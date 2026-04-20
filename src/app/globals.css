@@ -1,0 +1,129 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:is(.dark *));
+
+/* MJ Biopharm brand: navy #2D2A6E */
+:root {
+  --background: #0b0b14;
+  --foreground: #e7e7ef;
+  --card: #12121f;
+  --card-foreground: #e7e7ef;
+  --popover: #14142a;
+  --popover-foreground: #e7e7ef;
+  --primary: #5b57d1;
+  --primary-foreground: #ffffff;
+  --secondary: #1e1e33;
+  --secondary-foreground: #e7e7ef;
+  --muted: #1a1a2c;
+  --muted-foreground: #9a9ab3;
+  --accent: #2d2a6e;
+  --accent-foreground: #ffffff;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --border: #24243d;
+  --input: #1b1b30;
+  --ring: #5b57d1;
+  --radius: 0.5rem;
+
+  --brand: #2d2a6e;
+  --brand-50: #eceaff;
+  --brand-100: #d6d1ff;
+  --brand-200: #a9a1f7;
+  --brand-300: #7d72ec;
+  --brand-400: #5b4fe0;
+  --brand-500: #403ac8;
+  --brand-600: #2d2a6e;
+  --brand-700: #1f1d4f;
+  --brand-800: #13122e;
+  --brand-900: #090817;
+
+  --success: #16a34a;
+  --warning: #ca8a04;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-brand: var(--brand);
+  --color-brand-50: var(--brand-50);
+  --color-brand-100: var(--brand-100);
+  --color-brand-200: var(--brand-200);
+  --color-brand-300: var(--brand-300);
+  --color-brand-400: var(--brand-400);
+  --color-brand-500: var(--brand-500);
+  --color-brand-600: var(--brand-600);
+  --color-brand-700: var(--brand-700);
+  --color-brand-800: var(--brand-800);
+  --color-brand-900: var(--brand-900);
+
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+  html,
+  body {
+    background-color: var(--background);
+    color: var(--foreground);
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+  body {
+    min-height: 100vh;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 6px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--muted);
+  }
+}
+
+/* Fix highlight applied via AI suggestion */
+.fix-applied {
+  background-color: rgb(22 101 52 / 0.35);
+  border-left: 3px solid rgb(34 197 94);
+  padding-left: 0.5rem;
+}
+
+/* Comment anchor in manager view */
+.comment-anchor {
+  background-color: rgb(202 138 4 / 0.25);
+  border-bottom: 2px dashed rgb(202 138 4);
+  cursor: pointer;
+}
