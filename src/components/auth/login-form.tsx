@@ -28,8 +28,7 @@ export function LoginForm({ users }: { users: MockUser[] }) {
         body: JSON.stringify({ userId: selectedId }),
       });
       if (!res.ok) return;
-      router.push("/");
-      router.refresh();
+      window.location.href = "/";
     });
   };
 

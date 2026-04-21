@@ -1,7 +1,6 @@
 "use client";
 
-import { Plus, Trash2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Trash2 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -39,7 +38,7 @@ export function AnalyzeEditor() {
       lastSavedAt={lastSavedAt}
     >
       <section className="space-y-3">
-        <h3 className="font-semibold text-[var(--brand-200)]">
+        <h3 className="font-semibold text-[var(--foreground)]">
           6M Method (If Applicable)
         </h3>
         <p className="text-xs text-[var(--muted-foreground)]">
@@ -84,34 +83,15 @@ export function AnalyzeEditor() {
       <Separator />
 
       <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="font-semibold text-[var(--brand-200)]">5-Why Approach</h3>
-          {!readOnly && (
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() =>
-                updateSection("analyze", (p) => ({
-                  ...p,
-                  fiveWhy: {
-                    ...p.fiveWhy,
-                    whys: [...p.fiveWhy.whys, { question: "", answer: "" }],
-                  },
-                }))
-              }
-            >
-              <Plus className="size-3" /> Add Why
-            </Button>
-          )}
-        </div>
+        <h3 className="font-semibold text-[var(--foreground)]">5-Why Approach</h3>
         <div className="space-y-3">
           {value.fiveWhy.whys.map((why, idx) => (
             <div
               key={idx}
-              className="grid gap-2 p-3 rounded-md border border-[var(--border)] bg-[var(--secondary)]"
+              className="grid gap-2 p-3 rounded-md border border-[var(--border)] bg-[var(--card)]"
             >
               <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-[var(--brand-200)]">
+                <span className="text-xs font-semibold text-[var(--foreground)]">
                   Why {idx + 1}
                 </span>
                 {!readOnly && value.fiveWhy.whys.length > 1 && (
@@ -236,7 +216,7 @@ export function AnalyzeEditor() {
       <Separator />
 
       <section className="space-y-3">
-        <h3 className="font-semibold text-[var(--brand-200)]">
+        <h3 className="font-semibold text-[var(--foreground)]">
           Identified Root Cause / Probable Cause
         </h3>
         <div className="grid gap-1.5">
@@ -311,7 +291,7 @@ export function AnalyzeEditor() {
       <Separator />
 
       <section className="space-y-3">
-        <h3 className="font-semibold text-[var(--brand-200)]">Impact Assessment</h3>
+        <h3 className="font-semibold text-[var(--foreground)]">Impact Assessment</h3>
         <div className="grid gap-3">
           {(
             [

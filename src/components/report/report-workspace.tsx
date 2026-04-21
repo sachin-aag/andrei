@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { ChevronLeft, Download, Loader2, Send, CheckCircle2, MessageSquare } from "lucide-react";
 import { toast } from "sonner";
@@ -8,7 +8,6 @@ import { useRouter } from "next/navigation";
 import { useReport } from "@/providers/report-provider";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { StatusBadge } from "./status-badge";
 import { ReportHeader } from "./report-header";
 import { DefineEditor } from "./sections/define-editor";
@@ -23,14 +22,47 @@ import type { SectionType } from "@/db/schema";
 
 export type WorkspaceMode = "edit" | "review";
 
+const DMAIC_SECTIONS: SectionType[] = ["define", "measure", "analyze", "improve", "control"];
+
 export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
   const { report, isEvaluating, runEvaluation, refresh, currentUserId } = useReport();
-  const [tab, setTab] = useState<SectionType>("define");
+  const [activeSection, setActiveSection] = useState<SectionType>("define");
   const [sidebarTab, setSidebarTab] = useState<"traffic" | "comments">("traffic");
   const [submitting, setSubmitting] = useState(false);
   const [approving, setApproving] = useState(false);
   const [sendingFeedback, setSendingFeedback] = useState(false);
   const router = useRouter();
+  const mainRef = useRef<HTMLElement>(null);
+
+  // Scroll-spy: track which section is currently in view
+  useEffect(() => {
+    const container = mainRef.current;
+    if (!container) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        // Find the topmost visible section
+        const visible = entries
+          .filter((e) => e.isIntersecting)
+          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
+        if (visible.length > 0) {
+          setActiveSection(visible[0].target.id as SectionType);
+        }
+      },
+      {
+        root: container,
+        rootMargin: "-10% 0px -60% 0px",
+        threshold: 0,
+      }
+    );
+
+    for (const section of DMAIC_SECTIONS) {
+      const el = container.querySelector(`#${section}`);
+      if (el) observer.observe(el);
+    }
+
+    return () => observer.disconnect();
+  }, []);
 
   const manager = useMemo(
     () => getUser(report.assignedManagerId ?? undefined),
@@ -174,31 +206,15 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
       </header>
 
       <div className="flex-1 flex overflow-hidden">
-        <main className="flex-1 overflow-auto">
-          <div className="max-w-[900px] mx-auto px-8 py-8 space-y-6 pb-24">
+        <main ref={mainRef} className="flex-1 overflow-auto">
+          <div className="max-w-[900px] mx-auto px-8 py-8 space-y-10 pb-24">
             <ReportHeader />
 
-            <Tabs
-              value={tab}
-              onValueChange={(v) => setTab(v as SectionType)}
-              className="w-full"
-            >
-              <div className="sticky top-0 z-10 bg-[var(--background)] py-2 -mx-8 px-8 backdrop-blur">
-                <TabsList>
-                  <TabsTrigger value="define">Define</TabsTrigger>
-                  <TabsTrigger value="measure">Measure</TabsTrigger>
-                  <TabsTrigger value="analyze">Analyze</TabsTrigger>
-                  <TabsTrigger value="improve">Improve</TabsTrigger>
-                  <TabsTrigger value="control">Control</TabsTrigger>
-                </TabsList>
-              </div>
-
-              <TabsContent value="define"><DefineEditor /></TabsContent>
-              <TabsContent value="measure"><MeasureEditor /></TabsContent>
-              <TabsContent value="analyze"><AnalyzeEditor /></TabsContent>
-              <TabsContent value="improve"><ImproveEditor /></TabsContent>
-              <TabsContent value="control"><ControlEditor /></TabsContent>
-            </Tabs>
+            <section id="define"><DefineEditor /></section>
+            <section id="measure"><MeasureEditor /></section>
+            <section id="analyze"><AnalyzeEditor /></section>
+            <section id="improve"><ImproveEditor /></section>
+            <section id="control"><ControlEditor /></section>
           </div>
         </main>
 
@@ -244,9 +260,12 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
 
           <div className="flex-1 overflow-auto">
             {sidebarTab === "traffic" ? (
-              <TrafficLightSidebar activeSection={tab} />
+              <TrafficLightSidebar activeSection={activeSection} onSectionClick={(s) => {
+                const el = mainRef.current?.querySelector(`#${s}`);
+                if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+              }} />
             ) : (
-              <CommentsPanel mode={mode} activeSection={tab} />
+              <CommentsPanel mode={mode} activeSection={activeSection} />
             )}
           </div>
         </aside>

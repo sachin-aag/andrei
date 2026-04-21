@@ -67,7 +67,7 @@ export function ImproveEditor() {
 
       <div className="space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="font-semibold text-[var(--brand-200)]">Corrective Actions</h3>
+          <h3 className="font-semibold text-[var(--foreground)]">Corrective Actions</h3>
           {!readOnly && (
             <Button size="sm" variant="outline" onClick={addAction}>
               <Plus className="size-3" /> Add Action
@@ -84,10 +84,10 @@ export function ImproveEditor() {
             {value.correctiveActions.map((a, idx) => (
               <div
                 key={a.id}
-                className="rounded-md border border-[var(--border)] bg-[var(--secondary)] p-4 space-y-3"
+                className="rounded-md border border-[var(--border)] bg-[var(--card)] p-4 space-y-3"
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-[var(--brand-200)]">
+                  <span className="text-xs font-semibold text-[var(--foreground)]">
                     CA-{String(idx + 1).padStart(3, "0")}
                   </span>
                   {!readOnly && (

@@ -49,18 +49,6 @@ export function ReportHeader() {
     <Card>
       <CardContent className="p-5 space-y-4">
         <div className="flex items-start gap-4 flex-wrap">
-          <div className="grid gap-2 flex-1 min-w-[220px]">
-            <Label>
-              <Hash className="inline size-3 mr-1" />
-              Deviation No.
-            </Label>
-            <Input
-              placeholder="DEV/PK/26/001"
-              value={deviationNo}
-              disabled={readOnly}
-              onChange={(e) => setDeviationNo(e.target.value)}
-            />
-          </div>
           <div className="grid gap-2 min-w-[180px]">
             <Label>
               <CalendarDays className="inline size-3 mr-1" />
@@ -71,6 +59,18 @@ export function ReportHeader() {
               value={date}
               disabled={readOnly}
               onChange={(e) => setDate(e.target.value)}
+            />
+          </div>
+          <div className="grid gap-2 flex-1 min-w-[220px]">
+            <Label>
+              <Hash className="inline size-3 mr-1" />
+              Deviation No.
+            </Label>
+            <Input
+              placeholder="DEV/PK/26/001"
+              value={deviationNo}
+              disabled={readOnly}
+              onChange={(e) => setDeviationNo(e.target.value)}
             />
           </div>
           <div className="ml-auto self-end">

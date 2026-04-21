@@ -127,14 +127,14 @@ export function CommentsPanel({
                     </span>
                   </div>
                   {c.status === "resolved" ? (
-                    <span className="text-[10px] text-green-400 flex items-center gap-1">
+                    <span className="text-[10px] text-green-700 flex items-center gap-1">
                       <Check className="size-3" />
                       Resolved
                     </span>
                   ) : (
                     isAuthor && (
                       <button
-                        className="text-[10px] text-[var(--muted-foreground)] hover:text-green-400 cursor-pointer"
+                        className="text-[10px] text-[var(--muted-foreground)] hover:text-green-700 cursor-pointer"
                         onClick={() => resolveComment(c.id)}
                       >
                         Resolve

@@ -79,7 +79,7 @@ export function ControlEditor() {
 
       <section className="space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="font-semibold text-[var(--brand-200)]">
+          <h3 className="font-semibold text-[var(--foreground)]">
             Preventive Actions
           </h3>
           {!readOnly && (
@@ -98,10 +98,10 @@ export function ControlEditor() {
             {value.preventiveActions.map((a, idx) => (
               <div
                 key={a.id}
-                className="rounded-md border border-[var(--border)] bg-[var(--secondary)] p-4 space-y-3"
+                className="rounded-md border border-[var(--border)] bg-[var(--card)] p-4 space-y-3"
               >
                 <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-[var(--brand-200)]">
+                  <span className="text-xs font-semibold text-[var(--foreground)]">
                     PA-{String(idx + 1).padStart(3, "0")}
                   </span>
                   {!readOnly && (
@@ -263,7 +263,7 @@ export function ControlEditor() {
       <Separator />
 
       <section className="space-y-3">
-        <h3 className="font-semibold text-[var(--brand-200)]">
+        <h3 className="font-semibold text-[var(--foreground)]">
           Impact assessment (post-investigation)
         </h3>
         <div className="grid gap-3">

@@ -2,7 +2,7 @@
 
 /* MJ Biopharm brand: navy #2D2A6E — light theme only */
 :root {
-  --background: #f8f8fc;
+  --background: #fafafa;
   --foreground: #16162b;
   --card: #ffffff;
   --card-foreground: #16162b;
@@ -10,15 +10,15 @@
   --popover-foreground: #16162b;
   --primary: #403ac8;
   --primary-foreground: #ffffff;
-  --secondary: #ececf4;
+  --secondary: #f4f4f5;
   --secondary-foreground: #1f1d4f;
-  --muted: #f0f0f6;
+  --muted: #f4f4f5;
   --muted-foreground: #5c5c72;
   --accent: #2d2a6e;
   --accent-foreground: #ffffff;
   --destructive: #dc2626;
   --destructive-foreground: #ffffff;
-  --border: #e0e0ea;
+  --border: #e5e5e5;
   --input: #ffffff;
   --ring: #5b57d1;
   --radius: 0.5rem;
@@ -35,8 +35,8 @@
   --brand-800: #13122e;
   --brand-900: #090817;
 
-  --success: #16a34a;
-  --warning: #ca8a04;
+  --success: #15803d;
+  --warning: #a16207;
 }
 
 @theme inline {
