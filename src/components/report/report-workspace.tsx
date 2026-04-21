@@ -209,7 +209,7 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
                 className={`px-3 py-1 rounded ${
                   sidebarTab === "traffic"
                     ? "bg-[var(--brand-600)] text-white"
-                    : "text-[var(--muted-foreground)] hover:text-white"
+                    : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
                 }`}
                 onClick={() => setSidebarTab("traffic")}
               >
@@ -219,7 +219,7 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
                 className={`px-3 py-1 rounded ${
                   sidebarTab === "comments"
                     ? "bg-[var(--brand-600)] text-white"
-                    : "text-[var(--muted-foreground)] hover:text-white"
+                    : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
                 }`}
                 onClick={() => setSidebarTab("comments")}
               >

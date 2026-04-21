@@ -1,27 +1,25 @@
 @import "tailwindcss";
 
-@custom-variant dark (&:is(.dark *));
-
-/* MJ Biopharm brand: navy #2D2A6E */
+/* MJ Biopharm brand: navy #2D2A6E — light theme only */
 :root {
-  --background: #0b0b14;
-  --foreground: #e7e7ef;
-  --card: #12121f;
-  --card-foreground: #e7e7ef;
-  --popover: #14142a;
-  --popover-foreground: #e7e7ef;
-  --primary: #5b57d1;
+  --background: #f8f8fc;
+  --foreground: #16162b;
+  --card: #ffffff;
+  --card-foreground: #16162b;
+  --popover: #ffffff;
+  --popover-foreground: #16162b;
+  --primary: #403ac8;
   --primary-foreground: #ffffff;
-  --secondary: #1e1e33;
-  --secondary-foreground: #e7e7ef;
-  --muted: #1a1a2c;
-  --muted-foreground: #9a9ab3;
+  --secondary: #ececf4;
+  --secondary-foreground: #1f1d4f;
+  --muted: #f0f0f6;
+  --muted-foreground: #5c5c72;
   --accent: #2d2a6e;
   --accent-foreground: #ffffff;
   --destructive: #dc2626;
   --destructive-foreground: #ffffff;
-  --border: #24243d;
-  --input: #1b1b30;
+  --border: #e0e0ea;
+  --input: #ffffff;
   --ring: #5b57d1;
   --radius: 0.5rem;
 
@@ -88,6 +86,9 @@
 @layer base {
   * {
     border-color: var(--border);
+  }
+  html {
+    color-scheme: light;
   }
   html,
   body {

@@ -272,7 +272,7 @@ function CriterionRow({
           className={cn(
             "flex-1 leading-snug",
             evaluation.bypassed && "line-through text-[var(--muted-foreground)]",
-            evaluation.fixApplied && "text-green-300"
+            evaluation.fixApplied && "text-green-700"
           )}
         >
           {evaluation.criterionLabel}
@@ -287,8 +287,8 @@ function CriterionRow({
             </p>
           )}
           {showFix && (
-            <div className="rounded-md bg-[var(--brand-800)]/70 border border-[var(--brand-500)]/30 p-2.5 space-y-2">
-              <div className="flex items-center gap-1.5 text-[var(--brand-200)] font-semibold text-[11px] uppercase tracking-wide">
+            <div className="rounded-md bg-[var(--brand-50)] border border-[var(--brand-200)] p-2.5 space-y-2">
+              <div className="flex items-center gap-1.5 text-[var(--brand-700)] font-semibold text-[11px] uppercase tracking-wide">
                 <Sparkles className="size-3" /> Suggested fix
               </div>
               <p className="leading-relaxed text-[var(--foreground)]">
@@ -319,7 +319,7 @@ function CriterionRow({
             </div>
           )}
           {evaluation.fixApplied && (
-            <div className="text-green-400 text-[11px] flex items-center gap-1">
+            <div className="text-green-700 text-[11px] flex items-center gap-1">
               <Check className="size-3" /> Fix applied · content was updated
             </div>
           )}

@@ -38,24 +38,8 @@ export function MeasureEditor() {
               narrative: e.target.value,
             }))
           }
-          placeholder="The equipment is installed in ... SOP No. ... is in place for ..."
-          className="min-h-[320px]"
-        />
-      </div>
-
-      <div className="grid gap-2">
-        <Label>Regulatory notification (if applicable)</Label>
-        <Textarea
-          value={value.regulatoryNotification ?? ""}
-          disabled={readOnly}
-          onChange={(e) =>
-            updateSection("measure", (p) => ({
-              ...p,
-              regulatoryNotification: e.target.value,
-            }))
-          }
-          placeholder="If applicable, provide details. Otherwise 'Not required because ...'"
-          className="min-h-[80px]"
+          placeholder={`The equipment is installed in ... SOP No. ... is in place for ...\n\nInclude regulatory notification details if applicable.`}
+          className="min-h-[400px]"
         />
       </div>
     </SectionShell>
