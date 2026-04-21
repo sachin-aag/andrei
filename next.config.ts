@@ -6,6 +6,9 @@ const nextConfig: NextConfig = {
       bodySizeLimit: "5mb",
     },
   },
+  outputFileTracingIncludes: {
+    "/api/*": ["./templates/**/*"],
+  },
 };
 
 export default nextConfig;
