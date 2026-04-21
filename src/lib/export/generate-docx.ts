@@ -57,6 +57,29 @@ function toRoman(n: number): string {
   return result;
 }
 
+function composeDefine(d: DefineSection): string {
+  const parts: string[] = [];
+  if (d.narrative?.trim()) parts.push(d.narrative.trim());
+  if (d.location?.trim()) parts.push(`Location: ${d.location.trim()}`);
+  if (d.dateTimeOccurrence?.trim())
+    parts.push(`Date/Time of Occurrence: ${d.dateTimeOccurrence.trim()}`);
+  if (d.dateTimeDetection?.trim())
+    parts.push(`Date/Time of Detection: ${d.dateTimeDetection.trim()}`);
+  if (d.personnel?.trim())
+    parts.push(`Personnel Involved: ${d.personnel.trim()}`);
+  if (d.initialScope?.trim())
+    parts.push(`Initial Scope: ${d.initialScope.trim()}`);
+  return parts.length > 0 ? parts.join("\n") : "Not Applicable";
+}
+
+function composeMeasure(m: MeasureSection): string {
+  const parts: string[] = [];
+  if (m.narrative?.trim()) parts.push(m.narrative.trim());
+  if (m.regulatoryNotification?.trim())
+    parts.push(`Regulatory Notification: ${m.regulatoryNotification.trim()}`);
+  return parts.length > 0 ? parts.join("\n") : "Not Applicable";
+}
+
 function buildTemplateData(
   report: ReportRow,
   sections: ReportSectionRecord[]
@@ -86,11 +109,11 @@ function buildTemplateData(
     brainstormingCheck: check(tools.brainstorming),
     otherToolsDisplay: na(report.otherTools),
 
-    // Define
-    defineNarrative: na(d.narrative),
+    // Define — compose all sub-fields into one block
+    defineNarrative: composeDefine(d),
 
-    // Measure
-    measureNarrative: na(m.narrative),
+    // Measure — include regulatory notification if present
+    measureNarrative: composeMeasure(m),
 
     // Analyze - 6M
     sixMMan: na(a.sixM.man),

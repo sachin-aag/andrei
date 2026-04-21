@@ -20,12 +20,12 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={`dark ${inter.variable}`} suppressHydrationWarning>
+    <html lang="en" className={inter.variable} suppressHydrationWarning>
       <body className="min-h-screen font-sans antialiased">
         {children}
         <Toaster
           position="bottom-right"
-          theme="dark"
+          theme="light"
           toastOptions={{
             style: {
               background: "var(--card)",
