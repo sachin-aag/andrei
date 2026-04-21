@@ -26,7 +26,7 @@ export function SaveStatus({
   }
   if (status === "saved") {
     return (
-      <div className="text-xs text-green-400 flex items-center gap-1.5">
+      <div className="text-xs text-green-700 flex items-center gap-1.5">
         <Check className="size-3" /> Saved
         {lastSavedAt
           ? ` · ${lastSavedAt.toLocaleTimeString([], {

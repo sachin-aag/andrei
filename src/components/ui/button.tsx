@@ -18,7 +18,8 @@ const buttonVariants = cva(
           "bg-[var(--secondary)] text-[var(--secondary-foreground)] hover:bg-[var(--muted)]",
         ghost: "hover:bg-[var(--secondary)] hover:text-[var(--foreground)]",
         link: "text-[var(--brand-300)] underline-offset-4 hover:underline",
-        success: "bg-green-600 text-white hover:bg-green-500 shadow-sm",
+        success:
+          "bg-green-700 text-white hover:bg-green-800 shadow-sm",
       },
       size: {
         default: "h-9 px-4 py-2",

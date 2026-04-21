@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useEffect } from "react";
 import { ChevronDown, ChevronRight, Check, X, Sparkles } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
@@ -13,21 +13,33 @@ import { EVALUATABLE_SECTIONS, getCriteria } from "@/lib/ai/criteria";
 import { SECTION_LABELS } from "@/types/sections";
 
 const STATUS_COLORS: Record<CriterionStatus, string> = {
-  met: "bg-green-500",
-  partially_met: "bg-yellow-500",
-  not_met: "bg-red-500",
+  met: "bg-green-700",
+  partially_met: "bg-yellow-700",
+  not_met: "bg-red-700",
   not_evaluated: "bg-[var(--muted-foreground)]/40",
 };
 
 export function TrafficLightSidebar({
   activeSection,
+  onSectionClick,
 }: {
   activeSection: SectionType;
+  onSectionClick?: (section: SectionType) => void;
 }) {
   const { evaluations, runEvaluation, isEvaluating } = useReport();
   const [openSections, setOpenSections] = useState<Set<string>>(
     new Set([activeSection])
   );
+
+  // Auto-open the active section when it changes via scroll
+  useEffect(() => {
+    setOpenSections((prev) => {
+      if (prev.has(activeSection)) return prev;
+      const next = new Set(prev);
+      next.add(activeSection);
+      return next;
+    });
+  }, [activeSection]);
 
   const grouped = useMemo(() => {
     const map = new Map<SectionType, EvaluationRecord[]>();
@@ -63,7 +75,7 @@ export function TrafficLightSidebar({
       {EVALUATABLE_SECTIONS.map((section) => {
         const rows = grouped.get(section) ?? [];
         const sectionStatus = aggregateStatus(rows);
-        const isOpen = openSections.has(section) || section === activeSection;
+        const isOpen = openSections.has(section);
         return (
           <div
             key={section}
@@ -74,14 +86,15 @@ export function TrafficLightSidebar({
           >
             <button
               className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-[var(--secondary)] cursor-pointer"
-              onClick={() =>
+              onClick={() => {
                 setOpenSections((prev) => {
                   const next = new Set(prev);
                   if (next.has(section)) next.delete(section);
                   else next.add(section);
                   return next;
-                })
-              }
+                });
+                onSectionClick?.(section);
+              }}
             >
               {isOpen ? (
                 <ChevronDown className="size-3.5 shrink-0" />
@@ -262,6 +275,12 @@ function CriterionRow({
         className="w-full text-left flex items-start gap-2 cursor-pointer"
         onClick={() => setExpanded((v) => !v)}
       >
+        <ChevronRight
+          className={cn(
+            "size-3 mt-1 shrink-0 text-[var(--muted-foreground)] transition-transform",
+            expanded && "rotate-90"
+          )}
+        />
         <span
           className={cn(
             "size-2 rounded-full mt-1.5 shrink-0",
@@ -272,7 +291,9 @@ function CriterionRow({
           className={cn(
             "flex-1 leading-snug",
             evaluation.bypassed && "line-through text-[var(--muted-foreground)]",
-            evaluation.fixApplied && "text-green-700"
+            !evaluation.bypassed && effectiveStatus === "met" && "text-green-700",
+            !evaluation.bypassed && effectiveStatus === "not_met" && "text-red-700",
+            !evaluation.bypassed && effectiveStatus === "partially_met" && "text-yellow-700"
           )}
         >
           {evaluation.criterionLabel}

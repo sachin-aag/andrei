@@ -48,7 +48,7 @@ export default async function EditReportPage({
   const canEdit =
     user.role === "engineer" &&
     user.id === report.authorId &&
-    (report.status === "draft" || report.status === "feedback");
+    report.status !== "approved";
 
   const bundle = JSON.parse(
     JSON.stringify({
