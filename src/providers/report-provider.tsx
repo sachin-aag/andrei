@@ -21,6 +21,7 @@ import type {
 } from "@/types/sections";
 import { EDITABLE_SECTIONS, EMPTY_CONTENT } from "@/types/sections";
 import type { SectionType } from "@/db/schema";
+import { stringFieldFromStoredValue } from "@/lib/section-content-normalize";
 
 type SectionContents = Partial<{
   [K in keyof SectionContentMap]: SectionContentMap[K];
@@ -84,14 +85,19 @@ function deepMerge<T>(base: T, override: Partial<T>): T {
   }
   const out = { ...(base as Record<string, unknown>) };
   for (const [k, v] of Object.entries((override as Record<string, unknown>) ?? {})) {
+    const baseVal = out[k];
     if (
       v !== null &&
       typeof v === "object" &&
       !Array.isArray(v) &&
-      typeof out[k] === "object" &&
-      out[k] !== null
+      typeof baseVal === "object" &&
+      baseVal !== null &&
+      !Array.isArray(baseVal)
     ) {
-      out[k] = deepMerge(out[k] as unknown, v as Partial<unknown>);
+      out[k] = deepMerge(baseVal as unknown, v as Partial<unknown>);
+    } else if (typeof baseVal === "string" && v !== null && typeof v === "object") {
+      /* Rich-text doc saved in DB, older UI expects a string (avoid `[object Object]` in textareas). */
+      out[k] = stringFieldFromStoredValue(v) as (typeof out)[typeof k];
     } else {
       out[k] = v;
     }
