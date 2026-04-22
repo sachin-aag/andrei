@@ -102,7 +102,7 @@ export const TrackChangesKeyboardExtension = Extension.create({
         .focus()
         .setTextSelection({ from, to })
         .setMark(suggestionDeleteMarkName, pendingMarkAttrs(authorId))
-        .setTextSelection(to)
+        .setTextSelection(from)
         .run();
     };
 
@@ -121,13 +121,21 @@ export const TrackChangesKeyboardExtension = Extension.create({
       const between = state.doc.textBetween(from, to, "");
       if (between.length === 0) return false;
 
+      const deleteMarkType = state.schema.marks[suggestionDeleteMarkName];
+      if (!deleteMarkType) return false;
+
+      if (state.doc.rangeHasMark(from, to, deleteMarkType)) {
+        return editor.chain().focus().setTextSelection(from).run();
+      }
+
       const authorId = editor.storage.trackChanges?.authorId ?? "";
       return editor
         .chain()
         .focus()
         .setTextSelection({ from, to })
+        .unsetMark(suggestionInsertMarkName)
         .setMark(suggestionDeleteMarkName, pendingMarkAttrs(authorId))
-        .setTextSelection(to)
+        .setTextSelection(from)
         .run();
     };
 
@@ -146,13 +154,21 @@ export const TrackChangesKeyboardExtension = Extension.create({
       const between = state.doc.textBetween(from, to, "");
       if (between.length === 0) return false;
 
+      const deleteMarkType = state.schema.marks[suggestionDeleteMarkName];
+      if (!deleteMarkType) return false;
+
+      if (state.doc.rangeHasMark(from, to, deleteMarkType)) {
+        return editor.chain().focus().setTextSelection(to).run();
+      }
+
       const authorId = editor.storage.trackChanges?.authorId ?? "";
       return editor
         .chain()
         .focus()
         .setTextSelection({ from, to })
+        .unsetMark(suggestionInsertMarkName)
         .setMark(suggestionDeleteMarkName, pendingMarkAttrs(authorId))
-        .setTextSelection(to)
+        .setTextSelection(from)
         .run();
     };
 
@@ -184,7 +200,7 @@ export const TrackChangesExtension = Extension.create({
     return [
       new Plugin({
         key: trackChangesInsertKey,
-        appendTransaction(transactions, _oldState, newState) {
+        appendTransaction(transactions, oldState, newState) {
           if (transactions.some((tr) => tr.getMeta("skipTrackChanges"))) return null;
           if (editor.storage.trackChanges?.enabled !== true) return null;
           const docChanging = transactions.filter((tr) => tr.docChanged);
@@ -192,14 +208,23 @@ export const TrackChangesExtension = Extension.create({
           if (docChanging.length > 1) return null;
 
           const transaction = docChanging[0]!;
+          /** Programmatic sync (e.g. setContent) — do not mark baseline text as green insert. */
+          if (transaction.getMeta("preventUpdate") === true) return null;
+
           const authorId = editor.storage.trackChanges?.authorId ?? "";
           const attrs = () => pendingMarkAttrs(authorId);
+          const fullContentReplace = (step: ReplaceStep) =>
+            step.from === 0 && step.to === oldState.doc.content.size;
 
           let tr = newState.tr;
           let changed = false;
 
           for (const step of transaction.steps) {
             if (!(step instanceof ReplaceStep)) continue;
+            if (fullContentReplace(step)) {
+              // Whole-document replace (setContent, etc.): never treat as a TC insert.
+              continue;
+            }
             const slice = step.slice;
             if (!slice || slice.size === 0) continue;
 
