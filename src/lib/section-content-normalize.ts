@@ -1,4 +1,9 @@
-import type { JSONContent } from "@tiptap/core";
+/** Narrow Tiptap / ProseMirror JSON doc shape (avoids @tiptap/core dependency). */
+type TiptapJsonNode = {
+  type?: string;
+  text?: string;
+  content?: TiptapJsonNode[];
+};
 
 const BLOCK = new Set([
   "paragraph",
@@ -18,7 +23,7 @@ export function plainTextFromTiptapJson(node: unknown): string {
   if (node == null) return "";
   if (typeof node === "string") return node;
   if (typeof node !== "object") return "";
-  const n = node as JSONContent;
+  const n = node as TiptapJsonNode;
   if (n.type === "text" && typeof n.text === "string") {
     return n.text;
   }
