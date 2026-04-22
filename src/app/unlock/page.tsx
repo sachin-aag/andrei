@@ -1,12 +1,38 @@
 import Image from "next/image";
 import { redirect } from "next/navigation";
-import { LoginForm } from "@/components/auth/login-form";
-import { getCurrentUser } from "@/lib/auth/session";
-import { MOCK_USERS } from "@/lib/auth/mock-users";
+import { cookies } from "next/headers";
+import {
+  SITE_ACCESS_COOKIE,
+  verifySiteAccessToken,
+} from "@/lib/site-access-token";
+import { UnlockForm } from "@/components/auth/unlock-form";
 
-export default async function LoginPage() {
-  const user = await getCurrentUser();
-  if (user) redirect("/");
+export default async function UnlockPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ next?: string }>;
+}) {
+  const secret = process.env.SITE_ACCESS_PASSWORD?.trim();
+  if (!secret) {
+    redirect("/login");
+  }
+
+  const store = await cookies();
+  const existing = store.get(SITE_ACCESS_COOKIE)?.value;
+  if (existing && (await verifySiteAccessToken(existing, secret))) {
+    const { next: nextPath } = await searchParams;
+    const safe =
+      nextPath && nextPath.startsWith("/") && !nextPath.startsWith("//")
+        ? nextPath
+        : "/";
+    redirect(safe);
+  }
+
+  const { next: nextPath } = await searchParams;
+  const nextHref =
+    nextPath && nextPath.startsWith("/") && !nextPath.startsWith("//")
+      ? nextPath
+      : "/";
 
   return (
     <div className="min-h-screen flex">
@@ -28,7 +54,6 @@ export default async function LoginPage() {
               height={36}
               alt="MJ Biopharm logo"
               className="object-contain"
-              style={{ width: "auto", height: "auto" }}
             />
           </div>
           <div>
@@ -38,16 +63,13 @@ export default async function LoginPage() {
         </div>
         <div className="relative">
           <h2 className="text-4xl font-bold leading-tight mb-3">
-            Investigation Reporting,
-            <br /> accelerated.
+            Site access
           </h2>
-          <p className="max-w-md">
-            Draft DMAIC deviation reports with AI-assisted quality checks,
-            streamlined manager review, and one-click DOCX export matching
-            SOP/DP/QA/008.
+          <p className="max-w-md text-white/90">
+            Enter the shared access password to continue.
           </p>
         </div>
-        <div className="relative text-xs">
+        <div className="relative text-xs opacity-80">
           Ref. SOP No.: SOP/DP/QA/008 · Form: SOP/DP/QA/008/F04-R02
         </div>
       </div>
@@ -55,27 +77,25 @@ export default async function LoginPage() {
       <div className="flex-1 flex items-center justify-center p-8">
         <div className="w-full max-w-sm space-y-6">
           <div className="lg:hidden flex items-center gap-3">
-            <div className="size-10 rounded-lg bg-white p-1">
+            <div className="size-10 rounded-lg bg-white p-1 border border-border">
               <Image
                 src="/logo.png"
                 width={32}
                 height={32}
                 alt="MJ Biopharm logo"
-                className="object-contain"
-                style={{ width: "auto", height: "auto" }}
               />
             </div>
             <div className="font-semibold">M.J. Biopharm</div>
           </div>
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">
-              Sign in to your workspace
+              Enter access password
             </h1>
             <p className="text-sm text-[var(--muted-foreground)] mt-2">
-              Pick a mock user to continue. In production, this would be SSO.
+              This site is restricted. Ask your administrator for the password.
             </p>
           </div>
-          <LoginForm users={[...MOCK_USERS]} />
+          <UnlockForm nextHref={nextHref} />
         </div>
       </div>
     </div>
