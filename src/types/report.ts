@@ -44,11 +44,15 @@ export type EvaluationRecord = {
 export type CommentRecord = {
   id: string;
   reportId: string;
+  parentId: string | null;
   sectionId: string | null;
   section: SectionType | null;
   authorId: string;
   content: string;
   anchorText: string;
+  contentPath: string | null;
+  fromPos: number | null;
+  toPos: number | null;
   status: CommentStatus;
   createdAt: string;
 };

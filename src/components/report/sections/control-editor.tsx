@@ -10,6 +10,7 @@ import { Separator } from "@/components/ui/separator";
 import { useReport } from "@/providers/report-provider";
 import { useSectionSave } from "@/hooks/use-section-save";
 import { SectionShell, CriteriaChecklist } from "./section-shell";
+import { TiptapSectionField } from "@/components/report/tiptap-section-field";
 
 const CHECKS = [
   "Were specific preventive actions identified for each root cause / substantiated probable root cause as applicable?",
@@ -30,7 +31,7 @@ const CHECKS = [
 
 export function ControlEditor() {
   const { updateSection, readOnly } = useReport();
-  const { status, lastSavedAt, value } = useSectionSave("control");
+  const { status, lastSavedAt, value, flushSave } = useSectionSave("control");
 
   const addAction = () => {
     updateSection("control", (p) => ({
@@ -59,21 +60,18 @@ export function ControlEditor() {
     >
       <CriteriaChecklist items={CHECKS} />
 
-      <div className="grid gap-1.5">
-        <Label>Narrative</Label>
-        <Textarea
-          value={value.narrative}
-          disabled={readOnly}
-          className="min-h-[220px]"
-          onChange={(e) =>
-            updateSection("control", (p) => ({
-              ...p,
-              narrative: e.target.value,
-            }))
-          }
-          placeholder="The investigation has been carried out through ... During the investigation root cause ..."
-        />
-      </div>
+      <TiptapSectionField
+        section="control"
+        contentPath="narrative"
+        label="Narrative"
+        placeholder="The investigation has been carried out through … During the investigation root cause …"
+        className="grid gap-1.5"
+        value={value.narrative}
+        onChange={(doc) =>
+          updateSection("control", (p) => ({ ...p, narrative: doc }))
+        }
+        onFlushSave={flushSave}
+      />
 
       <Separator />
 

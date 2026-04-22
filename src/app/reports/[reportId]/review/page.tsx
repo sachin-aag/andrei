@@ -54,9 +54,19 @@ export default async function ReviewReportPage({
     })
   ) as ReportBundle;
 
+  const initialTrackChangesMode =
+    user.role === "manager" &&
+    (report.status === "submitted" || report.status === "in_review");
+
   return (
     <AppShell user={user}>
-      <ReportProvider bundle={bundle} currentUserId={user.id} readOnly>
+      <ReportProvider
+        bundle={bundle}
+        currentUserId={user.id}
+        readOnly
+        workspaceMode="review"
+        initialTrackChangesMode={initialTrackChangesMode}
+      >
         <ReportWorkspace mode="review" />
       </ReportProvider>
     </AppShell>

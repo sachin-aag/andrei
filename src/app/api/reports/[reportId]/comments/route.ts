@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
-import { eq, asc } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { comments, reports, sectionTypeEnum } from "@/db/schema";
 import type { SectionType } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
+
+function canAccessReport(user: { id: string; role: string }, report: { authorId: string; assignedManagerId: string | null }) {
+  if (user.role === "manager") return true;
+  return user.id === report.authorId;
+}
 
 export async function GET(
   _req: Request,
@@ -25,9 +30,13 @@ export async function GET(
 const sectionValues = sectionTypeEnum.enumValues;
 const createSchema = z.object({
   content: z.string().min(1),
+  parentId: z.string().optional().nullable(),
   anchorText: z.string().optional().default(""),
   sectionId: z.string().optional(),
   section: z.enum(sectionValues).optional(),
+  contentPath: z.string().optional().nullable(),
+  fromPos: z.number().int().optional().nullable(),
+  toPos: z.number().int().optional().nullable(),
 });
 
 export async function POST(
@@ -43,11 +52,8 @@ export async function POST(
     .from(reports)
     .where(eq(reports.id, reportId));
   if (!report) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (user.role !== "manager") {
-    return NextResponse.json(
-      { error: "Only managers can comment" },
-      { status: 403 }
-    );
+  if (!canAccessReport(user, report)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const parse = createSchema.safeParse(await req.json().catch(() => ({})));
@@ -55,15 +61,56 @@ export async function POST(
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }
 
+  const requestedParentId = parse.data.parentId ?? null;
+  let parentRow: (typeof comments.$inferSelect) | undefined;
+  /** Thread root (flat replies all point at root id). */
+  let threadRoot: (typeof comments.$inferSelect) | undefined;
+
+  if (requestedParentId) {
+    const [p] = await db
+      .select()
+      .from(comments)
+      .where(and(eq(comments.id, requestedParentId), eq(comments.reportId, reportId)));
+    if (!p) {
+      return NextResponse.json({ error: "Parent comment not found" }, { status: 400 });
+    }
+    parentRow = p;
+    let node = p;
+    while (node.parentId) {
+      const [up] = await db
+        .select()
+        .from(comments)
+        .where(and(eq(comments.id, node.parentId), eq(comments.reportId, reportId)));
+      if (!up) break;
+      node = up;
+    }
+    threadRoot = node;
+  } else if (user.role !== "manager") {
+    return NextResponse.json(
+      { error: "Only reviewers can start a new anchored comment thread" },
+      { status: 403 }
+    );
+  }
+
+  const parentIdForInsert = threadRoot ? threadRoot.id : null;
+
   const [inserted] = await db
     .insert(comments)
     .values({
       reportId,
-      sectionId: parse.data.sectionId ?? null,
-      section: (parse.data.section as SectionType | undefined) ?? null,
+      parentId: parentIdForInsert,
+      sectionId: threadRoot
+        ? threadRoot.sectionId
+        : parse.data.sectionId ?? null,
+      section: threadRoot
+        ? threadRoot.section
+        : ((parse.data.section as SectionType | undefined) ?? null),
       authorId: user.id,
       content: parse.data.content,
-      anchorText: parse.data.anchorText ?? "",
+      anchorText: threadRoot ? "" : parse.data.anchorText ?? "",
+      contentPath: threadRoot ? threadRoot.contentPath : parse.data.contentPath ?? null,
+      fromPos: threadRoot ? null : parse.data.fromPos ?? null,
+      toPos: threadRoot ? null : parse.data.toPos ?? null,
     })
     .returning();
 

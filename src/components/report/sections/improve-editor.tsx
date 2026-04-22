@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { useReport } from "@/providers/report-provider";
 import { useSectionSave } from "@/hooks/use-section-save";
 import { SectionShell, CriteriaChecklist } from "./section-shell";
+import { TiptapSectionField } from "@/components/report/tiptap-section-field";
 
 const CHECKS = [
   "Were specific corrective actions identified (including applicable immediate actions) to remediate the current issue?",
@@ -21,7 +22,7 @@ const CHECKS = [
 
 export function ImproveEditor() {
   const { updateSection, readOnly } = useReport();
-  const { status, lastSavedAt, value } = useSectionSave("improve");
+  const { status, lastSavedAt, value, flushSave } = useSectionSave("improve");
 
   const addAction = () => {
     updateSection("improve", (p) => ({
@@ -49,21 +50,18 @@ export function ImproveEditor() {
     >
       <CriteriaChecklist items={CHECKS} />
 
-      <div className="grid gap-1.5">
-        <Label>Narrative</Label>
-        <Textarea
-          value={value.narrative}
-          disabled={readOnly}
-          className="min-h-[220px]"
-          onChange={(e) =>
-            updateSection("improve", (p) => ({
-              ...p,
-              narrative: e.target.value,
-            }))
-          }
-          placeholder="The nonconformance is related to ... After identification of the nonconformance below actions were taken ..."
-        />
-      </div>
+      <TiptapSectionField
+        section="improve"
+        contentPath="narrative"
+        label="Narrative"
+        placeholder="The nonconformance is related to … After identification of the nonconformance below actions were taken …"
+        className="grid gap-1.5"
+        value={value.narrative}
+        onChange={(doc) =>
+          updateSection("improve", (p) => ({ ...p, narrative: doc }))
+        }
+        onFlushSave={flushSave}
+      />
 
       <div className="space-y-3">
         <div className="flex items-center justify-between">

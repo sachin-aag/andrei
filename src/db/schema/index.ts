@@ -5,7 +5,9 @@ import {
   jsonb,
   pgEnum,
   boolean,
+  integer,
   uniqueIndex,
+  type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
@@ -93,6 +95,10 @@ export const comments = pgTable("comments", {
   reportId: text("report_id")
     .notNull()
     .references(() => reports.id, { onDelete: "cascade" }),
+  /** Reply thread: null = top-level (anchored) comment */
+  parentId: text("parent_id").references((): AnyPgColumn => comments.id, {
+    onDelete: "cascade",
+  }),
   sectionId: text("section_id").references(() => reportSections.id, {
     onDelete: "cascade",
   }),
@@ -100,6 +106,9 @@ export const comments = pgTable("comments", {
   authorId: text("author_id").notNull(),
   content: text("content").notNull(),
   anchorText: text("anchor_text").notNull().default(""),
+  contentPath: text("content_path"),
+  fromPos: integer("from_pos"),
+  toPos: integer("to_pos"),
   status: commentStatusEnum("status").notNull().default("open"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
@@ -130,7 +139,7 @@ export const evaluationsRelations = relations(criteriaEvaluations, ({ one }) => 
   }),
 }));
 
-export const commentsRelations = relations(comments, ({ one }) => ({
+export const commentsRelations = relations(comments, ({ one, many }) => ({
   report: one(reports, {
     fields: [comments.reportId],
     references: [reports.id],
@@ -139,6 +148,12 @@ export const commentsRelations = relations(comments, ({ one }) => ({
     fields: [comments.sectionId],
     references: [reportSections.id],
   }),
+  parent: one(comments, {
+    fields: [comments.parentId],
+    references: [comments.id],
+    relationName: "comment_thread",
+  }),
+  replies: many(comments, { relationName: "comment_thread" }),
 }));
 
 export type ReportStatus = (typeof reportStatusEnum.enumValues)[number];

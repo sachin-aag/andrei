@@ -21,10 +21,13 @@ import type {
 } from "@/types/sections";
 import { EDITABLE_SECTIONS, EMPTY_CONTENT } from "@/types/sections";
 import type { SectionType } from "@/db/schema";
+import { mergeSection } from "@/lib/sections-merge";
 
 type SectionContents = Partial<{
   [K in keyof SectionContentMap]: SectionContentMap[K];
 }>;
+
+export type WorkspaceMode = "edit" | "review";
 
 type ReportContextValue = {
   report: ReportRecord;
@@ -33,7 +36,17 @@ type ReportContextValue = {
   evaluations: EvaluationRecord[];
   comments: CommentRecord[];
   readOnly: boolean;
+  trackChangesMode: boolean;
+  setTrackChangesMode: React.Dispatch<React.SetStateAction<boolean>>;
+  workspaceMode: WorkspaceMode;
   currentUserId: string;
+  /** Inline / sidebar: which anchored comment thread is focused (dark highlight + expanded panel). */
+  activeCommentId: string | null;
+  setActiveCommentId: React.Dispatch<React.SetStateAction<string | null>>;
+  /** One-shot: editors focus selection at anchor when set (e.g. opening thread from sidebar). */
+  pendingCommentFocusCommentId: string | null;
+  requestCommentFocus: (commentId: string) => void;
+  acknowledgeCommentFocus: () => void;
   updateSection: <K extends keyof SectionContentMap>(
     section: K,
     updater: (prev: SectionContentMap[K]) => SectionContentMap[K]
@@ -58,7 +71,7 @@ function bundleToSections(rows: ReportSectionRecord[]): SectionContents {
   for (const section of EDITABLE_SECTIONS) {
     const row = rows.find((r) => r.section === section);
     if (row) {
-      out[section] = mergeWithEmpty(section, row.content);
+      out[section] = mergeSection(section, row.content);
     } else {
       out[section] = EMPTY_CONTENT[section];
     }
@@ -66,50 +79,23 @@ function bundleToSections(rows: ReportSectionRecord[]): SectionContents {
   return out as SectionContents;
 }
 
-function mergeWithEmpty<K extends keyof SectionContentMap>(
-  section: K,
-  content: unknown
-): SectionContentMap[K] {
-  const base = EMPTY_CONTENT[section] as SectionContentMap[K];
-  if (!content || typeof content !== "object") return base;
-  return deepMerge(base, content as Partial<SectionContentMap[K]>);
-}
-
-function deepMerge<T>(base: T, override: Partial<T>): T {
-  if (Array.isArray(base)) {
-    return (Array.isArray(override) ? override : base) as T;
-  }
-  if (typeof base !== "object" || base === null) {
-    return (override ?? base) as T;
-  }
-  const out = { ...(base as Record<string, unknown>) };
-  for (const [k, v] of Object.entries((override as Record<string, unknown>) ?? {})) {
-    if (
-      v !== null &&
-      typeof v === "object" &&
-      !Array.isArray(v) &&
-      typeof out[k] === "object" &&
-      out[k] !== null
-    ) {
-      out[k] = deepMerge(out[k] as unknown, v as Partial<unknown>);
-    } else {
-      out[k] = v;
-    }
-  }
-  return out as T;
-}
-
 export function ReportProvider({
   bundle,
   currentUserId,
   readOnly,
+  initialTrackChangesMode = false,
+  workspaceMode = "edit",
   children,
 }: {
   bundle: ReportBundle;
   currentUserId: string;
   readOnly: boolean;
+  /** Manager: typically true on review; engineer: false. User can toggle in the workspace header. */
+  initialTrackChangesMode?: boolean;
+  workspaceMode?: WorkspaceMode;
   children: React.ReactNode;
 }) {
+  const [trackChangesMode, setTrackChangesMode] = useState(initialTrackChangesMode);
   const [report, setReport] = useState<ReportRecord>(bundle.report);
   const [sectionRows, setSectionRows] = useState<ReportSectionRecord[]>(
     bundle.sections
@@ -120,8 +106,30 @@ export function ReportProvider({
   const [evaluations, setEvaluations] = useState<EvaluationRecord[]>(
     bundle.evaluations
   );
-  const [comments, setComments] = useState<CommentRecord[]>(bundle.comments);
+  const [comments, setComments] = useState<CommentRecord[]>(() =>
+    bundle.comments.map((c) => ({
+      ...c,
+      parentId: c.parentId ?? null,
+    }))
+  );
   const [isEvaluating, setIsEvaluating] = useState(false);
+  const [activeCommentId, setActiveCommentId] = useState<string | null>(null);
+  const [pendingCommentFocusCommentId, setPendingCommentFocusCommentId] = useState<string | null>(
+    null
+  );
+
+  const requestCommentFocus = useCallback((commentId: string) => {
+    setPendingCommentFocusCommentId(commentId);
+    setActiveCommentId(commentId);
+  }, []);
+
+  const acknowledgeCommentFocus = useCallback(() => {
+    setPendingCommentFocusCommentId(null);
+  }, []);
+
+  useEffect(() => {
+    setTrackChangesMode(initialTrackChangesMode);
+  }, [bundle.report.id, initialTrackChangesMode]);
 
   useEffect(() => {
     setSections(bundleToSections(sectionRows));
@@ -157,7 +165,12 @@ export function ReportProvider({
     setReport(data.report);
     setSectionRows(data.sections);
     setEvaluations(data.evaluations);
-    setComments(data.comments);
+    setComments(
+      data.comments.map((c: CommentRecord) => ({
+        ...c,
+        parentId: c.parentId ?? null,
+      }))
+    );
   }, [bundle.report.id]);
 
   const getSectionId = useCallback(
@@ -208,7 +221,15 @@ export function ReportProvider({
       evaluations,
       comments,
       readOnly,
+      trackChangesMode,
+      setTrackChangesMode,
+      workspaceMode,
       currentUserId,
+      activeCommentId,
+      setActiveCommentId,
+      pendingCommentFocusCommentId,
+      requestCommentFocus,
+      acknowledgeCommentFocus,
       updateSection,
       replaceSection,
       setReport,
@@ -226,7 +247,14 @@ export function ReportProvider({
       evaluations,
       comments,
       readOnly,
+      trackChangesMode,
+      setTrackChangesMode,
+      workspaceMode,
       currentUserId,
+      activeCommentId,
+      pendingCommentFocusCommentId,
+      requestCommentFocus,
+      acknowledgeCommentFocus,
       updateSection,
       replaceSection,
       runEvaluation,

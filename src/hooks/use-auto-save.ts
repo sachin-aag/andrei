@@ -29,9 +29,8 @@ export function useAutoSave<T>({
   const isSaving = useRef(false);
   const pending = useRef(false);
 
-  useEffect(() => {
-    latestValue.current = value;
-  }, [value]);
+  /** Keep in sync every render so flush() after flushSync(onChange) sees the latest doc immediately. */
+  latestValue.current = value;
 
   const flush = useCallback(async () => {
     if (!enabled) return;

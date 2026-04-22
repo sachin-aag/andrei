@@ -40,6 +40,7 @@ export function AppShell({
               height={28}
               alt="MJ Biopharm"
               className="object-contain"
+              style={{ width: "auto", height: "auto" }}
             />
           </div>
           <div className="flex flex-col min-w-0">

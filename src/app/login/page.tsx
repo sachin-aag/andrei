@@ -28,6 +28,7 @@ export default async function LoginPage() {
               height={36}
               alt="MJ Biopharm logo"
               className="object-contain"
+              style={{ width: "auto", height: "auto" }}
             />
           </div>
           <div>
@@ -60,6 +61,8 @@ export default async function LoginPage() {
                 width={32}
                 height={32}
                 alt="MJ Biopharm logo"
+                className="object-contain"
+                style={{ width: "auto", height: "auto" }}
               />
             </div>
             <div className="font-semibold">M.J. Biopharm</div>

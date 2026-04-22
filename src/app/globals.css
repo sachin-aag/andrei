@@ -128,3 +128,73 @@
   border-bottom: 2px dashed rgb(202 138 4);
   cursor: pointer;
 }
+
+/* Tiptap / ProseMirror — anchored comment threads */
+.comment-highlight {
+  background-color: rgb(253 224 71 / 0.55);
+  border-bottom: 1px dashed rgb(161 98 7 / 0.7);
+  border-radius: 2px;
+  cursor: pointer;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+
+.comment-highlight-active {
+  background-color: rgb(250 204 21 / 0.85);
+  border-bottom: 1px solid rgb(133 77 14);
+}
+
+.comment-highlight-resolved {
+  background-color: rgb(113 113 122 / 0.12);
+  border-bottom: 1px dashed rgb(113 113 122);
+}
+
+.comment-thread-bubble {
+  display: inline-flex;
+  vertical-align: middle;
+  margin-left: 3px;
+  user-select: none;
+  position: relative;
+  top: -1px;
+}
+
+.comment-thread-bubble-resolved .comment-thread-bubble-btn {
+  color: rgb(113 113 122);
+  opacity: 0.85;
+}
+
+.comment-thread-bubble-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border-radius: 9999px;
+  border: 1px solid rgb(161 98 7 / 0.45);
+  background: rgb(255 251 235);
+  color: rgb(133 77 14);
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.06);
+}
+
+.comment-thread-bubble-btn:hover {
+  background: rgb(254 243 199);
+  border-color: rgb(161 98 7);
+}
+
+.comment-thread-bubble-resolved .comment-thread-bubble-btn {
+  border-color: rgb(161 161 170 / 0.6);
+  background: rgb(244 244 245);
+}
+
+.suggestion-insert {
+  background-color: rgb(22 101 52 / 0.15);
+  border-bottom: 2px solid rgb(22 101 52);
+}
+
+.suggestion-delete {
+  text-decoration: line-through;
+  text-decoration-thickness: 2px;
+  color: var(--muted-foreground);
+  background-color: rgb(220 38 38 / 0.08);
+}

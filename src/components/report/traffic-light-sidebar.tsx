@@ -11,6 +11,8 @@ import type { CriterionStatus, SectionType } from "@/db/schema";
 import type { EvaluationRecord } from "@/types/report";
 import { EVALUATABLE_SECTIONS, getCriteria } from "@/lib/ai/criteria";
 import { SECTION_LABELS } from "@/types/sections";
+import type { JSONContent } from "@tiptap/core";
+import { legacyStringToDoc, richJsonToPlainText } from "@/lib/tiptap/rich-text";
 
 const STATUS_COLORS: Record<CriterionStatus, string> = {
   met: "bg-green-700",
@@ -212,14 +214,15 @@ function CriterionRow({
       case "measure":
       case "improve":
       case "control": {
-        const withNarrative = current as { narrative: string };
+        const withNarrative = current as { narrative: JSONContent };
+        const combined =
+          richJsonToPlainText(withNarrative.narrative).trim() +
+          prefix +
+          fixText +
+          suffix;
         replaceSection(section as never, {
           ...(current as object),
-          narrative:
-            (withNarrative.narrative ?? "").trim() +
-            prefix +
-            fixText +
-            suffix,
+          narrative: legacyStringToDoc(combined),
         } as never);
         break;
       }

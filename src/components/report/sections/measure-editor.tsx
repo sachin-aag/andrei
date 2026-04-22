@@ -5,6 +5,7 @@ import { Label } from "@/components/ui/label";
 import { useReport } from "@/providers/report-provider";
 import { useSectionSave } from "@/hooks/use-section-save";
 import { SectionShell, CriteriaChecklist } from "./section-shell";
+import { TiptapSectionField } from "@/components/report/tiptap-section-field";
 
 const CHECKS = [
   "Does the summary provide relevant facts and data/information reviewed (environment, process/product history, personnel info, control limits)?",
@@ -16,7 +17,7 @@ const CHECKS = [
 
 export function MeasureEditor() {
   const { updateSection, readOnly } = useReport();
-  const { status, lastSavedAt, value } = useSectionSave("measure");
+  const { status, lastSavedAt, value, flushSave } = useSectionSave("measure");
 
   return (
     <SectionShell
@@ -27,21 +28,18 @@ export function MeasureEditor() {
     >
       <CriteriaChecklist items={CHECKS} />
 
-      <div className="grid gap-2">
-        <Label>Measurement Narrative</Label>
-        <Textarea
-          value={value.narrative}
-          disabled={readOnly}
-          onChange={(e) =>
-            updateSection("measure", (p) => ({
-              ...p,
-              narrative: e.target.value,
-            }))
-          }
-          placeholder={`The equipment is installed in ... SOP No. ... is in place for ...\n\nInclude regulatory notification details if applicable.`}
-          className="min-h-[400px]"
-        />
-      </div>
+      <TiptapSectionField
+        section="measure"
+        contentPath="narrative"
+        label="Measurement Narrative"
+        placeholder="The equipment is installed in … SOP No. … is in place for … Include regulatory notification details if applicable."
+        className="grid gap-2"
+        value={value.narrative}
+        onChange={(doc) =>
+          updateSection("measure", (p) => ({ ...p, narrative: doc }))
+        }
+        onFlushSave={flushSave}
+      />
     </SectionShell>
   );
 }

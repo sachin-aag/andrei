@@ -17,6 +17,9 @@ import type { ReportSectionRecord } from "@/types/report";
 import type { reports as reportsTable } from "@/db/schema";
 import { getUser } from "@/lib/auth/mock-users";
 import { formatDate } from "@/lib/utils";
+import { mergeSection } from "@/lib/sections-merge";
+import { richJsonToPlainText } from "@/lib/tiptap/rich-text";
+import type { SectionType } from "@/db/schema";
 
 type ReportRow = typeof reportsTable.$inferSelect;
 
@@ -32,10 +35,7 @@ function sectionByKey<K extends keyof SectionContentMap>(
 ): SectionContentMap[K] {
   const row = rows.find((r) => r.section === key);
   if (!row) return EMPTY_CONTENT[key];
-  return {
-    ...(EMPTY_CONTENT[key] as object),
-    ...(row.content as object),
-  } as SectionContentMap[K];
+  return mergeSection(key as K & SectionType, row.content);
 }
 
 function na(value: string | undefined | null): string {
@@ -59,7 +59,8 @@ function toRoman(n: number): string {
 
 function composeDefine(d: DefineSection): string {
   const parts: string[] = [];
-  if (d.narrative?.trim()) parts.push(d.narrative.trim());
+  const narrativeText = richJsonToPlainText(d.narrative);
+  if (narrativeText.trim()) parts.push(narrativeText.trim());
   if (d.location?.trim()) parts.push(`Location: ${d.location.trim()}`);
   if (d.dateTimeOccurrence?.trim())
     parts.push(`Date/Time of Occurrence: ${d.dateTimeOccurrence.trim()}`);
@@ -74,7 +75,8 @@ function composeDefine(d: DefineSection): string {
 
 function composeMeasure(m: MeasureSection): string {
   const parts: string[] = [];
-  if (m.narrative?.trim()) parts.push(m.narrative.trim());
+  const narrativeText = richJsonToPlainText(m.narrative);
+  if (narrativeText.trim()) parts.push(narrativeText.trim());
   if (m.regulatoryNotification?.trim())
     parts.push(`Regulatory Notification: ${m.regulatoryNotification.trim()}`);
   return parts.length > 0 ? parts.join("\n") : "Not Applicable";
@@ -153,7 +155,7 @@ function buildTemplateData(
     impactPatientSafety: na(a.impactAssessment.patientSafety),
 
     // Improve
-    improveNarrative: na(i.narrative),
+    improveNarrative: na(richJsonToPlainText(i.narrative)),
     correctiveActions: i.correctiveActions.map((ca, idx) => ({
       caNumber: `CA-${String(idx + 1).padStart(3, "0")}`,
       description: na(ca.description),
@@ -164,7 +166,7 @@ function buildTemplateData(
     })),
 
     // Control
-    controlNarrative: na(c.narrative),
+    controlNarrative: na(richJsonToPlainText(c.narrative)),
     preventiveActions: c.preventiveActions.map((pa, idx) => ({
       paNumber: `PA-${String(idx + 1).padStart(3, "0")}`,
       description: na(pa.description),
