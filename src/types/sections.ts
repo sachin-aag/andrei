@@ -3,11 +3,6 @@ import { emptyDoc } from "@/lib/tiptap/rich-text";
 
 export type DefineSection = {
   narrative: JSONContent;
-  location?: string;
-  dateTimeOccurrence?: string;
-  dateTimeDetection?: string;
-  personnel?: string;
-  initialScope?: string;
 };
 
 export type MeasureSection = {
@@ -66,19 +61,9 @@ export type ImproveSection = {
   correctiveActions: CorrectiveAction[];
 };
 
-export type PreventiveAction = {
-  id: string;
-  description: string;
-  responsiblePerson: string;
-  dueDate: string;
-  expectedOutcome: string;
-  effectivenessVerification: string;
-  linkedRootCause: string;
-};
-
 export type ControlSection = {
   narrative: JSONContent;
-  preventiveActions: PreventiveAction[];
+  preventiveActions: string;
   interimPlan: string;
   finalComments: string;
   regulatoryImpact: string;
@@ -111,11 +96,6 @@ export type SectionContentMap = {
 export const EMPTY_CONTENT: SectionContentMap = {
   define: {
     narrative: emptyDoc(),
-    location: "",
-    dateTimeOccurrence: "",
-    dateTimeDetection: "",
-    personnel: "",
-    initialScope: "",
   },
   measure: {
     narrative: emptyDoc(),
@@ -164,7 +144,7 @@ export const EMPTY_CONTENT: SectionContentMap = {
   },
   control: {
     narrative: emptyDoc(),
-    preventiveActions: [],
+    preventiveActions: "",
     interimPlan: "",
     finalComments: "",
     regulatoryImpact: "",

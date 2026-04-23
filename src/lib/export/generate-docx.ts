@@ -58,19 +58,8 @@ function toRoman(n: number): string {
 }
 
 function composeDefine(d: DefineSection): string {
-  const parts: string[] = [];
-  const narrativeText = richJsonToPlainText(d.narrative);
-  if (narrativeText.trim()) parts.push(narrativeText.trim());
-  if (d.location?.trim()) parts.push(`Location: ${d.location.trim()}`);
-  if (d.dateTimeOccurrence?.trim())
-    parts.push(`Date/Time of Occurrence: ${d.dateTimeOccurrence.trim()}`);
-  if (d.dateTimeDetection?.trim())
-    parts.push(`Date/Time of Detection: ${d.dateTimeDetection.trim()}`);
-  if (d.personnel?.trim())
-    parts.push(`Personnel Involved: ${d.personnel.trim()}`);
-  if (d.initialScope?.trim())
-    parts.push(`Initial Scope: ${d.initialScope.trim()}`);
-  return parts.length > 0 ? parts.join("\n") : "Not Applicable";
+  const narrativeText = richJsonToPlainText(d.narrative).trim();
+  return narrativeText.length > 0 ? narrativeText : "Not Applicable";
 }
 
 function composeMeasure(m: MeasureSection): string {
@@ -167,15 +156,19 @@ function buildTemplateData(
 
     // Control
     controlNarrative: na(richJsonToPlainText(c.narrative)),
-    preventiveActions: c.preventiveActions.map((pa, idx) => ({
-      paNumber: `PA-${String(idx + 1).padStart(3, "0")}`,
-      description: na(pa.description),
-      linkedRootCause: na(pa.linkedRootCause),
-      responsiblePerson: na(pa.responsiblePerson),
-      dueDate: na(pa.dueDate),
-      expectedOutcome: na(pa.expectedOutcome),
-      effectivenessVerification: na(pa.effectivenessVerification),
-    })),
+    preventiveActions: c.preventiveActions.trim()
+      ? [
+          {
+            paNumber: "PA-001",
+            description: c.preventiveActions.trim(),
+            linkedRootCause: "—",
+            responsiblePerson: "—",
+            dueDate: "—",
+            expectedOutcome: "—",
+            effectivenessVerification: "—",
+          },
+        ]
+      : [],
     interimPlan: na(c.interimPlan),
     finalComments: na(c.finalComments),
     regulatoryImpact: na(c.regulatoryImpact),

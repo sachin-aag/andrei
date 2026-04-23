@@ -47,12 +47,42 @@ export function mergeImproveSection(content: unknown): ImproveSection {
 export function mergeControlSection(content: unknown): ControlSection {
   const base = EMPTY_CONTENT.control;
   if (!content || typeof content !== "object") return base;
-  const o = content as Partial<ControlSection>;
+  const o = content as Partial<ControlSection> & {
+    preventiveActions?: unknown;
+  };
   return {
     ...base,
-    ...o,
+    ...(o as Partial<ControlSection>),
     narrative: normalizeRichField(o.narrative ?? base.narrative),
+    preventiveActions: coercePreventiveActions(o.preventiveActions, base.preventiveActions),
   };
+}
+
+/* Legacy rows stored preventiveActions as a structured array; flatten to text. */
+function coercePreventiveActions(value: unknown, fallback: string): string {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    return value
+      .map((entry, idx) => {
+        if (!entry || typeof entry !== "object") return "";
+        const a = entry as Record<string, unknown>;
+        const lines = [
+          `PA-${String(idx + 1).padStart(3, "0")}`,
+          a.description ? `Description: ${String(a.description)}` : "",
+          a.linkedRootCause ? `Linked root cause: ${String(a.linkedRootCause)}` : "",
+          a.responsiblePerson ? `Responsible: ${String(a.responsiblePerson)}` : "",
+          a.dueDate ? `Due date: ${String(a.dueDate)}` : "",
+          a.expectedOutcome ? `Expected outcome: ${String(a.expectedOutcome)}` : "",
+          a.effectivenessVerification
+            ? `Effectiveness verification: ${String(a.effectivenessVerification)}`
+            : "",
+        ].filter(Boolean);
+        return lines.join("\n");
+      })
+      .filter(Boolean)
+      .join("\n\n");
+  }
+  return fallback;
 }
 
 export function mergeSection<K extends keyof SectionContentMap & SectionType>(
