@@ -11,35 +11,37 @@ export const DEFINE_CRITERIA: CriterionDefinition[] = [
     key: "define.what_happened",
     label: "Clearly define what happened actually",
     description:
-      "Does the narrative clearly describe the actual event in concrete, factual terms?",
+      "Does the narrative clearly describe the actual event in concrete, factual terms — including the specific activity being performed, the instrument/equipment involved (with ID), and the exact observation or result obtained? Vague statements like 'it was observed that results were out of spec' are insufficient; the narrative must state what was being done, on what equipment, and what specifically was observed (e.g., 'obtained SST result of 115.1% Recovery of Benzoquinone').",
   },
   {
     key: "define.what_is_different",
     label: "Explain what is different than expected",
     description:
-      "Does the narrative explain the expected behavior and the observed deviation from it?",
+      "Does the narrative explicitly state both the expected standard/acceptance criteria AND the observed deviation from it, with reference to the governing SOP (including SOP number, revision number, title, and relevant section number)? For example, stating 'not within acceptance criteria as per SOP/DP/QC/045' is insufficient — the narrative must cite the SOP revision, title, and section (e.g., 'As per SOP No.: SOP/DP/QC/045, Revision No: R02, Title: ..., Section No.: 7.4.3.26, the results must not be less than 85% & must not be more than 115%').",
   },
   {
     key: "define.location",
     label: "Mention the location where the deviation occurred",
-    description: "Is a specific physical location (area, room, equipment ID) identified?",
+    description:
+      "Is a specific physical location identified, including the room name/number or area code (e.g., 'Instrument Lab - II (FF-16)', 'Filling Room (GF-89)')? Simply stating the department or omitting the location entirely is insufficient. The location must be precise enough to trace the deviation to a specific area within the facility.",
   },
   {
     key: "define.datetime",
     label: "Date/time of occurrence and date/time of detection",
     description:
-      "Does the narrative specify both when the deviation occurred and when it was detected?",
+      "Does the narrative specify both the date AND time (in HH:MM format) of when the deviation occurred, and separately when it was detected/identified? Stating only the date (e.g., 'On 13/03/2026') without the time is insufficient. Stating only a month or year (e.g., 'scheduled for 2025' instead of 'scheduled for February 2025') is also insufficient. Both occurrence and detection timestamps must be present with appropriate precision.",
   },
   {
     key: "define.personnel",
     label: "Personnel involved in the deviation",
     description:
-      "Are the personnel (by employee ID or role) who were involved identified?",
+      "Are the personnel who performed the activity, observed the deviation, or are otherwise involved identified by their Employee ID (Emp. ID)? Generic references such as 'the analyst', 'the operator', or 'the auditor' without an Emp. ID are insufficient. Each person mentioned must include their Emp. ID (e.g., 'analyst (Emp. ID. 615)', 'operator (Emp. ID: 1089)', 'auditor (Emp. ID- 562 and Emp. ID - 252)').",
   },
   {
     key: "define.initial_scope",
     label: "Initial scope (impacted product/material/equipment/system/batches)",
-    description: "Is the initial scope of impact explicitly stated?",
+    description:
+      "Is the initial scope of impact explicitly stated, including specific identifiers such as batch numbers, equipment IDs, instrument IDs, affected departments, or material names? The scope must clearly delineate what is affected and what is not (e.g., 'The scope of the deviation was limited to Batch No. B092542503'). Vague scope statements without specific identifiers are insufficient.",
   },
 ];
 
