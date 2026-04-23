@@ -8,17 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useReport } from "@/providers/report-provider";
 import { useSectionSave } from "@/hooks/use-section-save";
-import { SectionShell, CriteriaChecklist } from "./section-shell";
+import { SectionShell } from "./section-shell";
 import { TiptapSectionField } from "@/components/report/tiptap-section-field";
-
-const CHECKS = [
-  "Were specific corrective actions identified (including applicable immediate actions) to remediate the current issue?",
-  "Were specific corrective actions identified for each root cause / substantiated probable root cause, as applicable?",
-  "Was the corrective action assigned a unique number, responsible person, and due date so it can be tracked?",
-  "Does the action describe what will be the expected outcome that can be verified?",
-  "Was effectiveness verification required or not, and the rationale for either documented?",
-  "Are the identified corrective actions achievable based on the information provided?",
-];
 
 export function ImproveEditor() {
   const { updateSection, readOnly } = useReport();
@@ -47,9 +38,8 @@ export function ImproveEditor() {
       description="Define corrective actions with unique tracking fields."
       status={status}
       lastSavedAt={lastSavedAt}
+      section="improve"
     >
-      <CriteriaChecklist items={CHECKS} />
-
       <TiptapSectionField
         section="improve"
         contentPath="narrative"

@@ -62,6 +62,7 @@ export function TiptapSectionField({
     setActiveCommentId,
     pendingCommentFocusCommentId,
     acknowledgeCommentFocus,
+    registerEditor,
   } = useReport();
 
   const rangesRef = useRef<CommentHighlightRange[]>([]);
@@ -196,6 +197,12 @@ export function TiptapSectionField({
       s.authorId = currentUserId;
     }
   }, [editor, trackChangesMode, currentUserId]);
+
+  useEffect(() => {
+    if (!editor) return;
+    const unregister = registerEditor(section, contentPath, editor);
+    return unregister;
+  }, [editor, registerEditor, section, contentPath]);
 
   useEffect(() => {
     if (!editor) return;

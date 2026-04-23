@@ -6,9 +6,11 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { toast } from "sonner";
+import type { Editor } from "@tiptap/react";
 import type {
   CommentRecord,
   EvaluationRecord,
@@ -29,6 +31,16 @@ type SectionContents = Partial<{
 
 export type WorkspaceMode = "edit" | "review";
 
+export type EditorRegistryEntry = {
+  editor: Editor;
+  section: SectionType;
+  contentPath: string;
+};
+
+export function editorRegistryKey(section: SectionType, contentPath: string) {
+  return `${section}:${contentPath}`;
+}
+
 type ReportContextValue = {
   report: ReportRecord;
   sections: SectionContents;
@@ -47,6 +59,9 @@ type ReportContextValue = {
   pendingCommentFocusCommentId: string | null;
   requestCommentFocus: (commentId: string) => void;
   acknowledgeCommentFocus: () => void;
+  /** Margin gutter card focus (comment id or `ai:<evaluationId>`). */
+  activeAnchorId: string | null;
+  setActiveAnchorId: React.Dispatch<React.SetStateAction<string | null>>;
   updateSection: <K extends keyof SectionContentMap>(
     section: K,
     updater: (prev: SectionContentMap[K]) => SectionContentMap[K]
@@ -62,6 +77,15 @@ type ReportContextValue = {
   setComments: React.Dispatch<React.SetStateAction<CommentRecord[]>>;
   refresh: () => Promise<void>;
   getSectionId: (section: SectionType) => string | null;
+  /** Tiptap editor registry for the margin-gutter to compute anchor positions. */
+  registerEditor: (
+    section: SectionType,
+    contentPath: string,
+    editor: Editor
+  ) => () => void;
+  getEditor: (section: SectionType, contentPath: string) => Editor | null;
+  /** Bumped whenever editors register/unregister or transactions occur. */
+  editorTick: number;
 };
 
 const ReportContext = createContext<ReportContextValue | null>(null);
@@ -114,13 +138,63 @@ export function ReportProvider({
   );
   const [isEvaluating, setIsEvaluating] = useState(false);
   const [activeCommentId, setActiveCommentId] = useState<string | null>(null);
+  const [activeAnchorId, setActiveAnchorId] = useState<string | null>(null);
   const [pendingCommentFocusCommentId, setPendingCommentFocusCommentId] = useState<string | null>(
     null
+  );
+
+  /**
+   * Imperative editor registry. Keyed by `section:contentPath`. The margin gutter
+   * uses these editor refs to compute live anchor coordinates via `view.coordsAtPos`.
+   */
+  const editorsRef = useRef<Map<string, EditorRegistryEntry>>(new Map());
+  const [editorTick, setEditorTick] = useState(0);
+
+  const registerEditor = useCallback(
+    (section: SectionType, contentPath: string, editor: Editor) => {
+      const key = editorRegistryKey(section, contentPath);
+      editorsRef.current.set(key, { editor, section, contentPath });
+      setEditorTick((n) => n + 1);
+
+      // Coalesce rapid bursts of `update` events into one state bump per frame.
+      // We intentionally do NOT subscribe to `transaction` — selection-only and
+      // decoration-only transactions would cause re-render storms that can in
+      // turn trigger more transactions (focus shuffling, etc.) and infinite
+      // loops. `update` only fires when the doc actually changes, which is the
+      // only thing that can move our anchor positions.
+      let frame: number | null = null;
+      const onUpdate = () => {
+        if (frame != null) return;
+        frame = requestAnimationFrame(() => {
+          frame = null;
+          setEditorTick((n) => n + 1);
+        });
+      };
+      editor.on("update", onUpdate);
+      return () => {
+        if (frame != null) cancelAnimationFrame(frame);
+        editor.off("update", onUpdate);
+        const cur = editorsRef.current.get(key);
+        if (cur && cur.editor === editor) {
+          editorsRef.current.delete(key);
+          setEditorTick((n) => n + 1);
+        }
+      };
+    },
+    []
+  );
+
+  const getEditor = useCallback(
+    (section: SectionType, contentPath: string) => {
+      return editorsRef.current.get(editorRegistryKey(section, contentPath))?.editor ?? null;
+    },
+    []
   );
 
   const requestCommentFocus = useCallback((commentId: string) => {
     setPendingCommentFocusCommentId(commentId);
     setActiveCommentId(commentId);
+    setActiveAnchorId(commentId);
   }, []);
 
   const acknowledgeCommentFocus = useCallback(() => {
@@ -227,6 +301,8 @@ export function ReportProvider({
       currentUserId,
       activeCommentId,
       setActiveCommentId,
+      activeAnchorId,
+      setActiveAnchorId,
       pendingCommentFocusCommentId,
       requestCommentFocus,
       acknowledgeCommentFocus,
@@ -239,6 +315,9 @@ export function ReportProvider({
       setComments,
       refresh,
       getSectionId,
+      registerEditor,
+      getEditor,
+      editorTick,
     }),
     [
       report,
@@ -252,6 +331,7 @@ export function ReportProvider({
       workspaceMode,
       currentUserId,
       activeCommentId,
+      activeAnchorId,
       pendingCommentFocusCommentId,
       requestCommentFocus,
       acknowledgeCommentFocus,
@@ -261,6 +341,9 @@ export function ReportProvider({
       isEvaluating,
       refresh,
       getSectionId,
+      registerEditor,
+      getEditor,
+      editorTick,
     ]
   );
 

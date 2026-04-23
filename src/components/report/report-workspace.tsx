@@ -1,8 +1,16 @@
 "use client";
 
-import { useMemo, useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { ChevronLeft, Download, Loader2, Send, CheckCircle2, MessageSquare } from "lucide-react";
+import {
+  ChevronLeft,
+  Download,
+  Loader2,
+  Send,
+  CheckCircle2,
+  MessageSquare,
+  ListChecks,
+} from "lucide-react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { useReport } from "@/providers/report-provider";
@@ -17,68 +25,32 @@ import { MeasureEditor } from "./sections/measure-editor";
 import { AnalyzeEditor } from "./sections/analyze-editor";
 import { ImproveEditor } from "./sections/improve-editor";
 import { ControlEditor } from "./sections/control-editor";
-import { TrafficLightSidebar } from "./traffic-light-sidebar";
-import { CommentsPanel } from "./comments-panel";
+import { MarginGutter } from "./review-rail/margin-gutter";
+import { CriteriaSheet } from "./criteria-sheet";
 import { getUser } from "@/lib/auth/mock-users";
 import type { SectionType } from "@/db/schema";
 import type { WorkspaceMode } from "@/providers/report-provider";
 
 export type { WorkspaceMode };
 
-const DMAIC_SECTIONS: SectionType[] = ["define", "measure", "analyze", "improve", "control"];
-
 export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
   const {
     report,
-    isEvaluating,
-    runEvaluation,
     refresh,
     currentUserId,
     trackChangesMode,
     setTrackChangesMode,
+    requestCommentFocus,
   } = useReport();
-  const [activeSection, setActiveSection] = useState<SectionType>("define");
   const [submitting, setSubmitting] = useState(false);
   const [approving, setApproving] = useState(false);
   const [sendingFeedback, setSendingFeedback] = useState(false);
+  const [criteriaOpen, setCriteriaOpen] = useState(false);
   const router = useRouter();
   const mainRef = useRef<HTMLElement>(null);
 
-  // Scroll-spy: track which section is currently in view
-  useEffect(() => {
-    const container = mainRef.current;
-    if (!container) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        // Find the topmost visible section
-        const visible = entries
-          .filter((e) => e.isIntersecting)
-          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
-        if (visible.length > 0) {
-          setActiveSection(visible[0].target.id as SectionType);
-        }
-      },
-      {
-        root: container,
-        rootMargin: "-10% 0px -60% 0px",
-        threshold: 0,
-      }
-    );
-
-    for (const section of DMAIC_SECTIONS) {
-      const el = container.querySelector(`#${section}`);
-      if (el) observer.observe(el);
-    }
-
-    return () => observer.disconnect();
-  }, []);
-
-  const manager = useMemo(
-    () => getUser(report.assignedManagerId ?? undefined),
-    [report.assignedManagerId]
-  );
-  const author = useMemo(() => getUser(report.authorId), [report.authorId]);
+  const manager = getUser(report.assignedManagerId ?? undefined);
+  const author = getUser(report.authorId);
 
   const canSubmit =
     mode === "edit" &&
@@ -137,6 +109,15 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
     }
   };
 
+  const jumpToSection = (s: SectionType) => {
+    const el = mainRef.current?.querySelector(`#${s}`);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const jumpToComment = (id: string) => {
+    requestCommentFocus(id);
+  };
+
   return (
     <div className="flex h-full flex-col">
       <header className="h-16 border-b border-[var(--border)] bg-[var(--card)] px-6 flex items-center gap-4 shrink-0">
@@ -179,6 +160,14 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
             )}
           </div>
           <Separator orientation="vertical" className="h-6 hidden sm:block" />
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setCriteriaOpen(true)}
+          >
+            <ListChecks className="size-4" />
+            Criteria
+          </Button>
           <Button variant="outline" size="sm" asChild>
             <a
               href={`/api/reports/${report.id}/export`}
@@ -234,62 +223,36 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
         </div>
       </header>
 
-      <div className="flex-1 flex overflow-hidden">
-        <main ref={mainRef} className="flex-1 overflow-auto">
-          <div className="max-w-[900px] mx-auto px-8 py-8 space-y-10 pb-24">
-            <ReportHeader />
-
-            <section id="define"><DefineEditor /></section>
-            <section id="measure"><MeasureEditor /></section>
-            <section id="analyze"><AnalyzeEditor /></section>
-            <section id="improve"><ImproveEditor /></section>
-            <section id="control"><ControlEditor /></section>
+      <div className="flex-1 overflow-hidden">
+        <main
+          ref={mainRef}
+          className="h-full overflow-auto bg-[var(--background)]"
+        >
+          <div className="mx-auto px-6 py-8 pb-24 grid gap-8 grid-cols-1 lg:grid-cols-[minmax(0,720px)_360px] lg:max-w-[1180px]">
+            <div className="space-y-10 min-w-0">
+              <ReportHeader />
+              <section id="define"><DefineEditor /></section>
+              <section id="measure"><MeasureEditor /></section>
+              <section id="analyze"><AnalyzeEditor /></section>
+              <section id="improve"><ImproveEditor /></section>
+              <section id="control"><ControlEditor /></section>
+            </div>
+            <aside
+              className="hidden lg:block relative"
+              aria-label="Review margin"
+            >
+              <MarginGutter scrollRef={mainRef} />
+            </aside>
           </div>
         </main>
-
-        <aside className="w-[400px] shrink-0 border-l border-[var(--border)] bg-[var(--card)] flex flex-col min-h-0">
-          <div className="flex-1 flex flex-col min-h-0 border-b border-[var(--border)]">
-            <div className="shrink-0 px-3 py-2 flex items-center justify-between gap-2 border-b border-[var(--border)] bg-[var(--secondary)]/40">
-              <span className="text-xs font-semibold text-[var(--foreground)]">Traffic light</span>
-              <Button
-                size="sm"
-                variant="secondary"
-                className="h-7 text-xs"
-                onClick={() => runEvaluation()}
-                disabled={isEvaluating}
-              >
-                {isEvaluating ? <Loader2 className="size-3.5 animate-spin" /> : null}
-                Run AI check
-              </Button>
-            </div>
-            <div className="flex-1 min-h-0 overflow-auto">
-              <TrafficLightSidebar
-                activeSection={activeSection}
-                onSectionClick={(s) => {
-                  const el = mainRef.current?.querySelector(`#${s}`);
-                  if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-                }}
-              />
-            </div>
-          </div>
-
-          <div className="flex-1 flex flex-col min-h-0">
-            <div className="shrink-0 px-3 py-2 border-b border-[var(--border)] bg-[var(--secondary)]/40">
-              <span className="text-xs font-semibold text-[var(--foreground)]">Comments</span>
-            </div>
-            <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-              <CommentsPanel
-                mode={mode}
-                activeSection={activeSection}
-                onNavigateToSection={(s) => {
-                  const el = mainRef.current?.querySelector(`#${s}`);
-                  if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-                }}
-              />
-            </div>
-          </div>
-        </aside>
       </div>
+
+      <CriteriaSheet
+        open={criteriaOpen}
+        onOpenChange={setCriteriaOpen}
+        onJumpToSection={jumpToSection}
+        onJumpToComment={jumpToComment}
+      />
     </div>
   );
 }
