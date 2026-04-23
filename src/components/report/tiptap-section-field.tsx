@@ -98,12 +98,13 @@ export function TiptapSectionField({
 
   rangesRef.current = filteredRanges;
 
-  /** Engineer authoring a draft must never persist or show suggestion-insert styling. */
+  /** Engineer authoring a draft must never persist or show suggestion-insert styling — unless track changes is on. */
   const shouldStripSuggestionMarks = useMemo(() => {
+    if (trackChangesMode) return false;
     if (report.status !== "draft") return false;
     if (currentUserId !== report.authorId) return false;
     return getUser(currentUserId)?.role === "engineer";
-  }, [report.status, report.authorId, currentUserId]);
+  }, [trackChangesMode, report.status, report.authorId, currentUserId]);
 
   const shouldStripRef = useRef(shouldStripSuggestionMarks);
   shouldStripRef.current = shouldStripSuggestionMarks;

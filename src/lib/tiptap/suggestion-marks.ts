@@ -228,7 +228,7 @@ export const TrackChangesExtension = Extension.create({
             const slice = step.slice;
             if (!slice || slice.size === 0) continue;
 
-            const start = transaction.mapping.map(step.from, 1);
+            const start = transaction.mapping.map(step.from, -1);
             const end = start + slice.size;
             if (start >= end) continue;
 
