@@ -7,6 +7,8 @@ import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import { useReport } from "@/providers/report-provider";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { StatusBadge } from "./status-badge";
 import { ReportHeader } from "./report-header";
@@ -19,15 +21,23 @@ import { TrafficLightSidebar } from "./traffic-light-sidebar";
 import { CommentsPanel } from "./comments-panel";
 import { getUser } from "@/lib/auth/mock-users";
 import type { SectionType } from "@/db/schema";
+import type { WorkspaceMode } from "@/providers/report-provider";
 
-export type WorkspaceMode = "edit" | "review";
+export type { WorkspaceMode };
 
 const DMAIC_SECTIONS: SectionType[] = ["define", "measure", "analyze", "improve", "control"];
 
 export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
-  const { report, isEvaluating, runEvaluation, refresh, currentUserId } = useReport();
+  const {
+    report,
+    isEvaluating,
+    runEvaluation,
+    refresh,
+    currentUserId,
+    trackChangesMode,
+    setTrackChangesMode,
+  } = useReport();
   const [activeSection, setActiveSection] = useState<SectionType>("define");
-  const [sidebarTab, setSidebarTab] = useState<"traffic" | "comments">("traffic");
   const [submitting, setSubmitting] = useState(false);
   const [approving, setApproving] = useState(false);
   const [sendingFeedback, setSendingFeedback] = useState(false);
@@ -149,7 +159,26 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
             {manager ? ` → ${manager.name}` : ""}
           </span>
         </div>
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-3 flex-wrap justify-end">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Checkbox
+              id="track-changes-toggle"
+              checked={trackChangesMode}
+              onCheckedChange={(v) => setTrackChangesMode(v === true)}
+            />
+            <Label
+              htmlFor="track-changes-toggle"
+              className="text-sm font-normal cursor-pointer whitespace-nowrap"
+            >
+              Track changes
+            </Label>
+            {trackChangesMode && (
+              <span className="text-[10px] uppercase tracking-wide text-amber-800 bg-amber-100 px-2 py-0.5 rounded border border-amber-200/80">
+                On
+              </span>
+            )}
+          </div>
+          <Separator orientation="vertical" className="h-6 hidden sm:block" />
           <Button variant="outline" size="sm" asChild>
             <a
               href={`/api/reports/${report.id}/export`}
@@ -218,55 +247,46 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
           </div>
         </main>
 
-        <aside className="w-[380px] shrink-0 border-l border-[var(--border)] bg-[var(--card)] flex flex-col">
-          <div className="shrink-0 h-12 px-4 flex items-center border-b border-[var(--border)]">
-            <div className="flex gap-1 bg-[var(--secondary)] p-1 rounded-md text-xs">
-              <button
-                className={`px-3 py-1 rounded ${
-                  sidebarTab === "traffic"
-                    ? "bg-[var(--brand-600)] text-white"
-                    : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-                }`}
-                onClick={() => setSidebarTab("traffic")}
+        <aside className="w-[400px] shrink-0 border-l border-[var(--border)] bg-[var(--card)] flex flex-col min-h-0">
+          <div className="flex-1 flex flex-col min-h-0 border-b border-[var(--border)]">
+            <div className="shrink-0 px-3 py-2 flex items-center justify-between gap-2 border-b border-[var(--border)] bg-[var(--secondary)]/40">
+              <span className="text-xs font-semibold text-[var(--foreground)]">Traffic light</span>
+              <Button
+                size="sm"
+                variant="secondary"
+                className="h-7 text-xs"
+                onClick={() => runEvaluation()}
+                disabled={isEvaluating}
               >
-                Traffic Light
-              </button>
-              <button
-                className={`px-3 py-1 rounded ${
-                  sidebarTab === "comments"
-                    ? "bg-[var(--brand-600)] text-white"
-                    : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-                }`}
-                onClick={() => setSidebarTab("comments")}
-              >
-                Comments
-              </button>
+                {isEvaluating ? <Loader2 className="size-3.5 animate-spin" /> : null}
+                Run AI check
+              </Button>
             </div>
-            <div className="ml-auto">
-              {sidebarTab === "traffic" && (
-                <Button
-                  size="sm"
-                  onClick={() => runEvaluation()}
-                  disabled={isEvaluating}
-                >
-                  {isEvaluating ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : null}
-                  Run AI Check
-                </Button>
-              )}
+            <div className="flex-1 min-h-0 overflow-auto">
+              <TrafficLightSidebar
+                activeSection={activeSection}
+                onSectionClick={(s) => {
+                  const el = mainRef.current?.querySelector(`#${s}`);
+                  if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+                }}
+              />
             </div>
           </div>
 
-          <div className="flex-1 overflow-auto">
-            {sidebarTab === "traffic" ? (
-              <TrafficLightSidebar activeSection={activeSection} onSectionClick={(s) => {
-                const el = mainRef.current?.querySelector(`#${s}`);
-                if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-              }} />
-            ) : (
-              <CommentsPanel mode={mode} activeSection={activeSection} />
-            )}
+          <div className="flex-1 flex flex-col min-h-0">
+            <div className="shrink-0 px-3 py-2 border-b border-[var(--border)] bg-[var(--secondary)]/40">
+              <span className="text-xs font-semibold text-[var(--foreground)]">Comments</span>
+            </div>
+            <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+              <CommentsPanel
+                mode={mode}
+                activeSection={activeSection}
+                onNavigateToSection={(s) => {
+                  const el = mainRef.current?.querySelector(`#${s}`);
+                  if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+                }}
+              />
+            </div>
           </div>
         </aside>
       </div>

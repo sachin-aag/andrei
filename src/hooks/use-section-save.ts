@@ -9,7 +9,7 @@ import type { SectionType } from "@/db/schema";
 export function useSectionSave<K extends keyof SectionContentMap & SectionType>(
   section: K
 ) {
-  const { sections, report, readOnly } = useReport();
+  const { sections, report, readOnly, trackChangesMode } = useReport();
   const value = sections[section] as SectionContentMap[K];
 
   const onSave = useCallback(
@@ -27,13 +27,13 @@ export function useSectionSave<K extends keyof SectionContentMap & SectionType>(
     [report.id, section]
   );
 
-  const { status, lastSavedAt } = useAutoSave({
-    enabled: !readOnly,
+  const { status, lastSavedAt, flush } = useAutoSave({
+    enabled: !readOnly || trackChangesMode,
     value,
     onSave,
     beaconUrl: `/api/reports/${report.id}/sections/${section}`,
     serialize: (v) => JSON.stringify({ content: v }),
   });
 
-  return { status, lastSavedAt, value };
+  return { status, lastSavedAt, value, flushSave: flush };
 }

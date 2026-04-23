@@ -1,14 +1,12 @@
+import type { JSONContent } from "@tiptap/core";
+import { emptyDoc } from "@/lib/tiptap/rich-text";
+
 export type DefineSection = {
-  narrative: string;
-  location?: string;
-  dateTimeOccurrence?: string;
-  dateTimeDetection?: string;
-  personnel?: string;
-  initialScope?: string;
+  narrative: JSONContent;
 };
 
 export type MeasureSection = {
-  narrative: string;
+  narrative: JSONContent;
   regulatoryNotification?: string;
 };
 
@@ -59,23 +57,13 @@ export type CorrectiveAction = {
 };
 
 export type ImproveSection = {
-  narrative: string;
+  narrative: JSONContent;
   correctiveActions: CorrectiveAction[];
 };
 
-export type PreventiveAction = {
-  id: string;
-  description: string;
-  responsiblePerson: string;
-  dueDate: string;
-  expectedOutcome: string;
-  effectivenessVerification: string;
-  linkedRootCause: string;
-};
-
 export type ControlSection = {
-  narrative: string;
-  preventiveActions: PreventiveAction[];
+  narrative: JSONContent;
+  preventiveActions: string;
   interimPlan: string;
   finalComments: string;
   regulatoryImpact: string;
@@ -107,15 +95,10 @@ export type SectionContentMap = {
 
 export const EMPTY_CONTENT: SectionContentMap = {
   define: {
-    narrative: "",
-    location: "",
-    dateTimeOccurrence: "",
-    dateTimeDetection: "",
-    personnel: "",
-    initialScope: "",
+    narrative: emptyDoc(),
   },
   measure: {
-    narrative: "",
+    narrative: emptyDoc(),
     regulatoryNotification: "",
   },
   analyze: {
@@ -156,12 +139,12 @@ export const EMPTY_CONTENT: SectionContentMap = {
     },
   },
   improve: {
-    narrative: "",
+    narrative: emptyDoc(),
     correctiveActions: [],
   },
   control: {
-    narrative: "",
-    preventiveActions: [],
+    narrative: emptyDoc(),
+    preventiveActions: "",
     interimPlan: "",
     finalComments: "",
     regulatoryImpact: "",

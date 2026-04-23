@@ -11,6 +11,13 @@ import type { CriterionStatus, SectionType } from "@/db/schema";
 import type { EvaluationRecord } from "@/types/report";
 import { EVALUATABLE_SECTIONS, getCriteria } from "@/lib/ai/criteria";
 import { SECTION_LABELS } from "@/types/sections";
+import type { JSONContent } from "@tiptap/core";
+import {
+  appendParagraphsToDoc,
+  replaceTextInDoc,
+} from "@/lib/tiptap/rich-text";
+
+const collapse = (s: string) => s.replace(/\s+/g, " ").trim();
 
 const STATUS_COLORS: Record<CriterionStatus, string> = {
   met: "bg-green-700",
@@ -59,7 +66,7 @@ export function TrafficLightSidebar({
           criterionLabel: d.label,
           status: "not_evaluated" as CriterionStatus,
           reasoning: "",
-          suggestedFix: "",
+          suggestedFix: { anchorText: "", replacementText: "" },
           fixApplied: false,
           bypassed: false,
           updatedAt: "",
@@ -171,12 +178,10 @@ function CriterionRow({
     : evaluation.status;
 
   const applyFix = async () => {
-    if (!evaluation.suggestedFix) return;
+    if (!evaluation.suggestedFix?.replacementText) return;
     setPending(true);
     try {
-      // Append suggested fix to narrative / appropriate text field of the section content
-      appendFixToSection(section, evaluation.suggestedFix);
-      // Mark as applied
+      applyFixToSection(section, evaluation.suggestedFix);
       const res = await fetch(
         `/api/reports/${report.id}/evaluations/${evaluation.id}`,
         {
@@ -198,40 +203,70 @@ function CriterionRow({
     }
   };
 
-  const appendFixToSection = (section: SectionType, fixText: string) => {
-    // Find narrative-like field depending on section
+  const applyFixToSection = (
+    section: SectionType,
+    fix: { anchorText: string; replacementText: string }
+  ) => {
     const current = sections[section as keyof typeof sections];
     if (!current) return;
-    const prefix =
-      "\n\n[AI-suggested fix applied " +
-      new Date().toLocaleDateString() +
-      "]\n";
-    const suffix = "\n[/AI-suggested fix]";
+    const { anchorText, replacementText } = fix;
+    if (!replacementText.trim()) return;
+
     switch (section) {
       case "define":
       case "measure":
       case "improve":
       case "control": {
-        const withNarrative = current as { narrative: string };
+        const withNarrative = current as { narrative: JSONContent };
+        const cloned: JSONContent = JSON.parse(
+          JSON.stringify(withNarrative.narrative)
+        );
+        let nextDoc = cloned;
+        if (anchorText && anchorText.trim()) {
+          const { doc, replaced } = replaceTextInDoc(
+            cloned,
+            anchorText,
+            replacementText
+          );
+          nextDoc = replaced
+            ? doc
+            : appendParagraphsToDoc(cloned, replacementText);
+        } else {
+          nextDoc = appendParagraphsToDoc(cloned, replacementText);
+        }
         replaceSection(section as never, {
           ...(current as object),
-          narrative:
-            (withNarrative.narrative ?? "").trim() +
-            prefix +
-            fixText +
-            suffix,
+          narrative: nextDoc,
         } as never);
         break;
       }
       case "analyze": {
         const ana = current as { investigationOutcome: string };
+        const existing = ana.investigationOutcome ?? "";
+        let next: string;
+        if (anchorText && anchorText.trim() && existing.includes(anchorText)) {
+          next = existing.replace(anchorText, replacementText);
+        } else if (
+          anchorText &&
+          anchorText.trim() &&
+          collapse(existing).includes(collapse(anchorText))
+        ) {
+          // Whitespace-tolerant fallback for plain strings.
+          const re = new RegExp(
+            anchorText
+              .replace(/\s+/g, "WHITESPACE_PLACEHOLDER")
+              .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+              .replace(/WHITESPACE_PLACEHOLDER/g, "\\s+")
+          );
+          next = existing.replace(re, replacementText);
+        } else {
+          next = existing.trim()
+            ? `${existing.trim()}\n\n${replacementText}`
+            : replacementText;
+        }
         replaceSection("analyze", {
           ...(current as object),
-          investigationOutcome:
-            (ana.investigationOutcome ?? "").trim() +
-            prefix +
-            fixText +
-            suffix,
+          investigationOutcome: next,
         } as never);
         break;
       }
@@ -263,8 +298,9 @@ function CriterionRow({
   };
 
   const canAct = !readOnly && !evaluation.fixApplied && !evaluation.bypassed;
+  const fix = evaluation.suggestedFix;
   const showFix =
-    evaluation.suggestedFix &&
+    !!fix?.replacementText &&
     (effectiveStatus === "partially_met" || effectiveStatus === "not_met") &&
     !evaluation.fixApplied &&
     !evaluation.bypassed;
@@ -307,13 +343,27 @@ function CriterionRow({
               {evaluation.reasoning}
             </p>
           )}
-          {showFix && (
+          {showFix && fix && (
             <div className="rounded-md bg-[var(--brand-50)] border border-[var(--brand-200)] p-2.5 space-y-2">
               <div className="flex items-center gap-1.5 text-[var(--brand-700)] font-semibold text-[11px] uppercase tracking-wide">
-                <Sparkles className="size-3" /> Suggested fix
+                <Sparkles className="size-3" /> Suggested text
               </div>
-              <p className="leading-relaxed text-[var(--foreground)]">
-                {evaluation.suggestedFix}
+              {fix.anchorText.trim() ? (
+                <div className="text-[10px] text-[var(--muted-foreground)] italic">
+                  Replaces:{" "}
+                  &ldquo;
+                  {fix.anchorText.trim().length > 80
+                    ? `${fix.anchorText.trim().slice(0, 80)}…`
+                    : fix.anchorText.trim()}
+                  &rdquo;
+                </div>
+              ) : (
+                <div className="text-[10px] text-[var(--muted-foreground)] italic">
+                  Appends a new paragraph at the end of the section.
+                </div>
+              )}
+              <p className="leading-relaxed text-[var(--foreground)] whitespace-pre-wrap">
+                {fix.replacementText}
               </p>
               {canAct && (
                 <div className="flex gap-1.5 pt-1">

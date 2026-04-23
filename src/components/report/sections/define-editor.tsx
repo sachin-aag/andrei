@@ -1,10 +1,9 @@
 "use client";
 
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
 import { useReport } from "@/providers/report-provider";
 import { useSectionSave } from "@/hooks/use-section-save";
 import { SectionShell, CriteriaChecklist } from "./section-shell";
+import { TiptapSectionField } from "@/components/report/tiptap-section-field";
 
 const CHECKS = [
   "Clearly define what happens actually",
@@ -16,8 +15,8 @@ const CHECKS = [
 ];
 
 export function DefineEditor() {
-  const { updateSection, readOnly } = useReport();
-  const { status, lastSavedAt, value } = useSectionSave("define");
+  const { updateSection } = useReport();
+  const { status, lastSavedAt, value, flushSave } = useSectionSave("define");
 
   return (
     <SectionShell
@@ -28,18 +27,16 @@ export function DefineEditor() {
     >
       <CriteriaChecklist items={CHECKS} />
 
-      <div className="grid gap-2">
-        <Label>Details of Investigation (Narrative)</Label>
-        <Textarea
-          value={value.narrative}
-          disabled={readOnly}
-          onChange={(e) =>
-            updateSection("define", (p) => ({ ...p, narrative: e.target.value }))
-          }
-          placeholder={`On dated DD/MM/YYYY at approximately HH:MM hrs, while performing routine operation at [location], it was observed that...\n\nInclude: location of deviation, date/time of occurrence & detection, personnel involved, and initial scope (impacted product/material/equipment/system/batches).`}
-          className="min-h-[360px]"
-        />
-      </div>
+      <TiptapSectionField
+        section="define"
+        contentPath="narrative"
+        label="Details of Investigation (Narrative)"
+        placeholder="On dated DD/MM/YYYY at approximately HH:MM hrs, while performing routine operation at [location], it was observed that… Include: location of deviation, date/time of occurrence & detection, personnel involved, and initial scope."
+        className="grid gap-2"
+        value={value.narrative}
+        onChange={(doc) => updateSection("define", (p) => ({ ...p, narrative: doc }))}
+        onFlushSave={flushSave}
+      />
     </SectionShell>
   );
 }
