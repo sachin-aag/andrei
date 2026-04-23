@@ -25,9 +25,19 @@ export function useAutoSave<T>({
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
   const latestValue = useRef(value);
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const firstRun = useRef(true);
   const isSaving = useRef(false);
   const pending = useRef(false);
+  /**
+   * Serialized snapshot of the last value we either saved or scheduled. Used to
+   * skip work when a parent re-render hands us a new object reference whose
+   * contents haven't actually changed (very common, since callers usually pass
+   * an inline `{ ... }` literal).
+   */
+  const serializeValue = useCallback(
+    (v: T) => (serialize ? serialize(v) : JSON.stringify(v)),
+    [serialize]
+  );
+  const lastSerialized = useRef<string>(serializeValue(value));
 
   /** Keep in sync every render so flush() after flushSync(onChange) sees the latest doc immediately. */
   latestValue.current = value;
@@ -41,7 +51,9 @@ export function useAutoSave<T>({
     isSaving.current = true;
     setStatus("saving");
     try {
-      await onSave(latestValue.current);
+      const snapshot = latestValue.current;
+      await onSave(snapshot);
+      lastSerialized.current = serializeValue(snapshot);
       setStatus("saved");
       setLastSavedAt(new Date());
     } catch (err) {
@@ -58,10 +70,9 @@ export function useAutoSave<T>({
 
   useEffect(() => {
     if (!enabled) return;
-    if (firstRun.current) {
-      firstRun.current = false;
-      return;
-    }
+    const next = serializeValue(value);
+    if (next === lastSerialized.current) return;
+    lastSerialized.current = next;
     if (timer.current) clearTimeout(timer.current);
     setStatus("saving");
     timer.current = setTimeout(() => {
