@@ -22,6 +22,13 @@
       "when": 1777000000000,
       "tag": "0002_comment_parent_id",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1777200000000,
+      "tag": "0003_suggested_fix_jsonb",
+      "breakpoints": true
     }
   ]
 }

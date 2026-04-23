@@ -16,23 +16,38 @@ function resolveModel(): LanguageModel {
   return google("gemini-2.5-flash");
 }
 
+const suggestedFixSchema = z.object({
+  anchorText: z.string().max(800),
+  replacementText: z.string().max(2000),
+});
+
 const evaluationSchema = z.object({
   evaluations: z.array(
     z.object({
       criterionKey: z.string(),
       status: z.enum(["met", "partially_met", "not_met"]),
       reasoning: z.string().min(1).max(1200),
-      suggestedFix: z.string().max(2000),
+      suggestedFix: suggestedFixSchema,
     })
   ),
 });
+
+export type SuggestedFix = {
+  anchorText: string;
+  replacementText: string;
+};
+
+export const EMPTY_SUGGESTED_FIX: SuggestedFix = {
+  anchorText: "",
+  replacementText: "",
+};
 
 export type CriterionEvaluationResult = {
   criterionKey: string;
   criterionLabel: string;
   status: CriterionStatus;
   reasoning: string;
-  suggestedFix: string;
+  suggestedFix: SuggestedFix;
 };
 
 
@@ -62,7 +77,7 @@ export async function evaluateSection({
       criterionLabel: c.label,
       status: "not_evaluated" as const,
       reasoning: "Section is empty.",
-      suggestedFix: "",
+      suggestedFix: { ...EMPTY_SUGGESTED_FIX },
     }));
   }
 
@@ -71,9 +86,26 @@ export async function evaluateSection({
 - "partially_met": the criterion is addressed but with gaps, ambiguity, or missing specifics.
 - "not_met": the criterion is missing, unclear, or incorrect.
 
-Always provide a brief reasoning (1-3 sentences). For partially_met or not_met, write a concrete suggestedFix that, if appended or integrated into the section, would resolve the gap. For met, leave suggestedFix as an empty string.
+Always provide a brief "reasoning" (1-3 sentences) explaining your judgment.
 
-Write suggestedFix in the same tone/voice as a GMP investigation report - factual, precise, and written as prose ready to paste into the section. Do not include labels like "Suggested fix:" in the fix text itself.`;
+For "met", set suggestedFix to {"anchorText": "", "replacementText": ""}.
+
+For "partially_met" or "not_met", produce a structured suggestedFix that the user can apply directly to the section without further editing:
+
+- "replacementText" MUST be the LITERAL prose to insert into the report, written in the voice of a GMP investigation report — factual, precise, complete sentences. It is what will appear in the document verbatim.
+  * Do NOT use suggestion or instruction language: never write "should", "must", "needs to", "consider adding", "the narrative should", "add a statement that", "include details about", "mention the…", "it would be better to", or similar.
+  * Do NOT include labels like "Suggested fix:", "Revised text:", quotes around the whole reply, or commentary.
+  * If you don't have the real-world fact (e.g. you don't know the actual Emp. ID, room number, or SOP revision), use a clearly bracketed placeholder like "[Emp. ID: <to be filled>]" that the user can swap in. Still write it as a complete sentence in report voice.
+
+- "anchorText" MUST be a SHORT verbatim substring (one or two sentences max) copied EXACTLY from the SECTION CONTENT above — same characters, same punctuation, same casing — that the replacementText should overwrite. Choose the vague or incorrect sentence that needs to be rewritten. Do NOT paraphrase or rewrite the anchor; if you cannot find a suitable substring to copy, leave anchorText as "".
+  * If anchorText is "" the replacementText will be appended as a new paragraph at the end of the section.
+  * If anchorText is non-empty, it will be replaced by replacementText in place.
+
+Examples (for the "Personnel involved" criterion):
+  GOOD replacementText: "The deviation was observed by the analyst (Emp. ID: [to be filled]) during routine HPLC analysis."
+  BAD  replacementText: "The narrative should mention the Emp. ID of the analyst who observed the deviation."
+  GOOD anchorText (copied verbatim from the section): "The deviation was observed by the analyst during routine HPLC analysis."
+  BAD  anchorText (paraphrased): "Mention of the analyst observing the deviation."`;
 
   const userPrompt = `DEVIATION: ${reportContext.deviationNo} (report date: ${
     typeof reportContext.date === "string"
@@ -114,7 +146,7 @@ Evaluate each criterion. Return one evaluation object per criterion, using the e
         criterionLabel: c.label,
         status: "not_evaluated" as CriterionStatus,
         reasoning: "No evaluation returned by model.",
-        suggestedFix: "",
+        suggestedFix: { ...EMPTY_SUGGESTED_FIX },
       };
     }
     return {
@@ -122,7 +154,7 @@ Evaluate each criterion. Return one evaluation object per criterion, using the e
       criterionLabel: c.label,
       status: result.status as CriterionStatus,
       reasoning: result.reasoning,
-      suggestedFix: result.suggestedFix ?? "",
+      suggestedFix: result.suggestedFix ?? { ...EMPTY_SUGGESTED_FIX },
     };
   });
 }

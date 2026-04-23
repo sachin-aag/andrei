@@ -10,8 +10,9 @@
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:ensure": "npm run db:fix-comments && drizzle-kit push",
+    "db:ensure": "npm run db:fix-comments && npm run db:migrate-suggested-fix && drizzle-kit push",
     "db:fix-comments": "tsx scripts/ensure-comment-columns.ts",
+    "db:migrate-suggested-fix": "tsx scripts/migrate-suggested-fix.ts",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio"
   },

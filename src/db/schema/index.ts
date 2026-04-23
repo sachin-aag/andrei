@@ -84,7 +84,10 @@ export const criteriaEvaluations = pgTable("criteria_evaluations", {
   criterionLabel: text("criterion_label").notNull(),
   status: criterionStatusEnum("status").notNull().default("not_evaluated"),
   reasoning: text("reasoning").notNull().default(""),
-  suggestedFix: text("suggested_fix").notNull().default(""),
+  suggestedFix: jsonb("suggested_fix")
+    .$type<{ anchorText: string; replacementText: string }>()
+    .notNull()
+    .default({ anchorText: "", replacementText: "" }),
   fixApplied: boolean("fix_applied").notNull().default(false),
   bypassed: boolean("bypassed").notNull().default(false),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),

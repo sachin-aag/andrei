@@ -35,7 +35,7 @@ export type EvaluationRecord = {
   criterionLabel: string;
   status: CriterionStatus;
   reasoning: string;
-  suggestedFix: string;
+  suggestedFix: { anchorText: string; replacementText: string };
   fixApplied: boolean;
   bypassed: boolean;
   updatedAt: string;

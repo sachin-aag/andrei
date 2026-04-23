@@ -101,7 +101,7 @@ AI / traffic-light criteria per report section.
 | `criterion_label` | `text` | Not null |
 | `status` | `criterion_status` | Default `not_evaluated` |
 | `reasoning` | `text` | Default `''` |
-| `suggested_fix` | `text` | Default `''` |
+| `suggested_fix` | `jsonb` | `{ anchorText, replacementText }`; default `{"anchorText":"","replacementText":""}` |
 | `fix_applied` | `boolean` | Default `false` |
 | `bypassed` | `boolean` | Default `false` |
 | `updated_at` | `timestamptz` | Default `now()` |

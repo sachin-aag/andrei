@@ -146,7 +146,12 @@ The `/api/reports/[reportId]/evaluate` route calls `generateObject` with a zod s
 ```ts
 {
   evaluations: [
-    { criterionKey, status: "met" | "partially_met" | "not_met", reasoning, suggestedFix }
+    {
+      criterionKey,
+      status: "met" | "partially_met" | "not_met",
+      reasoning,
+      suggestedFix: { anchorText, replacementText }
+    }
   ]
 }
 ```
