@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { useReport } from "@/providers/report-provider";
+import { cn } from "@/lib/utils";
 import { SECTION_LABELS } from "@/types/sections";
 import type { SectionType } from "@/db/schema";
 
@@ -74,34 +75,43 @@ export function SectionCommentComposer({ section }: { section: SectionType }) {
         placeholder="Write a comment for the author…"
         autoFocus
         className="min-h-[64px] text-xs bg-[var(--input)]"
+        maxLength={1024}
       />
-      <div className="flex justify-end gap-2">
-        <Button
-          type="button"
-          size="sm"
-          variant="ghost"
-          className="h-7 text-xs"
-          onClick={() => {
-            setOpen(false);
-            setDraft("");
-          }}
-        >
-          Cancel
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          className="h-7 text-xs"
-          disabled={posting || !draft.trim()}
-          onClick={post}
-        >
-          {posting ? (
-            <Loader2 className="size-3 animate-spin" />
-          ) : (
-            <MessageSquarePlus className="size-3" />
-          )}
-          Post
-        </Button>
+      <div className="flex items-center justify-between gap-2">
+        <span className={cn(
+          "text-[10px] tabular-nums",
+          draft.length > 960 ? "text-red-500" : "text-[var(--muted-foreground)]"
+        )}>
+          {draft.length}/1024
+        </span>
+        <div className="flex gap-2">
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="h-7 text-xs"
+            onClick={() => {
+              setOpen(false);
+              setDraft("");
+            }}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            className="h-7 text-xs"
+            disabled={posting || !draft.trim() || draft.length > 1024}
+            onClick={post}
+          >
+            {posting ? (
+              <Loader2 className="size-3 animate-spin" />
+            ) : (
+              <MessageSquarePlus className="size-3" />
+            )}
+            Post
+          </Button>
+        </div>
       </div>
     </div>
   );

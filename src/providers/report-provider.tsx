@@ -59,6 +59,10 @@ type ReportContextValue = {
   pendingCommentFocusCommentId: string | null;
   requestCommentFocus: (commentId: string) => void;
   acknowledgeCommentFocus: () => void;
+  /** Comment IDs currently hovered (plural: overlapping ranges can highlight multiple). */
+  hoveredCommentIds: string[];
+  setHoveredCommentIds: (ids: string[]) => void;
+  clearHoveredCommentIds: () => void;
   /** Margin gutter card focus (comment id or `ai:<evaluationId>`). */
   activeAnchorId: string | null;
   setActiveAnchorId: React.Dispatch<React.SetStateAction<string | null>>;
@@ -139,6 +143,18 @@ export function ReportProvider({
   const [isEvaluating, setIsEvaluating] = useState(false);
   const [activeCommentId, setActiveCommentId] = useState<string | null>(null);
   const [activeAnchorId, setActiveAnchorId] = useState<string | null>(null);
+  const [hoveredCommentIds, setHoveredCommentIdsRaw] = useState<string[]>([]);
+
+  const setHoveredCommentIds = useCallback((ids: string[]) => {
+    setHoveredCommentIdsRaw((prev) => {
+      if (prev.length === ids.length && prev.every((id, i) => id === ids[i])) return prev;
+      return ids;
+    });
+  }, []);
+
+  const clearHoveredCommentIds = useCallback(() => {
+    setHoveredCommentIdsRaw((prev) => (prev.length === 0 ? prev : []));
+  }, []);
   const [pendingCommentFocusCommentId, setPendingCommentFocusCommentId] = useState<string | null>(
     null
   );
@@ -301,6 +317,9 @@ export function ReportProvider({
       currentUserId,
       activeCommentId,
       setActiveCommentId,
+      hoveredCommentIds,
+      setHoveredCommentIds,
+      clearHoveredCommentIds,
       activeAnchorId,
       setActiveAnchorId,
       pendingCommentFocusCommentId,
@@ -331,6 +350,9 @@ export function ReportProvider({
       workspaceMode,
       currentUserId,
       activeCommentId,
+      hoveredCommentIds,
+      setHoveredCommentIds,
+      clearHoveredCommentIds,
       activeAnchorId,
       pendingCommentFocusCommentId,
       requestCommentFocus,

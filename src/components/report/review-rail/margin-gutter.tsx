@@ -58,6 +58,7 @@ export function MarginGutter({ scrollRef }: Props) {
     activeAnchorId,
     setActiveAnchorId,
     setActiveCommentId,
+    hoveredCommentIds,
     workspaceMode,
     report,
     currentUserId,
@@ -66,10 +67,11 @@ export function MarginGutter({ scrollRef }: Props) {
   const [cardHeights, setCardHeights] = useState<Record<string, number>>({});
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
-  const isManagerReview =
-    workspaceMode === "review" &&
-    getUser(currentUserId)?.role === "manager" &&
-    (report.status === "submitted" || report.status === "in_review");
+  const isManager = getUser(currentUserId)?.role === "manager";
+  const isAuthor = currentUserId === report.authorId;
+  const canComment =
+    (isManager && workspaceMode === "review" && (report.status === "submitted" || report.status === "in_review")) ||
+    (isAuthor && (report.status === "draft" || report.status === "submitted" || report.status === "in_review"));
 
   // Recompute on scroll/resize so cards stay glued to anchors as the user scrolls.
   useEffect(() => {
@@ -95,7 +97,7 @@ export function MarginGutter({ scrollRef }: Props) {
     const result: GutterAnchor[] = [];
 
     // 1. Section composer cards pinned at the top of each section.
-    if (isManagerReview) {
+    if (canComment) {
       for (const section of EVALUATABLE_SECTIONS) {
         const heading = document.getElementById(section);
         if (!heading) continue;
@@ -201,7 +203,7 @@ export function MarginGutter({ scrollRef }: Props) {
     getEditor,
     editorTick,
     tick,
-    isManagerReview,
+    canComment,
     containerRef,
   ]);
 
@@ -253,6 +255,15 @@ export function MarginGutter({ scrollRef }: Props) {
     return m;
   }, [comments]);
 
+  // Auto-scroll the gutter so hovered cards are visible.
+  useEffect(() => {
+    if (hoveredCommentIds.length === 0) return;
+    const firstId = hoveredCommentIds[0];
+    const el = cardRefs.current[firstId];
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  }, [hoveredCommentIds]);
+
   const activate = (a: GutterAnchor) => {
     setActiveAnchorId(a.id);
     if (a.type === "comment" && a.comment) {
@@ -264,8 +275,53 @@ export function MarginGutter({ scrollRef }: Props) {
     }
   };
 
+  // Compute connector line positions for active/hovered comment(s).
+  const connectorAnchors = useMemo(() => {
+    const ids = new Set<string>();
+    if (activeAnchorId) ids.add(activeAnchorId);
+    for (const id of hoveredCommentIds) ids.add(id);
+    if (ids.size === 0) return [];
+
+    const container = containerRef.current;
+    if (!container) return [];
+    const containerRect = container.getBoundingClientRect();
+
+    const lines: { id: string; y: number }[] = [];
+    for (const a of packed) {
+      if (!ids.has(a.id) && !(a.comment && ids.has(a.comment.id))) continue;
+      if (a.type !== "comment" || !a.comment) continue;
+      const cardEl = cardRefs.current[a.id];
+      if (!cardEl) continue;
+      const cardRect = cardEl.getBoundingClientRect();
+      const y = cardRect.top - containerRect.top + cardRect.height / 2;
+      lines.push({ id: a.id, y });
+    }
+    return lines;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [packed, activeAnchorId, hoveredCommentIds, tick]);
+
   return (
     <div ref={containerRef} className="relative w-full" aria-label="Margin notes">
+      {connectorAnchors.length > 0 && (
+        <svg
+          className="absolute inset-0 w-full h-full pointer-events-none"
+          style={{ overflow: "visible" }}
+          aria-hidden
+        >
+          {connectorAnchors.map((c) => (
+            <line
+              key={c.id}
+              x1={-12}
+              y1={c.y}
+              x2={0}
+              y2={c.y}
+              stroke="rgb(245 158 11 / 0.5)"
+              strokeWidth={1.5}
+              strokeDasharray="4 3"
+            />
+          ))}
+        </svg>
+      )}
       {packed.map((a) => {
         let node: ReactNode = null;
         const isActive = activeAnchorId === a.id;

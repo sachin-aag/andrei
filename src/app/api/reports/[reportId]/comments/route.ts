@@ -28,6 +28,9 @@ export async function GET(
 }
 
 const sectionValues = sectionTypeEnum.enumValues;
+const COMMENT_MAX_LENGTH = 1024;
+const REPLY_MAX_LENGTH = 512;
+
 const createSchema = z.object({
   content: z.string().min(1),
   parentId: z.string().optional().nullable(),
@@ -85,14 +88,22 @@ export async function POST(
       node = up;
     }
     threadRoot = node;
-  } else if (user.role !== "manager") {
+  } else if (user.role !== "manager" && user.id !== report.authorId) {
     return NextResponse.json(
-      { error: "Only reviewers can start a new anchored comment thread" },
+      { error: "Only reviewers or the report author can start a new comment thread" },
       { status: 403 }
     );
   }
 
   const parentIdForInsert = threadRoot ? threadRoot.id : null;
+
+  const maxLen = parentIdForInsert ? REPLY_MAX_LENGTH : COMMENT_MAX_LENGTH;
+  if (parse.data.content.length > maxLen) {
+    return NextResponse.json(
+      { error: `Content exceeds ${maxLen} character limit` },
+      { status: 400 }
+    );
+  }
 
   const [inserted] = await db
     .insert(comments)

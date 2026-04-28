@@ -28,7 +28,7 @@ export function CommentCard({
   active: boolean;
   onActivate: () => void;
 }) {
-  const { report, setComments, currentUserId, requestCommentFocus } = useReport();
+  const { report, setComments, currentUserId, requestCommentFocus, hoveredCommentIds, setHoveredCommentIds, clearHoveredCommentIds } = useReport();
   const [reply, setReply] = useState("");
   const [posting, setPosting] = useState(false);
   const [updating, setUpdating] = useState(false);
@@ -39,6 +39,7 @@ export function CommentCard({
     getUser(currentUserId)?.role === "manager";
 
   const isAnchored = root.fromPos != null && root.toPos != null;
+  const isHovered = hoveredCommentIds.includes(root.id);
 
   const postReply = async () => {
     if (!reply.trim()) return;
@@ -102,6 +103,8 @@ export function CommentCard({
       role="button"
       tabIndex={0}
       onClick={handleActivate}
+      onMouseEnter={() => setHoveredCommentIds([root.id])}
+      onMouseLeave={() => clearHoveredCommentIds()}
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
@@ -112,9 +115,11 @@ export function CommentCard({
         "rounded-md border bg-[var(--card)] shadow-sm text-left transition-all overflow-hidden cursor-pointer",
         active
           ? "border-amber-500 ring-2 ring-amber-400/30 bg-amber-50/60"
-          : root.status === "resolved"
-            ? "border-[var(--border)]/70 opacity-80"
-            : "border-[var(--border)] hover:border-amber-500/50"
+          : isHovered
+            ? "border-amber-400 ring-1 ring-amber-300/40 bg-amber-50/40"
+            : root.status === "resolved"
+              ? "border-[var(--border)]/70 opacity-80"
+              : "border-[var(--border)] hover:border-amber-500/50"
       )}
     >
       <div className="px-3 py-2 flex items-start gap-2">
@@ -148,6 +153,38 @@ export function CommentCard({
           </span>
         </div>
       </div>
+
+      {/* Collapsed reply indicator -- visible when card is NOT active */}
+      {!active && replies.length > 0 && (() => {
+        const lastReply = replies[replies.length - 1];
+        const lastAuthor = getUser(lastReply.authorId);
+        const uniqueAuthors = [...new Set(replies.map((r) => r.authorId))];
+        return (
+          <div className="px-3 py-1.5 border-t border-[var(--border)]/50 flex items-center gap-1.5 text-[10px] text-[var(--muted-foreground)]">
+            <div className="flex -space-x-1.5">
+              {uniqueAuthors.slice(0, 3).map((uid) => {
+                const u = getUser(uid);
+                const ini = (u?.name ?? "?").split(" ").map((n) => n[0]).slice(0, 2).join("") || "?";
+                return (
+                  <div
+                    key={uid}
+                    className="size-4 rounded-full bg-[var(--brand-600)]/80 flex items-center justify-center text-[7px] font-semibold text-white ring-1 ring-[var(--card)]"
+                  >
+                    {ini}
+                  </div>
+                );
+              })}
+            </div>
+            <span className="truncate">
+              <span className="font-medium text-[var(--foreground)]">{lastAuthor?.name ?? "Unknown"}</span>
+              {" replied"}
+            </span>
+            {replies.length > 1 && (
+              <span className="shrink-0">· {replies.length} replies</span>
+            )}
+          </div>
+        );
+      })()}
 
       {active && (
         <div className="px-3 pb-3 space-y-3 border-t border-[var(--border)]/70 bg-[var(--secondary)]/20 pt-2">
@@ -183,33 +220,42 @@ export function CommentCard({
                 onChange={(e) => setReply(e.target.value)}
                 placeholder="Reply…"
                 className="min-h-[56px] text-xs bg-[var(--input)]"
+                maxLength={512}
               />
-              <div className="flex items-center gap-2 justify-end">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  className="h-7 text-xs"
-                  disabled={updating}
-                  onClick={() => patchStatus("resolved")}
-                >
-                  {updating ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
-                  Resolve
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  className="h-7 text-xs"
-                  disabled={posting || !reply.trim()}
-                  onClick={postReply}
-                >
-                  {posting ? (
-                    <Loader2 className="size-3 animate-spin" />
-                  ) : (
-                    <MessageSquare className="size-3" />
-                  )}
-                  Reply
-                </Button>
+              <div className="flex items-center gap-2">
+                <span className={cn(
+                  "text-[10px] tabular-nums",
+                  reply.length > 480 ? "text-red-500" : "text-[var(--muted-foreground)]"
+                )}>
+                  {reply.length}/512
+                </span>
+                <div className="flex items-center gap-2 ml-auto">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs"
+                    disabled={updating}
+                    onClick={() => patchStatus("resolved")}
+                  >
+                    {updating ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
+                    Resolve
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-7 text-xs"
+                    disabled={posting || !reply.trim() || reply.length > 512}
+                    onClick={postReply}
+                  >
+                    {posting ? (
+                      <Loader2 className="size-3 animate-spin" />
+                    ) : (
+                      <MessageSquare className="size-3" />
+                    )}
+                    Reply
+                  </Button>
+                </div>
               </div>
             </div>
           )}

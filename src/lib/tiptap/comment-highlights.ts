@@ -10,6 +10,14 @@ export type CommentHighlightRange = {
   resolved?: boolean;
   /** Dark yellow when this thread is selected (sidebar or doc). */
   active?: boolean;
+  /** Medium yellow when the cursor hovers over this range or its gutter card. */
+  hovered?: boolean;
+};
+
+export type CommentHighlightHandlers = {
+  onCommentActivate: (commentId: string) => void;
+  onCommentHover: (commentIds: string[]) => void;
+  onCommentDeactivate: () => void;
 };
 
 const commentHighlightKey = new PluginKey<DecorationSet>("commentHighlights");
@@ -38,6 +46,17 @@ function bubbleEl(commentId: string, resolved: boolean, onActivate: (id: string)
   return wrap;
 }
 
+function collectCommentIds(target: HTMLElement): string[] {
+  const ids: string[] = [];
+  let el: HTMLElement | null = target;
+  while (el) {
+    const id = el.getAttribute("data-comment-id");
+    if (id && !ids.includes(id)) ids.push(id);
+    el = el.parentElement;
+  }
+  return ids;
+}
+
 function buildSet(
   doc: PMNode,
   ranges: CommentHighlightRange[],
@@ -53,6 +72,7 @@ function buildSet(
     let cls = "comment-highlight";
     if (r.resolved) cls += " comment-highlight-resolved";
     else if (r.active) cls += " comment-highlight-active";
+    else if (r.hovered) cls += " comment-highlight-hovered";
 
     decos.push(
       Decoration.inline(from, to, {
@@ -77,7 +97,7 @@ function buildSet(
 
 export function createCommentHighlightExtension(
   getRanges: () => CommentHighlightRange[],
-  getHandlers: () => { onCommentActivate: (commentId: string) => void }
+  getHandlers: () => CommentHighlightHandlers
 ) {
   return Extension.create({
     name: "commentHighlights",
@@ -108,12 +128,28 @@ export function createCommentHighlightExtension(
               const t = event.target as HTMLElement | null;
               if (!t) return false;
               const el = t.closest("[data-comment-id]");
-              if (!el) return false;
+              if (!el) {
+                getHandlers().onCommentDeactivate();
+                return false;
+              }
               if (el.classList.contains("comment-thread-bubble")) return false;
               const id = el.getAttribute("data-comment-id");
               if (!id) return false;
               getHandlers().onCommentActivate(id);
               return true;
+            },
+            handleDOMEvents: {
+              mouseover(_view, event) {
+                const t = event.target as HTMLElement | null;
+                if (!t) return false;
+                const ids = collectCommentIds(t);
+                getHandlers().onCommentHover(ids);
+                return false;
+              },
+              mouseleave(_view, _event) {
+                getHandlers().onCommentHover([]);
+                return false;
+              },
             },
           },
         }),

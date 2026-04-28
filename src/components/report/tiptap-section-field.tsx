@@ -16,7 +16,7 @@ import { getUser } from "@/lib/auth/mock-users";
 import { cn } from "@/lib/utils";
 import { stripSuggestionMarksFromDoc } from "@/lib/tiptap/rich-text";
 import { createCommentHighlightExtension } from "@/lib/tiptap/comment-highlights";
-import type { CommentHighlightRange } from "@/lib/tiptap/comment-highlights";
+import type { CommentHighlightRange, CommentHighlightHandlers } from "@/lib/tiptap/comment-highlights";
 import {
   SuggestionInsert,
   SuggestionDelete,
@@ -60,14 +60,20 @@ export function TiptapSectionField({
     getSectionId,
     activeCommentId,
     setActiveCommentId,
+    setActiveAnchorId,
+    hoveredCommentIds,
+    setHoveredCommentIds,
+    clearHoveredCommentIds,
     pendingCommentFocusCommentId,
     acknowledgeCommentFocus,
     registerEditor,
   } = useReport();
 
   const rangesRef = useRef<CommentHighlightRange[]>([]);
-  const handlersRef = useRef<{ onCommentActivate: (id: string) => void }>({
+  const handlersRef = useRef<CommentHighlightHandlers>({
     onCommentActivate: () => {},
+    onCommentHover: () => {},
+    onCommentDeactivate: () => {},
   });
   const highlightExtension = useMemo(
     () =>
@@ -94,8 +100,9 @@ export function TiptapSectionField({
         to: c.toPos!,
         resolved: c.status === "resolved",
         active: activeCommentId === c.id,
+        hovered: hoveredCommentIds.includes(c.id),
       }));
-  }, [comments, section, contentPath, activeCommentId]);
+  }, [comments, section, contentPath, activeCommentId, hoveredCommentIds]);
 
   rangesRef.current = filteredRanges;
 
@@ -116,7 +123,8 @@ export function TiptapSectionField({
   const editable = !readOnly || trackChangesMode;
   const manager = getUser(currentUserId)?.role === "manager";
   const canInlineComment =
-    workspaceMode === "review" && manager && (report.status === "submitted" || report.status === "in_review");
+    (report.status === "submitted" || report.status === "in_review" || report.status === "draft") &&
+    (manager ? workspaceMode === "review" : currentUserId === report.authorId);
   const canResolveSuggestions = !readOnly && !trackChangesMode;
 
   const [commentComposing, setCommentComposing] = useState(false);
@@ -166,6 +174,17 @@ export function TiptapSectionField({
       if (!editor) return;
       editor.chain().focus().setTextSelection({ from: c.fromPos, to: c.toPos }).run();
     },
+    onCommentHover: (ids: string[]) => {
+      if (ids.length === 0) {
+        clearHoveredCommentIds();
+      } else {
+        setHoveredCommentIds(ids);
+      }
+    },
+    onCommentDeactivate: () => {
+      setActiveCommentId(null);
+      setActiveAnchorId(null);
+    },
   };
 
   useEffect(() => {
@@ -180,6 +199,18 @@ export function TiptapSectionField({
     }
     editor.chain().focus().setTextSelection({ from: root.fromPos, to: root.toPos }).run();
     acknowledgeCommentFocus();
+
+    // Trigger pulse animation on the freshly-focused highlight.
+    requestAnimationFrame(() => {
+      const el = editor.view.dom.querySelector(
+        `.comment-highlight-active[data-comment-id="${root.id}"]`
+      );
+      if (el) {
+        el.classList.remove("comment-highlight-pulse");
+        void (el as HTMLElement).offsetWidth;
+        el.classList.add("comment-highlight-pulse");
+      }
+    });
   }, [
     editor,
     pendingCommentFocusCommentId,
@@ -225,11 +256,25 @@ export function TiptapSectionField({
     applyExternalValueToEditor();
   }, [applyExternalValueToEditor, shouldStripSuggestionMarks]);
 
+  // Debounced decoration refresh — coalesces hover-driven updates to one per frame.
+  const hoverRefreshFrame = useRef<number | null>(null);
   useEffect(() => {
     if (!editor) return;
-    editor.view.dispatch(
-      editor.state.tr.setMeta("commentRefresh", true).setMeta("addToHistory", false)
-    );
+
+    if (hoverRefreshFrame.current != null) cancelAnimationFrame(hoverRefreshFrame.current);
+    hoverRefreshFrame.current = requestAnimationFrame(() => {
+      hoverRefreshFrame.current = null;
+      editor.view.dispatch(
+        editor.state.tr.setMeta("commentRefresh", true).setMeta("addToHistory", false)
+      );
+    });
+
+    return () => {
+      if (hoverRefreshFrame.current != null) {
+        cancelAnimationFrame(hoverRefreshFrame.current);
+        hoverRefreshFrame.current = null;
+      }
+    };
   }, [editor, activeCommentId, filteredRanges]);
 
   const cancelCommentCompose = useCallback(() => {
@@ -387,29 +432,38 @@ export function TiptapSectionField({
                   onChange={(e) => setCommentDraft(e.target.value)}
                   placeholder="Write your comment…"
                   className="min-h-[72px] text-sm bg-[var(--input)] resize-y"
+                  maxLength={1024}
                   autoFocus
                 />
-                <div className="flex justify-end gap-2">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={cancelCommentCompose}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={postInlineComment}
-                    disabled={posting || !commentDraft.trim()}
-                  >
-                    {posting ? (
-                      <Loader2 className="size-3 animate-spin" />
-                    ) : (
-                      "Post"
-                    )}
-                  </Button>
+                <div className="flex items-center justify-between gap-2">
+                  <span className={cn(
+                    "text-[10px] tabular-nums",
+                    commentDraft.length > 960 ? "text-red-500" : "text-[var(--muted-foreground)]"
+                  )}>
+                    {commentDraft.length}/1024
+                  </span>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={cancelCommentCompose}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={postInlineComment}
+                      disabled={posting || !commentDraft.trim() || commentDraft.length > 1024}
+                    >
+                      {posting ? (
+                        <Loader2 className="size-3 animate-spin" />
+                      ) : (
+                        "Post"
+                      )}
+                    </Button>
+                  </div>
                 </div>
               </div>
             )}
