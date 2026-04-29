@@ -49,6 +49,7 @@ export function rowsForSection(
       suggestedFix: { anchorText: "", replacementText: "" },
       fixApplied: false,
       bypassed: false,
+      evaluatedContentHash: "",
       updatedAt: "",
       isPlaceholder: true,
     };

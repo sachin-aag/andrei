@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import {
   ChevronLeft,
@@ -27,6 +27,7 @@ import { ImproveEditor } from "./sections/improve-editor";
 import { ControlEditor } from "./sections/control-editor";
 import { MarginGutter } from "./review-rail/margin-gutter";
 import { CriteriaSheet } from "./criteria-sheet";
+import { PlaceholdersPanel } from "./placeholders-panel";
 import { getUser } from "@/lib/auth/mock-users";
 import type { SectionType } from "@/db/schema";
 import type { WorkspaceMode } from "@/providers/report-provider";
@@ -41,13 +42,41 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
     trackChangesMode,
     setTrackChangesMode,
     requestCommentFocus,
+    pendingPlaceholders,
   } = useReport();
   const [submitting, setSubmitting] = useState(false);
   const [approving, setApproving] = useState(false);
   const [sendingFeedback, setSendingFeedback] = useState(false);
   const [criteriaOpen, setCriteriaOpen] = useState(false);
+  const [criteriaSection, setCriteriaSection] = useState<SectionType | undefined>();
+  const [sectionMinHeights, setSectionMinHeights] = useState<
+    Partial<Record<SectionType, number>>
+  >({});
   const router = useRouter();
   const mainRef = useRef<HTMLElement>(null);
+
+  const handleOpenCriteria = useCallback((section: SectionType) => {
+    setCriteriaSection(section);
+    setCriteriaOpen(true);
+  }, []);
+
+  const handleSectionOverflow = useCallback(
+    (overflows: Record<SectionType, number>) => {
+      setSectionMinHeights((prev) => {
+        // Only update if values actually changed to avoid render loops.
+        const keys = Object.keys(overflows) as SectionType[];
+        const prevKeys = Object.keys(prev) as SectionType[];
+        if (
+          keys.length === prevKeys.length &&
+          keys.every((k) => Math.abs((prev[k] ?? 0) - (overflows[k] ?? 0)) < 2)
+        ) {
+          return prev;
+        }
+        return overflows;
+      });
+    },
+    []
+  );
 
   const manager = getUser(report.assignedManagerId ?? undefined);
   const author = getUser(report.authorId);
@@ -61,6 +90,15 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
     mode === "review" &&
     (report.status === "submitted" || report.status === "in_review");
 
+  const warnIfPlaceholders = () => {
+    const n = pendingPlaceholders.length;
+    if (n > 0) {
+      toast.warning(
+        `${n} placeholder${n === 1 ? "" : "s"} still unfilled — submitted anyway.`
+      );
+    }
+  };
+
   const handleSubmit = async () => {
     setSubmitting(true);
     try {
@@ -70,6 +108,7 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
         return;
       }
       toast.success("Report submitted for review");
+      warnIfPlaceholders();
       await refresh();
       router.refresh();
     } finally {
@@ -86,6 +125,7 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
         return;
       }
       toast.success("Report approved");
+      warnIfPlaceholders();
       await refresh();
       router.refresh();
     } finally {
@@ -160,6 +200,7 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
             )}
           </div>
           <Separator orientation="vertical" className="h-6 hidden sm:block" />
+          <PlaceholdersPanel onJumpToSection={jumpToSection} />
           <Button
             variant="outline"
             size="sm"
@@ -231,17 +272,35 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
           <div className="mx-auto px-6 py-8 pb-24 grid gap-8 grid-cols-1 lg:grid-cols-[minmax(0,720px)_360px] lg:max-w-[1180px]">
             <div className="space-y-10 min-w-0">
               <ReportHeader />
-              <section id="define"><DefineEditor /></section>
-              <section id="measure"><MeasureEditor /></section>
-              <section id="analyze"><AnalyzeEditor /></section>
-              <section id="improve"><ImproveEditor /></section>
-              <section id="control"><ControlEditor /></section>
+              {(["define", "measure", "analyze", "improve", "control"] as const).map((s) => {
+                const Editor = {
+                  define: DefineEditor,
+                  measure: MeasureEditor,
+                  analyze: AnalyzeEditor,
+                  improve: ImproveEditor,
+                  control: ControlEditor,
+                }[s];
+                const extra = sectionMinHeights[s];
+                return (
+                  <section
+                    key={s}
+                    id={s}
+                    style={extra ? { paddingBottom: `${extra}px` } : undefined}
+                  >
+                    <Editor />
+                  </section>
+                );
+              })}
             </div>
             <aside
               className="hidden lg:block relative"
               aria-label="Review margin"
             >
-              <MarginGutter scrollRef={mainRef} />
+              <MarginGutter
+                scrollRef={mainRef}
+                onOpenCriteria={handleOpenCriteria}
+                onSectionOverflow={handleSectionOverflow}
+              />
             </aside>
           </div>
         </main>
@@ -249,9 +308,13 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
 
       <CriteriaSheet
         open={criteriaOpen}
-        onOpenChange={setCriteriaOpen}
+        onOpenChange={(open) => {
+          setCriteriaOpen(open);
+          if (!open) setCriteriaSection(undefined);
+        }}
         onJumpToSection={jumpToSection}
         onJumpToComment={jumpToComment}
+        initialSection={criteriaSection}
       />
     </div>
   );

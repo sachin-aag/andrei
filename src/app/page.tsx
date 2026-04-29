@@ -13,6 +13,7 @@ import { Card } from "@/components/ui/card";
 import { StatusBadge } from "@/components/report/status-badge";
 import { CreateReportButton } from "@/components/dashboard/create-report-button";
 import { formatDate } from "@/lib/utils";
+import { withTransientRetry } from "@/lib/db/with-transient-retry";
 import type { ReportStatus } from "@/db/schema";
 
 export const dynamic = "force-dynamic";
@@ -23,22 +24,26 @@ export default async function DashboardPage() {
 
   const myReports =
     user.role === "engineer"
-      ? await db
-          .select()
-          .from(reports)
-          .where(eq(reports.authorId, user.id))
-          .orderBy(desc(reports.updatedAt))
-      : await db
-          .select()
-          .from(reports)
-          .where(
-            or(
-              eq(reports.assignedManagerId, user.id),
-              eq(reports.status, "submitted"),
-              eq(reports.status, "in_review")
+      ? await withTransientRetry("dashboard.engineerReports", () =>
+          db
+            .select()
+            .from(reports)
+            .where(eq(reports.authorId, user.id))
+            .orderBy(desc(reports.updatedAt))
+        )
+      : await withTransientRetry("dashboard.managerReports", () =>
+          db
+            .select()
+            .from(reports)
+            .where(
+              or(
+                eq(reports.assignedManagerId, user.id),
+                eq(reports.status, "submitted"),
+                eq(reports.status, "in_review")
+              )
             )
-          )
-          .orderBy(desc(reports.updatedAt));
+            .orderBy(desc(reports.updatedAt))
+        );
 
   return (
     <AppShell user={user}>

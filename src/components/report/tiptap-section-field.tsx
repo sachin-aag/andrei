@@ -14,9 +14,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { getUser } from "@/lib/auth/mock-users";
 import { cn } from "@/lib/utils";
-import { stripSuggestionMarksFromDoc } from "@/lib/tiptap/rich-text";
 import { createCommentHighlightExtension } from "@/lib/tiptap/comment-highlights";
 import type { CommentHighlightRange, CommentHighlightHandlers } from "@/lib/tiptap/comment-highlights";
+import { PlaceholderHighlightExtension } from "@/lib/tiptap/placeholder-highlights";
 import {
   SuggestionInsert,
   SuggestionDelete,
@@ -74,6 +74,7 @@ export function TiptapSectionField({
     onCommentActivate: () => {},
     onCommentHover: () => {},
     onCommentDeactivate: () => {},
+    onAiSuggestionMarkActivate: () => {},
   });
   const highlightExtension = useMemo(
     () =>
@@ -101,22 +102,17 @@ export function TiptapSectionField({
         resolved: c.status === "resolved",
         active: activeCommentId === c.id,
         hovered: hoveredCommentIds.includes(c.id),
+        ai: c.kind?.startsWith("ai_") ?? false,
       }));
   }, [comments, section, contentPath, activeCommentId, hoveredCommentIds]);
 
   rangesRef.current = filteredRanges;
 
-  /** Engineer authoring a draft must never persist or show suggestion-insert styling — unless track changes is on. */
-  const shouldStripSuggestionMarks = useMemo(() => {
-    if (trackChangesMode) return false;
-    if (report.status !== "draft") return false;
-    if (currentUserId !== report.authorId) return false;
-    return getUser(currentUserId)?.role === "engineer";
-  }, [trackChangesMode, report.status, report.authorId, currentUserId]);
-
-  const shouldStripRef = useRef(shouldStripSuggestionMarks);
-  shouldStripRef.current = shouldStripSuggestionMarks;
-
+  // Track-changes toggle controls *capture of new edits* only. Existing
+  // suggestion marks (from prior typing while TC was on, or from AI fixes
+  // injected server-side) stay visible regardless of the toggle, until the
+  // author explicitly accepts or ignores them. Stripping them on toggle-off
+  // would silently destroy reviewer intent.
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 
@@ -146,18 +142,12 @@ export function TiptapSectionField({
         TrackChangesKeyboardExtension,
         TrackChangesExtension,
         highlightExtension,
+        PlaceholderHighlightExtension,
       ],
       content: value,
       editable,
       onUpdate: ({ editor: ed }) => {
-        let json = ed.getJSON() as JSONContent;
-        if (shouldStripRef.current) {
-          const stripped = stripSuggestionMarksFromDoc(json);
-          if (JSON.stringify(stripped) !== JSON.stringify(json)) {
-            ed.commands.setContent(stripped as Content, { emitUpdate: false });
-            json = stripped;
-          }
-        }
+        const json = ed.getJSON() as JSONContent;
         // Do not use flushSync here: onUpdate can run during useEffect (e.g. setContent sync), and React 19 forbids flushSync inside lifecycle methods.
         onChangeRef.current(json);
       },
@@ -169,10 +159,22 @@ export function TiptapSectionField({
   handlersRef.current = {
     onCommentActivate: (id: string) => {
       setActiveCommentId(id);
+      setActiveAnchorId(id);
       const c = comments.find((x) => x.id === id && !x.parentId);
       if (!c || c.fromPos == null || c.toPos == null) return;
       if (!editor) return;
       editor.chain().focus().setTextSelection({ from: c.fromPos, to: c.toPos }).run();
+    },
+    onAiSuggestionMarkActivate: (evaluationId: string) => {
+      const c = comments.find(
+        (x) => !x.parentId && x.evaluationId === evaluationId
+      );
+      if (!c) return;
+      setActiveCommentId(c.id);
+      setActiveAnchorId(c.id);
+      if (c.fromPos != null && c.toPos != null && editor) {
+        editor.chain().focus().setTextSelection({ from: c.fromPos, to: c.toPos }).run();
+      }
     },
     onCommentHover: (ids: string[]) => {
       if (ids.length === 0) {
@@ -240,21 +242,18 @@ export function TiptapSectionField({
     editor.setEditable(editable);
   }, [editor, editable]);
 
-  /** Keep deps length stable (2) for Fast Refresh — React 19 warns if the same hook’s dep array changes size. */
   const applyExternalValueToEditor = useCallback(() => {
     if (!editor) return;
-    const strip = shouldStripRef.current;
-    const nextDoc = strip ? stripSuggestionMarksFromDoc(value) : value;
     const cur = JSON.stringify(editor.getJSON());
-    const next = JSON.stringify(nextDoc);
+    const next = JSON.stringify(value);
     if (cur !== next) {
-      editor.commands.setContent(nextDoc as Content, { emitUpdate: false });
+      editor.commands.setContent(value as Content, { emitUpdate: false });
     }
   }, [editor, value]);
 
   useEffect(() => {
     applyExternalValueToEditor();
-  }, [applyExternalValueToEditor, shouldStripSuggestionMarks]);
+  }, [applyExternalValueToEditor]);
 
   // Debounced decoration refresh — coalesces hover-driven updates to one per frame.
   const hoverRefreshFrame = useRef<number | null>(null);

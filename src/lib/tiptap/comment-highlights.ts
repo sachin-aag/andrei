@@ -12,15 +12,37 @@ export type CommentHighlightRange = {
   active?: boolean;
   /** Medium yellow when the cursor hovers over this range or its gutter card. */
   hovered?: boolean;
+  /** AI-emitted comment (kind starts with `ai_`) — uses a distinct decoration class. */
+  ai?: boolean;
 };
 
 export type CommentHighlightHandlers = {
   onCommentActivate: (commentId: string) => void;
   onCommentHover: (commentIds: string[]) => void;
   onCommentDeactivate: () => void;
+  /** AI criterion fixes use evaluation id on suggestion marks; used when the doc click misses comment decorations. */
+  onAiSuggestionMarkActivate?: (evaluationId: string) => void;
 };
 
-const commentHighlightKey = new PluginKey<DecorationSet>("commentHighlights");
+type TrackedRange = {
+  id: string;
+  from: number;
+  to: number;
+  /** Original positions used to detect when an external range was reset (e.g. new comment). */
+  initFrom: number;
+  initTo: number;
+  resolved: boolean;
+  active: boolean;
+  hovered: boolean;
+  ai: boolean;
+};
+
+type PluginState = {
+  decos: DecorationSet;
+  ranges: TrackedRange[];
+};
+
+const commentHighlightKey = new PluginKey<PluginState>("commentHighlights");
 
 function bubbleEl(commentId: string, resolved: boolean, onActivate: (id: string) => void) {
   const wrap = document.createElement("span");
@@ -59,7 +81,7 @@ function collectCommentIds(target: HTMLElement): string[] {
 
 function buildSet(
   doc: PMNode,
-  ranges: CommentHighlightRange[],
+  ranges: TrackedRange[],
   onActivate: (id: string) => void
 ) {
   const decos: Decoration[] = [];
@@ -70,6 +92,7 @@ function buildSet(
     if (from >= to) continue;
 
     let cls = "comment-highlight";
+    if (r.ai) cls += " comment-highlight-ai";
     if (r.resolved) cls += " comment-highlight-resolved";
     else if (r.active) cls += " comment-highlight-active";
     else if (r.hovered) cls += " comment-highlight-hovered";
@@ -95,6 +118,46 @@ function buildSet(
   return DecorationSet.create(doc, decos);
 }
 
+function syncRanges(
+  prev: TrackedRange[],
+  external: CommentHighlightRange[]
+): TrackedRange[] {
+  const prevById = new Map(prev.map((r) => [r.id, r]));
+  const next: TrackedRange[] = [];
+  for (const r of external) {
+    const existing = prevById.get(r.id);
+    // Reset tracked positions if this is a new range, or if the external
+    // anchor was reassigned (e.g. comment recreated). Otherwise keep the
+    // mapped positions so the highlight stays anchored across edits.
+    if (
+      !existing ||
+      existing.initFrom !== r.from ||
+      existing.initTo !== r.to
+    ) {
+      next.push({
+        id: r.id,
+        from: r.from,
+        to: r.to,
+        initFrom: r.from,
+        initTo: r.to,
+        resolved: !!r.resolved,
+        active: !!r.active,
+        hovered: !!r.hovered,
+        ai: !!r.ai,
+      });
+    } else {
+      next.push({
+        ...existing,
+        resolved: !!r.resolved,
+        active: !!r.active,
+        hovered: !!r.hovered,
+        ai: !!r.ai,
+      });
+    }
+  }
+  return next;
+}
+
 export function createCommentHighlightExtension(
   getRanges: () => CommentHighlightRange[],
   getHandlers: () => CommentHighlightHandlers
@@ -103,40 +166,74 @@ export function createCommentHighlightExtension(
     name: "commentHighlights",
     addProseMirrorPlugins() {
       return [
-        new Plugin({
+        new Plugin<PluginState>({
           key: commentHighlightKey,
           state: {
             init(_, state) {
-              return buildSet(state.doc, getRanges(), getHandlers().onCommentActivate);
+              const ranges = syncRanges([], getRanges());
+              return {
+                ranges,
+                decos: buildSet(state.doc, ranges, getHandlers().onCommentActivate),
+              };
             },
             apply(tr, prev, _oldState, newState) {
+              let ranges = prev.ranges;
+      if (tr.docChanged) {
+        // Left-inclusive, right-exclusive boundaries: insertions strictly
+        // INSIDE the range still grow the highlight, but insertions at the
+        // exact boundaries stay OUTSIDE — so typing at the end of a comment
+        // (e.g. pressing Enter to start a new paragraph) does not swallow
+        // the new text into the highlight.
+        ranges = ranges.map((r) => ({
+          ...r,
+          from: tr.mapping.map(r.from, 1),
+          to: tr.mapping.map(r.to, -1),
+        }));
+      }
               if (tr.getMeta("commentRefresh") || tr.docChanged) {
-                return buildSet(
-                  newState.doc,
-                  getRanges(),
-                  getHandlers().onCommentActivate
-                );
+                ranges = syncRanges(ranges, getRanges());
+                return {
+                  ranges,
+                  decos: buildSet(
+                    newState.doc,
+                    ranges,
+                    getHandlers().onCommentActivate
+                  ),
+                };
               }
-              return prev.map(tr.mapping, tr.doc);
+              return {
+                ranges,
+                decos: prev.decos.map(tr.mapping, tr.doc),
+              };
             },
           },
           props: {
             decorations(state) {
-              return commentHighlightKey.getState(state) ?? DecorationSet.empty;
+              return commentHighlightKey.getState(state)?.decos ?? DecorationSet.empty;
             },
             handleClick(_view, _pos, event) {
               const t = event.target as HTMLElement | null;
               if (!t) return false;
               const el = t.closest("[data-comment-id]");
-              if (!el) {
-                getHandlers().onCommentDeactivate();
-                return false;
+              if (el) {
+                if (el.classList.contains("comment-thread-bubble")) return false;
+                const id = el.getAttribute("data-comment-id");
+                if (!id) return false;
+                getHandlers().onCommentActivate(id);
+                return true;
               }
-              if (el.classList.contains("comment-thread-bubble")) return false;
-              const id = el.getAttribute("data-comment-id");
-              if (!id) return false;
-              getHandlers().onCommentActivate(id);
-              return true;
+              const aiMark = t.closest(
+                '[data-suggestion-author="ai"][data-eval-id]'
+              ) as HTMLElement | null;
+              if (aiMark) {
+                const evalId = aiMark.getAttribute("data-eval-id");
+                if (evalId) {
+                  getHandlers().onAiSuggestionMarkActivate?.(evalId);
+                  return true;
+                }
+              }
+              getHandlers().onCommentDeactivate();
+              return false;
             },
             handleDOMEvents: {
               mouseover(_view, event) {

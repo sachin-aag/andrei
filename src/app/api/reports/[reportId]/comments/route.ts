@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, ne } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { comments, reports, sectionTypeEnum } from "@/db/schema";
@@ -12,17 +12,26 @@ function canAccessReport(user: { id: string; role: string }, report: { authorId:
 }
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ reportId: string }> }
 ) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { reportId } = await params;
 
+  // Dismissed comments are kept in the DB for audit / undo but excluded from
+  // the UI by default. Pass ?include=dismissed when you genuinely need them.
+  const url = new URL(req.url);
+  const includeDismissed = url.searchParams.get("include") === "dismissed";
+
+  const where = includeDismissed
+    ? eq(comments.reportId, reportId)
+    : and(eq(comments.reportId, reportId), ne(comments.status, "dismissed"));
+
   const rows = await db
     .select()
     .from(comments)
-    .where(eq(comments.reportId, reportId))
+    .where(where)
     .orderBy(asc(comments.createdAt));
   return NextResponse.json({ comments: rows });
 }

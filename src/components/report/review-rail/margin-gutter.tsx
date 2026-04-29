@@ -12,31 +12,30 @@ import {
 
 import { useReport } from "@/providers/report-provider";
 import { CommentCard } from "./comment-card";
-import { AiSuggestionCard } from "./ai-suggestion-card";
+import { OverflowSummaryCard } from "./overflow-summary-card";
 import { SectionCommentComposer } from "./section-comment-composer";
-import { findAnchorRangeInDoc } from "@/lib/tiptap/find-anchor";
-import { activeSuggestions } from "@/lib/ai/criteria-view";
 import { EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
 import { getUser } from "@/lib/auth/mock-users";
-import type { CommentRecord, EvaluationRecord } from "@/types/report";
+import type { CommentRecord } from "@/types/report";
 import type { SectionType } from "@/db/schema";
 
 export type GutterAnchor = {
-  /** Stable id: comment id, `ai:<evaluationId>`, `composer:<section>`, or `unanchored:<commentId>`. */
+  /** Stable id: comment id, `composer:<section>`, `unanchored:<commentId>`, or `overflow:<section>`. */
   id: string;
-  type: "comment" | "ai" | "composer" | "unanchored-comment";
+  type: "comment" | "composer" | "unanchored-comment" | "overflow-summary";
   desiredTop: number;
   section?: SectionType;
   comment?: CommentRecord;
-  evaluation?: EvaluationRecord;
-  /** True when an AI anchor text wasn't found in the live doc. */
-  anchorMissing?: boolean;
+  /** Only set for overflow-summary anchors. */
+  overflowCount?: number;
 };
 
 const CARD_GAP = 8;
 
 type Props = {
   scrollRef: RefObject<HTMLElement | null>;
+  onOpenCriteria?: (section: SectionType) => void;
+  onSectionOverflow?: (overflows: Record<SectionType, number>) => void;
 };
 
 /**
@@ -48,11 +47,10 @@ type Props = {
  * greedy top-down packer then pushes overlapping cards downward so they never
  * overlap.
  */
-export function MarginGutter({ scrollRef }: Props) {
+export function MarginGutter({ scrollRef, onOpenCriteria, onSectionOverflow }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const {
     comments,
-    evaluations,
     getEditor,
     editorTick,
     activeAnchorId,
@@ -62,6 +60,7 @@ export function MarginGutter({ scrollRef }: Props) {
     workspaceMode,
     report,
     currentUserId,
+    overflowCounts,
   } = useReport();
   const [tick, setTick] = useState(0);
   const [cardHeights, setCardHeights] = useState<Record<string, number>>({});
@@ -153,45 +152,29 @@ export function MarginGutter({ scrollRef }: Props) {
       }
     }
 
-    // 3. AI suggestions — anchor in the live doc and slot in.
-    for (const ev of activeSuggestions(evaluations)) {
-      const section = ev.section as SectionType;
-      const editor = getEditor(section, "narrative");
-      let top: number | null = null;
-      let anchorMissing = false;
+    // AI suggestions used to be a separate gutter card slot. They now live as
+    // ai_fix comments and are handled by the comment loop above — no extra
+    // slot needed.
 
-      if (editor && ev.suggestedFix?.anchorText?.trim()) {
-        const range = findAnchorRangeInDoc(
-          editor.view.state.doc,
-          ev.suggestedFix.anchorText
-        );
-        if (range) {
-          try {
-            const coords = editor.view.coordsAtPos(range.from);
-            top = coords.top - containerTop;
-          } catch {
-            anchorMissing = true;
-          }
-        } else {
-          anchorMissing = true;
-        }
-      } else {
-        anchorMissing = true;
-      }
-
-      if (top == null) {
-        const heading = document.getElementById(section);
-        if (!heading) continue;
-        top = heading.getBoundingClientRect().top - containerTop + 56;
-      }
-
+    // 3. Overflow summary cards for sections with capped AI comments.
+    for (const section of EVALUATABLE_SECTIONS) {
+      const count = overflowCounts[section as SectionType];
+      if (!count || count <= 0) continue;
+      // Find the last comment anchor in this section to place the overflow card below it.
+      const sectionAnchors = result.filter((a) => a.section === section && a.type !== "composer");
+      const lastAnchor = sectionAnchors[sectionAnchors.length - 1];
+      const baseTop = lastAnchor ? lastAnchor.desiredTop + 60 : 0;
+      // Fallback: use section heading if no comments at all.
+      const heading = document.getElementById(section);
+      const fallbackTop = heading
+        ? heading.getBoundingClientRect().top - containerTop + 60
+        : baseTop;
       result.push({
-        id: `ai:${ev.id}`,
-        type: "ai",
-        desiredTop: top,
-        section,
-        evaluation: ev,
-        anchorMissing,
+        id: `overflow:${section}`,
+        type: "overflow-summary",
+        desiredTop: lastAnchor ? baseTop : fallbackTop,
+        section: section as SectionType,
+        overflowCount: count,
       });
     }
 
@@ -199,12 +182,12 @@ export function MarginGutter({ scrollRef }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     comments,
-    evaluations,
     getEditor,
     editorTick,
     tick,
     canComment,
     containerRef,
+    overflowCounts,
   ]);
 
   // Greedy non-overlap packing: each card's top is `max(desiredTop, prev.bottom + gap)`.
@@ -220,6 +203,35 @@ export function MarginGutter({ scrollRef }: Props) {
       return { ...a, top };
     });
   }, [anchors, cardHeights]);
+
+  // Section height overflow: after packing, compute how far cards extend
+  // below each section's natural bottom and report the delta so the workspace
+  // can apply minHeight to prevent overlap with the next section.
+  useEffect(() => {
+    if (!onSectionOverflow) return;
+    const container = containerRef.current;
+    if (!container) return;
+    const containerTop = container.getBoundingClientRect().top;
+
+    const overflows: Record<string, number> = {};
+    for (const section of EVALUATABLE_SECTIONS) {
+      const sectionEl = document.getElementById(section);
+      if (!sectionEl) continue;
+      const sectionBottom =
+        sectionEl.getBoundingClientRect().bottom - containerTop;
+      const cardsInSection = packed.filter((c) => c.section === section);
+      if (cardsInSection.length === 0) continue;
+      const maxCardBottom = Math.max(
+        ...cardsInSection.map((c) => c.top + (cardHeights[c.id] ?? 80))
+      );
+      const delta = maxCardBottom - sectionBottom;
+      if (delta > 0) {
+        overflows[section] = delta;
+      }
+    }
+    onSectionOverflow(overflows as Record<SectionType, number>);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [packed, cardHeights, onSectionOverflow]);
 
   // Measure card heights once they render so the packer knows actual sizes.
   useLayoutEffect(() => {
@@ -328,6 +340,13 @@ export function MarginGutter({ scrollRef }: Props) {
 
         if (a.type === "composer" && a.section) {
           node = <SectionCommentComposer section={a.section} />;
+        } else if (a.type === "overflow-summary" && a.section && a.overflowCount) {
+          node = (
+            <OverflowSummaryCard
+              count={a.overflowCount}
+              onClick={() => onOpenCriteria?.(a.section!)}
+            />
+          );
         } else if (
           (a.type === "comment" || a.type === "unanchored-comment") &&
           a.comment
@@ -338,15 +357,6 @@ export function MarginGutter({ scrollRef }: Props) {
               root={a.comment}
               replies={replies}
               active={isActive}
-              onActivate={() => activate(a)}
-            />
-          );
-        } else if (a.type === "ai" && a.evaluation) {
-          node = (
-            <AiSuggestionCard
-              evaluation={a.evaluation}
-              active={isActive}
-              anchorMissing={!!a.anchorMissing}
               onActivate={() => activate(a)}
             />
           );
