@@ -297,7 +297,6 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
               aria-label="Review margin"
             >
               <MarginGutter
-                scrollRef={mainRef}
                 onOpenCriteria={handleOpenCriteria}
                 onSectionOverflow={handleSectionOverflow}
               />

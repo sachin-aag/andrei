@@ -2,7 +2,6 @@
 
 import {
   ReactNode,
-  RefObject,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -33,7 +32,6 @@ export type GutterAnchor = {
 const CARD_GAP = 8;
 
 type Props = {
-  scrollRef: RefObject<HTMLElement | null>;
   onOpenCriteria?: (section: SectionType) => void;
   onSectionOverflow?: (overflows: Record<SectionType, number>) => void;
 };
@@ -47,7 +45,7 @@ type Props = {
  * greedy top-down packer then pushes overlapping cards downward so they never
  * overlap.
  */
-export function MarginGutter({ scrollRef, onOpenCriteria, onSectionOverflow }: Props) {
+export function MarginGutter({ onOpenCriteria, onSectionOverflow }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const {
     comments,
@@ -62,7 +60,7 @@ export function MarginGutter({ scrollRef, onOpenCriteria, onSectionOverflow }: P
     currentUserId,
     overflowCounts,
   } = useReport();
-  const [tick, setTick] = useState(0);
+  const [layoutVersion, setLayoutVersion] = useState(0);
   const [cardHeights, setCardHeights] = useState<Record<string, number>>({});
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
@@ -72,22 +70,29 @@ export function MarginGutter({ scrollRef, onOpenCriteria, onSectionOverflow }: P
     (isManager && workspaceMode === "review" && (report.status === "submitted" || report.status === "in_review")) ||
     (isAuthor && (report.status === "draft" || report.status === "submitted" || report.status === "in_review"));
 
-  // Recompute on scroll/resize so cards stay glued to anchors as the user scrolls.
+  // The gutter and document live in the same scroll container, so relative anchor
+  // offsets do not change while scrolling. Recompute for mount/resize/layout
+  // changes only; scroll-frame updates make the rail visibly flicker.
   useEffect(() => {
-    const scroll = scrollRef.current;
-    if (!scroll) return;
-    const onScroll = () => setTick((n) => n + 1);
-    const onResize = () => setTick((n) => n + 1);
-    scroll.addEventListener("scroll", onScroll, { passive: true });
-    window.addEventListener("resize", onResize);
-    return () => {
-      scroll.removeEventListener("scroll", onScroll);
-      window.removeEventListener("resize", onResize);
+    let frame: number | null = null;
+    const requestLayout = () => {
+      if (frame !== null) return;
+      frame = requestAnimationFrame(() => {
+        frame = null;
+        setLayoutVersion((n) => n + 1);
+      });
     };
-  }, [scrollRef]);
+
+    requestLayout();
+    window.addEventListener("resize", requestLayout);
+    return () => {
+      if (frame !== null) cancelAnimationFrame(frame);
+      window.removeEventListener("resize", requestLayout);
+    };
+  }, []);
 
   const anchors = useMemo<GutterAnchor[]>(() => {
-    void tick; // re-run on scroll/resize
+    void layoutVersion; // re-run on mount/resize
     void editorTick; // re-run when editors mutate
     const container = containerRef.current;
     if (!container) return [];
@@ -184,7 +189,7 @@ export function MarginGutter({ scrollRef, onOpenCriteria, onSectionOverflow }: P
     comments,
     getEditor,
     editorTick,
-    tick,
+    layoutVersion,
     canComment,
     containerRef,
     overflowCounts,
@@ -310,7 +315,7 @@ export function MarginGutter({ scrollRef, onOpenCriteria, onSectionOverflow }: P
     }
     return lines;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [packed, activeAnchorId, hoveredCommentIds, tick]);
+  }, [packed, activeAnchorId, hoveredCommentIds]);
 
   return (
     <div ref={containerRef} className="relative w-full" aria-label="Margin notes">
@@ -368,7 +373,7 @@ export function MarginGutter({ scrollRef, onOpenCriteria, onSectionOverflow }: P
             ref={(el) => {
               cardRefs.current[a.id] = el;
             }}
-            className="absolute left-0 right-0 px-1 transition-all duration-150"
+            className="absolute left-0 right-0 px-1"
             style={{ top: `${Math.max(0, a.top)}px` }}
           >
             {node}
