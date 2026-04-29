@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { reports, reportSections, criteriaEvaluations, comments } from "@/db/schema";
@@ -29,10 +29,13 @@ export async function GET(
     .from(criteriaEvaluations)
     .where(eq(criteriaEvaluations.reportId, reportId));
 
+  // Dismissed comments stay in the DB but are excluded from the bundle so
+  // ignored AI suggestions and dismissed human threads do not clutter the
+  // gutter or the highlight overlay.
   const commentsRows = await db
     .select()
     .from(comments)
-    .where(eq(comments.reportId, reportId));
+    .where(and(eq(comments.reportId, reportId), ne(comments.status, "dismissed")));
 
   return NextResponse.json({
     report,

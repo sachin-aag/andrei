@@ -37,7 +37,25 @@ export const criterionStatusEnum = pgEnum("criterion_status", [
   "not_evaluated",
 ]);
 
-export const commentStatusEnum = pgEnum("comment_status", ["open", "resolved"]);
+export const commentStatusEnum = pgEnum("comment_status", [
+  "open",
+  "resolved",
+  "dismissed",
+]);
+
+/**
+ * Discriminator for who/what created the comment. Reserved AI values land
+ * here as the suggestion catalog grows (grammar, tone, removal, redraft) so
+ * the schema does not need another migration per type.
+ */
+export const commentKindEnum = pgEnum("comment_kind", [
+  "human",
+  "ai_fix",
+  "ai_grammar",
+  "ai_tone",
+  "ai_removal",
+  "ai_redraft",
+]);
 
 export const reports = pgTable("reports", {
   id: text("id").primaryKey().$defaultFn(() => createId()),
@@ -90,6 +108,12 @@ export const criteriaEvaluations = pgTable("criteria_evaluations", {
     .default({ anchorText: "", replacementText: "" }),
   fixApplied: boolean("fix_applied").notNull().default(false),
   bypassed: boolean("bypassed").notNull().default(false),
+  /**
+   * Stable hash of the section content that produced this row. Used by the
+   * /evaluate route to skip the LLM call when the section content has not
+   * changed since the last evaluation (auto-eval dedupe).
+   */
+  evaluatedContentHash: text("evaluated_content_hash").notNull().default(""),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -113,6 +137,12 @@ export const comments = pgTable("comments", {
   fromPos: integer("from_pos"),
   toPos: integer("to_pos"),
   status: commentStatusEnum("status").notNull().default("open"),
+  kind: commentKindEnum("kind").notNull().default("human"),
+  /** Links AI-generated comments to the criteria evaluation that emitted them. */
+  evaluationId: text("evaluation_id").references(
+    (): AnyPgColumn => criteriaEvaluations.id,
+    { onDelete: "set null" }
+  ),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -163,3 +193,4 @@ export type ReportStatus = (typeof reportStatusEnum.enumValues)[number];
 export type SectionType = (typeof sectionTypeEnum.enumValues)[number];
 export type CriterionStatus = (typeof criterionStatusEnum.enumValues)[number];
 export type CommentStatus = (typeof commentStatusEnum.enumValues)[number];
+export type CommentKind = (typeof commentKindEnum.enumValues)[number];

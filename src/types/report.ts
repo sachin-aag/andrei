@@ -3,6 +3,7 @@ import type {
   ReportStatus,
   SectionType,
   CommentStatus,
+  CommentKind,
 } from "@/db/schema";
 
 export type ReportRecord = {
@@ -38,6 +39,7 @@ export type EvaluationRecord = {
   suggestedFix: { anchorText: string; replacementText: string };
   fixApplied: boolean;
   bypassed: boolean;
+  evaluatedContentHash: string;
   updatedAt: string;
 };
 
@@ -54,6 +56,8 @@ export type CommentRecord = {
   fromPos: number | null;
   toPos: number | null;
   status: CommentStatus;
+  kind: CommentKind;
+  evaluationId: string | null;
   createdAt: string;
 };
 

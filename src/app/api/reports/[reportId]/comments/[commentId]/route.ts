@@ -6,7 +6,7 @@ import { comments, reports } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 
 const patchSchema = z.object({
-  status: z.enum(["open", "resolved"]).optional(),
+  status: z.enum(["open", "resolved", "dismissed"]).optional(),
   content: z.string().optional(),
 });
 

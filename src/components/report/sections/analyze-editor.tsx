@@ -36,6 +36,7 @@ export function AnalyzeEditor() {
       description="Investigate the root cause using 6M, 5-Why, and assess impact."
       status={status}
       lastSavedAt={lastSavedAt}
+      section="analyze"
     >
       <section className="space-y-3">
         <h3 className="font-semibold text-[var(--foreground)]">
