@@ -1,7 +1,10 @@
 "use client";
 
 import { useCallback } from "react";
-import { useReport } from "@/providers/report-provider";
+import {
+  useReportData,
+  useReportSection,
+} from "@/providers/report-provider";
 import { useAutoSave } from "./use-auto-save";
 import type { SectionContentMap } from "@/types/sections";
 import type { SectionType } from "@/db/schema";
@@ -9,8 +12,8 @@ import type { SectionType } from "@/db/schema";
 export function useSectionSave<K extends keyof SectionContentMap & SectionType>(
   section: K
 ) {
-  const { sections, report, readOnly, trackChangesMode } = useReport();
-  const value = sections[section] as SectionContentMap[K];
+  const { report, readOnly, trackChangesMode } = useReportData();
+  const { value } = useReportSection(section);
 
   const onSave = useCallback(
     async (v: SectionContentMap[K]) => {

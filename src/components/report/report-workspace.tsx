@@ -1,84 +1,112 @@
 "use client";
 
-import { useMemo, useState, useEffect, useRef, useCallback } from "react";
-import Link from "next/link";
-import { ChevronLeft, Download, Loader2, Send, CheckCircle2, MessageSquare } from "lucide-react";
+import { useState, useRef, useCallback, type ComponentType } from "react";
+import dynamic from "next/dynamic";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
-import { useReport } from "@/providers/report-provider";
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
-import { Separator } from "@/components/ui/separator";
-import { StatusBadge } from "./status-badge";
+import {
+  useReportComments,
+  useReportData,
+  useReportPlaceholders,
+} from "@/providers/report-provider";
 import { ReportHeader } from "./report-header";
-import { DefineEditor } from "./sections/define-editor";
-import { MeasureEditor } from "./sections/measure-editor";
-import { AnalyzeEditor } from "./sections/analyze-editor";
-import { ImproveEditor } from "./sections/improve-editor";
-import { ControlEditor } from "./sections/control-editor";
-import { TrafficLightSidebar } from "./traffic-light-sidebar";
-import { CommentsPanel } from "./comments-panel";
+import { ReportWorkspaceHeader } from "./report-workspace-header";
+import { MarginGutter } from "./review-rail/margin-gutter";
+import { CriteriaSheet } from "./criteria-sheet";
 import { getUser } from "@/lib/auth/mock-users";
 import type { SectionType } from "@/db/schema";
 import type { WorkspaceMode } from "@/providers/report-provider";
 
 export type { WorkspaceMode };
 
-const DMAIC_SECTIONS: SectionType[] = ["define", "measure", "analyze", "improve", "control"];
+function SectionEditorLoading() {
+  return (
+    <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-5">
+      <div className="h-5 w-32 rounded bg-[var(--secondary)]" />
+      <div className="mt-3 h-24 rounded bg-[var(--secondary)]" />
+    </div>
+  );
+}
+
+const REPORT_WORKSPACE_SECTIONS = [
+  "define",
+  "measure",
+  "analyze",
+  "improve",
+  "control",
+] as const;
+
+const SECTION_EDITORS = {
+  define: dynamic(
+    () => import("./sections/define-editor").then((mod) => mod.DefineEditor),
+    { loading: SectionEditorLoading }
+  ),
+  measure: dynamic(
+    () => import("./sections/measure-editor").then((mod) => mod.MeasureEditor),
+    { loading: SectionEditorLoading }
+  ),
+  analyze: dynamic(
+    () => import("./sections/analyze-editor").then((mod) => mod.AnalyzeEditor),
+    { loading: SectionEditorLoading }
+  ),
+  improve: dynamic(
+    () => import("./sections/improve-editor").then((mod) => mod.ImproveEditor),
+    { loading: SectionEditorLoading }
+  ),
+  control: dynamic(
+    () => import("./sections/control-editor").then((mod) => mod.ControlEditor),
+    { loading: SectionEditorLoading }
+  ),
+} satisfies Record<(typeof REPORT_WORKSPACE_SECTIONS)[number], ComponentType>;
 
 export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
   const {
     report,
-    isEvaluating,
-    runEvaluation,
     refresh,
     currentUserId,
     trackChangesMode,
     setTrackChangesMode,
-  } = useReport();
-  const [activeSection, setActiveSection] = useState<SectionType>("define");
+  } = useReportData();
+  const { pendingPlaceholders } = useReportPlaceholders();
+  const { requestCommentFocus } = useReportComments();
   const [submitting, setSubmitting] = useState(false);
   const [approving, setApproving] = useState(false);
   const [sendingFeedback, setSendingFeedback] = useState(false);
+  const [criteriaOpen, setCriteriaOpen] = useState(false);
+  const [criteriaSection, setCriteriaSection] = useState<SectionType | undefined>();
+  const [sectionMinHeights, setSectionMinHeights] = useState<
+    Partial<Record<SectionType, number>>
+  >({});
   const router = useRouter();
   const mainRef = useRef<HTMLElement>(null);
 
-  // Scroll-spy: track which section is currently in view
-  useEffect(() => {
-    const container = mainRef.current;
-    if (!container) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        // Find the topmost visible section
-        const visible = entries
-          .filter((e) => e.isIntersecting)
-          .sort((a, b) => a.boundingClientRect.top - b.boundingClientRect.top);
-        if (visible.length > 0) {
-          setActiveSection(visible[0].target.id as SectionType);
-        }
-      },
-      {
-        root: container,
-        rootMargin: "-10% 0px -60% 0px",
-        threshold: 0,
-      }
-    );
-
-    for (const section of DMAIC_SECTIONS) {
-      const el = container.querySelector(`#${section}`);
-      if (el) observer.observe(el);
-    }
-
-    return () => observer.disconnect();
+  const handleOpenCriteria = useCallback((section: SectionType) => {
+    setCriteriaSection(section);
+    setCriteriaOpen(true);
   }, []);
 
-  const manager = useMemo(
-    () => getUser(report.assignedManagerId ?? undefined),
-    [report.assignedManagerId]
+  const handleSectionOverflow = useCallback(
+    (overflows: Record<SectionType, number>) => {
+      setSectionMinHeights((prev) => {
+        // MarginGutter measures absolutely positioned cards and reports how far
+        // they extend past each section. Only update when the padding delta
+        // actually changes; otherwise measurement can feed back into layout.
+        const keys = Object.keys(overflows) as SectionType[];
+        const prevKeys = Object.keys(prev) as SectionType[];
+        if (
+          keys.length === prevKeys.length &&
+          keys.every((k) => Math.abs((prev[k] ?? 0) - (overflows[k] ?? 0)) < 2)
+        ) {
+          return prev;
+        }
+        return overflows;
+      });
+    },
+    []
   );
-  const author = useMemo(() => getUser(report.authorId), [report.authorId]);
+
+  const manager = getUser(report.assignedManagerId ?? undefined);
+  const author = getUser(report.authorId);
 
   const canSubmit =
     mode === "edit" &&
@@ -89,6 +117,15 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
     mode === "review" &&
     (report.status === "submitted" || report.status === "in_review");
 
+  const warnIfPlaceholders = () => {
+    const n = pendingPlaceholders.length;
+    if (n > 0) {
+      toast.warning(
+        `${n} placeholder${n === 1 ? "" : "s"} still unfilled — submitted anyway.`
+      );
+    }
+  };
+
   const handleSubmit = async () => {
     setSubmitting(true);
     try {
@@ -98,6 +135,7 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
         return;
       }
       toast.success("Report submitted for review");
+      warnIfPlaceholders();
       await refresh();
       router.refresh();
     } finally {
@@ -114,6 +152,7 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
         return;
       }
       toast.success("Report approved");
+      warnIfPlaceholders();
       await refresh();
       router.refresh();
     } finally {
@@ -137,159 +176,81 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
     }
   };
 
+  const jumpToSection = (s: SectionType) => {
+    const el = mainRef.current?.querySelector(`#${s}`);
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  const jumpToComment = (id: string) => {
+    requestCommentFocus(id);
+  };
+
   return (
     <div className="flex h-full flex-col">
-      <header className="h-16 border-b border-[var(--border)] bg-[var(--card)] px-6 flex items-center gap-4 shrink-0">
-        <Button asChild variant="ghost" size="sm">
-          <Link href="/">
-            <ChevronLeft className="size-4" />
-            Dashboard
-          </Link>
-        </Button>
-        <Separator orientation="vertical" className="h-6" />
-        <div className="flex flex-col leading-tight min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="font-semibold truncate">
-              {report.deviationNo || "Untitled"}
-            </span>
-            <StatusBadge status={report.status} />
-          </div>
-          <span className="text-xs text-[var(--muted-foreground)] truncate">
-            {author?.name ?? "Unknown author"}
-            {manager ? ` → ${manager.name}` : ""}
-          </span>
-        </div>
-        <div className="ml-auto flex items-center gap-3 flex-wrap justify-end">
-          <div className="flex items-center gap-2 flex-wrap">
-            <Checkbox
-              id="track-changes-toggle"
-              checked={trackChangesMode}
-              onCheckedChange={(v) => setTrackChangesMode(v === true)}
-            />
-            <Label
-              htmlFor="track-changes-toggle"
-              className="text-sm font-normal cursor-pointer whitespace-nowrap"
+      <ReportWorkspaceHeader
+        report={report}
+        mode={mode}
+        authorName={author?.name}
+        managerName={manager?.name}
+        trackChangesMode={trackChangesMode}
+        onTrackChangesModeChange={setTrackChangesMode}
+        onJumpToSection={jumpToSection}
+        onOpenCriteria={() => setCriteriaOpen(true)}
+        canSubmit={canSubmit}
+        canReview={canReview}
+        submitting={submitting}
+        approving={approving}
+        sendingFeedback={sendingFeedback}
+        onSubmit={handleSubmit}
+        onApprove={handleApprove}
+        onFeedback={handleFeedback}
+      />
+
+      <div className="flex-1 overflow-hidden">
+        <main
+          ref={mainRef}
+          className="h-full overflow-auto bg-[var(--background)]"
+        >
+          <div className="mx-auto px-6 py-8 pb-24 grid gap-8 grid-cols-1 lg:grid-cols-[minmax(0,720px)_360px] lg:max-w-[1180px]">
+            <div className="space-y-10 min-w-0">
+              <ReportHeader />
+              {REPORT_WORKSPACE_SECTIONS.map((s) => {
+                const Editor = SECTION_EDITORS[s];
+                const extra = sectionMinHeights[s];
+                return (
+                  <section
+                    key={s}
+                    id={s}
+                    style={extra ? { paddingBottom: `${extra}px` } : undefined}
+                  >
+                    <Editor />
+                  </section>
+                );
+              })}
+            </div>
+            <aside
+              className="hidden lg:block relative"
+              aria-label="Review margin"
             >
-              Track changes
-            </Label>
-            {trackChangesMode && (
-              <span className="text-[10px] uppercase tracking-wide text-amber-800 bg-amber-100 px-2 py-0.5 rounded border border-amber-200/80">
-                On
-              </span>
-            )}
-          </div>
-          <Separator orientation="vertical" className="h-6 hidden sm:block" />
-          <Button variant="outline" size="sm" asChild>
-            <a
-              href={`/api/reports/${report.id}/export`}
-              target="_blank"
-              rel="noreferrer"
-            >
-              <Download className="size-4" />
-              Export DOCX
-            </a>
-          </Button>
-
-          {canSubmit && (
-            <Button size="sm" onClick={handleSubmit} disabled={submitting}>
-              {submitting ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                <Send className="size-4" />
-              )}
-              Submit for Review
-            </Button>
-          )}
-
-          {canReview && (
-            <>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleFeedback}
-                disabled={sendingFeedback}
-              >
-                {sendingFeedback ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <MessageSquare className="size-4" />
-                )}
-                Return with Feedback
-              </Button>
-              <Button
-                variant="success"
-                size="sm"
-                onClick={handleApprove}
-                disabled={approving}
-              >
-                {approving ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <CheckCircle2 className="size-4" />
-                )}
-                Approve
-              </Button>
-            </>
-          )}
-        </div>
-      </header>
-
-      <div className="flex-1 flex overflow-hidden">
-        <main ref={mainRef} className="flex-1 overflow-auto">
-          <div className="max-w-[900px] mx-auto px-8 py-8 space-y-10 pb-24">
-            <ReportHeader />
-
-            <section id="define"><DefineEditor /></section>
-            <section id="measure"><MeasureEditor /></section>
-            <section id="analyze"><AnalyzeEditor /></section>
-            <section id="improve"><ImproveEditor /></section>
-            <section id="control"><ControlEditor /></section>
+              <MarginGutter
+                onOpenCriteria={handleOpenCriteria}
+                onSectionOverflow={handleSectionOverflow}
+              />
+            </aside>
           </div>
         </main>
-
-        <aside className="w-[400px] shrink-0 border-l border-[var(--border)] bg-[var(--card)] flex flex-col min-h-0">
-          <div className="flex-1 flex flex-col min-h-0 border-b border-[var(--border)]">
-            <div className="shrink-0 px-3 py-2 flex items-center justify-between gap-2 border-b border-[var(--border)] bg-[var(--secondary)]/40">
-              <span className="text-xs font-semibold text-[var(--foreground)]">Traffic light</span>
-              <Button
-                size="sm"
-                variant="secondary"
-                className="h-7 text-xs"
-                onClick={() => runEvaluation()}
-                disabled={isEvaluating}
-              >
-                {isEvaluating ? <Loader2 className="size-3.5 animate-spin" /> : null}
-                Run AI check
-              </Button>
-            </div>
-            <div className="flex-1 min-h-0 overflow-auto">
-              <TrafficLightSidebar
-                activeSection={activeSection}
-                onSectionClick={(s) => {
-                  const el = mainRef.current?.querySelector(`#${s}`);
-                  if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-                }}
-              />
-            </div>
-          </div>
-
-          <div className="flex-1 flex flex-col min-h-0">
-            <div className="shrink-0 px-3 py-2 border-b border-[var(--border)] bg-[var(--secondary)]/40">
-              <span className="text-xs font-semibold text-[var(--foreground)]">Comments</span>
-            </div>
-            <div className="flex-1 min-h-0 overflow-hidden flex flex-col">
-              <CommentsPanel
-                mode={mode}
-                activeSection={activeSection}
-                onNavigateToSection={(s) => {
-                  const el = mainRef.current?.querySelector(`#${s}`);
-                  if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-                }}
-              />
-            </div>
-          </div>
-        </aside>
       </div>
+
+      <CriteriaSheet
+        open={criteriaOpen}
+        onOpenChange={(open) => {
+          setCriteriaOpen(open);
+          if (!open) setCriteriaSection(undefined);
+        }}
+        onJumpToSection={jumpToSection}
+        onJumpToComment={jumpToComment}
+        initialSection={criteriaSection}
+      />
     </div>
   );
 }

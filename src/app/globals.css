@@ -37,6 +37,10 @@
 
   --success: #15803d;
   --warning: #a16207;
+
+  --duration-exit: 150ms;
+  --duration-enter: 210ms;
+  --duration-move: 400ms;
 }
 
 @theme inline {
@@ -98,6 +102,7 @@
   }
   body {
     min-height: 100vh;
+    -webkit-tap-highlight-color: transparent;
   }
   ::-webkit-scrollbar {
     width: 10px;
@@ -112,6 +117,64 @@
   }
   ::-webkit-scrollbar-thumb:hover {
     background: var(--muted);
+  }
+}
+
+@keyframes fade {
+  from { filter: blur(3px); opacity: 0; }
+  to { filter: blur(0); opacity: 1; }
+}
+
+@keyframes slide {
+  from { translate: var(--slide-offset); }
+  to { translate: 0; }
+}
+
+::view-transition-old(.nav-forward) {
+  --slide-offset: -60px;
+  animation:
+    var(--duration-exit) ease-in both fade reverse,
+    var(--duration-move) ease-in-out both slide reverse;
+}
+
+::view-transition-new(.nav-forward) {
+  --slide-offset: 60px;
+  animation:
+    var(--duration-enter) ease-out var(--duration-exit) both fade,
+    var(--duration-move) ease-in-out both slide;
+}
+
+::view-transition-old(.nav-back) {
+  --slide-offset: 60px;
+  animation:
+    var(--duration-exit) ease-in both fade reverse,
+    var(--duration-move) ease-in-out both slide reverse;
+}
+
+::view-transition-new(.nav-back) {
+  --slide-offset: -60px;
+  animation:
+    var(--duration-enter) ease-out var(--duration-exit) both fade,
+    var(--duration-move) ease-in-out both slide;
+}
+
+::view-transition-group(app-sidebar) {
+  animation: none;
+  z-index: 100;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(*),
+  ::view-transition-new(*),
+  ::view-transition-group(*) {
+    animation-duration: 0s !important;
+    animation-delay: 0s !important;
+  }
+
+  .comment-highlight,
+  .comment-highlight-pulse {
+    animation: none !important;
+    transition-duration: 0s !important;
   }
 }
 
@@ -131,11 +194,14 @@
 
 /* Tiptap / ProseMirror — anchored comment threads */
 .comment-highlight {
-  background-color: rgb(253 224 71 / 0.55);
-  border-bottom: 1px dashed rgb(161 98 7 / 0.7);
   border-radius: 2px;
   cursor: pointer;
   transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+
+.comment-highlight-human {
+  background-color: rgb(254 240 138 / 0.65);
+  border-bottom: 1px dashed rgb(161 98 7 / 0.7);
 }
 
 .comment-highlight-active {
@@ -143,9 +209,44 @@
   border-bottom: 1px solid rgb(133 77 14);
 }
 
+.comment-highlight-hovered {
+  background-color: rgb(253 224 71 / 0.75);
+  border-bottom: 1px dashed rgb(133 77 14);
+}
+
+@keyframes comment-pulse {
+  0% { background-color: rgb(250 204 21 / 0.85); }
+  40% { background-color: rgb(250 204 21 / 1); box-shadow: 0 0 8px 2px rgb(250 204 21 / 0.5); }
+  100% { background-color: rgb(250 204 21 / 0.85); box-shadow: none; }
+}
+
+.comment-highlight-pulse {
+  animation: comment-pulse 0.6s ease-out;
+}
+
 .comment-highlight-resolved {
   background-color: rgb(113 113 122 / 0.12);
   border-bottom: 1px dashed rgb(113 113 122);
+}
+
+/* AI-emitted comments: violet idle / hover / active (lighter → darker).
+   Track-changes marks still show through the light default wash. */
+.comment-highlight-ai {
+  background-color: rgb(124 58 237 / 0.09);
+  border-bottom: 1px dashed rgb(91 33 182 / 0.4);
+  cursor: pointer;
+}
+.comment-highlight-ai.comment-highlight-resolved {
+  background-color: rgb(113 113 122 / 0.12);
+  border-bottom: 1px dashed rgb(113 113 122);
+}
+.comment-highlight-ai.comment-highlight-active {
+  background-color: rgb(124 58 237 / 0.18);
+  border-bottom: 1px solid rgb(91 33 182);
+}
+.comment-highlight-ai.comment-highlight-hovered {
+  background-color: rgb(124 58 237 / 0.12);
+  border-bottom: 1px dashed rgb(91 33 182);
 }
 
 .comment-thread-bubble {
@@ -187,6 +288,7 @@
   background: rgb(244 244 245);
 }
 
+/* Suggestion marks — all kinds share base behavior; modifier classes change color. */
 .suggestion-insert {
   background-color: rgb(22 101 52 / 0.15);
   border-bottom: 2px solid rgb(22 101 52);
@@ -197,4 +299,92 @@
   text-decoration-thickness: 2px;
   color: var(--muted-foreground);
   background-color: rgb(220 38 38 / 0.08);
+}
+
+/* fix (default — criterion-driven AI suggestions) — uses base colors above. */
+
+/*
+ * AI-authored suggestion marks: bracket the run with a small sparkles icon
+ * on each side so reviewers can tell at a glance "this is AI", not a human
+ * track-change. Pseudo-elements live on the OUTERMOST mark span; when the
+ * same suggestion spans multiple text nodes (different base marks split the
+ * run) the bracket repeats per fragment, which is acceptable visual noise
+ * and still reads as "this came from the AI".
+ *
+ * Icon = lucide `sparkles`, recolored to match the suggestion hue (green
+ * for insert, red for delete) and inlined so we don't ship a network round
+ * trip per highlight. The mask trick lets the icon inherit a CSS color so
+ * it stays legible on hover/active states.
+ */
+:root {
+  /* lucide `sparkles` SVG (24x24, currentColor) */
+  --ai-sparkle-mask: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z'/><path d='M20 3v4'/><path d='M22 5h-4'/><path d='M4 17v2'/><path d='M5 18H3'/></svg>");
+}
+
+/*
+ * AI-authored suggestion marks: bracket the run with a small sparkles icon
+ * on each side so reviewers can tell at a glance "this is AI", not a human
+ * track-change. Pseudo-elements live on the OUTERMOST mark span; when the
+ * same suggestion spans multiple text nodes (different base marks split the
+ * run) the bracket repeats per fragment, which is acceptable visual noise
+ * and still reads as "this came from the AI".
+ */
+.suggestion-insert-ai::before,
+.suggestion-insert-ai::after,
+.suggestion-delete-ai::before,
+.suggestion-delete-ai::after {
+  content: "";
+  display: inline-block;
+  width: 0.85em;
+  height: 0.85em;
+  vertical-align: -0.12em;
+  margin: 0 0.15em;
+  -webkit-mask: var(--ai-sparkle-mask) center / contain no-repeat;
+          mask: var(--ai-sparkle-mask) center / contain no-repeat;
+  opacity: 0.9;
+}
+
+.suggestion-insert-ai::before,
+.suggestion-insert-ai::after {
+  background-color: rgb(22 101 52);
+}
+
+.suggestion-delete-ai::before,
+.suggestion-delete-ai::after {
+  background-color: rgb(190 18 60);
+}
+
+/* grammar (future) — light blue */
+.suggestion-insert-grammar {
+  background-color: rgb(37 99 235 / 0.12);
+  border-bottom-color: rgb(37 99 235);
+}
+.suggestion-delete-grammar {
+  background-color: rgb(37 99 235 / 0.06);
+}
+
+/* tone / clarity (future) — purple */
+.suggestion-insert-tone {
+  background-color: rgb(147 51 234 / 0.12);
+  border-bottom-color: rgb(147 51 234);
+}
+.suggestion-delete-tone {
+  background-color: rgb(147 51 234 / 0.06);
+}
+
+/* removal (future) — pure strikethrough, no insert paired */
+.suggestion-delete-removal {
+  background-color: rgb(220 38 38 / 0.12);
+}
+
+/* redraft (future) — handled by section banner, not inline marks. No styles. */
+
+/* `[Field name: <to be filled>]` markers — visible todos until the user fills them in. */
+.placeholder-todo {
+  background-color: rgb(245 158 11 / 0.15);
+  border: 1px dashed rgb(245 158 11 / 0.7);
+  border-radius: 4px;
+  padding: 0 3px;
+  color: rgb(146 64 14);
+  font-weight: 500;
 }

@@ -17,6 +17,17 @@ export const suggestionDeleteMarkName = "suggestionDelete";
 
 export type SuggestionStatus = "pending" | "accepted" | "rejected";
 
+/**
+ * Discriminator on a suggestion mark. Drives a CSS modifier class so
+ * different review types can read distinctly without new infra.
+ *  - "fix"     → criterion fix from auto-eval (default; what ships in Part 2)
+ *  - "grammar" → grammar / spelling polish (future)
+ *  - "tone"    → tone / clarity rewrite     (future)
+ *  - "removal" → "this paragraph adds nothing" (future)
+ *  - "redraft" → wholesale section rewrite — uses a banner, not inline marks
+ */
+export type SuggestionKind = "fix" | "grammar" | "tone" | "removal" | "redraft";
+
 export const SuggestionInsert = Mark.create({
   name: suggestionInsertMarkName,
   inclusive: true,
@@ -26,17 +37,26 @@ export const SuggestionInsert = Mark.create({
       authorId: { default: "" },
       status: { default: "pending" as SuggestionStatus },
       createdAt: { default: "" },
+      kind: { default: "fix" as SuggestionKind },
     };
   },
   parseHTML() {
     return [{ tag: "span[data-suggestion-insert]" }];
   },
   renderHTML({ HTMLAttributes }) {
+    const kind = (HTMLAttributes.kind as SuggestionKind) ?? "fix";
+    const isAi = HTMLAttributes.authorId === "ai";
+    const evalId = HTMLAttributes.id as string | null | undefined;
     return [
       "span",
       mergeAttributes(HTMLAttributes, {
         "data-suggestion-insert": "",
-        class: "suggestion-insert",
+        "data-suggestion-kind": kind,
+        "data-suggestion-author": isAi ? "ai" : "human",
+        ...(evalId ? { "data-eval-id": String(evalId) } : {}),
+        class: `suggestion-insert suggestion-insert-${kind}${
+          isAi ? " suggestion-insert-ai" : ""
+        }`,
       }),
       0,
     ];
@@ -52,17 +72,26 @@ export const SuggestionDelete = Mark.create({
       authorId: { default: "" },
       status: { default: "pending" as SuggestionStatus },
       createdAt: { default: "" },
+      kind: { default: "fix" as SuggestionKind },
     };
   },
   parseHTML() {
     return [{ tag: "span[data-suggestion-delete]" }];
   },
   renderHTML({ HTMLAttributes }) {
+    const kind = (HTMLAttributes.kind as SuggestionKind) ?? "fix";
+    const isAi = HTMLAttributes.authorId === "ai";
+    const evalId = HTMLAttributes.id as string | null | undefined;
     return [
       "span",
       mergeAttributes(HTMLAttributes, {
         "data-suggestion-delete": "",
-        class: "suggestion-delete",
+        "data-suggestion-kind": kind,
+        "data-suggestion-author": isAi ? "ai" : "human",
+        ...(evalId ? { "data-eval-id": String(evalId) } : {}),
+        class: `suggestion-delete suggestion-delete-${kind}${
+          isAi ? " suggestion-delete-ai" : ""
+        }`,
       }),
       0,
     ];

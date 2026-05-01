@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { ViewTransition } from "react";
 import { desc, eq, or } from "drizzle-orm";
 import { Plus, FileText, ArrowRight } from "lucide-react";
 import { db } from "@/db";
@@ -13,6 +14,7 @@ import { Card } from "@/components/ui/card";
 import { StatusBadge } from "@/components/report/status-badge";
 import { CreateReportButton } from "@/components/dashboard/create-report-button";
 import { formatDate } from "@/lib/utils";
+import { withTransientRetry } from "@/lib/db/with-transient-retry";
 import type { ReportStatus } from "@/db/schema";
 
 export const dynamic = "force-dynamic";
@@ -23,25 +25,34 @@ export default async function DashboardPage() {
 
   const myReports =
     user.role === "engineer"
-      ? await db
-          .select()
-          .from(reports)
-          .where(eq(reports.authorId, user.id))
-          .orderBy(desc(reports.updatedAt))
-      : await db
-          .select()
-          .from(reports)
-          .where(
-            or(
-              eq(reports.assignedManagerId, user.id),
-              eq(reports.status, "submitted"),
-              eq(reports.status, "in_review")
+      ? await withTransientRetry("dashboard.engineerReports", () =>
+          db
+            .select()
+            .from(reports)
+            .where(eq(reports.authorId, user.id))
+            .orderBy(desc(reports.updatedAt))
+        )
+      : await withTransientRetry("dashboard.managerReports", () =>
+          db
+            .select()
+            .from(reports)
+            .where(
+              or(
+                eq(reports.assignedManagerId, user.id),
+                eq(reports.status, "submitted"),
+                eq(reports.status, "in_review")
+              )
             )
-          )
-          .orderBy(desc(reports.updatedAt));
+            .orderBy(desc(reports.updatedAt))
+        );
 
   return (
     <AppShell user={user}>
+      <ViewTransition
+        enter={{ "nav-back": "nav-back", default: "none" }}
+        exit={{ "nav-forward": "nav-forward", default: "none" }}
+        default="none"
+      >
       <div className="flex flex-col h-full">
         <div className="flex items-center justify-between px-10 py-6 border-b border-[var(--border)]">
           <div>
@@ -69,6 +80,7 @@ export default async function DashboardPage() {
                   <Link
                     key={report.id}
                     href={`/reports/${report.id}`}
+                    transitionTypes={["nav-forward"]}
                     className="group"
                   >
                     <Card className="p-5 hover:border-[var(--brand-500)] transition-colors cursor-pointer">
@@ -116,6 +128,7 @@ export default async function DashboardPage() {
           )}
         </div>
       </div>
+      </ViewTransition>
     </AppShell>
   );
 }

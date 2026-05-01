@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import {
   LogOut,
   FileText,
@@ -11,7 +11,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
@@ -25,8 +25,8 @@ export function AppShell({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
-  const router = useRouter();
   const [collapsed, setCollapsed] = useState(true);
+  const mainId = useId();
 
   const handleLogout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -40,7 +40,15 @@ export function AppShell({
 
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-[var(--background)]">
+      <a
+        href={`#${mainId}`}
+        className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-50 focus:rounded-md focus:bg-[var(--card)] focus:px-3 focus:py-2 focus:text-sm focus:shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]"
+      >
+        Skip to main content
+      </a>
       <aside
+        aria-label="Primary navigation"
+        style={{ viewTransitionName: "app-sidebar" }}
         className={cn(
           "shrink-0 border-r border-[var(--border)] bg-[var(--card)] flex flex-col transition-[width] duration-200 ease-in-out",
           collapsed ? "w-14" : "w-60"
@@ -82,9 +90,12 @@ export function AppShell({
             )}
           >
             <button
+              type="button"
+              aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+              aria-expanded={!collapsed}
               onClick={() => setCollapsed((c) => !c)}
               className={cn(
-                "flex items-center gap-2 rounded-md text-sm font-medium text-[var(--muted-foreground)] hover:bg-[var(--secondary)] hover:text-[var(--foreground)] transition-colors cursor-pointer",
+                "flex items-center gap-2 rounded-md text-sm font-medium text-[var(--muted-foreground)] hover:bg-[var(--secondary)] hover:text-[var(--foreground)] transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]",
                 collapsed
                   ? "size-10 justify-center"
                   : "w-full px-3 py-2.5"
@@ -108,16 +119,18 @@ export function AppShell({
             <Link
               key={idx}
               href={item.href}
+              aria-label={collapsed ? item.label : undefined}
+              aria-current={pathname === item.href ? "page" : undefined}
               title={collapsed ? item.label : undefined}
               className={cn(
-                "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
+                "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]",
                 collapsed && "justify-center px-0",
                 pathname === item.href
                   ? "bg-[var(--brand-700)] text-white"
                   : "text-[var(--muted-foreground)] hover:bg-[var(--secondary)] hover:text-[var(--foreground)]"
               )}
             >
-              <item.icon className="size-4 shrink-0" />
+              <item.icon className="size-4 shrink-0" aria-hidden="true" />
               {!collapsed && item.label}
             </Link>
           ))}
@@ -130,7 +143,7 @@ export function AppShell({
                 </span>
               </div>
               <div className="flex items-center gap-3 px-3 py-2 text-xs text-[var(--muted-foreground)]">
-                <BookOpen className="size-4" />
+                <BookOpen className="size-4" aria-hidden="true" />
                 <span>SOP/DP/QA/008</span>
               </div>
             </>
@@ -163,11 +176,13 @@ export function AppShell({
                   </span>
                 </div>
                 <button
+                  type="button"
+                  aria-label="Log out"
                   onClick={handleLogout}
-                  className="text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors cursor-pointer"
+                  className="text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]"
                   title="Log out"
                 >
-                  <LogOut className="size-4" />
+                  <LogOut className="size-4" aria-hidden="true" />
                 </button>
               </>
             )}
@@ -175,7 +190,9 @@ export function AppShell({
         </div>
       </aside>
 
-      <main className="flex-1 overflow-hidden flex flex-col">{children}</main>
+      <main id={mainId} className="flex-1 overflow-hidden flex flex-col">
+        {children}
+      </main>
     </div>
   );
 }

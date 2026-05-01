@@ -10,6 +10,7 @@ const nextConfig: NextConfig = {
     root: appRoot,
   },
   experimental: {
+    viewTransition: true,
     serverActions: {
       bodySizeLimit: "5mb",
     },

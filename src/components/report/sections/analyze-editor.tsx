@@ -5,7 +5,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { useReport } from "@/providers/report-provider";
+import {
+  useReportData,
+  useReportSection,
+} from "@/providers/report-provider";
 import { useSectionSave } from "@/hooks/use-section-save";
 import { SectionShell } from "./section-shell";
 
@@ -27,7 +30,8 @@ const SIX_M_FIELDS: Array<[keyof Omit<{
 ];
 
 export function AnalyzeEditor() {
-  const { updateSection, readOnly } = useReport();
+  const { readOnly } = useReportData();
+  const { update } = useReportSection("analyze");
   const { status, lastSavedAt, value } = useSectionSave("analyze");
 
   return (
@@ -36,6 +40,7 @@ export function AnalyzeEditor() {
       description="Investigate the root cause using 6M, 5-Why, and assess impact."
       status={status}
       lastSavedAt={lastSavedAt}
+      section="analyze"
     >
       <section className="space-y-3">
         <h3 className="font-semibold text-[var(--foreground)]">
@@ -53,7 +58,7 @@ export function AnalyzeEditor() {
                 value={value.sixM[key]}
                 disabled={readOnly}
                 onChange={(e) =>
-                  updateSection("analyze", (p) => ({
+                  update((p) => ({
                     ...p,
                     sixM: { ...p.sixM, [key]: e.target.value },
                   }))
@@ -70,7 +75,7 @@ export function AnalyzeEditor() {
             value={value.sixM.conclusion}
             disabled={readOnly}
             onChange={(e) =>
-              updateSection("analyze", (p) => ({
+              update((p) => ({
                 ...p,
                 sixM: { ...p.sixM, conclusion: e.target.value },
               }))
@@ -97,7 +102,7 @@ export function AnalyzeEditor() {
                 {!readOnly && value.fiveWhy.whys.length > 1 && (
                   <button
                     onClick={() =>
-                      updateSection("analyze", (p) => ({
+                      update((p) => ({
                         ...p,
                         fiveWhy: {
                           ...p.fiveWhy,
@@ -116,7 +121,7 @@ export function AnalyzeEditor() {
                 value={why.question}
                 disabled={readOnly}
                 onChange={(e) =>
-                  updateSection("analyze", (p) => ({
+                  update((p) => ({
                     ...p,
                     fiveWhy: {
                       ...p.fiveWhy,
@@ -133,7 +138,7 @@ export function AnalyzeEditor() {
                 disabled={readOnly}
                 className="min-h-[70px]"
                 onChange={(e) =>
-                  updateSection("analyze", (p) => ({
+                  update((p) => ({
                     ...p,
                     fiveWhy: {
                       ...p.fiveWhy,
@@ -154,7 +159,7 @@ export function AnalyzeEditor() {
             disabled={readOnly}
             className="min-h-[100px]"
             onChange={(e) =>
-              updateSection("analyze", (p) => ({
+              update((p) => ({
                 ...p,
                 fiveWhy: { ...p.fiveWhy, conclusion: e.target.value },
               }))
@@ -172,7 +177,7 @@ export function AnalyzeEditor() {
             value={value.brainstorming}
             disabled={readOnly}
             onChange={(e) =>
-              updateSection("analyze", (p) => ({
+              update((p) => ({
                 ...p,
                 brainstorming: e.target.value,
               }))
@@ -187,7 +192,7 @@ export function AnalyzeEditor() {
             value={value.otherTools}
             disabled={readOnly}
             onChange={(e) =>
-              updateSection("analyze", (p) => ({
+              update((p) => ({
                 ...p,
                 otherTools: e.target.value,
               }))
@@ -203,7 +208,7 @@ export function AnalyzeEditor() {
             disabled={readOnly}
             className="min-h-[200px]"
             onChange={(e) =>
-              updateSection("analyze", (p) => ({
+              update((p) => ({
                 ...p,
                 investigationOutcome: e.target.value,
               }))
@@ -226,7 +231,7 @@ export function AnalyzeEditor() {
             disabled={readOnly}
             className="min-h-[80px]"
             onChange={(e) =>
-              updateSection("analyze", (p) => ({
+              update((p) => ({
                 ...p,
                 rootCause: { ...p.rootCause, narrative: e.target.value },
               }))
@@ -240,7 +245,7 @@ export function AnalyzeEditor() {
               value={value.rootCause.primaryLevel1}
               disabled={readOnly}
               onChange={(e) =>
-                updateSection("analyze", (p) => ({
+                update((p) => ({
                   ...p,
                   rootCause: {
                     ...p.rootCause,
@@ -257,7 +262,7 @@ export function AnalyzeEditor() {
               value={value.rootCause.secondaryLevel2}
               disabled={readOnly}
               onChange={(e) =>
-                updateSection("analyze", (p) => ({
+                update((p) => ({
                   ...p,
                   rootCause: {
                     ...p.rootCause,
@@ -274,7 +279,7 @@ export function AnalyzeEditor() {
               value={value.rootCause.thirdLevel3}
               disabled={readOnly}
               onChange={(e) =>
-                updateSection("analyze", (p) => ({
+                update((p) => ({
                   ...p,
                   rootCause: {
                     ...p.rootCause,
@@ -309,7 +314,7 @@ export function AnalyzeEditor() {
                 disabled={readOnly}
                 className="min-h-[70px]"
                 onChange={(e) =>
-                  updateSection("analyze", (p) => ({
+                  update((p) => ({
                     ...p,
                     impactAssessment: {
                       ...p.impactAssessment,

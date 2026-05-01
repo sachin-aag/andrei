@@ -3,30 +3,17 @@
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { useReport } from "@/providers/report-provider";
+import {
+  useReportData,
+  useReportSection,
+} from "@/providers/report-provider";
 import { useSectionSave } from "@/hooks/use-section-save";
-import { SectionShell, CriteriaChecklist } from "./section-shell";
+import { SectionShell } from "./section-shell";
 import { TiptapSectionField } from "@/components/report/tiptap-section-field";
 
-const CHECKS = [
-  "Were specific preventive actions identified for each root cause / substantiated probable root cause as applicable?",
-  "Was the preventive action linked to the classification of the root cause?",
-  "Was the preventive action assigned a unique number, responsible person and due date?",
-  "Does the action describe an expected outcome that can be verified?",
-  "Was effectiveness verification required or not, and the rationale documented?",
-  "Was an interim plan needed? If so, addressed?",
-  "Was rationale provided when no preventive action was identified?",
-  "Do the final comments support the conclusion of the investigation and CAPA?",
-  "Was each of the impact assessment fields completed correctly?",
-  "Does the recommended lot disposition match the conclusions?",
-  "Does the conclusion include final decision and rationale?",
-  "Is the CAPA verified complete prior to material/batch disposition?",
-  "Does the conclusion include root cause summary and final scope/impact?",
-  "Are the identified preventive actions achievable?",
-];
-
 export function ControlEditor() {
-  const { updateSection, readOnly } = useReport();
+  const { readOnly } = useReportData();
+  const { update } = useReportSection("control");
   const { status, lastSavedAt, value, flushSave } = useSectionSave("control");
 
   return (
@@ -35,9 +22,8 @@ export function ControlEditor() {
       description="Define preventive actions, interim plan, impact assessment, and conclusion."
       status={status}
       lastSavedAt={lastSavedAt}
+      section="control"
     >
-      <CriteriaChecklist items={CHECKS} />
-
       <TiptapSectionField
         section="control"
         contentPath="narrative"
@@ -46,7 +32,7 @@ export function ControlEditor() {
         className="grid gap-1.5"
         value={value.narrative}
         onChange={(doc) =>
-          updateSection("control", (p) => ({ ...p, narrative: doc }))
+          update((p) => ({ ...p, narrative: doc }))
         }
         onFlushSave={flushSave}
       />
@@ -61,7 +47,7 @@ export function ControlEditor() {
           className="min-h-[160px]"
           placeholder="List preventive actions for each root cause. Include unique number, responsible person, due date, expected outcome, linked root cause, and effectiveness verification (or rationale if not required)."
           onChange={(e) =>
-            updateSection("control", (p) => ({
+            update((p) => ({
               ...p,
               preventiveActions: e.target.value,
             }))
@@ -79,7 +65,7 @@ export function ControlEditor() {
             disabled={readOnly}
             className="min-h-[80px]"
             onChange={(e) =>
-              updateSection("control", (p) => ({
+              update((p) => ({
                 ...p,
                 interimPlan: e.target.value,
               }))
@@ -94,7 +80,7 @@ export function ControlEditor() {
             disabled={readOnly}
             className="min-h-[80px]"
             onChange={(e) =>
-              updateSection("control", (p) => ({
+              update((p) => ({
                 ...p,
                 finalComments: e.target.value,
               }))
@@ -126,7 +112,7 @@ export function ControlEditor() {
                 disabled={readOnly}
                 className="min-h-[60px]"
                 onChange={(e) =>
-                  updateSection("control", (p) => ({
+                  update((p) => ({
                     ...p,
                     [key]: e.target.value,
                   }))
@@ -141,7 +127,7 @@ export function ControlEditor() {
               disabled={readOnly}
               className="min-h-[70px]"
               onChange={(e) =>
-                updateSection("control", (p) => ({
+                update((p) => ({
                   ...p,
                   lotDisposition: e.target.value,
                 }))
@@ -155,7 +141,7 @@ export function ControlEditor() {
               disabled={readOnly}
               className="min-h-[120px]"
               onChange={(e) =>
-                updateSection("control", (p) => ({
+                update((p) => ({
                   ...p,
                   conclusion: e.target.value,
                 }))

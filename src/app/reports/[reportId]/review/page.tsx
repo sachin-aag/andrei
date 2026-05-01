@@ -1,4 +1,5 @@
 import { redirect, notFound } from "next/navigation";
+import { ViewTransition } from "react";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import {
@@ -30,20 +31,14 @@ export default async function ReviewReportPage({
     .where(eq(reports.id, reportId));
   if (!report) notFound();
 
-  const sectionRows = await db
-    .select()
-    .from(reportSections)
-    .where(eq(reportSections.reportId, reportId));
-
-  const evals = await db
-    .select()
-    .from(criteriaEvaluations)
-    .where(eq(criteriaEvaluations.reportId, reportId));
-
-  const commentRows = await db
-    .select()
-    .from(comments)
-    .where(eq(comments.reportId, reportId));
+  const [sectionRows, evals, commentRows] = await Promise.all([
+    db.select().from(reportSections).where(eq(reportSections.reportId, reportId)),
+    db
+      .select()
+      .from(criteriaEvaluations)
+      .where(eq(criteriaEvaluations.reportId, reportId)),
+    db.select().from(comments).where(eq(comments.reportId, reportId)),
+  ]);
 
   const bundle = JSON.parse(
     JSON.stringify({
@@ -67,7 +62,13 @@ export default async function ReviewReportPage({
         workspaceMode="review"
         initialTrackChangesMode={initialTrackChangesMode}
       >
-        <ReportWorkspace mode="review" />
+        <ViewTransition
+          enter={{ "nav-forward": "nav-forward", default: "none" }}
+          exit={{ "nav-back": "nav-back", default: "none" }}
+          default="none"
+        >
+          <ReportWorkspace mode="review" />
+        </ViewTransition>
       </ReportProvider>
     </AppShell>
   );
