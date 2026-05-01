@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Content, JSONContent } from "@tiptap/core";
 import { useEditor, EditorContent } from "@tiptap/react";
 import { BubbleMenu } from "@tiptap/react/menus";
@@ -82,13 +82,15 @@ export function TiptapSectionField({
     onCommentDeactivate: () => {},
     onAiSuggestionMarkActivate: () => {},
   });
+
+  const getRanges = useCallback(() => rangesRef.current, []);
+  const getHandlers = useCallback(() => handlersRef.current, []);
+
   const highlightExtension = useMemo(
     () =>
-      createCommentHighlightExtension(
-        () => rangesRef.current,
-        () => handlersRef.current
-      ),
-    []
+      // eslint-disable-next-line react-hooks/refs -- ProseMirror calls getters at transaction time, not during render
+      createCommentHighlightExtension(getRanges, getHandlers),
+    [getRanges, getHandlers]
   );
 
   const filteredRanges = useMemo(() => {
@@ -112,7 +114,9 @@ export function TiptapSectionField({
       }));
   }, [comments, section, contentPath, activeCommentId, hoveredCommentIds]);
 
-  rangesRef.current = filteredRanges;
+  useLayoutEffect(() => {
+    rangesRef.current = filteredRanges;
+  }, [filteredRanges]);
 
   // Track-changes toggle controls *capture of new edits* only. Existing
   // suggestion marks (from prior typing while TC was on, or from AI fixes
@@ -120,7 +124,9 @@ export function TiptapSectionField({
   // author explicitly accepts or ignores them. Stripping them on toggle-off
   // would silently destroy reviewer intent.
   const onChangeRef = useRef(onChange);
-  onChangeRef.current = onChange;
+  useLayoutEffect(() => {
+    onChangeRef.current = onChange;
+  }, [onChange]);
 
   const editable = !readOnly || trackChangesMode;
   const manager = getUser(currentUserId)?.role === "manager";
@@ -162,36 +168,45 @@ export function TiptapSectionField({
     [highlightExtension, placeholder]
   );
 
-  handlersRef.current = {
-    onCommentActivate: (id: string) => {
-      setActiveCommentId(id);
-      setActiveAnchorId(id);
-      const c = comments.find((x) => x.id === id && !x.parentId);
-      if (!c || c.fromPos == null || c.toPos == null) return;
-      if (c.kind?.startsWith("ai_")) return;
-      if (!editor) return;
-      editor.chain().focus().setTextSelection({ from: c.fromPos, to: c.toPos }).run();
-    },
-    onAiSuggestionMarkActivate: (evaluationId: string) => {
-      const c = comments.find(
-        (x) => !x.parentId && x.evaluationId === evaluationId
-      );
-      if (!c) return;
-      setActiveCommentId(c.id);
-      setActiveAnchorId(c.id);
-    },
-    onCommentHover: (ids: string[]) => {
-      if (ids.length === 0) {
-        clearHoveredCommentIds();
-      } else {
-        setHoveredCommentIds(ids);
-      }
-    },
-    onCommentDeactivate: () => {
-      setActiveCommentId(null);
-      setActiveAnchorId(null);
-    },
-  };
+  useLayoutEffect(() => {
+    handlersRef.current = {
+      onCommentActivate: (id: string) => {
+        setActiveCommentId(id);
+        setActiveAnchorId(id);
+        const c = comments.find((x) => x.id === id && !x.parentId);
+        if (!c || c.fromPos == null || c.toPos == null) return;
+        if (c.kind?.startsWith("ai_")) return;
+        if (!editor) return;
+        editor.chain().focus().setTextSelection({ from: c.fromPos, to: c.toPos }).run();
+      },
+      onAiSuggestionMarkActivate: (evaluationId: string) => {
+        const c = comments.find(
+          (x) => !x.parentId && x.evaluationId === evaluationId
+        );
+        if (!c) return;
+        setActiveCommentId(c.id);
+        setActiveAnchorId(c.id);
+      },
+      onCommentHover: (ids: string[]) => {
+        if (ids.length === 0) {
+          clearHoveredCommentIds();
+        } else {
+          setHoveredCommentIds(ids);
+        }
+      },
+      onCommentDeactivate: () => {
+        setActiveCommentId(null);
+        setActiveAnchorId(null);
+      },
+    };
+  }, [
+    editor,
+    comments,
+    setActiveCommentId,
+    setActiveAnchorId,
+    setHoveredCommentIds,
+    clearHoveredCommentIds,
+  ]);
 
   useEffect(() => {
     if (!editor || !pendingCommentFocusCommentId) return;
@@ -230,6 +245,8 @@ export function TiptapSectionField({
     if (!editor) return;
     const s = editor.storage.trackChanges as { enabled: boolean; authorId: string } | undefined;
     if (s) {
+      // TipTap extension storage is intentionally mutable configuration.
+      // eslint-disable-next-line react-hooks/immutability -- TipTap mutates extension storage for runtime toggles
       s.enabled = trackChangesMode === true;
       s.authorId = currentUserId;
     }

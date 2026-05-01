@@ -1,4 +1,3 @@
-import type { JSONContent } from "@tiptap/core";
 import type {
   ControlSection,
   DefineSection,

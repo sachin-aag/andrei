@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { CalendarDays, Hash, Wrench } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,20 +10,21 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useAutoSave } from "@/hooks/use-auto-save";
 import { SaveStatus } from "./save-status";
 import { useReportData } from "@/providers/report-provider";
+import type { ReportRecord } from "@/types/report";
 
-export function ReportHeader() {
-  const { report, setReport, readOnly } = useReportData();
+function ReportHeaderForm({
+  report,
+  setReport,
+  readOnly,
+}: {
+  report: ReportRecord;
+  setReport: React.Dispatch<React.SetStateAction<ReportRecord>>;
+  readOnly: boolean;
+}) {
   const [deviationNo, setDeviationNo] = useState(report.deviationNo);
   const [date, setDate] = useState(report.date.slice(0, 10));
   const [toolsUsed, setToolsUsed] = useState(report.toolsUsed);
   const [otherTools, setOtherTools] = useState(report.otherTools);
-
-  useEffect(() => {
-    setDeviationNo(report.deviationNo);
-    setDate(report.date.slice(0, 10));
-    setToolsUsed(report.toolsUsed);
-    setOtherTools(report.otherTools);
-  }, [report.id, report.deviationNo, report.date, report.toolsUsed, report.otherTools]);
 
   const { status, lastSavedAt } = useAutoSave({
     enabled: !readOnly,
@@ -118,5 +119,17 @@ export function ReportHeader() {
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+export function ReportHeader() {
+  const { report, setReport, readOnly } = useReportData();
+  return (
+    <ReportHeaderForm
+      key={report.id}
+      report={report}
+      setReport={setReport}
+      readOnly={readOnly}
+    />
   );
 }

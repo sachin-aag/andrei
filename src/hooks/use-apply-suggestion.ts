@@ -192,7 +192,6 @@ export function useApplySuggestion(): ApplySuggestionState {
 
       const view = editor.view;
       const schema = view.state.schema;
-      const insertType = schema.marks[suggestionInsertMarkName];
       const deleteType = schema.marks[suggestionDeleteMarkName];
 
       // Reverse of accept:

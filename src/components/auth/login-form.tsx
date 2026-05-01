@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
 import { Loader2, LogIn } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -17,7 +16,6 @@ import type { MockUser } from "@/lib/auth/mock-users";
 export function LoginForm({ users }: { users: MockUser[] }) {
   const [selectedId, setSelectedId] = useState<string>(users[0]?.id ?? "");
   const [pending, startTransition] = useTransition();
-  const router = useRouter();
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();

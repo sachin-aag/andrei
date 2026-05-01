@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { FileQuestion, ChevronRight, X } from "lucide-react";
+import { FileQuestion, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,

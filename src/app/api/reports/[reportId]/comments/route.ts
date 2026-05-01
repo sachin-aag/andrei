@@ -74,7 +74,6 @@ export async function POST(
   }
 
   const requestedParentId = parse.data.parentId ?? null;
-  let parentRow: (typeof comments.$inferSelect) | undefined;
   /** Thread root (flat replies all point at root id). */
   let threadRoot: (typeof comments.$inferSelect) | undefined;
 
@@ -86,7 +85,6 @@ export async function POST(
     if (!p) {
       return NextResponse.json({ error: "Parent comment not found" }, { status: 400 });
     }
-    parentRow = p;
     let node = p;
     while (node.parentId) {
       const [up] = await db

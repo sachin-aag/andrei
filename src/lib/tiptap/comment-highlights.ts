@@ -243,7 +243,7 @@ export function createCommentHighlightExtension(
                 getHandlers().onCommentHover(ids);
                 return false;
               },
-              mouseleave(_view, _event) {
+              mouseleave() {
                 getHandlers().onCommentHover([]);
                 return false;
               },

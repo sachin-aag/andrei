@@ -64,6 +64,8 @@ export function MarginGutter({ onOpenCriteria, onSectionOverflow }: Props) {
   const { overflowCounts } = useReportEvaluations();
   const [layoutVersion, setLayoutVersion] = useState(0);
   const [cardHeights, setCardHeights] = useState<Record<string, number>>({});
+  const [anchors, setAnchors] = useState<GutterAnchor[]>([]);
+  const [connectorLines, setConnectorLines] = useState<{ id: string; y: number }[]>([]);
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const isManager = getUser(currentUserId)?.role === "manager";
@@ -100,11 +102,14 @@ export function MarginGutter({ onOpenCriteria, onSectionOverflow }: Props) {
     };
   }, []);
 
-  const anchors = useMemo<GutterAnchor[]>(() => {
-    void layoutVersion; // re-run on mount/resize
-    void editorTick; // re-run when editors mutate
+  useLayoutEffect(() => {
+    void layoutVersion;
+    void editorTick;
     const container = containerRef.current;
-    if (!container) return [];
+    if (!container) {
+      setAnchors([]);
+      return;
+    }
     const containerTop = container.getBoundingClientRect().top;
 
     const result: GutterAnchor[] = [];
@@ -174,11 +179,9 @@ export function MarginGutter({ onOpenCriteria, onSectionOverflow }: Props) {
     for (const section of EVALUATABLE_SECTIONS) {
       const count = overflowCounts[section as SectionType];
       if (!count || count <= 0) continue;
-      // Find the last comment anchor in this section to place the overflow card below it.
       const sectionAnchors = result.filter((a) => a.section === section && a.type !== "composer");
       const lastAnchor = sectionAnchors[sectionAnchors.length - 1];
       const baseTop = lastAnchor ? lastAnchor.desiredTop + 60 : 0;
-      // Fallback: use section heading if no comments at all.
       const heading = document.getElementById(section);
       const fallbackTop = heading
         ? heading.getBoundingClientRect().top - containerTop + 60
@@ -192,7 +195,7 @@ export function MarginGutter({ onOpenCriteria, onSectionOverflow }: Props) {
       });
     }
 
-    return result.sort((a, b) => a.desiredTop - b.desiredTop);
+    setAnchors(result.sort((a, b) => a.desiredTop - b.desiredTop));
   }, [
     comments,
     getEditor,
@@ -206,14 +209,18 @@ export function MarginGutter({ onOpenCriteria, onSectionOverflow }: Props) {
   // Active card stays at its desired position when possible — others shift around it.
   const packed = useMemo(() => {
     const heights = cardHeights;
-    let prevBottom = -Infinity;
-    return anchors.map((a) => {
-      const desired = a.desiredTop;
-      const top = Math.max(desired, prevBottom + CARD_GAP);
-      const h = heights[a.id] ?? 80;
-      prevBottom = top + h;
-      return { ...a, top };
-    });
+    return anchors.reduce<{ items: Array<GutterAnchor & { top: number }>; prevBottom: number }>(
+      (acc, a) => {
+        const desired = a.desiredTop;
+        const top = Math.max(desired, acc.prevBottom + CARD_GAP);
+        const h = heights[a.id] ?? 80;
+        return {
+          items: [...acc.items, { ...a, top }],
+          prevBottom: top + h,
+        };
+      },
+      { items: [], prevBottom: -Infinity }
+    ).items;
   }, [anchors, cardHeights]);
 
   // Section height overflow: after packing, compute how far cards extend
@@ -304,15 +311,24 @@ export function MarginGutter({ onOpenCriteria, onSectionOverflow }: Props) {
     }
   };
 
-  // Compute connector line positions for active/hovered comment(s).
-  const connectorAnchors = useMemo(() => {
+  useLayoutEffect(() => {
     const ids = new Set<string>();
     if (activeAnchorId) ids.add(activeAnchorId);
     for (const id of hoveredCommentIds) ids.add(id);
-    if (ids.size === 0) return [];
+    if (ids.size === 0) {
+      queueMicrotask(() => {
+        setConnectorLines([]);
+      });
+      return;
+    }
 
     const container = containerRef.current;
-    if (!container) return [];
+    if (!container) {
+      queueMicrotask(() => {
+        setConnectorLines([]);
+      });
+      return;
+    }
     const containerRect = container.getBoundingClientRect();
 
     const lines: { id: string; y: number }[] = [];
@@ -325,18 +341,20 @@ export function MarginGutter({ onOpenCriteria, onSectionOverflow }: Props) {
       const y = cardRect.top - containerRect.top + cardRect.height / 2;
       lines.push({ id: a.id, y });
     }
-    return lines;
+    queueMicrotask(() => {
+      setConnectorLines(lines);
+    });
   }, [packed, activeAnchorId, hoveredCommentIds]);
 
   return (
     <div ref={containerRef} className="relative w-full" aria-label="Margin notes">
-      {connectorAnchors.length > 0 && (
+      {connectorLines.length > 0 && (
         <svg
           className="absolute inset-0 w-full h-full pointer-events-none"
           style={{ overflow: "visible" }}
           aria-hidden
         >
-          {connectorAnchors.map((c) => (
+          {connectorLines.map((c) => (
             <line
               key={c.id}
               x1={-12}
