@@ -237,6 +237,21 @@ export function ReportProvider({
   const [sections, setSections] = useState<SectionContents>(() =>
     bundleToSections(bundle.sections)
   );
+
+  const [trackChangesSync, setTrackChangesSync] = useState({
+    id: bundle.report.id,
+    initial: initialTrackChangesMode,
+  });
+  if (
+    trackChangesSync.id !== bundle.report.id ||
+    trackChangesSync.initial !== initialTrackChangesMode
+  ) {
+    setTrackChangesSync({
+      id: bundle.report.id,
+      initial: initialTrackChangesMode,
+    });
+    setTrackChangesMode(initialTrackChangesMode);
+  }
   const [evaluations, setEvaluations] = useState<EvaluationRecord[]>(
     bundle.evaluations
   );
@@ -332,14 +347,6 @@ export function ReportProvider({
     setPendingCommentFocusCommentId(null);
   }, []);
 
-  useEffect(() => {
-    setTrackChangesMode(initialTrackChangesMode);
-  }, [bundle.report.id, initialTrackChangesMode]);
-
-  useEffect(() => {
-    setSections(bundleToSections(sectionRows));
-  }, [sectionRows]);
-
   const updateSection = useCallback(
     <K extends keyof SectionContentMap>(
       section: K,
@@ -369,6 +376,7 @@ export function ReportProvider({
     const data = (await res.json()) as ReportBundle;
     setReport(data.report);
     setSectionRows(data.sections);
+    setSections(bundleToSections(data.sections));
     setEvaluations(data.evaluations);
     setComments(
       data.comments.map((c: CommentRecord) => ({
@@ -461,7 +469,9 @@ export function ReportProvider({
         // emitted new linked AI comments — apply both atomically so the UI
         // re-renders in sync with the new evaluation set.
         if (Array.isArray(data.sections)) {
-          setSectionRows(data.sections as ReportSectionRecord[]);
+          const rows = data.sections as ReportSectionRecord[];
+          setSectionRows(rows);
+          setSections(bundleToSections(rows));
         }
         if (Array.isArray(data.comments)) {
           setComments(
@@ -713,7 +723,9 @@ export function ReportProvider({
           idleTimersRef.current.delete(s);
         }
       }
-      setPendingEvalSections([]);
+      queueMicrotask(() => {
+        setPendingEvalSections([]);
+      });
       return;
     }
     for (const s of EVALUATABLE_SECTIONS) {

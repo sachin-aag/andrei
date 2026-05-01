@@ -53,15 +53,16 @@ export function CriteriaSheet({
   const grouped = useMemo(() => rowsBySection(evaluations), [evaluations]);
   const criteriaContainerRef = useRef<HTMLDivElement>(null);
 
-  // When opened from an overflow card, ensure that section is expanded and scrolled into view.
+  /** When the sheet opens with a target section, force that row expanded without a state-sync effect. */
+  const displayOpenSections = useMemo(() => {
+    const next = new Set(openSections);
+    if (open && initialSection) next.add(initialSection);
+    return next;
+  }, [open, initialSection, openSections]);
+
+  // When opened from an overflow card, scroll that section into view after layout.
   useEffect(() => {
     if (!open || !initialSection) return;
-    setOpenSections((prev) => {
-      if (prev.has(initialSection)) return prev;
-      const next = new Set(prev);
-      next.add(initialSection);
-      return next;
-    });
     // Wait a tick for the DOM to update before scrolling.
     const frame = requestAnimationFrame(() => {
       const el = criteriaContainerRef.current?.querySelector(
@@ -132,7 +133,7 @@ export function CriteriaSheet({
                 const rows = grouped.get(section) ?? [];
                 const status = aggregateStatus(rows);
                 const { met, total } = metCount(rows);
-                const isOpen = openSections.has(section);
+                const isOpen = displayOpenSections.has(section);
                 return (
                   <div
                     key={section}

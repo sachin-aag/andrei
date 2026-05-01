@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 export type SaveStatus = "idle" | "saving" | "saved" | "error";
 
@@ -37,36 +37,48 @@ export function useAutoSave<T>({
     (v: T) => (serialize ? serialize(v) : JSON.stringify(v)),
     [serialize]
   );
+  const serializeValueRef = useRef(serializeValue);
+  useLayoutEffect(() => {
+    serializeValueRef.current = serializeValue;
+  }, [serializeValue]);
   const lastSerialized = useRef<string>(serializeValue(value));
 
-  /** Keep in sync every render so flush() after flushSync(onChange) sees the latest doc immediately. */
-  latestValue.current = value;
+  /** Keep in sync so flush() after flushSync(onChange) sees the latest doc immediately. */
+  useLayoutEffect(() => {
+    latestValue.current = value;
+  }, [value]);
 
-  const flush = useCallback(async () => {
-    if (!enabled) return;
-    if (isSaving.current) {
-      pending.current = true;
-      return;
-    }
-    isSaving.current = true;
-    setStatus("saving");
-    try {
-      const snapshot = latestValue.current;
-      await onSave(snapshot);
-      lastSerialized.current = serializeValue(snapshot);
-      setStatus("saved");
-      setLastSavedAt(new Date());
-    } catch (err) {
-      console.error("AutoSave error", err);
-      setStatus("error");
-    } finally {
-      isSaving.current = false;
-      if (pending.current) {
-        pending.current = false;
-        flush();
+  const flushImpl = useRef<() => Promise<void>>(async () => {});
+
+  useLayoutEffect(() => {
+    flushImpl.current = async () => {
+      if (!enabled) return;
+      if (isSaving.current) {
+        pending.current = true;
+        return;
       }
-    }
+      isSaving.current = true;
+      setStatus("saving");
+      try {
+        const snapshot = latestValue.current;
+        await onSave(snapshot);
+        lastSerialized.current = serializeValueRef.current(snapshot);
+        setStatus("saved");
+        setLastSavedAt(new Date());
+      } catch (err) {
+        console.error("AutoSave error", err);
+        setStatus("error");
+      } finally {
+        isSaving.current = false;
+        if (pending.current) {
+          pending.current = false;
+          void flushImpl.current();
+        }
+      }
+    };
   }, [enabled, onSave]);
+
+  const flush = () => flushImpl.current();
 
   useEffect(() => {
     if (!enabled) return;
