@@ -92,7 +92,7 @@ function buildSet(
     if (from >= to) continue;
 
     let cls = "comment-highlight";
-    if (r.ai) cls += " comment-highlight-ai";
+    cls += r.ai ? " comment-highlight-ai" : " comment-highlight-human";
     if (r.resolved) cls += " comment-highlight-resolved";
     else if (r.active) cls += " comment-highlight-active";
     else if (r.hovered) cls += " comment-highlight-hovered";

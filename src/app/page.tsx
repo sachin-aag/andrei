@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { ViewTransition } from "react";
 import { desc, eq, or } from "drizzle-orm";
 import { Plus, FileText, ArrowRight } from "lucide-react";
 import { db } from "@/db";
@@ -47,6 +48,11 @@ export default async function DashboardPage() {
 
   return (
     <AppShell user={user}>
+      <ViewTransition
+        enter={{ "nav-back": "nav-back", default: "none" }}
+        exit={{ "nav-forward": "nav-forward", default: "none" }}
+        default="none"
+      >
       <div className="flex flex-col h-full">
         <div className="flex items-center justify-between px-10 py-6 border-b border-[var(--border)]">
           <div>
@@ -74,6 +80,7 @@ export default async function DashboardPage() {
                   <Link
                     key={report.id}
                     href={`/reports/${report.id}`}
+                    transitionTypes={["nav-forward"]}
                     className="group"
                   >
                     <Card className="p-5 hover:border-[var(--brand-500)] transition-colors cursor-pointer">
@@ -121,6 +128,7 @@ export default async function DashboardPage() {
           )}
         </div>
       </div>
+      </ViewTransition>
     </AppShell>
   );
 }

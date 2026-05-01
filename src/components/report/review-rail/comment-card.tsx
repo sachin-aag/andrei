@@ -13,7 +13,11 @@ import {
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { useReport } from "@/providers/report-provider";
+import {
+  useReportComments,
+  useReportData,
+  useReportEvaluations,
+} from "@/providers/report-provider";
 import { useApplySuggestion } from "@/hooks/use-apply-suggestion";
 import { getUser } from "@/lib/auth/mock-users";
 import { cn, formatDateTime } from "@/lib/utils";
@@ -39,16 +43,15 @@ export function CommentCard({
   active: boolean;
   onActivate: () => void;
 }) {
+  const { report, currentUserId } = useReportData();
   const {
-    report,
     setComments,
-    currentUserId,
     requestCommentFocus,
     hoveredCommentIds,
     setHoveredCommentIds,
     clearHoveredCommentIds,
-    evaluations,
-  } = useReport();
+  } = useReportComments();
+  const { evaluations } = useReportEvaluations();
   const [reply, setReply] = useState("");
   const [posting, setPosting] = useState(false);
   const [updating, setUpdating] = useState(false);
@@ -369,7 +372,8 @@ function AiCommentCard({
   onHover: () => void;
   onLeave: () => void;
 }) {
-  const { readOnly, evaluations } = useReport();
+  const { readOnly } = useReportData();
+  const { evaluations } = useReportEvaluations();
   const { applySuggestion, ignoreSuggestion, pendingId } = useApplySuggestion();
   const evaluation = evaluations.find((e) => e.id === root.evaluationId) ?? null;
   const pending = evaluation ? pendingId === evaluation.id : false;

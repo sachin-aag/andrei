@@ -9,7 +9,10 @@ import {
   SheetTitle,
   SheetTrigger,
 } from "@/components/ui/sheet";
-import { useReport } from "@/providers/report-provider";
+import {
+  useReportEditors,
+  useReportPlaceholders,
+} from "@/providers/report-provider";
 import { SECTION_LABELS } from "@/types/sections";
 import type { SectionType } from "@/db/schema";
 import type { Placeholder } from "@/lib/placeholders/find";
@@ -20,7 +23,8 @@ export function PlaceholdersPanel({
   onJumpToSection: (section: SectionType) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const { pendingPlaceholders, getEditor } = useReport();
+  const { pendingPlaceholders } = useReportPlaceholders();
+  const { getEditor } = useReportEditors();
 
   const grouped = pendingPlaceholders.reduce((acc, p) => {
     if (!acc[p.section]) acc[p.section] = [];
@@ -131,7 +135,7 @@ export function PlaceholdersPanel({
                 <CheckCircle2 className="size-6 text-green-600" />
               </div>
               <p className="text-sm font-medium text-[var(--foreground)]">
-                You're all caught up!
+                You&apos;re all caught up!
               </p>
               <p className="text-xs text-[var(--muted-foreground)] mt-1 max-w-[250px]">
                 No placeholders found in the document.

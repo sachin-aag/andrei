@@ -9,7 +9,12 @@ import {
   useState,
 } from "react";
 
-import { useReport } from "@/providers/report-provider";
+import {
+  useReportComments,
+  useReportData,
+  useReportEditors,
+  useReportEvaluations,
+} from "@/providers/report-provider";
 import { CommentCard } from "./comment-card";
 import { OverflowSummaryCard } from "./overflow-summary-card";
 import { SectionCommentComposer } from "./section-comment-composer";
@@ -47,19 +52,16 @@ type Props = {
  */
 export function MarginGutter({ onOpenCriteria, onSectionOverflow }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const { report, workspaceMode, currentUserId } = useReportData();
   const {
     comments,
-    getEditor,
-    editorTick,
     activeAnchorId,
     setActiveAnchorId,
     setActiveCommentId,
     hoveredCommentIds,
-    workspaceMode,
-    report,
-    currentUserId,
-    overflowCounts,
-  } = useReport();
+  } = useReportComments();
+  const { getEditor, editorTick } = useReportEditors();
+  const { overflowCounts } = useReportEvaluations();
   const [layoutVersion, setLayoutVersion] = useState(0);
   const [cardHeights, setCardHeights] = useState<Record<string, number>>({});
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -85,8 +87,15 @@ export function MarginGutter({ onOpenCriteria, onSectionOverflow }: Props) {
 
     requestLayout();
     window.addEventListener("resize", requestLayout);
+    const observer =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(requestLayout)
+        : null;
+    if (containerRef.current) observer?.observe(containerRef.current);
+
     return () => {
       if (frame !== null) cancelAnimationFrame(frame);
+      observer?.disconnect();
       window.removeEventListener("resize", requestLayout);
     };
   }, []);
@@ -184,14 +193,12 @@ export function MarginGutter({ onOpenCriteria, onSectionOverflow }: Props) {
     }
 
     return result.sort((a, b) => a.desiredTop - b.desiredTop);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     comments,
     getEditor,
     editorTick,
     layoutVersion,
     canComment,
-    containerRef,
     overflowCounts,
   ]);
 
@@ -235,25 +242,30 @@ export function MarginGutter({ onOpenCriteria, onSectionOverflow }: Props) {
       }
     }
     onSectionOverflow(overflows as Record<SectionType, number>);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [packed, cardHeights, onSectionOverflow]);
 
   // Measure card heights once they render so the packer knows actual sizes.
   useLayoutEffect(() => {
-    let changed = false;
-    const next: Record<string, number> = { ...cardHeights };
-    for (const a of anchors) {
-      const el = cardRefs.current[a.id];
-      if (!el) continue;
-      const h = el.getBoundingClientRect().height;
-      if (Math.abs((next[a.id] ?? 0) - h) > 1) {
+    setCardHeights((prev) => {
+      let changed = false;
+      const next: Record<string, number> = {};
+
+      for (const a of anchors) {
+        const el = cardRefs.current[a.id];
+        const h = el?.getBoundingClientRect().height ?? prev[a.id];
+        if (h == null) continue;
         next[a.id] = h;
-        changed = true;
+        if (Math.abs((prev[a.id] ?? 0) - h) > 1) {
+          changed = true;
+        }
       }
-    }
-    if (changed) setCardHeights(next);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [packed, anchors.length]);
+
+      if (!changed && Object.keys(prev).length === Object.keys(next).length) {
+        return prev;
+      }
+      return next;
+    });
+  }, [packed, anchors]);
 
   const repliesByParent = useMemo(() => {
     const m = new Map<string, CommentRecord[]>();
@@ -314,7 +326,6 @@ export function MarginGutter({ onOpenCriteria, onSectionOverflow }: Props) {
       lines.push({ id: a.id, y });
     }
     return lines;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [packed, activeAnchorId, hoveredCommentIds]);
 
   return (

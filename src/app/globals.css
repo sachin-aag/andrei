@@ -37,6 +37,10 @@
 
   --success: #15803d;
   --warning: #a16207;
+
+  --duration-exit: 150ms;
+  --duration-enter: 210ms;
+  --duration-move: 400ms;
 }
 
 @theme inline {
@@ -98,6 +102,7 @@
   }
   body {
     min-height: 100vh;
+    -webkit-tap-highlight-color: transparent;
   }
   ::-webkit-scrollbar {
     width: 10px;
@@ -112,6 +117,64 @@
   }
   ::-webkit-scrollbar-thumb:hover {
     background: var(--muted);
+  }
+}
+
+@keyframes fade {
+  from { filter: blur(3px); opacity: 0; }
+  to { filter: blur(0); opacity: 1; }
+}
+
+@keyframes slide {
+  from { translate: var(--slide-offset); }
+  to { translate: 0; }
+}
+
+::view-transition-old(.nav-forward) {
+  --slide-offset: -60px;
+  animation:
+    var(--duration-exit) ease-in both fade reverse,
+    var(--duration-move) ease-in-out both slide reverse;
+}
+
+::view-transition-new(.nav-forward) {
+  --slide-offset: 60px;
+  animation:
+    var(--duration-enter) ease-out var(--duration-exit) both fade,
+    var(--duration-move) ease-in-out both slide;
+}
+
+::view-transition-old(.nav-back) {
+  --slide-offset: 60px;
+  animation:
+    var(--duration-exit) ease-in both fade reverse,
+    var(--duration-move) ease-in-out both slide reverse;
+}
+
+::view-transition-new(.nav-back) {
+  --slide-offset: -60px;
+  animation:
+    var(--duration-enter) ease-out var(--duration-exit) both fade,
+    var(--duration-move) ease-in-out both slide;
+}
+
+::view-transition-group(app-sidebar) {
+  animation: none;
+  z-index: 100;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(*),
+  ::view-transition-new(*),
+  ::view-transition-group(*) {
+    animation-duration: 0s !important;
+    animation-delay: 0s !important;
+  }
+
+  .comment-highlight,
+  .comment-highlight-pulse {
+    animation: none !important;
+    transition-duration: 0s !important;
   }
 }
 
@@ -131,11 +194,14 @@
 
 /* Tiptap / ProseMirror — anchored comment threads */
 .comment-highlight {
-  background-color: rgb(253 224 71 / 0.55);
-  border-bottom: 1px dashed rgb(161 98 7 / 0.7);
   border-radius: 2px;
   cursor: pointer;
   transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+
+.comment-highlight-human {
+  background-color: rgb(254 240 138 / 0.65);
+  border-bottom: 1px dashed rgb(161 98 7 / 0.7);
 }
 
 .comment-highlight-active {

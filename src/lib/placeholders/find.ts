@@ -12,10 +12,12 @@ export type Placeholder = {
 
 /**
  * Regex to find placeholders in the text.
- * Matches: `[` followed by anything except `]`, containing `<to be filled>`, followed by anything except `]`, and ending with `]`.
- * Examples: `[Batch No. 1: <to be filled>]`, `[<to be filled>]`
+ * Matches a bracketed placeholder containing either `<to be filled>` or
+ * `to be filled`. AI suggestions sometimes omit the angle brackets, so keep
+ * both forms visible in the completion checklist.
+ * Examples: `[Batch No. 1: <to be filled>]`, `[<to be filled>]`, `[to be filled]`
  */
-export const PLACEHOLDER_REGEX = /\[[^\]]*<to be filled>[^\]]*\]/g;
+export const PLACEHOLDER_REGEX = /\[[^\]]*(?:<\s*)?to be filled(?:\s*>)?[^\]]*\]/gi;
 
 /**
  * Scans a Tiptap JSON document and returns all placeholders found within it.

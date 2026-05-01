@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, Loader2, Sparkles } from "lucide-react";
-import { useReport } from "@/providers/report-provider";
+import { useReportEvaluations } from "@/providers/report-provider";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { SectionType } from "@/db/schema";
@@ -53,7 +53,7 @@ export function SectionStatusPill({ section }: { section: SectionType }) {
     isEvaluating,
     pendingEvalSections,
     runningEvalSections,
-  } = useReport();
+  } = useReportEvaluations();
   const [open, setOpen] = useState(false);
   const rows = useMemo(() => rowsForSection(section, evaluations), [evaluations, section]);
   const status = aggregateStatus(rows);

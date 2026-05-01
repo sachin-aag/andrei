@@ -3,7 +3,13 @@
 import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import type { JSONContent } from "@tiptap/core";
-import { useReport } from "@/providers/report-provider";
+import {
+  useReportComments,
+  useReportData,
+  useReportEditors,
+  useReportEvaluations,
+  useReportSections,
+} from "@/providers/report-provider";
 import {
   appendParagraphsToDoc,
   replaceTextInDoc,
@@ -45,16 +51,11 @@ export type ApplySuggestionState = {
  * bypass the eval for Ignore.
  */
 export function useApplySuggestion(): ApplySuggestionState {
-  const {
-    report,
-    sections,
-    replaceSection,
-    setEvaluations,
-    setComments,
-    comments,
-    getEditor,
-    scheduleEvaluation,
-  } = useReport();
+  const { report } = useReportData();
+  const { sections, replaceSection } = useReportSections();
+  const { comments, setComments } = useReportComments();
+  const { getEditor } = useReportEditors();
+  const { setEvaluations, scheduleEvaluation } = useReportEvaluations();
   const [pendingId, setPendingId] = useState<string | null>(null);
 
   const findLinkedComment = useCallback(

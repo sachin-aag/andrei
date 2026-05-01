@@ -125,7 +125,80 @@ type ReportContextValue = {
   editorTick: number;
 };
 
-const ReportContext = createContext<ReportContextValue | null>(null);
+type ReportDataContextValue = Pick<
+  ReportContextValue,
+  | "report"
+  | "sectionRows"
+  | "readOnly"
+  | "trackChangesMode"
+  | "setTrackChangesMode"
+  | "workspaceMode"
+  | "currentUserId"
+  | "setReport"
+  | "refresh"
+  | "getSectionId"
+>;
+
+type ReportSectionsContextValue = Pick<
+  ReportContextValue,
+  "sections" | "updateSection" | "replaceSection"
+>;
+
+type ReportPlaceholdersContextValue = Pick<
+  ReportContextValue,
+  "pendingPlaceholders"
+>;
+
+type ReportSectionContextValue<K extends keyof SectionContentMap> = {
+  value: SectionContentMap[K];
+  update: (updater: (prev: SectionContentMap[K]) => SectionContentMap[K]) => void;
+  replace: (next: SectionContentMap[K]) => void;
+};
+
+type ReportCommentsContextValue = Pick<
+  ReportContextValue,
+  | "comments"
+  | "setComments"
+  | "activeCommentId"
+  | "setActiveCommentId"
+  | "pendingCommentFocusCommentId"
+  | "requestCommentFocus"
+  | "acknowledgeCommentFocus"
+  | "hoveredCommentIds"
+  | "setHoveredCommentIds"
+  | "clearHoveredCommentIds"
+  | "activeAnchorId"
+  | "setActiveAnchorId"
+>;
+
+type ReportEvaluationContextValue = Pick<
+  ReportContextValue,
+  | "evaluations"
+  | "overflowCounts"
+  | "runEvaluation"
+  | "scheduleEvaluation"
+  | "isEvaluating"
+  | "pendingEvalSections"
+  | "runningEvalSections"
+  | "setEvaluations"
+>;
+
+type ReportEditorsContextValue = Pick<
+  ReportContextValue,
+  "registerEditor" | "getEditor" | "editorTick"
+>;
+
+const ReportDataContext = createContext<ReportDataContextValue | null>(null);
+const ReportSectionsContext = createContext<ReportSectionsContextValue | null>(null);
+const ReportPlaceholdersContext = createContext<ReportPlaceholdersContextValue | null>(null);
+const ReportCommentsContext = createContext<ReportCommentsContextValue | null>(null);
+const ReportEvaluationContext = createContext<ReportEvaluationContextValue | null>(null);
+const ReportEditorsContext = createContext<ReportEditorsContextValue | null>(null);
+const DefineSectionContext = createContext<ReportSectionContextValue<"define"> | null>(null);
+const MeasureSectionContext = createContext<ReportSectionContextValue<"measure"> | null>(null);
+const AnalyzeSectionContext = createContext<ReportSectionContextValue<"analyze"> | null>(null);
+const ImproveSectionContext = createContext<ReportSectionContextValue<"improve"> | null>(null);
+const ControlSectionContext = createContext<ReportSectionContextValue<"control"> | null>(null);
 
 function bundleToSections(rows: ReportSectionRecord[]): SectionContents {
   const out: Record<string, unknown> = {};
@@ -680,19 +753,95 @@ export function ReportProvider({
     [sections]
   );
 
-  const value = useMemo<ReportContextValue>(
+  const reportDataValue = useMemo<ReportDataContextValue>(
     () => ({
       report,
-      sections,
       sectionRows,
-      evaluations,
-      comments,
-      overflowCounts,
       readOnly,
       trackChangesMode,
       setTrackChangesMode,
       workspaceMode,
       currentUserId,
+      setReport,
+      refresh,
+      getSectionId,
+    }),
+    [
+      report,
+      sectionRows,
+      readOnly,
+      trackChangesMode,
+      setTrackChangesMode,
+      workspaceMode,
+      currentUserId,
+      refresh,
+      getSectionId,
+    ]
+  );
+
+  const sectionsValue = useMemo<ReportSectionsContextValue>(
+    () => ({
+      sections,
+      updateSection,
+      replaceSection,
+    }),
+    [sections, updateSection, replaceSection]
+  );
+
+  const placeholdersValue = useMemo<ReportPlaceholdersContextValue>(
+    () => ({ pendingPlaceholders }),
+    [pendingPlaceholders]
+  );
+
+  const defineSectionValue = useMemo<ReportSectionContextValue<"define">>(
+    () => ({
+      value: (sections.define ?? EMPTY_CONTENT.define) as SectionContentMap["define"],
+      update: (updater) => updateSection("define", updater),
+      replace: (next) => replaceSection("define", next),
+    }),
+    [sections.define, updateSection, replaceSection]
+  );
+
+  const measureSectionValue = useMemo<ReportSectionContextValue<"measure">>(
+    () => ({
+      value: (sections.measure ?? EMPTY_CONTENT.measure) as SectionContentMap["measure"],
+      update: (updater) => updateSection("measure", updater),
+      replace: (next) => replaceSection("measure", next),
+    }),
+    [sections.measure, updateSection, replaceSection]
+  );
+
+  const analyzeSectionValue = useMemo<ReportSectionContextValue<"analyze">>(
+    () => ({
+      value: (sections.analyze ?? EMPTY_CONTENT.analyze) as SectionContentMap["analyze"],
+      update: (updater) => updateSection("analyze", updater),
+      replace: (next) => replaceSection("analyze", next),
+    }),
+    [sections.analyze, updateSection, replaceSection]
+  );
+
+  const improveSectionValue = useMemo<ReportSectionContextValue<"improve">>(
+    () => ({
+      value: (sections.improve ?? EMPTY_CONTENT.improve) as SectionContentMap["improve"],
+      update: (updater) => updateSection("improve", updater),
+      replace: (next) => replaceSection("improve", next),
+    }),
+    [sections.improve, updateSection, replaceSection]
+  );
+
+  const controlSectionValue = useMemo<ReportSectionContextValue<"control">>(
+    () => ({
+      value: (sections.control ?? EMPTY_CONTENT.control) as SectionContentMap["control"],
+      update: (updater) => updateSection("control", updater),
+      replace: (next) => replaceSection("control", next),
+    }),
+    [sections.control, updateSection, replaceSection]
+  );
+
+  const commentsValue = useMemo<ReportCommentsContextValue>(
+    () => ({
+      comments,
+      setComments,
       activeCommentId,
       setActiveCommentId,
       hoveredCommentIds,
@@ -703,35 +852,9 @@ export function ReportProvider({
       pendingCommentFocusCommentId,
       requestCommentFocus,
       acknowledgeCommentFocus,
-      updateSection,
-      replaceSection,
-      setReport,
-      runEvaluation,
-      scheduleEvaluation,
-      isEvaluating,
-      pendingEvalSections,
-      runningEvalSections,
-      pendingPlaceholders,
-      setEvaluations,
-      setComments,
-      refresh,
-      getSectionId,
-      registerEditor,
-      getEditor,
-      editorTick,
     }),
     [
-      report,
-      sections,
-      sectionRows,
-      evaluations,
       comments,
-      overflowCounts,
-      readOnly,
-      trackChangesMode,
-      setTrackChangesMode,
-      workspaceMode,
-      currentUserId,
       activeCommentId,
       hoveredCommentIds,
       setHoveredCommentIds,
@@ -740,27 +863,148 @@ export function ReportProvider({
       pendingCommentFocusCommentId,
       requestCommentFocus,
       acknowledgeCommentFocus,
-      updateSection,
-      replaceSection,
+    ]
+  );
+
+  const evaluationValue = useMemo<ReportEvaluationContextValue>(
+    () => ({
+      evaluations,
+      overflowCounts,
       runEvaluation,
       scheduleEvaluation,
       isEvaluating,
       pendingEvalSections,
       runningEvalSections,
-      pendingPlaceholders,
-      refresh,
-      getSectionId,
-      registerEditor,
-      getEditor,
-      editorTick,
+      setEvaluations,
+    }),
+    [
+      evaluations,
+      overflowCounts,
+      runEvaluation,
+      scheduleEvaluation,
+      isEvaluating,
+      pendingEvalSections,
+      runningEvalSections,
     ]
   );
 
-  return <ReportContext.Provider value={value}>{children}</ReportContext.Provider>;
+  const editorsValue = useMemo<ReportEditorsContextValue>(
+    () => ({
+      registerEditor,
+      getEditor,
+      editorTick,
+    }),
+    [registerEditor, getEditor, editorTick]
+  );
+
+  return (
+    <ReportDataContext.Provider value={reportDataValue}>
+      <ReportSectionsContext.Provider value={sectionsValue}>
+        <ReportPlaceholdersContext.Provider value={placeholdersValue}>
+          <DefineSectionContext.Provider value={defineSectionValue}>
+            <MeasureSectionContext.Provider value={measureSectionValue}>
+              <AnalyzeSectionContext.Provider value={analyzeSectionValue}>
+                <ImproveSectionContext.Provider value={improveSectionValue}>
+                  <ControlSectionContext.Provider value={controlSectionValue}>
+                    <ReportEvaluationContext.Provider value={evaluationValue}>
+                      <ReportCommentsContext.Provider value={commentsValue}>
+                        <ReportEditorsContext.Provider value={editorsValue}>
+                          {children}
+                        </ReportEditorsContext.Provider>
+                      </ReportCommentsContext.Provider>
+                    </ReportEvaluationContext.Provider>
+                  </ControlSectionContext.Provider>
+                </ImproveSectionContext.Provider>
+              </AnalyzeSectionContext.Provider>
+            </MeasureSectionContext.Provider>
+          </DefineSectionContext.Provider>
+        </ReportPlaceholdersContext.Provider>
+      </ReportSectionsContext.Provider>
+    </ReportDataContext.Provider>
+  );
 }
 
-export function useReport() {
-  const ctx = useContext(ReportContext);
-  if (!ctx) throw new Error("useReport must be used within ReportProvider");
+export function useReport(): ReportContextValue {
+  const data = useReportData();
+  const sections = useReportSections();
+  const placeholders = useReportPlaceholders();
+  const evaluations = useReportEvaluations();
+  const comments = useReportComments();
+  const editors = useReportEditors();
+
+  return useMemo(
+    () => ({
+      ...data,
+      ...sections,
+      ...placeholders,
+      ...evaluations,
+      ...comments,
+      ...editors,
+    }),
+    [data, sections, placeholders, evaluations, comments, editors]
+  );
+}
+
+export function useReportData() {
+  const ctx = useContext(ReportDataContext);
+  if (!ctx) throw new Error("useReportData must be used within ReportProvider");
+  return ctx;
+}
+
+export function useReportSections() {
+  const ctx = useContext(ReportSectionsContext);
+  if (!ctx) throw new Error("useReportSections must be used within ReportProvider");
+  return ctx;
+}
+
+export function useReportSection<K extends keyof SectionContentMap & SectionType>(
+  section: K
+): ReportSectionContextValue<K> {
+  const define = useContext(DefineSectionContext);
+  const measure = useContext(MeasureSectionContext);
+  const analyze = useContext(AnalyzeSectionContext);
+  const improve = useContext(ImproveSectionContext);
+  const control = useContext(ControlSectionContext);
+  if (!define || !measure || !analyze || !improve || !control) {
+    throw new Error("useReportSection must be used within ReportProvider");
+  }
+
+  switch (section) {
+    case "define":
+      return define as unknown as ReportSectionContextValue<K>;
+    case "measure":
+      return measure as unknown as ReportSectionContextValue<K>;
+    case "analyze":
+      return analyze as unknown as ReportSectionContextValue<K>;
+    case "improve":
+      return improve as unknown as ReportSectionContextValue<K>;
+    case "control":
+      return control as unknown as ReportSectionContextValue<K>;
+    default:
+      throw new Error(`Unknown report section: ${section}`);
+  }
+}
+
+export function useReportPlaceholders() {
+  const ctx = useContext(ReportPlaceholdersContext);
+  if (!ctx) throw new Error("useReportPlaceholders must be used within ReportProvider");
+  return ctx;
+}
+
+export function useReportComments() {
+  const ctx = useContext(ReportCommentsContext);
+  if (!ctx) throw new Error("useReportComments must be used within ReportProvider");
+  return ctx;
+}
+
+export function useReportEvaluations() {
+  const ctx = useContext(ReportEvaluationContext);
+  if (!ctx) throw new Error("useReportEvaluations must be used within ReportProvider");
+  return ctx;
+}
+
+export function useReportEditors() {
+  const ctx = useContext(ReportEditorsContext);
+  if (!ctx) throw new Error("useReportEditors must be used within ReportProvider");
   return ctx;
 }

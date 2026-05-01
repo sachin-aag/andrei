@@ -3,13 +3,17 @@
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { useReport } from "@/providers/report-provider";
+import {
+  useReportData,
+  useReportSection,
+} from "@/providers/report-provider";
 import { useSectionSave } from "@/hooks/use-section-save";
 import { SectionShell } from "./section-shell";
 import { TiptapSectionField } from "@/components/report/tiptap-section-field";
 
 export function ControlEditor() {
-  const { updateSection, readOnly } = useReport();
+  const { readOnly } = useReportData();
+  const { update } = useReportSection("control");
   const { status, lastSavedAt, value, flushSave } = useSectionSave("control");
 
   return (
@@ -28,7 +32,7 @@ export function ControlEditor() {
         className="grid gap-1.5"
         value={value.narrative}
         onChange={(doc) =>
-          updateSection("control", (p) => ({ ...p, narrative: doc }))
+          update((p) => ({ ...p, narrative: doc }))
         }
         onFlushSave={flushSave}
       />
@@ -43,7 +47,7 @@ export function ControlEditor() {
           className="min-h-[160px]"
           placeholder="List preventive actions for each root cause. Include unique number, responsible person, due date, expected outcome, linked root cause, and effectiveness verification (or rationale if not required)."
           onChange={(e) =>
-            updateSection("control", (p) => ({
+            update((p) => ({
               ...p,
               preventiveActions: e.target.value,
             }))
@@ -61,7 +65,7 @@ export function ControlEditor() {
             disabled={readOnly}
             className="min-h-[80px]"
             onChange={(e) =>
-              updateSection("control", (p) => ({
+              update((p) => ({
                 ...p,
                 interimPlan: e.target.value,
               }))
@@ -76,7 +80,7 @@ export function ControlEditor() {
             disabled={readOnly}
             className="min-h-[80px]"
             onChange={(e) =>
-              updateSection("control", (p) => ({
+              update((p) => ({
                 ...p,
                 finalComments: e.target.value,
               }))
@@ -108,7 +112,7 @@ export function ControlEditor() {
                 disabled={readOnly}
                 className="min-h-[60px]"
                 onChange={(e) =>
-                  updateSection("control", (p) => ({
+                  update((p) => ({
                     ...p,
                     [key]: e.target.value,
                   }))
@@ -123,7 +127,7 @@ export function ControlEditor() {
               disabled={readOnly}
               className="min-h-[70px]"
               onChange={(e) =>
-                updateSection("control", (p) => ({
+                update((p) => ({
                   ...p,
                   lotDisposition: e.target.value,
                 }))
@@ -137,7 +141,7 @@ export function ControlEditor() {
               disabled={readOnly}
               className="min-h-[120px]"
               onChange={(e) =>
-                updateSection("control", (p) => ({
+                update((p) => ({
                   ...p,
                   conclusion: e.target.value,
                 }))

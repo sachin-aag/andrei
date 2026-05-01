@@ -95,16 +95,6 @@ function getNarrative(content: unknown): JSONContent | null {
   return null;
 }
 
-function fixesEqual(
-  a: { anchorText: string; replacementText: string } | null | undefined,
-  b: { anchorText: string; replacementText: string } | null | undefined
-): boolean {
-  return (
-    (a?.anchorText ?? "") === (b?.anchorText ?? "") &&
-    (a?.replacementText ?? "") === (b?.replacementText ?? "")
-  );
-}
-
 function contentForPrompt(section: SectionType, content: unknown): string {
   // Prefer human-readable narrative/outcome fields over raw JSON dumps when available.
   if (section === "analyze" && content && typeof content === "object") {
@@ -421,9 +411,16 @@ export async function POST(
         continue;
       }
 
-      // Case B: user already acted on the prior suggestion (resolved/dismissed)
-      // → respect their decision; do not re-materialize.
-      if (linked && (linked.status === "resolved" || linked.status === "dismissed")) {
+      // Case B: user already acted on the prior suggestion during normal
+      // background reconciliation → respect their decision; do not
+      // re-materialize. A manual re-evaluation is explicit intent to ask the
+      // AI again, so it may reopen the linked suggestion if the criterion still
+      // fails.
+      if (
+        reason !== "manual" &&
+        linked &&
+        (linked.status === "resolved" || linked.status === "dismissed")
+      ) {
         continue;
       }
 

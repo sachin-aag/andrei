@@ -2,7 +2,10 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, Loader2, Sparkles, Check, MessageSquare } from "lucide-react";
-import { useReport } from "@/providers/report-provider";
+import {
+  useReportComments,
+  useReportEvaluations,
+} from "@/providers/report-provider";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -42,7 +45,8 @@ export function CriteriaSheet({
   onJumpToComment,
   initialSection,
 }: Props) {
-  const { evaluations, comments, runEvaluation, isEvaluating } = useReport();
+  const { comments } = useReportComments();
+  const { evaluations, runEvaluation, isEvaluating } = useReportEvaluations();
   const [openSections, setOpenSections] = useState<Set<SectionType>>(
     () => new Set(EVALUATABLE_SECTIONS)
   );
@@ -135,43 +139,53 @@ export function CriteriaSheet({
                     data-section={section}
                     className="rounded-md border border-[var(--border)] bg-[var(--card)] overflow-hidden"
                   >
-                    <button
-                      type="button"
-                      className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-[var(--secondary)] cursor-pointer"
-                      onClick={() => {
-                        setOpenSections((prev) => {
-                          const next = new Set(prev);
-                          if (next.has(section)) next.delete(section);
-                          else next.add(section);
-                          return next;
-                        });
-                      }}
-                    >
-                      {isOpen ? (
-                        <ChevronDown className="size-3.5 shrink-0 text-[var(--muted-foreground)]" />
-                      ) : (
-                        <ChevronRight className="size-3.5 shrink-0 text-[var(--muted-foreground)]" />
-                      )}
-                      <span
-                        className={cn(
-                          "size-2.5 rounded-full shrink-0",
-                          STATUS_COLOR[status]
+                    <div className="flex items-center gap-1 hover:bg-[var(--secondary)]">
+                      <button
+                        type="button"
+                        aria-expanded={isOpen}
+                        aria-controls={`criteria-section-${section}`}
+                        className="min-w-0 flex-1 flex items-center gap-2 px-3 py-2 text-left cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]"
+                        onClick={() => {
+                          setOpenSections((prev) => {
+                            const next = new Set(prev);
+                            if (next.has(section)) next.delete(section);
+                            else next.add(section);
+                            return next;
+                          });
+                        }}
+                      >
+                        {isOpen ? (
+                          <ChevronDown
+                            className="size-3.5 shrink-0 text-[var(--muted-foreground)]"
+                            aria-hidden="true"
+                          />
+                        ) : (
+                          <ChevronRight
+                            className="size-3.5 shrink-0 text-[var(--muted-foreground)]"
+                            aria-hidden="true"
+                          />
                         )}
-                      />
-                      <span className="text-sm font-semibold flex-1">
-                        {SECTION_LABELS[section] ?? section}
-                      </span>
-                      <span className="text-[10px] text-[var(--muted-foreground)]">
-                        {met}/{total}
-                      </span>
+                        <span
+                          aria-hidden="true"
+                          className={cn(
+                            "size-2.5 rounded-full shrink-0",
+                            STATUS_COLOR[status]
+                          )}
+                        />
+                        <span className="text-sm font-semibold flex-1 truncate">
+                          {SECTION_LABELS[section] ?? section}
+                        </span>
+                        <span className="text-[10px] text-[var(--muted-foreground)]">
+                          {met}/{total}
+                        </span>
+                      </button>
                       {onJumpToSection && (
                         <Button
                           type="button"
                           variant="ghost"
                           size="sm"
-                          className="h-6 px-2 text-[10px]"
-                          onClick={(e) => {
-                            e.stopPropagation();
+                          className="mr-2 h-6 px-2 text-[10px]"
+                          onClick={() => {
                             onOpenChange(false);
                             onJumpToSection(section);
                           }}
@@ -179,10 +193,13 @@ export function CriteriaSheet({
                           Jump
                         </Button>
                       )}
-                    </button>
+                    </div>
 
                     {isOpen && (
-                      <div className="border-t border-[var(--border)] bg-[var(--secondary)]/30 px-3 py-2 space-y-1.5">
+                      <div
+                        id={`criteria-section-${section}`}
+                        className="border-t border-[var(--border)] bg-[var(--secondary)]/30 px-3 py-2 space-y-1.5"
+                      >
                         {rows.map((row) => {
                           const eff = effectiveStatus(row);
                           return (
@@ -191,6 +208,7 @@ export function CriteriaSheet({
                               className="flex items-start gap-2 text-xs"
                             >
                               <span
+                                aria-hidden="true"
                                 className={cn(
                                   "size-1.5 rounded-full mt-1.5 shrink-0",
                                   STATUS_COLOR[eff]
@@ -214,7 +232,7 @@ export function CriteriaSheet({
                                 )}
                                 {row.fixApplied && (
                                   <div className="mt-1 text-[10px] text-green-700 flex items-center gap-1">
-                                    <Check className="size-3" /> Fix applied
+                                    <Check className="size-3" aria-hidden="true" /> Fix applied
                                   </div>
                                 )}
                               </div>
@@ -244,14 +262,17 @@ export function CriteriaSheet({
                     <button
                       key={c.id}
                       type="button"
-                      className="w-full text-left rounded-md border border-[var(--border)] bg-[var(--card)] p-2.5 hover:border-amber-600/40 cursor-pointer"
+                      className="w-full text-left rounded-md border border-[var(--border)] bg-[var(--card)] p-2.5 hover:border-amber-600/40 cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]"
                       onClick={() => {
                         onOpenChange(false);
                         onJumpToComment?.(c.id);
                       }}
                     >
                       <div className="flex items-center gap-2 flex-wrap">
-                        <MessageSquare className="size-3 text-[var(--muted-foreground)]" />
+                        <MessageSquare
+                          className="size-3 text-[var(--muted-foreground)]"
+                          aria-hidden="true"
+                        />
                         <span className="text-xs font-semibold truncate">
                           {author?.name ?? "Unknown"}
                         </span>

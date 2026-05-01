@@ -1,12 +1,12 @@
 "use client";
 
-import { useReport } from "@/providers/report-provider";
+import { useReportSection } from "@/providers/report-provider";
 import { useSectionSave } from "@/hooks/use-section-save";
 import { SectionShell } from "./section-shell";
 import { TiptapSectionField } from "@/components/report/tiptap-section-field";
 
 export function MeasureEditor() {
-  const { updateSection } = useReport();
+  const { update } = useReportSection("measure");
   const { status, lastSavedAt, value, flushSave } = useSectionSave("measure");
 
   return (
@@ -25,7 +25,7 @@ export function MeasureEditor() {
         className="grid gap-2"
         value={value.narrative}
         onChange={(doc) =>
-          updateSection("measure", (p) => ({ ...p, narrative: doc }))
+          update((p) => ({ ...p, narrative: doc }))
         }
         onFlushSave={flushSave}
       />

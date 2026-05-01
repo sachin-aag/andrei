@@ -5,7 +5,10 @@ import { Loader2, MessageSquarePlus } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { useReport } from "@/providers/report-provider";
+import {
+  useReportComments,
+  useReportData,
+} from "@/providers/report-provider";
 import { cn } from "@/lib/utils";
 import { SECTION_LABELS } from "@/types/sections";
 import type { SectionType } from "@/db/schema";
@@ -16,7 +19,8 @@ import type { SectionType } from "@/db/schema";
  * from the Tiptap bubble menu.
  */
 export function SectionCommentComposer({ section }: { section: SectionType }) {
-  const { report, setComments, getSectionId, setActiveAnchorId } = useReport();
+  const { report, getSectionId } = useReportData();
+  const { setComments, setActiveAnchorId } = useReportComments();
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [posting, setPosting] = useState(false);

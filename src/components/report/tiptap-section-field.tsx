@@ -8,7 +8,11 @@ import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import { toast } from "sonner";
 import { Loader2, MessageSquarePlus, Check, X } from "lucide-react";
-import { useReport } from "@/providers/report-provider";
+import {
+  useReportComments,
+  useReportData,
+  useReportEditors,
+} from "@/providers/report-provider";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -51,13 +55,15 @@ export function TiptapSectionField({
 }: TiptapSectionFieldProps) {
   const {
     report,
-    comments,
-    setComments,
     readOnly,
     trackChangesMode,
     workspaceMode,
     currentUserId,
     getSectionId,
+  } = useReportData();
+  const {
+    comments,
+    setComments,
     activeCommentId,
     setActiveCommentId,
     setActiveAnchorId,
@@ -66,8 +72,8 @@ export function TiptapSectionField({
     clearHoveredCommentIds,
     pendingCommentFocusCommentId,
     acknowledgeCommentFocus,
-    registerEditor,
-  } = useReport();
+  } = useReportComments();
+  const { registerEditor } = useReportEditors();
 
   const rangesRef = useRef<CommentHighlightRange[]>([]);
   const handlersRef = useRef<CommentHighlightHandlers>({
@@ -162,6 +168,7 @@ export function TiptapSectionField({
       setActiveAnchorId(id);
       const c = comments.find((x) => x.id === id && !x.parentId);
       if (!c || c.fromPos == null || c.toPos == null) return;
+      if (c.kind?.startsWith("ai_")) return;
       if (!editor) return;
       editor.chain().focus().setTextSelection({ from: c.fromPos, to: c.toPos }).run();
     },
@@ -172,9 +179,6 @@ export function TiptapSectionField({
       if (!c) return;
       setActiveCommentId(c.id);
       setActiveAnchorId(c.id);
-      if (c.fromPos != null && c.toPos != null && editor) {
-        editor.chain().focus().setTextSelection({ from: c.fromPos, to: c.toPos }).run();
-      }
     },
     onCommentHover: (ids: string[]) => {
       if (ids.length === 0) {

@@ -6,17 +6,21 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { useReport } from "@/providers/report-provider";
+import {
+  useReportData,
+  useReportSection,
+} from "@/providers/report-provider";
 import { useSectionSave } from "@/hooks/use-section-save";
 import { SectionShell } from "./section-shell";
 import { TiptapSectionField } from "@/components/report/tiptap-section-field";
 
 export function ImproveEditor() {
-  const { updateSection, readOnly } = useReport();
+  const { readOnly } = useReportData();
+  const { update } = useReportSection("improve");
   const { status, lastSavedAt, value, flushSave } = useSectionSave("improve");
 
   const addAction = () => {
-    updateSection("improve", (p) => ({
+    update((p) => ({
       ...p,
       correctiveActions: [
         ...p.correctiveActions,
@@ -48,7 +52,7 @@ export function ImproveEditor() {
         className="grid gap-1.5"
         value={value.narrative}
         onChange={(doc) =>
-          updateSection("improve", (p) => ({ ...p, narrative: doc }))
+          update((p) => ({ ...p, narrative: doc }))
         }
         onFlushSave={flushSave}
       />
@@ -81,7 +85,7 @@ export function ImproveEditor() {
                   {!readOnly && (
                     <button
                       onClick={() =>
-                        updateSection("improve", (p) => ({
+                        update((p) => ({
                           ...p,
                           correctiveActions: p.correctiveActions.filter(
                             (_, i) => i !== idx
@@ -101,7 +105,7 @@ export function ImproveEditor() {
                     disabled={readOnly}
                     className="min-h-[70px]"
                     onChange={(e) =>
-                      updateSection("improve", (p) => ({
+                      update((p) => ({
                         ...p,
                         correctiveActions: p.correctiveActions.map((x, i) =>
                           i === idx ? { ...x, description: e.target.value } : x
@@ -117,7 +121,7 @@ export function ImproveEditor() {
                       value={a.responsiblePerson}
                       disabled={readOnly}
                       onChange={(e) =>
-                        updateSection("improve", (p) => ({
+                        update((p) => ({
                           ...p,
                           correctiveActions: p.correctiveActions.map((x, i) =>
                             i === idx
@@ -135,7 +139,7 @@ export function ImproveEditor() {
                       value={a.dueDate}
                       disabled={readOnly}
                       onChange={(e) =>
-                        updateSection("improve", (p) => ({
+                        update((p) => ({
                           ...p,
                           correctiveActions: p.correctiveActions.map((x, i) =>
                             i === idx ? { ...x, dueDate: e.target.value } : x
@@ -152,7 +156,7 @@ export function ImproveEditor() {
                     disabled={readOnly}
                     className="min-h-[60px]"
                     onChange={(e) =>
-                      updateSection("improve", (p) => ({
+                      update((p) => ({
                         ...p,
                         correctiveActions: p.correctiveActions.map((x, i) =>
                           i === idx ? { ...x, expectedOutcome: e.target.value } : x
@@ -168,7 +172,7 @@ export function ImproveEditor() {
                     disabled={readOnly}
                     className="min-h-[60px]"
                     onChange={(e) =>
-                      updateSection("improve", (p) => ({
+                      update((p) => ({
                         ...p,
                         correctiveActions: p.correctiveActions.map((x, i) =>
                           i === idx
