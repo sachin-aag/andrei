@@ -8,6 +8,7 @@ import {
   MessageSquare,
   RotateCcw,
   Sparkles,
+  Trash2,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -55,6 +56,8 @@ export function CommentCard({
   const [reply, setReply] = useState("");
   const [posting, setPosting] = useState(false);
   const [updating, setUpdating] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const author = getUser(root.authorId);
 
   const isAi = (root.kind ?? "human").startsWith("ai_");
@@ -66,6 +69,35 @@ export function CommentCard({
     currentUserId === report.authorId ||
     getUser(currentUserId)?.role === "manager";
   const canDismissHuman = canReplyOrResolve;
+  const currentUserRole = getUser(currentUserId)?.role;
+  const canDeleteRoot =
+    currentUserId === root.authorId || currentUserRole === "manager";
+
+  const deleteComment = async (commentId: string) => {
+    setDeleting(true);
+    try {
+      const res = await fetch(
+        `/api/reports/${report.id}/comments/${commentId}`,
+        { method: "DELETE" }
+      );
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        toast.error(err.error ?? "Failed to delete comment");
+        return;
+      }
+      setComments((prev) => {
+        if (commentId === root.id) {
+          const replyIds = new Set(replies.map((r) => r.id));
+          return prev.filter((c) => c.id !== root.id && !replyIds.has(c.id));
+        }
+        return prev.filter((c) => c.id !== commentId);
+      });
+      setConfirmDelete(null);
+      toast.success("Comment deleted");
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const isAnchored = root.fromPos != null && root.toPos != null;
   const isHovered = hoveredCommentIds.includes(root.id);
@@ -192,6 +224,34 @@ export function CommentCard({
                 {SECTION_LABELS[root.section] ?? root.section}
               </span>
             )}
+            {canDeleteRoot && active && (
+              <button
+                type="button"
+                className={cn(
+                  "ml-auto size-5 flex items-center justify-center rounded hover:bg-red-100 transition-colors",
+                  confirmDelete === root.id
+                    ? "text-red-600"
+                    : "text-[var(--muted-foreground)] hover:text-red-600"
+                )}
+                disabled={deleting}
+                title={confirmDelete === root.id ? "Click again to confirm" : "Delete thread"}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (confirmDelete === root.id) {
+                    void deleteComment(root.id);
+                  } else {
+                    setConfirmDelete(root.id);
+                  }
+                }}
+                onBlur={() => setConfirmDelete(null)}
+              >
+                {deleting && confirmDelete === root.id ? (
+                  <Loader2 className="size-3 animate-spin" />
+                ) : (
+                  <Trash2 className="size-3" />
+                )}
+              </button>
+            )}
           </div>
           <p className="text-xs text-[var(--foreground)] mt-1 whitespace-pre-wrap leading-snug">
             {root.content}
@@ -240,14 +300,44 @@ export function CommentCard({
             <ul className="space-y-2">
               {replies.map((r) => {
                 const ra = getUser(r.authorId);
+                const canDeleteReply =
+                  currentUserId === r.authorId || currentUserRole === "manager";
                 return (
-                  <li key={r.id} className="text-xs">
+                  <li key={r.id} className="text-xs group/reply">
                     <div className="flex items-center gap-1.5 text-[10px] text-[var(--muted-foreground)] mb-0.5">
                       <CornerDownRight className="size-3 shrink-0" />
                       <span className="font-medium text-[var(--foreground)]">
                         {ra?.name ?? "Unknown"}
                       </span>
                       <span>· {formatDateTime(r.createdAt)}</span>
+                      {canDeleteReply && (
+                        <button
+                          type="button"
+                          className={cn(
+                            "size-4 flex items-center justify-center rounded transition-colors",
+                            confirmDelete === r.id
+                              ? "text-red-600 opacity-100"
+                              : "text-[var(--muted-foreground)] hover:text-red-600 opacity-0 group-hover/reply:opacity-100"
+                          )}
+                          disabled={deleting}
+                          title={confirmDelete === r.id ? "Click again to confirm" : "Delete reply"}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (confirmDelete === r.id) {
+                              void deleteComment(r.id);
+                            } else {
+                              setConfirmDelete(r.id);
+                            }
+                          }}
+                          onBlur={() => setConfirmDelete(null)}
+                        >
+                          {deleting && confirmDelete === r.id ? (
+                            <Loader2 className="size-2.5 animate-spin" />
+                          ) : (
+                            <Trash2 className="size-2.5" />
+                          )}
+                        </button>
+                      )}
                     </div>
                     <p className="whitespace-pre-wrap pl-4 leading-snug">
                       {r.content}
