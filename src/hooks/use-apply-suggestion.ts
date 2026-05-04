@@ -55,7 +55,7 @@ export function useApplySuggestion(): ApplySuggestionState {
   const { sections, replaceSection } = useReportSections();
   const { comments, setComments } = useReportComments();
   const { getEditor } = useReportEditors();
-  const { setEvaluations } = useReportEvaluations();
+  const { setEvaluations, scheduleEvaluation } = useReportEvaluations();
   const [pendingId, setPendingId] = useState<string | null>(null);
 
   const findLinkedComment = useCallback(
@@ -248,6 +248,7 @@ export function useApplySuggestion(): ApplySuggestionState {
           linkedComment ? patchComment(linkedComment.id, "resolved") : Promise.resolve(),
         ]);
         toast.success("Suggestion applied");
+        scheduleEvaluation(sectionKey, { immediate: true, reason: "post-action" });
       } catch (err) {
         console.error(err);
         toast.error("Failed to apply suggestion");
@@ -261,6 +262,7 @@ export function useApplySuggestion(): ApplySuggestionState {
       patchComment,
       patchEvaluation,
       replaceSection,
+      scheduleEvaluation,
       sections,
     ]
   );
@@ -283,6 +285,7 @@ export function useApplySuggestion(): ApplySuggestionState {
           linkedComment ? patchComment(linkedComment.id, "dismissed") : Promise.resolve(),
         ]);
         toast.success("Suggestion dismissed");
+        scheduleEvaluation(sectionKey, { immediate: true, reason: "post-action" });
       } catch (err) {
         console.error(err);
         toast.error("Failed to dismiss suggestion");
@@ -295,6 +298,7 @@ export function useApplySuggestion(): ApplySuggestionState {
       ignoreInline,
       patchComment,
       patchEvaluation,
+      scheduleEvaluation,
     ]
   );
 
