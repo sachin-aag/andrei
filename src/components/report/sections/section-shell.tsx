@@ -41,14 +41,14 @@ export function SectionShell({
           )}
         </div>
       </div>
+      <Card>
+        <CardContent className="p-5 space-y-5">{children}</CardContent>
+      </Card>
       {section && (
         <div className="max-w-md">
           <SectionStatusPill section={section} />
         </div>
       )}
-      <Card>
-        <CardContent className="p-5 space-y-5">{children}</CardContent>
-      </Card>
     </div>
   );
 }

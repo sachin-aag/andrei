@@ -51,23 +51,11 @@ export function SectionStatusPill({ section }: { section: SectionType }) {
     evaluations,
     runEvaluation,
     isEvaluating,
-    pendingEvalSections,
-    runningEvalSections,
   } = useReportEvaluations();
   const [open, setOpen] = useState(false);
   const rows = useMemo(() => rowsForSection(section, evaluations), [evaluations, section]);
   const status = aggregateStatus(rows);
   const { met, total } = metCount(rows);
-  const isPending = pendingEvalSections.includes(section);
-  const isRunning = runningEvalSections.includes(section);
-
-  // Auto-eval status badge: "checking" while in flight for this section,
-  // "queued" when the idle timer is armed but hasn't fired yet.
-  const autoStatus = isRunning
-    ? { label: "AI checking…", spin: true }
-    : isPending
-    ? { label: "AI check queued", spin: false }
-    : null;
 
   return (
     <div className="rounded-md border border-[var(--border)] bg-[var(--card)] overflow-hidden">
@@ -80,20 +68,9 @@ export function SectionStatusPill({ section }: { section: SectionType }) {
         <span className="text-xs font-medium text-[var(--foreground)] truncate">
           {SECTION_LABELS[section] ?? section} · {met}/{total} met
         </span>
-        {autoStatus ? (
-          <span className="ml-1 inline-flex items-center gap-1 text-[10px] text-[var(--muted-foreground)] truncate">
-            {autoStatus.spin ? (
-              <Loader2 className="size-3 animate-spin" />
-            ) : (
-              <span className="size-1.5 rounded-full bg-amber-400 animate-pulse" />
-            )}
-            <span className="hidden sm:inline">{autoStatus.label}</span>
-          </span>
-        ) : (
-          <span className="text-[10px] text-[var(--muted-foreground)] hidden sm:inline truncate">
-            {STATUS_LABEL[status]}
-          </span>
-        )}
+        <span className="text-[10px] text-[var(--muted-foreground)] hidden sm:inline truncate">
+          {STATUS_LABEL[status]}
+        </span>
         <ChevronDown
           className={cn(
             "ml-auto size-3.5 text-[var(--muted-foreground)] transition-transform shrink-0",
@@ -147,7 +124,7 @@ export function SectionStatusPill({ section }: { section: SectionType }) {
               ) : (
                 <Sparkles className="size-3" />
               )}
-              Re-evaluate {SECTION_LABELS[section] ?? section}
+              Run it by Andrei
             </Button>
           </div>
         </div>

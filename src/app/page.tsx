@@ -11,6 +11,7 @@ import { AppShell } from "@/components/layout/app-shell";
 import { Card } from "@/components/ui/card";
 import { StatusBadge } from "@/components/report/status-badge";
 import { CreateReportButton } from "@/components/dashboard/create-report-button";
+import { DeleteReportButton } from "@/components/dashboard/delete-report-button";
 import { formatDate } from "@/lib/utils";
 import { withTransientRetry } from "@/lib/db/with-transient-retry";
 import type { ReportStatus } from "@/db/schema";
@@ -74,24 +75,25 @@ export default async function DashboardPage() {
               {myReports.map((report) => {
                 const author = getUser(report.authorId);
                 const manager = getUser(report.assignedManagerId ?? undefined);
+                const title = report.deviationNo || "Untitled deviation";
                 return (
-                  <Link
+                  <Card
                     key={report.id}
-                    href={`/reports/${report.id}`}
-                    transitionTypes={["nav-forward"]}
-                    className="group"
+                    className="p-5 hover:border-[var(--brand-500)] transition-colors"
                   >
-                    <Card className="p-5 hover:border-[var(--brand-500)] transition-colors cursor-pointer">
-                      <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <Link
+                        href={`/reports/${report.id}`}
+                        transitionTypes={["nav-forward"]}
+                        className="group flex flex-1 min-w-0 items-start justify-between gap-4 cursor-pointer"
+                      >
                         <div className="flex items-start gap-3 min-w-0">
                           <div className="size-10 rounded-lg bg-[var(--brand-700)] flex items-center justify-center shrink-0">
                             <FileText className="size-5 text-[var(--brand-200)]" />
                           </div>
                           <div className="min-w-0">
                             <div className="flex items-center gap-2 mb-1">
-                              <h3 className="font-semibold truncate">
-                                {report.deviationNo || "Untitled deviation"}
-                              </h3>
+                              <h3 className="font-semibold truncate">{title}</h3>
                               <StatusBadge
                                 status={report.status as ReportStatus}
                               />
@@ -113,13 +115,19 @@ export default async function DashboardPage() {
                             </div>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2 text-[var(--muted-foreground)] group-hover:text-[var(--brand-300)] transition-colors">
+                        <div className="flex items-center gap-2 shrink-0 text-[var(--muted-foreground)] group-hover:text-[var(--brand-300)] transition-colors">
                           <span className="text-xs">Open</span>
                           <ArrowRight className="size-4" />
                         </div>
-                      </div>
-                    </Card>
-                  </Link>
+                      </Link>
+                      {user.role === "engineer" && (
+                        <DeleteReportButton
+                          reportId={report.id}
+                          reportTitle={title}
+                        />
+                      )}
+                    </div>
+                  </Card>
                 );
               })}
             </div>

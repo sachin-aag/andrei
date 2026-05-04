@@ -709,45 +709,9 @@ export function ReportProvider({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bundle.report.id, evaluations, comments, sections, readOnly]);
 
-  // The driver: when the in-memory `sections` content for an evaluatable
-  // section diverges from the last-evaluated hash, arm a debounce timer.
-  // Gated: no auto-eval until the user has triggered at least one manual run.
-  useEffect(() => {
-    if (readOnly) return;
-    if (!hasManualEvalRef.current) return;
-    if (!hasEnoughContextInFirstSection(sections.define)) {
-      for (const s of EVALUATABLE_SECTIONS) {
-        const t = idleTimersRef.current.get(s);
-        if (t) {
-          clearTimeout(t);
-          idleTimersRef.current.delete(s);
-        }
-      }
-      queueMicrotask(() => {
-        setPendingEvalSections([]);
-      });
-      return;
-    }
-    for (const s of EVALUATABLE_SECTIONS) {
-      const content = sections[s];
-      if (content === undefined) continue;
-      const currentHash = hashContent(content);
-      const lastHash = lastEvalHashRef.current.get(s);
-      if (lastHash === currentHash) {
-        // Content matches what's already evaluated — make sure no stale timer
-        // is left armed.
-        const t = idleTimersRef.current.get(s);
-        if (t) {
-          clearTimeout(t);
-          idleTimersRef.current.delete(s);
-          setPendingEvalSections((prev) => prev.filter((p) => p !== s));
-        }
-        continue;
-      }
-      // Arm/refresh the per-section idle timer.
-      scheduleEvaluation(s, { reason: "idle" });
-    }
-  }, [sections, readOnly, scheduleEvaluation]);
+  // Auto-evaluation disabled — evaluation is manual only ("Run it by Andrei").
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _autoEvalDeps = [sections, readOnly, scheduleEvaluation];
 
   // Cancel pending timers on unmount / report swap.
   useEffect(() => {
