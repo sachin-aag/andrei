@@ -8,8 +8,9 @@ import {
   useReportSection,
 } from "@/providers/report-provider";
 import { useSectionSave } from "@/hooks/use-section-save";
-import { SectionShell } from "./section-shell";
+import { CriteriaChecklist, SectionShell } from "./section-shell";
 import { TiptapSectionField } from "@/components/report/tiptap-section-field";
+import { SECTION_GUIDANCE } from "@/lib/report-section-guidance";
 
 export function ControlEditor() {
   const { readOnly } = useReportData();
@@ -24,6 +25,8 @@ export function ControlEditor() {
       lastSavedAt={lastSavedAt}
       section="control"
     >
+      <CriteriaChecklist items={SECTION_GUIDANCE.control ?? []} ordered />
+
       <TiptapSectionField
         section="control"
         contentPath="narrative"

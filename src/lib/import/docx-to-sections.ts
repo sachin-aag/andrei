@@ -1,4 +1,5 @@
 import mammoth from "mammoth";
+import PizZip from "pizzip";
 import type {
   AnalyzeSection,
   CorrectiveAction,
@@ -7,8 +8,18 @@ import type {
 } from "@/types/sections";
 import { EMPTY_CONTENT, SECTION_LABELS } from "@/types/sections";
 import { legacyStringToDoc } from "@/lib/tiptap/rich-text";
+import { SECTION_GUIDANCE } from "@/lib/report-section-guidance";
 
 type EditableKey = "define" | "measure" | "analyze" | "improve" | "control";
+type ImportedSections = Pick<
+  SectionContentMap,
+  "define" | "measure" | "analyze" | "improve" | "control"
+>;
+
+export type ImportedReportContent = {
+  sections: ImportedSections;
+  toolsUsed: { sixM: boolean; fiveWhy: boolean; brainstorming: boolean };
+};
 
 const SECTION_ORDER: EditableKey[] = [
   "define",
@@ -115,21 +126,32 @@ function cleanImportedText(text: string): string {
 }
 
 function stripGuidanceChecklist(text: string): string {
-  const lines = text.split(/\r?\n/);
-  const start = lines.findIndex((line) =>
-    /^following checks shall be considered/i.test(line.trim())
-  );
-  if (start === -1) return text;
+  const guidance = Object.values(SECTION_GUIDANCE)
+    .flat()
+    .map(normalizeGuidanceLine);
 
-  let end = start + 1;
-  while (
-    end < lines.length &&
-    (lines[end]!.trim() === "" || /^[•*-]\s+/.test(lines[end]!.trim()))
-  ) {
-    end += 1;
-  }
+  return text
+    .split(/\r?\n/)
+    .filter((line) => {
+      const trimmed = line.trim();
+      if (/^following (?:checks|checkpoints?) shall be considered/i.test(trimmed)) {
+        return false;
+      }
+      const normalized = normalizeGuidanceLine(trimmed);
+      return !guidance.some(
+        (item) => normalized === item || normalized.includes(item) || item.includes(normalized)
+      );
+    })
+    .join("\n");
+}
 
-  return [...lines.slice(0, start), ...lines.slice(end)].join("\n");
+function normalizeGuidanceLine(text: string): string {
+  return text
+    .replace(/^[•*\-]\s*/, "")
+    .replace(/^\d+[.)]\s*/, "")
+    .replace(/\s+/g, " ")
+    .replace(/[^a-z0-9]+/gi, "")
+    .toLowerCase();
 }
 
 function findLabel(text: string, labels: string[], from = 0): RegExpExecArray | null {
@@ -206,33 +228,33 @@ function textBeforeAnyInlineLabel(text: string, labels: string[]): string {
 
 function parseMeasure(text: string): MeasureSection {
   const body = cleanImportedText(stripGuidanceChecklist(text));
-  const notificationLabel = findInlineLabel(body, "Regulatory Notification");
-  const regulatoryNotification = notificationLabel
-    ? cleanImportedText(body.slice(notificationLabel.index + notificationLabel[0].length))
-    : "";
-  const narrative = notificationLabel
-    ? cleanImportedText(body.slice(0, notificationLabel.index))
-    : body;
 
   return {
     ...EMPTY_CONTENT.measure,
-    narrative: legacyStringToDoc(narrative),
-    regulatoryNotification,
+    narrative: legacyStringToDoc(body),
   };
 }
 
-function parseFiveWhys(text: string): AnalyzeSection["fiveWhy"]["whys"] {
-  const whys: AnalyzeSection["fiveWhy"]["whys"] = [];
-  const re =
-    /^\s*(?:\d+\.)\s*Why\s*:\s*([\s\S]*?)^\s*Ans\.?\s*([\s\S]*?)(?=^\s*(?:\d+\.)\s*Why\s*:|^\s*Conclusion\s*:|\s*$)/gim;
-  let match: RegExpExecArray | null;
-  while ((match = re.exec(text)) !== null) {
-    whys.push({
-      question: cleanImportedText(match[1] ?? ""),
-      answer: cleanImportedText(match[2] ?? ""),
-    });
-  }
-  return whys.length > 0 ? whys : EMPTY_CONTENT.analyze.fiveWhy.whys;
+function splitConclusionBlock(text: string): { body: string; conclusion: string } {
+  const match = findLabel(text, ["Conclusion"]);
+  if (!match) return { body: cleanImportedText(text), conclusion: "" };
+
+  return {
+    body: cleanImportedText(text.slice(0, match.index)),
+    conclusion: cleanImportedText(text.slice(match.index + match[0].length)),
+  };
+}
+
+function normalizeFiveWhyNarrative(text: string): string {
+  return cleanImportedText(text);
+}
+
+function parseFiveWhyBlock(text: string): AnalyzeSection["fiveWhy"] {
+  const { body, conclusion } = splitConclusionBlock(text);
+  return {
+    narrative: normalizeFiveWhyNarrative(body),
+    conclusion,
+  };
 }
 
 function buildAnalyzeFromChunk(text: string): AnalyzeSection {
@@ -261,8 +283,7 @@ function buildAnalyzeFromChunk(text: string): AnalyzeSection {
       conclusion: getLineValue(sixMBlock, "Conclusion"),
     },
     fiveWhy: {
-      whys: parseFiveWhys(fiveWhyBlock),
-      conclusion: getLineValue(fiveWhyBlock, "Conclusion"),
+      ...parseFiveWhyBlock(fiveWhyBlock),
     },
     brainstorming: getBetweenLabels(body, ["Brainstorming"], [
       "Other Tool if Any",
@@ -406,17 +427,92 @@ function parsePreventiveActions(text: string): string {
   return cleanImportedText(entries.filter(Boolean).join("\n\n"));
 }
 
-/**
- * Reads a .docx buffer and maps recognizable DMAIC blocks into section content.
- * Uses plain-text extraction and heading lines that match section titles (Define, Measure, …).
- */
-export async function docxBufferToSectionContentMap(
-  buffer: Buffer
-): Promise<Pick<
-  SectionContentMap,
-  "define" | "measure" | "analyze" | "improve" | "control"
->> {
-  const { value: raw } = await mammoth.extractRawText({ buffer });
+function parseToolsUsed(raw: string): ImportedReportContent["toolsUsed"] {
+  const line =
+    raw
+      .split(/\r?\n/)
+      .find((item) => /investigation\s+tool\s+used/i.test(item)) ?? "";
+  const afterLabel = line.replace(/^.*?investigation\s+tool\s+used\s*:?\s*/i, "");
+  const checked = (label: RegExp) => {
+    const match = label.exec(afterLabel);
+    if (!match) return false;
+    const before = afterLabel.slice(Math.max(0, match.index - 3), match.index);
+    if (before.includes("☑")) return true;
+    if (before.includes("☐")) return false;
+    return false;
+  };
+
+  return {
+    sixM: checked(/\b6\s*M\b/i),
+    fiveWhy: checked(/\b5\s*-?\s*why\b/i),
+    brainstorming: checked(/\bbrainstorming\b/i),
+  };
+}
+
+function parseToolsUsedFromDocxXml(buffer: Buffer): ImportedReportContent["toolsUsed"] | null {
+  try {
+    const zip = new PizZip(buffer);
+    const xml = zip.file("word/document.xml")?.asText();
+    if (!xml) return null;
+    const paragraphs = xml.match(/<\w+:p\b[\s\S]*?<\/\w+:p>/g) ?? [];
+    const toolsPara = paragraphs.find((paragraph) =>
+      decodeXmlText(paragraph).match(/investigation\s+tool\s+used/i)
+    );
+    if (!toolsPara) return null;
+
+    const toolsUsed: ImportedReportContent["toolsUsed"] = {
+      sixM: false,
+      fiveWhy: false,
+      brainstorming: false,
+    };
+    let pendingCheckbox: boolean | null = null;
+    const runs = toolsPara.match(/<\w+:r\b[\s\S]*?<\/\w+:r>/g) ?? [];
+    for (const run of runs) {
+      const checkbox = checkboxStateFromRun(run);
+      if (checkbox !== null) {
+        pendingCheckbox = checkbox;
+        continue;
+      }
+
+      const text = decodeXmlText(run).trim();
+      if (!text || pendingCheckbox === null) continue;
+      if (/^6\s*M\b/i.test(text)) toolsUsed.sixM = pendingCheckbox;
+      else if (/^5\s*-?\s*why\b/i.test(text)) toolsUsed.fiveWhy = pendingCheckbox;
+      else if (/^brainstorming\b/i.test(text)) toolsUsed.brainstorming = pendingCheckbox;
+      pendingCheckbox = null;
+    }
+
+    return toolsUsed;
+  } catch {
+    return null;
+  }
+}
+
+function checkboxStateFromRun(runXml: string): boolean | null {
+  const checkbox = /<\w+:checkBox\b[\s\S]*?<\/\w+:checkBox>/.exec(runXml)?.[0];
+  if (!checkbox) return null;
+
+  const checked = /<\w+:checked\b[^>]*(?:\w+:)?val="([^"]+)"/.exec(checkbox)?.[1];
+  if (checked !== undefined) return checked !== "0" && checked.toLowerCase() !== "false";
+
+  const defaultValue = /<\w+:default\b[^>]*(?:\w+:)?val="([^"]+)"/.exec(checkbox)?.[1];
+  return defaultValue === "1" || defaultValue?.toLowerCase() === "true";
+}
+
+function decodeXmlText(xml: string): string {
+  return Array.from(xml.matchAll(/<\w+:t\b[^>]*>([\s\S]*?)<\/\w+:t>/g))
+    .map((match) =>
+      (match[1] ?? "")
+        .replace(/&amp;/g, "&")
+        .replace(/&lt;/g, "<")
+        .replace(/&gt;/g, ">")
+        .replace(/&quot;/g, '"')
+        .replace(/&apos;/g, "'")
+    )
+    .join("");
+}
+
+function buildSectionsFromRaw(raw: string): ImportedSections {
   const { sections, foundHeadings } = splitPlainTextIntoSections(raw);
 
   const defineText = cleanImportedText(stripGuidanceChecklist(sections.define));
@@ -470,6 +566,27 @@ export async function docxBufferToSectionContentMap(
       lotDisposition: getLineValue(controlBody, "Lot Disposition"),
       conclusion: getLineValue(controlBody, "Conclusion"),
     },
+  };
+}
+
+/**
+ * Reads a .docx buffer and maps recognizable DMAIC blocks into section content.
+ * Uses plain-text extraction and heading lines that match section titles (Define, Measure, …).
+ */
+export async function docxBufferToSectionContentMap(
+  buffer: Buffer
+): Promise<ImportedSections> {
+  const imported = await docxBufferToImportedReportContent(buffer);
+  return imported.sections;
+}
+
+export async function docxBufferToImportedReportContent(
+  buffer: Buffer
+): Promise<ImportedReportContent> {
+  const { value: raw } = await mammoth.extractRawText({ buffer });
+  return {
+    sections: buildSectionsFromRaw(raw),
+    toolsUsed: parseToolsUsedFromDocxXml(buffer) ?? parseToolsUsed(raw),
   };
 }
 

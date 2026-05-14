@@ -91,8 +91,28 @@ export async function DELETE(
     .from(comments)
     .where(and(eq(comments.id, commentId), eq(comments.reportId, reportId)));
   if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (row.authorId !== user.id && user.role !== "manager") {
+
+  const [report] = await db.select().from(reports).where(eq(reports.id, reportId));
+  if (!report) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  const isAiThread =
+    row.authorId === "ai" ||
+    row.kind.startsWith("ai_");
+  const canDelete =
+    user.id === row.authorId ||
+    user.role === "manager" ||
+    (isAiThread && canResolveThread(user, report));
+
+  if (!canDelete) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  if (isAiThread) {
+    await db
+      .update(comments)
+      .set({ status: "dismissed" })
+      .where(and(eq(comments.id, commentId), eq(comments.reportId, reportId)));
+    return NextResponse.json({ ok: true });
   }
 
   await db

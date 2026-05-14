@@ -1,6 +1,5 @@
 "use client";
 
-import { Trash2 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -89,68 +88,20 @@ export function AnalyzeEditor() {
 
       <section className="space-y-3">
         <h3 className="font-semibold text-[var(--foreground)]">5-Why Approach</h3>
-        <div className="space-y-3">
-          {value.fiveWhy.whys.map((why, idx) => (
-            <div
-              key={idx}
-              className="grid gap-2 p-3 rounded-md border border-[var(--border)] bg-[var(--card)]"
-            >
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-[var(--foreground)]">
-                  Why {idx + 1}
-                </span>
-                {!readOnly && value.fiveWhy.whys.length > 1 && (
-                  <button
-                    onClick={() =>
-                      update((p) => ({
-                        ...p,
-                        fiveWhy: {
-                          ...p.fiveWhy,
-                          whys: p.fiveWhy.whys.filter((_, i) => i !== idx),
-                        },
-                      }))
-                    }
-                    className="text-[var(--muted-foreground)] hover:text-red-400 cursor-pointer"
-                  >
-                    <Trash2 className="size-3.5" />
-                  </button>
-                )}
-              </div>
-              <Input
-                placeholder="Why question?"
-                value={why.question}
-                disabled={readOnly}
-                onChange={(e) =>
-                  update((p) => ({
-                    ...p,
-                    fiveWhy: {
-                      ...p.fiveWhy,
-                      whys: p.fiveWhy.whys.map((w, i) =>
-                        i === idx ? { ...w, question: e.target.value } : w
-                      ),
-                    },
-                  }))
-                }
-              />
-              <Textarea
-                placeholder="Answer"
-                value={why.answer}
-                disabled={readOnly}
-                className="min-h-[70px]"
-                onChange={(e) =>
-                  update((p) => ({
-                    ...p,
-                    fiveWhy: {
-                      ...p.fiveWhy,
-                      whys: p.fiveWhy.whys.map((w, i) =>
-                        i === idx ? { ...w, answer: e.target.value } : w
-                      ),
-                    },
-                  }))
-                }
-              />
-            </div>
-          ))}
+        <div className="grid gap-1.5">
+          <Label>5-Why Narrative</Label>
+          <Textarea
+            placeholder="Capture the complete 5-Why analysis, including each Why and answer."
+            value={value.fiveWhy.narrative}
+            disabled={readOnly}
+            className="min-h-[220px]"
+            onChange={(e) =>
+              update((p) => ({
+                ...p,
+                fiveWhy: { ...p.fiveWhy, narrative: e.target.value },
+              }))
+            }
+          />
         </div>
         <div className="grid gap-1.5">
           <Label>5-Why Conclusion</Label>

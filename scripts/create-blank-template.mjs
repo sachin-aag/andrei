@@ -126,12 +126,12 @@ R.set(3, rebuildRow(rows[3].xml, makePara(" ")));
 // Row 5: Define content (checklist + narrative)
 R.set(5, rebuildRow(rows[5].xml, makeParas([
   'Following checks shall be considered while writing the \u201CDefine\u201D section.',
-  '\u2022 Clearly define what happens actually.',
-  '\u2022 Explain what is different than expected.',
-  '\u2022 Mention the location where the deviation has occurred.',
-  '\u2022 Date/time of deviation occurrence and date/time of detection.',
-  '\u2022 Mention the name of personnel who is involved in the deviation.',
-  '\u2022 Mention initial scope of deviation (impacted product/Material/Equipment/System/Batches/etc.)',
+  '1. Clearly define what happens actually.',
+  '2. Explain what is different than expected.',
+  '3. Mention the location where the deviation has occurred.',
+  '4. Date/time of deviation occurrence and date/time of detection.',
+  '5. Mention the name of personnel who is involved in the deviation.',
+  '6. Mention initial scope of deviation (impacted product/Material/Equipment/System/Batches/etc.)',
   '',
   '{defineNarrative}',
 ])));
@@ -142,11 +142,11 @@ R.set(5, rebuildRow(rows[5].xml, makeParas([
 R.set(7, rebuildRow(rows[7].xml, makeParas([
   'Measure:',
   'Following checks shall be considered while writing the \u201CMeasure\u201D section.',
-  '\u2022 Does the summary provide relevant facts and data/information reviewed?',
-  '\u2022 Is a summary of the analysis of the factors and data provided?',
-  '\u2022 Is a conclusion statement of the analysis and review provided?',
-  '\u2022 If there were Regulatory Notification, were details provided?',
-  '\u2022 Is the report written in a logical flow and easily understood by the reader?',
+  '1. Does the summary provide relevant facts and data/information reviewed?',
+  '2. Is a summary of the analysis of the factors and data provided?',
+  '3. Is a conclusion statement of the analysis and review provided?',
+  '4. If there were Regulatory Notification, were details provided?',
+  '5. Is the report written in a logical flow and easily understood by the reader?',
   '',
   '{measureNarrative}',
 ])));
@@ -170,10 +170,7 @@ R.set(9, rebuildRow(rows[9].xml, makeParas([
 // Row 11: 5 Why content
 R.set(11, rebuildRow(rows[11].xml, makeParas([
   '5 Why Approach (If Applicable):',
-  '{#fiveWhys}',
-  '{index}. Why: {question}',
-  '   Ans. {answer}',
-  '{/fiveWhys}',
+  '{fiveWhyNarrative}',
   '',
   'Conclusion: {fiveWhyConclusion}',
 ])));
@@ -220,12 +217,12 @@ R.set(20, rebuildRow(rows[20].xml, makeParas([
 R.set(21, rebuildRow(rows[21].xml, makeParas([
   'Improve: Improve section covers the corrective actions.',
   'Following checks shall be considered while writing the \u201CImprove\u201D section.',
-  '\u2022 Were specific corrective actions identified (including immediate actions)?',
-  '\u2022 Were specific corrective actions identified for each root cause?',
-  '\u2022 Was the corrective action assigned a unique number, responsible person and due date?',
-  '\u2022 Does the action describe the expected outcome that can be verified?',
-  '\u2022 Was effectiveness verification required or not, with rationale documented?',
-  '\u2022 Are the identified corrective actions achievable?',
+  '1. Were specific corrective actions identified (including immediate actions)?',
+  '2. Were specific corrective actions identified for each root cause?',
+  '3. Was the corrective action assigned a unique number, responsible person and due date?',
+  '4. Does the action describe the expected outcome that can be verified?',
+  '5. Was effectiveness verification required or not, with rationale documented?',
+  '6. Are the identified corrective actions achievable?',
 ])));
 
 // Row 22: "Corrective Action:" label → keep
@@ -248,14 +245,14 @@ R.set(23, rebuildRow(rows[23].xml, makeParas([
 R.set(24, rebuildRow(rows[24].xml, makeParas([
   'Control: Control section covers the preventive actions.',
   'Following checks shall be considered while writing the \u201CControl\u201D section.',
-  '\u2022 Are specific preventive actions identified to prevent recurrence?',
-  '\u2022 Was the preventive action assigned a unique number, responsible person and due date?',
-  '\u2022 Does the action describe the expected outcome that can be verified?',
-  '\u2022 Was effectiveness verification required or not, with rationale documented?',
-  '\u2022 Was interim plan discussed for pending status of CAPA?',
-  '\u2022 Was each impact assessment field completed correctly?',
-  '\u2022 Does the Conclusion include final decision and rationale?',
-  '\u2022 Are the identified preventive actions achievable?',
+  '1. Are specific preventive actions identified to prevent recurrence?',
+  '2. Was the preventive action assigned a unique number, responsible person and due date?',
+  '3. Does the action describe the expected outcome that can be verified?',
+  '4. Was effectiveness verification required or not, with rationale documented?',
+  '5. Was interim plan discussed for pending status of CAPA?',
+  '6. Was each impact assessment field completed correctly?',
+  '7. Does the Conclusion include final decision and rationale?',
+  '8. Are the identified preventive actions achievable?',
 ])));
 
 // Row 25: "Preventive Action:" label → keep

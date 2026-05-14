@@ -11,8 +11,9 @@ import {
   useReportSection,
 } from "@/providers/report-provider";
 import { useSectionSave } from "@/hooks/use-section-save";
-import { SectionShell } from "./section-shell";
+import { CriteriaChecklist, SectionShell } from "./section-shell";
 import { TiptapSectionField } from "@/components/report/tiptap-section-field";
+import { SECTION_GUIDANCE } from "@/lib/report-section-guidance";
 
 export function ImproveEditor() {
   const { readOnly } = useReportData();
@@ -44,6 +45,8 @@ export function ImproveEditor() {
       lastSavedAt={lastSavedAt}
       section="improve"
     >
+      <CriteriaChecklist items={SECTION_GUIDANCE.improve ?? []} ordered />
+
       <TiptapSectionField
         section="improve"
         contentPath="narrative"

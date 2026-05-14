@@ -65,7 +65,7 @@ export function ReportWorkspaceHeader({
       <Button asChild variant="ghost" size="sm">
         <Link href="/" transitionTypes={["nav-back"]}>
           <ChevronLeft className="size-4" aria-hidden="true" />
-          Dashboard
+          Reports
         </Link>
       </Button>
       <Separator orientation="vertical" className="h-6" />

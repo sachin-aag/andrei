@@ -16,6 +16,7 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { evaluateSection } from "@/lib/ai/evaluate";
 import { EVALUATABLE_SECTIONS, getCriteria } from "@/lib/ai/criteria";
 import { hashContent } from "@/lib/ai/content-hash";
+import { PROMPT_VERSION } from "@/lib/ai/section-prompts";
 import {
   hasEnoughContextInFirstSection,
   INSUFFICIENT_FIRST_SECTION_MESSAGE,
@@ -186,8 +187,11 @@ export async function POST(
     });
   }
 
+  // Hashes are salted with PROMPT_VERSION so cached evaluations are
+  // invalidated when the system prompt changes, even if section content didn't.
   const sectionHashes = new Map<string, string>();
-  for (const row of sectionRows) sectionHashes.set(row.id, hashContent(row.content));
+  for (const row of sectionRows)
+    sectionHashes.set(row.id, hashContent(row.content, PROMPT_VERSION));
 
   const existingForSections = sectionRows.length
     ? await db

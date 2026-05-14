@@ -26,7 +26,7 @@ import { SECTION_LABELS } from "@/types/sections";
 import type { CommentRecord } from "@/types/report";
 
 const AI_KIND_LABEL: Record<string, string> = {
-  ai_fix: "AI Fix",
+  ai_fix: "Andrei suggests",
   ai_grammar: "AI Grammar",
   ai_tone: "AI Tone",
   ai_removal: "AI Removal",
@@ -220,11 +220,16 @@ export function CommentCard({
               <span className="text-[10px] text-amber-800">Open</span>
             )}
             {!isAnchored && root.section && (
-              <span className="text-[10px] text-[var(--muted-foreground)] uppercase tracking-wide ml-auto">
+              <span
+                className={cn(
+                  "text-[10px] text-[var(--muted-foreground)] uppercase tracking-wide",
+                  !canDeleteRoot && "ml-auto"
+                )}
+              >
                 {SECTION_LABELS[root.section] ?? root.section}
               </span>
             )}
-            {canDeleteRoot && active && (
+            {canDeleteRoot && (
               <button
                 type="button"
                 className={cn(
@@ -317,7 +322,7 @@ export function CommentCard({
                             "size-4 flex items-center justify-center rounded transition-colors",
                             confirmDelete === r.id
                               ? "text-red-600 opacity-100"
-                              : "text-[var(--muted-foreground)] hover:text-red-600 opacity-0 group-hover/reply:opacity-100"
+                              : "text-[var(--muted-foreground)] hover:text-red-600"
                           )}
                           disabled={deleting}
                           title={confirmDelete === r.id ? "Click again to confirm" : "Delete reply"}
@@ -462,12 +467,28 @@ function AiCommentCard({
   onHover: () => void;
   onLeave: () => void;
 }) {
-  const { readOnly } = useReportData();
+  const { report, currentUserId, readOnly } = useReportData();
   const { evaluations } = useReportEvaluations();
-  const { applySuggestion, ignoreSuggestion, pendingId } = useApplySuggestion();
-  const evaluation = evaluations.find((e) => e.id === root.evaluationId) ?? null;
-  const pending = evaluation ? pendingId === evaluation.id : false;
+  const {
+    applySuggestion,
+    ignoreSuggestion,
+    deleteAiSuggestion,
+    pendingId,
+  } = useApplySuggestion();
+  const evaluation =
+    evaluations.find((e) => e.id === root.evaluationId) ?? null;
+  const pendingBusy = evaluation
+    ? pendingId === evaluation.id
+    : pendingId === root.id;
+  const anySuggestionPending = pendingId !== null;
   const kindLabel = AI_KIND_LABEL[root.kind ?? "ai_fix"] ?? "AI Suggestion";
+  const canDeleteAi =
+    currentUserId === report.authorId ||
+    getUser(currentUserId)?.role === "manager";
+  const [confirmDeleteSuggestion, setConfirmDeleteSuggestion] = useState<
+    string | null
+  >(null);
+  const [removingSuggestion, setRemovingSuggestion] = useState(false);
 
   const anchorPreview = root.anchorText?.trim()
     ? root.anchorText.length > 80
@@ -503,7 +524,7 @@ function AiCommentCard({
     >
       <div className="px-3 py-1.5 border-b border-[var(--border)] flex items-center gap-2 bg-violet-50">
         <Sparkles className="size-3.5 text-violet-700 shrink-0" />
-        <span className="text-[10px] uppercase tracking-wide font-semibold text-violet-800">
+        <span className="text-[10px] tracking-wide font-semibold text-violet-800">
           {kindLabel}
         </span>
         {isResolved && (
@@ -534,30 +555,75 @@ function AiCommentCard({
           {anchorPreview}
         </div>
 
-        {!readOnly && evaluation && !isResolved && (
-          <div className="flex items-center gap-1.5 pt-0.5" onClick={(e) => e.stopPropagation()}>
-            <Button
-              type="button"
-              size="sm"
-              variant="success"
-              className="h-7 text-xs"
-              disabled={pending}
-              onClick={() => void applySuggestion(evaluation)}
-            >
-              {pending ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
-              Accept
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="ghost"
-              className="h-7 text-xs"
-              disabled={pending}
-              onClick={() => void ignoreSuggestion(evaluation)}
-            >
-              <X className="size-3" />
-              Ignore
-            </Button>
+        {!readOnly && ((evaluation && !isResolved) || canDeleteAi) && (
+          <div className="flex flex-wrap items-center gap-1.5 pt-0.5" onClick={(e) => e.stopPropagation()}>
+            {evaluation && !isResolved && (
+              <>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="success"
+                  className="h-7 text-xs"
+                  disabled={anySuggestionPending || removingSuggestion}
+                  onClick={() => void applySuggestion(evaluation)}
+                >
+                  {pendingBusy ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
+                  Accept
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="h-7 text-xs"
+                  disabled={anySuggestionPending || removingSuggestion}
+                  onClick={() => void ignoreSuggestion(evaluation)}
+                >
+                  <X className="size-3" />
+                  Ignore
+                </Button>
+              </>
+            )}
+            {canDeleteAi && (
+              <button
+                type="button"
+                className={cn(
+                  "inline-flex shrink-0 size-8 items-center justify-center rounded-md border border-transparent transition-colors",
+                  "ml-auto",
+                  confirmDeleteSuggestion === root.id
+                    ? "text-red-600 border-red-200 bg-red-50 hover:bg-red-50"
+                    : "text-[var(--muted-foreground)] hover:text-red-600 hover:border-red-200 hover:bg-red-50"
+                )}
+                disabled={anySuggestionPending || removingSuggestion}
+                title={
+                  confirmDeleteSuggestion === root.id
+                    ? "Click again to confirm"
+                    : "Delete suggestion"
+                }
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (confirmDeleteSuggestion === root.id) {
+                    setRemovingSuggestion(true);
+                    void deleteAiSuggestion({
+                      evaluation,
+                      commentId: root.id,
+                      isResolved,
+                    }).finally(() => {
+                      setRemovingSuggestion(false);
+                      setConfirmDeleteSuggestion(null);
+                    });
+                  } else {
+                    setConfirmDeleteSuggestion(root.id);
+                  }
+                }}
+                onBlur={() => setConfirmDeleteSuggestion(null)}
+              >
+                {removingSuggestion ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <Trash2 className="size-3.5" />
+                )}
+              </button>
+            )}
           </div>
         )}
       </div>

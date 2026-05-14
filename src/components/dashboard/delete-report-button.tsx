@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Trash2, Loader2 } from "lucide-react";
+import { Loader2, Trash2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -15,26 +15,29 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 
-type Props = {
+export function DeleteReportButton({
+  reportId,
+  deviationNo,
+}: {
   reportId: string;
-  reportTitle: string;
-};
-
-export function DeleteReportButton({ reportId, reportTitle }: Props) {
+  deviationNo: string;
+}) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
-  const router = useRouter();
 
-  const confirmDelete = () => {
+  const deleteReport = () => {
     startTransition(async () => {
-      const res = await fetch(`/api/reports/${reportId}`, { method: "DELETE" });
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      const res = await fetch(`/api/reports/${reportId}`, {
+        method: "DELETE",
+      });
       if (!res.ok) {
-        toast.error(body.error ?? "Could not delete report");
+        const body = await res.json().catch(() => ({}));
+        toast.error(body.error ?? "Failed to delete report");
         return;
       }
-      toast.success("Report deleted");
       setOpen(false);
+      toast.success("Report deleted");
       router.refresh();
     });
   };
@@ -46,50 +49,42 @@ export function DeleteReportButton({ reportId, reportTitle }: Props) {
           type="button"
           variant="ghost"
           size="icon"
-          className="shrink-0 text-[var(--muted-foreground)] hover:text-[var(--destructive)]"
-          aria-label={`Delete report ${reportTitle}`}
-          onClick={(e) => e.stopPropagation()}
+          className="size-8 text-[var(--muted-foreground)] hover:bg-red-50 hover:text-red-600"
+          aria-label={`Delete report ${deviationNo}`}
+          title="Delete report"
         >
           <Trash2 className="size-4" />
         </Button>
       </DialogTrigger>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent>
         <DialogHeader>
-          <DialogTitle>Delete this report?</DialogTitle>
-          <DialogDescription asChild>
-            <div className="space-y-2">
-              <p className="font-medium text-[var(--foreground)]">{reportTitle}</p>
-              <p>
-                This permanently removes the report, sections, comments, and
-                evaluations. This cannot be undone.
-              </p>
-            </div>
+          <DialogTitle>Delete report?</DialogTitle>
+          <DialogDescription>
+            This will permanently delete {deviationNo || "this report"} and all
+            of its sections, comments, and evaluations. This cannot be undone.
           </DialogDescription>
         </DialogHeader>
-        <DialogFooter className="gap-2 sm:gap-0">
+        <DialogFooter>
           <Button
             type="button"
             variant="outline"
-            disabled={pending}
             onClick={() => setOpen(false)}
+            disabled={pending}
           >
             Cancel
           </Button>
           <Button
             type="button"
             variant="destructive"
+            onClick={deleteReport}
             disabled={pending}
-            onClick={confirmDelete}
-            className="gap-2"
           >
             {pending ? (
-              <>
-                <Loader2 className="size-4 shrink-0 animate-spin" />
-                Deleting…
-              </>
+              <Loader2 className="size-4 animate-spin" />
             ) : (
-              "Delete report"
+              <Trash2 className="size-4" />
             )}
+            Delete
           </Button>
         </DialogFooter>
       </DialogContent>

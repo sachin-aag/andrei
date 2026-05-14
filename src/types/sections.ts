@@ -26,7 +26,7 @@ export type AnalyzeSection = {
     conclusion: string;
   };
   fiveWhy: {
-    whys: FiveWhyEntry[];
+    narrative: string;
     conclusion: string;
   };
   brainstorming: string;
@@ -99,7 +99,6 @@ export const EMPTY_CONTENT: SectionContentMap = {
   },
   measure: {
     narrative: emptyDoc(),
-    regulatoryNotification: "",
   },
   analyze: {
     sixM: {
@@ -112,13 +111,7 @@ export const EMPTY_CONTENT: SectionContentMap = {
       conclusion: "",
     },
     fiveWhy: {
-      whys: [
-        { question: "", answer: "" },
-        { question: "", answer: "" },
-        { question: "", answer: "" },
-        { question: "", answer: "" },
-        { question: "", answer: "" },
-      ],
+      narrative: "",
       conclusion: "",
     },
     brainstorming: "",

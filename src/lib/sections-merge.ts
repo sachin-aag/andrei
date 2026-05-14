@@ -1,4 +1,5 @@
 import type {
+  AnalyzeSection,
   ControlSection,
   DefineSection,
   ImproveSection,
@@ -7,7 +8,11 @@ import type {
 } from "@/types/sections";
 import { EMPTY_CONTENT } from "@/types/sections";
 import { stringFieldFromStoredValue } from "@/lib/section-content-normalize";
-import { normalizeRichField } from "@/lib/tiptap/rich-text";
+import {
+  appendParagraphsToDoc,
+  normalizeRichField,
+  richJsonToPlainText,
+} from "@/lib/tiptap/rich-text";
 import type { SectionType } from "@/db/schema";
 
 export function mergeDefineSection(content: unknown): DefineSection {
@@ -25,10 +30,22 @@ export function mergeMeasureSection(content: unknown): MeasureSection {
   const base = EMPTY_CONTENT.measure;
   if (!content || typeof content !== "object") return base;
   const o = content as Partial<MeasureSection>;
+  const { regulatoryNotification, ...rest } = o;
+  const narrative = normalizeRichField(o.narrative ?? base.narrative);
+  const notificationText =
+    typeof regulatoryNotification === "string" ? regulatoryNotification.trim() : "";
+  const mergedNarrative =
+    notificationText && !richJsonToPlainText(narrative).includes(notificationText)
+      ? appendParagraphsToDoc(
+          narrative,
+          `Regulatory Notification: ${notificationText}`
+        )
+      : narrative;
+
   return {
     ...base,
-    ...o,
-    narrative: normalizeRichField(o.narrative ?? base.narrative),
+    ...rest,
+    narrative: mergedNarrative,
   };
 }
 
@@ -54,6 +71,27 @@ export function mergeControlSection(content: unknown): ControlSection {
     ...(o as Partial<ControlSection>),
     narrative: normalizeRichField(o.narrative ?? base.narrative),
     preventiveActions: coercePreventiveActions(o.preventiveActions, base.preventiveActions),
+  };
+}
+
+export function mergeAnalyzeSection(content: unknown): AnalyzeSection {
+  const base = EMPTY_CONTENT.analyze;
+  if (!content || typeof content !== "object") return base;
+  const o = content as Partial<AnalyzeSection> & {
+    fiveWhy?: Partial<AnalyzeSection["fiveWhy"]> & {
+      whys?: Array<{ question?: unknown; answer?: unknown }>;
+    };
+  };
+  const merged = deepMerge(base, o as Partial<AnalyzeSection>);
+  return {
+    ...merged,
+    fiveWhy: {
+      ...merged.fiveWhy,
+      narrative:
+        typeof o.fiveWhy?.narrative === "string"
+          ? o.fiveWhy.narrative
+          : coerceFiveWhyRows(o.fiveWhy?.whys, base.fiveWhy.narrative),
+    },
   };
 }
 
@@ -84,6 +122,27 @@ function coercePreventiveActions(value: unknown, fallback: string): string {
   return fallback;
 }
 
+/* Legacy rows stored 5-Why as question/answer pairs; flatten to the new narrative field. */
+function coerceFiveWhyRows(
+  value: Array<{ question?: unknown; answer?: unknown }> | undefined,
+  fallback: string
+): string {
+  if (!Array.isArray(value)) return fallback;
+  return value
+    .map((entry, idx) => {
+      const question = typeof entry.question === "string" ? entry.question.trim() : "";
+      const answer = typeof entry.answer === "string" ? entry.answer.trim() : "";
+      return [
+        question ? `${idx + 1}. Why: ${question}` : "",
+        answer ? `Ans. ${answer}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
+    })
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 export function mergeSection<K extends keyof SectionContentMap & SectionType>(
   section: K,
   content: unknown
@@ -93,6 +152,8 @@ export function mergeSection<K extends keyof SectionContentMap & SectionType>(
       return mergeDefineSection(content) as SectionContentMap[K];
     case "measure":
       return mergeMeasureSection(content) as SectionContentMap[K];
+    case "analyze":
+      return mergeAnalyzeSection(content) as SectionContentMap[K];
     case "improve":
       return mergeImproveSection(content) as SectionContentMap[K];
     case "control":

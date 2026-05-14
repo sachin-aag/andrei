@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { mergeControlSection, mergeSection } from "@/lib/sections-merge";
+import {
+  mergeAnalyzeSection,
+  mergeControlSection,
+  mergeMeasureSection,
+  mergeSection,
+} from "@/lib/sections-merge";
+import { legacyStringToDoc, richJsonToPlainText } from "@/lib/tiptap/rich-text";
 
 describe("sections merge", () => {
   it("coerces legacy preventive action arrays into readable text", () => {
@@ -28,6 +34,34 @@ describe("sections merge", () => {
 
     expect(analyze.sixM.man).toBe("Training gap");
     expect(analyze.sixM.machine).toBe("");
-    expect(analyze.fiveWhy.whys).toHaveLength(5);
+    expect(analyze.fiveWhy.narrative).toBe("");
+  });
+
+  it("flattens legacy 5-Why rows into a narrative", () => {
+    const analyze = mergeAnalyzeSection({
+      fiveWhy: {
+        whys: [
+          { question: "Why did logging stop?", answer: "Communication failed." },
+          { question: "Why did communication fail?", answer: "The HMI time drifted." },
+        ],
+        conclusion: "Weak battery caused the drift.",
+      },
+    });
+
+    expect(analyze.fiveWhy.narrative).toContain("1. Why: Why did logging stop?");
+    expect(analyze.fiveWhy.narrative).toContain("Ans. Communication failed.");
+    expect(analyze.fiveWhy.conclusion).toBe("Weak battery caused the drift.");
+  });
+
+  it("folds legacy measure regulatory notification into the narrative", () => {
+    const measure = mergeMeasureSection({
+      narrative: legacyStringToDoc("Reviewed temperature excursion data."),
+      regulatoryNotification: "Not Applicable",
+    });
+
+    const measureText = richJsonToPlainText(measure.narrative);
+    expect(measureText).toContain("Reviewed temperature excursion data.");
+    expect(measureText).toContain("Regulatory Notification: Not Applicable");
+    expect(measure.regulatoryNotification).toBeUndefined();
   });
 });

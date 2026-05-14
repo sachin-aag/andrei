@@ -4,7 +4,6 @@ import { useId, useState } from "react";
 import {
   LogOut,
   FileText,
-  Home,
   BookOpen,
   PanelLeftClose,
   PanelLeftOpen,
@@ -33,7 +32,6 @@ export function AppShell({
   };
 
   const navItems = [
-    { href: "/", label: "Dashboard", icon: Home },
     { href: "/", label: "Reports", icon: FileText },
   ];
 

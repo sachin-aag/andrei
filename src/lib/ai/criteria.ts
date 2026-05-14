@@ -23,11 +23,11 @@ export const DEFINE_CRITERIA: CriterionDefinition[] = [
     label: "Explain what is different than expected",
     description:
       "Does the narrative explicitly state both the expected standard/acceptance criteria " +
-      "AND the observed deviation from it, with reference to the governing SOP (including SOP " +
-      "number, revision number, title, and relevant section number)? " +
+      "AND the observed deviation from it, with reference to the governing SOP No. " +
+      "(revision number is not required) and relevant section number? " +
       "For example, stating 'not within acceptance criteria as per SOP/DP/QC/045' is " +
-      "insufficient — the narrative must cite the SOP revision, title, and section " +
-      "(e.g., 'As per SOP No.: SOP/DP/QC/045, Revision No: R02, Title: ..., " +
+      "insufficient — the narrative must cite the SOP No. and section " +
+      "(e.g., 'As per SOP No.: SOP/DP/QC/045, " +
       "Section No.: 7.4.3.26, the results must not be less than 85% & must not be more " +
       "than 115%').",
   },
@@ -57,11 +57,11 @@ export const DEFINE_CRITERIA: CriterionDefinition[] = [
     label: "Personnel involved in the deviation",
     description:
       "Are the personnel who performed the activity, observed the deviation, or are " +
-      "otherwise involved identified by their Employee ID (Emp. ID)? " +
+      "otherwise involved identified by their Employee ID (Emp. ID) only? " +
       "Generic references such as 'the analyst', 'the operator', or 'the auditor' without " +
-      "an Emp. ID are insufficient. " +
-      "Each person mentioned must include their Emp. ID (e.g., 'analyst (Emp. ID. 615)', " +
-      "'operator (Emp. ID: 1089)', 'auditor (Emp. ID- 562 and Emp. ID - 252)').",
+      "an Emp. ID are insufficient, and names, roles, titles, or job functions are not required. " +
+      "Each person mentioned must include their Emp. ID (e.g., 'Emp. ID: 615', " +
+      "'Emp. ID: 1089', 'Emp. ID: 562 and Emp. ID: 252').",
   },
   {
     key: "define.initial_scope",
@@ -80,11 +80,11 @@ export const MEASURE_CRITERIA: CriterionDefinition[] = [
   {
     key: "measure.facts_data",
     label:
-      "Relevant facts and data reviewed (environment, process/product history, " +
-      "personnel info, control limits)",
+      "Relevant facts and data reviewed (environment, process/product history, control limits)",
     description:
       "Does the summary provide relevant facts and data reviewed including environment, " +
-      "process/product history, personnel info (title and job title), controls limits, etc?",
+      "process/product history, control limits, etc? If personnel are referenced, Emp. ID " +
+      "is sufficient; names, titles, and job functions are not required.",
   },
   {
     key: "measure.analysis_summary",
@@ -118,15 +118,27 @@ export const ANALYZE_CRITERIA: CriterionDefinition[] = [
     key: "analyze.sixm_completeness",
     label: "6M method completeness",
     description:
-      "Are all 6M fields filled (Man, Machine, Measurement, Material, Method, Milieu) " +
-      "with an answer (even if 'Not Applicable') and a conclusion provided?",
+      "6M and 5-Why are alternative root-cause tools; either one, meaningfully " +
+      "completed, satisfies the Analyze section. Mark this criterion 'met' when " +
+      "6M is the active tool and all six fields (Man, Machine, Measurement, " +
+      "Material, Method, Milieu) are filled with an answer (even if 'Not " +
+      "Applicable') and a conclusion is provided. Also mark it 'met' when the " +
+      "investigation explicitly relies on 5-Why and 6M is documented as 'Not " +
+      "Applicable' with a brief rationale.",
   },
   {
     key: "analyze.fivewhy_completeness",
     label: "5-Why approach completeness",
     description:
-      "Are the 5-Why questions and answers filled (with Not Applicable where appropriate) " +
-      "and a conclusion provided?",
+      "6M and 5-Why are alternative root-cause tools; either one, meaningfully " +
+      "completed, satisfies the Analyze section. '5-Why' names the methodology, " +
+      "not a fixed number of questions: fewer or more than five questions are " +
+      "acceptable when the chain logically reaches the root cause. Mark this " +
+      "criterion 'met' when 5-Why is the active tool, each question is derived " +
+      "from facts in Define/Measure (not generic), each answer introduces new " +
+      "evidence, and a clear conclusion is provided. Also mark it 'met' when the " +
+      "investigation explicitly relies on 6M and 5-Why is documented as 'Not " +
+      "Applicable' with a brief rationale.",
   },
   {
     key: "analyze.investigation_outcome",

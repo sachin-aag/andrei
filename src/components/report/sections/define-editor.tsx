@@ -2,8 +2,9 @@
 
 import { useReportSection } from "@/providers/report-provider";
 import { useSectionSave } from "@/hooks/use-section-save";
-import { SectionShell } from "./section-shell";
+import { CriteriaChecklist, SectionShell } from "./section-shell";
 import { TiptapSectionField } from "@/components/report/tiptap-section-field";
+import { SECTION_GUIDANCE } from "@/lib/report-section-guidance";
 
 export function DefineEditor() {
   const { update } = useReportSection("define");
@@ -17,11 +18,13 @@ export function DefineEditor() {
       lastSavedAt={lastSavedAt}
       section="define"
     >
+      <CriteriaChecklist items={SECTION_GUIDANCE.define ?? []} ordered />
+
       <TiptapSectionField
         section="define"
         contentPath="narrative"
         label="Details of Investigation (Narrative)"
-        placeholder="On dated DD/MM/YYYY at approximately HH:MM hrs, while performing routine operation at [location], it was observed that… Include: location of deviation, date/time of occurrence & detection, personnel involved, and initial scope."
+        placeholder="On dated DD/MM/YYYY at approximately HH:MM hrs, while performing routine operation at [location], it was observed that… Include: location of deviation, date/time of occurrence & detection, personnel involved by Emp. ID only, and initial scope."
         className="grid gap-2"
         value={value.narrative}
         onChange={(doc) => update((p) => ({ ...p, narrative: doc }))}

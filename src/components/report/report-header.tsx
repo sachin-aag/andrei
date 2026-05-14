@@ -52,8 +52,8 @@ function ReportHeaderForm({
         <div className="flex items-start gap-4 flex-wrap">
           <div className="grid gap-2 min-w-[180px]">
             <Label>
-              <CalendarDays className="inline size-3 mr-1" />
               Date
+              <CalendarDays className="inline size-3 ml-1" />
             </Label>
             <Input
               type="date"

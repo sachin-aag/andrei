@@ -75,55 +75,59 @@ export default async function DashboardPage() {
               {myReports.map((report) => {
                 const author = getUser(report.authorId);
                 const manager = getUser(report.assignedManagerId ?? undefined);
-                const title = report.deviationNo || "Untitled deviation";
+                const canDelete = report.authorId === user.id;
                 return (
                   <Card
                     key={report.id}
                     className="p-5 hover:border-[var(--brand-500)] transition-colors"
                   >
-                    <div className="flex items-start justify-between gap-3">
+                    <div className="group flex items-start justify-between gap-4">
                       <Link
                         href={`/reports/${report.id}`}
                         transitionTypes={["nav-forward"]}
-                        className="group flex flex-1 min-w-0 items-start justify-between gap-4 cursor-pointer"
+                        className="min-w-0 flex-1"
                       >
-                        <div className="flex items-start gap-3 min-w-0">
-                          <div className="size-10 rounded-lg bg-[var(--brand-700)] flex items-center justify-center shrink-0">
-                            <FileText className="size-5 text-[var(--brand-200)]" />
-                          </div>
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2 mb-1">
-                              <h3 className="font-semibold truncate">{title}</h3>
-                              <StatusBadge
-                                status={report.status as ReportStatus}
-                              />
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex items-start gap-3 min-w-0">
+                            <div className="size-10 rounded-lg bg-[var(--brand-700)] flex items-center justify-center shrink-0">
+                              <FileText className="size-5 text-[var(--brand-200)]" />
                             </div>
-                            <div className="text-xs text-[var(--muted-foreground)] flex flex-wrap items-center gap-3">
-                              <span>Date: {formatDate(report.date)}</span>
-                              <span>·</span>
-                              <span>Author: {author?.name ?? "—"}</span>
-                              {manager && (
-                                <>
-                                  <span>·</span>
-                                  <span>Manager: {manager.name}</span>
-                                </>
-                              )}
-                              <span>·</span>
-                              <span>
-                                Updated: {formatDate(report.updatedAt)}
-                              </span>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <h3 className="font-semibold truncate">
+                                  {report.deviationNo || "Untitled deviation"}
+                                </h3>
+                                <StatusBadge
+                                  status={report.status as ReportStatus}
+                                />
+                              </div>
+                              <div className="text-xs text-[var(--muted-foreground)] flex flex-wrap items-center gap-3">
+                                <span>Date: {formatDate(report.date)}</span>
+                                <span>·</span>
+                                <span>Author: {author?.name ?? "—"}</span>
+                                {manager && (
+                                  <>
+                                    <span>·</span>
+                                    <span>Manager: {manager.name}</span>
+                                  </>
+                                )}
+                                <span>·</span>
+                                <span>
+                                  Updated: {formatDate(report.updatedAt)}
+                                </span>
+                              </div>
                             </div>
                           </div>
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0 text-[var(--muted-foreground)] group-hover:text-[var(--brand-300)] transition-colors">
-                          <span className="text-xs">Open</span>
-                          <ArrowRight className="size-4" />
+                          <div className="flex items-center gap-2 text-[var(--muted-foreground)] group-hover:text-[var(--brand-300)] transition-colors">
+                            <span className="text-xs">Open</span>
+                            <ArrowRight className="size-4" />
+                          </div>
                         </div>
                       </Link>
-                      {user.role === "engineer" && (
+                      {canDelete && (
                         <DeleteReportButton
                           reportId={report.id}
-                          reportTitle={title}
+                          deviationNo={report.deviationNo || "Untitled deviation"}
                         />
                       )}
                     </div>
