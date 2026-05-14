@@ -50,3 +50,6 @@ Thumbs.db
 
 # Optional local certs / keys
 *.pem
+
+# Optional bulk sample investigations (not required for tests; CI uses docs/Investigation  DEV-PK-25-002.docx)
+docs/sample_files/
