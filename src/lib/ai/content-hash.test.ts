@@ -13,4 +13,19 @@ describe("hashContent", () => {
       hashContent({ values: ["b", "a"] }),
     );
   });
+
+  it("changes when salt changes even if content is identical", () => {
+    const content = { section: "define", values: ["a", "b"] };
+    expect(hashContent(content, "v1")).not.toBe(hashContent(content, "v2"));
+  });
+
+  it("is stable for the same content + salt", () => {
+    const content = { section: "define", values: ["a", "b"] };
+    expect(hashContent(content, "v1")).toBe(hashContent(content, "v1"));
+  });
+
+  it("is unaffected when salt is omitted versus supplied as undefined", () => {
+    const content = { section: "define", values: ["a"] };
+    expect(hashContent(content)).toBe(hashContent(content, undefined));
+  });
 });

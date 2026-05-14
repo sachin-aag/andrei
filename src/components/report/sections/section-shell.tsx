@@ -68,15 +68,15 @@ export function CriteriaChecklist({
 }) {
   const List = ordered ? "ol" : "ul";
   return (
-    <div className="rounded-md border border-[var(--border)] bg-[var(--secondary)] p-4 text-xs text-[var(--muted-foreground)]">
-      <div className="font-semibold text-[var(--foreground)] mb-2 text-xs uppercase tracking-wide">
+    <details className="rounded-md border border-[var(--border)] bg-[var(--secondary)] p-4 text-xs text-[var(--muted-foreground)]">
+      <summary className="cursor-pointer font-semibold text-[var(--foreground)] text-xs uppercase tracking-wide">
         Checks to consider
-      </div>
-      <List className={`space-y-1 ${ordered ? "list-decimal" : "list-disc"} list-outside pl-4`}>
+      </summary>
+      <List className={`mt-2 space-y-1 ${ordered ? "list-decimal" : "list-disc"} list-outside pl-4`}>
         {items.map((item, idx) => (
           <li key={idx}>{item}</li>
         ))}
       </List>
-    </div>
+    </details>
   );
 }

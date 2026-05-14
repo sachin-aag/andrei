@@ -118,15 +118,27 @@ export const ANALYZE_CRITERIA: CriterionDefinition[] = [
     key: "analyze.sixm_completeness",
     label: "6M method completeness",
     description:
-      "Are all 6M fields filled (Man, Machine, Measurement, Material, Method, Milieu) " +
-      "with an answer (even if 'Not Applicable') and a conclusion provided?",
+      "6M and 5-Why are alternative root-cause tools; either one, meaningfully " +
+      "completed, satisfies the Analyze section. Mark this criterion 'met' when " +
+      "6M is the active tool and all six fields (Man, Machine, Measurement, " +
+      "Material, Method, Milieu) are filled with an answer (even if 'Not " +
+      "Applicable') and a conclusion is provided. Also mark it 'met' when the " +
+      "investigation explicitly relies on 5-Why and 6M is documented as 'Not " +
+      "Applicable' with a brief rationale.",
   },
   {
     key: "analyze.fivewhy_completeness",
     label: "5-Why approach completeness",
     description:
-      "Are the 5-Why questions and answers filled (with Not Applicable where appropriate) " +
-      "and a conclusion provided?",
+      "6M and 5-Why are alternative root-cause tools; either one, meaningfully " +
+      "completed, satisfies the Analyze section. '5-Why' names the methodology, " +
+      "not a fixed number of questions: fewer or more than five questions are " +
+      "acceptable when the chain logically reaches the root cause. Mark this " +
+      "criterion 'met' when 5-Why is the active tool, each question is derived " +
+      "from facts in Define/Measure (not generic), each answer introduces new " +
+      "evidence, and a clear conclusion is provided. Also mark it 'met' when the " +
+      "investigation explicitly relies on 6M and 5-Why is documented as 'Not " +
+      "Applicable' with a brief rationale.",
   },
   {
     key: "analyze.investigation_outcome",

@@ -5,13 +5,26 @@
  * has changed since the last evaluation. Cheap, dependency-free, and stable
  * across client and server — we don't need cryptographic strength, only
  * collision resistance for "did this change?" comparisons.
+ *
+ * Pass `salt` (for example a prompt version string) to mix it into the hash
+ * so cached evaluations are invalidated when the salt changes even if the
+ * content did not. Client-side callers that only need content-change
+ * detection can omit `salt`.
  */
-export function hashContent(value: unknown): string {
+export function hashContent(value: unknown, salt?: string): string {
   const str = stableStringify(value);
   let h = 0x811c9dc5;
   for (let i = 0; i < str.length; i++) {
     h ^= str.charCodeAt(i);
     h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  if (salt) {
+    h ^= 0x1f;
+    h = Math.imul(h, 0x01000193) >>> 0;
+    for (let i = 0; i < salt.length; i++) {
+      h ^= salt.charCodeAt(i);
+      h = Math.imul(h, 0x01000193) >>> 0;
+    }
   }
   return h.toString(16).padStart(8, "0");
 }
