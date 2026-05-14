@@ -108,6 +108,8 @@ type ReportContextValue = {
   pendingEvalSections: SectionType[];
   /** Sections whose evaluation is currently in flight. */
   runningEvalSections: SectionType[];
+  pendingSuggestionId: string | null;
+  setPendingSuggestionId: React.Dispatch<React.SetStateAction<string | null>>;
   /** Unfilled `<to be filled>` placeholders across the live document. */
   pendingPlaceholders: Placeholder[];
   setEvaluations: React.Dispatch<React.SetStateAction<EvaluationRecord[]>>;
@@ -180,6 +182,8 @@ type ReportEvaluationContextValue = Pick<
   | "isEvaluating"
   | "pendingEvalSections"
   | "runningEvalSections"
+  | "pendingSuggestionId"
+  | "setPendingSuggestionId"
   | "setEvaluations"
 >;
 
@@ -420,6 +424,9 @@ export function ReportProvider({
   );
   const [runningEvalSections, setRunningEvalSections] = useState<SectionType[]>(
     []
+  );
+  const [pendingSuggestionId, setPendingSuggestionId] = useState<string | null>(
+    null
   );
 
   // Mirror of `sections` for callbacks that must read latest draft without widening deps.
@@ -887,6 +894,8 @@ export function ReportProvider({
       isEvaluating,
       pendingEvalSections,
       runningEvalSections,
+      pendingSuggestionId,
+      setPendingSuggestionId,
       setEvaluations,
     }),
     [
@@ -897,6 +906,7 @@ export function ReportProvider({
       isEvaluating,
       pendingEvalSections,
       runningEvalSections,
+      pendingSuggestionId,
     ]
   );
 

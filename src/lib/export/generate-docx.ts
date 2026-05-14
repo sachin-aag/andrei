@@ -116,11 +116,7 @@ function buildTemplateData(
     sixMConclusion: na(a.sixM.conclusion),
 
     // Analyze - 5 Why
-    fiveWhys: a.fiveWhy.whys.map((w, idx) => ({
-      index: idx + 1,
-      question: na(w.question),
-      answer: na(w.answer),
-    })),
+    fiveWhyNarrative: na(a.fiveWhy.narrative),
     fiveWhyConclusion: na(a.fiveWhy.conclusion),
 
     // Analyze - other

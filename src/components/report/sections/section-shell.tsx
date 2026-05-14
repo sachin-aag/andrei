@@ -3,7 +3,10 @@
 import { ReactNode } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { SaveStatus } from "../save-status";
-import { SectionStatusPill } from "../section-status-pill";
+import {
+  SectionRunEvaluationButton,
+  SectionStatusPill,
+} from "../section-status-pill";
 import type { SaveStatus as SaveStatusType } from "@/hooks/use-auto-save";
 import type { SectionType } from "@/db/schema";
 
@@ -42,8 +45,11 @@ export function SectionShell({
         </div>
       </div>
       {section && (
-        <div className="max-w-md">
-          <SectionStatusPill section={section} />
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="max-w-md flex-1">
+            <SectionStatusPill section={section} />
+          </div>
+          <SectionRunEvaluationButton section={section} />
         </div>
       )}
       <Card>
@@ -55,19 +61,22 @@ export function SectionShell({
 
 export function CriteriaChecklist({
   items,
+  ordered = false,
 }: {
   items: string[];
+  ordered?: boolean;
 }) {
+  const List = ordered ? "ol" : "ul";
   return (
     <div className="rounded-md border border-[var(--border)] bg-[var(--secondary)] p-4 text-xs text-[var(--muted-foreground)]">
       <div className="font-semibold text-[var(--foreground)] mb-2 text-xs uppercase tracking-wide">
         Checks to consider
       </div>
-      <ul className="space-y-1 list-disc list-inside">
+      <List className={`space-y-1 ${ordered ? "list-decimal" : "list-disc"} list-outside pl-4`}>
         {items.map((item, idx) => (
           <li key={idx}>{item}</li>
         ))}
-      </ul>
+      </List>
     </div>
   );
 }

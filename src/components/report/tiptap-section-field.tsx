@@ -7,12 +7,14 @@ import { BubbleMenu } from "@tiptap/react/menus";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import { toast } from "sonner";
-import { Loader2, MessageSquarePlus, Check, X } from "lucide-react";
+import { Loader2, MessageSquarePlus } from "lucide-react";
 import {
   useReportComments,
   useReportData,
   useReportEditors,
+  useReportEvaluations,
 } from "@/providers/report-provider";
+import { useApplySuggestion } from "@/hooks/use-apply-suggestion";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -26,9 +28,12 @@ import {
   SuggestionDelete,
   TrackChangesExtension,
   TrackChangesKeyboardExtension,
-  suggestionDeleteMarkName,
-  suggestionInsertMarkName,
 } from "@/lib/tiptap/suggestion-marks";
+import {
+  createSuggestionActionWidgetsExtension,
+  suggestionActionWidgetsRefreshMeta,
+  type SuggestionActionWidgetState,
+} from "@/lib/tiptap/suggestion-action-widgets";
 import type { SectionType } from "@/db/schema";
 
 export type TiptapSectionFieldProps = {
@@ -51,7 +56,6 @@ export function TiptapSectionField({
   className,
   value,
   onChange,
-  onFlushSave,
 }: TiptapSectionFieldProps) {
   const {
     report,
@@ -74,6 +78,8 @@ export function TiptapSectionField({
     acknowledgeCommentFocus,
   } = useReportComments();
   const { registerEditor } = useReportEditors();
+  const { evaluations } = useReportEvaluations();
+  const { applySuggestion, ignoreSuggestion, pendingId } = useApplySuggestion();
 
   const rangesRef = useRef<CommentHighlightRange[]>([]);
   const handlersRef = useRef<CommentHighlightHandlers>({
@@ -85,12 +91,25 @@ export function TiptapSectionField({
 
   const getRanges = useCallback(() => rangesRef.current, []);
   const getHandlers = useCallback(() => handlersRef.current, []);
+  const suggestionActionsRef = useRef<SuggestionActionWidgetState>({
+    enabled: false,
+    actionableEvaluationIds: new Set<string>(),
+    pendingId: null as string | null,
+    onAccept: () => {},
+    onIgnore: () => {},
+  });
+  const getSuggestionActions = useCallback(() => suggestionActionsRef.current, []);
 
   const highlightExtension = useMemo(
     () =>
       // eslint-disable-next-line react-hooks/refs -- ProseMirror calls getters at transaction time, not during render
       createCommentHighlightExtension(getRanges, getHandlers),
     [getRanges, getHandlers]
+  );
+  const suggestionActionExtension = useMemo(
+    // eslint-disable-next-line react-hooks/refs -- ProseMirror calls the getter from plugin lifecycle/event code, not during render
+    () => createSuggestionActionWidgetsExtension(getSuggestionActions),
+    [getSuggestionActions]
   );
 
   const filteredRanges = useMemo(() => {
@@ -134,12 +153,24 @@ export function TiptapSectionField({
     (report.status === "submitted" || report.status === "in_review" || report.status === "draft") &&
     (manager ? workspaceMode === "review" : currentUserId === report.authorId);
   const canResolveSuggestions = !readOnly && !trackChangesMode;
+  const actionableEvaluationIds = useMemo(() => {
+    return new Set(
+      evaluations
+        .filter(
+          (evaluation) =>
+            evaluation.section === section &&
+            !evaluation.bypassed &&
+            !evaluation.fixApplied &&
+            !!evaluation.suggestedFix?.replacementText?.trim()
+        )
+        .map((evaluation) => evaluation.id)
+    );
+  }, [evaluations, section]);
 
   const [commentComposing, setCommentComposing] = useState(false);
   const [commentDraft, setCommentDraft] = useState("");
   const [pendingSel, setPendingSel] = useState<{ from: number; to: number } | null>(null);
   const [posting, setPosting] = useState(false);
-  const [, bump] = useState(0);
 
   const editor = useEditor(
     {
@@ -155,6 +186,7 @@ export function TiptapSectionField({
         TrackChangesExtension,
         highlightExtension,
         PlaceholderHighlightExtension,
+        suggestionActionExtension,
       ],
       content: value,
       editable,
@@ -163,10 +195,41 @@ export function TiptapSectionField({
         // Do not use flushSync here: onUpdate can run during useEffect (e.g. setContent sync), and React 19 forbids flushSync inside lifecycle methods.
         onChangeRef.current(json);
       },
-      onSelectionUpdate: () => bump((n) => n + 1),
     },
-    [highlightExtension, placeholder]
+    [highlightExtension, placeholder, suggestionActionExtension]
   );
+
+  useLayoutEffect(() => {
+    suggestionActionsRef.current = {
+      enabled: canResolveSuggestions,
+      actionableEvaluationIds,
+      pendingId,
+      onAccept: (evaluationId: string) => {
+        const evaluation = evaluations.find((item) => item.id === evaluationId);
+        if (evaluation) void applySuggestion(evaluation);
+      },
+      onIgnore: (evaluationId: string) => {
+        const evaluation = evaluations.find((item) => item.id === evaluationId);
+        if (evaluation) void ignoreSuggestion(evaluation);
+      },
+    };
+  }, [
+    actionableEvaluationIds,
+    applySuggestion,
+    canResolveSuggestions,
+    evaluations,
+    ignoreSuggestion,
+    pendingId,
+  ]);
+
+  useEffect(() => {
+    if (!editor) return;
+    editor.view.dispatch(
+      editor.state.tr
+        .setMeta(suggestionActionWidgetsRefreshMeta, true)
+        .setMeta("addToHistory", false)
+    );
+  }, [editor, actionableEvaluationIds, canResolveSuggestions, pendingId]);
 
   useLayoutEffect(() => {
     handlersRef.current = {
@@ -338,71 +401,10 @@ export function TiptapSectionField({
     }
   };
 
-  const acceptInsertion = useCallback(() => {
-    if (!editor) return;
-    editor.chain().focus().extendMarkRange(suggestionInsertMarkName).unsetMark(suggestionInsertMarkName).run();
-    queueMicrotask(() => {
-      void onFlushSave?.();
-    });
-  }, [editor, onFlushSave]);
-
-  const rejectInsertion = useCallback(() => {
-    if (!editor) return;
-    editor.chain().focus().deleteSelection().run();
-    queueMicrotask(() => {
-      void onFlushSave?.();
-    });
-  }, [editor, onFlushSave]);
-
-  const acceptDeletion = useCallback(() => {
-    if (!editor) return;
-    editor.chain().focus().extendMarkRange(suggestionDeleteMarkName).deleteSelection().run();
-    queueMicrotask(() => {
-      void onFlushSave?.();
-    });
-  }, [editor, onFlushSave]);
-
-  const rejectDeletion = useCallback(() => {
-    if (!editor) return;
-    editor.chain().focus().extendMarkRange(suggestionDeleteMarkName).unsetMark(suggestionDeleteMarkName).run();
-    queueMicrotask(() => {
-      void onFlushSave?.();
-    });
-  }, [editor, onFlushSave]);
-
-  const selectionHasInsert = editor?.isActive(suggestionInsertMarkName);
-  const selectionHasDelete = editor?.isActive(suggestionDeleteMarkName);
-
   return (
     <div className={className}>
-      <div className="flex flex-wrap items-center justify-between gap-2 mb-1.5">
+      <div className="mb-1.5">
         <Label>{label}</Label>
-        <div className="flex flex-wrap gap-1 items-center">
-          {canResolveSuggestions && selectionHasInsert && (
-            <>
-              <Button type="button" variant="outline" size="sm" onClick={acceptInsertion}>
-                <Check className="size-3" />
-                Accept insert
-              </Button>
-              <Button type="button" variant="destructive" size="sm" onClick={rejectInsertion}>
-                <X className="size-3" />
-                Reject insert
-              </Button>
-            </>
-          )}
-          {canResolveSuggestions && selectionHasDelete && (
-            <>
-              <Button type="button" variant="outline" size="sm" onClick={acceptDeletion}>
-                <Check className="size-3" />
-                Accept delete
-              </Button>
-              <Button type="button" variant="secondary" size="sm" onClick={rejectDeletion}>
-                <X className="size-3" />
-                Reject delete
-              </Button>
-            </>
-          )}
-        </div>
       </div>
 
       {editor && (

@@ -219,9 +219,7 @@ export function CriteriaSheet({
                                 <div
                                   className={cn(
                                     "leading-snug",
-                                    row.bypassed &&
-                                      "line-through text-[var(--muted-foreground)]",
-                                    !row.bypassed && STATUS_TEXT_COLOR[eff]
+                                    STATUS_TEXT_COLOR[eff]
                                   )}
                                 >
                                   {row.criterionLabel}

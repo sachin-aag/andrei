@@ -49,8 +49,6 @@ function ExpandableReasoning({ text }: { text: string }) {
 export function SectionStatusPill({ section }: { section: SectionType }) {
   const {
     evaluations,
-    runEvaluation,
-    isEvaluating,
     pendingEvalSections,
     runningEvalSections,
   } = useReportEvaluations();
@@ -71,36 +69,39 @@ export function SectionStatusPill({ section }: { section: SectionType }) {
 
   return (
     <div className="rounded-md border border-[var(--border)] bg-[var(--card)] overflow-hidden">
-      <button
-        type="button"
-        className="w-full flex items-center gap-2 px-3 py-1.5 text-left hover:bg-[var(--secondary)] cursor-pointer"
-        onClick={() => setOpen((v) => !v)}
-      >
-        <span className={cn("size-2 rounded-full shrink-0", STATUS_COLOR[status])} />
-        <span className="text-xs font-medium text-[var(--foreground)] truncate">
-          {SECTION_LABELS[section] ?? section} · {met}/{total} met
-        </span>
-        {autoStatus ? (
-          <span className="ml-1 inline-flex items-center gap-1 text-[10px] text-[var(--muted-foreground)] truncate">
-            {autoStatus.spin ? (
-              <Loader2 className="size-3 animate-spin" />
-            ) : (
-              <span className="size-1.5 rounded-full bg-amber-400 animate-pulse" />
-            )}
-            <span className="hidden sm:inline">{autoStatus.label}</span>
+      <div className="flex items-center gap-2 px-3 py-1.5 hover:bg-[var(--secondary)]">
+        <button
+          type="button"
+          className="min-w-0 flex-1 flex items-center gap-2 text-left cursor-pointer"
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+        >
+          <span className={cn("size-2 rounded-full shrink-0", STATUS_COLOR[status])} />
+          <span className="text-xs font-medium text-[var(--foreground)] truncate">
+            {SECTION_LABELS[section] ?? section} · {met}/{total} met
           </span>
-        ) : (
-          <span className="text-[10px] text-[var(--muted-foreground)] hidden sm:inline truncate">
-            {STATUS_LABEL[status]}
-          </span>
-        )}
-        <ChevronDown
-          className={cn(
-            "ml-auto size-3.5 text-[var(--muted-foreground)] transition-transform shrink-0",
-            open && "rotate-180"
+          {autoStatus ? (
+            <span className="ml-1 inline-flex items-center gap-1 text-[10px] text-[var(--muted-foreground)] truncate">
+              {autoStatus.spin ? (
+                <Loader2 className="size-3 animate-spin" />
+              ) : (
+                <span className="size-1.5 rounded-full bg-amber-400 animate-pulse" />
+              )}
+              <span className="hidden sm:inline">{autoStatus.label}</span>
+            </span>
+          ) : (
+            <span className="text-[10px] text-[var(--muted-foreground)] hidden sm:inline truncate">
+              {STATUS_LABEL[status]}
+            </span>
           )}
-        />
-      </button>
+          <ChevronDown
+            className={cn(
+              "ml-auto size-3.5 text-[var(--muted-foreground)] transition-transform shrink-0",
+              open && "rotate-180"
+            )}
+          />
+        </button>
+      </div>
 
       {open && (
         <div className="border-t border-[var(--border)] bg-[var(--secondary)]/30 px-2 py-2 space-y-1">
@@ -121,8 +122,7 @@ export function SectionStatusPill({ section }: { section: SectionType }) {
                   <div
                     className={cn(
                       "leading-snug",
-                      row.bypassed && "line-through text-[var(--muted-foreground)]",
-                      !row.bypassed && STATUS_TEXT_COLOR[eff]
+                      STATUS_TEXT_COLOR[eff]
                     )}
                   >
                     {row.criterionLabel}
@@ -134,24 +134,35 @@ export function SectionStatusPill({ section }: { section: SectionType }) {
               </div>
             );
           })}
-          <div className="pt-1.5 px-1">
-            <Button
-              size="sm"
-              variant="outline"
-              className="w-full h-7 text-xs"
-              disabled={isEvaluating}
-              onClick={() => runEvaluation(section, { reason: "manual" })}
-            >
-              {isEvaluating ? (
-                <Loader2 className="size-3 animate-spin" />
-              ) : (
-                <Sparkles className="size-3" />
-              )}
-              Re-evaluate {SECTION_LABELS[section] ?? section}
-            </Button>
-          </div>
         </div>
       )}
     </div>
+  );
+}
+
+export function SectionRunEvaluationButton({ section }: { section: SectionType }) {
+  const {
+    runEvaluation,
+    isEvaluating,
+    runningEvalSections,
+  } = useReportEvaluations();
+  const isRunning = runningEvalSections.includes(section);
+
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant="outline"
+      className="h-8 shrink-0 text-xs bg-[var(--card)] shadow-sm"
+      disabled={isEvaluating}
+      onClick={() => runEvaluation(section, { reason: "manual" })}
+    >
+      {isRunning ? (
+        <Loader2 className="size-3 animate-spin" />
+      ) : (
+        <Sparkles className="size-3" />
+      )}
+      Run it by Andrei
+    </Button>
   );
 }

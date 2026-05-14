@@ -2,8 +2,9 @@
 
 import { useReportSection } from "@/providers/report-provider";
 import { useSectionSave } from "@/hooks/use-section-save";
-import { SectionShell } from "./section-shell";
+import { CriteriaChecklist, SectionShell } from "./section-shell";
 import { TiptapSectionField } from "@/components/report/tiptap-section-field";
+import { SECTION_GUIDANCE } from "@/lib/report-section-guidance";
 
 export function MeasureEditor() {
   const { update } = useReportSection("measure");
@@ -17,6 +18,8 @@ export function MeasureEditor() {
       lastSavedAt={lastSavedAt}
       section="measure"
     >
+      <CriteriaChecklist items={SECTION_GUIDANCE.measure ?? []} ordered />
+
       <TiptapSectionField
         section="measure"
         contentPath="narrative"
@@ -24,9 +27,7 @@ export function MeasureEditor() {
         placeholder="The equipment is installed in … SOP No. … is in place for … Include regulatory notification details if applicable."
         className="grid gap-2"
         value={value.narrative}
-        onChange={(doc) =>
-          update((p) => ({ ...p, narrative: doc }))
-        }
+        onChange={(doc) => update((p) => ({ ...p, narrative: doc }))}
         onFlushSave={flushSave}
       />
     </SectionShell>

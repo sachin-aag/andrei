@@ -108,15 +108,16 @@ For "partially_met" or "not_met", produce a structured suggestedFix that the use
   * Do NOT use suggestion or instruction language: never write "should", "must", "needs to", "consider adding", "the narrative should", "add a statement that", "include details about", "mention the…", "it would be better to", or similar.
   * Do NOT include labels like "Suggested fix:", "Revised text:", quotes around the whole reply, or commentary. Do NOT mention the criterion you are addressing.
   * Write it self-contained: it must read sensibly when slotted in place of the anchor (or at the end of the section if the anchor is empty), without any surrounding edits.
-  * If you don't have the real-world fact (e.g. you don't know the actual Emp. ID, room number, or SOP revision), use a clearly bracketed placeholder containing the literal token "<to be filled>" — for example "[Emp. ID: <to be filled>]", "[SOP No.: <to be filled>]", "[Room ID: <to be filled>]". The exact "<to be filled>" token is required so the editor can highlight these as actionable todos for the author. Still write it as a complete sentence in report voice.
+  * If you don't have the real-world fact (e.g. you don't know the actual Emp. ID, room number, or SOP No.), use a clearly bracketed placeholder containing the literal token "<to be filled>" — for example "[Emp. ID: <to be filled>]", "[SOP No.: <to be filled>]", "[Room ID: <to be filled>]". The exact "<to be filled>" token is required so the editor can highlight these as actionable todos for the author. Still write it as a complete sentence in report voice.
 
 - "anchorText" MUST be a SHORT verbatim substring (one or two sentences max) copied EXACTLY from the SECTION CONTENT above — same characters, same punctuation, same casing — that the replacementText should overwrite. Choose the vague or incorrect sentence that needs to be rewritten. Do NOT paraphrase or rewrite the anchor; if you cannot find a suitable substring to copy, leave anchorText as "".
   * If anchorText is "" the replacementText will be appended as a new paragraph at the end of the section. Choose this only when there is no existing sentence to rewrite — otherwise prefer in-place replacement.
   * If anchorText is non-empty, it will be replaced by replacementText in place.
 
 Examples (for the "Personnel involved" criterion):
-  GOOD replacementText: "The deviation was observed by the analyst (Emp. ID: [to be filled]) during routine HPLC analysis."
+  GOOD replacementText: "The deviation was observed during routine HPLC analysis by Emp. ID: <to be filled>."
   BAD  replacementText: "The narrative should mention the Emp. ID of the analyst who observed the deviation."
+  BAD  replacementText: "The deviation was observed by the analyst (Emp. ID: <to be filled>) during routine HPLC analysis."
   GOOD anchorText (copied verbatim from the section): "The deviation was observed by the analyst during routine HPLC analysis."
   BAD  anchorText (paraphrased): "Mention of the analyst observing the deviation."`;
 

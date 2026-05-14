@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback } from "react";
 import { toast } from "sonner";
 import type { JSONContent } from "@tiptap/core";
 import {
@@ -35,6 +35,15 @@ export type ApplySuggestionState = {
   applySuggestion: (evaluation: EvaluationRecord) => Promise<void>;
   /** Ignore: revert the inline suggestion. Original text returns; new text is dropped. */
   ignoreSuggestion: (evaluation: EvaluationRecord) => Promise<void>;
+  /**
+   * Remove the AI gutter card permanently. Pending suggestions drop their inline
+   * marks, but the criterion itself remains visible/not bypassed.
+   */
+  deleteAiSuggestion: (args: {
+    evaluation: EvaluationRecord | null;
+    commentId: string;
+    isResolved: boolean;
+  }) => Promise<void>;
   pendingId: string | null;
 };
 
@@ -55,8 +64,12 @@ export function useApplySuggestion(): ApplySuggestionState {
   const { sections, replaceSection } = useReportSections();
   const { comments, setComments } = useReportComments();
   const { getEditor } = useReportEditors();
-  const { setEvaluations, scheduleEvaluation } = useReportEvaluations();
-  const [pendingId, setPendingId] = useState<string | null>(null);
+  const {
+    setEvaluations,
+    scheduleEvaluation,
+    pendingSuggestionId,
+    setPendingSuggestionId,
+  } = useReportEvaluations();
 
   const findLinkedComment = useCallback(
     (evaluationId: string): CommentRecord | undefined =>
@@ -216,7 +229,7 @@ export function useApplySuggestion(): ApplySuggestionState {
 
   const applySuggestion = useCallback(
     async (evaluation: EvaluationRecord) => {
-      setPendingId(evaluation.id);
+      setPendingSuggestionId(evaluation.id);
       try {
         const sectionKey = evaluation.section as SectionType;
         const linkedComment = findLinkedComment(evaluation.id);
@@ -253,7 +266,7 @@ export function useApplySuggestion(): ApplySuggestionState {
         console.error(err);
         toast.error("Failed to apply suggestion");
       } finally {
-        setPendingId(null);
+        setPendingSuggestionId(null);
       }
     },
     [
@@ -264,12 +277,13 @@ export function useApplySuggestion(): ApplySuggestionState {
       replaceSection,
       scheduleEvaluation,
       sections,
+      setPendingSuggestionId,
     ]
   );
 
   const ignoreSuggestion = useCallback(
     async (evaluation: EvaluationRecord) => {
-      setPendingId(evaluation.id);
+      setPendingSuggestionId(evaluation.id);
       try {
         const sectionKey = evaluation.section as SectionType;
         const linkedComment = findLinkedComment(evaluation.id);
@@ -290,7 +304,7 @@ export function useApplySuggestion(): ApplySuggestionState {
         console.error(err);
         toast.error("Failed to dismiss suggestion");
       } finally {
-        setPendingId(null);
+        setPendingSuggestionId(null);
       }
     },
     [
@@ -299,10 +313,57 @@ export function useApplySuggestion(): ApplySuggestionState {
       patchComment,
       patchEvaluation,
       scheduleEvaluation,
+      setPendingSuggestionId,
     ]
   );
 
-  return { applySuggestion, ignoreSuggestion, pendingId };
+  const deleteAiSuggestion = useCallback(
+    async ({
+      evaluation,
+      commentId,
+      isResolved,
+    }: {
+      evaluation: EvaluationRecord | null;
+      commentId: string;
+      isResolved: boolean;
+    }) => {
+      try {
+        if (evaluation && !isResolved) {
+          const sectionKey = evaluation.section as SectionType;
+          if (NARRATIVE_SECTIONS.has(sectionKey)) {
+            ignoreInline(sectionKey, evaluation.id);
+          }
+        }
+
+        const res = await fetch(
+          `/api/reports/${report.id}/comments/${commentId}`,
+          { method: "DELETE" }
+        );
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          toast.error(err.error ?? "Failed to delete");
+          return;
+        }
+        setComments((prev) => prev.filter((c) => c.id !== commentId));
+        toast.success("Suggestion removed");
+      } catch (err) {
+        console.error(err);
+        toast.error("Failed to remove suggestion");
+      }
+    },
+    [
+      ignoreInline,
+      report.id,
+      setComments,
+    ]
+  );
+
+  return {
+    applySuggestion,
+    ignoreSuggestion,
+    deleteAiSuggestion,
+    pendingId: pendingSuggestionId,
+  };
 }
 
 /**

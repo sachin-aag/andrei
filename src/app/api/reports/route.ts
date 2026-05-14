@@ -4,7 +4,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { reports, reportSections } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
-import { docxBufferToSectionContentMap } from "@/lib/import/docx-to-sections";
+import { docxBufferToImportedReportContent } from "@/lib/import/docx-to-sections";
 import { EMPTY_CONTENT, EDITABLE_SECTIONS } from "@/types/sections";
 
 const MAX_DOCX_BYTES = 15 * 1024 * 1024;
@@ -54,7 +54,7 @@ export async function POST(req: Request) {
 
   let deviationNo: string;
   let assignedManagerId: string | null;
-  let importedSections: Awaited<ReturnType<typeof docxBufferToSectionContentMap>> | null =
+  let importedContent: Awaited<ReturnType<typeof docxBufferToImportedReportContent>> | null =
     null;
 
   if (contentType.includes("multipart/form-data")) {
@@ -89,7 +89,7 @@ export async function POST(req: Request) {
       }
       try {
         const buf = Buffer.from(await file.arrayBuffer());
-        importedSections = await docxBufferToSectionContentMap(buf);
+        importedContent = await docxBufferToImportedReportContent(buf);
       } catch {
         return NextResponse.json(
           {
@@ -115,18 +115,19 @@ export async function POST(req: Request) {
       deviationNo,
       authorId: user.id,
       assignedManagerId,
+      ...(importedContent ? { toolsUsed: importedContent.toolsUsed } : {}),
     })
     .returning();
 
-  type Imported = NonNullable<typeof importedSections>;
+  type Imported = NonNullable<typeof importedContent>["sections"];
 
   await db.insert(reportSections).values(
     EDITABLE_SECTIONS.map((section) => ({
       reportId: report.id,
       section,
       content: (
-        importedSections !== null
-          ? importedSections[section as keyof Imported]
+        importedContent !== null
+          ? importedContent.sections[section as keyof Imported]
           : EMPTY_CONTENT[section]
       ) as unknown as Record<string, unknown>,
     }))

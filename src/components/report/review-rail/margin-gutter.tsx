@@ -272,7 +272,50 @@ export function MarginGutter({ onOpenCriteria, onSectionOverflow }: Props) {
       }
       return next;
     });
-  }, [packed, anchors]);
+  }, [packed, anchors, activeAnchorId]);
+
+  useEffect(() => {
+    if (typeof ResizeObserver === "undefined") return;
+
+    let frame: number | null = null;
+    const measure = () => {
+      if (frame !== null) return;
+      frame = requestAnimationFrame(() => {
+        frame = null;
+        setCardHeights((prev) => {
+          let changed = false;
+          const next: Record<string, number> = {};
+
+          for (const a of anchors) {
+            const el = cardRefs.current[a.id];
+            const h = el?.getBoundingClientRect().height ?? prev[a.id];
+            if (h == null) continue;
+            next[a.id] = h;
+            if (Math.abs((prev[a.id] ?? 0) - h) > 1) {
+              changed = true;
+            }
+          }
+
+          if (!changed && Object.keys(prev).length === Object.keys(next).length) {
+            return prev;
+          }
+          return next;
+        });
+      });
+    };
+
+    const observer = new ResizeObserver(measure);
+    for (const a of anchors) {
+      const el = cardRefs.current[a.id];
+      if (el) observer.observe(el);
+    }
+    measure();
+
+    return () => {
+      if (frame !== null) cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, [anchors]);
 
   const repliesByParent = useMemo(() => {
     const m = new Map<string, CommentRecord[]>();
@@ -370,7 +413,7 @@ export function MarginGutter({ onOpenCriteria, onSectionOverflow }: Props) {
       )}
       {packed.map((a) => {
         let node: ReactNode = null;
-        const isActive = activeAnchorId === a.id;
+        const isActive = activeAnchorId === a.id || activeAnchorId === a.comment?.id;
 
         if (a.type === "composer" && a.section) {
           node = <SectionCommentComposer section={a.section} />;
