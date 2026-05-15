@@ -6,7 +6,7 @@ import type { SectionType } from "@/db/schema";
  * into the per-section content hash so the next eval pass refreshes all
  * sections after a prompt update.
  */
-export const PROMPT_VERSION = "2026-05-15-5";
+export const PROMPT_VERSION = "2026-05-15-6";
 
 /**
  * Common reviewer rules, scoring system, scope rule, suggested-fix format,
@@ -48,6 +48,12 @@ the right kind for each criterion:
   - kind:"none" - the criterion is met. Emit exactly {"kind": "none"} for every
     criterion you mark as "met". Never emit "patch" or "fields" for a met
     criterion.
+    IMPORTANT: If the only fix you can think of is a minor rewording or
+    stylistic rephrasing that does not add missing facts, dates, IDs, SOP
+    references, or structural elements, the criterion IS met — mark it "met"
+    with kind:"none" and note the minor observation in reasoning. A trivial
+    rewording is NOT a deficiency. Only mark partially_met or not_met when
+    concrete information is missing, wrong, or structurally absent.
 
   - kind:"patch" - the fix is an in-place rewrite of a span of NARRATIVE prose
     in the section content. Use this for criteria whose deficiency is a vague
