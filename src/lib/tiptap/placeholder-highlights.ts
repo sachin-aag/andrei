@@ -1,62 +1,112 @@
 import { Extension } from "@tiptap/core";
-import { Plugin, PluginKey } from "@tiptap/pm/state";
+import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
+import type { EditorState } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
+import type { EditorView } from "@tiptap/pm/view";
 import { findPlaceholders } from "../placeholders/find";
+import type { Placeholder } from "../placeholders/find";
 import type { JSONContent } from "@tiptap/core";
 
-const placeholderKey = new PluginKey("placeholderHighlights");
+const placeholderKey = new PluginKey<PluginStateData>("placeholderHighlights");
+
+type PluginStateData = {
+  decos: DecorationSet;
+  placeholders: Placeholder[];
+};
+
+function scanPlaceholders(doc: import("@tiptap/pm/model").Node): Placeholder[] {
+  const json = doc.toJSON() as JSONContent;
+  return findPlaceholders(json, "define", "narrative");
+}
+
+function buildDecorations(
+  doc: import("@tiptap/pm/model").Node,
+  placeholders: Placeholder[]
+): DecorationSet {
+  const decos: Decoration[] = [];
+  for (const p of placeholders) {
+    decos.push(
+      Decoration.inline(p.fromPos, p.toPos, {
+        class: "placeholder-todo",
+      })
+    );
+  }
+  return DecorationSet.create(doc, decos);
+}
+
+/**
+ * Returns true if the current selection exactly covers a placeholder span.
+ * Used to suppress the comment BubbleMenu when clicking a placeholder.
+ */
+export function isSelectionOverPlaceholder(state: EditorState): boolean {
+  const pluginState = placeholderKey.getState(state);
+  if (!pluginState) return false;
+  const { from, to } = state.selection;
+  return pluginState.placeholders.some(
+    (p) => p.fromPos === from && p.toPos === to
+  );
+}
 
 /**
  * Tiptap extension that highlights actionable bracketed spans: `to be filled`
  * tokens and other non-numeric `[...]` guidance the model may emit.
- * in the document as amber pills so they're visually distinct as actionable items.
+ *
+ * Clicking a placeholder selects its full text range so the user can
+ * immediately type a replacement — ProseMirror's native selection-replace
+ * handles the rest.
  */
 export const PlaceholderHighlightExtension = Extension.create({
   name: "placeholderHighlights",
   addProseMirrorPlugins() {
     return [
-      new Plugin({
+      new Plugin<PluginStateData>({
         key: placeholderKey,
         state: {
           init(_, { doc }) {
-            const decos: Decoration[] = [];
-            const json = doc.toJSON() as JSONContent;
-            // The section/contentPath don't matter for pure rendering, just the pos.
-            const placeholders = findPlaceholders(json, "define", "narrative");
-            for (const p of placeholders) {
-              decos.push(
-                Decoration.inline(p.fromPos, p.toPos, {
-                  class: "placeholder-todo",
-                })
-              );
-            }
-            return DecorationSet.create(doc, decos);
+            const placeholders = scanPlaceholders(doc);
+            return {
+              decos: buildDecorations(doc, placeholders),
+              placeholders,
+            };
           },
-          apply(tr, oldSet, oldState, newState) {
-            let set = oldSet.map(tr.mapping, tr.doc);
-
-            // Recompute decorations if document changed. This is cheap enough for
-            // typing, but if the doc gets massive we could optimize by only scanning
-            // modified nodes.
+          apply(tr, prev, _oldState, newState) {
             if (tr.docChanged) {
-              const decos: Decoration[] = [];
-              const json = newState.doc.toJSON() as JSONContent;
-              const placeholders = findPlaceholders(json, "define", "narrative");
-              for (const p of placeholders) {
-                decos.push(
-                  Decoration.inline(p.fromPos, p.toPos, {
-                    class: "placeholder-todo",
-                  })
-                );
-              }
-              set = DecorationSet.create(newState.doc, decos);
+              const placeholders = scanPlaceholders(newState.doc);
+              return {
+                decos: buildDecorations(newState.doc, placeholders),
+                placeholders,
+              };
             }
-            return set;
+            return {
+              decos: prev.decos.map(tr.mapping, tr.doc),
+              placeholders: prev.placeholders,
+            };
           },
         },
         props: {
           decorations(state) {
-            return placeholderKey.getState(state);
+            return placeholderKey.getState(state)?.decos ?? DecorationSet.empty;
+          },
+          handleClick(view: EditorView, pos: number, event: MouseEvent) {
+            const target = event.target as HTMLElement;
+            if (!target.closest(".placeholder-todo")) return false;
+
+            const pluginState = placeholderKey.getState(view.state);
+            if (!pluginState) return false;
+
+            // Find the placeholder whose range contains the click position
+            const placeholder = pluginState.placeholders.find(
+              (p) => pos >= p.fromPos && pos <= p.toPos
+            );
+            if (!placeholder) return false;
+
+            // Select the entire placeholder text so typing replaces it
+            const $from = view.state.doc.resolve(placeholder.fromPos);
+            const $to = view.state.doc.resolve(placeholder.toPos);
+            view.dispatch(
+              view.state.tr.setSelection(TextSelection.create(view.state.doc, $from.pos, $to.pos))
+            );
+            return true;
           },
         },
       }),
