@@ -8,6 +8,8 @@ A Next.js 16 application that replaces the manual DOCX-over-email workflow for d
 - **Manager review workflow**: engineer submits → manager comments, then approves or returns feedback.
 - **DOCX export** matching the original template (company header, SOP reference, main content, signature block, and footer with page numbers).
 
+**Release notes:** use the project skill **release-notes** (`.agents/skills/release-notes/SKILL.md`) to draft paste-ready markdown for GitHub Releases.
+
 ---
 
 ## Tech stack
