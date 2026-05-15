@@ -4,6 +4,27 @@ import { z } from "zod";
 import type { SectionType, CriterionStatus } from "@/db/schema";
 import { getCriteria } from "./criteria";
 import { buildEvaluationSystemPrompt } from "./section-prompts";
+import {
+  EMPTY_SUGGESTED_FIX,
+  coerceLegacyFix,
+  modelSuggestedFixSchema,
+  type SuggestedFix,
+} from "./suggested-fix";
+
+export {
+  EMPTY_SUGGESTED_FIX,
+  coerceLegacyFix,
+  hasFixContent,
+} from "./suggested-fix";
+export type {
+  SuggestedFix,
+  FieldOp,
+  SetFieldOp,
+  AppendFieldOp,
+  NoneFix,
+  PatchFix,
+  FieldsFix,
+} from "./suggested-fix";
 
 function resolveModel(): LanguageModel {
   const googleKey =
@@ -17,31 +38,40 @@ function resolveModel(): LanguageModel {
   return google("gemini-2.5-flash");
 }
 
-const suggestedFixSchema = z.object({
-  anchorText: z.string().max(800),
-  replacementText: z.string().max(2000),
-});
-
 const evaluationSchema = z.object({
   evaluations: z.array(
     z.object({
       criterionKey: z.string(),
       status: z.enum(["met", "partially_met", "not_met"]),
       reasoning: z.string().min(1).max(1200),
-      suggestedFix: suggestedFixSchema,
+      suggestedFix: modelSuggestedFixSchema,
     })
   ),
 });
 
-export type SuggestedFix = {
-  anchorText: string;
-  replacementText: string;
-};
+const HEAVY_REASONING_SECTIONS = new Set<SectionType>([
+  "analyze",
+  "improve",
+  "control",
+]);
 
-export const EMPTY_SUGGESTED_FIX: SuggestedFix = {
-  anchorText: "",
-  replacementText: "",
-};
+function generationSettingsForSection(section: SectionType) {
+  if (!HEAVY_REASONING_SECTIONS.has(section)) {
+    return { maxOutputTokens: 8192 };
+  }
+
+  return {
+    maxOutputTokens: 32768,
+    providerOptions: {
+      google: {
+        thinkingConfig: {
+          thinkingBudget: 8192,
+          includeThoughts: false,
+        },
+      },
+    },
+  };
+}
 
 export type CriterionEvaluationResult = {
   criterionKey: string;
@@ -83,7 +113,7 @@ export async function evaluateSection({
       criterionLabel: c.label,
       status: "not_evaluated" as const,
       reasoning: "Section is empty.",
-      suggestedFix: { ...EMPTY_SUGGESTED_FIX },
+      suggestedFix: EMPTY_SUGGESTED_FIX,
     }));
   }
 
@@ -126,12 +156,14 @@ ${criteria
 
 Evaluate each criterion. Return one evaluation object per criterion, using the exact criterionKey provided.`;
 
+  const generationSettings = generationSettingsForSection(section);
   const { object } = await generateObject({
     model: resolveModel(),
     schema: evaluationSchema,
     system: systemPrompt,
     prompt: userPrompt,
     temperature: 0.2,
+    ...generationSettings,
   });
 
   const byKey = new Map(object.evaluations.map((e) => [e.criterionKey, e]));
@@ -143,7 +175,7 @@ Evaluate each criterion. Return one evaluation object per criterion, using the e
         criterionLabel: c.label,
         status: "not_evaluated" as CriterionStatus,
         reasoning: "No evaluation returned by model.",
-        suggestedFix: { ...EMPTY_SUGGESTED_FIX },
+        suggestedFix: EMPTY_SUGGESTED_FIX,
       };
     }
     return {
@@ -151,7 +183,7 @@ Evaluate each criterion. Return one evaluation object per criterion, using the e
       criterionLabel: c.label,
       status: result.status as CriterionStatus,
       reasoning: result.reasoning,
-      suggestedFix: result.suggestedFix ?? { ...EMPTY_SUGGESTED_FIX },
+      suggestedFix: coerceLegacyFix(result.suggestedFix),
     };
   });
 }

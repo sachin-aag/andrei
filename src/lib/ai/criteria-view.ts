@@ -1,6 +1,11 @@
 import type { CriterionStatus, SectionType } from "@/db/schema";
 import type { EvaluationRecord } from "@/types/report";
 import { EVALUATABLE_SECTIONS, getCriteria } from "@/lib/ai/criteria";
+import {
+  EMPTY_SUGGESTED_FIX,
+  coerceLegacyFix,
+  hasFixContent,
+} from "@/lib/ai/suggested-fix";
 
 export type CriterionRow = EvaluationRecord & {
   /** True when this row is just a placeholder for a criterion that has never been evaluated. */
@@ -46,7 +51,7 @@ export function rowsForSection(
       criterionLabel: d.label,
       status: "not_evaluated" as CriterionStatus,
       reasoning: "",
-      suggestedFix: { anchorText: "", replacementText: "" },
+      suggestedFix: EMPTY_SUGGESTED_FIX,
       fixApplied: false,
       bypassed: false,
       evaluatedContentHash: "",
@@ -82,7 +87,7 @@ export function metCount(rows: EvaluationRecord[]): { met: number; total: number
   return { met, total: rows.length };
 }
 
-/** Active suggestions = AI fixes that have an anchor or replacement, not yet applied or bypassed. */
+/** Active suggestions = AI fixes with actionable content, not yet applied or bypassed. */
 export function activeSuggestions(
   evaluations: EvaluationRecord[]
 ): EvaluationRecord[] {
@@ -91,6 +96,6 @@ export function activeSuggestions(
       !e.fixApplied &&
       !e.bypassed &&
       (e.status === "partially_met" || e.status === "not_met") &&
-      !!e.suggestedFix?.replacementText?.trim()
+      hasFixContent(coerceLegacyFix(e.suggestedFix))
   );
 }

@@ -80,11 +80,6 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
   const router = useRouter();
   const mainRef = useRef<HTMLElement>(null);
 
-  const handleOpenCriteria = useCallback((section: SectionType) => {
-    setCriteriaSection(section);
-    setCriteriaOpen(true);
-  }, []);
-
   const handleSectionOverflow = useCallback(
     (overflows: Record<SectionType, number>) => {
       setSectionMinHeights((prev) => {
@@ -233,7 +228,6 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
               aria-label="Review margin"
             >
               <MarginGutter
-                onOpenCriteria={handleOpenCriteria}
                 onSectionOverflow={handleSectionOverflow}
               />
             </aside>

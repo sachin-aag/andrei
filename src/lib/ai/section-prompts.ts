@@ -6,7 +6,7 @@ import type { SectionType } from "@/db/schema";
  * into the per-section content hash so the next eval pass refreshes all
  * sections after a prompt update.
  */
-export const PROMPT_VERSION = "2026-05-14-1";
+export const PROMPT_VERSION = "2026-05-15-1";
 
 /**
  * Common reviewer rules, scoring system, scope rule, suggested-fix format,
@@ -41,29 +41,84 @@ EXAMPLES POLICY:
   specific identifiers (Emp. IDs, batch numbers, SOP numbers, equipment IDs,
   room codes) in suggestedFix for the current report.
 
-For "met", set suggestedFix to {"anchorText": "", "replacementText": ""}.
+SUGGESTED FIX SHAPE:
+suggestedFix is a discriminated union with one of three "kind" values. Choose
+the right kind for each criterion:
 
-For "partially_met" or "not_met", produce a structured suggestedFix that the user can apply directly to the section without further editing. Your replacementText will appear inline immediately as a pending edit (track-changes style) right where the anchor was, so it must read naturally in that exact spot.
+  - kind:"none" - the criterion is met. Emit exactly {"kind": "none"} for every
+    criterion you mark as "met". Never emit "patch" or "fields" for a met
+    criterion.
 
-- "replacementText" MUST be the LITERAL prose to insert into the report, written in the voice of a GMP investigation report - factual, precise, complete sentences. It is what will appear in the document verbatim where the anchor used to sit.
-  * Do NOT use suggestion or instruction language: never write "should", "must", "needs to", "consider adding", "the narrative should", "add a statement that", "include details about", "mention the...", "it would be better to", or similar.
-  * Do NOT include labels like "Suggested fix:", "Revised text:", quotes around the whole reply, or commentary. Do NOT mention the criterion you are addressing.
-  * Write it self-contained: it must read sensibly when slotted in place of the anchor (or at the end of the section if the anchor is empty), without any surrounding edits.
-  * If you don't have the real-world fact (e.g. you don't know the actual Emp. ID, room number, or SOP No.), use a clearly bracketed placeholder containing the literal token "<to be filled>" - for example "[Emp. ID: <to be filled>]", "[SOP No.: <to be filled>]", "[Room ID: <to be filled>]". The exact "<to be filled>" token is required so the editor can highlight these as actionable todos for the author. Still write it as a complete sentence in report voice.
+  - kind:"patch" - the fix is an in-place rewrite of a span of NARRATIVE prose
+    in the section content. Use this for criteria whose deficiency is a vague
+    or incorrect sentence in a Tiptap narrative field. Emit
+    {"kind": "patch", "anchorText": "...", "replacementText": "..."} where
+    anchorText is a short verbatim substring of the SECTION CONTENT and
+    replacementText is what overwrites it inline (track-changes style).
 
-- "anchorText" MUST be a SHORT verbatim substring (one or two sentences max) copied EXACTLY from the SECTION CONTENT above - same characters, same punctuation, same casing - that the replacementText should overwrite. Choose the vague or incorrect sentence that needs to be rewritten. Do NOT paraphrase or rewrite the anchor; if you cannot find a suitable substring to copy, leave anchorText as "".
-  * If anchorText is "" the replacementText will be appended as a new paragraph at the end of the section. Choose this only when there is no existing sentence to rewrite - otherwise prefer in-place replacement.
-  * If anchorText is non-empty, it will be replaced by replacementText in place.
+  - kind:"fields" - the fix targets one or more STRUCTURED FORM FIELDS on the
+    section content (textareas, inputs, repeating items). Emit
+    {"kind": "fields", "ops": [...]} with one or more set/append operations.
+    Each op carries a "path" (dot for nested objects, [N] for array indices,
+    e.g. "sixM.man", "correctiveActions[0].dueDate") and the literal value
+    that should be written. Use op:"set" to write a value to an existing
+    field; use op:"append" to add a new item to an array (the client supplies
+    any required id automatically - never include "id" in the value). The
+    section additions below tell you which paths each criterion should target.
 
-<example type="anchor-format">
+PROSE VOICE RULES (apply to replacementText AND every set/append value):
+- Write LITERAL prose in the voice of a GMP investigation report - factual,
+  precise, complete sentences. The text appears verbatim in the document.
+- Do NOT use suggestion or instruction language: never write "should", "must",
+  "needs to", "consider adding", "the narrative should", "add a statement
+  that", "include details about", "mention the...", "it would be better to",
+  or similar.
+- Do NOT include labels like "Suggested fix:", "Revised text:", quotes around
+  the whole reply, or commentary. Do NOT mention the criterion you are
+  addressing.
+- Write each value self-contained so it reads sensibly in the target field
+  with no surrounding edits.
+- If you don't have a real-world fact (e.g. Emp. ID, room number, SOP No.),
+  use a clearly bracketed placeholder containing the literal token
+  "<to be filled>" - for example "[Emp. ID: <to be filled>]",
+  "[SOP No.: <to be filled>]", "[Room ID: <to be filled>]". The exact
+  "<to be filled>" token is required so the editor can highlight these as
+  actionable todos.
+
+PATCH-KIND RULES (in addition to the prose voice rules):
+- "anchorText" MUST be a SHORT verbatim substring (one or two sentences max)
+  copied EXACTLY from the SECTION CONTENT - same characters, same punctuation,
+  same casing. Choose the vague or incorrect sentence to rewrite. Do NOT
+  paraphrase the anchor; if you cannot find a suitable substring, leave
+  anchorText as "" and the replacementText will be appended at the end.
+- Prefer in-place replacement (non-empty anchor) over append (empty anchor).
+
+FIELDS-KIND RULES (in addition to the prose voice rules):
+- Only target paths that the section addition documents for this criterion.
+  Do not invent new paths.
+- Each item in "ops" MUST be a JSON object, not a quoted JSON string. Correct:
+  {"op":"set","path":"fiveWhy.conclusion","value":"..."}.
+  Incorrect: "{\"op\":\"set\",\"path\":\"fiveWhy.conclusion\",\"value\":\"...\"}".
+- For op:"append" values, do not include "id" - the client generates one.
+- Keep ops focused. One criterion's ops should fill exactly that criterion's
+  fields; do not bundle ops for unrelated criteria.
+
+<example type="patch-kind">
 A vague sentence in the section content reads:
 "The equipment did not perform as expected and a deviation was raised."
 
-GOOD anchorText (verbatim copy from section): "The equipment did not perform as expected and a deviation was raised."
-GOOD replacementText (in-place rewrite, complete report voice): "The HPHV Steam Sterilizer (Equipment ID: [Equipment ID: <to be filled>]) did not maintain the sterilization temperature range of 121.1 degC to 124.0 degC defined in [SOP No.: <to be filled>]; the cycle was manually aborted at [time: <to be filled>] and Deviation No. [Deviation No.: <to be filled>] was initiated to investigate the event."
+GOOD: {"kind": "patch", "anchorText": "The equipment did not perform as expected and a deviation was raised.", "replacementText": "The HPHV Steam Sterilizer (Equipment ID: [Equipment ID: <to be filled>]) did not maintain the sterilization temperature range of 121.1 degC to 124.0 degC defined in [SOP No.: <to be filled>]; the cycle was manually aborted at [time: <to be filled>] and Deviation No. [Deviation No.: <to be filled>] was initiated to investigate the event."}
 
-BAD replacementText (instruction voice): "The narrative should mention which equipment failed and which SOP defines the range."
-BAD anchorText (paraphrased, not verbatim): "Mention of equipment not performing."
+BAD (instruction voice): replacementText "The narrative should mention which equipment failed and which SOP defines the range."
+BAD (paraphrased anchor): anchorText "Mention of equipment not performing."
+</example>
+
+<example type="fields-kind">
+A 5-Why criterion has empty narrative + conclusion fields. Emit:
+{"kind": "fields", "ops": [
+  {"op": "set", "path": "fiveWhy.narrative", "value": "1. Why was temperature data not recorded in the Kyoshi application?\\nAns. Communication failure occurred between the Cold Room HMI and the Kyoshi application.\\n2. Why did the communication failure occur?\\nAns. The HMI date/time was out of synchronization with the actual date/time, triggering communication failure alarms and disrupting data logging.\\n... <continue chain to root cause> ..."},
+  {"op": "set", "path": "fiveWhy.conclusion", "value": "Battery condition and software version checks were not part of the AMC/PM checklist for the cold room, which prevented detection of the weak HMI battery and outdated software identified by the OEM service report."}
+]}
 </example>`;
 
 const DEFINE_PROMPT_ADDITION = `SECTION ROLE - DEFINE:
@@ -129,6 +184,21 @@ KEY RULES:
 - Investigation Outcome must be consistent with the chosen tool and the categorized root cause (Level 1/2/3 per SOP/DP/QA/008-F04).
 - Impact assessment fields (System/Document/Product/Equipment/Patient safety/Past batches) must trace back to Measure evidence.
 
+TOOL SELECTION (sixm_completeness vs fivewhy_completeness):
+- If the existing SECTION CONTENT already populates one of sixM.* or fiveWhy.*, treat that as the chosen tool and leave the other tool's criterion satisfied with kind:"none". Use a brief reasoning like "5-Why methodology used; 6M marked Not Applicable per SOP/DP/QA/008".
+- If neither is populated, pick exactly one tool. Default to 5-Why for chains driven by a single technical/equipment failure traceable through a sequence of mechanisms (the typical equipment-deviation case at this site). Default to 6M when the failure spans multiple human/process/material factors that don't form a single causal chain.
+- Never emit ops for both 5-Why and 6M in the same evaluation pass — the chosen tool gets ops; the unused tool's criterion is met (kind:"none") with the Not-Applicable rationale.
+
+SUGGESTED FIX SHAPE (analyze):
+Every analyze criterion is fields-shape (kind:"fields") when partially_met / not_met — there is no narrative editor on this section. Use these target paths:
+- analyze.sixm_completeness  -> set ops on sixM.man, sixM.machine, sixM.measurement, sixM.material, sixM.method, sixM.milieu, sixM.conclusion (only when 6M is the chosen tool; otherwise kind:"none")
+- analyze.fivewhy_completeness -> set ops on fiveWhy.narrative, fiveWhy.conclusion (only when 5-Why is the chosen tool; otherwise kind:"none"). The narrative value should contain the numbered Q/A chain in plain text, with each question and answer on its own line.
+- analyze.investigation_outcome -> set op on investigationOutcome
+- analyze.root_cause -> set ops on rootCause.narrative, rootCause.primaryLevel1, rootCause.secondaryLevel2, rootCause.thirdLevel3
+- analyze.impact_assessment -> set ops on impactAssessment.system, impactAssessment.document, impactAssessment.product, impactAssessment.equipment, impactAssessment.patientSafety
+
+For any criterion above where the existing field already contains acceptable content, omit the corresponding op (don't overwrite good prose). When a criterion's existing content is partially complete, only set the missing or weak fields.
+
 <example type="strong" length="5 whys" pattern="equipment + control gap">
 <context>Define: temperature data was not captured in the Kyoshi application for a defined window. Measure: HMI time mismatch identified, 7 communication failure alarms recorded, OEM identified weak battery + outdated software.</context>
 <output>
@@ -190,6 +260,17 @@ KEY RULES:
 - If no further corrective action is required (for example because an OEM patch closes the failure mode, or the event is an isolated first occurrence), state this explicitly with rationale.
 - Effectiveness verification: state required + how, or state not required + rationale. Never silent.
 
+SUGGESTED FIX SHAPE (improve):
+This section has both a narrative editor and a structured correctiveActions array. Pick kind based on the criterion:
+- improve.specific_actions -> typically kind:"fields" with one or more append ops on path "correctiveActions" (each value = {description, responsiblePerson, dueDate, expectedOutcome, effectivenessVerification}; do NOT include "id"). When an immediate-action narrative is missing (already-completed corrections in past tense), add a kind:"patch" against the narrative editor instead.
+- improve.per_root_cause -> kind:"fields" with append ops on "correctiveActions", one per root-cause Level the action addresses. Reference the root-cause level inside the description value (e.g. "Linked to Analyze Level 2 root cause: ...").
+- improve.tracking_fields -> kind:"fields" with set ops on existing items, e.g. correctiveActions[0].responsiblePerson, correctiveActions[0].dueDate. Only target indices that already exist in the section content; do not invent new array slots through set (use append for new items).
+- improve.expected_outcome -> kind:"fields" with set ops on correctiveActions[N].expectedOutcome.
+- improve.effectiveness -> kind:"fields" with set ops on correctiveActions[N].effectivenessVerification, OR a kind:"patch" against the narrative when the criterion is about the holistic "verification not required because ..." rationale.
+- improve.achievable -> kind:"patch" against the narrative editor. This is a holistic judgment that belongs in the narrative commentary, not in any specific field.
+
+Common pitfall to avoid: emitting a kind:"patch" with replacementText that just restates "Corrective action X should be added with responsible person Y" — that is instruction voice and will not pass the voice rules. Use kind:"fields" with append ops to add structured CA items instead.
+
 <example type="weak" failure="unspecific, untracked, no expected outcome">
 <input>The team will look into preventing this in the future. Awareness training will be provided.</input>
 </example>
@@ -207,6 +288,21 @@ KEY RULES:
 - Cover the conclusion: final decision, lot disposition, regulatory notification rationale.
 - Mention interim controls when CAPA is pending or residual risk remains. If interim control is not required, state why (for example trained personnel, equipment in healthy operating condition).
 - Prefer layered controls when the root cause is procedural: procedural + administrative + technical. Standalone "awareness training" is insufficient for technical root causes.
+
+SUGGESTED FIX SHAPE (control):
+This section has a narrative editor plus several flat structured fields. Pick kind based on the criterion:
+- control.preventive_per_root_cause -> kind:"fields" with set op on path "preventiveActions". Value = the full preventive-actions list as numbered prose linking each PA to its root-cause level.
+- control.linked_to_root_cause -> kind:"fields" with set op on "preventiveActions" if the existing text fails to cite the Analyze root-cause Level; otherwise kind:"patch" against the narrative.
+- control.tracking_fields, control.expected_outcome, control.effectiveness -> kind:"fields" with set op on "preventiveActions". Embed the tracking IDs / expected outcomes / verification rationale inline in the same numbered prose.
+- control.interim_plan -> kind:"fields" with set op on "interimPlan".
+- control.no_preventive_rationale -> kind:"fields" with set op on "preventiveActions" (state the rationale inline, do not leave the field empty).
+- control.final_comments -> kind:"fields" with set op on "finalComments".
+- control.impact_fields_complete -> kind:"fields" with set ops on the missing fields among regulatoryImpact, productQuality, validation, stability, marketClinical.
+- control.lot_disposition -> kind:"fields" with set op on "lotDisposition".
+- control.conclusion_final_decision, control.conclusion_summary, control.capa_verified -> kind:"fields" with set op on "conclusion".
+- control.preventive_achievable -> kind:"patch" against the narrative editor. Holistic judgment.
+
+Do not emit ops for fields that already contain acceptable content. When extending an existing field's prose, the new value should be the FULL replacement (set overwrites; the route does not merge), so include any prior content you intend to keep along with the new content.
 
 <example type="weak" failure="single-layer training-only PA against a technical root cause">
 <input>Awareness training will be given. No interim control is required.</input>

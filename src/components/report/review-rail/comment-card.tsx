@@ -24,6 +24,13 @@ import { getUser } from "@/lib/auth/mock-users";
 import { cn, formatDateTime } from "@/lib/utils";
 import { SECTION_LABELS } from "@/types/sections";
 import type { CommentRecord } from "@/types/report";
+import {
+  coerceLegacyFix,
+  type AppendFieldOp,
+  type FieldOp,
+  type SetFieldOp,
+} from "@/lib/ai/suggested-fix";
+import type { SectionType } from "@/db/schema";
 
 const AI_KIND_LABEL: Record<string, string> = {
   ai_fix: "Andrei suggests",
@@ -32,6 +39,14 @@ const AI_KIND_LABEL: Record<string, string> = {
   ai_removal: "AI Removal",
   ai_redraft: "AI Redraft",
 };
+
+function queryFieldAnchor(section: SectionType, contentPath: string): HTMLElement | null {
+  const value = `${section}.${contentPath}`;
+  const escaped = globalThis.CSS?.escape
+    ? globalThis.CSS.escape(value)
+    : value.replace(/"/g, '\\"');
+  return document.querySelector<HTMLElement>(`[data-field-anchor="${escaped}"]`);
+}
 
 export function CommentCard({
   root,
@@ -154,7 +169,16 @@ export function CommentCard({
 
   const handleActivate = () => {
     onActivate();
-    if (isAnchored) requestCommentFocus(root.id);
+    if (isAnchored) {
+      requestCommentFocus(root.id);
+      return;
+    }
+    if (root.section && root.contentPath) {
+      queryFieldAnchor(root.section, root.contentPath)?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+    }
   };
 
   const initials =
@@ -490,11 +514,24 @@ function AiCommentCard({
   >(null);
   const [removingSuggestion, setRemovingSuggestion] = useState(false);
 
-  const anchorPreview = root.anchorText?.trim()
-    ? root.anchorText.length > 80
-      ? `…${root.anchorText.slice(0, 80)}…`
-      : `…${root.anchorText}…`
-    : "Adding new content at end of section.";
+  const fix = evaluation
+    ? coerceLegacyFix(evaluation.suggestedFix)
+    : null;
+
+  // Build a kind-aware preview of what Accept will do. For patches, show the
+  // anchor span; for fields, list each op; for none / no-eval, fall back to a
+  // generic message.
+  const fieldOps: FieldOp[] | null =
+    fix && fix.kind === "fields" ? fix.ops : null;
+  const patchAnchor =
+    fix && fix.kind === "patch" ? fix.anchorText : root.anchorText ?? "";
+  const anchorPreview = fieldOps
+    ? null
+    : patchAnchor.trim()
+      ? patchAnchor.length > 80
+        ? `…${patchAnchor.slice(0, 80)}…`
+        : `…${patchAnchor}…`
+      : "Adding new content at end of section.";
 
   const isResolved = root.status === "resolved";
 
@@ -551,9 +588,16 @@ function AiCommentCard({
           {root.content}
         </p>
 
-        <div className="text-[10px] italic text-[var(--muted-foreground)]/80 leading-snug border-l-2 border-violet-300 pl-2">
-          {anchorPreview}
-        </div>
+        {fieldOps && fieldOps.length > 0 ? (
+          <FieldOpsPreview
+            ops={fieldOps}
+            section={root.section}
+          />
+        ) : anchorPreview ? (
+          <div className="text-[10px] italic text-[var(--muted-foreground)]/80 leading-snug border-l-2 border-violet-300 pl-2">
+            {anchorPreview}
+          </div>
+        ) : null}
 
         {!readOnly && ((evaluation && !isResolved) || canDeleteAi) && (
           <div className="flex flex-wrap items-center gap-1.5 pt-0.5" onClick={(e) => e.stopPropagation()}>
@@ -629,4 +673,156 @@ function AiCommentCard({
       </div>
     </div>
   );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Fields-kind preview
+// ─────────────────────────────────────────────────────────────────────────────
+
+const FIELD_OPS_PREVIEW_LIMIT = 4;
+
+function FieldOpsPreview({
+  ops,
+  section,
+}: {
+  ops: FieldOp[];
+  section: SectionType | null;
+}) {
+  const visible = ops.slice(0, FIELD_OPS_PREVIEW_LIMIT);
+  const hidden = ops.length - visible.length;
+  return (
+    <div className="space-y-1 border-l-2 border-violet-300 pl-2">
+      {visible.map((op, i) => (
+        <div
+          key={i}
+          className="flex items-start gap-1.5 text-[10px] text-[var(--muted-foreground)] leading-snug"
+        >
+          <span
+            className={cn(
+              "inline-flex items-center rounded px-1 py-px text-[9px] font-semibold uppercase tracking-wide shrink-0",
+              op.op === "set"
+                ? "bg-violet-100 text-violet-800"
+                : "bg-emerald-100 text-emerald-800"
+            )}
+          >
+            {op.op === "set" ? "Set" : "Add"}
+          </span>
+          <span className="font-medium text-[var(--foreground)]">
+            {formatPathLabel(section, op.path, op.op)}
+          </span>
+          <span className="text-[var(--muted-foreground)]/80 italic truncate">
+            {opValueSnippet(op)}
+          </span>
+        </div>
+      ))}
+      {hidden > 0 && (
+        <div className="text-[10px] italic text-[var(--muted-foreground)]/70">
+          + {hidden} more {hidden === 1 ? "field" : "fields"}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function opValueSnippet(op: FieldOp): string {
+  const raw =
+    op.op === "set"
+      ? (op as SetFieldOp).value
+      : Object.values((op as AppendFieldOp).value).find(
+          (v) => typeof v === "string" && v.trim()
+        ) ?? "";
+  const collapsed = String(raw).replace(/\s+/g, " ").trim();
+  if (collapsed.length === 0) return "";
+  const limit = 60;
+  return collapsed.length > limit
+    ? `“${collapsed.slice(0, limit)}…”`
+    : `“${collapsed}”`;
+}
+
+// Friendlier labels for the per-criterion field paths the prompt instructs the
+// model to use. Falls back to a prettified version of the raw path so we
+// always render something sensible.
+const STATIC_LABELS: Record<string, Record<string, string>> = {
+  analyze: {
+    "sixM.man": "6M · Man",
+    "sixM.machine": "6M · Machine",
+    "sixM.measurement": "6M · Measurement",
+    "sixM.material": "6M · Material",
+    "sixM.method": "6M · Method",
+    "sixM.milieu": "6M · Milieu",
+    "sixM.conclusion": "6M · Conclusion",
+    "fiveWhy.narrative": "5-Why · Chain",
+    "fiveWhy.conclusion": "5-Why · Conclusion",
+    investigationOutcome: "Investigation outcome",
+    "rootCause.narrative": "Root cause · Narrative",
+    "rootCause.primaryLevel1": "Root cause · Level 1",
+    "rootCause.secondaryLevel2": "Root cause · Level 2",
+    "rootCause.thirdLevel3": "Root cause · Level 3",
+    "impactAssessment.system": "Impact · System",
+    "impactAssessment.document": "Impact · Document",
+    "impactAssessment.product": "Impact · Product",
+    "impactAssessment.equipment": "Impact · Equipment",
+    "impactAssessment.patientSafety": "Impact · Patient safety",
+  },
+  improve: {
+    correctiveActions: "New corrective action",
+  },
+  control: {
+    preventiveActions: "Preventive actions",
+    interimPlan: "Interim plan",
+    finalComments: "Final comments",
+    regulatoryImpact: "Regulatory impact",
+    productQuality: "Product quality",
+    validation: "Validation",
+    stability: "Stability",
+    marketClinical: "Market / Clinical",
+    lotDisposition: "Lot disposition",
+    conclusion: "Conclusion",
+  },
+};
+
+const CORRECTIVE_ACTION_FIELDS: Record<string, string> = {
+  description: "Description",
+  responsiblePerson: "Responsible person",
+  dueDate: "Due date",
+  expectedOutcome: "Expected outcome",
+  effectivenessVerification: "Effectiveness verification",
+};
+
+function formatPathLabel(
+  section: SectionType | null,
+  path: string,
+  op: FieldOp["op"]
+): string {
+  if (op === "append" && section === "improve" && path === "correctiveActions") {
+    return "New corrective action";
+  }
+
+  // correctiveActions[N].field → "Action N+1 · <field>"
+  const ca = path.match(/^correctiveActions\[(\d+)\](?:\.([a-zA-Z]+))?$/);
+  if (ca) {
+    const idx = Number.parseInt(ca[1]!, 10);
+    const fld = ca[2] ?? "";
+    const fldLabel = CORRECTIVE_ACTION_FIELDS[fld] ?? prettify(fld);
+    return fld ? `Action ${idx + 1} · ${fldLabel}` : `Action ${idx + 1}`;
+  }
+
+  if (section && STATIC_LABELS[section]?.[path]) {
+    return STATIC_LABELS[section]![path]!;
+  }
+
+  return prettify(path);
+}
+
+function prettify(path: string): string {
+  if (!path) return "";
+  return path
+    .split(/[\.\[\]]+/)
+    .filter(Boolean)
+    .map((seg) =>
+      seg
+        .replace(/([a-z])([A-Z])/g, "$1 $2")
+        .replace(/^./, (c) => c.toUpperCase())
+    )
+    .join(" · ");
 }

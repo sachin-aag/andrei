@@ -13,10 +13,16 @@ import {
 } from "@/db/schema";
 import type { SectionType } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
-import { evaluateSection } from "@/lib/ai/evaluate";
+import { evaluateSection, type CriterionEvaluationResult } from "@/lib/ai/evaluate";
 import { EVALUATABLE_SECTIONS, getCriteria } from "@/lib/ai/criteria";
 import { hashContent } from "@/lib/ai/content-hash";
 import { PROMPT_VERSION } from "@/lib/ai/section-prompts";
+import {
+  EMPTY_SUGGESTED_FIX,
+  coerceLegacyFix,
+  hasFixContent,
+  type SuggestedFix,
+} from "@/lib/ai/suggested-fix";
 import {
   hasEnoughContextInFirstSection,
   INSUFFICIENT_FIRST_SECTION_MESSAGE,
@@ -64,11 +70,6 @@ function isValidSection(v: string): v is SectionType {
   return (sectionTypeEnum.enumValues as readonly string[]).includes(v);
 }
 
-/** Maximum AI comments materialized per section. Lower-priority overflow evals
- *  are still persisted (criteria sheet sees them) but don't get inline marks
- *  or gutter comment cards. */
-const MAX_AI_COMMENTS_PER_SECTION = 3;
-
 const SEVERITY_ORDER: Record<string, number> = {
   not_met: 0,
   partially_met: 1,
@@ -96,20 +97,221 @@ function getNarrative(content: unknown): JSONContent | null {
   return null;
 }
 
-function contentForPrompt(section: SectionType, content: unknown): string {
-  // Prefer human-readable narrative/outcome fields over raw JSON dumps when available.
-  if (section === "analyze" && content && typeof content === "object") {
-    const outcome = (content as { investigationOutcome?: unknown }).investigationOutcome;
-    if (typeof outcome === "string" && outcome.trim()) return outcome.trim();
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function compactText(value: string, maxChars = 1200): string {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  if (normalized.length <= maxChars) return normalized;
+  return `${normalized.slice(0, maxChars).trim()}...`;
+}
+
+function tiptapText(value: unknown): string {
+  const pieces: string[] = [];
+  function visit(node: unknown) {
+    if (!node || typeof node !== "object") return;
+    const n = node as JSONContent;
+    if (typeof n.text === "string") pieces.push(n.text);
+    if (n.type === "hardBreak" || n.type === "paragraph") pieces.push("\n");
+    if (n.content?.length) n.content.forEach(visit);
   }
-  if (content && typeof content === "object") {
-    const narrative = (content as { narrative?: unknown }).narrative;
-    if (narrative != null) {
-      const asJson = JSON.stringify(narrative, null, 2);
-      if (asJson && asJson !== "{}") return asJson;
+  visit(value);
+  return pieces.join(" ").replace(/\s+\n/g, "\n").replace(/\n\s+/g, "\n").trim();
+}
+
+function pushTextLine(
+  lines: string[],
+  label: string,
+  value: unknown,
+  maxChars?: number
+) {
+  if (typeof value !== "string") return;
+  const text = compactText(value, maxChars);
+  if (text) lines.push(`${label}: ${text}`);
+}
+
+function pushNarrativeLine(lines: string[], content: Record<string, unknown>) {
+  const text = tiptapText(content.narrative);
+  if (text) lines.push(`Narrative excerpt: ${compactText(text, 1600)}`);
+}
+
+function pushObjectFields(
+  lines: string[],
+  heading: string,
+  value: unknown,
+  fields: Array<[string, string]>
+) {
+  if (!isRecord(value)) return;
+  const fieldLines: string[] = [];
+  for (const [key, label] of fields) {
+    const fieldValue = value[key];
+    if (typeof fieldValue === "string" && fieldValue.trim()) {
+      fieldLines.push(`${label}: ${compactText(fieldValue, 500)}`);
     }
   }
-  return typeof content === "string" ? content : JSON.stringify(content, null, 2);
+  if (fieldLines.length) lines.push(`${heading}: ${fieldLines.join("; ")}`);
+}
+
+function fallbackContextForPrompt(content: unknown): string {
+  if (typeof content === "string") return content;
+  return JSON.stringify(content, null, 2);
+}
+
+function contextForPrompt(section: SectionType, content: unknown): string {
+  if (!isRecord(content)) return fallbackContextForPrompt(content);
+
+  const lines: string[] = [];
+  if (section === "define") {
+    pushNarrativeLine(lines, content);
+  } else if (section === "measure") {
+    pushNarrativeLine(lines, content);
+    pushTextLine(lines, "Regulatory notification", content.regulatoryNotification);
+  } else if (section === "analyze") {
+    pushObjectFields(lines, "6M", content.sixM, [
+      ["man", "Man"],
+      ["machine", "Machine"],
+      ["measurement", "Measurement"],
+      ["material", "Material"],
+      ["method", "Method"],
+      ["milieu", "Milieu"],
+      ["conclusion", "Conclusion"],
+    ]);
+    pushObjectFields(lines, "5-Why", content.fiveWhy, [
+      ["narrative", "Chain"],
+      ["conclusion", "Conclusion"],
+    ]);
+    pushTextLine(lines, "Investigation outcome", content.investigationOutcome);
+    pushObjectFields(lines, "Root cause", content.rootCause, [
+      ["narrative", "Narrative"],
+      ["primaryLevel1", "Level 1"],
+      ["secondaryLevel2", "Level 2"],
+      ["thirdLevel3", "Level 3"],
+    ]);
+    pushObjectFields(lines, "Impact assessment", content.impactAssessment, [
+      ["system", "System"],
+      ["document", "Document"],
+      ["product", "Product"],
+      ["equipment", "Equipment"],
+      ["patientSafety", "Patient safety"],
+    ]);
+  } else if (section === "improve") {
+    pushNarrativeLine(lines, content);
+    const actions = Array.isArray(content.correctiveActions)
+      ? content.correctiveActions
+      : [];
+    actions.slice(0, 8).forEach((action, index) => {
+      if (!isRecord(action)) return;
+      const parts: string[] = [];
+      pushTextLine(parts, "description", action.description, 600);
+      pushTextLine(parts, "responsible", action.responsiblePerson, 250);
+      pushTextLine(parts, "due", action.dueDate, 120);
+      pushTextLine(parts, "outcome", action.expectedOutcome, 350);
+      pushTextLine(parts, "effectiveness", action.effectivenessVerification, 350);
+      if (parts.length) lines.push(`Corrective action ${index + 1}: ${parts.join("; ")}`);
+    });
+    if (actions.length > 8) lines.push(`[${actions.length - 8} more corrective actions omitted]`);
+  } else if (section === "control") {
+    pushNarrativeLine(lines, content);
+    pushTextLine(lines, "Preventive actions", content.preventiveActions, 1800);
+    pushTextLine(lines, "Interim plan", content.interimPlan);
+    pushTextLine(lines, "Final comments", content.finalComments);
+    pushTextLine(lines, "Regulatory impact", content.regulatoryImpact);
+    pushTextLine(lines, "Product quality", content.productQuality);
+    pushTextLine(lines, "Validation", content.validation);
+    pushTextLine(lines, "Stability", content.stability);
+    pushTextLine(lines, "Market/clinical", content.marketClinical);
+    pushTextLine(lines, "Lot disposition", content.lotDisposition);
+    pushTextLine(lines, "Conclusion", content.conclusion, 1800);
+  }
+
+  return lines.length ? lines.join("\n") : fallbackContextForPrompt(content);
+}
+
+type AnalyzeTool = "sixM" | "fiveWhy";
+
+function meaningfulAnalyzeText(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  const normalized = value.trim().toLowerCase().replace(/\.+$/, "");
+  return normalized.length > 0 && normalized !== "not applicable" && normalized !== "n/a";
+}
+
+function existingAnalyzeTool(content: unknown): AnalyzeTool | null {
+  if (!content || typeof content !== "object") return null;
+  const c = content as {
+    sixM?: Record<string, unknown>;
+    fiveWhy?: Record<string, unknown>;
+  };
+  const hasSixM = c.sixM
+    ? Object.values(c.sixM).some(meaningfulAnalyzeText)
+    : false;
+  const hasFiveWhy = c.fiveWhy
+    ? [c.fiveWhy.narrative, c.fiveWhy.conclusion].some(meaningfulAnalyzeText)
+    : false;
+
+  if (hasSixM && !hasFiveWhy) return "sixM";
+  if (hasFiveWhy && !hasSixM) return "fiveWhy";
+  return null;
+}
+
+function fixTargetsAnalyzeTool(fix: SuggestedFix, tool: AnalyzeTool): boolean {
+  if (fix.kind !== "fields") return false;
+  const prefix = tool === "sixM" ? "sixM." : "fiveWhy.";
+  return fix.ops.some((op) => op.path.startsWith(prefix));
+}
+
+function chooseAnalyzeTool(
+  content: unknown,
+  evaluations: CriterionEvaluationResult[]
+): AnalyzeTool | null {
+  const existingTool = existingAnalyzeTool(content);
+  if (existingTool) return existingTool;
+
+  const sixMEval = evaluations.find((e) => e.criterionKey === "analyze.sixm_completeness");
+  const fiveWhyEval = evaluations.find(
+    (e) => e.criterionKey === "analyze.fivewhy_completeness"
+  );
+  const wantsSixM = sixMEval
+    ? fixTargetsAnalyzeTool(coerceLegacyFix(sixMEval.suggestedFix), "sixM")
+    : false;
+  const wantsFiveWhy = fiveWhyEval
+    ? fixTargetsAnalyzeTool(coerceLegacyFix(fiveWhyEval.suggestedFix), "fiveWhy")
+    : false;
+
+  if (wantsSixM && !wantsFiveWhy) return "sixM";
+  if (wantsFiveWhy && !wantsSixM) return "fiveWhy";
+  if (wantsSixM && wantsFiveWhy) return "fiveWhy";
+  return null;
+}
+
+function normalizeAnalyzeToolSuggestions(
+  content: unknown,
+  evaluations: CriterionEvaluationResult[]
+): CriterionEvaluationResult[] {
+  const chosenTool = chooseAnalyzeTool(content, evaluations);
+  if (!chosenTool) return evaluations;
+
+  const unusedKey =
+    chosenTool === "fiveWhy"
+      ? "analyze.sixm_completeness"
+      : "analyze.fivewhy_completeness";
+  const chosenLabel = chosenTool === "fiveWhy" ? "5-Why" : "6M";
+  const unusedLabel = chosenTool === "fiveWhy" ? "6M" : "5-Why";
+
+  return evaluations.map((evaluation) => {
+    if (evaluation.criterionKey !== unusedKey) return evaluation;
+    return {
+      ...evaluation,
+      status: "met",
+      reasoning: `${chosenLabel} methodology selected for this Analyze pass; ${unusedLabel} remains Not Applicable because the root-cause tool requirement is satisfied by one completed methodology.`,
+      suggestedFix: EMPTY_SUGGESTED_FIX,
+    };
+  });
+}
+
+function primaryFieldPath(fix: SuggestedFix): string | null {
+  if (fix.kind !== "fields") return null;
+  return fix.ops[0]?.path ?? null;
 }
 
 function normalizePromptText(s: string, maxChars = 6000): string {
@@ -239,7 +441,7 @@ export async function POST(
         .map((section) => {
           const prior = bySection.get(section);
           if (!prior) return null;
-          const raw = contentForPrompt(section, prior.content);
+          const raw = contextForPrompt(section, prior.content);
           if (!raw || raw.trim() === "" || raw.trim() === "{}") return null;
           return {
             section,
@@ -256,7 +458,13 @@ export async function POST(
         reportContext: { deviationNo: report.deviationNo, date: report.date },
         previousSections,
       });
-      return { sectionRow: row, evaluations };
+      return {
+        sectionRow: row,
+        evaluations:
+          row.section === "analyze"
+            ? normalizeAnalyzeToolSuggestions(row.content, evaluations)
+            : evaluations,
+      };
     })
   );
 
@@ -338,8 +546,6 @@ export async function POST(
     }
   }
 
-  const overflowCounts: Partial<Record<SectionType, number>> = {};
-
   for (const sectionRow of sectionRows) {
     const evalsForSection = freshEvals.filter((e) => e.sectionId === sectionRow.id);
     if (evalsForSection.length === 0) continue;
@@ -352,15 +558,15 @@ export async function POST(
 
     let workingContent = sectionRow.content as unknown;
     let narrative = getNarrative(workingContent);
-    const isNarrativeSection = NARRATIVE_SECTIONS.has(sectionRow.section);
+    const sectionHasNarrative = NARRATIVE_SECTIONS.has(sectionRow.section);
     let narrativeChanged = false;
-    let materializedCount = 0;
 
     for (const ev of evalsForSection) {
       const linked = aiCommentsBySectionEval.get(ev.id);
-      const fix = (ev.suggestedFix ?? null) as
-        | { anchorText: string; replacementText: string }
-        | null;
+      // Coerce on every read so legacy {anchorText, replacementText} rows in
+      // the DB are treated as kind:"patch" and we never crash on a missing
+      // discriminator.
+      const fix = coerceLegacyFix(ev.suggestedFix);
       // Source of truth for "did the user act on this?" is the linked AI
       // comment (open / resolved / dismissed), NOT the legacy `fixApplied`
       // boolean — which was set true by the old one-click Apply flow even
@@ -369,37 +575,18 @@ export async function POST(
       const wantsSuggestion =
         (ev.status === "partially_met" || ev.status === "not_met") &&
         !ev.bypassed &&
-        !!fix?.replacementText?.trim();
-
-      // ── Overflow cap: only materialize the first N suggestions per section.
-      // Evals beyond the cap that have existing open comments get dismissed
-      // (reuses Case A cleanup), but the eval row stays for the criteria sheet.
-      if (wantsSuggestion && materializedCount >= MAX_AI_COMMENTS_PER_SECTION) {
-        // Dismiss any existing open comment + strip inline marks.
-        if (linked && linked.status === "open") {
-          if (isNarrativeSection && narrative) {
-            const stripped = stripSuggestionMarksById(narrative, ev.id);
-            if (JSON.stringify(stripped) !== JSON.stringify(narrative)) {
-              narrative = stripped;
-              workingContent = { ...(workingContent as object), narrative };
-              narrativeChanged = true;
-            }
-          }
-          await db
-            .update(comments)
-            .set({ status: "dismissed" })
-            .where(eq(comments.id, linked.id));
-        }
-        overflowCounts[sectionRow.section] =
-          (overflowCounts[sectionRow.section] ?? 0) + 1;
-        continue;
-      }
+        hasFixContent(fix);
+      // Inline-mark materialization only applies to patch-shape fixes against
+      // narrative-bearing sections. Fields-shape fixes get an unanchored gutter
+      // comment regardless of section.
+      const wantsInlineMarks =
+        wantsSuggestion && fix.kind === "patch" && sectionHasNarrative && !!narrative;
 
       // Case A: criterion now met (or no longer wants a suggestion). Clean up
       // any open AI comment + inline marks. Leave already-acted comments.
       if (!wantsSuggestion) {
         if (linked && linked.status === "open") {
-          if (isNarrativeSection && narrative) {
+          if (sectionHasNarrative && narrative) {
             const stripped = stripSuggestionMarksById(narrative, ev.id);
             if (JSON.stringify(stripped) !== JSON.stringify(narrative)) {
               narrative = stripped;
@@ -428,23 +615,32 @@ export async function POST(
         continue;
       }
 
-      // Case C: open + the inline marks for this eval are still present in
-      // the doc → idempotent, nothing to do. If the marks are missing
-      // (legacy Apply flow stripped them, or the user manually deleted the
-      // tracked-change spans), fall through to Case D so the suggestion
-      // gets re-materialized inline.
-      if (linked && linked.status === "open" && isNarrativeSection && narrative) {
-        const sameAnchor = (linked.anchorText ?? "") === (fix?.anchorText ?? "");
-        const marksPresent = hasMarksWithId(narrative, ev.id);
-        if (sameAnchor && marksPresent) {
-          materializedCount++;
-          continue;
+      // Case C: idempotent open-comment short-circuit.
+      // - Patch fixes: keep the existing comment if its anchor matches and the
+      //   inline marks are still present in the doc. If marks are missing
+      //   (legacy Apply flow stripped them, or the user manually deleted the
+      //   tracked-change spans), fall through to Case D so the suggestion gets
+      //   re-materialized inline.
+      // - Fields fixes: there are no marks to verify, so we keep the existing
+      //   comment as-is unless its content (the model's reasoning) changed —
+      //   Case D will refresh content when needed.
+      if (linked && linked.status === "open") {
+        if (fix.kind === "patch" && sectionHasNarrative && narrative) {
+          const sameAnchor = (linked.anchorText ?? "") === fix.anchorText;
+          const marksPresent = hasMarksWithId(narrative, ev.id);
+          if (sameAnchor && marksPresent && linked.content === ev.reasoning) {
+            continue;
+          }
+        } else if (fix.kind === "fields") {
+          if (linked.content === ev.reasoning) {
+            continue;
+          }
         }
       }
 
-      // Case D: need to (re)materialize. Strip prior marks + (re)create comment.
-      materializedCount++;
-      if (isNarrativeSection && narrative) {
+      // Case D: need to (re)materialize. Branch on fix.kind, NOT section type
+      // — improve/control can emit either patch or fields per criterion.
+      if (wantsInlineMarks && fix.kind === "patch" && narrative) {
         if (linked) {
           const stripped = stripSuggestionMarksById(narrative, ev.id);
           if (JSON.stringify(stripped) !== JSON.stringify(narrative)) {
@@ -454,8 +650,8 @@ export async function POST(
         }
         const result = injectSuggestionMarks(
           narrative,
-          fix!.anchorText,
-          fix!.replacementText,
+          fix.anchorText,
+          fix.replacementText,
           {
             id: ev.id,
             authorId: "ai",
@@ -473,7 +669,8 @@ export async function POST(
             .update(comments)
             .set({
               content: ev.reasoning,
-              anchorText: fix!.anchorText,
+              anchorText: fix.anchorText,
+              contentPath: "narrative",
               fromPos: result.insertFromPos,
               toPos: result.insertToPos,
               status: "open",
@@ -487,7 +684,7 @@ export async function POST(
             section: sectionRow.section,
             authorId: "ai",
             content: ev.reasoning,
-            anchorText: fix!.anchorText,
+            anchorText: fix.anchorText,
             contentPath: "narrative",
             fromPos: result.insertFromPos,
             toPos: result.insertToPos,
@@ -497,15 +694,32 @@ export async function POST(
           });
         }
       } else {
-        // Non-narrative section (analyze): no inline marks. The AI comment is
-        // unanchored at the section header — gutter renders it like any other
-        // unanchored comment.
+        // No inline marks for this fix — either kind:"fields", or a patch
+        // emitted against a section without a narrative editor. The AI comment
+        // is unanchored at the section header; the gutter card renders the
+        // ops preview (for fields) or the replacement text fallback (for an
+        // orphan patch).
+        const anchorText = fix.kind === "patch" ? fix.anchorText : "";
+        const fieldPath = primaryFieldPath(fix);
+        // If we previously materialized this eval as inline marks (fix changed
+        // shape across runs), strip the now-stale marks first.
+        if (linked && sectionHasNarrative && narrative) {
+          const stripped = stripSuggestionMarksById(narrative, ev.id);
+          if (JSON.stringify(stripped) !== JSON.stringify(narrative)) {
+            narrative = stripped;
+            workingContent = { ...(workingContent as object), narrative };
+            narrativeChanged = true;
+          }
+        }
         if (linked) {
           await db
             .update(comments)
             .set({
               content: ev.reasoning,
-              anchorText: fix!.anchorText,
+              anchorText,
+              contentPath: fieldPath,
+              fromPos: null,
+              toPos: null,
               status: "open",
             })
             .where(eq(comments.id, linked.id));
@@ -517,8 +731,8 @@ export async function POST(
             section: sectionRow.section,
             authorId: "ai",
             content: ev.reasoning,
-            anchorText: fix!.anchorText,
-            contentPath: null,
+            anchorText,
+            contentPath: fieldPath,
             fromPos: null,
             toPos: null,
             status: "open",
@@ -529,7 +743,7 @@ export async function POST(
       }
     }
 
-    if (isNarrativeSection && narrativeChanged) {
+    if (sectionHasNarrative && narrativeChanged) {
       await db
         .update(reportSections)
         .set({ content: workingContent as object, updatedAt: new Date() })
@@ -551,7 +765,7 @@ export async function POST(
     evaluations: updatedEvals,
     sections: updatedSections,
     comments: updatedComments,
-    overflowCounts,
+    overflowCounts: {},
     skipped: sectionRows
       .filter((r) => !sectionsToEvaluate.includes(r))
       .map((r) => r.section),

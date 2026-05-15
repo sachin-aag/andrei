@@ -18,26 +18,27 @@ import {
   suggestionDeleteMarkName,
   suggestionInsertMarkName,
 } from "@/lib/tiptap/suggestion-marks";
+import { applyFieldOps } from "@/lib/ai/apply-field-ops";
+import {
+  coerceLegacyFix,
+  type FieldOp,
+  type PatchFix,
+} from "@/lib/ai/suggested-fix";
 import type { EvaluationRecord, CommentRecord } from "@/types/report";
 import type { SectionType } from "@/db/schema";
 
-const collapse = (s: string) => s.replace(/\s+/g, " ").trim();
-
-const NARRATIVE_SECTIONS = new Set<SectionType>([
-  "define",
-  "measure",
-  "improve",
-  "control",
-]);
-
 export type ApplySuggestionState = {
-  /** Accept: commit the inline suggestion. Marks are removed; doc keeps the new text. */
+  /** Accept: commit the suggestion. For patches, marks are removed and the doc
+   *  keeps the new text; for fields, set/append ops are written to the section. */
   applySuggestion: (evaluation: EvaluationRecord) => Promise<void>;
-  /** Ignore: revert the inline suggestion. Original text returns; new text is dropped. */
+  /** Ignore: revert the suggestion. For patches, original text returns; for
+   *  fields, the comment is dismissed and the eval bypassed (no doc revert
+   *  needed since nothing was applied yet). */
   ignoreSuggestion: (evaluation: EvaluationRecord) => Promise<void>;
   /**
-   * Remove the AI gutter card permanently. Pending suggestions drop their inline
-   * marks, but the criterion itself remains visible/not bypassed.
+   * Remove the AI gutter card permanently. Pending patches drop their inline
+   * marks; pending fields drop nothing in the doc. The criterion itself
+   * remains visible/not bypassed in either case.
    */
   deleteAiSuggestion: (args: {
     evaluation: EvaluationRecord | null;
@@ -48,16 +49,18 @@ export type ApplySuggestionState = {
 };
 
 /**
- * Accept / Ignore for AI suggestions. Server-side, the suggestion is already
- * materialized in the document as a `suggestionDelete` over the original
- * anchor + a `suggestionInsert` for the replacement, both carrying
- * `attrs.id === evaluation.id`. This hook walks the editor to locate those
- * marks, then commits or reverts them, updates the linked AI comment, and
- * triggers a post-action eval so the criterion immediately reflects the change.
+ * Accept / Ignore for AI suggestions. Two delivery shapes:
  *
- * Non-narrative sections (analyze) have no inline marks — they fall back to
- * the direct content-mutation path for Accept and just dismiss the comment +
- * bypass the eval for Ignore.
+ *   - `kind:"patch"` (narrative sections): the suggestion is materialized as
+ *     a `suggestionDelete` over the original anchor + a `suggestionInsert` for
+ *     the replacement, both carrying `attrs.id === evaluation.id`. This hook
+ *     walks the editor to locate those marks, then commits or reverts them.
+ *
+ *   - `kind:"fields"` (Analyze, plus the structured parts of Improve/Control):
+ *     the suggestion is a list of set/append ops over the section's content
+ *     tree. Accept walks the ops and writes them via `replaceSection`. Ignore
+ *     just dismisses the linked comment + bypasses the eval (no inline marks
+ *     to revert).
  */
 export function useApplySuggestion(): ApplySuggestionState {
   const { report } = useReportData();
@@ -233,22 +236,34 @@ export function useApplySuggestion(): ApplySuggestionState {
       try {
         const sectionKey = evaluation.section as SectionType;
         const linkedComment = findLinkedComment(evaluation.id);
+        const fix = coerceLegacyFix(evaluation.suggestedFix);
         let mutated = false;
 
-        if (NARRATIVE_SECTIONS.has(sectionKey)) {
+        if (fix.kind === "none") {
+          toast.error("Nothing to apply for this suggestion.");
+          return;
+        }
+
+        if (fix.kind === "patch") {
           mutated = acceptInline(sectionKey, evaluation.id);
           // If marks weren't found in the editor (race / not yet rendered), fall
           // back to direct content mutation so the user always sees a result.
-          if (!mutated && evaluation.suggestedFix?.replacementText?.trim()) {
-            applyDirect(sectionKey, evaluation.suggestedFix, sections, replaceSection as never);
-            mutated = true;
+          if (!mutated && fix.replacementText.trim()) {
+            mutated = applyPatchDirect(
+              sectionKey,
+              fix,
+              sections,
+              replaceSection as (section: SectionType, next: unknown) => void
+            );
           }
         } else {
-          // Non-narrative (analyze): no inline marks. Use direct mutation.
-          if (evaluation.suggestedFix?.replacementText?.trim()) {
-            applyDirect(sectionKey, evaluation.suggestedFix, sections, replaceSection as never);
-            mutated = true;
-          }
+          // kind === "fields": always direct mutation; no inline marks exist.
+          mutated = applyFieldsDirect(
+            sectionKey,
+            fix.ops,
+            sections,
+            replaceSection as (section: SectionType, next: unknown) => void
+          );
         }
 
         if (!mutated) {
@@ -287,12 +302,14 @@ export function useApplySuggestion(): ApplySuggestionState {
       try {
         const sectionKey = evaluation.section as SectionType;
         const linkedComment = findLinkedComment(evaluation.id);
+        const fix = coerceLegacyFix(evaluation.suggestedFix);
 
-        if (NARRATIVE_SECTIONS.has(sectionKey)) {
+        // Inline marks only exist for patch-shape fixes. Field-shape fixes
+        // and `none` fixes have nothing to revert in the doc — bypass + dismiss
+        // is the entire revert.
+        if (fix.kind === "patch") {
           ignoreInline(sectionKey, evaluation.id);
         }
-        // Analyze has no inline marks to revert; bypassing the eval +
-        // dismissing the comment is the entire revert.
 
         await Promise.all([
           patchEvaluation(evaluation.id, { bypassed: true }),
@@ -330,7 +347,8 @@ export function useApplySuggestion(): ApplySuggestionState {
       try {
         if (evaluation && !isResolved) {
           const sectionKey = evaluation.section as SectionType;
-          if (NARRATIVE_SECTIONS.has(sectionKey)) {
+          const fix = coerceLegacyFix(evaluation.suggestedFix);
+          if (fix.kind === "patch") {
             ignoreInline(sectionKey, evaluation.id);
           }
         }
@@ -366,75 +384,59 @@ export function useApplySuggestion(): ApplySuggestionState {
   };
 }
 
-/**
- * Direct content mutation (for analyze section, or as a fallback when the
- * inline marks aren't present in the editor anymore).
- */
-function applyDirect(
+// ─────────────────────────────────────────────────────────────────────────────
+// Direct-mutation helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+function applyFieldsDirect(
   section: SectionType,
-  fix: { anchorText: string; replacementText: string },
+  ops: FieldOp[],
   sections: Record<string, unknown>,
   replaceSection: (section: SectionType, next: unknown) => void
-) {
+): boolean {
   const current = sections[section];
-  if (!current) return;
-  const { anchorText, replacementText } = fix;
-  if (!replacementText.trim()) return;
+  if (!current || typeof current !== "object") return false;
 
-  switch (section) {
-    case "define":
-    case "measure":
-    case "improve":
-    case "control": {
-      const withNarrative = current as { narrative: JSONContent };
-      const cloned: JSONContent = JSON.parse(
-        JSON.stringify(withNarrative.narrative)
-      );
-      let nextDoc = cloned;
-      if (anchorText && anchorText.trim()) {
-        const { doc, replaced } = replaceTextInDoc(
-          cloned,
-          anchorText,
-          replacementText
-        );
-        nextDoc = replaced ? doc : appendParagraphsToDoc(cloned, replacementText);
-      } else {
-        nextDoc = appendParagraphsToDoc(cloned, replacementText);
-      }
-      replaceSection(section, {
-        ...(current as object),
-        narrative: nextDoc,
-      });
-      break;
-    }
-    case "analyze": {
-      const ana = current as { investigationOutcome: string };
-      const existing = ana.investigationOutcome ?? "";
-      let next: string;
-      if (anchorText && anchorText.trim() && existing.includes(anchorText)) {
-        next = existing.replace(anchorText, replacementText);
-      } else if (
-        anchorText &&
-        anchorText.trim() &&
-        collapse(existing).includes(collapse(anchorText))
-      ) {
-        const re = new RegExp(
-          anchorText
-            .replace(/\s+/g, "WHITESPACE_PLACEHOLDER")
-            .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-            .replace(/WHITESPACE_PLACEHOLDER/g, "\\s+")
-        );
-        next = existing.replace(re, replacementText);
-      } else {
-        next = existing.trim()
-          ? `${existing.trim()}\n\n${replacementText}`
-          : replacementText;
-      }
-      replaceSection("analyze", {
-        ...(current as object),
-        investigationOutcome: next,
-      });
-      break;
-    }
+  const { next, anyApplied } = applyFieldOps(current as Record<string, unknown>, ops);
+  if (!anyApplied) return false;
+  replaceSection(section, next);
+  return true;
+}
+
+/** Apply a patch-shape suggestion to the section's narrative. Used only as a
+ *  fallback when inline marks are not present in the editor (race / not-yet-
+ *  mounted). For analyze/improve/control structured fields, the model should
+ *  emit kind:"fields" instead. */
+function applyPatchDirect(
+  section: SectionType,
+  fix: PatchFix,
+  sections: Record<string, unknown>,
+  replaceSection: (section: SectionType, next: unknown) => void
+): boolean {
+  const current = sections[section];
+  if (!current || typeof current !== "object") return false;
+  if (!("narrative" in current)) return false;
+  const { anchorText, replacementText } = fix;
+  if (!replacementText.trim()) return false;
+
+  const withNarrative = current as { narrative: JSONContent };
+  const cloned: JSONContent = JSON.parse(
+    JSON.stringify(withNarrative.narrative)
+  );
+  let nextDoc = cloned;
+  if (anchorText && anchorText.trim()) {
+    const { doc, replaced } = replaceTextInDoc(
+      cloned,
+      anchorText,
+      replacementText
+    );
+    nextDoc = replaced ? doc : appendParagraphsToDoc(cloned, replacementText);
+  } else {
+    nextDoc = appendParagraphsToDoc(cloned, replacementText);
   }
+  replaceSection(section, {
+    ...(current as object),
+    narrative: nextDoc,
+  });
+  return true;
 }

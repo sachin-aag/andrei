@@ -19,6 +19,7 @@ import type { SectionType } from "@/db/schema";
 import type { WorkspaceMode } from "@/providers/report-provider";
 import type { ReportRecord } from "@/types/report";
 import { PlaceholdersPanel } from "./placeholders-panel";
+import { RunAllEvaluationButton } from "./section-status-pill";
 import { StatusBadge } from "./status-badge";
 
 type ReportWorkspaceHeaderProps = {
@@ -100,6 +101,7 @@ export function ReportWorkspaceHeader({
         </div>
         <Separator orientation="vertical" className="h-6 hidden sm:block" />
         <PlaceholdersPanel onJumpToSection={onJumpToSection} />
+        <RunAllEvaluationButton />
         <Button variant="outline" size="sm" onClick={onOpenCriteria}>
           <ListChecks className="size-4" aria-hidden="true" />
           Criteria
