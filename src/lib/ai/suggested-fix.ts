@@ -75,7 +75,7 @@ export const legacySuggestedFixSchema = z.object({
 // section narratives into anchorText until the JSON is truncated.
 export const modelSuggestedFixSchema = z.object({
   kind: z.enum(["none", "patch", "fields"]).optional(),
-  anchorText: z.string().max(300).optional(),
+  anchorText: z.string().max(600).optional(),
   replacementText: z.string().max(1600).optional(),
   ops: z.array(z.unknown()).max(12).optional(),
 });

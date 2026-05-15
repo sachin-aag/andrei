@@ -18,6 +18,8 @@ export type SidebarTab = "placeholders" | "criteria" | "comments";
 
 type Props = {
   collapsed: boolean;
+  /** When true, sidebar is fixed to the right edge of the workspace and stacks above the review gutter. */
+  overlaysWorkspace?: boolean;
   onToggleCollapse: () => void;
   activeTab: SidebarTab;
   onTabChange: (tab: SidebarTab) => void;
@@ -35,6 +37,7 @@ const TABS: { value: SidebarTab; label: string; icon: typeof ListChecks }[] = [
 
 export function ReportSidebar({
   collapsed,
+  overlaysWorkspace = false,
   onToggleCollapse,
   activeTab,
   onTabChange,
@@ -51,7 +54,10 @@ export function ReportSidebar({
     <aside
       aria-label="Report sidebar"
       className={cn(
-        "shrink-0 border-l border-[var(--border)] bg-[var(--card)] flex flex-col transition-[width] duration-200 ease-in-out overflow-hidden",
+        "flex flex-col overflow-hidden border-l border-[var(--border)] bg-[var(--card)] transition-[width,box-shadow] duration-200 ease-in-out",
+        overlaysWorkspace && !collapsed
+          ? "absolute inset-y-0 right-0 z-40 max-h-full shadow-2xl"
+          : "relative shrink-0",
         collapsed ? "w-12" : "w-[400px]",
       )}
     >

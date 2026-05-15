@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback, type ComponentType } from "react";
+import { useState, useRef, useCallback, useLayoutEffect, type ComponentType } from "react";
 import dynamic from "next/dynamic";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
@@ -61,6 +61,12 @@ const SECTION_EDITORS = {
   ),
 } satisfies Record<(typeof REPORT_WORKSPACE_SECTIONS)[number], ComponentType>;
 
+/** Doc column minimum + review gutter (lg); used to decide when the sidebar should overlay */
+const MAIN_DOC_MIN_PX = 560;
+const GUTTER_COL_PX = 360;
+const SIDEBAR_EXPANDED_PX = 400;
+const LG_MIN = "(min-width: 1024px)";
+
 export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
   const {
     report,
@@ -76,6 +82,7 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
   const [approving, setApproving] = useState(false);
   const [sendingFeedback, setSendingFeedback] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
+  const [sidebarOverlaysContent, setSidebarOverlaysContent] = useState(false);
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("criteria");
   const [criteriaSection, setCriteriaSection] = useState<SectionType | undefined>();
   const [sectionMinHeights, setSectionMinHeights] = useState<
@@ -83,6 +90,35 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
   >({});
   const router = useRouter();
   const mainRef = useRef<HTMLElement>(null);
+  const workspaceRowRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const row = workspaceRowRef.current;
+    if (!row || typeof ResizeObserver === "undefined") return;
+
+    const mq = window.matchMedia(LG_MIN);
+
+    const update = () => {
+      if (sidebarCollapsed) {
+        setSidebarOverlaysContent(false);
+        return;
+      }
+      const w = row.getBoundingClientRect().width;
+      const gutterActive = mq.matches;
+      const minMain =
+        MAIN_DOC_MIN_PX + (gutterActive ? GUTTER_COL_PX : 0);
+      setSidebarOverlaysContent(w - SIDEBAR_EXPANDED_PX < minMain);
+    };
+
+    const ro = new ResizeObserver(update);
+    ro.observe(row);
+    mq.addEventListener("change", update);
+    update();
+    return () => {
+      ro.disconnect();
+      mq.removeEventListener("change", update);
+    };
+  }, [sidebarCollapsed]);
 
   const handleSectionOverflow = useCallback(
     (overflows: Record<SectionType, number>) => {
@@ -218,12 +254,15 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
         onFeedback={handleFeedback}
       />
 
-      <div className="flex-1 overflow-hidden flex">
+      <div
+        ref={workspaceRowRef}
+        className="relative flex min-h-0 flex-1 overflow-hidden"
+      >
         <main
           ref={mainRef}
-          className="flex-1 min-w-0 h-full overflow-auto bg-[var(--background)]"
+          className="min-h-0 min-w-0 flex-1 overflow-auto bg-[var(--background)]"
         >
-          <div className="mx-auto px-6 py-8 pb-24 grid gap-8 grid-cols-1 lg:grid-cols-[minmax(0,720px)_360px] lg:max-w-[1180px]">
+          <div className="mx-auto grid grid-cols-1 gap-8 px-6 py-8 pb-24 lg:max-w-[1180px] lg:grid-cols-[minmax(560px,720px)_360px]">
             <div className="space-y-10 min-w-0">
               <ReportHeader />
               {REPORT_WORKSPACE_SECTIONS.map((s) => {
@@ -253,6 +292,7 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
 
         <ReportSidebar
           collapsed={sidebarCollapsed}
+          overlaysWorkspace={sidebarOverlaysContent}
           onToggleCollapse={toggleSidebarCollapse}
           activeTab={sidebarTab}
           onTabChange={setSidebarTab}

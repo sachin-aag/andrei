@@ -1,4 +1,4 @@
-import { generateObject, type LanguageModel } from "ai";
+import { generateText, Output, type LanguageModel } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { z } from "zod";
 import type { SectionType, CriterionStatus } from "@/db/schema";
@@ -8,7 +8,6 @@ import { buildEvaluationSystemPrompt } from "./section-prompts";
 import {
   EMPTY_SUGGESTED_FIX,
   coerceLegacyFix,
-  modelSuggestedFixSchema,
   type SuggestedFix,
 } from "./suggested-fix";
 
@@ -45,7 +44,11 @@ const evaluationSchema = z.object({
       criterionKey: z.string(),
       status: z.enum(["met", "partially_met", "not_met"]),
       reasoning: z.string().min(1).max(1200),
-      suggestedFix: modelSuggestedFixSchema,
+      // Intentionally permissive: the prompt describes the desired shape, and
+      // coerceLegacyFix() handles coercion/truncation after parsing.  Strict
+      // length validation here caused the entire response to be rejected when
+      // even one criterion's suggestedFix was oversized.
+      suggestedFix: z.unknown(),
     })
   ),
 });
@@ -59,7 +62,17 @@ const HEAVY_REASONING_SECTIONS = new Set<SectionType>([
 
 function generationSettingsForSection(section: SectionType) {
   if (!HEAVY_REASONING_SECTIONS.has(section)) {
-    return { maxOutputTokens: 8192 };
+    return {
+      maxOutputTokens: 16384,
+      providerOptions: {
+        google: {
+          thinkingConfig: {
+            thinkingBudget: 4096,
+            includeThoughts: false,
+          },
+        },
+      },
+    };
   }
 
   return {
@@ -73,6 +86,46 @@ function generationSettingsForSection(section: SectionType) {
       },
     },
   };
+}
+
+type RawEvaluation = {
+  criterionKey: string;
+  status: string;
+  reasoning: string;
+  suggestedFix: unknown;
+};
+
+/** Parse raw JSON text and extract evaluations, dropping malformed entries. */
+function salvageEvaluations(
+  section: string,
+  text: string,
+  finishReason: string
+): RawEvaluation[] {
+  let raw: { evaluations?: Array<Record<string, unknown>> };
+  try {
+    raw = JSON.parse(text) as typeof raw;
+  } catch {
+    throw new Error(
+      `Failed to parse model response for ${section}. ` +
+        `finishReason: ${finishReason}, text length: ${text.length}`
+    );
+  }
+  if (!Array.isArray(raw.evaluations) || raw.evaluations.length === 0) {
+    throw new Error(
+      `No evaluations in model response for ${section}. ` +
+        `finishReason: ${finishReason}`
+    );
+  }
+  console.warn(
+    `[evaluate] Schema validation failed for ${section}, ` +
+      `salvaging ${raw.evaluations.length} evaluations from raw response`
+  );
+  return raw.evaluations.map((e) => ({
+    criterionKey: typeof e.criterionKey === "string" ? e.criterionKey : "",
+    status: typeof e.status === "string" ? e.status : "not_met",
+    reasoning: typeof e.reasoning === "string" ? e.reasoning : "",
+    suggestedFix: e.suggestedFix,
+  }));
 }
 
 export type CriterionEvaluationResult = {
@@ -160,16 +213,43 @@ ${criteria
 Evaluate each criterion. Return one evaluation object per criterion, using the exact criterionKey provided.`;
 
   const generationSettings = generationSettingsForSection(section);
-  const { object } = await generateObject({
-    model: resolveModel(),
-    schema: evaluationSchema,
-    system: systemPrompt,
-    prompt: userPrompt,
-    temperature: 0.2,
-    ...generationSettings,
-  });
 
-  const byKey = new Map(object.evaluations.map((e) => [e.criterionKey, e]));
+  let evaluations: Array<{
+    criterionKey: string;
+    status: string;
+    reasoning: string;
+    suggestedFix: unknown;
+  }>;
+
+  try {
+    const result = await generateText({
+      model: resolveModel(),
+      output: Output.object({ schema: evaluationSchema }),
+      system: systemPrompt,
+      prompt: userPrompt,
+      temperature: 0.2,
+      ...generationSettings,
+    });
+
+    if (result.experimental_output) {
+      evaluations = result.experimental_output.evaluations;
+    } else {
+      // Output.object() returned null — try salvaging from raw text.
+      evaluations = salvageEvaluations(section, result.text, result.finishReason);
+    }
+  } catch (err: unknown) {
+    // generateText + Output.object() throws on schema validation failure
+    // rather than returning experimental_output: null.  Extract the raw
+    // text from the error and salvage what we can.
+    const errText =
+      err && typeof err === "object" && "text" in err
+        ? String((err as { text: string }).text)
+        : "";
+    if (!errText) throw err;
+    evaluations = salvageEvaluations(section, errText, "error");
+  }
+
+  const byKey = new Map(evaluations.map((e) => [e.criterionKey, e]));
   return criteria.map((c) => {
     const result = byKey.get(c.key);
     if (!result) {

@@ -6,7 +6,7 @@ import type { SectionType } from "@/db/schema";
  * into the per-section content hash so the next eval pass refreshes all
  * sections after a prompt update.
  */
-export const PROMPT_VERSION = "2026-05-15-4";
+export const PROMPT_VERSION = "2026-05-15-5";
 
 /**
  * Common reviewer rules, scoring system, scope rule, suggested-fix format,
@@ -90,8 +90,8 @@ PROSE VOICE RULES (apply to replacementText AND every set/append value):
   "[Visible particulate description: <to be filled>]").
 
 PATCH-KIND RULES (in addition to the prose voice rules):
-- "anchorText" MUST be a SHORT verbatim substring (maximum 300 characters,
-  ideally one sentence) copied EXACTLY from the SECTION CONTENT - same
+- "anchorText" MUST be a SHORT verbatim substring (maximum 600 characters,
+  ideally one or two sentences) copied EXACTLY from the SECTION CONTENT - same
   characters, same punctuation, same casing. Choose the smallest vague or
   incorrect sentence fragment that uniquely identifies where the rewrite
   belongs. Do NOT copy a whole paragraph or the whole section into anchorText.
