@@ -1,13 +1,32 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { Content, JSONContent } from "@tiptap/core";
+import type { Content, JSONContent, Editor } from "@tiptap/core";
 import { useEditor, EditorContent } from "@tiptap/react";
-import { BubbleMenu } from "@tiptap/react/menus";
+import { BubbleMenu, FloatingMenu } from "@tiptap/react/menus";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
+import { Table } from "@tiptap/extension-table";
+import { TableRow } from "@tiptap/extension-table-row";
+import { TableCellWithVerticalAlign, TableHeaderWithVerticalAlign } from "@/lib/tiptap/table-cell-vertical-align";
 import { toast } from "sonner";
-import { Loader2, MessageSquarePlus } from "lucide-react";
+import {
+  Loader2,
+  MessageSquarePlus,
+  TableIcon,
+  Plus,
+  Minus,
+  Trash2,
+  ToggleLeft,
+  Columns3,
+  Rows3,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
+  ArrowUpToLine,
+  AlignVerticalJustifyCenter,
+  ArrowDownToLine,
+} from "lucide-react";
 import {
   useReportComments,
   useReportData,
@@ -36,6 +55,182 @@ import {
   type SuggestionActionWidgetState,
 } from "@/lib/tiptap/suggestion-action-widgets";
 import type { SectionType } from "@/db/schema";
+
+function TableEditToolbar({
+  editor,
+  tableHAlign,
+  tableVAlign,
+}: {
+  editor: Editor;
+  tableHAlign: string | null;
+  tableVAlign: string | null;
+}) {
+  return (
+    <div
+      className="flex max-w-[min(100vw-1.5rem,36rem)] flex-wrap items-center gap-1 rounded-lg border border-[var(--border)] bg-[var(--card)] px-1.5 py-1 shadow-md"
+      onMouseDown={(e) => e.preventDefault()}
+    >
+      <span className="w-full px-0.5 text-[10px] font-medium uppercase tracking-wide text-[var(--muted-foreground)] sm:w-auto sm:pr-1">
+        Table
+      </span>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-6 px-1.5 text-xs gap-1"
+        onClick={() => editor.chain().focus().addColumnBefore().run()}
+        title="Add column before"
+      >
+        <Columns3 className="size-3" />
+        <Plus className="size-2.5" />
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-6 px-1.5 text-xs gap-1"
+        onClick={() => editor.chain().focus().addColumnAfter().run()}
+        title="Add column after"
+      >
+        <Plus className="size-2.5" />
+        <Columns3 className="size-3" />
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-6 px-1.5 text-xs gap-1"
+        onClick={() => editor.chain().focus().addRowBefore().run()}
+        title="Add row before"
+      >
+        <Rows3 className="size-3" />
+        <Plus className="size-2.5" />
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-6 px-1.5 text-xs gap-1"
+        onClick={() => editor.chain().focus().addRowAfter().run()}
+        title="Add row after"
+      >
+        <Plus className="size-2.5" />
+        <Rows3 className="size-3" />
+      </Button>
+      <div className="w-px h-4 bg-[var(--border)] mx-0.5" />
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-6 px-1.5 text-xs gap-1"
+        onClick={() => editor.chain().focus().deleteColumn().run()}
+        title="Delete column"
+      >
+        <Columns3 className="size-3" />
+        <Minus className="size-2.5" />
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-6 px-1.5 text-xs gap-1"
+        onClick={() => editor.chain().focus().deleteRow().run()}
+        title="Delete row"
+      >
+        <Rows3 className="size-3" />
+        <Minus className="size-2.5" />
+      </Button>
+      <div className="w-px h-4 bg-[var(--border)] mx-0.5" />
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-6 px-1.5 text-xs gap-1"
+        onClick={() => editor.chain().focus().toggleHeaderRow().run()}
+        title="Toggle header row"
+      >
+        <ToggleLeft className="size-3" />
+        Header
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className="h-6 px-1.5 text-xs gap-1 text-[var(--destructive)]"
+        onClick={() => editor.chain().focus().deleteTable().run()}
+        title="Delete table"
+      >
+        <Trash2 className="size-3" />
+        Delete
+      </Button>
+      <div className="w-px h-4 bg-[var(--border)] mx-0.5" />
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className={cn(
+          "h-6 px-1.5",
+          tableHAlign === "left" && "bg-brand-100 text-foreground"
+        )}
+        onClick={() => editor.chain().focus().setCellAttribute("align", "left").run()}
+        title="Align cell left"
+      >
+        <AlignLeft className="size-3.5" />
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className={cn("h-6 px-1.5", tableHAlign === "center" && "bg-brand-100 text-foreground")}
+        onClick={() => editor.chain().focus().setCellAttribute("align", "center").run()}
+        title="Align cell center"
+      >
+        <AlignCenter className="size-3.5" />
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className={cn("h-6 px-1.5", tableHAlign === "right" && "bg-brand-100 text-foreground")}
+        onClick={() => editor.chain().focus().setCellAttribute("align", "right").run()}
+        title="Align cell right"
+      >
+        <AlignRight className="size-3.5" />
+      </Button>
+      <div className="w-px h-4 bg-[var(--border)] mx-0.5" />
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className={cn("h-6 px-1.5", tableVAlign === "top" && "bg-brand-100 text-foreground")}
+        onClick={() => editor.chain().focus().setCellAttribute("verticalAlign", "top").run()}
+        title="Align cell top"
+      >
+        <ArrowUpToLine className="size-3.5" />
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className={cn("h-6 px-1.5", tableVAlign === "middle" && "bg-brand-100 text-foreground")}
+        onClick={() => editor.chain().focus().setCellAttribute("verticalAlign", "middle").run()}
+        title="Align cell middle"
+      >
+        <AlignVerticalJustifyCenter className="size-3.5" />
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        className={cn("h-6 px-1.5", tableVAlign === "bottom" && "bg-brand-100 text-foreground")}
+        onClick={() => editor.chain().focus().setCellAttribute("verticalAlign", "bottom").run()}
+        title="Align cell bottom"
+      >
+        <ArrowDownToLine className="size-3.5" />
+      </Button>
+    </div>
+  );
+}
 
 export type TiptapSectionFieldProps = {
   section: SectionType;
@@ -183,6 +378,10 @@ export function TiptapSectionField({
           heading: false,
         }),
         Placeholder.configure({ placeholder }),
+        Table.configure({ resizable: false }),
+        TableRow,
+        TableCellWithVerticalAlign,
+        TableHeaderWithVerticalAlign,
         SuggestionInsert,
         SuggestionDelete,
         TrackChangesKeyboardExtension,
@@ -404,11 +603,70 @@ export function TiptapSectionField({
     }
   };
 
+  const activeTableCellAttrs =
+    editor && editable && editor.isActive("table")
+      ? editor.isActive("tableHeader")
+        ? editor.getAttributes("tableHeader")
+        : editor.getAttributes("tableCell")
+      : null;
+  const tableHAlign = (activeTableCellAttrs?.align as string | undefined) ?? null;
+  const tableVAlign = (activeTableCellAttrs?.verticalAlign as string | undefined) ?? null;
+
   return (
     <div className={className}>
-      <div className="mb-1.5">
+      <div className="mb-1.5 flex items-center gap-2">
         <Label>{label}</Label>
+        {editor && editable && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            className="h-6 px-1.5 text-xs gap-1 text-[var(--muted-foreground)]"
+            onClick={() =>
+              editor
+                .chain()
+                .focus()
+                .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
+                .run()
+            }
+          >
+            <TableIcon className="size-3" />
+            Insert Table
+          </Button>
+        )}
+        {editor && editable && editor.isActive("table") && (
+          <span className="text-[10px] text-[var(--muted-foreground)]">
+            Table tools float above the cell
+          </span>
+        )}
       </div>
+
+      {editor && editable && (
+        <FloatingMenu
+          editor={editor}
+          pluginKey="tableEditFloatingMenu"
+          updateDelay={50}
+          appendTo={() => document.body}
+          options={{
+            placement: "top-start",
+            offset: 10,
+            flip: true,
+            shift: { padding: 8 },
+          }}
+          shouldShow={({ editor: ed }) =>
+            ed.isEditable &&
+            ed.isActive("table") &&
+            ed.view.hasFocus() &&
+            !commentComposing
+          }
+        >
+          <TableEditToolbar
+            editor={editor}
+            tableHAlign={tableHAlign}
+            tableVAlign={tableVAlign}
+          />
+        </FloatingMenu>
+      )}
 
       {editor && (
         <BubbleMenu

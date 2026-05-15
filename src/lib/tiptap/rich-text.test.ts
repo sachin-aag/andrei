@@ -79,6 +79,59 @@ describe("rich text helpers", () => {
     });
   });
 
+  it("extracts pipe-separated plain text from table nodes", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [
+                { type: "tableHeader", content: [{ type: "paragraph", content: [{ type: "text", text: "Header 1" }] }] },
+                { type: "tableHeader", content: [{ type: "paragraph", content: [{ type: "text", text: "Header 2" }] }] },
+              ],
+            },
+            {
+              type: "tableRow",
+              content: [
+                { type: "tableCell", content: [{ type: "paragraph", content: [{ type: "text", text: "Data 1" }] }] },
+                { type: "tableCell", content: [{ type: "paragraph", content: [{ type: "text", text: "Data 2" }] }] },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(richJsonToPlainText(doc)).toBe("Header 1 | Header 2\nData 1 | Data 2");
+  });
+
+  it("handles table mixed with paragraphs", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        { type: "paragraph", content: [{ type: "text", text: "Before table." }] },
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [
+                { type: "tableCell", content: [{ type: "paragraph", content: [{ type: "text", text: "A" }] }] },
+                { type: "tableCell", content: [{ type: "paragraph", content: [{ type: "text", text: "B" }] }] },
+              ],
+            },
+          ],
+        },
+        { type: "paragraph", content: [{ type: "text", text: "After table." }] },
+      ],
+    };
+
+    expect(richJsonToPlainText(doc)).toBe("Before table.\n\nA | B\n\nAfter table.");
+  });
+
   it("strips suggestion marks while keeping other marks", () => {
     const doc: JSONContent = {
       type: "doc",

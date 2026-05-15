@@ -10,6 +10,7 @@ import {
   modelSuggestedFixSchema,
   type SuggestedFix,
 } from "./suggested-fix";
+import { richJsonToPlainText } from "@/lib/tiptap/rich-text";
 
 export {
   EMPTY_SUGGESTED_FIX,
@@ -73,6 +74,30 @@ function generationSettingsForSection(section: SectionType) {
   };
 }
 
+/**
+ * Pre-process section content for AI evaluation. Converts any JSONContent
+ * narrative fields to plain text so tables appear as readable pipe-separated
+ * rows instead of raw Tiptap JSON nodes.
+ */
+function preProcessContentForAi(content: unknown): string {
+  if (!content || typeof content !== "object") {
+    return JSON.stringify(content, null, 2);
+  }
+
+  const obj = content as Record<string, unknown>;
+  const processed: Record<string, unknown> = { ...obj };
+
+  // Convert narrative fields from JSONContent to plain text
+  if ("narrative" in processed && processed.narrative && typeof processed.narrative === "object") {
+    const narr = processed.narrative as { type?: string };
+    if (narr.type === "doc") {
+      processed.narrative = richJsonToPlainText(narr as import("@tiptap/core").JSONContent) || "(empty)";
+    }
+  }
+
+  return JSON.stringify(processed, null, 2);
+}
+
 export type CriterionEvaluationResult = {
   criterionKey: string;
   criterionLabel: string;
@@ -103,7 +128,9 @@ export async function evaluateSection({
   if (criteria.length === 0) return [];
 
   const contentStr =
-    typeof content === "string" ? content : JSON.stringify(content, null, 2);
+    typeof content === "string"
+      ? content
+      : preProcessContentForAi(content);
 
   const isEmpty = !contentStr || contentStr.trim() === "" || contentStr === "{}";
 

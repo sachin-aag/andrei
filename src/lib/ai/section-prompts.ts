@@ -22,6 +22,8 @@ export const COMMON_EVALUATION_SYSTEM_PROMPT = `You are a pharmaceutical quality
 
 Always provide a brief "reasoning" (1-3 sentences) explaining your judgment.
 
+NOTE ON TABLES: Narrative content may contain tables rendered as pipe-separated rows (e.g. "Header 1 | Header 2\nData 1 | Data 2"). Evaluate table content the same as prose — assess completeness, accuracy, and traceability of the data within tables.
+
 CRITICAL SCOPE RULE:
 - Determine "status" and "reasoning" using ONLY the current SECTION CONTENT.
 - Previous sections (if provided) are context-only and MUST NOT be used to

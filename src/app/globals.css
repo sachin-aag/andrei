@@ -456,6 +456,46 @@
 
 /* redraft (future) — handled by section banner, not inline marks. No styles. */
 
+/* ProseMirror / Tiptap — table editing */
+.ProseMirror table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  margin: 0.75rem 0;
+  overflow: hidden;
+}
+
+.ProseMirror td,
+.ProseMirror th {
+  min-width: 1em;
+  border: 1px solid var(--border);
+  padding: 6px 8px;
+  /* Default; per-cell alignment from TipTap uses inline style and wins. */
+  vertical-align: top;
+  box-sizing: border-box;
+  position: relative;
+}
+
+.ProseMirror th {
+  background-color: var(--secondary);
+  font-weight: 600;
+}
+
+.ProseMirror .selectedCell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--ring);
+  opacity: 0.12;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.ProseMirror td > *,
+.ProseMirror th > * {
+  margin-bottom: 0;
+}
+
 /* `[Field name: <to be filled>]` markers — visible todos until the user fills them in. */
 .placeholder-todo {
   background-color: rgb(245 158 11 / 0.15);

@@ -63,10 +63,31 @@ export function richJsonToPlainText(doc: JSONContent | undefined | null): string
       parts.push("\n");
       return;
     }
+    if (node.type === "table") {
+      for (const row of inner) walk(row, "");
+      parts.push("\n");
+      return;
+    }
+    if (node.type === "tableRow") {
+      const cells: string[] = [];
+      for (const cell of inner) {
+        const before = parts.length;
+        walk(cell, "");
+        // Collect text added by the cell's children
+        const cellText = parts.splice(before).join("").trim();
+        cells.push(cellText);
+      }
+      parts.push(cells.join(" | ") + "\n");
+      return;
+    }
+    if (node.type === "tableCell" || node.type === "tableHeader") {
+      for (const ch of inner) walk(ch, "");
+      return;
+    }
     if (node.type === "doc") {
       for (let i = 0; i < inner.length; i++) {
         const ch = inner[i]!;
-        const isBlock = ["paragraph", "heading", "blockquote", "codeBlock", "bulletList", "orderedList"].includes(
+        const isBlock = ["paragraph", "heading", "blockquote", "codeBlock", "bulletList", "orderedList", "table"].includes(
           ch.type ?? ""
         );
         walk(ch, isBlock ? "\n\n" : "");
@@ -128,7 +149,7 @@ export function replaceTextInDoc(
       for (let i = 0; i < node.content.length; i++) {
         collect(node.content[i]!);
         if (
-          (node.type === "doc" || node.type === "paragraph" || node.type === "heading") &&
+          (node.type === "doc" || node.type === "paragraph" || node.type === "heading" || node.type === "tableCell" || node.type === "tableHeader") &&
           i < node.content.length - 1
         ) {
           // separator that won't survive whitespace collapse

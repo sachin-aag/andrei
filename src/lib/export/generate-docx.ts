@@ -19,6 +19,7 @@ import { getUser } from "@/lib/auth/mock-users";
 import { formatDate } from "@/lib/utils";
 import { mergeSection } from "@/lib/sections-merge";
 import { richJsonToPlainText } from "@/lib/tiptap/rich-text";
+import { narrativeToDocxXml } from "@/lib/export/narrative-to-docx-xml";
 import type { SectionType } from "@/db/schema";
 
 type ReportRow = typeof reportsTable.$inferSelect;
@@ -71,6 +72,15 @@ function composeMeasure(m: MeasureSection): string {
   return parts.length > 0 ? parts.join("\n") : "Not Applicable";
 }
 
+function composeMeasureXml(m: MeasureSection): string {
+  const narrativeXml = narrativeToDocxXml(m.narrative);
+  if (m.regulatoryNotification?.trim()) {
+    const regXml = `<w:p><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">Regulatory Notification: </w:t></w:r><w:r><w:t xml:space="preserve">${m.regulatoryNotification.trim().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</w:t></w:r></w:p>`;
+    return narrativeXml + regXml;
+  }
+  return narrativeXml;
+}
+
 function buildTemplateData(
   report: ReportRow,
   sections: ReportSectionRecord[]
@@ -100,11 +110,11 @@ function buildTemplateData(
     brainstormingCheck: check(tools.brainstorming),
     otherToolsDisplay: na(report.otherTools),
 
-    // Define — compose all sub-fields into one block
-    defineNarrative: composeDefine(d),
+    // Define — compose all sub-fields into one block (raw XML for table support)
+    defineNarrativeXml: narrativeToDocxXml(d.narrative),
 
-    // Measure — include regulatory notification if present
-    measureNarrative: composeMeasure(m),
+    // Measure — include regulatory notification if present (raw XML for table support)
+    measureNarrativeXml: composeMeasureXml(m),
 
     // Analyze - 6M
     sixMMan: na(a.sixM.man),
@@ -139,8 +149,8 @@ function buildTemplateData(
     impactEquipment: na(a.impactAssessment.equipment),
     impactPatientSafety: na(a.impactAssessment.patientSafety),
 
-    // Improve
-    improveNarrative: na(richJsonToPlainText(i.narrative)),
+    // Improve (raw XML for table support)
+    improveNarrativeXml: narrativeToDocxXml(i.narrative),
     correctiveActions: i.correctiveActions.map((ca, idx) => ({
       caNumber: `CA-${String(idx + 1).padStart(3, "0")}`,
       description: na(ca.description),
@@ -150,8 +160,8 @@ function buildTemplateData(
       effectivenessVerification: na(ca.effectivenessVerification),
     })),
 
-    // Control
-    controlNarrative: na(richJsonToPlainText(c.narrative)),
+    // Control (raw XML for table support)
+    controlNarrativeXml: narrativeToDocxXml(c.narrative),
     preventiveActions: c.preventiveActions.trim()
       ? [
           {
