@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { generateObject } from "ai";
+import { generateText } from "ai";
 import { evaluateSection } from "@/lib/ai/evaluate";
 
 vi.mock("ai", async () => {
   const actual = await vi.importActual<typeof import("ai")>("ai");
   return {
     ...actual,
-    generateObject: vi.fn(),
+    generateText: vi.fn(),
   };
 });
 
@@ -17,11 +17,11 @@ vi.mock("@ai-sdk/google", () => ({
 const COMMON_RULE_PHRASE = "traffic light system";
 const PROMPT_INJECTION_GUARD = "PROMPT INJECTION GUARD";
 
-type GenerateObjectArgs = Parameters<typeof generateObject>[0];
+type GenerateTextArgs = Parameters<typeof generateText>[0];
 
 function mockSingleEval() {
-  vi.mocked(generateObject).mockResolvedValueOnce({
-    object: {
+  vi.mocked(generateText).mockResolvedValueOnce({
+    experimental_output: {
       evaluations: [
         {
           criterionKey: "unknown",
@@ -31,18 +31,20 @@ function mockSingleEval() {
         },
       ],
     },
-  } as Awaited<ReturnType<typeof generateObject>>);
+    text: "{}",
+    finishReason: "stop",
+  } as unknown as Awaited<ReturnType<typeof generateText>>);
 }
 
 function lastSystemPrompt(): string {
-  const args = lastGenerateObjectArgs();
+  const args = lastGenerateTextArgs();
   return typeof args.system === "string" ? args.system : "";
 }
 
-function lastGenerateObjectArgs(): GenerateObjectArgs {
-  const call = vi.mocked(generateObject).mock.calls.at(-1);
-  if (!call) throw new Error("generateObject was not called");
-  return call[0] as GenerateObjectArgs;
+function lastGenerateTextArgs(): GenerateTextArgs {
+  const call = vi.mocked(generateText).mock.calls.at(-1);
+  if (!call) throw new Error("generateText was not called");
+  return call[0] as GenerateTextArgs;
 }
 
 describe("evaluateSection", () => {
@@ -62,7 +64,7 @@ describe("evaluateSection", () => {
     expect(results.length).toBeGreaterThan(0);
     expect(results.every((result) => result.status === "not_evaluated")).toBe(true);
     expect(results.every((result) => result.reasoning === "Section is empty.")).toBe(true);
-    expect(generateObject).not.toHaveBeenCalled();
+    expect(generateText).not.toHaveBeenCalled();
   });
 
   it("maps missing model evaluations to not evaluated", async () => {
@@ -76,7 +78,7 @@ describe("evaluateSection", () => {
       previousSections: [{ section: "define", content: "Previous section content." }],
     });
 
-    expect(generateObject).toHaveBeenCalledOnce();
+    expect(generateText).toHaveBeenCalledOnce();
     expect(results.length).toBeGreaterThan(0);
     expect(results.every((result) => result.status === "not_evaluated")).toBe(true);
     expect(results[0]?.reasoning).toBe("No evaluation returned by model.");
@@ -97,6 +99,7 @@ describe("evaluateSection", () => {
     expect(prompt).toContain(PROMPT_INJECTION_GUARD);
     expect(prompt).toContain("SECTION ROLE - DEFINE");
     expect(prompt).toContain("Distinguish occurrence date/time and detection date/time");
+    expect(prompt).toContain("maximum 600 characters");
     expect(prompt).toMatch(/<example type="strong"/);
     expect(prompt).toMatch(/<example type="weak"/);
   });
@@ -136,6 +139,43 @@ describe("evaluateSection", () => {
     }
   });
 
+  it("salvages evaluations when generateText throws a schema validation error", async () => {
+    process.env.GOOGLE_GENERATIVE_AI_API_KEY = "test-key";
+
+    const oversizedResponse = JSON.stringify({
+      evaluations: [
+        {
+          criterionKey: "measure.timeline",
+          status: "partially_met",
+          reasoning: "Timeline is incomplete.",
+          suggestedFix: {
+            kind: "patch",
+            anchorText: "short anchor",
+            replacementText: "x".repeat(5000), // exceeds any limit
+          },
+        },
+      ],
+    });
+
+    // Simulate the error shape thrown by generateText + Output.object()
+    const err = Object.assign(
+      new Error("No object generated: response did not match schema."),
+      { text: oversizedResponse }
+    );
+    vi.mocked(generateText).mockRejectedValueOnce(err);
+
+    const results = await evaluateSection({
+      section: "measure",
+      content: "The deviation was observed during production.",
+      reportContext: { deviationNo: "DEV-007", date: "2026-05-01" },
+    });
+
+    expect(results.length).toBeGreaterThan(0);
+    // The salvaged criterion should appear as not_evaluated (key doesn't match
+    // any real measure criterion), but importantly it didn't throw.
+    expect(results.every((r) => r.status === "not_evaluated")).toBe(true);
+  });
+
   it("uses larger output and thinking budgets for heavy reasoning sections", async () => {
     process.env.GOOGLE_GENERATIVE_AI_API_KEY = "test-key";
 
@@ -146,7 +186,7 @@ describe("evaluateSection", () => {
       reportContext: { deviationNo: "DEV-006", date: "2026-05-02" },
     });
 
-    expect(lastGenerateObjectArgs()).toMatchObject({
+    expect(lastGenerateTextArgs()).toMatchObject({
       maxOutputTokens: 32768,
       providerOptions: {
         google: {
@@ -160,14 +200,21 @@ describe("evaluateSection", () => {
 
     mockSingleEval();
     await evaluateSection({
-      section: "measure",
-      content: "Placeholder measure content.",
+      section: "define",
+      content: "Placeholder define content.",
       reportContext: { deviationNo: "DEV-006", date: "2026-05-02" },
     });
 
-    expect(lastGenerateObjectArgs()).toMatchObject({
-      maxOutputTokens: 8192,
+    expect(lastGenerateTextArgs()).toMatchObject({
+      maxOutputTokens: 16384,
+      providerOptions: {
+        google: {
+          thinkingConfig: {
+            thinkingBudget: 4096,
+            includeThoughts: false,
+          },
+        },
+      },
     });
-    expect(lastGenerateObjectArgs()).not.toHaveProperty("providerOptions");
   });
 });

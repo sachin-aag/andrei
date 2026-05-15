@@ -54,4 +54,31 @@ describe("findPlaceholders", () => {
       text: "[Room ID: <to be filled>]",
     });
   });
+
+  it("treats bracket guidance without to be filled as placeholders but skips numeric citations", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: 'Observed [description of particulate, e.g., fibers] in [number] vials; see ref [12]. Per [SOP No.: <to be filled>].',
+            },
+          ],
+        },
+      ],
+    };
+
+    const found = findPlaceholders(doc, "define", "narrative");
+
+    expect(found.map((p) => p.text).sort()).toEqual(
+      [
+        "[SOP No.: <to be filled>]",
+        "[description of particulate, e.g., fibers]",
+        "[number]",
+      ].sort()
+    );
+  });
 });

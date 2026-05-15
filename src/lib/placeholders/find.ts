@@ -19,6 +19,44 @@ export type Placeholder = {
  */
 export const PLACEHOLDER_REGEX = /\[[^\]]*(?:<\s*)?to be filled(?:\s*>)?[^\]]*\]/gi;
 
+/** Any `[...]` span; paired with exclusions in `collectPlaceholderSpans`. */
+export const BRACKET_SPAN_REGEX = /\[[^\]]+\]/g;
+
+/** Citation-style `[12]` — not treated as an editable placeholder. */
+export const NUMERIC_ONLY_BRACKET = /^\[\s*\d+\s*\]$/;
+
+type TextSpan = { fromRel: number; toRel: number; text: string };
+
+function collectPlaceholderSpans(text: string): TextSpan[] {
+  const spans: TextSpan[] = [];
+
+  PLACEHOLDER_REGEX.lastIndex = 0;
+  let tm: RegExpExecArray | null;
+  while ((tm = PLACEHOLDER_REGEX.exec(text)) !== null) {
+    spans.push({
+      fromRel: tm.index,
+      toRel: tm.index + tm[0].length,
+      text: tm[0],
+    });
+  }
+
+  BRACKET_SPAN_REGEX.lastIndex = 0;
+  let bm: RegExpExecArray | null;
+  while ((bm = BRACKET_SPAN_REGEX.exec(text)) !== null) {
+    const seg = bm[0];
+    if (NUMERIC_ONLY_BRACKET.test(seg)) continue;
+
+    const fromRel = bm.index;
+    const toRel = bm.index + seg.length;
+    if (spans.some((s) => s.fromRel <= fromRel && s.toRel >= toRel)) continue;
+
+    spans.push({ fromRel, toRel, text: seg });
+  }
+
+  spans.sort((a, b) => a.fromRel - b.fromRel || b.toRel - a.toRel);
+  return spans;
+}
+
 /**
  * Scans a Tiptap JSON document and returns all placeholders found within it.
  */
@@ -32,19 +70,19 @@ export function findPlaceholders(
   function walk(node: JSONContent, pos: number): number {
     if (node.type === "text") {
       const text = node.text ?? "";
-      let match;
-      // Reset lastIndex just in case
-      PLACEHOLDER_REGEX.lastIndex = 0;
-      while ((match = PLACEHOLDER_REGEX.exec(text)) !== null) {
+      const spans = collectPlaceholderSpans(text);
+
+      for (const s of spans) {
         placeholders.push({
-          id: `${section}-${contentPath}-${pos + match.index}`,
+          id: `${section}-${contentPath}-${pos + s.fromRel}`,
           section,
           contentPath,
-          fromPos: pos + match.index,
-          toPos: pos + match.index + match[0].length,
-          text: match[0],
+          fromPos: pos + s.fromRel,
+          toPos: pos + s.toRel,
+          text: s.text,
         });
       }
+
       return pos + text.length;
     }
 

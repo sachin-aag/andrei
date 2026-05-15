@@ -78,8 +78,8 @@ describe("modelSuggestedFixSchema", () => {
     });
   });
 
-  it("keeps the model boundary loose while runtime coercion stays strict", () => {
-    expect(modelSuggestedFixSchema.parse(null)).toBeNull();
+  it("keeps the model boundary shallow while runtime coercion stays strict", () => {
+    expect(() => modelSuggestedFixSchema.parse(null)).toThrow();
     expect(modelSuggestedFixSchema.parse({ kind: "fields", ops: [null] })).toEqual({
       kind: "fields",
       ops: [null],

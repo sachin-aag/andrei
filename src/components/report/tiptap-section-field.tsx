@@ -23,7 +23,7 @@ import { getUser } from "@/lib/auth/mock-users";
 import { cn } from "@/lib/utils";
 import { createCommentHighlightExtension } from "@/lib/tiptap/comment-highlights";
 import type { CommentHighlightRange, CommentHighlightHandlers } from "@/lib/tiptap/comment-highlights";
-import { PlaceholderHighlightExtension } from "@/lib/tiptap/placeholder-highlights";
+import { PlaceholderHighlightExtension, isSelectionOverPlaceholder } from "@/lib/tiptap/placeholder-highlights";
 import {
   SuggestionInsert,
   SuggestionDelete,
@@ -422,7 +422,11 @@ export function TiptapSectionField({
           shouldShow={({ editor: ed, state }) => {
             if (!canInlineComment || !ed.isEditable) return false;
             if (commentComposing) return true;
-            return !state.selection.empty;
+            if (state.selection.empty) return false;
+            // Don't show comment bubble when the selection covers a placeholder
+            // (user clicked to fill it, not to comment on it)
+            if (isSelectionOverPlaceholder(state)) return false;
+            return true;
           }}
         >
           <div

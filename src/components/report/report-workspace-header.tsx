@@ -5,7 +5,6 @@ import {
   CheckCircle2,
   ChevronLeft,
   Download,
-  ListChecks,
   Loader2,
   MessageSquare,
   Send,
@@ -15,10 +14,8 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import type { SectionType } from "@/db/schema";
 import type { WorkspaceMode } from "@/providers/report-provider";
 import type { ReportRecord } from "@/types/report";
-import { PlaceholdersPanel } from "./placeholders-panel";
 import { RunAllEvaluationButton } from "./section-status-pill";
 import { StatusBadge } from "./status-badge";
 
@@ -29,8 +26,6 @@ type ReportWorkspaceHeaderProps = {
   managerName?: string;
   trackChangesMode: boolean;
   onTrackChangesModeChange: (next: boolean) => void;
-  onJumpToSection: (section: SectionType) => void;
-  onOpenCriteria: () => void;
   canSubmit: boolean;
   canReview: boolean;
   submitting: boolean;
@@ -48,8 +43,6 @@ export function ReportWorkspaceHeader({
   managerName,
   trackChangesMode,
   onTrackChangesModeChange,
-  onJumpToSection,
-  onOpenCriteria,
   canSubmit,
   canReview,
   submitting,
@@ -100,12 +93,8 @@ export function ReportWorkspaceHeader({
           )}
         </div>
         <Separator orientation="vertical" className="h-6 hidden sm:block" />
-        <PlaceholdersPanel onJumpToSection={onJumpToSection} />
+
         <RunAllEvaluationButton />
-        <Button variant="outline" size="sm" onClick={onOpenCriteria}>
-          <ListChecks className="size-4" aria-hidden="true" />
-          Criteria
-        </Button>
         <Button variant="outline" size="sm" asChild>
           <a
             href={`/api/reports/${report.id}/export`}

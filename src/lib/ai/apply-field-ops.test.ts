@@ -159,6 +159,30 @@ describe("applyFieldOps", () => {
     expect((next.sixM as { man: string }).man).toBe("ok");
   });
 
+  it("normalizes bracket placeholders inside string values", () => {
+    const input = { sixM: { man: "[number]" } } as Record<string, unknown>;
+    const { next, anyApplied } = applyFieldOps(input, [
+      { op: "set", path: "sixM.man", value: "[count]" },
+    ]);
+    expect(anyApplied).toBe(true);
+    expect((next.sixM as { man: string }).man).toBe("[count: <to be filled>]");
+  });
+
+  it("normalizes bracket placeholders in append payloads", () => {
+    const root = { correctiveActions: [] as unknown[] } as Record<string, unknown>;
+    const { next, anyApplied } = applyFieldOps(root, [
+      {
+        op: "append",
+        path: "correctiveActions",
+        value: { description: "[responsible]" },
+      },
+    ]);
+    expect(anyApplied).toBe(true);
+    expect(((next.correctiveActions as { description: string }[])[0]).description).toBe(
+      "[responsible: <to be filled>]"
+    );
+  });
+
   it("returns anyApplied false when every op fails", () => {
     const { anyApplied } = applyFieldOps({} as Record<string, unknown>, [
       { op: "set", path: "missing.leaf", value: "x" },

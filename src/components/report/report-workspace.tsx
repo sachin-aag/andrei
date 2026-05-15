@@ -1,21 +1,23 @@
 "use client";
 
-import { useState, useRef, useCallback, type ComponentType } from "react";
+import { useState, useRef, useCallback, useLayoutEffect, type ComponentType } from "react";
 import dynamic from "next/dynamic";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import {
   useReportComments,
   useReportData,
+  useReportEditors,
   useReportPlaceholders,
 } from "@/providers/report-provider";
 import { ReportHeader } from "./report-header";
 import { ReportWorkspaceHeader } from "./report-workspace-header";
 import { MarginGutter } from "./review-rail/margin-gutter";
-import { CriteriaSheet } from "./criteria-sheet";
+import { ReportSidebar, type SidebarTab } from "./report-sidebar";
 import { getUser } from "@/lib/auth/mock-users";
 import type { SectionType } from "@/db/schema";
 import type { WorkspaceMode } from "@/providers/report-provider";
+import type { Placeholder } from "@/lib/placeholders/find";
 
 export type { WorkspaceMode };
 
@@ -59,6 +61,12 @@ const SECTION_EDITORS = {
   ),
 } satisfies Record<(typeof REPORT_WORKSPACE_SECTIONS)[number], ComponentType>;
 
+/** Doc column minimum + review gutter (lg); used to decide when the sidebar should overlay */
+const MAIN_DOC_MIN_PX = 560;
+const GUTTER_COL_PX = 360;
+const SIDEBAR_EXPANDED_PX = 400;
+const LG_MIN = "(min-width: 1024px)";
+
 export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
   const {
     report,
@@ -68,24 +76,53 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
     setTrackChangesMode,
   } = useReportData();
   const { pendingPlaceholders } = useReportPlaceholders();
+  const { getEditor } = useReportEditors();
   const { requestCommentFocus } = useReportComments();
   const [submitting, setSubmitting] = useState(false);
   const [approving, setApproving] = useState(false);
   const [sendingFeedback, setSendingFeedback] = useState(false);
-  const [criteriaOpen, setCriteriaOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
+  const [sidebarOverlaysContent, setSidebarOverlaysContent] = useState(false);
+  const [sidebarTab, setSidebarTab] = useState<SidebarTab>("criteria");
   const [criteriaSection, setCriteriaSection] = useState<SectionType | undefined>();
   const [sectionMinHeights, setSectionMinHeights] = useState<
     Partial<Record<SectionType, number>>
   >({});
   const router = useRouter();
   const mainRef = useRef<HTMLElement>(null);
+  const workspaceRowRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    const row = workspaceRowRef.current;
+    if (!row || typeof ResizeObserver === "undefined") return;
+
+    const mq = window.matchMedia(LG_MIN);
+
+    const update = () => {
+      if (sidebarCollapsed) {
+        setSidebarOverlaysContent(false);
+        return;
+      }
+      const w = row.getBoundingClientRect().width;
+      const gutterActive = mq.matches;
+      const minMain =
+        MAIN_DOC_MIN_PX + (gutterActive ? GUTTER_COL_PX : 0);
+      setSidebarOverlaysContent(w - SIDEBAR_EXPANDED_PX < minMain);
+    };
+
+    const ro = new ResizeObserver(update);
+    ro.observe(row);
+    mq.addEventListener("change", update);
+    update();
+    return () => {
+      ro.disconnect();
+      mq.removeEventListener("change", update);
+    };
+  }, [sidebarCollapsed]);
 
   const handleSectionOverflow = useCallback(
     (overflows: Record<SectionType, number>) => {
       setSectionMinHeights((prev) => {
-        // MarginGutter measures absolutely positioned cards and reports how far
-        // they extend past each section. Only update when the padding delta
-        // actually changes; otherwise measurement can feed back into layout.
         const keys = Object.keys(overflows) as SectionType[];
         const prevKeys = Object.keys(prev) as SectionType[];
         if (
@@ -180,6 +217,24 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
     requestCommentFocus(id);
   };
 
+  const handleJumpToPlaceholder = (p: Placeholder) => {
+    jumpToSection(p.section);
+    requestAnimationFrame(() => {
+      const editor = getEditor(p.section, p.contentPath);
+      if (editor) {
+        editor
+          .chain()
+          .focus()
+          .setTextSelection({ from: p.fromPos, to: p.toPos })
+          .run();
+      }
+    });
+  };
+
+  const toggleSidebarCollapse = () => {
+    setSidebarCollapsed((c) => !c);
+  };
+
   return (
     <div className="flex h-full flex-col">
       <ReportWorkspaceHeader
@@ -189,8 +244,6 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
         managerName={manager?.name}
         trackChangesMode={trackChangesMode}
         onTrackChangesModeChange={setTrackChangesMode}
-        onJumpToSection={jumpToSection}
-        onOpenCriteria={() => setCriteriaOpen(true)}
         canSubmit={canSubmit}
         canReview={canReview}
         submitting={submitting}
@@ -201,12 +254,15 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
         onFeedback={handleFeedback}
       />
 
-      <div className="flex-1 overflow-hidden">
+      <div
+        ref={workspaceRowRef}
+        className="relative flex min-h-0 flex-1 overflow-hidden"
+      >
         <main
           ref={mainRef}
-          className="h-full overflow-auto bg-[var(--background)]"
+          className="min-h-0 min-w-0 flex-1 overflow-auto bg-[var(--background)]"
         >
-          <div className="mx-auto px-6 py-8 pb-24 grid gap-8 grid-cols-1 lg:grid-cols-[minmax(0,720px)_360px] lg:max-w-[1180px]">
+          <div className="mx-auto grid grid-cols-1 gap-8 px-6 py-8 pb-24 lg:max-w-[1180px] lg:grid-cols-[minmax(560px,720px)_360px]">
             <div className="space-y-10 min-w-0">
               <ReportHeader />
               {REPORT_WORKSPACE_SECTIONS.map((s) => {
@@ -233,18 +289,19 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
             </aside>
           </div>
         </main>
-      </div>
 
-      <CriteriaSheet
-        open={criteriaOpen}
-        onOpenChange={(open) => {
-          setCriteriaOpen(open);
-          if (!open) setCriteriaSection(undefined);
-        }}
-        onJumpToSection={jumpToSection}
-        onJumpToComment={jumpToComment}
-        initialSection={criteriaSection}
-      />
+        <ReportSidebar
+          collapsed={sidebarCollapsed}
+          overlaysWorkspace={sidebarOverlaysContent}
+          onToggleCollapse={toggleSidebarCollapse}
+          activeTab={sidebarTab}
+          onTabChange={setSidebarTab}
+          onJumpToSection={jumpToSection}
+          onJumpToPlaceholder={handleJumpToPlaceholder}
+          onJumpToComment={jumpToComment}
+          initialCriteriaSection={criteriaSection}
+        />
+      </div>
     </div>
   );
 }

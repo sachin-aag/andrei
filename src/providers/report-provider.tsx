@@ -770,7 +770,7 @@ export function ReportProvider({
     };
   }, []);
 
-  // Scan the live section content for unfilled `<to be filled>` placeholders.
+  // Scan narrative for unfilled placeholders (to-be-filled tokens + bracket guidance).
   // Single source of truth for the header badge + Sheet panel + inline highlights.
   const pendingPlaceholders = useMemo(
     () => collectPlaceholders(sections),
