@@ -7,7 +7,8 @@ import type { JSONContent } from "@tiptap/core";
 const placeholderKey = new PluginKey("placeholderHighlights");
 
 /**
- * Tiptap extension that automatically highlights `[...<to be filled>...]` patterns
+ * Tiptap extension that highlights actionable bracketed spans: `to be filled`
+ * tokens and other non-numeric `[...]` guidance the model may emit.
  * in the document as amber pills so they're visually distinct as actionable items.
  */
 export const PlaceholderHighlightExtension = Extension.create({

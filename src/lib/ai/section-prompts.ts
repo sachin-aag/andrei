@@ -6,7 +6,7 @@ import type { SectionType } from "@/db/schema";
  * into the per-section content hash so the next eval pass refreshes all
  * sections after a prompt update.
  */
-export const PROMPT_VERSION = "2026-05-15-1";
+export const PROMPT_VERSION = "2026-05-15-2";
 
 /**
  * Common reviewer rules, scoring system, scope rule, suggested-fix format,
@@ -84,6 +84,10 @@ PROSE VOICE RULES (apply to replacementText AND every set/append value):
   "[SOP No.: <to be filled>]", "[Room ID: <to be filled>]". The exact
   "<to be filled>" token is required so the editor can highlight these as
   actionable todos.
+- Do NOT emit bare instructional brackets without that token inside the same span
+  (wrong: "[number]", "[description of particulate, e.g., fibers]"). Instead use
+  a label plus the token (right: "[Count: <to be filled>]",
+  "[Visible particulate description: <to be filled>]").
 
 PATCH-KIND RULES (in addition to the prose voice rules):
 - "anchorText" MUST be a SHORT verbatim substring (one or two sentences max)

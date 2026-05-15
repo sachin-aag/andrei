@@ -24,6 +24,7 @@ import {
   type FieldOp,
   type PatchFix,
 } from "@/lib/ai/suggested-fix";
+import { normalizeBracketPlaceholdersInPlainText } from "@/lib/placeholders/normalize-bracket-placeholders";
 import type { EvaluationRecord, CommentRecord } from "@/types/report";
 import type { SectionType } from "@/db/schema";
 
@@ -419,6 +420,10 @@ function applyPatchDirect(
   const { anchorText, replacementText } = fix;
   if (!replacementText.trim()) return false;
 
+  const normalizedReplacement = normalizeBracketPlaceholdersInPlainText(
+    replacementText.trim()
+  );
+
   const withNarrative = current as { narrative: JSONContent };
   const cloned: JSONContent = JSON.parse(
     JSON.stringify(withNarrative.narrative)
@@ -428,11 +433,11 @@ function applyPatchDirect(
     const { doc, replaced } = replaceTextInDoc(
       cloned,
       anchorText,
-      replacementText
+      normalizedReplacement
     );
-    nextDoc = replaced ? doc : appendParagraphsToDoc(cloned, replacementText);
+    nextDoc = replaced ? doc : appendParagraphsToDoc(cloned, normalizedReplacement);
   } else {
-    nextDoc = appendParagraphsToDoc(cloned, replacementText);
+    nextDoc = appendParagraphsToDoc(cloned, normalizedReplacement);
   }
   replaceSection(section, {
     ...(current as object),

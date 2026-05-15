@@ -1,5 +1,22 @@
 import { createId } from "@paralleldrive/cuid2";
 import type { FieldOp } from "@/lib/ai/suggested-fix";
+import { normalizeBracketPlaceholdersInPlainText } from "@/lib/placeholders/normalize-bracket-placeholders";
+
+function normalizeFieldOpValue(value: unknown): unknown {
+  if (typeof value === "string") {
+    return normalizeBracketPlaceholdersInPlainText(value);
+  }
+  return value;
+}
+
+function normalizeAppendPayload(value: Record<string, string>): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [key, raw] of Object.entries(value)) {
+    out[key] =
+      typeof raw === "string" ? normalizeBracketPlaceholdersInPlainText(raw) : raw;
+  }
+  return out;
+}
 
 const FORBIDDEN_PATH_SEGMENTS = new Set([
   "__proto__",
@@ -141,9 +158,13 @@ export function applyFieldOps(
   let anyApplied = false;
   for (const op of ops) {
     if (op.op === "set") {
-      if (setNestedPath(next, op.path, op.value)) anyApplied = true;
+      if (setNestedPath(next, op.path, normalizeFieldOpValue(op.value))) {
+        anyApplied = true;
+      }
     } else {
-      if (appendAtPath(next, op.path, op.value, generateId)) anyApplied = true;
+      if (appendAtPath(next, op.path, normalizeAppendPayload(op.value), generateId)) {
+        anyApplied = true;
+      }
     }
   }
   return { next, anyApplied };
