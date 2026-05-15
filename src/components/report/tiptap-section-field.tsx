@@ -15,6 +15,7 @@ import {
   useReportEvaluations,
 } from "@/providers/report-provider";
 import { useApplySuggestion } from "@/hooks/use-apply-suggestion";
+import { coerceLegacyFix } from "@/lib/ai/suggested-fix";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -156,13 +157,15 @@ export function TiptapSectionField({
   const actionableEvaluationIds = useMemo(() => {
     return new Set(
       evaluations
-        .filter(
-          (evaluation) =>
-            evaluation.section === section &&
-            !evaluation.bypassed &&
-            !evaluation.fixApplied &&
-            !!evaluation.suggestedFix?.replacementText?.trim()
-        )
+        .filter((evaluation) => {
+          if (evaluation.section !== section) return false;
+          if (evaluation.bypassed || evaluation.fixApplied) return false;
+          // Only patch-shape suggestions live inline in the narrative editor;
+          // fields-shape suggestions render in the gutter card and have no
+          // anchor here to react to clicks.
+          const fix = coerceLegacyFix(evaluation.suggestedFix);
+          return fix.kind === "patch" && fix.replacementText.trim().length > 0;
+        })
         .map((evaluation) => evaluation.id)
     );
   }, [evaluations, section]);

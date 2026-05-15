@@ -54,10 +54,18 @@ export function SectionStatusPill({ section }: { section: SectionType }) {
   } = useReportEvaluations();
   const [open, setOpen] = useState(false);
   const rows = useMemo(() => rowsForSection(section, evaluations), [evaluations, section]);
-  const status = aggregateStatus(rows);
-  const { met, total } = metCount(rows);
   const isPending = pendingEvalSections.includes(section);
   const isRunning = runningEvalSections.includes(section);
+  const isBusy = isPending || isRunning;
+  const [stableRows, setStableRows] = useState(rows);
+
+  if (!isBusy && stableRows !== rows) {
+    setStableRows(rows);
+  }
+
+  const displayRows = isBusy ? stableRows : rows;
+  const status = aggregateStatus(displayRows);
+  const { met, total } = metCount(displayRows);
 
   // Auto-eval status badge: "checking" while in flight for this section,
   // "queued" when the idle timer is armed but hasn't fired yet.
@@ -76,8 +84,20 @@ export function SectionStatusPill({ section }: { section: SectionType }) {
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
         >
-          <span className={cn("size-2 rounded-full shrink-0", STATUS_COLOR[status])} />
-          <span className="text-xs font-medium text-[var(--foreground)] truncate">
+          <span
+            className={cn(
+              "size-2 rounded-full shrink-0 transition-opacity",
+              STATUS_COLOR[status],
+              isBusy && "opacity-40"
+            )}
+            title={isBusy ? "Showing previous result while AI checks this section" : undefined}
+          />
+          <span
+            className={cn(
+              "text-xs font-medium text-[var(--foreground)] truncate transition-opacity",
+              isBusy && "opacity-60"
+            )}
+          >
             {SECTION_LABELS[section] ?? section} · {met}/{total} met
           </span>
           {autoStatus ? (
@@ -105,7 +125,7 @@ export function SectionStatusPill({ section }: { section: SectionType }) {
 
       {open && (
         <div className="border-t border-[var(--border)] bg-[var(--secondary)]/30 px-2 py-2 space-y-1">
-          {rows.map((row) => {
+          {displayRows.map((row) => {
             const eff = effectiveStatus(row);
             return (
               <div
@@ -114,15 +134,17 @@ export function SectionStatusPill({ section }: { section: SectionType }) {
               >
                 <span
                   className={cn(
-                    "size-1.5 rounded-full mt-1.5 shrink-0",
-                    STATUS_COLOR[eff]
+                    "size-1.5 rounded-full mt-1.5 shrink-0 transition-opacity",
+                    STATUS_COLOR[eff],
+                    isBusy && "opacity-40"
                   )}
                 />
                 <div className="flex-1 min-w-0">
                   <div
                     className={cn(
-                      "leading-snug",
-                      STATUS_TEXT_COLOR[eff]
+                      "leading-snug transition-opacity",
+                      STATUS_TEXT_COLOR[eff],
+                      isBusy && "opacity-60"
                     )}
                   >
                     {row.criterionLabel}
@@ -163,6 +185,49 @@ export function SectionRunEvaluationButton({ section }: { section: SectionType }
         <Sparkles className="size-3" />
       )}
       Run it by Andrei
+    </Button>
+  );
+}
+
+export function RunAllEvaluationButton({
+  size = "sm",
+  variant = "success",
+  className,
+}: {
+  size?: "sm" | "default";
+  variant?: "outline" | "secondary" | "default" | "success";
+  className?: string;
+}) {
+  const {
+    runEvaluation,
+    isEvaluating,
+    runningEvalSections,
+    pendingEvalSections,
+  } = useReportEvaluations();
+
+  const inFlight = runningEvalSections.length + pendingEvalSections.length;
+  const label = isEvaluating
+    ? inFlight > 0
+      ? `Checking… ${inFlight} left`
+      : "Checking…"
+    : "Run all by Andrei";
+
+  return (
+    <Button
+      type="button"
+      size={size}
+      variant={variant}
+      className={className}
+      disabled={isEvaluating}
+      onClick={() => runEvaluation(undefined, { reason: "manual" })}
+      title="Run AI checks across every section"
+    >
+      {isEvaluating ? (
+        <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+      ) : (
+        <Sparkles className="size-4" aria-hidden="true" />
+      )}
+      {label}
     </Button>
   );
 }

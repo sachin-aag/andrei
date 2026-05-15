@@ -13,10 +13,8 @@ import {
   useReportComments,
   useReportData,
   useReportEditors,
-  useReportEvaluations,
 } from "@/providers/report-provider";
 import { CommentCard } from "./comment-card";
-import { OverflowSummaryCard } from "./overflow-summary-card";
 import { SectionCommentComposer } from "./section-comment-composer";
 import { EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
 import { getUser } from "@/lib/auth/mock-users";
@@ -26,18 +24,22 @@ import type { SectionType } from "@/db/schema";
 export type GutterAnchor = {
   /** Stable id: comment id, `composer:<section>`, `unanchored:<commentId>`, or `overflow:<section>`. */
   id: string;
-  type: "comment" | "composer" | "unanchored-comment" | "overflow-summary";
+  type: "comment" | "composer" | "field-comment" | "unanchored-comment";
   desiredTop: number;
   section?: SectionType;
   comment?: CommentRecord;
-  /** Only set for overflow-summary anchors. */
-  overflowCount?: number;
 };
 
 const CARD_GAP = 8;
 
+function queryFieldAnchor(section: SectionType, contentPath: string): HTMLElement | null {
+  const css = globalThis.CSS;
+  const value = `${section}.${contentPath}`;
+  const escaped = css?.escape ? css.escape(value) : value.replace(/"/g, '\\"');
+  return document.querySelector<HTMLElement>(`[data-field-anchor="${escaped}"]`);
+}
+
 type Props = {
-  onOpenCriteria?: (section: SectionType) => void;
   onSectionOverflow?: (overflows: Record<SectionType, number>) => void;
 };
 
@@ -50,7 +52,7 @@ type Props = {
  * greedy top-down packer then pushes overlapping cards downward so they never
  * overlap.
  */
-export function MarginGutter({ onOpenCriteria, onSectionOverflow }: Props) {
+export function MarginGutter({ onSectionOverflow }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { report, workspaceMode, currentUserId } = useReportData();
   const {
@@ -61,7 +63,6 @@ export function MarginGutter({ onOpenCriteria, onSectionOverflow }: Props) {
     hoveredCommentIds,
   } = useReportComments();
   const { getEditor, editorTick } = useReportEditors();
-  const { overflowCounts } = useReportEvaluations();
   const [layoutVersion, setLayoutVersion] = useState(0);
   const [cardHeights, setCardHeights] = useState<Record<string, number>>({});
   const [anchors, setAnchors] = useState<GutterAnchor[]>([]);
@@ -129,16 +130,21 @@ export function MarginGutter({ onOpenCriteria, onSectionOverflow }: Props) {
       }
     }
 
-    // 2. Comments — anchored ones use editor coords; unanchored go to section header.
+    // 2. Comments — editor comments use Tiptap coords, field comments use
+    // form-control anchors, and fully unanchored comments go to the section header.
     for (const c of comments) {
       if (c.parentId) continue;
-      const isAnchored =
+      const isEditorAnchored =
         c.section &&
         c.contentPath &&
         c.fromPos != null &&
         c.toPos != null;
+      const fieldAnchor =
+        c.section && c.contentPath && !isEditorAnchored
+          ? queryFieldAnchor(c.section as SectionType, c.contentPath)
+          : null;
 
-      if (isAnchored) {
+      if (isEditorAnchored) {
         const editor = getEditor(c.section as SectionType, c.contentPath as string);
         if (!editor) continue;
         const view = editor.view;
@@ -157,6 +163,15 @@ export function MarginGutter({ onOpenCriteria, onSectionOverflow }: Props) {
         } catch {
           // ignore positioning errors (doc may have shrunk below this pos)
         }
+      } else if (fieldAnchor && c.section) {
+        const top = fieldAnchor.getBoundingClientRect().top - containerTop;
+        result.push({
+          id: `field:${c.id}`,
+          type: "field-comment",
+          desiredTop: top,
+          section: c.section,
+          comment: c,
+        });
       } else if (c.section) {
         const heading = document.getElementById(c.section);
         if (!heading) continue;
@@ -175,26 +190,6 @@ export function MarginGutter({ onOpenCriteria, onSectionOverflow }: Props) {
     // ai_fix comments and are handled by the comment loop above — no extra
     // slot needed.
 
-    // 3. Overflow summary cards for sections with capped AI comments.
-    for (const section of EVALUATABLE_SECTIONS) {
-      const count = overflowCounts[section as SectionType];
-      if (!count || count <= 0) continue;
-      const sectionAnchors = result.filter((a) => a.section === section && a.type !== "composer");
-      const lastAnchor = sectionAnchors[sectionAnchors.length - 1];
-      const baseTop = lastAnchor ? lastAnchor.desiredTop + 60 : 0;
-      const heading = document.getElementById(section);
-      const fallbackTop = heading
-        ? heading.getBoundingClientRect().top - containerTop + 60
-        : baseTop;
-      result.push({
-        id: `overflow:${section}`,
-        type: "overflow-summary",
-        desiredTop: lastAnchor ? baseTop : fallbackTop,
-        section: section as SectionType,
-        overflowCount: count,
-      });
-    }
-
     setAnchors(result.sort((a, b) => a.desiredTop - b.desiredTop));
   }, [
     comments,
@@ -202,7 +197,6 @@ export function MarginGutter({ onOpenCriteria, onSectionOverflow }: Props) {
     editorTick,
     layoutVersion,
     canComment,
-    overflowCounts,
   ]);
 
   // Greedy non-overlap packing: each card's top is `max(desiredTop, prev.bottom + gap)`.
@@ -347,6 +341,8 @@ export function MarginGutter({ onOpenCriteria, onSectionOverflow }: Props) {
     setActiveAnchorId(a.id);
     if (a.type === "comment" && a.comment) {
       setActiveCommentId(a.comment.id);
+    } else if (a.type === "field-comment" && a.comment) {
+      setActiveCommentId(a.comment.id);
     } else if (a.type === "unanchored-comment" && a.comment) {
       setActiveCommentId(a.comment.id);
     } else {
@@ -417,17 +413,7 @@ export function MarginGutter({ onOpenCriteria, onSectionOverflow }: Props) {
 
         if (a.type === "composer" && a.section) {
           node = <SectionCommentComposer section={a.section} />;
-        } else if (a.type === "overflow-summary" && a.section && a.overflowCount) {
-          node = (
-            <OverflowSummaryCard
-              count={a.overflowCount}
-              onClick={() => onOpenCriteria?.(a.section!)}
-            />
-          );
-        } else if (
-          (a.type === "comment" || a.type === "unanchored-comment") &&
-          a.comment
-        ) {
+        } else if (a.type !== "composer" && a.comment) {
           const replies = repliesByParent.get(a.comment.id) ?? [];
           node = (
             <CommentCard

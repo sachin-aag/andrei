@@ -11,6 +11,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
+import type { SuggestedFix } from "@/lib/ai/suggested-fix";
 
 export const reportStatusEnum = pgEnum("report_status", [
   "draft",
@@ -103,9 +104,9 @@ export const criteriaEvaluations = pgTable("criteria_evaluations", {
   status: criterionStatusEnum("status").notNull().default("not_evaluated"),
   reasoning: text("reasoning").notNull().default(""),
   suggestedFix: jsonb("suggested_fix")
-    .$type<{ anchorText: string; replacementText: string }>()
+    .$type<SuggestedFix>()
     .notNull()
-    .default({ anchorText: "", replacementText: "" }),
+    .default({ kind: "none" }),
   fixApplied: boolean("fix_applied").notNull().default(false),
   bypassed: boolean("bypassed").notNull().default(false),
   /**

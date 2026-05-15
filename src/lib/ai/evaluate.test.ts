@@ -27,7 +27,7 @@ function mockSingleEval() {
           criterionKey: "unknown",
           status: "met",
           reasoning: "Returned for a criterion not in this section.",
-          suggestedFix: { anchorText: "", replacementText: "" },
+          suggestedFix: { kind: "none" },
         },
       ],
     },
@@ -35,10 +35,14 @@ function mockSingleEval() {
 }
 
 function lastSystemPrompt(): string {
+  const args = lastGenerateObjectArgs();
+  return typeof args.system === "string" ? args.system : "";
+}
+
+function lastGenerateObjectArgs(): GenerateObjectArgs {
   const call = vi.mocked(generateObject).mock.calls.at(-1);
   if (!call) throw new Error("generateObject was not called");
-  const args = call[0] as GenerateObjectArgs;
-  return typeof args.system === "string" ? args.system : "";
+  return call[0] as GenerateObjectArgs;
 }
 
 describe("evaluateSection", () => {
@@ -111,6 +115,7 @@ describe("evaluateSection", () => {
     expect(prompt).toContain(COMMON_RULE_PHRASE);
     expect(prompt).toContain("SECTION ROLE - ANALYZE");
     expect(prompt).toContain("5-Why and 6M are alternatives");
+    expect(prompt).toContain("Each item in \"ops\" MUST be a JSON object");
     expect(prompt).toContain("Fewer or more than five questions are acceptable");
     expect(prompt).toContain("collapses to human error");
   });
@@ -129,5 +134,40 @@ describe("evaluateSection", () => {
       expect(prompt).toContain(COMMON_RULE_PHRASE);
       expect(prompt).toContain(`SECTION ROLE - ${section.toUpperCase()}`);
     }
+  });
+
+  it("uses larger output and thinking budgets for heavy reasoning sections", async () => {
+    process.env.GOOGLE_GENERATIVE_AI_API_KEY = "test-key";
+
+    mockSingleEval();
+    await evaluateSection({
+      section: "improve",
+      content: "Placeholder improve content.",
+      reportContext: { deviationNo: "DEV-006", date: "2026-05-02" },
+    });
+
+    expect(lastGenerateObjectArgs()).toMatchObject({
+      maxOutputTokens: 32768,
+      providerOptions: {
+        google: {
+          thinkingConfig: {
+            thinkingBudget: 8192,
+            includeThoughts: false,
+          },
+        },
+      },
+    });
+
+    mockSingleEval();
+    await evaluateSection({
+      section: "measure",
+      content: "Placeholder measure content.",
+      reportContext: { deviationNo: "DEV-006", date: "2026-05-02" },
+    });
+
+    expect(lastGenerateObjectArgs()).toMatchObject({
+      maxOutputTokens: 8192,
+    });
+    expect(lastGenerateObjectArgs()).not.toHaveProperty("providerOptions");
   });
 });

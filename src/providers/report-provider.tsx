@@ -26,6 +26,7 @@ import type { SectionType } from "@/db/schema";
 import { mergeSection } from "@/lib/sections-merge";
 import { hashContent } from "@/lib/ai/content-hash";
 import { EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
+import { coerceLegacyFix, hasFixContent } from "@/lib/ai/suggested-fix";
 import {
   hasEnoughContextInFirstSection,
   INSUFFICIENT_FIRST_SECTION_MESSAGE,
@@ -458,13 +459,14 @@ export function ReportProvider({
         });
         if (!res.ok) {
           const errBody = await res.json().catch(() => ({}));
+          const message =
+            typeof errBody.error === "string"
+              ? errBody.error
+              : "AI evaluation failed. Please try again.";
           // Stay quiet for background runs — only the manual button toasts on
           // failure, otherwise we'd nag the user every minute.
           if (reason === "manual") {
-            toast.error(
-              errBody.error ??
-                "AI evaluation failed. Check that AI_GATEWAY_API_KEY is configured."
-            );
+            toast.error(message);
           } else {
             console.warn("Background AI evaluation failed", errBody);
           }
@@ -688,10 +690,11 @@ export function ReportProvider({
     };
     const sectionsNeedingBackfill = new Set<SectionType>();
     for (const ev of evaluations) {
+      const fix = coerceLegacyFix(ev.suggestedFix);
       const wantsFix =
         (ev.status === "partially_met" || ev.status === "not_met") &&
         !ev.bypassed &&
-        !!ev.suggestedFix?.replacementText?.trim();
+        hasFixContent(fix);
       if (!wantsFix) continue;
       const hasOpenLink = linkedOpenByEvalId.has(ev.id);
       if (!hasOpenLink) {
@@ -699,8 +702,10 @@ export function ReportProvider({
         sectionsNeedingBackfill.add(ev.section);
         continue;
       }
-      // Open linked comment exists — check that the inline marks are also
-      // in the narrative; if not, the prior materialization was lost.
+      // Open linked comment exists. For inline patches, also check that the
+      // marks are still in the narrative; if not, the prior materialization
+      // was lost. Fields-shape fixes have no inline marks to verify.
+      if (fix.kind !== "patch") continue;
       const sectionContent = sections[ev.section as keyof typeof sections] as
         | { narrative?: unknown }
         | undefined;

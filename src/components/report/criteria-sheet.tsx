@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, Loader2, Sparkles, Check, MessageSquare } from "lucide-react";
+import { ChevronDown, ChevronRight, Check, Loader2, MessageSquare } from "lucide-react";
 import {
   useReportComments,
   useReportEvaluations,
 } from "@/providers/report-provider";
 import { Button } from "@/components/ui/button";
+import { RunAllEvaluationButton } from "./section-status-pill";
 import {
   Sheet,
   SheetContent,
@@ -20,6 +21,7 @@ import { EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
 import {
   STATUS_COLOR,
   STATUS_TEXT_COLOR,
+  type CriterionRow,
   aggregateStatus,
   effectiveStatus,
   metCount,
@@ -46,11 +48,18 @@ export function CriteriaSheet({
   initialSection,
 }: Props) {
   const { comments } = useReportComments();
-  const { evaluations, runEvaluation, isEvaluating } = useReportEvaluations();
+  const {
+    evaluations,
+    pendingEvalSections,
+    runningEvalSections,
+  } = useReportEvaluations();
   const [openSections, setOpenSections] = useState<Set<SectionType>>(
     () => new Set(EVALUATABLE_SECTIONS)
   );
   const grouped = useMemo(() => rowsBySection(evaluations), [evaluations]);
+  const [stableRowsBySection, setStableRowsBySection] = useState<
+    Map<SectionType, CriterionRow[]>
+  >(() => new Map(grouped));
   const criteriaContainerRef = useRef<HTMLDivElement>(null);
 
   /** When the sheet opens with a target section, force that row expanded without a state-sync effect. */
@@ -72,6 +81,25 @@ export function CriteriaSheet({
     });
     return () => cancelAnimationFrame(frame);
   }, [open, initialSection]);
+
+  let nextStableRowsBySection = stableRowsBySection;
+  for (const section of EVALUATABLE_SECTIONS) {
+    const isBusy =
+      pendingEvalSections.includes(section) ||
+      runningEvalSections.includes(section);
+    if (isBusy) continue;
+
+    const rows = grouped.get(section) ?? [];
+    if (nextStableRowsBySection.get(section) !== rows) {
+      if (nextStableRowsBySection === stableRowsBySection) {
+        nextStableRowsBySection = new Map(stableRowsBySection);
+      }
+      nextStableRowsBySection.set(section, rows);
+    }
+  }
+  if (nextStableRowsBySection !== stableRowsBySection) {
+    setStableRowsBySection(nextStableRowsBySection);
+  }
 
   const rootComments = useMemo(
     () =>
@@ -99,20 +127,7 @@ export function CriteriaSheet({
                 Quick scan of AI criteria and all comment threads.
               </SheetDescription>
             </div>
-            <Button
-              size="sm"
-              variant="secondary"
-              className="h-7 text-xs"
-              onClick={() => runEvaluation(undefined, { reason: "manual" })}
-              disabled={isEvaluating}
-            >
-              {isEvaluating ? (
-                <Loader2 className="size-3.5 animate-spin" />
-              ) : (
-                <Sparkles className="size-3.5" />
-              )}
-              Run AI check
-            </Button>
+            <RunAllEvaluationButton className="h-7 text-xs" />
           </div>
         </SheetHeader>
         <div className="flex-1 min-h-0 overflow-hidden p-3">
@@ -130,10 +145,21 @@ export function CriteriaSheet({
               className="flex-1 min-h-0 overflow-y-auto mt-3 space-y-2"
             >
               {EVALUATABLE_SECTIONS.map((section) => {
-                const rows = grouped.get(section) ?? [];
+                const currentRows = grouped.get(section) ?? [];
+                const isPending = pendingEvalSections.includes(section);
+                const isRunning = runningEvalSections.includes(section);
+                const isBusy = isPending || isRunning;
+                const rows =
+                  (isBusy ? stableRowsBySection.get(section) : currentRows) ??
+                  currentRows;
                 const status = aggregateStatus(rows);
                 const { met, total } = metCount(rows);
                 const isOpen = displayOpenSections.has(section);
+                const busyLabel = isRunning
+                  ? "AI checking..."
+                  : isPending
+                  ? "AI check queued"
+                  : null;
                 return (
                   <div
                     key={section}
@@ -146,6 +172,11 @@ export function CriteriaSheet({
                         aria-expanded={isOpen}
                         aria-controls={`criteria-section-${section}`}
                         className="min-w-0 flex-1 flex items-center gap-2 px-3 py-2 text-left cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]"
+                        title={
+                          isBusy
+                            ? "Showing previous result while AI checks this section"
+                            : undefined
+                        }
                         onClick={() => {
                           setOpenSections((prev) => {
                             const next = new Set(prev);
@@ -169,14 +200,38 @@ export function CriteriaSheet({
                         <span
                           aria-hidden="true"
                           className={cn(
-                            "size-2.5 rounded-full shrink-0",
-                            STATUS_COLOR[status]
+                            "size-2.5 rounded-full shrink-0 transition-opacity",
+                            STATUS_COLOR[status],
+                            isBusy && "opacity-40"
                           )}
                         />
-                        <span className="text-sm font-semibold flex-1 truncate">
+                        <span
+                          className={cn(
+                            "text-sm font-semibold flex-1 truncate transition-opacity",
+                            isBusy && "opacity-60"
+                          )}
+                        >
                           {SECTION_LABELS[section] ?? section}
                         </span>
-                        <span className="text-[10px] text-[var(--muted-foreground)]">
+                        {busyLabel && (
+                          <span className="inline-flex items-center gap-1 text-[10px] text-[var(--muted-foreground)] truncate">
+                            {isRunning ? (
+                              <Loader2 className="size-3 animate-spin" aria-hidden="true" />
+                            ) : (
+                              <span
+                                className="size-1.5 rounded-full bg-amber-400 animate-pulse"
+                                aria-hidden="true"
+                              />
+                            )}
+                            <span className="hidden sm:inline">{busyLabel}</span>
+                          </span>
+                        )}
+                        <span
+                          className={cn(
+                            "text-[10px] text-[var(--muted-foreground)] transition-opacity",
+                            isBusy && "opacity-60"
+                          )}
+                        >
                           {met}/{total}
                         </span>
                       </button>
@@ -211,15 +266,17 @@ export function CriteriaSheet({
                               <span
                                 aria-hidden="true"
                                 className={cn(
-                                  "size-1.5 rounded-full mt-1.5 shrink-0",
-                                  STATUS_COLOR[eff]
+                                  "size-1.5 rounded-full mt-1.5 shrink-0 transition-opacity",
+                                  STATUS_COLOR[eff],
+                                  isBusy && "opacity-40"
                                 )}
                               />
                               <div className="flex-1 min-w-0">
                                 <div
                                   className={cn(
-                                    "leading-snug",
-                                    STATUS_TEXT_COLOR[eff]
+                                    "leading-snug transition-opacity",
+                                    STATUS_TEXT_COLOR[eff],
+                                    isBusy && "opacity-60"
                                   )}
                                 >
                                   {row.criterionLabel}
