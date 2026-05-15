@@ -18,7 +18,6 @@ import type { reports as reportsTable } from "@/db/schema";
 import { getUser } from "@/lib/auth/mock-users";
 import { formatDate } from "@/lib/utils";
 import { mergeSection } from "@/lib/sections-merge";
-import { richJsonToPlainText } from "@/lib/tiptap/rich-text";
 import { narrativeToDocxXml } from "@/lib/export/narrative-to-docx-xml";
 import type { SectionType } from "@/db/schema";
 
@@ -56,20 +55,6 @@ function toRoman(n: number): string {
     }
   }
   return result;
-}
-
-function composeDefine(d: DefineSection): string {
-  const narrativeText = richJsonToPlainText(d.narrative).trim();
-  return narrativeText.length > 0 ? narrativeText : "Not Applicable";
-}
-
-function composeMeasure(m: MeasureSection): string {
-  const parts: string[] = [];
-  const narrativeText = richJsonToPlainText(m.narrative);
-  if (narrativeText.trim()) parts.push(narrativeText.trim());
-  if (m.regulatoryNotification?.trim())
-    parts.push(`Regulatory Notification: ${m.regulatoryNotification.trim()}`);
-  return parts.length > 0 ? parts.join("\n") : "Not Applicable";
 }
 
 function composeMeasureXml(m: MeasureSection): string {
