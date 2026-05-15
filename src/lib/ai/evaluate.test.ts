@@ -97,6 +97,7 @@ describe("evaluateSection", () => {
     expect(prompt).toContain(PROMPT_INJECTION_GUARD);
     expect(prompt).toContain("SECTION ROLE - DEFINE");
     expect(prompt).toContain("Distinguish occurrence date/time and detection date/time");
+    expect(prompt).toContain("maximum 300 characters");
     expect(prompt).toMatch(/<example type="strong"/);
     expect(prompt).toMatch(/<example type="weak"/);
   });
@@ -160,8 +161,8 @@ describe("evaluateSection", () => {
 
     mockSingleEval();
     await evaluateSection({
-      section: "measure",
-      content: "Placeholder measure content.",
+      section: "define",
+      content: "Placeholder define content.",
       reportContext: { deviationNo: "DEV-006", date: "2026-05-02" },
     });
 

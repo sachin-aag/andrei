@@ -6,7 +6,7 @@ import type { SectionType } from "@/db/schema";
  * into the per-section content hash so the next eval pass refreshes all
  * sections after a prompt update.
  */
-export const PROMPT_VERSION = "2026-05-15-2";
+export const PROMPT_VERSION = "2026-05-15-4";
 
 /**
  * Common reviewer rules, scoring system, scope rule, suggested-fix format,
@@ -90,12 +90,19 @@ PROSE VOICE RULES (apply to replacementText AND every set/append value):
   "[Visible particulate description: <to be filled>]").
 
 PATCH-KIND RULES (in addition to the prose voice rules):
-- "anchorText" MUST be a SHORT verbatim substring (one or two sentences max)
-  copied EXACTLY from the SECTION CONTENT - same characters, same punctuation,
-  same casing. Choose the vague or incorrect sentence to rewrite. Do NOT
-  paraphrase the anchor; if you cannot find a suitable substring, leave
-  anchorText as "" and the replacementText will be appended at the end.
+- "anchorText" MUST be a SHORT verbatim substring (maximum 300 characters,
+  ideally one sentence) copied EXACTLY from the SECTION CONTENT - same
+  characters, same punctuation, same casing. Choose the smallest vague or
+  incorrect sentence fragment that uniquely identifies where the rewrite
+  belongs. Do NOT copy a whole paragraph or the whole section into anchorText.
+  Do NOT paraphrase the anchor; if you cannot find a short suitable substring,
+  leave anchorText as "" and the replacementText will be appended at the end.
 - Prefer in-place replacement (non-empty anchor) over append (empty anchor).
+- "replacementText" replaces ONLY the anchorText span. It must contain ONLY
+  the rewritten or added sentences — NOT the surrounding unchanged text.
+  Maximum 1600 characters. If you copy the entire section narrative into
+  replacementText the response will be rejected. Target one deficiency per
+  criterion; do not bundle the whole section rewrite into a single patch.
 
 FIELDS-KIND RULES (in addition to the prose voice rules):
 - Only target paths that the section addition documents for this criterion.

@@ -69,11 +69,16 @@ export const legacySuggestedFixSchema = z.object({
   replacementText: z.string().max(2000),
 });
 
-// Keep the provider-facing schema intentionally loose. Gemini's native
-// responseSchema support can struggle with nested unions/preprocess schemas and
-// drift into very long invalid JSON; strict validation happens immediately
-// after generation via coerceLegacyFix().
-export const modelSuggestedFixSchema = z.unknown();
+// Keep the provider-facing schema shallow. Gemini's native responseSchema
+// support can struggle with nested unions/preprocess schemas, but leaving this
+// as z.unknown() gives the model no length guidance and it can copy entire
+// section narratives into anchorText until the JSON is truncated.
+export const modelSuggestedFixSchema = z.object({
+  kind: z.enum(["none", "patch", "fields"]).optional(),
+  anchorText: z.string().max(300).optional(),
+  replacementText: z.string().max(1600).optional(),
+  ops: z.array(z.unknown()).max(12).optional(),
+});
 
 export type SetFieldOp = z.infer<typeof setFieldOpSchema>;
 export type AppendFieldOp = z.infer<typeof appendFieldOpSchema>;
