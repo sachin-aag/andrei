@@ -1,21 +1,16 @@
 "use client";
 
-import { useMemo, type ReactNode } from "react";
-import { Check, Loader2, X } from "lucide-react";
+import { type ReactNode } from "react";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import {
   useReportData,
-  useReportComments,
-  useReportEvaluations,
   useReportSection,
 } from "@/providers/report-provider";
 import { useSectionSave } from "@/hooks/use-section-save";
-import { useApplySuggestion } from "@/hooks/use-apply-suggestion";
 import { SectionShell } from "./section-shell";
-import { coerceLegacyFix } from "@/lib/ai/suggested-fix";
 import { cn } from "@/lib/utils";
 
 const SIX_M_FIELDS: Array<[keyof Omit<{
@@ -37,123 +32,19 @@ const SIX_M_FIELDS: Array<[keyof Omit<{
 
 export function AnalyzeEditor() {
   const { readOnly } = useReportData();
-  const {
-    comments,
-  } = useReportComments();
-  const { evaluations } = useReportEvaluations();
   const { update } = useReportSection("analyze");
   const { status, lastSavedAt, value } = useSectionSave("analyze");
-  const {
-    applySuggestion,
-    ignoreSuggestion,
-    pendingId,
-  } = useApplySuggestion();
-
-  const { suggestedFieldValues } = useMemo(() => {
-    const byEvaluationId = new Map(evaluations.map((item) => [item.id, item]));
-    const values = new Map<
-      string,
-      {
-        value: string;
-        evaluation: (typeof evaluations)[number];
-      }
-    >();
-    for (const comment of comments) {
-      if (
-        comment.section !== "analyze" ||
-        comment.status !== "open" ||
-        !(comment.kind ?? "").startsWith("ai_") ||
-        !comment.evaluationId
-      ) {
-        continue;
-      }
-      const evaluation = byEvaluationId.get(comment.evaluationId);
-      if (!evaluation) continue;
-      const fix = coerceLegacyFix(evaluation.suggestedFix);
-      if (fix.kind !== "fields") continue;
-      for (const op of fix.ops) {
-        if (op.op === "set") {
-          values.set(op.path, { value: op.value, evaluation });
-        }
-      }
-    }
-    return {
-      suggestedFieldValues: values,
-    };
-  }, [comments, evaluations]);
 
   const fieldAnchorProps = (path: string) => ({
     "data-field-anchor": `analyze.${path}`,
     className: "grid gap-1.5 scroll-mt-24",
   });
 
-  const hasFieldSuggestion = (path: string) => suggestedFieldValues.has(path);
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const suggestedControlClass = (_path: string) => "";
 
-  const suggestedControlClass = (path: string) =>
-    hasFieldSuggestion(path)
-      ? "rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0"
-      : "";
-
-  const currentFieldValue = (path: string): string => {
-    const result = path
-      .split(".")
-      .reduce<unknown>((acc, segment) => {
-        if (!acc || typeof acc !== "object") return undefined;
-        return (acc as Record<string, unknown>)[segment];
-      }, value);
-    return typeof result === "string" ? result : "";
-  };
-
-  const renderFieldDiffPreview = (path: string) => {
-    const suggestion = suggestedFieldValues.get(path);
-    if (!suggestion) return null;
-    const busy = pendingId === suggestion.evaluation.id;
-    const disabled = busy || pendingId !== null || readOnly;
-    const current = currentFieldValue(path).trim();
-    return (
-      <div className="p-3 text-sm leading-relaxed">
-        {current ? (
-          <>
-            <span className="suggestion-delete suggestion-delete-ai whitespace-pre-wrap">
-              {current}
-            </span>{" "}
-          </>
-        ) : null}
-        <span className="suggestion-insert suggestion-insert-fix suggestion-insert-ai whitespace-pre-wrap">
-          {suggestion.value}
-        </span>
-        <span className="suggestion-action-widget" aria-label="Suggestion actions">
-          <button
-            type="button"
-            className="suggestion-action-button suggestion-action-button-accept"
-            disabled={disabled}
-            onClick={() => void applySuggestion(suggestion.evaluation)}
-            aria-label={busy ? "Applying suggestion" : "Accept suggestion"}
-          >
-            {busy ? <Loader2 className="size-4 animate-spin" /> : <Check className="size-4" />}
-          </button>
-          <span className="suggestion-action-divider" aria-hidden="true" />
-          <button
-            type="button"
-            className="suggestion-action-button suggestion-action-button-ignore"
-            disabled={disabled}
-            onClick={() => void ignoreSuggestion(suggestion.evaluation)}
-            aria-label="Ignore suggestion"
-          >
-            <X className="size-4" />
-          </button>
-        </span>
-      </div>
-    );
-  };
-
-  const renderControl = (path: string, control: ReactNode) => {
-    if (!hasFieldSuggestion(path)) return control;
-    return (
-      <div className="min-h-[90px] resize-y overflow-auto rounded-md border border-[var(--border)] bg-[var(--input)] shadow-sm focus-within:ring-1 focus-within:ring-[var(--ring)]">
-        {renderFieldDiffPreview(path)}
-      </div>
-    );
+  const renderControl = (_path: string, control: ReactNode) => {
+    return control;
   };
 
   return (

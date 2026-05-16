@@ -12,10 +12,7 @@ import {
   useReportComments,
   useReportData,
   useReportEditors,
-  useReportEvaluations,
 } from "@/providers/report-provider";
-import { useApplySuggestion } from "@/hooks/use-apply-suggestion";
-import { coerceLegacyFix } from "@/lib/ai/suggested-fix";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -30,11 +27,6 @@ import {
   TrackChangesExtension,
   TrackChangesKeyboardExtension,
 } from "@/lib/tiptap/suggestion-marks";
-import {
-  createSuggestionActionWidgetsExtension,
-  suggestionActionWidgetsRefreshMeta,
-  type SuggestionActionWidgetState,
-} from "@/lib/tiptap/suggestion-action-widgets";
 import type { SectionType } from "@/db/schema";
 
 export type TiptapSectionFieldProps = {
@@ -79,8 +71,6 @@ export function TiptapSectionField({
     acknowledgeCommentFocus,
   } = useReportComments();
   const { registerEditor } = useReportEditors();
-  const { evaluations } = useReportEvaluations();
-  const { applySuggestion, ignoreSuggestion, pendingId } = useApplySuggestion();
 
   const rangesRef = useRef<CommentHighlightRange[]>([]);
   const handlersRef = useRef<CommentHighlightHandlers>({
@@ -92,25 +82,12 @@ export function TiptapSectionField({
 
   const getRanges = useCallback(() => rangesRef.current, []);
   const getHandlers = useCallback(() => handlersRef.current, []);
-  const suggestionActionsRef = useRef<SuggestionActionWidgetState>({
-    enabled: false,
-    actionableEvaluationIds: new Set<string>(),
-    pendingId: null as string | null,
-    onAccept: () => {},
-    onIgnore: () => {},
-  });
-  const getSuggestionActions = useCallback(() => suggestionActionsRef.current, []);
 
   const highlightExtension = useMemo(
     () =>
       // eslint-disable-next-line react-hooks/refs -- ProseMirror calls getters at transaction time, not during render
       createCommentHighlightExtension(getRanges, getHandlers),
     [getRanges, getHandlers]
-  );
-  const suggestionActionExtension = useMemo(
-    // eslint-disable-next-line react-hooks/refs -- ProseMirror calls the getter from plugin lifecycle/event code, not during render
-    () => createSuggestionActionWidgetsExtension(getSuggestionActions),
-    [getSuggestionActions]
   );
 
   const filteredRanges = useMemo(() => {
@@ -153,22 +130,6 @@ export function TiptapSectionField({
   const canInlineComment =
     (report.status === "submitted" || report.status === "in_review" || report.status === "draft") &&
     (manager ? workspaceMode === "review" : currentUserId === report.authorId);
-  const canResolveSuggestions = !readOnly && !trackChangesMode;
-  const actionableEvaluationIds = useMemo(() => {
-    return new Set(
-      evaluations
-        .filter((evaluation) => {
-          if (evaluation.section !== section) return false;
-          if (evaluation.bypassed || evaluation.fixApplied) return false;
-          // Only patch-shape suggestions live inline in the narrative editor;
-          // fields-shape suggestions render in the gutter card and have no
-          // anchor here to react to clicks.
-          const fix = coerceLegacyFix(evaluation.suggestedFix);
-          return fix.kind === "patch" && fix.replacementText.trim().length > 0;
-        })
-        .map((evaluation) => evaluation.id)
-    );
-  }, [evaluations, section]);
 
   const [commentComposing, setCommentComposing] = useState(false);
   const [commentDraft, setCommentDraft] = useState("");
@@ -189,7 +150,6 @@ export function TiptapSectionField({
         TrackChangesExtension,
         highlightExtension,
         PlaceholderHighlightExtension,
-        suggestionActionExtension,
       ],
       content: value,
       editable,
@@ -199,40 +159,9 @@ export function TiptapSectionField({
         onChangeRef.current(json);
       },
     },
-    [highlightExtension, placeholder, suggestionActionExtension]
+    [highlightExtension, placeholder]
   );
 
-  useLayoutEffect(() => {
-    suggestionActionsRef.current = {
-      enabled: canResolveSuggestions,
-      actionableEvaluationIds,
-      pendingId,
-      onAccept: (evaluationId: string) => {
-        const evaluation = evaluations.find((item) => item.id === evaluationId);
-        if (evaluation) void applySuggestion(evaluation);
-      },
-      onIgnore: (evaluationId: string) => {
-        const evaluation = evaluations.find((item) => item.id === evaluationId);
-        if (evaluation) void ignoreSuggestion(evaluation);
-      },
-    };
-  }, [
-    actionableEvaluationIds,
-    applySuggestion,
-    canResolveSuggestions,
-    evaluations,
-    ignoreSuggestion,
-    pendingId,
-  ]);
-
-  useEffect(() => {
-    if (!editor) return;
-    editor.view.dispatch(
-      editor.state.tr
-        .setMeta(suggestionActionWidgetsRefreshMeta, true)
-        .setMeta("addToHistory", false)
-    );
-  }, [editor, actionableEvaluationIds, canResolveSuggestions, pendingId]);
 
   useLayoutEffect(() => {
     handlersRef.current = {

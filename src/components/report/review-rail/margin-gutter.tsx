@@ -132,8 +132,10 @@ export function MarginGutter({ onSectionOverflow }: Props) {
 
     // 2. Comments — editor comments use Tiptap coords, field comments use
     // form-control anchors, and fully unanchored comments go to the section header.
+    // Filter out AI comments — they are no longer shown as gutter cards.
     for (const c of comments) {
       if (c.parentId) continue;
+      if ((c.kind ?? "human").startsWith("ai_")) continue;
       const isEditorAnchored =
         c.section &&
         c.contentPath &&
