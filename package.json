@@ -20,7 +20,8 @@
     "db:fix-comments": "tsx scripts/ensure-comment-columns.ts",
     "db:migrate-suggested-fix": "tsx scripts/migrate-suggested-fix.ts",
     "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "sample-eval-report": "tsx scripts/bulk-sample-evaluation-report.ts"
   },
   "dependencies": {
     "@ai-sdk/gateway": "^3.0.104",

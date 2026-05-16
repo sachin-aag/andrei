@@ -6,7 +6,7 @@ import { getCriteria } from "./criteria";
 import { contextForPrompt } from "./section-context";
 import { buildEvaluationSystemPrompt } from "./section-prompts";
 
-function resolveModel(): LanguageModel {
+export function resolveEvaluationLanguageModel(): LanguageModel {
   const googleKey =
     process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.AI_GATEWAY_API_KEY;
   if (!googleKey) {
@@ -16,6 +16,10 @@ function resolveModel(): LanguageModel {
   }
   const google = createGoogleGenerativeAI({ apiKey: googleKey });
   return google("gemini-2.5-flash");
+}
+
+function resolveModel(): LanguageModel {
+  return resolveEvaluationLanguageModel();
 }
 
 const evaluationSchema = z.object({
