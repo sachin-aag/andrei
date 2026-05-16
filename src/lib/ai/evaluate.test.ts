@@ -27,7 +27,6 @@ function mockSingleEval() {
           criterionKey: "unknown",
           status: "met",
           reasoning: "Returned for a criterion not in this section.",
-          suggestedFix: { kind: "none" },
         },
       ],
     },
@@ -99,7 +98,6 @@ describe("evaluateSection", () => {
     expect(prompt).toContain(PROMPT_INJECTION_GUARD);
     expect(prompt).toContain("SECTION ROLE - DEFINE");
     expect(prompt).toContain("Distinguish occurrence date/time and detection date/time");
-    expect(prompt).toContain("maximum 600 characters");
     expect(prompt).toMatch(/<example type="strong"/);
     expect(prompt).toMatch(/<example type="weak"/);
   });
@@ -118,7 +116,6 @@ describe("evaluateSection", () => {
     expect(prompt).toContain(COMMON_RULE_PHRASE);
     expect(prompt).toContain("SECTION ROLE - ANALYZE");
     expect(prompt).toContain("5-Why and 6M are alternatives");
-    expect(prompt).toContain("Each item in \"ops\" MUST be a JSON object");
     expect(prompt).toContain("Fewer or more than five questions are acceptable");
     expect(prompt).toContain("collapses to human error");
   });
@@ -148,11 +145,6 @@ describe("evaluateSection", () => {
           criterionKey: "measure.timeline",
           status: "partially_met",
           reasoning: "Timeline is incomplete.",
-          suggestedFix: {
-            kind: "patch",
-            anchorText: "short anchor",
-            replacementText: "x".repeat(5000), // exceeds any limit
-          },
         },
       ],
     });

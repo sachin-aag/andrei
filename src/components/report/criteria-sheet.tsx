@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Check, Loader2, MessageSquare } from "lucide-react";
+import { MessageSquare } from "lucide-react";
 import {
   useReportComments,
   useReportEvaluations,
@@ -43,6 +43,7 @@ function CriterionItem({
   busy?: boolean;
 }) {
   const eff = effectiveStatus(row);
+
   return (
     <div className="flex items-start gap-2 text-xs">
       <span
@@ -68,11 +69,6 @@ function CriterionItem({
             {row.reasoning}
           </div>
         )}
-        {row.fixApplied && (
-          <div className="mt-1 text-[10px] text-green-700 flex items-center gap-1">
-            <Check className="size-3" aria-hidden="true" /> Fix applied
-          </div>
-        )}
       </div>
     </div>
   );
@@ -91,7 +87,6 @@ export function CriteriaPanelContent({
 }) {
   const {
     evaluations,
-    pendingEvalSections,
     runningEvalSections,
   } = useReportEvaluations();
   const [openSections, setOpenSections] = useState<Set<SectionType>>(
@@ -122,10 +117,8 @@ export function CriteriaPanelContent({
 
   let nextStableRowsBySection = stableRowsBySection;
   for (const section of EVALUATABLE_SECTIONS) {
-    const isBusy =
-      pendingEvalSections.includes(section) ||
-      runningEvalSections.includes(section);
-    if (isBusy) continue;
+    const isRunning = runningEvalSections.includes(section);
+    if (isRunning) continue;
     const rows = grouped.get(section) ?? [];
     if (nextStableRowsBySection.get(section) !== rows) {
       if (nextStableRowsBySection === stableRowsBySection) {
@@ -142,20 +135,14 @@ export function CriteriaPanelContent({
     <div ref={containerRef} className="space-y-2">
       {EVALUATABLE_SECTIONS.map((section) => {
         const currentRows = grouped.get(section) ?? [];
-        const isPending = pendingEvalSections.includes(section);
         const isRunning = runningEvalSections.includes(section);
-        const isBusy = isPending || isRunning;
         const rows =
-          (isBusy ? stableRowsBySection.get(section) : currentRows) ??
+          (isRunning ? stableRowsBySection.get(section) : currentRows) ??
           currentRows;
         const status = aggregateStatus(rows);
         const { met, total } = metCount(rows);
         const isOpen = displayOpenSections.has(section);
-        const busyLabel = isRunning
-          ? "AI checking..."
-          : isPending
-            ? "AI check queued"
-            : null;
+        const busyLabel = isRunning ? "AI checking..." : null;
         return (
           <SectionAccordion
             key={section}
@@ -173,12 +160,12 @@ export function CriteriaPanelContent({
             onJumpToSection={onJumpToSection}
             statusColor={STATUS_COLOR[status]}
             trailingLabel={`${met}/${total}`}
-            busy={isBusy}
+            busy={isRunning}
             busyLabel={busyLabel ?? undefined}
             busySpinning={isRunning}
           >
             {rows.map((row) => (
-              <CriterionItem key={row.criterionKey} row={row} busy={isBusy} />
+              <CriterionItem key={row.criterionKey} row={row} busy={isRunning} />
             ))}
           </SectionAccordion>
         );

@@ -5,26 +5,6 @@ import type { SectionType, CriterionStatus } from "@/db/schema";
 import { getCriteria } from "./criteria";
 import { contextForPrompt } from "./section-context";
 import { buildEvaluationSystemPrompt } from "./section-prompts";
-import {
-  EMPTY_SUGGESTED_FIX,
-  coerceLegacyFix,
-  type SuggestedFix,
-} from "./suggested-fix";
-
-export {
-  EMPTY_SUGGESTED_FIX,
-  coerceLegacyFix,
-  hasFixContent,
-} from "./suggested-fix";
-export type {
-  SuggestedFix,
-  FieldOp,
-  SetFieldOp,
-  AppendFieldOp,
-  NoneFix,
-  PatchFix,
-  FieldsFix,
-} from "./suggested-fix";
 
 function resolveModel(): LanguageModel {
   const googleKey =
@@ -44,11 +24,6 @@ const evaluationSchema = z.object({
       criterionKey: z.string(),
       status: z.enum(["met", "partially_met", "not_met"]),
       reasoning: z.string().min(1).max(1200),
-      // Intentionally permissive: the prompt describes the desired shape, and
-      // coerceLegacyFix() handles coercion/truncation after parsing.  Strict
-      // length validation here caused the entire response to be rejected when
-      // even one criterion's suggestedFix was oversized.
-      suggestedFix: z.unknown(),
     })
   ),
 });
@@ -92,7 +67,6 @@ type RawEvaluation = {
   criterionKey: string;
   status: string;
   reasoning: string;
-  suggestedFix: unknown;
 };
 
 /** Parse raw JSON text and extract evaluations, dropping malformed entries. */
@@ -124,7 +98,6 @@ function salvageEvaluations(
     criterionKey: typeof e.criterionKey === "string" ? e.criterionKey : "",
     status: typeof e.status === "string" ? e.status : "not_met",
     reasoning: typeof e.reasoning === "string" ? e.reasoning : "",
-    suggestedFix: e.suggestedFix,
   }));
 }
 
@@ -133,7 +106,6 @@ export type CriterionEvaluationResult = {
   criterionLabel: string;
   status: CriterionStatus;
   reasoning: string;
-  suggestedFix: SuggestedFix;
 };
 
 
@@ -168,7 +140,6 @@ export async function evaluateSection({
       criterionLabel: c.label,
       status: "not_evaluated" as const,
       reasoning: "Section is empty.",
-      suggestedFix: EMPTY_SUGGESTED_FIX,
     }));
   }
 
@@ -197,9 +168,7 @@ ${previousSections
   )
   .join("\n")}
 
-Use this context to keep terminology, chronology, and conclusions consistent with earlier sections. Do NOT re-evaluate earlier sections; only evaluate the current SECTION.
-Use this context only for drafting suggestedFix wording consistency. Do NOT use it to decide status or reasoning for the current SECTION.
-Do NOT copy large blocks of text from previous sections or the current section into your replacementText. Each patch must target only the specific deficient span, not the whole narrative.`
+Use this context to keep terminology, chronology, and conclusions consistent with earlier sections. Do NOT re-evaluate earlier sections; only evaluate the current SECTION.`
     : ""
 }
 
@@ -218,7 +187,6 @@ Evaluate each criterion. Return one evaluation object per criterion, using the e
     criterionKey: string;
     status: string;
     reasoning: string;
-    suggestedFix: unknown;
   }>;
 
   try {
@@ -258,7 +226,6 @@ Evaluate each criterion. Return one evaluation object per criterion, using the e
         criterionLabel: c.label,
         status: "not_evaluated" as CriterionStatus,
         reasoning: "No evaluation returned by model.",
-        suggestedFix: EMPTY_SUGGESTED_FIX,
       };
     }
     return {
@@ -266,7 +233,6 @@ Evaluate each criterion. Return one evaluation object per criterion, using the e
       criterionLabel: c.label,
       status: result.status as CriterionStatus,
       reasoning: result.reasoning,
-      suggestedFix: coerceLegacyFix(result.suggestedFix),
     };
   });
 }

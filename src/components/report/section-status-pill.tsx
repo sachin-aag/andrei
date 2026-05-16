@@ -49,31 +49,20 @@ function ExpandableReasoning({ text }: { text: string }) {
 export function SectionStatusPill({ section }: { section: SectionType }) {
   const {
     evaluations,
-    pendingEvalSections,
     runningEvalSections,
   } = useReportEvaluations();
   const [open, setOpen] = useState(false);
   const rows = useMemo(() => rowsForSection(section, evaluations), [evaluations, section]);
-  const isPending = pendingEvalSections.includes(section);
   const isRunning = runningEvalSections.includes(section);
-  const isBusy = isPending || isRunning;
   const [stableRows, setStableRows] = useState(rows);
 
-  if (!isBusy && stableRows !== rows) {
+  if (!isRunning && stableRows !== rows) {
     setStableRows(rows);
   }
 
-  const displayRows = isBusy ? stableRows : rows;
+  const displayRows = isRunning ? stableRows : rows;
   const status = aggregateStatus(displayRows);
   const { met, total } = metCount(displayRows);
-
-  // Auto-eval status badge: "checking" while in flight for this section,
-  // "queued" when the idle timer is armed but hasn't fired yet.
-  const autoStatus = isRunning
-    ? { label: "AI checking…", spin: true }
-    : isPending
-    ? { label: "AI check queued", spin: false }
-    : null;
 
   return (
     <div className="rounded-md border border-[var(--border)] bg-[var(--card)] overflow-hidden">
@@ -88,26 +77,22 @@ export function SectionStatusPill({ section }: { section: SectionType }) {
             className={cn(
               "size-2 rounded-full shrink-0 transition-opacity",
               STATUS_COLOR[status],
-              isBusy && "opacity-40"
+              isRunning && "opacity-40"
             )}
-            title={isBusy ? "Showing previous result while AI checks this section" : undefined}
+            title={isRunning ? "Showing previous result while AI checks this section" : undefined}
           />
           <span
             className={cn(
               "text-xs font-medium text-[var(--foreground)] truncate transition-opacity",
-              isBusy && "opacity-60"
+              isRunning && "opacity-60"
             )}
           >
             {SECTION_LABELS[section] ?? section} · {met}/{total} met
           </span>
-          {autoStatus ? (
+          {isRunning ? (
             <span className="ml-1 inline-flex items-center gap-1 text-[10px] text-[var(--muted-foreground)] truncate">
-              {autoStatus.spin ? (
-                <Loader2 className="size-3 animate-spin" />
-              ) : (
-                <span className="size-1.5 rounded-full bg-amber-400 animate-pulse" />
-              )}
-              <span className="hidden sm:inline">{autoStatus.label}</span>
+              <Loader2 className="size-3 animate-spin" />
+              <span className="hidden sm:inline">AI checking…</span>
             </span>
           ) : (
             <span className="text-[10px] text-[var(--muted-foreground)] hidden sm:inline truncate">
@@ -136,7 +121,7 @@ export function SectionStatusPill({ section }: { section: SectionType }) {
                   className={cn(
                     "size-1.5 rounded-full mt-1.5 shrink-0 transition-opacity",
                     STATUS_COLOR[eff],
-                    isBusy && "opacity-40"
+                    isRunning && "opacity-40"
                   )}
                 />
                 <div className="flex-1 min-w-0">
@@ -144,7 +129,7 @@ export function SectionStatusPill({ section }: { section: SectionType }) {
                     className={cn(
                       "leading-snug transition-opacity",
                       STATUS_TEXT_COLOR[eff],
-                      isBusy && "opacity-60"
+                      isRunning && "opacity-60"
                     )}
                   >
                     {row.criterionLabel}
@@ -177,7 +162,7 @@ export function SectionRunEvaluationButton({ section }: { section: SectionType }
       variant="outline"
       className="h-8 shrink-0 text-xs bg-[var(--card)] shadow-sm"
       disabled={isEvaluating}
-      onClick={() => runEvaluation(section, { reason: "manual" })}
+      onClick={() => runEvaluation(section)}
     >
       {isRunning ? (
         <Loader2 className="size-3 animate-spin" />
@@ -202,13 +187,11 @@ export function RunAllEvaluationButton({
     runEvaluation,
     isEvaluating,
     runningEvalSections,
-    pendingEvalSections,
   } = useReportEvaluations();
 
-  const inFlight = runningEvalSections.length + pendingEvalSections.length;
   const label = isEvaluating
-    ? inFlight > 0
-      ? `Checking… ${inFlight} left`
+    ? runningEvalSections.length > 0
+      ? `Checking… ${runningEvalSections.length} left`
       : "Checking…"
     : "Run all by Andrei";
 
@@ -219,7 +202,7 @@ export function RunAllEvaluationButton({
       variant={variant}
       className={className}
       disabled={isEvaluating}
-      onClick={() => runEvaluation(undefined, { reason: "manual" })}
+      onClick={() => runEvaluation()}
       title="Run AI checks across every section"
     >
       {isEvaluating ? (

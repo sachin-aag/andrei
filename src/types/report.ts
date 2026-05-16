@@ -5,7 +5,7 @@ import type {
   CommentStatus,
   CommentKind,
 } from "@/db/schema";
-import type { SuggestedFix } from "@/lib/ai/suggested-fix";
+
 
 export type ReportRecord = {
   id: string;
@@ -37,8 +37,6 @@ export type EvaluationRecord = {
   criterionLabel: string;
   status: CriterionStatus;
   reasoning: string;
-  suggestedFix: SuggestedFix;
-  fixApplied: boolean;
   bypassed: boolean;
   evaluatedContentHash: string;
   updatedAt: string;
