@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { generateText } from "ai";
 import { evaluateSection } from "@/lib/ai/evaluate";
+import { PROMPT_VERSION } from "@/lib/ai/section-prompts";
 
 vi.mock("ai", async () => {
   const actual = await vi.importActual<typeof import("ai")>("ai");
@@ -97,6 +98,9 @@ describe("evaluateSection", () => {
     expect(prompt).toContain(COMMON_RULE_PHRASE);
     expect(prompt).toContain(PROMPT_INJECTION_GUARD);
     expect(prompt).toContain("SECTION ROLE - DEFINE");
+    expect(prompt).toContain(
+      `EVALUATION_PROMPT_VERSION (bookkeeping): ${PROMPT_VERSION}`
+    );
     expect(prompt).toContain("Distinguish occurrence date/time and detection date/time");
     expect(prompt).toMatch(/<example type="strong"/);
     expect(prompt).toMatch(/<example type="weak"/);

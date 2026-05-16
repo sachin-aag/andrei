@@ -6,6 +6,25 @@ import { getCriteria } from "./criteria";
 import { contextForPrompt } from "./section-context";
 import { buildEvaluationSystemPrompt } from "./section-prompts";
 
+export { PROMPT_VERSION } from "./section-prompts";
+
+/** Google Generative AI model slug passed through `@ai-sdk/google`. */
+export const CRITERIA_EVAL_GOOGLE_MODEL_ID = "gemini-2.5-flash" as const;
+
+/** Temperature applied to criterion-level `evaluateSection` calls. */
+export const CRITERIA_EVAL_TEMPERATURE = 0.2 as const;
+
+const evaluationSchemaDescription =
+  'Output.object with Zod array "evaluations" (criterionKey, status, reasoning).';
+
+/** DMAIC slices that allocate more Gemini thinking budget during evaluation. */
+export const CRITERIA_EVAL_HEAVY_SECTION_KEYS = [
+  "measure",
+  "analyze",
+  "improve",
+  "control",
+] as const satisfies readonly SectionType[];
+
 export function resolveEvaluationLanguageModel(): LanguageModel {
   const googleKey =
     process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.AI_GATEWAY_API_KEY;
@@ -15,7 +34,7 @@ export function resolveEvaluationLanguageModel(): LanguageModel {
     );
   }
   const google = createGoogleGenerativeAI({ apiKey: googleKey });
-  return google("gemini-2.5-flash");
+  return google(CRITERIA_EVAL_GOOGLE_MODEL_ID);
 }
 
 function resolveModel(): LanguageModel {
@@ -33,10 +52,7 @@ const evaluationSchema = z.object({
 });
 
 const HEAVY_REASONING_SECTIONS = new Set<SectionType>([
-  "measure",
-  "analyze",
-  "improve",
-  "control",
+  ...CRITERIA_EVAL_HEAVY_SECTION_KEYS,
 ]);
 
 function generationSettingsForSection(section: SectionType) {
@@ -64,6 +80,41 @@ function generationSettingsForSection(section: SectionType) {
         },
       },
     },
+  };
+}
+
+export function describeCriterionEvaluationLlmFootprint(): {
+  criterionModelId: string;
+  criterionProvider: string;
+  criterionTemperature: number;
+  criterionStructuredOutput: string;
+  criterionLightSectionsConfig: string;
+  criterionHeavySectionsConfig: string;
+  criterionHeavySectionList: string;
+} {
+  const lightGs = generationSettingsForSection("define");
+  const heavyGs = generationSettingsForSection("measure");
+  const lightBudget =
+    (
+      lightGs as {
+        providerOptions?: { google?: { thinkingConfig?: { thinkingBudget?: number } } };
+      }
+    ).providerOptions?.google?.thinkingConfig?.thinkingBudget;
+  const heavyBudget =
+    (
+      heavyGs as {
+        providerOptions?: { google?: { thinkingConfig?: { thinkingBudget?: number } } };
+      }
+    ).providerOptions?.google?.thinkingConfig?.thinkingBudget;
+  return {
+    criterionModelId: CRITERIA_EVAL_GOOGLE_MODEL_ID,
+    criterionProvider:
+      "@ai-sdk/google · Vercel AI SDK generateText (`ai` package) + structured output (`Output.object`)",
+    criterionTemperature: CRITERIA_EVAL_TEMPERATURE,
+    criterionStructuredOutput: evaluationSchemaDescription,
+    criterionLightSectionsConfig: `define: maxOutputTokens=${lightGs.maxOutputTokens}; thinkingBudget=${lightBudget}; includeThoughts=false`,
+    criterionHeavySectionsConfig: `measure|analyze|improve|control: maxOutputTokens=${heavyGs.maxOutputTokens}; thinkingBudget=${heavyBudget}; includeThoughts=false`,
+    criterionHeavySectionList: CRITERIA_EVAL_HEAVY_SECTION_KEYS.join(", "),
   };
 }
 
@@ -199,7 +250,7 @@ Evaluate each criterion. Return one evaluation object per criterion, using the e
       output: Output.object({ schema: evaluationSchema }),
       system: systemPrompt,
       prompt: userPrompt,
-      temperature: 0.2,
+      temperature: CRITERIA_EVAL_TEMPERATURE,
       ...generationSettings,
     });
 

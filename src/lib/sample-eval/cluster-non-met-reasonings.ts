@@ -3,6 +3,7 @@ import type { LanguageModel } from "ai";
 import { z } from "zod";
 import type { DedupedReasonSample } from "@/lib/sample-eval/bulk-eval-aggregates";
 import { truncateOneLine } from "@/lib/sample-eval/bulk-eval-aggregates";
+import { CRITERIA_EVAL_GOOGLE_MODEL_ID } from "@/lib/ai/evaluate";
 
 const classificationSchema = z.object({
   assignments: z.array(
@@ -20,6 +21,19 @@ export type ReasoningPatternRow = {
   topCriterionKeys: string[];
   exampleReasoning: string;
 };
+
+/** LLM settings for reasoning-bucket classification in bulk HTML reports. */
+export const REASONING_BUCKET_LAYER_LLM = {
+  modelId: CRITERIA_EVAL_GOOGLE_MODEL_ID as string,
+  provider:
+    "@ai-sdk/google · Vercel AI SDK generateText (`ai` package) + structured output (`Output.object`)",
+  temperature: 0,
+  maxOutputTokens: 8192 as const,
+  schemaDescription:
+    "assignments[].reasonId + buckets[] (multi-label; labels restricted to allowed lists)",
+  passes: 2,
+  passLabels: "specific issue buckets, then generic follow-up themes",
+} as const;
 
 export type LayeredReasoningPatterns = {
   specificRows: ReasoningPatternRow[];
@@ -139,8 +153,8 @@ async function classifyWithBuckets(params: {
   try {
     const result = await generateText({
       model,
-      temperature: 0,
-      maxOutputTokens: 8192,
+      temperature: REASONING_BUCKET_LAYER_LLM.temperature,
+      maxOutputTokens: REASONING_BUCKET_LAYER_LLM.maxOutputTokens,
       output: Output.object({ schema: classificationSchema }),
       system:
         `You classify pharmaceutical QA deviation review reasonings into ${layerName}s. ` +

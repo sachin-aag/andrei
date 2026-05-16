@@ -6,7 +6,7 @@ import type { SectionType } from "@/db/schema";
  * into the per-section content hash so the next eval pass refreshes all
  * sections after a prompt update.
  */
-export const PROMPT_VERSION = "2026-05-16-7";
+export const PROMPT_VERSION = "2026-05-16-8";
 
 /**
  * Common reviewer rules, scoring system, scope rule, prompt-injection guard,
@@ -223,8 +223,10 @@ export const SECTION_SYSTEM_PROMPT_ADDITIONS: Partial<Record<SectionType, string
  */
 export function buildEvaluationSystemPrompt(section: SectionType): string {
   const addition = SECTION_SYSTEM_PROMPT_ADDITIONS[section];
+  const versionFooter = `\n\n---\nEVALUATION_PROMPT_VERSION (bookkeeping): ${PROMPT_VERSION}\n(This line is only for reproducibility audits; ignore it during scoring.)`;
+
   if (!addition || !addition.trim()) {
-    return COMMON_EVALUATION_SYSTEM_PROMPT;
+    return `${COMMON_EVALUATION_SYSTEM_PROMPT}${versionFooter}`;
   }
-  return `${COMMON_EVALUATION_SYSTEM_PROMPT}\n\n${addition}`;
+  return `${COMMON_EVALUATION_SYSTEM_PROMPT}\n\n${addition}${versionFooter}`;
 }
