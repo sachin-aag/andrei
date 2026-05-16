@@ -7,6 +7,7 @@ import { richJsonToPlainText } from "@/lib/tiptap/rich-text";
 const fixturePath = path.join(
   process.cwd(),
   "docs",
+  "sample_files",
   "Investigation  DEV-PK-25-002.docx"
 );
 

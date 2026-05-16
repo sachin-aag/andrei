@@ -6,7 +6,7 @@
  * Cost: ~(number of DOCX × 5) sectional Gemini calls plus one clustering call.
  *
  *   npm run sample-eval-report
- *   Default output naming: docs/sample_evaluation_report_YYYY-MM-DD_HHmmss.html (override with --out)
+ *   Default output naming: reports/sample_evaluation_report_YYYY-MM-DD_HHmmss.html (override with --out)
  *   npx tsx scripts/bulk-sample-evaluation-report.ts --concurrency 4
  */
 
@@ -90,7 +90,7 @@ function parseArgs(argv: string[]) {
   return { inputDir, outOverride, docConcurrency };
 }
 
-/** Default docs/sample_evaluation_report_YYYY-MM-DD_HHmmss.html (local clock). */
+/** Default reports/sample_evaluation_report_YYYY-MM-DD_HHmmss.html (local clock). Gitignored folder. */
 function defaultTimestampedReportFile(cwd: string): string {
   const n = new Date();
   const yyyy = n.getFullYear();
@@ -101,7 +101,7 @@ function defaultTimestampedReportFile(cwd: string): string {
   const ss = String(n.getSeconds()).padStart(2, "0");
   return path.join(
     cwd,
-    "docs",
+    "reports",
     `sample_evaluation_report_${yyyy}-${mm}-${dd}_${hh}${mi}${ss}.html`
   );
 }

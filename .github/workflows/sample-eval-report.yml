@@ -9,7 +9,9 @@
 # Alternative name supported by `@ai-sdk/google` in some setups:
 #   AI_GATEWAY_API_KEY — set that secret instead only if your deployment uses Gateway.
 #
-# Fork pull requests receive no repo secrets — the job will skip cleanly with a notice.
+# Fork pull requests receive no repo secrets — the job skips cleanly unless you configure access.
+#
+# Committed DOCX bulk samples live in docs/sample_files/ (fixture + optional extras).
 #
 # Outputs: Artifact "sample-evaluation-report-…" attached to each workflow run
 #          (Artifacts tab on the run summary). Retention defaults to repo settings.
@@ -73,7 +75,7 @@ jobs:
           fi
           echo "Generating ci-artifacts/${ART}"
           npm run sample-eval-report -- \
-            --input-dir docs \
+            --input-dir docs/sample_files \
             --out "ci-artifacts/${ART}"
 
       - uses: actions/upload-artifact@v4
