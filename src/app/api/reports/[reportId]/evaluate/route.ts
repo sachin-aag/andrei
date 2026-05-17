@@ -10,7 +10,7 @@ import {
 } from "@/db/schema";
 import type { SectionType } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
-import { evaluateSection } from "@/lib/ai/evaluate";
+import { evaluateSection, type AllSectionsContent } from "@/lib/ai/evaluate";
 import { EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
 import {
   normalizeAnalyzeToolResults,
@@ -104,6 +104,12 @@ export async function POST(
     existingBySectionId.set(row.sectionId, arr);
   }
 
+  // Build a map of all section content for cumulative prior-section context.
+  const allSections: AllSectionsContent = {};
+  for (const row of allEvaluatableRows) {
+    allSections[row.section] = row.content;
+  }
+
   // ── 1. Run the LLM in parallel for all target sections ──────────────────
   const llmResults = await Promise.all(
     sectionRows.map(async (row) => {
@@ -111,6 +117,7 @@ export async function POST(
         section: row.section,
         content: row.content,
         reportContext: { deviationNo: report.deviationNo, date: report.date },
+        allSections,
       });
       return {
         sectionRow: row,

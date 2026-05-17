@@ -343,6 +343,12 @@ async function evaluateOneDocx(absPath: string, reportDate: string): Promise<Rep
     };
   }
 
+  // Build allSections map for cumulative prior-section context.
+  const allSections: Record<string, unknown> = {};
+  for (const sk of EVALUATABLE_SECTIONS) {
+    allSections[sk] = imported.sections[sk as keyof typeof imported.sections];
+  }
+
   const sectionLlmQueries: ReportSectionLlmQuery[] = EVALUATABLE_SECTIONS.map(
     (sectionKey) => {
       const payload =
@@ -351,6 +357,7 @@ async function evaluateOneDocx(absPath: string, reportDate: string): Promise<Rep
         section: sectionKey,
         content: payload,
         reportContext: { deviationNo, date: reportDate },
+        allSections,
       });
       if (!prompts) {
         return { section: sectionKey, llmCalled: false };
@@ -373,6 +380,7 @@ async function evaluateOneDocx(absPath: string, reportDate: string): Promise<Rep
         section: sectionKey,
         content: payload,
         reportContext: { deviationNo, date: reportDate },
+        allSections,
       });
 
       if (sectionKey === "analyze") {

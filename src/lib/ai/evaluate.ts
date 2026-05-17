@@ -5,6 +5,7 @@ import type { SectionType, CriterionStatus } from "@/db/schema";
 import { getCriteria } from "./criteria";
 import { contextForPrompt } from "./section-context";
 import { buildEvaluationSystemPrompt } from "./section-prompts";
+import { EDITABLE_SECTIONS } from "@/types/sections";
 
 export { PROMPT_VERSION } from "./section-prompts";
 
@@ -133,13 +134,59 @@ function sectionContentForPrompt(section: SectionType, content: unknown): string
 }
 
 /**
+ * Map of section type → content for all sections in a report.
+ * Used to build cumulative prior-section context in the user prompt.
+ */
+export type AllSectionsContent = Partial<Record<SectionType, unknown>>;
+
+/**
+ * Returns the DMAIC sections that precede `section` in report order.
+ * Define has no prior sections; Measure gets [define]; Analyze gets [define, measure]; etc.
+ */
+function priorSections(section: SectionType): SectionType[] {
+  const idx = EDITABLE_SECTIONS.indexOf(section as (typeof EDITABLE_SECTIONS)[number]);
+  if (idx <= 0) return [];
+  return EDITABLE_SECTIONS.slice(0, idx) as unknown as SectionType[];
+}
+
+/**
+ * Builds a PRIOR SECTIONS CONTEXT block from all preceding sections' content.
+ * Returns empty string if no prior sections have meaningful content.
+ */
+function buildPriorSectionsBlock(
+  section: SectionType,
+  allSections?: AllSectionsContent
+): string {
+  if (!allSections) return "";
+  const prior = priorSections(section);
+  if (prior.length === 0) return "";
+
+  const blocks: string[] = [];
+  for (const ps of prior) {
+    const content = allSections[ps];
+    if (!content) continue;
+    const text = sectionContentForPrompt(ps, content);
+    if (!text || text.trim() === "" || text === "{}") continue;
+    blocks.push(`[${ps.toUpperCase()}]\n${text}`);
+  }
+  if (blocks.length === 0) return "";
+
+  return `\nPRIOR SECTIONS (read-only context — do NOT evaluate these, only use them to inform your judgment of the current section):\n"""\n${blocks.join("\n\n")}\n"""`;
+}
+
+/**
  * Builds the same strings `evaluateSection` sends to the model. Returns `null`
  * when no request is made (no criteria for section, or empty section content).
+ *
+ * When `allSections` is provided, prior sections' content is included as
+ * read-only context so the model can make cross-section judgments (e.g.
+ * whether Improve actions trace back to Analyze root causes).
  */
 export function buildCriterionEvaluationLlmPrompts({
   section,
   content,
   reportContext,
+  allSections,
 }: {
   section: SectionType;
   content: unknown;
@@ -147,6 +194,7 @@ export function buildCriterionEvaluationLlmPrompts({
     deviationNo: string;
     date: Date | string;
   };
+  allSections?: AllSectionsContent;
 }): CriterionEvaluationLlmPrompts | null {
   const criteria = getCriteria(section);
   if (criteria.length === 0) return null;
@@ -159,6 +207,8 @@ export function buildCriterionEvaluationLlmPrompts({
 
   const systemPrompt = buildEvaluationSystemPrompt(section);
 
+  const priorBlock = buildPriorSectionsBlock(section, allSections);
+
   const userPrompt = `DEVIATION: ${reportContext.deviationNo} (report date: ${
     typeof reportContext.date === "string"
       ? reportContext.date
@@ -170,7 +220,7 @@ SECTION: ${section.toUpperCase()}
 SECTION CONTENT:
 """
 ${contentStr}
-"""
+"""${priorBlock}
 
 CRITERIA TO EVALUATE:
 ${criteria
@@ -179,7 +229,7 @@ ${criteria
   )
   .join("\n")}
 
-Evaluate each criterion using only the section content above. Return one evaluation object per criterion, using the exact criterionKey provided. Do not include suggested fixes or rewritten report text.`;
+Evaluate each criterion using only the section content above. Use the prior sections as background context to inform your judgment (e.g. whether actions trace to root causes), but do not evaluate them. Return one evaluation object per criterion, using the exact criterionKey provided. Do not include suggested fixes or rewritten report text.`;
 
   return { systemPrompt, userPrompt };
 }
@@ -188,6 +238,7 @@ export async function evaluateSection({
   section,
   content,
   reportContext,
+  allSections,
 }: {
   section: SectionType;
   content: unknown;
@@ -195,6 +246,7 @@ export async function evaluateSection({
     deviationNo: string;
     date: Date | string;
   };
+  allSections?: AllSectionsContent;
 }): Promise<CriterionEvaluationResult[]> {
   const criteria = getCriteria(section);
   if (criteria.length === 0) return [];
@@ -203,6 +255,7 @@ export async function evaluateSection({
     section,
     content,
     reportContext,
+    allSections,
   });
 
   if (!prompts) {
