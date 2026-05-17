@@ -1,0 +1,11 @@
+--- src/lib/ai/evaluate.ts
++++ src/lib/ai/evaluate.ts
+@@ -144,8 +144,9 @@
+   .join("\n")}
+ 
+ Use this context to keep terminology, chronology, and conclusions consistent with earlier sections. Do NOT re-evaluate earlier sections; only evaluate the current SECTION.
+-Use this context only for drafting suggestedFix wording consistency. Do NOT use it to decide status or reasoning for the current SECTION.`
++Use this context only for drafting suggestedFix wording consistency. Do NOT use it to decide status or reasoning for the current SECTION.
++Do NOT copy large blocks of text from previous sections into your replacementText. Keep fixes strictly focused on the current section's criteria.`
+     : ""
+ }

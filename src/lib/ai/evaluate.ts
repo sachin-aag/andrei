@@ -1,33 +1,26 @@
-import { generateObject, type LanguageModel } from "ai";
+import { generateText, Output, type LanguageModel } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { z } from "zod";
 import type { SectionType, CriterionStatus } from "@/db/schema";
 import { getCriteria } from "./criteria";
+import { contextForPrompt } from "./section-context";
 import { buildEvaluationSystemPrompt } from "./section-prompts";
-import {
-  EMPTY_SUGGESTED_FIX,
-  coerceLegacyFix,
-  modelSuggestedFixSchema,
-  type SuggestedFix,
-} from "./suggested-fix";
-import { richJsonToPlainText } from "@/lib/tiptap/rich-text";
 
-export {
-  EMPTY_SUGGESTED_FIX,
-  coerceLegacyFix,
-  hasFixContent,
-} from "./suggested-fix";
-export type {
-  SuggestedFix,
-  FieldOp,
-  SetFieldOp,
-  AppendFieldOp,
-  NoneFix,
-  PatchFix,
-  FieldsFix,
-} from "./suggested-fix";
+export { PROMPT_VERSION } from "./section-prompts";
 
-function resolveModel(): LanguageModel {
+/** Google Generative AI model slug passed through `@ai-sdk/google`. */
+export const CRITERIA_EVAL_GOOGLE_MODEL_ID = "gemini-3.1-flash-lite" as const;
+
+/** Temperature applied to criterion-level `evaluateSection` calls. */
+export const CRITERIA_EVAL_TEMPERATURE = 0 as const;
+
+/** Fixed seed for reproducible sampling across runs. */
+export const CRITERIA_EVAL_SEED = 0 as const;
+
+const evaluationSchemaDescription =
+  'Output.object with Zod array "evaluations" (criterionKey, status, reasoning).';
+
+export function resolveEvaluationLanguageModel(): LanguageModel {
   const googleKey =
     process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.AI_GATEWAY_API_KEY;
   if (!googleKey) {
@@ -36,7 +29,11 @@ function resolveModel(): LanguageModel {
     );
   }
   const google = createGoogleGenerativeAI({ apiKey: googleKey });
-  return google("gemini-2.5-flash");
+  return google(CRITERIA_EVAL_GOOGLE_MODEL_ID);
+}
+
+function resolveModel(): LanguageModel {
+  return resolveEvaluationLanguageModel();
 }
 
 const evaluationSchema = z.object({
@@ -45,57 +42,77 @@ const evaluationSchema = z.object({
       criterionKey: z.string(),
       status: z.enum(["met", "partially_met", "not_met"]),
       reasoning: z.string().min(1).max(1200),
-      suggestedFix: modelSuggestedFixSchema,
     })
   ),
 });
 
-const HEAVY_REASONING_SECTIONS = new Set<SectionType>([
-  "analyze",
-  "improve",
-  "control",
-]);
-
-function generationSettingsForSection(section: SectionType) {
-  if (!HEAVY_REASONING_SECTIONS.has(section)) {
-    return { maxOutputTokens: 8192 };
-  }
-
+function generationSettingsForSection() {
   return {
     maxOutputTokens: 32768,
     providerOptions: {
       google: {
-        thinkingConfig: {
-          thinkingBudget: 8192,
-          includeThoughts: false,
-        },
+        seed: CRITERIA_EVAL_SEED,
       },
     },
   };
 }
 
-/**
- * Pre-process section content for AI evaluation. Converts any JSONContent
- * narrative fields to plain text so tables appear as readable pipe-separated
- * rows instead of raw Tiptap JSON nodes.
- */
-function preProcessContentForAi(content: unknown): string {
-  if (!content || typeof content !== "object") {
-    return JSON.stringify(content, null, 2);
+export function describeCriterionEvaluationLlmFootprint(): {
+  criterionModelId: string;
+  criterionProvider: string;
+  criterionTemperature: number;
+  criterionSeed: number;
+  criterionStructuredOutput: string;
+  criterionGenerationConfig: string;
+} {
+  const gs = generationSettingsForSection();
+  return {
+    criterionModelId: CRITERIA_EVAL_GOOGLE_MODEL_ID,
+    criterionProvider:
+      "@ai-sdk/google · Vercel AI SDK generateText (`ai` package) + structured output (`Output.object`)",
+    criterionTemperature: CRITERIA_EVAL_TEMPERATURE,
+    criterionSeed: CRITERIA_EVAL_SEED,
+    criterionStructuredOutput: evaluationSchemaDescription,
+    criterionGenerationConfig: `all sections: maxOutputTokens=${gs.maxOutputTokens}; seed=${CRITERIA_EVAL_SEED}; no thinking (non-reasoning model)`,
+  };
+}
+
+type RawEvaluation = {
+  criterionKey: string;
+  status: string;
+  reasoning: string;
+};
+
+/** Parse raw JSON text and extract evaluations, dropping malformed entries. */
+function salvageEvaluations(
+  section: string,
+  text: string,
+  finishReason: string
+): RawEvaluation[] {
+  let raw: { evaluations?: Array<Record<string, unknown>> };
+  try {
+    raw = JSON.parse(text) as typeof raw;
+  } catch {
+    throw new Error(
+      `Failed to parse model response for ${section}. ` +
+        `finishReason: ${finishReason}, text length: ${text.length}`
+    );
   }
-
-  const obj = content as Record<string, unknown>;
-  const processed: Record<string, unknown> = { ...obj };
-
-  // Convert narrative fields from JSONContent to plain text
-  if ("narrative" in processed && processed.narrative && typeof processed.narrative === "object") {
-    const narr = processed.narrative as { type?: string };
-    if (narr.type === "doc") {
-      processed.narrative = richJsonToPlainText(narr as import("@tiptap/core").JSONContent) || "(empty)";
-    }
+  if (!Array.isArray(raw.evaluations) || raw.evaluations.length === 0) {
+    throw new Error(
+      `No evaluations in model response for ${section}. ` +
+        `finishReason: ${finishReason}`
+    );
   }
-
-  return JSON.stringify(processed, null, 2);
+  console.warn(
+    `[evaluate] Schema validation failed for ${section}, ` +
+      `salvaging ${raw.evaluations.length} evaluations from raw response`
+  );
+  return raw.evaluations.map((e) => ({
+    criterionKey: typeof e.criterionKey === "string" ? e.criterionKey : "",
+    status: typeof e.status === "string" ? e.status : "not_met",
+    reasoning: typeof e.reasoning === "string" ? e.reasoning : "",
+  }));
 }
 
 export type CriterionEvaluationResult = {
@@ -103,15 +120,26 @@ export type CriterionEvaluationResult = {
   criterionLabel: string;
   status: CriterionStatus;
   reasoning: string;
-  suggestedFix: SuggestedFix;
 };
 
+/** Exact `system` + `prompt` passed to `generateText` for a sectional evaluation, when an LLM call is made. */
+export type CriterionEvaluationLlmPrompts = {
+  systemPrompt: string;
+  userPrompt: string;
+};
 
-export async function evaluateSection({
+function sectionContentForPrompt(section: SectionType, content: unknown): string {
+  return typeof content === "string" ? content : contextForPrompt(section, content);
+}
+
+/**
+ * Builds the same strings `evaluateSection` sends to the model. Returns `null`
+ * when no request is made (no criteria for section, or empty section content).
+ */
+export function buildCriterionEvaluationLlmPrompts({
   section,
   content,
   reportContext,
-  previousSections = [],
 }: {
   section: SectionType;
   content: unknown;
@@ -119,30 +147,15 @@ export async function evaluateSection({
     deviationNo: string;
     date: Date | string;
   };
-  previousSections?: Array<{
-    section: SectionType;
-    content: string;
-  }>;
-}): Promise<CriterionEvaluationResult[]> {
+}): CriterionEvaluationLlmPrompts | null {
   const criteria = getCriteria(section);
-  if (criteria.length === 0) return [];
+  if (criteria.length === 0) return null;
 
-  const contentStr =
-    typeof content === "string"
-      ? content
-      : preProcessContentForAi(content);
+  const contentStr = sectionContentForPrompt(section, content);
 
   const isEmpty = !contentStr || contentStr.trim() === "" || contentStr === "{}";
 
-  if (isEmpty) {
-    return criteria.map((c) => ({
-      criterionKey: c.key,
-      criterionLabel: c.label,
-      status: "not_evaluated" as const,
-      reasoning: "Section is empty.",
-      suggestedFix: EMPTY_SUGGESTED_FIX,
-    }));
-  }
+  if (isEmpty) return null;
 
   const systemPrompt = buildEvaluationSystemPrompt(section);
 
@@ -159,21 +172,6 @@ SECTION CONTENT:
 ${contentStr}
 """
 
-${
-  previousSections.length > 0
-    ? `PREVIOUS SECTION CONTEXT (read-only, for consistency only):
-${previousSections
-  .map(
-    (s) =>
-      `\n[${s.section.toUpperCase()}]\n"""\n${s.content}\n"""`
-  )
-  .join("\n")}
-
-Use this context to keep terminology, chronology, and conclusions consistent with earlier sections. Do NOT re-evaluate earlier sections; only evaluate the current SECTION.
-Use this context only for drafting suggestedFix wording consistency. Do NOT use it to decide status or reasoning for the current SECTION.`
-    : ""
-}
-
 CRITERIA TO EVALUATE:
 ${criteria
   .map(
@@ -181,19 +179,80 @@ ${criteria
   )
   .join("\n")}
 
-Evaluate each criterion. Return one evaluation object per criterion, using the exact criterionKey provided.`;
+Evaluate each criterion using only the section content above. Return one evaluation object per criterion, using the exact criterionKey provided. Do not include suggested fixes or rewritten report text.`;
 
-  const generationSettings = generationSettingsForSection(section);
-  const { object } = await generateObject({
-    model: resolveModel(),
-    schema: evaluationSchema,
-    system: systemPrompt,
-    prompt: userPrompt,
-    temperature: 0.2,
-    ...generationSettings,
+  return { systemPrompt, userPrompt };
+}
+
+export async function evaluateSection({
+  section,
+  content,
+  reportContext,
+}: {
+  section: SectionType;
+  content: unknown;
+  reportContext: {
+    deviationNo: string;
+    date: Date | string;
+  };
+}): Promise<CriterionEvaluationResult[]> {
+  const criteria = getCriteria(section);
+  if (criteria.length === 0) return [];
+
+  const prompts = buildCriterionEvaluationLlmPrompts({
+    section,
+    content,
+    reportContext,
   });
 
-  const byKey = new Map(object.evaluations.map((e) => [e.criterionKey, e]));
+  if (!prompts) {
+    return criteria.map((c) => ({
+      criterionKey: c.key,
+      criterionLabel: c.label,
+      status: "not_evaluated" as const,
+      reasoning: "Section is empty.",
+    }));
+  }
+
+  const { systemPrompt, userPrompt } = prompts;
+
+  const generationSettings = generationSettingsForSection();
+
+  let evaluations: Array<{
+    criterionKey: string;
+    status: string;
+    reasoning: string;
+  }>;
+
+  try {
+    const result = await generateText({
+      model: resolveModel(),
+      output: Output.object({ schema: evaluationSchema }),
+      system: systemPrompt,
+      prompt: userPrompt,
+      temperature: CRITERIA_EVAL_TEMPERATURE,
+      ...generationSettings,
+    });
+
+    if (result.experimental_output) {
+      evaluations = result.experimental_output.evaluations;
+    } else {
+      // Output.object() returned null — try salvaging from raw text.
+      evaluations = salvageEvaluations(section, result.text, result.finishReason);
+    }
+  } catch (err: unknown) {
+    // generateText + Output.object() throws on schema validation failure
+    // rather than returning experimental_output: null.  Extract the raw
+    // text from the error and salvage what we can.
+    const errText =
+      err && typeof err === "object" && "text" in err
+        ? String((err as { text: string }).text)
+        : "";
+    if (!errText) throw err;
+    evaluations = salvageEvaluations(section, errText, "error");
+  }
+
+  const byKey = new Map(evaluations.map((e) => [e.criterionKey, e]));
   return criteria.map((c) => {
     const result = byKey.get(c.key);
     if (!result) {
@@ -202,7 +261,6 @@ Evaluate each criterion. Return one evaluation object per criterion, using the e
         criterionLabel: c.label,
         status: "not_evaluated" as CriterionStatus,
         reasoning: "No evaluation returned by model.",
-        suggestedFix: EMPTY_SUGGESTED_FIX,
       };
     }
     return {
@@ -210,7 +268,6 @@ Evaluate each criterion. Return one evaluation object per criterion, using the e
       criterionLabel: c.label,
       status: result.status as CriterionStatus,
       reasoning: result.reasoning,
-      suggestedFix: coerceLegacyFix(result.suggestedFix),
     };
   });
 }

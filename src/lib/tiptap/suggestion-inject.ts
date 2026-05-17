@@ -1,4 +1,5 @@
 import type { JSONContent } from "@tiptap/core";
+import { normalizeBracketPlaceholdersInPlainText } from "@/lib/placeholders/normalize-bracket-placeholders";
 import {
   suggestionInsertMarkName,
   suggestionDeleteMarkName,
@@ -179,7 +180,9 @@ export function injectSuggestionMarks(
   const cloned: JSONContent = JSON.parse(JSON.stringify(doc));
 
   const trimmedAnchor = (anchorText ?? "").trim();
-  const trimmedReplacement = (replacementText ?? "").trim();
+  const trimmedReplacement = normalizeBracketPlaceholdersInPlainText(
+    (replacementText ?? "").trim()
+  );
 
   // ── Edge case: no anchor or empty replacement → append at end ──────────
   // The plan collapses "anchor missing" + "anchor empty" into one path: a

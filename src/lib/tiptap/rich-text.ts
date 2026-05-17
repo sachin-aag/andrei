@@ -49,9 +49,8 @@ export function richJsonToPlainText(doc: JSONContent | undefined | null): string
     const inner = node.content;
     if (!inner?.length) return;
     if (node.type === "paragraph") {
-      const line: string[] = [];
       for (const ch of inner) walk(ch, "");
-      parts.push(line.join("") + blockSep);
+      parts.push(blockSep);
       return;
     }
     if (node.type === "heading") {

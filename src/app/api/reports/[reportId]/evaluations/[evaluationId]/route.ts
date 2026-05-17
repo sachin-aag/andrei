@@ -6,7 +6,6 @@ import { criteriaEvaluations } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 
 const bodySchema = z.object({
-  fixApplied: z.boolean().optional(),
   bypassed: z.boolean().optional(),
 });
 

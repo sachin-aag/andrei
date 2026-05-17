@@ -1,12 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronDown, ChevronRight, Check, Loader2, MessageSquare } from "lucide-react";
+import { MessageSquare } from "lucide-react";
 import {
   useReportComments,
   useReportEvaluations,
 } from "@/providers/report-provider";
-import { Button } from "@/components/ui/button";
 import { RunAllEvaluationButton } from "./section-status-pill";
 import {
   Sheet,
@@ -27,9 +26,310 @@ import {
   metCount,
   rowsBySection,
 } from "@/lib/ai/criteria-view";
-import { SECTION_LABELS } from "@/types/sections";
+import { SectionAccordion } from "./section-accordion";
 import { getUser } from "@/lib/auth/mock-users";
 import type { SectionType } from "@/db/schema";
+import type { CommentRecord } from "@/types/report";
+
+/* ------------------------------------------------------------------ */
+/*  Individual criterion row                                           */
+/* ------------------------------------------------------------------ */
+
+function CriterionItem({
+  row,
+  busy,
+}: {
+  row: CriterionRow;
+  busy?: boolean;
+}) {
+  const eff = effectiveStatus(row);
+
+  return (
+    <div className="flex items-start gap-2 text-xs">
+      <span
+        aria-hidden="true"
+        className={cn(
+          "size-1.5 rounded-full mt-1.5 shrink-0 transition-opacity",
+          STATUS_COLOR[eff],
+          busy && "opacity-40",
+        )}
+      />
+      <div className="flex-1 min-w-0">
+        <div
+          className={cn(
+            "leading-snug transition-opacity",
+            STATUS_TEXT_COLOR[eff],
+            busy && "opacity-60",
+          )}
+        >
+          {row.criterionLabel}
+        </div>
+        {row.reasoning && (
+          <div className="mt-0.5 text-[11px] text-[var(--muted-foreground)] leading-snug">
+            {row.reasoning}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Standalone Criteria content — used inside ReportSidebar            */
+/* ------------------------------------------------------------------ */
+
+export function CriteriaPanelContent({
+  onJumpToSection,
+  initialSection,
+}: {
+  onJumpToSection?: (section: SectionType) => void;
+  initialSection?: SectionType;
+}) {
+  const {
+    evaluations,
+    runningEvalSections,
+  } = useReportEvaluations();
+  const [openSections, setOpenSections] = useState<Set<SectionType>>(
+    () => new Set(EVALUATABLE_SECTIONS),
+  );
+  const grouped = useMemo(() => rowsBySection(evaluations), [evaluations]);
+  const [stableRowsBySection, setStableRowsBySection] = useState<
+    Map<SectionType, CriterionRow[]>
+  >(() => new Map(grouped));
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  const displayOpenSections = useMemo(() => {
+    const next = new Set(openSections);
+    if (initialSection) next.add(initialSection);
+    return next;
+  }, [initialSection, openSections]);
+
+  useEffect(() => {
+    if (!initialSection) return;
+    const frame = requestAnimationFrame(() => {
+      const el = containerRef.current?.querySelector(
+        `[data-section="${initialSection}"]`,
+      );
+      el?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [initialSection]);
+
+  let nextStableRowsBySection = stableRowsBySection;
+  for (const section of EVALUATABLE_SECTIONS) {
+    const isRunning = runningEvalSections.includes(section);
+    if (isRunning) continue;
+    const rows = grouped.get(section) ?? [];
+    if (nextStableRowsBySection.get(section) !== rows) {
+      if (nextStableRowsBySection === stableRowsBySection) {
+        nextStableRowsBySection = new Map(stableRowsBySection);
+      }
+      nextStableRowsBySection.set(section, rows);
+    }
+  }
+  if (nextStableRowsBySection !== stableRowsBySection) {
+    setStableRowsBySection(nextStableRowsBySection);
+  }
+
+  return (
+    <div ref={containerRef} className="space-y-2">
+      {EVALUATABLE_SECTIONS.map((section) => {
+        const currentRows = grouped.get(section) ?? [];
+        const isRunning = runningEvalSections.includes(section);
+        const rows =
+          (isRunning ? stableRowsBySection.get(section) : currentRows) ??
+          currentRows;
+        const status = aggregateStatus(rows);
+        const { met, total } = metCount(rows);
+        const isOpen = displayOpenSections.has(section);
+        const busyLabel = isRunning ? "AI checking..." : null;
+        return (
+          <SectionAccordion
+            key={section}
+            section={section}
+            count={rows.length}
+            isOpen={isOpen}
+            onToggle={() => {
+              setOpenSections((prev) => {
+                const next = new Set(prev);
+                if (next.has(section)) next.delete(section);
+                else next.add(section);
+                return next;
+              });
+            }}
+            onJumpToSection={onJumpToSection}
+            statusColor={STATUS_COLOR[status]}
+            trailingLabel={`${met}/${total}`}
+            busy={isRunning}
+            busyLabel={busyLabel ?? undefined}
+            busySpinning={isRunning}
+          >
+            {rows.map((row) => (
+              <CriterionItem key={row.criterionKey} row={row} busy={isRunning} />
+            ))}
+          </SectionAccordion>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Individual comment card                                            */
+/* ------------------------------------------------------------------ */
+
+function CommentCard({
+  comment,
+  replyCount,
+  onJump,
+}: {
+  comment: CommentRecord;
+  replyCount: number;
+  onJump?: () => void;
+}) {
+  const author = getUser(comment.authorId);
+
+  return (
+    <button
+      type="button"
+      className="w-full text-left rounded-md border border-[var(--border)] bg-[var(--card)] p-2.5 hover:border-amber-600/40 cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]"
+      onClick={onJump}
+    >
+      <div className="flex items-center gap-2 flex-wrap">
+        <MessageSquare
+          className="size-3 text-[var(--muted-foreground)]"
+          aria-hidden="true"
+        />
+        <span className="text-xs font-semibold truncate">
+          {author?.name ?? "Unknown"}
+        </span>
+        {comment.status === "resolved" ? (
+          <span className="text-[10px] text-green-700 ml-auto">
+            Resolved
+          </span>
+        ) : (
+          <span className="text-[10px] text-amber-800 ml-auto">
+            Open
+          </span>
+        )}
+      </div>
+      <p className="text-[11px] text-[var(--muted-foreground)] mt-1 line-clamp-2">
+        {comment.content}
+      </p>
+      <div className="flex items-center gap-2 mt-1 text-[10px] text-[var(--muted-foreground)]">
+        <span>{formatDateTime(comment.createdAt)}</span>
+        {replyCount > 0 && <span>· {replyCount} replies</span>}
+      </div>
+    </button>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Standalone Comments content — used inside ReportSidebar            */
+/* ------------------------------------------------------------------ */
+
+export function CommentsPanelContent({
+  onJumpToComment,
+}: {
+  onJumpToComment?: (commentId: string) => void;
+}) {
+  const { comments } = useReportComments();
+  const [openSections, setOpenSections] = useState<Set<SectionType>>(
+    () => new Set(EVALUATABLE_SECTIONS),
+  );
+
+  const rootComments = useMemo(
+    () =>
+      [...comments]
+        .filter((c) => !c.parentId)
+        .sort(
+          (a, b) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+        ),
+    [comments],
+  );
+
+  // Group root comments by section
+  const grouped = useMemo(() => {
+    const map: Record<string, CommentRecord[]> = {};
+    for (const c of rootComments) {
+      const key = c.section ?? "_unsectioned";
+      if (!map[key]) map[key] = [];
+      map[key].push(c);
+    }
+    return map;
+  }, [rootComments]);
+
+  const unsectioned = grouped["_unsectioned"] ?? [];
+
+  if (rootComments.length === 0) {
+    return (
+      <div className="text-xs text-[var(--muted-foreground)] italic text-center py-8">
+        No comments yet.
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      {EVALUATABLE_SECTIONS.map((section) => {
+        const list = grouped[section] ?? [];
+        return (
+          <SectionAccordion
+            key={section}
+            section={section}
+            count={list.length}
+            isOpen={openSections.has(section)}
+            onToggle={() => {
+              setOpenSections((prev) => {
+                const next = new Set(prev);
+                if (next.has(section)) next.delete(section);
+                else next.add(section);
+                return next;
+              });
+            }}
+          >
+            <div className="space-y-1.5">
+              {list.map((c) => {
+                const replies = comments.filter((r) => r.parentId === c.id).length;
+                return (
+                  <CommentCard
+                    key={c.id}
+                    comment={c}
+                    replyCount={replies}
+                    onJump={() => onJumpToComment?.(c.id)}
+                  />
+                );
+              })}
+            </div>
+          </SectionAccordion>
+        );
+      })}
+      {unsectioned.length > 0 && (
+        <div className="space-y-1.5 mt-2">
+          <p className="text-[10px] uppercase tracking-wider text-[var(--muted-foreground)] font-semibold px-1">
+            General
+          </p>
+          {unsectioned.map((c) => {
+            const replies = comments.filter((r) => r.parentId === c.id).length;
+            return (
+              <CommentCard
+                key={c.id}
+                comment={c}
+                replyCount={replies}
+                onJump={() => onJumpToComment?.(c.id)}
+              />
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Original Sheet wrapper — kept for backwards compat                 */
+/* ------------------------------------------------------------------ */
 
 type Props = {
   open: boolean;
@@ -48,68 +348,10 @@ export function CriteriaSheet({
   initialSection,
 }: Props) {
   const { comments } = useReportComments();
-  const {
-    evaluations,
-    pendingEvalSections,
-    runningEvalSections,
-  } = useReportEvaluations();
-  const [openSections, setOpenSections] = useState<Set<SectionType>>(
-    () => new Set(EVALUATABLE_SECTIONS)
-  );
-  const grouped = useMemo(() => rowsBySection(evaluations), [evaluations]);
-  const [stableRowsBySection, setStableRowsBySection] = useState<
-    Map<SectionType, CriterionRow[]>
-  >(() => new Map(grouped));
-  const criteriaContainerRef = useRef<HTMLDivElement>(null);
-
-  /** When the sheet opens with a target section, force that row expanded without a state-sync effect. */
-  const displayOpenSections = useMemo(() => {
-    const next = new Set(openSections);
-    if (open && initialSection) next.add(initialSection);
-    return next;
-  }, [open, initialSection, openSections]);
-
-  // When opened from an overflow card, scroll that section into view after layout.
-  useEffect(() => {
-    if (!open || !initialSection) return;
-    // Wait a tick for the DOM to update before scrolling.
-    const frame = requestAnimationFrame(() => {
-      const el = criteriaContainerRef.current?.querySelector(
-        `[data-section="${initialSection}"]`
-      );
-      el?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [open, initialSection]);
-
-  let nextStableRowsBySection = stableRowsBySection;
-  for (const section of EVALUATABLE_SECTIONS) {
-    const isBusy =
-      pendingEvalSections.includes(section) ||
-      runningEvalSections.includes(section);
-    if (isBusy) continue;
-
-    const rows = grouped.get(section) ?? [];
-    if (nextStableRowsBySection.get(section) !== rows) {
-      if (nextStableRowsBySection === stableRowsBySection) {
-        nextStableRowsBySection = new Map(stableRowsBySection);
-      }
-      nextStableRowsBySection.set(section, rows);
-    }
-  }
-  if (nextStableRowsBySection !== stableRowsBySection) {
-    setStableRowsBySection(nextStableRowsBySection);
-  }
 
   const rootComments = useMemo(
-    () =>
-      [...comments]
-        .filter((c) => !c.parentId)
-        .sort(
-          (a, b) =>
-            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-        ),
-    [comments]
+    () => comments.filter((c) => !c.parentId),
+    [comments],
   );
 
   return (
@@ -140,224 +382,36 @@ export function CriteriaSheet({
             </TabsList>
 
             <TabsContent
-              ref={criteriaContainerRef}
               value="criteria"
-              className="flex-1 min-h-0 overflow-y-auto mt-3 space-y-2"
+              className="flex-1 min-h-0 overflow-y-auto mt-3"
             >
-              {EVALUATABLE_SECTIONS.map((section) => {
-                const currentRows = grouped.get(section) ?? [];
-                const isPending = pendingEvalSections.includes(section);
-                const isRunning = runningEvalSections.includes(section);
-                const isBusy = isPending || isRunning;
-                const rows =
-                  (isBusy ? stableRowsBySection.get(section) : currentRows) ??
-                  currentRows;
-                const status = aggregateStatus(rows);
-                const { met, total } = metCount(rows);
-                const isOpen = displayOpenSections.has(section);
-                const busyLabel = isRunning
-                  ? "AI checking..."
-                  : isPending
-                  ? "AI check queued"
-                  : null;
-                return (
-                  <div
-                    key={section}
-                    data-section={section}
-                    className="rounded-md border border-[var(--border)] bg-[var(--card)] overflow-hidden"
-                  >
-                    <div className="flex items-center gap-1 hover:bg-[var(--secondary)]">
-                      <button
-                        type="button"
-                        aria-expanded={isOpen}
-                        aria-controls={`criteria-section-${section}`}
-                        className="min-w-0 flex-1 flex items-center gap-2 px-3 py-2 text-left cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]"
-                        title={
-                          isBusy
-                            ? "Showing previous result while AI checks this section"
-                            : undefined
-                        }
-                        onClick={() => {
-                          setOpenSections((prev) => {
-                            const next = new Set(prev);
-                            if (next.has(section)) next.delete(section);
-                            else next.add(section);
-                            return next;
-                          });
-                        }}
-                      >
-                        {isOpen ? (
-                          <ChevronDown
-                            className="size-3.5 shrink-0 text-[var(--muted-foreground)]"
-                            aria-hidden="true"
-                          />
-                        ) : (
-                          <ChevronRight
-                            className="size-3.5 shrink-0 text-[var(--muted-foreground)]"
-                            aria-hidden="true"
-                          />
-                        )}
-                        <span
-                          aria-hidden="true"
-                          className={cn(
-                            "size-2.5 rounded-full shrink-0 transition-opacity",
-                            STATUS_COLOR[status],
-                            isBusy && "opacity-40"
-                          )}
-                        />
-                        <span
-                          className={cn(
-                            "text-sm font-semibold flex-1 truncate transition-opacity",
-                            isBusy && "opacity-60"
-                          )}
-                        >
-                          {SECTION_LABELS[section] ?? section}
-                        </span>
-                        {busyLabel && (
-                          <span className="inline-flex items-center gap-1 text-[10px] text-[var(--muted-foreground)] truncate">
-                            {isRunning ? (
-                              <Loader2 className="size-3 animate-spin" aria-hidden="true" />
-                            ) : (
-                              <span
-                                className="size-1.5 rounded-full bg-amber-400 animate-pulse"
-                                aria-hidden="true"
-                              />
-                            )}
-                            <span className="hidden sm:inline">{busyLabel}</span>
-                          </span>
-                        )}
-                        <span
-                          className={cn(
-                            "text-[10px] text-[var(--muted-foreground)] transition-opacity",
-                            isBusy && "opacity-60"
-                          )}
-                        >
-                          {met}/{total}
-                        </span>
-                      </button>
-                      {onJumpToSection && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="mr-2 h-6 px-2 text-[10px]"
-                          onClick={() => {
-                            onOpenChange(false);
-                            onJumpToSection(section);
-                          }}
-                        >
-                          Jump
-                        </Button>
-                      )}
-                    </div>
-
-                    {isOpen && (
-                      <div
-                        id={`criteria-section-${section}`}
-                        className="border-t border-[var(--border)] bg-[var(--secondary)]/30 px-3 py-2 space-y-1.5"
-                      >
-                        {rows.map((row) => {
-                          const eff = effectiveStatus(row);
-                          return (
-                            <div
-                              key={row.criterionKey}
-                              className="flex items-start gap-2 text-xs"
-                            >
-                              <span
-                                aria-hidden="true"
-                                className={cn(
-                                  "size-1.5 rounded-full mt-1.5 shrink-0 transition-opacity",
-                                  STATUS_COLOR[eff],
-                                  isBusy && "opacity-40"
-                                )}
-                              />
-                              <div className="flex-1 min-w-0">
-                                <div
-                                  className={cn(
-                                    "leading-snug transition-opacity",
-                                    STATUS_TEXT_COLOR[eff],
-                                    isBusy && "opacity-60"
-                                  )}
-                                >
-                                  {row.criterionLabel}
-                                </div>
-                                {row.reasoning && (
-                                  <div className="mt-0.5 text-[11px] text-[var(--muted-foreground)] leading-snug">
-                                    {row.reasoning}
-                                  </div>
-                                )}
-                                {row.fixApplied && (
-                                  <div className="mt-1 text-[10px] text-green-700 flex items-center gap-1">
-                                    <Check className="size-3" aria-hidden="true" /> Fix applied
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+              <CriteriaPanelContent
+                onJumpToSection={
+                  onJumpToSection
+                    ? (s) => {
+                        onOpenChange(false);
+                        onJumpToSection(s);
+                      }
+                    : undefined
+                }
+                initialSection={open ? initialSection : undefined}
+              />
             </TabsContent>
 
             <TabsContent
               value="comments"
-              className="flex-1 min-h-0 overflow-y-auto mt-3 space-y-2"
+              className="flex-1 min-h-0 overflow-y-auto mt-3"
             >
-              {rootComments.length === 0 ? (
-                <div className="text-xs text-[var(--muted-foreground)] italic text-center py-8">
-                  No comments yet.
-                </div>
-              ) : (
-                rootComments.map((c) => {
-                  const author = getUser(c.authorId);
-                  const replies = comments.filter((r) => r.parentId === c.id).length;
-                  return (
-                    <button
-                      key={c.id}
-                      type="button"
-                      className="w-full text-left rounded-md border border-[var(--border)] bg-[var(--card)] p-2.5 hover:border-amber-600/40 cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]"
-                      onClick={() => {
+              <CommentsPanelContent
+                onJumpToComment={
+                  onJumpToComment
+                    ? (id) => {
                         onOpenChange(false);
-                        onJumpToComment?.(c.id);
-                      }}
-                    >
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <MessageSquare
-                          className="size-3 text-[var(--muted-foreground)]"
-                          aria-hidden="true"
-                        />
-                        <span className="text-xs font-semibold truncate">
-                          {author?.name ?? "Unknown"}
-                        </span>
-                        {c.section && (
-                          <span className="text-[10px] text-[var(--muted-foreground)] uppercase tracking-wide">
-                            {SECTION_LABELS[c.section] ?? c.section}
-                          </span>
-                        )}
-                        {c.status === "resolved" ? (
-                          <span className="text-[10px] text-green-700 ml-auto">
-                            Resolved
-                          </span>
-                        ) : (
-                          <span className="text-[10px] text-amber-800 ml-auto">
-                            Open
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[11px] text-[var(--muted-foreground)] mt-1 line-clamp-2">
-                        {c.content}
-                      </p>
-                      <div className="flex items-center gap-2 mt-1 text-[10px] text-[var(--muted-foreground)]">
-                        <span>{formatDateTime(c.createdAt)}</span>
-                        {replies > 0 && <span>· {replies} replies</span>}
-                      </div>
-                    </button>
-                  );
-                })
-              )}
+                        onJumpToComment(id);
+                      }
+                    : undefined
+                }
+              />
             </TabsContent>
           </Tabs>
         </div>

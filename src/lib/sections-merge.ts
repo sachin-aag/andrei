@@ -1,7 +1,9 @@
 import type {
   AnalyzeSection,
+  AttachmentsSection,
   ControlSection,
   DefineSection,
+  DocumentsReviewedSection,
   ImproveSection,
   MeasureSection,
   SectionContentMap,
@@ -10,6 +12,7 @@ import { EMPTY_CONTENT } from "@/types/sections";
 import { stringFieldFromStoredValue } from "@/lib/section-content-normalize";
 import {
   appendParagraphsToDoc,
+  emptyDoc,
   normalizeRichField,
   richJsonToPlainText,
 } from "@/lib/tiptap/rich-text";
@@ -52,25 +55,92 @@ export function mergeMeasureSection(content: unknown): MeasureSection {
 export function mergeImproveSection(content: unknown): ImproveSection {
   const base = EMPTY_CONTENT.improve;
   if (!content || typeof content !== "object") return base;
-  const o = content as Partial<ImproveSection>;
+  const o = content as Partial<ImproveSection> & {
+    correctiveActions?: unknown;
+  };
+
+  const narrative = normalizeRichField(o.narrative ?? base.narrative);
+  let corrective = coerceCorrectiveActions(
+    o.correctiveActions,
+    base.correctiveActions
+  );
+  const narPlain = richJsonToPlainText(narrative).trim();
+
+  if (narPlain) {
+    const corTrim = corrective.trim();
+    if (!corTrim) corrective = narPlain;
+    else if (!corTrim.startsWith(narPlain) && !narPlain.startsWith(corTrim))
+      corrective = `${narPlain}\n\n${corrective}`;
+  }
+
   return {
     ...base,
-    ...o,
-    narrative: normalizeRichField(o.narrative ?? base.narrative),
+    narrative: emptyDoc(),
+    correctiveActions: corrective,
   };
+}
+
+function coerceStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((v) => (typeof v === "string" ? v : ""))
+    .map((s) => s.trim())
+    .filter(Boolean);
+}
+
+function coerceAttachmentItems(
+  value: unknown
+): AttachmentsSection["items"] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") return null;
+      const o = entry as Record<string, unknown>;
+      const label = typeof o.label === "string" ? o.label.trim() : "";
+      const description =
+        typeof o.description === "string" ? o.description.trim() : "";
+      if (!label && !description) return null;
+      return { label, description };
+    })
+    .filter((x): x is AttachmentsSection["items"][number] => x !== null);
+}
+
+export function mergeDocumentsReviewedSection(
+  content: unknown
+): DocumentsReviewedSection {
+  const base = EMPTY_CONTENT.documents_reviewed;
+  if (!content || typeof content !== "object") return base;
+  const o = content as Partial<DocumentsReviewedSection>;
+  return { items: coerceStringList(o.items ?? []) };
+}
+
+export function mergeAttachmentsSection(content: unknown): AttachmentsSection {
+  const base = EMPTY_CONTENT.attachments;
+  if (!content || typeof content !== "object") return base;
+  const o = content as Partial<AttachmentsSection>;
+  return { items: coerceAttachmentItems(o.items ?? []) };
 }
 
 export function mergeControlSection(content: unknown): ControlSection {
   const base = EMPTY_CONTENT.control;
   if (!content || typeof content !== "object") return base;
-  const o = content as Partial<ControlSection> & {
-    preventiveActions?: unknown;
-  };
+  const o = content as Record<string, unknown> & { preventiveActions?: unknown };
+  const narrative = normalizeRichField("narrative" in o ? o.narrative : emptyDoc());
+  let preventive = coercePreventiveActions(
+    o.preventiveActions,
+    base.preventiveActions
+  );
+  const narPlain = richJsonToPlainText(narrative).trim();
+
+  if (narPlain) {
+    const pTrim = preventive.trim();
+    if (!pTrim) preventive = narPlain;
+    else if (!pTrim.startsWith(narPlain) && !narPlain.startsWith(pTrim))
+      preventive = `${narPlain}\n\n${preventive}`;
+  }
+
   return {
-    ...base,
-    ...(o as Partial<ControlSection>),
-    narrative: normalizeRichField(o.narrative ?? base.narrative),
-    preventiveActions: coercePreventiveActions(o.preventiveActions, base.preventiveActions),
+    preventiveActions: preventive,
   };
 }
 
@@ -122,6 +192,32 @@ function coercePreventiveActions(value: unknown, fallback: string): string {
   return fallback;
 }
 
+/* Legacy rows stored correctiveActions as structured cards; flatten to text. */
+function coerceCorrectiveActions(value: unknown, fallback: string): string {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    return value
+      .map((entry, idx) => {
+        if (!entry || typeof entry !== "object") return "";
+        const a = entry as Record<string, unknown>;
+        const lines = [
+          `CA-${String(idx + 1).padStart(3, "0")}`,
+          a.description ? `Description: ${String(a.description)}` : "",
+          a.responsiblePerson ? `Responsible: ${String(a.responsiblePerson)}` : "",
+          a.dueDate ? `Due date: ${String(a.dueDate)}` : "",
+          a.expectedOutcome ? `Expected outcome: ${String(a.expectedOutcome)}` : "",
+          a.effectivenessVerification
+            ? `Effectiveness verification: ${String(a.effectivenessVerification)}`
+            : "",
+        ].filter(Boolean);
+        return lines.join("\n");
+      })
+      .filter(Boolean)
+      .join("\n\n");
+  }
+  return fallback;
+}
+
 /* Legacy rows stored 5-Why as question/answer pairs; flatten to the new narrative field. */
 function coerceFiveWhyRows(
   value: Array<{ question?: unknown; answer?: unknown }> | undefined,
@@ -158,6 +254,10 @@ export function mergeSection<K extends keyof SectionContentMap & SectionType>(
       return mergeImproveSection(content) as SectionContentMap[K];
     case "control":
       return mergeControlSection(content) as SectionContentMap[K];
+    case "documents_reviewed":
+      return mergeDocumentsReviewedSection(content) as SectionContentMap[K];
+    case "attachments":
+      return mergeAttachmentsSection(content) as SectionContentMap[K];
     default:
       return mergeGeneric(section, content);
   }

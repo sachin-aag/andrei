@@ -136,39 +136,20 @@ function buildTemplateData(
 
     // Improve (raw XML for table support)
     improveNarrativeXml: narrativeToDocxXml(i.narrative),
-    correctiveActions: i.correctiveActions.map((ca, idx) => ({
-      caNumber: `CA-${String(idx + 1).padStart(3, "0")}`,
-      description: na(ca.description),
-      responsiblePerson: na(ca.responsiblePerson),
-      dueDate: na(ca.dueDate),
-      expectedOutcome: na(ca.expectedOutcome),
-      effectivenessVerification: na(ca.effectivenessVerification),
-    })),
+    correctiveActions: na(i.correctiveActions),
 
     // Control (raw XML for table support)
-    controlNarrativeXml: narrativeToDocxXml(c.narrative),
-    preventiveActions: c.preventiveActions.trim()
-      ? [
-          {
-            paNumber: "PA-001",
-            description: c.preventiveActions.trim(),
-            linkedRootCause: "—",
-            responsiblePerson: "—",
-            dueDate: "—",
-            expectedOutcome: "—",
-            effectivenessVerification: "—",
-          },
-        ]
-      : [],
-    interimPlan: na(c.interimPlan),
-    finalComments: na(c.finalComments),
-    regulatoryImpact: na(c.regulatoryImpact),
-    productQuality: na(c.productQuality),
-    validation: na(c.validation),
-    stability: na(c.stability),
-    marketClinical: na(c.marketClinical),
-    lotDisposition: na(c.lotDisposition),
-    controlConclusion: na(c.conclusion),
+    controlNarrativeXml: "",
+    preventiveActions: na(c.preventiveActions),
+    interimPlan: "Not Applicable",
+    finalComments: "Not Applicable",
+    regulatoryImpact: "Not Applicable",
+    productQuality: "Not Applicable",
+    validation: "Not Applicable",
+    stability: "Not Applicable",
+    marketClinical: "Not Applicable",
+    lotDisposition: "Not Applicable",
+    controlConclusion: "Not Applicable",
 
     // Documents Reviewed
     documentsReviewed: dr.items.length > 0
