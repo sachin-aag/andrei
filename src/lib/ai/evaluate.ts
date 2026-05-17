@@ -9,21 +9,16 @@ import { buildEvaluationSystemPrompt } from "./section-prompts";
 export { PROMPT_VERSION } from "./section-prompts";
 
 /** Google Generative AI model slug passed through `@ai-sdk/google`. */
-export const CRITERIA_EVAL_GOOGLE_MODEL_ID = "gemini-2.5-flash" as const;
+export const CRITERIA_EVAL_GOOGLE_MODEL_ID = "gemini-3.1-flash-lite" as const;
 
 /** Temperature applied to criterion-level `evaluateSection` calls. */
 export const CRITERIA_EVAL_TEMPERATURE = 0.2 as const;
 
+/** Fixed seed for reproducible sampling across runs. */
+export const CRITERIA_EVAL_SEED = 0 as const;
+
 const evaluationSchemaDescription =
   'Output.object with Zod array "evaluations" (criterionKey, status, reasoning).';
-
-/** DMAIC slices that allocate more Gemini thinking budget during evaluation. */
-export const CRITERIA_EVAL_HEAVY_SECTION_KEYS = [
-  "measure",
-  "analyze",
-  "improve",
-  "control",
-] as const satisfies readonly SectionType[];
 
 export function resolveEvaluationLanguageModel(): LanguageModel {
   const googleKey =
@@ -51,33 +46,12 @@ const evaluationSchema = z.object({
   ),
 });
 
-const HEAVY_REASONING_SECTIONS = new Set<SectionType>([
-  ...CRITERIA_EVAL_HEAVY_SECTION_KEYS,
-]);
-
-function generationSettingsForSection(section: SectionType) {
-  if (!HEAVY_REASONING_SECTIONS.has(section)) {
-    return {
-      maxOutputTokens: 16384,
-      providerOptions: {
-        google: {
-          thinkingConfig: {
-            thinkingBudget: 4096,
-            includeThoughts: false,
-          },
-        },
-      },
-    };
-  }
-
+function generationSettingsForSection() {
   return {
     maxOutputTokens: 32768,
     providerOptions: {
       google: {
-        thinkingConfig: {
-          thinkingBudget: 8192,
-          includeThoughts: false,
-        },
+        seed: CRITERIA_EVAL_SEED,
       },
     },
   };
@@ -87,34 +61,19 @@ export function describeCriterionEvaluationLlmFootprint(): {
   criterionModelId: string;
   criterionProvider: string;
   criterionTemperature: number;
+  criterionSeed: number;
   criterionStructuredOutput: string;
-  criterionLightSectionsConfig: string;
-  criterionHeavySectionsConfig: string;
-  criterionHeavySectionList: string;
+  criterionGenerationConfig: string;
 } {
-  const lightGs = generationSettingsForSection("define");
-  const heavyGs = generationSettingsForSection("measure");
-  const lightBudget =
-    (
-      lightGs as {
-        providerOptions?: { google?: { thinkingConfig?: { thinkingBudget?: number } } };
-      }
-    ).providerOptions?.google?.thinkingConfig?.thinkingBudget;
-  const heavyBudget =
-    (
-      heavyGs as {
-        providerOptions?: { google?: { thinkingConfig?: { thinkingBudget?: number } } };
-      }
-    ).providerOptions?.google?.thinkingConfig?.thinkingBudget;
+  const gs = generationSettingsForSection();
   return {
     criterionModelId: CRITERIA_EVAL_GOOGLE_MODEL_ID,
     criterionProvider:
       "@ai-sdk/google · Vercel AI SDK generateText (`ai` package) + structured output (`Output.object`)",
     criterionTemperature: CRITERIA_EVAL_TEMPERATURE,
+    criterionSeed: CRITERIA_EVAL_SEED,
     criterionStructuredOutput: evaluationSchemaDescription,
-    criterionLightSectionsConfig: `define: maxOutputTokens=${lightGs.maxOutputTokens}; thinkingBudget=${lightBudget}; includeThoughts=false`,
-    criterionHeavySectionsConfig: `measure|analyze|improve|control: maxOutputTokens=${heavyGs.maxOutputTokens}; thinkingBudget=${heavyBudget}; includeThoughts=false`,
-    criterionHeavySectionList: CRITERIA_EVAL_HEAVY_SECTION_KEYS.join(", "),
+    criterionGenerationConfig: `all sections: maxOutputTokens=${gs.maxOutputTokens}; seed=${CRITERIA_EVAL_SEED}; no thinking (non-reasoning model)`,
   };
 }
 
@@ -168,7 +127,6 @@ export async function evaluateSection({
   section,
   content,
   reportContext,
-  previousSections = [],
 }: {
   section: SectionType;
   content: unknown;
@@ -176,10 +134,6 @@ export async function evaluateSection({
     deviationNo: string;
     date: Date | string;
   };
-  previousSections?: Array<{
-    section: SectionType;
-    content: string;
-  }>;
 }): Promise<CriterionEvaluationResult[]> {
   const criteria = getCriteria(section);
   if (criteria.length === 0) return [];
@@ -213,20 +167,6 @@ SECTION CONTENT:
 ${contentStr}
 """
 
-${
-  previousSections.length > 0
-    ? `PREVIOUS SECTION CONTEXT (read-only, for consistency only):
-${previousSections
-  .map(
-    (s) =>
-      `\n[${s.section.toUpperCase()}]\n"""\n${s.content}\n"""`
-  )
-  .join("\n")}
-
-Use this context to keep terminology, chronology, and conclusions consistent with earlier sections. Do NOT re-evaluate earlier sections; only evaluate the current SECTION.`
-    : ""
-}
-
 CRITERIA TO EVALUATE:
 ${criteria
   .map(
@@ -236,7 +176,7 @@ ${criteria
 
 Evaluate each criterion. Return one evaluation object per criterion, using the exact criterionKey provided.`;
 
-  const generationSettings = generationSettingsForSection(section);
+  const generationSettings = generationSettingsForSection();
 
   let evaluations: Array<{
     criterionKey: string;

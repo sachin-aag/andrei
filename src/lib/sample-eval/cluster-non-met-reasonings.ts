@@ -3,7 +3,7 @@ import type { LanguageModel } from "ai";
 import { z } from "zod";
 import type { DedupedReasonSample } from "@/lib/sample-eval/bulk-eval-aggregates";
 import { truncateOneLine } from "@/lib/sample-eval/bulk-eval-aggregates";
-import { CRITERIA_EVAL_GOOGLE_MODEL_ID } from "@/lib/ai/evaluate";
+import { CRITERIA_EVAL_GOOGLE_MODEL_ID, CRITERIA_EVAL_SEED } from "@/lib/ai/evaluate";
 
 const classificationSchema = z.object({
   assignments: z.array(
@@ -155,6 +155,9 @@ async function classifyWithBuckets(params: {
       model,
       temperature: REASONING_BUCKET_LAYER_LLM.temperature,
       maxOutputTokens: REASONING_BUCKET_LAYER_LLM.maxOutputTokens,
+      providerOptions: {
+        google: { seed: CRITERIA_EVAL_SEED },
+      },
       output: Output.object({ schema: classificationSchema }),
       system:
         `You classify pharmaceutical QA deviation review reasonings into ${layerName}s. ` +

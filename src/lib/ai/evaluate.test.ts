@@ -75,7 +75,6 @@ describe("evaluateSection", () => {
       section: "measure",
       content: "The deviation was observed during production.",
       reportContext: { deviationNo: "DEV-002", date: new Date("2026-05-01") },
-      previousSections: [{ section: "define", content: "Previous section content." }],
     });
 
     expect(generateText).toHaveBeenCalledOnce();
@@ -172,45 +171,25 @@ describe("evaluateSection", () => {
     expect(results.every((r) => r.status === "not_evaluated")).toBe(true);
   });
 
-  it("uses larger output and thinking budgets for heavy reasoning sections", async () => {
+  it("uses uniform generation settings with seed for all sections", async () => {
     process.env.GOOGLE_GENERATIVE_AI_API_KEY = "test-key";
 
-    mockSingleEval();
-    await evaluateSection({
-      section: "improve",
-      content: "Placeholder improve content.",
-      reportContext: { deviationNo: "DEV-006", date: "2026-05-02" },
-    });
+    for (const section of ["define", "improve"] as const) {
+      mockSingleEval();
+      await evaluateSection({
+        section,
+        content: `Placeholder ${section} content.`,
+        reportContext: { deviationNo: "DEV-006", date: "2026-05-02" },
+      });
 
-    expect(lastGenerateTextArgs()).toMatchObject({
-      maxOutputTokens: 32768,
-      providerOptions: {
-        google: {
-          thinkingConfig: {
-            thinkingBudget: 8192,
-            includeThoughts: false,
+      expect(lastGenerateTextArgs()).toMatchObject({
+        maxOutputTokens: 32768,
+        providerOptions: {
+          google: {
+            seed: 0,
           },
         },
-      },
-    });
-
-    mockSingleEval();
-    await evaluateSection({
-      section: "define",
-      content: "Placeholder define content.",
-      reportContext: { deviationNo: "DEV-006", date: "2026-05-02" },
-    });
-
-    expect(lastGenerateTextArgs()).toMatchObject({
-      maxOutputTokens: 16384,
-      providerOptions: {
-        google: {
-          thinkingConfig: {
-            thinkingBudget: 4096,
-            includeThoughts: false,
-          },
-        },
-      },
-    });
+      });
+    }
   });
 });

@@ -29,17 +29,17 @@ import {
 } from "@/lib/ai/evaluate";
 import {
   normalizeAnalyzeToolResults,
-  normalizePromptText,
 } from "@/lib/ai/evaluate-run-helpers";
 import { EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
-import { contextForPrompt } from "@/lib/ai/section-context";
 import { hasEnoughContextInFirstSection } from "@/lib/ai/first-section-context";
 import {
   aggregateCriterionOverall,
+  aggregateSectionOverall,
   allEvaluatableCriterionEntries,
   criterionLabelLookup,
   dedupeReasoningsNonMet,
   escapeHtml,
+  emptyCriterionStatusCounts,
   truncateOneLine,
   type BulkEvalRow,
 } from "@/lib/sample-eval/bulk-eval-aggregates";
@@ -67,11 +67,18 @@ type ReportRunOutcome = {
   rows: BulkEvalRow[];
 };
 
+/** Derive a stable date from PROMPT_VERSION (e.g. "2026-05-17-1" → "2026-05-17"). */
+function stableDateFromPromptVersion(): string {
+  const match = PROMPT_VERSION.match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : new Date().toISOString().slice(0, 10);
+}
+
 function parseArgs(argv: string[]) {
   let inputDir = path.join(process.cwd(), "docs", "sample_files");
   let outOverride: string | undefined;
   /** How many DOCX files to evaluate concurrently (each file still evaluates its 5 DMAIC sections in parallel). */
   let docConcurrency = 4;
+  let reportDate: string | undefined;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--input-dir" && argv[i + 1]) {
@@ -85,9 +92,11 @@ function parseArgs(argv: string[]) {
         process.exit(1);
       }
       docConcurrency = Math.floor(n);
+    } else if (a === "--report-date" && argv[i + 1]) {
+      reportDate = argv[++i];
     }
   }
-  return { inputDir, outOverride, docConcurrency };
+  return { inputDir, outOverride, docConcurrency, reportDate: reportDate ?? stableDateFromPromptVersion() };
 }
 
 /** Default reports/sample_evaluation_report_YYYY-MM-DD_HHmmss.html (local clock). Gitignored folder. */
@@ -116,10 +125,9 @@ function renderRunMetaTable(meta: HtmlRunMeta): string {
     ["Criterion evaluator model ID", escapeHtml(criterionLlm.criterionModelId)],
     ["Criterion evaluator stack", escapeHtml(criterionLlm.criterionProvider)],
     ["Criterion evaluator temperature", escapeHtml(String(criterionLlm.criterionTemperature))],
+    ["Criterion evaluator seed", escapeHtml(String(criterionLlm.criterionSeed))],
     ["Criterion structured output", escapeHtml(criterionLlm.criterionStructuredOutput)],
-    ["Higher thinking-budget sections", escapeHtml(criterionLlm.criterionHeavySectionList)],
-    ["Light section generation tuning", escapeHtml(criterionLlm.criterionLightSectionsConfig)],
-    ["Heavy section generation tuning", escapeHtml(criterionLlm.criterionHeavySectionsConfig)],
+    ["Criterion generation config", escapeHtml(criterionLlm.criterionGenerationConfig)],
     ["Reasoning-bucket model", escapeHtml(bucketLlm.modelId)],
     ["Reasoning-bucket stack", escapeHtml(bucketLlm.provider)],
     ["Reasoning-bucket passes", escapeHtml(String(bucketLlm.passes))],
@@ -201,24 +209,7 @@ function deviationNoFromBasename(originalName: string): string {
   );
 }
 
-function buildPreviousSections(
-  sections: ImportedReportContent["sections"],
-  current: SectionType
-): Array<{ section: SectionType; content: string }> {
-  const idx = EVALUATABLE_SECTIONS.indexOf(current);
-  const priorKeys = EVALUATABLE_SECTIONS.slice(0, Math.max(0, idx));
-  return priorKeys
-    .map((sectionKey) => {
-      const payload =
-        sections[sectionKey as keyof ImportedReportContent["sections"]];
-      const raw = contextForPrompt(sectionKey, payload);
-      if (!raw || raw.trim() === "" || raw.trim() === "{}") return null;
-      return { section: sectionKey, content: normalizePromptText(raw) };
-    })
-    .filter((x): x is { section: SectionType; content: string } => x !== null);
-}
-
-async function evaluateOneDocx(absPath: string): Promise<ReportRunOutcome> {
+async function evaluateOneDocx(absPath: string, reportDate: string): Promise<ReportRunOutcome> {
   const buf = fs.readFileSync(absPath);
   const sourceFile = path.basename(absPath);
   const anchorSlug = reportAnchorSlug(path.basename(absPath, ".docx"));
@@ -251,8 +242,6 @@ async function evaluateOneDocx(absPath: string): Promise<ReportRunOutcome> {
     };
   }
 
-  const reportDate = new Date();
-
   const sectionResults = await Promise.all(
     EVALUATABLE_SECTIONS.map(async (sectionKey) => {
       const payload =
@@ -262,7 +251,6 @@ async function evaluateOneDocx(absPath: string): Promise<ReportRunOutcome> {
         section: sectionKey,
         content: payload,
         reportContext: { deviationNo, date: reportDate },
-        previousSections: buildPreviousSections(imported.sections, sectionKey),
       });
 
       if (sectionKey === "analyze") {
@@ -354,17 +342,20 @@ function htmlReport(params: {
   const criterionOrder = allEvaluatableCriterionEntries();
 
   const overall = aggregateCriterionOverall(params.allRows);
+  const sectionOverall = aggregateSectionOverall(params.allRows);
 
   const reportNavSubtree = renderReportNavSubtree(params.runs);
 
   const hierarchicalNavMarkup = `
 <ol class="nav-tree-root">
+  <li><a href="#aggregate-dmaic">Aggregate: DMAIC phase totals</a></li>
+  <li><a href="#aggregate-criterion">Aggregate: criterion totals</a></li>
+  <li><a href="#per-report-summary">Per-report counts</a></li>
   <li><a href="#run-meta">Report generation details</a></li>
   <li>
     <a href="#per-report-intro">Per-report evaluations</a>
 ${reportNavSubtree}
   </li>
-  <li><a href="#aggregate-criterion">Aggregate: criterion totals</a></li>
   <li><a href="#specific-buckets">Specific issue buckets</a></li>
   <li><a href="#generic-themes">Generic follow-up themes</a></li>
 </ol>`;
@@ -438,7 +429,7 @@ ${reportNavSubtree}
 </div>
 <h3>Top follow-ups</h3>
 ${topIssuesHtml}
-<details>
+<details open>
 <summary>All scores and reasonings (${run.rows.length})</summary>
 <table class="compact-table">
 <thead><tr><th>Section</th><th>Status</th><th>Criterion</th><th>Reasoning</th></tr></thead>
@@ -465,6 +456,81 @@ ${topIssuesHtml}
 <td>${oc.not_evaluated}</td>
 </tr>`;
   });
+
+  const dmaicOverviewRows = EVALUATABLE_SECTIONS.map((sec) => {
+    const oc = sectionOverall.get(sec) ?? emptyCriterionStatusCounts();
+    const label =
+      sec === "define"
+        ? "Define"
+        : sec === "measure"
+          ? "Measure"
+          : sec === "analyze"
+            ? "Analyze"
+            : sec === "improve"
+              ? "Improve"
+              : "Control";
+    return `<tr>
+<td>${escapeHtml(label)}</td>
+<td>${oc.met}</td>
+<td>${oc.partially_met}</td>
+<td>${oc.not_met}</td>
+<td>${oc.not_evaluated}</td>
+</tr>`;
+  }).join("\n");
+
+  const perReportSummaryRows = params.runs
+    .map((run) => {
+      if (run.skippedReason) {
+        return `<tr>
+<td>${escapeHtml(run.deviationNo)}</td>
+<td colspan="3" class="muted">Skipped (${escapeHtml(truncateOneLine(run.skippedReason, 140))})</td>
+</tr>`;
+      }
+      const c = emptyCriterionStatusCounts();
+      for (const row of run.rows) c[row.status] += 1;
+      return `<tr>
+<td>${escapeHtml(run.deviationNo)}</td>
+<td>${c.met}</td>
+<td>${c.partially_met}</td>
+<td>${c.not_met}</td>
+</tr>`;
+    })
+    .join("\n");
+
+  const aggregateStackHtml = `
+<div class="aggregate-stack">
+<details class="table-panel" id="aggregate-dmaic" open>
+<summary>Aggregate: traffic light totals by DMAIC phase</summary>
+<div class="panel-body">
+<p class="muted narrow-note">Totals across all evaluated criterion rows in this bulk run, grouped by Define, Measure, Analyze, Improve, and Control sections.</p>
+<table class="panel-table">
+<thead><tr><th>Phase</th><th>Met</th><th>Partial</th><th>Not met</th><th>Not eval</th></tr></thead>
+<tbody>${dmaicOverviewRows}</tbody>
+</table>
+</div>
+</details>
+
+<details class="table-panel" id="aggregate-criterion" open>
+<summary>Aggregate: traffic light totals per criterion</summary>
+<div class="panel-body">
+<p class="muted narrow-note">Met (green), partially met (amber), not met (red), not evaluated (gray).</p>
+<table class="panel-table">
+<thead><tr><th>Criterion key</th><th>Label</th><th>Met</th><th>Partial</th><th>Not met</th><th>Not eval</th></tr></thead>
+<tbody>${overviewRows.join("\n")}</tbody></table>
+</div>
+</details>
+
+<details class="table-panel" id="per-report-summary" open>
+<summary>Per-report summary</summary>
+<div class="panel-body">
+<p class="muted narrow-note">Counts of criterion evaluations per sampled report. Skipped files list the reason instead of totals.</p>
+<table class="panel-table">
+<thead><tr><th>Deviation (report)</th><th>Met</th><th>Partial</th><th>Not met</th></tr></thead>
+<tbody>${perReportSummaryRows}</tbody>
+</table>
+</div>
+</details>
+</div>`;
 
   const renderPatternRows = (
     rows: typeof params.specificPatternRows,
@@ -604,6 +670,16 @@ ${topIssuesHtml}
  .meta-table{font-size:.82rem;width:100%;}
  .meta-table th[scope="row"]{vertical-align:top;white-space:nowrap;width:260px;color:#374151;font-weight:600;}
  .meta-table td{vertical-align:top;}
+ .aggregate-stack{display:flex;flex-direction:column;gap:14px;margin:4px 0 20px;}
+ .table-panel{border:1px solid var(--border);border-radius:8px;background:#fff;overflow:hidden;}
+ .table-panel > summary{list-style:none;padding:11px 14px;font-weight:600;font-size:.95rem;color:#111827;cursor:pointer;margin:0;border-bottom:1px solid transparent;}
+ .table-panel > summary::-webkit-details-marker{display:none;}
+ .table-panel[open] > summary{border-bottom-color:var(--border);background:var(--surface);}
+ .table-panel > summary::before{content:"▾ ";display:inline-block;transform-origin:center;transition:transform .15s ease;font-size:.72rem;color:var(--muted);margin-right:5px;}
+ .table-panel:not([open]) > summary::before{transform:rotate(-90deg);}
+ .panel-body{padding:4px 12px 12px;}
+ .narrow-note{margin:8px 0 4px;font-size:.82rem;}
+ .panel-table{width:100%;margin:8px 0 6px;}
  @media print {
    .page-shell{display:block!important;}
    .toc-sidebar,.mobile-toc-btn,.sidebar-drawer-overlay,.outline-top{display:none!important;}
@@ -613,6 +689,8 @@ ${topIssuesHtml}
    .report-card{page-break-after:always;margin:0 0 10px;padding:10px;border:none;}
    .sep{display:none;}
    .compact-table{font-size:9px;}
+   .aggregate-stack{gap:8px;margin:10px 0;}
+   details.table-panel, .run-meta{break-inside:avoid;}
  }
 </style>
 </head>
@@ -644,7 +722,9 @@ ${hierarchicalNavMarkup}
 <main class="doc-main" id="report-main-start">
 <h1>Bulk deviation traffic-light evaluation</h1>
 
-<details class="run-meta" id="run-meta">
+${aggregateStackHtml}
+
+<details class="run-meta" id="run-meta" open>
 <summary>Report generation details (prompt + LLM)</summary>
 <table class="meta-table">
 <tbody>
@@ -653,23 +733,25 @@ ${renderRunMetaTable(params.runMeta)}
 </table>
 </details>
 
+<p class="top-quick-tables" role="navigation" aria-label="Jump links for long report">
+<strong>Navigate:</strong>
+<a href="#aggregate-dmaic">Aggregate (DMAIC)</a><span aria-hidden="true"> · </span>
+<a href="#aggregate-criterion">Criterion totals</a><span aria-hidden="true"> · </span>
+<a href="#per-report-summary">Per-report counts</a><span aria-hidden="true"> · </span>
+<a href="#run-meta">Run / LLM details</a><span aria-hidden="true"> · </span>
+<a href="#per-report-intro">Per-report detail</a>
+<br/>
+<strong>Issue buckets:</strong>
+<a href="#specific-buckets">Specific issue buckets</a><span aria-hidden="true"> · </span>
+<a href="#generic-themes">Generic follow-up themes</a>
+</p>
+
 <div class="pill">
 <span class="pill-green">Green = met</span>
 <span class="pill-amber">Amber = partially met</span>
 <span class="pill-red">Red = not met</span>
 <span class="pill-muted">Gray = not evaluated</span>
 </div>
-
-<p class="top-quick-tables" role="navigation" aria-label="Jump links for long report">
-<strong>Navigate:</strong>
-<a href="#run-meta">Run / LLM details</a><span aria-hidden="true"> · </span>
-<a href="#per-report-intro">Per-report scores</a>
-<br/>
-<strong>Aggregate tables:</strong>
-<a href="#aggregate-criterion">Criterion traffic-light totals</a><span aria-hidden="true"> · </span>
-<a href="#specific-buckets">Specific issue buckets</a><span aria-hidden="true"> · </span>
-<a href="#generic-themes">Generic follow-up themes</a>
-</p>
 
 <details class="outline-top" open>
 <summary>Full hierarchical outline</summary>
@@ -685,25 +767,27 @@ ${reportSectionsHtml}
 
 <hr class="sep"/>
 
-<h2 id="aggregate-criterion">Aggregate: traffic light totals per criterion</h2>
-<p class="muted">Columns: met (green), partially met (amber), not met (red), not evaluated (?).</p>
-<table>
-<thead><tr><th>Criterion key</th><th>Label</th><th>Met</th><th>Partial</th><th>Not met</th><th>Not eval</th></tr></thead>
-<tbody>${overviewRows.join("\n")}</tbody></table>
-
-<h2 id="specific-buckets">Specific issue buckets (non-met statuses)</h2>
-<p class="muted">Weighted by deduplicated reasoning text across reports. Labels are multi-assign; counts can overlap.</p>
-<table>
+<details class="table-panel" id="specific-buckets" open>
+<summary>Specific issue buckets (non-met statuses)</summary>
+<div class="panel-body">
+<p class="muted narrow-note">Weighted by deduplicated reasoning text across reports. Labels are multi-assign; counts can overlap.</p>
+<table class="panel-table">
 <thead><tr><th>Pattern</th><th>Occurrences</th><th>Top criteria keys</th><th>Example reasoning</th></tr></thead>
 <tbody>${specificPatternRowsHtml}</tbody>
 </table>
+</div>
+</details>
 
-<h2 id="generic-themes">Generic follow-up themes</h2>
-<p class="muted">Second-pass broader themes; overlaps with specific buckets are expected.</p>
-<table>
+<details class="table-panel" id="generic-themes" open>
+<summary>Generic follow-up themes</summary>
+<div class="panel-body">
+<p class="muted narrow-note">Second-pass broader themes; overlaps with specific buckets are expected.</p>
+<table class="panel-table">
 <thead><tr><th>Theme</th><th>Occurrences</th><th>Top criteria keys</th><th>Example reasoning</th></tr></thead>
 <tbody>${genericPatternRowsHtml}</tbody>
 </table>
+</div>
+</details>
 </main>
 </div>
 <script>
@@ -852,7 +936,7 @@ ${reportSectionsHtml}
 }
 
 async function main() {
-  const { inputDir, outOverride, docConcurrency } = parseArgs(
+  const { inputDir, outOverride, docConcurrency, reportDate } = parseArgs(
     process.argv.slice(2)
   );
   const outFile =
@@ -860,6 +944,7 @@ async function main() {
   console.error(`Scanning DOCX inputs in: ${inputDir}`);
   console.error(`Output HTML path: ${outFile}`);
   console.error(`Concurrent documents: ${docConcurrency}`);
+  console.error(`Report date: ${reportDate}`);
   const files = collectDocxFiles(inputDir);
   if (files.length === 0) {
     console.error(
@@ -870,7 +955,7 @@ async function main() {
 
   const runs = await mapWithConcurrencyLimit(files, docConcurrency, async (f, i) => {
     console.error(`[${i + 1}/${files.length}] Evaluating: ${path.basename(f)} …`);
-    const run = await evaluateOneDocx(f);
+    const run = await evaluateOneDocx(f, reportDate);
     if (run.skippedReason) {
       console.error(`  ├─ ${path.basename(f)} skipped: ${run.skippedReason}`);
     } else {

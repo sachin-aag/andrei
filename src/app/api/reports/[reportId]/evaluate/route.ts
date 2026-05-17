@@ -14,7 +14,6 @@ import { evaluateSection } from "@/lib/ai/evaluate";
 import { EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
 import {
   normalizeAnalyzeToolResults,
-  normalizePromptText,
 } from "@/lib/ai/evaluate-run-helpers";
 import { hashContent } from "@/lib/ai/content-hash";
 import { PROMPT_VERSION } from "@/lib/ai/section-prompts";
@@ -22,8 +21,6 @@ import {
   hasEnoughContextInFirstSection,
   INSUFFICIENT_FIRST_SECTION_MESSAGE,
 } from "@/lib/ai/first-section-context";
-
-import { contextForPrompt } from "@/lib/ai/section-context";
 
 export const maxDuration = 60;
 
@@ -109,27 +106,10 @@ export async function POST(
   // ── 1. Run the LLM in parallel for all target sections ──────────────────
   const llmResults = await Promise.all(
     sectionRows.map(async (row) => {
-      const idx = EVALUATABLE_SECTIONS.indexOf(row.section);
-      const previousSections = EVALUATABLE_SECTIONS.slice(0, Math.max(0, idx))
-        .map((section) => {
-          const prior = bySection.get(section);
-          if (!prior) return null;
-          const raw = contextForPrompt(section, prior.content);
-          if (!raw || raw.trim() === "" || raw.trim() === "{}") return null;
-          return {
-            section,
-            content: normalizePromptText(raw),
-          };
-        })
-        .filter(
-          (v): v is { section: SectionType; content: string } => v != null
-        );
-
       const evaluations = await evaluateSection({
         section: row.section,
         content: row.content,
         reportContext: { deviationNo: report.deviationNo, date: report.date },
-        previousSections,
       });
       return {
         sectionRow: row,
