@@ -46,6 +46,17 @@ describe("sections merge", () => {
     expect(improve.correctiveActions).toContain("Responsible: Engineering");
   });
 
+  it("folds legacy improve narrative prose into corrective actions text", () => {
+    const improve = mergeImproveSection({
+      narrative: legacyStringToDoc("Intro paragraphs before corrective detail."),
+      correctiveActions: "Work order WO-1 closed.",
+    });
+
+    expect(richJsonToPlainText(improve.narrative)).toBe("");
+    expect(improve.correctiveActions).toContain("Intro paragraphs before corrective detail.");
+    expect(improve.correctiveActions).toContain("Work order WO-1 closed.");
+  });
+
   it("preserves nested defaults when merging sparse analyze content", () => {
     const analyze = mergeSection("analyze", {
       sixM: { man: "Training gap" },

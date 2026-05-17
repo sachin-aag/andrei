@@ -1,0 +1,198 @@
+import fs from "node:fs";
+import path from "node:path";
+import { describe, expect, it } from "vitest";
+import { reports } from "@/db/schema";
+import type { ImportedReportContent } from "@/lib/import/docx-to-sections";
+import { docxBufferToImportedReportContent } from "@/lib/import/docx-to-sections";
+import { generateReportDocx } from "@/lib/export/generate-docx";
+import { mergeSection } from "@/lib/sections-merge";
+import type {
+  AnalyzeSection,
+  ControlSection,
+  DefineSection,
+  ImproveSection,
+  MeasureSection,
+} from "@/types/sections";
+import { EDITABLE_SECTIONS } from "@/types/sections";
+import type { ReportSectionRecord } from "@/types/report";
+import { richJsonToPlainText } from "@/lib/tiptap/rich-text";
+
+/**
+ * Integration-ish test: mimics multipart upload parsing + DOCX export (same code paths as
+ * `docxBufferToImportedReportContent` → DB-shaped rows → `generateReportDocx`), then compares
+ * a normalized fingerprint instead of binary .docx equality (different compression/metadata).
+ */
+
+type ReportRow = typeof reports.$inferSelect;
+
+/** Same wording as DOCX export `na()` — re-import captures this literal for empty slots. */
+function normalizeComparableText(s: string): string {
+  const t = s.replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim();
+  if (
+    !t ||
+    t === "Not Applicable" ||
+    t === "\u2014" ||
+    t === "-" ||
+    t === "NA"
+  ) {
+    return "";
+  }
+  return t;
+}
+
+/** Mammoth/export often inserts or drops spaces (e.g. before `Ans.`); strip all ASCII whitespace so round-trip fingerprints stay stable. */
+function fingerprintComparableString(s: string): string {
+  const n = normalizeComparableText(s);
+  return n.replace(/\s/g, "");
+}
+
+/**
+ * Standalone uploads carry numbered template preamble in plain text that `generate-report`
+ * placeholders do not re-embed. Normalize so upload → export → import compares substantive copy.
+ */
+const DEFINE_UPLOAD_HEADING_PREFIX =
+  /^6\.Mentioninitialscopeofdeviation\(impactedproduct\/Material\/Equipment\/System\/Batches\/etc\.\)/i;
+
+const MEASURE_UPLOAD_GUIDANCE_PREFIX =
+  /^1\.Doesthesummaryproviderelevantfactsanddata\/informationreviewed\?/i;
+
+function mergedEditableSections(sections: ImportedReportContent["sections"]) {
+  return {
+    define: mergeSection("define", sections.define),
+    measure: mergeSection("measure", sections.measure),
+    analyze: mergeSection("analyze", sections.analyze),
+    improve: mergeSection("improve", sections.improve),
+    control: mergeSection("control", sections.control),
+  };
+}
+
+function fingerprintDefine(d: DefineSection) {
+  return fingerprintComparableString(richJsonToPlainText(d.narrative)).replace(
+    DEFINE_UPLOAD_HEADING_PREFIX,
+    ""
+  );
+}
+
+function fingerprintMeasure(m: MeasureSection) {
+  const narrative = fingerprintComparableString(richJsonToPlainText(m.narrative)).replace(
+    MEASURE_UPLOAD_GUIDANCE_PREFIX,
+    ""
+  );
+  const reg =
+    typeof m.regulatoryNotification === "string"
+      ? fingerprintComparableString(m.regulatoryNotification)
+      : "";
+  return { narrative, regulatoryNotification: reg };
+}
+
+function fingerprintAnalyze(a: AnalyzeSection): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(a.sixM)) {
+    out[`sixM.${k}`] = fingerprintComparableString(v);
+  }
+  out["fiveWhy.narrative"] = fingerprintComparableString(a.fiveWhy.narrative);
+  out["fiveWhy.conclusion"] = fingerprintComparableString(a.fiveWhy.conclusion);
+  out["brainstorming"] = fingerprintComparableString(a.brainstorming);
+  out["otherTools"] = fingerprintComparableString(a.otherTools);
+  out["investigationOutcome"] = fingerprintComparableString(a.investigationOutcome);
+  for (const [k, v] of Object.entries(a.rootCause)) {
+    out[`rootCause.${k}`] = fingerprintComparableString(v);
+  }
+  for (const [k, v] of Object.entries(a.impactAssessment)) {
+    out[`impactAssessment.${k}`] = fingerprintComparableString(v);
+  }
+  return out;
+}
+
+function fingerprintImprove(i: ImproveSection) {
+  return {
+    narrative: fingerprintComparableString(richJsonToPlainText(i.narrative)),
+    correctiveActions: fingerprintComparableString(i.correctiveActions),
+  };
+}
+
+function fingerprintControl(c: ControlSection) {
+  return {
+    narrative: fingerprintComparableString(richJsonToPlainText(c.narrative)),
+    preventiveActions: fingerprintComparableString(c.preventiveActions),
+    interimPlan: fingerprintComparableString(c.interimPlan),
+    finalComments: fingerprintComparableString(c.finalComments),
+    regulatoryImpact: fingerprintComparableString(c.regulatoryImpact),
+    productQuality: fingerprintComparableString(c.productQuality),
+    validation: fingerprintComparableString(c.validation),
+    stability: fingerprintComparableString(c.stability),
+    marketClinical: fingerprintComparableString(c.marketClinical),
+    lotDisposition: fingerprintComparableString(c.lotDisposition),
+    conclusion: fingerprintComparableString(c.conclusion),
+  };
+}
+
+/** Structured summary used to diff import → export → re-import without binary DOCX equality. */
+function fingerprintAfterMerge(sections: ImportedReportContent["sections"]) {
+  const m = mergedEditableSections(sections);
+  return {
+    define: fingerprintDefine(m.define),
+    measure: fingerprintMeasure(m.measure),
+    analyze: fingerprintAnalyze(m.analyze),
+    improve: fingerprintImprove(m.improve),
+    control: fingerprintControl(m.control),
+  };
+}
+
+function buildMockReport(imported: ImportedReportContent): ReportRow {
+  const iso = new Date("2026-03-04T12:00:00.000Z");
+  return {
+    id: "docx-round-trip-report-id",
+    deviationNo: "DEV-PK-25-002",
+    date: iso,
+    toolsUsed: imported.toolsUsed,
+    otherTools: "",
+    status: "draft",
+    authorId: "1",
+    assignedManagerId: "2",
+    createdAt: iso,
+    updatedAt: iso,
+  };
+}
+
+function buildEditableSectionRecords(
+  reportId: string,
+  sections: ImportedReportContent["sections"]
+): ReportSectionRecord[] {
+  const updatedAt = "2026-01-01T00:00:00.000Z";
+  return EDITABLE_SECTIONS.map((section, i) => ({
+    id: `test-section-${section}-${i}`,
+    reportId,
+    section,
+    content: sections[section],
+    updatedAt,
+  }));
+}
+
+describe("DOCX upload → export round-trip", () => {
+  const fixturePath = path.join(
+    process.cwd(),
+    "docs",
+    "sample_files",
+    "Investigation  DEV-PK-25-002.docx"
+  );
+
+  it("exported DOCX re-import matches original import (normalized section payloads)", async () => {
+    const uploaded = await docxBufferToImportedReportContent(fs.readFileSync(fixturePath));
+
+    const reportRow = buildMockReport(uploaded);
+    const sectionsInput = buildEditableSectionRecords(reportRow.id, uploaded.sections);
+    const exportedBuffer = await generateReportDocx({ report: reportRow, sections: sectionsInput });
+
+    const afterExport = await docxBufferToImportedReportContent(exportedBuffer);
+
+    expect(afterExport.toolsUsed).toEqual(uploaded.toolsUsed);
+
+    const beforeFp = fingerprintAfterMerge(uploaded.sections);
+    const afterFp = fingerprintAfterMerge(afterExport.sections);
+
+    expect(beforeFp).toEqual(afterFp);
+    /** Sanity: define body survives templated export */
+    expect(beforeFp.define.length).toBeGreaterThan(50);
+  });
+});

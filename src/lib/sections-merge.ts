@@ -10,6 +10,7 @@ import { EMPTY_CONTENT } from "@/types/sections";
 import { stringFieldFromStoredValue } from "@/lib/section-content-normalize";
 import {
   appendParagraphsToDoc,
+  emptyDoc,
   normalizeRichField,
   richJsonToPlainText,
 } from "@/lib/tiptap/rich-text";
@@ -55,14 +56,25 @@ export function mergeImproveSection(content: unknown): ImproveSection {
   const o = content as Partial<ImproveSection> & {
     correctiveActions?: unknown;
   };
+
+  const narrative = normalizeRichField(o.narrative ?? base.narrative);
+  let corrective = coerceCorrectiveActions(
+    o.correctiveActions,
+    base.correctiveActions
+  );
+  const narPlain = richJsonToPlainText(narrative).trim();
+
+  if (narPlain) {
+    const corTrim = corrective.trim();
+    if (!corTrim) corrective = narPlain;
+    else if (!corTrim.startsWith(narPlain) && !narPlain.startsWith(corTrim))
+      corrective = `${narPlain}\n\n${corrective}`;
+  }
+
   return {
     ...base,
-    ...(o as Partial<ImproveSection>),
-    narrative: normalizeRichField(o.narrative ?? base.narrative),
-    correctiveActions: coerceCorrectiveActions(
-      o.correctiveActions,
-      base.correctiveActions
-    ),
+    narrative: emptyDoc(),
+    correctiveActions: corrective,
   };
 }
 

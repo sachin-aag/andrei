@@ -165,22 +165,14 @@ describe("evaluateSection", () => {
   });
 
   it("includes full structured section context in the LLM prompt", () => {
-    const longNarrative = `${"A detailed corrective narrative sentence. ".repeat(120)}TAIL_MARKER`;
+    const longLead = `${"A detailed corrective narrative sentence. ".repeat(120)}TAIL_MARKER`;
     const correctiveActions = `${"Corrective action details. ".repeat(120)}ACTION_TAIL`;
+    const improveBody = `${longLead}\n${correctiveActions}`;
 
     const prompts = buildCriterionEvaluationLlmPrompts({
       section: "improve",
       content: {
-        narrative: {
-          type: "doc",
-          content: [
-            {
-              type: "paragraph",
-              content: [{ type: "text", text: longNarrative }],
-            },
-          ],
-        },
-        correctiveActions,
+        correctiveActions: improveBody,
       },
       reportContext: { deviationNo: "DEV-009", date: "2026-05-02" },
     });

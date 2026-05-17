@@ -126,8 +126,7 @@ export function contextForPrompt(section: SectionType, content: unknown): string
       ["patientSafety", "Patient safety"],
     ]);
   } else if (section === "improve") {
-    pushNarrativeLine(lines, section, content);
-    pushTextLine(lines, "Corrective action", content.correctiveActions);
+    pushTextLine(lines, "Corrective actions", content.correctiveActions);
   } else if (section === "control") {
     pushNarrativeLine(lines, section, content);
     pushTextLine(lines, "Preventive actions", content.preventiveActions);

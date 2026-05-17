@@ -229,16 +229,7 @@ R.set(21, rebuildRow(rows[21].xml, makeParas([
 
 // Row 23: Corrective Action content
 R.set(23, rebuildRow(rows[23].xml, makeParas([
-  '{improveNarrative}',
-  '',
-  'Corrective Actions Register:',
-  '{#correctiveActions}',
-  '{caNumber}: {description}',
-  '  Responsible person: {responsiblePerson}',
-  '  Due date: {dueDate}',
-  '  Expected outcome: {expectedOutcome}',
-  '  Effectiveness verification: {effectivenessVerification}',
-  '{/correctiveActions}',
+  '{correctiveActions}',
 ])));
 
 // Row 24: Control (label + checklist combined)

@@ -6,7 +6,7 @@ import type {
   SectionContentMap,
 } from "@/types/sections";
 import { EMPTY_CONTENT, SECTION_LABELS } from "@/types/sections";
-import { legacyStringToDoc } from "@/lib/tiptap/rich-text";
+import { emptyDoc, legacyStringToDoc } from "@/lib/tiptap/rich-text";
 import { SECTION_GUIDANCE } from "@/lib/report-section-guidance";
 
 type EditableKey = "define" | "measure" | "analyze" | "improve" | "control";
@@ -497,10 +497,12 @@ function parseToolsUsedFromDocxXml(buffer: Buffer): ImportedReportContent["tools
       brainstorming: false,
     };
     let pendingCheckbox: boolean | null = null;
+    let sawStructuredCheckbox = false;
     const runs = toolsPara.match(/<\w+:r\b[\s\S]*?<\/\w+:r>/g) ?? [];
     for (const run of runs) {
       const checkbox = checkboxStateFromRun(run);
       if (checkbox !== null) {
+        sawStructuredCheckbox = true;
         pendingCheckbox = checkbox;
         continue;
       }
@@ -512,6 +514,9 @@ function parseToolsUsedFromDocxXml(buffer: Buffer): ImportedReportContent["tools
       else if (/^brainstorming\b/i.test(text)) toolsUsed.brainstorming = pendingCheckbox;
       pendingCheckbox = null;
     }
+
+    /** Exported reports use ☑ / ☐ in text (Docxtemplater), not Word SDT checkboxes — let `parseToolsUsed(raw)` handle those. */
+    if (!sawStructuredCheckbox) return null;
 
     return toolsUsed;
   } catch {
@@ -559,16 +564,23 @@ function buildSectionsFromRaw(raw: string): ImportedSections {
   const controlNarrative = getBetweenLabels(controlBody, ["Preventive Action"], [
     "Preventive Actions Register",
   ]);
-  const correctiveActionsText = stripSectionTemplatePreamble(
+  const correctiveParsed = stripSectionTemplatePreamble(
     "improve",
     [correctiveActionBlock, parseCorrectiveActions(improveBody)]
       .filter(Boolean)
       .join("\n\n")
   );
-  const cleanImproveNarrative = stripSectionTemplatePreamble(
+  const improveIntroPlain = stripSectionTemplatePreamble(
     "improve",
     hasLabel(improveBody, ["Corrective Action"]) ? "" : improveBody
   );
+  const correctiveActionsUnified = [
+    improveIntroPlain,
+    correctiveParsed,
+  ]
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .join("\n\n");
   const cleanControlNarrative = stripSectionTemplatePreamble(
     "control",
     controlNarrative ||
@@ -584,8 +596,8 @@ function buildSectionsFromRaw(raw: string): ImportedSections {
     analyze: buildAnalyzeFromChunk(sections.analyze),
     improve: {
       ...EMPTY_CONTENT.improve,
-      narrative: legacyStringToDoc(cleanImproveNarrative),
-      correctiveActions: correctiveActionsText,
+      narrative: emptyDoc(),
+      correctiveActions: correctiveActionsUnified,
     },
     control: {
       ...EMPTY_CONTENT.control,

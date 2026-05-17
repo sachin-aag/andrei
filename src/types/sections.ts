@@ -157,10 +157,10 @@ export const SECTION_LABELS: Record<keyof SectionContentMap, string> = {
   attachments: "Attachments",
 };
 
-export const EDITABLE_SECTIONS: Array<keyof SectionContentMap> = [
+export const EDITABLE_SECTIONS = [
   "define",
   "measure",
   "analyze",
   "improve",
   "control",
-];
+] as const satisfies readonly (keyof SectionContentMap)[];

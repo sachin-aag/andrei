@@ -37,11 +37,17 @@ describe("docx import", () => {
     expect(fiveWhy.conclusion).toContain("Based on the 5-Why analysis");
     expect(fiveWhy.conclusion).toContain("old version software was being used");
 
-    const improveText = richJsonToPlainText(imported.sections.improve.narrative);
-    expect(improveText).not.toContain("The non-conformance is related to temperature data");
-    expect(improveText).not.toContain("Improve section covers the corrective actions");
-    expect(improveText).not.toContain("Was Effectiveness Verification required");
-    expect(improveText).not.toContain("Were specific corrective Actions identified");
+    const improveNarrPlain = richJsonToPlainText(imported.sections.improve.narrative);
+    expect(improveNarrPlain).toBe("");
+    expect(imported.sections.improve.correctiveActions).not.toContain(
+      "Improve section covers the corrective actions"
+    );
+    expect(imported.sections.improve.correctiveActions).not.toContain(
+      "Were specific corrective Actions identified"
+    );
+    expect(imported.sections.improve.correctiveActions).not.toContain(
+      "Was Effectiveness Verification required"
+    );
     expect(imported.sections.improve.correctiveActions).toContain(
       "The non-conformance is related to temperature data"
     );

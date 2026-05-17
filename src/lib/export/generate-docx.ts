@@ -140,7 +140,6 @@ function buildTemplateData(
     impactPatientSafety: na(a.impactAssessment.patientSafety),
 
     // Improve
-    improveNarrative: na(richJsonToPlainText(i.narrative)),
     correctiveActions: na(i.correctiveActions),
 
     // Control
