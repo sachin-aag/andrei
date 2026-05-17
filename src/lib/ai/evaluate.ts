@@ -12,7 +12,7 @@ export { PROMPT_VERSION } from "./section-prompts";
 export const CRITERIA_EVAL_GOOGLE_MODEL_ID = "gemini-3.1-flash-lite" as const;
 
 /** Temperature applied to criterion-level `evaluateSection` calls. */
-export const CRITERIA_EVAL_TEMPERATURE = 0.2 as const;
+export const CRITERIA_EVAL_TEMPERATURE = 0 as const;
 
 /** Fixed seed for reproducible sampling across runs. */
 export const CRITERIA_EVAL_SEED = 0 as const;
