@@ -5,10 +5,33 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
 
-export function compactText(value: string, maxChars = 1200): string {
-  const normalized = value.replace(/\s+/g, " ").trim();
-  if (normalized.length <= maxChars) return normalized;
-  return `${normalized.slice(0, maxChars).trim()}...`;
+export function compactText(value: string): string {
+  return value.replace(/\s+/g, " ").trim();
+}
+
+function stripLeadingTemplateChecklist(section: SectionType, value: string): string {
+  if (section !== "improve" && section !== "control") return value;
+
+  const marker =
+    section === "improve"
+      ? /^improve section covers the corrective actions\s*/i
+      : /^control section covers the preventive actions\s*/i;
+
+  let text = value.trim();
+  if (!marker.test(text)) return value;
+
+  text = text.replace(marker, "").trimStart();
+
+  while (text) {
+    const checklistSentence = text.match(
+      /^(?:(?:is|are|was|were|does|do|did)\b|capa required\b)[^?.]*(?:[?.]\s*|$)/i
+    );
+    if (!checklistSentence) break;
+
+    text = text.slice(checklistSentence[0].length).trimStart();
+  }
+
+  return text;
 }
 
 export function tiptapText(value: unknown): string {
@@ -27,17 +50,20 @@ export function tiptapText(value: unknown): string {
 export function pushTextLine(
   lines: string[],
   label: string,
-  value: unknown,
-  maxChars?: number
+  value: unknown
 ) {
   if (typeof value !== "string") return;
-  const text = compactText(value, maxChars);
+  const text = compactText(value);
   if (text) lines.push(`${label}: ${text}`);
 }
 
-export function pushNarrativeLine(lines: string[], content: Record<string, unknown>) {
-  const text = tiptapText(content.narrative);
-  if (text) lines.push(`Narrative excerpt: ${compactText(text, 1600)}`);
+export function pushNarrativeLine(
+  lines: string[],
+  section: SectionType,
+  content: Record<string, unknown>
+) {
+  const text = stripLeadingTemplateChecklist(section, tiptapText(content.narrative));
+  if (text) lines.push(`Narrative: ${compactText(text)}`);
 }
 
 export function pushObjectFields(
@@ -51,7 +77,7 @@ export function pushObjectFields(
   for (const [key, label] of fields) {
     const fieldValue = value[key];
     if (typeof fieldValue === "string" && fieldValue.trim()) {
-      fieldLines.push(`${label}: ${compactText(fieldValue, 500)}`);
+      fieldLines.push(`${label}: ${compactText(fieldValue)}`);
     }
   }
   if (fieldLines.length) lines.push(`${heading}: ${fieldLines.join("; ")}`);
@@ -67,9 +93,9 @@ export function contextForPrompt(section: SectionType, content: unknown): string
 
   const lines: string[] = [];
   if (section === "define") {
-    pushNarrativeLine(lines, content);
+    pushNarrativeLine(lines, section, content);
   } else if (section === "measure") {
-    pushNarrativeLine(lines, content);
+    pushNarrativeLine(lines, section, content);
     pushTextLine(lines, "Regulatory notification", content.regulatoryNotification);
   } else if (section === "analyze") {
     pushObjectFields(lines, "6M", content.sixM, [
@@ -100,24 +126,11 @@ export function contextForPrompt(section: SectionType, content: unknown): string
       ["patientSafety", "Patient safety"],
     ]);
   } else if (section === "improve") {
-    pushNarrativeLine(lines, content);
-    const actions = Array.isArray(content.correctiveActions)
-      ? content.correctiveActions
-      : [];
-    actions.slice(0, 8).forEach((action, index) => {
-      if (!isRecord(action)) return;
-      const parts: string[] = [];
-      pushTextLine(parts, "description", action.description, 600);
-      pushTextLine(parts, "responsible", action.responsiblePerson, 250);
-      pushTextLine(parts, "due", action.dueDate, 120);
-      pushTextLine(parts, "outcome", action.expectedOutcome, 350);
-      pushTextLine(parts, "effectiveness", action.effectivenessVerification, 350);
-      if (parts.length) lines.push(`Corrective action ${index + 1}: ${parts.join("; ")}`);
-    });
-    if (actions.length > 8) lines.push(`[${actions.length - 8} more corrective actions omitted]`);
+    pushNarrativeLine(lines, section, content);
+    pushTextLine(lines, "Corrective action", content.correctiveActions);
   } else if (section === "control") {
-    pushNarrativeLine(lines, content);
-    pushTextLine(lines, "Preventive actions", content.preventiveActions, 1800);
+    pushNarrativeLine(lines, section, content);
+    pushTextLine(lines, "Preventive actions", content.preventiveActions);
     pushTextLine(lines, "Interim plan", content.interimPlan);
     pushTextLine(lines, "Final comments", content.finalComments);
     pushTextLine(lines, "Regulatory impact", content.regulatoryImpact);
@@ -126,7 +139,7 @@ export function contextForPrompt(section: SectionType, content: unknown): string
     pushTextLine(lines, "Stability", content.stability);
     pushTextLine(lines, "Market/clinical", content.marketClinical);
     pushTextLine(lines, "Lot disposition", content.lotDisposition);
-    pushTextLine(lines, "Conclusion", content.conclusion, 1800);
+    pushTextLine(lines, "Conclusion", content.conclusion);
   }
 
   return lines.length ? lines.join("\n") : fallbackContextForPrompt(content);

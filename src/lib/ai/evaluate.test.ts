@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { generateText } from "ai";
-import { evaluateSection } from "@/lib/ai/evaluate";
+import {
+  buildCriterionEvaluationLlmPrompts,
+  evaluateSection,
+} from "@/lib/ai/evaluate";
 import { PROMPT_VERSION } from "@/lib/ai/section-prompts";
 
 vi.mock("ai", async () => {
@@ -39,6 +42,11 @@ function mockSingleEval() {
 function lastSystemPrompt(): string {
   const args = lastGenerateTextArgs();
   return typeof args.system === "string" ? args.system : "";
+}
+
+function lastUserPrompt(): string {
+  const args = lastGenerateTextArgs();
+  return typeof args.prompt === "string" ? args.prompt : "";
 }
 
 function lastGenerateTextArgs(): GenerateTextArgs {
@@ -97,12 +105,14 @@ describe("evaluateSection", () => {
     expect(prompt).toContain(COMMON_RULE_PHRASE);
     expect(prompt).toContain(PROMPT_INJECTION_GUARD);
     expect(prompt).toContain("SECTION ROLE - DEFINE");
+    expect(PROMPT_VERSION).toBeTruthy();
+    expect(prompt).not.toContain("EVALUATION_PROMPT_VERSION");
     expect(prompt).toContain(
-      `EVALUATION_PROMPT_VERSION (bookkeeping): ${PROMPT_VERSION}`
+      "Occurrence date/time and detection date/time are distinct facts"
     );
-    expect(prompt).toContain("Distinguish occurrence date/time and detection date/time");
-    expect(prompt).toMatch(/<example type="strong"/);
-    expect(prompt).toMatch(/<example type="weak"/);
+    expect(prompt).toContain("Do not rewrite the report");
+    expect(prompt).not.toMatch(/<example type="strong"/);
+    expect(prompt).not.toMatch(/<example type="weak"/);
   });
 
   it("composes the system prompt for analyze with the either-or 5-Why/6M rule and length flexibility", async () => {
@@ -120,7 +130,7 @@ describe("evaluateSection", () => {
     expect(prompt).toContain("SECTION ROLE - ANALYZE");
     expect(prompt).toContain("5-Why and 6M are alternatives");
     expect(prompt).toContain("Fewer or more than five questions are acceptable");
-    expect(prompt).toContain("collapses to human error");
+    expect(prompt).toContain('jump directly to "human error"');
   });
 
   it("includes section-specific roles in measure, improve, and control prompts", async () => {
@@ -137,6 +147,101 @@ describe("evaluateSection", () => {
       expect(prompt).toContain(COMMON_RULE_PHRASE);
       expect(prompt).toContain(`SECTION ROLE - ${section.toUpperCase()}`);
     }
+  });
+
+  it("asks for criteria-only output without suggested fixes", async () => {
+    process.env.GOOGLE_GENERATIVE_AI_API_KEY = "test-key";
+    mockSingleEval();
+
+    await evaluateSection({
+      section: "improve",
+      content: "A corrective action was assigned.",
+      reportContext: { deviationNo: "DEV-008", date: "2026-05-02" },
+    });
+
+    const prompt = lastUserPrompt();
+    expect(prompt).toContain("Return one evaluation object per criterion");
+    expect(prompt).toContain("Do not include suggested fixes or rewritten report text");
+  });
+
+  it("includes full structured section context in the LLM prompt", () => {
+    const longNarrative = `${"A detailed corrective narrative sentence. ".repeat(120)}TAIL_MARKER`;
+    const correctiveActions = `${"Corrective action details. ".repeat(120)}ACTION_TAIL`;
+
+    const prompts = buildCriterionEvaluationLlmPrompts({
+      section: "improve",
+      content: {
+        narrative: {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [{ type: "text", text: longNarrative }],
+            },
+          ],
+        },
+        correctiveActions,
+      },
+      reportContext: { deviationNo: "DEV-009", date: "2026-05-02" },
+    });
+
+    expect(prompts?.userPrompt).toContain("TAIL_MARKER");
+    expect(prompts?.userPrompt).toContain("Corrective action details.");
+    expect(prompts?.userPrompt).toContain("ACTION_TAIL");
+    expect(prompts?.userPrompt).not.toContain("more corrective actions omitted");
+    expect(prompts?.userPrompt).not.toContain("...");
+  });
+
+  it("keeps each LLM prompt scoped to the current section", () => {
+    const prompts = buildCriterionEvaluationLlmPrompts({
+      section: "control",
+      content: "Control section conclusion.",
+      reportContext: { deviationNo: "DEV-010", date: "2026-05-02" },
+    });
+
+    expect(prompts?.userPrompt).toContain("SECTION: CONTROL");
+    expect(prompts?.userPrompt).toContain("SECTION CONTENT:");
+    expect(prompts?.userPrompt).toContain("Control section conclusion.");
+    expect(prompts?.userPrompt).not.toContain("FULL REPORT CONTEXT");
+    expect(prompts?.userPrompt).not.toContain("## DEFINE");
+  });
+
+  it("removes imported Improve/Control template checklist boilerplate from prompt context", () => {
+    const prompts = buildCriterionEvaluationLlmPrompts({
+      section: "control",
+      content: {
+        narrative: {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                {
+                  type: "text",
+                  text:
+                    "Control section covers the preventive actions " +
+                    "Was the Preventive Action linked the classification of the root cause and explanation given for how it will prevent recurrence? " +
+                    "Was an Interim Plan needed to ensure a state the control while the Preventive Actions were implemented? " +
+                    "Does the Final Comments section include rationale to support the conclusion of the investigation and CAPA. " +
+                    "Preventive Action No. CAPA-001 was opened to update the PM checklist.",
+                },
+              ],
+            },
+          ],
+        },
+      },
+      reportContext: { deviationNo: "DEV-011", date: "2026-05-02" },
+    });
+
+    expect(prompts?.userPrompt).not.toContain(
+      "Control section covers the preventive actions"
+    );
+    expect(prompts?.userPrompt).not.toContain(
+      "Was the Preventive Action linked"
+    );
+    expect(prompts?.userPrompt).toContain(
+      "Preventive Action No. CAPA-001 was opened"
+    );
   });
 
   it("salvages evaluations when generateText throws a schema validation error", async () => {

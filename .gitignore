@@ -52,4 +52,4 @@ Thumbs.db
 *.pem
 
 # Local bulk deviation evaluation HTML (`npm run sample-eval-report`; CI uploads to artifacts instead)
-reports/
+/reports/

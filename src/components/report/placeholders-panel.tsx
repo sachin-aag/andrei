@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState } from "react";
 import { ArrowRight, CheckCircle2, PenLine } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,7 +8,6 @@ import {
 } from "@/providers/report-provider";
 import { EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
 import { SectionAccordion, useSectionAccordionState } from "./section-accordion";
-import type { SectionType } from "@/db/schema";
 import type { Placeholder } from "@/lib/placeholders/find";
 import { fillPlaceholder } from "@/lib/placeholders/fill";
 
@@ -123,12 +122,17 @@ function ExitingPlaceholderCard({
   const label = extractLabel(placeholder.text);
   const [phase, setPhase] = useState<"enter" | "exit">("enter");
   const doneRef = useRef(false);
+  const onDoneRef = useRef(onDone);
 
-  const finish = () => {
+  useLayoutEffect(() => {
+    onDoneRef.current = onDone;
+  }, [onDone]);
+
+  const finish = useCallback(() => {
     if (doneRef.current) return;
     doneRef.current = true;
-    onDone();
-  };
+    onDoneRef.current();
+  }, []);
 
   useLayoutEffect(() => {
     const id2Ref = { current: null as number | null };
@@ -141,7 +145,7 @@ function ExitingPlaceholderCard({
       if (id2Ref.current != null) cancelAnimationFrame(id2Ref.current);
       window.clearTimeout(fallback);
     };
-  }, []);
+  }, [finish]);
 
   const handleTransitionEnd = (e: React.TransitionEvent<HTMLDivElement>) => {
     if (e.target !== e.currentTarget) return;

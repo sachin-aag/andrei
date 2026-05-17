@@ -122,8 +122,21 @@ export type CriterionEvaluationResult = {
   reasoning: string;
 };
 
+/** Exact `system` + `prompt` passed to `generateText` for a sectional evaluation, when an LLM call is made. */
+export type CriterionEvaluationLlmPrompts = {
+  systemPrompt: string;
+  userPrompt: string;
+};
 
-export async function evaluateSection({
+function sectionContentForPrompt(section: SectionType, content: unknown): string {
+  return typeof content === "string" ? content : contextForPrompt(section, content);
+}
+
+/**
+ * Builds the same strings `evaluateSection` sends to the model. Returns `null`
+ * when no request is made (no criteria for section, or empty section content).
+ */
+export function buildCriterionEvaluationLlmPrompts({
   section,
   content,
   reportContext,
@@ -134,23 +147,15 @@ export async function evaluateSection({
     deviationNo: string;
     date: Date | string;
   };
-}): Promise<CriterionEvaluationResult[]> {
+}): CriterionEvaluationLlmPrompts | null {
   const criteria = getCriteria(section);
-  if (criteria.length === 0) return [];
+  if (criteria.length === 0) return null;
 
-  const contentStr =
-    typeof content === "string" ? content : contextForPrompt(section, content);
+  const contentStr = sectionContentForPrompt(section, content);
 
   const isEmpty = !contentStr || contentStr.trim() === "" || contentStr === "{}";
 
-  if (isEmpty) {
-    return criteria.map((c) => ({
-      criterionKey: c.key,
-      criterionLabel: c.label,
-      status: "not_evaluated" as const,
-      reasoning: "Section is empty.",
-    }));
-  }
+  if (isEmpty) return null;
 
   const systemPrompt = buildEvaluationSystemPrompt(section);
 
@@ -174,7 +179,42 @@ ${criteria
   )
   .join("\n")}
 
-Evaluate each criterion. Return one evaluation object per criterion, using the exact criterionKey provided.`;
+Evaluate each criterion using only the section content above. Return one evaluation object per criterion, using the exact criterionKey provided. Do not include suggested fixes or rewritten report text.`;
+
+  return { systemPrompt, userPrompt };
+}
+
+export async function evaluateSection({
+  section,
+  content,
+  reportContext,
+}: {
+  section: SectionType;
+  content: unknown;
+  reportContext: {
+    deviationNo: string;
+    date: Date | string;
+  };
+}): Promise<CriterionEvaluationResult[]> {
+  const criteria = getCriteria(section);
+  if (criteria.length === 0) return [];
+
+  const prompts = buildCriterionEvaluationLlmPrompts({
+    section,
+    content,
+    reportContext,
+  });
+
+  if (!prompts) {
+    return criteria.map((c) => ({
+      criterionKey: c.key,
+      criterionLabel: c.label,
+      status: "not_evaluated" as const,
+      reasoning: "Section is empty.",
+    }));
+  }
+
+  const { systemPrompt, userPrompt } = prompts;
 
   const generationSettings = generationSettingsForSection();
 

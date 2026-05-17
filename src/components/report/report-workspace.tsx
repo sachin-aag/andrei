@@ -84,7 +84,6 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [sidebarOverlaysContent, setSidebarOverlaysContent] = useState(false);
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("criteria");
-  const [criteriaSection, setCriteriaSection] = useState<SectionType | undefined>();
   const [sectionMinHeights, setSectionMinHeights] = useState<
     Partial<Record<SectionType, number>>
   >({});
@@ -299,7 +298,6 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
           onJumpToSection={jumpToSection}
           onJumpToPlaceholder={handleJumpToPlaceholder}
           onJumpToComment={jumpToComment}
-          initialCriteriaSection={criteriaSection}
         />
       </div>
     </div>

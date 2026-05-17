@@ -47,18 +47,9 @@ export type AnalyzeSection = {
   };
 };
 
-export type CorrectiveAction = {
-  id: string;
-  description: string;
-  responsiblePerson: string;
-  dueDate: string;
-  expectedOutcome: string;
-  effectivenessVerification: string;
-};
-
 export type ImproveSection = {
   narrative: JSONContent;
-  correctiveActions: CorrectiveAction[];
+  correctiveActions: string;
 };
 
 export type ControlSection = {
@@ -133,7 +124,7 @@ export const EMPTY_CONTENT: SectionContentMap = {
   },
   improve: {
     narrative: emptyDoc(),
-    correctiveActions: [],
+    correctiveActions: "",
   },
   control: {
     narrative: emptyDoc(),

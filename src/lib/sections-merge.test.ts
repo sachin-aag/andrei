@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   mergeAnalyzeSection,
   mergeControlSection,
+  mergeImproveSection,
   mergeMeasureSection,
   mergeSection,
 } from "@/lib/sections-merge";
@@ -25,6 +26,24 @@ describe("sections merge", () => {
     expect(control.preventiveActions).toContain("PA-001");
     expect(control.preventiveActions).toContain("Description: Retrain operators");
     expect(control.preventiveActions).toContain("Responsible: QA Manager");
+  });
+
+  it("coerces legacy corrective action arrays into readable text", () => {
+    const improve = mergeImproveSection({
+      correctiveActions: [
+        {
+          description: "Raise work order",
+          responsiblePerson: "Engineering",
+          dueDate: "2026-05-15",
+          expectedOutcome: "Equipment restored",
+          effectivenessVerification: "Trial run satisfactory",
+        },
+      ],
+    });
+
+    expect(improve.correctiveActions).toContain("CA-001");
+    expect(improve.correctiveActions).toContain("Description: Raise work order");
+    expect(improve.correctiveActions).toContain("Responsible: Engineering");
   });
 
   it("preserves nested defaults when merging sparse analyze content", () => {

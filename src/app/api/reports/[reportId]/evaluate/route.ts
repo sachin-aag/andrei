@@ -65,8 +65,8 @@ export async function POST(
       )
     );
 
-  // Pull all evaluatable section rows for this report so each section evaluation
-  // can reference prior sections for chronology/consistency.
+  // Pull all evaluatable section rows so the Define context guard still works
+  // when a subset of sections is requested.
   const allEvaluatableRows = await db
     .select()
     .from(reportSections)

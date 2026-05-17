@@ -2,7 +2,6 @@ import mammoth from "mammoth";
 import PizZip from "pizzip";
 import type {
   AnalyzeSection,
-  CorrectiveAction,
   MeasureSection,
   SectionContentMap,
 } from "@/types/sections";
@@ -139,10 +138,35 @@ function stripGuidanceChecklist(text: string): string {
       }
       const normalized = normalizeGuidanceLine(trimmed);
       return !guidance.some(
-        (item) => normalized === item || normalized.includes(item) || item.includes(normalized)
+        (item) =>
+          normalized === item ||
+          normalized.includes(item) ||
+          (normalized.length >= 40 && item.includes(normalized))
       );
     })
     .join("\n");
+}
+
+function stripSectionTemplatePreamble(section: "improve" | "control", text: string): string {
+  const marker =
+    section === "improve"
+      ? /^improve section covers the corrective actions\s*/i
+      : /^control section covers the preventive actions\s*/i;
+
+  let body = cleanImportedText(text);
+  if (!marker.test(body)) return body;
+
+  body = body.replace(marker, "").trimStart();
+
+  while (body) {
+    const checklistSentence = body.match(
+      /^(?:(?:is|are|was|were|does|do|did)\b|capa required\b)[^?.]*(?:[?.]\s*|$)/i
+    );
+    if (!checklistSentence) break;
+    body = body.slice(checklistSentence[0].length).trimStart();
+  }
+
+  return cleanImportedText(body);
 }
 
 function normalizeGuidanceLine(text: string): string {
@@ -321,43 +345,50 @@ function buildAnalyzeFromChunk(text: string): AnalyzeSection {
   };
 }
 
-function parseCorrectiveActions(text: string): CorrectiveAction[] {
+function parseCorrectiveActions(text: string): string {
   const register = getBetweenLabels(text, ["Corrective Actions Register"], []);
-  if (!register) return [];
+  if (!register) return "";
 
-  const actions: CorrectiveAction[] = [];
   const starts = Array.from(register.matchAll(/^CA-\d+\s*:\s*/gim));
+  if (starts.length === 0) {
+    return cleanImportedText(register);
+  }
+
+  const entries: string[] = [];
   for (let idx = 0; idx < starts.length; idx++) {
     const match = starts[idx]!;
     const next = starts[idx + 1];
     const start = match.index + match[0].length;
     const end = next?.index ?? register.length;
     const block = cleanImportedText(register.slice(start, end));
-    actions.push({
-      id: `imported-ca-${actions.length + 1}`,
-      description: textBeforeAnyInlineLabel(block, [
-        "Responsible person",
+    const description = textBeforeAnyInlineLabel(block, [
+      "Responsible person",
+      "Due date",
+      "Expected outcome",
+      "Effectiveness verification",
+    ]);
+    const details = [
+      ["Responsible person", getInlineBetweenLabel(block, "Responsible person", [
         "Due date",
         "Expected outcome",
         "Effectiveness verification",
-      ]),
-      responsiblePerson: getInlineBetweenLabel(block, "Responsible person", [
-        "Due date",
+      ])],
+      ["Due date", getInlineBetweenLabel(block, "Due date", [
         "Expected outcome",
         "Effectiveness verification",
-      ]),
-      dueDate: getInlineBetweenLabel(block, "Due date", [
-        "Expected outcome",
+      ])],
+      ["Expected outcome", getInlineBetweenLabel(block, "Expected outcome", [
         "Effectiveness verification",
-      ]),
-      expectedOutcome: getInlineBetweenLabel(block, "Expected outcome", [
-        "Effectiveness verification",
-      ]),
-      effectivenessVerification: getInlineBetweenLabel(block, "Effectiveness verification", []),
-    });
+      ])],
+      ["Effectiveness verification", getInlineBetweenLabel(block, "Effectiveness verification", [])],
+    ]
+      .filter(([, value]) => value && value !== "—")
+      .map(([label, value]) => `${label}: ${value}`);
+
+    entries.push(cleanImportedText([description, ...details].filter(Boolean).join("\n")));
   }
 
-  return actions;
+  return cleanImportedText(entries.filter(Boolean).join("\n\n"));
 }
 
 function parsePreventiveActions(text: string): string {
@@ -522,12 +553,27 @@ function buildSectionsFromRaw(raw: string): ImportedSections {
   const defineNarr = defineText
     ? legacyStringToDoc(defineText)
     : emptyDocFallback(foundHeadings, raw);
-  const improveNarrative = getBetweenLabels(improveBody, ["Corrective Action"], [
+  const correctiveActionBlock = getBetweenLabels(improveBody, ["Corrective Action"], [
     "Corrective Actions Register",
   ]);
   const controlNarrative = getBetweenLabels(controlBody, ["Preventive Action"], [
     "Preventive Actions Register",
   ]);
+  const correctiveActionsText = stripSectionTemplatePreamble(
+    "improve",
+    [correctiveActionBlock, parseCorrectiveActions(improveBody)]
+      .filter(Boolean)
+      .join("\n\n")
+  );
+  const cleanImproveNarrative = stripSectionTemplatePreamble(
+    "improve",
+    hasLabel(improveBody, ["Corrective Action"]) ? "" : improveBody
+  );
+  const cleanControlNarrative = stripSectionTemplatePreamble(
+    "control",
+    controlNarrative ||
+      (hasLabel(controlBody, ["Preventive Action"]) ? "" : controlBody)
+  );
 
   return {
     define: {
@@ -538,18 +584,12 @@ function buildSectionsFromRaw(raw: string): ImportedSections {
     analyze: buildAnalyzeFromChunk(sections.analyze),
     improve: {
       ...EMPTY_CONTENT.improve,
-      narrative: legacyStringToDoc(
-        improveNarrative ||
-          (hasLabel(improveBody, ["Corrective Action"]) ? "" : improveBody)
-      ),
-      correctiveActions: parseCorrectiveActions(improveBody),
+      narrative: legacyStringToDoc(cleanImproveNarrative),
+      correctiveActions: correctiveActionsText,
     },
     control: {
       ...EMPTY_CONTENT.control,
-      narrative: legacyStringToDoc(
-        controlNarrative ||
-          (hasLabel(controlBody, ["Preventive Action"]) ? "" : controlBody)
-      ),
+      narrative: legacyStringToDoc(cleanControlNarrative),
       preventiveActions: parsePreventiveActions(controlBody),
       interimPlan: getBetweenLabels(controlBody, ["Interim Plan"], [
         "Final Comments",

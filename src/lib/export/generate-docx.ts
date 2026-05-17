@@ -141,14 +141,7 @@ function buildTemplateData(
 
     // Improve
     improveNarrative: na(richJsonToPlainText(i.narrative)),
-    correctiveActions: i.correctiveActions.map((ca, idx) => ({
-      caNumber: `CA-${String(idx + 1).padStart(3, "0")}`,
-      description: na(ca.description),
-      responsiblePerson: na(ca.responsiblePerson),
-      dueDate: na(ca.dueDate),
-      expectedOutcome: na(ca.expectedOutcome),
-      effectivenessVerification: na(ca.effectivenessVerification),
-    })),
+    correctiveActions: na(i.correctiveActions),
 
     // Control
     controlNarrative: na(richJsonToPlainText(c.narrative)),

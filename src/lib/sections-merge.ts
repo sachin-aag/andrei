@@ -52,11 +52,17 @@ export function mergeMeasureSection(content: unknown): MeasureSection {
 export function mergeImproveSection(content: unknown): ImproveSection {
   const base = EMPTY_CONTENT.improve;
   if (!content || typeof content !== "object") return base;
-  const o = content as Partial<ImproveSection>;
+  const o = content as Partial<ImproveSection> & {
+    correctiveActions?: unknown;
+  };
   return {
     ...base,
-    ...o,
+    ...(o as Partial<ImproveSection>),
     narrative: normalizeRichField(o.narrative ?? base.narrative),
+    correctiveActions: coerceCorrectiveActions(
+      o.correctiveActions,
+      base.correctiveActions
+    ),
   };
 }
 
@@ -107,6 +113,32 @@ function coercePreventiveActions(value: unknown, fallback: string): string {
           `PA-${String(idx + 1).padStart(3, "0")}`,
           a.description ? `Description: ${String(a.description)}` : "",
           a.linkedRootCause ? `Linked root cause: ${String(a.linkedRootCause)}` : "",
+          a.responsiblePerson ? `Responsible: ${String(a.responsiblePerson)}` : "",
+          a.dueDate ? `Due date: ${String(a.dueDate)}` : "",
+          a.expectedOutcome ? `Expected outcome: ${String(a.expectedOutcome)}` : "",
+          a.effectivenessVerification
+            ? `Effectiveness verification: ${String(a.effectivenessVerification)}`
+            : "",
+        ].filter(Boolean);
+        return lines.join("\n");
+      })
+      .filter(Boolean)
+      .join("\n\n");
+  }
+  return fallback;
+}
+
+/* Legacy rows stored correctiveActions as structured cards; flatten to text. */
+function coerceCorrectiveActions(value: unknown, fallback: string): string {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) {
+    return value
+      .map((entry, idx) => {
+        if (!entry || typeof entry !== "object") return "";
+        const a = entry as Record<string, unknown>;
+        const lines = [
+          `CA-${String(idx + 1).padStart(3, "0")}`,
+          a.description ? `Description: ${String(a.description)}` : "",
           a.responsiblePerson ? `Responsible: ${String(a.responsiblePerson)}` : "",
           a.dueDate ? `Due date: ${String(a.dueDate)}` : "",
           a.expectedOutcome ? `Expected outcome: ${String(a.expectedOutcome)}` : "",

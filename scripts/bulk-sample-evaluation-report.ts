@@ -18,11 +18,12 @@ import { config as loadEnv } from "dotenv";
 loadEnv({ path: ".env.local" });
 loadEnv({ path: ".env" });
 
+import type { SectionType } from "@/db/schema";
 import type { ImportedReportContent } from "@/lib/import/docx-to-sections";
 import { docxBufferToImportedReportContent } from "@/lib/import/docx-to-sections";
-import type { SectionType } from "@/db/schema";
 import {
   evaluateSection,
+  buildCriterionEvaluationLlmPrompts,
   resolveEvaluationLanguageModel,
   PROMPT_VERSION,
   describeCriterionEvaluationLlmFootprint,
@@ -31,6 +32,10 @@ import {
   normalizeAnalyzeToolResults,
 } from "@/lib/ai/evaluate-run-helpers";
 import { EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
+import {
+  COMMON_EVALUATION_SYSTEM_PROMPT,
+  SECTION_SYSTEM_PROMPT_ADDITIONS,
+} from "@/lib/ai/section-prompts";
 import { hasEnoughContextInFirstSection } from "@/lib/ai/first-section-context";
 import {
   aggregateCriterionOverall,
@@ -58,6 +63,13 @@ type HtmlRunMeta = {
   clusteringNote: string;
 };
 
+type ReportSectionLlmQuery = {
+  section: SectionType;
+  llmCalled: boolean;
+  systemPrompt?: string;
+  userPrompt?: string;
+};
+
 type ReportRunOutcome = {
   sourcePath: string;
   sourceFile: string;
@@ -65,6 +77,8 @@ type ReportRunOutcome = {
   anchorSlug: string;
   skippedReason: string | null;
   rows: BulkEvalRow[];
+  /** Per sectional Gemini request when this report was evaluated (skipped reports: empty). */
+  sectionLlmQueries: ReportSectionLlmQuery[];
 };
 
 /** Derive a stable date from PROMPT_VERSION (e.g. "2026-05-17-1" → "2026-05-17"). */
@@ -137,12 +151,97 @@ function renderRunMetaTable(meta: HtmlRunMeta): string {
     ["Reasoning-bucket schema", escapeHtml(bucketLlm.schemaDescription)],
     ["Reasoning-layer processing note", escapeHtml(meta.clusteringNote)],
   ];
+  const promptAuditRow = `<tr class="prompt-audit-row"><td colspan="2">${renderEvaluationPromptsAudit()}</td></tr>`;
   return rows
-    .map(
-      ([label, htmlVal]) =>
-        `<tr><th scope="row">${escapeHtml(label)}</th><td>${htmlVal}</td></tr>`
-    )
+    .flatMap(([label, htmlVal]) => {
+      const row = `<tr><th scope="row">${escapeHtml(label)}</th><td>${htmlVal}</td></tr>`;
+      return label === "Evaluation prompt version"
+        ? [row, promptAuditRow]
+        : [row];
+    })
     .join("\n");
+}
+
+/**
+ * Collapsible hierarchy: outer block closed by default; common prompt + one
+ * nested &lt;details&gt; per DMAIC section so each can expand independently.
+ */
+function renderEvaluationPromptsAudit(): string {
+  const commonHtml = escapeHtml(COMMON_EVALUATION_SYSTEM_PROMPT);
+
+  const sectionBlocks = EVALUATABLE_SECTIONS.map((section) => {
+    const addition = SECTION_SYSTEM_PROMPT_ADDITIONS[section];
+    const trimmed = addition?.trim();
+    const additionHtml = trimmed
+      ? escapeHtml(trimmed)
+      : escapeHtml("(No section-specific addition; common prompt only.)");
+    const title =
+      section.slice(0, 1).toUpperCase() + section.slice(1).toLowerCase();
+    return `<details class="prompt-section-detail">
+<summary>${escapeHtml(title)} section prompt</summary>
+<pre class="prompt-pre">${additionHtml}</pre>
+</details>`;
+  }).join("\n");
+
+  return `<details class="prompt-audit-root">
+<summary class="prompt-audit-root-summary">Full evaluation system prompts</summary>
+<div class="prompt-audit-body">
+<p class="narrow-note">Collapsed by default. Exact strings combined for each sectional Gemini call: common block plus one section-specific block. The prompt version is tracked separately in report metadata.</p>
+<details class="prompt-section-detail">
+<summary>Common rules (all sections)</summary>
+<pre class="prompt-pre">${commonHtml}</pre>
+</details>
+${sectionBlocks}
+</div>
+</details>`;
+}
+
+/** Nested sectional prompts for the per-report audit block on each report card. */
+function buildReportLlmQuerySectionDetails(
+  queries: readonly ReportSectionLlmQuery[]
+): string {
+  return queries
+    .map((q) => {
+      const title =
+        q.section.slice(0, 1).toUpperCase() + q.section.slice(1).toLowerCase();
+      if (!q.llmCalled) {
+        return `<details class="prompt-section-detail llm-query-section">
+<summary>${escapeHtml(title)} — no LLM call</summary>
+<p class="narrow-note muted">${escapeHtml(
+          "Section had no criteria or empty content; evaluateSection skipped the model."
+        )}</p>
+</details>`;
+      }
+      return `<details class="prompt-section-detail llm-query-section">
+<summary>${escapeHtml(title)} sectional request</summary>
+<div class="llm-query-pair">
+<p class="llm-query-label">system</p>
+<pre class="prompt-pre">${escapeHtml(q.systemPrompt ?? "")}</pre>
+<p class="llm-query-label">user (prompt)</p>
+<pre class="prompt-pre">${escapeHtml(q.userPrompt ?? "")}</pre>
+</div>
+</details>`;
+    })
+    .join("\n");
+}
+
+/** Full audit block on each report card (sectional Gemini system + user prompts per phase). */
+function renderReportLlmQueriesAudit(
+  queries: readonly ReportSectionLlmQuery[]
+): string {
+  if (queries.length === 0) return "";
+
+  const sectionsHtml = buildReportLlmQuerySectionDetails(queries);
+
+  return `<details class="prompt-audit-root llm-query-report-root">
+<summary class="prompt-audit-root-summary">Exact LLM requests for this report</summary>
+<div class="prompt-audit-body">
+<p class="narrow-note">${escapeHtml(
+    "Collapsed by default. Matches generateText system and prompt for each sectional call (temperature, seed, output schema unchanged from Report generation details)."
+  )}</p>
+${sectionsHtml}
+</div>
+</details>`;
 }
 
 /**
@@ -225,6 +324,7 @@ async function evaluateOneDocx(absPath: string, reportDate: string): Promise<Rep
       anchorSlug,
       skippedReason: `Import failed: ${e instanceof Error ? e.message : String(e)}`,
       rows: [],
+      sectionLlmQueries: [],
     };
   }
 
@@ -239,8 +339,30 @@ async function evaluateOneDocx(absPath: string, reportDate: string): Promise<Rep
       skippedReason:
         "Define section lacks enough sentences to evaluate (needs at least two).",
       rows: [],
+      sectionLlmQueries: [],
     };
   }
+
+  const sectionLlmQueries: ReportSectionLlmQuery[] = EVALUATABLE_SECTIONS.map(
+    (sectionKey) => {
+      const payload =
+        imported.sections[sectionKey as keyof typeof imported.sections];
+      const prompts = buildCriterionEvaluationLlmPrompts({
+        section: sectionKey,
+        content: payload,
+        reportContext: { deviationNo, date: reportDate },
+      });
+      if (!prompts) {
+        return { section: sectionKey, llmCalled: false };
+      }
+      return {
+        section: sectionKey,
+        llmCalled: true,
+        systemPrompt: prompts.systemPrompt,
+        userPrompt: prompts.userPrompt,
+      };
+    }
+  );
 
   const sectionResults = await Promise.all(
     EVALUATABLE_SECTIONS.map(async (sectionKey) => {
@@ -277,6 +399,7 @@ async function evaluateOneDocx(absPath: string, reportDate: string): Promise<Rep
     anchorSlug,
     skippedReason: null,
     rows: sectionResults.flat(),
+    sectionLlmQueries,
   };
 }
 
@@ -427,9 +550,10 @@ ${reportNavSubtree}
   <div><strong>${counts.not_evaluated}</strong><span>Not eval</span></div>
   <div><strong>${issueRows.length}</strong><span>Follow-ups</span></div>
 </div>
+${renderReportLlmQueriesAudit(run.sectionLlmQueries)}
 <h3>Top follow-ups</h3>
 ${topIssuesHtml}
-<details open>
+<details class="score-sheet" open>
 <summary>All scores and reasonings (${run.rows.length})</summary>
 <table class="compact-table">
 <thead><tr><th>Section</th><th>Status</th><th>Criterion</th><th>Reasoning</th></tr></thead>
@@ -482,14 +606,14 @@ ${topIssuesHtml}
     .map((run) => {
       if (run.skippedReason) {
         return `<tr>
-<td>${escapeHtml(run.deviationNo)}</td>
+<td class="deviation-cell">${escapeHtml(run.deviationNo)}</td>
 <td colspan="3" class="muted">Skipped (${escapeHtml(truncateOneLine(run.skippedReason, 140))})</td>
 </tr>`;
       }
       const c = emptyCriterionStatusCounts();
       for (const row of run.rows) c[row.status] += 1;
       return `<tr>
-<td>${escapeHtml(run.deviationNo)}</td>
+<td class="deviation-cell">${escapeHtml(run.deviationNo)}</td>
 <td>${c.met}</td>
 <td>${c.partially_met}</td>
 <td>${c.not_met}</td>
@@ -650,6 +774,11 @@ ${topIssuesHtml}
  .issue-list small{display:block;color:#374151;margin-top:2px;}
  .compact-ok{color:var(--green);font-weight:600;}
  summary{cursor:pointer;font-weight:700;margin:10px 0;}
+ .score-sheet > summary{list-style:none;margin:10px 0;}
+ .score-sheet > summary::-webkit-details-marker{display:none;}
+ .score-sheet > summary::marker{font-size:0;}
+ .score-sheet > summary::before{content:"▾ ";display:inline-block;transform-origin:center;transition:transform .15s ease;font-size:.72rem;line-height:1;color:var(--muted);margin-right:5px;}
+ .score-sheet:not([open]) > summary::before{transform:rotate(-90deg);}
  .compact-table{font-size:.78rem;margin-top:8px;}
  .compact-table th,.compact-table td{padding:5px 6px;}
  .compact-table td:nth-child(1){width:72px;}
@@ -667,19 +796,47 @@ ${topIssuesHtml}
  .pill-red{background:var(--red);}
  .pill-muted{background:#4b5563;}
  .run-meta{margin:12px 0 18px;border:1px solid var(--border);border-radius:8px;background:#fff;padding:8px 12px;}
+ .run-meta > summary{list-style:none;margin:0 0 8px;font-weight:700;}
+ .run-meta > summary::-webkit-details-marker{display:none;}
+ .run-meta > summary::marker{font-size:0;}
+ .run-meta > summary::before{content:"▾ ";display:inline-block;transform-origin:center;transition:transform .15s ease;font-size:.72rem;line-height:1;color:var(--muted);margin-right:5px;}
+ .run-meta:not([open]) > summary::before{transform:rotate(-90deg);}
+ .prompt-audit-root{margin-top:14px;border-top:1px solid var(--border);padding-top:10px;}
+ .meta-table .prompt-audit-root{margin-top:0;border-top:none;padding-top:0;}
+ .prompt-audit-root > summary.prompt-audit-root-summary{list-style:none;margin:0 0 6px;font-weight:700;font-size:.92rem;cursor:pointer;}
+ .prompt-audit-root > summary.prompt-audit-root-summary::-webkit-details-marker{display:none;}
+ .prompt-audit-root > summary.prompt-audit-root-summary::marker{font-size:0;}
+ .prompt-audit-root > summary.prompt-audit-root-summary::before{content:"▾ ";display:inline-block;transform-origin:center;transition:transform .15s ease;font-size:.72rem;line-height:1;color:var(--muted);margin-right:5px;}
+ .prompt-audit-root:not([open]) > summary.prompt-audit-root-summary::before{transform:rotate(-90deg);}
+ .prompt-audit-body{display:flex;flex-direction:column;gap:8px;margin-top:6px;}
+ .prompt-section-detail{border:1px solid var(--border);border-radius:6px;background:var(--surface);padding:0 10px 8px;margin:0;}
+ .prompt-section-detail > summary{list-style:none;padding:8px 0 6px;font-weight:600;font-size:.84rem;cursor:pointer;margin:0;}
+ .prompt-section-detail > summary::-webkit-details-marker{display:none;}
+ .prompt-section-detail > summary::marker{font-size:0;}
+ .prompt-section-detail > summary::before{content:"▾ ";display:inline-block;transform-origin:center;transition:transform .15s ease;font-size:.72rem;line-height:1;color:var(--muted);margin-right:5px;}
+ .prompt-section-detail:not([open]) > summary::before{transform:rotate(-90deg);}
+ .prompt-pre{display:block;margin:4px 0 0;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.72rem;line-height:1.38;white-space:pre-wrap;word-break:break-word;max-height:min(70vh,560px);overflow:auto;background:#fff;border:1px solid var(--border);border-radius:4px;padding:8px 10px;}
+ .llm-query-report-root{margin:14px 0;}
+ .llm-query-label{margin:10px 0 4px;font-size:.72rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);}
+ .llm-query-pair .prompt-pre:first-of-type{margin-top:2px;}
  .meta-table{font-size:.82rem;width:100%;}
+ .meta-table .prompt-audit-row td{padding:10px 8px 12px;vertical-align:top;background:var(--surface);}
  .meta-table th[scope="row"]{vertical-align:top;white-space:nowrap;width:260px;color:#374151;font-weight:600;}
  .meta-table td{vertical-align:top;}
  .aggregate-stack{display:flex;flex-direction:column;gap:14px;margin:4px 0 20px;}
  .table-panel{border:1px solid var(--border);border-radius:8px;background:#fff;overflow:hidden;}
  .table-panel > summary{list-style:none;padding:11px 14px;font-weight:600;font-size:.95rem;color:#111827;cursor:pointer;margin:0;border-bottom:1px solid transparent;}
  .table-panel > summary::-webkit-details-marker{display:none;}
+ .table-panel > summary::marker{font-size:0;}
  .table-panel[open] > summary{border-bottom-color:var(--border);background:var(--surface);}
- .table-panel > summary::before{content:"▾ ";display:inline-block;transform-origin:center;transition:transform .15s ease;font-size:.72rem;color:var(--muted);margin-right:5px;}
+ .table-panel > summary::before{content:"▾ ";display:inline-block;transform-origin:center;transition:transform .15s ease;font-size:.72rem;line-height:1;color:var(--muted);margin-right:5px;}
  .table-panel:not([open]) > summary::before{transform:rotate(-90deg);}
  .panel-body{padding:4px 12px 12px;}
  .narrow-note{margin:8px 0 4px;font-size:.82rem;}
  .panel-table{width:100%;margin:8px 0 6px;}
+ .panel-table td.deviation-cell{max-width:min(520px,46vw);}
+ .panel-table td .llm-query-report-root{margin:0;}
+ .panel-table td .prompt-audit-root > summary.prompt-audit-root-summary{margin:0;font-size:.92rem;}
  @media print {
    .page-shell{display:block!important;}
    .toc-sidebar,.mobile-toc-btn,.sidebar-drawer-overlay,.outline-top{display:none!important;}
@@ -690,7 +847,7 @@ ${topIssuesHtml}
    .sep{display:none;}
    .compact-table{font-size:9px;}
    .aggregate-stack{gap:8px;margin:10px 0;}
-   details.table-panel, .run-meta{break-inside:avoid;}
+   details.table-panel, .run-meta, .prompt-audit-root, .llm-query-report-root{break-inside:avoid;}
  }
 </style>
 </head>

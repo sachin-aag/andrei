@@ -38,7 +38,19 @@ describe("docx import", () => {
     expect(fiveWhy.conclusion).toContain("old version software was being used");
 
     const improveText = richJsonToPlainText(imported.sections.improve.narrative);
-    expect(improveText).toContain("The non-conformance is related to temperature data");
+    expect(improveText).not.toContain("The non-conformance is related to temperature data");
+    expect(improveText).not.toContain("Improve section covers the corrective actions");
+    expect(improveText).not.toContain("Was Effectiveness Verification required");
     expect(improveText).not.toContain("Were specific corrective Actions identified");
+    expect(imported.sections.improve.correctiveActions).toContain(
+      "The non-conformance is related to temperature data"
+    );
+    expect(imported.sections.improve.correctiveActions).toContain(
+      "Work Order No. WO/PK/26-005"
+    );
+
+    const controlText = richJsonToPlainText(imported.sections.control.narrative);
+    expect(controlText).not.toContain("Control section covers the preventive actions");
+    expect(controlText).not.toContain("Was the Preventive Action linked");
   });
 });
