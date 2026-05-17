@@ -3,6 +3,7 @@ import type { SectionType } from "@/db/schema";
 import {
   aggregateCriterionBySection,
   aggregateCriterionOverall,
+  aggregateSectionOverall,
   dedupeReasoningsNonMet,
   emptyCriterionStatusCounts,
   escapeHtml,
@@ -34,6 +35,25 @@ describe("bulk-eval-aggregates", () => {
   it("emptyCriterionStatusCounts has zeroed fields", () => {
     const e = emptyCriterionStatusCounts();
     expect(e.met + e.partially_met + e.not_met + e.not_evaluated).toBe(0);
+  });
+
+  it("aggregateSectionOverall sums statuses per DMAIC section", () => {
+    const rows = [
+      baseRow({ section: "define", status: "met" }),
+      baseRow({ section: "define", status: "met" }),
+      baseRow({ section: "measure", status: "not_met" }),
+      baseRow({
+        section: "analyze",
+        criterionKey: "analyze.sixm_completeness",
+        status: "partially_met",
+        reasoning: "x",
+      }),
+    ];
+    const m = aggregateSectionOverall(rows);
+    expect(m.get("define")?.met).toBe(2);
+    expect(m.get("measure")?.not_met).toBe(1);
+    expect(m.get("analyze")?.partially_met).toBe(1);
+    expect(m.get("improve")?.met).toBe(0);
   });
 
   it("aggregateCriterionOverall sums statuses per criterion", () => {

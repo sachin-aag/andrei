@@ -46,6 +46,22 @@ export function emptyCriterionStatusCounts(): Record<CriterionStatus, number> {
   };
 }
 
+/** Overall traffic-light totals per DMAIC phase (evaluatable sections only). */
+export function aggregateSectionOverall(
+  rows: BulkEvalRow[]
+): Map<SectionType, Record<CriterionStatus, number>> {
+  const map = new Map<SectionType, Record<CriterionStatus, number>>();
+  for (const sec of EVALUATABLE_SECTIONS) {
+    map.set(sec, emptyCriterionStatusCounts());
+  }
+  for (const r of rows) {
+    const rec = map.get(r.section);
+    if (!rec) continue;
+    rec[r.status] += 1;
+  }
+  return map;
+}
+
 /** Overall totals per criterion across all sampled reports. */
 export function aggregateCriterionOverall(
   rows: BulkEvalRow[]
