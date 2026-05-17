@@ -202,25 +202,12 @@ describe("evaluateSection", () => {
     const prompts = buildCriterionEvaluationLlmPrompts({
       section: "control",
       content: {
-        narrative: {
-          type: "doc",
-          content: [
-            {
-              type: "paragraph",
-              content: [
-                {
-                  type: "text",
-                  text:
-                    "Control section covers the preventive actions " +
-                    "Was the Preventive Action linked the classification of the root cause and explanation given for how it will prevent recurrence? " +
-                    "Was an Interim Plan needed to ensure a state the control while the Preventive Actions were implemented? " +
-                    "Does the Final Comments section include rationale to support the conclusion of the investigation and CAPA. " +
-                    "Preventive Action No. CAPA-001 was opened to update the PM checklist.",
-                },
-              ],
-            },
-          ],
-        },
+        preventiveActions:
+          "Control section covers the preventive actions " +
+          "Was the Preventive Action linked the classification of the root cause and explanation given for how it will prevent recurrence? " +
+          "Was an Interim Plan needed to ensure a state the control while the Preventive Actions were implemented? " +
+          "Does the Final Comments section include rationale to support the conclusion of the investigation and CAPA. " +
+          "Preventive Action No. CAPA-001 was opened to update the PM checklist.",
       },
       reportContext: { deviationNo: "DEV-011", date: "2026-05-02" },
     });

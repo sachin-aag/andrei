@@ -21,7 +21,7 @@ import type {
 import type {
   SectionContentMap,
 } from "@/types/sections";
-import { EDITABLE_SECTIONS, EMPTY_CONTENT } from "@/types/sections";
+import { EMPTY_CONTENT, REPORT_SECTION_ROW_ORDER } from "@/types/sections";
 import type { SectionType } from "@/db/schema";
 import { mergeSection } from "@/lib/sections-merge";
 import { EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
@@ -179,10 +179,14 @@ const MeasureSectionContext = createContext<ReportSectionContextValue<"measure">
 const AnalyzeSectionContext = createContext<ReportSectionContextValue<"analyze"> | null>(null);
 const ImproveSectionContext = createContext<ReportSectionContextValue<"improve"> | null>(null);
 const ControlSectionContext = createContext<ReportSectionContextValue<"control"> | null>(null);
+const DocumentsReviewedSectionContext =
+  createContext<ReportSectionContextValue<"documents_reviewed"> | null>(null);
+const AttachmentsSectionContext =
+  createContext<ReportSectionContextValue<"attachments"> | null>(null);
 
 function bundleToSections(rows: ReportSectionRecord[]): SectionContents {
   const out: Record<string, unknown> = {};
-  for (const section of EDITABLE_SECTIONS) {
+  for (const section of REPORT_SECTION_ROW_ORDER) {
     const row = rows.find((r) => r.section === section);
     if (row) {
       out[section] = mergeSection(section, row.content);
@@ -519,6 +523,26 @@ export function ReportProvider({
     [sections.control, updateSection, replaceSection]
   );
 
+  const documentsReviewedSectionValue = useMemo<
+    ReportSectionContextValue<"documents_reviewed">
+  >(
+    () => ({
+      value: (sections.documents_reviewed ?? EMPTY_CONTENT.documents_reviewed) as SectionContentMap["documents_reviewed"],
+      update: (updater) => updateSection("documents_reviewed", updater),
+      replace: (next) => replaceSection("documents_reviewed", next),
+    }),
+    [sections.documents_reviewed, updateSection, replaceSection]
+  );
+
+  const attachmentsSectionValue = useMemo<ReportSectionContextValue<"attachments">>(
+    () => ({
+      value: (sections.attachments ?? EMPTY_CONTENT.attachments) as SectionContentMap["attachments"],
+      update: (updater) => updateSection("attachments", updater),
+      replace: (next) => replaceSection("attachments", next),
+    }),
+    [sections.attachments, updateSection, replaceSection]
+  );
+
   const commentsValue = useMemo<ReportCommentsContextValue>(
     () => ({
       comments,
@@ -583,13 +607,19 @@ export function ReportProvider({
               <AnalyzeSectionContext.Provider value={analyzeSectionValue}>
                 <ImproveSectionContext.Provider value={improveSectionValue}>
                   <ControlSectionContext.Provider value={controlSectionValue}>
-                    <ReportEvaluationContext.Provider value={evaluationValue}>
-                      <ReportCommentsContext.Provider value={commentsValue}>
-                        <ReportEditorsContext.Provider value={editorsValue}>
-                          {children}
-                        </ReportEditorsContext.Provider>
-                      </ReportCommentsContext.Provider>
-                    </ReportEvaluationContext.Provider>
+                    <DocumentsReviewedSectionContext.Provider
+                      value={documentsReviewedSectionValue}
+                    >
+                      <AttachmentsSectionContext.Provider value={attachmentsSectionValue}>
+                        <ReportEvaluationContext.Provider value={evaluationValue}>
+                          <ReportCommentsContext.Provider value={commentsValue}>
+                            <ReportEditorsContext.Provider value={editorsValue}>
+                              {children}
+                            </ReportEditorsContext.Provider>
+                          </ReportCommentsContext.Provider>
+                        </ReportEvaluationContext.Provider>
+                      </AttachmentsSectionContext.Provider>
+                    </DocumentsReviewedSectionContext.Provider>
                   </ControlSectionContext.Provider>
                 </ImproveSectionContext.Provider>
               </AnalyzeSectionContext.Provider>
@@ -642,7 +672,17 @@ export function useReportSection<K extends keyof SectionContentMap & SectionType
   const analyze = useContext(AnalyzeSectionContext);
   const improve = useContext(ImproveSectionContext);
   const control = useContext(ControlSectionContext);
-  if (!define || !measure || !analyze || !improve || !control) {
+  const documentsReviewed = useContext(DocumentsReviewedSectionContext);
+  const attachments = useContext(AttachmentsSectionContext);
+  if (
+    !define ||
+    !measure ||
+    !analyze ||
+    !improve ||
+    !control ||
+    !documentsReviewed ||
+    !attachments
+  ) {
     throw new Error("useReportSection must be used within ReportProvider");
   }
 
@@ -657,6 +697,10 @@ export function useReportSection<K extends keyof SectionContentMap & SectionType
       return improve as unknown as ReportSectionContextValue<K>;
     case "control":
       return control as unknown as ReportSectionContextValue<K>;
+    case "documents_reviewed":
+      return documentsReviewed as unknown as ReportSectionContextValue<K>;
+    case "attachments":
+      return attachments as unknown as ReportSectionContextValue<K>;
     default:
       throw new Error(`Unknown report section: ${section}`);
   }

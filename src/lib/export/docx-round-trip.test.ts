@@ -8,12 +8,14 @@ import { generateReportDocx } from "@/lib/export/generate-docx";
 import { mergeSection } from "@/lib/sections-merge";
 import type {
   AnalyzeSection,
+  AttachmentsSection,
   ControlSection,
   DefineSection,
+  DocumentsReviewedSection,
   ImproveSection,
   MeasureSection,
 } from "@/types/sections";
-import { EDITABLE_SECTIONS } from "@/types/sections";
+import { REPORT_SECTION_ROW_ORDER } from "@/types/sections";
 import type { ReportSectionRecord } from "@/types/report";
 import { richJsonToPlainText } from "@/lib/tiptap/rich-text";
 
@@ -63,6 +65,8 @@ function mergedEditableSections(sections: ImportedReportContent["sections"]) {
     analyze: mergeSection("analyze", sections.analyze),
     improve: mergeSection("improve", sections.improve),
     control: mergeSection("control", sections.control),
+    documents_reviewed: mergeSection("documents_reviewed", sections.documents_reviewed),
+    attachments: mergeSection("attachments", sections.attachments),
   };
 }
 
@@ -113,17 +117,22 @@ function fingerprintImprove(i: ImproveSection) {
 
 function fingerprintControl(c: ControlSection) {
   return {
-    narrative: fingerprintComparableString(richJsonToPlainText(c.narrative)),
     preventiveActions: fingerprintComparableString(c.preventiveActions),
-    interimPlan: fingerprintComparableString(c.interimPlan),
-    finalComments: fingerprintComparableString(c.finalComments),
-    regulatoryImpact: fingerprintComparableString(c.regulatoryImpact),
-    productQuality: fingerprintComparableString(c.productQuality),
-    validation: fingerprintComparableString(c.validation),
-    stability: fingerprintComparableString(c.stability),
-    marketClinical: fingerprintComparableString(c.marketClinical),
-    lotDisposition: fingerprintComparableString(c.lotDisposition),
-    conclusion: fingerprintComparableString(c.conclusion),
+  };
+}
+
+function fingerprintDocumentsReviewed(dr: DocumentsReviewedSection) {
+  return {
+    items: dr.items.map((s) => fingerprintComparableString(s)),
+  };
+}
+
+function fingerprintAttachments(att: AttachmentsSection) {
+  return {
+    items: att.items.map((i) => ({
+      label: fingerprintComparableString(i.label),
+      description: fingerprintComparableString(i.description),
+    })),
   };
 }
 
@@ -136,6 +145,8 @@ function fingerprintAfterMerge(sections: ImportedReportContent["sections"]) {
     analyze: fingerprintAnalyze(m.analyze),
     improve: fingerprintImprove(m.improve),
     control: fingerprintControl(m.control),
+    documents_reviewed: fingerprintDocumentsReviewed(m.documents_reviewed),
+    attachments: fingerprintAttachments(m.attachments),
   };
 }
 
@@ -160,7 +171,7 @@ function buildEditableSectionRecords(
   sections: ImportedReportContent["sections"]
 ): ReportSectionRecord[] {
   const updatedAt = "2026-01-01T00:00:00.000Z";
-  return EDITABLE_SECTIONS.map((section, i) => ({
+  return REPORT_SECTION_ROW_ORDER.map((section, i) => ({
     id: `test-section-${section}-${i}`,
     reportId,
     section,

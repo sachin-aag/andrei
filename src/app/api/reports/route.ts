@@ -5,7 +5,7 @@ import { db } from "@/db";
 import { reports, reportSections } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import { docxBufferToImportedReportContent } from "@/lib/import/docx-to-sections";
-import { EMPTY_CONTENT, EDITABLE_SECTIONS } from "@/types/sections";
+import { EMPTY_CONTENT, REPORT_SECTION_ROW_ORDER } from "@/types/sections";
 
 const MAX_DOCX_BYTES = 15 * 1024 * 1024;
 
@@ -119,15 +119,13 @@ export async function POST(req: Request) {
     })
     .returning();
 
-  type Imported = NonNullable<typeof importedContent>["sections"];
-
   await db.insert(reportSections).values(
-    EDITABLE_SECTIONS.map((section) => ({
+    REPORT_SECTION_ROW_ORDER.map((section) => ({
       reportId: report.id,
       section,
       content: (
         importedContent !== null
-          ? importedContent.sections[section as keyof Imported]
+          ? importedContent.sections[section]
           : EMPTY_CONTENT[section]
       ) as unknown as Record<string, unknown>,
     }))

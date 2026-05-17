@@ -28,6 +28,16 @@ describe("sections merge", () => {
     expect(control.preventiveActions).toContain("Responsible: QA Manager");
   });
 
+  it("folds legacy control narrative prose into preventive actions text", () => {
+    const control = mergeControlSection({
+      narrative: legacyStringToDoc("Closure narrative before PA table."),
+      preventiveActions: "PA-001: Retrain staff.",
+    });
+
+    expect(control.preventiveActions).toContain("Closure narrative before PA table.");
+    expect(control.preventiveActions).toContain("Retrain staff.");
+  });
+
   it("coerces legacy corrective action arrays into readable text", () => {
     const improve = mergeImproveSection({
       correctiveActions: [
@@ -55,6 +65,18 @@ describe("sections merge", () => {
     expect(richJsonToPlainText(improve.narrative)).toBe("");
     expect(improve.correctiveActions).toContain("Intro paragraphs before corrective detail.");
     expect(improve.correctiveActions).toContain("Work order WO-1 closed.");
+  });
+
+  it("merges documents reviewed item list", () => {
+    const dr = mergeSection("documents_reviewed", { items: ["  a ", "b"] });
+    expect(dr.items).toEqual(["a", "b"]);
+  });
+
+  it("merges attachment label and description rows", () => {
+    const att = mergeSection("attachments", {
+      items: [{ label: " Attachment No. I ", description: " Photocopy " }],
+    });
+    expect(att.items).toEqual([{ label: "Attachment No. I", description: "Photocopy" }]);
   });
 
   it("preserves nested defaults when merging sparse analyze content", () => {

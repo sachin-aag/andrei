@@ -53,17 +53,8 @@ export type ImproveSection = {
 };
 
 export type ControlSection = {
-  narrative: JSONContent;
+  /** All preventive-action and closure content in one free-text field. */
   preventiveActions: string;
-  interimPlan: string;
-  finalComments: string;
-  regulatoryImpact: string;
-  productQuality: string;
-  validation: string;
-  stability: string;
-  marketClinical: string;
-  lotDisposition: string;
-  conclusion: string;
 };
 
 export type DocumentsReviewedSection = {
@@ -127,17 +118,7 @@ export const EMPTY_CONTENT: SectionContentMap = {
     correctiveActions: "",
   },
   control: {
-    narrative: emptyDoc(),
     preventiveActions: "",
-    interimPlan: "",
-    finalComments: "",
-    regulatoryImpact: "",
-    productQuality: "",
-    validation: "",
-    stability: "",
-    marketClinical: "",
-    lotDisposition: "",
-    conclusion: "",
   },
   documents_reviewed: {
     items: [],
@@ -164,3 +145,13 @@ export const EDITABLE_SECTIONS = [
   "improve",
   "control",
 ] as const satisfies readonly (keyof SectionContentMap)[];
+
+/** All `report_sections` rows created for a report (DMAIC + document metadata blocks). */
+export const REPORT_SECTION_ROW_ORDER = [
+  ...EDITABLE_SECTIONS,
+  "documents_reviewed",
+  "attachments",
+] as const satisfies readonly (keyof SectionContentMap)[];
+
+/** Sections rendered as editors in the report workspace (same as DB row order). */
+export const REPORT_WORKSPACE_SECTIONS = REPORT_SECTION_ROW_ORDER;

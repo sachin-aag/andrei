@@ -6,7 +6,7 @@ import type { SectionType } from "@/db/schema";
  * into the per-section content hash so the next eval pass refreshes all
  * sections after a prompt update.
  */
-export const PROMPT_VERSION = "2026-05-17-5";
+export const PROMPT_VERSION = "2026-05-18-36c";
 
 /**
  * Common reviewer rules, scoring system, scope rule, and prompt-injection guard.
@@ -87,13 +87,14 @@ KEY RULES:
 - Effectiveness verification should be documented as required with method, or not required with rationale. Silence is a gap.`;
 
 const CONTROL_PROMPT_ADDITION = `SECTION ROLE - CONTROL:
-Judge whether preventive actions and closure controls address the root cause and residual risk.
+Judge preventive actions and closure content against the template Control checklist (14 criteria), using only the Control section text (unified preventive/closure narrative).
 
 KEY RULES:
-- Every preventive action must link explicitly to a failure mode or root cause from Analyze.
+- Every preventive action must link explicitly to a failure mode or root cause from Analyze when actions are listed.
 - If no preventive action is proposed, the section should provide a rationale.
 - Cover the conclusion: final decision, lot disposition, regulatory notification rationale.
 - Interim controls should be mentioned when CAPA is pending or residual risk remains. If interim control is not required, the section should say why.
+- Final comments, post-investigation impact fields, CAPA verification, and lot disposition must be supported by what is written in the Control text when the template expects them.
 - Prefer layered controls when the root cause is procedural: procedural + administrative + technical. Standalone "awareness training" is insufficient for technical root causes.`;
 
 /**

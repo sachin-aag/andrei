@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { docxBufferToImportedReportContent } from "@/lib/import/docx-to-sections";
+import { docxBufferToImportedReportContent, buildSectionsFromRaw } from "@/lib/import/docx-to-sections";
 import { richJsonToPlainText } from "@/lib/tiptap/rich-text";
 
 const fixturePath = path.join(
@@ -54,9 +54,40 @@ describe("docx import", () => {
     expect(imported.sections.improve.correctiveActions).toContain(
       "Work Order No. WO/PK/26-005"
     );
+    expect(imported.sections.improve.correctiveActions).toMatch(
+      /1\.\s*Work Order No\.\s*WO\/PK\/26-005/
+    );
 
-    const controlText = richJsonToPlainText(imported.sections.control.narrative);
-    expect(controlText).not.toContain("Control section covers the preventive actions");
-    expect(controlText).not.toContain("Was the Preventive Action linked");
+    const controlPrev = imported.sections.control.preventiveActions;
+    expect(controlPrev).not.toContain("Control section covers the preventive actions");
+    expect(controlPrev).not.toContain("Was the Preventive Action linked");
+  });
+
+  it("maps Documents Reviewed and List of attachment blocks into structured items", () => {
+    const raw = [
+      "1. Define",
+      "Def body",
+      "2. Measure",
+      "Mea body",
+      "3. Analyze",
+      "Ana body",
+      "4. Improve",
+      "Imp body",
+      "5. Control",
+      "Prev body",
+      "6. Documents Reviewed:",
+      "1. First SOP",
+      "2. Second SOP",
+      "7. List of attachment (If applicable):",
+      "Attachment No. I: Photocopy",
+      "Attachment No. II: Audit Trail",
+    ].join("\n");
+
+    const sections = buildSectionsFromRaw(raw);
+    expect(sections.documents_reviewed.items).toEqual(["First SOP", "Second SOP"]);
+    expect(sections.attachments.items).toEqual([
+      { label: "Attachment No. I", description: "Photocopy" },
+      { label: "Attachment No. II", description: "Audit Trail" },
+    ]);
   });
 });

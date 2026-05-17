@@ -142,30 +142,8 @@ function buildTemplateData(
     // Improve
     correctiveActions: na(i.correctiveActions),
 
-    // Control
-    controlNarrative: na(richJsonToPlainText(c.narrative)),
-    preventiveActions: c.preventiveActions.trim()
-      ? [
-          {
-            paNumber: "PA-001",
-            description: c.preventiveActions.trim(),
-            linkedRootCause: "—",
-            responsiblePerson: "—",
-            dueDate: "—",
-            expectedOutcome: "—",
-            effectivenessVerification: "—",
-          },
-        ]
-      : [],
-    interimPlan: na(c.interimPlan),
-    finalComments: na(c.finalComments),
-    regulatoryImpact: na(c.regulatoryImpact),
-    productQuality: na(c.productQuality),
-    validation: na(c.validation),
-    stability: na(c.stability),
-    marketClinical: na(c.marketClinical),
-    lotDisposition: na(c.lotDisposition),
-    controlConclusion: na(c.conclusion),
+    // Control (single body includes former narrative, register prose, etc.)
+    preventiveActions: na(c.preventiveActions),
 
     // Documents Reviewed
     documentsReviewed: dr.items.length > 0

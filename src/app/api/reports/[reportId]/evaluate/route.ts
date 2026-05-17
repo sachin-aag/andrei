@@ -45,9 +45,10 @@ export async function POST(
   const parsed = bodySchema.safeParse(body);
   const requestedSections = parsed.success ? parsed.data.sections : undefined;
 
-  const targetSections: SectionType[] = (requestedSections ?? EVALUATABLE_SECTIONS).filter(
-    (s): s is SectionType => isValidSection(s)
-  );
+  const evalSet = new Set<SectionType>(EVALUATABLE_SECTIONS);
+  const targetSections: SectionType[] = (requestedSections ?? EVALUATABLE_SECTIONS)
+    .filter((s): s is SectionType => isValidSection(s))
+    .filter((s) => evalSet.has(s));
 
   const [report] = await db
     .select()

@@ -128,17 +128,10 @@ export function contextForPrompt(section: SectionType, content: unknown): string
   } else if (section === "improve") {
     pushTextLine(lines, "Corrective actions", content.correctiveActions);
   } else if (section === "control") {
-    pushNarrativeLine(lines, section, content);
-    pushTextLine(lines, "Preventive actions", content.preventiveActions);
-    pushTextLine(lines, "Interim plan", content.interimPlan);
-    pushTextLine(lines, "Final comments", content.finalComments);
-    pushTextLine(lines, "Regulatory impact", content.regulatoryImpact);
-    pushTextLine(lines, "Product quality", content.productQuality);
-    pushTextLine(lines, "Validation", content.validation);
-    pushTextLine(lines, "Stability", content.stability);
-    pushTextLine(lines, "Market/clinical", content.marketClinical);
-    pushTextLine(lines, "Lot disposition", content.lotDisposition);
-    pushTextLine(lines, "Conclusion", content.conclusion);
+    const raw =
+      typeof content.preventiveActions === "string" ? content.preventiveActions : "";
+    const stripped = stripLeadingTemplateChecklist(section, raw);
+    pushTextLine(lines, "Preventive actions", stripped);
   }
 
   return lines.length ? lines.join("\n") : fallbackContextForPrompt(content);

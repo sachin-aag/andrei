@@ -1,5 +1,15 @@
 import mammoth from "mammoth";
 import PizZip from "pizzip";
+
+/** Runtime API; bundled mammoth `.d.ts` only lists `convertToHtml` / `extractRawText`. */
+async function mammothConvertToMarkdown(buffer: Buffer): Promise<string> {
+  const { value } = await (
+    mammoth as typeof mammoth & {
+      convertToMarkdown: (input: { buffer: Buffer }) => Promise<{ value: string }>;
+    }
+  ).convertToMarkdown({ buffer });
+  return value;
+}
 import type {
   AnalyzeSection,
   MeasureSection,
@@ -9,32 +19,32 @@ import { EMPTY_CONTENT, SECTION_LABELS } from "@/types/sections";
 import { emptyDoc, legacyStringToDoc } from "@/lib/tiptap/rich-text";
 import { SECTION_GUIDANCE } from "@/lib/report-section-guidance";
 
-type EditableKey = "define" | "measure" | "analyze" | "improve" | "control";
-type ImportedSections = Pick<
-  SectionContentMap,
-  "define" | "measure" | "analyze" | "improve" | "control"
->;
+export type ImportedSections = SectionContentMap;
 
 export type ImportedReportContent = {
   sections: ImportedSections;
   toolsUsed: { sixM: boolean; fiveWhy: boolean; brainstorming: boolean };
 };
 
-const SECTION_ORDER: EditableKey[] = [
+type ImportSectionKey = keyof SectionContentMap;
+
+const SECTION_ORDER: ImportSectionKey[] = [
   "define",
   "measure",
   "analyze",
   "improve",
   "control",
+  "documents_reviewed",
+  "attachments",
 ];
 
 type HeadingMatch = {
-  key: EditableKey;
+  key: ImportSectionKey;
   remainder: string;
 };
 
 const NON_EDITABLE_EXPORT_HEADING_RE =
-  /^(?:details\s+investigation|documents?\s+reviewed|document\s+reviewed|list\s+of\s+attachments?|prepared\s+by|reviewed\s+by|approved(?:\s+by)?)/i;
+  /^(?:details\s+investigation|prepared\s+by|reviewed\s+by|approved(?:\s+by)?)/i;
 
 function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -44,16 +54,26 @@ function labelPattern(labels: string): string {
   return `${escapeRegex(labels)}(?![A-Za-z0-9_])(?:[ \\t]*\\([^)]*\\))?[ \\t]*:?[ \\t]*`;
 }
 
+function sectionHeadingRegex(key: ImportSectionKey): RegExp {
+  if (key === "documents_reviewed") {
+    return /^(?:\d+(?:\.\d+)*\.?\s+)?documents?\s+reviewed\b(?:\s*\([^)]*\))?\s*(?::|[-–—])?\s*(.*)$/i;
+  }
+  if (key === "attachments") {
+    return /^(?:\d+(?:\.\d+)*\.?\s+)?(?:list\s+of\s+attachments?|attachments)\b(?:\s*\([^)]*\))?\s*(?::|[-–—])?\s*(.*)$/i;
+  }
+  const label = SECTION_LABELS[key];
+  const escaped = escapeRegex(label);
+  return new RegExp(
+    `^(?:\\d+(?:\\.\\d+)*\\.?\\s+|(?:section|part)\\s+[ivxlcdm]+\\s*[.:)]\\s*)?${escaped}(?:\\s*[:\\-–—]\\s*(.*)|\\s*)$`,
+    "i"
+  );
+}
+
 /** Match an exported section title line (Word headings, numbered sections, or `Define:` labels). */
 function matchSectionHeading(trimmedLine: string): HeadingMatch | null {
   const t = trimmedLine.replace(/\s+/g, " ").trim();
   for (const key of SECTION_ORDER) {
-    const label = SECTION_LABELS[key];
-    const escaped = escapeRegex(label);
-    const re = new RegExp(
-      `^(?:\\d+(?:\\.\\d+)*\\.?\\s+|(?:section|part)\\s+[ivxlcdm]+\\s*[.:)]\\s*)?${escaped}(?:\\s*[:\\-–—]\\s*(.*)|\\s*)$`,
-      "i"
-    );
+    const re = sectionHeadingRegex(key);
     const match = re.exec(t);
     if (match) return { key, remainder: match[1]?.trim() ?? "" };
   }
@@ -61,19 +81,26 @@ function matchSectionHeading(trimmedLine: string): HeadingMatch | null {
 }
 
 function splitPlainTextIntoSections(raw: string): {
-  sections: Record<EditableKey, string>;
+  sections: Record<ImportSectionKey, string>;
   foundHeadings: boolean;
 } {
   const lines = raw.split(/\r?\n/);
-  const buckets: Record<EditableKey, string[]> = {
+  const buckets: Record<ImportSectionKey, string[]> = {
     define: [],
     measure: [],
     analyze: [],
     improve: [],
     control: [],
+    documents_reviewed: [],
+    attachments: [],
   };
-  let current: EditableKey | "preamble" | "ignored" = "preamble";
+  let current: ImportSectionKey | "preamble" | "ignored" = "preamble";
   let foundHeadings = false;
+
+  const leavesAttachmentsSection = (line: string) =>
+    /^(?:\d+(?:\.\d+)*\.?\s+)?(?:prepared|reviewed|approved)\s+by\b/i.test(
+      line.trim()
+    );
 
   for (const line of lines) {
     const heading = matchSectionHeading(line);
@@ -84,6 +111,10 @@ function splitPlainTextIntoSections(raw: string): {
       continue;
     }
     if (NON_EDITABLE_EXPORT_HEADING_RE.test(line.trim())) {
+      current = "ignored";
+      continue;
+    }
+    if (current === "attachments" && leavesAttachmentsSection(line)) {
       current = "ignored";
       continue;
     }
@@ -98,17 +129,37 @@ function splitPlainTextIntoSections(raw: string): {
         analyze: "",
         improve: "",
         control: "",
+        documents_reviewed: "",
+        attachments: "",
       },
       foundHeadings: false,
     };
   }
 
-  const sections = {} as Record<EditableKey, string>;
+  const sections = {} as Record<ImportSectionKey, string>;
   for (const key of SECTION_ORDER) {
     sections[key] = buckets[key].join("\n").trim();
   }
 
   return { sections, foundHeadings: true };
+}
+
+/** Reverses mammoth's markdown escaper so import text matches readable prose. */
+function unescapeMammothMarkdownEscapes(text: string): string {
+  return text.replace(/\\([\\`*_{}[\]()#+\-.!])/g, "$1");
+}
+
+/**
+ * Mammoth's convertToMarkdown keeps Word list numbering as "1. …", "2. …".
+ * extractRawText drops those numbers because they are not stored as paragraph text.
+ */
+function mammothMarkdownToImportPlain(markdown: string): string {
+  const lines = markdown.split(/\r?\n/);
+  const normalized = lines.map((line) => {
+    const withoutBold = line.replace(/__([\s\S]*?)__/g, "$1").trimEnd();
+    return unescapeMammothMarkdownEscapes(withoutBold);
+  });
+  return normalized.join("\n");
 }
 
 function cleanImportedText(text: string): string {
@@ -391,71 +442,19 @@ function parseCorrectiveActions(text: string): string {
   return cleanImportedText(entries.filter(Boolean).join("\n\n"));
 }
 
-function parsePreventiveActions(text: string): string {
-  const register = getBetweenLabels(text, ["Preventive Actions Register"], [
-    "Interim Plan",
-    "Final Comments",
-    "Impact Assessment (post-investigation)",
-  ]);
-  const starts = Array.from(register.matchAll(/^PA-\d+\s*:\s*/gim));
-  if (starts.length === 0) {
-    return cleanImportedText(
-      register
-        .split("\n")
-        .filter((line) => {
-          const trimmed = line.trim();
-          return trimmed !== ":" && !/^[A-Za-z][A-Za-z /-]*:\s*$/.test(trimmed);
-        })
-        .join("\n")
-    );
+/** Headings that begin content outside the Control DMAIC block (export/upload templates). */
+const CONTROL_BODY_STOP_LABELS = [
+  "Documents Reviewed",
+  "Document Reviewed",
+  "List of attachment",
+  "List of attachments",
+];
+
+function extractControlPreventivePlain(controlBody: string): string {
+  if (hasLabel(controlBody, ["Preventive Action"])) {
+    return getBetweenLabels(controlBody, ["Preventive Action"], CONTROL_BODY_STOP_LABELS);
   }
-
-  const entries: string[] = [];
-  for (let idx = 0; idx < starts.length; idx++) {
-    const match = starts[idx]!;
-    const next = starts[idx + 1];
-    const start = match.index + match[0].length;
-    const end = next?.index ?? register.length;
-    const block = cleanImportedText(register.slice(start, end));
-    const description = textBeforeAnyInlineLabel(block, [
-      "Linked root cause",
-      "Responsible person",
-      "Due date",
-      "Expected outcome",
-      "Effectiveness verification",
-    ]);
-    const details = [
-      ["Linked root cause", getInlineBetweenLabel(block, "Linked root cause", [
-        "Responsible person",
-        "Due date",
-        "Expected outcome",
-        "Effectiveness verification",
-      ])],
-      ["Responsible person", getInlineBetweenLabel(block, "Responsible person", [
-        "Due date",
-        "Expected outcome",
-        "Effectiveness verification",
-      ])],
-      ["Due date", getInlineBetweenLabel(block, "Due date", [
-        "Expected outcome",
-        "Effectiveness verification",
-      ])],
-      ["Expected outcome", getInlineBetweenLabel(block, "Expected outcome", [
-        "Effectiveness verification",
-      ])],
-      ["Effectiveness verification", getInlineBetweenLabel(
-        block,
-        "Effectiveness verification",
-        []
-      )],
-    ]
-      .filter(([, value]) => value && value !== "—")
-      .map(([label, value]) => `${label}: ${value}`);
-
-    entries.push(cleanImportedText([description, ...details].filter(Boolean).join("\n")));
-  }
-
-  return cleanImportedText(entries.filter(Boolean).join("\n\n"));
+  return stripSectionTemplatePreamble("control", controlBody);
 }
 
 function parseToolsUsed(raw: string): ImportedReportContent["toolsUsed"] {
@@ -548,7 +547,58 @@ function decodeXmlText(xml: string): string {
     .join("");
 }
 
-function buildSectionsFromRaw(raw: string): ImportedSections {
+function parseDocumentsReviewedBody(body: string): string[] {
+  const lines = cleanImportedText(body)
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const items: string[] = [];
+  for (const line of lines) {
+    const numbered = line.match(/^\d+\.\s*(.+)$/);
+    if (numbered) {
+      items.push(numbered[1]!.trim());
+      continue;
+    }
+    if (/^documents?\s+reviewed\b/i.test(line)) continue;
+    items.push(line);
+  }
+  return items;
+}
+
+function parseAttachmentsBody(body: string): SectionContentMap["attachments"]["items"] {
+  const lines = cleanImportedText(body)
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter(Boolean);
+  const items: SectionContentMap["attachments"]["items"] = [];
+  const attRe =
+    /^(?:\d+\.\s*)?(Attachment\s*No\.\s*[IVXLCDM]+)(?:\s*:\s*|\s+)(.*)$/i;
+  for (const line of lines) {
+    const m = attRe.exec(line);
+    if (m) {
+      items.push({ label: m[1]!.trim(), description: (m[2] ?? "").trim() });
+    } else if (!/^list\s+of\s+attachments?\b/i.test(line)) {
+      items.push({ label: "", description: line });
+    }
+  }
+  return trimAttachmentListSignatureNoise(items);
+}
+
+/** Drop signature / approval table rows often parsed as extra “attachments” after real annexes. */
+function trimAttachmentListSignatureNoise(
+  items: SectionContentMap["attachments"]["items"]
+): SectionContentMap["attachments"]["items"] {
+  const cut = items.findIndex((row) => {
+    const d = row.description.trim();
+    if (!/^prepared$/i.test(d)) return false;
+    const lab = row.label.replace(/\s/g, "");
+    if (!lab) return true;
+    return /^AttachmentNo\.VI/i.test(lab);
+  });
+  return cut === -1 ? items : items.slice(0, cut);
+}
+
+export function buildSectionsFromRaw(raw: string): ImportedSections {
   const { sections, foundHeadings } = splitPlainTextIntoSections(raw);
 
   const defineText = cleanImportedText(stripGuidanceChecklist(sections.define));
@@ -561,9 +611,9 @@ function buildSectionsFromRaw(raw: string): ImportedSections {
   const correctiveActionBlock = getBetweenLabels(improveBody, ["Corrective Action"], [
     "Corrective Actions Register",
   ]);
-  const controlNarrative = getBetweenLabels(controlBody, ["Preventive Action"], [
-    "Preventive Actions Register",
-  ]);
+  const controlPreventiveUnified = cleanImportedText(
+    extractControlPreventivePlain(controlBody)
+  );
   const correctiveParsed = stripSectionTemplatePreamble(
     "improve",
     [correctiveActionBlock, parseCorrectiveActions(improveBody)]
@@ -581,11 +631,6 @@ function buildSectionsFromRaw(raw: string): ImportedSections {
     .map((s) => s.trim())
     .filter(Boolean)
     .join("\n\n");
-  const cleanControlNarrative = stripSectionTemplatePreamble(
-    "control",
-    controlNarrative ||
-      (hasLabel(controlBody, ["Preventive Action"]) ? "" : controlBody)
-  );
 
   return {
     define: {
@@ -601,29 +646,23 @@ function buildSectionsFromRaw(raw: string): ImportedSections {
     },
     control: {
       ...EMPTY_CONTENT.control,
-      narrative: legacyStringToDoc(cleanControlNarrative),
-      preventiveActions: parsePreventiveActions(controlBody),
-      interimPlan: getBetweenLabels(controlBody, ["Interim Plan"], [
-        "Final Comments",
-        "Impact Assessment (post-investigation)",
-      ]),
-      finalComments: getBetweenLabels(controlBody, ["Final Comments"], [
-        "Impact Assessment (post-investigation)",
-      ]),
-      regulatoryImpact: getLineValue(controlBody, "Regulatory Impact / Notification"),
-      productQuality: getLineValue(controlBody, "Product Quality"),
-      validation: getLineValue(controlBody, "Validation"),
-      stability: getLineValue(controlBody, "Stability"),
-      marketClinical: getLineValue(controlBody, "Market / Clinical"),
-      lotDisposition: getLineValue(controlBody, "Lot Disposition"),
-      conclusion: getLineValue(controlBody, "Conclusion"),
+      preventiveActions: controlPreventiveUnified,
+    },
+    documents_reviewed: {
+      ...EMPTY_CONTENT.documents_reviewed,
+      items: parseDocumentsReviewedBody(sections.documents_reviewed),
+    },
+    attachments: {
+      ...EMPTY_CONTENT.attachments,
+      items: parseAttachmentsBody(sections.attachments),
     },
   };
 }
 
 /**
  * Reads a .docx buffer and maps recognizable DMAIC blocks into section content.
- * Uses plain-text extraction and heading lines that match section titles (Define, Measure, …).
+ * Uses mammoth markdown conversion (normalized to plain text) so Word list numbering
+ * is preserved; plain extractRawText omits automatic 1., 2., … prefixes.
  */
 export async function docxBufferToSectionContentMap(
   buffer: Buffer
@@ -635,7 +674,8 @@ export async function docxBufferToSectionContentMap(
 export async function docxBufferToImportedReportContent(
   buffer: Buffer
 ): Promise<ImportedReportContent> {
-  const { value: raw } = await mammoth.extractRawText({ buffer });
+  const markdown = await mammothConvertToMarkdown(buffer);
+  const raw = mammothMarkdownToImportPlain(markdown);
   return {
     sections: buildSectionsFromRaw(raw),
     toolsUsed: parseToolsUsedFromDocxXml(buffer) ?? parseToolsUsed(raw),
