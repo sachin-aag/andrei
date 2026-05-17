@@ -229,16 +229,7 @@ R.set(21, rebuildRow(rows[21].xml, makeParas([
 
 // Row 23: Corrective Action content
 R.set(23, rebuildRow(rows[23].xml, makeParas([
-  '{improveNarrative}',
-  '',
-  'Corrective Actions Register:',
-  '{#correctiveActions}',
-  '{caNumber}: {description}',
-  '  Responsible person: {responsiblePerson}',
-  '  Due date: {dueDate}',
-  '  Expected outcome: {expectedOutcome}',
-  '  Effectiveness verification: {effectivenessVerification}',
-  '{/correctiveActions}',
+  '{correctiveActions}',
 ])));
 
 // Row 24: Control (label + checklist combined)
@@ -249,41 +240,14 @@ R.set(24, rebuildRow(rows[24].xml, makeParas([
   '2. Was the preventive action assigned a unique number, responsible person and due date?',
   '3. Does the action describe the expected outcome that can be verified?',
   '4. Was effectiveness verification required or not, with rationale documented?',
-  '5. Was interim plan discussed for pending status of CAPA?',
-  '6. Was each impact assessment field completed correctly?',
-  '7. Does the Conclusion include final decision and rationale?',
-  '8. Are the identified preventive actions achievable?',
+  '5. Are the identified preventive actions achievable?',
 ])));
 
 // Row 25: "Preventive Action:" label → keep
 
-// Row 26: Preventive Action content + all Control fields
+// Row 26: Preventive Action content (single body)
 R.set(26, rebuildRow(rows[26].xml, makeParas([
-  '{controlNarrative}',
-  '',
-  'Preventive Actions Register:',
-  '{#preventiveActions}',
-  '{paNumber}: {description}',
-  '  Linked root cause: {linkedRootCause}',
-  '  Responsible person: {responsiblePerson}',
-  '  Due date: {dueDate}',
-  '  Expected outcome: {expectedOutcome}',
-  '  Effectiveness verification: {effectivenessVerification}',
-  '{/preventiveActions}',
-  '',
-  'Interim Plan: {interimPlan}',
-  '',
-  'Final Comments: {finalComments}',
-  '',
-  'Impact Assessment (post-investigation):',
-  'Regulatory Impact / Notification: {regulatoryImpact}',
-  'Product Quality: {productQuality}',
-  'Validation: {validation}',
-  'Stability: {stability}',
-  'Market / Clinical: {marketClinical}',
-  'Lot Disposition: {lotDisposition}',
-  '',
-  'Conclusion: {controlConclusion}',
+  '{preventiveActions}',
 ])));
 
 // Row 27: "Document Reviewed:" label → keep

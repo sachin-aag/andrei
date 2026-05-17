@@ -47,32 +47,14 @@ export type AnalyzeSection = {
   };
 };
 
-export type CorrectiveAction = {
-  id: string;
-  description: string;
-  responsiblePerson: string;
-  dueDate: string;
-  expectedOutcome: string;
-  effectivenessVerification: string;
-};
-
 export type ImproveSection = {
   narrative: JSONContent;
-  correctiveActions: CorrectiveAction[];
+  correctiveActions: string;
 };
 
 export type ControlSection = {
-  narrative: JSONContent;
+  /** All preventive-action and closure content in one free-text field. */
   preventiveActions: string;
-  interimPlan: string;
-  finalComments: string;
-  regulatoryImpact: string;
-  productQuality: string;
-  validation: string;
-  stability: string;
-  marketClinical: string;
-  lotDisposition: string;
-  conclusion: string;
 };
 
 export type DocumentsReviewedSection = {
@@ -133,20 +115,10 @@ export const EMPTY_CONTENT: SectionContentMap = {
   },
   improve: {
     narrative: emptyDoc(),
-    correctiveActions: [],
+    correctiveActions: "",
   },
   control: {
-    narrative: emptyDoc(),
     preventiveActions: "",
-    interimPlan: "",
-    finalComments: "",
-    regulatoryImpact: "",
-    productQuality: "",
-    validation: "",
-    stability: "",
-    marketClinical: "",
-    lotDisposition: "",
-    conclusion: "",
   },
   documents_reviewed: {
     items: [],
@@ -166,10 +138,20 @@ export const SECTION_LABELS: Record<keyof SectionContentMap, string> = {
   attachments: "Attachments",
 };
 
-export const EDITABLE_SECTIONS: Array<keyof SectionContentMap> = [
+export const EDITABLE_SECTIONS = [
   "define",
   "measure",
   "analyze",
   "improve",
   "control",
-];
+] as const satisfies readonly (keyof SectionContentMap)[];
+
+/** All `report_sections` rows created for a report (DMAIC + document metadata blocks). */
+export const REPORT_SECTION_ROW_ORDER = [
+  ...EDITABLE_SECTIONS,
+  "documents_reviewed",
+  "attachments",
+] as const satisfies readonly (keyof SectionContentMap)[];
+
+/** Sections rendered as editors in the report workspace (same as DB row order). */
+export const REPORT_WORKSPACE_SECTIONS = REPORT_SECTION_ROW_ORDER;

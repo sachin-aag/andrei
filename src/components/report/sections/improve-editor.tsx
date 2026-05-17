@@ -1,10 +1,6 @@
 "use client";
 
-import { createId } from "@paralleldrive/cuid2";
-import { Plus, Trash2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
   useReportData,
@@ -12,184 +8,39 @@ import {
 } from "@/providers/report-provider";
 import { useSectionSave } from "@/hooks/use-section-save";
 import { CriteriaChecklist, SectionShell } from "./section-shell";
-import { TiptapSectionField } from "@/components/report/tiptap-section-field";
 import { SECTION_GUIDANCE } from "@/lib/report-section-guidance";
+import { emptyDoc } from "@/lib/tiptap/rich-text";
 
 export function ImproveEditor() {
   const { readOnly } = useReportData();
   const { update } = useReportSection("improve");
-  const { status, lastSavedAt, value, flushSave } = useSectionSave("improve");
-
-  const addAction = () => {
-    update((p) => ({
-      ...p,
-      correctiveActions: [
-        ...p.correctiveActions,
-        {
-          id: createId(),
-          description: "",
-          responsiblePerson: "",
-          dueDate: "",
-          expectedOutcome: "",
-          effectivenessVerification: "",
-        },
-      ],
-    }));
-  };
+  const { status, lastSavedAt, value } = useSectionSave("improve");
 
   return (
     <SectionShell
       title="Improve"
-      description="Define corrective actions with unique tracking fields."
+      description="Describe corrective actions, ownership, timelines, verification, and any related detail."
       status={status}
       lastSavedAt={lastSavedAt}
       section="improve"
     >
       <CriteriaChecklist items={SECTION_GUIDANCE.improve ?? []} ordered />
 
-      <TiptapSectionField
-        section="improve"
-        contentPath="narrative"
-        label="Narrative"
-        placeholder="The nonconformance is related to … After identification of the nonconformance below actions were taken …"
-        className="grid gap-1.5"
-        value={value.narrative}
-        onChange={(doc) =>
-          update((p) => ({ ...p, narrative: doc }))
-        }
-        onFlushSave={flushSave}
-      />
-
-      <div className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h3 className="font-semibold text-[var(--foreground)]">Corrective Actions</h3>
-          {!readOnly && (
-            <Button size="sm" variant="outline" onClick={addAction}>
-              <Plus className="size-3" /> Add Action
-            </Button>
-          )}
-        </div>
-
-        {value.correctiveActions.length === 0 ? (
-          <div className="text-xs text-[var(--muted-foreground)] italic border border-dashed border-[var(--border)] rounded-md p-4 text-center">
-            No corrective actions yet.
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {value.correctiveActions.map((a, idx) => (
-              <div
-                key={a.id}
-                className="rounded-md border border-[var(--border)] bg-[var(--card)] p-4 space-y-3"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-[var(--foreground)]">
-                    CA-{String(idx + 1).padStart(3, "0")}
-                  </span>
-                  {!readOnly && (
-                    <button
-                      onClick={() =>
-                        update((p) => ({
-                          ...p,
-                          correctiveActions: p.correctiveActions.filter(
-                            (_, i) => i !== idx
-                          ),
-                        }))
-                      }
-                      className="text-[var(--muted-foreground)] hover:text-red-400 cursor-pointer"
-                    >
-                      <Trash2 className="size-3.5" />
-                    </button>
-                  )}
-                </div>
-                <div className="grid gap-1.5">
-                  <Label>Description</Label>
-                  <Textarea
-                    value={a.description}
-                    disabled={readOnly}
-                    className="min-h-[70px]"
-                    onChange={(e) =>
-                      update((p) => ({
-                        ...p,
-                        correctiveActions: p.correctiveActions.map((x, i) =>
-                          i === idx ? { ...x, description: e.target.value } : x
-                        ),
-                      }))
-                    }
-                  />
-                </div>
-                <div className="grid gap-3 md:grid-cols-2">
-                  <div className="grid gap-1.5">
-                    <Label>Responsible person</Label>
-                    <Input
-                      value={a.responsiblePerson}
-                      disabled={readOnly}
-                      onChange={(e) =>
-                        update((p) => ({
-                          ...p,
-                          correctiveActions: p.correctiveActions.map((x, i) =>
-                            i === idx
-                              ? { ...x, responsiblePerson: e.target.value }
-                              : x
-                          ),
-                        }))
-                      }
-                    />
-                  </div>
-                  <div className="grid gap-1.5">
-                    <Label>Due date</Label>
-                    <Input
-                      type="date"
-                      value={a.dueDate}
-                      disabled={readOnly}
-                      onChange={(e) =>
-                        update((p) => ({
-                          ...p,
-                          correctiveActions: p.correctiveActions.map((x, i) =>
-                            i === idx ? { ...x, dueDate: e.target.value } : x
-                          ),
-                        }))
-                      }
-                    />
-                  </div>
-                </div>
-                <div className="grid gap-1.5">
-                  <Label>Expected outcome</Label>
-                  <Textarea
-                    value={a.expectedOutcome}
-                    disabled={readOnly}
-                    className="min-h-[60px]"
-                    onChange={(e) =>
-                      update((p) => ({
-                        ...p,
-                        correctiveActions: p.correctiveActions.map((x, i) =>
-                          i === idx ? { ...x, expectedOutcome: e.target.value } : x
-                        ),
-                      }))
-                    }
-                  />
-                </div>
-                <div className="grid gap-1.5">
-                  <Label>Effectiveness verification</Label>
-                  <Textarea
-                    value={a.effectivenessVerification}
-                    disabled={readOnly}
-                    className="min-h-[60px]"
-                    onChange={(e) =>
-                      update((p) => ({
-                        ...p,
-                        correctiveActions: p.correctiveActions.map((x, i) =>
-                          i === idx
-                            ? { ...x, effectivenessVerification: e.target.value }
-                            : x
-                        ),
-                      }))
-                    }
-                  />
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+      <div className="grid gap-1.5">
+        <Label>Corrective Action</Label>
+        <Textarea
+          value={value.correctiveActions}
+          disabled={readOnly}
+          className="min-h-[220px]"
+          placeholder="Describe corrective actions taken or proposed, including tracking numbers, responsible persons, due dates, expected outcomes, and effectiveness verification where applicable."
+          onChange={(e) =>
+            update((p) => ({
+              ...p,
+              narrative: emptyDoc(),
+              correctiveActions: e.target.value,
+            }))
+          }
+        />
       </div>
     </SectionShell>
   );

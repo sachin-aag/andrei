@@ -6,7 +6,21 @@ import { getCriteria } from "./criteria";
 import { contextForPrompt } from "./section-context";
 import { buildEvaluationSystemPrompt } from "./section-prompts";
 
-function resolveModel(): LanguageModel {
+export { PROMPT_VERSION } from "./section-prompts";
+
+/** Google Generative AI model slug passed through `@ai-sdk/google`. */
+export const CRITERIA_EVAL_GOOGLE_MODEL_ID = "gemini-3.1-flash-lite" as const;
+
+/** Temperature applied to criterion-level `evaluateSection` calls. */
+export const CRITERIA_EVAL_TEMPERATURE = 0 as const;
+
+/** Fixed seed for reproducible sampling across runs. */
+export const CRITERIA_EVAL_SEED = 0 as const;
+
+const evaluationSchemaDescription =
+  'Output.object with Zod array "evaluations" (criterionKey, status, reasoning).';
+
+export function resolveEvaluationLanguageModel(): LanguageModel {
   const googleKey =
     process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.AI_GATEWAY_API_KEY;
   if (!googleKey) {
@@ -15,7 +29,11 @@ function resolveModel(): LanguageModel {
     );
   }
   const google = createGoogleGenerativeAI({ apiKey: googleKey });
-  return google("gemini-2.5-flash");
+  return google(CRITERIA_EVAL_GOOGLE_MODEL_ID);
+}
+
+function resolveModel(): LanguageModel {
+  return resolveEvaluationLanguageModel();
 }
 
 const evaluationSchema = z.object({
@@ -28,38 +46,34 @@ const evaluationSchema = z.object({
   ),
 });
 
-const HEAVY_REASONING_SECTIONS = new Set<SectionType>([
-  "measure",
-  "analyze",
-  "improve",
-  "control",
-]);
-
-function generationSettingsForSection(section: SectionType) {
-  if (!HEAVY_REASONING_SECTIONS.has(section)) {
-    return {
-      maxOutputTokens: 16384,
-      providerOptions: {
-        google: {
-          thinkingConfig: {
-            thinkingBudget: 4096,
-            includeThoughts: false,
-          },
-        },
-      },
-    };
-  }
-
+function generationSettingsForSection() {
   return {
     maxOutputTokens: 32768,
     providerOptions: {
       google: {
-        thinkingConfig: {
-          thinkingBudget: 8192,
-          includeThoughts: false,
-        },
+        seed: CRITERIA_EVAL_SEED,
       },
     },
+  };
+}
+
+export function describeCriterionEvaluationLlmFootprint(): {
+  criterionModelId: string;
+  criterionProvider: string;
+  criterionTemperature: number;
+  criterionSeed: number;
+  criterionStructuredOutput: string;
+  criterionGenerationConfig: string;
+} {
+  const gs = generationSettingsForSection();
+  return {
+    criterionModelId: CRITERIA_EVAL_GOOGLE_MODEL_ID,
+    criterionProvider:
+      "@ai-sdk/google · Vercel AI SDK generateText (`ai` package) + structured output (`Output.object`)",
+    criterionTemperature: CRITERIA_EVAL_TEMPERATURE,
+    criterionSeed: CRITERIA_EVAL_SEED,
+    criterionStructuredOutput: evaluationSchemaDescription,
+    criterionGenerationConfig: `all sections: maxOutputTokens=${gs.maxOutputTokens}; seed=${CRITERIA_EVAL_SEED}; no thinking (non-reasoning model)`,
   };
 }
 
@@ -108,12 +122,24 @@ export type CriterionEvaluationResult = {
   reasoning: string;
 };
 
+/** Exact `system` + `prompt` passed to `generateText` for a sectional evaluation, when an LLM call is made. */
+export type CriterionEvaluationLlmPrompts = {
+  systemPrompt: string;
+  userPrompt: string;
+};
 
-export async function evaluateSection({
+function sectionContentForPrompt(section: SectionType, content: unknown): string {
+  return typeof content === "string" ? content : contextForPrompt(section, content);
+}
+
+/**
+ * Builds the same strings `evaluateSection` sends to the model. Returns `null`
+ * when no request is made (no criteria for section, or empty section content).
+ */
+export function buildCriterionEvaluationLlmPrompts({
   section,
   content,
   reportContext,
-  previousSections = [],
 }: {
   section: SectionType;
   content: unknown;
@@ -121,27 +147,15 @@ export async function evaluateSection({
     deviationNo: string;
     date: Date | string;
   };
-  previousSections?: Array<{
-    section: SectionType;
-    content: string;
-  }>;
-}): Promise<CriterionEvaluationResult[]> {
+}): CriterionEvaluationLlmPrompts | null {
   const criteria = getCriteria(section);
-  if (criteria.length === 0) return [];
+  if (criteria.length === 0) return null;
 
-  const contentStr =
-    typeof content === "string" ? content : contextForPrompt(section, content);
+  const contentStr = sectionContentForPrompt(section, content);
 
   const isEmpty = !contentStr || contentStr.trim() === "" || contentStr === "{}";
 
-  if (isEmpty) {
-    return criteria.map((c) => ({
-      criterionKey: c.key,
-      criterionLabel: c.label,
-      status: "not_evaluated" as const,
-      reasoning: "Section is empty.",
-    }));
-  }
+  if (isEmpty) return null;
 
   const systemPrompt = buildEvaluationSystemPrompt(section);
 
@@ -158,20 +172,6 @@ SECTION CONTENT:
 ${contentStr}
 """
 
-${
-  previousSections.length > 0
-    ? `PREVIOUS SECTION CONTEXT (read-only, for consistency only):
-${previousSections
-  .map(
-    (s) =>
-      `\n[${s.section.toUpperCase()}]\n"""\n${s.content}\n"""`
-  )
-  .join("\n")}
-
-Use this context to keep terminology, chronology, and conclusions consistent with earlier sections. Do NOT re-evaluate earlier sections; only evaluate the current SECTION.`
-    : ""
-}
-
 CRITERIA TO EVALUATE:
 ${criteria
   .map(
@@ -179,9 +179,44 @@ ${criteria
   )
   .join("\n")}
 
-Evaluate each criterion. Return one evaluation object per criterion, using the exact criterionKey provided.`;
+Evaluate each criterion using only the section content above. Return one evaluation object per criterion, using the exact criterionKey provided. Do not include suggested fixes or rewritten report text.`;
 
-  const generationSettings = generationSettingsForSection(section);
+  return { systemPrompt, userPrompt };
+}
+
+export async function evaluateSection({
+  section,
+  content,
+  reportContext,
+}: {
+  section: SectionType;
+  content: unknown;
+  reportContext: {
+    deviationNo: string;
+    date: Date | string;
+  };
+}): Promise<CriterionEvaluationResult[]> {
+  const criteria = getCriteria(section);
+  if (criteria.length === 0) return [];
+
+  const prompts = buildCriterionEvaluationLlmPrompts({
+    section,
+    content,
+    reportContext,
+  });
+
+  if (!prompts) {
+    return criteria.map((c) => ({
+      criterionKey: c.key,
+      criterionLabel: c.label,
+      status: "not_evaluated" as const,
+      reasoning: "Section is empty.",
+    }));
+  }
+
+  const { systemPrompt, userPrompt } = prompts;
+
+  const generationSettings = generationSettingsForSection();
 
   let evaluations: Array<{
     criterionKey: string;
@@ -195,7 +230,7 @@ Evaluate each criterion. Return one evaluation object per criterion, using the e
       output: Output.object({ schema: evaluationSchema }),
       system: systemPrompt,
       prompt: userPrompt,
-      temperature: 0.2,
+      temperature: CRITERIA_EVAL_TEMPERATURE,
       ...generationSettings,
     });
 

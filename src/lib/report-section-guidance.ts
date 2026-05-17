@@ -30,9 +30,6 @@ export const SECTION_GUIDANCE: Partial<Record<SectionType, string[]>> = {
     "Was the preventive action assigned a unique number, responsible person and due date so it can be tracked?",
     "Does the action describe an expected outcome that can be verified?",
     "Was effectiveness verification required or not and was the rationale documented?",
-    "Was an interim plan discussed for pending status of CAPA?",
-    "Was each impact assessment field completed correctly?",
-    "Does the conclusion include final decision and rationale?",
     "Are the identified preventive actions achievable based on the information provided?",
   ],
 };

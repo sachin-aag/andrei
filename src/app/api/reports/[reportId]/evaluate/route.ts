@@ -10,16 +10,17 @@ import {
 } from "@/db/schema";
 import type { SectionType } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
-import { evaluateSection, type CriterionEvaluationResult } from "@/lib/ai/evaluate";
+import { evaluateSection } from "@/lib/ai/evaluate";
 import { EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
+import {
+  normalizeAnalyzeToolResults,
+} from "@/lib/ai/evaluate-run-helpers";
 import { hashContent } from "@/lib/ai/content-hash";
 import { PROMPT_VERSION } from "@/lib/ai/section-prompts";
 import {
   hasEnoughContextInFirstSection,
   INSUFFICIENT_FIRST_SECTION_MESSAGE,
 } from "@/lib/ai/first-section-context";
-
-import { contextForPrompt } from "@/lib/ai/section-context";
 
 export const maxDuration = 60;
 
@@ -30,70 +31,6 @@ const bodySchema = z.object({
 
 function isValidSection(v: string): v is SectionType {
   return (sectionTypeEnum.enumValues as readonly string[]).includes(v);
-}
-
-
-
-type AnalyzeTool = "sixM" | "fiveWhy";
-
-function meaningfulAnalyzeText(value: unknown): boolean {
-  if (typeof value !== "string") return false;
-  const normalized = value.trim().toLowerCase().replace(/\.+$/, "");
-  return normalized.length > 0 && normalized !== "not applicable" && normalized !== "n/a";
-}
-
-function existingAnalyzeTool(content: unknown): AnalyzeTool | null {
-  if (!content || typeof content !== "object") return null;
-  const c = content as {
-    sixM?: Record<string, unknown>;
-    fiveWhy?: Record<string, unknown>;
-  };
-  const hasSixM = c.sixM
-    ? Object.values(c.sixM).some(meaningfulAnalyzeText)
-    : false;
-  const hasFiveWhy = c.fiveWhy
-    ? [c.fiveWhy.narrative, c.fiveWhy.conclusion].some(meaningfulAnalyzeText)
-    : false;
-
-  if (hasSixM && !hasFiveWhy) return "sixM";
-  if (hasFiveWhy && !hasSixM) return "fiveWhy";
-  return null;
-}
-
-/**
- * After evaluation, if the analyze section has both sixm_completeness and
- * fivewhy_completeness results, check which tool the content actually uses
- * and mark the unused one as "met" with a reasoning note.
- */
-function normalizeAnalyzeToolResults(
-  content: unknown,
-  evaluations: CriterionEvaluationResult[]
-): CriterionEvaluationResult[] {
-  const chosenTool = existingAnalyzeTool(content);
-  if (!chosenTool) return evaluations;
-
-  const unusedKey =
-    chosenTool === "fiveWhy"
-      ? "analyze.sixm_completeness"
-      : "analyze.fivewhy_completeness";
-  const chosenLabel = chosenTool === "fiveWhy" ? "5-Why" : "6M";
-  const unusedLabel = chosenTool === "fiveWhy" ? "6M" : "5-Why";
-
-  return evaluations.map((evaluation) => {
-    if (evaluation.criterionKey !== unusedKey) return evaluation;
-    return {
-      ...evaluation,
-      status: "met" as const,
-      reasoning: `${chosenLabel} methodology selected for this Analyze pass; ${unusedLabel} remains Not Applicable because the root-cause tool requirement is satisfied by one completed methodology.`,
-    };
-  });
-}
-
-
-function normalizePromptText(s: string, maxChars = 6000): string {
-  const trimmed = s.trim();
-  if (trimmed.length <= maxChars) return trimmed;
-  return `${trimmed.slice(0, maxChars)}\n\n[Truncated for context length]`;
 }
 
 export async function POST(
@@ -108,9 +45,10 @@ export async function POST(
   const parsed = bodySchema.safeParse(body);
   const requestedSections = parsed.success ? parsed.data.sections : undefined;
 
-  const targetSections: SectionType[] = (requestedSections ?? EVALUATABLE_SECTIONS).filter(
-    (s): s is SectionType => isValidSection(s)
-  );
+  const evalSet = new Set<SectionType>(EVALUATABLE_SECTIONS);
+  const targetSections: SectionType[] = (requestedSections ?? EVALUATABLE_SECTIONS)
+    .filter((s): s is SectionType => isValidSection(s))
+    .filter((s) => evalSet.has(s));
 
   const [report] = await db
     .select()
@@ -128,8 +66,8 @@ export async function POST(
       )
     );
 
-  // Pull all evaluatable section rows for this report so each section evaluation
-  // can reference prior sections for chronology/consistency.
+  // Pull all evaluatable section rows so the Define context guard still works
+  // when a subset of sections is requested.
   const allEvaluatableRows = await db
     .select()
     .from(reportSections)
@@ -169,27 +107,10 @@ export async function POST(
   // ── 1. Run the LLM in parallel for all target sections ──────────────────
   const llmResults = await Promise.all(
     sectionRows.map(async (row) => {
-      const idx = EVALUATABLE_SECTIONS.indexOf(row.section);
-      const previousSections = EVALUATABLE_SECTIONS.slice(0, Math.max(0, idx))
-        .map((section) => {
-          const prior = bySection.get(section);
-          if (!prior) return null;
-          const raw = contextForPrompt(section, prior.content);
-          if (!raw || raw.trim() === "" || raw.trim() === "{}") return null;
-          return {
-            section,
-            content: normalizePromptText(raw),
-          };
-        })
-        .filter(
-          (v): v is { section: SectionType; content: string } => v != null
-        );
-
       const evaluations = await evaluateSection({
         section: row.section,
         content: row.content,
         reportContext: { deviationNo: report.deviationNo, date: report.date },
-        previousSections,
       });
       return {
         sectionRow: row,

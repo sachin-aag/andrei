@@ -18,6 +18,7 @@ import { getUser } from "@/lib/auth/mock-users";
 import type { SectionType } from "@/db/schema";
 import type { WorkspaceMode } from "@/providers/report-provider";
 import type { Placeholder } from "@/lib/placeholders/find";
+import { REPORT_WORKSPACE_SECTIONS } from "@/types/sections";
 
 export type { WorkspaceMode };
 
@@ -29,14 +30,6 @@ function SectionEditorLoading() {
     </div>
   );
 }
-
-const REPORT_WORKSPACE_SECTIONS = [
-  "define",
-  "measure",
-  "analyze",
-  "improve",
-  "control",
-] as const;
 
 const SECTION_EDITORS = {
   define: dynamic(
@@ -57,6 +50,18 @@ const SECTION_EDITORS = {
   ),
   control: dynamic(
     () => import("./sections/control-editor").then((mod) => mod.ControlEditor),
+    { loading: SectionEditorLoading }
+  ),
+  documents_reviewed: dynamic(
+    () =>
+      import("./sections/documents-reviewed-editor").then(
+        (mod) => mod.DocumentsReviewedEditor
+      ),
+    { loading: SectionEditorLoading }
+  ),
+  attachments: dynamic(
+    () =>
+      import("./sections/attachments-editor").then((mod) => mod.AttachmentsEditor),
     { loading: SectionEditorLoading }
   ),
 } satisfies Record<(typeof REPORT_WORKSPACE_SECTIONS)[number], ComponentType>;
@@ -84,7 +89,6 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(true);
   const [sidebarOverlaysContent, setSidebarOverlaysContent] = useState(false);
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("criteria");
-  const [criteriaSection, setCriteriaSection] = useState<SectionType | undefined>();
   const [sectionMinHeights, setSectionMinHeights] = useState<
     Partial<Record<SectionType, number>>
   >({});
@@ -299,7 +303,6 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
           onJumpToSection={jumpToSection}
           onJumpToPlaceholder={handleJumpToPlaceholder}
           onJumpToComment={jumpToComment}
-          initialCriteriaSection={criteriaSection}
         />
       </div>
     </div>
