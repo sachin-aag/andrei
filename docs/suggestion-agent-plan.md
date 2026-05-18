@@ -2,7 +2,7 @@
 
 ## Context
 
-The traffic lights evaluation system already evaluates 36 criteria across DMAIC sections and reports which are `met`, `partially_met`, or `not_met` with reasoning. Users currently see what's wrong but must manually fix their report text. This feature adds an agent that **auto-generates targeted fix suggestions** immediately after evaluation, displayed both inline in the Tiptap editor (tracked-change marks) and in the criteria side panel.
+The traffic lights evaluation system already evaluates 36 criteria across DMAIC sections and reports which are `met`, `partially_met`, or `not_met` with reasoning. Users currently see what's wrong but must manually fix their report text. This feature adds an agent that **generates targeted fix suggestions on demand** (one explicit action per section), displayed both inline in the Tiptap editor (tracked-change marks) and in the criteria side panel.
 
 **Key insight**: The infrastructure is 90% built. The `injectSuggestionMarks()` function, suggestion mark extensions, action widgets (accept/ignore), `ai_fix` comment kind, `contentPath`, `anchorText`, and `fromPos`/`toPos` columns all exist. What's missing is the **generation** step — the LLM call that produces the oldText/newText pairs.
 
@@ -11,10 +11,13 @@ The traffic lights evaluation system already evaluates 36 criteria across DMAIC 
 ## Architecture
 
 ```
-Evaluation completes (existing)
+User runs AI check for a section (existing), sees failing criteria
     │
-    ▼ (auto-trigger, non-blocking)
-POST /api/reports/[reportId]/suggestions
+    ▼
+User clicks “Suggest fixes” for THAT section only (no global / top-bar trigger)
+    │
+    ▼ (non-blocking request for that section)
+POST /api/reports/[reportId]/suggestions  { sections: [thatSection] }
     │
     ├─ Group failing criteria by section
     ├─ For each section: one LLM call with full content + all failing criteria
@@ -31,8 +34,12 @@ POST /api/reports/[reportId]/suggestions
 
 **Why separate endpoint (not inline with eval)**:
 - Evaluation already takes 10-20s across sections. Adding suggestion generation sequentially would hit function timeouts.
-- Client shows evaluation results immediately, then fires suggestions in background.
+- Client shows evaluation results as soon as the check finishes; the user decides when to request suggestions per section.
 - Can retry suggestions independently if they fail.
+
+**Why no auto-trigger and no top-level “suggest all” button**:
+- Suggestions are LLM-heavy and edit the document; users should opt in explicitly and only for the section they are working on.
+- A single control per section matches the existing **Run it by Andrei** pattern in `section-shell.tsx` and avoids accidental bulk edits.
 
 ---
 
@@ -85,10 +92,10 @@ System prompt for suggestion generation:
 ### 3. New file: `src/app/api/reports/[reportId]/suggestions/route.ts`
 
 POST endpoint orchestrating the flow:
-1. Receive `{ sections?: SectionType[] }` (defaults to all sections with failing criteria)
+1. Receive `{ sections?: SectionType[] }` — **client sends exactly one section** per button click (implementation may still accept an array for tests); do not default to “all sections” from the product UI
 2. Load current evaluations + section content from DB
 3. Filter to `partially_met` / `not_met` criteria
-4. Call `generateSuggestions()` per section (parallel with `Promise.all`)
+4. Call `generateSuggestions()` per requested section (typically one; use `Promise.all` when the array has multiple entries, e.g. tests)
 5. For each valid suggestion:
    - **Narrative**: call `injectSuggestionMarks(doc, anchor, replacement, attrs)` where `attrs.id = evaluationId`, `attrs.authorId = "ai"`, `attrs.kind = "fix"`
    - **Structured field**: skip Tiptap injection (no narrative to mark)
@@ -98,9 +105,16 @@ POST endpoint orchestrating the flow:
 
 ### 4. Modify: `src/providers/report-provider.tsx`
 
-- Add `generateSuggestions()` function triggered after `runEvaluation()` completes
-- Add `isSuggesting` state for UI loading indicator
-- After suggestions return: call `replaceSection()` for each updated section (triggers Tiptap re-render with marks), merge new comments into state
+- Add `generateSuggestions(section: SectionType)` (or equivalent) called **only** from the per-section UI — **not** from `runEvaluation()` success callbacks
+- Track `suggestingSections: SectionType[]` (or `runningSuggestSections` parallel to `runningEvalSections`) so the section button can show a spinner
+- After suggestions return for that section: call `replaceSection()` for the updated section (Tiptap re-render with marks), merge new comments into state
+
+### 4b. Modify: `src/components/report/sections/section-shell.tsx` (+ small component)
+
+- Place **one** secondary control next to `SectionRunEvaluationButton`: e.g. **Suggest fixes** (or similar label), wired to `generateSuggestions(section)`
+- Disable when: eval is running for that section, suggestions are already generating for that section, that section has no failing criteria (`partially_met` / `not_met`), or pending `ai_fix` comments block re-generation (per re-run policy below)
+- **Do not** add a `RunAllSuggestionsButton` or any header/toolbar control that generates suggestions for every section — contrast with `RunAllEvaluationButton`, which stays evaluation-only
+- Optionally extract `SectionSuggestFixesButton` into `section-status-pill.tsx` next to `SectionRunEvaluationButton` for consistency
 
 ### 5. Modify: `src/components/report/criteria-sheet.tsx`
 
@@ -134,7 +148,8 @@ This tracks per-criterion whether a suggestion exists and its lifecycle, avoidin
 | `src/lib/tiptap/suggestion-action-widgets.ts` | **EXISTING** — Accept/Ignore inline buttons |
 | `src/lib/ai/evaluate.ts` | **EXISTING** — Pattern to follow for LLM call |
 | `src/lib/ai/section-context.ts` | **EXISTING** — `contextForPrompt()` reused for suggestion prompt |
-| `src/providers/report-provider.tsx` | **MODIFY** — Wire `generateSuggestions()` after eval |
+| `src/providers/report-provider.tsx` | **MODIFY** — Expose `generateSuggestions(section)`, loading state per section |
+| `src/components/report/sections/section-shell.tsx` | **MODIFY** — Per-section **Suggest fixes** button (only place in app chrome) |
 | `src/components/report/criteria-sheet.tsx` | **MODIFY** — Suggestion cards in panel |
 | `src/db/schema/index.ts` | **MODIFY** — Add `suggestionStatus` column |
 
@@ -154,9 +169,9 @@ For sections like Analyze (6M fields, rootCause, impactAssessment) and Improve (
 
 ## Re-run Policy: Block While Pending
 
-If the user re-runs evaluation while pending suggestions exist:
+If the user tries to run **Suggest fixes** again while pending suggestions exist for that section:
 - **Block suggestion generation** — the endpoint returns an error/warning: "Pending suggestions exist. Accept or dismiss them before generating new ones."
-- The UI disables the "Run AI Check" button (or shows a tooltip) while `isSuggesting` or while any `suggestionStatus === 'pending'` exists for that section.
+- The per-section **Suggest fixes** button is disabled (or shows a tooltip) while that section is generating suggestions or while any `suggestionStatus === 'pending'` exists **for that section**.
 - This avoids the complexity of stripping/superseding marks and prevents confusing overlapping suggestions.
 
 **Evaluation itself is NOT blocked** — the user can always re-evaluate criteria (traffic lights update). Only the suggestion generation step is gated on no pending suggestions.
@@ -205,7 +220,7 @@ Between evaluation completing and suggestions being applied, the user may have e
 3. **E2E manual test**:
    - Write a Define section missing detection date/time
    - Run evaluation → see "not_met" for `define.datetime`
-   - Wait for suggestions to auto-generate
+   - Click **Suggest fixes** on that section’s header (no top-bar suggestion control)
    - Verify inline green/red marks appear in editor
    - Verify suggestion card appears in criteria panel
    - Click Accept → marks resolve, text updated
@@ -213,5 +228,6 @@ Between evaluation completing and suggestions being applied, the user may have e
 4. **Structured field test**:
    - Leave `sixM.measurement` empty in Analyze section
    - Run evaluation → see "not_met" for `analyze.sixm_completeness`
+   - Click **Suggest fixes** for Analyze
    - Verify suggestion card in panel with "Apply" button
    - Click Apply → field populated
