@@ -187,7 +187,7 @@ describe("evaluateSection", () => {
     expect(prompts?.userPrompt).not.toContain("...");
   });
 
-  it("keeps each LLM prompt scoped to the current section", () => {
+  it("keeps each LLM prompt scoped to the current section without prior context when allSections is omitted", () => {
     const prompts = buildCriterionEvaluationLlmPrompts({
       section: "control",
       content: "Control section conclusion.",
@@ -197,8 +197,52 @@ describe("evaluateSection", () => {
     expect(prompts?.userPrompt).toContain("SECTION: CONTROL");
     expect(prompts?.userPrompt).toContain("SECTION CONTENT:");
     expect(prompts?.userPrompt).toContain("Control section conclusion.");
-    expect(prompts?.userPrompt).not.toContain("FULL REPORT CONTEXT");
-    expect(prompts?.userPrompt).not.toContain("## DEFINE");
+    expect(prompts?.userPrompt).not.toContain("PRIOR SECTIONS");
+  });
+
+  it("includes cumulative prior sections when allSections is provided", () => {
+    const allSections = {
+      define: "The deviation was discovered in Room 101.",
+      measure: "Environmental monitoring showed OOL result.",
+      analyze: { investigationOutcome: "Root cause identified." },
+      improve: "CAPA-001 opened.",
+      control: "Preventive Action No. PA-001 assigned.",
+    };
+
+    // Define gets no prior context
+    const definePrompts = buildCriterionEvaluationLlmPrompts({
+      section: "define",
+      content: allSections.define,
+      reportContext: { deviationNo: "DEV-011", date: "2026-05-02" },
+      allSections,
+    });
+    expect(definePrompts?.userPrompt).not.toContain("PRIOR SECTIONS");
+
+    // Measure gets Define as prior
+    const measurePrompts = buildCriterionEvaluationLlmPrompts({
+      section: "measure",
+      content: allSections.measure,
+      reportContext: { deviationNo: "DEV-011", date: "2026-05-02" },
+      allSections,
+    });
+    expect(measurePrompts?.userPrompt).toContain("PRIOR SECTIONS");
+    expect(measurePrompts?.userPrompt).toContain("[DEFINE]");
+    expect(measurePrompts?.userPrompt).toContain("Room 101");
+    expect(measurePrompts?.userPrompt).not.toContain("[ANALYZE]");
+
+    // Control gets Define, Measure, Analyze, Improve as prior
+    const controlPrompts = buildCriterionEvaluationLlmPrompts({
+      section: "control",
+      content: allSections.control,
+      reportContext: { deviationNo: "DEV-011", date: "2026-05-02" },
+      allSections,
+    });
+    expect(controlPrompts?.userPrompt).toContain("PRIOR SECTIONS");
+    expect(controlPrompts?.userPrompt).toContain("[DEFINE]");
+    expect(controlPrompts?.userPrompt).toContain("[MEASURE]");
+    expect(controlPrompts?.userPrompt).toContain("[ANALYZE]");
+    expect(controlPrompts?.userPrompt).toContain("[IMPROVE]");
+    expect(controlPrompts?.userPrompt).toContain("read-only context");
   });
 
   it("renders narrative tables as markdown with expanded merged cells in the LLM prompt", () => {

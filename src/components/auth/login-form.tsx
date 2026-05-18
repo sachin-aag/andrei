@@ -40,15 +40,15 @@ export function LoginForm({ users }: { users: MockUser[] }) {
           </SelectTrigger>
           <SelectContent>
             {users.map((u) => (
-              <SelectItem key={u.id} value={u.id}>
+              <SelectItem key={u.id} value={u.id} className="group">
                 <div className="flex flex-col py-1">
                   <span className="font-medium">
                     {u.name}{" "}
-                    <span className="text-[var(--muted-foreground)] font-normal">
+                    <span className="font-normal text-[var(--muted-foreground)] group-data-[highlighted]:text-[var(--accent-foreground)]">
                       · {u.role === "engineer" ? "Engineer" : "Manager"}
                     </span>
                   </span>
-                  <span className="text-xs text-[var(--muted-foreground)]">
+                  <span className="text-xs text-[var(--muted-foreground)] group-data-[highlighted]:text-[var(--accent-foreground)]">
                     {u.title} · Emp #{u.employeeId}
                   </span>
                 </div>

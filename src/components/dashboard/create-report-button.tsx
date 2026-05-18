@@ -104,7 +104,7 @@ export function CreateReportButton() {
                 ref={fileInputRef}
                 type="file"
                 accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                className="cursor-pointer file:mr-3 file:rounded-md file:border-0 file:bg-[var(--secondary)] file:px-3 file:py-1 file:text-sm"
+                className="cursor-pointer file:mr-3 file:inline-flex file:items-center file:justify-start file:rounded-md file:border-0 file:bg-[var(--secondary)] file:px-3 file:py-1 file:text-left file:text-sm"
                 onChange={(e) => {
                   const f = e.target.files?.[0] ?? null;
                   setDraftFile(f);
