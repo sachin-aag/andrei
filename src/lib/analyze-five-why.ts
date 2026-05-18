@@ -2,7 +2,7 @@ import type { AnalyzeSection } from "@/types/sections";
 
 /**
  * Store the full 5-Why (chain + conclusion) in `narrative` only; `conclusion` is kept empty for
- * backward compatibility with older payloads and DOCX placeholders.
+ * backward compatibility with older payloads (and after merge, DOCX/UI use narrative only).
  */
 export function collapseFiveWhyFields(
   fw: AnalyzeSection["fiveWhy"] | undefined | null
@@ -20,7 +20,7 @@ export function collapseFiveWhyFields(
   return { narrative: combined, conclusion: "" };
 }
 
-/** Full text for DOCX / display; leaves the legacy conclusion slot blank on export. */
+/** Plain text / DOCX `{fiveWhyNarrative}` — full chain plus any legacy `conclusion` merged in. */
 export function fiveWhyTextForExport(
   fw: AnalyzeSection["fiveWhy"] | undefined | null
 ): string {

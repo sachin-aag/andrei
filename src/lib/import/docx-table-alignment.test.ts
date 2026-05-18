@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { JSONContent } from "@tiptap/core";
 import {
   extractTableAlignmentSpecsFromDocumentXml,
+  extractTblGridColumnWidthsDxa,
   mergeDocxAlignmentIntoTipTapTable,
 } from "@/lib/import/docx-table-alignment";
 
@@ -23,6 +24,66 @@ const minimalTableXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 </w:document>`;
 
 describe("docx-table-alignment", () => {
+  it("extractTblGridColumnWidthsDxa parses grid columns in document order", () => {
+    const inner = `
+<w:tblPr/>
+<w:tblGrid><w:gridCol w:w="914"/><w:gridCol w:w="1829"/></w:tblGrid>`;
+    expect(extractTblGridColumnWidthsDxa(inner)).toEqual([914, 1829]);
+  });
+
+  it("extracts gridCol widths into specs alongside alignment", () => {
+    const specs = extractTableAlignmentSpecsFromDocumentXml(`
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:tbl>
+      <w:tblGrid><w:gridCol w:w="500"/><w:gridCol w:w="1500"/></w:tblGrid>
+      <w:tr>
+        <w:tc><w:p><w:r><w:t>U</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>V</w:t></w:r></w:p></w:tc>
+      </w:tr>
+    </w:tbl>
+  </w:body>
+</w:document>`);
+    expect(specs[0]!.gridColWidths).toEqual([500, 1500]);
+  });
+
+  it("copies OOXML tblGrid widths onto TipTap attrs when logical column counts match", () => {
+    const specs = extractTableAlignmentSpecsFromDocumentXml(`
+<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+  <w:body>
+    <w:tbl>
+      <w:tblGrid><w:gridCol w:w="100"/><w:gridCol w:w="200"/></w:tblGrid>
+      <w:tr>
+        <w:tc><w:p><w:r><w:t>X</w:t></w:r></w:p></w:tc>
+        <w:tc><w:p><w:r><w:t>Y</w:t></w:r></w:p></w:tc>
+      </w:tr>
+    </w:tbl>
+  </w:body>
+</w:document>`);
+
+    const table: JSONContent = {
+      type: "table",
+      content: [
+        {
+          type: "tableRow",
+          content: [
+            {
+              type: "tableCell",
+              content: [{ type: "paragraph", content: [{ type: "text", text: "X" }] }],
+            },
+            {
+              type: "tableCell",
+              content: [{ type: "paragraph", content: [{ type: "text", text: "Y" }] }],
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(mergeDocxAlignmentIntoTipTapTable(table, specs[0])).toBe(true);
+    expect(table.attrs?.colWidths).toEqual([100, 200]);
+  });
+
   it("extracts horizontal jc and vertical vAlign from OOXML", () => {
     const specs = extractTableAlignmentSpecsFromDocumentXml(minimalTableXml);
     expect(specs).toHaveLength(1);

@@ -167,12 +167,10 @@ R.set(9, rebuildRow(rows[9].xml, makeParas([
 
 // Row 10: 6M Note → keep
 
-// Row 11: 5 Why content
+// Row 11: 5 Why content (chain + conclusion live in one narrative field)
 R.set(11, rebuildRow(rows[11].xml, makeParas([
   '5 Why Approach (If Applicable):',
   '{fiveWhyNarrative}',
-  '',
-  'Conclusion: {fiveWhyConclusion}',
 ])));
 
 // Row 12: Brainstorming

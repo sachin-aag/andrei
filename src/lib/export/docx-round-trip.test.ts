@@ -49,9 +49,9 @@ function fingerprintComparableString(s: string): string {
 }
 
 function fingerprintFiveWhyNarrative(s: string): string {
-  // The 5-Why block is one verbatim field. The source DOCX includes a literal "Conclusion:"
-  // label inside it, and the export re-emits an (empty) conclusion placeholder that may render
-  // as "Not Applicable". Strip both trailing residues so the comparison is on substantive text.
+  // The 5-Why block is one verbatim field. Source DOCXs may repeat a "Conclusion:" label or
+  // older exports appended "Not Applicable". Strip trailing residue so fingerprints match on
+  // substantive text only.
   let fp = fingerprintComparableString(s);
   for (let i = 0; i < 4; i++) {
     const next = fp

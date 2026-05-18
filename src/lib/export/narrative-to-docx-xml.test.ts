@@ -97,6 +97,60 @@ describe("narrativeToDocxXml tables", () => {
     expect(xml.match(/<w:vMerge w:val="continue"\/>/g)).toHaveLength(2);
   });
 
+  it("uses table.attrs.colWidths for w:tblGrid when length matches logical columns", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          attrs: { colWidths: [800, 1200] },
+          content: [
+            {
+              type: "tableRow",
+              content: [textCell("tableHeader", "A"), textCell("tableHeader", "B")],
+            },
+          ],
+        },
+      ],
+    };
+
+    const xml = narrativeToDocxXml(doc);
+    expect(xml).toContain('<w:tblW w:w="5000" w:type="pct"/>');
+    expect(xml).toContain('<w:gridCol w:w="800"/>');
+    expect(xml).toContain('<w:gridCol w:w="1200"/>');
+  });
+
+  it("defaults w:tblGrid column widths so the sum stays within a Letter content band", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [
+                textCell("tableHeader", "C1"),
+                textCell("tableHeader", "C2"),
+                textCell("tableHeader", "C3"),
+                textCell("tableHeader", "C4"),
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const xml = narrativeToDocxXml(doc);
+    const cols = [...xml.matchAll(/<w:gridCol w:w="(\d+)"/g)].map((m) =>
+      parseInt(m[1]!, 10)
+    );
+    expect(cols).toHaveLength(4);
+    const sum = cols.reduce((a, b) => a + b, 0);
+    expect(sum).toBeLessThanOrEqual(9360 + 100);
+    expect(sum).toBeGreaterThan(8000);
+  });
+
   it("emits Word gridSpan for colspans", () => {
     const doc: JSONContent = {
       type: "doc",

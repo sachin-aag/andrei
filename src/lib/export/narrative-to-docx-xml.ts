@@ -37,6 +37,9 @@ export function narrativeToDocxXml(
 const DEFAULT_RUN_FONT = "Times New Roman";
 const DEFAULT_RUN_SIZE_HALF_POINTS = "24";
 
+/** Target total grid width in dxa (~6.5" usable on Letter) — avoids overrun when widths unknown. */
+const TABLE_GRID_TOTAL_FALLBACK_DXA = 9360;
+
 function escapeXml(text: string): string {
   return text
     .replace(/&/g, "&amp;")
@@ -135,10 +138,29 @@ function tableToXml(node: JSONContent): string {
 
   const colCount = Math.max(1, getLogicalColumnCount(rows));
 
-  // Table properties: borders + auto layout
+  const colWidthsRaw = node.attrs?.colWidths as unknown;
+  let storedWidths: number[] | null = null;
+  if (Array.isArray(colWidthsRaw) && colWidthsRaw.length === colCount) {
+    const nums = colWidthsRaw.filter(
+      (x): x is number => typeof x === "number" && Number.isFinite(x) && x > 0
+    );
+    if (nums.length === colCount) storedWidths = nums;
+  }
+
+  const perColFallback = Math.max(
+    360,
+    Math.floor(TABLE_GRID_TOTAL_FALLBACK_DXA / colCount)
+  );
+  const gridColXmlParts = storedWidths
+    ? storedWidths.map((w) => `<w:gridCol w:w="${Math.round(w)}"/>`)
+    : Array.from({ length: colCount }).map(
+        () => `<w:gridCol w:w="${perColFallback}"/>`
+      );
+  const tblGrid = `<w:tblGrid>${gridColXmlParts.join("")}</w:tblGrid>`;
+
   const tblPr = `<w:tblPr>
 <w:tblStyle w:val="TableGrid"/>
-<w:tblW w:w="0" w:type="auto"/>
+<w:tblW w:w="5000" w:type="pct"/>
 <w:tblBorders>
 <w:top w:val="single" w:sz="4" w:space="0" w:color="auto"/>
 <w:left w:val="single" w:sz="4" w:space="0" w:color="auto"/>
@@ -149,12 +171,6 @@ function tableToXml(node: JSONContent): string {
 </w:tblBorders>
 <w:tblLook w:val="04A0" w:firstRow="1" w:lastRow="0" w:firstColumn="1" w:lastColumn="0" w:noHBand="0" w:noVBand="1"/>
 </w:tblPr>`;
-
-  // Grid columns (equal width)
-  const gridCols = Array.from({ length: colCount })
-    .map(() => '<w:gridCol w:w="2000"/>')
-    .join("");
-  const tblGrid = `<w:tblGrid>${gridCols}</w:tblGrid>`;
 
   const activeMerges: (ActiveRowMerge | null)[] = [];
   const rowsXml = rows

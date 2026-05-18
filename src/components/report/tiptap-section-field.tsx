@@ -6,9 +6,9 @@ import { useEditor, EditorContent } from "@tiptap/react";
 import { BubbleMenu, FloatingMenu } from "@tiptap/react/menus";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
-import { Table } from "@tiptap/extension-table";
 import { TableRow } from "@tiptap/extension-table-row";
 import { TableCellWithVerticalAlign, TableHeaderWithVerticalAlign } from "@/lib/tiptap/table-cell-vertical-align";
+import { TableWithColumnWidths } from "@/lib/tiptap/table-column-widths";
 import { toast } from "sonner";
 import {
   Loader2,
@@ -339,7 +339,7 @@ export function TiptapSectionField({
           heading: false,
         }),
         Placeholder.configure({ placeholder }),
-        Table.configure({ resizable: false }),
+        TableWithColumnWidths.configure({ resizable: false }),
         TableRow,
         TableCellWithVerticalAlign,
         TableHeaderWithVerticalAlign,

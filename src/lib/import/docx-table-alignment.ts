@@ -15,6 +15,8 @@ export type DocxTableAlignmentSpec = {
    * a mammoth HTML sub-table to a row range inside a large Word layout table.
    */
   rowTexts: string[][];
+  /** `w:tblGrid` → `gridCol/@w:w` widths in twips (dxa), left-to-right; empty if absent. */
+  gridColWidths: number[];
 };
 
 type RawCell = {
@@ -107,7 +109,11 @@ export function extractTableAlignmentSpecsFromDocumentXml(
     const innerStart = tblXml.indexOf(">") + 1;
     const inner = tblXml.slice(innerStart, tblXml.length - CLOSE_TBL.length);
     const parsed = parseRawRowsFromTableInner(inner);
-    out.push({ rawRows: parsed.rawRows, rowTexts: parsed.rowTexts });
+    out.push({
+      rawRows: parsed.rawRows,
+      rowTexts: parsed.rowTexts,
+      gridColWidths: parsed.gridColWidths,
+    });
     pos = start + 1;
   }
   return out;
@@ -146,6 +152,7 @@ function splitTopLevelCells(trXml: string): string[] {
 function parseRawRowsFromTableInner(tblInner: string): {
   rawRows: RawCell[][];
   rowTexts: string[][];
+  gridColWidths: number[];
 } {
   const rawRows: RawCell[][] = [];
   const rowTexts: string[][] = [];
@@ -154,7 +161,54 @@ function parseRawRowsFromTableInner(tblInner: string): {
     rawRows.push(cells.map(parseRawCell));
     rowTexts.push(cells.map(extractTcPlainText));
   }
-  return { rawRows, rowTexts };
+  return {
+    rawRows,
+    rowTexts,
+    gridColWidths: extractTblGridColumnWidthsDxa(tblInner),
+  };
+}
+
+/**
+ * OOXML `<w:tblGrid>` defines one `<w:gridCol w:w="…"/>` per logical column (dxa twips).
+ */
+export function extractTblGridColumnWidthsDxa(tblInner: string): number[] {
+  const open = /<w:tblGrid\b[^>]*>/i.exec(tblInner);
+  if (!open || open.index === undefined) return [];
+  const afterOpen = open.index + open[0].length;
+  const closeIdx = tblInner.indexOf("</w:tblGrid>", afterOpen);
+  if (closeIdx < 0) return [];
+  const segment = tblInner.slice(afterOpen, closeIdx);
+  const widths: number[] = [];
+  const re = /<w:gridCol\b[^>]*\bw:w="(\d+)"/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(segment)) !== null) {
+    widths.push(parseInt(m[1]!, 10));
+  }
+  return widths;
+}
+
+function logicalGridColumnsFromTipTapFirstRow(table: JSONContent): number {
+  const row0 = table.content?.[0];
+  if (!row0?.content) return 0;
+  let n = 0;
+  for (const cell of row0.content) {
+    const cs =
+      typeof cell.attrs?.colspan === "number" && Number.isFinite(cell.attrs.colspan)
+        ? Math.max(1, Math.floor(cell.attrs.colspan))
+        : 1;
+    n += cs;
+  }
+  return n;
+}
+
+function applyCapturedGridWidths(
+  table: JSONContent,
+  gridColWidths: number[] | undefined
+): void {
+  if (!gridColWidths?.length) return;
+  const n = logicalGridColumnsFromTipTapFirstRow(table);
+  if (n === 0 || gridColWidths.length !== n) return;
+  table.attrs = { ...(table.attrs ?? {}), colWidths: [...gridColWidths] };
 }
 
 /** First paragraph’s visible text in a `<w:tc>` (for header fingerprinting). */
@@ -333,14 +387,19 @@ export function mergeDocxAlignmentIntoTipTapTable(
   spec: DocxTableAlignmentSpec | undefined
 ): boolean {
   if (!spec) return false;
-  const { rawRows } = spec;
-  if (walkMergeAlignmentIntoTable(table, rawRows)) return true;
+  const { rawRows, gridColWidths } = spec;
+  if (walkMergeAlignmentIntoTable(table, rawRows)) {
+    applyCapturedGridWidths(table, gridColWidths);
+    return true;
+  }
 
   const start = findSliceMergeStartRow(table, spec);
   if (start < 0) return false;
   const tipLen = table.content?.length ?? 0;
   const slice = rawRows.slice(start, start + tipLen);
-  return walkMergeAlignmentIntoTable(table, slice);
+  if (!walkMergeAlignmentIntoTable(table, slice)) return false;
+  applyCapturedGridWidths(table, gridColWidths);
+  return true;
 }
 
 /**

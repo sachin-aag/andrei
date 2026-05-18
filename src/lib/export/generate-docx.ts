@@ -111,9 +111,8 @@ function buildTemplateData(
     sixMMilieu: na(a.sixM.milieu),
     sixMConclusion: na(a.sixM.conclusion),
 
-    // Analyze - 5 Why (single narrative box; conclusion placeholder left blank)
+    // Analyze - 5 Why (single field: chain + conclusion; see analyze-five-why / template)
     fiveWhyNarrative: na(fiveWhyTextForExport(a.fiveWhy)),
-    fiveWhyConclusion: na(""),
 
     // Analyze - other
     brainstorming: na(a.brainstorming),
