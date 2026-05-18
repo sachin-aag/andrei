@@ -10,6 +10,20 @@ export function compactText(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
 
+/**
+ * Collapses runs of spaces/tabs within each line but preserves line breaks.
+ * Used for narrative content that may include markdown tables — we don't want
+ * to flatten table rows into a single line, but we still want clean prose.
+ */
+export function compactTextPreservingNewlines(value: string): string {
+  return value
+    .split("\n")
+    .map((line) => line.replace(/[ \t]+/g, " ").trim())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function stripLeadingTemplateChecklist(section: SectionType, value: string): string {
   if (section !== "improve" && section !== "control") return value;
 
@@ -41,7 +55,9 @@ export function tiptapText(value: unknown): string {
     typeof value === "object" &&
     (value as JSONContent).type === "doc"
   ) {
-    return richJsonToPlainText(value as JSONContent);
+    // Use markdown table format so the LLM sees explicit headers, separator
+    // rows, and expanded merged cells instead of an ambiguous pipe stream.
+    return richJsonToPlainText(value as JSONContent, { tableFormat: "markdown" });
   }
 
   const pieces: string[] = [];
@@ -72,7 +88,16 @@ export function pushNarrativeLine(
   content: Record<string, unknown>
 ) {
   const text = stripLeadingTemplateChecklist(section, tiptapText(content.narrative));
-  if (text) lines.push(`Narrative: ${compactText(text)}`);
+  if (!text) return;
+  const cleaned = compactTextPreservingNewlines(text);
+  // Multi-line narratives (especially ones containing markdown tables) read
+  // better when the label is on its own line so the table's first `|` row
+  // starts at column 0.
+  if (cleaned.includes("\n")) {
+    lines.push(`Narrative:\n${cleaned}`);
+  } else {
+    lines.push(`Narrative: ${cleaned}`);
+  }
 }
 
 export function pushObjectFields(

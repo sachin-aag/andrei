@@ -309,12 +309,33 @@ function textBeforeAnyInlineLabel(text: string, labels: string[]): string {
 }
 
 function parseMeasure(text: string): MeasureSection {
-  const body = cleanImportedText(stripGuidanceChecklist(text));
+  const body = stripMeasureLeadingCriteriaLine(cleanImportedText(stripGuidanceChecklist(text)));
 
   return {
     ...EMPTY_CONTENT.measure,
     narrative: legacyStringToDoc(body),
   };
+}
+
+function stripMeasureLeadingCriteriaLine(text: string): string {
+  const lines = text.split(/\r?\n/);
+  const firstNonEmptyIndex = lines.findIndex((line) => line.trim().length > 0);
+  if (firstNonEmptyIndex === -1) return "";
+
+  const firstLine = lines[firstNonEmptyIndex]!.trim();
+  // Some customer DOCX templates include Measure checklist criterion 1 as a
+  // free-text line with small wording variants (e.g. "controls/control limits").
+  // Remove only this known leading criterion pattern to avoid dropping valid content.
+  if (
+    /^\d+[.)]?\s*does the summary provide relevant facts and data\/information that was reviewed including\b/i.test(
+      firstLine
+    )
+  ) {
+    const nextLines = lines.slice(firstNonEmptyIndex + 1);
+    return cleanImportedText(nextLines.join("\n"));
+  }
+
+  return text;
 }
 
 function splitConclusionBlock(text: string): { body: string; conclusion: string } {
@@ -770,18 +791,28 @@ function injectTablesFromHtml(
 }
 
 /**
- * Extract all cell text values from a table node in reading order.
+ * Extract all paragraph text values from table cells in reading order.
+ * Mammoth flattens multi-line cells as separate paragraphs in markdown, so the
+ * replacement matcher must use the same granularity.
  */
 function extractTableCellTexts(tableNode: JSONContent): string[] {
   const texts: string[] = [];
   for (const row of tableNode.content ?? []) {
     for (const cell of row.content ?? []) {
-      // Each cell contains paragraph(s) with text nodes
-      const cellText = extractParagraphTexts(cell);
-      if (cellText) texts.push(cellText);
+      const cellTexts = extractCellParagraphTexts(cell);
+      if (cellTexts.length > 0) texts.push(...cellTexts);
     }
   }
   return texts;
+}
+
+function extractCellParagraphTexts(node: JSONContent): string[] {
+  if (node.type === "paragraph") {
+    const text = extractParagraphTexts(node);
+    return text ? [text] : [];
+  }
+  if (!node.content?.length) return [];
+  return node.content.flatMap(extractCellParagraphTexts);
 }
 
 function extractParagraphTexts(node: JSONContent): string {

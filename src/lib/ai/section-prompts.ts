@@ -6,7 +6,7 @@ import type { SectionType } from "@/db/schema";
  * into the per-section content hash so the next eval pass refreshes all
  * sections after a prompt update.
  */
-export const PROMPT_VERSION = "2026-05-18-36c";
+export const PROMPT_VERSION = "2026-05-18-37-md-tables";
 
 /**
  * Common reviewer rules, scoring system, scope rule, and prompt-injection guard.
@@ -33,7 +33,7 @@ structural elements, the criterion IS met — note the minor observation in
 reasoning. A trivial rewording is NOT a deficiency. Only mark partially_met or
 not_met when concrete information is missing, wrong, or structurally absent.
 
-NOTE ON TABLES: Narrative content may contain tables rendered as pipe-separated rows (e.g. "Header 1 | Header 2\nData 1 | Data 2"). Evaluate table content the same as prose — assess completeness, accuracy, and traceability of the data within tables.
+NOTE ON TABLES: Narrative content may contain GitHub-flavored markdown tables (with a "| --- | --- |" separator row beneath the header). Merged cells (rowspan/colspan in the source document) are expanded so the merged value is repeated in every covered row or column — treat repeated values as a single grouped measurement rather than independent observations. Evaluate table content the same as prose: assess completeness, accuracy, and traceability of the data within tables.
 
 CRITICAL SCOPE RULE:
 - Determine "status" and "reasoning" using only the current SECTION CONTENT.
