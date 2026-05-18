@@ -35,7 +35,7 @@ export function narrativeToDocxXml(
 }
 
 const DEFAULT_RUN_FONT = "Times New Roman";
-const DEFAULT_RUN_SIZE_HALF_POINTS = "20";
+const DEFAULT_RUN_SIZE_HALF_POINTS = "24";
 
 function escapeXml(text: string): string {
   return text

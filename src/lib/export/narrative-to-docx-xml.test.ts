@@ -39,7 +39,7 @@ describe("narrativeToDocxXml tables", () => {
     expect(xml).toContain(
       '<w:rFonts w:ascii="Times New Roman" w:eastAsia="Times New Roman" w:hAnsi="Times New Roman" w:cs="Times New Roman"/>'
     );
-    expect(xml).toContain('<w:sz w:val="20"/>');
+    expect(xml).toContain('<w:sz w:val="24"/>');
   });
 
   it("emits Word vertical merge continuation cells for rowspans", () => {
