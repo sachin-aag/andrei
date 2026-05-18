@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { generateText } from "ai";
 import {
@@ -5,6 +7,7 @@ import {
   evaluateSection,
 } from "@/lib/ai/evaluate";
 import { PROMPT_VERSION } from "@/lib/ai/section-prompts";
+import { docxBufferToImportedReportContent } from "@/lib/import/docx-to-sections";
 
 vi.mock("ai", async () => {
   const actual = await vi.importActual<typeof import("ai")>("ai");
@@ -240,6 +243,121 @@ describe("evaluateSection", () => {
     expect(controlPrompts?.userPrompt).toContain("[ANALYZE]");
     expect(controlPrompts?.userPrompt).toContain("[IMPROVE]");
     expect(controlPrompts?.userPrompt).toContain("read-only context");
+  });
+
+  it("renders narrative tables as markdown with expanded merged cells in the LLM prompt", () => {
+    const measureNarrative = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Refer table no. 1 for heat-up profile:" }],
+        },
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [
+                {
+                  type: "tableHeader",
+                  content: [{ type: "paragraph", content: [{ type: "text", text: "Sensor" }] }],
+                },
+                {
+                  type: "tableHeader",
+                  content: [{ type: "paragraph", content: [{ type: "text", text: "Max temp °C" }] }],
+                },
+                {
+                  type: "tableHeader",
+                  content: [{ type: "paragraph", content: [{ type: "text", text: "Total Duration" }] }],
+                },
+              ],
+            },
+            {
+              type: "tableRow",
+              content: [
+                {
+                  type: "tableCell",
+                  content: [{ type: "paragraph", content: [{ type: "text", text: "T1" }] }],
+                },
+                {
+                  type: "tableCell",
+                  content: [{ type: "paragraph", content: [{ type: "text", text: "105.2" }] }],
+                },
+                {
+                  type: "tableCell",
+                  attrs: { rowspan: 2 },
+                  content: [{ type: "paragraph", content: [{ type: "text", text: "01 hr. 24 minute" }] }],
+                },
+              ],
+            },
+            {
+              type: "tableRow",
+              content: [
+                {
+                  type: "tableCell",
+                  content: [{ type: "paragraph", content: [{ type: "text", text: "T2" }] }],
+                },
+                {
+                  type: "tableCell",
+                  content: [{ type: "paragraph", content: [{ type: "text", text: "122.3" }] }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const prompts = buildCriterionEvaluationLlmPrompts({
+      section: "measure",
+      content: { narrative: measureNarrative },
+      reportContext: { deviationNo: "DEV-TBL-1", date: "2026-05-18" },
+    });
+
+    expect(prompts).not.toBeNull();
+    const userPrompt = prompts!.userPrompt;
+
+    expect(userPrompt).toContain("| Sensor | Max temp °C | Total Duration |");
+    expect(userPrompt).toContain("| --- | --- | --- |");
+    expect(userPrompt).toContain("| T1 | 105.2 | 01 hr. 24 minute |");
+    expect(userPrompt).toContain("| T2 | 122.3 | 01 hr. 24 minute |");
+    expect(userPrompt).not.toMatch(/Sensor \| Max temp.+Total Duration \| T1/);
+  });
+
+  it("end-to-end: imports DEV-PR-25-008 and emits markdown tables in the Measure LLM prompt", async () => {
+    const fixture = path.join(
+      process.cwd(),
+      "docs",
+      "sample_files",
+      "Investigation DEV-PR-25-008.docx",
+    );
+    const imported = await docxBufferToImportedReportContent(fs.readFileSync(fixture));
+
+    const prompts = buildCriterionEvaluationLlmPrompts({
+      section: "measure",
+      content: imported.sections.measure,
+      reportContext: { deviationNo: "DEV-PR-25-008", date: "2026-05-18" },
+    });
+
+    expect(prompts).not.toBeNull();
+    const userPrompt = prompts!.userPrompt;
+
+    // Markdown header + separator rows are present for at least one table.
+    expect(userPrompt).toMatch(/^\| Sr\. No\. \|.*\|$/m);
+    expect(userPrompt).toMatch(/^\| --- \|( --- \|)+$/m);
+
+    // Real data rows from the Air Velocity table show up as full markdown rows,
+    // not as flattened pipe-soup or comma-separated text.
+    expect(userPrompt).toContain("| DF11 |");
+    expect(userPrompt).toContain("| DF 32 |");
+
+    // Merged "Equipment Name" cell is expanded to every data row so the
+    // model never has to infer rowspan from context.
+    const equipmentRows = userPrompt
+      .split("\n")
+      .filter((line) => line.includes("Depyrogenating Tunnel (E/PR/069)"));
+    expect(equipmentRows.length).toBeGreaterThanOrEqual(5);
   });
 
   it("removes imported Improve/Control template checklist boilerplate from prompt context", () => {

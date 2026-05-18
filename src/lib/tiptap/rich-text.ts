@@ -36,9 +36,27 @@ export function normalizeRichField(v: unknown): JSONContent {
   return emptyDoc();
 }
 
+/**
+ * How tables are serialized when converting a Tiptap doc to text.
+ * - `pipe`: legacy "cell | cell" rows, used by export round-trip + diffing.
+ * - `markdown`: GitHub-flavored markdown table with header separator and
+ *   merged cells expanded (the merged value is repeated across every
+ *   rowspan/colspan position). Preferred for LLM prompts where structure
+ *   matters and the model is well-trained on markdown tables.
+ */
+export type RichTextTableFormat = "pipe" | "markdown";
+
+export type RichJsonToPlainTextOptions = {
+  tableFormat?: RichTextTableFormat;
+};
+
 /** Plain text for export / AI (walks text nodes; paragraphs → newlines). */
-export function richJsonToPlainText(doc: JSONContent | undefined | null): string {
+export function richJsonToPlainText(
+  doc: JSONContent | undefined | null,
+  options: RichJsonToPlainTextOptions = {},
+): string {
   if (!doc) return "";
+  const tableFormat: RichTextTableFormat = options.tableFormat ?? "pipe";
   const parts: string[] = [];
 
   function walk(node: JSONContent, blockSep: string) {
@@ -49,9 +67,8 @@ export function richJsonToPlainText(doc: JSONContent | undefined | null): string
     const inner = node.content;
     if (!inner?.length) return;
     if (node.type === "paragraph") {
-      const line: string[] = [];
       for (const ch of inner) walk(ch, "");
-      parts.push(line.join("") + blockSep);
+      parts.push(blockSep);
       return;
     }
     if (node.type === "heading") {
@@ -63,10 +80,36 @@ export function richJsonToPlainText(doc: JSONContent | undefined | null): string
       parts.push("\n");
       return;
     }
+    if (node.type === "table") {
+      if (tableFormat === "markdown") {
+        const md = renderTableAsMarkdown(node);
+        if (md) parts.push(md + "\n\n");
+      } else {
+        for (const row of inner) walk(row, "");
+        parts.push("\n");
+      }
+      return;
+    }
+    if (node.type === "tableRow") {
+      const cells: string[] = [];
+      for (const cell of inner) {
+        const before = parts.length;
+        walk(cell, "");
+        // Collect text added by the cell's children
+        const cellText = parts.splice(before).join("").trim();
+        cells.push(cellText);
+      }
+      parts.push(cells.join(" | ") + "\n");
+      return;
+    }
+    if (node.type === "tableCell" || node.type === "tableHeader") {
+      for (const ch of inner) walk(ch, "");
+      return;
+    }
     if (node.type === "doc") {
       for (let i = 0; i < inner.length; i++) {
         const ch = inner[i]!;
-        const isBlock = ["paragraph", "heading", "blockquote", "codeBlock", "bulletList", "orderedList"].includes(
+        const isBlock = ["paragraph", "heading", "blockquote", "codeBlock", "bulletList", "orderedList", "table"].includes(
           ch.type ?? ""
         );
         walk(ch, isBlock ? "\n\n" : "");
@@ -89,6 +132,105 @@ export function richJsonToPlainText(doc: JSONContent | undefined | null): string
     .join("")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+/**
+ * Render a Tiptap `table` node as a GitHub-flavored markdown table.
+ *
+ * - Computes the logical column count from the widest row (sum of colspans).
+ * - Expands merged cells by repeating the merged value into every covered
+ *   position. This is intentional: it makes the data unambiguous for LLMs
+ *   that don't reason about rowspan attributes (e.g. when a single "Total
+ *   duration" cell merges over five sensor rows, every sensor row shows the
+ *   same duration value).
+ * - Cell text is collapsed to a single line; intra-cell paragraph breaks
+ *   are joined with " / " so the markdown row stays valid.
+ */
+function renderTableAsMarkdown(tableNode: JSONContent): string {
+  const rows = tableNode.content ?? [];
+  if (rows.length === 0) return "";
+
+  let colCount = 0;
+  for (const row of rows) {
+    let rowCols = 0;
+    for (const cell of row.content ?? []) {
+      rowCols += getSpan(cell, "colspan");
+    }
+    if (rowCols > colCount) colCount = rowCols;
+  }
+  if (colCount === 0) return "";
+
+  const grid: (string | null)[][] = Array.from({ length: rows.length }, () =>
+    Array<string | null>(colCount).fill(null)
+  );
+
+  for (let r = 0; r < rows.length; r++) {
+    const cells = rows[r]?.content ?? [];
+    let c = 0;
+    for (const cell of cells) {
+      while (c < colCount && grid[r]![c] !== null) c++;
+      if (c >= colCount) break;
+      const cs = getSpan(cell, "colspan");
+      const rs = getSpan(cell, "rowspan");
+      const value = collapseCellText(cell);
+      for (let dr = 0; dr < rs && r + dr < rows.length; dr++) {
+        for (let dc = 0; dc < cs && c + dc < colCount; dc++) {
+          grid[r + dr]![c + dc] = value;
+        }
+      }
+      c += cs;
+    }
+  }
+
+  const lines: string[] = [];
+  const header = grid[0]!.map((v) => escapeMarkdownCell(v ?? ""));
+  lines.push(`| ${header.join(" | ")} |`);
+  lines.push(`| ${header.map(() => "---").join(" | ")} |`);
+  for (let r = 1; r < grid.length; r++) {
+    const row = grid[r]!.map((v) => escapeMarkdownCell(v ?? ""));
+    lines.push(`| ${row.join(" | ")} |`);
+  }
+  return lines.join("\n");
+}
+
+function getSpan(cell: JSONContent, key: "colspan" | "rowspan"): number {
+  const raw = (cell.attrs as { colspan?: number; rowspan?: number } | undefined)?.[key];
+  if (typeof raw === "number" && Number.isFinite(raw) && raw > 1) return Math.floor(raw);
+  return 1;
+}
+
+function collapseCellText(cell: JSONContent): string {
+  const pieces: string[] = [];
+  let currentParagraph: string[] = [];
+  function flushParagraph() {
+    const joined = currentParagraph.join("").replace(/\s+/g, " ").trim();
+    if (joined) pieces.push(joined);
+    currentParagraph = [];
+  }
+  function walk(node: JSONContent) {
+    if (node.type === "text") {
+      currentParagraph.push(node.text ?? "");
+      return;
+    }
+    if (node.type === "hardBreak") {
+      currentParagraph.push(" ");
+      return;
+    }
+    if (node.type === "paragraph") {
+      flushParagraph();
+      for (const ch of node.content ?? []) walk(ch);
+      flushParagraph();
+      return;
+    }
+    for (const ch of node.content ?? []) walk(ch);
+  }
+  for (const ch of cell.content ?? []) walk(ch);
+  flushParagraph();
+  return pieces.join(" / ");
+}
+
+function escapeMarkdownCell(value: string): string {
+  return value.replace(/\|/g, "\\|").replace(/\n+/g, " ");
 }
 
 /**
@@ -128,7 +270,7 @@ export function replaceTextInDoc(
       for (let i = 0; i < node.content.length; i++) {
         collect(node.content[i]!);
         if (
-          (node.type === "doc" || node.type === "paragraph" || node.type === "heading") &&
+          (node.type === "doc" || node.type === "paragraph" || node.type === "heading" || node.type === "tableCell" || node.type === "tableHeader") &&
           i < node.content.length - 1
         ) {
           // separator that won't survive whitespace collapse

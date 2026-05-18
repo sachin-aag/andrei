@@ -1,3 +1,4 @@
+import { collapseFiveWhyFields } from "@/lib/analyze-five-why";
 import type {
   AnalyzeSection,
   AttachmentsSection,
@@ -153,15 +154,18 @@ export function mergeAnalyzeSection(content: unknown): AnalyzeSection {
     };
   };
   const merged = deepMerge(base, o as Partial<AnalyzeSection>);
+  const narrative =
+    typeof o.fiveWhy?.narrative === "string"
+      ? o.fiveWhy.narrative
+      : coerceFiveWhyRows(o.fiveWhy?.whys, merged.fiveWhy.narrative);
+  const conclusion =
+    typeof o.fiveWhy?.conclusion === "string"
+      ? o.fiveWhy.conclusion
+      : merged.fiveWhy.conclusion;
+
   return {
     ...merged,
-    fiveWhy: {
-      ...merged.fiveWhy,
-      narrative:
-        typeof o.fiveWhy?.narrative === "string"
-          ? o.fiveWhy.narrative
-          : coerceFiveWhyRows(o.fiveWhy?.whys, base.fiveWhy.narrative),
-    },
+    fiveWhy: collapseFiveWhyFields({ narrative, conclusion }),
   };
 }
 

@@ -17,8 +17,9 @@ import type { ReportSectionRecord } from "@/types/report";
 import type { reports as reportsTable } from "@/db/schema";
 import { getUser } from "@/lib/auth/mock-users";
 import { formatDate } from "@/lib/utils";
+import { fiveWhyTextForExport } from "@/lib/analyze-five-why";
 import { mergeSection } from "@/lib/sections-merge";
-import { richJsonToPlainText } from "@/lib/tiptap/rich-text";
+import { narrativeToDocxXml } from "@/lib/export/narrative-to-docx-xml";
 import type { SectionType } from "@/db/schema";
 
 type ReportRow = typeof reportsTable.$inferSelect;
@@ -57,18 +58,13 @@ function toRoman(n: number): string {
   return result;
 }
 
-function composeDefine(d: DefineSection): string {
-  const narrativeText = richJsonToPlainText(d.narrative).trim();
-  return narrativeText.length > 0 ? narrativeText : "Not Applicable";
-}
-
-function composeMeasure(m: MeasureSection): string {
-  const parts: string[] = [];
-  const narrativeText = richJsonToPlainText(m.narrative);
-  if (narrativeText.trim()) parts.push(narrativeText.trim());
-  if (m.regulatoryNotification?.trim())
-    parts.push(`Regulatory Notification: ${m.regulatoryNotification.trim()}`);
-  return parts.length > 0 ? parts.join("\n") : "Not Applicable";
+function composeMeasureXml(m: MeasureSection): string {
+  const narrativeXml = narrativeToDocxXml(m.narrative);
+  if (m.regulatoryNotification?.trim()) {
+    const regXml = `<w:p><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">Regulatory Notification: </w:t></w:r><w:r><w:t xml:space="preserve">${m.regulatoryNotification.trim().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</w:t></w:r></w:p>`;
+    return narrativeXml + regXml;
+  }
+  return narrativeXml;
 }
 
 function buildTemplateData(
@@ -100,11 +96,11 @@ function buildTemplateData(
     brainstormingCheck: check(tools.brainstorming),
     otherToolsDisplay: na(report.otherTools),
 
-    // Define — compose all sub-fields into one block
-    defineNarrative: composeDefine(d),
+    // Define — compose all sub-fields into one block (raw XML for table support)
+    defineNarrativeXml: narrativeToDocxXml(d.narrative),
 
-    // Measure — include regulatory notification if present
-    measureNarrative: composeMeasure(m),
+    // Measure — include regulatory notification if present (raw XML for table support)
+    measureNarrativeXml: composeMeasureXml(m),
 
     // Analyze - 6M
     sixMMan: na(a.sixM.man),
@@ -115,9 +111,9 @@ function buildTemplateData(
     sixMMilieu: na(a.sixM.milieu),
     sixMConclusion: na(a.sixM.conclusion),
 
-    // Analyze - 5 Why
-    fiveWhyNarrative: na(a.fiveWhy.narrative),
-    fiveWhyConclusion: na(a.fiveWhy.conclusion),
+    // Analyze - 5 Why (single narrative box; conclusion placeholder left blank)
+    fiveWhyNarrative: na(fiveWhyTextForExport(a.fiveWhy)),
+    fiveWhyConclusion: na(""),
 
     // Analyze - other
     brainstorming: na(a.brainstorming),
@@ -139,11 +135,22 @@ function buildTemplateData(
     impactEquipment: na(a.impactAssessment.equipment),
     impactPatientSafety: na(a.impactAssessment.patientSafety),
 
-    // Improve
+    // Improve (raw XML for table support)
+    improveNarrativeXml: narrativeToDocxXml(i.narrative),
     correctiveActions: na(i.correctiveActions),
 
-    // Control (single body includes former narrative, register prose, etc.)
+    // Control (raw XML for table support)
+    controlNarrativeXml: "",
     preventiveActions: na(c.preventiveActions),
+    interimPlan: "Not Applicable",
+    finalComments: "Not Applicable",
+    regulatoryImpact: "Not Applicable",
+    productQuality: "Not Applicable",
+    validation: "Not Applicable",
+    stability: "Not Applicable",
+    marketClinical: "Not Applicable",
+    lotDisposition: "Not Applicable",
+    controlConclusion: "Not Applicable",
 
     // Documents Reviewed
     documentsReviewed: dr.items.length > 0

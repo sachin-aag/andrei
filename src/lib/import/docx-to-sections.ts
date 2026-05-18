@@ -1,5 +1,6 @@
 import mammoth from "mammoth";
 import PizZip from "pizzip";
+import type { JSONContent } from "@tiptap/core";
 
 /** Runtime API; bundled mammoth `.d.ts` only lists `convertToHtml` / `extractRawText`. */
 async function mammothConvertToMarkdown(buffer: Buffer): Promise<string> {
@@ -18,6 +19,11 @@ import type {
 import { EMPTY_CONTENT, SECTION_LABELS } from "@/types/sections";
 import { emptyDoc, legacyStringToDoc } from "@/lib/tiptap/rich-text";
 import { SECTION_GUIDANCE } from "@/lib/report-section-guidance";
+import { parseHtmlTablesWithPositions, findDataTablePositions } from "@/lib/import/html-table-parser";
+import {
+  extractTableAlignmentSpecsFromDocxBuffer,
+  mergeDocxAlignmentIntoTipTapTableFromSpecs,
+} from "@/lib/import/docx-table-alignment";
 
 export type ImportedSections = SectionContentMap;
 
@@ -27,6 +33,7 @@ export type ImportedReportContent = {
 };
 
 type ImportSectionKey = keyof SectionContentMap;
+type EditableKey = ImportSectionKey;
 
 const SECTION_ORDER: ImportSectionKey[] = [
   "define",
@@ -302,7 +309,7 @@ function textBeforeAnyInlineLabel(text: string, labels: string[]): string {
 }
 
 function parseMeasure(text: string): MeasureSection {
-  const body = cleanImportedText(stripGuidanceChecklist(text));
+  const body = stripMeasureLeadingCriteriaLine(cleanImportedText(stripGuidanceChecklist(text)));
 
   return {
     ...EMPTY_CONTENT.measure,
@@ -310,26 +317,34 @@ function parseMeasure(text: string): MeasureSection {
   };
 }
 
-function splitConclusionBlock(text: string): { body: string; conclusion: string } {
-  const match = findLabel(text, ["Conclusion"]);
-  if (!match) return { body: cleanImportedText(text), conclusion: "" };
+function stripMeasureLeadingCriteriaLine(text: string): string {
+  const lines = text.split(/\r?\n/);
+  const firstNonEmptyIndex = lines.findIndex((line) => line.trim().length > 0);
+  if (firstNonEmptyIndex === -1) return "";
 
-  return {
-    body: cleanImportedText(text.slice(0, match.index)),
-    conclusion: cleanImportedText(text.slice(match.index + match[0].length)),
-  };
+  const firstLine = lines[firstNonEmptyIndex]!.trim();
+  // Some customer DOCX templates include Measure checklist criterion 1 as a
+  // free-text line with small wording variants (e.g. "controls/control limits").
+  // Remove only this known leading criterion pattern to avoid dropping valid content.
+  if (
+    /^\d+[.)]?\s*does the summary provide relevant facts and data\/information that was reviewed including\b/i.test(
+      firstLine
+    )
+  ) {
+    const nextLines = lines.slice(firstNonEmptyIndex + 1);
+    return cleanImportedText(nextLines.join("\n"));
+  }
+
+  return text;
 }
 
-function normalizeFiveWhyNarrative(text: string): string {
-  return cleanImportedText(text);
-}
-
+/**
+ * The investigation template stores the 5-Why chain and its concluding paragraph in a single
+ * table cell. Parse it verbatim into `narrative` and leave `conclusion` empty so nothing has
+ * to be re-stitched downstream.
+ */
 function parseFiveWhyBlock(text: string): AnalyzeSection["fiveWhy"] {
-  const { body, conclusion } = splitConclusionBlock(text);
-  return {
-    narrative: normalizeFiveWhyNarrative(body),
-    conclusion,
-  };
+  return { narrative: cleanImportedText(text), conclusion: "" };
 }
 
 function buildAnalyzeFromChunk(text: string): AnalyzeSection {
@@ -674,12 +689,200 @@ export async function docxBufferToSectionContentMap(
 export async function docxBufferToImportedReportContent(
   buffer: Buffer
 ): Promise<ImportedReportContent> {
-  const markdown = await mammothConvertToMarkdown(buffer);
+  const [markdown, { value: html }] = await Promise.all([
+    mammothConvertToMarkdown(buffer),
+    mammoth.convertToHtml({ buffer }),
+  ]);
   const raw = mammothMarkdownToImportPlain(markdown);
+
+  const sections = buildSectionsFromRaw(raw);
+
+  // Inject table nodes from HTML into narratives where applicable.
+  injectTablesFromHtml(html, sections, buffer);
+
   return {
-    sections: buildSectionsFromRaw(raw),
+    sections,
     toolsUsed: parseToolsUsedFromDocxXml(buffer) ?? parseToolsUsed(raw),
   };
+}
+
+/**
+ * Split the mammoth HTML by section heading boundaries and inject any data
+ * tables found within each section into the corresponding narrative JSONContent.
+ *
+ * Because `mammoth.extractRawText()` flattens table cells into individual
+ * lines, the raw-text-based narrative already contains the table content as
+ * flat paragraphs (e.g. "Sr. No.\nDate\nTime in Hrs.\n…"). This function:
+ *   1. Identifies which section each data table belongs to.
+ *   2. Finds the consecutive flat paragraphs that match the table's cell text.
+ *   3. Replaces those paragraphs with a proper Tiptap table node.
+ */
+function injectTablesFromHtml(
+  html: string,
+  sections: ImportedSections,
+  buffer: Buffer
+): void {
+  const tablesWithMeta = parseHtmlTablesWithPositions(html);
+  const specs = extractTableAlignmentSpecsFromDocxBuffer(buffer);
+  for (const { node } of tablesWithMeta) {
+    mergeDocxAlignmentIntoTipTapTableFromSpecs(node, specs);
+  }
+  const tables = tablesWithMeta.map((t) => t.node);
+  const tablePositions = findDataTablePositions(html);
+  if (tables.length === 0) return;
+
+  // Find section heading positions using patterns that match heading-style
+  // occurrences (bold label followed by colon, or inside a strong tag),
+  // avoiding false matches like "control logic".
+  const sectionPositions: Array<{ key: EditableKey; index: number }> = [];
+  for (const key of SECTION_ORDER) {
+    const label = SECTION_LABELS[key];
+    const headingRe = new RegExp(
+      `<strong>\\s*${escapeRegex(label)}\\s*(?::|</strong>)`,
+      "i"
+    );
+    const match = headingRe.exec(html);
+    if (match) sectionPositions.push({ key, index: match.index });
+  }
+  sectionPositions.sort((a, b) => a.index - b.index);
+
+  // Group tables by section key.
+  const tablesBySection = new Map<EditableKey, JSONContent[]>();
+  for (let i = 0; i < tables.length; i++) {
+    const tablePos = tablePositions[i]!;
+    let sectionKey: EditableKey | null = null;
+    for (let j = sectionPositions.length - 1; j >= 0; j--) {
+      if (sectionPositions[j]!.index <= tablePos) {
+        sectionKey = sectionPositions[j]!.key;
+        break;
+      }
+    }
+    if (sectionKey) {
+      const list = tablesBySection.get(sectionKey) ?? [];
+      list.push(tables[i]!);
+      tablesBySection.set(sectionKey, list);
+    }
+  }
+
+  // For each section, replace flat paragraphs with the table nodes.
+  for (const [sectionKey, sectionTables] of tablesBySection) {
+    const section = sections[sectionKey];
+    const narrative =
+      "narrative" in section ? (section as { narrative: JSONContent }).narrative : null;
+    if (!narrative || narrative.type !== "doc" || !narrative.content) continue;
+
+    for (const tableNode of sectionTables) {
+      replaceFlatParagraphsWithTable(narrative, tableNode);
+    }
+  }
+}
+
+/**
+ * Extract all paragraph text values from table cells in reading order.
+ * Mammoth flattens multi-line cells as separate paragraphs in markdown, so the
+ * replacement matcher must use the same granularity.
+ */
+function extractTableCellTexts(tableNode: JSONContent): string[] {
+  const texts: string[] = [];
+  for (const row of tableNode.content ?? []) {
+    for (const cell of row.content ?? []) {
+      const cellTexts = extractCellParagraphTexts(cell);
+      if (cellTexts.length > 0) texts.push(...cellTexts);
+    }
+  }
+  return texts;
+}
+
+function extractCellParagraphTexts(node: JSONContent): string[] {
+  if (node.type === "paragraph") {
+    const text = extractParagraphTexts(node);
+    return text ? [text] : [];
+  }
+  if (!node.content?.length) return [];
+  return node.content.flatMap(extractCellParagraphTexts);
+}
+
+function extractParagraphTexts(node: JSONContent): string {
+  if (node.type === "text") return (node.text ?? "").trim();
+  if (!node.content?.length) return "";
+  return node.content.map(extractParagraphTexts).join(" ").trim();
+}
+
+/**
+ * Get the plain text of a narrative paragraph node.
+ */
+function paragraphText(para: JSONContent): string {
+  if (para.type === "text") return (para.text ?? "").trim();
+  if (!para.content?.length) return "";
+  return para.content.map(paragraphText).join("").trim();
+}
+
+/**
+ * Find consecutive paragraphs in the narrative whose text matches the table's
+ * cell values (in order), and replace them with the table node. The match uses
+ * the table's header row cells to anchor the search, then extends forward to
+ * cover all remaining cell values.
+ */
+function replaceFlatParagraphsWithTable(
+  narrative: JSONContent,
+  tableNode: JSONContent
+): void {
+  const cellTexts = extractTableCellTexts(tableNode);
+  if (cellTexts.length === 0) return;
+
+  const content = narrative.content;
+  if (!content?.length) return;
+
+  // Build a Set of all cell texts for fast membership checks. Guidance
+  // stripping may have removed some cells (e.g. "Date" matches a guidance
+  // line), so we match greedily on the set rather than requiring exact order.
+  const cellTextSet = new Set(cellTexts);
+
+  // Find the first paragraph whose text appears in the table's cell values.
+  // Use the FIRST header cell as anchor since it's the most distinctive.
+  const firstHeaderText = cellTexts[0];
+  if (!firstHeaderText) return;
+
+  let anchorStart = -1;
+  for (let i = 0; i < content.length; i++) {
+    if (paragraphText(content[i]!) === firstHeaderText) {
+      anchorStart = i;
+      break;
+    }
+  }
+  if (anchorStart === -1) return;
+
+  // From the anchor, consume consecutive paragraphs whose text either matches
+  // a table cell value or is empty (blank lines between flattened cells).
+  // Stop as soon as we hit a paragraph that doesn't match any cell text.
+  let matchEnd = anchorStart;
+  let matchedCells = 0;
+
+  while (matchEnd < content.length) {
+    const paraT = paragraphText(content[matchEnd]!);
+    if (!paraT) {
+      // Empty paragraph — skip it (mammoth inserts blanks between cells).
+      matchEnd++;
+      continue;
+    }
+    if (cellTextSet.has(paraT)) {
+      matchEnd++;
+      matchedCells++;
+    } else {
+      break;
+    }
+  }
+
+  // Require matching at least half the cell texts to avoid false positives.
+  if (matchedCells < Math.min(cellTexts.length, 3)) return;
+
+  // Skip trailing empty paragraphs after the table data.
+  while (matchEnd < content.length && !paragraphText(content[matchEnd]!)) {
+    matchEnd++;
+  }
+
+  // Replace the flat paragraphs [anchorStart..matchEnd) with the table node.
+  content.splice(anchorStart, matchEnd - anchorStart, tableNode);
 }
 
 function emptyDocFallback(foundHeadings: boolean, raw: string) {

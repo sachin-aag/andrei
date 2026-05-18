@@ -108,40 +108,32 @@ export function AnalyzeEditor() {
 
       <section className="space-y-3">
         <h3 className="font-semibold text-[var(--foreground)]">5-Why Approach</h3>
-        <div {...fieldAnchorProps("fiveWhy.narrative")}>
-          <Label>5-Why Narrative</Label>
-          {renderControl(
-            "fiveWhy.narrative",
-            <Textarea
-              placeholder="Capture the complete 5-Why analysis, including each Why and answer."
-              value={value.fiveWhy.narrative}
-              disabled={readOnly}
-              className={cn("min-h-[220px]", suggestedControlClass("fiveWhy.narrative"))}
-              onChange={(e) =>
-                update((p) => ({
-                  ...p,
-                  fiveWhy: { ...p.fiveWhy, narrative: e.target.value },
-                }))
-              }
-            />
-          )}
-        </div>
-        <div {...fieldAnchorProps("fiveWhy.conclusion")}>
-          <Label>5-Why Conclusion</Label>
-          {renderControl(
-            "fiveWhy.conclusion",
-            <Textarea
-              value={value.fiveWhy.conclusion}
-              disabled={readOnly}
-              className={cn("min-h-[100px]", suggestedControlClass("fiveWhy.conclusion"))}
-              onChange={(e) =>
-                update((p) => ({
-                  ...p,
-                  fiveWhy: { ...p.fiveWhy, conclusion: e.target.value },
-                }))
-              }
-            />
-          )}
+        <div className="rounded-md border border-[var(--border)] bg-[var(--secondary)]/40 p-4">
+          <div {...fieldAnchorProps("fiveWhy.narrative")}>
+            <Label>5-Why analysis</Label>
+            {renderControl(
+              "fiveWhy.narrative",
+              <Textarea
+                placeholder="Capture each Why and answer, then your conclusion — all in this box (same as the investigation template)."
+                value={value.fiveWhy.narrative}
+                disabled={readOnly}
+                className={cn(
+                  "min-h-[260px]",
+                  suggestedControlClass("fiveWhy.narrative")
+                )}
+                onChange={(e) =>
+                  update((p) => ({
+                    ...p,
+                    fiveWhy: {
+                      ...p.fiveWhy,
+                      narrative: e.target.value,
+                      conclusion: "",
+                    },
+                  }))
+                }
+              />
+            )}
+          </div>
         </div>
       </section>
 

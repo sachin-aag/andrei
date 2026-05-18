@@ -83,7 +83,9 @@ function collectTextRefs(doc: JSONContent): { refs: TextRef[]; flat: string } {
           i < arr.length - 1 &&
           (node.type === "doc" ||
             node.type === "paragraph" ||
-            node.type === "heading")
+            node.type === "heading" ||
+            node.type === "tableCell" ||
+            node.type === "tableHeader")
         ) {
           flat += " ";
         }

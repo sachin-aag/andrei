@@ -26,7 +26,9 @@ export type AnalyzeSection = {
     conclusion: string;
   };
   fiveWhy: {
+    /** Full 5-Why chain and conclusion (single field in the UI). */
     narrative: string;
+    /** Legacy second slot; always normalized empty after merge / save. */
     conclusion: string;
   };
   brainstorming: string;

@@ -1,5 +1,8 @@
 import type { JSONContent } from "@tiptap/core";
 import type { SectionType } from "@/db/schema";
+import type { AnalyzeSection } from "@/types/sections";
+import { collapseFiveWhyFields } from "@/lib/analyze-five-why";
+import { richJsonToPlainText } from "@/lib/tiptap/rich-text";
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
@@ -7,6 +10,20 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 
 export function compactText(value: string): string {
   return value.replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Collapses runs of spaces/tabs within each line but preserves line breaks.
+ * Used for narrative content that may include markdown tables — we don't want
+ * to flatten table rows into a single line, but we still want clean prose.
+ */
+export function compactTextPreservingNewlines(value: string): string {
+  return value
+    .split("\n")
+    .map((line) => line.replace(/[ \t]+/g, " ").trim())
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 function stripLeadingTemplateChecklist(section: SectionType, value: string): string {
@@ -35,6 +52,16 @@ function stripLeadingTemplateChecklist(section: SectionType, value: string): str
 }
 
 export function tiptapText(value: unknown): string {
+  if (
+    value &&
+    typeof value === "object" &&
+    (value as JSONContent).type === "doc"
+  ) {
+    // Use markdown table format so the LLM sees explicit headers, separator
+    // rows, and expanded merged cells instead of an ambiguous pipe stream.
+    return richJsonToPlainText(value as JSONContent, { tableFormat: "markdown" });
+  }
+
   const pieces: string[] = [];
   function visit(node: unknown) {
     if (!node || typeof node !== "object") return;
@@ -57,13 +84,34 @@ export function pushTextLine(
   if (text) lines.push(`${label}: ${text}`);
 }
 
+/** Multi-line plain text: preserves paragraph breaks so SECTION CONTENT stays readable in the user prompt. */
+export function pushTextBlock(lines: string[], label: string, value: unknown) {
+  if (typeof value !== "string") return;
+  const cleaned = compactTextPreservingNewlines(value);
+  if (!cleaned) return;
+  if (cleaned.includes("\n")) {
+    lines.push(`${label}:\n${cleaned}`);
+  } else {
+    lines.push(`${label}: ${cleaned}`);
+  }
+}
+
 export function pushNarrativeLine(
   lines: string[],
   section: SectionType,
   content: Record<string, unknown>
 ) {
   const text = stripLeadingTemplateChecklist(section, tiptapText(content.narrative));
-  if (text) lines.push(`Narrative: ${compactText(text)}`);
+  if (!text) return;
+  const cleaned = compactTextPreservingNewlines(text);
+  // Multi-line narratives (especially ones containing markdown tables) read
+  // better when the label is on its own line so the table's first `|` row
+  // starts at column 0.
+  if (cleaned.includes("\n")) {
+    lines.push(`Narrative:\n${cleaned}`);
+  } else {
+    lines.push(`Narrative: ${cleaned}`);
+  }
 }
 
 export function pushObjectFields(
@@ -107,11 +155,11 @@ export function contextForPrompt(section: SectionType, content: unknown): string
       ["milieu", "Milieu"],
       ["conclusion", "Conclusion"],
     ]);
-    pushObjectFields(lines, "5-Why", content.fiveWhy, [
-      ["narrative", "Chain"],
-      ["conclusion", "Conclusion"],
-    ]);
-    pushTextLine(lines, "Investigation outcome", content.investigationOutcome);
+    const fiveWhyCollapsed = collapseFiveWhyFields(
+      content.fiveWhy as AnalyzeSection["fiveWhy"]
+    );
+    pushTextBlock(lines, "5-Why", fiveWhyCollapsed.narrative);
+    pushTextBlock(lines, "Investigation outcome", content.investigationOutcome);
     pushObjectFields(lines, "Root cause", content.rootCause, [
       ["narrative", "Narrative"],
       ["primaryLevel1", "Level 1"],
