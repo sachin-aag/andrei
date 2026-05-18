@@ -131,9 +131,8 @@ export const ANALYZE_CRITERIA: CriterionDefinition[] = [
     label: "5-Why approach completeness",
     description:
       "6M and 5-Why are alternative root-cause tools; either one, meaningfully " +
-      "completed, satisfies the Analyze section. '5-Why' names the methodology, " +
-      "not a fixed number of questions: fewer or more than five questions are " +
-      "acceptable when the chain logically reaches the root cause. Mark this " +
+      "completed, satisfies the Analyze section. (Methodology detail—including that " +
+      "the count of “why” steps is not fixed—is in the system prompt.) Mark this " +
       "criterion 'met' when 5-Why is the active tool, each question is derived " +
       "from facts in Define/Measure (not generic), each answer introduces new " +
       "evidence, and a clear conclusion is provided. Also mark it 'met' when the " +

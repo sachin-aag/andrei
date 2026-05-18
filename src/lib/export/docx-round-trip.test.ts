@@ -48,6 +48,21 @@ function fingerprintComparableString(s: string): string {
   return n.replace(/\s/g, "");
 }
 
+function fingerprintFiveWhyNarrative(s: string): string {
+  // The 5-Why block is one verbatim field. The source DOCX includes a literal "Conclusion:"
+  // label inside it, and the export re-emits an (empty) conclusion placeholder that may render
+  // as "Not Applicable". Strip both trailing residues so the comparison is on substantive text.
+  let fp = fingerprintComparableString(s);
+  for (let i = 0; i < 4; i++) {
+    const next = fp
+      .replace(/NotApplicable$/i, "")
+      .replace(/Conclusion:?$/i, "");
+    if (next === fp) break;
+    fp = next;
+  }
+  return fp;
+}
+
 /**
  * Standalone uploads carry numbered template preamble in plain text that `generate-report`
  * placeholders do not re-embed. Normalize so upload → export → import compares substantive copy.
@@ -94,7 +109,7 @@ function fingerprintAnalyze(a: AnalyzeSection): Record<string, string> {
   for (const [k, v] of Object.entries(a.sixM)) {
     out[`sixM.${k}`] = fingerprintComparableString(v);
   }
-  out["fiveWhy.narrative"] = fingerprintComparableString(a.fiveWhy.narrative);
+  out["fiveWhy.narrative"] = fingerprintFiveWhyNarrative(a.fiveWhy.narrative);
   out["fiveWhy.conclusion"] = fingerprintComparableString(a.fiveWhy.conclusion);
   out["brainstorming"] = fingerprintComparableString(a.brainstorming);
   out["otherTools"] = fingerprintComparableString(a.otherTools);

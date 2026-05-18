@@ -17,6 +17,7 @@ import type { ReportSectionRecord } from "@/types/report";
 import type { reports as reportsTable } from "@/db/schema";
 import { getUser } from "@/lib/auth/mock-users";
 import { formatDate } from "@/lib/utils";
+import { fiveWhyTextForExport } from "@/lib/analyze-five-why";
 import { mergeSection } from "@/lib/sections-merge";
 import { narrativeToDocxXml } from "@/lib/export/narrative-to-docx-xml";
 import type { SectionType } from "@/db/schema";
@@ -110,9 +111,9 @@ function buildTemplateData(
     sixMMilieu: na(a.sixM.milieu),
     sixMConclusion: na(a.sixM.conclusion),
 
-    // Analyze - 5 Why
-    fiveWhyNarrative: na(a.fiveWhy.narrative),
-    fiveWhyConclusion: na(a.fiveWhy.conclusion),
+    // Analyze - 5 Why (single narrative box; conclusion placeholder left blank)
+    fiveWhyNarrative: na(fiveWhyTextForExport(a.fiveWhy)),
+    fiveWhyConclusion: na(""),
 
     // Analyze - other
     brainstorming: na(a.brainstorming),

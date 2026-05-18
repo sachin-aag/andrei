@@ -338,26 +338,13 @@ function stripMeasureLeadingCriteriaLine(text: string): string {
   return text;
 }
 
-function splitConclusionBlock(text: string): { body: string; conclusion: string } {
-  const match = findLabel(text, ["Conclusion"]);
-  if (!match) return { body: cleanImportedText(text), conclusion: "" };
-
-  return {
-    body: cleanImportedText(text.slice(0, match.index)),
-    conclusion: cleanImportedText(text.slice(match.index + match[0].length)),
-  };
-}
-
-function normalizeFiveWhyNarrative(text: string): string {
-  return cleanImportedText(text);
-}
-
+/**
+ * The investigation template stores the 5-Why chain and its concluding paragraph in a single
+ * table cell. Parse it verbatim into `narrative` and leave `conclusion` empty so nothing has
+ * to be re-stitched downstream.
+ */
 function parseFiveWhyBlock(text: string): AnalyzeSection["fiveWhy"] {
-  const { body, conclusion } = splitConclusionBlock(text);
-  return {
-    narrative: normalizeFiveWhyNarrative(body),
-    conclusion,
-  };
+  return { narrative: cleanImportedText(text), conclusion: "" };
 }
 
 function buildAnalyzeFromChunk(text: string): AnalyzeSection {

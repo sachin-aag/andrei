@@ -40,8 +40,9 @@ describe("docx import", () => {
       "1. Why was the temperature data not recorded/captured"
     );
     expect(fiveWhy.narrative).toContain("Ans. Communication failure occurred");
-    expect(fiveWhy.conclusion).toContain("Based on the 5-Why analysis");
-    expect(fiveWhy.conclusion).toContain("old version software was being used");
+    expect(fiveWhy.narrative).toContain("Based on the 5-Why analysis");
+    expect(fiveWhy.narrative).toContain("old version software was being used");
+    expect(fiveWhy.conclusion).toBe("");
 
     const improveNarrPlain = richJsonToPlainText(imported.sections.improve.narrative);
     expect(improveNarrPlain).toBe("");

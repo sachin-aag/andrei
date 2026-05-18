@@ -6,7 +6,7 @@ import type { SectionType } from "@/db/schema";
  * into the per-section content hash so the next eval pass refreshes all
  * sections after a prompt update.
  */
-export const PROMPT_VERSION = "2026-05-18-38-merge";
+export const PROMPT_VERSION = "2026-05-18-39-eval-user-prompt-clarity";
 
 /**
  * Common reviewer rules, scoring system, scope rule, and prompt-injection guard.

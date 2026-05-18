@@ -102,7 +102,8 @@ describe("sections merge", () => {
 
     expect(analyze.fiveWhy.narrative).toContain("1. Why: Why did logging stop?");
     expect(analyze.fiveWhy.narrative).toContain("Ans. Communication failed.");
-    expect(analyze.fiveWhy.conclusion).toBe("Weak battery caused the drift.");
+    expect(analyze.fiveWhy.narrative).toContain("Weak battery caused the drift.");
+    expect(analyze.fiveWhy.conclusion).toBe("");
   });
 
   it("folds legacy measure regulatory notification into the narrative", () => {
