@@ -48,6 +48,9 @@ Thumbs.db
 # Turborepo (if added later)
 .turbo
 
+# npm lockfile (project uses pnpm)
+package-lock.json
+
 # Optional local certs / keys
 *.pem
 
