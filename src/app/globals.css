@@ -1,6 +1,6 @@
 @import "tailwindcss";
 
-/* MJ Biopharm brand: navy #2D2A6E — light theme only */
+/* MJ Biopharm brand navy #133782 rgb(19,55,130) — light theme only */
 :root {
   --background: #fafafa;
   --foreground: #16162b;
@@ -14,23 +14,24 @@
   --secondary-foreground: #1f1d4f;
   --muted: #f4f4f5;
   --muted-foreground: #5c5c72;
-  --accent: #2d2a6e;
+  --accent: #133782;
   --accent-foreground: #ffffff;
   --destructive: #dc2626;
   --destructive-foreground: #ffffff;
   --border: #e5e5e5;
   --input: #ffffff;
-  --ring: #5b57d1;
+  /* Lighter MJ tint for rings / focus visibility on pale surfaces */
+  --ring: #3a62c4;
   --radius: 0.5rem;
 
-  --brand: #2d2a6e;
+  --brand: #133782;
   --brand-50: #eceaff;
   --brand-100: #d6d1ff;
   --brand-200: #a9a1f7;
   --brand-300: #7d72ec;
   --brand-400: #5b4fe0;
   --brand-500: #403ac8;
-  --brand-600: #2d2a6e;
+  --brand-600: #133782;
   --brand-700: #1f1d4f;
   --brand-800: #13122e;
   --brand-900: #090817;

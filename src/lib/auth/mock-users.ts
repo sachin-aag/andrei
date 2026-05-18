@@ -11,6 +11,30 @@ export type MockUser = {
 
 export const MOCK_USERS: readonly MockUser[] = [
   {
+    id: "5",
+    name: "Tushar Berad",
+    email: "tushar.berad@mjbiopharm.com",
+    employeeId: "627",
+    role: "manager",
+    title: "Manager QA, Drug product",
+  },
+  {
+    id: "6",
+    name: "Gautam",
+    email: "gautam@mjbiopharm.com",
+    employeeId: "628",
+    role: "engineer",
+    title: "Engineer",
+  },
+  {
+    id: "7",
+    name: "Test Engineer",
+    email: "test.engineer@mjbiopharm.com",
+    employeeId: "629",
+    role: "engineer",
+    title: "Test Engineer",
+  },
+  {
     id: "1",
     name: "Bhargav Patel",
     email: "bhargav@mjbiopharm.com",
@@ -36,8 +60,8 @@ export const MOCK_USERS: readonly MockUser[] = [
   },
   {
     id: "4",
-    name: "Anil Deshmukh",
-    email: "anil@mjbiopharm.com",
+    name: "Pankaj Birari",
+    email: "pankaj.birari@mjbiopharm.com",
     employeeId: "105",
     role: "manager",
     title: "Head of Quality",

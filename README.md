@@ -59,7 +59,7 @@ On first load you'll be redirected to `/login`. Pick any mock user:
 | Bhargav Patel  | Engineer | 598         |
 | Priya Sharma   | Engineer | 312         |
 | Rajesh Kumar   | Manager  | 201         |
-| Anil Deshmukh  | Manager  | 105         |
+| Pankaj Birari  | Manager  | 105         |
 
 Edit `src/lib/auth/mock-users.ts` to change the list.
 
@@ -185,7 +185,22 @@ npm run db:generate    # drizzle-kit generate
 npm run db:push        # drizzle-kit push (applies schema directly)
 npm run db:migrate     # drizzle-kit migrate
 npm run db:studio      # drizzle studio GUI
+npm run sample-eval-report   # bulk AI evaluation of sample DOCX → HTML evaluation report (see below)
 ```
+
+### Bulk sample evaluation report
+
+Runs `scripts/bulk-sample-evaluation-report.ts`: evaluates each DOCX under `docs/sample_files` with the **same AI pipeline** as `/api/reports/[reportId]/evaluate`, then writes a single HTML file with per-report detail and aggregate traffic-light tables. Requires `.env.local` (or `.env`) with a working gateway key—the script makes roughly `(number of DOCX × five)` sectional model calls plus one clustering pass.
+
+- **Default output:** `reports/sample_evaluation_report_YYYY-MM-DD_HHmmss.html` (`/reports/` is gitignored.)
+- **Pass flags after `--`:**
+
+```bash
+npm run sample-eval-report -- --concurrency 4
+npm run sample-eval-report -- --input-dir ./path/to/docx --out ./my-report.html
+```
+
+Flags: `--input-dir`, `--out`, `--concurrency` (or `-j`), `--report-date`.
 
 ## Verification checklist
 
