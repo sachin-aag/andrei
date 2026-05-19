@@ -32,10 +32,10 @@ export const MOCK_USERS = [
     role: 'engineer',
   },
   {
-    id: '2',
-    name: 'Rajesh Kumar',
-    email: 'rajesh@mjbiopharm.com',
-    employeeId: '201',
+    id: '5',
+    name: 'Tushar Berad',
+    email: 'tushar.berad@mjbiopharm.com',
+    employeeId: '627',
     role: 'manager',
   },
 ] as const;

@@ -175,7 +175,7 @@ function buildMockReport(imported: ImportedReportContent): ReportRow {
     otherTools: "",
     status: "draft",
     authorId: "1",
-    assignedManagerId: "2",
+    assignedManagerId: "5",
     createdAt: iso,
     updatedAt: iso,
   };

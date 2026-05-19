@@ -58,7 +58,7 @@ On first load you'll be redirected to `/login`. Pick any mock user:
 | -------------- | -------- | ----------- |
 | Bhargav Patel  | Engineer | 598         |
 | Priya Sharma   | Engineer | 312         |
-| Rajesh Kumar   | Manager  | 201         |
+| Tushar Berad   | Manager  | 627         |
 | Pankaj Birari  | Manager  | 105         |
 
 Edit `src/lib/auth/mock-users.ts` to change the list.
@@ -70,7 +70,7 @@ Edit `src/lib/auth/mock-users.ts` to change the list.
 3. Click **Run AI Check**: Gemini evaluates each criterion and populates the right-hand traffic-light panel.
 4. For yellow/red criteria, click **Apply** to paste the suggested fix into the section (highlighted block) or **Ignore** to override.
 5. Click **Submit for Review**. Report status transitions to `submitted`.
-6. **Manager** (Rajesh) sees the report in their Queue on the dashboard → clicks it → sees the read-only review.
+6. **Manager** (Tushar Berad) sees the report in their Queue on the dashboard → clicks it → sees the read-only review.
 7. Manager adds comments from the right-hand `Comments` tab. Status transitions to `in_review` on the first comment.
 8. Manager clicks **Return with Feedback** (→ `feedback`, engineer can edit again) or **Approve** (→ `approved`).
 9. At any time, anyone can click **Export DOCX** in the header to download a Word document matching `SOP/DP/QA/008/F04-R02`.
