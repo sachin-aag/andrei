@@ -3,6 +3,7 @@
 import { useCallback } from "react";
 import {
   useReportData,
+  useReportEvaluations,
   useReportSection,
 } from "@/providers/report-provider";
 import { useAutoSave } from "./use-auto-save";
@@ -13,7 +14,9 @@ export function useSectionSave<K extends keyof SectionContentMap & SectionType>(
   section: K
 ) {
   const { report, readOnly, trackChangesMode } = useReportData();
+  const { runningSuggestionSections } = useReportEvaluations();
   const { value } = useReportSection(section);
+  const suggestionInFlight = runningSuggestionSections.includes(section);
 
   const onSave = useCallback(
     async (v: SectionContentMap[K]) => {
@@ -31,7 +34,7 @@ export function useSectionSave<K extends keyof SectionContentMap & SectionType>(
   );
 
   const { status, lastSavedAt, flush } = useAutoSave({
-    enabled: !readOnly || trackChangesMode,
+    enabled: (!readOnly || trackChangesMode) && !suggestionInFlight,
     value,
     onSave,
     beaconUrl: `/api/reports/${report.id}/sections/${section}`,

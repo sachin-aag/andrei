@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { after } from "next/server";
+import { propagateAttributes } from "@langfuse/tracing";
 import { eq, inArray, and } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
@@ -16,11 +18,18 @@ import {
   normalizeAnalyzeToolResults,
 } from "@/lib/ai/evaluate-run-helpers";
 import { hashContent } from "@/lib/ai/content-hash";
+import { cleanSectionContentForEval } from "@/lib/tiptap/strip-pending-suggestions";
 import { PROMPT_VERSION } from "@/lib/ai/section-prompts";
 import {
   hasEnoughContextInFirstSection,
   INSUFFICIENT_FIRST_SECTION_MESSAGE,
 } from "@/lib/ai/first-section-context";
+import {
+  flushLangfuseTraces,
+  isLangfuseEnabled,
+  observeRouteHandler,
+  setRouteObservationIO,
+} from "@/lib/observability/langfuse";
 
 export const maxDuration = 60;
 
@@ -33,7 +42,12 @@ function isValidSection(v: string): v is SectionType {
   return (sectionTypeEnum.enumValues as readonly string[]).includes(v);
 }
 
-export async function POST(
+export const POST = observeRouteHandler(
+  "report-criteria-evaluate",
+  handleEvaluatePost
+);
+
+async function handleEvaluatePost(
   req: Request,
   { params }: { params: Promise<{ reportId: string }> }
 ) {
@@ -56,125 +70,163 @@ export async function POST(
     .where(eq(reports.id, reportId));
   if (!report) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const sectionRows = await db
-    .select()
-    .from(reportSections)
-    .where(
-      and(
-        eq(reportSections.reportId, reportId),
-        inArray(reportSections.section, targetSections)
-      )
-    );
-
-  // Pull all evaluatable section rows so the Define context guard still works
-  // when a subset of sections is requested.
-  const allEvaluatableRows = await db
-    .select()
-    .from(reportSections)
-    .where(
-      and(
-        eq(reportSections.reportId, reportId),
-        inArray(reportSections.section, EVALUATABLE_SECTIONS)
-      )
-    );
-  const bySection = new Map<SectionType, (typeof allEvaluatableRows)[number]>();
-  for (const row of allEvaluatableRows) bySection.set(row.section, row);
-
-  const defineRow = bySection.get("define");
-  if (!hasEnoughContextInFirstSection(defineRow?.content)) {
-    return NextResponse.json({ error: INSUFFICIENT_FIRST_SECTION_MESSAGE }, { status: 400 });
-  }
-
-  // Look up existing evaluations so we can UPDATE rather than double-INSERT.
-  const existingForSections = sectionRows.length
-    ? await db
-        .select()
-        .from(criteriaEvaluations)
-        .where(
-          inArray(
-            criteriaEvaluations.sectionId,
-            sectionRows.map((r) => r.id)
-          )
+  const runEvaluation = async (): Promise<Response> => {
+    const sectionRows = await db
+      .select()
+      .from(reportSections)
+      .where(
+        and(
+          eq(reportSections.reportId, reportId),
+          inArray(reportSections.section, targetSections)
         )
-    : [];
-  const existingBySectionId = new Map<string, typeof existingForSections>();
-  for (const row of existingForSections) {
-    const arr = existingBySectionId.get(row.sectionId) ?? [];
-    arr.push(row);
-    existingBySectionId.set(row.sectionId, arr);
-  }
+      );
 
-  // Build a map of all section content for cumulative prior-section context.
-  const allSections: AllSectionsContent = {};
-  for (const row of allEvaluatableRows) {
-    allSections[row.section] = row.content;
-  }
+    const allEvaluatableRows = await db
+      .select()
+      .from(reportSections)
+      .where(
+        and(
+          eq(reportSections.reportId, reportId),
+          inArray(reportSections.section, EVALUATABLE_SECTIONS)
+        )
+      );
+    const bySection = new Map<SectionType, (typeof allEvaluatableRows)[number]>();
+    for (const row of allEvaluatableRows) bySection.set(row.section, row);
 
-  // ── 1. Run the LLM in parallel for all target sections ──────────────────
-  const llmResults = await Promise.all(
-    sectionRows.map(async (row) => {
-      const evaluations = await evaluateSection({
-        section: row.section,
-        content: row.content,
-        reportContext: { deviationNo: report.deviationNo, date: report.date },
-        allSections,
-      });
-      return {
-        sectionRow: row,
-        evaluations:
-          row.section === "analyze"
-            ? normalizeAnalyzeToolResults(row.content, evaluations)
-            : evaluations,
-      };
-    })
-  );
+    const defineRow = bySection.get("define");
+    if (!hasEnoughContextInFirstSection(defineRow?.content)) {
+      return NextResponse.json({ error: INSUFFICIENT_FIRST_SECTION_MESSAGE }, { status: 400 });
+    }
 
-  // ── 2. Persist evaluation rows (UPDATE existing / INSERT new) ───────────
-  // neon-http: no transactions, so sequential statements.
-  for (const { sectionRow, evaluations } of llmResults) {
-    const existing = existingBySectionId.get(sectionRow.id) ?? [];
-    const existingByKey = new Map(existing.map((e) => [e.criterionKey, e]));
-    const contentHash = hashContent(sectionRow.content, PROMPT_VERSION);
+    const existingForSections = sectionRows.length
+      ? await db
+          .select()
+          .from(criteriaEvaluations)
+          .where(
+            inArray(
+              criteriaEvaluations.sectionId,
+              sectionRows.map((r) => r.id)
+            )
+          )
+      : [];
+    const existingBySectionId = new Map<string, typeof existingForSections>();
+    for (const row of existingForSections) {
+      const arr = existingBySectionId.get(row.sectionId) ?? [];
+      arr.push(row);
+      existingBySectionId.set(row.sectionId, arr);
+    }
 
-    for (const evalResult of evaluations) {
-      const prior = existingByKey.get(evalResult.criterionKey);
-      if (prior) {
-        const keepBypass = prior.bypassed && evalResult.status !== "met";
-        await db
-          .update(criteriaEvaluations)
-          .set({
-            section: sectionRow.section,
-            status: evalResult.status,
-            criterionLabel: evalResult.criterionLabel,
-            reasoning: evalResult.reasoning,
-            bypassed: keepBypass,
-            evaluatedContentHash: contentHash,
-            updatedAt: new Date(),
-          })
-          .where(eq(criteriaEvaluations.id, prior.id));
-      } else {
-        await db.insert(criteriaEvaluations).values({
-          reportId,
-          sectionId: sectionRow.id,
-          section: sectionRow.section,
-          criterionKey: evalResult.criterionKey,
-          criterionLabel: evalResult.criterionLabel,
-          status: evalResult.status,
-          reasoning: evalResult.reasoning,
-          evaluatedContentHash: contentHash,
+    const allSections: AllSectionsContent = {};
+    for (const row of allEvaluatableRows) {
+      allSections[row.section] = row.content;
+    }
+
+    const llmResults = await Promise.all(
+      sectionRows.map(async (row) => {
+        const evaluations = await evaluateSection({
+          section: row.section,
+          content: row.content,
+          reportContext: { deviationNo: report.deviationNo, date: report.date },
+          allSections,
         });
+        return {
+          sectionRow: row,
+          evaluations:
+            row.section === "analyze"
+              ? normalizeAnalyzeToolResults(row.content, evaluations)
+              : evaluations,
+        };
+      })
+    );
+
+    for (const { sectionRow, evaluations } of llmResults) {
+      const existing = existingBySectionId.get(sectionRow.id) ?? [];
+      const existingByKey = new Map(existing.map((e) => [e.criterionKey, e]));
+      const contentHash = hashContent(
+        cleanSectionContentForEval(sectionRow.section, sectionRow.content),
+        PROMPT_VERSION
+      );
+
+      for (const evalResult of evaluations) {
+        const prior = existingByKey.get(evalResult.criterionKey);
+        if (prior) {
+          const keepBypass = prior.bypassed && evalResult.status !== "met";
+          await db
+            .update(criteriaEvaluations)
+            .set({
+              section: sectionRow.section,
+              status: evalResult.status,
+              criterionLabel: evalResult.criterionLabel,
+              reasoning: evalResult.reasoning,
+              bypassed: keepBypass,
+              evaluatedContentHash: contentHash,
+              updatedAt: new Date(),
+            })
+            .where(eq(criteriaEvaluations.id, prior.id));
+        } else {
+          await db.insert(criteriaEvaluations).values({
+            reportId,
+            sectionId: sectionRow.id,
+            section: sectionRow.section,
+            criterionKey: evalResult.criterionKey,
+            criterionLabel: evalResult.criterionLabel,
+            status: evalResult.status,
+            reasoning: evalResult.reasoning,
+            evaluatedContentHash: contentHash,
+          });
+        }
       }
     }
-  }
 
-  // ── 3. Re-fetch all evaluations for this report ─────────────────────────
-  const updatedEvals = await db
-    .select()
-    .from(criteriaEvaluations)
-    .where(eq(criteriaEvaluations.reportId, reportId));
+    const updatedEvals = await db
+      .select()
+      .from(criteriaEvaluations)
+      .where(eq(criteriaEvaluations.reportId, reportId));
 
-  return NextResponse.json({
-    evaluations: updatedEvals,
-    overflowCounts: {},
+    setRouteObservationIO({
+      output: {
+        reportId,
+        evaluationCount: updatedEvals.length,
+        sectionsEvaluated: targetSections,
+        statusBySection: llmResults.map(({ sectionRow, evaluations }) => ({
+          section: sectionRow.section,
+          met: evaluations.filter((e) => e.status === "met").length,
+          partiallyMet: evaluations.filter((e) => e.status === "partially_met").length,
+          notMet: evaluations.filter((e) => e.status === "not_met").length,
+          notEvaluated: evaluations.filter((e) => e.status === "not_evaluated").length,
+        })),
+      },
+    });
+
+    return NextResponse.json({
+      evaluations: updatedEvals,
+      overflowCounts: {},
+    });
+  };
+
+  if (!isLangfuseEnabled()) return runEvaluation();
+
+  setRouteObservationIO({
+    input: {
+      reportId,
+      sections: targetSections,
+      deviationNo: report.deviationNo,
+      reason: parsed.success ? parsed.data.reason ?? null : null,
+    },
   });
+  after(flushLangfuseTraces);
+
+  return propagateAttributes(
+    {
+      sessionId: reportId,
+      userId: user.id,
+      traceName: "report-criteria-evaluate",
+      tags: ["criteria-evaluation"],
+      metadata: {
+        feature: "criteria-evaluation",
+        deviationNo: report.deviationNo,
+      },
+    },
+    runEvaluation
+  );
 }

@@ -13,7 +13,8 @@ export const DEFINE_CRITERIA: CriterionDefinition[] = [
     description:
       "Does the narrative clearly describe the actual event in concrete, factual terms — " +
       "including the specific activity being performed, the instrument/equipment involved " +
-      "(with ID), and the exact observation or result obtained? " +
+      "(with ID when applicable; for SCADA, the system name such as AGLTS SCADA is sufficient " +
+      "without an E/PR equipment code or version number), and the exact observation or result obtained? " +
       "Vague statements like 'it was observed that results were out of spec' are insufficient; " +
       "the narrative must state what was being done, on what equipment, and what specifically " +
       "was observed (e.g., 'obtained SST result of 115.1% Recovery of Benzoquinone').",
@@ -72,7 +73,10 @@ export const DEFINE_CRITERIA: CriterionDefinition[] = [
       "material names? " +
       "The scope must clearly delineate what is affected and what is not " +
       "(e.g., 'The scope of the deviation was limited to Batch No. B092542503'). " +
-      "Vague scope statements without specific identifiers are insufficient.",
+      "Vague scope statements without specific identifiers are insufficient. " +
+      "For SCADA-related scope, naming the system (e.g., AGLTS SCADA) and the affected " +
+      "time periods or functions is sufficient; a site equipment ID (E/PR/xxx) or version " +
+      "number for the SCADA system is not required.",
   },
 ];
 

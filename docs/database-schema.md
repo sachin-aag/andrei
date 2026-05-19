@@ -4,7 +4,7 @@ This document describes the application database so you can **recreate the schem
 
 ## Recreating the schema
 
-Prerequisites: a Postgres connection string in `.env.local` as `DATABASE_URL` (e.g. Neon).
+Prerequisites: a Postgres connection string in `.env.local` as `DATABASE_URL` (local Docker or Neon — see [database-environments.md](./database-environments.md)).
 
 ### Option A — Drizzle migrations (recommended)
 

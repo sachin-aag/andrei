@@ -1,12 +1,11 @@
 "use client";
 
-import { Textarea } from "@/components/ui/textarea";
-import { Label } from "@/components/ui/label";
 import {
   useReportData,
   useReportSection,
 } from "@/providers/report-provider";
 import { useSectionSave } from "@/hooks/use-section-save";
+import { PlainTextSuggestionField } from "@/components/report/plain-text-suggestion-field";
 import { CriteriaChecklist, SectionShell } from "./section-shell";
 import { SECTION_GUIDANCE } from "@/lib/report-section-guidance";
 import { emptyDoc } from "@/lib/tiptap/rich-text";
@@ -26,22 +25,22 @@ export function ImproveEditor() {
     >
       <CriteriaChecklist items={SECTION_GUIDANCE.improve ?? []} ordered />
 
-      <div className="grid gap-1.5">
-        <Label>Corrective Action</Label>
-        <Textarea
-          value={value.correctiveActions}
-          disabled={readOnly}
-          className="min-h-[220px]"
-          placeholder="Describe corrective actions taken or proposed, including tracking numbers, responsible persons, due dates, expected outcomes, and effectiveness verification where applicable."
-          onChange={(e) =>
-            update((p) => ({
-              ...p,
-              narrative: emptyDoc(),
-              correctiveActions: e.target.value,
-            }))
-          }
-        />
-      </div>
+      <PlainTextSuggestionField
+        section="improve"
+        contentPath="correctiveActions"
+        label="Corrective Action"
+        value={value.correctiveActions}
+        disabled={readOnly}
+        className="min-h-[220px]"
+        placeholder="Describe corrective actions taken or proposed, including tracking numbers, responsible persons, due dates, expected outcomes, and effectiveness verification where applicable."
+        onChange={(next) =>
+          update((p) => ({
+            ...p,
+            narrative: emptyDoc(),
+            correctiveActions: next,
+          }))
+        }
+      />
     </SectionShell>
   );
 }

@@ -94,6 +94,36 @@ describe("evaluateSection", () => {
     expect(results[0]?.reasoning).toBe("No evaluation returned by model.");
   });
 
+  it("passes placeholders through unchanged in the evaluation user prompt", () => {
+    const prompts = buildCriterionEvaluationLlmPrompts({
+      section: "define",
+      content: {
+        narrative: {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: [
+                {
+                  type: "text",
+                  text: "On [detection date: <to be filled>] at [time: <to be filled>] hrs the event was noted.",
+                },
+              ],
+            },
+          ],
+        },
+      },
+      reportContext: { deviationNo: "DEV-PH", date: "2026-05-02" },
+    });
+
+    expect(prompts).not.toBeNull();
+    expect(prompts!.userPrompt).toContain("[detection date: <to be filled>]");
+    expect(prompts!.userPrompt).toContain("[time: <to be filled>]");
+    expect(prompts!.userPrompt).toContain("PLACEHOLDER NOTE");
+    expect(prompts!.userPrompt).toContain("as if it will contain");
+    expect(prompts!.systemPrompt).toContain("PLACEHOLDER TOKENS");
+  });
+
   it("composes the system prompt for define with common rules plus define-specific guidance", async () => {
     process.env.GOOGLE_GENERATIVE_AI_API_KEY = "test-key";
     mockSingleEval();
@@ -113,6 +143,7 @@ describe("evaluateSection", () => {
     expect(prompt).toContain(
       "Occurrence date/time and detection date/time are distinct facts"
     );
+    expect(prompt).toContain("SCADA:");
     expect(prompt).toContain("Do not rewrite the report");
     expect(prompt).not.toMatch(/<example type="strong"/);
     expect(prompt).not.toMatch(/<example type="weak"/);

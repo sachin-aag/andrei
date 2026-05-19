@@ -27,7 +27,11 @@ import {
   rowsBySection,
 } from "@/lib/ai/criteria-view";
 import { SectionAccordion } from "./section-accordion";
-import { getUser } from "@/lib/auth/mock-users";
+import {
+  getCommentCardPreview,
+  getCommentCardTitle,
+  isAiFixComment,
+} from "@/lib/comments/display";
 import type { SectionType } from "@/db/schema";
 import type { CommentRecord } from "@/types/report";
 
@@ -187,7 +191,10 @@ function CommentCard({
   replyCount: number;
   onJump?: () => void;
 }) {
-  const author = getUser(comment.authorId);
+  const { evaluations } = useReportEvaluations();
+  const aiFix = isAiFixComment(comment);
+  const title = getCommentCardTitle(comment, evaluations);
+  const preview = getCommentCardPreview(comment);
 
   return (
     <button
@@ -197,11 +204,14 @@ function CommentCard({
     >
       <div className="flex items-center gap-2 flex-wrap">
         <MessageSquare
-          className="size-3 text-[var(--muted-foreground)]"
+          className={cn(
+            "size-3 shrink-0",
+            aiFix ? "text-violet-600" : "text-[var(--muted-foreground)]"
+          )}
           aria-hidden="true"
         />
-        <span className="text-xs font-semibold truncate">
-          {author?.name ?? "Unknown"}
+        <span className="text-xs font-semibold truncate min-w-0 flex-1">
+          {title}
         </span>
         {comment.status === "resolved" ? (
           <span className="text-[10px] text-green-700 ml-auto">
@@ -213,9 +223,11 @@ function CommentCard({
           </span>
         )}
       </div>
-      <p className="text-[11px] text-[var(--muted-foreground)] mt-1 line-clamp-2">
-        {comment.content}
-      </p>
+      {preview ? (
+        <p className="text-[11px] text-[var(--muted-foreground)] mt-1 line-clamp-2 leading-snug">
+          {preview}
+        </p>
+      ) : null}
       <div className="flex items-center gap-2 mt-1 text-[10px] text-[var(--muted-foreground)]">
         <span>{formatDateTime(comment.createdAt)}</span>
         {replyCount > 0 && <span>· {replyCount} replies</span>}
@@ -369,7 +381,7 @@ export function CriteriaSheet({
                 Quick scan of AI criteria and all comment threads.
               </SheetDescription>
             </div>
-            <RunAllEvaluationButton className="h-7 text-xs" />
+            <RunAllEvaluationButton layout="inline" className="h-7 text-xs max-w-[11rem]" />
           </div>
         </SheetHeader>
         <div className="flex-1 min-h-0 overflow-hidden p-3">

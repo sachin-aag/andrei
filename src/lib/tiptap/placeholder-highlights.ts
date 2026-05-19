@@ -5,6 +5,7 @@ import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import type { EditorView } from "@tiptap/pm/view";
 import { findPlaceholders } from "../placeholders/find";
 import type { Placeholder } from "../placeholders/find";
+import type { SectionType } from "@/db/schema";
 import type { JSONContent } from "@tiptap/core";
 
 const placeholderKey = new PluginKey<PluginStateData>("placeholderHighlights");
@@ -14,10 +15,10 @@ type PluginStateData = {
   placeholders: Placeholder[];
 };
 
-function scanPlaceholders(doc: import("@tiptap/pm/model").Node): Placeholder[] {
-  const json = doc.toJSON() as JSONContent;
-  return findPlaceholders(json, "define", "narrative");
-}
+type PlaceholderHighlightOptions = {
+  section: SectionType;
+  contentPath: string;
+};
 
 function buildDecorations(
   doc: import("@tiptap/pm/model").Node,
@@ -55,9 +56,22 @@ export function isSelectionOverPlaceholder(state: EditorState): boolean {
  * immediately type a replacement — ProseMirror's native selection-replace
  * handles the rest.
  */
-export const PlaceholderHighlightExtension = Extension.create({
+export const PlaceholderHighlightExtension = Extension.create<PlaceholderHighlightOptions>({
   name: "placeholderHighlights",
+  addOptions() {
+    return {
+      section: "define" as SectionType,
+      contentPath: "narrative",
+    };
+  },
   addProseMirrorPlugins() {
+    const { section, contentPath } = this.options;
+
+    const scanPlaceholders = (doc: import("@tiptap/pm/model").Node): Placeholder[] => {
+      const json = doc.toJSON() as JSONContent;
+      return findPlaceholders(json, section, contentPath);
+    };
+
     return [
       new Plugin<PluginStateData>({
         key: placeholderKey,
@@ -94,17 +108,17 @@ export const PlaceholderHighlightExtension = Extension.create({
             const pluginState = placeholderKey.getState(view.state);
             if (!pluginState) return false;
 
-            // Find the placeholder whose range contains the click position
             const placeholder = pluginState.placeholders.find(
               (p) => pos >= p.fromPos && pos <= p.toPos
             );
             if (!placeholder) return false;
 
-            // Select the entire placeholder text so typing replaces it
             const $from = view.state.doc.resolve(placeholder.fromPos);
             const $to = view.state.doc.resolve(placeholder.toPos);
             view.dispatch(
-              view.state.tr.setSelection(TextSelection.create(view.state.doc, $from.pos, $to.pos))
+              view.state.tr.setSelection(
+                TextSelection.create(view.state.doc, $from.pos, $to.pos)
+              )
             );
             return true;
           },

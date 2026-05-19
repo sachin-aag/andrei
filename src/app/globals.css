@@ -379,6 +379,87 @@
   }
 }
 
+@keyframes suggestion-card-applied-glow {
+  0% {
+    box-shadow: 0 0 0 0 rgb(34 197 94 / 0.35);
+    border-color: rgb(34 197 94 / 0.55);
+  }
+  100% {
+    box-shadow: 0 0 0 10px rgb(34 197 94 / 0);
+    border-color: rgb(139 92 246 / 0.3);
+  }
+}
+
+@keyframes suggestion-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.985);
+    filter: blur(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes suggestion-card-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.98);
+    filter: blur(1px);
+  }
+}
+
+.suggestion-card-applied-glow {
+  animation: suggestion-card-applied-glow 0.75s ease-out;
+}
+
+/* Brief settle after apply — no inline preview, calm before next suggestion. */
+.suggestion-field-settling {
+  transition: opacity 0.35s ease;
+}
+
+.suggestion-field-settling .ProseMirror {
+  transition: opacity 0.35s ease;
+}
+
+.suggestion-card-stack {
+  position: relative;
+  isolation: isolate;
+}
+
+.suggestion-card-stack__exit {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.suggestion-card-animate-in {
+  animation: suggestion-card-in 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  will-change: transform, opacity, filter;
+}
+
+.suggestion-card-animate-out {
+  animation: suggestion-card-out 520ms cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  will-change: transform, opacity, filter;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .suggestion-card-animate-in,
+  .suggestion-card-animate-out,
+  .suggestion-card-applied-glow {
+    animation-duration: 0.01ms !important;
+    filter: none !important;
+  }
+}
+
 /* fix (default — criterion-driven AI suggestions) — uses base colors above. */
 
 /*
@@ -506,4 +587,13 @@
   color: rgb(146 64 14);
   font-weight: 500;
   cursor: pointer;
+}
+
+/* Plain-text mirror layer — no border/padding so line heights match the textarea. */
+.placeholder-todo-mirror {
+  background-color: rgb(245 158 11 / 0.22);
+  color: rgb(146 64 14);
+  font-weight: 500;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
 }

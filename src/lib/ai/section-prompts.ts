@@ -6,7 +6,7 @@ import type { SectionType } from "@/db/schema";
  * into the per-section content hash so the next eval pass refreshes all
  * sections after a prompt update.
  */
-export const PROMPT_VERSION = "2026-05-18-39-eval-user-prompt-clarity";
+export const PROMPT_VERSION = "2026-05-18-44-placeholder-partially-met-only";
 
 /**
  * Common reviewer rules, scoring system, scope rule, and prompt-injection guard.
@@ -35,6 +35,13 @@ not_met when concrete information is missing, wrong, or structurally absent.
 
 NOTE ON TABLES: Narrative content may contain GitHub-flavored markdown tables (with a "| --- | --- |" separator row beneath the header). Merged cells (rowspan/colspan in the source document) are expanded so the merged value is repeated in every covered row or column — treat repeated values as a single grouped measurement rather than independent observations. Evaluate table content the same as prose: assess completeness, accuracy, and traceability of the data within tables.
 
+PLACEHOLDER TOKENS:
+- Section content may include bracket placeholders such as [Date: <to be filled>] or [SOP number: <to be filled>]. The author will complete them later in the Placeholders panel — not via Suggest fixes.
+- For evaluation, treat each placeholder as if it will be filled with appropriate factual data that matches its label (date, time, Emp. ID, batch, SOP number, location, etc.). Credit the criterion when the narrative places a placeholder where that fact belongs.
+- Do NOT mark not_met or partially_met solely because the literal bracket text appears instead of a final value. Judge structure, coverage, and whether the right kinds of facts are represented.
+- When the ONLY remaining gap is unfilled placeholder(s), status MUST be "partially_met" (never "not_met"). Reasoning may note that the author should complete the placeholder in the Placeholders panel.
+- You may briefly note in reasoning that the author should still complete a placeholder in the editor. Do not recommend removing or rewriting placeholder tokens in your reasoning.
+
 CRITICAL SCOPE RULE:
 - Determine "status" and "reasoning" using the current SECTION CONTENT.
 - When PRIOR SECTIONS are provided, use them as read-only background context to inform your judgment (e.g. whether corrective actions trace to root causes, whether evidence references earlier facts). Do NOT evaluate the prior sections themselves.
@@ -53,7 +60,8 @@ KEY RULES:
 - Occurrence date/time and detection date/time are distinct facts. Mark gaps when the section collapses them or omits one required timestamp.
 - Bare references such as "as per SOP" are insufficient when the criterion asks for the governing SOP No. and section.
 - Department-only locations are weaker than specific room/area codes.
-- Personnel are sufficiently identified by Emp. ID; names, titles, and job functions are not required.`;
+- Personnel are sufficiently identified by Emp. ID; names, titles, and job functions are not required.
+- SCADA: When the deviation concerns a SCADA system, credit scope and event framing when the narrative names the system (e.g., AGLTS SCADA) and the affected audit-trail periods or functions. Do not mark partially_met or not_met solely because a site equipment ID (E/PR/xxx) or SCADA software version number is absent.`;
 
 const MEASURE_PROMPT_ADDITION = `SECTION ROLE - MEASURE:
 Judge whether the section presents evidence, chronology, analysis, and conclusions clearly enough to support the investigation.

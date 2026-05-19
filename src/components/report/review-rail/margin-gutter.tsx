@@ -13,19 +13,36 @@ import {
   useReportComments,
   useReportData,
   useReportEditors,
+  useReportEvaluations,
 } from "@/providers/report-provider";
 import { CommentCard } from "./comment-card";
 import { SectionCommentComposer } from "./section-comment-composer";
+import { SectionSuggestionCard } from "@/components/report/suggestion-card";
 import { EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
+import { isNarrativeTargetField } from "@/lib/ai/suggest-target-fields";
+import { suggestionFieldAnchorKey } from "@/lib/suggestions/resolve-suggestion-field-path";
+import {
+  suggestionDeleteMarkName,
+  suggestionInsertMarkName,
+} from "@/lib/tiptap/suggestion-marks";
+import { cn } from "@/lib/utils";
 import { getUser } from "@/lib/auth/mock-users";
+import type { Editor } from "@tiptap/react";
 import type { CommentRecord } from "@/types/report";
 import type { SectionType } from "@/db/schema";
 
 export type GutterAnchor = {
   /** Stable id: comment id, `composer:<section>`, `unanchored:<commentId>`, or `overflow:<section>`. */
   id: string;
-  type: "comment" | "composer" | "field-comment" | "unanchored-comment";
+  type:
+    | "comment"
+    | "composer"
+    | "field-comment"
+    | "unanchored-comment"
+    | "suggestion";
   desiredTop: number;
+  /** When true, desiredTop is the vertical center of the target field (card is centered on it). */
+  valignCenter?: boolean;
   section?: SectionType;
   comment?: CommentRecord;
 };
@@ -36,6 +53,92 @@ function queryFieldAnchor(section: SectionType, contentPath: string): HTMLElemen
   const css = globalThis.CSS;
   const value = `${section}.${contentPath}`;
   const escaped = css?.escape ? css.escape(value) : value.replace(/"/g, '\\"');
+  return document.querySelector<HTMLElement>(`[data-field-anchor="${escaped}"]`);
+}
+
+function findSuggestionMarkPos(editor: Editor, markId: string): number | null {
+  let found: number | null = null;
+  editor.state.doc.descendants((node, pos) => {
+    if (found != null) return false;
+    if (!node.isText || !node.marks?.length) return;
+    for (const mark of node.marks) {
+      const attrs = mark.attrs as { id?: string | null } | undefined;
+      if (attrs?.id === markId) {
+        found = pos;
+        return false;
+      }
+    }
+  });
+  return found;
+}
+
+function findSuggestionMarkRange(
+  editor: Editor,
+  markId: string
+): { from: number; to: number } | null {
+  let from: number | null = null;
+  let to: number | null = null;
+  editor.state.doc.descendants((node, pos) => {
+    if (!node.isText || !node.marks?.length) return;
+    const len = node.text?.length ?? 0;
+    for (const mark of node.marks) {
+      const attrs = mark.attrs as { id?: string | null } | undefined;
+      if (attrs?.id !== markId) continue;
+      if (
+        mark.type.name !== suggestionInsertMarkName &&
+        mark.type.name !== suggestionDeleteMarkName
+      ) {
+        continue;
+      }
+      from = from === null ? pos : Math.min(from, pos);
+      to = to === null ? pos + len : Math.max(to, pos + len);
+    }
+  });
+  if (from === null || to === null) return null;
+  return { from, to };
+}
+
+function elementCenterY(el: HTMLElement, containerTop: number): number {
+  const rect = el.getBoundingClientRect();
+  return rect.top + rect.height / 2 - containerTop;
+}
+
+function suggestionCenterYInEditor(
+  editor: Editor,
+  markId: string,
+  containerTop: number,
+  fromPos?: number | null
+): number | null {
+  const view = editor.view;
+  const docSize = view.state.doc.content.size;
+  const range = findSuggestionMarkRange(editor, markId);
+  if (range) {
+    const safeFrom = Math.max(0, Math.min(range.from, docSize));
+    const safeTo = Math.max(safeFrom, Math.min(range.to, docSize));
+    try {
+      const start = view.coordsAtPos(safeFrom);
+      const end = view.coordsAtPos(safeTo);
+      return (start.top + end.bottom) / 2 - containerTop;
+    } catch {
+      // fall through
+    }
+  }
+  const pos =
+    fromPos != null
+      ? Math.max(0, Math.min(fromPos, docSize))
+      : findSuggestionMarkPos(editor, markId);
+  if (pos == null) return null;
+  try {
+    const coords = view.coordsAtPos(pos);
+    return coords.top + (coords.bottom - coords.top) / 2 - containerTop;
+  } catch {
+    return null;
+  }
+}
+
+function queryFieldAnchorKey(anchorKey: string): HTMLElement | null {
+  const css = globalThis.CSS;
+  const escaped = css?.escape ? css.escape(anchorKey) : anchorKey.replace(/"/g, '\\"');
   return document.querySelector<HTMLElement>(`[data-field-anchor="${escaped}"]`);
 }
 
@@ -63,6 +166,8 @@ export function MarginGutter({ onSectionOverflow }: Props) {
     hoveredCommentIds,
   } = useReportComments();
   const { getEditor, editorTick } = useReportEditors();
+  const { evaluations, gutterSuggestionCommentForSection } =
+    useReportEvaluations();
   const [layoutVersion, setLayoutVersion] = useState(0);
   const [cardHeights, setCardHeights] = useState<Record<string, number>>({});
   const [anchors, setAnchors] = useState<GutterAnchor[]>([]);
@@ -188,13 +293,57 @@ export function MarginGutter({ onSectionOverflow }: Props) {
       }
     }
 
-    // AI suggestions used to be a separate gutter card slot. They now live as
-    // ai_fix comments and are handled by the comment loop above — no extra
-    // slot needed.
+    // 3. Active AI suggestion cards — vertically centered on the target textbox.
+    for (const section of EVALUATABLE_SECTIONS) {
+      const active = gutterSuggestionCommentForSection(section);
+      if (!active) continue;
+
+      const contentPath = active.contentPath ?? "narrative";
+      let centerY: number | null = null;
+
+      if (isNarrativeTargetField(contentPath)) {
+        const editor = getEditor(section, contentPath);
+        if (editor) {
+          centerY = suggestionCenterYInEditor(
+            editor,
+            active.id,
+            containerTop,
+            active.fromPos
+          );
+        }
+      }
+
+      if (centerY == null) {
+        const anchorKey = suggestionFieldAnchorKey(section, active.contentPath);
+        const fieldEl = queryFieldAnchorKey(anchorKey);
+        if (fieldEl) centerY = elementCenterY(fieldEl, containerTop);
+      }
+
+      if (centerY == null) {
+        const heading = document.getElementById(section);
+        if (heading) {
+          const rect = heading.getBoundingClientRect();
+          centerY = rect.top + rect.height / 2 - containerTop;
+        }
+      }
+
+      if (centerY == null) continue;
+
+      result.push({
+        id: `suggestion:${section}`,
+        type: "suggestion",
+        desiredTop: centerY,
+        valignCenter: true,
+        section,
+        comment: active,
+      });
+    }
 
     setAnchors(result.sort((a, b) => a.desiredTop - b.desiredTop));
   }, [
     comments,
+    evaluations,
+    gutterSuggestionCommentForSection,
     getEditor,
     editorTick,
     layoutVersion,
@@ -207,9 +356,11 @@ export function MarginGutter({ onSectionOverflow }: Props) {
     const heights = cardHeights;
     return anchors.reduce<{ items: Array<GutterAnchor & { top: number }>; prevBottom: number }>(
       (acc, a) => {
-        const desired = a.desiredTop;
-        const top = Math.max(desired, acc.prevBottom + CARD_GAP);
         const h = heights[a.id] ?? 80;
+        const desired = a.valignCenter
+          ? a.desiredTop - h / 2
+          : a.desiredTop;
+        const top = Math.max(desired, acc.prevBottom + CARD_GAP);
         return {
           items: [...acc.items, { ...a, top }],
           prevBottom: top + h,
@@ -347,6 +498,8 @@ export function MarginGutter({ onSectionOverflow }: Props) {
       setActiveCommentId(a.comment.id);
     } else if (a.type === "unanchored-comment" && a.comment) {
       setActiveCommentId(a.comment.id);
+    } else if (a.type === "suggestion" && a.comment) {
+      setActiveCommentId(a.comment.id);
     } else {
       setActiveCommentId(null);
     }
@@ -415,6 +568,15 @@ export function MarginGutter({ onSectionOverflow }: Props) {
 
         if (a.type === "composer" && a.section) {
           node = <SectionCommentComposer section={a.section} />;
+        } else if (a.type === "suggestion" && a.section) {
+          node = (
+            <div
+              className={cn(isActive && "rounded-md ring-1 ring-violet-400/40")}
+              onPointerDown={() => activate(a)}
+            >
+              <SectionSuggestionCard section={a.section} />
+            </div>
+          );
         } else if (a.type !== "composer" && a.comment) {
           const replies = repliesByParent.get(a.comment.id) ?? [];
           node = (

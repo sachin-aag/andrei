@@ -1,0 +1,10 @@
+{
+  "plugins": {
+    "langfuse": {
+      "enabled": true
+    },
+    "neon-postgres": {
+      "enabled": true
+    }
+  }
+}

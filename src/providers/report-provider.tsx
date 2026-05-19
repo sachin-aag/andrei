@@ -25,6 +25,9 @@ import { EMPTY_CONTENT, REPORT_SECTION_ROW_ORDER } from "@/types/sections";
 import type { SectionType } from "@/db/schema";
 import { mergeSection } from "@/lib/sections-merge";
 import { EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
+import { activeSuggestionForSection } from "@/lib/ai/suggestion-gating";
+import { validateSuggestionLocate } from "@/lib/suggestions/validate-suggestion";
+import { normalizeCommentRecord } from "@/lib/comments/normalize";
 import {
   hasEnoughContextInFirstSection,
   INSUFFICIENT_FIRST_SECTION_MESSAGE,
@@ -87,9 +90,30 @@ type ReportContextValue = {
   runEvaluation: (
     section?: SectionType | SectionType[]
   ) => Promise<void>;
+  generateSuggestions: (section: SectionType) => Promise<void>;
   isEvaluating: boolean;
+  isSuggesting: boolean;
   /** Sections whose evaluation is currently in flight. */
   runningEvalSections: SectionType[];
+  /** Sections whose suggestion generation is in flight. */
+  runningSuggestionSections: SectionType[];
+  /** Active open ai_fix comment id per section (severity-ordered). */
+  activeSuggestionIdForSection: (section: SectionType) => string | null;
+  /** Open ai_fix used for gutter anchoring (stable during apply transitions). */
+  gutterSuggestionCommentForSection: (
+    section: SectionType
+  ) => CommentRecord | null;
+  /** True while apply/queue transition — suppresses next inline preview. */
+  isSuggestionPreviewHeld: (section: SectionType) => boolean;
+  /** Call before applying a suggestion; locks gutter anchor and hides next inline preview. */
+  beginSuggestionApplyTransition: (
+    section: SectionType,
+    commentId: string
+  ) => void;
+  endSuggestionApplyTransition: (section: SectionType) => void;
+  /** Set after suggestions succeed — workspace opens Criteria tab for this section. */
+  suggestionsFocusSection: SectionType | null;
+  clearSuggestionsFocusSection: () => void;
   /** Unfilled `<to be filled>` placeholders across the live document. */
   pendingPlaceholders: Placeholder[];
   setEvaluations: React.Dispatch<React.SetStateAction<EvaluationRecord[]>>;
@@ -158,8 +182,18 @@ type ReportEvaluationContextValue = Pick<
   | "evaluations"
   | "overflowCounts"
   | "runEvaluation"
+  | "generateSuggestions"
   | "isEvaluating"
+  | "isSuggesting"
   | "runningEvalSections"
+  | "runningSuggestionSections"
+  | "activeSuggestionIdForSection"
+  | "gutterSuggestionCommentForSection"
+  | "isSuggestionPreviewHeld"
+  | "beginSuggestionApplyTransition"
+  | "endSuggestionApplyTransition"
+  | "suggestionsFocusSection"
+  | "clearSuggestionsFocusSection"
   | "setEvaluations"
 >;
 
@@ -240,11 +274,12 @@ export function ReportProvider({
     bundle.evaluations
   );
   const [comments, setComments] = useState<CommentRecord[]>(() =>
-    bundle.comments.map((c) => ({
-      ...c,
-      parentId: c.parentId ?? null,
-    }))
+    bundle.comments.map((c) =>
+      normalizeCommentRecord(c as unknown as Record<string, unknown>)
+    )
   );
+  const [suggestionsFocusSection, setSuggestionsFocusSection] =
+    useState<SectionType | null>(null);
   const [isEvaluating, setIsEvaluating] = useState(false);
   const [overflowCounts, setOverflowCounts] = useState<
     Partial<Record<SectionType, number>>
@@ -356,12 +391,19 @@ export function ReportProvider({
     setReport(data.report);
     setSectionRows(data.sections);
     setSections(bundleToSections(data.sections));
-    setEvaluations(data.evaluations);
-    setComments(
-      data.comments.map((c: CommentRecord) => ({
-        ...c,
-        parentId: c.parentId ?? null,
+    setEvaluations(
+      (data.evaluations as EvaluationRecord[]).map((e) => ({
+        ...e,
+        updatedAt:
+          typeof e.updatedAt === "string"
+            ? e.updatedAt
+            : new Date(e.updatedAt as string).toISOString(),
       }))
+    );
+    setComments(
+      (data.comments as Record<string, unknown>[]).map((c) =>
+        normalizeCommentRecord(c)
+      )
     );
   }, [bundle.report.id]);
 
@@ -375,6 +417,17 @@ export function ReportProvider({
   const [runningEvalSections, setRunningEvalSections] = useState<SectionType[]>(
     []
   );
+  const [runningSuggestionSections, setRunningSuggestionSections] = useState<
+    SectionType[]
+  >([]);
+  const [isSuggesting, setIsSuggesting] = useState(false);
+  type SuggestionApplyTransition = {
+    holdInlinePreview: boolean;
+    gutterAnchorCommentId: string;
+  };
+  const [suggestionApplyTransition, setSuggestionApplyTransition] = useState<
+    Partial<Record<SectionType, SuggestionApplyTransition>>
+  >({});
 
   // Mirror of `sections` for callbacks that must read latest draft without widening deps.
   const sectionsRef = useRef<SectionContents>(sections);
@@ -429,6 +482,147 @@ export function ReportProvider({
       }
     },
     [bundle.report.id]
+  );
+
+  const generateSuggestions = useCallback(
+    async (section: SectionType) => {
+      setRunningSuggestionSections([section]);
+      setIsSuggesting(true);
+      try {
+        const res = await fetch(
+          `/api/reports/${bundle.report.id}/suggestions`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ section }),
+          }
+        );
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          if (data.blocked && data.reason === "no_gap_criteria") {
+            toast.error("Resolve pending suggestions before requesting more.");
+          } else if (data.blocked && data.reason === "stale_evaluation") {
+            toast.error("Content changed — re-run criteria for this section first.");
+          } else {
+            toast.error(
+              typeof data.error === "string"
+                ? data.error
+                : "Suggestion generation failed."
+            );
+          }
+          return;
+        }
+        const dropped = data.dropped as Array<{ criterionKey: string; reason: string }> | undefined;
+        const applied = data.applied as
+          | Array<{ suggestionId: string; criterionKey: string }>
+          | undefined;
+
+        if (Array.isArray(data.newComments) && data.newComments.length > 0) {
+          setComments((prev) => {
+            const ids = new Set(prev.map((c) => c.id));
+            const added = (data.newComments as Record<string, unknown>[])
+              .map((c) => normalizeCommentRecord(c))
+              .filter((c) => !ids.has(c.id));
+            return added.length ? [...prev, ...added] : prev;
+          });
+        }
+
+        // Reload from server so narrative marks + comments stay in sync (avoids autosave races).
+        await refresh();
+
+        if (dropped?.length) {
+          for (const d of dropped) {
+            toast.warning(`No fix for ${d.criterionKey}: ${d.reason}`);
+          }
+        }
+        if (applied?.length) {
+          setSuggestionsFocusSection(section);
+          toast.success(
+            `Generated ${applied.length} suggestion${applied.length === 1 ? "" : "s"} — see inline preview in the narrative`
+          );
+        } else if (!dropped?.length) {
+          toast.message("No new suggestions were generated.");
+        }
+
+        // Let editors apply refreshed section JSON before autosave resumes.
+        await new Promise<void>((resolve) => {
+          requestAnimationFrame(() => requestAnimationFrame(() => resolve()));
+        });
+      } catch (err) {
+        console.error(err);
+        const isNetworkFailure =
+          err instanceof TypeError &&
+          (err.message === "Failed to fetch" ||
+            err.message === "NetworkError when attempting to fetch resource.");
+        toast.error(
+          isNetworkFailure
+            ? "Could not reach the server — wait for the page to finish loading, then try Suggest fixes again."
+            : "Suggestion generation failed"
+        );
+      } finally {
+        setIsSuggesting(false);
+        setRunningSuggestionSections([]);
+      }
+    },
+    [bundle.report.id, refresh]
+  );
+
+  const clearSuggestionsFocusSection = useCallback(() => {
+    setSuggestionsFocusSection(null);
+  }, []);
+
+  const beginSuggestionApplyTransition = useCallback(
+    (section: SectionType, commentId: string) => {
+      setSuggestionApplyTransition((prev) => ({
+        ...prev,
+        [section]: {
+          holdInlinePreview: true,
+          gutterAnchorCommentId: commentId,
+        },
+      }));
+    },
+    []
+  );
+
+  const endSuggestionApplyTransition = useCallback((section: SectionType) => {
+    setSuggestionApplyTransition((prev) => {
+      const next = { ...prev };
+      delete next[section];
+      return next;
+    });
+  }, []);
+
+  const isSuggestionPreviewHeld = useCallback(
+    (section: SectionType) =>
+      suggestionApplyTransition[section]?.holdInlinePreview === true,
+    [suggestionApplyTransition]
+  );
+
+  const gutterSuggestionCommentForSection = useCallback(
+    (section: SectionType) => {
+      const lockedId = suggestionApplyTransition[section]?.gutterAnchorCommentId;
+      if (lockedId) {
+        const locked = comments.find((c) => c.id === lockedId);
+        if (locked) return locked;
+      }
+      return activeSuggestionForSection(section, comments, evaluations);
+    },
+    [comments, evaluations, suggestionApplyTransition]
+  );
+
+  const activeSuggestionIdForSection = useCallback(
+    (section: SectionType) => {
+      if (isSuggestionPreviewHeld(section)) return null;
+      const active = activeSuggestionForSection(section, comments, evaluations);
+      if (!active) return null;
+      const validation = validateSuggestionLocate(
+        active,
+        section,
+        sections[section]
+      );
+      return validation.canPreview ? active.id : null;
+    },
+    [comments, evaluations, isSuggestionPreviewHeld, sections]
   );
 
   // Scan narrative for unfilled placeholders (to-be-filled tokens + bracket guidance).
@@ -576,16 +770,36 @@ export function ReportProvider({
       evaluations,
       overflowCounts,
       runEvaluation,
+      generateSuggestions,
       isEvaluating,
+      isSuggesting,
       runningEvalSections,
+      runningSuggestionSections,
+      activeSuggestionIdForSection,
+      gutterSuggestionCommentForSection,
+      isSuggestionPreviewHeld,
+      beginSuggestionApplyTransition,
+      endSuggestionApplyTransition,
+      suggestionsFocusSection,
+      clearSuggestionsFocusSection,
       setEvaluations,
     }),
     [
       evaluations,
       overflowCounts,
       runEvaluation,
+      generateSuggestions,
       isEvaluating,
+      isSuggesting,
       runningEvalSections,
+      runningSuggestionSections,
+      activeSuggestionIdForSection,
+      gutterSuggestionCommentForSection,
+      isSuggestionPreviewHeld,
+      beginSuggestionApplyTransition,
+      endSuggestionApplyTransition,
+      suggestionsFocusSection,
+      clearSuggestionsFocusSection,
     ]
   );
 

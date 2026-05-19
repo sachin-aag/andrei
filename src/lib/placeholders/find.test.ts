@@ -23,10 +23,10 @@ describe("findPlaceholders", () => {
 
     expect(placeholders).toMatchObject([
       {
-        id: "define-narrative-7",
+        id: "define-narrative-8",
         section: "define",
         contentPath: "narrative",
-        fromPos: 7,
+        fromPos: 8,
         text: "[Batch No.: <to be filled>]",
       },
       {
@@ -35,6 +35,31 @@ describe("findPlaceholders", () => {
         text: "[to be filled]",
       },
     ]);
+  });
+
+  it("finds placeholders split across adjacent text nodes", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "CAPA " },
+            { type: "text", text: "[CAPA number: <to be filled>]" },
+            { type: "text", text: ", assigned to [Responsible person: <to be filled>]." },
+          ],
+        },
+      ],
+    };
+
+    const found = findPlaceholders(doc, "improve", "narrative");
+
+    expect(found.map((p) => p.text).sort()).toEqual(
+      [
+        "[CAPA number: <to be filled>]",
+        "[Responsible person: <to be filled>]",
+      ].sort()
+    );
   });
 
   it("walks nested text nodes with stable positions", () => {
@@ -49,8 +74,8 @@ describe("findPlaceholders", () => {
     const [placeholder] = findPlaceholders(doc, "measure", "narrative");
 
     expect(placeholder).toMatchObject({
-      id: "measure-narrative-28",
-      fromPos: 28,
+      id: "measure-narrative-29",
+      fromPos: 29,
       text: "[Room ID: <to be filled>]",
     });
   });

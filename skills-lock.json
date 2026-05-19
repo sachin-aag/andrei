@@ -1,6 +1,12 @@
 {
   "version": 1,
   "skills": {
+    "langfuse": {
+      "source": "langfuse/skills",
+      "sourceType": "github",
+      "skillPath": "skills/langfuse/SKILL.md",
+      "computedHash": "f0d24f191ab8cd00dedbf701be50b13bdf01b6507129c633fa6fd9c0c730b3a1"
+    },
     "vercel-composition-patterns": {
       "source": "vercel-labs/agent-skills",
       "sourceType": "github",

@@ -43,6 +43,8 @@ cp .env.example .env.local
 #   AI_GATEWAY_API_KEY=...              # Vercel AI Gateway key
 
 # 3. Create the database schema
+#    Local DB (no Neon admin): npm run db:local:up  →  use DATABASE_URL in .env.example
+#    Neon branches + production isolation: docs/database-environments.md
 npm run db:push            # or: npm run db:generate && npm run db:migrate
 #    See docs/database-schema.md for full table reference and disaster recovery.
 #    If you see Postgres "column ... does not exist" on comments: npm run db:fix-comments
