@@ -1,4 +1,4 @@
-# Bulk HTML sample evaluation (`npm run sample-eval-report`).
+# Bulk HTML sample evaluation (`pnpm run sample-eval-report`).
 #
 # API key — add a repository Actions secret:
 #   Settings → Secrets and variables → Actions → New repository secret
@@ -38,10 +38,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: pnpm/action-setup@v4
+
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-          cache: npm
+          cache: pnpm
 
       - name: Check API key secret
         id: key
@@ -59,7 +61,7 @@ jobs:
 
       - name: Install dependencies
         if: steps.key.outputs.skip == 'false'
-        run: npm ci
+        run: pnpm install --frozen-lockfile
 
       - name: Run bulk sample evaluation report
         if: steps.key.outputs.skip == 'false'
@@ -74,7 +76,7 @@ jobs:
             ART="sample_evaluation_report_${GITHUB_REF_NAME//\//_}_${{ github.sha }}.html"
           fi
           echo "Generating ci-artifacts/${ART}"
-          npm run sample-eval-report -- \
+          pnpm run sample-eval-report -- \
             --input-dir docs/sample_files \
             --out "ci-artifacts/${ART}"
 
