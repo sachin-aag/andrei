@@ -109,13 +109,23 @@ export async function POST(req: Request) {
     assignedManagerId = parse.data.assignedManagerId ?? null;
   }
 
+  const importedDeviationNo = importedContent?.header.deviationNo?.trim();
+  const importedDate = importedContent?.header.date;
+  const importedOtherTools = importedContent?.header.otherTools?.trim();
+
   const [report] = await db
     .insert(reports)
     .values({
-      deviationNo,
+      deviationNo: importedDeviationNo || deviationNo,
       authorId: user.id,
       assignedManagerId,
-      ...(importedContent ? { toolsUsed: importedContent.toolsUsed } : {}),
+      ...(importedContent
+        ? {
+            toolsUsed: importedContent.toolsUsed,
+            ...(importedDate ? { date: importedDate } : {}),
+            ...(importedOtherTools !== undefined ? { otherTools: importedOtherTools } : {}),
+          }
+        : {}),
     })
     .returning();
 

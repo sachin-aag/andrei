@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   appendParagraphsToDoc,
   legacyStringToDoc,
+  MAMMOTH_SOFT_BREAK,
   replaceTextInDoc,
   richJsonToPlainText,
   stripSuggestionMarksFromDoc,
@@ -21,6 +22,46 @@ describe("rich text helpers", () => {
         { type: "paragraph", content: [{ type: "text", text: "Line two" }] },
       ],
     });
+  });
+
+  it("preserves mammoth soft line breaks as hardBreak nodes", () => {
+    expect(
+      legacyStringToDoc(
+        `Line one${MAMMOTH_SOFT_BREAK}\nLine two${MAMMOTH_SOFT_BREAK}\nLine three`
+      )
+    ).toEqual({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "Line one" },
+            { type: "hardBreak" },
+            { type: "text", text: "Line two" },
+            { type: "hardBreak" },
+            { type: "text", text: "Line three" },
+          ],
+        },
+      ],
+    });
+  });
+
+  it("renders hardBreak nodes in plain text extraction", () => {
+    expect(
+      richJsonToPlainText({
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              { type: "text", text: "Line one" },
+              { type: "hardBreak" },
+              { type: "text", text: "Line two" },
+            ],
+          },
+        ],
+      })
+    ).toBe("Line one\nLine two");
   });
 
   it("extracts plain text from paragraphs, headings, and lists", () => {

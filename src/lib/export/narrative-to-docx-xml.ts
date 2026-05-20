@@ -46,11 +46,34 @@ export function plainTextToDocxXml(text: string | undefined | null): string {
 const DEFAULT_RUN_FONT = "Times New Roman";
 const DEFAULT_RUN_SIZE_HALF_POINTS = "24";
 
-/** Target total grid width in dxa (~6.5" usable on Letter) — avoids overrun when widths unknown. */
-const TABLE_GRID_TOTAL_FALLBACK_DXA = 9360;
+/**
+ * Max table grid width in dxa (twips), matching investigation template body:
+ * pgSz 11909 − left/right pgMar 720 each = 10469.
+ */
+const TABLE_GRID_TOTAL_MAX_DXA = 10469;
 
-/** Chain keepNext on all rows so Word moves the whole table if it does not fit on one page. */
-const TABLE_KEEP_TOGETHER_MAX_ROWS = 8;
+/** Minimum per-column width in dxa so cells stay readable after scaling. */
+const TABLE_GRID_MIN_COL_DXA = 180;
+
+function normalizeGridColWidths(widths: number[], maxTotalDxa: number): number[] {
+  const sum = widths.reduce((a, b) => a + b, 0);
+  if (sum <= maxTotalDxa) return widths;
+
+  const scale = maxTotalDxa / sum;
+  const scaled = widths.map((w) =>
+    Math.max(TABLE_GRID_MIN_COL_DXA, Math.round(w * scale))
+  );
+  const scaledSum = scaled.reduce((a, b) => a + b, 0);
+  const drift = maxTotalDxa - scaledSum;
+  if (drift !== 0 && scaled.length > 0) {
+    const last = scaled.length - 1;
+    scaled[last] = Math.max(
+      TABLE_GRID_MIN_COL_DXA,
+      scaled[last]! + drift
+    );
+  }
+  return scaled;
+}
 
 function escapeXml(text: string): string {
   return text
@@ -69,13 +92,15 @@ function paragraphJustification(align?: string | null): string {
 
 function paragraphProperties(
   align?: string | null,
-  numId?: number | null
+  numId?: number | null,
+  keepNext?: boolean
 ): string {
   const jc = paragraphJustification(align);
+  const keep = keepNext ? "<w:keepNext/>" : "";
   if (numId) {
-    return `<w:pPr>${jc}<w:numPr><w:ilvl w:val="0"/><w:numId w:val="${numId}"/></w:numPr></w:pPr>`;
+    return `<w:pPr>${keep}${jc}<w:numPr><w:ilvl w:val="0"/><w:numId w:val="${numId}"/></w:numPr></w:pPr>`;
   }
-  return `<w:pPr>${jc}</w:pPr>`;
+  return `<w:pPr>${keep}${jc}</w:pPr>`;
 }
 
 function wrapParagraph(text: string): string {
@@ -88,10 +113,11 @@ function paragraphToXml(
   node: JSONContent,
   bold = false,
   paragraphAlign?: string | null,
-  numId?: number | null
+  numId?: number | null,
+  keepNext = false
 ): string {
   const runs = textNodesToRuns(node.content ?? [], bold);
-  const pPr = paragraphProperties(paragraphAlign, numId);
+  const pPr = paragraphProperties(paragraphAlign, numId, keepNext);
   if (!runs) return `<w:p>${pPr}</w:p>`;
   return `<w:p>${pPr}${runs}</w:p>`;
 }
@@ -163,6 +189,53 @@ function listToXml(node: JSONContent): string {
 }
 
 function tableToXml(node: JSONContent): string {
+  const inner = buildInnerTableXml(node);
+  if (!inner) return "";
+
+  // Wrap the real table inside a single-row, single-cell, borderless table
+  // marked <w:cantSplit/>. Word treats the wrapper row as atomic, which keeps
+  // the inner table together across page breaks. If the wrapper row is taller
+  // than one page Word ignores cantSplit and splits the inner table anyway,
+  // which is the desired escape hatch for genuinely oversize tables.
+  const wrapperTblPr = `<w:tblPr>` +
+    `<w:tblW w:w="5000" w:type="pct"/>` +
+    `<w:tblBorders>` +
+    `<w:top w:val="nil"/>` +
+    `<w:left w:val="nil"/>` +
+    `<w:bottom w:val="nil"/>` +
+    `<w:right w:val="nil"/>` +
+    `<w:insideH w:val="nil"/>` +
+    `<w:insideV w:val="nil"/>` +
+    `</w:tblBorders>` +
+    `<w:tblCellMar>` +
+    `<w:top w:w="0" w:type="dxa"/>` +
+    `<w:left w:w="0" w:type="dxa"/>` +
+    `<w:bottom w:w="0" w:type="dxa"/>` +
+    `<w:right w:w="0" w:type="dxa"/>` +
+    `</w:tblCellMar>` +
+    `<w:tblLook w:val="04A0" w:firstRow="0" w:lastRow="0" w:firstColumn="0" w:lastColumn="0" w:noHBand="1" w:noVBand="1"/>` +
+    `</w:tblPr>`;
+  const wrapperGrid = `<w:tblGrid><w:gridCol w:w="${TABLE_GRID_TOTAL_MAX_DXA}"/></w:tblGrid>`;
+  const wrapperCell =
+    `<w:tc>` +
+    `<w:tcPr><w:tcW w:w="5000" w:type="pct"/>` +
+    `<w:tcMar>` +
+    `<w:top w:w="0" w:type="dxa"/>` +
+    `<w:left w:w="0" w:type="dxa"/>` +
+    `<w:bottom w:w="0" w:type="dxa"/>` +
+    `<w:right w:w="0" w:type="dxa"/>` +
+    `</w:tcMar>` +
+    `</w:tcPr>` +
+    inner +
+    // Word requires a trailing paragraph in every cell. Zero spacing keeps
+    // the wrapper from adding visible whitespace below the real table.
+    `<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/></w:pPr></w:p>` +
+    `</w:tc>`;
+  const wrapperRow = `<w:tr><w:trPr><w:cantSplit/></w:trPr>${wrapperCell}</w:tr>`;
+  return `<w:tbl>${wrapperTblPr}${wrapperGrid}${wrapperRow}</w:tbl>`;
+}
+
+function buildInnerTableXml(node: JSONContent): string {
   const rows = node.content ?? [];
   if (rows.length === 0) return "";
 
@@ -179,18 +252,23 @@ function tableToXml(node: JSONContent): string {
 
   const perColFallback = Math.max(
     360,
-    Math.floor(TABLE_GRID_TOTAL_FALLBACK_DXA / colCount)
+    Math.floor(TABLE_GRID_TOTAL_MAX_DXA / colCount)
   );
-  const gridColXmlParts = storedWidths
-    ? storedWidths.map((w) => `<w:gridCol w:w="${Math.round(w)}"/>`)
-    : Array.from({ length: colCount }).map(
-        () => `<w:gridCol w:w="${perColFallback}"/>`
-      );
+  const rawWidths = storedWidths
+    ? storedWidths
+    : Array.from({ length: colCount }, () => perColFallback);
+  const colWidths = normalizeGridColWidths(rawWidths, TABLE_GRID_TOTAL_MAX_DXA);
+  const gridTotalDxa = colWidths.reduce((a, b) => a + b, 0);
+  const gridColXmlParts = colWidths.map(
+    (w) => `<w:gridCol w:w="${Math.round(w)}"/>`
+  );
   const tblGrid = `<w:tblGrid>${gridColXmlParts.join("")}</w:tblGrid>`;
 
+  // Nested inside the keep-together wrapper: explicit dxa width prevents Word
+  // from honoring an oversized imported tblGrid sum and clipping the right edge.
   const tblPr = `<w:tblPr>
 <w:tblStyle w:val="TableGrid"/>
-<w:tblW w:w="5000" w:type="pct"/>
+<w:tblW w:w="${gridTotalDxa}" w:type="dxa"/>
 <w:tblBorders>
 <w:top w:val="single" w:sz="4" w:space="0" w:color="auto"/>
 <w:left w:val="single" w:sz="4" w:space="0" w:color="auto"/>
@@ -204,57 +282,18 @@ function tableToXml(node: JSONContent): string {
 
   const activeMerges: (ActiveRowMerge | null)[] = [];
   const rowsXml = rows
-    .map((row, rowIdx) => tableRowToXml(row, rowIdx, rows, activeMerges, colCount))
+    .map((row, rowIdx) =>
+      tableRowToXml(
+        row,
+        rowIdx === 0,
+        rowIdx === rows.length - 1,
+        activeMerges,
+        colCount
+      )
+    )
     .join("");
 
   return `<w:tbl>${tblPr}${tblGrid}${rowsXml}</w:tbl>`;
-}
-
-function isRepeatingHeaderRow(row: JSONContent): boolean {
-  const cells = row.content ?? [];
-  if (cells.length === 0) return false;
-  return cells.every((c) => c.type === "tableHeader");
-}
-
-/** First row index that is body/data (after title + column-header band). */
-function headerBandEndIndex(rows: JSONContent[]): number {
-  let i = 0;
-  while (i < rows.length) {
-    const row = rows[i]!;
-    if (isRepeatingHeaderRow(row)) {
-      i++;
-      continue;
-    }
-    if (i + 1 < rows.length && isRepeatingHeaderRow(rows[i + 1]!)) {
-      i++;
-      continue;
-    }
-    break;
-  }
-  return i;
-}
-
-function tableRowProperties(
-  rowIdx: number,
-  rows: JSONContent[],
-  row: JSONContent
-): string {
-  const parts: string[] = [];
-  if (isRepeatingHeaderRow(row)) {
-    parts.push("<w:tblHeader/>");
-  }
-  parts.push("<w:cantSplit/>");
-
-  const keepTogether = rows.length <= TABLE_KEEP_TOGETHER_MAX_ROWS;
-  const keepWithNext = keepTogether
-    ? rowIdx < rows.length - 1
-    : rowIdx < headerBandEndIndex(rows);
-
-  if (keepWithNext) {
-    parts.push("<w:keepNext/>");
-  }
-
-  return `<w:trPr>${parts.join("")}</w:trPr>`;
 }
 
 type ActiveRowMerge = {
@@ -265,13 +304,17 @@ type ActiveRowMerge = {
 
 function tableRowToXml(
   row: JSONContent,
-  rowIdx: number,
-  rows: JSONContent[],
+  isHeader: boolean,
+  isLastRow: boolean,
   activeMerges: (ActiveRowMerge | null)[],
   colCount: number
 ): string {
-  const trPr = tableRowProperties(rowIdx, rows, row);
   const cells = row.content ?? [];
+  // Always set cantSplit so a single row never breaks mid-content across pages.
+  // Header rows additionally repeat at the top of each page if the table spills.
+  let trPr = "<w:trPr><w:cantSplit/>";
+  if (isHeader) trPr += "<w:tblHeader/>";
+  trPr += "</w:trPr>";
   const consumedMerges = new Set<ActiveRowMerge>();
   const cellsXml: string[] = [];
   let col = 0;
@@ -283,7 +326,7 @@ function tableRowToXml(
     const isMergeStart = col === 0 || activeMerges[col - 1] !== merge;
     if (isMergeStart) {
       cellsXml.push(
-        tableCellToXml(merge.cell, {
+        tableCellToXml(merge.cell, isHeader, isLastRow, {
           colspan: merge.colspan,
           vMerge: "continue",
           empty: true,
@@ -306,7 +349,7 @@ function tableRowToXml(
     const colspan = getSpan(cell, "colspan");
     const rowspan = getSpan(cell, "rowspan");
     cellsXml.push(
-      tableCellToXml(cell, {
+      tableCellToXml(cell, isHeader, isLastRow, {
         colspan,
         vMerge: rowspan > 1 ? "restart" : null,
       })
@@ -328,7 +371,9 @@ function tableRowToXml(
 
   while (col < colCount) {
     if (!emitActiveMerge()) {
-      cellsXml.push(tableCellToXml({ type: "tableCell", content: [] }));
+      cellsXml.push(
+        tableCellToXml({ type: "tableCell", content: [] }, isHeader, isLastRow)
+      );
       col++;
     }
   }
@@ -340,6 +385,8 @@ function tableRowToXml(
 
 function tableCellToXml(
   cell: JSONContent,
+  isHeader: boolean,
+  isLastRow: boolean,
   options: {
     colspan?: number;
     vMerge?: "restart" | "continue" | null;
@@ -358,7 +405,7 @@ function tableCellToXml(
   if (options.vMerge) {
     tcPr += `<w:vMerge w:val="${options.vMerge}"/>`;
   }
-  if (cell.type === "tableHeader") {
+  if (isHeader) {
     tcPr += '<w:shd w:val="clear" w:color="auto" w:fill="D9E2F3"/>';
   }
   if (vWord) {
@@ -366,22 +413,24 @@ function tableCellToXml(
   }
   tcPr += "</w:tcPr>";
 
+  // keepNext on every paragraph in every non-last row asks Word to keep the
+  // table together when it fits on a single page, while still allowing a
+  // genuine split when the table is too tall for one page.
+  const keepNext = !isLastRow;
   const paragraphs = options.empty ? [] : cell.content ?? [];
   const content = paragraphs
     .map((p) => {
       if (p.type === "paragraph") {
-        return paragraphToXml(
-          p,
-          cell.type === "tableHeader",
-          hAlign ?? null
-        );
+        return paragraphToXml(p, isHeader, hAlign ?? null, null, keepNext);
       }
-      return paragraphToXml(p, false, hAlign ?? null);
+      return paragraphToXml(p, false, hAlign ?? null, null, keepNext);
     })
     .join("");
 
   // Word requires at least one paragraph in each cell
-  const cellContent = content || "<w:p/>";
+  const cellContent =
+    content ||
+    (keepNext ? `<w:p>${paragraphProperties(null, null, true)}</w:p>` : "<w:p/>");
   return `<w:tc>${tcPr}${cellContent}</w:tc>`;
 }
 

@@ -295,17 +295,7 @@ function parseTableCells(
     const rowspan = extractSpanAttr(tagAttrs, "rowspan");
     const align = extractTextAlign(tagAttrs, cellHtml);
 
-    const textContent = stripHtmlTags(cellHtml).trim();
-    const paragraphs = textContent
-      ? textContent.split(/\n+/).map(
-          (line): JSONContent => ({
-            type: "paragraph",
-            content: line.trim()
-              ? [{ type: "text", text: line.trim() }]
-              : [],
-          })
-        )
-      : [{ type: "paragraph" } as JSONContent];
+    const paragraphs = parseCellParagraphs(cellHtml);
 
     const cell: JSONContent = { type: cellType, content: paragraphs };
     const attrs: Record<string, number | string> = {};
@@ -386,15 +376,49 @@ function extractSpanAttr(attrs: string, name: string): number {
   return m ? parseInt(m[1]!, 10) : 1;
 }
 
-function stripHtmlTags(html: string): string {
-  return html
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/p>\s*<p\b[^>]*>/gi, "\n")
-    .replace(/<[^>]+>/g, "")
+function parseCellParagraphs(cellHtml: string): JSONContent[] {
+  const paragraphs: JSONContent[] = [];
+  const paraRegex = /<p\b[^>]*>([\s\S]*?)<\/p>/gi;
+  let match: RegExpExecArray | null;
+
+  while ((match = paraRegex.exec(cellHtml)) !== null) {
+    paragraphs.push(parseHtmlInlineParagraph(match[1]!));
+  }
+
+  if (paragraphs.length > 0) return paragraphs;
+
+  const text = stripHtmlTags(cellHtml).trim();
+  return text ? [parseHtmlInlineParagraph(text)] : [{ type: "paragraph" }];
+}
+
+function parseHtmlInlineParagraph(innerHtml: string): JSONContent {
+  const parts = innerHtml.split(/<br\s*\/?>/gi);
+  const inline: JSONContent[] = [];
+
+  for (let i = 0; i < parts.length; i++) {
+    const text = decodeHtmlEntities(stripHtmlTags(parts[i]!)).replace(/\s+/g, " ").trim();
+    if (i > 0) inline.push({ type: "hardBreak" });
+    if (text) inline.push({ type: "text", text });
+  }
+
+  return { type: "paragraph", content: inline.length > 0 ? inline : [] };
+}
+
+function decodeHtmlEntities(text: string): string {
+  return text
     .replace(/&amp;/g, "&")
     .replace(/&lt;/g, "<")
     .replace(/&gt;/g, ">")
     .replace(/&quot;/g, '"')
     .replace(/&apos;/g, "'")
     .replace(/&nbsp;/g, " ");
+}
+
+function stripHtmlTags(html: string): string {
+  return decodeHtmlEntities(
+    html
+      .replace(/<br\s*\/?>/gi, "\n")
+      .replace(/<\/p>\s*<p\b[^>]*>/gi, "\n")
+      .replace(/<[^>]+>/g, "")
+  );
 }

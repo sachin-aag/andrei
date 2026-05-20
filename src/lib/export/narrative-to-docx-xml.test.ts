@@ -18,6 +18,22 @@ function tableRows(xml: string): string[] {
   return [...xml.matchAll(/<w:tr>[\s\S]*?<\/w:tr>/g)].map((match) => match[0]);
 }
 
+/**
+ * Tables are emitted wrapped in a single-row "keep-together" outer table.
+ * This returns just the rows of the inner table the test cares about.
+ */
+function innerTableRows(xml: string): string[] {
+  const innerMatch = xml.match(/<w:tbl>[\s\S]*?<w:tbl>([\s\S]*?)<\/w:tbl>/);
+  return innerMatch ? tableRows(innerMatch[1]!) : [];
+}
+
+function hasWrapperRowWithCantSplit(xml: string): boolean {
+  // The wrapper row immediately follows the outer <w:tblGrid>. Its <w:trPr>
+  // must include <w:cantSplit/> — that is what keeps the inner table glued
+  // together across a page break.
+  return /<\/w:tblGrid>\s*<w:tr>\s*<w:trPr>[^<]*<w:cantSplit\/>/.test(xml);
+}
+
 function cellCount(rowXml: string): number {
   return (rowXml.match(/<w:tc>/g) ?? []).length;
 }
@@ -90,7 +106,7 @@ describe("narrativeToDocxXml tables", () => {
     };
 
     const xml = narrativeToDocxXml(doc);
-    const rows = tableRows(xml);
+    const rows = innerTableRows(xml);
 
     expect(rows).toHaveLength(4);
     expect(rows.map(cellCount)).toEqual([4, 4, 4, 4]);
@@ -116,7 +132,7 @@ describe("narrativeToDocxXml tables", () => {
     };
 
     const xml = narrativeToDocxXml(doc);
-    expect(xml).toContain('<w:tblW w:w="5000" w:type="pct"/>');
+    expect(xml).toContain('<w:tblW w:w="2000" w:type="dxa"/>');
     expect(xml).toContain('<w:gridCol w:w="800"/>');
     expect(xml).toContain('<w:gridCol w:w="1200"/>');
   });
@@ -143,16 +159,18 @@ describe("narrativeToDocxXml tables", () => {
     };
 
     const xml = narrativeToDocxXml(doc);
-    const cols = [...xml.matchAll(/<w:gridCol w:w="(\d+)"/g)].map((m) =>
+    const innerMatch = xml.match(/<w:tbl>[\s\S]*?(<w:tbl>[\s\S]*?<\/w:tbl>)/);
+    const innerXml = innerMatch?.[1] ?? "";
+    const cols = [...innerXml.matchAll(/<w:gridCol w:w="(\d+)"/g)].map((m) =>
       parseInt(m[1]!, 10)
     );
     expect(cols).toHaveLength(4);
     const sum = cols.reduce((a, b) => a + b, 0);
-    expect(sum).toBeLessThanOrEqual(9360 + 100);
-    expect(sum).toBeGreaterThan(8000);
+    expect(sum).toBeLessThanOrEqual(10469 + 100);
+    expect(sum).toBeGreaterThan(9000);
   });
 
-  it("emits tblHeader, cantSplit, and keepNext on header rows to avoid orphaned headers", () => {
+  it("keeps tables together across page breaks when they fit", () => {
     const doc: JSONContent = {
       type: "doc",
       content: [
@@ -161,101 +179,68 @@ describe("narrativeToDocxXml tables", () => {
           content: [
             {
               type: "tableRow",
-              content: [
-                textCell("tableHeader", "Sr. No."),
-                textCell("tableHeader", "Equipment"),
-              ],
+              content: [textCell("tableHeader", "H1"), textCell("tableHeader", "H2")],
             },
             {
               type: "tableRow",
-              content: [
-                textCell("tableCell", "1"),
-                textCell("tableCell", "Tunnel"),
-              ],
+              content: [textCell("tableCell", "A"), textCell("tableCell", "B")],
+            },
+            {
+              type: "tableRow",
+              content: [textCell("tableCell", "C"), textCell("tableCell", "D")],
             },
           ],
         },
       ],
     };
 
-    const rows = tableRows(narrativeToDocxXml(doc));
-    expect(rows[0]).toContain("<w:tblHeader/>");
-    expect(rows[0]).toContain("<w:cantSplit/>");
-    expect(rows[0]).toContain("<w:keepNext/>");
-    expect(rows[1]).toContain("<w:cantSplit/>");
-    expect(rows[1]).not.toContain("<w:tblHeader/>");
-    expect(rows[1]).not.toContain("<w:keepNext/>");
-  });
+    const xml = narrativeToDocxXml(doc);
 
-  it("marks every tableHeader row as tblHeader, not only row 0", () => {
-    const doc: JSONContent = {
-      type: "doc",
-      content: [
-        {
-          type: "table",
-          content: [
-            {
-              type: "tableRow",
-              content: [
-                textCell("tableCell", "NVPC Results", { colspan: 2 }),
-              ],
-            },
-            {
-              type: "tableRow",
-              content: [
-                textCell("tableHeader", "Sr. No."),
-                textCell("tableHeader", "Result"),
-              ],
-            },
-            {
-              type: "tableRow",
-              content: [textCell("tableCell", "1"), textCell("tableCell", "Pass")],
-            },
-          ],
-        },
-      ],
-    };
+    // The wrapper table is what actually keeps the inner table together: a
+    // single-row outer table whose row carries cantSplit. Word treats the
+    // wrapper row as atomic and refuses to break across page boundaries.
+    expect(hasWrapperRowWithCantSplit(xml)).toBe(true);
 
-    const rows = tableRows(narrativeToDocxXml(doc));
-    expect(rows[0]).not.toContain("<w:tblHeader/>");
-    expect(rows[0]).toContain("<w:keepNext/>");
-    expect(rows[1]).toContain("<w:tblHeader/>");
-    expect(rows[1]).toContain("<w:keepNext/>");
-    expect(rows[2]).not.toContain("<w:keepNext/>");
-  });
-
-  it("chains keepNext on all but the last row for small tables", () => {
-    const doc: JSONContent = {
-      type: "doc",
-      content: [
-        {
-          type: "table",
-          content: [
-            {
-              type: "tableRow",
-              content: [
-                textCell("tableHeader", "A"),
-                textCell("tableHeader", "B"),
-              ],
-            },
-            ...Array.from({ length: 6 }, (_, i) => ({
-              type: "tableRow" as const,
-              content: [
-                textCell("tableCell", String(i + 1)),
-                textCell("tableCell", `Value ${i + 1}`),
-              ],
-            })),
-          ],
-        },
-      ],
-    };
-
-    const rows = tableRows(narrativeToDocxXml(doc));
-    expect(rows).toHaveLength(7);
-    for (let i = 0; i < rows.length - 1; i++) {
-      expect(rows[i]).toContain("<w:keepNext/>");
+    const inner = innerTableRows(xml);
+    expect(inner).toHaveLength(3);
+    for (const row of inner) {
+      expect(row).toContain("<w:cantSplit/>");
     }
-    expect(rows[6]).not.toContain("<w:keepNext/>");
+    expect(inner[0]).toContain("<w:keepNext/>");
+    expect(inner[1]).toContain("<w:keepNext/>");
+    expect(inner[2]).not.toContain("<w:keepNext/>");
+  });
+
+  it("scales oversized colWidths so the grid does not clip the right edge", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          attrs: { colWidths: [5000, 4000, 4000] },
+          content: [
+            {
+              type: "tableRow",
+              content: [
+                textCell("tableHeader", "Description"),
+                textCell("tableHeader", "Unit"),
+                textCell("tableHeader", "Value"),
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const xml = narrativeToDocxXml(doc);
+    const innerMatch = xml.match(/<w:tbl>[\s\S]*?(<w:tbl>[\s\S]*?<\/w:tbl>)/);
+    const innerXml = innerMatch?.[1] ?? "";
+    const cols = [...innerXml.matchAll(/<w:gridCol w:w="(\d+)"/g)].map((m) =>
+      parseInt(m[1]!, 10)
+    );
+    const sum = cols.reduce((a, b) => a + b, 0);
+    expect(sum).toBeLessThanOrEqual(10469);
+    expect(innerXml).toContain(`<w:tblW w:w="${sum}" w:type="dxa"/>`);
   });
 
   it("emits Word gridSpan for colspans", () => {

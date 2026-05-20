@@ -17,6 +17,9 @@ export function emptyDoc(): JSONContent {
   };
 }
 
+/** Internal marker for Word soft line breaks preserved from mammoth markdown. */
+export const MAMMOTH_SOFT_BREAK = "\u0001";
+
 /** Convert plain-text narrative to a doc, grouping markdown-style list lines. */
 export function linesToDoc(s: string): JSONContent {
   if (!s.trim()) return emptyDoc();
@@ -27,12 +30,14 @@ export function linesToDoc(s: string): JSONContent {
 
   while (i < lines.length) {
     const line = lines[i]!;
-    const parsed = parseListLine(line);
+    const parsed = parseListLine(line.replace(new RegExp(`${MAMMOTH_SOFT_BREAK}$`), ""));
 
     if (parsed?.kind === "ordered") {
       const items: JSONContent[] = [];
       while (i < lines.length) {
-        const next = parseListLine(lines[i]!);
+        const next = parseListLine(
+          lines[i]!.replace(new RegExp(`${MAMMOTH_SOFT_BREAK}$`), "")
+        );
         if (next?.kind !== "ordered") break;
         items.push(listItemParagraph(next.text));
         i++;
@@ -45,7 +50,9 @@ export function linesToDoc(s: string): JSONContent {
       const listStyle = parsed.listStyle;
       const items: JSONContent[] = [];
       while (i < lines.length) {
-        const next = parseListLine(lines[i]!);
+        const next = parseListLine(
+          lines[i]!.replace(new RegExp(`${MAMMOTH_SOFT_BREAK}$`), "")
+        );
         if (next?.kind !== "bullet" || next.listStyle !== listStyle) break;
         items.push(listItemParagraph(next.text));
         i++;
@@ -54,6 +61,29 @@ export function linesToDoc(s: string): JSONContent {
         type: "bulletList",
         attrs: { listStyle },
         content: items,
+      });
+      continue;
+    }
+
+    if (line.endsWith(MAMMOTH_SOFT_BREAK)) {
+      const inline: JSONContent[] = [];
+      while (i < lines.length) {
+        const current = lines[i]!;
+        if (current.endsWith(MAMMOTH_SOFT_BREAK)) {
+          const text = current.slice(0, -MAMMOTH_SOFT_BREAK.length);
+          if (text) inline.push({ type: "text", text });
+          inline.push({ type: "hardBreak" });
+          i++;
+          continue;
+        }
+        if (current) inline.push({ type: "text", text: current });
+        i++;
+        break;
+      }
+      if (inline.at(-1)?.type === "hardBreak") inline.pop();
+      content.push({
+        type: "paragraph",
+        content: inline.length > 0 ? inline : [],
       });
       continue;
     }
@@ -112,6 +142,10 @@ export function richJsonToPlainText(
       parts.push(node.text ?? "");
       return;
     }
+    if (node.type === "hardBreak") {
+      parts.push("\n");
+      return;
+    }
     const inner = node.content;
     if (!inner?.length) return;
     if (node.type === "paragraph") {
@@ -121,10 +155,6 @@ export function richJsonToPlainText(
     }
     if (node.type === "heading") {
       for (const ch of inner) walk(ch, "");
-      parts.push("\n");
-      return;
-    }
-    if (node.type === "hardBreak") {
       parts.push("\n");
       return;
     }
