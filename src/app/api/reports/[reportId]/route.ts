@@ -4,6 +4,11 @@ import { z } from "zod";
 import { db } from "@/db";
 import { reports, reportSections, criteriaEvaluations, comments } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
+import {
+  DUPLICATE_DEVIATION_NO_ERROR,
+  isDeviationNoTaken,
+  normalizeDeviationNo,
+} from "@/lib/reports/deviation-no";
 
 export async function GET(
   _req: Request,
@@ -74,6 +79,17 @@ export async function PATCH(
 
   const updates: Record<string, unknown> = { ...parse.data, updatedAt: new Date() };
   if (parse.data.date) updates.date = new Date(parse.data.date);
+
+  if (parse.data.deviationNo !== undefined) {
+    const normalized = normalizeDeviationNo(parse.data.deviationNo);
+    if (!normalized) {
+      return NextResponse.json({ error: "Deviation number is required" }, { status: 400 });
+    }
+    if (await isDeviationNoTaken(normalized, reportId)) {
+      return NextResponse.json({ error: DUPLICATE_DEVIATION_NO_ERROR }, { status: 409 });
+    }
+    updates.deviationNo = normalized;
+  }
 
   const [updated] = await db
     .update(reports)

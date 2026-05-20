@@ -5,6 +5,11 @@ import { db } from "@/db";
 import { reports, reportSections } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import { docxBufferToImportedReportContent } from "@/lib/import/docx-to-sections";
+import {
+  DUPLICATE_DEVIATION_NO_ERROR,
+  isDeviationNoTaken,
+  normalizeDeviationNo,
+} from "@/lib/reports/deviation-no";
 import { EMPTY_CONTENT, REPORT_SECTION_ROW_ORDER } from "@/types/sections";
 
 const MAX_DOCX_BYTES = 15 * 1024 * 1024;
@@ -112,11 +117,20 @@ export async function POST(req: Request) {
   const importedDeviationNo = importedContent?.header.deviationNo?.trim();
   const importedDate = importedContent?.header.date;
   const importedOtherTools = importedContent?.header.otherTools?.trim();
+  const finalDeviationNo = normalizeDeviationNo(importedDeviationNo || deviationNo);
+
+  if (!finalDeviationNo) {
+    return NextResponse.json({ error: "Deviation number is required" }, { status: 400 });
+  }
+
+  if (await isDeviationNoTaken(finalDeviationNo)) {
+    return NextResponse.json({ error: DUPLICATE_DEVIATION_NO_ERROR }, { status: 409 });
+  }
 
   const [report] = await db
     .insert(reports)
     .values({
-      deviationNo: importedDeviationNo || deviationNo,
+      deviationNo: finalDeviationNo,
       authorId: user.id,
       assignedManagerId,
       ...(importedContent
