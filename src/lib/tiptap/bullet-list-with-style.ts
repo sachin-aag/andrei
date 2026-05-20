@@ -7,9 +7,9 @@ export const BulletListWithStyle = BulletList.extend({
       ...this.parent?.(),
       listStyle: {
         default: "disc",
-        parseHTML: (element) =>
+        parseHTML: (element: HTMLElement) =>
           element.getAttribute("data-list-style") === "dash" ? "dash" : "disc",
-        renderHTML: (attributes) => ({
+        renderHTML: (attributes: { listStyle?: string | null }) => ({
           "data-list-style": attributes.listStyle === "dash" ? "dash" : "disc",
         }),
       },
