@@ -30,6 +30,7 @@ export function CreateReportButton() {
   const [deviationNo, setDeviationNo] = useState("");
   const [managerId, setManagerId] = useState<string>("");
   const [draftFile, setDraftFile] = useState<File | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
   const managers = getManagers();
@@ -39,7 +40,40 @@ export function CreateReportButton() {
     setDeviationNo("");
     setManagerId("");
     setDraftFile(null);
+    setPreviewLoading(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleFileChange = async (file: File | null) => {
+    setDraftFile(file);
+    if (!file) {
+      setPreviewLoading(false);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
+    setPreviewLoading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/reports/import-preview", {
+        method: "POST",
+        body: fd,
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        toast.error(body.error ?? "Could not read that Word file");
+        return;
+      }
+      const data = (await res.json()) as { deviationNo?: string | null };
+      if (data.deviationNo) {
+        setDeviationNo(data.deviationNo);
+      }
+    } catch {
+      toast.error("Could not read that Word file");
+    } finally {
+      setPreviewLoading(false);
+    }
   };
 
   const submit = () => {
@@ -106,8 +140,7 @@ export function CreateReportButton() {
                 accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                 className="cursor-pointer file:mr-3 file:inline-flex file:items-center file:justify-start file:rounded-md file:border-0 file:bg-[var(--secondary)] file:px-3 file:py-1 file:text-left file:text-sm"
                 onChange={(e) => {
-                  const f = e.target.files?.[0] ?? null;
-                  setDraftFile(f);
+                  void handleFileChange(e.target.files?.[0] ?? null);
                 }}
               />
               {draftFile && (
@@ -122,8 +155,7 @@ export function CreateReportButton() {
                     size="sm"
                     className="h-8 gap-1 text-[var(--muted-foreground)]"
                     onClick={() => {
-                      setDraftFile(null);
-                      if (fileInputRef.current) fileInputRef.current.value = "";
+                      void handleFileChange(null);
                     }}
                   >
                     <X className="size-3.5" />
@@ -139,8 +171,14 @@ export function CreateReportButton() {
               id="deviationNo"
               placeholder="e.g. DEV/PK/26/001"
               value={deviationNo}
+              disabled={previewLoading}
               onChange={(e) => setDeviationNo(e.target.value)}
             />
+            {previewLoading && (
+              <p className="text-xs text-[var(--muted-foreground)]">
+                Reading deviation number from Word file…
+              </p>
+            )}
           </div>
           <div className="grid gap-2">
             <Label>Assigned Manager (optional)</Label>
@@ -166,7 +204,7 @@ export function CreateReportButton() {
           >
             Cancel
           </Button>
-          <Button onClick={submit} disabled={pending}>
+          <Button onClick={submit} disabled={pending || previewLoading}>
             {pending && <Loader2 className="size-4 animate-spin" />}
             Create
           </Button>

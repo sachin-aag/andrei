@@ -5,14 +5,13 @@ import { db } from "@/db";
 import { reports, reportSections } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import { docxBufferToImportedReportContent } from "@/lib/import/docx-to-sections";
+import { readDocxUpload } from "@/lib/import/docx-upload";
 import {
   DUPLICATE_DEVIATION_NO_ERROR,
   isDeviationNoTaken,
   normalizeDeviationNo,
 } from "@/lib/reports/deviation-no";
 import { EMPTY_CONTENT, REPORT_SECTION_ROW_ORDER } from "@/types/sections";
-
-const MAX_DOCX_BYTES = 15 * 1024 * 1024;
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -75,27 +74,14 @@ export async function POST(req: Request) {
     }
 
     if (file instanceof File && file.size > 0) {
-      if (file.size > MAX_DOCX_BYTES) {
-        return NextResponse.json(
-          { error: "Uploaded file is too large (max 15 MB)" },
-          { status: 400 }
-        );
-      }
-      const lower = file.name.toLowerCase();
-      if (
-        !lower.endsWith(".docx") &&
-        file.type !==
-          "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-      ) {
-        return NextResponse.json(
-          { error: "Only Word documents (.docx) are supported" },
-          { status: 400 }
-        );
-      }
       try {
-        const buf = Buffer.from(await file.arrayBuffer());
+        const buf = await readDocxUpload(file);
         importedContent = await docxBufferToImportedReportContent(buf);
-      } catch {
+      } catch (e) {
+        const message = e instanceof Error ? e.message : "";
+        if (message.includes("too large") || message.includes("Only Word")) {
+          return NextResponse.json({ error: message }, { status: 400 });
+        }
         return NextResponse.json(
           {
             error:
@@ -120,19 +106,6 @@ export async function POST(req: Request) {
 
   if (!finalDeviationNo) {
     return NextResponse.json({ error: "Deviation number is required" }, { status: 400 });
-  }
-
-  const importedRaw = importedContent?.header.deviationNo?.trim();
-  if (importedRaw) {
-    const importedCanonical = normalizeDeviationNo(importedRaw);
-    if (importedCanonical !== finalDeviationNo) {
-      return NextResponse.json(
-        {
-          error: `The Word file lists deviation number ${importedRaw}, which does not match ${deviationNo.trim()}.`,
-        },
-        { status: 400 }
-      );
-    }
   }
 
   if (await isDeviationNoTaken(finalDeviationNo)) {
