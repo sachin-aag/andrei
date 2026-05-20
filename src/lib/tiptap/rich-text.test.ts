@@ -38,7 +38,9 @@ describe("rich text helpers", () => {
       ],
     };
 
-    expect(richJsonToPlainText(doc)).toBe("Root cause\nObserved during review.\n\nBatch record");
+    expect(richJsonToPlainText(doc)).toBe(
+      "Root cause\nObserved during review.\n\n• Batch record"
+    );
   });
 
   it("replaces text with whitespace-tolerant anchor matching", () => {

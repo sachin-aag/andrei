@@ -386,18 +386,17 @@ function buildAnalyzeFromChunk(text: string): AnalyzeSection {
     investigationOutcome: getBetweenLabels(body, ["Investigation Outcome"], [
       "Identified Root Cause/ Probable Cause",
       "Identified Root Cause / Probable Cause",
-      "Primary Root Cause Level 1",
       "Impact Assessment (System/ Document/ Product/ Equipment/Patient safety/Past batches)",
     ]),
     rootCause: {
       narrative: getBetweenLabels(
         body,
         ["Identified Root Cause/ Probable Cause", "Identified Root Cause / Probable Cause"],
-        ["Primary Root Cause Level 1", "Impact Assessment"]
+        [
+          "Impact Assessment (System/ Document/ Product/ Equipment/Patient safety/Past batches)",
+          "Impact Assessment",
+        ]
       ),
-      primaryLevel1: getLineValue(body, "Primary Root Cause Level 1"),
-      secondaryLevel2: getLineValue(body, "Secondary Root Cause Level 2"),
-      thirdLevel3: getLineValue(body, "Third Root Cause Level 3"),
     },
     impactAssessment: {
       system: getLineValue(body, "System"),

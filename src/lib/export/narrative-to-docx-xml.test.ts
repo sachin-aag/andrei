@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { JSONContent } from "@tiptap/core";
-import { narrativeToDocxXml } from "@/lib/export/narrative-to-docx-xml";
+import { narrativeToDocxXml, plainTextToDocxXml } from "@/lib/export/narrative-to-docx-xml";
 
 function textCell(
   type: "tableCell" | "tableHeader",
@@ -40,6 +40,7 @@ describe("narrativeToDocxXml tables", () => {
       '<w:rFonts w:ascii="Times New Roman" w:eastAsia="Times New Roman" w:hAnsi="Times New Roman" w:cs="Times New Roman"/>'
     );
     expect(xml).toContain('<w:sz w:val="24"/>');
+    expect(xml).toContain('<w:jc w:val="left"/>');
   });
 
   it("emits Word vertical merge continuation cells for rowspans", () => {
@@ -172,5 +173,55 @@ describe("narrativeToDocxXml tables", () => {
     };
 
     expect(narrativeToDocxXml(doc)).toContain('<w:gridSpan w:val="2"/>');
+  });
+
+  it("emits Word numbering for dash and ordered lists", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "bulletList",
+          attrs: { listStyle: "dash" },
+          content: [
+            {
+              type: "listItem",
+              content: [
+                {
+                  type: "paragraph",
+                  content: [{ type: "text", text: "Dash item" }],
+                },
+              ],
+            },
+          ],
+        },
+        {
+          type: "orderedList",
+          content: [
+            {
+              type: "listItem",
+              content: [
+                {
+                  type: "paragraph",
+                  content: [{ type: "text", text: "Numbered item" }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const xml = narrativeToDocxXml(doc);
+    expect(xml).toContain('<w:numId w:val="37"/>');
+    expect(xml).toContain('<w:numId w:val="35"/>');
+    expect(xml).toContain("Dash item");
+    expect(xml).toContain("Numbered item");
+  });
+
+  it("parses plain text dash lists into numbered Word XML", () => {
+    const xml = plainTextToDocxXml("- First\n- Second");
+    expect(xml).toContain('<w:numId w:val="37"/>');
+    expect(xml).toContain("First");
+    expect(xml).toContain("Second");
   });
 });

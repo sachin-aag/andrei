@@ -1,4 +1,6 @@
 import type { JSONContent } from "@tiptap/core";
+import { wordNumIdForList } from "@/lib/tiptap/list-style";
+import { linesToDoc } from "@/lib/tiptap/rich-text";
 
 /**
  * Convert a Tiptap JSONContent narrative document to OOXML (Word XML).
@@ -34,6 +36,13 @@ export function narrativeToDocxXml(
   return result || wrapParagraph("Not Applicable");
 }
 
+/** Plain multiline text (markdown-style list markers) → Word XML. */
+export function plainTextToDocxXml(text: string | undefined | null): string {
+  const trimmed = text?.trim();
+  if (!trimmed) return wrapParagraph("Not Applicable");
+  return narrativeToDocxXml(linesToDoc(trimmed));
+}
+
 const DEFAULT_RUN_FONT = "Times New Roman";
 const DEFAULT_RUN_SIZE_HALF_POINTS = "24";
 
@@ -49,8 +58,25 @@ function escapeXml(text: string): string {
     .replace(/'/g, "&apos;");
 }
 
+function paragraphJustification(align?: string | null): string {
+  const val =
+    align === "center" || align === "right" ? align : "left";
+  return `<w:jc w:val="${val}"/>`;
+}
+
+function paragraphProperties(
+  align?: string | null,
+  numId?: number | null
+): string {
+  const jc = paragraphJustification(align);
+  if (numId) {
+    return `<w:pPr>${jc}<w:numPr><w:ilvl w:val="0"/><w:numId w:val="${numId}"/></w:numPr></w:pPr>`;
+  }
+  return `<w:pPr>${jc}</w:pPr>`;
+}
+
 function wrapParagraph(text: string): string {
-  return `<w:p><w:r>${runProperties()}<w:t xml:space="preserve">${escapeXml(
+  return `<w:p>${paragraphProperties()}<w:r>${runProperties()}<w:t xml:space="preserve">${escapeXml(
     text
   )}</w:t></w:r></w:p>`;
 }
@@ -58,17 +84,13 @@ function wrapParagraph(text: string): string {
 function paragraphToXml(
   node: JSONContent,
   bold = false,
-  paragraphAlign?: string | null
+  paragraphAlign?: string | null,
+  numId?: number | null
 ): string {
   const runs = textNodesToRuns(node.content ?? [], bold);
-  const jc =
-    paragraphAlign === "left" ||
-    paragraphAlign === "center" ||
-    paragraphAlign === "right"
-      ? `<w:pPr><w:jc w:val="${paragraphAlign}"/></w:pPr>`
-      : "";
-  if (!runs) return `<w:p>${jc}</w:p>`;
-  return `<w:p>${jc}${runs}</w:p>`;
+  const pPr = paragraphProperties(paragraphAlign, numId);
+  if (!runs) return `<w:p>${pPr}</w:p>`;
+  return `<w:p>${pPr}${runs}</w:p>`;
 }
 
 function textNodesToRuns(
@@ -121,11 +143,16 @@ function runProperties(options: { bold?: boolean; italic?: boolean } = {}): stri
 }
 
 function listToXml(node: JSONContent): string {
+  const listType = node.type === "orderedList" ? "orderedList" : "bulletList";
+  const numId = wordNumIdForList(
+    listType,
+    (node.attrs?.listStyle as string | undefined) ?? null
+  );
   const parts: string[] = [];
   for (const item of node.content ?? []) {
     if (item.type === "listItem") {
       for (const child of item.content ?? []) {
-        parts.push(paragraphToXml(child));
+        parts.push(paragraphToXml(child, false, null, numId));
       }
     }
   }

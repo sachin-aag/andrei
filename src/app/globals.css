@@ -497,6 +497,39 @@
   margin-bottom: 0;
 }
 
+/* ProseMirror / Tiptap — lists */
+.ProseMirror ul,
+.ProseMirror ol {
+  margin: 0.35rem 0 0.35rem 1.25rem;
+  padding: 0;
+}
+
+.ProseMirror li {
+  margin: 0.15rem 0;
+}
+
+.ProseMirror ul[data-list-style="disc"] {
+  list-style-type: disc;
+}
+
+.ProseMirror ul[data-list-style="dash"] {
+  list-style-type: none;
+}
+
+.ProseMirror ul[data-list-style="dash"] > li {
+  position: relative;
+}
+
+.ProseMirror ul[data-list-style="dash"] > li::before {
+  content: "-";
+  position: absolute;
+  left: -1rem;
+}
+
+.ProseMirror ol {
+  list-style-type: decimal;
+}
+
 /* `[Field name: <to be filled>]` markers — visible todos until the user fills them in. */
 .placeholder-todo {
   background-color: rgb(245 158 11 / 0.15);

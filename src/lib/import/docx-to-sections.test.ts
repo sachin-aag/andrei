@@ -68,6 +68,11 @@ describe("docx import", () => {
     const controlPrev = imported.sections.control.preventiveActions;
     expect(controlPrev).not.toContain("Control section covers the preventive actions");
     expect(controlPrev).not.toContain("Was the Preventive Action linked");
+
+    const rootCauseNarrative = imported.sections.analyze.rootCause.narrative;
+    expect(rootCauseNarrative).toContain("Primary Root Cause Level 1");
+    expect(rootCauseNarrative).toContain("Equipment / Instrument");
+    expect(imported.sections.analyze.rootCause).not.toHaveProperty("primaryLevel1");
   });
 
   it("maps Documents Reviewed and List of attachment blocks into structured items", () => {
