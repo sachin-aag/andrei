@@ -14,11 +14,13 @@ vi.mock("@/lib/auth/session", () => ({
   getCurrentUser: vi.fn(),
 }));
 
-vi.mock("@/lib/reports/deviation-no", () => ({
-  DUPLICATE_DEVIATION_NO_ERROR: "A report with this deviation number already exists",
-  isDeviationNoTaken: vi.fn(),
-  normalizeDeviationNo: vi.fn((value: string) => value.trim()),
-}));
+vi.mock("@/lib/reports/deviation-no", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/reports/deviation-no")>();
+  return {
+    ...actual,
+    isDeviationNoTaken: vi.fn(),
+  };
+});
 
 import { db } from "@/db";
 import { isDeviationNoTaken } from "@/lib/reports/deviation-no";
@@ -96,6 +98,29 @@ describe("/api/reports", () => {
     await expect(response.json()).resolves.toEqual({
       error: DUPLICATE_DEVIATION_NO_ERROR,
     });
+    expect(db.insert).not.toHaveBeenCalled();
+  });
+
+  it("checks duplicates using the user-entered deviation number, not only the docx header", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValueOnce({
+      id: "engineer-1",
+      name: "Engineer",
+      email: "engineer@example.com",
+      employeeId: "E-001",
+      role: "engineer",
+      title: "Quality Engineer",
+    });
+    vi.mocked(isDeviationNoTaken).mockResolvedValueOnce(true);
+
+    const response = await POST(
+      new Request("http://localhost/api/reports", {
+        method: "POST",
+        body: JSON.stringify({ deviationNo: "dev pr 24 016" }),
+      }),
+    );
+
+    expect(response.status).toBe(409);
+    expect(isDeviationNoTaken).toHaveBeenCalledWith("DEV/PR/24/016");
     expect(db.insert).not.toHaveBeenCalled();
   });
 });

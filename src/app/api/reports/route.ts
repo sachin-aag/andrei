@@ -114,13 +114,25 @@ export async function POST(req: Request) {
     assignedManagerId = parse.data.assignedManagerId ?? null;
   }
 
-  const importedDeviationNo = importedContent?.header.deviationNo?.trim();
   const importedDate = importedContent?.header.date;
   const importedOtherTools = importedContent?.header.otherTools?.trim();
-  const finalDeviationNo = normalizeDeviationNo(importedDeviationNo || deviationNo);
+  const finalDeviationNo = normalizeDeviationNo(deviationNo);
 
   if (!finalDeviationNo) {
     return NextResponse.json({ error: "Deviation number is required" }, { status: 400 });
+  }
+
+  const importedRaw = importedContent?.header.deviationNo?.trim();
+  if (importedRaw) {
+    const importedCanonical = normalizeDeviationNo(importedRaw);
+    if (importedCanonical !== finalDeviationNo) {
+      return NextResponse.json(
+        {
+          error: `The Word file lists deviation number ${importedRaw}, which does not match ${deviationNo.trim()}.`,
+        },
+        { status: 400 }
+      );
+    }
   }
 
   if (await isDeviationNoTaken(finalDeviationNo)) {
