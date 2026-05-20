@@ -152,6 +152,112 @@ describe("narrativeToDocxXml tables", () => {
     expect(sum).toBeGreaterThan(8000);
   });
 
+  it("emits tblHeader, cantSplit, and keepNext on header rows to avoid orphaned headers", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [
+                textCell("tableHeader", "Sr. No."),
+                textCell("tableHeader", "Equipment"),
+              ],
+            },
+            {
+              type: "tableRow",
+              content: [
+                textCell("tableCell", "1"),
+                textCell("tableCell", "Tunnel"),
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const rows = tableRows(narrativeToDocxXml(doc));
+    expect(rows[0]).toContain("<w:tblHeader/>");
+    expect(rows[0]).toContain("<w:cantSplit/>");
+    expect(rows[0]).toContain("<w:keepNext/>");
+    expect(rows[1]).toContain("<w:cantSplit/>");
+    expect(rows[1]).not.toContain("<w:tblHeader/>");
+    expect(rows[1]).not.toContain("<w:keepNext/>");
+  });
+
+  it("marks every tableHeader row as tblHeader, not only row 0", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [
+                textCell("tableCell", "NVPC Results", { colspan: 2 }),
+              ],
+            },
+            {
+              type: "tableRow",
+              content: [
+                textCell("tableHeader", "Sr. No."),
+                textCell("tableHeader", "Result"),
+              ],
+            },
+            {
+              type: "tableRow",
+              content: [textCell("tableCell", "1"), textCell("tableCell", "Pass")],
+            },
+          ],
+        },
+      ],
+    };
+
+    const rows = tableRows(narrativeToDocxXml(doc));
+    expect(rows[0]).not.toContain("<w:tblHeader/>");
+    expect(rows[0]).toContain("<w:keepNext/>");
+    expect(rows[1]).toContain("<w:tblHeader/>");
+    expect(rows[1]).toContain("<w:keepNext/>");
+    expect(rows[2]).not.toContain("<w:keepNext/>");
+  });
+
+  it("chains keepNext on all but the last row for small tables", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [
+                textCell("tableHeader", "A"),
+                textCell("tableHeader", "B"),
+              ],
+            },
+            ...Array.from({ length: 6 }, (_, i) => ({
+              type: "tableRow" as const,
+              content: [
+                textCell("tableCell", String(i + 1)),
+                textCell("tableCell", `Value ${i + 1}`),
+              ],
+            })),
+          ],
+        },
+      ],
+    };
+
+    const rows = tableRows(narrativeToDocxXml(doc));
+    expect(rows).toHaveLength(7);
+    for (let i = 0; i < rows.length - 1; i++) {
+      expect(rows[i]).toContain("<w:keepNext/>");
+    }
+    expect(rows[6]).not.toContain("<w:keepNext/>");
+  });
+
   it("emits Word gridSpan for colspans", () => {
     const doc: JSONContent = {
       type: "doc",

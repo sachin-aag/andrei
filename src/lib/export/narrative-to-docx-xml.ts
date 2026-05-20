@@ -49,6 +49,9 @@ const DEFAULT_RUN_SIZE_HALF_POINTS = "24";
 /** Target total grid width in dxa (~6.5" usable on Letter) — avoids overrun when widths unknown. */
 const TABLE_GRID_TOTAL_FALLBACK_DXA = 9360;
 
+/** Chain keepNext on all rows so Word moves the whole table if it does not fit on one page. */
+const TABLE_KEEP_TOGETHER_MAX_ROWS = 8;
+
 function escapeXml(text: string): string {
   return text
     .replace(/&/g, "&amp;")
@@ -201,12 +204,57 @@ function tableToXml(node: JSONContent): string {
 
   const activeMerges: (ActiveRowMerge | null)[] = [];
   const rowsXml = rows
-    .map((row, rowIdx) =>
-      tableRowToXml(row, rowIdx === 0, activeMerges, colCount)
-    )
+    .map((row, rowIdx) => tableRowToXml(row, rowIdx, rows, activeMerges, colCount))
     .join("");
 
   return `<w:tbl>${tblPr}${tblGrid}${rowsXml}</w:tbl>`;
+}
+
+function isRepeatingHeaderRow(row: JSONContent): boolean {
+  const cells = row.content ?? [];
+  if (cells.length === 0) return false;
+  return cells.every((c) => c.type === "tableHeader");
+}
+
+/** First row index that is body/data (after title + column-header band). */
+function headerBandEndIndex(rows: JSONContent[]): number {
+  let i = 0;
+  while (i < rows.length) {
+    const row = rows[i]!;
+    if (isRepeatingHeaderRow(row)) {
+      i++;
+      continue;
+    }
+    if (i + 1 < rows.length && isRepeatingHeaderRow(rows[i + 1]!)) {
+      i++;
+      continue;
+    }
+    break;
+  }
+  return i;
+}
+
+function tableRowProperties(
+  rowIdx: number,
+  rows: JSONContent[],
+  row: JSONContent
+): string {
+  const parts: string[] = [];
+  if (isRepeatingHeaderRow(row)) {
+    parts.push("<w:tblHeader/>");
+  }
+  parts.push("<w:cantSplit/>");
+
+  const keepTogether = rows.length <= TABLE_KEEP_TOGETHER_MAX_ROWS;
+  const keepWithNext = keepTogether
+    ? rowIdx < rows.length - 1
+    : rowIdx < headerBandEndIndex(rows);
+
+  if (keepWithNext) {
+    parts.push("<w:keepNext/>");
+  }
+
+  return `<w:trPr>${parts.join("")}</w:trPr>`;
 }
 
 type ActiveRowMerge = {
@@ -217,15 +265,13 @@ type ActiveRowMerge = {
 
 function tableRowToXml(
   row: JSONContent,
-  isHeader: boolean,
+  rowIdx: number,
+  rows: JSONContent[],
   activeMerges: (ActiveRowMerge | null)[],
   colCount: number
 ): string {
+  const trPr = tableRowProperties(rowIdx, rows, row);
   const cells = row.content ?? [];
-  let trPr = "";
-  if (isHeader) {
-    trPr = "<w:trPr><w:tblHeader/></w:trPr>";
-  }
   const consumedMerges = new Set<ActiveRowMerge>();
   const cellsXml: string[] = [];
   let col = 0;
@@ -237,7 +283,7 @@ function tableRowToXml(
     const isMergeStart = col === 0 || activeMerges[col - 1] !== merge;
     if (isMergeStart) {
       cellsXml.push(
-        tableCellToXml(merge.cell, isHeader, {
+        tableCellToXml(merge.cell, {
           colspan: merge.colspan,
           vMerge: "continue",
           empty: true,
@@ -260,7 +306,7 @@ function tableRowToXml(
     const colspan = getSpan(cell, "colspan");
     const rowspan = getSpan(cell, "rowspan");
     cellsXml.push(
-      tableCellToXml(cell, isHeader, {
+      tableCellToXml(cell, {
         colspan,
         vMerge: rowspan > 1 ? "restart" : null,
       })
@@ -282,7 +328,7 @@ function tableRowToXml(
 
   while (col < colCount) {
     if (!emitActiveMerge()) {
-      cellsXml.push(tableCellToXml({ type: "tableCell", content: [] }, isHeader));
+      cellsXml.push(tableCellToXml({ type: "tableCell", content: [] }));
       col++;
     }
   }
@@ -294,7 +340,6 @@ function tableRowToXml(
 
 function tableCellToXml(
   cell: JSONContent,
-  isHeader: boolean,
   options: {
     colspan?: number;
     vMerge?: "restart" | "continue" | null;
@@ -313,7 +358,7 @@ function tableCellToXml(
   if (options.vMerge) {
     tcPr += `<w:vMerge w:val="${options.vMerge}"/>`;
   }
-  if (isHeader) {
+  if (cell.type === "tableHeader") {
     tcPr += '<w:shd w:val="clear" w:color="auto" w:fill="D9E2F3"/>';
   }
   if (vWord) {
@@ -325,7 +370,11 @@ function tableCellToXml(
   const content = paragraphs
     .map((p) => {
       if (p.type === "paragraph") {
-        return paragraphToXml(p, isHeader, hAlign ?? null);
+        return paragraphToXml(
+          p,
+          cell.type === "tableHeader",
+          hAlign ?? null
+        );
       }
       return paragraphToXml(p, false, hAlign ?? null);
     })
