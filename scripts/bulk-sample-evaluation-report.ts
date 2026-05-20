@@ -18,25 +18,22 @@ import { config as loadEnv } from "dotenv";
 loadEnv({ path: ".env.local" });
 loadEnv({ path: ".env" });
 
-import type { SectionType } from "@/db/schema";
-import type { ImportedReportContent } from "@/lib/import/docx-to-sections";
-import { docxBufferToImportedReportContent } from "@/lib/import/docx-to-sections";
 import {
-  evaluateSection,
-  buildCriterionEvaluationLlmPrompts,
   resolveEvaluationLanguageModel,
   PROMPT_VERSION,
   describeCriterionEvaluationLlmFootprint,
 } from "@/lib/ai/evaluate";
-import {
-  normalizeAnalyzeToolResults,
-} from "@/lib/ai/evaluate-run-helpers";
 import { EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
 import {
   COMMON_EVALUATION_SYSTEM_PROMPT,
   SECTION_SYSTEM_PROMPT_ADDITIONS,
 } from "@/lib/ai/section-prompts";
-import { hasEnoughContextInFirstSection } from "@/lib/ai/first-section-context";
+import {
+  collectDocxFiles,
+  evaluateOneDocx,
+  type ReportRunOutcome,
+  type ReportSectionLlmQuery,
+} from "@/lib/sample-eval/evaluate-sample-docx";
 import {
   aggregateCriterionOverall,
   aggregateSectionOverall,
@@ -61,24 +58,6 @@ type HtmlRunMeta = {
   criterionLlm: ReturnType<typeof describeCriterionEvaluationLlmFootprint>;
   bucketLlm: typeof REASONING_BUCKET_LAYER_LLM;
   clusteringNote: string;
-};
-
-type ReportSectionLlmQuery = {
-  section: SectionType;
-  llmCalled: boolean;
-  systemPrompt?: string;
-  userPrompt?: string;
-};
-
-type ReportRunOutcome = {
-  sourcePath: string;
-  sourceFile: string;
-  deviationNo: string;
-  anchorSlug: string;
-  skippedReason: string | null;
-  rows: BulkEvalRow[];
-  /** Per sectional Gemini request when this report was evaluated (skipped reports: empty). */
-  sectionLlmQueries: ReportSectionLlmQuery[];
 };
 
 /** Derive a stable date from PROMPT_VERSION (e.g. "2026-05-17-1" → "2026-05-17"). */
@@ -268,147 +247,6 @@ async function mapWithConcurrencyLimit<T, R>(
   const poolSize = Math.min(cap, items.length);
   await Promise.all(Array.from({ length: poolSize }, () => runNext()));
   return results;
-}
-
-/** Collect *.docx under dir (recursive depth-first). */
-function collectDocxFiles(dir: string): string[] {
-  const out: string[] = [];
-  if (!fs.existsSync(dir)) return out;
-  const stack = [dir];
-  while (stack.length > 0) {
-    const cur = stack.pop()!;
-    let entries;
-    try {
-      entries = fs.readdirSync(cur, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const e of entries) {
-      const full = path.join(cur, e.name);
-      if (e.isDirectory()) stack.push(full);
-      else if (e.isFile() && /\.docx$/i.test(e.name)) out.push(full);
-    }
-  }
-  return out.sort();
-}
-
-function reportAnchorSlug(basenameNoExt: string): string {
-  const base =
-    basenameNoExt
-      .replace(/\.docx$/i, "")
-      .replace(/[^\p{L}\p{N}]+/gu, "-")
-      .replace(/^-+|-+$/gu, "") || "report";
-  return `report-${base.toLowerCase()}`;
-}
-
-function deviationNoFromBasename(originalName: string): string {
-  return (
-    originalName.replace(/\.docx$/i, "").replace(/_/g, " ").trim() ||
-    originalName
-  );
-}
-
-async function evaluateOneDocx(absPath: string, reportDate: string): Promise<ReportRunOutcome> {
-  const buf = fs.readFileSync(absPath);
-  const sourceFile = path.basename(absPath);
-  const anchorSlug = reportAnchorSlug(path.basename(absPath, ".docx"));
-
-  let imported: ImportedReportContent;
-  try {
-    imported = await docxBufferToImportedReportContent(buf);
-  } catch (e) {
-    return {
-      sourcePath: absPath,
-      sourceFile,
-      deviationNo: deviationNoFromBasename(sourceFile),
-      anchorSlug,
-      skippedReason: `Import failed: ${e instanceof Error ? e.message : String(e)}`,
-      rows: [],
-      sectionLlmQueries: [],
-    };
-  }
-
-  const deviationNo = deviationNoFromBasename(sourceFile);
-
-  if (!hasEnoughContextInFirstSection(imported.sections.define)) {
-    return {
-      sourcePath: absPath,
-      sourceFile,
-      deviationNo,
-      anchorSlug,
-      skippedReason:
-        "Define section lacks enough sentences to evaluate (needs at least two).",
-      rows: [],
-      sectionLlmQueries: [],
-    };
-  }
-
-  // Build allSections map for cumulative prior-section context.
-  const allSections: Record<string, unknown> = {};
-  for (const sk of EVALUATABLE_SECTIONS) {
-    allSections[sk] = imported.sections[sk as keyof typeof imported.sections];
-  }
-
-  const sectionLlmQueries: ReportSectionLlmQuery[] = EVALUATABLE_SECTIONS.map(
-    (sectionKey) => {
-      const payload =
-        imported.sections[sectionKey as keyof typeof imported.sections];
-      const prompts = buildCriterionEvaluationLlmPrompts({
-        section: sectionKey,
-        content: payload,
-        reportContext: { deviationNo, date: reportDate },
-        allSections,
-      });
-      if (!prompts) {
-        return { section: sectionKey, llmCalled: false };
-      }
-      return {
-        section: sectionKey,
-        llmCalled: true,
-        systemPrompt: prompts.systemPrompt,
-        userPrompt: prompts.userPrompt,
-      };
-    }
-  );
-
-  const sectionResults = await Promise.all(
-    EVALUATABLE_SECTIONS.map(async (sectionKey) => {
-      const payload =
-        imported.sections[sectionKey as keyof typeof imported.sections];
-
-      let evaluations = await evaluateSection({
-        section: sectionKey,
-        content: payload,
-        reportContext: { deviationNo, date: reportDate },
-        allSections,
-      });
-
-      if (sectionKey === "analyze") {
-        evaluations = normalizeAnalyzeToolResults(payload as unknown, evaluations);
-      }
-
-      const rowsChunk: BulkEvalRow[] = evaluations.map((ev) => ({
-        sourceFile,
-        deviationNo,
-        section: sectionKey,
-        criterionKey: ev.criterionKey,
-        criterionLabel: ev.criterionLabel,
-        status: ev.status,
-        reasoning: ev.reasoning,
-      }));
-      return rowsChunk;
-    })
-  );
-
-  return {
-    sourcePath: absPath,
-    sourceFile,
-    deviationNo,
-    anchorSlug,
-    skippedReason: null,
-    rows: sectionResults.flat(),
-    sectionLlmQueries,
-  };
 }
 
 function statusBadgeClass(status: BulkEvalRow["status"]): string {

@@ -147,6 +147,14 @@ function sectionContentForPrompt(section: SectionType, content: unknown): string
   return sectionPlainTextForPrompt(section, content);
 }
 
+/** Exported for Langfuse datasets and other human-review tooling. */
+export function formatSectionContentForEvaluation(
+  section: SectionType,
+  content: unknown
+): string {
+  return sectionContentForPrompt(section, content);
+}
+
 /**
  * Map of section type → content for all sections in a report.
  * Used to build cumulative prior-section context in the user prompt.

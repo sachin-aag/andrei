@@ -26,7 +26,8 @@
     "db:local:setup": "docker compose up -d && sleep 3 && drizzle-kit push --force",
     "db:local:reset": "docker compose down -v && docker compose up -d && sleep 3 && drizzle-kit push --force",
     "db:studio": "drizzle-kit studio",
-    "sample-eval-report": "tsx scripts/bulk-sample-evaluation-report.ts"
+    "sample-eval-report": "tsx scripts/bulk-sample-evaluation-report.ts",
+    "seed-langfuse-criteria-dataset": "tsx scripts/seed-langfuse-criteria-dataset.ts"
   },
   "dependencies": {
     "@ai-sdk/gateway": "^3.0.104",
