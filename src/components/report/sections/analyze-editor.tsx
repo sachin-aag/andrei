@@ -2,7 +2,6 @@
 
 import { type ReactNode } from "react";
 import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import {
@@ -212,71 +211,6 @@ export function AnalyzeEditor() {
               }
             />
           )}
-        </div>
-        <div className="grid gap-3 md:grid-cols-3">
-          <div {...fieldAnchorProps("rootCause.primaryLevel1")}>
-            <Label>Primary (Level 1)</Label>
-            {renderControl(
-              "rootCause.primaryLevel1",
-              <Input
-                value={value.rootCause.primaryLevel1}
-                disabled={readOnly}
-                onChange={(e) =>
-                  update((p) => ({
-                    ...p,
-                    rootCause: {
-                      ...p.rootCause,
-                      primaryLevel1: e.target.value,
-                    },
-                  }))
-                }
-                placeholder="Equipment / Instrument"
-                className={suggestedControlClass("rootCause.primaryLevel1")}
-              />
-            )}
-          </div>
-          <div {...fieldAnchorProps("rootCause.secondaryLevel2")}>
-            <Label>Secondary (Level 2)</Label>
-            {renderControl(
-              "rootCause.secondaryLevel2",
-              <Input
-                value={value.rootCause.secondaryLevel2}
-                disabled={readOnly}
-                onChange={(e) =>
-                  update((p) => ({
-                    ...p,
-                    rootCause: {
-                      ...p.rootCause,
-                      secondaryLevel2: e.target.value,
-                    },
-                  }))
-                }
-                placeholder="Not Applicable"
-                className={suggestedControlClass("rootCause.secondaryLevel2")}
-              />
-            )}
-          </div>
-          <div {...fieldAnchorProps("rootCause.thirdLevel3")}>
-            <Label>Third (Level 3)</Label>
-            {renderControl(
-              "rootCause.thirdLevel3",
-              <Input
-                value={value.rootCause.thirdLevel3}
-                disabled={readOnly}
-                onChange={(e) =>
-                  update((p) => ({
-                    ...p,
-                    rootCause: {
-                      ...p.rootCause,
-                      thirdLevel3: e.target.value,
-                    },
-                  }))
-                }
-                placeholder="Not Applicable"
-                className={suggestedControlClass("rootCause.thirdLevel3")}
-              />
-            )}
-          </div>
         </div>
       </section>
 

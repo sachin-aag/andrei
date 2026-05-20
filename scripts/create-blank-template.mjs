@@ -18,11 +18,48 @@ let xml = zip.file("word/document.xml").asText();
 
 function makePara(text, { bold = false, fontSize = 24 } = {}) {
   const bTag = bold ? "<w:b/>" : "<w:bCs/>";
-  return `<w:p><w:pPr><w:spacing w:before="60" w:line="276" w:lineRule="auto"/><w:jc w:val="both"/><w:rPr>${bTag}<w:sz w:val="${fontSize}"/><w:szCs w:val="${fontSize}"/></w:rPr></w:pPr><w:r><w:rPr>${bTag}<w:sz w:val="${fontSize}"/><w:szCs w:val="${fontSize}"/></w:rPr><w:t xml:space="preserve">${text}</w:t></w:r></w:p>`;
+  return `<w:p><w:pPr><w:spacing w:before="60" w:line="276" w:lineRule="auto"/><w:jc w:val="left"/><w:rPr>${bTag}<w:sz w:val="${fontSize}"/><w:szCs w:val="${fontSize}"/></w:rPr></w:pPr><w:r><w:rPr>${bTag}<w:sz w:val="${fontSize}"/><w:szCs w:val="${fontSize}"/></w:rPr><w:t xml:space="preserve">${text}</w:t></w:r></w:p>`;
 }
 
 function makeParas(lines, opts = {}) {
   return lines.map(l => makePara(l, opts)).join("");
+}
+
+// Keep in sync with src/lib/export/docx-form-checkbox.ts
+const RUN_PR = '<w:rPr><w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr>';
+
+function formCheckboxFieldXml(checked, fieldName) {
+  const defaultVal = checked ? "1" : "0";
+  const checkedTag = checked ? '<w:checked w:val="1"/>' : "";
+  const checkBoxInner = `<w:sizeAuto/><w:default w:val="${defaultVal}"/>${checkedTag}`;
+  return (
+    `<w:r>${RUN_PR}<w:fldChar w:fldCharType="begin"><w:ffData>` +
+    `<w:name w:val="${fieldName}"/><w:enabled/><w:calcOnExit w:val="0"/>` +
+    `<w:checkBox>${checkBoxInner}</w:checkBox></w:ffData></w:fldChar></w:r>` +
+    `<w:r>${RUN_PR}<w:instrText xml:space="preserve"> FORMCHECKBOX </w:instrText></w:r>` +
+    `<w:r>${RUN_PR}</w:r>` +
+    `<w:r>${RUN_PR}<w:fldChar w:fldCharType="separate"/></w:r>` +
+    `<w:r>${RUN_PR}<w:fldChar w:fldCharType="end"/></w:r>`
+  );
+}
+
+function makeInvestigationToolsParagraph() {
+  const textRun = (text, bold = true) => {
+    const bTag = bold ? "<w:b/>" : "<w:bCs/>";
+    return `<w:r><w:rPr>${bTag}<w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr><w:t xml:space="preserve">${text}</w:t></w:r>`;
+  };
+  return (
+    "<w:p><w:pPr><w:spacing w:before=\"60\" w:line=\"276\" w:lineRule=\"auto\"/>" +
+    "<w:jc w:val=\"left\"/><w:rPr><w:b/><w:sz w:val=\"24\"/><w:szCs w:val=\"24\"/></w:rPr></w:pPr>" +
+    textRun("Investigation tool used:  ") +
+    formCheckboxFieldXml(false, "toolSixM") +
+    textRun(" 6M     ") +
+    formCheckboxFieldXml(false, "toolFiveWhy") +
+    textRun(" 5 Why     ") +
+    formCheckboxFieldXml(false, "toolBrainstorming") +
+    textRun(" Brainstorming") +
+    "</w:p>"
+  );
 }
 
 // ─── Parse rows with simple regex (handles siblings correctly) ───
@@ -108,10 +145,8 @@ R.set(0, rebuildMultiCellRow(rows[0].xml, {
   3: makePara("{deviationNo}"),
 }));
 
-// Row 1: Investigation tool used
-R.set(1, rebuildRow(rows[1].xml,
-  makePara("Investigation tool used:  {sixMCheck} 6M     {fiveWhyCheck} 5 Why     {brainstormingCheck} Brainstorming", { bold: true })
-));
+// Row 1: Investigation tool used (Word form checkboxes — state set at export via docx-form-checkbox)
+R.set(1, rebuildRow(rows[1].xml, makeInvestigationToolsParagraph()));
 
 // Row 2: Other Tools label + value
 R.set(2, rebuildRow(rows[2].xml,
@@ -133,7 +168,7 @@ R.set(5, rebuildRow(rows[5].xml, makeParas([
   '5. Mention the name of personnel who is involved in the deviation.',
   '6. Mention initial scope of deviation (impacted product/Material/Equipment/System/Batches/etc.)',
   '',
-  '{defineNarrative}',
+  '{@defineNarrativeXml}',
 ])));
 
 // Row 6: "Details Investigation:" label → keep
@@ -148,7 +183,7 @@ R.set(7, rebuildRow(rows[7].xml, makeParas([
   '4. If there were Regulatory Notification, were details provided?',
   '5. Is the report written in a logical flow and easily understood by the reader?',
   '',
-  '{measureNarrative}',
+  '{@measureNarrativeXml}',
 ])));
 
 // Row 8: "Analyze:" label → keep
@@ -170,19 +205,19 @@ R.set(9, rebuildRow(rows[9].xml, makeParas([
 // Row 11: 5 Why content (chain + conclusion live in one narrative field)
 R.set(11, rebuildRow(rows[11].xml, makeParas([
   '5 Why Approach (If Applicable):',
-  '{fiveWhyNarrative}',
+  '{@fiveWhyNarrativeXml}',
 ])));
 
 // Row 12: Brainstorming
 R.set(12, rebuildRow(rows[12].xml, makeParas([
   'Brainstorming:',
-  '{brainstorming}',
+  '{@brainstormingXml}',
 ])));
 
 // Row 13: Other Tool #1
 R.set(13, rebuildRow(rows[13].xml, makeParas([
   'Other Tool if Any:',
-  '{analyzeOtherTools}',
+  '{@analyzeOtherToolsXml}',
 ])));
 
 // Row 14: Other Tool #2 (duplicate) → empty
@@ -190,15 +225,12 @@ R.set(14, rebuildRow(rows[14].xml, makePara(" ")));
 
 // Row 15: Investigation Outcome label → keep
 // Row 16: Investigation Outcome content
-R.set(16, rebuildRow(rows[16].xml, makePara("{investigationOutcome}")));
+R.set(16, rebuildRow(rows[16].xml, makePara("{@investigationOutcomeXml}")));
 
 // Row 17: Root Cause label → keep
 // Row 18: Root Cause content
 R.set(18, rebuildRow(rows[18].xml, makeParas([
-  '{rootCauseNarrative}',
-  'Primary Root Cause Level 1: {primaryLevel1}',
-  'Secondary Root Cause Level 2: {secondaryLevel2}',
-  'Third Root Cause Level 3: {thirdLevel3}',
+  '{@rootCauseNarrativeXml}',
 ])));
 
 // Row 19: Impact Assessment label → keep
@@ -227,7 +259,7 @@ R.set(21, rebuildRow(rows[21].xml, makeParas([
 
 // Row 23: Corrective Action content
 R.set(23, rebuildRow(rows[23].xml, makeParas([
-  '{correctiveActions}',
+  '{@correctiveActionsXml}',
 ])));
 
 // Row 24: Control (label + checklist combined)
@@ -245,13 +277,13 @@ R.set(24, rebuildRow(rows[24].xml, makeParas([
 
 // Row 26: Preventive Action content (single body)
 R.set(26, rebuildRow(rows[26].xml, makeParas([
-  '{preventiveActions}',
+  '{@preventiveActionsXml}',
 ])));
 
 // Row 27: "Document Reviewed:" label → keep
 
 // Row 28: Document Reviewed content
-R.set(28, rebuildRow(rows[28].xml, makePara("{documentsReviewed}")));
+R.set(28, rebuildRow(rows[28].xml, makePara("{@documentsReviewedXml}")));
 
 // Row 29: "List of attachment" label → keep
 

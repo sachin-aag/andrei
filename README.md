@@ -167,7 +167,7 @@ Results are upserted into `criteria_evaluations`. When a criterion becomes `met`
 `src/lib/export/generate-docx.ts` produces a document that mirrors `reference-template.docx`:
 
 - Header with logo + full company address + "Investigation Report" + `Ref. SOP No.: SOP/DP/QA/008`
-- Top 2×2 table with Date, Deviation No., Investigation tools (`☑` / `☐`), Other Tools
+- Top 2×2 table with Date, Deviation No., Investigation tools (editable Word form checkboxes), Other Tools
 - DMAIC sections with checklist guidance, 6M labels, 5-Why pairs, root cause levels, impact assessment
 - CAPA registers (`CA-001`, `PA-001`, …) with responsible person / due date / expected outcome / effectiveness
 - Signature table: Prepared By / Reviewed By (×2) / Approved By QA

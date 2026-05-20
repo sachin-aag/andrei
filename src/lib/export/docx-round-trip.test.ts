@@ -45,14 +45,17 @@ function normalizeComparableText(s: string): string {
 /** Mammoth/export often inserts or drops spaces (e.g. before `Ans.`); strip all ASCII whitespace so round-trip fingerprints stay stable. */
 function fingerprintComparableString(s: string): string {
   const n = normalizeComparableText(s);
-  return n.replace(/\s/g, "");
+  let fp = n.replace(/\s/g, "");
+  // Word list export/re-import may add visible ordinals like "1.HMI" (not "010.The").
+  fp = fp.replace(/(?<![0-9])([1-9]\d?)\.(?=[A-Z])/g, "");
+  return fp;
 }
 
 function fingerprintFiveWhyNarrative(s: string): string {
   // The 5-Why block is one verbatim field. Source DOCXs may repeat a "Conclusion:" label or
   // older exports appended "Not Applicable". Strip trailing residue so fingerprints match on
   // substantive text only.
-  let fp = fingerprintComparableString(s);
+  let fp = fingerprintComparableString(s).replace(/\d+\.(?=Why)/gi, "");
   for (let i = 0; i < 4; i++) {
     const next = fp
       .replace(/NotApplicable$/i, "")
@@ -68,10 +71,10 @@ function fingerprintFiveWhyNarrative(s: string): string {
  * placeholders do not re-embed. Normalize so upload → export → import compares substantive copy.
  */
 const DEFINE_UPLOAD_HEADING_PREFIX =
-  /^6\.Mentioninitialscopeofdeviation\(impactedproduct\/Material\/Equipment\/System\/Batches\/etc\.\)/i;
+  /^(?:\d+\.)?Mentioninitialscopeofdeviation\(impactedproduct\/Material\/Equipment\/System\/Batches\/etc\.\)/i;
 
 const MEASURE_UPLOAD_GUIDANCE_PREFIX =
-  /^1\.Doesthesummaryproviderelevantfactsanddata\/informationreviewed\?/i;
+  /^(?:\d+\.)?Doesthesummaryproviderelevantfactsanddata\/informationreviewed\?/i;
 
 function mergedEditableSections(sections: ImportedReportContent["sections"]) {
   return {

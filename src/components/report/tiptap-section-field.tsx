@@ -6,6 +6,7 @@ import { useEditor, EditorContent } from "@tiptap/react";
 import { BubbleMenu, FloatingMenu } from "@tiptap/react/menus";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
+import { BulletListWithStyle } from "@/lib/tiptap/bullet-list-with-style";
 import { TableRow } from "@tiptap/extension-table-row";
 import { TableCellWithVerticalAlign, TableHeaderWithVerticalAlign } from "@/lib/tiptap/table-cell-vertical-align";
 import { TableWithColumnWidths } from "@/lib/tiptap/table-column-widths";
@@ -26,6 +27,8 @@ import {
   ArrowUpToLine,
   AlignVerticalJustifyCenter,
   ArrowDownToLine,
+  List,
+  ListOrdered,
 } from "lucide-react";
 import {
   useReportComments,
@@ -47,6 +50,60 @@ import {
   TrackChangesKeyboardExtension,
 } from "@/lib/tiptap/suggestion-marks";
 import type { SectionType } from "@/db/schema";
+
+function ListEditToolbar({ editor }: { editor: Editor }) {
+  const toggleBulletStyle = (listStyle: "disc" | "dash") => {
+    if (editor.isActive("bulletList", { listStyle })) {
+      editor.chain().focus().liftListItem("listItem").run();
+      return;
+    }
+    editor
+      .chain()
+      .focus()
+      .toggleBulletList()
+      .updateAttributes("bulletList", { listStyle })
+      .run();
+  };
+
+  return (
+    <div className="flex items-center gap-0.5">
+      <Button
+        type="button"
+        variant={editor.isActive("orderedList") ? "secondary" : "ghost"}
+        size="sm"
+        className="h-6 px-1.5 text-xs"
+        onClick={() => editor.chain().focus().toggleOrderedList().run()}
+        title="Numbered list"
+      >
+        <ListOrdered className="size-3.5" />
+      </Button>
+      <Button
+        type="button"
+        variant={
+          editor.isActive("bulletList", { listStyle: "disc" }) ? "secondary" : "ghost"
+        }
+        size="sm"
+        className="h-6 px-1.5 text-xs"
+        onClick={() => toggleBulletStyle("disc")}
+        title="Bullet list"
+      >
+        <List className="size-3.5" />
+      </Button>
+      <Button
+        type="button"
+        variant={
+          editor.isActive("bulletList", { listStyle: "dash" }) ? "secondary" : "ghost"
+        }
+        size="sm"
+        className="h-6 px-1.5 text-xs"
+        onClick={() => toggleBulletStyle("dash")}
+        title="Dash list"
+      >
+        <Minus className="size-3.5" />
+      </Button>
+    </div>
+  );
+}
 
 function TableEditToolbar({
   editor,
@@ -337,7 +394,9 @@ export function TiptapSectionField({
       extensions: [
         StarterKit.configure({
           heading: false,
+          bulletList: false,
         }),
+        BulletListWithStyle,
         Placeholder.configure({ placeholder }),
         TableWithColumnWidths.configure({ resizable: false }),
         TableRow,
@@ -543,8 +602,9 @@ export function TiptapSectionField({
 
   return (
     <div className={className}>
-      <div className="mb-1.5 flex items-center gap-2">
+      <div className="mb-1.5 flex flex-wrap items-center gap-2">
         <Label>{label}</Label>
+        {editor && editable && <ListEditToolbar editor={editor} />}
         {editor && editable && (
           <Button
             type="button"

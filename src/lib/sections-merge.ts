@@ -1,4 +1,5 @@
 import { collapseFiveWhyFields } from "@/lib/analyze-five-why";
+import { collapseRootCauseFields } from "@/lib/analyze-root-cause";
 import type {
   AnalyzeSection,
   AttachmentsSection,
@@ -166,6 +167,9 @@ export function mergeAnalyzeSection(content: unknown): AnalyzeSection {
   return {
     ...merged,
     fiveWhy: collapseFiveWhyFields({ narrative, conclusion }),
+    rootCause: collapseRootCauseFields(
+      merged.rootCause as Parameters<typeof collapseRootCauseFields>[0]
+    ),
   };
 }
 

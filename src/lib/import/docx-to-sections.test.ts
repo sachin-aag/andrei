@@ -1,8 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { docxBufferToImportedReportContent, buildSectionsFromRaw } from "@/lib/import/docx-to-sections";
+import { docxBufferToImportedReportContent, buildSectionsFromRaw, parseReportHeaderFromRaw } from "@/lib/import/docx-to-sections";
 import { richJsonToPlainText } from "@/lib/tiptap/rich-text";
+import { formatDate } from "@/lib/utils";
 
 const fixturePath = path.join(
   process.cwd(),
@@ -26,6 +27,10 @@ describe("docx import", () => {
       fiveWhy: true,
       brainstorming: false,
     });
+
+    expect(formatDate(imported.header.date)).toBe("09/04/2026");
+    expect(imported.header.deviationNo).toBe("DEV/PK/25/002");
+    expect(imported.header.otherTools).toBe("Not applicable");
 
     const defineText = richJsonToPlainText(imported.sections.define.narrative);
     expect(defineText).toContain("On 04/03/2026");
@@ -68,6 +73,38 @@ describe("docx import", () => {
     const controlPrev = imported.sections.control.preventiveActions;
     expect(controlPrev).not.toContain("Control section covers the preventive actions");
     expect(controlPrev).not.toContain("Was the Preventive Action linked");
+
+    const rootCauseNarrative = imported.sections.analyze.rootCause.narrative;
+    expect(rootCauseNarrative).toContain("Primary Root Cause Level 1");
+    expect(rootCauseNarrative).toContain("Equipment / Instrument");
+    expect(imported.sections.analyze.rootCause).not.toHaveProperty("primaryLevel1");
+  });
+
+  it("reads header metadata when values are on the line after the label", () => {
+    const raw = [
+      "Date:",
+      "",
+      "25/11/2025",
+      "",
+      "Deviation No.",
+      "",
+      "DEV/PR/25/008",
+      "",
+      "Investigation tool used: 6M  5 Why  Brainstorming",
+      "",
+      "Other Tools (If any):",
+      "",
+      "Fishbone diagram",
+      "",
+      "Define:",
+      "Body text",
+    ].join("\n");
+
+    expect(parseReportHeaderFromRaw(raw)).toEqual({
+      date: new Date(Date.UTC(2025, 10, 25)),
+      deviationNo: "DEV/PR/25/008",
+      otherTools: "Fishbone diagram",
+    });
   });
 
   it("maps Documents Reviewed and List of attachment blocks into structured items", () => {
