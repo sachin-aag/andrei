@@ -18,10 +18,9 @@ describe("normalizeDeviationNo", () => {
     expect(normalizeDeviationNo("  DEV/PK/26/001  ")).toBe("DEV/PK/26/001");
   });
 
-  it("treats spaces and slashes as equivalent separators", () => {
-    expect(normalizeDeviationNo("dev pr 24 016")).toBe("DEV/PR/24/016");
+  it("does not rewrite separators or casing", () => {
+    expect(normalizeDeviationNo("dev pr 24 016")).toBe("dev pr 24 016");
     expect(normalizeDeviationNo("DEV/PR/24/016")).toBe("DEV/PR/24/016");
-    expect(normalizeDeviationNo("DEV-PR-24-016")).toBe("DEV/PR/24/016");
   });
 });
 
@@ -35,7 +34,7 @@ describe("isDeviationNoTaken", () => {
     expect(db.select).not.toHaveBeenCalled();
   });
 
-  it("checks canonical deviation numbers", async () => {
+  it("checks the trimmed literal deviation number", async () => {
     const limit = vi.fn().mockResolvedValue([]);
     const where = vi.fn().mockReturnValue({ limit });
     const from = vi.fn().mockReturnValue({ where });

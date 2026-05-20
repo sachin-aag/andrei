@@ -120,7 +120,7 @@ describe("/api/reports", () => {
     );
 
     expect(response.status).toBe(409);
-    expect(isDeviationNoTaken).toHaveBeenCalledWith("DEV/PR/24/016");
+    expect(isDeviationNoTaken).toHaveBeenCalledWith("dev pr 24 016");
     expect(db.insert).not.toHaveBeenCalled();
   });
 });

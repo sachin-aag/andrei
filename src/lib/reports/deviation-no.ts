@@ -1,27 +1,13 @@
-import { and, ne, sql } from "drizzle-orm";
+import { and, eq, ne } from "drizzle-orm";
 import { db } from "@/db";
 import { reports } from "@/db/schema";
 
 export const DUPLICATE_DEVIATION_NO_ERROR =
   "A report with this deviation number already exists";
 
-/** Canonical form for storage and duplicate checks (e.g. DEV/PR/24/016). */
+/** Trim only — deviation numbers are compared and stored literally. */
 export function normalizeDeviationNo(value: string): string {
-  return value
-    .trim()
-    .toUpperCase()
-    .replace(/[\s/\\_-]+/g, "/")
-    .replace(/\/+/g, "/")
-    .replace(/^\/+|\/+$/g, "");
-}
-
-function canonicalDeviationNoExpr() {
-  return sql<string>`regexp_replace(
-    regexp_replace(upper(trim(${reports.deviationNo})), '[[:space:]/_-]+', '/', 'g'),
-    '/+',
-    '/',
-    'g'
-  )`;
+  return value.trim();
 }
 
 export async function isDeviationNoTaken(
@@ -31,10 +17,9 @@ export async function isDeviationNoTaken(
   const normalized = normalizeDeviationNo(deviationNo);
   if (!normalized) return false;
 
-  const canonical = canonicalDeviationNoExpr();
   const where = excludeReportId
-    ? and(sql`${canonical} = ${normalized}`, ne(reports.id, excludeReportId))
-    : sql`${canonical} = ${normalized}`;
+    ? and(eq(reports.deviationNo, normalized), ne(reports.id, excludeReportId))
+    : eq(reports.deviationNo, normalized);
 
   const [existing] = await db
     .select({ id: reports.id })

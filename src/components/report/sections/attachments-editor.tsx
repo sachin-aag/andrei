@@ -4,7 +4,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
+import { AutoResizeTextarea } from "@/components/ui/auto-resize-textarea";
 import { SectionShell } from "./section-shell";
 import { useReportData, useReportSection } from "@/providers/report-provider";
 import { useSectionSave } from "@/hooks/use-section-save";
@@ -73,7 +73,7 @@ export function AttachmentsEditor() {
             </div>
             <div className="grid gap-1.5">
               <Label className="text-xs">Description</Label>
-              <Textarea
+              <AutoResizeTextarea
                 value={item.description}
                 disabled={readOnly}
                 className="min-h-[72px]"
