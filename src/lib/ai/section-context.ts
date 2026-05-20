@@ -160,12 +160,8 @@ export function contextForPrompt(section: SectionType, content: unknown): string
     );
     pushTextBlock(lines, "5-Why", fiveWhyCollapsed.narrative);
     pushTextBlock(lines, "Investigation outcome", content.investigationOutcome);
-    pushObjectFields(lines, "Root cause", content.rootCause, [
-      ["narrative", "Narrative"],
-      ["primaryLevel1", "Level 1"],
-      ["secondaryLevel2", "Level 2"],
-      ["thirdLevel3", "Level 3"],
-    ]);
+    const rootCause = content.rootCause as AnalyzeSection["rootCause"] | undefined;
+    pushTextBlock(lines, "Root cause", rootCause?.narrative ?? "");
     pushObjectFields(lines, "Impact assessment", content.impactAssessment, [
       ["system", "System"],
       ["document", "Document"],

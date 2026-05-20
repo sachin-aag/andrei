@@ -3,6 +3,11 @@ import {
   suggestionDeleteMarkName,
   suggestionInsertMarkName,
 } from "@/lib/tiptap/suggestion-marks";
+import {
+  listItemParagraph,
+  parseListLine,
+  type ListStyle,
+} from "@/lib/tiptap/list-style";
 
 /** Empty Tiptap document (single empty paragraph). */
 export function emptyDoc(): JSONContent {
@@ -12,17 +17,90 @@ export function emptyDoc(): JSONContent {
   };
 }
 
-/** Convert legacy plain-text narrative to a minimal doc (paragraphs by line breaks). */
-export function legacyStringToDoc(s: string): JSONContent {
+/** Internal marker for Word soft line breaks preserved from mammoth markdown. */
+export const MAMMOTH_SOFT_BREAK = "\u0001";
+
+/** Convert plain-text narrative to a doc, grouping markdown-style list lines. */
+export function linesToDoc(s: string): JSONContent {
   if (!s.trim()) return emptyDoc();
+
   const lines = s.split(/\n/);
-  return {
-    type: "doc",
-    content: lines.map((line) => ({
+  const content: JSONContent[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i]!;
+    const parsed = parseListLine(line.replace(new RegExp(`${MAMMOTH_SOFT_BREAK}$`), ""));
+
+    if (parsed?.kind === "ordered") {
+      const items: JSONContent[] = [];
+      while (i < lines.length) {
+        const next = parseListLine(
+          lines[i]!.replace(new RegExp(`${MAMMOTH_SOFT_BREAK}$`), "")
+        );
+        if (next?.kind !== "ordered") break;
+        items.push(listItemParagraph(next.text));
+        i++;
+      }
+      content.push({ type: "orderedList", content: items });
+      continue;
+    }
+
+    if (parsed?.kind === "bullet") {
+      const listStyle = parsed.listStyle;
+      const items: JSONContent[] = [];
+      while (i < lines.length) {
+        const next = parseListLine(
+          lines[i]!.replace(new RegExp(`${MAMMOTH_SOFT_BREAK}$`), "")
+        );
+        if (next?.kind !== "bullet" || next.listStyle !== listStyle) break;
+        items.push(listItemParagraph(next.text));
+        i++;
+      }
+      content.push({
+        type: "bulletList",
+        attrs: { listStyle },
+        content: items,
+      });
+      continue;
+    }
+
+    if (line.endsWith(MAMMOTH_SOFT_BREAK)) {
+      const inline: JSONContent[] = [];
+      while (i < lines.length) {
+        const current = lines[i]!;
+        if (current.endsWith(MAMMOTH_SOFT_BREAK)) {
+          const text = current.slice(0, -MAMMOTH_SOFT_BREAK.length);
+          if (text) inline.push({ type: "text", text });
+          inline.push({ type: "hardBreak" });
+          i++;
+          continue;
+        }
+        if (current) inline.push({ type: "text", text: current });
+        i++;
+        break;
+      }
+      if (inline.at(-1)?.type === "hardBreak") inline.pop();
+      content.push({
+        type: "paragraph",
+        content: inline.length > 0 ? inline : [],
+      });
+      continue;
+    }
+
+    content.push({
       type: "paragraph",
       content: line.length ? [{ type: "text", text: line }] : [],
-    })),
-  };
+    });
+    i++;
+  }
+
+  return { type: "doc", content };
+}
+
+/** Convert legacy plain-text narrative to a minimal doc (paragraphs by line breaks). */
+export function legacyStringToDoc(s: string): JSONContent {
+  return linesToDoc(s);
 }
 
 /** Normalize DB/client value to JSONContent (handles legacy strings). */
@@ -64,6 +142,10 @@ export function richJsonToPlainText(
       parts.push(node.text ?? "");
       return;
     }
+    if (node.type === "hardBreak") {
+      parts.push("\n");
+      return;
+    }
     const inner = node.content;
     if (!inner?.length) return;
     if (node.type === "paragraph") {
@@ -73,10 +155,6 @@ export function richJsonToPlainText(
     }
     if (node.type === "heading") {
       for (const ch of inner) walk(ch, "");
-      parts.push("\n");
-      return;
-    }
-    if (node.type === "hardBreak") {
       parts.push("\n");
       return;
     }
@@ -117,7 +195,20 @@ export function richJsonToPlainText(
       return;
     }
     if (node.type === "bulletList" || node.type === "orderedList") {
-      for (const item of inner) walk(item, "\n");
+      const listStyle = (node.attrs?.listStyle as ListStyle | undefined) ?? "disc";
+      let index = 1;
+      for (const item of inner) {
+        if (node.type === "orderedList") {
+          const itemText = extractListItemPlainText(item);
+          parts.push(`${index}. ${itemText}\n`);
+          index++;
+        } else {
+          const prefix = listStyle === "dash" ? "- " : "• ";
+          const itemText = extractListItemPlainText(item);
+          parts.push(`${prefix}${itemText}\n`);
+        }
+      }
+      parts.push(blockSep === "\n\n" ? "\n" : "");
       return;
     }
     if (node.type === "listItem") {
@@ -132,6 +223,19 @@ export function richJsonToPlainText(
     .join("")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+function extractListItemPlainText(item: JSONContent): string {
+  const chunks: string[] = [];
+  function walk(node: JSONContent) {
+    if (node.type === "text") {
+      chunks.push(node.text ?? "");
+      return;
+    }
+    for (const ch of node.content ?? []) walk(ch);
+  }
+  for (const ch of item.content ?? []) walk(ch);
+  return chunks.join("").trim();
 }
 
 /**

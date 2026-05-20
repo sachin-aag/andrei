@@ -36,9 +36,6 @@ export type AnalyzeSection = {
   investigationOutcome: string;
   rootCause: {
     narrative: string;
-    primaryLevel1: string;
-    secondaryLevel2: string;
-    thirdLevel3: string;
   };
   impactAssessment: {
     system: string;
@@ -103,9 +100,6 @@ export const EMPTY_CONTENT: SectionContentMap = {
     investigationOutcome: "",
     rootCause: {
       narrative: "",
-      primaryLevel1: "",
-      secondaryLevel2: "",
-      thirdLevel3: "",
     },
     impactAssessment: {
       system: "",

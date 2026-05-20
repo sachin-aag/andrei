@@ -89,6 +89,21 @@ describe("sections merge", () => {
     expect(analyze.fiveWhy.narrative).toBe("");
   });
 
+  it("folds legacy root cause level fields into narrative", () => {
+    const analyze = mergeAnalyzeSection({
+      rootCause: {
+        narrative: "Communication failure between HMI and logger.",
+        primaryLevel1: "Equipment / Instrument",
+        secondaryLevel2: "Not Applicable",
+        thirdLevel3: "Not Applicable",
+      },
+    });
+
+    expect(analyze.rootCause.narrative).toContain("Communication failure");
+    expect(analyze.rootCause.narrative).toContain("Primary (Level 1): Equipment / Instrument");
+    expect(analyze.rootCause).not.toHaveProperty("primaryLevel1");
+  });
+
   it("flattens legacy 5-Why rows into a narrative", () => {
     const analyze = mergeAnalyzeSection({
       fiveWhy: {

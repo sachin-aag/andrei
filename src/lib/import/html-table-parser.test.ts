@@ -116,4 +116,22 @@ describe("html-table-parser cell text alignment", () => {
       )
     ).toBeNull();
   });
+
+  it("preserves <br /> inside a cell paragraph as hardBreak", () => {
+    const html = `
+      <table>
+        <tr><td><p>Line one<br />Line two</p></td></tr>
+      </table>
+    `;
+    const tables = parseHtmlTables(html);
+    const paragraph = tables[0]!.content![0]!.content![0]!.content![0]!;
+    expect(paragraph).toEqual({
+      type: "paragraph",
+      content: [
+        { type: "text", text: "Line one" },
+        { type: "hardBreak" },
+        { type: "text", text: "Line two" },
+      ],
+    });
+  });
 });

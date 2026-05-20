@@ -58,21 +58,27 @@ export const commentKindEnum = pgEnum("comment_kind", [
   "ai_redraft",
 ]);
 
-export const reports = pgTable("reports", {
-  id: text("id").primaryKey().$defaultFn(() => createId()),
-  deviationNo: text("deviation_no").notNull(),
-  date: timestamp("date", { withTimezone: true }).notNull().defaultNow(),
-  toolsUsed: jsonb("tools_used")
-    .$type<{ sixM: boolean; fiveWhy: boolean; brainstorming: boolean }>()
-    .notNull()
-    .default({ sixM: false, fiveWhy: false, brainstorming: false }),
-  otherTools: text("other_tools").notNull().default(""),
-  status: reportStatusEnum("status").notNull().default("draft"),
-  authorId: text("author_id").notNull(),
-  assignedManagerId: text("assigned_manager_id"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const reports = pgTable(
+  "reports",
+  {
+    id: text("id").primaryKey().$defaultFn(() => createId()),
+    deviationNo: text("deviation_no").notNull(),
+    date: timestamp("date", { withTimezone: true }).notNull().defaultNow(),
+    toolsUsed: jsonb("tools_used")
+      .$type<{ sixM: boolean; fiveWhy: boolean; brainstorming: boolean }>()
+      .notNull()
+      .default({ sixM: false, fiveWhy: false, brainstorming: false }),
+    otherTools: text("other_tools").notNull().default(""),
+    status: reportStatusEnum("status").notNull().default("draft"),
+    authorId: text("author_id").notNull(),
+    assignedManagerId: text("assigned_manager_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    deviationNoUnique: uniqueIndex("reports_deviation_no_unique").on(t.deviationNo),
+  })
+);
 
 export const reportSections = pgTable(
   "report_sections",

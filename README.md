@@ -60,7 +60,7 @@ On first load you'll be redirected to `/login`. Pick any mock user:
 | -------------- | -------- | ----------- |
 | Bhargav Patel  | Engineer | 598         |
 | Priya Sharma   | Engineer | 312         |
-| Rajesh Kumar   | Manager  | 201         |
+| Tushar Berad   | Manager  | 627         |
 | Pankaj Birari  | Manager  | 105         |
 
 Edit `src/lib/auth/mock-users.ts` to change the list.
@@ -72,7 +72,7 @@ Edit `src/lib/auth/mock-users.ts` to change the list.
 3. Click **Run AI Check**: Gemini evaluates each criterion and populates the right-hand traffic-light panel.
 4. For yellow/red criteria, click **Apply** to paste the suggested fix into the section (highlighted block) or **Ignore** to override.
 5. Click **Submit for Review**. Report status transitions to `submitted`.
-6. **Manager** (Rajesh) sees the report in their Queue on the dashboard → clicks it → sees the read-only review.
+6. **Manager** (Tushar Berad) sees the report in their Queue on the dashboard → clicks it → sees the read-only review.
 7. Manager adds comments from the right-hand `Comments` tab. Status transitions to `in_review` on the first comment.
 8. Manager clicks **Return with Feedback** (→ `feedback`, engineer can edit again) or **Approve** (→ `approved`).
 9. At any time, anyone can click **Export DOCX** in the header to download a Word document matching `SOP/DP/QA/008/F04-R02`.
@@ -169,7 +169,7 @@ Results are upserted into `criteria_evaluations`. When a criterion becomes `met`
 `src/lib/export/generate-docx.ts` produces a document that mirrors `reference-template.docx`:
 
 - Header with logo + full company address + "Investigation Report" + `Ref. SOP No.: SOP/DP/QA/008`
-- Top 2×2 table with Date, Deviation No., Investigation tools (`☑` / `☐`), Other Tools
+- Top 2×2 table with Date, Deviation No., Investigation tools (editable Word form checkboxes), Other Tools
 - DMAIC sections with checklist guidance, 6M labels, 5-Why pairs, root cause levels, impact assessment
 - CAPA registers (`CA-001`, `PA-001`, …) with responsible person / due date / expected outcome / effectiveness
 - Signature table: Prepared By / Reviewed By (×2) / Approved By QA

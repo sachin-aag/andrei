@@ -17,7 +17,7 @@ import type {
   SectionContentMap,
 } from "@/types/sections";
 import { EMPTY_CONTENT, SECTION_LABELS } from "@/types/sections";
-import { emptyDoc, legacyStringToDoc } from "@/lib/tiptap/rich-text";
+import { emptyDoc, legacyStringToDoc, MAMMOTH_SOFT_BREAK } from "@/lib/tiptap/rich-text";
 import { SECTION_GUIDANCE } from "@/lib/report-section-guidance";
 import { parseHtmlTablesWithPositions, findDataTablePositions } from "@/lib/import/html-table-parser";
 import {
@@ -27,9 +27,16 @@ import {
 
 export type ImportedSections = SectionContentMap;
 
+export type ImportedReportHeader = {
+  date?: Date;
+  deviationNo?: string;
+  otherTools?: string;
+};
+
 export type ImportedReportContent = {
   sections: ImportedSections;
   toolsUsed: { sixM: boolean; fiveWhy: boolean; brainstorming: boolean };
+  header: ImportedReportHeader;
 };
 
 type ImportSectionKey = keyof SectionContentMap;
@@ -87,11 +94,13 @@ function matchSectionHeading(trimmedLine: string): HeadingMatch | null {
   return null;
 }
 
-function splitPlainTextIntoSections(raw: string): {
+function splitLinesIntoSections(
+  lines: string[],
+  headingLine: (line: string) => string = (line) => line.replace(/\s+/g, " ").trim()
+): {
   sections: Record<ImportSectionKey, string>;
   foundHeadings: boolean;
 } {
-  const lines = raw.split(/\r?\n/);
   const buckets: Record<ImportSectionKey, string[]> = {
     define: [],
     measure: [],
@@ -106,18 +115,19 @@ function splitPlainTextIntoSections(raw: string): {
 
   const leavesAttachmentsSection = (line: string) =>
     /^(?:\d+(?:\.\d+)*\.?\s+)?(?:prepared|reviewed|approved)\s+by\b/i.test(
-      line.trim()
+      headingLine(line)
     );
 
   for (const line of lines) {
-    const heading = matchSectionHeading(line);
+    const normalized = headingLine(line);
+    const heading = matchSectionHeading(normalized);
     if (heading) {
       foundHeadings = true;
       current = heading.key;
       if (heading.remainder) buckets[current].push(heading.remainder);
       continue;
     }
-    if (NON_EDITABLE_EXPORT_HEADING_RE.test(line.trim())) {
+    if (NON_EDITABLE_EXPORT_HEADING_RE.test(normalized)) {
       current = "ignored";
       continue;
     }
@@ -131,7 +141,7 @@ function splitPlainTextIntoSections(raw: string): {
   if (!foundHeadings) {
     return {
       sections: {
-        define: raw.trim(),
+        define: lines.join("\n").trim(),
         measure: "",
         analyze: "",
         improve: "",
@@ -151,6 +161,13 @@ function splitPlainTextIntoSections(raw: string): {
   return { sections, foundHeadings: true };
 }
 
+function splitPlainTextIntoSections(raw: string): {
+  sections: Record<ImportSectionKey, string>;
+  foundHeadings: boolean;
+} {
+  return splitLinesIntoSections(raw.split(/\r?\n/));
+}
+
 /** Reverses mammoth's markdown escaper so import text matches readable prose. */
 function unescapeMammothMarkdownEscapes(text: string): string {
   return text.replace(/\\([\\`*_{}[\]()#+\-.!])/g, "$1");
@@ -163,8 +180,10 @@ function unescapeMammothMarkdownEscapes(text: string): string {
 function mammothMarkdownToImportPlain(markdown: string): string {
   const lines = markdown.split(/\r?\n/);
   const normalized = lines.map((line) => {
+    const softBreak = /  +$/.test(line);
     const withoutBold = line.replace(/__([\s\S]*?)__/g, "$1").trimEnd();
-    return unescapeMammothMarkdownEscapes(withoutBold);
+    const unescaped = unescapeMammothMarkdownEscapes(withoutBold);
+    return softBreak ? `${unescaped}${MAMMOTH_SOFT_BREAK}` : unescaped;
   });
   return normalized.join("\n");
 }
@@ -174,10 +193,21 @@ function cleanImportedText(text: string): string {
     .replace(/\{[#/][^}]+\}/g, "")
     .replace(/\{[^}]+\}/g, "")
     .replace(/\r/g, "")
+    .replace(new RegExp(MAMMOTH_SOFT_BREAK, "g"), "\n")
     .split("\n")
     .map((line) => line.trimEnd())
     .join("\n")
     .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+/** Narrative import: preserve mammoth soft-break markers for linesToDoc/hardBreak. */
+function cleanImportedNarrativeText(text: string): string {
+  return text
+    .replace(/\{[#/][^}]+\}/g, "")
+    .replace(/\{[^}]+\}/g, "")
+    .replace(/\r/g, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
@@ -309,7 +339,9 @@ function textBeforeAnyInlineLabel(text: string, labels: string[]): string {
 }
 
 function parseMeasure(text: string): MeasureSection {
-  const body = stripMeasureLeadingCriteriaLine(cleanImportedText(stripGuidanceChecklist(text)));
+  const body = stripMeasureLeadingCriteriaLine(
+    cleanImportedNarrativeText(stripGuidanceChecklist(text))
+  );
 
   return {
     ...EMPTY_CONTENT.measure,
@@ -332,7 +364,7 @@ function stripMeasureLeadingCriteriaLine(text: string): string {
     )
   ) {
     const nextLines = lines.slice(firstNonEmptyIndex + 1);
-    return cleanImportedText(nextLines.join("\n"));
+    return cleanImportedNarrativeText(nextLines.join("\n"));
   }
 
   return text;
@@ -386,18 +418,17 @@ function buildAnalyzeFromChunk(text: string): AnalyzeSection {
     investigationOutcome: getBetweenLabels(body, ["Investigation Outcome"], [
       "Identified Root Cause/ Probable Cause",
       "Identified Root Cause / Probable Cause",
-      "Primary Root Cause Level 1",
       "Impact Assessment (System/ Document/ Product/ Equipment/Patient safety/Past batches)",
     ]),
     rootCause: {
       narrative: getBetweenLabels(
         body,
         ["Identified Root Cause/ Probable Cause", "Identified Root Cause / Probable Cause"],
-        ["Primary Root Cause Level 1", "Impact Assessment"]
+        [
+          "Impact Assessment (System/ Document/ Product/ Equipment/Patient safety/Past batches)",
+          "Impact Assessment",
+        ]
       ),
-      primaryLevel1: getLineValue(body, "Primary Root Cause Level 1"),
-      secondaryLevel2: getLineValue(body, "Secondary Root Cause Level 2"),
-      thirdLevel3: getLineValue(body, "Third Root Cause Level 3"),
     },
     impactAssessment: {
       system: getLineValue(body, "System"),
@@ -470,6 +501,85 @@ function extractControlPreventivePlain(controlBody: string): string {
     return getBetweenLabels(controlBody, ["Preventive Action"], CONTROL_BODY_STOP_LABELS);
   }
   return stripSectionTemplatePreamble("control", controlBody);
+}
+
+const REPORT_HEADER_LABEL_RE =
+  /^(?:date|deviation\s+no\.?|investigation\s+tool\s+used|other\s+tools?\b)/i;
+
+function isReportHeaderLabelLine(line: string): boolean {
+  return REPORT_HEADER_LABEL_RE.test(line.replace(/\s+/g, " ").trim());
+}
+
+/** Header fields in the investigation template put values on the line after the label. */
+function getBlockLabelValue(text: string, label: string): string {
+  const lines = text.split(/\r?\n/).map((line) => line.replace(/\s+/g, " ").trim());
+  const labelRe = new RegExp(`^${labelPattern(label)}(.*)$`, "i");
+
+  for (let i = 0; i < lines.length; i++) {
+    const match = labelRe.exec(lines[i]!);
+    if (!match) continue;
+
+    const inline = cleanImportedText(match[1] ?? "");
+    if (inline) return inline;
+
+    for (let j = i + 1; j < lines.length; j++) {
+      const next = lines[j]!;
+      if (!next) continue;
+      if (isReportHeaderLabelLine(next)) break;
+      return cleanImportedText(next);
+    }
+    return "";
+  }
+
+  return "";
+}
+
+function extractReportPreamble(raw: string): string {
+  const lines = raw.split(/\r?\n/);
+  const out: string[] = [];
+
+  for (const line of lines) {
+    const normalized = line.replace(/\s+/g, " ").trim();
+    if (matchSectionHeading(normalized)?.key === "define") break;
+    if (/^define\s*:?\s*$/i.test(normalized)) break;
+    out.push(line);
+  }
+
+  return out.join("\n");
+}
+
+function parseDdMmYyyyDate(value: string): Date | undefined {
+  const match = value.trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!match) return undefined;
+
+  const day = Number(match[1]);
+  const month = Number(match[2]);
+  const year = Number(match[3]);
+  const parsed = new Date(Date.UTC(year, month - 1, day));
+  if (
+    parsed.getUTCFullYear() !== year ||
+    parsed.getUTCMonth() !== month - 1 ||
+    parsed.getUTCDate() !== day
+  ) {
+    return undefined;
+  }
+
+  return parsed;
+}
+
+export function parseReportHeaderFromRaw(raw: string): ImportedReportHeader {
+  const preamble = extractReportPreamble(raw);
+  const dateText = getBlockLabelValue(preamble, "Date");
+  const deviationNo = getBlockLabelValue(preamble, "Deviation No.");
+  const otherTools = getBlockLabelValue(preamble, "Other Tools (If any)");
+
+  const header: ImportedReportHeader = {};
+  const parsedDate = parseDdMmYyyyDate(dateText);
+  if (parsedDate) header.date = parsedDate;
+  if (deviationNo) header.deviationNo = deviationNo;
+  if (otherTools) header.otherTools = otherTools;
+
+  return header;
 }
 
 function parseToolsUsed(raw: string): ImportedReportContent["toolsUsed"] {
@@ -616,7 +726,7 @@ function trimAttachmentListSignatureNoise(
 export function buildSectionsFromRaw(raw: string): ImportedSections {
   const { sections, foundHeadings } = splitPlainTextIntoSections(raw);
 
-  const defineText = cleanImportedText(stripGuidanceChecklist(sections.define));
+  const defineText = cleanImportedNarrativeText(stripGuidanceChecklist(sections.define));
   const improveBody = cleanImportedText(stripGuidanceChecklist(sections.improve));
   const controlBody = cleanImportedText(stripGuidanceChecklist(sections.control));
 
@@ -703,6 +813,7 @@ export async function docxBufferToImportedReportContent(
   return {
     sections,
     toolsUsed: parseToolsUsedFromDocxXml(buffer) ?? parseToolsUsed(raw),
+    header: parseReportHeaderFromRaw(raw),
   };
 }
 
@@ -803,9 +914,10 @@ function extractCellParagraphTexts(node: JSONContent): string[] {
 }
 
 function extractParagraphTexts(node: JSONContent): string {
-  if (node.type === "text") return (node.text ?? "").trim();
+  if (node.type === "text") return node.text ?? "";
+  if (node.type === "hardBreak") return " ";
   if (!node.content?.length) return "";
-  return node.content.map(extractParagraphTexts).join(" ").trim();
+  return node.content.map(extractParagraphTexts).join("").replace(/\s+/g, " ").trim();
 }
 
 /**

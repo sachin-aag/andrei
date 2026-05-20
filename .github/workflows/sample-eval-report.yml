@@ -1,4 +1,4 @@
-# Bulk HTML sample evaluation (`npm run sample-eval-report`).
+# Bulk HTML sample evaluation (`pnpm run sample-eval-report`).
 #
 # API key — add a repository Actions secret:
 #   Settings → Secrets and variables → Actions → New repository secret

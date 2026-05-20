@@ -19,7 +19,8 @@ import { getUser } from "@/lib/auth/mock-users";
 import { formatDate } from "@/lib/utils";
 import { fiveWhyTextForExport } from "@/lib/analyze-five-why";
 import { mergeSection } from "@/lib/sections-merge";
-import { narrativeToDocxXml } from "@/lib/export/narrative-to-docx-xml";
+import { applyInvestigationToolCheckboxes } from "@/lib/export/docx-form-checkbox";
+import { narrativeToDocxXml, plainTextToDocxXml } from "@/lib/export/narrative-to-docx-xml";
 import type { SectionType } from "@/db/schema";
 
 type ReportRow = typeof reportsTable.$inferSelect;
@@ -82,18 +83,12 @@ function buildTemplateData(
   const author = getUser(report.authorId);
   const manager = getUser(report.assignedManagerId ?? undefined);
 
-  const tools = report.toolsUsed;
-  const check = (v: boolean) => (v ? "\u2611" : "\u2610");
-
   return {
     // Header row
     date: formatDate(report.date),
     deviationNo: report.deviationNo,
 
-    // Tools used
-    sixMCheck: check(tools.sixM),
-    fiveWhyCheck: check(tools.fiveWhy),
-    brainstormingCheck: check(tools.brainstorming),
+    // Investigation-tool checkboxes are Word form fields in the template (see docx-form-checkbox)
     otherToolsDisplay: na(report.otherTools),
 
     // Define — compose all sub-fields into one block (raw XML for table support)
@@ -112,20 +107,17 @@ function buildTemplateData(
     sixMConclusion: na(a.sixM.conclusion),
 
     // Analyze - 5 Why (single field: chain + conclusion; see analyze-five-why / template)
-    fiveWhyNarrative: na(fiveWhyTextForExport(a.fiveWhy)),
+    fiveWhyNarrativeXml: plainTextToDocxXml(fiveWhyTextForExport(a.fiveWhy)),
 
     // Analyze - other
-    brainstorming: na(a.brainstorming),
-    analyzeOtherTools: na(a.otherTools),
+    brainstormingXml: plainTextToDocxXml(a.brainstorming),
+    analyzeOtherToolsXml: plainTextToDocxXml(a.otherTools),
 
     // Investigation Outcome
-    investigationOutcome: na(a.investigationOutcome),
+    investigationOutcomeXml: plainTextToDocxXml(a.investigationOutcome),
 
     // Root Cause
-    rootCauseNarrative: na(a.rootCause.narrative),
-    primaryLevel1: na(a.rootCause.primaryLevel1),
-    secondaryLevel2: na(a.rootCause.secondaryLevel2),
-    thirdLevel3: na(a.rootCause.thirdLevel3),
+    rootCauseNarrativeXml: plainTextToDocxXml(a.rootCause.narrative),
 
     // Impact Assessment
     impactSystem: na(a.impactAssessment.system),
@@ -136,11 +128,11 @@ function buildTemplateData(
 
     // Improve (raw XML for table support)
     improveNarrativeXml: narrativeToDocxXml(i.narrative),
-    correctiveActions: na(i.correctiveActions),
+    correctiveActionsXml: plainTextToDocxXml(i.correctiveActions),
 
     // Control (raw XML for table support)
     controlNarrativeXml: "",
-    preventiveActions: na(c.preventiveActions),
+    preventiveActionsXml: plainTextToDocxXml(c.preventiveActions),
     interimPlan: "Not Applicable",
     finalComments: "Not Applicable",
     regulatoryImpact: "Not Applicable",
@@ -152,9 +144,9 @@ function buildTemplateData(
     controlConclusion: "Not Applicable",
 
     // Documents Reviewed
-    documentsReviewed: dr.items.length > 0
-      ? dr.items.join("\n")
-      : "Not Applicable",
+    documentsReviewedXml: plainTextToDocxXml(
+      dr.items.length > 0 ? dr.items.map((item, idx) => `${idx + 1}. ${item}`).join("\n") : ""
+    ),
 
     // Attachments
     attachments: att.items.map((item, idx) => ({
@@ -186,6 +178,7 @@ export async function generateReportDocx({
 
   const data = buildTemplateData(report, sections);
   doc.render(data);
+  applyInvestigationToolCheckboxes(doc.getZip(), report.toolsUsed);
 
   const buf = doc.getZip().generate({
     type: "nodebuffer",

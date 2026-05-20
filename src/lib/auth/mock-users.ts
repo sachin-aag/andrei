@@ -43,14 +43,6 @@ export const MOCK_USERS: readonly MockUser[] = [
     title: "Quality Engineer - Packing",
   },
   {
-    id: "2",
-    name: "Rajesh Kumar",
-    email: "rajesh@mjbiopharm.com",
-    employeeId: "201",
-    role: "manager",
-    title: "Quality Assurance Manager",
-  },
-  {
     id: "3",
     name: "Priya Sharma",
     email: "priya@mjbiopharm.com",
