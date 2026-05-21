@@ -1,8 +1,8 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { Check, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -44,6 +44,7 @@ import { SECTION_LABELS } from "@/types/sections";
 
 const REVIEWER_STORAGE_KEY = "criteria-review:reviewer:v1";
 const CREATE_REVIEWER_VALUE = "__create_reviewer__";
+const AUTOSAVE_DELAY_MS = 1500;
 
 type DraftAnswer = {
   section: CriteriaReviewReportSection["section"];
@@ -104,14 +105,12 @@ export function CriteriaReviewSessionForm({
 }) {
   const router = useRouter();
   const [saving, setSaving] = useState(false);
+  const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [creatingReviewer, setCreatingReviewer] = useState(false);
   const [createReviewerOpen, setCreateReviewerOpen] = useState(false);
   const [submitReportOpen, setSubmitReportOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const firstCriterion = session.input.sections[0]?.criteria[0];
-  const [activeAnswerKey, setActiveAnswerKey] = useState(
-    firstCriterion?.answerKey ?? ""
-  );
+  const [activeSectionIndex, setActiveSectionIndex] = useState(0);
   const [reviewerOptions, setReviewerOptions] =
     useState<HumanReviewer[]>(reviewers);
   const [selectedReviewerId, setSelectedReviewerId] = useState(() => {
@@ -152,20 +151,7 @@ export function CriteriaReviewSessionForm({
     initialAnswersForReviewer(selectedReviewerId)
   );
 
-  const active = (() => {
-    for (const section of session.input.sections) {
-      const criterion = section.criteria.find(
-        (item) => item.answerKey === activeAnswerKey
-      );
-      if (criterion) return { section, criterion };
-    }
-    return null;
-  })();
-
-  const activeAnswer = active ? answers[active.criterion.answerKey] : undefined;
-  const orderedAnswerKeys = session.input.sections.flatMap((section) =>
-    section.criteria.map((criterion) => criterion.answerKey)
-  );
+  const activeSection = session.input.sections[activeSectionIndex] ?? null;
 
   const updateAnswer = useCallback(
     (answerKey: string, patch: Partial<DraftAnswer>) => {
@@ -176,6 +162,76 @@ export function CriteriaReviewSessionForm({
     },
     []
   );
+
+  // --- Auto-save logic ---
+  const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const answersRef = useRef(answers);
+  answersRef.current = answers;
+  const selectedReviewerRef = useRef(selectedReviewer);
+  selectedReviewerRef.current = selectedReviewer;
+  const savingRef = useRef(false);
+
+  const saveAnswers = useCallback(
+    async (answersToSave: Record<string, DraftAnswer>, complete: boolean): Promise<boolean> => {
+      const reviewer = selectedReviewerRef.current;
+      if (!reviewer) return false;
+      if (savingRef.current) return false;
+      savingRef.current = true;
+      setSaving(true);
+      setError(null);
+      try {
+        const payload = {
+          reviewer,
+          answers: Object.values(answersToSave).map((answer) => ({
+            section: answer.section,
+            criterionKey: answer.criterionKey,
+            criteriaEvaluationAgreement:
+              answer.criteriaEvaluationAgreement || undefined,
+            reasoningAgreement: answer.reasoningAgreement || undefined,
+            comment: answer.comment?.trim() || undefined,
+            suggestedStatus: answer.suggestedStatus ?? undefined,
+          })),
+          complete,
+        };
+
+        const res = await fetch(
+          `/api/criteria-review/sessions/${encodeURIComponent(session.id)}`,
+          {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          }
+        );
+        const data = (await res.json()) as { error?: string };
+        if (!res.ok) {
+          setError(data.error ?? "Save failed");
+          return false;
+        }
+        setLastSaved(new Date());
+        return true;
+      } catch {
+        setError("Save failed");
+        return false;
+      } finally {
+        savingRef.current = false;
+        setSaving(false);
+      }
+    },
+    [session.id]
+  );
+
+  // Debounced auto-save: fires AUTOSAVE_DELAY_MS after the last answer change
+  useEffect(() => {
+    if (!selectedReviewer) return;
+    if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
+    autosaveTimer.current = setTimeout(() => {
+      void saveAnswers(answersRef.current, false);
+    }, AUTOSAVE_DELAY_MS);
+    return () => {
+      if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [answers, selectedReviewer, saveAnswers]);
 
   const selectReviewer = (reviewerId: string) => {
     if (reviewerId === CREATE_REVIEWER_VALUE) {
@@ -231,150 +287,76 @@ export function CriteriaReviewSessionForm({
     }
   };
 
-  const save = async (complete: boolean): Promise<boolean> => {
-    if (!selectedReviewer) {
-      setError("Select a reviewer before saving.");
-      return false;
-    }
-    if (!active || !activeAnswer) return false;
-    setSaving(true);
-    setError(null);
-    try {
-      const payload = {
-        reviewer: selectedReviewer,
-        [complete ? "answers" : "answer"]: complete
-          ? Object.values(answers).map((answer) => ({
-              section: answer.section,
-              criterionKey: answer.criterionKey,
-              criteriaEvaluationAgreement:
-                answer.criteriaEvaluationAgreement || undefined,
-              reasoningAgreement: answer.reasoningAgreement || undefined,
-              comment: answer.comment?.trim() || undefined,
-              suggestedStatus: answer.suggestedStatus ?? undefined,
-            }))
-          : {
-              section: activeAnswer.section,
-              criterionKey: activeAnswer.criterionKey,
-              criteriaEvaluationAgreement:
-                activeAnswer.criteriaEvaluationAgreement || undefined,
-              reasoningAgreement: activeAnswer.reasoningAgreement || undefined,
-              comment: activeAnswer.comment?.trim() || undefined,
-              suggestedStatus: activeAnswer.suggestedStatus ?? undefined,
-            },
-        complete,
-      };
-
-      const res = await fetch(
-        `/api/criteria-review/sessions/${encodeURIComponent(session.id)}`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        }
-      );
-      const data = (await res.json()) as { error?: string };
-      if (!res.ok) {
-        setError(data.error ?? "Save failed");
-        return false;
-      }
+  const submitReport = async () => {
+    // Flush any pending autosave first
+    if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
+    const saved = await saveAnswers(answersRef.current, true);
+    if (saved) {
+      setSubmitReportOpen(false);
       router.refresh();
-      return true;
-    } catch {
-      setError("Save failed");
-      return false;
-    } finally {
-      setSaving(false);
+      router.push("/criteria-review");
     }
   };
 
   const isAnswerReviewed = (answer: DraftAnswer | undefined): boolean =>
     Boolean(answer?.criteriaEvaluationAgreement && answer.reasoningAgreement);
 
-  const nextUnreviewedAnswerKey = (): string | null => {
-    if (orderedAnswerKeys.length === 0) return null;
-    const activeIndex = Math.max(0, orderedAnswerKeys.indexOf(activeAnswerKey));
-    for (let offset = 1; offset <= orderedAnswerKeys.length; offset += 1) {
-      const key =
-        orderedAnswerKeys[(activeIndex + offset) % orderedAnswerKeys.length];
-      if (!isAnswerReviewed(answers[key])) return key;
-    }
-    return null;
-  };
-
-  const saveAndNext = async () => {
-    const saved = await save(false);
-    if (!saved) return;
-
-    const nextKey = nextUnreviewedAnswerKey();
-    if (nextKey) {
-      setActiveAnswerKey(nextKey);
-      return;
-    }
-    setSubmitReportOpen(true);
-  };
-
-  const submitReport = async () => {
-    const saved = await save(true);
-    if (saved) {
-      setSubmitReportOpen(false);
-      router.push("/criteria-review");
-    }
-  };
-
-  const currentAnswerComplete = Boolean(
-    activeAnswer?.criteriaEvaluationAgreement && activeAnswer.reasoningAgreement
-  );
-  const needsComment =
-    activeAnswer &&
-    currentAnswerComplete &&
-    humanCommentRequired(
-      activeAnswer.criteriaEvaluationAgreement,
-      activeAnswer.reasoningAgreement
-    );
-  const needsSuggested = activeAnswer?.criteriaEvaluationAgreement === "no";
   const reviewedCount = Object.values(answers).filter(isAnswerReviewed).length;
   const totalCriteria = session.metadata.totalCriterionCount;
   const canCompleteReport = totalCriteria > 0 && reviewedCount === totalCriteria;
 
+  const sectionReviewedCount = (section: CriteriaReviewReportSection) =>
+    section.criteria.filter((c) => isAnswerReviewed(answers[c.answerKey])).length;
+
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <header className="shrink-0 space-y-4 border-b border-[var(--border)] px-6 py-4">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div className="space-y-1">
-            <h1 className="text-lg font-semibold">{session.input.deviationNo}</h1>
-            <p className="text-sm text-[var(--muted-foreground)]">
-              {session.input.sourceFile}
-            </p>
-            <p className="text-xs text-[var(--muted-foreground)]">
-              {session.input.sections.length} sections ·{" "}
-              {session.metadata.totalCriterionCount} criteria
-            </p>
+      <header className="shrink-0 border-b border-[var(--border)] px-6 py-3">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex items-center gap-4 min-w-0">
+            <div className="min-w-0">
+              <div className="flex items-center gap-3">
+                <h1 className="text-lg font-semibold truncate">{session.input.deviationNo}</h1>
+                <span className="shrink-0 text-xs text-[var(--muted-foreground)]">
+                  {reviewedCount}/{totalCriteria} reviewed
+                </span>
+                {saving ? (
+                  <span className="shrink-0 flex items-center gap-1 text-xs text-[var(--muted-foreground)]">
+                    <Loader2 className="size-3 animate-spin" />
+                    Saving…
+                  </span>
+                ) : lastSaved ? (
+                  <span className="shrink-0 flex items-center gap-1 text-xs text-[var(--muted-foreground)]">
+                    <Check className="size-3" />
+                    Saved
+                  </span>
+                ) : null}
+              </div>
+              <p className="text-xs text-[var(--muted-foreground)] truncate">
+                {session.input.sourceFile}
+              </p>
+            </div>
           </div>
-        </div>
 
-        <div className="rounded-lg border border-[var(--border)] bg-[var(--secondary)]/40 p-4">
-          <div className="mb-3">
-            <h2 className="text-sm font-semibold">Reviewer</h2>
-            <p className="text-xs text-[var(--muted-foreground)]">
-              Select the person completing this review, or create a reviewer from the dropdown.
-            </p>
-          </div>
-          <Label htmlFor="reviewer-select">Reviewer</Label>
-          <Select value={selectedReviewerId} onValueChange={selectReviewer}>
-            <SelectTrigger id="reviewer-select" className="mt-2 max-w-xl bg-[var(--card)]">
-              <SelectValue placeholder="Select reviewer" />
-            </SelectTrigger>
-            <SelectContent>
-              {reviewerOptions.map((reviewer) => (
-                <SelectItem key={reviewer.id} value={reviewer.id}>
-                  {reviewer.name} ({reviewer.employeeId})
+          <div className="flex items-center gap-2 shrink-0">
+            <Label htmlFor="reviewer-select" className="text-xs text-[var(--muted-foreground)] whitespace-nowrap">
+              Reviewer
+            </Label>
+            <Select value={selectedReviewerId} onValueChange={selectReviewer}>
+              <SelectTrigger id="reviewer-select" className="h-8 w-56 bg-[var(--card)] text-sm">
+                <SelectValue placeholder="Select reviewer" />
+              </SelectTrigger>
+              <SelectContent>
+                {reviewerOptions.map((reviewer) => (
+                  <SelectItem key={reviewer.id} value={reviewer.id}>
+                    {reviewer.name} ({reviewer.employeeId})
+                  </SelectItem>
+                ))}
+                <SelectItem value={CREATE_REVIEWER_VALUE}>
+                  Create reviewer...
                 </SelectItem>
-              ))}
-              <SelectItem value={CREATE_REVIEWER_VALUE}>
-                Create reviewer...
-              </SelectItem>
-            </SelectContent>
-          </Select>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
       </header>
 
@@ -453,269 +435,297 @@ export function CriteriaReviewSessionForm({
         </DialogContent>
       </Dialog>
 
-      <div className="flex flex-1 min-h-0 overflow-hidden">
-        <aside className="w-72 shrink-0 overflow-y-auto border-r border-[var(--border)] p-3">
-          <div className="space-y-4">
-            {session.input.sections.map((section) => (
-              <div key={section.section} className="space-y-1">
-                <h2 className="px-2 text-xs font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
-                  {section.sectionIndex}. {SECTION_LABELS[section.section]}
-                </h2>
-                {section.criteria.map((criterion) => {
-                  const answer = answers[criterion.answerKey];
-                  const done = Boolean(
-                    answer?.criteriaEvaluationAgreement && answer.reasoningAgreement
-                  );
-                  return (
-                    <button
-                      key={criterion.answerKey}
-                      type="button"
-                      onClick={() => setActiveAnswerKey(criterion.answerKey)}
-                      className={cn(
-                        "grid w-full grid-cols-[1.5rem_1fr] gap-2 rounded-md px-2 py-2 text-left text-xs transition-colors",
-                        criterion.answerKey === activeAnswerKey
-                          ? "bg-[var(--brand-700)] text-white"
-                          : "text-[var(--foreground)] hover:bg-[var(--secondary)]"
-                      )}
-                    >
-                      <span className="font-medium tabular-nums">
-                        {criterion.index}.
-                      </span>
-                      <span>
-                        <span className="line-clamp-2">{criterion.label}</span>
-                        {done ? (
-                          <span className="mt-0.5 block opacity-70">Reviewed</span>
-                        ) : null}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            ))}
+      <div className="flex flex-1 min-h-0 overflow-y-auto">
+        {/* Sidebar: section-level navigation */}
+        <aside className="w-64 shrink-0 border-r border-[var(--border)] p-3">
+          <div className="sticky top-0 space-y-1">
+            {session.input.sections.map((section, idx) => {
+              const reviewed = sectionReviewedCount(section);
+              const total = section.criteria.length;
+              const allDone = reviewed === total;
+              return (
+                <button
+                  key={section.section}
+                  type="button"
+                  onClick={() => setActiveSectionIndex(idx)}
+                  className={cn(
+                    "flex w-full items-center justify-between gap-2 rounded-md px-3 py-2.5 text-left text-sm transition-colors",
+                    idx === activeSectionIndex
+                      ? "bg-[var(--brand-700)] text-white"
+                      : "text-[var(--foreground)] hover:bg-[var(--secondary)]"
+                  )}
+                >
+                  <span className="font-medium">
+                    {section.sectionIndex}. {SECTION_LABELS[section.section]}
+                  </span>
+                  <span
+                    className={cn(
+                      "shrink-0 rounded-full px-2 py-0.5 text-xs tabular-nums",
+                      idx === activeSectionIndex
+                        ? "bg-white/20 text-white"
+                        : allDone
+                          ? "bg-emerald-100 text-emerald-800"
+                          : "bg-[var(--secondary)] text-[var(--muted-foreground)]"
+                    )}
+                  >
+                    {reviewed}/{total}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </aside>
 
-        <div className="flex-1 overflow-y-auto p-6">
+        <div className="flex-1 p-6">
           {!selectedReviewer ? (
             <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 text-sm text-[var(--muted-foreground)]">
               Select or create a reviewer before saving evaluations.
             </div>
-          ) : active && activeAnswer ? (
+          ) : activeSection ? (
             <div className="space-y-6">
-              <section className="grid gap-4 xl:grid-cols-2">
+              {/* Section content + previous sections */}
+              <div className="grid gap-4 xl:grid-cols-2">
                 <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-4">
-                  <div className="mb-3 flex items-center justify-between gap-3">
-                    <h2 className="text-sm font-semibold">Input</h2>
-                    <span className="text-xs text-[var(--muted-foreground)]">
-                      Current section: {SECTION_LABELS[active.section.section]}
-                    </span>
-                  </div>
-                  <div className="space-y-2">
-                    <p className="text-xs font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
-                      Current section
+                  <h2 className="mb-3 text-sm font-semibold">
+                    {SECTION_LABELS[activeSection.section]} — Section content
+                  </h2>
+                  <pre className="max-h-80 overflow-y-auto whitespace-pre-wrap font-sans text-xs leading-relaxed text-[var(--foreground)]">
+                    {activeSection.sectionContent}
+                  </pre>
+                </div>
+
+                <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-4">
+                  <h2 className="mb-3 text-sm font-semibold">Previous sections</h2>
+                  {activeSection.previousSections.length > 0 ? (
+                    <details className="rounded-md border border-[var(--border)] bg-[var(--secondary)]/40 p-3">
+                      <summary className="cursor-pointer text-sm font-medium">
+                        {activeSection.previousSections.length} previous section{activeSection.previousSections.length !== 1 ? "s" : ""}
+                      </summary>
+                      <div className="mt-3 space-y-4">
+                        {activeSection.previousSections.map((section) => (
+                          <div key={section.section} className="space-y-1">
+                            <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
+                              {SECTION_LABELS[section.section]}
+                            </h3>
+                            <pre className="max-h-56 overflow-y-auto whitespace-pre-wrap font-sans text-xs leading-relaxed">
+                              {section.content}
+                            </pre>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  ) : (
+                    <p className="text-sm text-[var(--muted-foreground)]">
+                      No previous sections for this part of the report.
                     </p>
-                    <pre className="max-h-80 overflow-y-auto whitespace-pre-wrap font-sans text-xs leading-relaxed text-[var(--foreground)]">
-                      {active.section.sectionContent}
-                    </pre>
-                  </div>
+                  )}
                 </div>
+              </div>
 
-                <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-4">
-                  <h2 className="mb-3 text-sm font-semibold">Prompt context</h2>
-                  <div className="space-y-4">
-                    {active.section.previousSections.length > 0 ? (
-                      <details className="rounded-md border border-[var(--border)] bg-[var(--secondary)]/40 p-3">
-                        <summary className="cursor-pointer text-sm font-medium">
-                          Previous sections ({active.section.previousSections.length})
-                        </summary>
-                        <div className="mt-3 space-y-4">
-                          {active.section.previousSections.map((section) => (
-                            <div key={section.section} className="space-y-1">
-                              <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
-                                {SECTION_LABELS[section.section]}
-                              </h3>
-                              <pre className="max-h-56 overflow-y-auto whitespace-pre-wrap font-sans text-xs leading-relaxed">
-                                {section.content}
-                              </pre>
-                            </div>
-                          ))}
+              {/* All criteria for this section */}
+              <div className="space-y-4">
+                {activeSection.criteria.map((criterion) => {
+                  const answer = answers[criterion.answerKey];
+                  if (!answer) return null;
+                  const reviewed = isAnswerReviewed(answer);
+                  const needsComment =
+                    reviewed &&
+                    humanCommentRequired(
+                      answer.criteriaEvaluationAgreement,
+                      answer.reasoningAgreement
+                    );
+                  const needsSuggested = answer.criteriaEvaluationAgreement === "no";
+
+                  return (
+                    <div
+                      key={criterion.answerKey}
+                      className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-4"
+                    >
+                      {/* Criterion header */}
+                      <div className="mb-4 flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-3">
+                          <span className="mt-0.5 flex size-6 shrink-0 items-center justify-center rounded-full bg-[var(--secondary)] text-xs font-semibold tabular-nums">
+                            {criterion.index}
+                          </span>
+                          <div>
+                            <h3 className="text-sm font-semibold">{criterion.label}</h3>
+                          </div>
                         </div>
-                      </details>
-                    ) : (
-                      <p className="rounded-md border border-[var(--border)] bg-[var(--secondary)]/40 p-3 text-sm text-[var(--muted-foreground)]">
-                        No previous sections for this part of the report.
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </section>
+                        {reviewed ? (
+                          <span className="shrink-0 text-xs font-medium text-[var(--muted-foreground)]">
+                            Reviewed
+                          </span>
+                        ) : null}
+                      </div>
 
-              <section className="grid gap-4 xl:grid-cols-2">
-                <div className="rounded-lg border border-[var(--border)] bg-[var(--secondary)]/40 p-4">
-                  <h2 className="mb-3 text-sm font-semibold">AI evaluation</h2>
-                  <div className="space-y-4">
-                    <div>
-                      <p className="text-xs font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
-                        Criterion
-                      </p>
-                      <h3 className="mt-1 text-base font-semibold">
-                        {active.criterion.label}
-                      </h3>
-                      <details className="mt-3 rounded-md border border-[var(--border)] bg-[var(--card)]/70 p-3">
-                        <summary className="cursor-pointer text-sm font-medium">
-                          Criterion guidance
-                        </summary>
-                        <p className="mt-3 text-sm leading-relaxed text-[var(--muted-foreground)]">
-                          {active.criterion.description}
-                        </p>
-                      </details>
+                      {criterion.description ? (
+                        <details className="mb-4 rounded-md border border-[var(--border)] bg-[var(--secondary)]/40 px-3 py-2">
+                          <summary className="cursor-pointer text-xs font-medium text-[var(--muted-foreground)]">
+                            Criteria guidance
+                          </summary>
+                          <p className="mt-2 text-sm leading-relaxed text-[var(--muted-foreground)]">
+                            {criterion.description}
+                          </p>
+                        </details>
+                      ) : null}
+
+                      <div className="grid gap-4 xl:grid-cols-2">
+                        {/* AI reasoning */}
+                        <div className="rounded-md border border-[var(--border)] bg-[var(--secondary)]/40 p-3">
+                          <p className="mb-1 text-xs font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
+                            AI classification
+                          </p>
+                          <div className="mb-3">
+                            <span
+                              className={cn(
+                                "rounded-md px-2 py-0.5 text-xs font-semibold",
+                                statusTone(criterion.aiStatus)
+                              )}
+                            >
+                              {AI_STATUS_LABEL[criterion.aiStatus]}
+                            </span>
+                          </div>
+                          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
+                            AI reasoning
+                          </p>
+                          <p className="text-sm leading-relaxed">
+                            {criterion.aiReasoning}
+                          </p>
+                        </div>
+
+                        {/* Human evaluation */}
+                        <div className="space-y-4">
+                          <fieldset className="space-y-2">
+                            <legend className="text-xs font-medium">
+                              Agree with evaluation?
+                            </legend>
+                            <div className="flex gap-2">
+                              {CRITERIA_EVALUATION_AGREEMENTS.map((value) => (
+                                <label
+                                  key={value}
+                                  className={cn(
+                                    "flex cursor-pointer items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm transition-colors",
+                                    answer.criteriaEvaluationAgreement === value
+                                      ? "border-[var(--brand-600)] bg-[var(--brand-700)]/10"
+                                      : "border-[var(--border)] hover:bg-[var(--secondary)]"
+                                  )}
+                                >
+                                  <input
+                                    type="radio"
+                                    name={`criteria-agreement-${criterion.answerKey}`}
+                                    checked={
+                                      answer.criteriaEvaluationAgreement === value
+                                    }
+                                    onChange={() =>
+                                      updateAnswer(criterion.answerKey, {
+                                        criteriaEvaluationAgreement: value,
+                                        suggestedStatus:
+                                          value === "no"
+                                            ? answer.suggestedStatus
+                                            : null,
+                                      })
+                                    }
+                                    className="sr-only"
+                                  />
+                                  {CRITERIA_EVALUATION_AGREEMENT_LABELS[value]}
+                                </label>
+                              ))}
+                            </div>
+                          </fieldset>
+
+                          <fieldset className="space-y-2">
+                            <legend className="text-xs font-medium">
+                              Agree with AI reasoning?
+                            </legend>
+                            <div className="flex gap-2">
+                              {REASONING_AGREEMENTS.map((value) => (
+                                <label
+                                  key={value}
+                                  className={cn(
+                                    "flex cursor-pointer items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm transition-colors",
+                                    answer.reasoningAgreement === value
+                                      ? "border-[var(--brand-600)] bg-[var(--brand-700)]/10"
+                                      : "border-[var(--border)] hover:bg-[var(--secondary)]"
+                                  )}
+                                >
+                                  <input
+                                    type="radio"
+                                    name={`reasoning-agreement-${criterion.answerKey}`}
+                                    checked={answer.reasoningAgreement === value}
+                                    onChange={() =>
+                                      updateAnswer(criterion.answerKey, {
+                                        reasoningAgreement: value,
+                                      })
+                                    }
+                                    className="sr-only"
+                                  />
+                                  {REASONING_AGREEMENT_LABELS[value]}
+                                </label>
+                              ))}
+                            </div>
+                          </fieldset>
+
+                          {needsSuggested ? (
+                            <div className="space-y-1.5">
+                              <Label
+                                htmlFor={`suggested-status-${criterion.answerKey}`}
+                                className="text-xs"
+                              >
+                                Correct traffic-light status
+                              </Label>
+                              <Select
+                                value={answer.suggestedStatus ?? ""}
+                                onValueChange={(v) =>
+                                  updateAnswer(criterion.answerKey, {
+                                    suggestedStatus:
+                                      v as DraftAnswer["suggestedStatus"],
+                                  })
+                                }
+                              >
+                                <SelectTrigger
+                                  id={`suggested-status-${criterion.answerKey}`}
+                                  className="h-8 text-sm"
+                                >
+                                  <SelectValue placeholder="Select status" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="met">Met</SelectItem>
+                                  <SelectItem value="partially_met">
+                                    Partially met
+                                  </SelectItem>
+                                  <SelectItem value="not_met">Not met</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          ) : null}
+
+                          {needsComment ? (
+                            <div className="space-y-1.5">
+                              <Label
+                                htmlFor={`comment-${criterion.answerKey}`}
+                                className="text-xs"
+                              >
+                                Comment (min {MIN_HUMAN_COMMENT_LENGTH} chars)
+                              </Label>
+                              <Textarea
+                                id={`comment-${criterion.answerKey}`}
+                                value={answer.comment ?? ""}
+                                onChange={(e) =>
+                                  updateAnswer(criterion.answerKey, {
+                                    comment: e.target.value,
+                                  })
+                                }
+                                rows={2}
+                                className="resize-y text-sm"
+                              />
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <p className="mb-2 text-xs font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
-                        Traffic light
-                      </p>
-                      <span
-                        className={cn(
-                          "inline-flex rounded-md px-2 py-0.5 text-xs font-semibold",
-                          statusTone(active.criterion.aiStatus)
-                        )}
-                      >
-                        {AI_STATUS_LABEL[active.criterion.aiStatus]}
-                      </span>
-                    </div>
-                    <div>
-                      <p className="text-xs font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
-                        AI reasoning
-                      </p>
-                      <p className="mt-2 text-sm leading-relaxed">
-                        {active.criterion.aiReasoning}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-4">
-                  <h2 className="text-sm font-semibold">Human evaluation</h2>
-                  <div className="mt-4 space-y-5">
-                    <fieldset className="space-y-2">
-                      <legend className="text-sm font-medium">
-                        Do you agree with criteria evaluation?
-                      </legend>
-                      <div className="grid gap-2 sm:grid-cols-2">
-                        {CRITERIA_EVALUATION_AGREEMENTS.map((value) => (
-                          <label
-                            key={value}
-                            className={cn(
-                              "flex cursor-pointer gap-2 rounded-md border border-[var(--border)] p-3 text-sm transition-colors",
-                              activeAnswer.criteriaEvaluationAgreement === value
-                                ? "border-[var(--brand-600)] bg-[var(--brand-700)]/10"
-                                : "hover:bg-[var(--secondary)]"
-                            )}
-                          >
-                            <input
-                              type="radio"
-                              name={`criteria-agreement-${active.criterion.answerKey}`}
-                              checked={
-                                activeAnswer.criteriaEvaluationAgreement === value
-                              }
-                              onChange={() =>
-                                updateAnswer(active.criterion.answerKey, {
-                                  criteriaEvaluationAgreement: value,
-                                  suggestedStatus:
-                                    value === "no"
-                                      ? activeAnswer.suggestedStatus
-                                      : null,
-                                })
-                              }
-                              className="mt-1"
-                            />
-                            {CRITERIA_EVALUATION_AGREEMENT_LABELS[value]}
-                          </label>
-                        ))}
-                      </div>
-                    </fieldset>
-
-                    <fieldset className="space-y-2">
-                      <legend className="text-sm font-medium">
-                        Do you agree with reasoning given by the AI?
-                      </legend>
-                      <div className="grid gap-2 sm:grid-cols-3">
-                        {REASONING_AGREEMENTS.map((value) => (
-                          <label
-                            key={value}
-                            className={cn(
-                              "flex cursor-pointer gap-2 rounded-md border border-[var(--border)] p-3 text-sm transition-colors",
-                              activeAnswer.reasoningAgreement === value
-                                ? "border-[var(--brand-600)] bg-[var(--brand-700)]/10"
-                                : "hover:bg-[var(--secondary)]"
-                            )}
-                          >
-                            <input
-                              type="radio"
-                              name={`reasoning-agreement-${active.criterion.answerKey}`}
-                              checked={activeAnswer.reasoningAgreement === value}
-                              onChange={() =>
-                                updateAnswer(active.criterion.answerKey, {
-                                  reasoningAgreement: value,
-                                })
-                              }
-                              className="mt-1"
-                            />
-                            {REASONING_AGREEMENT_LABELS[value]}
-                          </label>
-                        ))}
-                      </div>
-                    </fieldset>
-
-                    {needsSuggested ? (
-                      <div className="space-y-2">
-                        <Label htmlFor="suggested-status">
-                          Correct traffic-light status
-                        </Label>
-                        <Select
-                          value={activeAnswer.suggestedStatus ?? ""}
-                          onValueChange={(v) =>
-                            updateAnswer(active.criterion.answerKey, {
-                              suggestedStatus:
-                                v as DraftAnswer["suggestedStatus"],
-                            })
-                          }
-                        >
-                          <SelectTrigger id="suggested-status">
-                            <SelectValue placeholder="Select status" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="met">Met</SelectItem>
-                            <SelectItem value="partially_met">
-                              Partially met
-                            </SelectItem>
-                            <SelectItem value="not_met">Not met</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    ) : null}
-
-                    {needsComment ? (
-                      <div className="space-y-2">
-                        <Label htmlFor="comment">
-                          Comment (required, min {MIN_HUMAN_COMMENT_LENGTH} characters)
-                        </Label>
-                        <Textarea
-                          id="comment"
-                          value={activeAnswer.comment ?? ""}
-                          onChange={(e) =>
-                            updateAnswer(active.criterion.answerKey, {
-                              comment: e.target.value,
-                            })
-                          }
-                          rows={4}
-                          className="resize-y"
-                        />
-                      </div>
-                    ) : null}
-                  </div>
-                </div>
-              </section>
+                  );
+                })}
+              </div>
             </div>
           ) : null}
 
@@ -744,27 +754,29 @@ export function CriteriaReviewSessionForm({
             </Button>
           )}
         </div>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={saving || !selectedReviewer || !currentAnswerComplete}
-            onClick={() => save(false)}
-          >
-            {saving ? <Loader2 className="size-4 animate-spin" /> : null}
-            Save criterion
-          </Button>
-          <Button
-            size="sm"
-            disabled={saving || !selectedReviewer || !currentAnswerComplete}
-            onClick={saveAndNext}
-          >
-            Save and next
-          </Button>
+        <div className="flex items-center gap-3">
+          <div className="flex gap-2">
+            {activeSectionIndex > 0 ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setActiveSectionIndex((i) => i - 1)}
+              >
+                Previous section
+              </Button>
+            ) : null}
+            {activeSectionIndex < session.input.sections.length - 1 ? (
+              <Button
+                size="sm"
+                onClick={() => setActiveSectionIndex((i) => i + 1)}
+              >
+                Next section
+              </Button>
+            ) : null}
+          </div>
           {canCompleteReport ? (
             <Button
               size="sm"
-              variant="outline"
               disabled={saving || !selectedReviewer}
               onClick={() => setSubmitReportOpen(true)}
             >
