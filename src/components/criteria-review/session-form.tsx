@@ -1,6 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import { useRouter } from "next/navigation";
 import { Check, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -84,9 +90,31 @@ function savedReviewerFromStorage(): HumanReviewer | null {
   }
 }
 
+const storedReviewerListeners = new Set<() => void>();
+
+function subscribeStoredReviewer(onStoreChange: () => void) {
+  storedReviewerListeners.add(onStoreChange);
+  return () => {
+    storedReviewerListeners.delete(onStoreChange);
+  };
+}
+
+function notifyStoredReviewer() {
+  storedReviewerListeners.forEach((listener) => listener());
+}
+
+function storedReviewerIdFor(reviewerList: HumanReviewer[]): string {
+  const saved = savedReviewerFromStorage();
+  if (saved && reviewerList.some((reviewer) => reviewer.id === saved.id)) {
+    return saved.id;
+  }
+  return "";
+}
+
 function persistReviewer(reviewer: HumanReviewer) {
   try {
     window.localStorage.setItem(REVIEWER_STORAGE_KEY, JSON.stringify(reviewer));
+    notifyStoredReviewer();
   } catch {
     // localStorage can fail in private browsing; saving can continue without it.
   }
@@ -113,13 +141,11 @@ export function CriteriaReviewSessionForm({
   const [activeSectionIndex, setActiveSectionIndex] = useState(0);
   const [reviewerOptions, setReviewerOptions] =
     useState<HumanReviewer[]>(reviewers);
-  const [selectedReviewerId, setSelectedReviewerId] = useState(() => {
-    const saved = savedReviewerFromStorage();
-    if (saved && reviewers.some((reviewer) => reviewer.id === saved.id)) {
-      return saved.id;
-    }
-    return "";
-  });
+  const selectedReviewerId = useSyncExternalStore(
+    subscribeStoredReviewer,
+    () => storedReviewerIdFor(reviewerOptions),
+    () => ""
+  );
   const selectedReviewer = reviewerOptions.find(
     (reviewer) => reviewer.id === selectedReviewerId
   );
@@ -148,8 +174,15 @@ export function CriteriaReviewSessionForm({
   );
 
   const [answers, setAnswers] = useState<Record<string, DraftAnswer>>(() =>
-    initialAnswersForReviewer(selectedReviewerId)
+    initialAnswersForReviewer("")
   );
+  const loadedAnswersForReviewer = useRef("");
+
+  useEffect(() => {
+    if (loadedAnswersForReviewer.current === selectedReviewerId) return;
+    loadedAnswersForReviewer.current = selectedReviewerId;
+    setAnswers(initialAnswersForReviewer(selectedReviewerId));
+  }, [selectedReviewerId, initialAnswersForReviewer]);
 
   const activeSection = session.input.sections[activeSectionIndex] ?? null;
 
@@ -234,7 +267,7 @@ export function CriteriaReviewSessionForm({
     }
     const nextReviewer = reviewerOptions.find((reviewer) => reviewer.id === reviewerId);
     if (!nextReviewer) return;
-    setSelectedReviewerId(reviewerId);
+    loadedAnswersForReviewer.current = reviewerId;
     setAnswers(initialAnswersForReviewer(reviewerId));
     persistReviewer(nextReviewer);
     setError(null);
@@ -270,7 +303,7 @@ export function CriteriaReviewSessionForm({
         );
       });
       setNewReviewer({ name: "", employeeId: "" });
-      setSelectedReviewerId(data.reviewer.id);
+      loadedAnswersForReviewer.current = data.reviewer.id;
       setAnswers(initialAnswersForReviewer(data.reviewer.id));
       persistReviewer(data.reviewer);
       setCreateReviewerOpen(false);

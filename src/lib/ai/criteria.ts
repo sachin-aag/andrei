@@ -13,7 +13,10 @@ export const DEFINE_CRITERIA: CriterionDefinition[] = [
     description:
       "Does the narrative clearly describe the actual event in concrete, factual terms — " +
       "including the specific activity being performed, the instrument/equipment involved " +
-      "(with ID), and the exact observation or result obtained? ",
+      "(with ID), and the exact observation or result obtained? " +
+      "Vague statements like 'it was observed that results were out of spec' are insufficient; " +
+      "the narrative must state what was being done, on what equipment, and what specifically " +
+      "was observed (e.g., 'obtained SST result of 115.1% Recovery of Benzoquinone').",
   },
   {
     key: "define.what_is_different",
@@ -21,14 +24,22 @@ export const DEFINE_CRITERIA: CriterionDefinition[] = [
     description:
       "Does the narrative explicitly state both the expected standard/acceptance criteria " +
       "AND the observed deviation from it, with reference to the governing SOP No. " +
-      "(revision number is not required) and relevant section number? " ,
+      "(revision number is not required) and relevant section number? " +
+      "For example, stating 'not within acceptance criteria as per SOP/DP/QC/045' is " +
+      "insufficient — the narrative must cite the SOP No. and section " +
+      "(e.g., 'As per SOP No.: SOP/DP/QC/045, " +
+      "Section No.: 7.4.3.26, the results must not be less than 85% & must not be more " +
+      "than 115%').",
   },
   {
     key: "define.location",
     label: "Mention the location where the deviation occurred",
     description:
       "Is a specific physical location identified, including the room name/number or area " +
-      "code? " ,
+      "code (e.g., 'Instrument Lab - II (FF-16)', 'Filling Room (GF-89)')? " +
+      "Simply stating the department or omitting the location entirely is insufficient. " +
+      "The location must be precise enough to trace the deviation to a specific area " +
+      "within the facility.",
   },
   {
     key: "define.datetime",
@@ -36,6 +47,9 @@ export const DEFINE_CRITERIA: CriterionDefinition[] = [
     description:
       "Does the narrative specify both the date AND time (in HH:MM format) of when the " +
       "deviation occurred, and separately when it was detected/identified? " +
+      "Stating only the date (e.g., 'On 13/03/2026') without the time is insufficient. " +
+      "Stating only a month or year (e.g., 'scheduled for 2025' instead of " +
+      "'scheduled for February 2025') is also insufficient. " +
       "Both occurrence and detection timestamps must be present with appropriate precision.",
   },
   {
@@ -43,7 +57,11 @@ export const DEFINE_CRITERIA: CriterionDefinition[] = [
     label: "Personnel involved in the deviation",
     description:
       "Are the personnel who performed the activity, observed the deviation, or are " +
-      "otherwise involved identified by their Employee ID (Emp. ID) only? ",
+      "otherwise involved identified by their Employee ID (Emp. ID) only? " +
+      "Generic references such as 'the analyst', 'the operator', or 'the auditor' without " +
+      "an Emp. ID are insufficient, and names, roles, titles, or job functions are not required. " +
+      "Each person mentioned must include their Emp. ID (e.g., 'Emp. ID: 615', " +
+      "'Emp. ID: 1089', 'Emp. ID: 562 and Emp. ID: 252').",
   },
   {
     key: "define.initial_scope",
@@ -51,7 +69,10 @@ export const DEFINE_CRITERIA: CriterionDefinition[] = [
     description:
       "Is the initial scope of impact explicitly stated, including specific identifiers " +
       "such as batch numbers, equipment IDs, instrument IDs, affected departments, or " +
-      "material names? ",
+      "material names? " +
+      "The scope must clearly delineate what is affected and what is not " +
+      "(e.g., 'The scope of the deviation was limited to Batch No. B092542503'). " +
+      "Vague scope statements without specific identifiers are insufficient.",
   },
 ];
 
@@ -61,9 +82,9 @@ export const MEASURE_CRITERIA: CriterionDefinition[] = [
     label:
       "Relevant facts and data reviewed (environment, process/product history, control limits)",
     description:
-      "Does the summary provide relevant facts and data/information that was reviewed including:"+ 
-      "environment, process/product history, personnel info (title and job title), controls limits"+
-      ", etc.",
+      "Does the summary provide relevant facts and data reviewed including environment, " +
+      "process/product history, control limits, etc? If personnel are referenced, Emp. ID " +
+      "is sufficient; names, titles, and job functions are not required.",
   },
   {
     key: "measure.analysis_summary",
@@ -212,10 +233,7 @@ export const CONTROL_CRITERIA: CriterionDefinition[] = [
     key: "control.expected_outcome",
     label: "Expected outcome verifiable",
     description:
-      "Was Effectiveness Verification required or not and the" + 
-      "rationale for either documented based on the quality impact"+
-      "of the incident after the investigation concluded?",
- 
+      "Does the action describe an expected outcome that can be verified?",
   },
   {
     key: "control.effectiveness",
