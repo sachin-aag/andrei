@@ -165,23 +165,18 @@ export function CriteriaReviewSessionForm({
 
   // --- Auto-save logic ---
   const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const answersRef = useRef(answers);
-  answersRef.current = answers;
-  const selectedReviewerRef = useRef(selectedReviewer);
-  selectedReviewerRef.current = selectedReviewer;
   const savingRef = useRef(false);
 
   const saveAnswers = useCallback(
     async (answersToSave: Record<string, DraftAnswer>, complete: boolean): Promise<boolean> => {
-      const reviewer = selectedReviewerRef.current;
-      if (!reviewer) return false;
+      if (!selectedReviewer) return false;
       if (savingRef.current) return false;
       savingRef.current = true;
       setSaving(true);
       setError(null);
       try {
         const payload = {
-          reviewer,
+          reviewer: selectedReviewer,
           answers: Object.values(answersToSave).map((answer) => ({
             section: answer.section,
             criterionKey: answer.criterionKey,
@@ -217,7 +212,7 @@ export function CriteriaReviewSessionForm({
         setSaving(false);
       }
     },
-    [session.id]
+    [session.id, selectedReviewer]
   );
 
   // Debounced auto-save: fires AUTOSAVE_DELAY_MS after the last answer change
@@ -225,12 +220,11 @@ export function CriteriaReviewSessionForm({
     if (!selectedReviewer) return;
     if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
     autosaveTimer.current = setTimeout(() => {
-      void saveAnswers(answersRef.current, false);
+      void saveAnswers(answers, false);
     }, AUTOSAVE_DELAY_MS);
     return () => {
       if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [answers, selectedReviewer, saveAnswers]);
 
   const selectReviewer = (reviewerId: string) => {
@@ -290,7 +284,7 @@ export function CriteriaReviewSessionForm({
   const submitReport = async () => {
     // Flush any pending autosave first
     if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
-    const saved = await saveAnswers(answersRef.current, true);
+    const saved = await saveAnswers(answers, true);
     if (saved) {
       setSubmitReportOpen(false);
       router.refresh();
