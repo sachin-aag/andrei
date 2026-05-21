@@ -3,9 +3,8 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { canAccessCriteriaReview } from "@/lib/criteria-review/access";
 import {
   getCriteriaReviewSession,
-  isLangfuseConfigured,
-  upsertCriteriaReviewSessionItem,
-} from "@/lib/langfuse/client";
+  saveCriteriaReviewSession,
+} from "@/lib/criteria-review/store";
 import {
   humanAnswerKey,
   humanReviewerSchema,
@@ -17,7 +16,7 @@ import {
 import type {
   CriteriaReviewForReviewer,
   CriteriaReviewSessionMetadata,
-} from "@/lib/langfuse/criteria-dataset";
+} from "@/lib/criteria-review/report-data";
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -29,13 +28,6 @@ export async function GET(_req: Request, context: RouteContext) {
   if (!canAccessCriteriaReview(user)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  if (!isLangfuseConfigured()) {
-    return NextResponse.json(
-      { error: "Langfuse is not configured on this server." },
-      { status: 503 }
-    );
-  }
-
   const { id } = await context.params;
   const item = await getCriteriaReviewSession(decodeURIComponent(id));
   if (!item) {
@@ -53,13 +45,6 @@ export async function PATCH(req: Request, context: RouteContext) {
   if (!canAccessCriteriaReview(user)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  if (!isLangfuseConfigured()) {
-    return NextResponse.json(
-      { error: "Langfuse is not configured on this server." },
-      { status: 503 }
-    );
-  }
-
   const { id } = await context.params;
   const body = (await req.json()) as {
     reviewer?: unknown;
@@ -181,7 +166,7 @@ export async function PATCH(req: Request, context: RouteContext) {
       humanReviewStatus,
     },
   };
-  await upsertCriteriaReviewSessionItem(updated);
+  const saved = await saveCriteriaReviewSession(updated);
 
-  return NextResponse.json({ session: updated });
+  return NextResponse.json({ session: saved });
 }

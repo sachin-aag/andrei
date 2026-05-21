@@ -4,9 +4,8 @@ import { canAccessCriteriaReview } from "@/lib/criteria-review/access";
 import { AppShell } from "@/components/layout/app-shell";
 import {
   getCriteriaReviewSession,
-  isLangfuseConfigured,
   listCriteriaReviewSessions,
-} from "@/lib/langfuse/client";
+} from "@/lib/criteria-review/store";
 import { listCriteriaReviewReviewers } from "@/lib/criteria-review/reviewers";
 import { CriteriaReviewSessionForm } from "@/components/criteria-review/session-form";
 
@@ -18,8 +17,6 @@ export default async function CriteriaReviewSessionPage({ params }: PageProps) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (!canAccessCriteriaReview(user)) redirect("/");
-  if (!isLangfuseConfigured()) redirect("/criteria-review");
-
   const { sessionId } = await params;
   const id = decodeURIComponent(sessionId);
   const session = await getCriteriaReviewSession(id);

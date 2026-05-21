@@ -6,7 +6,7 @@ import {
   reviewerProgress,
   sessionProgress,
   type CriteriaReviewDatasetItem,
-} from "@/lib/langfuse/criteria-dataset";
+} from "@/lib/criteria-review/report-data";
 
 const item: CriteriaReviewDatasetItem = {
   id: "review-report-example",

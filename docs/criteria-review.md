@@ -4,26 +4,27 @@ Internal QA workflow for validating AI traffic-light evaluations on sample devia
 
 ## Setup
 
-1. Add Langfuse keys to `.env.local` (see `.env.example`).
-2. Seed the dataset (runs bulk eval on `docs/sample_files`):
+1. Ensure `DATABASE_URL` is set in `.env.local` (Neon).
+2. Apply schema: `pnpm run db:migrate` (baselines push-created DBs, then applies `0008_criteria_review`).
+3. Seed review reports (runs bulk eval on `docs/sample_files`):
 
    ```bash
    pnpm run seed-criteria-review
    ```
 
-3. Open **Criteria review** in the app sidebar (`/criteria-review`).
+4. Open **Criteria review** in the app sidebar (`/criteria-review`).
 
-## Data model
+## Data model (Neon)
 
-- **Langfuse dataset:** `criteria-evaluations/human-review` (65 items after seed)
-- In the Langfuse UI this appears under folder **criteria-evaluations** → dataset **human-review**, not a separate empty dataset you may have created manually (e.g. “Criteria evalutations”).
-- **65 items** — one per sample DOCX × DMAIC section
-- Each item has ordered **sub-questions** (traffic lights) with AI status + reasoning
-- Human judgments stored in item `metadata.humanReview`
+- **`criteria_review_reports`** — one row per sample DOCX (AI input/output JSON, deviation, prompt version).
+- **`criteria_review_reviewers`** — reviewer registry (name + employee ID).
+- **`criteria_review_submissions`** — one row per reviewer × report; `answers` JSON holds per-criterion judgments.
 
-## Syncing from production traces
+Human labels are **not** stored on production `reports` / `criteria_evaluations` tables.
 
-In Langfuse: **Observations** → select a `criteria-evaluate-section` generation → **Actions → Add to dataset** → map fields into the same `input` / `expectedOutput` shape. Use a stable item `id` like `review-{docSlug}--{section}`.
+## Reseeding
+
+Re-running `pnpm run seed-criteria-review` updates AI baselines on each report but **preserves** existing human submissions for that report.
 
 ## Access control
 

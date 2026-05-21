@@ -1,6 +1,6 @@
 /**
  * Next.js server instrumentation hook.
- * Langfuse tracing via OpenTelemetry was removed; criteria review uses @langfuse/client only.
+ * Criteria review data is stored in Neon (see src/lib/criteria-review/store.ts).
  */
 export async function register(): Promise<void> {
   // No-op

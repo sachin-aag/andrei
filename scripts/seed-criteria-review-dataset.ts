@@ -1,5 +1,5 @@
 /**
- * Seeds Langfuse dataset `criteria-evaluations/human-review` with section review sessions.
+ * Seeds Neon `criteria_review_*` tables with sample report review sessions.
  *
  *   pnpm run seed-criteria-review
  *   pnpm run seed-criteria-review -- --dry-run
@@ -11,24 +11,12 @@ import path from "node:path";
 
 import { config as loadEnv } from "dotenv";
 
-loadEnv({ path: ".env.local" });
+/** Match Next.js: `.env.local` overrides `.env`. */
 loadEnv({ path: ".env" });
+loadEnv({ path: ".env.local", override: true });
 
-import { PROMPT_VERSION } from "@/lib/ai/evaluate";
-import { buildAllCriteriaReviewSessionItems } from "@/lib/langfuse/criteria-dataset";
-import {
-  ensureCriteriaReviewDataset,
-  isLangfuseConfigured,
-  upsertCriteriaReviewSessionItem,
-} from "@/lib/langfuse/client";
-import {
-  collectDocxFiles,
-  evaluateOneDocx,
-  type ReportRunOutcome,
-} from "@/lib/sample-eval/evaluate-sample-docx";
-
-function stableDateFromPromptVersion(): string {
-  const match = PROMPT_VERSION.match(/^(\d{4}-\d{2}-\d{2})/);
+function stableDateFromPromptVersion(promptVersion: string): string {
+  const match = promptVersion.match(/^(\d{4}-\d{2}-\d{2})/);
   return match ? match[1] : new Date().toISOString().slice(0, 10);
 }
 
@@ -59,7 +47,7 @@ function parseArgs(argv: string[]) {
     dryRun,
     fromRows,
     docConcurrency,
-    reportDate: reportDate ?? stableDateFromPromptVersion(),
+    reportDate,
   };
 }
 
@@ -87,59 +75,85 @@ async function mapWithConcurrencyLimit<T, R>(
   return results;
 }
 
-type CachedRun = Pick<
-  ReportRunOutcome,
-  "sourceFile" | "deviationNo" | "skippedReason" | "rows" | "allSections"
->;
-
-async function loadRuns(params: {
-  inputDir: string;
-  fromRows?: string;
-  docConcurrency: number;
-  reportDate: string;
-}): Promise<CachedRun[]> {
-  if (params.fromRows) {
-    const raw = JSON.parse(fs.readFileSync(params.fromRows, "utf8")) as {
-      runs: CachedRun[];
-    };
-    return raw.runs;
-  }
-
-  const files = collectDocxFiles(params.inputDir);
-  if (files.length === 0) {
-    throw new Error(`No .docx files under ${params.inputDir}`);
-  }
-
-  console.error(`Evaluating ${files.length} files…`);
-  const outcomes = await mapWithConcurrencyLimit(
-    files,
-    params.docConcurrency,
-    async (f, i) => {
-      console.error(`[${i + 1}/${files.length}] ${path.basename(f)}`);
-      return evaluateOneDocx(f, params.reportDate);
-    }
-  );
-
-  return outcomes.map((o) => ({
-    sourceFile: o.sourceFile,
-    deviationNo: o.deviationNo,
-    skippedReason: o.skippedReason,
-    rows: o.rows,
-    allSections: o.allSections,
-  }));
-}
-
 async function main() {
-  const args = parseArgs(process.argv.slice(2));
-
-  if (!args.dryRun && !isLangfuseConfigured()) {
+  if (!process.env.DATABASE_URL?.trim()) {
     console.error(
-      "Set LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY, and LANGFUSE_BASE_URL in .env.local"
+      "Set DATABASE_URL in .env.local or .env (Neon connection string)."
     );
     process.exit(1);
   }
 
-  const runs = await loadRuns(args);
+  const { runPendingMigrations } = await import("@/lib/db/run-pending-migrations");
+  const { PROMPT_VERSION } = await import("@/lib/ai/evaluate");
+  const { buildAllCriteriaReviewSessionItems } = await import(
+    "@/lib/criteria-review/report-data"
+  );
+  const { upsertCriteriaReviewSessionItem } = await import(
+    "@/lib/criteria-review/store"
+  );
+  const { collectDocxFiles, evaluateOneDocx } = await import(
+    "@/lib/sample-eval/evaluate-sample-docx"
+  );
+
+  type ReportRunOutcome = Awaited<ReturnType<typeof evaluateOneDocx>>;
+  type CachedRun = Pick<
+    ReportRunOutcome,
+    "sourceFile" | "deviationNo" | "skippedReason" | "rows" | "allSections"
+  >;
+
+  const args = parseArgs(process.argv.slice(2));
+  const reportDate =
+    args.reportDate ?? stableDateFromPromptVersion(PROMPT_VERSION);
+
+  const sql = (await import("@neondatabase/serverless")).neon(
+    process.env.DATABASE_URL!
+  );
+  const [{ exists: criteriaTablesReady }] = await sql`
+    SELECT EXISTS (
+      SELECT 1 FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = 'criteria_review_reports'
+    ) AS exists
+  `;
+  if (!criteriaTablesReady) {
+    console.error(
+      "criteria_review_* tables missing — applying pending migrations…"
+    );
+    await runPendingMigrations(process.env.DATABASE_URL!);
+  }
+
+  async function loadRuns(): Promise<CachedRun[]> {
+    if (args.fromRows) {
+      const raw = JSON.parse(fs.readFileSync(args.fromRows, "utf8")) as {
+        runs: CachedRun[];
+      };
+      return raw.runs;
+    }
+
+    const files = collectDocxFiles(args.inputDir);
+    if (files.length === 0) {
+      throw new Error(`No .docx files under ${args.inputDir}`);
+    }
+
+    console.error(`Evaluating ${files.length} files…`);
+    const outcomes = await mapWithConcurrencyLimit(
+      files,
+      args.docConcurrency,
+      async (f, i) => {
+        console.error(`[${i + 1}/${files.length}] ${path.basename(f)}`);
+        return evaluateOneDocx(f, reportDate);
+      }
+    );
+
+    return outcomes.map((o) => ({
+      sourceFile: o.sourceFile,
+      deviationNo: o.deviationNo,
+      skippedReason: o.skippedReason,
+      rows: o.rows,
+      allSections: o.allSections,
+    }));
+  }
+
+  const runs = await loadRuns();
   const items = runs.flatMap((run) => {
     if (run.skippedReason) {
       console.error(`  skip ${run.sourceFile}: ${run.skippedReason}`);
@@ -150,7 +164,7 @@ async function main() {
       deviationNo: run.deviationNo,
       rows: run.rows,
       allSections: run.allSections,
-      reportDate: args.reportDate,
+      reportDate,
       promptVersion: PROMPT_VERSION,
     });
   });
@@ -166,14 +180,12 @@ async function main() {
     return;
   }
 
-  await ensureCriteriaReviewDataset();
-
   let n = 0;
   for (const item of items) {
     await upsertCriteriaReviewSessionItem(item, { preserveHumanReview: true });
     n += 1;
     if (n % 10 === 0 || n === items.length) {
-      console.error(`  uploaded ${n}/${items.length}`);
+      console.error(`  saved ${n}/${items.length}`);
     }
   }
 

@@ -12,9 +12,6 @@ import {
 import { EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
 import { EDITABLE_SECTIONS } from "@/types/sections";
 
-export const CRITERIA_REVIEW_DATASET_NAME =
-  "criteria-evaluations/human-review" as const;
-
 export type CriteriaReviewCriterion = {
   index: number;
   answerKey: string;
@@ -71,11 +68,7 @@ export type CriteriaReviewSessionMetadata = {
   promptVersion: string;
   humanReviewStatus: "pending" | "in_progress" | "completed";
   humanReviews?: Record<string, CriteriaReviewForReviewer>;
-  /**
-   * Legacy section-level review data from earlier dataset versions. Kept only
-   * so parsing old Langfuse rows does not crash while the report-level dataset
-   * is being reseeded.
-   */
+  /** Legacy section-level shape; ignored when loading from Neon. */
   humanReview?: {
     reviewer?: unknown;
     subAnswers?: Array<{

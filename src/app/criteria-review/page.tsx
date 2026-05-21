@@ -4,11 +4,8 @@ import { ClipboardCheck } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth/session";
 import { canAccessCriteriaReview } from "@/lib/criteria-review/access";
 import { AppShell } from "@/components/layout/app-shell";
-import { isLangfuseConfigured, listCriteriaReviewSessions } from "@/lib/langfuse/client";
-import {
-  CRITERIA_REVIEW_DATASET_NAME,
-  sessionProgress,
-} from "@/lib/langfuse/criteria-dataset";
+import { listCriteriaReviewSessions } from "@/lib/criteria-review/store";
+import { sessionProgress } from "@/lib/criteria-review/report-data";
 
 export const dynamic = "force-dynamic";
 
@@ -17,8 +14,7 @@ export default async function CriteriaReviewListPage() {
   if (!user) redirect("/login");
   if (!canAccessCriteriaReview(user)) redirect("/");
 
-  const configured = isLangfuseConfigured();
-  const items = configured ? await listCriteriaReviewSessions() : [];
+  const items = await listCriteriaReviewSessions();
 
   return (
     <AppShell user={user}>
@@ -32,27 +28,21 @@ export default async function CriteriaReviewListPage() {
             Review AI traffic-light evaluations on sample deviation reports (one
             report per session).
           </p>
-          {configured && (
-            <p className="text-xs text-[var(--muted-foreground)] mt-2 font-mono">
-              Langfuse dataset: {CRITERIA_REVIEW_DATASET_NAME}
-              {items.length > 0 ? ` · ${items.length} sessions` : ""}
+          {items.length > 0 && (
+            <p className="text-xs text-[var(--muted-foreground)] mt-2">
+              {items.length} report{items.length === 1 ? "" : "s"} in Neon
             </p>
           )}
         </header>
 
         <div className="flex-1 overflow-y-auto p-6">
-          {!configured && (
-            <p className="text-sm text-amber-700 dark:text-amber-300 rounded-lg border border-amber-500/30 bg-amber-500/10 p-4">
-              Langfuse is not configured. Add LANGFUSE_PUBLIC_KEY,
-              LANGFUSE_SECRET_KEY, and LANGFUSE_BASE_URL to .env.local, then run{" "}
-              <code className="text-xs">pnpm run seed-criteria-review</code>.
-            </p>
-          )}
-
-          {configured && items.length === 0 && (
+          {items.length === 0 && (
             <p className="text-sm text-[var(--muted-foreground)]">
-              No review sessions in the dataset yet. Run{" "}
-              <code className="text-xs">pnpm run seed-criteria-review</code>.
+              No review reports in the database yet. Run{" "}
+              <code className="text-xs">pnpm run seed-criteria-review</code>{" "}
+              (uses <code className="text-xs">DATABASE_URL</code> from{" "}
+              <code className="text-xs">.env.local</code>, same as{" "}
+              <code className="text-xs">next dev</code>).
             </p>
           )}
 

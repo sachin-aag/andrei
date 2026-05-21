@@ -15,19 +15,18 @@
     "prepare": "husky",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
+    "db:migrate": "tsx scripts/drizzle-migrate.ts",
     "db:ensure": "npm run db:fix-comments && npm run db:migrate-suggested-fix && drizzle-kit push",
     "db:fix-comments": "tsx scripts/ensure-comment-columns.ts",
     "db:migrate-suggested-fix": "tsx scripts/migrate-suggested-fix.ts",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "sample-eval-report": "tsx scripts/bulk-sample-evaluation-report.ts",
-    "seed-criteria-review": "tsx scripts/seed-criteria-review-dataset.ts"
+    "seed-criteria-review": "tsx --env-file=.env --env-file=.env.local scripts/seed-criteria-review-dataset.ts"
   },
   "dependencies": {
     "@ai-sdk/gateway": "^3.0.104",
     "@ai-sdk/google": "^3.0.64",
-    "@langfuse/client": "^5.3.0",
     "@neondatabase/serverless": "^1.1.0",
     "@paralleldrive/cuid2": "^3.3.0",
     "@radix-ui/react-checkbox": "^1.3.3",

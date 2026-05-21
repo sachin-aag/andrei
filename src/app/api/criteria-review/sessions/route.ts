@@ -1,11 +1,8 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/session";
 import { canAccessCriteriaReview } from "@/lib/criteria-review/access";
-import {
-  isLangfuseConfigured,
-  listCriteriaReviewSessions,
-} from "@/lib/langfuse/client";
-import { sessionProgress } from "@/lib/langfuse/criteria-dataset";
+import { listCriteriaReviewSessions } from "@/lib/criteria-review/store";
+import { sessionProgress } from "@/lib/criteria-review/report-data";
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -15,13 +12,6 @@ export async function GET() {
   if (!canAccessCriteriaReview(user)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
-  if (!isLangfuseConfigured()) {
-    return NextResponse.json(
-      { error: "Langfuse is not configured on this server." },
-      { status: 503 }
-    );
-  }
-
   const items = await listCriteriaReviewSessions();
   const sessions = items.map((item) => {
     const { answered, total, status, reviewerCount } = sessionProgress(item);

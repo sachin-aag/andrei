@@ -39,7 +39,7 @@ import {
 import type {
   CriteriaReviewDatasetItem,
   CriteriaReviewReportSection,
-} from "@/lib/langfuse/criteria-dataset";
+} from "@/lib/criteria-review/report-data";
 import { SECTION_LABELS } from "@/types/sections";
 
 const REVIEWER_STORAGE_KEY = "criteria-review:reviewer:v1";
