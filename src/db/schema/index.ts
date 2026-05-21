@@ -58,6 +58,12 @@ export const commentKindEnum = pgEnum("comment_kind", [
   "ai_redraft",
 ]);
 
+export const criteriaReviewStatusEnum = pgEnum("criteria_review_status", [
+  "pending",
+  "in_progress",
+  "completed",
+]);
+
 export const reports = pgTable(
   "reports",
   {
@@ -191,8 +197,93 @@ export const commentsRelations = relations(comments, ({ one, many }) => ({
   replies: many(comments, { relationName: "comment_thread" }),
 }));
 
+/** Sample-report human QA (not tied to production `reports` rows). */
+export const criteriaReviewReports = pgTable("criteria_review_reports", {
+  id: text("id").primaryKey(),
+  sourceFile: text("source_file").notNull(),
+  deviationNo: text("deviation_no").notNull(),
+  reportDate: text("report_date").notNull(),
+  promptVersion: text("prompt_version").notNull(),
+  totalCriterionCount: integer("total_criterion_count").notNull(),
+  input: jsonb("input").notNull(),
+  expectedOutput: jsonb("expected_output").notNull(),
+  humanReviewStatus: criteriaReviewStatusEnum("human_review_status")
+    .notNull()
+    .default("pending"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const criteriaReviewReviewers = pgTable(
+  "criteria_review_reviewers",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    employeeId: text("employee_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    employeeIdUnique: uniqueIndex(
+      "criteria_review_reviewers_employee_id_unique"
+    ).on(t.employeeId),
+  })
+);
+
+export const criteriaReviewSubmissions = pgTable(
+  "criteria_review_submissions",
+  {
+    id: text("id").primaryKey().$defaultFn(() => createId()),
+    reportId: text("report_id")
+      .notNull()
+      .references(() => criteriaReviewReports.id, { onDelete: "cascade" }),
+    reviewerId: text("reviewer_id")
+      .notNull()
+      .references(() => criteriaReviewReviewers.id, { onDelete: "cascade" }),
+    status: criteriaReviewStatusEnum("status").notNull().default("pending"),
+    answers: jsonb("answers").notNull().default({}),
+    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    reportReviewerUnique: uniqueIndex(
+      "criteria_review_submissions_report_reviewer_unique"
+    ).on(t.reportId, t.reviewerId),
+  })
+);
+
+export const criteriaReviewReportsRelations = relations(
+  criteriaReviewReports,
+  ({ many }) => ({
+    submissions: many(criteriaReviewSubmissions),
+  })
+);
+
+export const criteriaReviewSubmissionsRelations = relations(
+  criteriaReviewSubmissions,
+  ({ one }) => ({
+    report: one(criteriaReviewReports, {
+      fields: [criteriaReviewSubmissions.reportId],
+      references: [criteriaReviewReports.id],
+    }),
+    reviewer: one(criteriaReviewReviewers, {
+      fields: [criteriaReviewSubmissions.reviewerId],
+      references: [criteriaReviewReviewers.id],
+    }),
+  })
+);
+
 export type ReportStatus = (typeof reportStatusEnum.enumValues)[number];
 export type SectionType = (typeof sectionTypeEnum.enumValues)[number];
 export type CriterionStatus = (typeof criterionStatusEnum.enumValues)[number];
 export type CommentStatus = (typeof commentStatusEnum.enumValues)[number];
 export type CommentKind = (typeof commentKindEnum.enumValues)[number];
+export type CriteriaReviewStatus =
+  (typeof criteriaReviewStatusEnum.enumValues)[number];

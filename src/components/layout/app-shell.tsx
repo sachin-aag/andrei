@@ -5,6 +5,7 @@ import {
   LogOut,
   FileText,
   BookOpen,
+  ClipboardCheck,
   PanelLeftClose,
   PanelLeftOpen,
 } from "lucide-react";
@@ -33,6 +34,7 @@ export function AppShell({
 
   const navItems = [
     { href: "/", label: "Reports", icon: FileText },
+    { href: "/criteria-review", label: "Criteria review", icon: ClipboardCheck },
   ];
 
   return (
@@ -122,7 +124,8 @@ export function AppShell({
               className={cn(
                 "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]",
                 collapsed && "justify-center px-0",
-                pathname === item.href
+                pathname === item.href ||
+                (item.href !== "/" && pathname.startsWith(item.href))
                   ? "bg-[var(--brand-700)] text-white"
                   : "text-[var(--muted-foreground)] hover:bg-[var(--secondary)] hover:text-[var(--foreground)]"
               )}
