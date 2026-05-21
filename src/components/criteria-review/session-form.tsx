@@ -54,16 +54,17 @@ type DraftAnswer = {
   suggestedStatus?: HumanSubAnswer["suggestedStatus"];
 };
 
+/** Light-theme-only pills; avoid `dark:` so OS dark mode does not wash out text on white cards. */
 function statusTone(status: string): string {
   switch (status) {
     case "met":
-      return "bg-emerald-500/15 text-emerald-700 dark:text-emerald-300";
+      return "border border-emerald-200 bg-emerald-50 text-emerald-800";
     case "partially_met":
-      return "bg-amber-500/15 text-amber-800 dark:text-amber-200";
+      return "border border-amber-300 bg-amber-100 text-amber-950";
     case "not_met":
-      return "bg-red-500/15 text-red-700 dark:text-red-300";
+      return "border border-red-200 bg-red-50 text-red-800";
     default:
-      return "bg-zinc-500/15 text-zinc-600 dark:text-zinc-400";
+      return "border border-zinc-200 bg-zinc-100 text-zinc-700";
   }
 }
 
@@ -522,14 +523,6 @@ export function CriteriaReviewSessionForm({
                 <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-4">
                   <h2 className="mb-3 text-sm font-semibold">Prompt context</h2>
                   <div className="space-y-4">
-                    <details className="rounded-md border border-[var(--border)] bg-[var(--secondary)]/40 p-3">
-                      <summary className="cursor-pointer text-sm font-medium">
-                        System prompt
-                      </summary>
-                      <pre className="mt-3 max-h-64 overflow-y-auto whitespace-pre-wrap font-sans text-xs leading-relaxed">
-                        {active.section.systemPrompt}
-                      </pre>
-                    </details>
                     {active.section.previousSections.length > 0 ? (
                       <details className="rounded-md border border-[var(--border)] bg-[var(--secondary)]/40 p-3">
                         <summary className="cursor-pointer text-sm font-medium">
@@ -583,7 +576,7 @@ export function CriteriaReviewSessionForm({
                       </p>
                       <span
                         className={cn(
-                          "inline-flex rounded px-2 py-0.5 text-xs font-medium",
+                          "inline-flex rounded-md px-2 py-0.5 text-xs font-semibold",
                           statusTone(active.criterion.aiStatus)
                         )}
                       >
@@ -727,7 +720,7 @@ export function CriteriaReviewSessionForm({
           ) : null}
 
           {error ? (
-            <p className="mt-4 text-sm text-red-600 dark:text-red-400" role="alert">
+            <p className="mt-4 text-sm text-red-700" role="alert">
               {error}
             </p>
           ) : null}
