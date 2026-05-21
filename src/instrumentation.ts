@@ -11,6 +11,11 @@ function langfuseConfigured(): boolean {
 /** Shared processor — call `forceFlush()` from serverless routes before exit. */
 export const langfuseSpanProcessor = new LangfuseSpanProcessor();
 
+/**
+ * Next.js server instrumentation hook.
+ * Langfuse tracing for inline suggestions / evaluation observability.
+ * Criteria review data is stored in Neon (see src/lib/criteria-review/store.ts).
+ */
 export function register() {
   if (process.env.NEXT_RUNTIME === "edge") return;
   if (!langfuseConfigured()) return;

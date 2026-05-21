@@ -147,7 +147,7 @@ function sectionContentForPrompt(section: SectionType, content: unknown): string
   return sectionPlainTextForPrompt(section, content);
 }
 
-/** Exported for Langfuse datasets and other human-review tooling. */
+/** Exported for criteria review seeding and other human-review tooling. */
 export function formatSectionContentForEvaluation(
   section: SectionType,
   content: unknown

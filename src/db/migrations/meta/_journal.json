@@ -29,6 +29,41 @@
       "when": 1777200000000,
       "tag": "0003_suggested_fix_jsonb",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1777400000000,
+      "tag": "0004_eval_content_hash",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1777500000000,
+      "tag": "0005_ai_comments_and_dismissed",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1777600000000,
+      "tag": "0006_remove_suggested_fix",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1777700000000,
+      "tag": "0007_unique_deviation_no",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1777800000000,
+      "tag": "0008_criteria_review",
+      "breakpoints": true
     }
   ]
 }
