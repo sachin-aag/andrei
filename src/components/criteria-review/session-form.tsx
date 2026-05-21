@@ -42,6 +42,7 @@ import {
   type HumanSubAnswer,
   type ReasoningAgreement,
 } from "@/lib/criteria-review/human-judgment";
+import { resolveHumanReviewCriterionDisplay } from "@/lib/criteria-review/human-review-criteria";
 import type {
   CriteriaReviewDatasetItem,
   CriteriaReviewReportSection,
@@ -554,6 +555,13 @@ export function CriteriaReviewSessionForm({
                 {activeSection.criteria.map((criterion) => {
                   const answer = answers[criterion.answerKey];
                   if (!answer) return null;
+                  const display = resolveHumanReviewCriterionDisplay(
+                    criterion.criterionKey,
+                    {
+                      label: criterion.label,
+                      description: criterion.description,
+                    }
+                  );
                   const reviewed = isAnswerReviewed(answer);
                   const needsComment =
                     reviewed &&
@@ -575,7 +583,7 @@ export function CriteriaReviewSessionForm({
                             {criterion.index}
                           </span>
                           <div>
-                            <h3 className="text-sm font-semibold">{criterion.label}</h3>
+                            <h3 className="text-sm font-semibold">{display.label}</h3>
                           </div>
                         </div>
                         {reviewed ? (
@@ -585,15 +593,10 @@ export function CriteriaReviewSessionForm({
                         ) : null}
                       </div>
 
-                      {criterion.description ? (
-                        <details className="mb-4 rounded-md border border-[var(--border)] bg-[var(--secondary)]/40 px-3 py-2">
-                          <summary className="cursor-pointer text-xs font-medium text-[var(--muted-foreground)]">
-                            Criteria guidance
-                          </summary>
-                          <p className="mt-2 text-sm leading-relaxed text-[var(--muted-foreground)]">
-                            {criterion.description}
-                          </p>
-                        </details>
+                      {display.description ? (
+                        <p className="mb-4 text-sm leading-relaxed text-[var(--muted-foreground)]">
+                          {display.description}
+                        </p>
                       ) : null}
 
                       <div className="grid gap-4 xl:grid-cols-2">
