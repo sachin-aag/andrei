@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { employeeIdSchema } from "@/lib/auth/employee-id";
 import {
   createWorkspaceUser,
   listWorkspaceUsers,
@@ -7,7 +8,7 @@ import {
 
 const createBodySchema = z.object({
   name: z.string().trim().min(1, "Name is required."),
-  employeeId: z.string().trim().min(1, "Employee ID is required."),
+  employeeId: employeeIdSchema,
   role: z.enum(["engineer", "manager"]).optional(),
   title: z.string().trim().optional(),
 });

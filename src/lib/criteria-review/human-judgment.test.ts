@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  getHumanSubAnswerValidationError,
   humanCommentRequired,
+  isHumanSubAnswerComplete,
   validateHumanReview,
   validateHumanSubAnswer,
 } from "@/lib/criteria-review/human-judgment";
@@ -36,6 +38,63 @@ describe("validateHumanSubAnswer", () => {
         comment: "This status should be changed based on the section evidence.",
       })
     ).toMatch(/Correct traffic-light status/);
+  });
+});
+
+describe("isHumanSubAnswerComplete", () => {
+  it("is false when agreement answers are missing", () => {
+    expect(
+      isHumanSubAnswerComplete({
+        section: "define",
+        criterionKey: "define.what_happened",
+      })
+    ).toBe(false);
+  });
+
+  it("is false when comment is too short", () => {
+    expect(
+      isHumanSubAnswerComplete({
+        section: "define",
+        criterionKey: "define.what_happened",
+        criteriaEvaluationAgreement: "yes",
+        reasoningAgreement: "no",
+        comment: "short",
+      })
+    ).toBe(false);
+  });
+
+  it("is false when suggested status is missing for rejected evaluation", () => {
+    expect(
+      isHumanSubAnswerComplete({
+        section: "define",
+        criterionKey: "define.what_happened",
+        criteriaEvaluationAgreement: "no",
+        reasoningAgreement: "yes",
+        comment: "This status should be changed based on the section evidence.",
+      })
+    ).toBe(false);
+  });
+
+  it("is true when both answers are yes and no comment is required", () => {
+    expect(
+      isHumanSubAnswerComplete({
+        section: "define",
+        criterionKey: "define.what_happened",
+        criteriaEvaluationAgreement: "yes",
+        reasoningAgreement: "yes",
+      })
+    ).toBe(true);
+  });
+});
+
+describe("getHumanSubAnswerValidationError", () => {
+  it("returns a generic message when required fields are missing", () => {
+    expect(
+      getHumanSubAnswerValidationError({
+        section: "define",
+        criterionKey: "define.what_happened",
+      })
+    ).toMatch(/Complete all required fields/);
   });
 });
 

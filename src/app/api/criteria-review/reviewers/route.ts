@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
+import { ZodError } from "zod";
 import { getCurrentUser } from "@/lib/auth/session";
+import { employeeIdSchema } from "@/lib/auth/employee-id";
 import { canAccessCriteriaReview } from "@/lib/criteria-review/access";
 import {
   createCriteriaReviewReviewer,
@@ -33,16 +35,37 @@ export async function POST(req: Request) {
     employeeId?: unknown;
   };
   const name = typeof body.name === "string" ? body.name.trim() : "";
-  const employeeId =
-    typeof body.employeeId === "string" ? body.employeeId.trim() : "";
+  const employeeIdParse = employeeIdSchema.safeParse(body.employeeId);
 
-  if (!name || !employeeId) {
+  if (!name) {
     return NextResponse.json(
-      { error: "Reviewer name and employee ID are required." },
+      { error: "Reviewer name is required." },
+      { status: 400 }
+    );
+  }
+  if (!employeeIdParse.success) {
+    return NextResponse.json(
+      {
+        error:
+          employeeIdParse.error.issues[0]?.message ?? "Invalid employee ID.",
+      },
       { status: 400 }
     );
   }
 
-  const reviewer = await createCriteriaReviewReviewer({ name, employeeId });
-  return NextResponse.json({ reviewer });
+  try {
+    const reviewer = await createCriteriaReviewReviewer({
+      name,
+      employeeId: employeeIdParse.data,
+    });
+    return NextResponse.json({ reviewer });
+  } catch (error) {
+    if (error instanceof ZodError) {
+      return NextResponse.json(
+        { error: error.issues[0]?.message ?? "Invalid payload" },
+        { status: 400 }
+      );
+    }
+    throw error;
+  }
 }

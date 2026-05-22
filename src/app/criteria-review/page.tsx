@@ -1,11 +1,12 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { humanReviewerFromMockUser } from "@/lib/auth/reviewer-from-user";
 import { getCurrentUser } from "@/lib/auth/session";
 import { canAccessCriteriaReview } from "@/lib/criteria-review/access";
 import { AppShell } from "@/components/layout/app-shell";
 import { CriteriaReviewListHeader } from "@/components/criteria-review/criteria-review-list-header";
 import { listCriteriaReviewSessions } from "@/lib/criteria-review/store";
-import { sessionProgress } from "@/lib/criteria-review/report-data";
+import { reviewerProgress } from "@/lib/criteria-review/report-data";
 
 export const dynamic = "force-dynamic";
 
@@ -15,6 +16,7 @@ export default async function CriteriaReviewListPage() {
   if (!canAccessCriteriaReview(user)) redirect("/");
 
   const items = await listCriteriaReviewSessions();
+  const reviewerId = humanReviewerFromMockUser(user).id;
 
   return (
     <AppShell user={user}>
@@ -44,15 +46,16 @@ export default async function CriteriaReviewListPage() {
                     <th className="px-4 py-2 font-medium">Deviation</th>
                     <th className="px-4 py-2 font-medium">Sections</th>
                     <th className="px-4 py-2 font-medium">Progress</th>
-                    <th className="px-4 py-2 font-medium">Reviewers</th>
                     <th className="px-4 py-2 font-medium">Status</th>
                     <th className="px-4 py-2 font-medium" />
                   </tr>
                 </thead>
                 <tbody>
                   {items.map((item) => {
-                    const { answered, total, status, reviewerCount } =
-                      sessionProgress(item);
+                    const { answered, total, status } = reviewerProgress(
+                      item,
+                      reviewerId
+                    );
                     return (
                       <tr
                         key={item.id}
@@ -69,9 +72,6 @@ export default async function CriteriaReviewListPage() {
                         </td>
                         <td className="px-4 py-3">
                           {answered}/{total}
-                        </td>
-                        <td className="px-4 py-3">
-                          {reviewerCount}
                         </td>
                         <td className="px-4 py-3 capitalize">
                           {status.replace(/_/g, " ")}

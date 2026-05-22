@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
+import { humanReviewerFromMockUser } from "@/lib/auth/reviewer-from-user";
 import { getCurrentUser } from "@/lib/auth/session";
 import { canAccessCriteriaReview } from "@/lib/criteria-review/access";
 import { listCriteriaReviewSessions } from "@/lib/criteria-review/store";
-import { sessionProgress } from "@/lib/criteria-review/report-data";
+import { reviewerProgress } from "@/lib/criteria-review/report-data";
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -13,8 +14,9 @@ export async function GET() {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const items = await listCriteriaReviewSessions();
+  const reviewerId = humanReviewerFromMockUser(user).id;
   const sessions = items.map((item) => {
-    const { answered, total, status, reviewerCount } = sessionProgress(item);
+    const { answered, total, status } = reviewerProgress(item, reviewerId);
     return {
       id: item.id,
       deviationNo: item.input.deviationNo,
@@ -23,7 +25,6 @@ export async function GET() {
       criterionCount: total,
       answeredCount: answered,
       humanReviewStatus: status,
-      reviewerCount,
       promptVersion: item.metadata.promptVersion,
     };
   });
