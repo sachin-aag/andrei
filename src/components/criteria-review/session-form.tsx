@@ -369,7 +369,10 @@ export function CriteriaReviewSessionForm({
             <Label htmlFor="reviewer-select" className="text-xs text-[var(--muted-foreground)] whitespace-nowrap">
               Reviewer
             </Label>
-            <Select value={selectedReviewerId} onValueChange={selectReviewer}>
+            <Select
+              value={selectedReviewerId || undefined}
+              onValueChange={selectReviewer}
+            >
               <SelectTrigger id="reviewer-select" className="h-8 w-56 bg-[var(--card)] text-sm">
                 <SelectValue placeholder="Select reviewer" />
               </SelectTrigger>
@@ -704,7 +707,7 @@ export function CriteriaReviewSessionForm({
                                 Correct traffic-light status
                               </Label>
                               <Select
-                                value={answer.suggestedStatus ?? ""}
+                                value={answer.suggestedStatus ?? undefined}
                                 onValueChange={(v) =>
                                   updateAnswer(criterion.answerKey, {
                                     suggestedStatus:
