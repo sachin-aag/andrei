@@ -24,6 +24,21 @@ function isMissingWorkspaceUsersTable(error: unknown): boolean {
   return err?.code === "42P01" || err?.cause?.code === "42P01";
 }
 
+function isDatabaseUnavailable(error: unknown): boolean {
+  if (isMissingWorkspaceUsersTable(error)) return true;
+  const err = error as {
+    code?: string;
+    cause?: { code?: string };
+    message?: string;
+  };
+  const code = err?.code ?? err?.cause?.code;
+  if (code === "ECONNREFUSED" || code === "ENOTFOUND" || code === "ETIMEDOUT") {
+    return true;
+  }
+  const message = `${err?.message ?? ""} ${(err?.cause as { message?: string } | undefined)?.message ?? ""}`;
+  return /fetch failed|connection|ECONNREFUSED|ENOTFOUND|ETIMEDOUT/i.test(message);
+}
+
 function sortedMockUsers(): MockUser[] {
   return [...MOCK_USERS].sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -62,7 +77,7 @@ export async function listWorkspaceUsers(): Promise<MockUser[]> {
     });
     return rows.map(rowToUser);
   } catch (error) {
-    if (isMissingWorkspaceUsersTable(error)) {
+    if (isDatabaseUnavailable(error)) {
       return sortedMockUsers();
     }
     throw error;
@@ -83,7 +98,7 @@ export async function getWorkspaceUserById(
     });
     return row ? rowToUser(row) : undefined;
   } catch (error) {
-    if (isMissingWorkspaceUsersTable(error)) {
+    if (isDatabaseUnavailable(error)) {
       return undefined;
     }
     throw error;

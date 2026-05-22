@@ -16,9 +16,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Unknown user" }, { status: 401 });
   }
   await setSession(user.id);
-  await createCriteriaReviewReviewer({
-    name: user.name,
-    employeeId: user.employeeId,
-  });
+  try {
+    await createCriteriaReviewReviewer({
+      name: user.name,
+      employeeId: user.employeeId,
+    });
+  } catch (error) {
+    console.warn("[auth/login] Failed to sync criteria review reviewer:", error);
+  }
   return NextResponse.json({ user });
 }

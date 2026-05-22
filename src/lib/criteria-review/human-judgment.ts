@@ -108,6 +108,23 @@ export function humanCommentRequired(
   );
 }
 
+const INCOMPLETE_ANSWER_MESSAGE =
+  "Complete all required fields for this criterion.";
+
+export function getHumanSubAnswerValidationError(
+  draft: HumanSubAnswerDraft
+): string | null {
+  const parsed = humanSubAnswerSchema.safeParse(draft);
+  if (!parsed.success) {
+    return INCOMPLETE_ANSWER_MESSAGE;
+  }
+  return validateHumanSubAnswer(parsed.data);
+}
+
+export function isHumanSubAnswerComplete(draft: HumanSubAnswerDraft): boolean {
+  return getHumanSubAnswerValidationError(draft) === null;
+}
+
 export function validateHumanSubAnswer(answer: HumanSubAnswer): string | null {
   if (
     answer.criteriaEvaluationAgreement === "no" &&

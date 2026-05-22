@@ -28,8 +28,12 @@ import {
   REASONING_AGREEMENT_LABELS,
   REASONING_AGREEMENTS,
   humanCommentRequired,
+  humanSubAnswerSchema,
+  isHumanSubAnswerComplete,
+  validateHumanReview,
   type CriteriaEvaluationAgreement,
   type HumanSubAnswer,
+  type HumanSubAnswerDraft,
   type ReasoningAgreement,
 } from "@/lib/criteria-review/human-judgment";
 import { resolveHumanReviewCriterionDisplay } from "@/lib/criteria-review/human-review-criteria";
@@ -66,6 +70,11 @@ type DraftAnswer = {
   suggestedStatus?: HumanSubAnswer["suggestedStatus"];
 };
 
+function isDraftAnswerComplete(answer: DraftAnswer | undefined): boolean {
+  if (!answer) return false;
+  return isHumanSubAnswerComplete(answer as HumanSubAnswerDraft);
+}
+
 /** Light-theme-only pills; avoid `dark:` so OS dark mode does not wash out text on white cards. */
 function statusTone(status: string): string {
   switch (status) {
@@ -94,6 +103,7 @@ export function CriteriaReviewSessionForm({
   const [saving, setSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [submitReportOpen, setSubmitReportOpen] = useState(false);
+  const [submitDialogError, setSubmitDialogError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeSectionIndex, setActiveSectionIndex] = useState(0);
 
@@ -149,12 +159,21 @@ export function CriteriaReviewSessionForm({
   const savingRef = useRef(false);
   const mainScrollRef = useRef<HTMLDivElement>(null);
 
+  const expectedAnswerKeys = session.input.sections.flatMap((section) =>
+    section.criteria.map((criterion) => criterion.answerKey)
+  );
+
   const saveAnswers = useCallback(
-    async (answersToSave: Record<string, DraftAnswer>, complete: boolean): Promise<boolean> => {
-      if (savingRef.current) return false;
+    async (
+      answersToSave: Record<string, DraftAnswer>,
+      complete: boolean
+    ): Promise<{ ok: true } | { ok: false; error: string }> => {
+      if (savingRef.current) return { ok: false, error: "Save already in progress" };
       savingRef.current = true;
       setSaving(true);
-      setError(null);
+      if (!complete) {
+        setError(null);
+      }
       try {
         const payload = {
           reviewer: selectedReviewer,
@@ -180,14 +199,16 @@ export function CriteriaReviewSessionForm({
         );
         const data = (await res.json()) as { error?: string };
         if (!res.ok) {
-          setError(data.error ?? "Save failed");
-          return false;
+          const message = data.error ?? "Save failed";
+          setError(message);
+          return { ok: false, error: message };
         }
         setLastSaved(new Date());
-        return true;
+        return { ok: true };
       } catch {
-        setError("Save failed");
-        return false;
+        const message = "Save failed";
+        setError(message);
+        return { ok: false, error: message };
       } finally {
         savingRef.current = false;
         setSaving(false);
@@ -207,26 +228,56 @@ export function CriteriaReviewSessionForm({
     };
   }, [answers, selectedReviewer, saveAnswers]);
 
+  useEffect(() => {
+    setSubmitDialogError(null);
+  }, [answers]);
+
   const submitReport = async () => {
-    // Flush any pending autosave first
     if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
-    const saved = await saveAnswers(answers, true);
-    if (saved) {
+    setSubmitDialogError(null);
+    const result = await saveAnswers(answers, true);
+    if (result.ok) {
       setSubmitReportOpen(false);
       router.refresh();
       router.push("/criteria-review");
+    } else {
+      setSubmitDialogError(result.error);
     }
   };
 
-  const isAnswerReviewed = (answer: DraftAnswer | undefined): boolean =>
-    Boolean(answer?.criteriaEvaluationAgreement && answer.reasoningAgreement);
+  const buildCompleteAnswers = useCallback((): HumanSubAnswer[] => {
+    return expectedAnswerKeys.flatMap((key) => {
+      const draft = answers[key];
+      if (!draft) return [];
+      const parsed = humanSubAnswerSchema.safeParse(draft);
+      return parsed.success ? [parsed.data] : [];
+    });
+  }, [answers, expectedAnswerKeys]);
 
-  const reviewedCount = Object.values(answers).filter(isAnswerReviewed).length;
+  const openSubmitDialog = () => {
+    setSubmitDialogError(null);
+    setError(null);
+    const validationError = validateHumanReview(
+      buildCompleteAnswers(),
+      expectedAnswerKeys
+    );
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+    setSubmitReportOpen(true);
+  };
+
+  const reviewedCount = Object.values(answers).filter((answer) =>
+    isDraftAnswerComplete(answer)
+  ).length;
   const totalCriteria = session.metadata.totalCriterionCount;
   const canCompleteReport = totalCriteria > 0 && reviewedCount === totalCriteria;
 
   const sectionReviewedCount = (section: CriteriaReviewReportSection) =>
-    section.criteria.filter((c) => isAnswerReviewed(answers[c.answerKey])).length;
+    section.criteria.filter((c) =>
+      isDraftAnswerComplete(answers[c.answerKey])
+    ).length;
 
   const goToSection = (index: number) => {
     setActiveSectionIndex(index);
@@ -274,7 +325,13 @@ export function CriteriaReviewSessionForm({
         </div>
       </header>
 
-      <Dialog open={submitReportOpen} onOpenChange={setSubmitReportOpen}>
+      <Dialog
+        open={submitReportOpen}
+        onOpenChange={(open) => {
+          setSubmitReportOpen(open);
+          if (!open) setSubmitDialogError(null);
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Submit report</DialogTitle>
@@ -282,6 +339,11 @@ export function CriteriaReviewSessionForm({
               All {totalCriteria} criteria have been reviewed for this report. Submit this reviewer&apos;s report review?
             </DialogDescription>
           </DialogHeader>
+          {submitDialogError ? (
+            <p className="text-sm text-red-700" role="alert">
+              {submitDialogError}
+            </p>
+          ) : null}
           <DialogFooter>
             <Button
               type="button"
@@ -393,13 +455,20 @@ export function CriteriaReviewSessionForm({
                       description: criterion.description,
                     }
                   );
-                  const reviewed = isAnswerReviewed(answer);
+                  const isComplete = isDraftAnswerComplete(answer);
+                  const agreementsSelected = Boolean(
+                    answer.criteriaEvaluationAgreement && answer.reasoningAgreement
+                  );
                   const needsComment =
-                    reviewed &&
+                    agreementsSelected &&
                     humanCommentRequired(
                       answer.criteriaEvaluationAgreement,
                       answer.reasoningAgreement
                     );
+                  const commentTooShort =
+                    needsComment &&
+                    (answer.comment?.trim() ?? "").length > 0 &&
+                    (answer.comment?.trim() ?? "").length < MIN_HUMAN_COMMENT_LENGTH;
                   const needsSuggested = answer.criteriaEvaluationAgreement === "no";
 
                   return (
@@ -417,11 +486,15 @@ export function CriteriaReviewSessionForm({
                             <h3 className="text-sm font-semibold">{display.label}</h3>
                           </div>
                         </div>
-                        {reviewed ? (
-                          <span className="shrink-0 text-xs font-medium text-[var(--muted-foreground)]">
+                        {isComplete ? (
+                          <span className="shrink-0 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-800">
                             Reviewed
                           </span>
-                        ) : null}
+                        ) : (
+                          <span className="shrink-0 rounded-md border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-800">
+                            Not reviewed
+                          </span>
+                        )}
                       </div>
 
                       {display.description ? (
@@ -573,6 +646,11 @@ export function CriteriaReviewSessionForm({
                                 rows={2}
                                 className="resize-y text-sm"
                               />
+                              {commentTooShort ? (
+                                <p className="text-xs text-red-700">
+                                  At least {MIN_HUMAN_COMMENT_LENGTH} characters required
+                                </p>
+                              ) : null}
                             </div>
                           ) : null}
                         </div>
@@ -633,7 +711,7 @@ export function CriteriaReviewSessionForm({
             <Button
               size="sm"
               disabled={saving}
-              onClick={() => setSubmitReportOpen(true)}
+              onClick={openSubmitDialog}
             >
               Submit report
             </Button>

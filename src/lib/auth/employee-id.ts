@@ -13,3 +13,7 @@ export const employeeIdSchema = z
 export function sanitizeEmployeeIdInput(value: string): string {
   return value.replace(/\D/g, "");
 }
+
+export function normalizeCriteriaReviewEmployeeId(employeeId: string): string {
+  return sanitizeEmployeeIdInput(employeeId.trim());
+}

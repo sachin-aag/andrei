@@ -1,5 +1,6 @@
 import { asc, eq } from "drizzle-orm";
 import { db, schema } from "@/db";
+import { normalizeCriteriaReviewEmployeeId } from "@/lib/auth/employee-id";
 import {
   humanReviewerSchema,
   type HumanReviewer,
@@ -25,10 +26,11 @@ export async function createCriteriaReviewReviewer(params: {
   name: string;
   employeeId: string;
 }): Promise<HumanReviewer> {
+  const employeeId = normalizeCriteriaReviewEmployeeId(params.employeeId);
   const reviewer = humanReviewerSchema.parse({
-    id: reviewerIdForEmployee(params.employeeId),
-    name: params.name,
-    employeeId: params.employeeId,
+    id: reviewerIdForEmployee(employeeId),
+    name: params.name.trim(),
+    employeeId,
   });
 
   const existing = await db.query.criteriaReviewReviewers.findFirst({
