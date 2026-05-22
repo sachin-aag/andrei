@@ -1,12 +1,14 @@
 import { cookies } from "next/headers";
-import { getUser, type MockUser } from "./mock-users";
+import type { MockUser } from "./mock-users";
+import { getWorkspaceUserById } from "./workspace-users";
 
 const SESSION_COOKIE = "mjb_session_uid";
 
 export async function getCurrentUser(): Promise<MockUser | null> {
   const store = await cookies();
   const uid = store.get(SESSION_COOKIE)?.value;
-  return getUser(uid) ?? null;
+  const user = await getWorkspaceUserById(uid);
+  return user ?? null;
 }
 
 export async function requireCurrentUser(): Promise<MockUser> {

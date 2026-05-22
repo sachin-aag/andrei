@@ -24,7 +24,7 @@ export default async function UnlockPage({
     const safe =
       nextPath && nextPath.startsWith("/") && !nextPath.startsWith("//")
         ? nextPath
-        : "/";
+        : "/login";
     redirect(safe);
   }
 
@@ -32,7 +32,7 @@ export default async function UnlockPage({
   const nextHref =
     nextPath && nextPath.startsWith("/") && !nextPath.startsWith("//")
       ? nextPath
-      : "/";
+      : "/login";
 
   return (
     <div className="min-h-screen flex">

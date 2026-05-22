@@ -2,11 +2,13 @@ import Image from "next/image";
 import { redirect } from "next/navigation";
 import { LoginForm } from "@/components/auth/login-form";
 import { getCurrentUser } from "@/lib/auth/session";
-import { MOCK_USERS } from "@/lib/auth/mock-users";
+import { listWorkspaceUsers } from "@/lib/auth/workspace-users";
 
 export default async function LoginPage() {
   const user = await getCurrentUser();
   if (user) redirect("/");
+
+  const users = await listWorkspaceUsers();
 
   return (
     <div className="min-h-screen flex">
@@ -72,10 +74,10 @@ export default async function LoginPage() {
               Sign in to your workspace
             </h1>
             <p className="text-sm text-[var(--muted-foreground)] mt-2">
-              Pick a mock user to continue. In production, this would be SSO.
+              Site access is granted. Select your name to continue.
             </p>
           </div>
-          <LoginForm users={[...MOCK_USERS]} />
+          <LoginForm initialUsers={users} />
         </div>
       </div>
     </div>

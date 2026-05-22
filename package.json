@@ -18,13 +18,15 @@
     "db:migrate": "tsx scripts/drizzle-migrate.ts",
     "db:ensure": "npm run db:fix-comments && npm run db:migrate-suggested-fix && drizzle-kit push",
     "db:fix-comments": "tsx scripts/ensure-comment-columns.ts",
+    "db:ensure-workspace-users": "tsx --env-file=.env --env-file=.env.local scripts/ensure-workspace-users.ts",
     "db:migrate-suggested-fix": "tsx scripts/migrate-suggested-fix.ts",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "sample-eval-report": "tsx scripts/bulk-sample-evaluation-report.ts",
     "compare-evals": "tsx scripts/compare-eval-runs.ts",
     "model-sweep": "tsx scripts/run-model-sweep.ts",
-    "seed-criteria-review": "tsx --env-file=.env --env-file=.env.local scripts/seed-criteria-review-dataset.ts"
+    "seed-criteria-review": "tsx --env-file=.env --env-file=.env.local scripts/seed-criteria-review-dataset.ts",
+    "clear-criteria-review-reviewers": "tsx --env-file=.env --env-file=.env.local scripts/clear-criteria-review-reviewers.ts"
   },
   "dependencies": {
     "@ai-sdk/gateway": "^3.0.104",

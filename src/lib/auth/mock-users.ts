@@ -1,74 +1,13 @@
-export type UserRole = "engineer" | "manager";
+export type { MockUser, UserRole } from "@/lib/auth/mock-users-data";
+export { MOCK_USERS } from "@/lib/auth/mock-users-data";
+export { getUser, hydrateUserDirectory } from "@/lib/auth/user-directory";
 
-export type MockUser = {
-  id: string;
-  name: string;
-  email: string;
-  employeeId: string;
-  role: UserRole;
-  title: string;
-};
+import { MOCK_USERS } from "@/lib/auth/mock-users-data";
 
-export const MOCK_USERS: readonly MockUser[] = [
-  {
-    id: "5",
-    name: "Tushar Berad",
-    email: "tushar.berad@mjbiopharm.com",
-    employeeId: "627",
-    role: "manager",
-    title: "Manager QA, Drug product",
-  },
-  {
-    id: "6",
-    name: "Gautam",
-    email: "gautam@mjbiopharm.com",
-    employeeId: "628",
-    role: "engineer",
-    title: "Engineer",
-  },
-  {
-    id: "7",
-    name: "Test Engineer",
-    email: "test.engineer@mjbiopharm.com",
-    employeeId: "629",
-    role: "engineer",
-    title: "Test Engineer",
-  },
-  {
-    id: "1",
-    name: "Bhargav Patel",
-    email: "bhargav@mjbiopharm.com",
-    employeeId: "598",
-    role: "engineer",
-    title: "Quality Engineer - Packing",
-  },
-  {
-    id: "3",
-    name: "Priya Sharma",
-    email: "priya@mjbiopharm.com",
-    employeeId: "312",
-    role: "engineer",
-    title: "Process Engineer",
-  },
-  {
-    id: "4",
-    name: "Pankaj Birari",
-    email: "pankaj.birari@mjbiopharm.com",
-    employeeId: "105",
-    role: "manager",
-    title: "Head of Quality",
-  },
-] as const;
-
-export function getUser(id: string | null | undefined): MockUser | undefined {
-  if (!id) return undefined;
-  return MOCK_USERS.find((u) => u.id === id);
-}
-
-export function getEngineers(): MockUser[] {
+export function getEngineers() {
   return MOCK_USERS.filter((u) => u.role === "engineer");
 }
 
-export function getManagers(): MockUser[] {
+export function getManagers() {
   return MOCK_USERS.filter((u) => u.role === "manager");
 }

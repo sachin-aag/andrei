@@ -11,8 +11,10 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Satisfies src/db/index.ts; CI build/dev do not need a reachable Postgres for covered routes.
-  DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/ci
+  # Real Neon URL for jobs that exercise the DB (e2e). Lint/typecheck/build
+  # only need a parseable value, so falls back to a stub when the secret
+  # is not configured.
+  DATABASE_URL: ${{ secrets.DATABASE_URL || 'postgresql://ci:ci@127.0.0.1:5432/ci' }}
 
 jobs:
   lint-typecheck-test-build:
@@ -60,11 +62,6 @@ jobs:
           key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
 
       - name: Install Playwright browsers
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: npx playwright install --with-deps chromium
-
-      - name: Ensure Playwright system deps (cache hit)
-        if: steps.playwright-cache.outputs.cache-hit == 'true'
-        run: npx playwright install-deps chromium
+        run: pnpm exec playwright install --with-deps chromium
 
       - run: pnpm run test:e2e
