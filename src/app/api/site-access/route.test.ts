@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { clearSession } from "@/lib/auth/session";
 import { setSiteAccessCookie } from "@/lib/site-access-cookie";
 import { POST } from "@/app/api/site-access/route";
+
+vi.mock("@/lib/auth/session", () => ({
+  clearSession: vi.fn(),
+}));
 
 vi.mock("@/lib/site-access-cookie", () => ({
   setSiteAccessCookie: vi.fn(),
@@ -56,6 +61,7 @@ describe("POST /api/site-access", () => {
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({ ok: true });
+    expect(clearSession).toHaveBeenCalledOnce();
     expect(setSiteAccessCookie).toHaveBeenCalledOnce();
     expect(vi.mocked(setSiteAccessCookie).mock.calls[0]?.[0]).toMatch(
       /^\d+:[A-Za-z0-9_-]+$/,

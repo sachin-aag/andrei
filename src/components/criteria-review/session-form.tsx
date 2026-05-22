@@ -38,11 +38,8 @@ import type {
   CriteriaReviewReportSection,
 } from "@/lib/criteria-review/report-data";
 import { SECTION_LABELS } from "@/types/sections";
+import { nativeSelectClassName } from "@/components/ui/native-select";
 import { useCriteriaReviewReviewer } from "@/components/criteria-review/reviewer-provider";
-import {
-  ReviewerPicker,
-  nativeSelectClassName,
-} from "@/components/criteria-review/reviewer-picker";
 
 const AUTOSAVE_DELAY_MS = 1500;
 
@@ -123,16 +120,11 @@ export function CriteriaReviewSessionForm({
   );
 
   const [answers, setAnswers] = useState<Record<string, DraftAnswer>>(() =>
-    initialAnswersForReviewer("")
+    initialAnswersForReviewer(selectedReviewerId)
   );
   const loadedAnswersForReviewer = useRef("");
 
   useEffect(() => {
-    if (!selectedReviewerId) {
-      loadedAnswersForReviewer.current = "";
-      setAnswers(initialAnswersForReviewer(""));
-      return;
-    }
     const loadKey = `${session.id}:${selectedReviewerId}`;
     if (loadedAnswersForReviewer.current === loadKey) return;
     loadedAnswersForReviewer.current = loadKey;
@@ -159,7 +151,6 @@ export function CriteriaReviewSessionForm({
 
   const saveAnswers = useCallback(
     async (answersToSave: Record<string, DraftAnswer>, complete: boolean): Promise<boolean> => {
-      if (!selectedReviewer) return false;
       if (savingRef.current) return false;
       savingRef.current = true;
       setSaving(true);
@@ -207,7 +198,6 @@ export function CriteriaReviewSessionForm({
 
   // Debounced auto-save: fires AUTOSAVE_DELAY_MS after the last answer change
   useEffect(() => {
-    if (!selectedReviewer) return;
     if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
     autosaveTimer.current = setTimeout(() => {
       void saveAnswers(answers, false);
@@ -272,7 +262,15 @@ export function CriteriaReviewSessionForm({
             </div>
           </div>
 
-          <ReviewerPicker />
+          <div className="shrink-0 text-right text-sm">
+            <p className="text-xs text-[var(--muted-foreground)]">Signed in as</p>
+            <p className="font-medium">
+              {selectedReviewer.name}{" "}
+              <span className="font-normal text-[var(--muted-foreground)]">
+                ({selectedReviewer.employeeId})
+              </span>
+            </p>
+          </div>
         </div>
       </header>
 
@@ -342,11 +340,7 @@ export function CriteriaReviewSessionForm({
         </aside>
 
         <div ref={mainScrollRef} className="min-h-0 flex-1 overflow-y-auto p-6">
-          {!selectedReviewer ? (
-            <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 text-sm text-[var(--muted-foreground)]">
-              Select or create a reviewer before saving evaluations.
-            </div>
-          ) : activeSection ? (
+          {activeSection ? (
             <div className="space-y-6">
               {/* Section content + previous sections */}
               <div className="grid gap-4 xl:grid-cols-2">
@@ -638,7 +632,7 @@ export function CriteriaReviewSessionForm({
           {canCompleteReport ? (
             <Button
               size="sm"
-              disabled={saving || !selectedReviewer}
+              disabled={saving}
               onClick={() => setSubmitReportOpen(true)}
             >
               Submit report

@@ -1,6 +1,8 @@
 "use client";
 
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
+import { hydrateUserDirectory } from "@/lib/auth/user-directory";
+import type { MockUser } from "@/lib/auth/mock-users";
 import {
   LogOut,
   FileText,
@@ -14,8 +16,6 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
-import type { MockUser } from "@/lib/auth/mock-users";
-
 export function AppShell({
   user,
   children,
@@ -26,6 +26,14 @@ export function AppShell({
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(true);
   const mainId = useId();
+
+  useEffect(() => {
+    void fetch("/api/auth/users")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { users?: MockUser[] } | null) => {
+        if (data?.users) hydrateUserDirectory(data.users);
+      });
+  }, []);
 
   const handleLogout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });

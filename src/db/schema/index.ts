@@ -64,6 +64,28 @@ export const criteriaReviewStatusEnum = pgEnum("criteria_review_status", [
   "completed",
 ]);
 
+export const userRoleEnum = pgEnum("user_role", ["engineer", "manager"]);
+
+export const workspaceUsers = pgTable(
+  "workspace_users",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    email: text("email").notNull(),
+    employeeId: text("employee_id").notNull(),
+    role: userRoleEnum("role").notNull().default("engineer"),
+    title: text("title").notNull().default("Engineer"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    employeeIdUnique: uniqueIndex("workspace_users_employee_id_unique").on(
+      t.employeeId
+    ),
+  })
+);
+
 export const reports = pgTable(
   "reports",
   {

@@ -1,5 +1,6 @@
+import { redirect } from "next/navigation";
+import { humanReviewerFromMockUser } from "@/lib/auth/reviewer-from-user";
 import { getCurrentUser } from "@/lib/auth/session";
-import { listCriteriaReviewReviewers } from "@/lib/criteria-review/reviewers";
 import { CriteriaReviewShell } from "@/components/criteria-review/criteria-review-shell";
 
 export default async function CriteriaReviewLayout({
@@ -7,17 +8,12 @@ export default async function CriteriaReviewLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const [reviewers, user] = await Promise.all([
-    listCriteriaReviewReviewers(),
-    getCurrentUser(),
-  ]);
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+
+  const reviewer = humanReviewerFromMockUser(user);
 
   return (
-    <CriteriaReviewShell
-      initialReviewers={reviewers}
-      authUserId={user?.id ?? null}
-    >
-      {children}
-    </CriteriaReviewShell>
+    <CriteriaReviewShell reviewer={reviewer}>{children}</CriteriaReviewShell>
   );
 }

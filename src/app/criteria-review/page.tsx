@@ -19,7 +19,11 @@ export default async function CriteriaReviewListPage() {
   return (
     <AppShell user={user}>
       <div className="flex flex-col h-full overflow-hidden">
-        <CriteriaReviewListHeader reportCount={items.length} />
+        <CriteriaReviewListHeader
+          reportCount={items.length}
+          reviewerName={user.name}
+          reviewerEmployeeId={user.employeeId}
+        />
 
         <div className="flex-1 overflow-y-auto p-6">
           {items.length === 0 && (

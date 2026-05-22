@@ -1,12 +1,15 @@
 "use client";
 
 import { ClipboardCheck } from "lucide-react";
-import { ReviewerPicker } from "@/components/criteria-review/reviewer-picker";
 
 export function CriteriaReviewListHeader({
   reportCount,
+  reviewerName,
+  reviewerEmployeeId,
 }: {
   reportCount: number;
+  reviewerName: string;
+  reviewerEmployeeId: string;
 }) {
   return (
     <header className="shrink-0 border-b border-[var(--border)] px-6 py-4">
@@ -26,7 +29,15 @@ export function CriteriaReviewListHeader({
             </p>
           )}
         </div>
-        <ReviewerPicker />
+        <div className="shrink-0 text-right text-sm">
+          <p className="text-xs text-[var(--muted-foreground)]">Signed in as</p>
+          <p className="font-medium">
+            {reviewerName}{" "}
+            <span className="font-normal text-[var(--muted-foreground)]">
+              ({reviewerEmployeeId})
+            </span>
+          </p>
+        </div>
       </div>
     </header>
   );
