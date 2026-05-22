@@ -1,5 +1,6 @@
 import { asc, eq } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
+import { employeeIdSchema } from "@/lib/auth/employee-id";
 import { db, schema } from "@/db";
 import {
   MOCK_USERS,
@@ -97,8 +98,14 @@ export async function createWorkspaceUser(params: {
   email?: string;
 }): Promise<MockUser> {
   const name = params.name.trim();
-  const employeeId = params.employeeId.trim();
-  if (!name || !employeeId) {
+  const employeeIdParse = employeeIdSchema.safeParse(params.employeeId);
+  if (!employeeIdParse.success) {
+    throw new Error(
+      employeeIdParse.error.issues[0]?.message ?? "Invalid employee ID."
+    );
+  }
+  const employeeId = employeeIdParse.data;
+  if (!name) {
     throw new Error("Name and employee ID are required.");
   }
 

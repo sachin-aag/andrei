@@ -560,7 +560,7 @@ export function CriteriaReviewSessionForm({
                                 htmlFor={`comment-${criterion.answerKey}`}
                                 className="text-xs"
                               >
-                                Comment (min {MIN_HUMAN_COMMENT_LENGTH} chars)
+                                Your Reasoning (min {MIN_HUMAN_COMMENT_LENGTH} chars)
                               </Label>
                               <Textarea
                                 id={`comment-${criterion.answerKey}`}

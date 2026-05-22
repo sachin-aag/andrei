@@ -22,6 +22,11 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import type { MockUser, UserRole } from "@/lib/auth/mock-users";
+import {
+  EMPLOYEE_ID_ERROR,
+  EMPLOYEE_ID_PATTERN,
+  sanitizeEmployeeIdInput,
+} from "@/lib/auth/employee-id";
 
 const CREATE_USER_VALUE = "__create_user__";
 
@@ -73,6 +78,10 @@ export function LoginForm({ initialUsers }: { initialUsers: MockUser[] }) {
     const employeeId = newUser.employeeId.trim();
     if (!name || !employeeId) {
       setCreateError("Name and employee ID are required.");
+      return;
+    }
+    if (!EMPLOYEE_ID_PATTERN.test(employeeId)) {
+      setCreateError(EMPLOYEE_ID_ERROR);
       return;
     }
     setCreating(true);
@@ -260,10 +269,12 @@ export function LoginForm({ initialUsers }: { initialUsers: MockUser[] }) {
                 onChange={(e) =>
                   setNewUser((prev) => ({
                     ...prev,
-                    employeeId: e.target.value,
+                    employeeId: sanitizeEmployeeIdInput(e.target.value),
                   }))
                 }
                 placeholder="e.g. 630"
+                inputMode="numeric"
+                pattern="[0-9]*"
                 autoComplete="off"
               />
             </div>

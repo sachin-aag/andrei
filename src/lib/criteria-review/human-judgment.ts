@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { CriterionStatus, SectionType } from "@/db/schema";
+import { employeeIdSchema } from "@/lib/auth/employee-id";
 
 export const CRITERIA_EVALUATION_AGREEMENTS = [
   "yes",
@@ -43,7 +44,7 @@ export const REVIEWABLE_SECTION_TYPES = [
 export const humanReviewerSchema = z.object({
   id: z.string().trim().min(1, "Reviewer ID is required."),
   name: z.string().trim().min(1, "Reviewer name is required."),
-  employeeId: z.string().trim().min(1, "Employee ID is required."),
+  employeeId: employeeIdSchema,
 });
 
 export const humanSubAnswerSchema = z.object({
@@ -124,7 +125,7 @@ export function validateHumanSubAnswer(answer: HumanSubAnswer): string | null {
   }
   const comment = answer.comment?.trim() ?? "";
   if (comment.length < MIN_HUMAN_COMMENT_LENGTH) {
-    return `Comment is required (at least ${MIN_HUMAN_COMMENT_LENGTH} characters) unless both answers are Yes.`;
+    return `Your reasoning is required (at least ${MIN_HUMAN_COMMENT_LENGTH} characters) unless both answers are Yes.`;
   }
   return null;
 }
