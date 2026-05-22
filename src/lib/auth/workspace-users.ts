@@ -1,9 +1,6 @@
 import { asc, eq } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
-import {
-  employeeIdSchema,
-  normalizeCriteriaReviewEmployeeId,
-} from "@/lib/auth/employee-id";
+import { employeeIdSchema } from "@/lib/auth/employee-id";
 import { db, schema } from "@/db";
 import {
   MOCK_USERS,
@@ -16,7 +13,7 @@ function rowToUser(row: typeof schema.workspaceUsers.$inferSelect): MockUser {
     id: row.id,
     name: row.name,
     email: row.email,
-    employeeId: normalizeCriteriaReviewEmployeeId(row.employeeId),
+    employeeId: row.employeeId,
     role: row.role,
     title: row.title,
   };
