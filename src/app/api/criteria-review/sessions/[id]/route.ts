@@ -103,11 +103,16 @@ export async function PATCH(req: Request, context: RouteContext) {
         { status: 400 }
       );
     }
-    const completeAnswer = humanSubAnswerSchema.safeParse(answer);
-    if (completeAnswer.success) {
-      const err = validateHumanReview([completeAnswer.data], [key]);
-      if (err) {
-        return NextResponse.json({ error: err }, { status: 400 });
+    // Only validate individual answers as "complete" during final submission.
+    // During draft auto-saves, answers may be in a valid intermediate state
+    // (e.g. criteria agreement changed to "no" but suggestedStatus not yet set).
+    if (body.complete) {
+      const completeAnswer = humanSubAnswerSchema.safeParse(answer);
+      if (completeAnswer.success) {
+        const err = validateHumanReview([completeAnswer.data], [key]);
+        if (err) {
+          return NextResponse.json({ error: err }, { status: 400 });
+        }
       }
     }
     answers[key] = answer;
