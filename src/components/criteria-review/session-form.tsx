@@ -5,7 +5,6 @@ import {
   useEffect,
   useRef,
   useState,
-  useSyncExternalStore,
 } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Loader2 } from "lucide-react";
@@ -13,13 +12,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -53,17 +45,20 @@ const REVIEWER_STORAGE_KEY = "criteria-review:reviewer:v1";
 const CREATE_REVIEWER_VALUE = "__create_reviewer__";
 const AUTOSAVE_DELAY_MS = 1500;
 
-/** Radix Select crashes on empty string or values with no matching SelectItem. */
+const nativeSelectClassName =
+  "flex h-8 w-full rounded-md border border-[var(--border)] bg-[var(--input)] px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-50";
+
+/** Native select values for corrected traffic-light status. */
 function suggestedStatusSelectValue(
   status: HumanSubAnswer["suggestedStatus"]
-): "met" | "partially_met" | "not_met" | undefined {
+): "" | "met" | "partially_met" | "not_met" {
   switch (status) {
     case "met":
     case "partially_met":
     case "not_met":
       return status;
     default:
-      return undefined;
+      return "";
   }
 }
 
@@ -105,19 +100,6 @@ function savedReviewerFromStorage(): HumanReviewer | null {
   }
 }
 
-const storedReviewerListeners = new Set<() => void>();
-
-function subscribeStoredReviewer(onStoreChange: () => void) {
-  storedReviewerListeners.add(onStoreChange);
-  return () => {
-    storedReviewerListeners.delete(onStoreChange);
-  };
-}
-
-function notifyStoredReviewer() {
-  storedReviewerListeners.forEach((listener) => listener());
-}
-
 function storedReviewerIdFor(reviewerList: HumanReviewer[]): string {
   const saved = savedReviewerFromStorage();
   if (saved && reviewerList.some((reviewer) => reviewer.id === saved.id)) {
@@ -129,7 +111,6 @@ function storedReviewerIdFor(reviewerList: HumanReviewer[]): string {
 function persistReviewer(reviewer: HumanReviewer) {
   try {
     window.localStorage.setItem(REVIEWER_STORAGE_KEY, JSON.stringify(reviewer));
-    notifyStoredReviewer();
   } catch {
     // localStorage can fail in private browsing; saving can continue without it.
   }
@@ -156,11 +137,7 @@ export function CriteriaReviewSessionForm({
   const [activeSectionIndex, setActiveSectionIndex] = useState(0);
   const [reviewerOptions, setReviewerOptions] =
     useState<HumanReviewer[]>(reviewers);
-  const selectedReviewerId = useSyncExternalStore(
-    subscribeStoredReviewer,
-    () => storedReviewerIdFor(reviewerOptions),
-    () => ""
-  );
+  const [selectedReviewerId, setSelectedReviewerId] = useState("");
   const selectedReviewer = reviewerOptions.find(
     (reviewer) => reviewer.id === selectedReviewerId
   );
@@ -194,10 +171,12 @@ export function CriteriaReviewSessionForm({
   const loadedAnswersForReviewer = useRef("");
 
   useEffect(() => {
-    if (loadedAnswersForReviewer.current === selectedReviewerId) return;
-    loadedAnswersForReviewer.current = selectedReviewerId;
-    setAnswers(initialAnswersForReviewer(selectedReviewerId));
-  }, [selectedReviewerId, initialAnswersForReviewer]);
+    const savedId = storedReviewerIdFor(reviewerOptions);
+    if (!savedId || loadedAnswersForReviewer.current === savedId) return;
+    loadedAnswersForReviewer.current = savedId;
+    setSelectedReviewerId(savedId);
+    setAnswers(initialAnswersForReviewer(savedId));
+  }, [reviewerOptions, initialAnswersForReviewer]);
 
   const activeSection = session.input.sections[activeSectionIndex] ?? null;
 
@@ -214,6 +193,7 @@ export function CriteriaReviewSessionForm({
   // --- Auto-save logic ---
   const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savingRef = useRef(false);
+  const mainScrollRef = useRef<HTMLDivElement>(null);
 
   const saveAnswers = useCallback(
     async (answersToSave: Record<string, DraftAnswer>, complete: boolean): Promise<boolean> => {
@@ -280,9 +260,17 @@ export function CriteriaReviewSessionForm({
       setCreateReviewerOpen(true);
       return;
     }
+    if (!reviewerId) {
+      setSelectedReviewerId("");
+      loadedAnswersForReviewer.current = "";
+      setAnswers(initialAnswersForReviewer(""));
+      setError(null);
+      return;
+    }
     const nextReviewer = reviewerOptions.find((reviewer) => reviewer.id === reviewerId);
     if (!nextReviewer) return;
     loadedAnswersForReviewer.current = reviewerId;
+    setSelectedReviewerId(reviewerId);
     setAnswers(initialAnswersForReviewer(reviewerId));
     persistReviewer(nextReviewer);
     setError(null);
@@ -319,6 +307,7 @@ export function CriteriaReviewSessionForm({
       });
       setNewReviewer({ name: "", employeeId: "" });
       loadedAnswersForReviewer.current = data.reviewer.id;
+      setSelectedReviewerId(data.reviewer.id);
       setAnswers(initialAnswersForReviewer(data.reviewer.id));
       persistReviewer(data.reviewer);
       setCreateReviewerOpen(false);
@@ -349,6 +338,11 @@ export function CriteriaReviewSessionForm({
 
   const sectionReviewedCount = (section: CriteriaReviewReportSection) =>
     section.criteria.filter((c) => isAnswerReviewed(answers[c.answerKey])).length;
+
+  const goToSection = (index: number) => {
+    setActiveSectionIndex(index);
+    mainScrollRef.current?.scrollTo({ top: 0 });
+  };
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -383,24 +377,20 @@ export function CriteriaReviewSessionForm({
             <Label htmlFor="reviewer-select" className="text-xs text-[var(--muted-foreground)] whitespace-nowrap">
               Reviewer
             </Label>
-            <Select
-              value={selectedReviewerId || undefined}
-              onValueChange={selectReviewer}
+            <select
+              id="reviewer-select"
+              value={selectedReviewerId}
+              onChange={(e) => selectReviewer(e.target.value)}
+              className={cn(nativeSelectClassName, "w-56 bg-[var(--card)]")}
             >
-              <SelectTrigger id="reviewer-select" className="h-8 w-56 bg-[var(--card)] text-sm">
-                <SelectValue placeholder="Select reviewer" />
-              </SelectTrigger>
-              <SelectContent>
-                {reviewerOptions.map((reviewer) => (
-                  <SelectItem key={reviewer.id} value={reviewer.id}>
-                    {reviewer.name} ({reviewer.employeeId})
-                  </SelectItem>
-                ))}
-                <SelectItem value={CREATE_REVIEWER_VALUE}>
-                  Create reviewer...
-                </SelectItem>
-              </SelectContent>
-            </Select>
+              <option value="">Select reviewer</option>
+              {reviewerOptions.map((reviewer) => (
+                <option key={reviewer.id} value={reviewer.id}>
+                  {reviewer.name} ({reviewer.employeeId})
+                </option>
+              ))}
+              <option value={CREATE_REVIEWER_VALUE}>Create reviewer...</option>
+            </select>
           </div>
         </div>
       </header>
@@ -480,10 +470,10 @@ export function CriteriaReviewSessionForm({
         </DialogContent>
       </Dialog>
 
-      <div className="flex flex-1 min-h-0 overflow-y-auto">
+      <div className="flex min-h-0 flex-1">
         {/* Sidebar: section-level navigation */}
-        <aside className="w-64 shrink-0 border-r border-[var(--border)] p-3">
-          <div className="sticky top-0 space-y-1">
+        <aside className="w-64 shrink-0 overflow-y-auto border-r border-[var(--border)] p-3">
+          <div className="space-y-1">
             {session.input.sections.map((section, idx) => {
               const reviewed = sectionReviewedCount(section);
               const total = section.criteria.length;
@@ -492,7 +482,7 @@ export function CriteriaReviewSessionForm({
                 <button
                   key={section.section}
                   type="button"
-                  onClick={() => setActiveSectionIndex(idx)}
+                  onClick={() => goToSection(idx)}
                   className={cn(
                     "flex w-full items-center justify-between gap-2 rounded-md px-3 py-2.5 text-left text-sm transition-colors",
                     idx === activeSectionIndex
@@ -521,7 +511,7 @@ export function CriteriaReviewSessionForm({
           </div>
         </aside>
 
-        <div className="flex-1 p-6">
+        <div ref={mainScrollRef} className="min-h-0 flex-1 overflow-y-auto p-6">
           {!selectedReviewer ? (
             <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 text-sm text-[var(--muted-foreground)]">
               Select or create a reviewer before saving evaluations.
@@ -651,7 +641,7 @@ export function CriteriaReviewSessionForm({
                                 <label
                                   key={value}
                                   className={cn(
-                                    "flex cursor-pointer items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm transition-colors",
+                                    "relative flex cursor-pointer items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm transition-colors focus-within:ring-1 focus-within:ring-[var(--ring)]",
                                     answer.criteriaEvaluationAgreement === value
                                       ? "border-[var(--brand-600)] bg-[var(--brand-700)]/10"
                                       : "border-[var(--border)] hover:bg-[var(--secondary)]"
@@ -672,7 +662,7 @@ export function CriteriaReviewSessionForm({
                                             : null,
                                       })
                                     }
-                                    className="sr-only"
+                                    className="absolute inset-0 m-0 cursor-pointer opacity-0"
                                   />
                                   {CRITERIA_EVALUATION_AGREEMENT_LABELS[value]}
                                 </label>
@@ -689,7 +679,7 @@ export function CriteriaReviewSessionForm({
                                 <label
                                   key={value}
                                   className={cn(
-                                    "flex cursor-pointer items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm transition-colors",
+                                    "relative flex cursor-pointer items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm transition-colors focus-within:ring-1 focus-within:ring-[var(--ring)]",
                                     answer.reasoningAgreement === value
                                       ? "border-[var(--brand-600)] bg-[var(--brand-700)]/10"
                                       : "border-[var(--border)] hover:bg-[var(--secondary)]"
@@ -704,7 +694,7 @@ export function CriteriaReviewSessionForm({
                                         reasoningAgreement: value,
                                       })
                                     }
-                                    className="sr-only"
+                                    className="absolute inset-0 m-0 cursor-pointer opacity-0"
                                   />
                                   {REASONING_AGREEMENT_LABELS[value]}
                                 </label>
@@ -720,29 +710,23 @@ export function CriteriaReviewSessionForm({
                               >
                                 Correct traffic-light status
                               </Label>
-                              <Select
+                              <select
+                                id={`suggested-status-${criterion.answerKey}`}
                                 value={suggestedStatusSelectValue(answer.suggestedStatus)}
-                                onValueChange={(v) =>
+                                onChange={(e) =>
                                   updateAnswer(criterion.answerKey, {
-                                    suggestedStatus:
-                                      v as DraftAnswer["suggestedStatus"],
+                                    suggestedStatus: e.target.value
+                                      ? (e.target.value as DraftAnswer["suggestedStatus"])
+                                      : null,
                                   })
                                 }
+                                className={nativeSelectClassName}
                               >
-                                <SelectTrigger
-                                  id={`suggested-status-${criterion.answerKey}`}
-                                  className="h-8 text-sm"
-                                >
-                                  <SelectValue placeholder="Select status" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="met">Met</SelectItem>
-                                  <SelectItem value="partially_met">
-                                    Partially met
-                                  </SelectItem>
-                                  <SelectItem value="not_met">Not met</SelectItem>
-                                </SelectContent>
-                              </Select>
+                                <option value="">Select status</option>
+                                <option value="met">Met</option>
+                                <option value="partially_met">Partially met</option>
+                                <option value="not_met">Not met</option>
+                              </select>
                             </div>
                           ) : null}
 
@@ -807,7 +791,7 @@ export function CriteriaReviewSessionForm({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setActiveSectionIndex((i) => i - 1)}
+                onClick={() => goToSection(activeSectionIndex - 1)}
               >
                 Previous section
               </Button>
@@ -815,7 +799,7 @@ export function CriteriaReviewSessionForm({
             {activeSectionIndex < session.input.sections.length - 1 ? (
               <Button
                 size="sm"
-                onClick={() => setActiveSectionIndex((i) => i + 1)}
+                onClick={() => goToSection(activeSectionIndex + 1)}
               >
                 Next section
               </Button>
