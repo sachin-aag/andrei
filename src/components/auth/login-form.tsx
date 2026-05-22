@@ -174,6 +174,16 @@ export function LoginForm({ initialUsers }: { initialUsers: MockUser[] }) {
                     </div>
                   </div>
                   <div className="max-h-56 overflow-y-auto p-1">
+                    <SelectItem
+                      value={CREATE_USER_VALUE}
+                      className="text-[var(--brand-600)] font-medium"
+                    >
+                      <span className="flex items-center gap-2">
+                        <UserPlus className="size-4" />
+                        Add new user…
+                      </span>
+                    </SelectItem>
+                    <Separator className="my-1" />
                     {filteredUsers.length === 0 ? (
                       <p className="px-3 py-6 text-center text-sm text-[var(--muted-foreground)]">
                         No users match your search.
@@ -194,16 +204,6 @@ export function LoginForm({ initialUsers }: { initialUsers: MockUser[] }) {
                         </SelectItem>
                       ))
                     )}
-                    <Separator className="my-1" />
-                    <SelectItem
-                      value={CREATE_USER_VALUE}
-                      className="text-[var(--brand-600)] font-medium"
-                    >
-                      <span className="flex items-center gap-2">
-                        <UserPlus className="size-4" />
-                        Add new user…
-                      </span>
-                    </SelectItem>
                   </div>
                 </SelectContent>
               </Select>
