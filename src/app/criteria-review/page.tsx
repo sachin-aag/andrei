@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { ClipboardCheck } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth/session";
 import { canAccessCriteriaReview } from "@/lib/criteria-review/access";
 import { AppShell } from "@/components/layout/app-shell";
+import { CriteriaReviewListHeader } from "@/components/criteria-review/criteria-review-list-header";
 import { listCriteriaReviewSessions } from "@/lib/criteria-review/store";
 import { sessionProgress } from "@/lib/criteria-review/report-data";
 
@@ -19,21 +19,7 @@ export default async function CriteriaReviewListPage() {
   return (
     <AppShell user={user}>
       <div className="flex flex-col h-full overflow-hidden">
-        <header className="shrink-0 border-b border-[var(--border)] px-6 py-4">
-          <div className="flex items-center gap-2">
-            <ClipboardCheck className="size-5 text-[var(--brand-600)]" />
-            <h1 className="text-lg font-semibold">Criteria review</h1>
-          </div>
-          <p className="text-sm text-[var(--muted-foreground)] mt-1">
-            Review AI traffic-light evaluations on sample deviation reports (one
-            report per session).
-          </p>
-          {items.length > 0 && (
-            <p className="text-xs text-[var(--muted-foreground)] mt-2">
-              {items.length} report{items.length === 1 ? "" : "s"} in Neon
-            </p>
-          )}
-        </header>
+        <CriteriaReviewListHeader reportCount={items.length} />
 
         <div className="flex-1 overflow-y-auto p-6">
           {items.length === 0 && (

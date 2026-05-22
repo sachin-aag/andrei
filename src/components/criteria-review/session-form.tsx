@@ -9,7 +9,6 @@ import {
 import { useRouter } from "next/navigation";
 import { Check, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -30,7 +29,6 @@ import {
   REASONING_AGREEMENTS,
   humanCommentRequired,
   type CriteriaEvaluationAgreement,
-  type HumanReviewer,
   type HumanSubAnswer,
   type ReasoningAgreement,
 } from "@/lib/criteria-review/human-judgment";
@@ -40,13 +38,13 @@ import type {
   CriteriaReviewReportSection,
 } from "@/lib/criteria-review/report-data";
 import { SECTION_LABELS } from "@/types/sections";
+import { useCriteriaReviewReviewer } from "@/components/criteria-review/reviewer-provider";
+import {
+  ReviewerPicker,
+  nativeSelectClassName,
+} from "@/components/criteria-review/reviewer-picker";
 
-const REVIEWER_STORAGE_KEY = "criteria-review:reviewer:v1";
-const CREATE_REVIEWER_VALUE = "__create_reviewer__";
 const AUTOSAVE_DELAY_MS = 1500;
-
-const nativeSelectClassName =
-  "flex h-8 w-full rounded-md border border-[var(--border)] bg-[var(--input)] px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)] disabled:cursor-not-allowed disabled:opacity-50";
 
 /** Native select values for corrected traffic-light status. */
 function suggestedStatusSelectValue(
@@ -85,63 +83,22 @@ function statusTone(status: string): string {
   }
 }
 
-function savedReviewerFromStorage(): HumanReviewer | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.localStorage.getItem(REVIEWER_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<HumanReviewer>;
-    const id = parsed.id?.trim();
-    const name = parsed.name?.trim();
-    const employeeId = parsed.employeeId?.trim();
-    return id && name && employeeId ? { id, name, employeeId } : null;
-  } catch {
-    return null;
-  }
-}
-
-function storedReviewerIdFor(reviewerList: HumanReviewer[]): string {
-  const saved = savedReviewerFromStorage();
-  if (saved && reviewerList.some((reviewer) => reviewer.id === saved.id)) {
-    return saved.id;
-  }
-  return "";
-}
-
-function persistReviewer(reviewer: HumanReviewer) {
-  try {
-    window.localStorage.setItem(REVIEWER_STORAGE_KEY, JSON.stringify(reviewer));
-  } catch {
-    // localStorage can fail in private browsing; saving can continue without it.
-  }
-}
-
 export function CriteriaReviewSessionForm({
   session,
-  reviewers,
   prevId,
   nextId,
 }: {
   session: CriteriaReviewDatasetItem;
-  reviewers: HumanReviewer[];
   prevId: string | null;
   nextId: string | null;
 }) {
   const router = useRouter();
+  const { selectedReviewer, selectedReviewerId } = useCriteriaReviewReviewer();
   const [saving, setSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
-  const [creatingReviewer, setCreatingReviewer] = useState(false);
-  const [createReviewerOpen, setCreateReviewerOpen] = useState(false);
   const [submitReportOpen, setSubmitReportOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeSectionIndex, setActiveSectionIndex] = useState(0);
-  const [reviewerOptions, setReviewerOptions] =
-    useState<HumanReviewer[]>(reviewers);
-  const [selectedReviewerId, setSelectedReviewerId] = useState("");
-  const selectedReviewer = reviewerOptions.find(
-    (reviewer) => reviewer.id === selectedReviewerId
-  );
-  const [newReviewer, setNewReviewer] = useState({ name: "", employeeId: "" });
 
   const initialAnswersForReviewer = useCallback(
     (reviewerId: string): Record<string, DraftAnswer> => {
@@ -171,12 +128,17 @@ export function CriteriaReviewSessionForm({
   const loadedAnswersForReviewer = useRef("");
 
   useEffect(() => {
-    const savedId = storedReviewerIdFor(reviewerOptions);
-    if (!savedId || loadedAnswersForReviewer.current === savedId) return;
-    loadedAnswersForReviewer.current = savedId;
-    setSelectedReviewerId(savedId);
-    setAnswers(initialAnswersForReviewer(savedId));
-  }, [reviewerOptions, initialAnswersForReviewer]);
+    if (!selectedReviewerId) {
+      loadedAnswersForReviewer.current = "";
+      setAnswers(initialAnswersForReviewer(""));
+      return;
+    }
+    const loadKey = `${session.id}:${selectedReviewerId}`;
+    if (loadedAnswersForReviewer.current === loadKey) return;
+    loadedAnswersForReviewer.current = loadKey;
+    setAnswers(initialAnswersForReviewer(selectedReviewerId));
+    setError(null);
+  }, [session.id, selectedReviewerId, initialAnswersForReviewer]);
 
   const activeSection = session.input.sections[activeSectionIndex] ?? null;
 
@@ -255,69 +217,6 @@ export function CriteriaReviewSessionForm({
     };
   }, [answers, selectedReviewer, saveAnswers]);
 
-  const selectReviewer = (reviewerId: string) => {
-    if (reviewerId === CREATE_REVIEWER_VALUE) {
-      setCreateReviewerOpen(true);
-      return;
-    }
-    if (!reviewerId) {
-      setSelectedReviewerId("");
-      loadedAnswersForReviewer.current = "";
-      setAnswers(initialAnswersForReviewer(""));
-      setError(null);
-      return;
-    }
-    const nextReviewer = reviewerOptions.find((reviewer) => reviewer.id === reviewerId);
-    if (!nextReviewer) return;
-    loadedAnswersForReviewer.current = reviewerId;
-    setSelectedReviewerId(reviewerId);
-    setAnswers(initialAnswersForReviewer(reviewerId));
-    persistReviewer(nextReviewer);
-    setError(null);
-  };
-
-  const createReviewer = async () => {
-    const name = newReviewer.name.trim();
-    const employeeId = newReviewer.employeeId.trim();
-    if (!name || !employeeId) {
-      setError("Reviewer name and employee ID are required.");
-      return;
-    }
-    setCreatingReviewer(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/criteria-review/reviewers", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, employeeId }),
-      });
-      const data = (await res.json()) as {
-        reviewer?: HumanReviewer;
-        error?: string;
-      };
-      if (!res.ok || !data.reviewer) {
-        setError(data.error ?? "Could not create reviewer.");
-        return;
-      }
-      setReviewerOptions((prev) => {
-        const withoutDuplicate = prev.filter((r) => r.id !== data.reviewer!.id);
-        return [...withoutDuplicate, data.reviewer!].sort((a, b) =>
-          a.name.localeCompare(b.name)
-        );
-      });
-      setNewReviewer({ name: "", employeeId: "" });
-      loadedAnswersForReviewer.current = data.reviewer.id;
-      setSelectedReviewerId(data.reviewer.id);
-      setAnswers(initialAnswersForReviewer(data.reviewer.id));
-      persistReviewer(data.reviewer);
-      setCreateReviewerOpen(false);
-    } catch {
-      setError("Could not create reviewer.");
-    } finally {
-      setCreatingReviewer(false);
-    }
-  };
-
   const submitReport = async () => {
     // Flush any pending autosave first
     if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
@@ -373,78 +272,9 @@ export function CriteriaReviewSessionForm({
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            <Label htmlFor="reviewer-select" className="text-xs text-[var(--muted-foreground)] whitespace-nowrap">
-              Reviewer
-            </Label>
-            <select
-              id="reviewer-select"
-              value={selectedReviewerId}
-              onChange={(e) => selectReviewer(e.target.value)}
-              className={cn(nativeSelectClassName, "w-56 bg-[var(--card)]")}
-            >
-              <option value="">Select reviewer</option>
-              {reviewerOptions.map((reviewer) => (
-                <option key={reviewer.id} value={reviewer.id}>
-                  {reviewer.name} ({reviewer.employeeId})
-                </option>
-              ))}
-              <option value={CREATE_REVIEWER_VALUE}>Create reviewer...</option>
-            </select>
-          </div>
+          <ReviewerPicker />
         </div>
       </header>
-
-      <Dialog open={createReviewerOpen} onOpenChange={setCreateReviewerOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Create reviewer</DialogTitle>
-            <DialogDescription>
-              Add the reviewer name and employee ID. The reviewer will be available in the dropdown.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="new-reviewer-name">Name</Label>
-              <Input
-                id="new-reviewer-name"
-                value={newReviewer.name}
-                onChange={(e) =>
-                  setNewReviewer((prev) => ({ ...prev, name: e.target.value }))
-                }
-                placeholder="Reviewer name"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="new-reviewer-employee-id">Employee ID</Label>
-              <Input
-                id="new-reviewer-employee-id"
-                value={newReviewer.employeeId}
-                onChange={(e) =>
-                  setNewReviewer((prev) => ({
-                    ...prev,
-                    employeeId: e.target.value,
-                  }))
-                }
-                placeholder="Employee ID"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setCreateReviewerOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button type="button" disabled={creatingReviewer} onClick={createReviewer}>
-              {creatingReviewer ? <Loader2 className="size-4 animate-spin" /> : null}
-              Create reviewer
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <Dialog open={submitReportOpen} onOpenChange={setSubmitReportOpen}>
         <DialogContent>
