@@ -21,6 +21,7 @@ loadEnv({ path: ".env" });
 import type { SectionType } from "@/db/schema";
 import type { ImportedReportContent } from "@/lib/import/docx-to-sections";
 import { docxBufferToImportedReportContent } from "@/lib/import/docx-to-sections";
+import type { LanguageModel } from "ai";
 import {
   evaluateSection,
   buildCriterionEvaluationLlmPrompts,
@@ -32,6 +33,11 @@ import {
   normalizeAnalyzeToolResults,
 } from "@/lib/ai/evaluate-run-helpers";
 import { EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
+import {
+  type ModelSpec,
+  DEFAULT_MODEL_SPEC,
+  resolveModelFromSpec,
+} from "@/lib/ai/model-resolver";
 import {
   COMMON_EVALUATION_SYSTEM_PROMPT,
   SECTION_SYSTEM_PROMPT_ADDITIONS,
@@ -93,6 +99,9 @@ function parseArgs(argv: string[]) {
   /** How many DOCX files to evaluate concurrently (each file still evaluates its 5 DMAIC sections in parallel). */
   let docConcurrency = 4;
   let reportDate: string | undefined;
+  let provider: ModelSpec["provider"] | undefined;
+  let modelId: string | undefined;
+  let temperature: number | undefined;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--input-dir" && argv[i + 1]) {
@@ -108,9 +117,39 @@ function parseArgs(argv: string[]) {
       docConcurrency = Math.floor(n);
     } else if (a === "--report-date" && argv[i + 1]) {
       reportDate = argv[++i];
+    } else if (a === "--provider" && argv[i + 1]) {
+      const v = argv[++i] as ModelSpec["provider"];
+      if (!["google", "vertex", "openai"].includes(v)) {
+        console.error(`--provider must be one of: google, vertex, openai (got "${v}")`);
+        process.exit(1);
+      }
+      provider = v;
+    } else if (a === "--model-id" && argv[i + 1]) {
+      modelId = argv[++i];
+    } else if (a === "--temperature" && argv[i + 1]) {
+      const n = Number(argv[++i]);
+      if (!Number.isFinite(n) || n < 0) {
+        console.error("--temperature expects a non-negative number");
+        process.exit(1);
+      }
+      temperature = n;
     }
   }
-  return { inputDir, outOverride, docConcurrency, reportDate: reportDate ?? stableDateFromPromptVersion() };
+
+  const modelSpec: ModelSpec = {
+    provider: provider ?? DEFAULT_MODEL_SPEC.provider,
+    modelId: modelId ?? DEFAULT_MODEL_SPEC.modelId,
+    temperature: temperature ?? DEFAULT_MODEL_SPEC.temperature,
+    seed: DEFAULT_MODEL_SPEC.seed,
+  };
+
+  return {
+    inputDir,
+    outOverride,
+    docConcurrency,
+    reportDate: reportDate ?? stableDateFromPromptVersion(),
+    modelSpec,
+  };
 }
 
 /** Default reports/sample_evaluation_report_YYYY-MM-DD_HHmmss.html (local clock). Gitignored folder. */
@@ -308,7 +347,12 @@ function deviationNoFromBasename(originalName: string): string {
   );
 }
 
-async function evaluateOneDocx(absPath: string, reportDate: string): Promise<ReportRunOutcome> {
+async function evaluateOneDocx(
+  absPath: string,
+  reportDate: string,
+  evalModel?: LanguageModel,
+  providerHint?: string,
+): Promise<ReportRunOutcome> {
   const buf = fs.readFileSync(absPath);
   const sourceFile = path.basename(absPath);
   const anchorSlug = reportAnchorSlug(path.basename(absPath, ".docx"));
@@ -381,6 +425,8 @@ async function evaluateOneDocx(absPath: string, reportDate: string): Promise<Rep
         content: payload,
         reportContext: { deviationNo, date: reportDate },
         allSections,
+        model: evalModel,
+        providerHint,
       });
 
       if (sectionKey === "analyze") {
@@ -1100,16 +1146,43 @@ ${reportSectionsHtml}
 </html>`;
 }
 
+/**
+ * Structured JSON sidecar written alongside the HTML report.
+ * Used by `compare-eval-runs.ts` for cross-model comparison.
+ */
+export type EvalRunJson = {
+  meta: {
+    provider: string;
+    modelId: string;
+    temperature: number;
+    seed: number | undefined;
+    promptVersion: string;
+    generatedAt: string;
+    inputDir: string;
+  };
+  reports: Array<{
+    sourceFile: string;
+    deviationNo: string;
+    skippedReason: string | null;
+    rows: BulkEvalRow[];
+  }>;
+};
+
 async function main() {
-  const { inputDir, outOverride, docConcurrency, reportDate } = parseArgs(
+  const { inputDir, outOverride, docConcurrency, reportDate, modelSpec } = parseArgs(
     process.argv.slice(2)
   );
   const outFile =
     outOverride ?? defaultTimestampedReportFile(process.cwd());
+
+  // Resolve model from spec (validates env vars eagerly before starting evals).
+  const evalModel = resolveModelFromSpec(modelSpec);
+
   console.error(`Scanning DOCX inputs in: ${inputDir}`);
   console.error(`Output HTML path: ${outFile}`);
   console.error(`Concurrent documents: ${docConcurrency}`);
   console.error(`Report date: ${reportDate}`);
+  console.error(`Model: ${modelSpec.provider}/${modelSpec.modelId} (temp=${modelSpec.temperature})`);
   const files = collectDocxFiles(inputDir);
   if (files.length === 0) {
     console.error(
@@ -1120,7 +1193,7 @@ async function main() {
 
   const runs = await mapWithConcurrencyLimit(files, docConcurrency, async (f, i) => {
     console.error(`[${i + 1}/${files.length}] Evaluating: ${path.basename(f)} …`);
-    const run = await evaluateOneDocx(f, reportDate);
+    const run = await evaluateOneDocx(f, reportDate, evalModel, modelSpec.provider);
     if (run.skippedReason) {
       console.error(`  ├─ ${path.basename(f)} skipped: ${run.skippedReason}`);
     } else {
@@ -1143,9 +1216,9 @@ async function main() {
     clusteringNote =
       "No partial, not met, or not evaluated reasonings included in clustering.";
   } else {
-    const model = resolveEvaluationLanguageModel();
+    const clusterModel = resolveEvaluationLanguageModel();
     const classifications = await classifyDedupedReasoningsWithLLM({
-      model,
+      model: clusterModel,
       deduped,
     });
     specificPatternRows = classifications.specificRows;
@@ -1177,6 +1250,28 @@ async function main() {
   fs.mkdirSync(path.dirname(outFile), { recursive: true });
   fs.writeFileSync(outFile, html, "utf8");
   console.error(`Wrote ${outFile}`);
+
+  // Write structured JSON sidecar for cross-model comparison.
+  const evalJson: EvalRunJson = {
+    meta: {
+      provider: modelSpec.provider,
+      modelId: modelSpec.modelId,
+      temperature: modelSpec.temperature,
+      seed: modelSpec.seed,
+      promptVersion: PROMPT_VERSION,
+      generatedAt: finishedAt.toISOString(),
+      inputDir,
+    },
+    reports: runs.map((r) => ({
+      sourceFile: r.sourceFile,
+      deviationNo: r.deviationNo,
+      skippedReason: r.skippedReason,
+      rows: r.rows,
+    })),
+  };
+  const jsonPath = outFile.replace(/\.html$/, ".eval.json");
+  fs.writeFileSync(jsonPath, JSON.stringify(evalJson, null, 2), "utf8");
+  console.error(`Wrote ${jsonPath}`);
 }
 
 main().catch((e) => {

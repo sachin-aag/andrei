@@ -47,15 +47,23 @@ const evaluationSchema = z.object({
   ),
 });
 
-function generationSettingsForSection() {
-  return {
+function generationSettingsForSection(providerHint?: string) {
+  const base: Record<string, unknown> = {
     maxOutputTokens: 32768,
-    providerOptions: {
+  };
+
+  // Only inject seed via providerOptions for Google-family providers.
+  // OpenAI supports seed at the top level (handled by caller).
+  // Vertex AI / Anthropic models ignore seed entirely.
+  if (!providerHint || providerHint === "google" || providerHint === "vertex") {
+    base.providerOptions = {
       google: {
         seed: CRITERIA_EVAL_SEED,
       },
-    },
-  };
+    };
+  }
+
+  return base;
 }
 
 export function describeCriterionEvaluationLlmFootprint(): {
@@ -239,6 +247,8 @@ export async function evaluateSection({
   content,
   reportContext,
   allSections,
+  model,
+  providerHint,
 }: {
   section: SectionType;
   content: unknown;
@@ -247,6 +257,10 @@ export async function evaluateSection({
     date: Date | string;
   };
   allSections?: AllSectionsContent;
+  /** Optional override model — when omitted, uses the default Google Gemini model. */
+  model?: LanguageModel;
+  /** Provider hint for generation settings (e.g. seed handling). One of "google", "vertex", "openai". */
+  providerHint?: string;
 }): Promise<CriterionEvaluationResult[]> {
   const criteria = getCriteria(section);
   if (criteria.length === 0) return [];
@@ -269,7 +283,8 @@ export async function evaluateSection({
 
   const { systemPrompt, userPrompt } = prompts;
 
-  const generationSettings = generationSettingsForSection();
+  const resolvedModel = model ?? resolveModel();
+  const generationSettings = generationSettingsForSection(providerHint);
 
   let evaluations: Array<{
     criterionKey: string;
@@ -279,7 +294,7 @@ export async function evaluateSection({
 
   try {
     const result = await generateText({
-      model: resolveModel(),
+      model: resolvedModel,
       output: Output.object({ schema: evaluationSchema }),
       system: systemPrompt,
       prompt: userPrompt,
