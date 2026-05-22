@@ -53,6 +53,20 @@ const REVIEWER_STORAGE_KEY = "criteria-review:reviewer:v1";
 const CREATE_REVIEWER_VALUE = "__create_reviewer__";
 const AUTOSAVE_DELAY_MS = 1500;
 
+/** Radix Select crashes on empty string or values with no matching SelectItem. */
+function suggestedStatusSelectValue(
+  status: HumanSubAnswer["suggestedStatus"]
+): "met" | "partially_met" | "not_met" | undefined {
+  switch (status) {
+    case "met":
+    case "partially_met":
+    case "not_met":
+      return status;
+    default:
+      return undefined;
+  }
+}
+
 type DraftAnswer = {
   section: CriteriaReviewReportSection["section"];
   criterionKey: string;
@@ -707,7 +721,7 @@ export function CriteriaReviewSessionForm({
                                 Correct traffic-light status
                               </Label>
                               <Select
-                                value={answer.suggestedStatus ?? undefined}
+                                value={suggestedStatusSelectValue(answer.suggestedStatus)}
                                 onValueChange={(v) =>
                                   updateAnswer(criterion.answerKey, {
                                     suggestedStatus:
