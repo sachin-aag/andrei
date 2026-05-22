@@ -1,6 +1,9 @@
 import { asc, eq } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
-import { employeeIdSchema } from "@/lib/auth/employee-id";
+import {
+  employeeIdSchema,
+  normalizeCriteriaReviewEmployeeId,
+} from "@/lib/auth/employee-id";
 import { db, schema } from "@/db";
 import {
   MOCK_USERS,
@@ -13,7 +16,7 @@ function rowToUser(row: typeof schema.workspaceUsers.$inferSelect): MockUser {
     id: row.id,
     name: row.name,
     email: row.email,
-    employeeId: row.employeeId,
+    employeeId: normalizeCriteriaReviewEmployeeId(row.employeeId),
     role: row.role,
     title: row.title,
   };
@@ -22,21 +25,6 @@ function rowToUser(row: typeof schema.workspaceUsers.$inferSelect): MockUser {
 function isMissingWorkspaceUsersTable(error: unknown): boolean {
   const err = error as { code?: string; cause?: { code?: string } };
   return err?.code === "42P01" || err?.cause?.code === "42P01";
-}
-
-function isDatabaseUnavailable(error: unknown): boolean {
-  if (isMissingWorkspaceUsersTable(error)) return true;
-  const err = error as {
-    code?: string;
-    cause?: { code?: string };
-    message?: string;
-  };
-  const code = err?.code ?? err?.cause?.code;
-  if (code === "ECONNREFUSED" || code === "ENOTFOUND" || code === "ETIMEDOUT") {
-    return true;
-  }
-  const message = `${err?.message ?? ""} ${(err?.cause as { message?: string } | undefined)?.message ?? ""}`;
-  return /fetch failed|connection|ECONNREFUSED|ENOTFOUND|ETIMEDOUT/i.test(message);
 }
 
 function sortedMockUsers(): MockUser[] {
@@ -77,7 +65,7 @@ export async function listWorkspaceUsers(): Promise<MockUser[]> {
     });
     return rows.map(rowToUser);
   } catch (error) {
-    if (isDatabaseUnavailable(error)) {
+    if (isMissingWorkspaceUsersTable(error)) {
       return sortedMockUsers();
     }
     throw error;
@@ -98,7 +86,7 @@ export async function getWorkspaceUserById(
     });
     return row ? rowToUser(row) : undefined;
   } catch (error) {
-    if (isDatabaseUnavailable(error)) {
+    if (isMissingWorkspaceUsersTable(error)) {
       return undefined;
     }
     throw error;
