@@ -47,7 +47,7 @@ export async function loginAsEngineer(page: Page) {
   ).toBeTruthy();
 
   await page.goto("/");
-  await expect(page.getByRole("button", { name: /new report/i })).toBeVisible({
+  await expect(page.getByRole("button", { name: /new report/i }).first()).toBeVisible({
     timeout: 30_000,
   });
 }
