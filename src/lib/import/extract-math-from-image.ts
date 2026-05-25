@@ -481,18 +481,26 @@ export async function extractMathFromImage(
   if (!input.bytes.length) return null;
 
   const key = hashBytes(input.bytes);
+  const shortKey = key.slice(0, 12);
+
   const cached = cacheGet(key);
-  if (cached) return cached;
+  if (cached) {
+    console.log(`[extract-math] L1 cache hit ${shortKey}`);
+    return cached;
+  }
 
   // Skip DB cache when llmCall is overridden — that path is used by tests that
   // control LLM output directly and must not be affected by cached real data.
   if (!options.llmCall) {
     const dbHit = await dbCacheGet(key);
     if (dbHit) {
+      console.log(`[extract-math] L2 db cache hit ${shortKey}`);
       cacheSet(key, dbHit);
       return dbHit;
     }
   }
+
+  console.log(`[extract-math] gemini call ${shortKey}`);
 
   let pngBytes: Uint8Array | null = null;
   if (isWmfMime(input.mime)) {
