@@ -140,12 +140,14 @@ export function CriteriaReviewSessionForm({
     loadedAnswersForReviewer.current = loadKey;
     setAnswers(initialAnswersForReviewer(selectedReviewerId));
     setError(null);
+    setSubmitDialogError(null);
   }, [session.id, selectedReviewerId, initialAnswersForReviewer]);
 
   const activeSection = session.input.sections[activeSectionIndex] ?? null;
 
   const updateAnswer = useCallback(
     (answerKey: string, patch: Partial<DraftAnswer>) => {
+      setSubmitDialogError(null);
       setAnswers((prev) => ({
         ...prev,
         [answerKey]: { ...prev[answerKey], ...patch } as DraftAnswer,
@@ -227,10 +229,6 @@ export function CriteriaReviewSessionForm({
       if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
     };
   }, [answers, selectedReviewer, saveAnswers]);
-
-  useEffect(() => {
-    setSubmitDialogError(null);
-  }, [answers]);
 
   const submitReport = async () => {
     if (autosaveTimer.current) clearTimeout(autosaveTimer.current);

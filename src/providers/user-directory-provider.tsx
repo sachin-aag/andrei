@@ -4,8 +4,8 @@ import {
   createContext,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
-  useRef,
   useState,
 } from "react";
 import type { MockUser } from "@/lib/auth/mock-users-data";
@@ -34,17 +34,10 @@ export function UserDirectoryProvider({
   children: React.ReactNode;
 }) {
   const [version, setVersion] = useState(0);
-  const syncedKeyRef = useRef<string>("");
 
-  const usersKey = useMemo(
-    () => initialUsers.map((user) => user.id).sort().join("|"),
-    [initialUsers]
-  );
-
-  if (syncedKeyRef.current !== usersKey) {
+  useLayoutEffect(() => {
     syncUserDirectory(initialUsers);
-    syncedKeyRef.current = usersKey;
-  }
+  }, [initialUsers]);
 
   useEffect(() => {
     void fetch("/api/auth/users")

@@ -43,10 +43,7 @@ export function MathEditorDialog({
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    if (!open) {
-      setReady(false);
-      return;
-    }
+    if (!open) return;
     let cancelled = false;
     void (async () => {
       await import("mathlive");
@@ -81,7 +78,13 @@ export function MathEditorDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog
+      open={open}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen) setReady(false);
+        onOpenChange(nextOpen);
+      }}
+    >
       <DialogContent className="max-w-3xl w-[min(calc(100vw-2rem),48rem)] gap-4 overflow-hidden">
         <DialogHeader className="min-w-0 pr-8">
           <DialogTitle>{title}</DialogTitle>

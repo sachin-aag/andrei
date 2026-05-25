@@ -19,6 +19,7 @@ export function ImageInlineNodeView({ node, selected }: NodeViewProps) {
       )}
       contentEditable={false}
     >
+      {/* eslint-disable-next-line @next/next/no-img-element -- inline data URLs in TipTap */}
       <img
         src={src}
         alt={alt}

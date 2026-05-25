@@ -541,11 +541,3 @@ function decodeHtmlEntities(text: string): string {
     .replace(/&nbsp;/g, " ");
 }
 
-function stripHtmlTags(html: string): string {
-  return decodeHtmlEntities(
-    html
-      .replace(/<br\s*\/?>/gi, "\n")
-      .replace(/<\/p>\s*<p\b[^>]*>/gi, "\n")
-      .replace(/<[^>]+>/g, "")
-  );
-}
