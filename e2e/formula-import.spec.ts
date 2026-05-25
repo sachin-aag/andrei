@@ -49,7 +49,7 @@ test.describe("legacy equation formula rendering", () => {
     await page.waitForURL(/\/reports\/[^/]+\/edit/, { timeout: 60_000 });
     createdReportId = page.url().match(/\/reports\/([^/]+)\/edit/)?.[1] ?? null;
 
-    await expect(page.getByText(/Calculated the\s+TOC of blank water as per formula\./)).toBeVisible({
+    await expect(page.getByText(/Calculated the\s+TOC of blank water as per formula\./).first()).toBeVisible({
       timeout: 30_000,
     });
     await expect(page.getByText("[unsupported WMF image]")).toHaveCount(0);
