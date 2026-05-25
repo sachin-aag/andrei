@@ -1,0 +1,453 @@
+Revised Analysis (with data from individual reports)                        
+                  
+  Good, I now have a complete picture. Here's my analysis and plan.           
+                                                                            
+  ---                                                                         
+  Analysis: Sources of Disagreement                                          
+                                                                              
+  The sweep shows 62% agreement across GPT-5.5, Claude Opus 4-7, and Gemini   
+  3.5 Flash — 178 out of 468 datapoints disagree. Here are the root causes,   
+  ordered by impact.                                                          
+                  
+  1. The "Not Applicable" Problem (~40-50% of disagreements)                
+
+  The single biggest source. When a report says "no preventive action is
+  proposed," 7 Control criteria ask about properties of those actions
+  (tracking fields, expected outcome, achievability, linkage to root cause,
+  effectiveness). The models fundamentally disagree:
+
+  - GPT-5.5: treats "N/A" as "met" — if no action is needed, the criterion is
+  satisfied
+  - Gemini/Claude: treat "N/A" as "not_met" — the criterion asks for X, X is
+  absent
+
+  Your schema only has met | partially_met | not_met — there's no
+  not_applicable. This forces models to shoehorn a logical N/A into an
+  ill-fitting bucket, and each model picks differently.
+
+  2. The "partially_met" vs "not_met" Threshold (~25%)
+
+  The criteria descriptions don't define where "addressed but with gaps"
+  (partially_met) ends and "missing" (not_met) begins. Example: a report says
+  "effectiveness shall be verified in the CAPA form" without specifying how.
+  Claude says not_met, Gemini/GPT say partially_met. Neither is wrong — the
+  boundary is undefined.
+
+  3. "CAPA Deferral" Pattern (~15%)
+
+  Many reports defer tracking fields, due dates, and effectiveness to a
+  "future CAPA form." Models split on whether acknowledging future work counts
+   as partially addressing the criterion or not addressing it at all.
+
+  4. Cross-Section Context Depth (~10%)
+
+  Some models (Gemini, Claude) use prior-section context aggressively — e.g.,
+  noticing corrective actions don't match the root cause from Analyze. GPT-5.5
+   evaluates more self-contained, giving credit for having any actions
+  regardless of relevance.
+
+  5. Leniency Spectrum
+
+  Clear consistent bias: GPT-5.5 is most lenient, Gemini most strict, Claude
+  in between. This is a systematic calibration difference amplified by the
+  ambiguities above.
+
+  ---
+  Plan to Tighten Agreement
+
+  Tier 1: Prompt Engineering (do first)
+
+  A. Add explicit N/A handling rules to the system prompt
+
+  Add a rule block like:
+  WHEN NO ACTION IS PROPOSED:
+  - If the report states no corrective/preventive action is required AND
+  provides
+    adequate rationale, criteria that evaluate properties of those actions
+    (tracking fields, expected outcome, achievability, linkage, effectiveness)
+    should be marked "met" with reasoning noting the rationale is adequate.
+    OR should be marked "not_met" because the action does not exist.
+    [Pick ONE interpretation and codify it.]
+  This single rule change would eliminate an estimated 50+ of the 178
+  disagreements.
+
+  B. Define the partially_met boundary with examples
+
+  In the common prompt, replace the current vague definition:
+  - "partially_met": the criterion is addressed but with gaps
+  With calibrated examples:
+  - "partially_met": some elements are present but key specifics are missing.
+    Example: a Work Order number exists but no responsible person or due date.
+    Example: effectiveness verification is mentioned but no method or criteria
+   defined.
+  - "not_met": the required content is entirely absent, factually wrong, or
+    addresses the wrong deviation/root cause. A bare deferral to a "future
+  CAPA
+    form" with no specifics in this section is "not_met", not "partially_met".
+
+  C. Add a "CAPA deferral" rule
+
+  CAPA DEFERRAL: When the section states "responsibilities and due dates shall
+  be assigned in the CAPA form" without providing them here, treat tracking
+  fields (unique number, responsible person, due date) as not_met. The
+  criterion
+  asks whether this section contains the information, not whether it will
+  exist
+  elsewhere later.
+
+  D. Clarify "achievable" criteria
+
+  For improve.achievable and control.preventive_achievable, add:
+  "Achievable" means both physically feasible AND relevant to the actual
+  deviation and root cause. Actions that are achievable but address the wrong
+  deviation are "not_met" for this criterion.
+
+  E. Add per-criterion N/A instructions directly in criteria.ts
+
+  For each Control criterion that can be logically N/A, append guidance to the
+   description field. E.g., for control.tracking_fields:
+  "If no preventive action is identified and adequate rationale is provided
+  in the section, mark this criterion as 'met' with a note that no tracking
+  is needed because no action was proposed."
+
+  Tier 2: Schema Changes (if prompt engineering isn't enough)
+
+  F. Add not_applicable as a fourth status
+
+  Change the Zod enum from ["met", "partially_met", "not_met"] to ["met",
+  "partially_met", "not_met", "not_applicable"]. Add a rule:
+  - "not_applicable": the criterion cannot logically be evaluated because its
+    prerequisite does not exist (e.g., no preventive action was proposed, so
+    tracking fields for preventive actions are not applicable). Only use when
+    the section provides adequate rationale for the prerequisite's absence.
+  This eliminates the forced met/not_met split entirely.
+
+  G. Make criteria conditional
+
+  Add a condition field to CriterionDefinition that specifies when a criterion
+   applies. E.g.:
+  {
+    key: "control.tracking_fields",
+    label: "...",
+    description: "...",
+    condition: "Only evaluate if preventive actions are identified in this
+  section."
+  }
+  Skip criteria that don't apply rather than forcing a judgment.
+
+  Tier 3: Structural / Algorithmic (if prompting + schema still insufficient)
+
+  H. Use majority voting / consensus
+
+  Run the evaluation across 3 models (or 3 runs of the same model) and take
+  the majority vote. This doesn't reduce disagreement but produces a more
+  stable final answer.
+
+  I. Use a two-pass approach
+
+  - Pass 1: A "triage" pass that determines which criteria are applicable for
+  this report (e.g., "are preventive actions proposed?")
+  - Pass 2: Only evaluate the applicable criteria
+
+  This avoids the N/A ambiguity entirely by pre-filtering.
+
+  J. Few-shot calibration examples
+
+  Add 2-3 gold-standard evaluated reports as few-shot examples in the prompt.
+  This anchors all models to the same calibration point. The trade-off is
+  token cost — each example adds significant context.
+
+  K. Fine-tune a single model
+
+  If cross-model consistency is the goal, pick one model and fine-tune it on a
+   gold-standard dataset of ~50-100 human-reviewed evaluations. This
+  eliminates the cross-model problem entirely, though it locks you to one
+  provider.
+
+  Recommended Execution Order
+
+  1. A + B + C + D + E (prompt changes) — these are the highest-impact,
+  lowest-effort changes and should resolve ~60-70% of the 178 disagreements
+  2. F (add not_applicable status) — if disagreements on N/A criteria persist
+  after prompt fixes
+  3. I (two-pass triage) — if conditional criteria are still causing noise
+  4. J (few-shot examples) — to further calibrate the partially_met boundary
+  5. H (majority voting) — as a final safety net for production use
+  6. K (fine-tuning) — only if you need to collapse to a single model for cost
+   or consistency reasons
+   
+   
+   ----------------------------------------------------------------------------------
+   
+   
+   
+   The initial impression that GPT-5.5 was the lenient outlier was wrong. The  
+  data tells a different story:                                               
+                                                                              
+  Actual Leniency Spectrum                                                    
+                                                                              
+  ┌─────────────┬───────┬───────────────┬─────────┬──────────────────────────┐
+  │    Model    │ met % │ partially_met │ not_met │        Character         │
+  │             │       │       %       │    %    │                          │
+  ├─────────────┼───────┼───────────────┼─────────┼──────────────────────────┤
+  │ Gemini 3.5  │ 57.5% │ 14.5%         │ 28.0%   │ Binary & lenient —       │
+  │ Flash       │       │               │         │ rarely hedges            │
+  ├─────────────┼───────┼───────────────┼─────────┼──────────────────────────┤
+  │ Claude Opus │ 44.7% │ 29.1%         │ 26.3%   │ Moderate — best          │
+  │  4-7        │       │               │         │ cross-section checker    │
+  ├─────────────┼───────┼───────────────┼─────────┼──────────────────────────┤
+  │ GPT-5.5     │ 41.2% │ 38.5%         │ 20.3%   │ Strict hedger — lives in │
+  │             │       │               │         │  partially_met           │
+  └─────────────┴───────┴───────────────┴─────────┴──────────────────────────┘
+
+  Gemini is the most lenient (57.5% met, nearly 4x more met than
+  partially_met). GPT-5.5 is the strictest — it's the solo strict dissenter 89
+   times vs 38 lenient. It uses partially_met at 2.6x the rate of Gemini.
+
+  The 5 Root Causes of Disagreement (revised with data)
+
+  1. The partially_met Calibration Gap (67.4% of disagreements)
+  The dominant pattern by far. The top split is GPT=partially_met while
+  Claude+Gemini=met (48 cases). GPT-5.5 finds minor imperfections that the
+  others accept. The current prompt says partially_met means "addressed but
+  with gaps" — this is too vague and lets GPT-5.5 nitpick while Gemini
+  rubber-stamps.
+
+  2. The 5-Why Methodology Disagreement (92% disagreement on
+  analyze.fivewhy_completeness)
+  Almost never agreed upon. GPT-5.5 consistently downgrades 5-Why analyses for
+   speculative causes, incomplete chains, or not probing deeply enough. Gemini
+   and Claude accept shorter chains with "Not Applicable" for unused whys. The
+   prompt says "the count of 'why' steps is not fixed" but doesn't define what
+   makes a chain incomplete.
+
+  3. The N/A-as-Met Pattern (narrow but systematic)
+  Only 5 cases, all concentrated in DEV-PR-25-008 and DEV-WH-25-003. When no
+  preventive action exists, GPT says met (N/A = satisfied), others say
+  not_met. Small in volume but conceptually important — the schema has no
+  not_applicable status.
+
+  4. CAPA Form Deferral (57 mentions, 13 disagreements)
+  Reports frequently say "will be tracked in CAPA form." Gemini accepts this
+  as sufficient (met); GPT and Claude downgrade because the current section
+  doesn't contain the specifics. The prompt doesn't specify whether future
+  deferral counts.
+
+  5. Cross-Section Consistency (Claude-unique strength)
+  Claude catches 30 cases where corrective actions don't match root causes
+  from prior sections. Example: Measure identifies a PM checklist gap, but
+  Improve doesn't address it — Claude catches this, GPT and Gemini miss it.
+
+  Most Contentious Criteria
+
+  ┌──────────────────────────────┬───────────────────┐
+  │          Criterion           │ Disagreement Rate │
+  ├──────────────────────────────┼───────────────────┤
+  │ analyze.fivewhy_completeness │ 92%               │
+  ├──────────────────────────────┼───────────────────┤
+  │ define.initial_scope         │ 77%               │
+  ├──────────────────────────────┼───────────────────┤
+  │ improve.expected_outcome     │ 69%               │
+  ├──────────────────────────────┼───────────────────┤
+  │ improve.specific_actions     │ 62%               │
+  ├──────────────────────────────┼───────────────────┤
+  │ control.linked_to_root_cause │ 62%               │
+  ├──────────────────────────────┼───────────────────┤
+  │ control.final_comments       │ 62%               │
+  ├──────────────────────────────┼───────────────────┤
+  │ control.conclusion_summary   │ 62%               │
+  └──────────────────────────────┴───────────────────┘
+
+  ---
+  Revised Plan
+
+  Tier 1: Prompt Engineering
+
+  A. Tighten the partially_met definition (addresses 67.4% of disagreements)
+
+  This is the single highest-impact change. Replace:
+  "partially_met": the criterion is addressed but with gaps, ambiguity, or
+  missing specifics.
+  With:
+  "partially_met": the criterion is addressed with SUBSTANTIVE gaps — specific
+   required
+  elements (IDs, dates, SOP references, batch numbers, responsible persons)
+  are missing
+  or incomplete. Minor wording preferences, stylistic improvements, or
+  rephrasing
+  suggestions that do not add missing factual content are NOT gaps — rate
+  "met" instead.
+  Conversely, if the required content is entirely absent or addresses the
+  wrong
+  deviation/root cause, rate "not_met" — do not use partially_met as a middle
+  ground
+  when nothing relevant is present.
+  Add a calibration rule:
+  CALIBRATION: When in doubt between "met" and "partially_met", ask: "Is there
+   a specific
+  factual element (ID, date, SOP reference, batch number, tracking field) that
+   the criterion
+  asks for and the section does not provide?" If no, rate "met". If yes, rate
+  "partially_met"
+  only if OTHER required elements ARE present. If ALL required elements are
+  missing,
+  rate "not_met".
+
+  B. Fix analyze.fivewhy_completeness (addresses the 92% disagreement
+  criterion)
+
+  The current criteria description defers to the system prompt for methodology
+   detail, but the prompt is ambiguous about what makes a chain "complete."
+  Add to the ANALYZE_PROMPT_ADDITION:
+  5-WHY COMPLETENESS STANDARD:
+  A 5-Why chain is "met" when it:
+    1. Starts from the observed deviation (not a generic statement)
+    2. Each subsequent question logically follows from the prior answer
+    3. Reaches a root cause that is actionable (not just "human error")
+    4. Has a clear conclusion statement
+    5. Unused "Why" slots may be marked "Not Applicable" — this is acceptable
+
+  A 5-Why chain is "partially_met" when the chain reaches a plausible root
+  cause
+  but contains speculative/unsupported intermediate steps or skips logical
+  levels.
+
+  A 5-Why chain is "not_met" when the chain is circular, contains repeated
+  wording,
+  jumps directly to "human error", or the conclusion contradicts the chain
+  logic.
+
+  Do NOT penalize chains for having fewer than 5 questions if the root cause
+  is
+  reached logically. Do NOT penalize for having answers that reference OEM
+  findings
+  or external investigation results.
+
+  C. Add explicit N/A handling (addresses the 5 systematic N/A cases +
+  prevents future drift)
+
+  Add to the common prompt:
+  NOT-APPLICABLE SCENARIO: When a criterion evaluates properties of an action
+  (tracking fields, expected outcome, achievability, linkage to root cause,
+  effectiveness) and NO such action exists in the section:
+  - If the section provides adequate rationale for why no action is needed,
+    rate "met" with reasoning noting the rationale is adequate and the
+  criterion
+    is satisfied by the justified absence.
+  - If the section provides NO rationale for the absence, rate "not_met".
+  Do NOT rate "not_met" solely because an action does not exist when its
+  absence
+  is justified.
+
+  D. Add a CAPA deferral rule
+
+  CAPA DEFERRAL RULE: When the section states that responsibilities, due
+  dates,
+  or tracking details "shall be assigned in the CAPA form" without providing
+  them
+  in this section:
+  - For tracking fields (unique number, responsible person, due date): rate
+    "not_met" — the criterion asks whether THIS section contains the
+  information.
+  - For effectiveness verification: rate "partially_met" if the section at
+  least
+    states whether effectiveness verification is required and provides
+  rationale,
+    even if the method is deferred. Rate "not_met" if effectiveness is not
+    mentioned at all.
+
+  E. Reward cross-section checking explicitly
+
+  Add to the IMPROVE_PROMPT_ADDITION and CONTROL_PROMPT_ADDITION:
+  CROSS-SECTION TRACEABILITY: When evaluating whether actions address root
+  causes,
+  actively check the PRIOR SECTIONS context. If the Analyze section identifies
+
+  multiple contributing factors or root causes, each should be addressed by at
+
+  least one corrective/preventive action. Actions that address a different
+  issue
+  than the identified root cause should be rated "not_met" for the
+  per_root_cause
+  and linked_to_root_cause criteria.
+
+  F. Tighten define.initial_scope (77% disagreement)
+
+  Add to the criterion description in criteria.ts:
+  The scope statement must include SPECIFIC identifiers (batch numbers,
+  equipment IDs,
+  material names). Saying "semi-finished and finished product batches were
+  stored"
+  without listing which batches is "partially_met". Saying "the scope is
+  limited to
+  Batch No. X, Y, Z" is "met". Completely omitting scope is "not_met".
+
+  Tier 2: Schema / Structural Changes
+
+  G. Add not_applicable status — same as before, changes the Zod enum to 4
+  values.
+
+  H. Weight criteria by section — the Control section has 14 criteria vs
+  Define's 6. Consider whether some Control criteria should be conditional
+  (only evaluated when preventive actions exist).
+
+  Tier 3: Algorithmic
+
+  I. Two-pass triage — a first pass determines which criteria apply to this
+  report (does it have preventive actions? CAPA? etc.), then a second pass
+  evaluates only applicable criteria.
+
+  J. Few-shot calibration — pick 2-3 of the most contentious reports
+  (DEV-WH-25-003, DEV-PR-25-008) and create gold-standard human-reviewed
+  evaluations. Include them as examples in the prompt. This anchors the
+  partially_met boundary concretely.
+
+  K. Ensemble with majority vote — run 3 calls to the same model (or across
+  models) and take majority. This is a safety net, not a fix.
+
+  L. Model selection — if you must pick one model, Claude Opus 4-7 has the
+  best profile: moderate leniency, good cross-section checking, and the most
+  nuanced use of partially_met. Gemini is too lenient/binary; GPT-5.5
+  over-hedges into partially_met.
+
+  Execution Priority
+
+  Priority: 1
+  Change: Tighten partially_met definition (A)
+  Expected Impact: ~60-80 of 178 disagreements
+  ────────────────────────────────────────
+  Priority: 2
+  Change: Fix 5-Why completeness standard (B)
+  Expected Impact: ~12 disagreements
+  ────────────────────────────────────────
+  Priority: 3
+  Change: Add N/A handling rule (C)
+  Expected Impact: ~5-10 disagreements
+  ────────────────────────────────────────
+  Priority: 4
+  Change: Add CAPA deferral rule (D)
+  Expected Impact: ~13 disagreements
+  ────────────────────────────────────────
+  Priority: 5
+  Change: Tighten initial_scope description (F)
+  Expected Impact: ~10 disagreements
+  ────────────────────────────────────────
+  Priority: 6
+  Change: Cross-section traceability (E)
+  Expected Impact: quality improvement, fewer false-mets
+  ────────────────────────────────────────
+  Priority: 7
+  Change: Few-shot calibration (J)
+  Expected Impact: residual calibration
+  ────────────────────────────────────────
+  Priority: 8
+  Change: not_applicable status (G)
+  Expected Impact: structural fix for N/A
+  ────────────────────────────────────────
+  Priority: 9
+  Change: Two-pass triage (I)
+  Expected Impact: eliminates N/A problem entirely
+
+  Changes 1-5 are all prompt-only and should be testable with another sweep
+  immediately. If agreement rises from 62% to ~80%+, you may not need the
+  schema or algorithmic changes.

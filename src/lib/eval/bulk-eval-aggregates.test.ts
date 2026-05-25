@@ -10,7 +10,7 @@ import {
   normalizeReasoningKey,
   reasoningPatternsFromDedupeOnly,
   type BulkEvalRow,
-} from "@/lib/sample-eval/bulk-eval-aggregates";
+} from "@/lib/eval/bulk-eval-aggregates";
 
 const baseRow = (overrides: Partial<BulkEvalRow>): BulkEvalRow => ({
   sourceFile: "x.docx",

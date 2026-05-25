@@ -2,25 +2,34 @@
  * Config-driven model sweep: runs the bulk eval for each model spec sequentially,
  * then auto-generates a comparison report.
  *
- *   npm run model-sweep
- *   npm run model-sweep -- --input-dir docs/sample_files --concurrency 4
+ *   pnpm run model-sweep
+ *   pnpm run model-sweep -- --input-dir docs/sample_files --concurrency 4
+ *
+ * Requires in .env.local:
+ *   GOOGLE_GENERATIVE_AI_API_KEY (google)
+ *   OPENAI_API_KEY (openai)
+ *   GOOGLE_VERTEX_PROJECT + ADC (vertex-anthropic)
  */
 
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import fs from "node:fs";
 
-import type { ModelSpec } from "@/lib/ai/model-resolver";
+import type { ModelSpec } from "@/lib/eval/model-resolver";
 
 /* -------------------------------------------------------------------------- */
 /*  Sweep configuration — edit this array to add/remove models                 */
 /* -------------------------------------------------------------------------- */
 
 const SWEEP_CONFIGS: ModelSpec[] = [
-  { provider: "google", modelId: "gemini-3.1-flash-lite", temperature: 0, seed: 0 },
-  { provider: "google", modelId: "gemini-3.1-flash", temperature: 0, seed: 0 },
-  { provider: "vertex", modelId: "claude-sonnet-4", temperature: 0 },
-  { provider: "openai", modelId: "gpt-4.1", temperature: 0 },
+  // Vertex has no `gemini-3.1-flash` — use `gemini-3.5-flash` (GA) or `gemini-3-flash-preview` on global.
+  { provider: "vertex", modelId: "gemini-3.1-flash-lite", temperature: 0, seed: 0, location: "global" },
+  { provider: "openai", modelId: "gpt-5.5" },
+  {
+    provider: "vertex-anthropic",
+    modelId: "claude-opus-4-7",
+    location: "global",
+  },
 ];
 
 /* -------------------------------------------------------------------------- */
@@ -60,21 +69,28 @@ function main() {
     return `${yyyy}-${mm}-${dd}_${hh}${mi}${ss}`;
   })();
 
-  const reportsDir = path.join(process.cwd(), "reports");
-  fs.mkdirSync(reportsDir, { recursive: true });
+  const sweepDir = path.join(process.cwd(), "reports", `sweep_${ts}`);
+  fs.mkdirSync(sweepDir, { recursive: true });
+  console.error(`Sweep output directory: ${sweepDir}`);
 
   const jsonPaths: string[] = [];
 
   for (let i = 0; i < SWEEP_CONFIGS.length; i++) {
     const spec = SWEEP_CONFIGS[i];
     const label = `${spec.provider}_${spec.modelId}`.replace(/[^a-zA-Z0-9._-]/g, "_");
-    const outFile = path.join(reportsDir, `sweep_${ts}_${label}.html`);
+    const outFile = path.join(sweepDir, `${label}.html`);
 
     const args = [
-      "scripts/bulk-sample-evaluation-report.ts",
+      "scripts/eval/bulk-sample-evaluation-report.ts",
       "--provider", spec.provider,
       "--model-id", spec.modelId,
-      "--temperature", String(spec.temperature),
+      ...(spec.temperature !== undefined
+        ? ["--temperature", String(spec.temperature)]
+        : []),
+      ...(spec.effort && spec.effort !== "none"
+        ? ["--effort", spec.effort]
+        : []),
+      ...(spec.location ? ["--location", spec.location] : []),
       "--out", outFile,
       ...passthrough,
     ];
@@ -108,14 +124,14 @@ function main() {
     process.exit(jsonPaths.length === 0 ? 1 : 0);
   }
 
-  // Generate comparison report
-  const comparisonOut = path.join(reportsDir, `sweep_comparison_${ts}.html`);
+  // Generate comparison report in the same sweep folder
+  const comparisonOut = path.join(sweepDir, "comparison.html");
   console.error(`\nGenerating comparison report from ${jsonPaths.length} runs...`);
 
   try {
     execFileSync("npx", [
       "tsx",
-      "scripts/compare-eval-runs.ts",
+      "scripts/eval/compare-eval-runs.ts",
       "--out", comparisonOut,
       ...jsonPaths,
     ], {
@@ -130,6 +146,7 @@ function main() {
   }
 
   console.error(`\nSweep complete. ${jsonPaths.length} runs compared.`);
+  console.error(`Output folder: ${sweepDir}`);
   console.error(`Comparison report: ${comparisonOut}`);
 }
 

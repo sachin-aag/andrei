@@ -3,7 +3,7 @@ import { getCriteria } from "@/lib/ai/criteria";
 import { contextForPrompt } from "@/lib/ai/section-context";
 import { buildEvaluationSystemPrompt } from "@/lib/ai/section-prompts";
 import type { AllSectionsContent } from "@/lib/ai/evaluate";
-import type { BulkEvalRow } from "@/lib/sample-eval/bulk-eval-aggregates";
+import type { BulkEvalRow } from "@/lib/eval/bulk-eval-aggregates";
 import {
   humanAnswerKey,
   type HumanReviewer,

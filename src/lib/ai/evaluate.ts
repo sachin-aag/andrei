@@ -3,6 +3,13 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { z } from "zod";
 import type { SectionType, CriterionStatus } from "@/db/schema";
 import { getCriteria } from "./criteria";
+import {
+  buildEvalGenerationSettings,
+  DEFAULT_EVAL_GENERATION_OPTIONS,
+  describeEvalGenerationConfig,
+  modelSkipsSamplingControls,
+  type EvalGenerationOptions,
+} from "@/lib/eval/eval-generation-options";
 import { contextForPrompt } from "./section-context";
 import { buildEvaluationSystemPrompt } from "./section-prompts";
 import { EDITABLE_SECTIONS } from "@/types/sections";
@@ -12,11 +19,11 @@ export { PROMPT_VERSION } from "./section-prompts";
 /** Google Generative AI model slug passed through `@ai-sdk/google`. */
 export const CRITERIA_EVAL_GOOGLE_MODEL_ID = "gemini-3.1-flash-lite" as const;
 
-/** Temperature applied to criterion-level `evaluateSection` calls. */
-export const CRITERIA_EVAL_TEMPERATURE = 0 as const;
+/** Temperature applied to criterion-level `evaluateSection` calls (in-app default). */
+export const CRITERIA_EVAL_TEMPERATURE = DEFAULT_EVAL_GENERATION_OPTIONS.temperature;
 
-/** Fixed seed for reproducible sampling across runs. */
-export const CRITERIA_EVAL_SEED = 0 as const;
+/** Fixed seed for reproducible sampling across runs (in-app default). */
+export const CRITERIA_EVAL_SEED = DEFAULT_EVAL_GENERATION_OPTIONS.seed ?? 0;
 
 const evaluationSchemaDescription =
   'Output.object with Zod array "evaluations" (criterionKey, status, reasoning).';
@@ -47,42 +54,63 @@ const evaluationSchema = z.object({
   ),
 });
 
-function generationSettingsForSection(providerHint?: string) {
-  const base: Record<string, unknown> = {
-    maxOutputTokens: 32768,
-  };
-
-  // Only inject seed via providerOptions for Google-family providers.
-  // OpenAI supports seed at the top level (handled by caller).
-  // Vertex AI / Anthropic models ignore seed entirely.
-  if (!providerHint || providerHint === "google" || providerHint === "vertex") {
-    base.providerOptions = {
-      google: {
-        seed: CRITERIA_EVAL_SEED,
-      },
-    };
-  }
-
-  return base;
+function generationSettingsForSection(
+  providerHint?: string,
+  generationOptions: EvalGenerationOptions = DEFAULT_EVAL_GENERATION_OPTIONS,
+  modelId?: string
+) {
+  return buildEvalGenerationSettings({
+    providerHint,
+    modelId,
+    ...generationOptions,
+    effort: generationOptions.effort ?? "none",
+  });
 }
 
-export function describeCriterionEvaluationLlmFootprint(): {
+export function describeCriterionEvaluationLlmFootprint(
+  overrides?: Partial<EvalGenerationOptions> & {
+    providerHint?: string;
+    modelId?: string;
+  }
+): {
   criterionModelId: string;
   criterionProvider: string;
-  criterionTemperature: number;
-  criterionSeed: number;
+  criterionTemperature: number | undefined;
+  criterionSeed: number | undefined;
+  criterionEffort: string;
   criterionStructuredOutput: string;
   criterionGenerationConfig: string;
 } {
-  const gs = generationSettingsForSection();
+  const skipSampling = modelSkipsSamplingControls(
+    overrides?.providerHint,
+    overrides?.modelId
+  );
+  const options: EvalGenerationOptions = {
+    ...(skipSampling
+      ? overrides?.temperature !== undefined
+        ? { temperature: overrides.temperature }
+        : {}
+      : { temperature: overrides?.temperature ?? CRITERIA_EVAL_TEMPERATURE }),
+    ...(skipSampling
+      ? overrides?.seed !== undefined
+        ? { seed: overrides.seed }
+        : {}
+      : { seed: overrides?.seed ?? CRITERIA_EVAL_SEED }),
+    effort: overrides?.effort ?? "none",
+  };
   return {
     criterionModelId: CRITERIA_EVAL_GOOGLE_MODEL_ID,
     criterionProvider:
       "@ai-sdk/google · Vercel AI SDK generateText (`ai` package) + structured output (`Output.object`)",
-    criterionTemperature: CRITERIA_EVAL_TEMPERATURE,
-    criterionSeed: CRITERIA_EVAL_SEED,
+    criterionTemperature: options.temperature,
+    criterionSeed: options.seed,
+    criterionEffort: options.effort ?? "none",
     criterionStructuredOutput: evaluationSchemaDescription,
-    criterionGenerationConfig: `all sections: maxOutputTokens=${gs.maxOutputTokens}; seed=${CRITERIA_EVAL_SEED}; no thinking (non-reasoning model)`,
+    criterionGenerationConfig: describeEvalGenerationConfig(
+      options,
+      overrides?.providerHint,
+      overrides?.modelId
+    ),
   };
 }
 
@@ -140,6 +168,8 @@ export type CriterionEvaluationLlmPrompts = {
 function sectionContentForPrompt(section: SectionType, content: unknown): string {
   return typeof content === "string" ? content : contextForPrompt(section, content);
 }
+
+export { sectionContentForPrompt };
 
 /**
  * Map of section type → content for all sections in a report.
@@ -249,6 +279,8 @@ export async function evaluateSection({
   allSections,
   model,
   providerHint,
+  modelId,
+  generationOptions,
 }: {
   section: SectionType;
   content: unknown;
@@ -261,6 +293,10 @@ export async function evaluateSection({
   model?: LanguageModel;
   /** Provider hint for generation settings (e.g. seed handling). One of "google", "vertex", "openai". */
   providerHint?: string;
+  /** Model id for provider-specific generation constraints (e.g. OpenAI reasoning models). */
+  modelId?: string;
+  /** Temperature, seed, and effort overrides for bulk eval / sweeps. */
+  generationOptions?: EvalGenerationOptions;
 }): Promise<CriterionEvaluationResult[]> {
   const criteria = getCriteria(section);
   if (criteria.length === 0) return [];
@@ -284,7 +320,12 @@ export async function evaluateSection({
   const { systemPrompt, userPrompt } = prompts;
 
   const resolvedModel = model ?? resolveModel();
-  const generationSettings = generationSettingsForSection(providerHint);
+  const resolvedGenerationOptions = generationOptions ?? DEFAULT_EVAL_GENERATION_OPTIONS;
+  const generationSettings = generationSettingsForSection(
+    providerHint,
+    resolvedGenerationOptions,
+    modelId
+  );
 
   let evaluations: Array<{
     criterionKey: string;
@@ -293,13 +334,17 @@ export async function evaluateSection({
   }>;
 
   try {
+    const { temperature, maxOutputTokens, seed, providerOptions } =
+      generationSettings;
     const result = await generateText({
       model: resolvedModel,
       output: Output.object({ schema: evaluationSchema }),
       system: systemPrompt,
       prompt: userPrompt,
-      temperature: CRITERIA_EVAL_TEMPERATURE,
-      ...generationSettings,
+      ...(temperature !== undefined ? { temperature } : {}),
+      maxOutputTokens,
+      ...(seed !== undefined ? { seed } : {}),
+      ...(providerOptions ? { providerOptions } : {}),
     });
 
     if (result.experimental_output) {

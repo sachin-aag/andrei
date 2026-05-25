@@ -429,6 +429,7 @@ describe("evaluateSection", () => {
       });
 
       expect(lastGenerateTextArgs()).toMatchObject({
+        temperature: 0,
         maxOutputTokens: 32768,
         providerOptions: {
           google: {
@@ -437,5 +438,35 @@ describe("evaluateSection", () => {
         },
       });
     }
+  });
+
+  it("applies effort and temperature overrides from generationOptions", async () => {
+    process.env.GOOGLE_GENERATIVE_AI_API_KEY = "test-key";
+    mockSingleEval();
+
+    await evaluateSection({
+      section: "define",
+      content: "Placeholder define content.",
+      reportContext: { deviationNo: "DEV-008", date: "2026-05-02" },
+      providerHint: "google",
+      generationOptions: {
+        temperature: 0.3,
+        seed: 0,
+        effort: "high",
+      },
+    });
+
+    expect(lastGenerateTextArgs()).toMatchObject({
+      temperature: 0.3,
+      providerOptions: {
+        google: {
+          seed: 0,
+          thinkingConfig: {
+            thinkingLevel: "high",
+            includeThoughts: false,
+          },
+        },
+      },
+    });
   });
 });

@@ -22,9 +22,9 @@
     "db:migrate-suggested-fix": "tsx scripts/migrate-suggested-fix.ts",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "sample-eval-report": "tsx scripts/bulk-sample-evaluation-report.ts",
-    "compare-evals": "tsx scripts/compare-eval-runs.ts",
-    "model-sweep": "tsx scripts/run-model-sweep.ts",
+    "sample-eval-report": "tsx scripts/eval/bulk-sample-evaluation-report.ts",
+    "compare-evals": "tsx scripts/eval/compare-eval-runs.ts",
+    "model-sweep": "tsx scripts/eval/run-model-sweep.ts",
     "seed-criteria-review": "tsx --env-file=.env --env-file=.env.local scripts/seed-criteria-review-dataset.ts",
     "clear-criteria-review-reviewers": "tsx --env-file=.env --env-file=.env.local scripts/clear-criteria-review-reviewers.ts"
   },

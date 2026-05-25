@@ -11,10 +11,9 @@ import path from "node:path";
 
 import type { CriterionStatus } from "@/db/schema";
 import type { EvalRunJson } from "./bulk-sample-evaluation-report";
-import {
-  escapeHtml,
-  truncateOneLine,
-} from "@/lib/sample-eval/bulk-eval-aggregates";
+import { formatModelRunLabel, type EvalEffort } from "@/lib/eval/eval-generation-options";
+import type { ModelSpec } from "@/lib/eval/model-resolver";
+import { escapeHtml } from "@/lib/eval/bulk-eval-aggregates";
 
 /* -------------------------------------------------------------------------- */
 /*  Types                                                                      */
@@ -29,6 +28,7 @@ type DatapointEntry = {
   criterionKey: string;
   criterionLabel: string;
   section: string;
+  sectionText?: string;
   results: Map<RunLabel, { status: CriterionStatus; reasoning: string }>;
 };
 
@@ -55,7 +55,15 @@ function parseArgs(argv: string[]): { jsonPaths: string[]; outOverride?: string 
 /* -------------------------------------------------------------------------- */
 
 function makeRunLabel(meta: EvalRunJson["meta"]): string {
-  return `${meta.provider}/${meta.modelId}`;
+  if (meta.runLabel) return meta.runLabel;
+  return formatModelRunLabel({
+    provider: meta.provider as ModelSpec["provider"],
+    modelId: meta.modelId,
+    ...(meta.temperature !== undefined ? { temperature: meta.temperature } : {}),
+    seed: meta.seed,
+    effort: (meta.effort ?? "none") as EvalEffort,
+    location: meta.location,
+  });
 }
 
 function dpKey(sourceFile: string, criterionKey: string): DatapointKey {
@@ -80,6 +88,46 @@ function statusBadgeClass(status: CriterionStatus): string {
   }
 }
 
+function sectionTextLookup(
+  runs: { label: RunLabel; data: EvalRunJson }[]
+): Map<string, string> {
+  const map = new Map<string, string>();
+  for (const run of runs) {
+    for (const report of run.data.reports) {
+      if (!report.sectionTexts) continue;
+      for (const [section, text] of Object.entries(report.sectionTexts)) {
+        const key = `${report.sourceFile}|${section}`;
+        if (!map.has(key) && text.trim()) {
+          map.set(key, text);
+        }
+      }
+    }
+  }
+  return map;
+}
+
+function renderSectionTextBlock(text?: string): string {
+  if (!text?.trim()) {
+    return `<p class="muted section-text-missing">Section text not available (re-run eval to capture).</p>`;
+  }
+  return `<details class="section-text-detail">
+<summary>Section text</summary>
+<pre class="section-text">${escapeHtml(text)}</pre>
+</details>`;
+}
+
+function renderCriterionCell(dp: DatapointEntry): string {
+  const keyNote =
+    dp.criterionKey !== dp.criterionLabel
+      ? `<small class="muted criterion-key">${escapeHtml(dp.criterionKey)}</small>`
+      : "";
+  return `<div class="criterion-cell">
+<strong>${escapeHtml(dp.criterionLabel)}</strong>
+${keyNote}
+${renderSectionTextBlock(dp.sectionText)}
+</div>`;
+}
+
 /* -------------------------------------------------------------------------- */
 /*  Core comparison logic                                                      */
 /* -------------------------------------------------------------------------- */
@@ -87,6 +135,7 @@ function statusBadgeClass(status: CriterionStatus): string {
 function buildComparison(runs: { label: RunLabel; data: EvalRunJson }[]) {
   const labels = runs.map((r) => r.label);
   const datapoints = new Map<DatapointKey, DatapointEntry>();
+  const sectionTexts = sectionTextLookup(runs);
 
   // Populate datapoints from all runs
   for (const run of runs) {
@@ -100,6 +149,7 @@ function buildComparison(runs: { label: RunLabel; data: EvalRunJson }[]) {
             criterionKey: row.criterionKey,
             criterionLabel: row.criterionLabel,
             section: row.section,
+            sectionText: sectionTexts.get(`${report.sourceFile}|${row.section}`),
             results: new Map(),
           };
           datapoints.set(key, dp);
@@ -234,7 +284,8 @@ function generateHtml(comparison: ReturnType<typeof buildComparison>): string {
 <td>${escapeHtml(r.label)}</td>
 <td>${escapeHtml(r.data.meta.provider)}</td>
 <td>${escapeHtml(r.data.meta.modelId)}</td>
-<td>${r.data.meta.temperature}</td>
+<td>${r.data.meta.temperature ?? "—"}</td>
+<td>${escapeHtml(r.data.meta.effort ?? "none")}</td>
 <td>${r.data.meta.seed ?? "—"}</td>
 <td>${escapeHtml(r.data.meta.promptVersion)}</td>
 <td>${escapeHtml(r.data.meta.generatedAt)}</td>
@@ -262,7 +313,7 @@ function generateHtml(comparison: ReturnType<typeof buildComparison>): string {
           if (!r) return `<td class="muted">—</td>`;
           return `<td>
 <span class="badge ${statusBadgeClass(r.status)}">${escapeHtml(r.status.replace(/_/g, " "))}</span>
-<small>${escapeHtml(truncateOneLine(r.reasoning, 180))}</small>
+<small class="reasoning-text">${escapeHtml(r.reasoning)}</small>
 </td>`;
         })
         .join("\n");
@@ -270,7 +321,7 @@ function generateHtml(comparison: ReturnType<typeof buildComparison>): string {
       return `<tr>
 <td>${escapeHtml(dp.sourceFile)}</td>
 <td><strong>${escapeHtml(dp.section.toUpperCase())}</strong></td>
-<td>${escapeHtml(dp.criterionKey)}<br/><small class="muted">${escapeHtml(dp.criterionLabel)}</small></td>
+<td>${renderCriterionCell(dp)}</td>
 ${cells}
 </tr>`;
     })
@@ -279,10 +330,9 @@ ${cells}
   // Per-criterion disagreement rate
   const criterionDisagreeRows = [...criterionDisagree.entries()]
     .sort(([, a], [, b]) => (b.disagree / (b.total || 1)) - (a.disagree / (a.total || 1)))
-    .map(([key, rec]) => {
+    .map(([, rec]) => {
       const pct = rec.total > 0 ? Math.round((rec.disagree / rec.total) * 100) : 0;
       return `<tr>
-<td>${escapeHtml(key)}</td>
 <td>${escapeHtml(rec.label)}</td>
 <td>${escapeHtml(rec.section.toUpperCase())}</td>
 <td>${rec.disagree} / ${rec.total} (${pct}%)</td>
@@ -343,6 +393,16 @@ thead th { background: var(--surface); position: sticky; top: 0; z-index: 1; }
 .badge.muted { background: #4b5563; }
 .muted { color: var(--muted); font-size: .85rem; }
 small { display: block; margin-top: 2px; color: #374151; font-size: .78rem; }
+.reasoning-text { white-space: normal; word-break: break-word; line-height: 1.45; font-size: .82rem; }
+.criterion-cell strong { display: block; margin-bottom: 4px; }
+.criterion-key { display: block; margin-bottom: 6px; font-size: .75rem; }
+.section-text-detail { margin-top: 6px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); }
+.section-text-detail > summary { padding: 6px 8px; font-size: .78rem; font-weight: 600; cursor: pointer; list-style: none; }
+.section-text-detail > summary::-webkit-details-marker { display: none; }
+.section-text-detail > summary::before { content: "▸ "; color: var(--muted); font-size: .72rem; }
+.section-text-detail[open] > summary::before { content: "▾ "; }
+.section-text { margin: 0; padding: 8px 10px; max-height: min(320px, 40vh); overflow: auto; white-space: pre-wrap; word-break: break-word; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .74rem; line-height: 1.4; background: #fff; border-top: 1px solid var(--border); }
+.section-text-missing { margin: 6px 0 0; font-size: .78rem; }
 .score-big { font-weight: 800; font-size: 2rem; color: var(--green); margin: 8px 0; }
 .score-big span { display: block; font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
 .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin: 16px 0; }
@@ -387,7 +447,7 @@ small { display: block; margin-top: 2px; color: #374151; font-size: .78rem; }
 <summary>Run summary</summary>
 <div class="panel-body">
 <table>
-<thead><tr><th>Run label</th><th>Provider</th><th>Model ID</th><th>Temp</th><th>Seed</th><th>Prompt version</th><th>Generated at</th></tr></thead>
+<thead><tr><th>Run label</th><th>Provider</th><th>Model ID</th><th>Temp</th><th>Effort</th><th>Seed</th><th>Prompt version</th><th>Generated at</th></tr></thead>
 <tbody>${runSummaryRows}</tbody>
 </table>
 </div>
@@ -420,7 +480,7 @@ small { display: block; margin-top: 2px; color: #374151; font-size: .78rem; }
 <div class="panel-body">
 <p class="narrow-note">Which criteria have the highest cross-model disagreement — candidates for prompt refinement.</p>
 <table>
-<thead><tr><th>Criterion key</th><th>Label</th><th>Section</th><th>Disagreement rate</th></tr></thead>
+<thead><tr><th>Criterion</th><th>Section</th><th>Disagreement rate</th></tr></thead>
 <tbody>${criterionDisagreeRows}</tbody>
 </table>
 </div>

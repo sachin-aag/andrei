@@ -190,7 +190,9 @@ npm run sample-eval-report   # bulk AI evaluation of sample DOCX → HTML evalua
 
 ### Bulk sample evaluation report
 
-Runs `scripts/bulk-sample-evaluation-report.ts`: evaluates each DOCX under `docs/sample_files` with the **same AI pipeline** as `/api/reports/[reportId]/evaluate`, then writes a single HTML file with per-report detail and aggregate traffic-light tables. Requires `.env.local` (or `.env`) with a working gateway key—the script makes roughly `(number of DOCX × five)` sectional model calls plus one clustering pass.
+Runs `scripts/eval/bulk-sample-evaluation-report.ts`: evaluates each DOCX under `docs/sample_files` with the **same AI pipeline** as `/api/reports/[reportId]/evaluate`, then writes a single HTML file with per-report detail and aggregate traffic-light tables. Requires `.env.local` (or `.env`) with a working gateway key—the script makes roughly `(number of DOCX × five)` sectional model calls plus one clustering pass.
+
+Offline eval tooling lives under `scripts/eval/` (CLI) and `src/lib/eval/` (shared helpers). Database and app maintenance scripts stay in `scripts/`. Production AI evaluation core stays in `src/lib/ai/`.
 
 - **Default output:** `reports/sample_evaluation_report_YYYY-MM-DD_HHmmss.html` (`/reports/` is gitignored.)
 - **Pass flags after `--`:**
@@ -198,9 +200,53 @@ Runs `scripts/bulk-sample-evaluation-report.ts`: evaluates each DOCX under `docs
 ```bash
 npm run sample-eval-report -- --concurrency 4
 npm run sample-eval-report -- --input-dir ./path/to/docx --out ./my-report.html
+npm run sample-eval-report -- --provider google --model-id gemini-3.1-flash --effort high
+npm run compare-evals -- reports/run_low.eval.json reports/run_high.eval.json
+npm run model-sweep -- --input-dir docs/sample_files
 ```
 
-Flags: `--input-dir`, `--out`, `--concurrency` (or `-j`), `--report-date`.
+**Model sweep:** `pnpm run model-sweep` runs each entry in `SWEEP_CONFIGS` inside `scripts/eval/run-model-sweep.ts`, then writes all artifacts under one timestamped folder:
+
+```
+reports/sweep_YYYY-MM-DD_HHmmss/
+  vertex_gemini-3.5-flash.html
+  vertex_gemini-3.5-flash.eval.json
+  openai_gpt-5.5.html
+  openai_gpt-5.5.eval.json
+  vertex-anthropic_claude-opus-4-7.html
+  vertex-anthropic_claude-opus-4-7.eval.json
+  comparison.html
+```
+
+Edit `SWEEP_CONFIGS` to change models; pass `--input-dir`, `--concurrency`, etc. after `--` to forward to each run.
+
+Flags: `--input-dir`, `--out`, `--concurrency` (or `-j`), `--report-date`, `--provider`, `--model-id`, `--temperature`, `--effort`, `--location`.
+
+**Providers:** `google` (API key), `vertex` (Gemini on Vertex), `vertex-anthropic` (Claude on Vertex), `openai`.
+
+**Vertex setup (bulk eval only):**
+
+1. GCP project with Vertex AI API enabled and billing on.
+2. Enable **Gemini** and **Anthropic Claude** model access in [Vertex Model Garden](https://console.cloud.google.com/vertex-ai/model-garden) (Claude requires partner-model approval in some orgs).
+3. Grant your identity `roles/aiplatform.user` (or equivalent) on the project.
+4. Authenticate locally:
+   ```bash
+   gcloud auth application-default login
+   gcloud config set project YOUR_PROJECT_ID
+   ```
+5. Add to `.env.local`:
+   ```bash
+   GOOGLE_VERTEX_PROJECT=YOUR_PROJECT_ID
+   GOOGLE_VERTEX_LOCATION=us-central1          # Gemini
+   GOOGLE_VERTEX_ANTHROPIC_LOCATION=us-east5     # Claude (if different)
+   ```
+6. Run:
+   ```bash
+   pnpm run sample-eval-report -- --provider vertex --model-id gemini-3.5-flash --location global
+   pnpm run sample-eval-report -- --provider vertex-anthropic --model-id claude-opus-4-7 --location global
+   ```
+
+   **Vertex Gemini model IDs** (check [Model Garden](https://console.cloud.google.com/vertex-ai/model-garden) for your project): `gemini-3.5-flash` and `gemini-3.1-flash-lite` (GA, `global`); `gemini-3-flash-preview`, `gemini-3.1-pro-preview` (preview, `global` only). There is no `gemini-3.1-flash` on Vertex.
 
 ## Verification checklist
 

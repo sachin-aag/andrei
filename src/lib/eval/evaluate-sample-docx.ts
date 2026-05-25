@@ -12,7 +12,7 @@ import {
 import { normalizeAnalyzeToolResults } from "@/lib/ai/evaluate-run-helpers";
 import { EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
 import { hasEnoughContextInFirstSection } from "@/lib/ai/first-section-context";
-import type { BulkEvalRow } from "@/lib/sample-eval/bulk-eval-aggregates";
+import type { BulkEvalRow } from "@/lib/eval/bulk-eval-aggregates";
 
 export type ReportSectionLlmQuery = {
   section: SectionType;
