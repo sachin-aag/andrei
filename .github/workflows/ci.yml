@@ -43,6 +43,8 @@ jobs:
   e2e:
     name: E2E (Playwright)
     runs-on: ubuntu-latest
+    env:
+      GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}
     steps:
       - uses: actions/checkout@v4
 
