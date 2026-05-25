@@ -19,7 +19,7 @@ test.describe("legacy equation formula rendering", () => {
     await unlockIfNeeded(page);
     await loginAsEngineer(page);
 
-    await page.getByRole("button", { name: /new report/i }).click();
+    await page.getByRole("button", { name: /new report/i }).first().click();
     await page.locator("#report-upload").setInputFiles(fixturePath);
     await expect(page.locator("#deviationNo")).not.toHaveValue("", { timeout: 30_000 });
     await page.getByRole("button", { name: /^create$/i }).click();
