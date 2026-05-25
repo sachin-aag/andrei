@@ -158,31 +158,16 @@ R.set(3, rebuildRow(rows[3].xml, makePara(" ")));
 
 // Row 4: "Define:" label → keep
 
-// Row 5: Define content (checklist + narrative)
+// Row 5: Define content (narrative includes template checkpoints from DB)
 R.set(5, rebuildRow(rows[5].xml, makeParas([
-  'Following checks shall be considered while writing the \u201CDefine\u201D section.',
-  '1. Clearly define what happens actually.',
-  '2. Explain what is different than expected.',
-  '3. Mention the location where the deviation has occurred.',
-  '4. Date/time of deviation occurrence and date/time of detection.',
-  '5. Mention the name of personnel who is involved in the deviation.',
-  '6. Mention initial scope of deviation (impacted product/Material/Equipment/System/Batches/etc.)',
-  '',
   '{@defineNarrativeXml}',
 ])));
 
 // Row 6: "Details Investigation:" label → keep
 
-// Row 7: Measure (COMBINED: label + checklist + narrative content)
+// Row 7: Measure (label + narrative content from DB)
 R.set(7, rebuildRow(rows[7].xml, makeParas([
   'Measure:',
-  'Following checks shall be considered while writing the \u201CMeasure\u201D section.',
-  '1. Does the summary provide relevant facts and data/information reviewed?',
-  '2. Is a summary of the analysis of the factors and data provided?',
-  '3. Is a conclusion statement of the analysis and review provided?',
-  '4. If there were Regulatory Notification, were details provided?',
-  '5. Is the report written in a logical flow and easily understood by the reader?',
-  '',
   '{@measureNarrativeXml}',
 ])));
 
@@ -243,16 +228,9 @@ R.set(20, rebuildRow(rows[20].xml, makeParas([
   'Patient safety / Past Batches: {impactPatientSafety}',
 ])));
 
-// Row 21: Improve (label + checklist combined)
+// Row 21: Improve section label (checkpoints live in correctiveActionsXml)
 R.set(21, rebuildRow(rows[21].xml, makeParas([
-  'Improve: Improve section covers the corrective actions.',
-  'Following checks shall be considered while writing the \u201CImprove\u201D section.',
-  '1. Were specific corrective actions identified (including immediate actions)?',
-  '2. Were specific corrective actions identified for each root cause?',
-  '3. Was the corrective action assigned a unique number, responsible person and due date?',
-  '4. Does the action describe the expected outcome that can be verified?',
-  '5. Was effectiveness verification required or not, with rationale documented?',
-  '6. Are the identified corrective actions achievable?',
+  'Improve:',
 ])));
 
 // Row 22: "Corrective Action:" label → keep
@@ -262,15 +240,9 @@ R.set(23, rebuildRow(rows[23].xml, makeParas([
   '{@correctiveActionsXml}',
 ])));
 
-// Row 24: Control (label + checklist combined)
+// Row 24: Control section label (checkpoints live in preventiveActionsXml)
 R.set(24, rebuildRow(rows[24].xml, makeParas([
-  'Control: Control section covers the preventive actions.',
-  'Following checks shall be considered while writing the \u201CControl\u201D section.',
-  '1. Are specific preventive actions identified to prevent recurrence?',
-  '2. Was the preventive action assigned a unique number, responsible person and due date?',
-  '3. Does the action describe the expected outcome that can be verified?',
-  '4. Was effectiveness verification required or not, with rationale documented?',
-  '5. Are the identified preventive actions achievable?',
+  'Control:',
 ])));
 
 // Row 25: "Preventive Action:" label → keep

@@ -6,12 +6,14 @@ import { reports, reportSections } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import { docxBufferToImportedReportContent } from "@/lib/import/docx-to-sections";
 import { readDocxUpload } from "@/lib/import/docx-upload";
+import { persistReportSourceDocx } from "@/lib/reports/persist-source-docx";
 import {
   DUPLICATE_DEVIATION_NO_ERROR,
   isDeviationNoTaken,
   normalizeDeviationNo,
 } from "@/lib/reports/deviation-no";
-import { EMPTY_CONTENT, REPORT_SECTION_ROW_ORDER } from "@/types/sections";
+import { seedBlankReportSections } from "@/lib/reports/seed-blank-report-sections";
+import { REPORT_SECTION_ROW_ORDER } from "@/types/sections";
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -60,6 +62,7 @@ export async function POST(req: Request) {
   let assignedManagerId: string | null;
   let importedContent: Awaited<ReturnType<typeof docxBufferToImportedReportContent>> | null =
     null;
+  let sourceUpload: { buffer: Buffer; filename: string } | null = null;
 
   if (contentType.includes("multipart/form-data")) {
     const form = await req.formData();
@@ -77,6 +80,7 @@ export async function POST(req: Request) {
       try {
         const buf = await readDocxUpload(file);
         importedContent = await docxBufferToImportedReportContent(buf);
+        sourceUpload = { buffer: buf, filename: file.name };
       } catch (e) {
         const message = e instanceof Error ? e.message : "";
         if (message.includes("too large") || message.includes("Only Word")) {
@@ -128,6 +132,7 @@ export async function POST(req: Request) {
     })
     .returning();
 
+  const blankSections = seedBlankReportSections();
   await db.insert(reportSections).values(
     REPORT_SECTION_ROW_ORDER.map((section) => ({
       reportId: report.id,
@@ -135,10 +140,29 @@ export async function POST(req: Request) {
       content: (
         importedContent !== null
           ? importedContent.sections[section]
-          : EMPTY_CONTENT[section]
+          : blankSections[section]
       ) as unknown as Record<string, unknown>,
     }))
   );
+
+  if (sourceUpload) {
+    try {
+      await persistReportSourceDocx({
+        reportId: report.id,
+        buffer: sourceUpload.buffer,
+        filename: sourceUpload.filename,
+        uploadedById: user.id,
+      });
+    } catch {
+      await db.delete(reports).where(eq(reports.id, report.id));
+      return NextResponse.json(
+        {
+          error: "Could not save the uploaded file. Please try again.",
+        },
+        { status: 500 }
+      );
+    }
+  }
 
   return NextResponse.json({ id: report.id, report });
 }

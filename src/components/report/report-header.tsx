@@ -29,7 +29,7 @@ function ReportHeaderForm({
   const { status, lastSavedAt } = useAutoSave({
     enabled: !readOnly,
     value: { deviationNo, date, toolsUsed, otherTools },
-    onSave: async (v) => {
+    onSave: async (v, context) => {
       const res = await fetch(`/api/reports/${report.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -39,6 +39,7 @@ function ReportHeaderForm({
           toolsUsed: v.toolsUsed,
           otherTools: v.otherTools,
         }),
+        signal: context?.signal,
       });
       if (!res.ok) throw new Error("Save failed");
       const data = await res.json();

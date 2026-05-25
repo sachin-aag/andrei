@@ -7,11 +7,32 @@ import {
   boolean,
   integer,
   uniqueIndex,
+  customType,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 
+/** Postgres bytea column mapped to Node.js Buffer. */
+export const bytea = customType<{ data: Buffer; driverData: string }>({
+  dataType() {
+    return "bytea";
+  },
+  toDriver(value: Buffer): string {
+    return `\\x${value.toString("hex")}`;
+  },
+  fromDriver(value: unknown): Buffer {
+    if (Buffer.isBuffer(value)) return value;
+    if (typeof value === "string") {
+      const hex = value.startsWith("\\x") ? value.slice(2) : value;
+      return Buffer.from(hex, "hex");
+    }
+    throw new Error("Unexpected bytea value from driver");
+  },
+});
+
+export const DOCX_MIME_TYPE =
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
 export const reportStatusEnum = pgEnum("report_status", [
   "draft",
@@ -124,6 +145,22 @@ export const reportSections = pgTable(
   })
 );
 
+/** Original .docx uploaded at report creation (audit/backup; not loaded on list/get). */
+export const reportSourceDocx = pgTable("report_source_docx", {
+  reportId: text("report_id")
+    .primaryKey()
+    .references(() => reports.id, { onDelete: "cascade" }),
+  filename: text("filename").notNull(),
+  mimeType: text("mime_type").notNull().default(DOCX_MIME_TYPE),
+  sizeBytes: integer("size_bytes").notNull(),
+  sha256: text("sha256").notNull(),
+  data: bytea("data").notNull(),
+  uploadedById: text("uploaded_by_id").notNull(),
+  uploadedAt: timestamp("uploaded_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
 export const criteriaEvaluations = pgTable("criteria_evaluations", {
   id: text("id").primaryKey().$defaultFn(() => createId()),
   reportId: text("report_id")
@@ -176,10 +213,18 @@ export const comments = pgTable("comments", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const reportsRelations = relations(reports, ({ many }) => ({
+export const reportsRelations = relations(reports, ({ one, many }) => ({
   sections: many(reportSections),
   evaluations: many(criteriaEvaluations),
   comments: many(comments),
+  sourceDocx: one(reportSourceDocx),
+}));
+
+export const reportSourceDocxRelations = relations(reportSourceDocx, ({ one }) => ({
+  report: one(reports, {
+    fields: [reportSourceDocx.reportId],
+    references: [reports.id],
+  }),
 }));
 
 export const sectionsRelations = relations(reportSections, ({ one, many }) => ({

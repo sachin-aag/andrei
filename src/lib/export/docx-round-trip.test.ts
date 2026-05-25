@@ -66,16 +66,6 @@ function fingerprintFiveWhyNarrative(s: string): string {
   return fp;
 }
 
-/**
- * Standalone uploads carry numbered template preamble in plain text that `generate-report`
- * placeholders do not re-embed. Normalize so upload → export → import compares substantive copy.
- */
-const DEFINE_UPLOAD_HEADING_PREFIX =
-  /^(?:\d+\.)?Mentioninitialscopeofdeviation\(impactedproduct\/Material\/Equipment\/System\/Batches\/etc\.\)/i;
-
-const MEASURE_UPLOAD_GUIDANCE_PREFIX =
-  /^(?:\d+\.)?Doesthesummaryproviderelevantfactsanddata\/informationreviewed\?/i;
-
 function mergedEditableSections(sections: ImportedReportContent["sections"]) {
   return {
     define: mergeSection("define", sections.define),
@@ -89,17 +79,11 @@ function mergedEditableSections(sections: ImportedReportContent["sections"]) {
 }
 
 function fingerprintDefine(d: DefineSection) {
-  return fingerprintComparableString(richJsonToPlainText(d.narrative)).replace(
-    DEFINE_UPLOAD_HEADING_PREFIX,
-    ""
-  );
+  return fingerprintComparableString(richJsonToPlainText(d.narrative));
 }
 
 function fingerprintMeasure(m: MeasureSection) {
-  const narrative = fingerprintComparableString(richJsonToPlainText(m.narrative)).replace(
-    MEASURE_UPLOAD_GUIDANCE_PREFIX,
-    ""
-  );
+  const narrative = fingerprintComparableString(richJsonToPlainText(m.narrative));
   const reg =
     typeof m.regulatoryNotification === "string"
       ? fingerprintComparableString(m.regulatoryNotification)

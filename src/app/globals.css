@@ -530,6 +530,21 @@
   list-style-type: decimal;
 }
 
+/* MathLive — equation editor dialog */
+.math-editor-shell {
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.math-editor-shell math-field.math-editor-field {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
 /* `[Field name: <to be filled>]` markers — visible todos until the user fills them in. */
 .placeholder-todo {
   background-color: rgb(245 158 11 / 0.15);

@@ -9,6 +9,7 @@ import {
   comments,
 } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
+import { listWorkspaceUsers } from "@/lib/auth/workspace-users";
 import { AppShell } from "@/components/layout/app-shell";
 import { ReportProvider } from "@/providers/report-provider";
 import { ReportWorkspace } from "@/components/report/report-workspace";
@@ -45,6 +46,8 @@ export default async function EditReportPage({
     user.id === report.authorId &&
     report.status !== "approved";
 
+  const workspaceUsers = await listWorkspaceUsers();
+
   const bundle = JSON.parse(
     JSON.stringify({
       report,
@@ -55,7 +58,7 @@ export default async function EditReportPage({
   ) as ReportBundle;
 
   return (
-    <AppShell user={user}>
+    <AppShell user={user} initialUsers={workspaceUsers}>
       <ReportProvider
         bundle={bundle}
         currentUserId={user.id}

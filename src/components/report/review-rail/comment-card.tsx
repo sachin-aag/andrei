@@ -17,7 +17,7 @@ import {
   useReportComments,
   useReportData,
 } from "@/providers/report-provider";
-import { getUser } from "@/lib/auth/mock-users";
+import { useUserDirectory } from "@/providers/user-directory-provider";
 import { cn, formatDateTime } from "@/lib/utils";
 import { SECTION_LABELS } from "@/types/sections";
 import type { CommentRecord } from "@/types/report";
@@ -55,6 +55,7 @@ export function CommentCard({
   const [updating, setUpdating] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const { getUser } = useUserDirectory();
   const author = getUser(root.authorId);
 
   const canReplyOrResolve =

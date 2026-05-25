@@ -6,7 +6,7 @@ import { FileText, ArrowRight } from "lucide-react";
 import { db } from "@/db";
 import { reports } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
-import { getUser } from "@/lib/auth/mock-users";
+import { listWorkspaceUsers } from "@/lib/auth/workspace-users";
 import { AppShell } from "@/components/layout/app-shell";
 import { Card } from "@/components/ui/card";
 import { StatusBadge } from "@/components/report/status-badge";
@@ -21,6 +21,9 @@ export const dynamic = "force-dynamic";
 export default async function DashboardPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+
+  const workspaceUsers = await listWorkspaceUsers();
+  const userById = new Map(workspaceUsers.map((entry) => [entry.id, entry]));
 
   const myReports =
     user.role === "engineer"
@@ -46,7 +49,7 @@ export default async function DashboardPage() {
         );
 
   return (
-    <AppShell user={user}>
+    <AppShell user={user} initialUsers={workspaceUsers}>
       <ViewTransition
         enter={{ "nav-back": "nav-back", default: "none" }}
         exit={{ "nav-forward": "nav-forward", default: "none" }}
@@ -73,8 +76,10 @@ export default async function DashboardPage() {
           ) : (
             <div className="grid gap-3">
               {myReports.map((report) => {
-                const author = getUser(report.authorId);
-                const manager = getUser(report.assignedManagerId ?? undefined);
+                const author = userById.get(report.authorId);
+                const manager = report.assignedManagerId
+                  ? userById.get(report.assignedManagerId)
+                  : undefined;
                 const canDelete = report.authorId === user.id;
                 return (
                   <Card

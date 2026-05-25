@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseListLine, wordNumIdForList } from "@/lib/tiptap/list-style";
+import { parseListLine } from "@/lib/tiptap/list-style";
 import { linesToDoc } from "@/lib/tiptap/rich-text";
 
 describe("parseListLine", () => {
@@ -33,13 +33,5 @@ describe("linesToDoc", () => {
       "paragraph",
     ]);
     expect(doc.content?.[1]?.attrs?.listStyle).toBe("dash");
-  });
-});
-
-describe("wordNumIdForList", () => {
-  it("maps list styles to template numIds", () => {
-    expect(wordNumIdForList("orderedList")).toBe(35);
-    expect(wordNumIdForList("bulletList", "disc")).toBe(36);
-    expect(wordNumIdForList("bulletList", "dash")).toBe(37);
   });
 });

@@ -117,6 +117,61 @@ describe("html-table-parser cell text alignment", () => {
     ).toBeNull();
   });
 
+  it("preserves bold from <strong> in table cells", () => {
+    const html = `
+      <table>
+        <tr><td><p><strong>Date:</strong> 09/04/2026</p></td></tr>
+      </table>
+    `;
+    const tables = parseHtmlTables(html);
+    const paragraph = tables[0]!.content![0]!.content![0]!.content![0]!;
+    expect(paragraph.content?.[0]).toMatchObject({
+      type: "text",
+      text: "Date:",
+      marks: [{ type: "bold" }],
+    });
+    expect((paragraph.content?.[1] as { text?: string })?.text?.trim()).toBe(
+      "09/04/2026"
+    );
+  });
+
+  it("preserves bold from span font-weight in table cells", () => {
+    const html = `
+      <table>
+        <tr><td><p><span style="font-weight: bold">Sensor</span> reading</p></td></tr>
+      </table>
+    `;
+    const tables = parseHtmlTables(html);
+    const content = tables[0]!.content![0]!.content![0]!.content![0]!.content;
+    expect(content?.[0]).toMatchObject({
+      type: "text",
+      text: "Sensor",
+      marks: [{ type: "bold" }],
+    });
+    expect(content?.[1]?.type).toBe("text");
+    expect((content?.[1] as { text?: string }).text?.trim()).toBe("reading");
+  });
+
+  it("preserves nested bold and italic in table cells", () => {
+    const html = `
+      <table>
+        <tr><td><p>See <strong>bold <em>both</em></strong> end</p></td></tr>
+      </table>
+    `;
+    const tables = parseHtmlTables(html);
+    const content = tables[0]!.content![0]!.content![0]!.content![0]!.content ?? [];
+    expect(content[1]).toMatchObject({
+      type: "text",
+      marks: [{ type: "bold" }],
+    });
+    expect((content[1] as { text?: string }).text?.trim()).toBe("bold");
+    expect(content[2]).toMatchObject({
+      type: "text",
+      text: "both",
+      marks: [{ type: "bold" }, { type: "italic" }],
+    });
+  });
+
   it("preserves <br /> inside a cell paragraph as hardBreak", () => {
     const html = `
       <table>

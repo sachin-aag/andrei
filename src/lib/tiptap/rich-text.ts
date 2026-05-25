@@ -146,6 +146,15 @@ export function richJsonToPlainText(
       parts.push("\n");
       return;
     }
+    if (node.type === "imageInline") {
+      const alt = (node.attrs?.alt as string | undefined)?.trim();
+      parts.push(`[image${alt ? `: ${alt}` : ""}]`);
+      return;
+    }
+    if (node.type === "mathInline" || node.type === "mathBlock") {
+      parts.push("[equation]");
+      return;
+    }
     const inner = node.content;
     if (!inner?.length) return;
     if (node.type === "paragraph") {

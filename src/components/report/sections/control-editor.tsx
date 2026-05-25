@@ -7,8 +7,7 @@ import {
   useReportSection,
 } from "@/providers/report-provider";
 import { useSectionSave } from "@/hooks/use-section-save";
-import { CriteriaChecklist, SectionShell } from "./section-shell";
-import { SECTION_GUIDANCE } from "@/lib/report-section-guidance";
+import { SectionShell } from "./section-shell";
 
 export function ControlEditor() {
   const { readOnly } = useReportData();
@@ -23,8 +22,6 @@ export function ControlEditor() {
       lastSavedAt={lastSavedAt}
       section="control"
     >
-      <CriteriaChecklist items={SECTION_GUIDANCE.control ?? []} ordered />
-
       <div className="grid gap-1.5">
         <Label>Preventive actions</Label>
         <Textarea

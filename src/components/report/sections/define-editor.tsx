@@ -2,9 +2,8 @@
 
 import { useReportSection } from "@/providers/report-provider";
 import { useSectionSave } from "@/hooks/use-section-save";
-import { CriteriaChecklist, SectionShell } from "./section-shell";
+import { SectionShell } from "./section-shell";
 import { TiptapSectionField } from "@/components/report/tiptap-section-field";
-import { SECTION_GUIDANCE } from "@/lib/report-section-guidance";
 
 export function DefineEditor() {
   const { update } = useReportSection("define");
@@ -18,8 +17,6 @@ export function DefineEditor() {
       lastSavedAt={lastSavedAt}
       section="define"
     >
-      <CriteriaChecklist items={SECTION_GUIDANCE.define ?? []} ordered />
-
       <TiptapSectionField
         section="define"
         contentPath="narrative"

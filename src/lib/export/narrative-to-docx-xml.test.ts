@@ -1,6 +1,26 @@
+import fs from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { JSONContent } from "@tiptap/core";
-import { narrativeToDocxXml, plainTextToDocxXml } from "@/lib/export/narrative-to-docx-xml";
+import PizZip from "pizzip";
+import { createDocxExportContext } from "@/lib/export/docx-export-context";
+import { loadListNumberingBasesFromZip } from "@/lib/export/docx-numbering";
+import {
+  narrativeToDocxXml,
+  narrativeToDocxXmlWithContext,
+  plainTextToDocxXml,
+} from "@/lib/export/narrative-to-docx-xml";
+
+const TEMPLATE_PATH = path.join(
+  process.cwd(),
+  "templates",
+  "investigation-report-template.docx"
+);
+
+function exportCtx() {
+  const zip = new PizZip(fs.readFileSync(TEMPLATE_PATH));
+  return createDocxExportContext(loadListNumberingBasesFromZip(zip));
+}
 
 function textCell(
   type: "tableCell" | "tableHeader",
@@ -57,6 +77,66 @@ describe("narrativeToDocxXml tables", () => {
     );
     expect(xml).toContain('<w:sz w:val="24"/>');
     expect(xml).toContain('<w:jc w:val="left"/>');
+  });
+
+  it("exports bold, italic, and underline marks to OOXML", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "Bold",
+              marks: [{ type: "bold" }],
+            },
+            {
+              type: "text",
+              text: "Italic",
+              marks: [{ type: "italic" }],
+            },
+            {
+              type: "text",
+              text: "Underline",
+              marks: [{ type: "underline" }],
+            },
+          ],
+        },
+      ],
+    };
+
+    const xml = narrativeToDocxXml(doc);
+
+    expect(xml).toContain("<w:b/>");
+    expect(xml).toContain("<w:i/>");
+    expect(xml).toContain('<w:u w:val="single"/>');
+    expect(xml).toContain("Bold");
+    expect(xml).toContain("Italic");
+    expect(xml).toContain("Underline");
+  });
+
+  it("exports textStyle color marks to OOXML", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "Red text",
+              marks: [{ type: "textStyle", attrs: { color: "#FF0000" } }],
+            },
+          ],
+        },
+      ],
+    };
+
+    const xml = narrativeToDocxXml(doc);
+
+    expect(xml).toContain('<w:color w:val="FF0000"/>');
+    expect(xml).toContain("Red text");
   });
 
   it("emits Word vertical merge continuation cells for rowspans", () => {
@@ -267,6 +347,7 @@ describe("narrativeToDocxXml tables", () => {
   });
 
   it("emits Word numbering for dash and ordered lists", () => {
+    const ctx = exportCtx();
     const doc: JSONContent = {
       type: "doc",
       content: [
@@ -302,17 +383,174 @@ describe("narrativeToDocxXml tables", () => {
       ],
     };
 
-    const xml = narrativeToDocxXml(doc);
-    expect(xml).toContain('<w:numId w:val="37"/>');
-    expect(xml).toContain('<w:numId w:val="35"/>');
+    const xml = narrativeToDocxXmlWithContext(doc, ctx).xml;
+    const dashNumId = ctx.allocatedNumIds[0];
+    const orderedNumId = ctx.allocatedNumIds[1];
+    expect(xml).toContain(`<w:numId w:val="${dashNumId}"/>`);
+    expect(xml).toContain(`<w:numId w:val="${orderedNumId}"/>`);
+    expect(dashNumId).not.toBe(orderedNumId);
     expect(xml).toContain("Dash item");
     expect(xml).toContain("Numbered item");
   });
 
+  it("allocates a fresh numId per ordered list block", () => {
+    const ctx = exportCtx();
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "orderedList",
+          content: [
+            {
+              type: "listItem",
+              content: [
+                {
+                  type: "paragraph",
+                  content: [{ type: "text", text: "Define one" }],
+                },
+              ],
+            },
+          ],
+        },
+        {
+          type: "orderedList",
+          content: [
+            {
+              type: "listItem",
+              content: [
+                {
+                  type: "paragraph",
+                  content: [{ type: "text", text: "Measure one" }],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const xml = narrativeToDocxXmlWithContext(doc, ctx).xml;
+    const [defineNumId, measureNumId] = ctx.allocatedNumIds;
+    expect(defineNumId).toBeDefined();
+    expect(measureNumId).toBeDefined();
+    expect(defineNumId).not.toBe(measureNumId);
+    expect(xml).toContain(`<w:numId w:val="${defineNumId}"/>`);
+    expect(xml).toContain(`<w:numId w:val="${measureNumId}"/>`);
+  });
+
   it("parses plain text dash lists into numbered Word XML", () => {
-    const xml = plainTextToDocxXml("- First\n- Second");
-    expect(xml).toContain('<w:numId w:val="37"/>');
+    const ctx = exportCtx();
+    const xml = plainTextToDocxXml("- First\n- Second", ctx);
+    expect(ctx.allocatedNumIds).toHaveLength(1);
+    expect(xml).toContain(`<w:numId w:val="${ctx.allocatedNumIds[0]}"/>`);
     expect(xml).toContain("First");
     expect(xml).toContain("Second");
+  });
+
+  it("strips bookmark anchors and preserves full list item text on export", () => {
+    const ctx = exportCtx();
+    const xml = plainTextToDocxXml(
+      [
+        "Following checkpoint shall be considered",
+        '27. <a id="_Hlk178957085"></a>Is the Corrective action assigned a unique number',
+      ].join("\n"),
+      ctx
+    );
+    expect(xml).not.toContain("_Hlk");
+    expect(xml).not.toContain("<a id");
+    expect(xml).toContain("Is the Corrective action assigned a unique number");
+  });
+});
+
+describe("narrativeToDocxXml advanced formatting", () => {
+  it("exports subscript and superscript vertAlign", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "H" },
+            { type: "text", text: "2", marks: [{ type: "subscript" }] },
+            { type: "text", text: "O" },
+          ],
+        },
+      ],
+    };
+
+    const xml = narrativeToDocxXml(doc);
+    expect(xml).toContain('<w:vertAlign w:val="subscript"/>');
+  });
+
+  it("exports inline images as drawing markup", () => {
+    const tinyPng =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const ctx = createDocxExportContext();
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "imageInline",
+              attrs: { src: tinyPng, width: 10 },
+            },
+          ],
+        },
+      ],
+    };
+
+    const xml = narrativeToDocxXml(doc, ctx);
+    expect(xml).toContain("<w:drawing>");
+    expect(ctx.media).toHaveLength(1);
+  });
+
+  it("exports inline math as OMML", () => {
+    const mathml =
+      '<math xmlns="http://www.w3.org/1998/Math/MathML"><mrow><mn>2</mn><mo>+</mo><mn>2</mn></mrow></math>';
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "mathInline",
+              attrs: { mathml, ommlDirty: true },
+            },
+          ],
+        },
+      ],
+    };
+
+    const xml = narrativeToDocxXml(doc);
+    expect(xml).toContain("<m:oMath");
+  });
+
+  it("exports inline math from latex-only attrs", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "Formula: " },
+            {
+              type: "mathInline",
+              attrs: {
+                mathml: "",
+                latex: String.raw`\frac{a}{b}`,
+                omml: null,
+                ommlDirty: true,
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    const xml = narrativeToDocxXml(doc);
+    expect(xml).toContain("<m:oMath");
   });
 });

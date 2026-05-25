@@ -20,7 +20,16 @@ import { formatDate } from "@/lib/utils";
 import { fiveWhyTextForExport } from "@/lib/analyze-five-why";
 import { mergeSection } from "@/lib/sections-merge";
 import { applyInvestigationToolCheckboxes } from "@/lib/export/docx-form-checkbox";
-import { narrativeToDocxXml, plainTextToDocxXml } from "@/lib/export/narrative-to-docx-xml";
+import { applyInlineMediaToDocxZip } from "@/lib/export/docx-inline-media";
+import {
+  createDocxExportContext,
+  type DocxExportContext,
+} from "@/lib/export/docx-export-context";
+import {
+  applyNumberingToDocxZip,
+  loadListNumberingBasesFromZip,
+} from "@/lib/export/docx-numbering";
+import { narrativeToDocxXmlWithContext, plainTextToDocxXml } from "@/lib/export/narrative-to-docx-xml";
 import type { SectionType } from "@/db/schema";
 
 type ReportRow = typeof reportsTable.$inferSelect;
@@ -59,8 +68,8 @@ function toRoman(n: number): string {
   return result;
 }
 
-function composeMeasureXml(m: MeasureSection): string {
-  const narrativeXml = narrativeToDocxXml(m.narrative);
+function composeMeasureXml(m: MeasureSection, ctx: DocxExportContext): string {
+  const narrativeXml = narrativeToDocxXmlWithContext(m.narrative, ctx).xml;
   if (m.regulatoryNotification?.trim()) {
     const regXml = `<w:p><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">Regulatory Notification: </w:t></w:r><w:r><w:t xml:space="preserve">${m.regulatoryNotification.trim().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</w:t></w:r></w:p>`;
     return narrativeXml + regXml;
@@ -70,7 +79,8 @@ function composeMeasureXml(m: MeasureSection): string {
 
 function buildTemplateData(
   report: ReportRow,
-  sections: ReportSectionRecord[]
+  sections: ReportSectionRecord[],
+  ctx: DocxExportContext
 ): Record<string, unknown> {
   const d = sectionByKey(sections, "define") as DefineSection;
   const m = sectionByKey(sections, "measure") as MeasureSection;
@@ -92,10 +102,10 @@ function buildTemplateData(
     otherToolsDisplay: na(report.otherTools),
 
     // Define — compose all sub-fields into one block (raw XML for table support)
-    defineNarrativeXml: narrativeToDocxXml(d.narrative),
+    defineNarrativeXml: narrativeToDocxXmlWithContext(d.narrative, ctx).xml,
 
     // Measure — include regulatory notification if present (raw XML for table support)
-    measureNarrativeXml: composeMeasureXml(m),
+    measureNarrativeXml: composeMeasureXml(m, ctx),
 
     // Analyze - 6M
     sixMMan: na(a.sixM.man),
@@ -107,17 +117,17 @@ function buildTemplateData(
     sixMConclusion: na(a.sixM.conclusion),
 
     // Analyze - 5 Why (single field: chain + conclusion; see analyze-five-why / template)
-    fiveWhyNarrativeXml: plainTextToDocxXml(fiveWhyTextForExport(a.fiveWhy)),
+    fiveWhyNarrativeXml: plainTextToDocxXml(fiveWhyTextForExport(a.fiveWhy), ctx),
 
     // Analyze - other
-    brainstormingXml: plainTextToDocxXml(a.brainstorming),
-    analyzeOtherToolsXml: plainTextToDocxXml(a.otherTools),
+    brainstormingXml: plainTextToDocxXml(a.brainstorming, ctx),
+    analyzeOtherToolsXml: plainTextToDocxXml(a.otherTools, ctx),
 
     // Investigation Outcome
-    investigationOutcomeXml: plainTextToDocxXml(a.investigationOutcome),
+    investigationOutcomeXml: plainTextToDocxXml(a.investigationOutcome, ctx),
 
     // Root Cause
-    rootCauseNarrativeXml: plainTextToDocxXml(a.rootCause.narrative),
+    rootCauseNarrativeXml: plainTextToDocxXml(a.rootCause.narrative, ctx),
 
     // Impact Assessment
     impactSystem: na(a.impactAssessment.system),
@@ -127,12 +137,12 @@ function buildTemplateData(
     impactPatientSafety: na(a.impactAssessment.patientSafety),
 
     // Improve (raw XML for table support)
-    improveNarrativeXml: narrativeToDocxXml(i.narrative),
-    correctiveActionsXml: plainTextToDocxXml(i.correctiveActions),
+    improveNarrativeXml: narrativeToDocxXmlWithContext(i.narrative, ctx).xml,
+    correctiveActionsXml: plainTextToDocxXml(i.correctiveActions, ctx),
 
     // Control (raw XML for table support)
     controlNarrativeXml: "",
-    preventiveActionsXml: plainTextToDocxXml(c.preventiveActions),
+    preventiveActionsXml: plainTextToDocxXml(c.preventiveActions, ctx),
     interimPlan: "Not Applicable",
     finalComments: "Not Applicable",
     regulatoryImpact: "Not Applicable",
@@ -145,7 +155,8 @@ function buildTemplateData(
 
     // Documents Reviewed
     documentsReviewedXml: plainTextToDocxXml(
-      dr.items.length > 0 ? dr.items.map((item, idx) => `${idx + 1}. ${item}`).join("\n") : ""
+      dr.items.length > 0 ? dr.items.map((item, idx) => `${idx + 1}. ${item}`).join("\n") : "",
+      ctx
     ),
 
     // Attachments
@@ -176,9 +187,13 @@ export async function generateReportDocx({
     delimiters: { start: "{", end: "}" },
   });
 
-  const data = buildTemplateData(report, sections);
+  const numberingBases = loadListNumberingBasesFromZip(zip);
+  const ctx = createDocxExportContext(numberingBases);
+  const data = buildTemplateData(report, sections, ctx);
   doc.render(data);
   applyInvestigationToolCheckboxes(doc.getZip(), report.toolsUsed);
+  applyNumberingToDocxZip(doc.getZip(), ctx);
+  applyInlineMediaToDocxZip(doc.getZip(), ctx);
 
   const buf = doc.getZip().generate({
     type: "nodebuffer",

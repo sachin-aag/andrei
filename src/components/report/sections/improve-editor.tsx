@@ -7,8 +7,7 @@ import {
   useReportSection,
 } from "@/providers/report-provider";
 import { useSectionSave } from "@/hooks/use-section-save";
-import { CriteriaChecklist, SectionShell } from "./section-shell";
-import { SECTION_GUIDANCE } from "@/lib/report-section-guidance";
+import { SectionShell } from "./section-shell";
 import { emptyDoc } from "@/lib/tiptap/rich-text";
 
 export function ImproveEditor() {
@@ -24,8 +23,6 @@ export function ImproveEditor() {
       lastSavedAt={lastSavedAt}
       section="improve"
     >
-      <CriteriaChecklist items={SECTION_GUIDANCE.improve ?? []} ordered />
-
       <div className="grid gap-1.5">
         <Label>Corrective Action</Label>
         <Textarea

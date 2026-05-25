@@ -17,7 +17,7 @@ import {
 import { CommentCard } from "./comment-card";
 import { SectionCommentComposer } from "./section-comment-composer";
 import { EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
-import { getUser } from "@/lib/auth/mock-users";
+import { useUserDirectory } from "@/providers/user-directory-provider";
 import type { CommentRecord } from "@/types/report";
 import type { SectionType } from "@/db/schema";
 
@@ -69,6 +69,7 @@ export function MarginGutter({ onSectionOverflow }: Props) {
   const [connectorLines, setConnectorLines] = useState<{ id: string; y: number }[]>([]);
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
+  const { getUser } = useUserDirectory();
   const isManager = getUser(currentUserId)?.role === "manager";
   const isAuthor = currentUserId === report.authorId;
   const canComment =
