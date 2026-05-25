@@ -48,13 +48,12 @@ test.describe("legacy equation formula rendering", () => {
 
     await page.waitForURL(/\/reports\/[^/]+\/edit/, { timeout: 60_000 });
     createdReportId = page.url().match(/\/reports\/([^/]+)\/edit/)?.[1] ?? null;
-    await page.getByRole("button", { name: /measure/i }).click();
 
     await expect(page.getByText(/Calculated the\s+TOC of blank water as per formula\./)).toBeVisible({
       timeout: 30_000,
     });
     await expect(page.getByText("[unsupported WMF image]")).toHaveCount(0);
-    await expect(page.locator('.tiptap img[data-image-inline="true"]')).toHaveCount(2, {
+    await expect(page.locator(".tiptap .tiptap-math-node")).toHaveCount(2, {
       timeout: 15_000,
     });
   });
