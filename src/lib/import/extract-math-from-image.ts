@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { generateText, Output, type LanguageModel } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
-import { convertLatexToMathMl } from "mathlive/ssr";
+import { convertLatexToMathMl, ensureMathliveSsr } from "@/lib/math/mathlive-ssr";
 import { z } from "zod";
 
 type WmfModule = {
@@ -478,6 +478,7 @@ export async function extractMathFromImage(
 
   let mathml: string;
   try {
+    await ensureMathliveSsr();
     mathml = convertLatexToMathMl(latex);
   } catch (err) {
     console.error("[extract-math] rejected: latex_to_mathml_failed", {

@@ -1,7 +1,7 @@
 import { JSDOM } from "jsdom";
 import omml2mathml from "omml2mathml";
 import { mml2omml } from "mathml2omml";
-import { convertLatexToMathMl } from "mathlive/ssr";
+import { convertLatexToMathMl } from "@/lib/math/mathlive-ssr";
 
 const MATH_NS = "http://schemas.openxmlformats.org/officeDocument/2006/math";
 const MATHML_NS = "http://www.w3.org/1998/Math/MathML";

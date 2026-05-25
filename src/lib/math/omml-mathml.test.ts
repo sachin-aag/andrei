@@ -1,8 +1,11 @@
-import { describe, expect, it } from "vitest";
-import { convertLatexToMathMl } from "mathlive/ssr";
+import { beforeAll, describe, expect, it } from "vitest";
+import { convertLatexToMathMl, ensureMathliveSsr } from "@/lib/math/mathlive-ssr";
 import { ommlFragmentToMathml, mathmlToOmmlFragment, resolveOmmlFromMathAttrs } from "@/lib/math/omml-mathml";
 
 describe("omml-mathml conversion", () => {
+  beforeAll(async () => {
+    await ensureMathliveSsr();
+  });
   it("converts simple MathML to OMML", () => {
     const mathml =
       '<math xmlns="http://www.w3.org/1998/Math/MathML"><mrow><mn>1</mn><mo>+</mo><mn>1</mn></mrow></math>';

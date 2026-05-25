@@ -90,7 +90,35 @@ describe("docx import", () => {
     expect(control).toContain("Procedure Error");
   });
 
+  it("preserves CPH subscript from DEV-QC-26-001 narratives", async () => {
+    if (!fs.existsSync(legacyEquationFixturePath)) return;
+
+    const imported = await docxBufferToImportedReportContent(
+      fs.readFileSync(legacyEquationFixturePath)
+    );
+
+    function collectCphTextNodes(doc: JSONContent): JSONContent[] {
+      const nodes: JSONContent[] = [];
+      function walk(node: JSONContent) {
+        if (node.type === "text" && node.text === "CPH") nodes.push(node);
+        for (const child of node.content ?? []) walk(child);
+      }
+      walk(doc);
+      return nodes;
+    }
+
+    const defineCph = collectCphTextNodes(imported.sections.define.narrative);
+    expect(defineCph.some((n) => n.marks?.some((m) => m.type === "subscript"))).toBe(
+      true
+    );
+
+    const measurePlain = richJsonToPlainText(imported.sections.measure.narrative);
+    expect(measurePlain).toContain("TOC-L CPH");
+  });
+
   it("imports legacy Equation Editor WMF previews as editable math nodes", async () => {
+    if (!fs.existsSync(legacyEquationFixturePath)) return;
+
     const imported = await docxBufferToImportedReportContent(
       fs.readFileSync(legacyEquationFixturePath)
     );

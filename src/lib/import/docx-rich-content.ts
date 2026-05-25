@@ -438,6 +438,41 @@ async function resolveLegacyMathImages(parsed: ParsedParagraph[]): Promise<void>
   if (tasks.length) await Promise.all(tasks);
 }
 
+function findParsedParagraphMatch(
+  expected: string,
+  parsed: ParsedParagraph[],
+  usedParsed: Set<number>,
+  pIdx: number
+): { matched: ParsedParagraph; index: number } | null {
+  const expectedHasMedia = normalizeMediaPlaceholders(expected).includes("[media]");
+
+  const tryRange = (start: number, end: number) => {
+    for (let scan = start; scan < end; scan++) {
+      if (usedParsed.has(scan)) continue;
+      const candidate = parsed[scan]!;
+      const candidatePlain = normalizePlain(candidate.plainText);
+      if (!candidatePlain && !expected) {
+        return { matched: candidate, index: scan };
+      }
+      if (plainTextMatches(candidatePlain, expected)) {
+        return { matched: candidate, index: scan };
+      }
+    }
+    return null;
+  };
+
+  if (expectedHasMedia) {
+    return tryRange(0, parsed.length);
+  }
+
+  // Prefer a forward window first, then search the whole document. Table
+  // injection removes flat narrative paragraphs while OOXML indices stay
+  // body-ordered, so sequential pIdx alone desyncs after tables are inserted.
+  return (
+    tryRange(pIdx, Math.min(parsed.length, pIdx + 20)) ?? tryRange(0, parsed.length)
+  );
+}
+
 /**
  * Enrich imported TipTap narratives with sub/superscript, images, and equations
  * parsed directly from OOXML (mammoth markdown drops these).
@@ -480,34 +515,14 @@ export async function enrichNarrativesFromDocxBuffer(
       const node = narrative.content[i]!;
       if (node.type !== "paragraph") continue;
       const expected = normalizePlain(paragraphPlainText(node));
-      let matched: ParsedParagraph | null = null;
       const expectedHasMedia = normalizeMediaPlaceholders(expected).includes("[media]");
-      // For media-only paragraphs ("[image]"/"[equation]") scan the whole
-      // body — they are rare and `usedParsed` prevents double-matching.
-      // For text we keep a tight forward window so loose substring matching
-      // (when both sides are substantial) cannot grab the wrong paragraph.
-      const scanStart = expectedHasMedia ? 0 : pIdx;
-      const scanEnd = expectedHasMedia
-        ? parsed.length
-        : Math.min(parsed.length, pIdx + 20);
-      for (let scan = scanStart; scan < scanEnd; scan++) {
-        if (usedParsed.has(scan)) continue;
-        const candidate = parsed[scan]!;
-        const candidatePlain = normalizePlain(candidate.plainText);
-        if (!candidatePlain && !expected) {
-          matched = candidate;
-          usedParsed.add(scan);
-          if (!expectedHasMedia) pIdx = Math.max(pIdx, scan + 1);
-          break;
-        }
-        if (plainTextMatches(candidatePlain, expected)) {
-          matched = candidate;
-          usedParsed.add(scan);
-          if (!expectedHasMedia) pIdx = Math.max(pIdx, scan + 1);
-          break;
-        }
-      }
-      if (!matched) continue;
+      const found = findParsedParagraphMatch(expected, parsed, usedParsed, pIdx);
+      if (!found) continue;
+
+      const { matched, index: matchedIndex } = found;
+      usedParsed.add(matchedIndex);
+      if (!expectedHasMedia) pIdx = Math.max(pIdx, matchedIndex + 1);
+
       if (matched.isMathBlock && matched.parts[0]?.kind === "mathBlock") {
         replaceParagraphWithMathBlock(narrative, i, matched.parts[0]);
       } else {

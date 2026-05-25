@@ -75,6 +75,21 @@ describe("parseParagraphXmlForTest", () => {
     });
   });
 
+  it("parses subscript CPH from a split Word run", () => {
+    const pXml =
+      "<w:p>" +
+      '<w:r><w:rPr><w:sz w:val="24"/></w:rPr><w:t xml:space="preserve">Model No. TOC-L </w:t></w:r>' +
+      '<w:r><w:rPr><w:sz w:val="24"/><w:vertAlign w:val="subscript"/></w:rPr><w:t>CPH</w:t></w:r>' +
+      '<w:r><w:rPr><w:sz w:val="24"/></w:rPr><w:t> with LabSolutions</w:t></w:r>' +
+      "</w:p>";
+    const parsed = parseParagraphXmlForTest(pXml, new Map());
+    expect(parsed.parts).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: "text", text: "CPH", subscript: true }),
+      ])
+    );
+  });
+
   it("matches mammoth image placeholders to OOXML equations", () => {
     expect(plainTextMatchesForTest("[equation]", "[image]")).toBe(true);
     expect(
