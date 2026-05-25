@@ -1,6 +1,8 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import {
   CheckCircle2,
   ChevronLeft,
@@ -53,12 +55,29 @@ export function ReportWorkspaceHeader({
   onFeedback,
 }: ReportWorkspaceHeaderProps) {
   const title = report.deviationNo || "Untitled";
+  const pathname = usePathname();
+  const [navigatingBack, setNavigatingBack] = useState(false);
+
+  useEffect(() => {
+    if (navigatingBack && pathname === "/") {
+      setNavigatingBack(false);
+    }
+  }, [navigatingBack, pathname]);
 
   return (
     <header className="h-16 border-b border-[var(--border)] bg-[var(--card)] px-6 flex items-center gap-4 shrink-0">
-      <Button asChild variant="ghost" size="sm">
-        <Link href="/" transitionTypes={["nav-back"]}>
-          <ChevronLeft className="size-4" aria-hidden="true" />
+      <Button asChild variant="ghost" size="sm" disabled={navigatingBack}>
+        <Link
+          href="/"
+          transitionTypes={["nav-back"]}
+          onClick={() => setNavigatingBack(true)}
+          aria-busy={navigatingBack}
+        >
+          {navigatingBack ? (
+            <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+          ) : (
+            <ChevronLeft className="size-4" aria-hidden="true" />
+          )}
           Reports
         </Link>
       </Button>
