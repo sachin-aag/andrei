@@ -17,11 +17,15 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "pnpm run dev",
+    command: process.env.CI
+      ? "pnpm run build && pnpm run start"
+      : "pnpm run dev",
     url: "http://127.0.0.1:3000",
     reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
+    timeout: process.env.CI ? 180_000 : 120_000,
     env: {
+      HOSTNAME: "127.0.0.1",
+      PORT: "3000",
       DATABASE_URL:
         process.env.DATABASE_URL ??
         "postgresql://ci:ci@127.0.0.1:5432/ci",

@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
 import {
   CheckCircle2,
   ChevronLeft,
@@ -55,14 +54,7 @@ export function ReportWorkspaceHeader({
   onFeedback,
 }: ReportWorkspaceHeaderProps) {
   const title = report.deviationNo || "Untitled";
-  const pathname = usePathname();
   const [navigatingBack, setNavigatingBack] = useState(false);
-
-  useEffect(() => {
-    if (navigatingBack && pathname === "/") {
-      setNavigatingBack(false);
-    }
-  }, [navigatingBack, pathname]);
 
   return (
     <header className="h-16 border-b border-[var(--border)] bg-[var(--card)] px-6 flex items-center gap-4 shrink-0">

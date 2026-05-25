@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { FileText, Plus, Loader2, X } from "lucide-react";
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -31,31 +31,19 @@ export function CreateReportButton() {
   const [managerId, setManagerId] = useState<string>("");
   const [draftFile, setDraftFile] = useState<File | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
-  const [openingReportId, setOpeningReportId] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
-  const pathname = usePathname();
   const managers = getManagers();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const isBusy = previewLoading || pending || openingReportId !== null;
+  const isBusy = previewLoading || pending;
 
   const resetForm = () => {
     setDeviationNo("");
     setManagerId("");
     setDraftFile(null);
     setPreviewLoading(false);
-    setOpeningReportId(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
-
-  useEffect(() => {
-    if (!openingReportId) return;
-    if (pathname === `/reports/${openingReportId}/edit`) {
-      setOpen(false);
-      resetForm();
-      toast.success("Report created");
-    }
-  }, [openingReportId, pathname]);
 
   const handleFileChange = async (file: File | null) => {
     setDraftFile(file);
@@ -110,7 +98,9 @@ export function CreateReportButton() {
         return;
       }
       const data = (await res.json()) as { id: string };
-      setOpeningReportId(data.id);
+      toast.success("Report created");
+      setOpen(false);
+      resetForm();
       router.push(`/reports/${data.id}/edit`);
       router.refresh();
     });
@@ -139,7 +129,7 @@ export function CreateReportButton() {
         }}
       >
         <div className="relative">
-          {(pending || openingReportId) && (
+          {pending && (
             <div
               className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-lg bg-[var(--card)]/85 backdrop-blur-[1px]"
               aria-live="polite"
@@ -150,7 +140,7 @@ export function CreateReportButton() {
                 aria-hidden="true"
               />
               <p className="text-sm text-[var(--muted-foreground)]">
-                {openingReportId ? "Opening report…" : "Creating report…"}
+                Creating report…
               </p>
             </div>
           )}
@@ -216,7 +206,7 @@ export function CreateReportButton() {
                 id="deviationNo"
                 placeholder="e.g. DEV/PK/26/001"
                 value={deviationNo}
-                disabled={previewLoading || pending || openingReportId !== null}
+                disabled={previewLoading || pending}
                 className={previewLoading ? "pr-9" : undefined}
                 onChange={(e) => setDeviationNo(e.target.value)}
               />
