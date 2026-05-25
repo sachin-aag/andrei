@@ -92,7 +92,7 @@ async function main() {
     "@/lib/criteria-review/store"
   );
   const { collectDocxFiles, evaluateOneDocx } = await import(
-    "@/lib/sample-eval/evaluate-sample-docx"
+    "@/lib/eval/evaluate-sample-docx"
   );
 
   type ReportRunOutcome = Awaited<ReturnType<typeof evaluateOneDocx>>;

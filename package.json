@@ -22,13 +22,17 @@
     "db:migrate-suggested-fix": "tsx scripts/migrate-suggested-fix.ts",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "sample-eval-report": "tsx scripts/bulk-sample-evaluation-report.ts",
+    "sample-eval-report": "tsx scripts/eval/bulk-sample-evaluation-report.ts",
+    "compare-evals": "tsx scripts/eval/compare-eval-runs.ts",
+    "model-sweep": "tsx scripts/eval/run-model-sweep.ts",
     "seed-criteria-review": "tsx --env-file=.env --env-file=.env.local scripts/seed-criteria-review-dataset.ts",
     "clear-criteria-review-reviewers": "tsx --env-file=.env --env-file=.env.local scripts/clear-criteria-review-reviewers.ts"
   },
   "dependencies": {
     "@ai-sdk/gateway": "^3.0.104",
     "@ai-sdk/google": "^3.0.64",
+    "@ai-sdk/google-vertex": "^4.0.134",
+    "@ai-sdk/openai": "^3.0.65",
     "@neondatabase/serverless": "^1.1.0",
     "@paralleldrive/cuid2": "^3.3.0",
     "@radix-ui/react-checkbox": "^1.3.3",

@@ -1,8 +1,8 @@
 import { generateText, Output } from "ai";
 import type { LanguageModel } from "ai";
 import { z } from "zod";
-import type { DedupedReasonSample } from "@/lib/sample-eval/bulk-eval-aggregates";
-import { truncateOneLine } from "@/lib/sample-eval/bulk-eval-aggregates";
+import type { DedupedReasonSample } from "@/lib/eval/bulk-eval-aggregates";
+import { truncateOneLine } from "@/lib/eval/bulk-eval-aggregates";
 import { CRITERIA_EVAL_GOOGLE_MODEL_ID, CRITERIA_EVAL_SEED } from "@/lib/ai/evaluate";
 
 const classificationSchema = z.object({
