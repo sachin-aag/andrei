@@ -2,7 +2,7 @@
 #
 # On pull requests, runs only when paths under evaluation logic, DOCX import, or
 # docs/sample_files/ change (see `on.pull_request.paths`). Manual workflow_dispatch
-# always runs. Test-only edits (*.test.ts) under those trees do not trigger a run.
+# always runs.
 #
 # API key — add a repository Actions secret:
 #   Settings → Secrets and variables → Actions → New repository secret
@@ -38,9 +38,6 @@ on:
       - "src/types/sections.ts"
       - "package.json"
       - "pnpm-lock.yaml"
-    paths-ignore:
-      - "**/*.test.ts"
-      - "**/*.test.tsx"
   workflow_dispatch:
 
 concurrency:

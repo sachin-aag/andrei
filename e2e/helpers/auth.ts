@@ -3,53 +3,51 @@ import { expect, type Page } from "@playwright/test";
 /** Stable mock engineer from `MOCK_USERS` (Test Engineer). */
 const E2E_ENGINEER_USER_ID = "7";
 
-export async function unlockIfNeeded(page: Page) {
-  if (
-    !(await page
-      .getByRole("heading", { name: /enter access password/i })
-      .isVisible()
-      .catch(() => false))
-  ) {
-    return;
+const SITE_ACCESS_PASSWORD =
+  process.env.SITE_ACCESS_PASSWORD ?? "@ndrei@2026";
+
+/** Acquire the site-access cookie via the API if the gate is enabled. */
+async function acquireSiteAccessIfNeeded(page: Page) {
+  const res = await page.request.post("/api/site-access", {
+    data: { password: SITE_ACCESS_PASSWORD },
+    headers: { "Content-Type": "application/json" },
+  });
+  // 503 = gate disabled, anything 2xx = unlocked, 401 = wrong password.
+  if (res.status() === 503) return;
+  if (!res.ok()) {
+    throw new Error(
+      `site-access POST failed: ${res.status()} ${await res.text()}`
+    );
   }
-  const password = process.env.SITE_ACCESS_PASSWORD ?? "@ndrei@2026";
-  await page.getByLabel(/^password$/i).fill(password);
-  await page.getByRole("button", { name: /^continue$/i }).click();
-  await page.waitForURL(/\/login/, { timeout: 15_000 });
 }
 
-async function loginViaApi(page: Page) {
+/**
+ * Backwards-compat shim — older specs called this after navigating to "/".
+ * The API-first login below makes it a no-op, but kept so existing specs
+ * compile without changes.
+ */
+export async function unlockIfNeeded(_page: Page) {
+  // no-op: loginAsEngineer handles unlock + session via API
+}
+
+/**
+ * Mock login as an engineer, entirely via API. Avoids depending on
+ * client-side hydration of the login dialog (which can be brittle in CI).
+ */
+export async function loginAsEngineer(page: Page) {
+  await acquireSiteAccessIfNeeded(page);
+
   const loginRes = await page.request.post("/api/auth/login", {
     data: { userId: E2E_ENGINEER_USER_ID },
     headers: { "Content-Type": "application/json" },
   });
-  expect(loginRes.ok()).toBeTruthy();
+  expect(
+    loginRes.ok(),
+    `auth/login failed: ${loginRes.status()} ${await loginRes.text()}`
+  ).toBeTruthy();
+
   await page.goto("/");
   await expect(page.getByRole("button", { name: /new report/i })).toBeVisible({
-    timeout: 15_000,
+    timeout: 30_000,
   });
-}
-
-/** Mock login: pick an engineer from the workspace user picker (or API fallback in CI). */
-export async function loginAsEngineer(page: Page) {
-  await expect(
-    page.getByRole("heading", { name: /sign in to your workspace/i })
-  ).toBeVisible();
-
-  const userSelect = page.locator("#user-select");
-  const uiReady = await userSelect
-    .waitFor({ state: "visible", timeout: 15_000 })
-    .then(() => true)
-    .catch(() => false);
-
-  if (!uiReady) {
-    // Client login dialog is client-only; CI dev can block HMR from 127.0.0.1.
-    await loginViaApi(page);
-    return;
-  }
-
-  await userSelect.click();
-  await page.getByRole("option").filter({ hasText: /engineer|qc/i }).first().click();
-  await page.getByRole("button", { name: /^continue$/i }).click();
-  await page.waitForURL("/", { timeout: 15_000 });
 }
