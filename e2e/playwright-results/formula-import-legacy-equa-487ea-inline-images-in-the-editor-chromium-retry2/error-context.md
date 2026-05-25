@@ -12,90 +12,1365 @@
 # Error details
 
 ```
-TimeoutError: page.waitForURL: Timeout 60000ms exceeded.
-=========================== logs ===========================
-waiting for navigation until "load"
-============================================================
+Error: locator.click: Error: strict mode violation: getByRole('button', { name: /measure/i }) resolved to 3 elements:
+    1) <button type="button" aria-expanded="false" class="min-w-0 flex-1 flex items-center gap-2 text-left cursor-pointer">…</button> aka getByRole('button', { name: 'Measure · 0/5 met Not' })
+    2) <button type="button" class="w-full text-left rounded-md border border-dashed border-[var(--border)] bg-[var(--card)]/40 hover:bg-[var(--secondary)]/30 hover:border-[var(--brand-500)]/60 px-3 py-2 text-[11px] text-[var(--muted-foreground)] flex items-center gap-2 cursor-pointer">…</button> aka getByRole('button', { name: 'Add note on Measure' })
+    3) <button type="button" aria-expanded="true" aria-controls="sidebar-section-measure" class="min-w-0 flex-1 flex items-center gap-2 px-3 py-2 text-left cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]">…</button> aka getByRole('button', { name: 'Measure 0/' })
+
+Call log:
+  - waiting for getByRole('button', { name: /measure/i })
+
 ```
 
 # Page snapshot
 
 ```yaml
-- generic:
-  - generic:
-    - link:
-      - /url: "#_R_1brb_"
-      - text: Skip to main content
-    - complementary:
-      - generic:
-        - generic:
-          - generic:
-            - img
-        - generic:
-          - button:
-            - img
-      - navigation:
-        - link:
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - link "Skip to main content" [ref=e3] [cursor=pointer]:
+      - /url: "#_r_3_"
+    - complementary "Primary navigation" [ref=e4]:
+      - generic [ref=e5]:
+        - img "MJ Biopharm" [ref=e8]
+        - button "Expand sidebar" [ref=e10] [cursor=pointer]:
+          - img [ref=e11]
+      - navigation [ref=e14]:
+        - link "Reports" [ref=e15] [cursor=pointer]:
           - /url: /
-          - img
-        - link:
+          - img [ref=e16]
+        - link "Criteria review" [ref=e19] [cursor=pointer]:
           - /url: /criteria-review
-          - img
-      - generic:
-        - generic:
-          - generic: TE
-    - main:
-      - generic:
-        - generic:
-          - generic:
-            - heading [level=1]: My Reports
-            - paragraph: Create and manage your deviation investigation reports.
-          - button [expanded]:
+          - img [ref=e20]
+      - generic [ref=e26]: TE
+    - main [ref=e27]:
+      - generic [ref=e28]:
+        - generic [ref=e29]:
+          - link "Reports" [ref=e30] [cursor=pointer]:
+            - /url: /
             - img
-            - text: New Report
-        - generic:
-          - generic:
-            - generic:
+            - text: Reports
+          - generic [ref=e31]:
+            - generic [ref=e32]:
+              - generic [ref=e33]: DEV/QC/26/001
+              - generic [ref=e34]: Draft
+            - generic [ref=e35]: Test Engineer
+          - generic [ref=e36]:
+            - generic [ref=e37]:
+              - checkbox "Track changes" [ref=e38]
+              - generic [ref=e39] [cursor=pointer]: Track changes
+            - button "Run all by Andrei" [ref=e40] [cursor=pointer]:
               - img
-            - heading [level=3]: No reports yet
-            - paragraph: Create a new deviation investigation report to get started. Your draft will auto-save as you write.
-            - button:
+              - text: Run all by Andrei
+            - link "Export DOCX" [ref=e41] [cursor=pointer]:
+              - /url: /api/reports/ejtma5qrpv0xk66pyjngpq5v/export
               - img
-              - text: New Report
-  - region "Notifications alt+T"
-  - alert
-  - dialog "Create investigation report" [active] [ref=e2]:
-    - generic [ref=e3]:
-      - generic [ref=e4]:
-        - heading "Create investigation report" [level=2] [ref=e5]
-        - paragraph [ref=e6]: "Starts a new deviation investigation report as a draft. Optionally upload an existing Word document (.docx): content under headings named Define, Measure, Analyze, Improve, and Control is placed into those sections. If those headings are missing, the whole document opens in Define."
-      - generic [ref=e7]:
-        - generic [ref=e8]:
-          - generic [ref=e9]: Existing report (.docx, optional)
-          - generic [ref=e10]:
-            - button "Existing report (.docx, optional)" [ref=e11] [cursor=pointer]
-            - generic [ref=e12]:
-              - img [ref=e13]
-              - text: Draft Investigation (DEV-QC-26-001).docx
-            - button "Clear" [ref=e16] [cursor=pointer]:
+              - text: Export DOCX
+            - button "Submit for Review" [ref=e42] [cursor=pointer]:
               - img
-              - text: Clear
-        - generic [ref=e17]:
-          - generic [ref=e18]: Deviation Number
-          - textbox "Deviation Number" [ref=e20]:
-            - /placeholder: e.g. DEV/PK/26/001
-            - text: DEV/QC/26/001
-        - generic [ref=e21]:
-          - generic [ref=e22]: Assigned Manager (optional)
-          - combobox [ref=e23] [cursor=pointer]:
-            - generic: Pick a manager
-            - img [ref=e24]
-      - generic [ref=e26]:
-        - button "Cancel" [ref=e27] [cursor=pointer]
-        - button "Create" [ref=e28] [cursor=pointer]
-    - button "Close" [ref=e29] [cursor=pointer]:
-      - img [ref=e30]
-      - generic [ref=e33]: Close
+              - text: Submit for Review
+        - generic [ref=e43]:
+          - main [ref=e44]:
+            - generic [ref=e45]:
+              - generic [ref=e46]:
+                - generic [ref=e48]:
+                  - generic [ref=e49]:
+                    - generic [ref=e50]:
+                      - generic [ref=e51]:
+                        - text: Date
+                        - img [ref=e52]
+                      - textbox [ref=e54]: 2026-05-22
+                    - generic [ref=e55]:
+                      - generic [ref=e56]:
+                        - img [ref=e57]
+                        - text: Deviation No.
+                      - textbox "DEV/PK/26/001" [ref=e60]: DEV/QC/26/001
+                    - generic [ref=e62]:
+                      - img [ref=e63]
+                      - text: Up to date
+                  - generic [ref=e65]:
+                    - generic [ref=e66]:
+                      - img [ref=e67]
+                      - text: Investigation Tool Used
+                    - generic [ref=e69]:
+                      - generic [ref=e70] [cursor=pointer]:
+                        - checkbox "6M" [ref=e71]
+                        - text: 6M
+                      - generic [ref=e72] [cursor=pointer]:
+                        - checkbox "5 Why" [checked] [ref=e73]:
+                          - generic:
+                            - img
+                        - text: 5 Why
+                      - generic [ref=e74] [cursor=pointer]:
+                        - checkbox "Brainstorming" [ref=e75]
+                        - text: Brainstorming
+                  - generic [ref=e76]:
+                    - generic [ref=e77]: Other Tools (If any)
+                    - textbox "Not applicable" [ref=e78]: Not Applicable
+                - generic [ref=e80]:
+                  - generic [ref=e81]:
+                    - generic [ref=e82]:
+                      - heading "Define" [level=2] [ref=e83]
+                      - paragraph [ref=e84]: Describe what happened and the initial scope of the deviation.
+                    - generic [ref=e86]:
+                      - img [ref=e87]
+                      - text: Saving…
+                  - generic [ref=e89]:
+                    - button "Define · 0/6 met Not evaluated yet" [ref=e93] [cursor=pointer]:
+                      - generic [ref=e95]: Define · 0/6 met
+                      - generic [ref=e96]: Not evaluated yet
+                      - img [ref=e97]
+                    - button "Run it by Andrei" [ref=e99] [cursor=pointer]:
+                      - img
+                      - text: Run it by Andrei
+                  - generic [ref=e102]:
+                    - generic [ref=e103]: Details of Investigation (Narrative)
+                    - textbox [ref=e106]:
+                      - paragraph [ref=e107]: The following checks shall be considered while writing the “Define” section.
+                      - paragraph [ref=e108]
+                      - list [ref=e109]:
+                        - listitem [ref=e110]:
+                          - paragraph [ref=e111]: Clearly define what happens actually.
+                        - listitem [ref=e112]:
+                          - paragraph [ref=e113]: Explain what is different than expected.
+                        - listitem [ref=e114]:
+                          - paragraph [ref=e115]: Mention the location at where the deviation has occurred.
+                        - listitem [ref=e116]:
+                          - paragraph [ref=e117]: Date/time of deviation occurrence and date/time of detection.
+                        - listitem [ref=e118]:
+                          - paragraph [ref=e119]: Mention the name of personnel who is involved in the deviation.
+                        - listitem [ref=e120]:
+                          - paragraph [ref=e121]: Mention initial scope of deviation (i.e., impacted product/Material/Equipment/System//Batches/etc.)
+                      - paragraph [ref=e122]
+                      - paragraph [ref=e123]: While performing 2 point calibration of TOC Analyzer, Instrument ID. I/QC/018, on 21/05/2026 in Instrument Lab - II (FF-16), analyst (Emp.ID. 952) observed that, obtained TOC of blank water is not within the acceptance criteria i.e. 121 ppb. As per the SOP No. SOP/DP/QC/045 result for TOC of blank water should Not More Than 100 ppb.
+                      - paragraph [ref=e124]
+                      - paragraph [ref=e125]:
+                        - text: "As per SOP No.: SOP/DP/QC/045, Revision No: R03, Title: Operation, Calibration, Maintenance of Shimadzu TOC Analyzer Model No. TOC-L"
+                        - subscript [ref=e126]: CPH
+                        - text: "with LabSolutions Software, Section No.: 7.4.2.24 mentioned as ‘TOC of blank water: Not more than 100 ppb’."
+                - generic [ref=e128]:
+                  - generic [ref=e129]:
+                    - generic [ref=e130]:
+                      - heading "Measure" [level=2] [ref=e131]
+                      - paragraph [ref=e132]: Summarize the facts, data reviewed, and conclusion of analysis.
+                    - generic [ref=e134]:
+                      - img [ref=e135]
+                      - text: Saving…
+                  - generic [ref=e137]:
+                    - button "Measure · 0/5 met Not evaluated yet" [ref=e141] [cursor=pointer]:
+                      - generic [ref=e143]: Measure · 0/5 met
+                      - generic [ref=e144]: Not evaluated yet
+                      - img [ref=e145]
+                    - button "Run it by Andrei" [ref=e147] [cursor=pointer]:
+                      - img
+                      - text: Run it by Andrei
+                  - generic [ref=e150]:
+                    - generic [ref=e151]: Measurement Narrative
+                    - textbox [ref=e154]:
+                      - paragraph [ref=e155]: The following checks shall be considered while writing the “Measure” section.
+                      - paragraph [ref=e156]
+                      - list [ref=e157]:
+                        - listitem [ref=e158]:
+                          - paragraph [ref=e159]: "Does the summary provide relevant facts and data/information that was reviewed including: environment, process/product history, personnel info (title and job title), controls/control limits, etc."
+                        - listitem [ref=e160]:
+                          - paragraph [ref=e161]: Is a summary of the analysis of the factors and data provided?
+                        - listitem [ref=e162]:
+                          - paragraph [ref=e163]: Is a conclusion statement of the analysis and review provided?
+                        - listitem [ref=e164]:
+                          - paragraph [ref=e165]: If there were Regulatory Notification, were details provided?
+                        - listitem [ref=e166]:
+                          - paragraph [ref=e167]: Is the report written in a logical flow and easily understood by the reader?
+                      - paragraph [ref=e168]
+                      - paragraph [ref=e169]: "Monthly & quarterly scheduled calibration of TOC Analyzer (Instrument ID: I/QC/018) was due on 21/05/2026, accordingly calibration of the TOC Analyzer, planned on 21/05/2026 and work allotted to the analyst (Emp. ID: 952)."
+                      - paragraph [ref=e170]
+                      - paragraph [ref=e171]: As per SOP ‘Operation, Calibration, Maintenance of Shimadzu TOC Analyzer Model No. TOC-L CPH with LabSolutions software’ (SOP/DP/QC/045-R03), 2- point calibration, System suitability & linearity test needs to be performed during monthly & quarterly calibration.
+                      - paragraph [ref=e172]
+                      - paragraph [ref=e173]: "Therefore, as per plan, prior to initiation of calibration, analyst (Emp. ID: 952) has assigned A.R. No. NR/26/0584 for the calibration activity in accordance with SOP No. SOP/DP/QC/008 and verified all the pre requisites before initiation of 2-Point calibration test as per SOP, ‘Title: Operation, Calibration and Maintenance of Shimadzu TOC Analyzer Model No.: TOC-L CPH With LabSolutions Software, SOP No.: SOP/DP/QC/045."
+                      - paragraph [ref=e174]
+                      - paragraph [ref=e175]: "As per plan, analyst had verified all the pre requisites before initiation of 2-point calibration and System Suitability as per SOP, ‘Title: Operation, Calibration and Maintenance of Shimadzu TOC Analyzer Model No.: TOC-L CPH With Lab Solution Software, SOP No.: SOP/DP/QC/045 and initiated the 2-point calibration, however obtained TOC of blank water is not within the acceptance criteria i.e. 121 ppb as per SOP/DP/QC/045. (TOC of blank water: Not More Than 100 ppb). Refer attachment I, Hence, initiated the deviation for further investigation."
+                      - paragraph [ref=e176]
+                      - paragraph [ref=e177]: As a part of investigation, the blank injection results were verified and it was noted that the analyst had injected two blank injections prior to proceeding with the 2-point calibration, as per the procedure mentioned in the SOP. During the review, the following observations were noted, Refer attachment II.
+                      - paragraph [ref=e178]
+                      - table [ref=e180]:
+                        - rowgroup [ref=e189]:
+                          - row "Blank 1 Blank 2" [ref=e190]:
+                            - columnheader "Blank 1" [ref=e191]:
+                              - paragraph [ref=e192]:
+                                - strong [ref=e193]: Blank 1
+                            - columnheader [ref=e194]:
+                              - paragraph [ref=e195]
+                            - columnheader "Blank 2" [ref=e196]:
+                              - paragraph [ref=e197]:
+                                - strong [ref=e198]: Blank 2
+                          - row "Sr. No. Area Cons. Sr. No. Area Cons." [ref=e199]:
+                            - cell "Sr. No." [ref=e200]:
+                              - paragraph [ref=e201]:
+                                - strong [ref=e202]: Sr. No.
+                            - cell "Area" [ref=e203]:
+                              - paragraph [ref=e204]:
+                                - strong [ref=e205]: Area
+                            - cell "Cons." [ref=e206]:
+                              - paragraph [ref=e207]:
+                                - strong [ref=e208]: Cons.
+                            - cell [ref=e209]:
+                              - paragraph [ref=e210]
+                            - cell "Sr. No." [ref=e211]:
+                              - paragraph [ref=e212]:
+                                - strong [ref=e213]: Sr. No.
+                            - cell "Area" [ref=e214]:
+                              - paragraph [ref=e215]:
+                                - strong [ref=e216]: Area
+                            - cell "Cons." [ref=e217]:
+                              - paragraph [ref=e218]:
+                                - strong [ref=e219]: Cons.
+                          - row "1 6.647 100.6 ppb 1 5.017 75.95 ppb" [ref=e220]:
+                            - cell "1" [ref=e221]:
+                              - paragraph [ref=e222]: "1"
+                            - cell "6.647" [ref=e223]:
+                              - paragraph [ref=e224]: "6.647"
+                            - cell "100.6 ppb" [ref=e225]:
+                              - paragraph [ref=e226]: 100.6 ppb
+                            - cell [ref=e227]:
+                              - paragraph [ref=e228]
+                            - cell "1" [ref=e229]:
+                              - paragraph [ref=e230]: "1"
+                            - cell "5.017" [ref=e231]:
+                              - paragraph [ref=e232]: "5.017"
+                            - cell "75.95 ppb" [ref=e233]:
+                              - paragraph [ref=e234]: 75.95 ppb
+                          - row "2 6.655 100.8 ppb 2 5.768 87.32 ppb" [ref=e235]:
+                            - cell "2" [ref=e236]:
+                              - paragraph [ref=e237]: "2"
+                            - cell "6.655" [ref=e238]:
+                              - paragraph [ref=e239]: "6.655"
+                            - cell "100.8 ppb" [ref=e240]:
+                              - paragraph [ref=e241]: 100.8 ppb
+                            - cell [ref=e242]:
+                              - paragraph [ref=e243]
+                            - cell "2" [ref=e244]:
+                              - paragraph [ref=e245]: "2"
+                            - cell "5.768" [ref=e246]:
+                              - paragraph [ref=e247]: "5.768"
+                            - cell "87.32 ppb" [ref=e248]:
+                              - paragraph [ref=e249]: 87.32 ppb
+                          - row "3 6.406 96.98 ppb 3 5.637 85.34 ppb" [ref=e250]:
+                            - cell "3" [ref=e251]:
+                              - paragraph [ref=e252]: "3"
+                            - cell "6.406" [ref=e253]:
+                              - paragraph [ref=e254]: "6.406"
+                            - cell "96.98 ppb" [ref=e255]:
+                              - paragraph [ref=e256]: 96.98 ppb
+                            - cell [ref=e257]:
+                              - paragraph [ref=e258]
+                            - cell "3" [ref=e259]:
+                              - paragraph [ref=e260]: "3"
+                            - cell "5.637" [ref=e261]:
+                              - paragraph [ref=e262]: "5.637"
+                            - cell "85.34 ppb" [ref=e263]:
+                              - paragraph [ref=e264]: 85.34 ppb
+                          - row "Average 99.4 ppb Average 82.87 ppb" [ref=e265]:
+                            - cell "Average" [ref=e266]:
+                              - paragraph [ref=e267]: Average
+                            - cell "99.4 ppb" [ref=e268]:
+                              - paragraph [ref=e269]:
+                                - strong [ref=e270]: 99.4 ppb
+                            - cell [ref=e271]:
+                              - paragraph [ref=e272]
+                            - cell "Average" [ref=e273]:
+                              - paragraph [ref=e274]: Average
+                            - cell "82.87 ppb" [ref=e275]:
+                              - paragraph [ref=e276]:
+                                - strong [ref=e277]: 82.87 ppb
+                      - paragraph [ref=e278]: Since, TOC of blank water, found within the limit, therefore analyst performed the 2-point calibration to generate the calibration curve.
+                      - paragraph [ref=e279]
+                      - paragraph [ref=e280]: Based on the reported nonconformance, verified the analyst workbench for standard preparation and noted that analyst prepared the sucrose stock standard solution (50000 ppb) in 100 ml volumetric flask. Refer Attachment I.
+                      - paragraph [ref=e281]
+                      - paragraph [ref=e282]: Verified the analytical test data sheet to check the preparation of sucrose solution and observed that analyst had prepared the solutions correctly as below;
+                      - paragraph [ref=e283]
+                      - paragraph [ref=e284]: Weighed 11.889 mg of sucrose & transferred in 100 ml volumetric flask and diluted to 100 ml with purified water.
+                      - paragraph [ref=e285]
+                      - paragraph [ref=e286]: Further, Taken 1 ml of above stock standard (50000 ppb) by pipetting with Glass pipette in 100 ml volumetric flask and make up the final volume to 100 ml with purified water. (Refer Attachment I).
+                      - paragraph [ref=e287]
+                      - paragraph [ref=e288]: Verified the details of sucrose standard which is used for the preparation of 500 ppb solution and noted that analyst had used the correct and valid standard, the details are as below;
+                      - paragraph [ref=e289]
+                      - paragraph [ref=e290]: "Name of Standard: Sucrose"
+                      - paragraph [ref=e291]
+                      - paragraph [ref=e292]: "Batch No: RS/003/25-001 (USP standard current lot)"
+                      - paragraph [ref=e293]
+                      - paragraph [ref=e294]: Verified the Daily verification record of water purification system and noted that observed online TOC was 05 ppb. (Refer Attachment – IV).
+                      - paragraph [ref=e295]
+                      - paragraph [ref=e296]: After preparation of standards analyst performed the 2-point calibration by preparing the calibration curve ‘CAL_21052026’ by referring the SOP/DP/QC/045 and generated curve ‘CAL_21052026.2026_05_21_10_52_00.cald’. Obtained results of the 2-point calibration found well within the acceptance criteria, the details are as follow, (Refer Attachment - V).
+                      - paragraph [ref=e297]
+                      - paragraph [ref=e298]: After completion of calibration curve run, verified the generated calibration curve and obtained results and found that ‘CAL_21052026.2026_05_21_10_52_00.cald’ generated successfully and obtained results are not within the acceptance criteria as per SOP/DP/QC/045. (Refer Attachment V-Result of two point Calibration). The details of the obtained results are as below;
+                      - paragraph [ref=e299]
+                      - table [ref=e301]:
+                        - rowgroup [ref=e306]:
+                          - 'row "Calibration Parameter Calibration Date: 21/05/2026" [ref=e307]':
+                            - columnheader "Calibration Parameter" [ref=e308]:
+                              - paragraph [ref=e309]:
+                                - strong [ref=e310]: Calibration Parameter
+                            - 'columnheader "Calibration Date: 21/05/2026" [ref=e311]':
+                              - paragraph [ref=e312]:
+                                - strong [ref=e313]: "Calibration Date: 21/05/2026"
+                          - row "SD (NMT 0.5) CV (NMT 5.0 %)" [ref=e314]:
+                            - cell "SD (NMT 0.5)" [ref=e315]:
+                              - paragraph [ref=e316]:
+                                - strong [ref=e317]: SD (NMT 0.5)
+                            - cell "CV (NMT 5.0 %)" [ref=e318]:
+                              - paragraph [ref=e319]:
+                                - strong [ref=e320]: CV (NMT 5.0 %)
+                          - row "Two Point Calibration (0 ppb) 0.4610 5.94 %" [ref=e321]:
+                            - cell "Two Point Calibration (0 ppb)" [ref=e322]:
+                              - paragraph [ref=e323]: Two Point Calibration (0 ppb)
+                            - cell "0.4610" [ref=e324]:
+                              - paragraph [ref=e325]: "0.4610"
+                            - cell "5.94 %" [ref=e326]:
+                              - paragraph [ref=e327]: 5.94 %
+                          - row "Two Point Calibration (500 ppb) 0.1124 0.28 %" [ref=e328]:
+                            - cell "Two Point Calibration (500 ppb)" [ref=e329]:
+                              - paragraph [ref=e330]: Two Point Calibration (500 ppb)
+                            - cell "0.1124" [ref=e331]:
+                              - paragraph [ref=e332]: "0.1124"
+                            - cell "0.28 %" [ref=e333]:
+                              - paragraph [ref=e334]: 0.28 %
+                      - paragraph [ref=e335]: The observed CV area of blank is found higher side i.e 5.94 % (CV- Not More Than 5.0 %) however as per the SOP acceptance criteria for SD and CV area is ‘CV – Not More Than 5.0 %, SD – Not More Than 0.5 (Either CV or SD should comply with the limits).
+                      - paragraph [ref=e336]
+                      - paragraph [ref=e337]: "All above details were verified and found well within the acceptance criteria as per SOP No.: SOP/DP/QC/045. Further, it was observed that the analyst had prepared the sucrose standard stock solution using the same TOC water used for blank preparation. The obtained sucrose mean area was 39.83 with SD area 0.1124 and % CV 0.28%."
+                      - paragraph [ref=e338]
+                      - paragraph [ref=e339]: However, the mean area observed for the blank TOC water was 7.764, which upon calculation corresponds to 121 ppb and exceeds the specified acceptance criteria of NMT 100 ppb.
+                      - paragraph [ref=e340]
+                      - paragraph [ref=e341]: Calculated the TOC of blank water as per formula.
+                      - paragraph [ref=e342]
+                      - paragraph [ref=e343]:
+                        - generic [ref=e345] [cursor=pointer]:
+                          - generic:
+                            - generic:
+                              - textbox
+                              - generic [ref=e346]:
+                                - generic [ref=e349]:
+                                  - text: TOC of Blank water in ppb=
+                                  - generic [ref=e353]:
+                                    - generic [ref=e354]: Area of Sucrose (rs)+Area of Blank (rw)
+                                    - generic [ref=e356]: 500 ×Area of Blank (rw)
+                                - generic: Toggle Virtual Keyboard Menu
+                              - generic:
+                                - status
+                      - paragraph [ref=e360]
+                      - paragraph [ref=e361]: Based on the occurred discrepancy following immediate action has been taken,
+                      - paragraph [ref=e362]
+                      - list [ref=e363]:
+                        - listitem [ref=e364]:
+                          - paragraph [ref=e365]: The ongoing calibration activity was immediately stopped to prevent the use of an invalid calibration curve
+                        - listitem [ref=e366]:
+                          - paragraph [ref=e367]: All glassware which are used for blank and preparation of standard solutions were rechecked and quarantined the analysis tray.
+                        - listitem [ref=e368]:
+                          - paragraph [ref=e369]: The nitrogen gas pressure verified and observed that pressure is maintained more than 4 Kg/cm2.
+                        - listitem [ref=e370]:
+                          - paragraph [ref=e371]: Verified that the tip of the rinse tubing reaches nearly to the bottom of the rinse bottle and observed that that water level of the rinsing bottle is above the two-liter level mark and rinse tubing reaches nearly to the bottom of the rinse bottle.
+                        - listitem [ref=e372]:
+                          - paragraph [ref=e373]: Verified the Water level in humidifier vessel and observed that humidifier water level is maintained in-between high and low marks.
+                        - listitem [ref=e374]:
+                          - paragraph [ref=e375]: The observed Non-Conformance informed to instrument service engineer from ‘Swan Biotec Pvt. Ltd’.
+                        - listitem [ref=e376]:
+                          - paragraph [ref=e377]: As the 2 point calibration results did not meet the acceptance criteria, therefore as an immediate action, it was informed to perform the alternative test i.e. ‘Oxidizable Substance’ as per purified water standard test procedure i.e. DP/STP/UT/0003 for the scheduled water sample analysis.
+                        - listitem [ref=e378]:
+                          - paragraph [ref=e379]: The observed Non-Conformance immediately informed to Team lead and Head QC.
+                      - paragraph [ref=e380]
+                      - paragraph [ref=e381]: Based on the reported nonconformance, verified the analyst workbench for standard preparation and noted that analyst prepared the sucrose stock standard solution (50000 ppb) in 100 ml volumetric flask.
+                      - paragraph [ref=e382]
+                      - paragraph [ref=e383]: The prepared standard solutions for 2-point calibration were verified and noted that Sucrose stock standard solution (50,000 ppb) was prepared in a 100 mL volumetric flask correctly as per the procedure defined in SOP/DP/QC/045.
+                      - paragraph [ref=e384]
+                      - paragraph [ref=e385]: The calibration data sheet (Format No. SOP/DP/QC/045/F01 and SOP/DP/QC/045/F02) was verified for the recorded preparation details of Sucrose standard solutions and noted that, analyst prepared the solutions correctly. (Refer attachment -I).
+                      - paragraph [ref=e386]
+                      - paragraph [ref=e387]: "Since, assignable cause could not be identified during the preliminary investigation, therefore conducted the analyst interview to find out the root cause, during analyst interview, the complete analytical procedure, sample preparation activity, instrument operation, and sequence execution were discussed and verified.. The analyst confirmed that the analysis was performed as per SOP No.: SOP/DP/QC/045. No abnormality, procedural deviation, calculation error, or handling issue was reported by the analyst during the activity. Based on the analyst interview and available investigation findings, no assignable cause could be identified for the observed higher TOC result of blank water during 2-point calibration. Refer attachment VI (Analyst interview)."
+                      - paragraph [ref=e388]
+                      - paragraph [ref=e389]: As no abnormalities were observed during the preliminary investigation, instrument verification, analyst interview, and review of analytical data, and only the initial blank readings were found on the higher side, the non-conformance was escalated to the TOC instrument service engineer ‘Swan Biotec Pvt. Ltd’ by telephonically for further evaluation of the higher-side of blank reading during 2-point calibration.
+                      - paragraph [ref=e390]
+                      - paragraph [ref=e391]: Based on the reported nonconformance, service engineer from ‘Swan Biotec Pvt. Ltd’ provided the service report related to the higher-side of blank reading during 2-point calibration. (Refer attachment VII Service Engineer Service Report).
+                      - paragraph [ref=e392]
+                      - paragraph [ref=e393]: The service engineer provided the service report related to the observed non-conformance.. Based on the service engineer service report, no specific assignable cause could be conclusively identified for the observed elevated blank TOC result.
+                      - paragraph [ref=e394]
+                      - paragraph [ref=e395]: As per the service engineer evaluation, service report and audit trail verification there is no major instrument malfunction was identified of the TOC analyzer. However, the service engineer suggested that the higher blank readings may be attributed to possible air intake due to improper vial septa fitting and/or bubbles trapped in the tubing during the particular analytical run. These are considered the most probable causes which may have contributed to the observed blank water result of 121 ppb, exceeding the specified acceptance criteria of NMT 100 ppb during 2-point calibration.
+                      - paragraph [ref=e396]
+                      - paragraph [ref=e397]: Further, service engineer recommended allowing the system for proper stabilization prior to calibration.
+                      - paragraph [ref=e398]
+                      - paragraph [ref=e399]: Based on the outcome of preliminary investigation and analyst interview assignable cause could not be identified, however suspected cause for the occurred non-conformance could be attributed to possible air intake due to improper vial septa. also if there are may be any bubbles trapped in tubing during particular run leading to a blank reading for 2-point calibration. therefore based on the probable cause and the service engineer’s suggestion below recommended actions performed.
+                      - paragraph [ref=e400]
+                      - paragraph [ref=e401]:
+                        - strong [ref=e402]: "Recommended action I:"
+                      - paragraph [ref=e403]
+                      - paragraph [ref=e404]: "Based on the probable cause and the service engineer’s recommendation, system flushing shall be performed to stabilize the system. There after addition three blanks shall be injected to monitor the reproducibility of area. And inject the new sequence for 2- point calibration with new file name as CAL_21052026_01 as per SOP No.: SOP/DP/QC/045."
+                      - paragraph [ref=e405]
+                      - paragraph [ref=e406]: "If the results of fresh preparation injections are found within the acceptance criteria [TOC of blank water: Not More Than 100 ppb, %CV: Not More Than 5.0%, and SD: Not More Than 0.5 (either %CV or SD should comply)], then system suitability and linearity parameters shall be performed as per SOP requirements. If all obtained results are found well within the specified acceptance criteria, the instrument shall be considered satisfactory and released for routine analysis."
+                      - paragraph [ref=e407]
+                      - paragraph [ref=e408]:
+                        - strong [ref=e410]: "Outcome of Recommended Action I:"
+                      - paragraph [ref=e411]
+                      - paragraph [ref=e412]: As part of the recommended action, analyst flushed the system on 21/05/2026 and repeated blank runs were performed to stabilize the TOC analyzer system. After adequate flushing and stabilization, the blank water results were found within the specified acceptance criteria. The details of performed blank reading as below,
+                      - paragraph [ref=e413]
+                      - table [ref=e415]:
+                        - rowgroup [ref=e422]:
+                          - row "Blank for system stabilization:" [ref=e423]:
+                            - columnheader "Blank for system stabilization:" [ref=e424]:
+                              - paragraph [ref=e425]:
+                                - strong [ref=e426]: "Blank for system stabilization:"
+                          - row "Name Mean Conc. (ppb) Mean Area SD CV (%)" [ref=e427]:
+                            - cell "Name" [ref=e428]:
+                              - paragraph [ref=e429]:
+                                - strong [ref=e430]: Name
+                            - cell "Mean Conc. (ppb)" [ref=e431]:
+                              - paragraph [ref=e432]:
+                                - strong [ref=e433]: Mean Conc. (ppb)
+                            - cell "Mean Area" [ref=e434]:
+                              - paragraph [ref=e435]:
+                                - strong [ref=e436]: Mean Area
+                            - cell "SD" [ref=e437]:
+                              - paragraph [ref=e438]:
+                                - strong [ref=e439]: SD
+                            - cell "CV (%)" [ref=e440]:
+                              - paragraph [ref=e441]:
+                                - strong [ref=e442]: CV (%)
+                          - row "Blank 1 128.2 8.466 0.3787 4.47" [ref=e443]:
+                            - cell "Blank 1" [ref=e444]:
+                              - paragraph [ref=e445]: Blank 1
+                            - cell "128.2" [ref=e446]:
+                              - paragraph [ref=e447]: "128.2"
+                            - cell "8.466" [ref=e448]:
+                              - paragraph [ref=e449]: "8.466"
+                            - cell "0.3787" [ref=e450]:
+                              - paragraph [ref=e451]: "0.3787"
+                            - cell "4.47" [ref=e452]:
+                              - paragraph [ref=e453]: "4.47"
+                          - row "Blank 2 128.1 8.458 0.1019 1.20" [ref=e454]:
+                            - cell "Blank 2" [ref=e455]:
+                              - paragraph [ref=e456]: Blank 2
+                            - cell "128.1" [ref=e457]:
+                              - paragraph [ref=e458]: "128.1"
+                            - cell "8.458" [ref=e459]:
+                              - paragraph [ref=e460]: "8.458"
+                            - cell "0.1019" [ref=e461]:
+                              - paragraph [ref=e462]: "0.1019"
+                            - cell "1.20" [ref=e463]:
+                              - paragraph [ref=e464]: "1.20"
+                          - row "Blank 3 78.16 5.163 0.3190 6.18" [ref=e465]:
+                            - cell "Blank 3" [ref=e466]:
+                              - paragraph [ref=e467]: Blank 3
+                            - cell "78.16" [ref=e468]:
+                              - paragraph [ref=e469]: "78.16"
+                            - cell "5.163" [ref=e470]:
+                              - paragraph [ref=e471]: "5.163"
+                            - cell "0.3190" [ref=e472]:
+                              - paragraph [ref=e473]: "0.3190"
+                            - cell "6.18" [ref=e474]:
+                              - paragraph [ref=e475]: "6.18"
+                          - row "Blank 4 76.38 5.045 0.4500 8.92" [ref=e476]:
+                            - cell "Blank 4" [ref=e477]:
+                              - paragraph [ref=e478]: Blank 4
+                            - cell "76.38" [ref=e479]:
+                              - paragraph [ref=e480]: "76.38"
+                            - cell "5.045" [ref=e481]:
+                              - paragraph [ref=e482]: "5.045"
+                            - cell "0.4500" [ref=e483]:
+                              - paragraph [ref=e484]: "0.4500"
+                            - cell "8.92" [ref=e485]:
+                              - paragraph [ref=e486]: "8.92"
+                          - row "Blank 5 76.53 5.055 0.3493 6.91" [ref=e487]:
+                            - cell "Blank 5" [ref=e488]:
+                              - paragraph [ref=e489]: Blank 5
+                            - cell "76.53" [ref=e490]:
+                              - paragraph [ref=e491]: "76.53"
+                            - cell "5.055" [ref=e492]:
+                              - paragraph [ref=e493]: "5.055"
+                            - cell "0.3493" [ref=e494]:
+                              - paragraph [ref=e495]: "0.3493"
+                            - cell "6.91" [ref=e496]:
+                              - paragraph [ref=e497]: "6.91"
+                          - row "Blank for reproducibility:" [ref=e498]:
+                            - cell "Blank for reproducibility:" [ref=e499]:
+                              - paragraph [ref=e500]:
+                                - strong [ref=e501]: "Blank for reproducibility:"
+                          - row "Name Mean Conc. (ppb) Mean Area SD CV (%)" [ref=e502]:
+                            - cell "Name" [ref=e503]:
+                              - paragraph [ref=e504]:
+                                - strong [ref=e505]: Name
+                            - cell "Mean Conc. (ppb)" [ref=e506]:
+                              - paragraph [ref=e507]:
+                                - strong [ref=e508]: Mean Conc. (ppb)
+                            - cell "Mean Area" [ref=e509]:
+                              - paragraph [ref=e510]:
+                                - strong [ref=e511]: Mean Area
+                            - cell "SD" [ref=e512]:
+                              - paragraph [ref=e513]:
+                                - strong [ref=e514]: SD
+                            - cell "CV (%)" [ref=e515]:
+                              - paragraph [ref=e516]:
+                                - strong [ref=e517]: CV (%)
+                          - row "Blank 71.76 4.740 0.2243 4.73" [ref=e518]:
+                            - cell "Blank" [ref=e519]:
+                              - paragraph [ref=e520]: Blank
+                            - cell "71.76" [ref=e521]:
+                              - paragraph [ref=e522]: "71.76"
+                            - cell "4.740" [ref=e523]:
+                              - paragraph [ref=e524]: "4.740"
+                            - cell "0.2243" [ref=e525]:
+                              - paragraph [ref=e526]: "0.2243"
+                            - cell "4.73" [ref=e527]:
+                              - paragraph [ref=e528]: "4.73"
+                          - row "Blank 72.53 4.791 0.3352 7.41" [ref=e529]:
+                            - cell "Blank" [ref=e530]:
+                              - paragraph [ref=e531]: Blank
+                            - cell "72.53" [ref=e532]:
+                              - paragraph [ref=e533]: "72.53"
+                            - cell "4.791" [ref=e534]:
+                              - paragraph [ref=e535]: "4.791"
+                            - cell "0.3352" [ref=e536]:
+                              - paragraph [ref=e537]: "0.3352"
+                            - cell "7.41" [ref=e538]:
+                              - paragraph [ref=e539]: "7.41"
+                          - row "Blank 75.35 4.977 0.09752 1.96" [ref=e540]:
+                            - cell "Blank" [ref=e541]:
+                              - paragraph [ref=e542]: Blank
+                            - cell "75.35" [ref=e543]:
+                              - paragraph [ref=e544]: "75.35"
+                            - cell "4.977" [ref=e545]:
+                              - paragraph [ref=e546]: "4.977"
+                            - cell "0.09752" [ref=e547]:
+                              - paragraph [ref=e548]: "0.09752"
+                            - cell "1.96" [ref=e549]:
+                              - paragraph [ref=e550]: "1.96"
+                      - paragraph [ref=e551]: Based on the above evaluation data, the area response of blank injections was observed in a decreasing trend as the observed higher blank result may have occurred due to temporary instability during water purification and/or system background stabilization. After adequate system flushing and stabilization, the blank readings were reproduced properly.
+                      - paragraph [ref=e552]
+                      - paragraph [ref=e553]: Further, analyst collected the water for analysis. Filled the TOC vial with freshly collected water as a blank water and injected the blank on TOC analyser and obtained TOC of Blank water is 74.82 ppb. The observed result was compared with the subsequent blank results performed for reproducibility purpose and it was noted that the blank responses were found within the specified acceptance criteria after adequate system flushing and stabilization.
+                      - paragraph [ref=e554]
+                      - paragraph [ref=e555]: As per SOP, SOP/DP/QC/045, the TOC of blank water should be less than 100 ppb and obtained TOC of Blank water is also less than 100 ppb i.e. 74.82 ppb, hence continued for the two point calibration of TOC Analyser.
+                      - paragraph [ref=e556]
+                      - paragraph [ref=e557]: Prepared the fresh solution of sucrose stock standard (50000 ppb) by using freshly collected water and details of preparation are as below;
+                      - paragraph [ref=e558]
+                      - paragraph [ref=e559]: Weighed and dissolved 11.880 mg of sucrose USPRS in 100 ml of purified water.
+                      - paragraph [ref=e560]
+                      - paragraph [ref=e561]: Further, diluted 1 ml of sucrose stock standard solution (50000 ppb) to 100 ml with purified water (Refer attachment- VIII) to get 500 ppb sucrose.
+                      - paragraph [ref=e562]
+                      - paragraph [ref=e563]: After preparation of sucrose solution (500 ppb), created the calibration curve ‘CAL_21052026_01’ and initiated the sequence as CAL_21052026_01’.
+                      - paragraph [ref=e564]
+                      - paragraph [ref=e565]: After completion of calibration curve run, verified the obtained results and found that obtained results are well within the acceptance limit as per SOP/DP/QC/045.
+                      - paragraph [ref=e566]
+                      - paragraph [ref=e567]: The details of the obtained results are as below;
+                      - paragraph [ref=e568]
+                      - table [ref=e570]:
+                        - rowgroup [ref=e575]:
+                          - 'row "Calibration Parameter Calibration Date : 21/05/2026" [ref=e576]':
+                            - columnheader "Calibration Parameter" [ref=e577]:
+                              - paragraph [ref=e578]:
+                                - strong [ref=e579]: Calibration Parameter
+                            - 'columnheader "Calibration Date : 21/05/2026" [ref=e580]':
+                              - paragraph [ref=e581]:
+                                - strong [ref=e582]: "Calibration Date : 21/05/2026"
+                          - row "SD (NMT 0.5) CV (NMT 5.0 %)" [ref=e583]:
+                            - cell "SD (NMT 0.5)" [ref=e584]:
+                              - paragraph [ref=e585]:
+                                - strong [ref=e586]: SD (NMT 0.5)
+                            - cell "CV (NMT 5.0 %)" [ref=e587]:
+                              - paragraph [ref=e588]:
+                                - strong [ref=e589]: CV (NMT 5.0 %)
+                          - row "Two Point Calibration (0 ppb) 0.1868 4.13 %" [ref=e590]:
+                            - cell "Two Point Calibration (0 ppb)" [ref=e591]:
+                              - paragraph [ref=e592]: Two Point Calibration (0 ppb)
+                            - cell "0.1868" [ref=e593]:
+                              - paragraph [ref=e594]: "0.1868"
+                            - cell "4.13 %" [ref=e595]:
+                              - paragraph [ref=e596]: 4.13 %
+                          - row "Two Point Calibration (500 ppb) 0.3955 1.08 %" [ref=e597]:
+                            - cell "Two Point Calibration (500 ppb)" [ref=e598]:
+                              - paragraph [ref=e599]: Two Point Calibration (500 ppb)
+                            - cell "0.3955" [ref=e600]:
+                              - paragraph [ref=e601]: "0.3955"
+                            - cell "1.08 %" [ref=e602]:
+                              - paragraph [ref=e603]: 1.08 %
+                      - paragraph [ref=e604]: Further Calculated the TOC of blank water as per formula.
+                      - paragraph [ref=e605]
+                      - paragraph [ref=e606]:
+                        - generic [ref=e608] [cursor=pointer]:
+                          - generic:
+                            - generic:
+                              - textbox
+                              - generic [ref=e609]:
+                                - generic [ref=e612]:
+                                  - text: TOC of Blank water in ppb=
+                                  - generic [ref=e616]:
+                                    - generic [ref=e617]: Area of Sucrose (rs)+Area of Blank (rw)
+                                    - generic [ref=e619]: 500 ×Area of Blank (rw)
+                                - generic: Toggle Virtual Keyboard Menu
+                              - generic:
+                                - status
+                      - paragraph [ref=e623]
+                      - paragraph [ref=e624]: The TOC of blank water which is injected to establish the calibration curve and noted that obtained TOC of blank water is 70.7243 ppb.
+                      - paragraph [ref=e625]
+                      - paragraph [ref=e626]: As the results of 2-point calibration were found well within the specified acceptance criteria, a successful calibration curve was generated with file name “CAL_21052026_01.2026_05_21_21_11_57.cald”.
+                      - paragraph [ref=e627]
+                      - paragraph [ref=e628]: Since, obtained results of two-point calibration found well within the limit as per SOP/DP/QC/045, hence proceeded for ‘System Suitability Test’.
+                      - paragraph [ref=e629]
+                      - paragraph [ref=e630]: For ‘System Suitability Test’ prepared the 1, 4-Benzoquinone solution as below;
+                      - paragraph [ref=e631]
+                      - paragraph [ref=e632]: Weighed and dissolved 7.504 mg of 1, 4-Benzoquinone USPRS in 100 ml of purified water.
+                      - paragraph [ref=e633]
+                      - paragraph [ref=e634]: Further, diluted 1 ml of 1, 4-Benzoquinone stock standard solution (50000 ppb) to 100 ml with purified water to get 500 ppb 1, 4-Benzoquinone.
+                      - paragraph [ref=e635]
+                      - paragraph [ref=e636]: Verified the details of 1,4 –Benzoquinone standard which is used for the preparation of 500 ppb solution and noted that analyst had used the correct and valid standard, the details are as below; (Refer Attachment VIII).
+                      - paragraph [ref=e637]
+                      - paragraph [ref=e638]: "Name of Standard: 1,4 –Benzoquinone USPRS"
+                      - paragraph [ref=e639]
+                      - paragraph [ref=e640]: "Lot No: R15690"
+                      - paragraph [ref=e641]
+                      - paragraph [ref=e642]: "Validity: Current lot"
+                      - paragraph [ref=e643]
+                      - paragraph [ref=e644]: Further, verified the calibration curve which is used for system suitability test (SST) and noted that analyst selected the correct calibration curve which is generated latest on 21/05/2026 i.e. CAL_21052026_01.2026_05_21_21_11_57.cald.
+                      - paragraph [ref=e645]
+                      - paragraph [ref=e646]: "After completion of the run, results were verified, and noted that obtained results for system suitability test found well within the acceptance criteria i.e. 98.44 % (Limit: 85 % to 115 %). (Refer attachment -IX)."
+                      - paragraph [ref=e647]
+                      - table [ref=e649]:
+                        - rowgroup [ref=e654]:
+                          - 'row "SST Parameter Calibration Date: 21/05/2026" [ref=e655]':
+                            - columnheader "SST Parameter" [ref=e656]:
+                              - paragraph [ref=e657]:
+                                - strong [ref=e658]: SST Parameter
+                            - 'columnheader "Calibration Date: 21/05/2026" [ref=e659]':
+                              - paragraph [ref=e660]:
+                                - strong [ref=e661]: "Calibration Date: 21/05/2026"
+                          - row "SD (NMT 0.5) CV (NMT 5.0 %)" [ref=e662]:
+                            - cell "SD (NMT 0.5)" [ref=e663]:
+                              - paragraph [ref=e664]:
+                                - strong [ref=e665]: SD (NMT 0.5)
+                            - cell "CV (NMT 5.0 %)" [ref=e666]:
+                              - paragraph [ref=e667]:
+                                - strong [ref=e668]: CV (NMT 5.0 %)
+                          - row "System Suitability Test’ 0.3301 0.91%" [ref=e669]:
+                            - cell "System Suitability Test’" [ref=e670]:
+                              - paragraph [ref=e671]: System Suitability Test’
+                            - cell "0.3301" [ref=e672]:
+                              - paragraph [ref=e673]: "0.3301"
+                            - cell "0.91%" [ref=e674]:
+                              - paragraph [ref=e675]: 0.91%
+                          - 'row "Recovery of 1, 4-Benzoquinone (Limit: Between 85-115 %) 99.20 %" [ref=e676]':
+                            - 'cell "Recovery of 1, 4-Benzoquinone (Limit: Between 85-115 %)" [ref=e677]':
+                              - paragraph [ref=e678]:
+                                - text: Recovery of 1, 4-Benzoquinone
+                                - strong [ref=e679]: "(Limit: Between 85-115 %)"
+                            - cell "99.20 %" [ref=e680]:
+                              - paragraph [ref=e681]:
+                                - strong [ref=e682]: 99.20 %
+                      - paragraph [ref=e683]: After obtaining satisfactory results for the system suitability parameter, the analyst proceeded with the further calibration parameter, i.e., linearity.
+                      - paragraph [ref=e684]
+                      - paragraph [ref=e685]: "For Linearity, further, diluted 3 ml of sucrose stock standard solution (50000 ppb) to 100 ml with purified water to get 1500 ppb sucrose. After preparation of sucrose solution (1500 ppb), created the linearity curve for 0 ppb, 250 ppb, 500 ppb and 750 ppb of sucrose solution and initiated the sequence ‘LIN_21052026’ by injecting the sucrose solution (1500 ppb) for the linearity calibration parameter and ensuring correct vial positions in linearity sequence during analysis as per the table below:"
+                      - paragraph [ref=e686]
+                      - table [ref=e688]:
+                        - rowgroup [ref=e695]:
+                          - row "Sr. No. Sample Name Sample ID Attribute Vial" [ref=e696]:
+                            - columnheader "Sr. No." [ref=e697]:
+                              - paragraph [ref=e698]:
+                                - strong [ref=e699]: Sr. No.
+                            - columnheader "Sample Name" [ref=e700]:
+                              - paragraph [ref=e701]:
+                                - strong [ref=e702]: Sample Name
+                            - columnheader "Sample ID" [ref=e703]:
+                              - paragraph [ref=e704]:
+                                - strong [ref=e705]: Sample ID
+                            - columnheader "Attribute" [ref=e706]:
+                              - paragraph [ref=e707]:
+                                - strong [ref=e708]: Attribute
+                            - columnheader "Vial" [ref=e709]:
+                              - paragraph [ref=e710]:
+                                - strong [ref=e711]: Vial
+                          - row "Sucrose STD 0.000 ppb 1" [ref=e712]:
+                            - cell [ref=e713]:
+                              - paragraph [ref=e714]
+                            - cell "Sucrose" [ref=e715]:
+                              - paragraph [ref=e716]: Sucrose
+                            - cell "STD" [ref=e717]:
+                              - paragraph [ref=e718]: STD
+                            - cell "0.000 ppb" [ref=e719]:
+                              - paragraph [ref=e720]: 0.000 ppb
+                            - cell "1" [ref=e721]:
+                              - paragraph [ref=e722]: "1"
+                          - row "Sucrose STD 250.0 ppb 2" [ref=e723]:
+                            - cell [ref=e724]:
+                              - paragraph [ref=e725]
+                            - cell "Sucrose" [ref=e726]:
+                              - paragraph [ref=e727]: Sucrose
+                            - cell "STD" [ref=e728]:
+                              - paragraph [ref=e729]: STD
+                            - cell "250.0 ppb" [ref=e730]:
+                              - paragraph [ref=e731]: 250.0 ppb
+                            - cell "2" [ref=e732]:
+                              - paragraph [ref=e733]: "2"
+                          - row "Sucrose STD 500.0 ppb 2" [ref=e734]:
+                            - cell [ref=e735]:
+                              - paragraph [ref=e736]
+                            - cell "Sucrose" [ref=e737]:
+                              - paragraph [ref=e738]: Sucrose
+                            - cell "STD" [ref=e739]:
+                              - paragraph [ref=e740]: STD
+                            - cell "500.0 ppb" [ref=e741]:
+                              - paragraph [ref=e742]: 500.0 ppb
+                            - cell "2" [ref=e743]:
+                              - paragraph [ref=e744]: "2"
+                          - row "Sucrose STD 750.0 ppb 2" [ref=e745]:
+                            - cell [ref=e746]:
+                              - paragraph [ref=e747]
+                            - cell "Sucrose" [ref=e748]:
+                              - paragraph [ref=e749]: Sucrose
+                            - cell "STD" [ref=e750]:
+                              - paragraph [ref=e751]: STD
+                            - cell "750.0 ppb" [ref=e752]:
+                              - paragraph [ref=e753]: 750.0 ppb
+                            - cell "2" [ref=e754]:
+                              - paragraph [ref=e755]: "2"
+                      - paragraph [ref=e756]: After completion of Linearity run, verified the obtained results and found that obtained results are well within the acceptance limit as per SOP/DP/QC/045. The details of the obtained results are as below; (Refer attachment X).
+                      - paragraph [ref=e757]
+                      - table [ref=e759]:
+                        - rowgroup [ref=e765]:
+                          - 'row "Linearity Solution Calibration Date: 21/05/2026" [ref=e766]':
+                            - columnheader "Linearity Solution" [ref=e767]:
+                              - paragraph [ref=e768]:
+                                - strong [ref=e769]: Linearity Solution
+                            - 'columnheader "Calibration Date: 21/05/2026" [ref=e770]':
+                              - paragraph [ref=e771]:
+                                - strong [ref=e772]: "Calibration Date: 21/05/2026"
+                          - row "Mean Area SD Area (NMT 0.5) CV Area (NMT 5.0 %)" [ref=e773]:
+                            - cell "Mean Area" [ref=e774]:
+                              - paragraph [ref=e775]:
+                                - strong [ref=e776]: Mean Area
+                            - cell "SD Area (NMT 0.5)" [ref=e777]:
+                              - paragraph [ref=e778]:
+                                - strong [ref=e779]: SD Area (NMT 0.5)
+                            - cell "CV Area (NMT 5.0 %)" [ref=e780]:
+                              - paragraph [ref=e781]:
+                                - strong [ref=e782]: CV Area (NMT 5.0 %)
+                          - row "0 ppb 3.376 0.02991 0.89 %" [ref=e783]:
+                            - cell "0 ppb" [ref=e784]:
+                              - paragraph [ref=e785]: 0 ppb
+                            - cell "3.376" [ref=e786]:
+                              - paragraph [ref=e787]: "3.376"
+                            - cell "0.02991" [ref=e788]:
+                              - paragraph [ref=e789]: "0.02991"
+                            - cell "0.89 %" [ref=e790]:
+                              - paragraph [ref=e791]: 0.89 %
+                          - row "250 ppb 12.46 0.02646 0.21 %" [ref=e792]:
+                            - cell "250 ppb" [ref=e793]:
+                              - paragraph [ref=e794]: 250 ppb
+                            - cell "12.46" [ref=e795]:
+                              - paragraph [ref=e796]: "12.46"
+                            - cell "0.02646" [ref=e797]:
+                              - paragraph [ref=e798]: "0.02646"
+                            - cell "0.21 %" [ref=e799]:
+                              - paragraph [ref=e800]: 0.21 %
+                          - row "500 ppb 21.21 0.1457 0.69 %" [ref=e801]:
+                            - cell "500 ppb" [ref=e802]:
+                              - paragraph [ref=e803]: 500 ppb
+                            - cell "21.21" [ref=e804]:
+                              - paragraph [ref=e805]: "21.21"
+                            - cell "0.1457" [ref=e806]:
+                              - paragraph [ref=e807]: "0.1457"
+                            - cell "0.69 %" [ref=e808]:
+                              - paragraph [ref=e809]: 0.69 %
+                          - row "750 ppb 30.29 0.2066 0.68 %" [ref=e810]:
+                            - cell "750 ppb" [ref=e811]:
+                              - paragraph [ref=e812]: 750 ppb
+                            - cell "30.29" [ref=e813]:
+                              - paragraph [ref=e814]: "30.29"
+                            - cell "0.2066" [ref=e815]:
+                              - paragraph [ref=e816]: "0.2066"
+                            - cell "0.68 %" [ref=e817]:
+                              - paragraph [ref=e818]: 0.68 %
+                          - 'row "Linearity (Limit: NLT 0.98) 0.9999 (NLT 0.98)" [ref=e819]':
+                            - 'cell "Linearity (Limit: NLT 0.98)" [ref=e820]':
+                              - paragraph [ref=e821]: "Linearity (Limit: NLT 0.98)"
+                            - cell "0.9999 (NLT 0.98)" [ref=e822]:
+                              - paragraph [ref=e823]:
+                                - strong [ref=e824]: 0.9999 (NLT 0.98)
+                      - paragraph [ref=e825]: "Acceptance Criteria: SD of the area: Not more than 0.5 OR % CV of the area: Not more than 5%."
+                      - paragraph [ref=e826]
+                      - paragraph [ref=e827]: The Correlation coefficient of the area vs. corresponding concentration should not be less than 0.98.
+                      - paragraph [ref=e828]
+                      - paragraph [ref=e829]: All calibration results, including blank response, system suitability, 2-point calibration parameters and linearity were found well within the specified acceptance criteria after adequate system flushing and stabilization. Hence, the TOC analyzer (I/QC/018) was released for routine daily water sample analysis ON 22/05/2026. Further, the daily water sample results analyzed thereafter were also found well within the specified acceptance limits, indicating satisfactory instrument performance. The daily water sample results details are as follows, (Refer Attachment XI).
+                      - paragraph [ref=e830]
+                      - table [ref=e832]:
+                        - rowgroup [ref=e839]:
+                          - 'row "Analysis Date: 22/05/2026" [ref=e840]':
+                            - 'columnheader "Analysis Date: 22/05/2026" [ref=e841]':
+                              - paragraph [ref=e842]:
+                                - strong [ref=e843]: "Analysis Date: 22/05/2026"
+                          - 'row "Sr. No Sample Name Sample ID Result (ppb) (Limit: NMT 500 ppb Status" [ref=e844]':
+                            - cell "Sr. No" [ref=e845]:
+                              - paragraph [ref=e846]:
+                                - strong [ref=e847]: Sr. No
+                            - cell "Sample Name" [ref=e848]:
+                              - paragraph [ref=e849]:
+                                - strong [ref=e850]: Sample Name
+                            - cell "Sample ID" [ref=e851]:
+                              - paragraph [ref=e852]:
+                                - strong [ref=e853]: Sample ID
+                            - 'cell "Result (ppb) (Limit: NMT 500 ppb" [ref=e854]':
+                              - paragraph [ref=e855]:
+                                - strong [ref=e856]: Result (ppb)
+                              - paragraph [ref=e857]:
+                                - strong [ref=e858]: "(Limit: NMT 500 ppb"
+                            - cell "Status" [ref=e859]:
+                              - paragraph [ref=e860]:
+                                - strong [ref=e861]: Status
+                          - row "1 Purified Water (SP-PuW-01) UT/26/0446 121.8 ppb Pass" [ref=e862]:
+                            - cell "1" [ref=e863]:
+                              - paragraph [ref=e864]: "1"
+                            - cell "Purified Water (SP-PuW-01)" [ref=e865]:
+                              - paragraph [ref=e866]: Purified Water (SP-PuW-01)
+                            - cell "UT/26/0446" [ref=e867]:
+                              - paragraph [ref=e868]: UT/26/0446
+                            - cell "121.8 ppb" [ref=e869]:
+                              - paragraph [ref=e870]: 121.8 ppb
+                            - cell "Pass" [ref=e871]:
+                              - paragraph [ref=e872]: Pass
+                          - row "2 Purified Water (SP-PuW-06) UT/26/0447 100.1 ppb Pass" [ref=e873]:
+                            - cell "2" [ref=e874]:
+                              - paragraph [ref=e875]: "2"
+                            - cell "Purified Water (SP-PuW-06)" [ref=e876]:
+                              - paragraph [ref=e877]: Purified Water (SP-PuW-06)
+                            - cell "UT/26/0447" [ref=e878]:
+                              - paragraph [ref=e879]: UT/26/0447
+                            - cell "100.1 ppb" [ref=e880]:
+                              - paragraph [ref=e881]: 100.1 ppb
+                            - cell "Pass" [ref=e882]:
+                              - paragraph [ref=e883]: Pass
+                          - row "3 Purified Water (SP-PuW-13) UT/26/0448 70.01 ppb Pass" [ref=e884]:
+                            - cell "3" [ref=e885]:
+                              - paragraph [ref=e886]: "3"
+                            - cell "Purified Water (SP-PuW-13)" [ref=e887]:
+                              - paragraph [ref=e888]: Purified Water (SP-PuW-13)
+                            - cell "UT/26/0448" [ref=e889]:
+                              - paragraph [ref=e890]: UT/26/0448
+                            - cell "70.01 ppb" [ref=e891]:
+                              - paragraph [ref=e892]: 70.01 ppb
+                            - cell "Pass" [ref=e893]:
+                              - paragraph [ref=e894]: Pass
+                          - row "4 Purified Water (SP-PuW-23) UT/26/0449 115.4 ppb Pass" [ref=e895]:
+                            - cell "4" [ref=e896]:
+                              - paragraph [ref=e897]: "4"
+                            - cell "Purified Water (SP-PuW-23)" [ref=e898]:
+                              - paragraph [ref=e899]: Purified Water (SP-PuW-23)
+                            - cell "UT/26/0449" [ref=e900]:
+                              - paragraph [ref=e901]: UT/26/0449
+                            - cell "115.4 ppb" [ref=e902]:
+                              - paragraph [ref=e903]: 115.4 ppb
+                            - cell "Pass" [ref=e904]:
+                              - paragraph [ref=e905]: Pass
+                          - row "5 Water for injection (SP-WFI-01) UT/26/0450 96.75 ppb Pass" [ref=e906]:
+                            - cell "5" [ref=e907]:
+                              - paragraph [ref=e908]: "5"
+                            - cell "Water for injection (SP-WFI-01)" [ref=e909]:
+                              - paragraph [ref=e910]: Water for injection (SP-WFI-01)
+                            - cell "UT/26/0450" [ref=e911]:
+                              - paragraph [ref=e912]: UT/26/0450
+                            - cell "96.75 ppb" [ref=e913]:
+                              - paragraph [ref=e914]: 96.75 ppb
+                            - cell "Pass" [ref=e915]:
+                              - paragraph [ref=e916]: Pass
+                          - row "6 Water for injection (SP-WFI-02) UT/26/0451 120.8 ppb Pass" [ref=e917]:
+                            - cell "6" [ref=e918]:
+                              - paragraph [ref=e919]: "6"
+                            - cell "Water for injection (SP-WFI-02)" [ref=e920]:
+                              - paragraph [ref=e921]: Water for injection (SP-WFI-02)
+                            - cell "UT/26/0451" [ref=e922]:
+                              - paragraph [ref=e923]: UT/26/0451
+                            - cell "120.8 ppb" [ref=e924]:
+                              - paragraph [ref=e925]: 120.8 ppb
+                            - cell "Pass" [ref=e926]:
+                              - paragraph [ref=e927]: Pass
+                          - row "7 Water for injection (SP-WFI-04) UT/26/0452 75.56 ppb Pass" [ref=e928]:
+                            - cell "7" [ref=e929]:
+                              - paragraph [ref=e930]: "7"
+                            - cell "Water for injection (SP-WFI-04)" [ref=e931]:
+                              - paragraph [ref=e932]: Water for injection (SP-WFI-04)
+                            - cell "UT/26/0452" [ref=e933]:
+                              - paragraph [ref=e934]: UT/26/0452
+                            - cell "75.56 ppb" [ref=e935]:
+                              - paragraph [ref=e936]: 75.56 ppb
+                            - cell "Pass" [ref=e937]:
+                              - paragraph [ref=e938]: Pass
+                          - row "8 Water for injection (SP-WFI-06) UT/26/0453 113.2 ppb Pass" [ref=e939]:
+                            - cell "8" [ref=e940]:
+                              - paragraph [ref=e941]: "8"
+                            - cell "Water for injection (SP-WFI-06)" [ref=e942]:
+                              - paragraph [ref=e943]: Water for injection (SP-WFI-06)
+                            - cell "UT/26/0453" [ref=e944]:
+                              - paragraph [ref=e945]: UT/26/0453
+                            - cell "113.2 ppb" [ref=e946]:
+                              - paragraph [ref=e947]: 113.2 ppb
+                            - cell "Pass" [ref=e948]:
+                              - paragraph [ref=e949]: Pass
+                          - row "9 Water for injection (SP-WFI-07) UT/26/0454 115.5 ppb Pass" [ref=e950]:
+                            - cell "9" [ref=e951]:
+                              - paragraph [ref=e952]: "9"
+                            - cell "Water for injection (SP-WFI-07)" [ref=e953]:
+                              - paragraph [ref=e954]: Water for injection (SP-WFI-07)
+                            - cell "UT/26/0454" [ref=e955]:
+                              - paragraph [ref=e956]: UT/26/0454
+                            - cell "115.5 ppb" [ref=e957]:
+                              - paragraph [ref=e958]: 115.5 ppb
+                            - cell "Pass" [ref=e959]:
+                              - paragraph [ref=e960]: Pass
+                          - row "10 Water for injection (SP-WFI-09) UT/26/0455 211.7 ppb Pass" [ref=e961]:
+                            - cell "10" [ref=e962]:
+                              - paragraph [ref=e963]: "10"
+                            - cell "Water for injection (SP-WFI-09)" [ref=e964]:
+                              - paragraph [ref=e965]: Water for injection (SP-WFI-09)
+                            - cell "UT/26/0455" [ref=e966]:
+                              - paragraph [ref=e967]: UT/26/0455
+                            - cell "211.7 ppb" [ref=e968]:
+                              - paragraph [ref=e969]: 211.7 ppb
+                            - cell "Pass" [ref=e970]:
+                              - paragraph [ref=e971]: Pass
+                          - row "11 Water for injection (SP-WFI-12) UT/26/0456 94.02 ppb Pass" [ref=e972]:
+                            - cell "11" [ref=e973]:
+                              - paragraph [ref=e974]: "11"
+                            - cell "Water for injection (SP-WFI-12)" [ref=e975]:
+                              - paragraph [ref=e976]: Water for injection (SP-WFI-12)
+                            - cell "UT/26/0456" [ref=e977]:
+                              - paragraph [ref=e978]: UT/26/0456
+                            - cell "94.02 ppb" [ref=e979]:
+                              - paragraph [ref=e980]: 94.02 ppb
+                            - cell "Pass" [ref=e981]:
+                              - paragraph [ref=e982]: Pass
+                          - row "12 Pure steam Condensate (SP-PSG-01) UT/26/0457 126.9 ppb Pass" [ref=e983]:
+                            - cell "12" [ref=e984]:
+                              - paragraph [ref=e985]: "12"
+                            - cell "Pure steam Condensate (SP-PSG-01)" [ref=e986]:
+                              - paragraph [ref=e987]: Pure steam Condensate (SP-PSG-01)
+                            - cell "UT/26/0457" [ref=e988]:
+                              - paragraph [ref=e989]: UT/26/0457
+                            - cell "126.9 ppb" [ref=e990]:
+                              - paragraph [ref=e991]: 126.9 ppb
+                            - cell "Pass" [ref=e992]:
+                              - paragraph [ref=e993]: Pass
+                          - row "13 Pure steam Condensate (SP-PSG-02) UT/26/0458 223.1 ppb Pass" [ref=e994]:
+                            - cell "13" [ref=e995]:
+                              - paragraph [ref=e996]: "13"
+                            - cell "Pure steam Condensate (SP-PSG-02)" [ref=e997]:
+                              - paragraph [ref=e998]: Pure steam Condensate (SP-PSG-02)
+                            - cell "UT/26/0458" [ref=e999]:
+                              - paragraph [ref=e1000]: UT/26/0458
+                            - cell "223.1 ppb" [ref=e1001]:
+                              - paragraph [ref=e1002]: 223.1 ppb
+                            - cell "Pass" [ref=e1003]:
+                              - paragraph [ref=e1004]: Pass
+                          - row "14 Ultra Pure Water NR/26/0597 70.26 ppb Pass" [ref=e1005]:
+                            - cell "14" [ref=e1006]:
+                              - paragraph [ref=e1007]: "14"
+                            - cell "Ultra Pure Water" [ref=e1008]:
+                              - paragraph [ref=e1009]: Ultra Pure Water
+                            - cell "NR/26/0597" [ref=e1010]:
+                              - paragraph [ref=e1011]: NR/26/0597
+                            - cell "70.26 ppb" [ref=e1012]:
+                              - paragraph [ref=e1013]: 70.26 ppb
+                            - cell "Pass" [ref=e1014]:
+                              - paragraph [ref=e1015]: Pass
+                      - paragraph [ref=e1016]: Based on the above evaluation data, the area response of blank injections was observed in a decreasing trend as the observed higher blank result may have occurred due to temporary instability during water purification and/or system background stabilization. After adequate system flushing and stabilization, the blank readings were reproduced properly and further calibration parameters and daily water sample TOC results found well within limit.
+                      - paragraph [ref=e1017]
+                      - paragraph [ref=e1018]: After adequate system flushing and stabilization, the blank results were reproduced satisfactorily and found within the specified acceptance criteria. Subsequently, system suitability, linearity, and 2-point calibration results were found well within limits and successful calibration curve generation was achieved. All daily water sample results analyzed thereafter were also found within acceptance criteria. Hence, the instrument performance was considered satisfactory.
+                      - paragraph [ref=e1019]
+                      - paragraph [ref=e1020]: "As a part of investigation, operation procedure ‘Title: Operation, Calibration and Maintenance of Shimadzu TOC Analyzer Model No.: TOC-L CPH With Lab Solution Software, SOP No.: SOP/DP/QC/045, Revision No.03 of TOC analyzer was verified during SOP evaluation, it was noted that no specific instruction is available regarding dedicated system flushing activity prior to initiation of calibration which could be the contributing factor for the reported nonconformance.Hence, inclusion of appropriate system flushing instructions before calibration may be considered to ensure adequate system stabilization and to minimize the possibility of elevated background TOC response."
+                      - paragraph [ref=e1021]
+                      - paragraph [ref=e1022]: "Based on the outcome of investigation and obtained results, it was confirmed that, no specific assignable cause could be identified for the observed elevated blank TOC result during 2-point calibration. Based on evaluation of analytical data, reproducibility study, analyst interview, and service engineer assessment and SOP evaluation the probable cause of the observed higher blank TOC result may be attributed to temporary system background instability, possible air intake through vial septa, and/or bubbles trapped in tubing during the initial stage associated with lack of procedure for stabilization/flushing of the TOC analyzer instrument SOP ‘Title: Operation, Calibration and Maintenance of Shimadzu TOC Analyzer Model No.: TOC-L CPH With Lab Solution Software, SOP No.: SOP/DP/QC/045, Revision No.03 ."
+                - generic [ref=e1024]:
+                  - generic [ref=e1025]:
+                    - generic [ref=e1026]:
+                      - heading "Analyze" [level=2] [ref=e1027]
+                      - paragraph [ref=e1028]: Investigate the root cause using 6M, 5-Why, and assess impact.
+                    - generic [ref=e1030]:
+                      - img [ref=e1031]
+                      - text: Up to date
+                  - generic [ref=e1033]:
+                    - button "Analyze · 0/5 met Not evaluated yet" [ref=e1037] [cursor=pointer]:
+                      - generic [ref=e1039]: Analyze · 0/5 met
+                      - generic [ref=e1040]: Not evaluated yet
+                      - img [ref=e1041]
+                    - button "Run it by Andrei" [ref=e1043] [cursor=pointer]:
+                      - img
+                      - text: Run it by Andrei
+                  - generic [ref=e1045]:
+                    - generic [ref=e1046]:
+                      - heading "6M Method (If Applicable)" [level=3] [ref=e1047]
+                      - paragraph [ref=e1048]: No 6M question shall be deleted in the investigation. If any is not applicable, mention "Not Applicable" in the answer.
+                      - generic [ref=e1049]:
+                        - generic [ref=e1050]:
+                          - generic [ref=e1051]: Man
+                          - textbox "Not Applicable" [ref=e1052]
+                        - generic [ref=e1053]:
+                          - generic [ref=e1054]: Machine
+                          - textbox "Not Applicable" [ref=e1055]
+                        - generic [ref=e1056]:
+                          - generic [ref=e1057]: Measurement
+                          - textbox "Not Applicable" [ref=e1058]
+                        - generic [ref=e1059]:
+                          - generic [ref=e1060]: Material
+                          - textbox "Not Applicable" [ref=e1061]
+                        - generic [ref=e1062]:
+                          - generic [ref=e1063]: Method
+                          - textbox "Not Applicable" [ref=e1064]
+                        - generic [ref=e1065]:
+                          - generic [ref=e1066]: Milieu (Environment)
+                          - textbox "Not Applicable" [ref=e1067]
+                      - generic [ref=e1068]:
+                        - generic [ref=e1069]: 6M Conclusion
+                        - textbox [ref=e1070]
+                    - generic [ref=e1071]:
+                      - heading "5-Why Approach" [level=3] [ref=e1072]
+                      - generic [ref=e1074]:
+                        - generic [ref=e1075]: 5-Why analysis
+                        - textbox "Capture each Why and answer, then your conclusion — all in this box (same as the investigation template)." [ref=e1076]: "1. WHY: Why did the deviation occur? Ans. Because the TOC value of blank water during 2-point calibration was observed as 121 ppb, which exceeded the acceptance criteria of NMT 100 ppb. 2. WHY: Why was the blank water during 2-point calibration observed as 121 ppb by calculation? Ans. Because the mean area obtained for the blank TOC water was observed as 7.764 during calibration analysis, which upon calculation corresponded to 121 ppb and exceeded the specified acceptance criteria of NMT 100 ppb. 3. WHY: Why was the TOC blank area observed as 7.764? Ans. The TOC blank area may have been observed on the higher side due to temporary system background instability possible air intake through improper vial septa, and/or bubbles trapped in the tubing during the initial stage of analysis, which contributed to elevated blank response during 2-point calibration. 4. WHY: Why did temporary system instability or carryover occur? Ans. Because adequate system stabilization/flushing prior to calibration may not have been ensured before initiating the analytical sequence. 5. WHY: Why was adequate flushing/stabilization not specifically ensured before calibration? Ans. During SOP evaluation, it was noted that no specific instruction regarding dedicated system flushing prior to calibration was available in SOP No.: SOP/DP/QC/045. *6. WHY: Not Applicable Ans. Not Applicable Conclusion: Based on the 5 Why analysis, the observed elevated TOC blank result during 2-point calibration was likely caused by temporary system background instability during the initial stage of analysis, possibly associated with inadequate system stabilization/flushing, air intake through vial septa, and/or bubbles trapped in the tubing. Further evaluation revealed that the current SOP i.e SOP No.: SOP/DP/QC/045, Revision No: R03, Title: Operation, Calibration, Maintenance of Shimadzu TOC Analyzer Model No. TOC-L CPH with LabSolutions Software does not contain specific instructions regarding dedicated system flushing prior to calibration, which may have contributed to the occurrence. After adequate flushing and stabilization, all calibration and daily water sample results were found within acceptance criteria. Hence, the incident is considered isolated and intermittent in nature with no significant impact on routine analysis. *Note: Less or more than 5 questions may be asked based on the outcome of earlier questions."
+                    - generic [ref=e1077]:
+                      - generic [ref=e1078]:
+                        - generic [ref=e1079]: Brainstorming
+                        - textbox "Not Applicable" [ref=e1080]
+                      - generic [ref=e1081]:
+                        - generic [ref=e1082]: Other Tools (If any)
+                        - textbox "Not Applicable" [ref=e1083]: "Not Applicable Other Tool if Any: Not Applicable"
+                      - generic [ref=e1084]:
+                        - generic [ref=e1085]: Investigation Outcome
+                        - textbox "Summarize the investigation driven by the selected tool(s) and describe the outcome." [ref=e1086]: "The investigation has been carried out by using the ‘5 Why’ investigation tool. The investigation was driven through the DMAIC methodology. Based on the initial risk assessment, the deviation has been categorized the deviation as ‘Major’. The investigation related to elevated TOC result of blank water during 2-point calibration on TOC Analyzer, Instrument ID: I/QC/018, was performed through review of raw data, instrument records, analyst interview, reproducibility evaluation, and service engineer report. During investigation, no abnormality was observed in analytical procedure, calculation, instrument operation, calibration activity, or data recording. The analyst had followed the procedure as per SOP No.: SOP/DP/QC/045 and injected the required blank injections prior to calibration. It was observed that the sucrose standard stock solution prepared using the same TOC water met the acceptance criteria with satisfactory % CV and SD values, indicating acceptable instrument precision and standard preparation. However, the mean area of blank TOC water was observed as 7.764, corresponding to 121 ppb, which exceeded the specified limit of NMT 100 ppb. The observed result was further compared with subsequent blank injections performed for reproducibility purpose and it was noted that the blank responses showed a decreasing trend after adequate system flushing and stabilization. Thereafter, blank results, system suitability, 2-point calibration results, linearity results and were found within acceptance criteria and successful calibration curve “CAL_21052026_01.2026_05_21_21_11_57.cald” was generated satisfactorily after successfully calibration daily water analysis also performed by using latest generated calibration curve and all results found satisfactory. As no specific assignable cause was identified during preliminary investigation, analyst interview, or service engineer evaluation, the probable root cause of the observed higher blank TOC result may be attributed to temporary system background instability, possible air intake through vial septa, and/or bubbles trapped in tubing during the initial stage of analysis. Additionally, inadequate stabilization/flushing of the TOC analyzer system may have contributed to the elevated blank response. Further evaluation revealed that the current SOP i.e SOP No.: SOP/DP/QC/045, Revision No: R03, Title: Operation, Calibration, Maintenance of Shimadzu TOC Analyzer Model No. TOC-L CPH with LabSolutions Software does not contain specific instructions regarding dedicated system flushing prior to calibration, which may have contributed to the occurrence. Based on the overall investigation and satisfactory reproducibility results after stabilization, the observed incident is considered an isolated and intermittent occurrence. The instrument performance was subsequently verified and found satisfactory for routine analysis. Based on the nature of nonconformance, chronology of events, and details investigation, further root cause categorization has been done as per format for “Root Cause Categorization” SOP/DP/QA/008-F03. (Refer Attachment No. XII)."
+                    - generic [ref=e1087]:
+                      - heading "Identified Root Cause / Probable Cause" [level=3] [ref=e1088]
+                      - generic [ref=e1089]:
+                        - generic [ref=e1090]: Root cause narrative
+                        - textbox [ref=e1091]: "Based on the detailed investigation, below mention probable root cause were identified Primary Root Cause Level 1: Procedure. Secondary Root Cause Level 2: Document unclear/Lacking details. Third Root Cause Level 3: NA."
+                    - generic [ref=e1092]:
+                      - heading "Impact Assessment" [level=3] [ref=e1093]
+                      - generic [ref=e1094]:
+                        - generic [ref=e1095]:
+                          - generic [ref=e1096]: System
+                          - textbox [ref=e1097]: The non-conformance related to failure of 2-point calibration test parameter of TOC Analyzer is attributed to the Procedure error as the mean area of blank TOC water was observed as 7.764, corresponding to 121 ppb, which exceeded the specified limit of NMT 100 ppb, however after evaluation, it has been determined that this non-conformance does not have any anticipated impact on the overall system.
+                        - generic [ref=e1098]:
+                          - generic [ref=e1099]: Document
+                          - textbox [ref=e1100]: "Performed the detail impact assessment for the reported nonconformance and as an outcome the root cause identified as ‘Procedure error’ as the mean area of blank TOC water was observed as 7.764, corresponding to 121 ppb, which exceeded the specified limit of NMT 100 ppb may be attributed to temporary system background instability, possible air intake through vial septa, and/or bubbles trapped in tubing during the initial stage of analysis. Additionally, inadequate stabilization/flushing of the TOC analyzer system may have contributed to the elevated blank response. Further evaluation revealed that the current SOP i.e SOP No.: SOP/DP/QC/045, Revision No: R03, Title: Operation, Calibration, Maintenance of Shimadzu TOC Analyzer Model No. TOC-L CPH with LabSolutions Software does not contain specific instructions regarding dedicated system flushing prior to calibration, which may have contributed to the occurrence therefore SOP No.: SOP/DP/QC/045-R03 found impacted and needs to be revised to incorporate the clarity to inclusion of appropriate system flushing instructions before calibration to ensure adequate system stabilization and to minimize the possibility of elevated background TOC response. The initial generated 2-point calibration data calibration curve i.e CAL_21052026.2026_05_21_10_52_00.cald shall be invalidate. The blanks which is performed for system stabilization purpose shall be considered as hypothesis study and the calibration curve i.e. CAL_21052026_01.2026_05_21_21_11_57.cald shall be used for routine analysis."
+                        - generic [ref=e1101]:
+                          - generic [ref=e1102]: Product
+                          - textbox [ref=e1103]: The non-conformance related to failure of 2-point calibration test parameter of TOC Analyzer is attributed to the Procedure error as the mean area of blank TOC water was observed as 7.764, corresponding to 121 ppb, which exceeded the specified limit of NMT 100 ppb is attributed to the Procedure error as the obtained 2-point calibration results does not meet the predefined acceptance criteria, and it was occurred during the scheduled monthly & quarterly calibration, therefore no any samples were analyzed from the date of occurrence of nonconformance. As an alternative measure to ensure timely monitoring of water quality, the test for Oxidizable Substances performed and result were well within the acceptance criteria. Therefore, impact on product quality not anticipated due to reported nonconformance.
+                        - generic [ref=e1104]:
+                          - generic [ref=e1105]: Equipment
+                          - textbox [ref=e1106]
+                        - generic [ref=e1107]:
+                          - generic [ref=e1108]: Patient safety / Past batches
+                          - textbox [ref=e1109]: "/Past Batches:"
+                - generic [ref=e1111]:
+                  - generic [ref=e1112]:
+                    - generic [ref=e1113]:
+                      - heading "Improve" [level=2] [ref=e1114]
+                      - paragraph [ref=e1115]: Describe corrective actions, ownership, timelines, verification, and any related detail.
+                    - generic [ref=e1117]:
+                      - img [ref=e1118]
+                      - text: Up to date
+                  - generic [ref=e1120]:
+                    - button "Improve · 0/6 met Not evaluated yet" [ref=e1124] [cursor=pointer]:
+                      - generic [ref=e1126]: Improve · 0/6 met
+                      - generic [ref=e1127]: Not evaluated yet
+                      - img [ref=e1128]
+                    - button "Run it by Andrei" [ref=e1130] [cursor=pointer]:
+                      - img
+                      - text: Run it by Andrei
+                  - generic [ref=e1133]:
+                    - generic [ref=e1134]: Corrective Action
+                    - textbox "Describe corrective actions taken or proposed, including tracking numbers, responsible persons, due dates, expected outcomes, and effectiveness verification where applicable." [ref=e1135]: "Improve section covers the corrective actions Following checkpoint shall be considered as guidance only while finalizing the corrective actions, 1. Is a specific corrective Actions identified (including applicable Immediate Actions) to remediate the current issue or situation such that the associated system was returned to a state of control/compliance and also it will avoid the recurrence of deviation? 2. Is specific Corrective Actions identified for each root cause /substantiated probable root cause, as applicable? 3. Is the Corrective action assigned a unique number, responsible person and due date so it can be tracked? Does the action describe what will be the expected outcome they can be verified? 4. Are the identified corrective actions achievable based on the information provided? The investigation has been driven through the DMAIC methodology. During the investigation ‘5 Why’ tool used to find out the root cause and based on the detailed investigation, it has been concluded that the nonconformance was triggered due to ‘Procedure error’ as during preliminary investigation, analyst interview, or service engineer evaluation, the probable root cause of the observed higher blank TOC result may be attributed to temporary system background instability, possible air intake through vial septa, and/or bubbles trapped in tubing during the initial stage of analysis. Additionally, inadequate stabilization/flushing of the TOC analyzer system may have contributed to the elevated blank response. Further evaluation revealed that the current SOP i.e SOP No.: SOP/DP/QC/045, Revision No: R03, Title: Operation, Calibration, Maintenance of Shimadzu TOC Analyzer Model No. TOC-L CPH with LabSolutions Software does not contain specific instructions regarding dedicated system flushing prior to calibration, which may have contributed to the occurrence therefore, as a corrective action, repeated the calibration by proper flashing and proper stabilization of system as an outcome the results of 2-point calibration, system suitability, linearity and daily water analysis result was found well within limits. The previously generated impacted calibration curve (CAL_21052026.2026_05_21_10_52_00.cald) was considered as invalidated, and newly generated calibration curve (CAL_21052026_01.2026_05_21_21_11_57.cald) considered valid. Analyst re-trained and select the of valid calibration curves for routine analysis."
+                - generic [ref=e1137]:
+                  - generic [ref=e1138]:
+                    - generic [ref=e1139]:
+                      - heading "Control" [level=2] [ref=e1140]
+                      - paragraph [ref=e1141]: Describe preventive actions, rationale when none are needed, tracking, expected outcomes, and verification—together in one place.
+                    - generic [ref=e1143]:
+                      - img [ref=e1144]
+                      - text: Up to date
+                  - generic [ref=e1146]:
+                    - button "Control · 0/14 met Not evaluated yet" [ref=e1150] [cursor=pointer]:
+                      - generic [ref=e1152]: Control · 0/14 met
+                      - generic [ref=e1153]: Not evaluated yet
+                      - img [ref=e1154]
+                    - button "Run it by Andrei" [ref=e1156] [cursor=pointer]:
+                      - img
+                      - text: Run it by Andrei
+                  - generic [ref=e1159]:
+                    - generic [ref=e1160]: Preventive actions
+                    - textbox "Describe preventive actions (per root cause where applicable), tracking IDs, responsible persons, due dates, expected outcomes, effectiveness verification or rationale, and any interim or closure context—in one continuous section." [ref=e1161]: "Control section covers the preventive actions Following checkpoint shall be considered as guidance only, 1. Is specific Preventive Actions identified for each root cause /substantiated probable cause as applicable? 2. Is the Preventive Action linked the classification of the root cause and explanation given for how it will prevent occurrence? 3. Is the Preventive action assigned a unique number, responsible person and due date so it can be tracked? Does the action describe and expected outcome can be verified? 4. Is an Interim Plan needed to ensure a state the control while the Preventive Actions were implemented? 5. Is rationale provided when no Preventive Action were identified? 6. Does the Final Comments section include rotational to support the conclusion of the investigation and CAPA 7. Is each of the impact assessment fields completed correctly — Regulatory Impact, Regulatory notification Product Quality, Validation, Stability, Market/Clinical? 8. Does the Recommended Lot disposition match the conclusions of the investigation and Impact assessment? 9. Does the Conclusion include final decision and rationale other regulatory notification required? 10. CAPA required to release material or batches have been verified to be complete and closed prior to material or batch disposition. Any related CAPA that remain open, but have no impact on the material or batch release and a documented explanation is provided. 11. Does the Conclusion include a brief summary of root cause, final scope/impact including rationale for product/material disposition, impact assessment and relevant lot/material/equipment details? 12. Are the identified preventive actions achievable based on the information provided? As an outcome of investigation, it is identified that the nonconformance occurred due to ‘Procedure Error i.e. the mean area of blank TOC water was observed as 7.764, corresponding to 121 ppb, which exceeded the specified limit of NMT 100 ppb may be attributed to temporary system background instability, possible air intake through vial septa, and/or bubbles trapped in tubing during the initial stage of analysis. Additionally, inadequate stabilization/flushing of the TOC analyzer system may have contributed to the elevated blank response and it was contributed by the lack of clarity in the guidance procedure, as the SOP doesn’t have clarity regarding dedicated system flushing prior to calibration, which may have contributed to the occurrence and due to Lack of clarity in the SOP No.: SOP/DP/QC/045, Revision No: R03, Title: Operation, Calibration, Maintenance of Shimadzu TOC Analyzer Model No. TOC-L CPH with LabSolutions Software, therefore SOP No.: SOP/DP/QC/045 found impacted and needs to be revised to incorporate the clarity to specific instructions regarding dedicated system flushing prior to calibration."
+                - generic [ref=e1163]:
+                  - generic [ref=e1164]:
+                    - generic [ref=e1165]:
+                      - heading "Documents reviewed" [level=2] [ref=e1166]
+                      - paragraph [ref=e1167]: SOPs, forms, or other records cited as reviewed for this investigation (numbered list, as in the Word template).
+                    - generic [ref=e1169]:
+                      - img [ref=e1170]
+                      - text: Up to date
+                  - generic [ref=e1174]:
+                    - list [ref=e1175]:
+                      - listitem [ref=e1176]:
+                        - generic [ref=e1177]:
+                          - textbox "e.g. SOP/DP/PK/013 — operation and cleaning procedure" [ref=e1178]: "SOP No.: SOP/DP/QC/045"
+                          - button "Remove document 1" [ref=e1179] [cursor=pointer]:
+                            - img
+                    - button "Add document" [ref=e1180] [cursor=pointer]:
+                      - img
+                      - text: Add document
+                - generic [ref=e1182]:
+                  - generic [ref=e1183]:
+                    - generic [ref=e1184]:
+                      - heading "Attachments" [level=2] [ref=e1185]
+                      - paragraph [ref=e1186]: Optional annexes (work order copies, audit trails, justification memos, etc.), matching the “List of attachment” block in the exported report.
+                    - generic [ref=e1188]:
+                      - img [ref=e1189]
+                      - text: Up to date
+                  - generic [ref=e1193]:
+                    - generic [ref=e1194]:
+                      - generic [ref=e1195]:
+                        - generic [ref=e1196]: Attachment 1
+                        - button "Remove attachment 1" [ref=e1197] [cursor=pointer]:
+                          - img
+                      - generic [ref=e1198]:
+                        - generic [ref=e1199]: Label (optional)
+                        - textbox "e.g. Attachment No. I" [ref=e1200]
+                      - generic [ref=e1201]:
+                        - generic [ref=e1202]: Description
+                        - textbox "Short title or reference for this appendix" [ref=e1203]: "Attachment – I : 2-point calibration data sheet"
+                    - generic [ref=e1204]:
+                      - generic [ref=e1205]:
+                        - generic [ref=e1206]: Attachment 2
+                        - button "Remove attachment 2" [ref=e1207] [cursor=pointer]:
+                          - img
+                      - generic [ref=e1208]:
+                        - generic [ref=e1209]: Label (optional)
+                        - textbox "e.g. Attachment No. I" [ref=e1210]
+                      - generic [ref=e1211]:
+                        - generic [ref=e1212]: Description
+                        - textbox "Short title or reference for this appendix" [ref=e1213]: "Attachment – II : Initial Blank Result"
+                    - generic [ref=e1214]:
+                      - generic [ref=e1215]:
+                        - generic [ref=e1216]: Attachment 3
+                        - button "Remove attachment 3" [ref=e1217] [cursor=pointer]:
+                          - img
+                      - generic [ref=e1218]:
+                        - generic [ref=e1219]: Label (optional)
+                        - textbox "e.g. Attachment No. I" [ref=e1220]
+                      - generic [ref=e1221]:
+                        - generic [ref=e1222]: Description
+                        - textbox "Short title or reference for this appendix" [ref=e1223]: "Attachment – III : TOC Cleaning Record"
+                    - generic [ref=e1224]:
+                      - generic [ref=e1225]:
+                        - generic [ref=e1226]: Attachment 4
+                        - button "Remove attachment 4" [ref=e1227] [cursor=pointer]:
+                          - img
+                      - generic [ref=e1228]:
+                        - generic [ref=e1229]: Label (optional)
+                        - textbox "e.g. Attachment No. I" [ref=e1230]
+                      - generic [ref=e1231]:
+                        - generic [ref=e1232]: Description
+                        - textbox "Short title or reference for this appendix" [ref=e1233]: "Attachment – IV : Daily TOC record for water purification system"
+                    - generic [ref=e1234]:
+                      - generic [ref=e1235]:
+                        - generic [ref=e1236]: Attachment 5
+                        - button "Remove attachment 5" [ref=e1237] [cursor=pointer]:
+                          - img
+                      - generic [ref=e1238]:
+                        - generic [ref=e1239]: Label (optional)
+                        - textbox "e.g. Attachment No. I" [ref=e1240]
+                      - generic [ref=e1241]:
+                        - generic [ref=e1242]: Description
+                        - textbox "Short title or reference for this appendix" [ref=e1243]: "Attachment – V : 2-point calibration record"
+                    - generic [ref=e1244]:
+                      - generic [ref=e1245]:
+                        - generic [ref=e1246]: Attachment 6
+                        - button "Remove attachment 6" [ref=e1247] [cursor=pointer]:
+                          - img
+                      - generic [ref=e1248]:
+                        - generic [ref=e1249]: Label (optional)
+                        - textbox "e.g. Attachment No. I" [ref=e1250]
+                      - generic [ref=e1251]:
+                        - generic [ref=e1252]: Description
+                        - textbox "Short title or reference for this appendix" [ref=e1253]: "Attachment – VI : Analyst Interview"
+                    - generic [ref=e1254]:
+                      - generic [ref=e1255]:
+                        - generic [ref=e1256]: Attachment 7
+                        - button "Remove attachment 7" [ref=e1257] [cursor=pointer]:
+                          - img
+                      - generic [ref=e1258]:
+                        - generic [ref=e1259]: Label (optional)
+                        - textbox "e.g. Attachment No. I" [ref=e1260]
+                      - generic [ref=e1261]:
+                        - generic [ref=e1262]: Description
+                        - textbox "Short title or reference for this appendix" [ref=e1263]: "Attachment – VII : Service engineer Report"
+                    - generic [ref=e1264]:
+                      - generic [ref=e1265]:
+                        - generic [ref=e1266]: Attachment 8
+                        - button "Remove attachment 8" [ref=e1267] [cursor=pointer]:
+                          - img
+                      - generic [ref=e1268]:
+                        - generic [ref=e1269]: Label (optional)
+                        - textbox "e.g. Attachment No. I" [ref=e1270]
+                      - generic [ref=e1271]:
+                        - generic [ref=e1272]: Description
+                        - textbox "Short title or reference for this appendix" [ref=e1273]: "Attachment – VIII : Preparation Record sucrose standard"
+                    - generic [ref=e1274]:
+                      - generic [ref=e1275]:
+                        - generic [ref=e1276]: Attachment 9
+                        - button "Remove attachment 9" [ref=e1277] [cursor=pointer]:
+                          - img
+                      - generic [ref=e1278]:
+                        - generic [ref=e1279]: Label (optional)
+                        - textbox "e.g. Attachment No. I" [ref=e1280]
+                      - generic [ref=e1281]:
+                        - generic [ref=e1282]: Description
+                        - textbox "Short title or reference for this appendix" [ref=e1283]: "Attachment – IX : System suitability Record"
+                    - generic [ref=e1284]:
+                      - generic [ref=e1285]:
+                        - generic [ref=e1286]: Attachment 10
+                        - button "Remove attachment 10" [ref=e1287] [cursor=pointer]:
+                          - img
+                      - generic [ref=e1288]:
+                        - generic [ref=e1289]: Label (optional)
+                        - textbox "e.g. Attachment No. I" [ref=e1290]
+                      - generic [ref=e1291]:
+                        - generic [ref=e1292]: Description
+                        - textbox "Short title or reference for this appendix" [ref=e1293]: "Attachment – X : Linearity Result Record"
+                    - generic [ref=e1294]:
+                      - generic [ref=e1295]:
+                        - generic [ref=e1296]: Attachment 11
+                        - button "Remove attachment 11" [ref=e1297] [cursor=pointer]:
+                          - img
+                      - generic [ref=e1298]:
+                        - generic [ref=e1299]: Label (optional)
+                        - textbox "e.g. Attachment No. I" [ref=e1300]
+                      - generic [ref=e1301]:
+                        - generic [ref=e1302]: Description
+                        - textbox "Short title or reference for this appendix" [ref=e1303]: "Attachment – XI : Daily Water analysis Result"
+                    - generic [ref=e1304]:
+                      - generic [ref=e1305]:
+                        - generic [ref=e1306]: Attachment 12
+                        - button "Remove attachment 12" [ref=e1307] [cursor=pointer]:
+                          - img
+                      - generic [ref=e1308]:
+                        - generic [ref=e1309]: Label (optional)
+                        - textbox "e.g. Attachment No. I" [ref=e1310]
+                      - generic [ref=e1311]:
+                        - generic [ref=e1312]: Description
+                        - textbox "Short title or reference for this appendix" [ref=e1313]: "Attachment – XII : Root Cause Categorization Form"
+                    - button "Add attachment" [ref=e1314] [cursor=pointer]:
+                      - img
+                      - text: Add attachment
+              - complementary "Review margin" [ref=e1315]:
+                - generic "Margin notes":
+                  - button "Add note on Define" [ref=e1317] [cursor=pointer]:
+                    - img [ref=e1318]
+                    - text: Add note on Define
+                  - button "Add note on Measure" [ref=e1321] [cursor=pointer]:
+                    - img [ref=e1322]
+                    - text: Add note on Measure
+                  - button "Add note on Analyze" [ref=e1325] [cursor=pointer]:
+                    - img [ref=e1326]
+                    - text: Add note on Analyze
+                  - button "Add note on Improve" [ref=e1329] [cursor=pointer]:
+                    - img [ref=e1330]
+                    - text: Add note on Improve
+                  - button "Add note on Control" [ref=e1333] [cursor=pointer]:
+                    - img [ref=e1334]
+                    - text: Add note on Control
+          - complementary "Report sidebar" [ref=e1336]:
+            - button "Collapse sidebar" [expanded] [ref=e1338] [cursor=pointer]:
+              - img [ref=e1339]
+              - generic [ref=e1342]: Collapse
+            - generic [ref=e1343]:
+              - button "Placeholders" [ref=e1344]:
+                - img [ref=e1345]
+                - text: Placeholders
+              - button "Criteria" [ref=e1348]:
+                - img [ref=e1349]
+                - text: Criteria
+              - button "Comments" [ref=e1352]:
+                - img [ref=e1353]
+                - text: Comments
+            - generic [ref=e1356]:
+              - generic [ref=e1357]:
+                - generic [ref=e1358]:
+                  - button "Define 0/6" [expanded] [ref=e1359] [cursor=pointer]:
+                    - img [ref=e1360]
+                    - generic [ref=e1363]: Define
+                    - generic [ref=e1364]: 0/6
+                  - button "Jump" [ref=e1365] [cursor=pointer]
+                - generic [ref=e1366]:
+                  - generic [ref=e1370]: Clearly define what happened actually
+                  - generic [ref=e1374]: Explain what is different than expected
+                  - generic [ref=e1378]: Mention the location where the deviation occurred
+                  - generic [ref=e1382]: Date/time of occurrence and date/time of detection
+                  - generic [ref=e1386]: Personnel involved in the deviation
+                  - generic [ref=e1390]: Initial scope (impacted product/material/equipment/system/batches)
+              - generic [ref=e1391]:
+                - generic [ref=e1392]:
+                  - button "Measure 0/5" [expanded] [ref=e1393] [cursor=pointer]:
+                    - img [ref=e1394]
+                    - generic [ref=e1397]: Measure
+                    - generic [ref=e1398]: 0/5
+                  - button "Jump" [ref=e1399] [cursor=pointer]
+                - generic [ref=e1400]:
+                  - generic [ref=e1404]: Relevant facts and data reviewed (environment, process/product history, control limits)
+                  - generic [ref=e1408]: Summary of analysis of factors and data provided
+                  - generic [ref=e1412]: Conclusion statement of the analysis and review
+                  - generic [ref=e1416]: Regulatory notification details (if applicable)
+                  - generic [ref=e1420]: Logical flow and readability
+              - generic [ref=e1421]:
+                - generic [ref=e1422]:
+                  - button "Analyze 0/5" [expanded] [ref=e1423] [cursor=pointer]:
+                    - img [ref=e1424]
+                    - generic [ref=e1427]: Analyze
+                    - generic [ref=e1428]: 0/5
+                  - button "Jump" [ref=e1429] [cursor=pointer]
+                - generic [ref=e1430]:
+                  - generic [ref=e1434]: 6M method completeness
+                  - generic [ref=e1438]: 5-Why approach completeness
+                  - generic [ref=e1442]: Investigation outcome summarized
+                  - generic [ref=e1446]: Root cause categorization (Level 1, 2, 3)
+                  - generic [ref=e1450]: Impact assessment (System/Document/Product/Equipment/Patient safety)
+              - generic [ref=e1451]:
+                - generic [ref=e1452]:
+                  - button "Improve 0/6" [expanded] [ref=e1453] [cursor=pointer]:
+                    - img [ref=e1454]
+                    - generic [ref=e1457]: Improve
+                    - generic [ref=e1458]: 0/6
+                  - button "Jump" [ref=e1459] [cursor=pointer]
+                - generic [ref=e1460]:
+                  - generic [ref=e1464]: Specific corrective actions identified (including applicable immediate actions)
+                  - generic [ref=e1468]: Corrective actions for each root cause / substantiated probable root cause
+                  - generic [ref=e1472]: Unique number, responsible person, and due date assigned
+                  - generic [ref=e1476]: Expected outcome described and verifiable
+                  - generic [ref=e1480]: Effectiveness verification documented
+                  - generic [ref=e1484]: Actions achievable
+              - generic [ref=e1485]:
+                - generic [ref=e1486]:
+                  - button "Control 0/14" [expanded] [ref=e1487] [cursor=pointer]:
+                    - img [ref=e1488]
+                    - generic [ref=e1491]: Control
+                    - generic [ref=e1492]: 0/14
+                  - button "Jump" [ref=e1493] [cursor=pointer]
+                - generic [ref=e1494]:
+                  - generic [ref=e1498]: Preventive actions for each root cause / substantiated probable root cause
+                  - generic [ref=e1502]: Linked to the classification of the root cause
+                  - generic [ref=e1506]: Unique number, responsible person, due date assigned
+                  - generic [ref=e1510]: Expected outcome verifiable
+                  - generic [ref=e1514]: Effectiveness verification documented
+                  - generic [ref=e1518]: Interim plan addressed
+                  - generic [ref=e1522]: Rationale when no preventive action is identified
+                  - generic [ref=e1526]: Final comments support conclusion of investigation and CAPA
+                  - generic [ref=e1530]: Impact assessment fields complete (Regulatory, Product Quality, Validation, Stability, Market/Clinical)
+                  - generic [ref=e1534]: Recommended lot disposition matches conclusions
+                  - generic [ref=e1538]: Conclusion includes final decision and rationale
+                  - generic [ref=e1542]: CAPA verified complete prior to lot disposition
+                  - generic [ref=e1546]: Conclusion includes summary of root cause, scope/impact, lot details
+                  - generic [ref=e1550]: Preventive actions achievable
+  - region "Notifications alt+T":
+    - list:
+      - listitem [ref=e1551]:
+        - img [ref=e1553]
+        - generic [ref=e1556]: Report created
+  - alert [ref=e1557]
 ```
 
 # Test source
@@ -149,10 +1424,10 @@ waiting for navigation until "load"
   46 |     await expect(page.locator("#deviationNo")).not.toHaveValue("", { timeout: 30_000 });
   47 |     await page.getByRole("button", { name: /^create$/i }).click();
   48 | 
-> 49 |     await page.waitForURL(/\/reports\/[^/]+\/edit/, { timeout: 60_000 });
-     |                ^ TimeoutError: page.waitForURL: Timeout 60000ms exceeded.
+  49 |     await page.waitForURL(/\/reports\/[^/]+\/edit/, { timeout: 60_000 });
   50 |     createdReportId = page.url().match(/\/reports\/([^/]+)\/edit/)?.[1] ?? null;
-  51 |     await page.getByRole("button", { name: /measure/i }).click();
+> 51 |     await page.getByRole("button", { name: /measure/i }).click();
+     |                                                          ^ Error: locator.click: Error: strict mode violation: getByRole('button', { name: /measure/i }) resolved to 3 elements:
   52 | 
   53 |     await expect(page.getByText(/Calculated the\s+TOC of blank water as per formula\./)).toBeVisible({
   54 |       timeout: 30_000,

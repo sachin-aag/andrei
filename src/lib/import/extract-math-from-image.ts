@@ -484,10 +484,14 @@ export async function extractMathFromImage(
   const cached = cacheGet(key);
   if (cached) return cached;
 
-  const dbHit = await dbCacheGet(key);
-  if (dbHit) {
-    cacheSet(key, dbHit);
-    return dbHit;
+  // Skip DB cache when llmCall is overridden — that path is used by tests that
+  // control LLM output directly and must not be affected by cached real data.
+  if (!options.llmCall) {
+    const dbHit = await dbCacheGet(key);
+    if (dbHit) {
+      cacheSet(key, dbHit);
+      return dbHit;
+    }
   }
 
   let pngBytes: Uint8Array | null = null;
@@ -540,6 +544,6 @@ export async function extractMathFromImage(
 
   const result: MathExtractionResult = { latex, mathml };
   cacheSet(key, result);
-  void dbCacheSet(key, result);
+  if (!options.llmCall) void dbCacheSet(key, result);
   return result;
 }
