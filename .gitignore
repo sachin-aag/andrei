@@ -60,6 +60,3 @@ package-lock.json
 
 # Understand Anything knowledge graph
 .understand-anything/
-
-# Local draft investigation documents
-docs/Draft Investigation (DEV-QC-26-001).docx
