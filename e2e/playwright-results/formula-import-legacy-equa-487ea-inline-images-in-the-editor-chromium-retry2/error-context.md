@@ -7,7 +7,7 @@
 # Test info
 
 - Name: formula-import.spec.ts >> legacy equation formula rendering >> imports DOCX formulas as visible inline images in the editor
-- Location: e2e/formula-import.spec.ts:15:7
+- Location: e2e/formula-import.spec.ts:37:7
 
 # Error details
 
@@ -115,30 +115,53 @@ waiting for navigation until "load"
   12 | test.describe("legacy equation formula rendering", () => {
   13 |   test.skip(!fs.existsSync(fixturePath), "Draft Investigation fixture missing");
   14 | 
-  15 |   test("imports DOCX formulas as visible inline images in the editor", async ({ page }) => {
-  16 |     test.setTimeout(120_000);
-  17 | 
-  18 |     await page.goto("/");
-  19 |     await unlockIfNeeded(page);
-  20 |     await loginAsEngineer(page);
-  21 | 
-  22 |     await page.getByRole("button", { name: /new report/i }).first().click();
-  23 |     await page.locator("#report-upload").setInputFiles(fixturePath);
-  24 |     await expect(page.locator("#deviationNo")).not.toHaveValue("", { timeout: 30_000 });
-  25 |     await page.getByRole("button", { name: /^create$/i }).click();
-  26 | 
-> 27 |     await page.waitForURL(/\/reports\/[^/]+\/edit/, { timeout: 60_000 });
-     |                ^ TimeoutError: page.waitForURL: Timeout 60000ms exceeded.
-  28 |     await page.getByRole("button", { name: /measure/i }).click();
-  29 | 
-  30 |     await expect(page.getByText(/Calculated the\s+TOC of blank water as per formula\./)).toBeVisible({
-  31 |       timeout: 30_000,
-  32 |     });
-  33 |     await expect(page.getByText("[unsupported WMF image]")).toHaveCount(0);
-  34 |     await expect(page.locator('.tiptap img[data-image-inline="true"]')).toHaveCount(2, {
-  35 |       timeout: 15_000,
-  36 |     });
-  37 |   });
-  38 | });
+  15 |   let createdReportId: string | null = null;
+  16 | 
+  17 |   test.beforeEach(async ({ page }) => {
+  18 |     await loginAsEngineer(page);
+  19 |     const res = await page.request.get("/api/reports");
+  20 |     if (!res.ok()) return;
+  21 |     const { reports: existing } = (await res.json()) as {
+  22 |       reports: Array<{ id: string; deviationNo: string }>;
+  23 |     };
+  24 |     for (const r of existing) {
+  25 |       if (r.deviationNo === "DEV/QC/26/001") {
+  26 |         await page.request.delete(`/api/reports/${r.id}`);
+  27 |       }
+  28 |     }
+  29 |   });
+  30 | 
+  31 |   test.afterEach(async ({ page }) => {
+  32 |     if (!createdReportId) return;
+  33 |     await page.request.delete(`/api/reports/${createdReportId}`);
+  34 |     createdReportId = null;
+  35 |   });
+  36 | 
+  37 |   test("imports DOCX formulas as visible inline images in the editor", async ({ page }) => {
+  38 |     test.setTimeout(120_000);
   39 | 
+  40 |     await page.goto("/");
+  41 |     await unlockIfNeeded(page);
+  42 |     await loginAsEngineer(page);
+  43 | 
+  44 |     await page.getByRole("button", { name: /new report/i }).first().click();
+  45 |     await page.locator("#report-upload").setInputFiles(fixturePath);
+  46 |     await expect(page.locator("#deviationNo")).not.toHaveValue("", { timeout: 30_000 });
+  47 |     await page.getByRole("button", { name: /^create$/i }).click();
+  48 | 
+> 49 |     await page.waitForURL(/\/reports\/[^/]+\/edit/, { timeout: 60_000 });
+     |                ^ TimeoutError: page.waitForURL: Timeout 60000ms exceeded.
+  50 |     createdReportId = page.url().match(/\/reports\/([^/]+)\/edit/)?.[1] ?? null;
+  51 |     await page.getByRole("button", { name: /measure/i }).click();
+  52 | 
+  53 |     await expect(page.getByText(/Calculated the\s+TOC of blank water as per formula\./)).toBeVisible({
+  54 |       timeout: 30_000,
+  55 |     });
+  56 |     await expect(page.getByText("[unsupported WMF image]")).toHaveCount(0);
+  57 |     await expect(page.locator('.tiptap img[data-image-inline="true"]')).toHaveCount(2, {
+  58 |       timeout: 15_000,
+  59 |     });
+  60 |   });
+  61 | });
+  62 | 
 ```

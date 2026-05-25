@@ -85,7 +85,7 @@ export async function PATCH(
     if (!normalized) {
       return NextResponse.json({ error: "Deviation number is required" }, { status: 400 });
     }
-    if (await isDeviationNoTaken(normalized, reportId)) {
+    if (await isDeviationNoTaken(normalized, user.id, reportId)) {
       return NextResponse.json({ error: DUPLICATE_DEVIATION_NO_ERROR }, { status: 409 });
     }
     updates.deviationNo = normalized;

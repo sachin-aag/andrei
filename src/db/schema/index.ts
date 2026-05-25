@@ -125,7 +125,7 @@ export const reports = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
-    deviationNoUnique: uniqueIndex("reports_deviation_no_unique").on(t.deviationNo),
+    deviationNoUnique: uniqueIndex("reports_deviation_no_unique").on(t.authorId, t.deviationNo),
   })
 );
 
@@ -263,6 +263,18 @@ export const commentsRelations = relations(comments, ({ one, many }) => ({
   }),
   replies: many(comments, { relationName: "comment_thread" }),
 }));
+
+/**
+ * Persistent cache for Gemini math-extraction results, keyed by SHA-256 of the
+ * source image bytes. Survives report deletion so re-importing the same DOCX
+ * (or a new report with the same formula) never hits the LLM twice.
+ */
+export const mathExtractionCache = pgTable("math_extraction_cache", {
+  imageHash: text("image_hash").primaryKey(),
+  latex: text("latex").notNull(),
+  mathml: text("mathml").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 /** Sample-report human QA (not tied to production `reports` rows). */
 export const criteriaReviewReports = pgTable("criteria_review_reports", {

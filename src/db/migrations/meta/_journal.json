@@ -71,6 +71,20 @@
       "when": 1777900000000,
       "tag": "0009_report_source_docx",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1779926400000,
+      "tag": "0010_math_extraction_cache",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1779969600000,
+      "tag": "0011_per_user_deviation_no",
+      "breakpoints": true
     }
   ]
 }

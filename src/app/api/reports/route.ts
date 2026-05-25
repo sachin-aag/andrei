@@ -112,7 +112,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Deviation number is required" }, { status: 400 });
   }
 
-  if (await isDeviationNoTaken(finalDeviationNo)) {
+  if (await isDeviationNoTaken(finalDeviationNo, user.id)) {
     return NextResponse.json({ error: DUPLICATE_DEVIATION_NO_ERROR }, { status: 409 });
   }
 

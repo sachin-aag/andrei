@@ -228,6 +228,41 @@ function hashBytes(bytes: Uint8Array): string {
 }
 
 // ---------------------------------------------------------------------------
+// DB cache (L2) — persists across process restarts / CI runs
+// ---------------------------------------------------------------------------
+
+async function dbCacheGet(key: string): Promise<MathExtractionResult | undefined> {
+  if (!process.env.DATABASE_URL) return undefined;
+  try {
+    const { db } = await import("@/db");
+    const { mathExtractionCache } = await import("@/db/schema");
+    const { eq } = await import("drizzle-orm");
+    const rows = await db
+      .select({ latex: mathExtractionCache.latex, mathml: mathExtractionCache.mathml })
+      .from(mathExtractionCache)
+      .where(eq(mathExtractionCache.imageHash, key))
+      .limit(1);
+    return rows[0];
+  } catch {
+    return undefined;
+  }
+}
+
+async function dbCacheSet(key: string, value: MathExtractionResult): Promise<void> {
+  if (!process.env.DATABASE_URL) return;
+  try {
+    const { db } = await import("@/db");
+    const { mathExtractionCache } = await import("@/db/schema");
+    await db
+      .insert(mathExtractionCache)
+      .values({ imageHash: key, latex: value.latex, mathml: value.mathml })
+      .onConflictDoNothing();
+  } catch {
+    // Non-fatal: proceed without persisting
+  }
+}
+
+// ---------------------------------------------------------------------------
 // LaTeX cleanup + LLM call
 // ---------------------------------------------------------------------------
 
@@ -435,8 +470,9 @@ export type ExtractMathOptions = {
  *   - the LLM returns an empty/unusable response
  *   - the LaTeX cannot be converted to MathML
  *
- * Calls are cached in-process by content hash, so re-importing the same DOCX
- * does not re-invoke the model.
+ * Results are cached in-process (L1) and in the DB (L2, keyed by content hash),
+ * so re-importing the same DOCX — even across process restarts / CI runs — never
+ * re-invokes the model.
  */
 export async function extractMathFromImage(
   input: ExtractMathInput,
@@ -447,6 +483,12 @@ export async function extractMathFromImage(
   const key = hashBytes(input.bytes);
   const cached = cacheGet(key);
   if (cached) return cached;
+
+  const dbHit = await dbCacheGet(key);
+  if (dbHit) {
+    cacheSet(key, dbHit);
+    return dbHit;
+  }
 
   let pngBytes: Uint8Array | null = null;
   if (isWmfMime(input.mime)) {
@@ -498,5 +540,6 @@ export async function extractMathFromImage(
 
   const result: MathExtractionResult = { latex, mathml };
   cacheSet(key, result);
+  void dbCacheSet(key, result);
   return result;
 }
