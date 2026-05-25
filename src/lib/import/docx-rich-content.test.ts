@@ -64,6 +64,54 @@ describe("parseParagraphXmlForTest", () => {
     });
   });
 
+  it("ignores paragraph default color leaked by loose run matching", () => {
+    const pXml =
+      "<w:p>" +
+      '<w:pPr><w:rPr><w:color w:val="EE0000"/></w:rPr></w:pPr>' +
+      '<w:r><w:rPr><w:color w:val="000000"/></w:rPr><w:t>Body text</w:t></w:r>' +
+      "</w:p>";
+    const parsed = parseParagraphXmlForTest(pXml, new Map());
+    const part = parsed.parts[0];
+    expect(part).toMatchObject({ kind: "text", text: "Body text" });
+    expect(part && part.kind === "text" ? part.color : undefined).toBeUndefined();
+  });
+
+  it("preserves explicit run red (e.g. cross-reference EE0000)", () => {
+    const pXml =
+      '<w:p><w:r><w:rPr><w:color w:val="EE0000"/></w:rPr><w:t>Refer Attachment I.</w:t></w:r></w:p>';
+    const parsed = parseParagraphXmlForTest(pXml, new Map());
+    expect(parsed.parts[0]).toMatchObject({
+      kind: "text",
+      text: "Refer Attachment I.",
+      color: "#ee0000",
+    });
+  });
+
+  it("does not inherit paragraph default color onto runs without run-level color", () => {
+    const pXml =
+      "<w:p>" +
+      '<w:pPr><w:rPr><w:color w:val="EE0000"/></w:rPr></w:pPr>' +
+      '<w:r><w:rPr><w:sz w:val="24"/></w:rPr><w:t>Black body text</w:t></w:r>' +
+      "</w:p>";
+    const parsed = parseParagraphXmlForTest(pXml, new Map());
+    const part = parsed.parts[0];
+    expect(part).toMatchObject({ kind: "text", text: "Black body text" });
+    expect(part && part.kind === "text" ? part.color : undefined).toBeUndefined();
+  });
+
+  it("uses the last w:color in run properties when duplicates exist", () => {
+    const pXml =
+      "<w:p>" +
+      '<w:r><w:rPr><w:color w:val="EE0000"/><w:color w:val="0070C0"/></w:rPr><w:t>Blue</w:t></w:r>' +
+      "</w:p>";
+    const parsed = parseParagraphXmlForTest(pXml, new Map());
+    expect(parsed.parts[0]).toMatchObject({
+      kind: "text",
+      text: "Blue",
+      color: "#0070c0",
+    });
+  });
+
   it("parses superscript runs from OOXML", () => {
     const pXml =
       '<w:p><w:r><w:rPr><w:vertAlign w:val="superscript"/></w:rPr><w:t>2</w:t></w:r></w:p>';

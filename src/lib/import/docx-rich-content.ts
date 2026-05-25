@@ -136,9 +136,11 @@ function runIsUnderline(runXml: string): boolean {
 }
 
 function runTextColor(runXml: string): string | undefined {
-  const m = /<w:color w:val="([^"]+)"/.exec(runXml);
-  if (!m) return undefined;
-  return wordColorValToCss(m[1]);
+  const rPrMatch = /<w:rPr[\s\S]*?<\/w:rPr>/.exec(runXml);
+  if (!rPrMatch) return undefined;
+  const colors = [...rPrMatch[0].matchAll(/<w:color w:val="([^"]+)"/g)].map((m) => m[1]!);
+  if (!colors.length) return undefined;
+  return wordColorValToCss(colors[colors.length - 1]);
 }
 
 function extractImageRelationshipId(runXml: string): string | null {
@@ -186,7 +188,8 @@ function parseParagraphXml(pXml: string, media: Map<string, MediaAsset>): Parsed
     return { plainText: "[equation]", parts, isMathBlock: true };
   }
 
-  const runRe = /<w:r[\s\S]*?<\/w:r>/g;
+  // Must not match `<w:rPr>` inside `<w:pPr>` — that pulls paragraph default color into runs.
+  const runRe = /<w:r(?:\s[^>]*)?>[\s\S]*?<\/w:r>/g;
   for (const runMatch of pXml.matchAll(runRe)) {
     const runXml = runMatch[0]!;
     if (/<w:br\s*\/>/.test(runXml) && !/<w:t/.test(runXml)) {

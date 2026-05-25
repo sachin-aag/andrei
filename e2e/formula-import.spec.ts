@@ -1,30 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
+import { loginAsEngineer, unlockIfNeeded } from "./helpers/auth";
 
 const fixturePath = path.join(
   process.cwd(),
   "docs",
   "Draft Investigation (DEV-QC-26-001).docx"
 );
-
-async function unlockIfNeeded(page: import("@playwright/test").Page) {
-  if (!(await page.getByRole("heading", { name: /enter access password/i }).isVisible().catch(() => false))) {
-    return;
-  }
-  const password = process.env.SITE_ACCESS_PASSWORD ?? "@ndrei@2026";
-  await page.getByLabel(/^password$/i).fill(password);
-  await page.getByRole("button", { name: /^continue$/i }).click();
-  await page.waitForURL(/\/login/, { timeout: 15_000 });
-}
-
-async function loginAsEngineer(page: import("@playwright/test").Page) {
-  await expect(page.getByRole("heading", { name: /sign in to your workspace/i })).toBeVisible();
-  await page.getByRole("combobox", { name: /^user$/i }).click();
-  await page.getByRole("option").filter({ hasText: /engineer|qc/i }).first().click();
-  await page.getByRole("button", { name: /^continue$/i }).click();
-  await page.waitForURL("/", { timeout: 15_000 });
-}
 
 test.describe("legacy equation formula rendering", () => {
   test.skip(!fs.existsSync(fixturePath), "Draft Investigation fixture missing");

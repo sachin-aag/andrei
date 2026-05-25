@@ -7,7 +7,6 @@ import { BubbleMenu, FloatingMenu } from "@tiptap/react/menus";
 import StarterKit from "@tiptap/starter-kit";
 import Subscript from "@tiptap/extension-subscript";
 import Superscript from "@tiptap/extension-superscript";
-import Underline from "@tiptap/extension-underline";
 import { Color } from "@tiptap/extension-color";
 import { TextStyle } from "@tiptap/extension-text-style";
 import Placeholder from "@tiptap/extension-placeholder";
@@ -350,7 +349,6 @@ export function TiptapSectionField({
         BulletListWithStyle,
         Subscript,
         Superscript,
-        Underline,
         TextStyle,
         Color,
         ImageInline,
