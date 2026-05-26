@@ -21,6 +21,7 @@ loadEnv({ path: ".env" });
 import type { SectionType } from "@/db/schema";
 import type { ImportedReportContent } from "@/lib/import/docx-to-sections";
 import { docxBufferToImportedReportContent } from "@/lib/import/docx-to-sections";
+import { ensureMathliveSsr } from "@/lib/math/mathlive-ssr";
 import {
   evaluateSection,
   buildCriterionEvaluationLlmPrompts,
@@ -1101,6 +1102,8 @@ ${reportSectionsHtml}
 }
 
 async function main() {
+  await ensureMathliveSsr();
+
   const { inputDir, outOverride, docConcurrency, reportDate } = parseArgs(
     process.argv.slice(2)
   );

@@ -4,14 +4,25 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react
 
 export type SaveStatus = "idle" | "saving" | "saved" | "error";
 
+export type AutoSaveContext = {
+  signal?: AbortSignal;
+};
+
 export type UseAutoSaveOptions<T> = {
   value: T;
-  onSave: (value: T) => Promise<void>;
+  onSave: (value: T, context?: AutoSaveContext) => Promise<void>;
   delayMs?: number;
   enabled?: boolean;
   beaconUrl?: string;
   serialize?: (value: T) => string;
 };
+
+function isBenignSaveError(err: unknown, signal?: AbortSignal): boolean {
+  if (signal?.aborted) return true;
+  if (err instanceof DOMException && err.name === "AbortError") return true;
+  if (err instanceof Error && err.name === "AbortError") return true;
+  return false;
+}
 
 export function useAutoSave<T>({
   value,
@@ -42,6 +53,7 @@ export function useAutoSave<T>({
     serializeValueRef.current = serializeValue;
   }, [serializeValue]);
   const lastSerialized = useRef<string>(serializeValue(value));
+  const abortRef = useRef<AbortController | null>(null);
 
   /** Keep in sync so flush() after flushSync(onChange) sees the latest doc immediately. */
   useLayoutEffect(() => {
@@ -59,13 +71,18 @@ export function useAutoSave<T>({
       }
       isSaving.current = true;
       setStatus("saving");
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
       try {
         const snapshot = latestValue.current;
-        await onSave(snapshot);
+        await onSave(snapshot, { signal: controller.signal });
+        if (controller.signal.aborted) return;
         lastSerialized.current = serializeValueRef.current(snapshot);
         setStatus("saved");
         setLastSavedAt(new Date());
       } catch (err) {
+        if (isBenignSaveError(err, controller.signal)) return;
         console.error("AutoSave error", err);
         setStatus("error");
       } finally {
@@ -77,6 +94,13 @@ export function useAutoSave<T>({
       }
     };
   }, [enabled, onSave]);
+
+  useEffect(
+    () => () => {
+      abortRef.current?.abort();
+    },
+    []
+  );
 
   const flush = () => flushImpl.current();
 

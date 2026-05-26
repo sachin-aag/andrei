@@ -24,6 +24,40 @@ function isMissingWorkspaceUsersTable(error: unknown): boolean {
   return err?.code === "42P01" || err?.cause?.code === "42P01";
 }
 
+/**
+ * True when the DB is missing/unreachable in a way that should degrade to the
+ * built-in mock roster instead of crashing the login page (CI without a real
+ * `DATABASE_URL`, local dev without Neon, etc.).
+ */
+function isDbUnavailable(error: unknown): boolean {
+  if (isMissingWorkspaceUsersTable(error)) return true;
+  const err = error as {
+    code?: string;
+    name?: string;
+    message?: string;
+    cause?: { code?: string; name?: string; message?: string };
+  };
+  const codes = new Set([
+    "ECONNREFUSED",
+    "ENOTFOUND",
+    "EAI_AGAIN",
+    "ETIMEDOUT",
+    "ECONNRESET",
+    "3D000", // database does not exist
+    "28P01", // invalid password
+    "57P03", // cannot connect now
+  ]);
+  if (err?.code && codes.has(err.code)) return true;
+  if (err?.cause?.code && codes.has(err.cause.code)) return true;
+  const message = `${err?.message ?? ""} ${err?.cause?.message ?? ""}`.toLowerCase();
+  return (
+    message.includes("fetch failed") ||
+    message.includes("connect econnrefused") ||
+    message.includes("getaddrinfo") ||
+    message.includes("failed to fetch")
+  );
+}
+
 function sortedMockUsers(): MockUser[] {
   return [...MOCK_USERS].sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -62,7 +96,11 @@ export async function listWorkspaceUsers(): Promise<MockUser[]> {
     });
     return rows.map(rowToUser);
   } catch (error) {
-    if (isMissingWorkspaceUsersTable(error)) {
+    if (isDbUnavailable(error)) {
+      console.warn(
+        "[workspace-users] DB unavailable, returning mock roster:",
+        (error as Error)?.message
+      );
       return sortedMockUsers();
     }
     throw error;
@@ -83,7 +121,7 @@ export async function getWorkspaceUserById(
     });
     return row ? rowToUser(row) : undefined;
   } catch (error) {
-    if (isMissingWorkspaceUsersTable(error)) {
+    if (isDbUnavailable(error)) {
       return undefined;
     }
     throw error;

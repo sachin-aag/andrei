@@ -20,6 +20,7 @@ Migration files (apply in order):
 |------|---------|
 | [`0000_third_nighthawk.sql`](../src/db/migrations/0000_third_nighthawk.sql) | Enums, tables, foreign keys, unique index |
 | [`0001_peaceful_rage.sql`](../src/db/migrations/0001_peaceful_rage.sql) | `comments`: `content_path`, `from_pos`, `to_pos` |
+| [`0009_report_source_docx.sql`](../src/db/migrations/0009_report_source_docx.sql) | `report_source_docx`: original import `.docx` bytes |
 
 Ensure the Drizzle migrations table exists; `drizzle-kit migrate` applies pending migrations.
 
@@ -87,6 +88,21 @@ One row per report × section; body stored as JSON.
 
 **Index:** unique on (`report_id`, `section`) — name `report_section_unique`.
 
+### `report_source_docx`
+
+Optional original `.docx` uploaded when a report is created via import. One row per report at most; omitted when the report is created without a file. The `data` column is not selected by normal list/get report queries.
+
+| Column | Type | Notes |
+|--------|------|--------|
+| `report_id` | `text` | Primary key; FK → `reports.id`, `ON DELETE CASCADE` |
+| `filename` | `text` | Original upload filename |
+| `mime_type` | `text` | Default Word DOCX MIME |
+| `size_bytes` | `integer` | Upload size in bytes |
+| `sha256` | `text` | SHA-256 hex digest of `data` |
+| `data` | `bytea` | Raw file bytes |
+| `uploaded_by_id` | `text` | Engineer who created the report |
+| `uploaded_at` | `timestamptz` | Default `now()` |
+
 ### `criteria_evaluations`
 
 AI / traffic-light criteria per report section.
@@ -128,6 +144,7 @@ Threaded comments; optional anchor to a section field and ProseMirror range for 
 ## Relationship summary
 
 - `reports` 1 — * `report_sections`; deleting a report deletes its sections.
+- `reports` 1 — 0..1 `report_source_docx`; deleting a report deletes its stored import file.
 - `reports` 1 — * `criteria_evaluations` and `comments`.
 - `report_sections` 1 — * `criteria_evaluations` and optionally `comments` (via `section_id`).
 

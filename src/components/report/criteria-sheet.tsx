@@ -27,7 +27,7 @@ import {
   rowsBySection,
 } from "@/lib/ai/criteria-view";
 import { SectionAccordion } from "./section-accordion";
-import { getUser } from "@/lib/auth/mock-users";
+import { useUserDirectory } from "@/providers/user-directory-provider";
 import type { SectionType } from "@/db/schema";
 import type { CommentRecord } from "@/types/report";
 
@@ -187,6 +187,7 @@ function CommentCard({
   replyCount: number;
   onJump?: () => void;
 }) {
+  const { getUser } = useUserDirectory();
   const author = getUser(comment.authorId);
 
   return (

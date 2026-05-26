@@ -99,8 +99,10 @@ describe("sections merge", () => {
       },
     });
 
-    expect(analyze.rootCause.narrative).toContain("Communication failure");
-    expect(analyze.rootCause.narrative).toContain("Primary (Level 1): Equipment / Instrument");
+    expect(richJsonToPlainText(analyze.rootCause.narrative)).toContain("Communication failure");
+    expect(richJsonToPlainText(analyze.rootCause.narrative)).toContain(
+      "Primary (Level 1): Equipment / Instrument"
+    );
     expect(analyze.rootCause).not.toHaveProperty("primaryLevel1");
   });
 

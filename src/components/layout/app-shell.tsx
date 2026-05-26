@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useId, useState } from "react";
-import { hydrateUserDirectory } from "@/lib/auth/user-directory";
+import { useId, useState } from "react";
 import type { MockUser } from "@/lib/auth/mock-users";
+import { UserDirectoryProvider } from "@/providers/user-directory-provider";
 import {
   LogOut,
   FileText,
@@ -18,22 +18,16 @@ import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 export function AppShell({
   user,
+  initialUsers,
   children,
 }: {
   user: MockUser;
+  initialUsers: MockUser[];
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(true);
   const mainId = useId();
-
-  useEffect(() => {
-    void fetch("/api/auth/users")
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: { users?: MockUser[] } | null) => {
-        if (data?.users) hydrateUserDirectory(data.users);
-      });
-  }, []);
 
   const handleLogout = async () => {
     await fetch("/api/auth/logout", { method: "POST" });
@@ -46,6 +40,7 @@ export function AppShell({
   ];
 
   return (
+    <UserDirectoryProvider initialUsers={initialUsers}>
     <div className="flex h-screen w-screen overflow-hidden bg-[var(--background)]">
       <a
         href={`#${mainId}`}
@@ -202,5 +197,6 @@ export function AppShell({
         {children}
       </main>
     </div>
+    </UserDirectoryProvider>
   );
 }

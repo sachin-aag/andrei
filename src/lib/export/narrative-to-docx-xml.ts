@@ -1,6 +1,19 @@
 import type { JSONContent } from "@tiptap/core";
-import { wordNumIdForList } from "@/lib/tiptap/list-style";
+import {
+  createDocxExportContext,
+  registerInlineImage,
+  type DocxExportContext,
+} from "@/lib/export/docx-export-context";
+import { allocateListNumId } from "@/lib/export/docx-numbering";
+import { resolveOmmlFromMathAttrs } from "@/lib/math/omml-mathml";
+import { stripWordBookmarkAnchors } from "@/lib/import/sanitize-import-html";
 import { linesToDoc } from "@/lib/tiptap/rich-text";
+import { colorFromTextMarks, cssColorToWordVal } from "@/lib/tiptap/text-color";
+
+export type NarrativeDocxXmlResult = {
+  xml: string;
+  ctx: DocxExportContext;
+};
 
 /**
  * Convert a Tiptap JSONContent narrative document to OOXML (Word XML).
@@ -9,38 +22,64 @@ import { linesToDoc } from "@/lib/tiptap/rich-text";
  * injection via docxtemplater's `{@rawXml}` syntax.
  */
 export function narrativeToDocxXml(
-  doc: JSONContent | undefined | null
+  doc: JSONContent | undefined | null,
+  ctx: DocxExportContext = createDocxExportContext()
 ): string {
+  return narrativeToDocxXmlWithContext(doc, ctx).xml;
+}
+
+function sanitizeDocTextNodes(doc: JSONContent): JSONContent {
+  function visit(node: JSONContent): JSONContent {
+    if (node.type === "text" && typeof node.text === "string") {
+      return { ...node, text: stripWordBookmarkAnchors(node.text) };
+    }
+    if (node.content?.length) {
+      return { ...node, content: node.content.map(visit) };
+    }
+    return node;
+  }
+  return visit(doc);
+}
+
+export function narrativeToDocxXmlWithContext(
+  doc: JSONContent | undefined | null,
+  ctx: DocxExportContext = createDocxExportContext()
+): NarrativeDocxXmlResult {
   if (!doc || !doc.content?.length) {
-    return wrapParagraph("Not Applicable");
+    return { xml: wrapParagraph("Not Applicable"), ctx };
   }
 
+  const sanitized = sanitizeDocTextNodes(doc);
   const parts: string[] = [];
 
-  for (const node of doc.content) {
+  for (const node of sanitized.content ?? []) {
     if (node.type === "table") {
-      parts.push(tableToXml(node));
+      parts.push(tableToXml(node, ctx));
     } else if (node.type === "paragraph") {
-      parts.push(paragraphToXml(node));
+      parts.push(paragraphToXml(node, false, null, null, false, ctx));
     } else if (node.type === "bulletList" || node.type === "orderedList") {
-      parts.push(listToXml(node));
+      parts.push(listToXml(node, ctx));
     } else if (node.type === "heading") {
-      parts.push(paragraphToXml(node, true));
+      parts.push(paragraphToXml(node, true, null, null, false, ctx));
+    } else if (node.type === "mathBlock") {
+      parts.push(mathBlockToXml(node));
     } else {
-      // Fallback: treat as paragraph
-      parts.push(paragraphToXml(node));
+      parts.push(paragraphToXml(node, false, null, null, false, ctx));
     }
   }
 
   const result = parts.join("");
-  return result || wrapParagraph("Not Applicable");
+  return { xml: result || wrapParagraph("Not Applicable"), ctx };
 }
 
 /** Plain multiline text (markdown-style list markers) → Word XML. */
-export function plainTextToDocxXml(text: string | undefined | null): string {
-  const trimmed = text?.trim();
+export function plainTextToDocxXml(
+  text: string | undefined | null,
+  ctx: DocxExportContext = createDocxExportContext()
+): string {
+  const trimmed = stripWordBookmarkAnchors(text?.trim() ?? "");
   if (!trimmed) return wrapParagraph("Not Applicable");
-  return narrativeToDocxXml(linesToDoc(trimmed));
+  return narrativeToDocxXmlWithContext(linesToDoc(trimmed), ctx).xml;
 }
 
 const DEFAULT_RUN_FONT = "Times New Roman";
@@ -114,17 +153,19 @@ function paragraphToXml(
   bold = false,
   paragraphAlign?: string | null,
   numId?: number | null,
-  keepNext = false
+  keepNext = false,
+  ctx?: DocxExportContext
 ): string {
-  const runs = textNodesToRuns(node.content ?? [], bold);
+  const runs = inlineNodesToRuns(node.content ?? [], bold, ctx);
   const pPr = paragraphProperties(paragraphAlign, numId, keepNext);
   if (!runs) return `<w:p>${pPr}</w:p>`;
   return `<w:p>${pPr}${runs}</w:p>`;
 }
 
-function textNodesToRuns(
+function inlineNodesToRuns(
   nodes: JSONContent[],
-  forceBold = false
+  forceBold = false,
+  ctx?: DocxExportContext
 ): string {
   const parts: string[] = [];
 
@@ -136,10 +177,20 @@ function textNodesToRuns(
       const isBold =
         forceBold || marks.some((m) => m.type === "bold");
       const isItalic = marks.some((m) => m.type === "italic");
+      const isUnderline = marks.some((m) => m.type === "underline");
+      const isSubscript = marks.some((m) => m.type === "subscript");
+      const isSuperscript = marks.some((m) => m.type === "superscript");
+      const color = colorFromTextMarks(marks);
 
-      const rPr = runProperties({ bold: isBold, italic: isItalic });
+      const rPr = runProperties({
+        bold: isBold,
+        italic: isItalic,
+        underline: isUnderline,
+        subscript: isSubscript,
+        superscript: isSuperscript,
+        color,
+      });
 
-      // Handle line breaks within text
       const lines = text.split("\n");
       for (let i = 0; i < lines.length; i++) {
         if (i > 0) {
@@ -153,13 +204,53 @@ function textNodesToRuns(
       }
     } else if (child.type === "hardBreak") {
       parts.push(`<w:r>${runProperties()}<w:br/></w:r>`);
+    } else if (child.type === "imageInline" && ctx) {
+      const src = child.attrs?.src as string | undefined;
+      if (src) {
+        const width = child.attrs?.width as number | undefined;
+        parts.push(registerInlineImage(ctx, src, width));
+      }
+    } else if (child.type === "mathInline") {
+      parts.push(mathInlineToRun(child));
     }
   }
 
   return parts.join("");
 }
 
-function runProperties(options: { bold?: boolean; italic?: boolean } = {}): string {
+function mathOmmlFromNode(node: JSONContent): string {
+  return resolveOmmlFromMathAttrs({
+    mathml: node.attrs?.mathml as string | undefined,
+    latex: node.attrs?.latex as string | undefined,
+    omml: node.attrs?.omml as string | undefined,
+    ommlDirty: node.attrs?.ommlDirty as boolean | undefined,
+  });
+}
+
+function mathInlineToRun(node: JSONContent): string {
+  const omml = mathOmmlFromNode(node);
+  if (!omml) return "";
+  const inner = omml.startsWith("<m:oMath") ? omml : `<m:oMath>${omml}</m:oMath>`;
+  return `<w:r>${runProperties()}${inner}</w:r>`;
+}
+
+function mathBlockToXml(node: JSONContent): string {
+  const omml = mathOmmlFromNode(node);
+  if (!omml) return wrapParagraph("[equation]");
+  const inner = omml.startsWith("<m:oMath") ? omml : `<m:oMath>${omml}</m:oMath>`;
+  return `<w:p>${paragraphProperties()}<m:oMathPara xmlns:m="http://schemas.openxmlformats.org/officeDocument/2006/math">${inner}</m:oMathPara></w:p>`;
+}
+
+function runProperties(
+  options: {
+    bold?: boolean;
+    italic?: boolean;
+    underline?: boolean;
+    color?: string;
+    subscript?: boolean;
+    superscript?: boolean;
+  } = {}
+): string {
   let rPr =
     `<w:rPr><w:rFonts w:ascii="${DEFAULT_RUN_FONT}" w:eastAsia="${DEFAULT_RUN_FONT}" ` +
     `w:hAnsi="${DEFAULT_RUN_FONT}" w:cs="${DEFAULT_RUN_FONT}"/>` +
@@ -167,29 +258,46 @@ function runProperties(options: { bold?: boolean; italic?: boolean } = {}): stri
     `<w:szCs w:val="${DEFAULT_RUN_SIZE_HALF_POINTS}"/>`;
   if (options.bold) rPr += "<w:b/>";
   if (options.italic) rPr += "<w:i/>";
+  if (options.underline) rPr += '<w:u w:val="single"/>';
+  const wordColor = cssColorToWordVal(options.color);
+  if (wordColor) rPr += `<w:color w:val="${wordColor}"/>`;
+  if (options.subscript) rPr += '<w:vertAlign w:val="subscript"/>';
+  if (options.superscript) rPr += '<w:vertAlign w:val="superscript"/>';
   rPr += "</w:rPr>";
   return rPr;
 }
 
-function listToXml(node: JSONContent): string {
+function listToXml(node: JSONContent, ctx: DocxExportContext): string {
   const listType = node.type === "orderedList" ? "orderedList" : "bulletList";
-  const numId = wordNumIdForList(
+  const numId = allocateListNumId(
+    ctx,
     listType,
     (node.attrs?.listStyle as string | undefined) ?? null
   );
   const parts: string[] = [];
   for (const item of node.content ?? []) {
     if (item.type === "listItem") {
+      let numbered = true;
       for (const child of item.content ?? []) {
-        parts.push(paragraphToXml(child, false, null, numId));
+        parts.push(
+          paragraphToXml(
+            child,
+            false,
+            null,
+            numbered ? numId : null,
+            false,
+            ctx
+          )
+        );
+        numbered = false;
       }
     }
   }
   return parts.join("");
 }
 
-function tableToXml(node: JSONContent): string {
-  const inner = buildInnerTableXml(node);
+function tableToXml(node: JSONContent, ctx?: DocxExportContext): string {
+  const inner = buildInnerTableXml(node, ctx);
   if (!inner) return "";
 
   // Wrap the real table inside a single-row, single-cell, borderless table
@@ -235,7 +343,7 @@ function tableToXml(node: JSONContent): string {
   return `<w:tbl>${wrapperTblPr}${wrapperGrid}${wrapperRow}</w:tbl>`;
 }
 
-function buildInnerTableXml(node: JSONContent): string {
+function buildInnerTableXml(node: JSONContent, ctx?: DocxExportContext): string {
   const rows = node.content ?? [];
   if (rows.length === 0) return "";
 
@@ -288,7 +396,8 @@ function buildInnerTableXml(node: JSONContent): string {
         rowIdx === 0,
         rowIdx === rows.length - 1,
         activeMerges,
-        colCount
+        colCount,
+        ctx
       )
     )
     .join("");
@@ -307,7 +416,8 @@ function tableRowToXml(
   isHeader: boolean,
   isLastRow: boolean,
   activeMerges: (ActiveRowMerge | null)[],
-  colCount: number
+  colCount: number,
+  ctx?: DocxExportContext
 ): string {
   const cells = row.content ?? [];
   // Always set cantSplit so a single row never breaks mid-content across pages.
@@ -326,7 +436,7 @@ function tableRowToXml(
     const isMergeStart = col === 0 || activeMerges[col - 1] !== merge;
     if (isMergeStart) {
       cellsXml.push(
-        tableCellToXml(merge.cell, isHeader, isLastRow, {
+        tableCellToXml(merge.cell, isHeader, isLastRow, ctx, {
           colspan: merge.colspan,
           vMerge: "continue",
           empty: true,
@@ -349,7 +459,7 @@ function tableRowToXml(
     const colspan = getSpan(cell, "colspan");
     const rowspan = getSpan(cell, "rowspan");
     cellsXml.push(
-      tableCellToXml(cell, isHeader, isLastRow, {
+      tableCellToXml(cell, isHeader, isLastRow, ctx, {
         colspan,
         vMerge: rowspan > 1 ? "restart" : null,
       })
@@ -372,7 +482,7 @@ function tableRowToXml(
   while (col < colCount) {
     if (!emitActiveMerge()) {
       cellsXml.push(
-        tableCellToXml({ type: "tableCell", content: [] }, isHeader, isLastRow)
+        tableCellToXml({ type: "tableCell", content: [] }, isHeader, isLastRow, ctx)
       );
       col++;
     }
@@ -387,6 +497,7 @@ function tableCellToXml(
   cell: JSONContent,
   isHeader: boolean,
   isLastRow: boolean,
+  ctx?: DocxExportContext,
   options: {
     colspan?: number;
     vMerge?: "restart" | "continue" | null;
@@ -421,9 +532,9 @@ function tableCellToXml(
   const content = paragraphs
     .map((p) => {
       if (p.type === "paragraph") {
-        return paragraphToXml(p, isHeader, hAlign ?? null, null, keepNext);
+        return paragraphToXml(p, isHeader, hAlign ?? null, null, keepNext, ctx);
       }
-      return paragraphToXml(p, false, hAlign ?? null, null, keepNext);
+      return paragraphToXml(p, false, hAlign ?? null, null, keepNext, ctx);
     })
     .join("");
 

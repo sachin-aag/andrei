@@ -1,5 +1,9 @@
 # Bulk HTML sample evaluation (`pnpm run sample-eval-report`).
 #
+# On pull requests, runs only when paths under evaluation logic, DOCX import, or
+# docs/sample_files/ change (see `on.pull_request.paths`). Manual workflow_dispatch
+# always runs.
+#
 # API key — add a repository Actions secret:
 #   Settings → Secrets and variables → Actions → New repository secret
 #
@@ -21,6 +25,19 @@ name: Sample evaluation HTML report
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+    # Skip expensive bulk Gemini runs unless evaluation inputs or the sample corpus changed.
+    paths:
+      - ".github/workflows/sample-eval-report.yml"
+      - "scripts/bulk-sample-evaluation-report.ts"
+      - "docs/sample_files/**"
+      - "src/lib/ai/**"
+      - "src/lib/sample-eval/**"
+      - "src/lib/import/**"
+      - "src/lib/math/**"
+      - "src/lib/tiptap/rich-text.ts"
+      - "src/types/sections.ts"
+      - "package.json"
+      - "pnpm-lock.yaml"
   workflow_dispatch:
 
 concurrency:

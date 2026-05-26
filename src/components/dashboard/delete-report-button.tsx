@@ -1,8 +1,7 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState } from "react";
 import { Loader2, Trash2 } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,16 +17,18 @@ import {
 export function DeleteReportButton({
   reportId,
   deviationNo,
+  onDeleted,
 }: {
   reportId: string;
   deviationNo: string;
+  onDeleted?: () => void;
 }) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [pending, startTransition] = useTransition();
+  const [pending, setPending] = useState(false);
 
-  const deleteReport = () => {
-    startTransition(async () => {
+  const deleteReport = async () => {
+    setPending(true);
+    try {
       const res = await fetch(`/api/reports/${reportId}`, {
         method: "DELETE",
       });
@@ -38,8 +39,10 @@ export function DeleteReportButton({
       }
       setOpen(false);
       toast.success("Report deleted");
-      router.refresh();
-    });
+      onDeleted?.();
+    } finally {
+      setPending(false);
+    }
   };
 
   return (

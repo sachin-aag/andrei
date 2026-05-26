@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { humanReviewerFromMockUser } from "@/lib/auth/reviewer-from-user";
 import { getCurrentUser } from "@/lib/auth/session";
+import { listWorkspaceUsers } from "@/lib/auth/workspace-users";
 import { canAccessCriteriaReview } from "@/lib/criteria-review/access";
 import { AppShell } from "@/components/layout/app-shell";
 import { CriteriaReviewListHeader } from "@/components/criteria-review/criteria-review-list-header";
@@ -17,9 +18,10 @@ export default async function CriteriaReviewListPage() {
 
   const items = await listCriteriaReviewSessions();
   const reviewerId = humanReviewerFromMockUser(user).id;
+  const workspaceUsers = await listWorkspaceUsers();
 
   return (
-    <AppShell user={user}>
+    <AppShell user={user} initialUsers={workspaceUsers}>
       <div className="flex flex-col h-full overflow-hidden">
         <CriteriaReviewListHeader
           reportCount={items.length}

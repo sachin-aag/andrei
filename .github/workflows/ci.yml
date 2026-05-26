@@ -43,6 +43,8 @@ jobs:
   e2e:
     name: E2E (Playwright)
     runs-on: ubuntu-latest
+    env:
+      GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}
     steps:
       - uses: actions/checkout@v4
 
@@ -65,3 +67,11 @@ jobs:
         run: pnpm exec playwright install --with-deps chromium
 
       - run: pnpm run test:e2e
+
+      - name: Upload Playwright results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: test-results/
+          retention-days: 7

@@ -5,8 +5,14 @@ import type { Content, JSONContent, Editor } from "@tiptap/core";
 import { useEditor, EditorContent } from "@tiptap/react";
 import { BubbleMenu, FloatingMenu } from "@tiptap/react/menus";
 import StarterKit from "@tiptap/starter-kit";
+import Subscript from "@tiptap/extension-subscript";
+import Superscript from "@tiptap/extension-superscript";
+import { Color } from "@tiptap/extension-color";
+import { TextStyle } from "@tiptap/extension-text-style";
 import Placeholder from "@tiptap/extension-placeholder";
 import { BulletListWithStyle } from "@/lib/tiptap/bullet-list-with-style";
+import { ImageInline } from "@/lib/tiptap/image-inline";
+import { MathBlock, MathInline } from "@/lib/tiptap/math-nodes";
 import { TableRow } from "@tiptap/extension-table-row";
 import { TableCellWithVerticalAlign, TableHeaderWithVerticalAlign } from "@/lib/tiptap/table-cell-vertical-align";
 import { TableWithColumnWidths } from "@/lib/tiptap/table-column-widths";
@@ -14,7 +20,6 @@ import { toast } from "sonner";
 import {
   Loader2,
   MessageSquarePlus,
-  TableIcon,
   Plus,
   Minus,
   Trash2,
@@ -27,8 +32,6 @@ import {
   ArrowUpToLine,
   AlignVerticalJustifyCenter,
   ArrowDownToLine,
-  List,
-  ListOrdered,
 } from "lucide-react";
 import {
   useReportComments,
@@ -38,7 +41,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { getUser } from "@/lib/auth/mock-users";
+import { useUserDirectory } from "@/providers/user-directory-provider";
 import { cn } from "@/lib/utils";
 import { createCommentHighlightExtension } from "@/lib/tiptap/comment-highlights";
 import type { CommentHighlightRange, CommentHighlightHandlers } from "@/lib/tiptap/comment-highlights";
@@ -50,60 +53,6 @@ import {
   TrackChangesKeyboardExtension,
 } from "@/lib/tiptap/suggestion-marks";
 import type { SectionType } from "@/db/schema";
-
-function ListEditToolbar({ editor }: { editor: Editor }) {
-  const toggleBulletStyle = (listStyle: "disc" | "dash") => {
-    if (editor.isActive("bulletList", { listStyle })) {
-      editor.chain().focus().liftListItem("listItem").run();
-      return;
-    }
-    editor
-      .chain()
-      .focus()
-      .toggleBulletList()
-      .updateAttributes("bulletList", { listStyle })
-      .run();
-  };
-
-  return (
-    <div className="flex items-center gap-0.5">
-      <Button
-        type="button"
-        variant={editor.isActive("orderedList") ? "secondary" : "ghost"}
-        size="sm"
-        className="h-6 px-1.5 text-xs"
-        onClick={() => editor.chain().focus().toggleOrderedList().run()}
-        title="Numbered list"
-      >
-        <ListOrdered className="size-3.5" />
-      </Button>
-      <Button
-        type="button"
-        variant={
-          editor.isActive("bulletList", { listStyle: "disc" }) ? "secondary" : "ghost"
-        }
-        size="sm"
-        className="h-6 px-1.5 text-xs"
-        onClick={() => toggleBulletStyle("disc")}
-        title="Bullet list"
-      >
-        <List className="size-3.5" />
-      </Button>
-      <Button
-        type="button"
-        variant={
-          editor.isActive("bulletList", { listStyle: "dash" }) ? "secondary" : "ghost"
-        }
-        size="sm"
-        className="h-6 px-1.5 text-xs"
-        onClick={() => toggleBulletStyle("dash")}
-        title="Dash list"
-      >
-        <Minus className="size-3.5" />
-      </Button>
-    </div>
-  );
-}
 
 function TableEditToolbar({
   editor,
@@ -291,6 +240,10 @@ export type TiptapSectionFieldProps = {
   onChange: (doc: JSONContent) => void;
   /** Persist immediately after accept/reject suggestion (autosave flush). */
   onFlushSave?: () => void | Promise<void>;
+  /** When true, the field stays read-only even in engineer edit mode. */
+  locked?: boolean;
+  /** Shrink the editor chrome for read-only blocks (e.g. signature tables). */
+  compact?: boolean;
 };
 
 export function TiptapSectionField({
@@ -301,6 +254,8 @@ export function TiptapSectionField({
   className,
   value,
   onChange,
+  locked = false,
+  compact = false,
 }: TiptapSectionFieldProps) {
   const {
     report,
@@ -322,7 +277,8 @@ export function TiptapSectionField({
     pendingCommentFocusCommentId,
     acknowledgeCommentFocus,
   } = useReportComments();
-  const { registerEditor } = useReportEditors();
+  const { registerEditor, setActiveEditor } = useReportEditors();
+  const { getUser } = useUserDirectory();
 
   const rangesRef = useRef<CommentHighlightRange[]>([]);
   const handlersRef = useRef<CommentHighlightHandlers>({
@@ -377,7 +333,7 @@ export function TiptapSectionField({
     onChangeRef.current = onChange;
   }, [onChange]);
 
-  const editable = !readOnly || trackChangesMode;
+  const editable = !locked && (!readOnly || trackChangesMode);
   const manager = getUser(currentUserId)?.role === "manager";
   const canInlineComment =
     (report.status === "submitted" || report.status === "in_review" || report.status === "draft") &&
@@ -397,6 +353,13 @@ export function TiptapSectionField({
           bulletList: false,
         }),
         BulletListWithStyle,
+        Subscript,
+        Superscript,
+        TextStyle,
+        Color,
+        ImageInline,
+        MathInline,
+        MathBlock,
         Placeholder.configure({ placeholder }),
         TableWithColumnWidths.configure({ resizable: false }),
         TableRow,
@@ -512,6 +475,15 @@ export function TiptapSectionField({
   }, [editor, registerEditor, section, contentPath]);
 
   useEffect(() => {
+    if (!editor || !editable) return;
+    const onFocus = () => setActiveEditor(section, contentPath);
+    editor.on("focus", onFocus);
+    return () => {
+      editor.off("focus", onFocus);
+    };
+  }, [editor, editable, section, contentPath, setActiveEditor]);
+
+  useEffect(() => {
     if (!editor) return;
     editor.setEditable(editable);
   }, [editor, editable]);
@@ -602,32 +574,8 @@ export function TiptapSectionField({
 
   return (
     <div className={className}>
-      <div className="mb-1.5 flex flex-wrap items-center gap-2">
+      <div className="mb-1.5">
         <Label>{label}</Label>
-        {editor && editable && <ListEditToolbar editor={editor} />}
-        {editor && editable && (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="h-6 px-1.5 text-xs gap-1 text-[var(--muted-foreground)]"
-            onClick={() =>
-              editor
-                .chain()
-                .focus()
-                .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
-                .run()
-            }
-          >
-            <TableIcon className="size-3" />
-            Insert Table
-          </Button>
-        )}
-        {editor && editable && editor.isActive("table") && (
-          <span className="text-[10px] text-[var(--muted-foreground)]">
-            Table tools float above the cell
-          </span>
-        )}
       </div>
 
       {editor && editable && (
@@ -749,8 +697,13 @@ export function TiptapSectionField({
 
       <div
         className={cn(
-          "rounded-md border border-[var(--border)] bg-[var(--input)] px-3 py-2 min-h-[200px] text-sm leading-relaxed focus-within:ring-2 focus-within:ring-[var(--ring)]",
-          "[&_.ProseMirror]:min-h-[180px] [&_.ProseMirror]:outline-none",
+          "rounded-md border border-[var(--border)] bg-[var(--input)] px-3 py-2 text-sm leading-relaxed focus-within:ring-2 focus-within:ring-[var(--ring)]",
+          compact
+            ? "[&_.ProseMirror]:min-h-0 [&_.ProseMirror>p.is-empty:last-child]:hidden [&_.ProseMirror_table]:my-0"
+            : "min-h-[200px] [&_.ProseMirror]:min-h-[180px]",
+          "[&_.ProseMirror]:outline-none",
+          "[&_.tiptap-image-inline]:my-1 [&_.tiptap-image-inline]:max-w-full [&_.tiptap-image-inline]:h-auto [&_.tiptap-image-inline]:rounded-sm",
+          "[&_.tiptap-math-block]:my-2",
           !editable && "opacity-90"
         )}
       >

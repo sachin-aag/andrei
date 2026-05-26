@@ -1,4 +1,5 @@
 import type { JSONContent } from "@tiptap/core";
+import { cssColorToWordVal } from "@/lib/tiptap/text-color";
 
 /**
  * Extract data tables from mammoth HTML output and convert each to
@@ -122,9 +123,9 @@ function findAllTableRanges(html: string): TableRange[] {
 }
 
 function isDataTableRange(html: string, range: TableRange): boolean {
+  if (isSignatureTable(html, range)) return false;
   if (range.depth >= 1) return true;
   if (isLayoutWrapper(html, range)) return false;
-  if (isSignatureTable(html, range)) return false;
   return true;
 }
 
@@ -387,21 +388,176 @@ function parseCellParagraphs(cellHtml: string): JSONContent[] {
 
   if (paragraphs.length > 0) return paragraphs;
 
-  const text = stripHtmlTags(cellHtml).trim();
-  return text ? [parseHtmlInlineParagraph(text)] : [{ type: "paragraph" }];
+  const trimmed = cellHtml.trim();
+  return trimmed ? [parseHtmlInlineParagraph(trimmed)] : [{ type: "paragraph" }];
 }
+
+type InlineMarkState = {
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  color?: string;
+};
+
+const BOLD_INLINE_TAGS = new Set(["strong", "b"]);
+const ITALIC_INLINE_TAGS = new Set(["em", "i"]);
+const UNDERLINE_INLINE_TAGS = new Set(["u"]);
+/** Tags whose contents are ignored (mammoth form controls, etc.). */
+const SKIP_INLINE_TAGS = new Set(["input", "img", "script", "style", "meta"]);
 
 function parseHtmlInlineParagraph(innerHtml: string): JSONContent {
   const parts = innerHtml.split(/<br\s*\/?>/gi);
   const inline: JSONContent[] = [];
 
   for (let i = 0; i < parts.length; i++) {
-    const text = decodeHtmlEntities(stripHtmlTags(parts[i]!)).replace(/\s+/g, " ").trim();
     if (i > 0) inline.push({ type: "hardBreak" });
-    if (text) inline.push({ type: "text", text });
+    inline.push(...parseHtmlInlineContent(parts[i]!));
   }
 
   return { type: "paragraph", content: inline.length > 0 ? inline : [] };
+}
+
+function marksFromState(state: InlineMarkState): JSONContent["marks"] | undefined {
+  const marks: NonNullable<JSONContent["marks"]> = [];
+  if (state.bold) marks.push({ type: "bold" });
+  if (state.italic) marks.push({ type: "italic" });
+  if (state.underline) marks.push({ type: "underline" });
+  if (state.color) marks.push({ type: "textStyle", attrs: { color: state.color } });
+  return marks.length > 0 ? marks : undefined;
+}
+
+function cssColorFromHtml(value: string): string | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  const hex = trimmed.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+  if (hex) {
+    const word = cssColorToWordVal(trimmed);
+    return word ? `#${word.toLowerCase()}` : undefined;
+  }
+  const rgb = trimmed.match(/^rgb\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/i);
+  if (rgb) {
+    const word = cssColorToWordVal(
+      `#${[rgb[1], rgb[2], rgb[3]]
+        .map((n) => Number(n).toString(16).padStart(2, "0"))
+        .join("")}`
+    );
+    return word ? `#${word.toLowerCase()}` : undefined;
+  }
+  return undefined;
+}
+
+function applySpanStyleToMarkState(state: InlineMarkState, tagHtml: string): void {
+  const styleM = /\bstyle\s*=\s*["']([^"']*)["']/i.exec(tagHtml);
+  if (!styleM) return;
+  const style = styleM[1]!;
+  const fw = /font-weight\s*:\s*([^;]+)/i.exec(style);
+  if (fw) {
+    const w = fw[1]!.trim().toLowerCase();
+    if (w === "bold" || w === "bolder" || (Number.parseInt(w, 10) || 0) >= 600) {
+      state.bold = true;
+    }
+  }
+  const fs = /font-style\s*:\s*([^;]+)/i.exec(style);
+  if (fs && fs[1]!.trim().toLowerCase() === "italic") state.italic = true;
+  const td = /text-decoration(?:-line)?\s*:\s*([^;]+)/i.exec(style);
+  if (td && td[1]!.toLowerCase().includes("underline")) state.underline = true;
+  const color = /(?:^|[;\s])color\s*:\s*([^;]+)/i.exec(style);
+  if (color) {
+    const css = cssColorFromHtml(color[1]!);
+    if (css) state.color = css;
+  }
+}
+
+function cloneMarkState(state: InlineMarkState): InlineMarkState {
+  return {
+    bold: state.bold,
+    italic: state.italic,
+    underline: state.underline,
+    color: state.color,
+  };
+}
+
+/**
+ * Walk mammoth cell HTML and preserve inline formatting (bold/italic/underline).
+ */
+export function parseHtmlInlineContent(
+  html: string,
+  baseState: InlineMarkState = {}
+): JSONContent[] {
+  const nodes: JSONContent[] = [];
+  const stack: InlineMarkState[] = [cloneMarkState(baseState)];
+  const tokenRe = /(<\/?[a-z][a-z0-9]*\b[^>]*\/?>)|([^<]+)/gi;
+  let match: RegExpExecArray | null;
+
+  while ((match = tokenRe.exec(html)) !== null) {
+    const tag = match[1];
+    if (tag) {
+      const isClose = /^<\//.test(tag);
+      const nameM = /^<\/?\s*([a-z][a-z0-9]*)/i.exec(tag);
+      const name = nameM?.[1]?.toLowerCase();
+      if (!name) continue;
+
+      if (/^<br\b/i.test(tag)) {
+        nodes.push({ type: "hardBreak" });
+        continue;
+      }
+
+      if (SKIP_INLINE_TAGS.has(name)) continue;
+
+      if (isClose) {
+        if (stack.length > 1) stack.pop();
+        continue;
+      }
+
+      if (/\/>$/.test(tag)) continue;
+
+      const next = cloneMarkState(stack[stack.length - 1]!);
+      if (BOLD_INLINE_TAGS.has(name)) next.bold = true;
+      else if (ITALIC_INLINE_TAGS.has(name)) next.italic = true;
+      else if (UNDERLINE_INLINE_TAGS.has(name)) next.underline = true;
+      else if (name === "span") applySpanStyleToMarkState(next, tag);
+      stack.push(next);
+      continue;
+    }
+
+    const rawText = decodeHtmlEntities(match[2] ?? "");
+    if (!rawText) continue;
+
+    const normalized = rawText.replace(/\s+/g, " ");
+    const state = stack[stack.length - 1]!;
+    const marks = marksFromState(state);
+    const textNode: JSONContent = { type: "text", text: normalized };
+    if (marks) textNode.marks = marks;
+
+    const prev = nodes[nodes.length - 1];
+    if (
+      prev?.type === "text" &&
+      textNode.type === "text" &&
+      JSON.stringify(prev.marks ?? []) === JSON.stringify(textNode.marks ?? [])
+    ) {
+      prev.text = (prev.text ?? "") + normalized;
+    } else {
+      nodes.push(textNode);
+    }
+  }
+
+  const filtered = nodes.filter((node) => {
+    if (node.type !== "text") return true;
+    return (node.text ?? "").length > 0;
+  });
+
+  if (filtered.length > 0) {
+    const first = filtered[0]!;
+    if (first.type === "text" && first.text) {
+      first.text = first.text.replace(/^\s+/, "");
+    }
+    const last = filtered[filtered.length - 1]!;
+    if (last.type === "text" && last.text) {
+      last.text = last.text.replace(/\s+$/, "");
+    }
+  }
+
+  return filtered.filter((node) => node.type !== "text" || (node.text ?? "").length > 0);
 }
 
 function decodeHtmlEntities(text: string): string {
@@ -414,11 +570,3 @@ function decodeHtmlEntities(text: string): string {
     .replace(/&nbsp;/g, " ");
 }
 
-function stripHtmlTags(html: string): string {
-  return decodeHtmlEntities(
-    html
-      .replace(/<br\s*\/?>/gi, "\n")
-      .replace(/<\/p>\s*<p\b[^>]*>/gi, "\n")
-      .replace(/<[^>]+>/g, "")
-  );
-}

@@ -33,9 +33,9 @@ export type AnalyzeSection = {
   };
   brainstorming: string;
   otherTools: string;
-  investigationOutcome: string;
+  investigationOutcome: JSONContent;
   rootCause: {
-    narrative: string;
+    narrative: JSONContent;
   };
   impactAssessment: {
     system: string;
@@ -64,6 +64,13 @@ export type AttachmentsSection = {
   items: Array<{ label: string; description: string }>;
 };
 
+/** Bottom QC/QA sign-off table (imported from uploaded DOCX; read-only in the app). */
+export type SignatureApprovalsSection = {
+  table: JSONContent | null;
+  headerRowXml?: string;
+  dataRowXml?: string;
+};
+
 export type SectionContentMap = {
   define: DefineSection;
   measure: MeasureSection;
@@ -72,6 +79,7 @@ export type SectionContentMap = {
   control: ControlSection;
   documents_reviewed: DocumentsReviewedSection;
   attachments: AttachmentsSection;
+  signature_approvals: SignatureApprovalsSection;
 };
 
 export const EMPTY_CONTENT: SectionContentMap = {
@@ -97,9 +105,9 @@ export const EMPTY_CONTENT: SectionContentMap = {
     },
     brainstorming: "",
     otherTools: "",
-    investigationOutcome: "",
+    investigationOutcome: emptyDoc(),
     rootCause: {
-      narrative: "",
+      narrative: emptyDoc(),
     },
     impactAssessment: {
       system: "",
@@ -122,6 +130,9 @@ export const EMPTY_CONTENT: SectionContentMap = {
   attachments: {
     items: [],
   },
+  signature_approvals: {
+    table: null,
+  },
 };
 
 export const SECTION_LABELS: Record<keyof SectionContentMap, string> = {
@@ -132,6 +143,7 @@ export const SECTION_LABELS: Record<keyof SectionContentMap, string> = {
   control: "Control",
   documents_reviewed: "Documents Reviewed",
   attachments: "Attachments",
+  signature_approvals: "Approvals (QC / QA)",
 };
 
 export const EDITABLE_SECTIONS = [
@@ -147,6 +159,7 @@ export const REPORT_SECTION_ROW_ORDER = [
   ...EDITABLE_SECTIONS,
   "documents_reviewed",
   "attachments",
+  "signature_approvals",
 ] as const satisfies readonly (keyof SectionContentMap)[];
 
 /** Sections rendered as editors in the report workspace (same as DB row order). */
