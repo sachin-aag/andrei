@@ -29,6 +29,7 @@
   "dependencies": {
     "@ai-sdk/gateway": "^3.0.104",
     "@ai-sdk/google": "^3.0.64",
+    "@ai-sdk/google-vertex": "^4.0.137",
     "@napi-rs/canvas": "^1.0.0",
     "@napi-rs/canvas-linux-x64-gnu": "^1.0.0",
     "@neondatabase/serverless": "^1.1.0",

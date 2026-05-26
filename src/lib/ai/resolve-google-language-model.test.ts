@@ -11,7 +11,23 @@ describe("resolveGoogleLanguageModel", () => {
     process.env = { ...env };
   });
 
+  it("uses Vertex AI when GOOGLE_VERTEX_PROJECT is set", () => {
+    process.env.GOOGLE_VERTEX_PROJECT = "my-gcp-project";
+    process.env.GOOGLE_VERTEX_LOCATION = "us-central1";
+    delete process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+    delete process.env.AI_GATEWAY_API_KEY;
+    delete process.env.VERCEL_OIDC_TOKEN;
+
+    const model = resolveGoogleLanguageModel("gemini-2.5-flash") as {
+      provider: string;
+      modelId: string;
+    };
+    expect(model.provider).toContain("vertex");
+    expect(model.modelId).toBe("gemini-2.5-flash");
+  });
+
   it("uses direct Google API key when GOOGLE_GENERATIVE_AI_API_KEY is set", () => {
+    delete process.env.GOOGLE_VERTEX_PROJECT;
     process.env.GOOGLE_GENERATIVE_AI_API_KEY = "google-direct";
     delete process.env.AI_GATEWAY_API_KEY;
     delete process.env.VERCEL_OIDC_TOKEN;
@@ -25,6 +41,7 @@ describe("resolveGoogleLanguageModel", () => {
   });
 
   it("routes through AI Gateway when only gateway credentials are set", () => {
+    delete process.env.GOOGLE_VERTEX_PROJECT;
     delete process.env.GOOGLE_GENERATIVE_AI_API_KEY;
     process.env.AI_GATEWAY_API_KEY = "gateway-key";
 
@@ -37,6 +54,7 @@ describe("resolveGoogleLanguageModel", () => {
   });
 
   it("throws when no credentials are configured", () => {
+    delete process.env.GOOGLE_VERTEX_PROJECT;
     delete process.env.GOOGLE_GENERATIVE_AI_API_KEY;
     delete process.env.AI_GATEWAY_API_KEY;
     delete process.env.VERCEL_OIDC_TOKEN;

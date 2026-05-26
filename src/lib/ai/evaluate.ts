@@ -12,6 +12,13 @@ export { PROMPT_VERSION } from "./section-prompts";
 /** Google Generative AI model slug passed through `@ai-sdk/google`. */
 export const CRITERIA_EVAL_GOOGLE_MODEL_ID = "gemini-3.1-flash-lite" as const;
 
+/**
+ * Gemini 3.x models on Vertex AI are only published in the `global` location
+ * (Gemini 2.5 is broadly available, but 3.1-flash-lite returns 404 at
+ * us-central1). See https://cloud.google.com/vertex-ai/generative-ai/docs/models.
+ */
+const CRITERIA_EVAL_VERTEX_LOCATION = "global" as const;
+
 /** Temperature applied to criterion-level `evaluateSection` calls. */
 export const CRITERIA_EVAL_TEMPERATURE = 0 as const;
 
@@ -22,7 +29,9 @@ const evaluationSchemaDescription =
   'Output.object with Zod array "evaluations" (criterionKey, status, reasoning).';
 
 export function resolveEvaluationLanguageModel(): LanguageModel {
-  return resolveGoogleLanguageModel(CRITERIA_EVAL_GOOGLE_MODEL_ID);
+  return resolveGoogleLanguageModel(CRITERIA_EVAL_GOOGLE_MODEL_ID, {
+    vertexLocation: CRITERIA_EVAL_VERTEX_LOCATION,
+  });
 }
 
 function resolveModel(): LanguageModel {
