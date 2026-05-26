@@ -37,6 +37,9 @@ export function isActionablePlaceholderBracket(match: string): boolean {
 
   const inner = match.slice(1, -1);
 
+  // Failed legacy equation import — not a fill-in field.
+  if (/^formula$/i.test(inner.trim())) return false;
+
   if (/to\s+be\s+filled/i.test(inner)) return true;
   if (/\be\.g\./i.test(inner)) return true;
 

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { generateText, Output, type LanguageModel } from "ai";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { generateText, Output } from "ai";
+import { resolveGoogleLanguageModel } from "@/lib/ai/resolve-google-language-model";
 import { convertLatexToMathMl, ensureMathliveSsr } from "@/lib/math/mathlive-ssr";
 import { z } from "zod";
 
@@ -385,19 +385,10 @@ function previewRaw(raw: string): string {
   return raw.length > 120 ? `${raw.slice(0, 120)}…` : raw;
 }
 
-let cachedModel: LanguageModel | null = null;
+let cachedModel: ReturnType<typeof resolveGoogleLanguageModel> | null = null;
 
-function resolveExtractionModel(): LanguageModel {
-  if (cachedModel) return cachedModel;
-  const googleKey =
-    process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.AI_GATEWAY_API_KEY;
-  if (!googleKey) {
-    throw new Error(
-      "No Gemini API key configured for math extraction. Set GOOGLE_GENERATIVE_AI_API_KEY (or AI_GATEWAY_API_KEY) in .env.local."
-    );
-  }
-  const google = createGoogleGenerativeAI({ apiKey: googleKey });
-  cachedModel = google(MATH_EXTRACT_GOOGLE_MODEL_ID);
+function resolveExtractionModel() {
+  cachedModel ??= resolveGoogleLanguageModel(MATH_EXTRACT_GOOGLE_MODEL_ID);
   return cachedModel;
 }
 
@@ -505,7 +496,15 @@ export async function extractMathFromImage(
   let pngBytes: Uint8Array | null = null;
   if (isWmfMime(input.mime)) {
     const buf = wmfBytesToPngBuffer(input.bytes, input.displayWidth);
-    if (!buf) return null;
+    if (!buf) {
+      console.error("[extract-math] rejected: wmf_render_failed", {
+        mime: input.mime,
+        byteLength: input.bytes.length,
+        hasCanvas: !!loadCreateCanvas(),
+        hasWmf: !!loadWmfModuleSync(),
+      });
+      return null;
+    }
     pngBytes = buf;
   } else if (input.mime === "image/png" || input.mime === "image/jpeg") {
     pngBytes = input.bytes;

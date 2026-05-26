@@ -1,5 +1,5 @@
 import { generateText, Output, type LanguageModel } from "ai";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { resolveGoogleLanguageModel } from "@/lib/ai/resolve-google-language-model";
 import { z } from "zod";
 import type { SectionType, CriterionStatus } from "@/db/schema";
 import { getCriteria } from "./criteria";
@@ -22,15 +22,7 @@ const evaluationSchemaDescription =
   'Output.object with Zod array "evaluations" (criterionKey, status, reasoning).';
 
 export function resolveEvaluationLanguageModel(): LanguageModel {
-  const googleKey =
-    process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.AI_GATEWAY_API_KEY;
-  if (!googleKey) {
-    throw new Error(
-      "No Gemini API key configured. Set GOOGLE_GENERATIVE_AI_API_KEY (or AI_GATEWAY_API_KEY) in .env.local."
-    );
-  }
-  const google = createGoogleGenerativeAI({ apiKey: googleKey });
-  return google(CRITERIA_EVAL_GOOGLE_MODEL_ID);
+  return resolveGoogleLanguageModel(CRITERIA_EVAL_GOOGLE_MODEL_ID);
 }
 
 function resolveModel(): LanguageModel {

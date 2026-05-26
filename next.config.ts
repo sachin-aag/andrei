@@ -19,7 +19,13 @@ const nextConfig: NextConfig = {
     },
   },
   outputFileTracingIncludes: {
-    "/api/*": ["./templates/**/*"],
+    "/api/*": [
+      "./templates/**/*",
+      "./node_modules/@napi-rs/canvas/**/*",
+      "./node_modules/@napi-rs/canvas-linux-x64-gnu/**/*",
+      "./node_modules/wmf/dist/**/*",
+      "./node_modules/mathlive/**/*",
+    ],
   },
 };
 
