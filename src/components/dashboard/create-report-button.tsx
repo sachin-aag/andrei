@@ -24,6 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { getManagers } from "@/lib/auth/mock-users";
+import { formatApiErrorToast, readApiErrorResponse } from "@/lib/debug/format-api-error-toast";
 
 export function CreateReportButton() {
   const [open, setOpen] = useState(false);
@@ -62,8 +63,9 @@ export function CreateReportButton() {
         body: fd,
       });
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        toast.error(body.error ?? "Could not read that Word file");
+        const body = await readApiErrorResponse(res);
+        console.error("[create-report] import-preview failed", body);
+        toast.error(formatApiErrorToast(body, "Could not read that Word file"));
         return;
       }
       const data = (await res.json()) as { deviationNo?: string | null };
@@ -88,13 +90,22 @@ export function CreateReportButton() {
       fd.append("assignedManagerId", managerId || "");
       if (draftFile) fd.append("file", draftFile);
 
-      const res = await fetch("/api/reports", {
-        method: "POST",
-        body: fd,
-      });
+      let res: Response;
+      try {
+        res = await fetch("/api/reports", {
+          method: "POST",
+          body: fd,
+        });
+      } catch (e) {
+        console.error("[create-report] network error", e);
+        toast.error("Network error while creating report");
+        return;
+      }
+
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        toast.error(body.error ?? "Failed to create report");
+        const body = await readApiErrorResponse(res);
+        console.error("[create-report] create failed", body);
+        toast.error(formatApiErrorToast(body, "Failed to create report"));
         return;
       }
       const data = (await res.json()) as { id: string };

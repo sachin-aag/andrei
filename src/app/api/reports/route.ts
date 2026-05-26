@@ -6,7 +6,9 @@ import { reports, reportSections } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import {
   createReportCreateLogger,
+  databaseUrlFingerprint,
   describeErrorChain,
+  isPostgresUniqueViolation,
 } from "@/lib/debug/report-create-log";
 import { docxBufferToImportedReportContent } from "@/lib/import/docx-to-sections";
 import { readDocxUpload } from "@/lib/import/docx-upload";
@@ -201,6 +203,7 @@ export async function POST(req: Request) {
           {
             error: "Could not save the uploaded file. Please try again.",
             debugStep: log.lastStep,
+            debugDb: databaseUrlFingerprint(),
           },
           { status: 500 }
         );
@@ -211,11 +214,25 @@ export async function POST(req: Request) {
     return NextResponse.json({ id: report.id, report });
   } catch (e) {
     log.fail(e);
+    const debugDb = databaseUrlFingerprint();
+    if (isPostgresUniqueViolation(e)) {
+      return NextResponse.json(
+        {
+          error:
+            "That deviation number is already in use (database unique constraint). Try a different number, or run migration 0011 if this DB still uses a global deviation_no index.",
+          debugStep: log.lastStep,
+          debugMessage: describeErrorChain(e),
+          debugDb,
+        },
+        { status: 409 }
+      );
+    }
     return NextResponse.json(
       {
         error: "Failed to create report",
         debugStep: log.lastStep,
         debugMessage: describeErrorChain(e),
+        debugDb,
       },
       { status: 500 }
     );

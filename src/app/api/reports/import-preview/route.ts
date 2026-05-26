@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   createReportCreateLogger,
+  databaseUrlFingerprint,
   describeErrorChain,
 } from "@/lib/debug/report-create-log";
 import { docxBufferToImportedReportContent } from "@/lib/import/docx-to-sections";
@@ -49,6 +50,7 @@ export async function POST(req: Request) {
         error: "Could not read that Word file. Save as .docx and try again.",
         debugStep: log.lastStep,
         debugMessage: describeErrorChain(e),
+        debugDb: databaseUrlFingerprint(),
       },
       { status: 400 }
     );
