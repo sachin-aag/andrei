@@ -42,6 +42,36 @@ describe("signature-block", () => {
     expect(dataTc).toBe(8);
   });
 
+  it("blank export template uses the QC/QA reviewer table from DEV-QC-26-001", () => {
+    const templatePath = path.join(
+      process.cwd(),
+      "templates",
+      "investigation-report-template.docx"
+    );
+    if (!fs.existsSync(templatePath)) return;
+
+    const block = extractSignatureBlockFromDocxBuffer(fs.readFileSync(templatePath));
+    expect(block).not.toBeNull();
+
+    const headers =
+      block!.table.content?.[0]?.content?.map(
+        (cell) => cell.content?.[0]?.content?.[0]?.text ?? ""
+      ) ?? [];
+    expect(headers).toHaveLength(5);
+    expect(headers[0]).toMatch(/Prepared By QC/i);
+    expect(headers[1]).toMatch(/Reviewed By QC/i);
+    expect(headers[3]).toMatch(/Reviewed By QA/i);
+    expect(headers[4]).toMatch(/Approved By QA/i);
+
+    const dataTexts =
+      block!.table.content?.[1]?.content?.flatMap((cell) =>
+        (cell.content?.[0]?.content ?? []).map((n) =>
+          n.type === "text" ? n.text : ""
+        )
+      ) ?? [];
+    expect(dataTexts.join("").trim()).toBe("");
+  });
+
   it("replaces template sign-off rows without changing column count", () => {
     if (!fs.existsSync(fixturePath)) return;
 

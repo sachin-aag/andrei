@@ -246,6 +246,31 @@ function getBetweenLabels(
   return cleanImportedText(text.slice(startIndex, endIndex));
 }
 
+/** Word forms duplicate "Other Tool if Any" rows; the answer is under the last label. */
+function parseAnalyzeOtherTools(body: string): string {
+  const startLabels = ["Other Tool if Any", "Other Tools (If any)"];
+  const stopLabels = ["Investigation Outcome"];
+
+  let lastStart: RegExpExecArray | null = null;
+  let from = 0;
+  while (true) {
+    const match = findLabel(body, startLabels, from);
+    if (!match) break;
+    lastStart = match;
+    from = match.index + match[0].length;
+  }
+  if (!lastStart) return "";
+
+  const startIndex = lastStart.index + lastStart[0].length;
+  let endIndex = body.length;
+  for (const stop of stopLabels) {
+    const match = findLabel(body, [stop], startIndex);
+    if (match && match.index < endIndex) endIndex = match.index;
+  }
+
+  return cleanImportedText(body.slice(startIndex, endIndex));
+}
+
 function hasLabel(text: string, labels: string[]): boolean {
   return findLabel(text, labels) !== null;
 }
@@ -354,9 +379,7 @@ function buildAnalyzeFromChunk(text: string): AnalyzeSection {
       "Other Tools (If any)",
       "Investigation Outcome",
     ]),
-    otherTools: getBetweenLabels(body, ["Other Tool if Any", "Other Tools (If any)"], [
-      "Investigation Outcome",
-    ]),
+    otherTools: parseAnalyzeOtherTools(body),
     investigationOutcome: legacyStringToDoc(
       getBetweenLabels(body, ["Investigation Outcome"], [
         "Identified Root Cause/ Probable Cause",
@@ -982,4 +1005,9 @@ function replaceFlatParagraphsWithTable(
 function emptyDocFallback(foundHeadings: boolean, raw: string) {
   if (foundHeadings) return legacyStringToDoc("");
   return legacyStringToDoc(raw.trim() || "");
+}
+
+/** @internal exported for tests */
+export function parseAnalyzeOtherToolsForTest(body: string) {
+  return parseAnalyzeOtherTools(body);
 }

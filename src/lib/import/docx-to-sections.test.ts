@@ -17,6 +17,7 @@ import {
   docxBufferToImportedReportContent,
   buildSectionsFromRaw,
   parseReportHeaderFromRaw,
+  parseAnalyzeOtherToolsForTest,
   mammothMarkdownToImportPlain,
 } from "@/lib/import/docx-to-sections";
 import { richJsonToPlainText } from "@/lib/tiptap/rich-text";
@@ -38,6 +39,12 @@ const legacyEquationFixturePath = path.join(
   process.cwd(),
   "docs",
   "Draft Investigation (DEV-QC-26-001).docx"
+);
+const devPr25008FixturePath = path.join(
+  process.cwd(),
+  "docs",
+  "sample_files",
+  "Investigation DEV-PR-25-008.docx"
 );
 
 function collectNodesByType(doc: JSONContent, type: string): JSONContent[] {
@@ -88,6 +95,14 @@ describe("docx import", () => {
     );
     expect(control).toContain("Preventive Action linked");
     expect(control).toContain("Procedure Error");
+
+    const sig = imported.sections.signature_approvals;
+    expect(sig.table?.content?.[0]?.content).toHaveLength(5);
+    const headerText = (sig.table?.content?.[0]?.content ?? [])
+      .map((cell) => richJsonToPlainText({ type: "doc", content: cell.content ?? [] }))
+      .join(" ");
+    expect(headerText).toMatch(/Prepared By QC/i);
+    expect(headerText).toMatch(/Approved By QA/i);
   });
 
   it("keeps red Refer Attachment I on the analyst workbench paragraph in DEV-QC-26-001", async () => {
@@ -190,6 +205,7 @@ describe("docx import", () => {
     expect(formatDate(imported.header.date)).toBe("09/04/2026");
     expect(imported.header.deviationNo).toBe("DEV/PK/25/002");
     expect(imported.header.otherTools).toBe("Not applicable");
+    expect(imported.sections.analyze.otherTools).toBe("Not Applicable");
 
     const defineText = richJsonToPlainText(imported.sections.define.narrative);
     expect(defineText).toContain("On 04/03/2026");
@@ -240,6 +256,20 @@ describe("docx import", () => {
     expect(sig.table?.content?.[0]?.content?.length).toBe(8);
     expect(sig.headerRowXml).toMatch(/<w:tr\b/);
     expect(sig.dataRowXml).toMatch(/<w:tr\b/);
+  });
+
+  it("reads analyze other tools from the last duplicate label row", () => {
+    const body = [
+      "Brainstorming:",
+      "Not Applicable",
+      "Other Tool if Any:\tFirst row value",
+      "Other Tool if Any:",
+      "Second row value",
+      "Investigation Outcome:",
+      "Outcome text",
+    ].join("\n");
+
+    expect(parseAnalyzeOtherToolsForTest(body)).toBe("Second row value");
   });
 
   it("reads header metadata when values are on the line after the label", () => {
@@ -358,6 +388,41 @@ describe("docx import", () => {
     expect(measureText).toContain(
       "Based on review of BMS audit trail and EMS trend logs, temperature remained within limits"
     );
+  });
+
+  it("imports DEV-PR-25-008 measure tables without leaving flattened calibration rows", async () => {
+    if (!fs.existsSync(devPr25008FixturePath)) return;
+
+    const imported = await docxBufferToImportedReportContent(
+      fs.readFileSync(devPr25008FixturePath)
+    );
+    const measureContent = imported.sections.measure.narrative.content ?? [];
+    const tableNodes = measureContent.filter((node) => node.type === "table");
+    expect(tableNodes.length).toBeGreaterThanOrEqual(2);
+
+    const flatParagraphs = measureContent
+      .filter((node) => node.type === "paragraph")
+      .map((node) => richJsonToPlainText(node).trim())
+      .filter(Boolean);
+
+    // Calibration parameter grid (Description / Unit / Value) must become a table, not flat lines.
+    expect(flatParagraphs).not.toContain("Description");
+    expect(flatParagraphs).not.toContain("Unit");
+    expect(flatParagraphs.some((t) => /^Value$/i.test(t))).toBe(false);
+
+    const joinedTables = tableNodes
+      .map((tbl) => richJsonToPlainText({ type: "doc", content: [tbl] }))
+      .join("\n");
+    expect(joinedTables).toMatch(/Description/);
+    expect(joinedTables).toMatch(/DF11|DF 32/);
+
+    for (const tbl of tableNodes) {
+      const row0 = tbl.content?.[0];
+      expect(row0?.content?.length).toBeGreaterThan(0);
+      for (const cell of row0?.content ?? []) {
+        expect(cell.content?.length).toBeGreaterThan(0);
+      }
+    }
   });
 
   it("does not leave flattened table text after tables with multi-line header cells", async () => {

@@ -7,6 +7,11 @@ import path from "path";
 import PizZip from "pizzip";
 
 const REFERENCE = path.join(process.cwd(), "reference-template.docx");
+/** QC/QA sign-off layout used on current investigation drafts (separate table after DMAIC body). */
+const SIGNATURE_LAYOUT_SOURCE = path.join(
+  process.cwd(),
+  "docs/Draft Investigation (DEV-QC-26-001).docx"
+);
 const OUTPUT_DIR = path.join(process.cwd(), "templates");
 const OUTPUT = path.join(OUTPUT_DIR, "investigation-report-template.docx");
 
@@ -39,6 +44,68 @@ function makeLabelValuePara(label, valuePlaceholder, { fontSize = 24 } = {}) {
 
 function makeParas(lines, opts = {}) {
   return lines.map((l) => makePara(l, opts)).join("");
+}
+
+function isSignatureTableXml(tblXml) {
+  const text = Array.from(tblXml.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g))
+    .map((m) => m[1] ?? "")
+    .join("");
+  return (
+    /\bPrepared\b/i.test(text) &&
+    /\bSign\s*\/\s*Date\b/i.test(text) &&
+    (/\bReviewed\b/i.test(text) || /\bApproved\b/i.test(text))
+  );
+}
+
+function extractSignatureTableXmlFromDocx(docxPath) {
+  const zip = new PizZip(fs.readFileSync(docxPath));
+  const docXml = zip.file("word/document.xml")?.asText();
+  if (!docXml) throw new Error(`Missing word/document.xml in ${docxPath}`);
+
+  const matches = [...docXml.matchAll(/<w:tbl\b[^>]*>[\s\S]*?<\/w:tbl>/g)].map(
+    (m) => m[0]
+  );
+  const signatureTables = matches.filter(isSignatureTableXml);
+  if (signatureTables.length === 0) {
+    throw new Error(`No signature table found in ${docxPath}`);
+  }
+  return signatureTables[signatureTables.length - 1];
+}
+
+function blankSignatureDataRow(dataRowXml) {
+  return dataRowXml.replace(
+    /<w:t[^>]*>[^<]*<\/w:t>/g,
+    '<w:t xml:space="preserve"></w:t>'
+  );
+}
+
+/** Two-row QC/QA reviewer table matching docs/Draft Investigation (DEV-QC-26-001).docx import. */
+function buildBlankReviewerSignatureTable() {
+  const source = extractSignatureTableXmlFromDocx(SIGNATURE_LAYOUT_SOURCE);
+  const rows = [...source.matchAll(/<w:tr\b[^>]*>[\s\S]*?<\/w:tr>/g)].map((m) => m[0]);
+  if (rows.length < 2) {
+    throw new Error("Signature layout source must contain header and data rows");
+  }
+  const tblPr = source.match(/<w:tblPr>[\s\S]*?<\/w:tblPr>/)?.[0] ?? "";
+  return `<w:tbl>${tblPr}${rows[0]}${blankSignatureDataRow(rows[1])}</w:tbl>`;
+}
+
+function replaceLastSignatureTable(xml, replacementTableXml) {
+  const candidates = [];
+  const tblRe = /<w:tbl\b[^>]*>[\s\S]*?<\/w:tbl>/g;
+  let match;
+  while ((match = tblRe.exec(xml)) !== null) {
+    if (!isSignatureTableXml(match[0])) continue;
+    candidates.push({
+      start: match.index,
+      end: match.index + match[0].length,
+    });
+  }
+  if (candidates.length === 0) {
+    throw new Error("No signature table found in reference template");
+  }
+  const last = candidates[candidates.length - 1];
+  return xml.substring(0, last.start) + replacementTableXml + xml.substring(last.end);
 }
 
 // Keep in sync with src/lib/export/docx-form-checkbox.ts
@@ -210,14 +277,14 @@ R.set(12, rebuildRow(rows[12].xml,
   makeParas(["{@brainstormingXml}"])
 ));
 
-// Row 13: Other Tool #1
-R.set(13, rebuildRow(rows[13].xml,
+// Row 13: Other Tool #1 — label-only duplicate row (value lives on row 14)
+R.set(13, rebuildRow(rows[13].xml, makePara("Other Tool if Any:", { bold: true })));
+
+// Row 14: Other Tool #2 — label + value on the following line(s)
+R.set(14, rebuildRow(rows[14].xml,
   makePara("Other Tool if Any:", { bold: true }) +
   makeParas(["{@analyzeOtherToolsXml}"])
 ));
-
-// Row 14: Other Tool #2 (duplicate) → empty
-R.set(14, rebuildRow(rows[14].xml, makePara(" ")));
 
 // Row 15: Investigation Outcome label → keep
 // Row 16: Investigation Outcome content
@@ -277,7 +344,7 @@ R.set(30, rebuildRow(rows[30].xml, makeParas([
   '{/attachments}',
 ])));
 
-// Rows 31-32: Signature table → keep
+// Second table (global rows 31–32): QC/QA reviewer sign-off — replaced after row edits
 
 // ─── Apply replacements in reverse order ───
 
@@ -288,6 +355,8 @@ for (const [idx, newRowXml] of sorted) {
     xml = xml.substring(0, row.start) + newRowXml + xml.substring(row.end);
   }
 }
+
+xml = replaceLastSignatureTable(xml, buildBlankReviewerSignatureTable());
 
 // ─── Save ───
 
@@ -301,3 +370,4 @@ fs.writeFileSync(OUTPUT, buf);
 
 console.log(`\nTemplate saved to: ${OUTPUT}`);
 console.log(`Applied ${R.size} row replacements`);
+console.log("Replaced signature table with QC/QA reviewer layout from draft investigation DOCX");
