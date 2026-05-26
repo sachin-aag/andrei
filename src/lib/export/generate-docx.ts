@@ -30,6 +30,7 @@ import {
   loadListNumberingBasesFromZip,
 } from "@/lib/export/docx-numbering";
 import { narrativeToDocxXmlWithContext, plainTextToDocxXml } from "@/lib/export/narrative-to-docx-xml";
+import { improveControlCheckpointsToDocxXml } from "@/lib/export/improve-control-checkpoints-docx";
 import {
   normalizeRichField,
   richJsonToPlainText,
@@ -176,11 +177,11 @@ function buildTemplateData(
     impactPatientSafety: na(a.impactAssessment.patientSafety),
 
     // Improve — checkpoints in Improve row; narrative in Corrective Action row
-    improveNarrativeXml: plainTextToDocxXml(improveCheckpoints, ctx),
+    improveNarrativeXml: improveControlCheckpointsToDocxXml(improveCheckpoints, "improve", ctx),
     correctiveActionsXml: plainTextToDocxXml(correctiveAction, ctx),
 
     // Control — checkpoints in Control row; narrative in Preventive Action row
-    controlNarrativeXml: plainTextToDocxXml(controlCheckpoints, ctx),
+    controlNarrativeXml: improveControlCheckpointsToDocxXml(controlCheckpoints, "control", ctx),
     preventiveActionsXml: plainTextToDocxXml(preventiveAction, ctx),
     interimPlan: "Not Applicable",
     finalComments: "Not Applicable",

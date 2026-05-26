@@ -242,6 +242,8 @@ export type TiptapSectionFieldProps = {
   onFlushSave?: () => void | Promise<void>;
   /** When true, the field stays read-only even in engineer edit mode. */
   locked?: boolean;
+  /** Shrink the editor chrome for read-only blocks (e.g. signature tables). */
+  compact?: boolean;
 };
 
 export function TiptapSectionField({
@@ -253,6 +255,7 @@ export function TiptapSectionField({
   value,
   onChange,
   locked = false,
+  compact = false,
 }: TiptapSectionFieldProps) {
   const {
     report,
@@ -694,8 +697,11 @@ export function TiptapSectionField({
 
       <div
         className={cn(
-          "rounded-md border border-[var(--border)] bg-[var(--input)] px-3 py-2 min-h-[200px] text-sm leading-relaxed focus-within:ring-2 focus-within:ring-[var(--ring)]",
-          "[&_.ProseMirror]:min-h-[180px] [&_.ProseMirror]:outline-none",
+          "rounded-md border border-[var(--border)] bg-[var(--input)] px-3 py-2 text-sm leading-relaxed focus-within:ring-2 focus-within:ring-[var(--ring)]",
+          compact
+            ? "[&_.ProseMirror]:min-h-0 [&_.ProseMirror>p.is-empty:last-child]:hidden [&_.ProseMirror_table]:my-0"
+            : "min-h-[200px] [&_.ProseMirror]:min-h-[180px]",
+          "[&_.ProseMirror]:outline-none",
           "[&_.tiptap-image-inline]:my-1 [&_.tiptap-image-inline]:max-w-full [&_.tiptap-image-inline]:h-auto [&_.tiptap-image-inline]:rounded-sm",
           "[&_.tiptap-math-block]:my-2",
           !editable && "opacity-90"

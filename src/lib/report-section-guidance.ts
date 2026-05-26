@@ -39,13 +39,22 @@ export const SECTION_GUIDANCE: Partial<Record<SectionType, string[]>> = {
   ],
 };
 
-const IMPROVE_SECTION_HEADER =
+export const IMPROVE_SECTION_HEADER =
   "Improve: Improve section covers the corrective actions";
-const IMPROVE_SECTION_INTRO =
+export const IMPROVE_SECTION_INTRO =
   "Following checkpoint shall be considered as guidance only while finalizing the corrective actions,";
-const CONTROL_SECTION_HEADER =
+export const CONTROL_SECTION_HEADER =
   "Control: Control section covers the preventive actions";
-const CONTROL_SECTION_INTRO = "Following checkpoint shall be considered as guidance only ,";
+export const CONTROL_SECTION_INTRO =
+  "Following checkpoint shall be considered as guidance only ,";
+
+/** Last default improve checklist line — narrative follows this when no action label is stored. */
+export const IMPROVE_LAST_CHECKPOINT_MARKER =
+  "Are the identified corrective actions achievable based on the information provided?";
+
+/** Last default control checklist line — narrative follows this when no action label is stored. */
+export const CONTROL_LAST_CHECKPOINT_MARKER =
+  "Are the identified preventive actions achievable based on the information provided?";
 
 function numberedChecklist(items: string[]): string {
   return items.map((item, index) => `${index + 1}. ${item}`).join("\n");

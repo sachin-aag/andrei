@@ -27,6 +27,8 @@ export function SignatureApprovalsSection() {
         value={table}
         onChange={() => {}}
         locked
+        compact
+        placeholder=""
       />
     </SectionShell>
   );

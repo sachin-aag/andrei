@@ -26,6 +26,23 @@ describe("splitImproveUnifiedText", () => {
     expect(correctiveAction).toContain("DMAIC methodology");
     expect(correctiveAction).not.toContain("Improve section covers");
   });
+
+  it("splits narrative after the last template checkpoint when the action label is missing", () => {
+    const unified = [
+      "Improve section covers the corrective actions",
+      "1. First checkpoint?",
+      "4. Are the identified corrective actions achievable based on the information provided?",
+      "",
+      "The investigation has been driven through the DMAIC methodology.",
+    ].join("\n");
+
+    const { checkpoints, correctiveAction } = splitImproveUnifiedText(unified);
+
+    expect(checkpoints).toContain("Improve section covers the corrective actions");
+    expect(checkpoints).toContain("achievable based on the information provided");
+    expect(checkpoints).not.toContain("DMAIC methodology");
+    expect(correctiveAction).toContain("DMAIC methodology");
+  });
 });
 
 describe("splitControlUnifiedText", () => {
@@ -47,5 +64,21 @@ describe("splitControlUnifiedText", () => {
     expect(checkpoints).not.toContain("5 Why methodology");
     expect(preventiveAction).toContain("5 Why methodology");
     expect(preventiveAction).not.toContain("Control section covers");
+  });
+
+  it("splits narrative after the last template checkpoint when the action label is missing", () => {
+    const unified = [
+      "Control section covers the preventive actions",
+      "1. First preventive checkpoint?",
+      "12. Are the identified preventive actions achievable based on the information provided?",
+      "",
+      "The investigation has been carried out through 5 Why methodology.",
+    ].join("\n");
+
+    const { checkpoints, preventiveAction } = splitControlUnifiedText(unified);
+
+    expect(checkpoints).toContain("Control section covers the preventive actions");
+    expect(checkpoints).not.toContain("5 Why methodology");
+    expect(preventiveAction).toContain("5 Why methodology");
   });
 });

@@ -135,6 +135,7 @@ describe("investigation-report-template.docx label formatting", () => {
       /Are the identified corrective actions achievable based on the information provided/i
     );
     expect(correctiveRow).not.toContain("Improve section covers the corrective actions");
+    expect(correctiveRow).toMatch(/Corrective Action:/i);
     expect(controlRow).toContain("Control section covers the preventive actions");
     expect(controlRow).toMatch(
       /Are the identified preventive actions achievable based on the information provided/i
@@ -178,5 +179,26 @@ describe("investigation-report-template.docx label formatting", () => {
     for (const label of ["System:", "Document:", "Product:", "Equipment:"]) {
       expect(labelRunXml(xml, label), `expected bold run for ${label} in QC export`).toBeTruthy();
     }
+
+    const rowTexts: string[] = [];
+    const rowRe = /<w:tr\b[^>]*>[\s\S]*?<\/w:tr>/g;
+    let rowMatch;
+    while ((rowMatch = rowRe.exec(xml)) !== null) {
+      const texts: string[] = [];
+      const tRe = /<w:t[^>]*>([^<]*)<\/w:t>/g;
+      let tm;
+      while ((tm = tRe.exec(rowMatch[0])) !== null) texts.push(tm[1]);
+      rowTexts.push(texts.join("").replace(/\s+/g, " ").trim());
+    }
+
+    const improveRow = rowTexts.find((t) => /^Improve:/i.test(t));
+    const correctiveRow = rowTexts.find((t) => /^Corrective Action:/i.test(t));
+    expect(improveRow).toBeTruthy();
+    expect(correctiveRow).toBeTruthy();
+    expect(improveRow).not.toMatch(/DMAIC methodology/i);
+    expect(xml).toMatch(/DMAIC methodology|non-conformance is related/i);
+    expect(
+      labelRunXml(xml, "Improve section covers the corrective actions")
+    ).toBeTruthy();
   });
 });

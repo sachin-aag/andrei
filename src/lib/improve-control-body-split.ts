@@ -3,6 +3,11 @@
  * checkpoints in the Improve/Control row, narrative in the Corrective/Preventive Action row.
  */
 
+import {
+  CONTROL_LAST_CHECKPOINT_MARKER,
+  IMPROVE_LAST_CHECKPOINT_MARKER,
+} from "@/lib/report-section-guidance";
+
 function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
@@ -74,6 +79,27 @@ export const CONTROL_BODY_STOP_LABELS = [
   "List of attachments",
 ] as const;
 
+function splitAfterLastTemplateCheckpoint(
+  body: string,
+  lastCheckpointMarker: string
+): { checkpoints: string; correctiveAction: string } | null {
+  const re = new RegExp(escapeRegex(lastCheckpointMarker).replace(/\?/g, "\\?"), "i");
+  const match = re.exec(body);
+  if (!match) return null;
+
+  let splitAt = match.index + match[0].length;
+  const newline = body.indexOf("\n", splitAt);
+  splitAt = newline === -1 ? body.length : newline;
+
+  const narrative = trimPlain(body.slice(splitAt));
+  if (!narrative) return null;
+
+  return {
+    checkpoints: trimPlain(body.slice(0, splitAt)),
+    correctiveAction: narrative,
+  };
+}
+
 function parseCorrectiveActionsRegister(text: string): string {
   const register = getBetweenLabels(text, ["Corrective Actions Register"], []);
   if (!register) return "";
@@ -100,9 +126,16 @@ export function splitImproveUnifiedText(text: string): {
   const body = trimPlain(text);
   if (!body) return { checkpoints: "", correctiveAction: "" };
 
-  const checkpoints = hasLabel(body, [...IMPROVE_ACTION_LABELS])
-    ? textBeforeAnyLabel(body, [...IMPROVE_ACTION_LABELS])
-    : body;
+  if (!hasLabel(body, [...IMPROVE_ACTION_LABELS])) {
+    const fallback = splitAfterLastTemplateCheckpoint(
+      body,
+      IMPROVE_LAST_CHECKPOINT_MARKER
+    );
+    if (fallback) return fallback;
+    return { checkpoints: body, correctiveAction: "" };
+  }
+
+  const checkpoints = textBeforeAnyLabel(body, [...IMPROVE_ACTION_LABELS]);
 
   const correctiveActionBlock = getBetweenLabels(
     body,
@@ -128,13 +161,27 @@ export function splitControlUnifiedText(text: string): {
   const body = trimPlain(text);
   if (!body) return { checkpoints: "", preventiveAction: "" };
 
-  const checkpoints = hasLabel(body, [...CONTROL_ACTION_LABELS])
-    ? textBeforeAnyLabel(body, [...CONTROL_ACTION_LABELS])
-    : body;
+  if (!hasLabel(body, [...CONTROL_ACTION_LABELS])) {
+    const fallback = splitAfterLastTemplateCheckpoint(
+      body,
+      CONTROL_LAST_CHECKPOINT_MARKER
+    );
+    if (fallback) {
+      return {
+        checkpoints: fallback.checkpoints,
+        preventiveAction: fallback.correctiveAction,
+      };
+    }
+    return { checkpoints: body, preventiveAction: "" };
+  }
 
-  const preventiveAction = hasLabel(body, [...CONTROL_ACTION_LABELS])
-    ? getBetweenLabels(body, [...CONTROL_ACTION_LABELS], [...CONTROL_BODY_STOP_LABELS])
-    : "";
+  const checkpoints = textBeforeAnyLabel(body, [...CONTROL_ACTION_LABELS]);
+
+  const preventiveAction = getBetweenLabels(
+    body,
+    [...CONTROL_ACTION_LABELS],
+    [...CONTROL_BODY_STOP_LABELS]
+  );
 
   return {
     checkpoints: checkpoints.trim(),

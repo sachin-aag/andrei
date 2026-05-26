@@ -445,13 +445,20 @@ const CONTROL_BODY_STOP_LABELS = [
 const IMPROVE_ACTION_LABELS = ["Corrective Action", "Corrective Actions Register"];
 
 function extractControlPreventivePlain(controlBody: string): string {
-  const preamble = hasLabel(controlBody, ["Preventive Action"])
-    ? textBeforeAnyLabel(controlBody, ["Preventive Action"])
-    : "";
-  const body = hasLabel(controlBody, ["Preventive Action"])
-    ? getBetweenLabels(controlBody, ["Preventive Action"], CONTROL_BODY_STOP_LABELS)
-    : controlBody;
-  return cleanImportedText([preamble, body].filter(Boolean).join("\n\n"));
+  if (!hasLabel(controlBody, ["Preventive Action"])) {
+    return cleanImportedText(controlBody);
+  }
+
+  const preamble = textBeforeAnyLabel(controlBody, ["Preventive Action"]);
+  const body = getBetweenLabels(
+    controlBody,
+    ["Preventive Action"],
+    CONTROL_BODY_STOP_LABELS
+  );
+  const parts: string[] = [];
+  if (preamble) parts.push(cleanImportedText(preamble));
+  if (body) parts.push(`Preventive Action:\n${cleanImportedText(body)}`);
+  return parts.filter(Boolean).join("\n\n");
 }
 
 const REPORT_HEADER_LABEL_RE =
@@ -698,10 +705,12 @@ export function buildSectionsFromRaw(raw: string): ImportedSections {
   const correctiveParsed = [correctiveActionBlock, parseCorrectiveActions(improveBody)]
     .filter(Boolean)
     .join("\n\n");
-  const correctiveActionsUnified = [improvePreamble, correctiveParsed]
-    .map((s) => s.trim())
-    .filter(Boolean)
-    .join("\n\n");
+  const improveParts: string[] = [];
+  if (improvePreamble) improveParts.push(improvePreamble);
+  if (correctiveParsed) {
+    improveParts.push(`Corrective Action:\n${correctiveParsed}`);
+  }
+  const correctiveActionsUnified = improveParts.join("\n\n");
 
   return {
     define: {

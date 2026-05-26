@@ -174,6 +174,7 @@ describe("docx import", () => {
     expect(imported.sections.improve.correctiveActions).toMatch(
       /Were specific corrective Actions identified|Improve section covers the corrective actions/i
     );
+    expect(imported.sections.improve.correctiveActions).toContain("Corrective Action:");
     expect(imported.sections.improve.correctiveActions).toContain(
       "The non-conformance is related to temperature data"
     );
@@ -188,6 +189,7 @@ describe("docx import", () => {
     expect(controlPrev).toMatch(
       /Control section covers the preventive actions|Was the Preventive Action linked/i
     );
+    expect(controlPrev).toContain("Preventive Action:");
 
     const rootCauseNarrative = richJsonToPlainText(imported.sections.analyze.rootCause.narrative);
     expect(rootCauseNarrative).toContain("Primary Root Cause Level 1");
