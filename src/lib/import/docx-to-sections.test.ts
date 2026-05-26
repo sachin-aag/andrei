@@ -90,6 +90,45 @@ describe("docx import", () => {
     expect(control).toContain("Procedure Error");
   });
 
+  it("keeps red Refer Attachment I on the analyst workbench paragraph in DEV-QC-26-001", async () => {
+    if (!fs.existsSync(legacyEquationFixturePath)) return;
+
+    const imported = await docxBufferToImportedReportContent(
+      fs.readFileSync(legacyEquationFixturePath)
+    );
+
+    const workbenchParas =
+      imported.sections.measure.narrative.content?.filter((node) => {
+        if (node.type !== "paragraph") return false;
+        const plain = richJsonToPlainText({ type: "doc", content: [node] });
+        return plain.includes("analyst workbench");
+      }) ?? [];
+
+    expect(workbenchParas).toHaveLength(1);
+
+    const plain = richJsonToPlainText({
+      type: "doc",
+      content: [workbenchParas[0]!],
+    });
+    expect(plain).toContain("Refer Attachment I");
+
+    const referNodes: JSONContent[] = [];
+    function walk(node: JSONContent) {
+      if (node.type === "text" && /Refer Attachment/.test(node.text ?? "")) {
+        referNodes.push(node);
+      }
+      for (const child of node.content ?? []) walk(child);
+    }
+    walk(workbenchParas[0]!);
+    expect(
+      referNodes.some((n) =>
+        n.marks?.some(
+          (m) => m.type === "textStyle" && m.attrs?.color === "#ee0000"
+        )
+      )
+    ).toBe(true);
+  });
+
   it("preserves CPH subscript from DEV-QC-26-001 narratives", async () => {
     if (!fs.existsSync(legacyEquationFixturePath)) return;
 

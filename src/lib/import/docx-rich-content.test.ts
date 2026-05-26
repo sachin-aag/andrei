@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
+import type { JSONContent } from "@tiptap/core";
 import {
+  dedupeSupersetNarrativeParagraphsForTest,
+  findParsedParagraphMatchForTest,
   parseParagraphXmlForTest,
   plainTextMatchesForTest,
 } from "@/lib/import/docx-rich-content";
@@ -136,6 +139,56 @@ describe("parseParagraphXmlForTest", () => {
         expect.objectContaining({ kind: "text", text: "CPH", subscript: true }),
       ])
     );
+  });
+
+  it("prefers the longest matching OOXML paragraph when Word repeats a stub", () => {
+    const stub =
+      "Based on the reported nonconformance, verified the analyst workbench for standard preparation and noted that analyst prepared the sucrose stock standard solution (50000 ppb) in 100 ml volumetric flask.";
+    const full = `${stub} Refer Attachment I.`;
+    const parsed = [
+      { plainText: stub, parts: [{ kind: "text" as const, text: stub }], isMathBlock: false },
+      {
+        plainText: full,
+        parts: [
+          { kind: "text" as const, text: stub },
+          {
+            kind: "text" as const,
+            text: " Refer Attachment I.",
+            color: "#ee0000",
+          },
+        ],
+        isMathBlock: false,
+      },
+    ];
+    const match = findParsedParagraphMatchForTest(stub, parsed, new Set(), 0);
+    expect(match?.index).toBe(1);
+    expect(match?.matched.plainText).toBe(full);
+  });
+
+  it("removes stub narrative paragraphs superseded by a longer duplicate", () => {
+    const stub =
+      "Based on the reported nonconformance, verified the analyst workbench for standard preparation and noted that analyst prepared the sucrose stock standard solution (50000 ppb) in 100 ml volumetric flask.";
+    const full = `${stub} Refer Attachment I.`;
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        { type: "paragraph", content: [{ type: "text", text: stub }] },
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: stub },
+            {
+              type: "text",
+              text: " Refer Attachment I.",
+              marks: [{ type: "textStyle", attrs: { color: "#ee0000" } }],
+            },
+          ],
+        },
+      ],
+    };
+    dedupeSupersetNarrativeParagraphsForTest(doc);
+    expect(doc.content).toHaveLength(1);
+    expect(doc.content?.[0]?.content?.[1]?.marks?.[0]?.type).toBe("textStyle");
   });
 
   it("matches mammoth image placeholders to OOXML equations", () => {

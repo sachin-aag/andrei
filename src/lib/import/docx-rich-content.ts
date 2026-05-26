@@ -450,6 +450,8 @@ function findParsedParagraphMatch(
   const expectedHasMedia = normalizeMediaPlaceholders(expected).includes("[media]");
 
   const tryRange = (start: number, end: number) => {
+    let best: { matched: ParsedParagraph; index: number } | null = null;
+    let bestLen = -1;
     for (let scan = start; scan < end; scan++) {
       if (usedParsed.has(scan)) continue;
       const candidate = parsed[scan]!;
@@ -457,11 +459,12 @@ function findParsedParagraphMatch(
       if (!candidatePlain && !expected) {
         return { matched: candidate, index: scan };
       }
-      if (plainTextMatches(candidatePlain, expected)) {
-        return { matched: candidate, index: scan };
+      if (plainTextMatches(candidatePlain, expected) && candidatePlain.length > bestLen) {
+        bestLen = candidatePlain.length;
+        best = { matched: candidate, index: scan };
       }
     }
-    return null;
+    return best;
   };
 
   if (expectedHasMedia) {
@@ -532,6 +535,75 @@ function enrichParagraphNode(
   applyPartsToParagraph(node, matched.parts);
 }
 
+const MIN_SUPERSET_DEDUPE_LEN = 40;
+
+function normalizeParaForDedupe(s: string): string {
+  return s.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function coloredTextNodeCount(node: JSONContent): number {
+  let count = 0;
+  const walk = (n: JSONContent) => {
+    if (
+      n.type === "text" &&
+      n.marks?.some((m) => m.type === "textStyle" && m.attrs?.color)
+    ) {
+      count++;
+    }
+    for (const ch of n.content ?? []) walk(ch);
+  };
+  walk(node);
+  return count;
+}
+
+/** Drop stub duplicates when Word repeats a paragraph without trailing cross-references. */
+function dedupeSupersetNarrativeParagraphs(doc: JSONContent): void {
+  if (!doc.content?.length) return;
+
+  const paragraphIndices: number[] = [];
+  const normalized = new Map<number, string>();
+
+  for (let i = 0; i < doc.content.length; i++) {
+    const node = doc.content[i]!;
+    if (node.type !== "paragraph") continue;
+    const text = normalizeParaForDedupe(paragraphPlainText(node));
+    if (text.length < MIN_SUPERSET_DEDUPE_LEN) continue;
+    paragraphIndices.push(i);
+    normalized.set(i, text);
+  }
+
+  const toRemove = new Set<number>();
+
+  for (const i of paragraphIndices) {
+    for (const j of paragraphIndices) {
+      if (i === j || toRemove.has(i)) continue;
+      const ti = normalized.get(i)!;
+      const tj = normalized.get(j)!;
+
+      if (ti.length < tj.length && tj.startsWith(ti) && tj.length - ti.length >= 3) {
+        toRemove.add(i);
+        continue;
+      }
+
+      if (ti === tj) {
+        const ni = doc.content[i]!;
+        const nj = doc.content[j]!;
+        const scoreI = coloredTextNodeCount(ni);
+        const scoreJ = coloredTextNodeCount(nj);
+        if (scoreI !== scoreJ) {
+          toRemove.add(scoreI < scoreJ ? i : j);
+        } else {
+          toRemove.add(Math.max(i, j));
+        }
+      }
+    }
+  }
+
+  if (toRemove.size > 0) {
+    doc.content = doc.content.filter((_, idx) => !toRemove.has(idx));
+  }
+}
+
 function enrichDocFromOoxml(
   doc: JSONContent,
   parsed: ParsedParagraph[],
@@ -576,6 +648,7 @@ export async function enrichNarrativesFromDocxBuffer(
   const usedParsed = new Set<number>();
   for (const narrative of collectEnrichableDocs(sections)) {
     enrichDocFromOoxml(narrative, parsed, usedParsed, pIdxRef);
+    dedupeSupersetNarrativeParagraphs(narrative);
   }
 }
 
@@ -587,4 +660,19 @@ export function parseParagraphXmlForTest(pXml: string, media: Map<string, MediaA
 /** @internal exported for tests */
 export function plainTextMatchesForTest(candidate: string, expected: string) {
   return plainTextMatches(normalizePlain(candidate), normalizePlain(expected));
+}
+
+/** @internal exported for tests */
+export function findParsedParagraphMatchForTest(
+  expected: string,
+  parsed: ParsedParagraph[],
+  usedParsed: Set<number>,
+  pIdx: number
+) {
+  return findParsedParagraphMatch(expected, parsed, usedParsed, pIdx);
+}
+
+/** @internal exported for tests */
+export function dedupeSupersetNarrativeParagraphsForTest(doc: JSONContent) {
+  dedupeSupersetNarrativeParagraphs(doc);
 }
