@@ -15,6 +15,12 @@ describe("normalizeBracketPlaceholdersInPlainText", () => {
     );
   });
 
+  it("leaves static acceptance-criteria brackets unchanged", () => {
+    const input =
+      "criteria [TOC of blank water: Not More Than 100 ppb, %CV: Not More Than 5.0%] apply";
+    expect(normalizeBracketPlaceholdersInPlainText(input)).toBe(input);
+  });
+
   it("leaves citations [digits] and existing to-be-filled spans unchanged", () => {
     expect(normalizeBracketPlaceholdersInPlainText("see ref [12]")).toBe("see ref [12]");
     expect(

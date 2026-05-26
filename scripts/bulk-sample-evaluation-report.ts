@@ -18,6 +18,7 @@ import { config as loadEnv } from "dotenv";
 loadEnv({ path: ".env.local" });
 loadEnv({ path: ".env" });
 
+import { ensureMathliveSsr } from "@/lib/math/mathlive-ssr";
 import {
   resolveEvaluationLanguageModel,
   PROMPT_VERSION,
@@ -939,6 +940,8 @@ ${reportSectionsHtml}
 }
 
 async function main() {
+  await ensureMathliveSsr();
+
   const { inputDir, outOverride, docConcurrency, reportDate } = parseArgs(
     process.argv.slice(2)
   );

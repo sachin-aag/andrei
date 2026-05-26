@@ -18,12 +18,14 @@ import type {
 } from "@/types/sections";
 import { EMPTY_CONTENT, SECTION_LABELS } from "@/types/sections";
 import { emptyDoc, legacyStringToDoc, MAMMOTH_SOFT_BREAK } from "@/lib/tiptap/rich-text";
-import { SECTION_GUIDANCE } from "@/lib/report-section-guidance";
 import { parseHtmlTablesWithPositions, findDataTablePositions } from "@/lib/import/html-table-parser";
 import {
   extractTableAlignmentSpecsFromDocxBuffer,
   mergeDocxAlignmentIntoTipTapTableFromSpecs,
 } from "@/lib/import/docx-table-alignment";
+import { enrichNarrativesFromDocxBuffer } from "@/lib/import/docx-rich-content";
+import { stripWordBookmarkAnchors } from "@/lib/import/sanitize-import-html";
+import { extractSignatureBlockFromDocxBuffer } from "@/lib/docx/signature-block";
 
 export type ImportedSections = SectionContentMap;
 
@@ -50,6 +52,7 @@ const SECTION_ORDER: ImportSectionKey[] = [
   "control",
   "documents_reviewed",
   "attachments",
+  "signature_approvals",
 ];
 
 type HeadingMatch = {
@@ -109,6 +112,7 @@ function splitLinesIntoSections(
     control: [],
     documents_reviewed: [],
     attachments: [],
+    signature_approvals: [],
   };
   let current: ImportSectionKey | "preamble" | "ignored" = "preamble";
   let foundHeadings = false;
@@ -148,6 +152,7 @@ function splitLinesIntoSections(
         control: "",
         documents_reviewed: "",
         attachments: "",
+        signature_approvals: "",
       },
       foundHeadings: false,
     };
@@ -173,17 +178,21 @@ function unescapeMammothMarkdownEscapes(text: string): string {
   return text.replace(/\\([\\`*_{}[\]()#+\-.!])/g, "$1");
 }
 
+const MAMMOTH_MARKDOWN_IMAGE_RE = /!\[[^\]\n]*\]\((?:data:image\/[^)\s]+|[^)\n]+)\)/gi;
+
 /**
  * Mammoth's convertToMarkdown keeps Word list numbering as "1. …", "2. …".
  * extractRawText drops those numbers because they are not stored as paragraph text.
  */
-function mammothMarkdownToImportPlain(markdown: string): string {
+export function mammothMarkdownToImportPlain(markdown: string): string {
   const lines = markdown.split(/\r?\n/);
   const normalized = lines.map((line) => {
     const softBreak = /  +$/.test(line);
     const withoutBold = line.replace(/__([\s\S]*?)__/g, "$1").trimEnd();
-    const unescaped = unescapeMammothMarkdownEscapes(withoutBold);
-    return softBreak ? `${unescaped}${MAMMOTH_SOFT_BREAK}` : unescaped;
+    const withImagePlaceholders = withoutBold.replace(MAMMOTH_MARKDOWN_IMAGE_RE, "[image]");
+    const unescaped = unescapeMammothMarkdownEscapes(withImagePlaceholders);
+    const stripped = stripWordBookmarkAnchors(unescaped);
+    return softBreak ? `${stripped}${MAMMOTH_SOFT_BREAK}` : stripped;
   });
   return normalized.join("\n");
 }
@@ -212,60 +221,6 @@ function cleanImportedNarrativeText(text: string): string {
     .trim();
 }
 
-function stripGuidanceChecklist(text: string): string {
-  const guidance = Object.values(SECTION_GUIDANCE)
-    .flat()
-    .map(normalizeGuidanceLine);
-
-  return text
-    .split(/\r?\n/)
-    .filter((line) => {
-      const trimmed = line.trim();
-      if (/^following (?:checks|checkpoints?) shall be considered/i.test(trimmed)) {
-        return false;
-      }
-      const normalized = normalizeGuidanceLine(trimmed);
-      return !guidance.some(
-        (item) =>
-          normalized === item ||
-          normalized.includes(item) ||
-          (normalized.length >= 40 && item.includes(normalized))
-      );
-    })
-    .join("\n");
-}
-
-function stripSectionTemplatePreamble(section: "improve" | "control", text: string): string {
-  const marker =
-    section === "improve"
-      ? /^improve section covers the corrective actions\s*/i
-      : /^control section covers the preventive actions\s*/i;
-
-  let body = cleanImportedText(text);
-  if (!marker.test(body)) return body;
-
-  body = body.replace(marker, "").trimStart();
-
-  while (body) {
-    const checklistSentence = body.match(
-      /^(?:(?:is|are|was|were|does|do|did)\b|capa required\b)[^?.]*(?:[?.]\s*|$)/i
-    );
-    if (!checklistSentence) break;
-    body = body.slice(checklistSentence[0].length).trimStart();
-  }
-
-  return cleanImportedText(body);
-}
-
-function normalizeGuidanceLine(text: string): string {
-  return text
-    .replace(/^[•*\-]\s*/, "")
-    .replace(/^\d+[.)]\s*/, "")
-    .replace(/\s+/g, " ")
-    .replace(/[^a-z0-9]+/gi, "")
-    .toLowerCase();
-}
-
 function findLabel(text: string, labels: string[], from = 0): RegExpExecArray | null {
   const alt = labels.map(labelPattern).join("|");
   const re = new RegExp(`^[ \\t]*(?:${alt})`, "gim");
@@ -289,6 +244,31 @@ function getBetweenLabels(
   }
 
   return cleanImportedText(text.slice(startIndex, endIndex));
+}
+
+/** Word forms duplicate "Other Tool if Any" rows; the answer is under the last label. */
+function parseAnalyzeOtherTools(body: string): string {
+  const startLabels = ["Other Tool if Any", "Other Tools (If any)"];
+  const stopLabels = ["Investigation Outcome"];
+
+  let lastStart: RegExpExecArray | null = null;
+  let from = 0;
+  while (true) {
+    const match = findLabel(body, startLabels, from);
+    if (!match) break;
+    lastStart = match;
+    from = match.index + match[0].length;
+  }
+  if (!lastStart) return "";
+
+  const startIndex = lastStart.index + lastStart[0].length;
+  let endIndex = body.length;
+  for (const stop of stopLabels) {
+    const match = findLabel(body, [stop], startIndex);
+    if (match && match.index < endIndex) endIndex = match.index;
+  }
+
+  return cleanImportedText(body.slice(startIndex, endIndex));
 }
 
 function hasLabel(text: string, labels: string[]): boolean {
@@ -338,36 +318,23 @@ function textBeforeAnyInlineLabel(text: string, labels: string[]): string {
   return cleanImportedText(text.slice(0, endIndex));
 }
 
+/** Line-anchored variant — avoids splitting on label phrases inside checklist questions. */
+function textBeforeAnyLabel(text: string, labels: string[]): string {
+  let endIndex = text.length;
+  for (const label of labels) {
+    const match = findLabel(text, [label]);
+    if (match && match.index < endIndex) endIndex = match.index;
+  }
+  return cleanImportedText(text.slice(0, endIndex));
+}
+
 function parseMeasure(text: string): MeasureSection {
-  const body = stripMeasureLeadingCriteriaLine(
-    cleanImportedNarrativeText(stripGuidanceChecklist(text))
-  );
+  const body = cleanImportedNarrativeText(text);
 
   return {
     ...EMPTY_CONTENT.measure,
     narrative: legacyStringToDoc(body),
   };
-}
-
-function stripMeasureLeadingCriteriaLine(text: string): string {
-  const lines = text.split(/\r?\n/);
-  const firstNonEmptyIndex = lines.findIndex((line) => line.trim().length > 0);
-  if (firstNonEmptyIndex === -1) return "";
-
-  const firstLine = lines[firstNonEmptyIndex]!.trim();
-  // Some customer DOCX templates include Measure checklist criterion 1 as a
-  // free-text line with small wording variants (e.g. "controls/control limits").
-  // Remove only this known leading criterion pattern to avoid dropping valid content.
-  if (
-    /^\d+[.)]?\s*does the summary provide relevant facts and data\/information that was reviewed including\b/i.test(
-      firstLine
-    )
-  ) {
-    const nextLines = lines.slice(firstNonEmptyIndex + 1);
-    return cleanImportedNarrativeText(nextLines.join("\n"));
-  }
-
-  return text;
 }
 
 /**
@@ -412,22 +379,24 @@ function buildAnalyzeFromChunk(text: string): AnalyzeSection {
       "Other Tools (If any)",
       "Investigation Outcome",
     ]),
-    otherTools: getBetweenLabels(body, ["Other Tool if Any", "Other Tools (If any)"], [
-      "Investigation Outcome",
-    ]),
-    investigationOutcome: getBetweenLabels(body, ["Investigation Outcome"], [
-      "Identified Root Cause/ Probable Cause",
-      "Identified Root Cause / Probable Cause",
-      "Impact Assessment (System/ Document/ Product/ Equipment/Patient safety/Past batches)",
-    ]),
+    otherTools: parseAnalyzeOtherTools(body),
+    investigationOutcome: legacyStringToDoc(
+      getBetweenLabels(body, ["Investigation Outcome"], [
+        "Identified Root Cause/ Probable Cause",
+        "Identified Root Cause / Probable Cause",
+        "Impact Assessment (System/ Document/ Product/ Equipment/Patient safety/Past batches)",
+      ])
+    ),
     rootCause: {
-      narrative: getBetweenLabels(
-        body,
-        ["Identified Root Cause/ Probable Cause", "Identified Root Cause / Probable Cause"],
-        [
-          "Impact Assessment (System/ Document/ Product/ Equipment/Patient safety/Past batches)",
-          "Impact Assessment",
-        ]
+      narrative: legacyStringToDoc(
+        getBetweenLabels(
+          body,
+          ["Identified Root Cause/ Probable Cause", "Identified Root Cause / Probable Cause"],
+          [
+            "Impact Assessment (System/ Document/ Product/ Equipment/Patient safety/Past batches)",
+            "Impact Assessment",
+          ]
+        )
       ),
     },
     impactAssessment: {
@@ -496,11 +465,23 @@ const CONTROL_BODY_STOP_LABELS = [
   "List of attachments",
 ];
 
+const IMPROVE_ACTION_LABELS = ["Corrective Action", "Corrective Actions Register"];
+
 function extractControlPreventivePlain(controlBody: string): string {
-  if (hasLabel(controlBody, ["Preventive Action"])) {
-    return getBetweenLabels(controlBody, ["Preventive Action"], CONTROL_BODY_STOP_LABELS);
+  if (!hasLabel(controlBody, ["Preventive Action"])) {
+    return cleanImportedText(controlBody);
   }
-  return stripSectionTemplatePreamble("control", controlBody);
+
+  const preamble = textBeforeAnyLabel(controlBody, ["Preventive Action"]);
+  const body = getBetweenLabels(
+    controlBody,
+    ["Preventive Action"],
+    CONTROL_BODY_STOP_LABELS
+  );
+  const parts: string[] = [];
+  if (preamble) parts.push(cleanImportedText(preamble));
+  if (body) parts.push(`Preventive Action:\n${cleanImportedText(body)}`);
+  return parts.filter(Boolean).join("\n\n");
 }
 
 const REPORT_HEADER_LABEL_RE =
@@ -726,36 +707,33 @@ function trimAttachmentListSignatureNoise(
 export function buildSectionsFromRaw(raw: string): ImportedSections {
   const { sections, foundHeadings } = splitPlainTextIntoSections(raw);
 
-  const defineText = cleanImportedNarrativeText(stripGuidanceChecklist(sections.define));
-  const improveBody = cleanImportedText(stripGuidanceChecklist(sections.improve));
-  const controlBody = cleanImportedText(stripGuidanceChecklist(sections.control));
+  const defineText = cleanImportedNarrativeText(sections.define);
+  const improveBody = cleanImportedText(sections.improve);
+  const controlBody = cleanImportedText(sections.control);
 
   const defineNarr = defineText
     ? legacyStringToDoc(defineText)
     : emptyDocFallback(foundHeadings, raw);
-  const correctiveActionBlock = getBetweenLabels(improveBody, ["Corrective Action"], [
-    "Corrective Actions Register",
-  ]);
+  const improvePreamble = hasLabel(improveBody, IMPROVE_ACTION_LABELS)
+    ? textBeforeAnyLabel(improveBody, IMPROVE_ACTION_LABELS)
+    : improveBody;
+  const correctiveActionBlock = getBetweenLabels(
+    improveBody,
+    ["Corrective Action"],
+    ["Corrective Actions Register"]
+  );
   const controlPreventiveUnified = cleanImportedText(
     extractControlPreventivePlain(controlBody)
   );
-  const correctiveParsed = stripSectionTemplatePreamble(
-    "improve",
-    [correctiveActionBlock, parseCorrectiveActions(improveBody)]
-      .filter(Boolean)
-      .join("\n\n")
-  );
-  const improveIntroPlain = stripSectionTemplatePreamble(
-    "improve",
-    hasLabel(improveBody, ["Corrective Action"]) ? "" : improveBody
-  );
-  const correctiveActionsUnified = [
-    improveIntroPlain,
-    correctiveParsed,
-  ]
-    .map((s) => s.trim())
+  const correctiveParsed = [correctiveActionBlock, parseCorrectiveActions(improveBody)]
     .filter(Boolean)
     .join("\n\n");
+  const improveParts: string[] = [];
+  if (improvePreamble) improveParts.push(improvePreamble);
+  if (correctiveParsed) {
+    improveParts.push(`Corrective Action:\n${correctiveParsed}`);
+  }
+  const correctiveActionsUnified = improveParts.join("\n\n");
 
   return {
     define: {
@@ -781,6 +759,7 @@ export function buildSectionsFromRaw(raw: string): ImportedSections {
       ...EMPTY_CONTENT.attachments,
       items: parseAttachmentsBody(sections.attachments),
     },
+    signature_approvals: { ...EMPTY_CONTENT.signature_approvals },
   };
 }
 
@@ -809,6 +788,21 @@ export async function docxBufferToImportedReportContent(
 
   // Inject table nodes from HTML into narratives where applicable.
   injectTablesFromHtml(html, sections, buffer);
+  await enrichNarrativesFromDocxBuffer(buffer, {
+    define: sections.define,
+    measure: sections.measure,
+    improve: sections.improve,
+    analyze: sections.analyze,
+  });
+
+  const signatureBlock = extractSignatureBlockFromDocxBuffer(buffer);
+  if (signatureBlock) {
+    sections.signature_approvals = {
+      table: signatureBlock.table,
+      headerRowXml: signatureBlock.headerRowXml,
+      dataRowXml: signatureBlock.dataRowXml,
+    };
+  }
 
   return {
     sections,
@@ -883,9 +877,20 @@ function injectTablesFromHtml(
     if (!narrative || narrative.type !== "doc" || !narrative.content) continue;
 
     for (const tableNode of sectionTables) {
+      if (isSignatureTipTapTable(tableNode)) continue;
       replaceFlatParagraphsWithTable(narrative, tableNode);
     }
   }
+}
+
+function isSignatureTipTapTable(tableNode: JSONContent): boolean {
+  const cellTexts = extractTableCellTexts(tableNode);
+  const joined = cellTexts.join(" ");
+  return (
+    /\bPrepared\b/i.test(joined) &&
+    /\bSign\/Date\b/i.test(joined) &&
+    (/\bReviewed\b/i.test(joined) || /\bApproved\b/i.test(joined))
+  );
 }
 
 /**
@@ -1000,4 +1005,9 @@ function replaceFlatParagraphsWithTable(
 function emptyDocFallback(foundHeadings: boolean, raw: string) {
   if (foundHeadings) return legacyStringToDoc("");
   return legacyStringToDoc(raw.trim() || "");
+}
+
+/** @internal exported for tests */
+export function parseAnalyzeOtherToolsForTest(body: string) {
+  return parseAnalyzeOtherTools(body);
 }

@@ -27,33 +27,50 @@ export const NUMERIC_ONLY_BRACKET = /^\[\s*\d+\s*\]$/;
 
 type TextSpan = { fromRel: number; toRel: number; text: string };
 
+/**
+ * True when `[...]` is guidance the author or AI should replace—not static prose
+ * such as SOP acceptance criteria that happen to be wrapped in brackets on import.
+ */
+export function isActionablePlaceholderBracket(match: string): boolean {
+  if (!/^\[[^\]]+\]$/.test(match)) return false;
+  if (NUMERIC_ONLY_BRACKET.test(match)) return false;
+
+  const inner = match.slice(1, -1);
+
+  if (/to\s+be\s+filled/i.test(inner)) return true;
+  if (/\be\.g\./i.test(inner)) return true;
+
+  // QC / SOP limit language in brackets is document copy, not a fill-in field.
+  if (/not more than|not less than|\bNMT\b|\bNLT\b/i.test(inner)) return false;
+
+  // Short tokens without label:value structure: [number], [fibers]
+  if (
+    !inner.includes(":") &&
+    inner.length <= 32 &&
+    /^[\w\s./-]+$/i.test(inner.trim())
+  ) {
+    return true;
+  }
+
+  return false;
+}
+
 export function collectPlaceholderSpans(text: string): TextSpan[] {
   const spans: TextSpan[] = [];
-
-  PLACEHOLDER_REGEX.lastIndex = 0;
-  let tm: RegExpExecArray | null;
-  while ((tm = PLACEHOLDER_REGEX.exec(text)) !== null) {
-    spans.push({
-      fromRel: tm.index,
-      toRel: tm.index + tm[0].length,
-      text: tm[0],
-    });
-  }
 
   BRACKET_SPAN_REGEX.lastIndex = 0;
   let bm: RegExpExecArray | null;
   while ((bm = BRACKET_SPAN_REGEX.exec(text)) !== null) {
     const seg = bm[0];
-    if (NUMERIC_ONLY_BRACKET.test(seg)) continue;
+    if (!isActionablePlaceholderBracket(seg)) continue;
 
-    const fromRel = bm.index;
-    const toRel = bm.index + seg.length;
-    if (spans.some((s) => s.fromRel <= fromRel && s.toRel >= toRel)) continue;
-
-    spans.push({ fromRel, toRel, text: seg });
+    spans.push({
+      fromRel: bm.index,
+      toRel: bm.index + seg.length,
+      text: seg,
+    });
   }
 
-  spans.sort((a, b) => a.fromRel - b.fromRel || b.toRel - a.toRel);
   return spans;
 }
 

@@ -26,7 +26,7 @@ import {
   suggestionInsertMarkName,
 } from "@/lib/tiptap/suggestion-marks";
 import { cn } from "@/lib/utils";
-import { getUser } from "@/lib/auth/mock-users";
+import { useUserDirectory } from "@/providers/user-directory-provider";
 import type { Editor } from "@tiptap/react";
 import type { CommentRecord } from "@/types/report";
 import type { SectionType } from "@/db/schema";
@@ -174,6 +174,7 @@ export function MarginGutter({ onSectionOverflow }: Props) {
   const [connectorLines, setConnectorLines] = useState<{ id: string; y: number }[]>([]);
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
+  const { getUser } = useUserDirectory();
   const isManager = getUser(currentUserId)?.role === "manager";
   const isAuthor = currentUserId === report.authorId;
   const canComment =

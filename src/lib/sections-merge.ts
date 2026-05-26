@@ -8,6 +8,7 @@ import type {
   DocumentsReviewedSection,
   ImproveSection,
   MeasureSection,
+  SignatureApprovalsSection,
   SectionContentMap,
 } from "@/types/sections";
 import { EMPTY_CONTENT } from "@/types/sections";
@@ -167,6 +168,9 @@ export function mergeAnalyzeSection(content: unknown): AnalyzeSection {
   return {
     ...merged,
     fiveWhy: collapseFiveWhyFields({ narrative, conclusion }),
+    investigationOutcome: normalizeRichField(
+      "investigationOutcome" in o ? o.investigationOutcome : merged.investigationOutcome
+    ),
     rootCause: collapseRootCauseFields(
       merged.rootCause as Parameters<typeof collapseRootCauseFields>[0]
     ),
@@ -247,6 +251,23 @@ function coerceFiveWhyRows(
     .join("\n\n");
 }
 
+export function mergeSignatureApprovalsSection(content: unknown): SignatureApprovalsSection {
+  const base = EMPTY_CONTENT.signature_approvals;
+  if (!content || typeof content !== "object") return base;
+  const o = content as Partial<SignatureApprovalsSection>;
+  const table =
+    o.table && typeof o.table === "object" && o.table.type === "table"
+      ? o.table
+      : base.table;
+  const headerRowXml =
+    typeof o.headerRowXml === "string" && o.headerRowXml.trim()
+      ? o.headerRowXml
+      : undefined;
+  const dataRowXml =
+    typeof o.dataRowXml === "string" && o.dataRowXml.trim() ? o.dataRowXml : undefined;
+  return { table, headerRowXml, dataRowXml };
+}
+
 export function mergeSection<K extends keyof SectionContentMap & SectionType>(
   section: K,
   content: unknown
@@ -266,6 +287,8 @@ export function mergeSection<K extends keyof SectionContentMap & SectionType>(
       return mergeDocumentsReviewedSection(content) as SectionContentMap[K];
     case "attachments":
       return mergeAttachmentsSection(content) as SectionContentMap[K];
+    case "signature_approvals":
+      return mergeSignatureApprovalsSection(content) as SectionContentMap[K];
     default:
       return mergeGeneric(section, content);
   }

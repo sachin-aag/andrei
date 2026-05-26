@@ -1,3 +1,4 @@
+import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 import { and, eq, ne } from "drizzle-orm";
 import { z } from "zod";
@@ -85,7 +86,7 @@ export async function PATCH(
     if (!normalized) {
       return NextResponse.json({ error: "Deviation number is required" }, { status: 400 });
     }
-    if (await isDeviationNoTaken(normalized, reportId)) {
+    if (await isDeviationNoTaken(normalized, user.id, reportId)) {
       return NextResponse.json({ error: DUPLICATE_DEVIATION_NO_ERROR }, { status: 409 });
     }
     updates.deviationNo = normalized;
@@ -119,5 +120,6 @@ export async function DELETE(
   }
 
   await db.delete(reports).where(eq(reports.id, reportId));
+  revalidatePath("/");
   return NextResponse.json({ ok: true });
 }

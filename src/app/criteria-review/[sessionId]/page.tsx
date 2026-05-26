@@ -1,12 +1,12 @@
 import { redirect, notFound } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/session";
+import { listWorkspaceUsers } from "@/lib/auth/workspace-users";
 import { canAccessCriteriaReview } from "@/lib/criteria-review/access";
 import { AppShell } from "@/components/layout/app-shell";
 import {
   getCriteriaReviewSession,
   listCriteriaReviewSessions,
 } from "@/lib/criteria-review/store";
-import { listCriteriaReviewReviewers } from "@/lib/criteria-review/reviewers";
 import { CriteriaReviewSessionForm } from "@/components/criteria-review/session-form";
 
 export const dynamic = "force-dynamic";
@@ -22,19 +22,16 @@ export default async function CriteriaReviewSessionPage({ params }: PageProps) {
   const session = await getCriteriaReviewSession(id);
   if (!session) notFound();
 
-  const [all, reviewers] = await Promise.all([
-    listCriteriaReviewSessions(),
-    listCriteriaReviewReviewers(),
-  ]);
+  const all = await listCriteriaReviewSessions();
   const index = all.findIndex((s) => s.id === id);
   const prevId = index > 0 ? all[index - 1]!.id : null;
   const nextId = index >= 0 && index < all.length - 1 ? all[index + 1]!.id : null;
+  const workspaceUsers = await listWorkspaceUsers();
 
   return (
-    <AppShell user={user}>
+    <AppShell user={user} initialUsers={workspaceUsers}>
       <CriteriaReviewSessionForm
         session={session}
-        reviewers={reviewers}
         prevId={prevId}
         nextId={nextId}
       />

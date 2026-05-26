@@ -2,7 +2,7 @@ import type { JSONContent } from "@tiptap/core";
 import type { SectionType } from "@/db/schema";
 import type { AnalyzeSection } from "@/types/sections";
 import { collapseFiveWhyFields } from "@/lib/analyze-five-why";
-import { richJsonToPlainText } from "@/lib/tiptap/rich-text";
+import { normalizeRichField, richJsonToPlainText } from "@/lib/tiptap/rich-text";
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
@@ -159,9 +159,17 @@ export function contextForPrompt(section: SectionType, content: unknown): string
       content.fiveWhy as AnalyzeSection["fiveWhy"]
     );
     pushTextBlock(lines, "5-Why", fiveWhyCollapsed.narrative);
-    pushTextBlock(lines, "Investigation outcome", content.investigationOutcome);
+    pushTextBlock(
+      lines,
+      "Investigation outcome",
+      richJsonToPlainText(normalizeRichField(content.investigationOutcome))
+    );
     const rootCause = content.rootCause as AnalyzeSection["rootCause"] | undefined;
-    pushTextBlock(lines, "Root cause", rootCause?.narrative ?? "");
+    pushTextBlock(
+      lines,
+      "Root cause",
+      richJsonToPlainText(normalizeRichField(rootCause?.narrative))
+    );
     pushObjectFields(lines, "Impact assessment", content.impactAssessment, [
       ["system", "System"],
       ["document", "Document"],

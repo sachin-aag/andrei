@@ -30,7 +30,7 @@ describe("isDeviationNoTaken", () => {
   });
 
   it("returns false for blank deviation numbers", async () => {
-    await expect(isDeviationNoTaken("   ")).resolves.toBe(false);
+    await expect(isDeviationNoTaken("   ", "user-1")).resolves.toBe(false);
     expect(db.select).not.toHaveBeenCalled();
   });
 
@@ -40,7 +40,7 @@ describe("isDeviationNoTaken", () => {
     const from = vi.fn().mockReturnValue({ where });
     vi.mocked(db.select).mockReturnValue({ from } as never);
 
-    await isDeviationNoTaken("dev pr 24 016");
+    await isDeviationNoTaken("dev pr 24 016", "user-1");
 
     expect(where).toHaveBeenCalled();
     expect(limit).toHaveBeenCalledWith(1);
@@ -52,12 +52,12 @@ describe("isDeviationNoTaken", () => {
     const from = vi.fn().mockReturnValue({ where });
     vi.mocked(db.select).mockReturnValue({ from } as never);
 
-    await expect(isDeviationNoTaken("DEV-001")).resolves.toBe(true);
+    await expect(isDeviationNoTaken("DEV-001", "user-1")).resolves.toBe(true);
   });
 });
 
 describe("DUPLICATE_DEVIATION_NO_ERROR", () => {
   it("is user-facing copy for duplicate names", () => {
-    expect(DUPLICATE_DEVIATION_NO_ERROR).toMatch(/already exists/i);
+    expect(DUPLICATE_DEVIATION_NO_ERROR).toMatch(/already have a report/i);
   });
 });

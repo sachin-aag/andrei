@@ -1,6 +1,8 @@
 "use client";
 
 import { useId, useState } from "react";
+import type { MockUser } from "@/lib/auth/mock-users";
+import { UserDirectoryProvider } from "@/providers/user-directory-provider";
 import {
   LogOut,
   FileText,
@@ -14,13 +16,13 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
-import type { MockUser } from "@/lib/auth/mock-users";
-
 export function AppShell({
   user,
+  initialUsers,
   children,
 }: {
   user: MockUser;
+  initialUsers: MockUser[];
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -38,6 +40,7 @@ export function AppShell({
   ];
 
   return (
+    <UserDirectoryProvider initialUsers={initialUsers}>
     <div className="flex h-screen w-screen overflow-hidden bg-[var(--background)]">
       <a
         href={`#${mainId}`}
@@ -194,5 +197,6 @@ export function AppShell({
         {children}
       </main>
     </div>
+    </UserDirectoryProvider>
   );
 }

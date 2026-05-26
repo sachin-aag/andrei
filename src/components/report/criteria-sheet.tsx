@@ -32,6 +32,7 @@ import {
   getCommentCardTitle,
   isAiFixComment,
 } from "@/lib/comments/display";
+import { useUserDirectory } from "@/providers/user-directory-provider";
 import type { SectionType } from "@/db/schema";
 import type { CommentRecord } from "@/types/report";
 
@@ -195,6 +196,8 @@ function CommentCard({
   const aiFix = isAiFixComment(comment);
   const title = getCommentCardTitle(comment, evaluations);
   const preview = getCommentCardPreview(comment);
+  const { getUser } = useUserDirectory();
+  const author = getUser(comment.authorId);
 
   return (
     <button

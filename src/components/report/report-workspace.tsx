@@ -13,9 +13,10 @@ import {
 } from "@/providers/report-provider";
 import { ReportHeader } from "./report-header";
 import { ReportWorkspaceHeader } from "./report-workspace-header";
+import { ReportEditorToolbar } from "./report-editor-toolbar";
 import { MarginGutter } from "./review-rail/margin-gutter";
 import { ReportSidebar, type SidebarTab } from "./report-sidebar";
-import { getUser } from "@/lib/auth/mock-users";
+import { useUserDirectory } from "@/providers/user-directory-provider";
 import type { SectionType } from "@/db/schema";
 import type { WorkspaceMode } from "@/providers/report-provider";
 import type { Placeholder } from "@/lib/placeholders/find";
@@ -66,6 +67,13 @@ const SECTION_EDITORS = {
       import("./sections/attachments-editor").then((mod) => mod.AttachmentsEditor),
     { loading: SectionEditorLoading }
   ),
+  signature_approvals: dynamic(
+    () =>
+      import("./sections/signature-approvals-section").then(
+        (mod) => mod.SignatureApprovalsSection
+      ),
+    { loading: SectionEditorLoading }
+  ),
 } satisfies Record<(typeof REPORT_WORKSPACE_SECTIONS)[number], ComponentType>;
 
 export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
@@ -111,6 +119,7 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
     []
   );
 
+  const { getUser } = useUserDirectory();
   const manager = getUser(report.assignedManagerId ?? undefined);
   const author = getUser(report.authorId);
 
@@ -257,6 +266,8 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
         onApprove={handleApprove}
         onFeedback={handleFeedback}
       />
+
+      <ReportEditorToolbar />
 
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         <main

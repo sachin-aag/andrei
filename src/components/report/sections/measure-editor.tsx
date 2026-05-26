@@ -2,9 +2,8 @@
 
 import { useReportSection } from "@/providers/report-provider";
 import { useSectionSave } from "@/hooks/use-section-save";
-import { CriteriaChecklist, SectionShell } from "./section-shell";
+import { SectionShell } from "./section-shell";
 import { TiptapSectionField } from "@/components/report/tiptap-section-field";
-import { SECTION_GUIDANCE } from "@/lib/report-section-guidance";
 
 export function MeasureEditor() {
   const { update } = useReportSection("measure");
@@ -18,8 +17,6 @@ export function MeasureEditor() {
       lastSavedAt={lastSavedAt}
       section="measure"
     >
-      <CriteriaChecklist items={SECTION_GUIDANCE.measure ?? []} ordered />
-
       <TiptapSectionField
         section="measure"
         contentPath="narrative"

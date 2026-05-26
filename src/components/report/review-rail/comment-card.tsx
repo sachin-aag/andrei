@@ -18,7 +18,7 @@ import {
   useReportData,
   useReportEvaluations,
 } from "@/providers/report-provider";
-import { getUser } from "@/lib/auth/mock-users";
+import { useUserDirectory } from "@/providers/user-directory-provider";
 import { cn, formatDateTime } from "@/lib/utils";
 import {
   getCommentCardPreview,
@@ -62,6 +62,7 @@ export function CommentCard({
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const { evaluations } = useReportEvaluations();
+  const { getUser } = useUserDirectory();
   const author = getUser(root.authorId);
   const aiFix = isAiFixComment(root);
   const cardTitle = getCommentCardTitle(root, evaluations);

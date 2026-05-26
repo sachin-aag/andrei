@@ -7,6 +7,11 @@ import path from "path";
 import PizZip from "pizzip";
 
 const REFERENCE = path.join(process.cwd(), "reference-template.docx");
+/** QC/QA sign-off layout used on current investigation drafts (separate table after DMAIC body). */
+const SIGNATURE_LAYOUT_SOURCE = path.join(
+  process.cwd(),
+  "docs/Draft Investigation (DEV-QC-26-001).docx"
+);
 const OUTPUT_DIR = path.join(process.cwd(), "templates");
 const OUTPUT = path.join(OUTPUT_DIR, "investigation-report-template.docx");
 
@@ -16,13 +21,91 @@ let xml = zip.file("word/document.xml").asText();
 
 // ─── Helpers ───
 
+function runPr({ bold = false, fontSize = 24 } = {}) {
+  const bTag = bold ? "<w:b/>" : "";
+  return `<w:rPr>${bTag}<w:sz w:val="${fontSize}"/><w:szCs w:val="${fontSize}"/></w:rPr>`;
+}
+
+function textRun(text, { bold = false, fontSize = 24 } = {}) {
+  return `<w:r>${runPr({ bold, fontSize })}<w:t xml:space="preserve">${text}</w:t></w:r>`;
+}
+
 function makePara(text, { bold = false, fontSize = 24 } = {}) {
-  const bTag = bold ? "<w:b/>" : "<w:bCs/>";
-  return `<w:p><w:pPr><w:spacing w:before="60" w:line="276" w:lineRule="auto"/><w:jc w:val="left"/><w:rPr>${bTag}<w:sz w:val="${fontSize}"/><w:szCs w:val="${fontSize}"/></w:rPr></w:pPr><w:r><w:rPr>${bTag}<w:sz w:val="${fontSize}"/><w:szCs w:val="${fontSize}"/></w:rPr><w:t xml:space="preserve">${text}</w:t></w:r></w:p>`;
+  const pPrRPr = runPr({ bold, fontSize });
+  return `<w:p><w:pPr><w:spacing w:before="60" w:line="276" w:lineRule="auto"/><w:jc w:val="left"/>${pPrRPr}</w:pPr>${textRun(text, { bold, fontSize })}</w:p>`;
+}
+
+function makeLabelValuePara(label, valuePlaceholder, { fontSize = 24 } = {}) {
+  return (
+    `<w:p><w:pPr><w:spacing w:before="60" w:line="276" w:lineRule="auto"/><w:jc w:val="left"/>${runPr({ bold: true, fontSize })}</w:pPr>` +
+    `${textRun(label, { bold: true, fontSize })}${textRun(valuePlaceholder, { bold: false, fontSize })}</w:p>`
+  );
 }
 
 function makeParas(lines, opts = {}) {
-  return lines.map(l => makePara(l, opts)).join("");
+  return lines.map((l) => makePara(l, opts)).join("");
+}
+
+function isSignatureTableXml(tblXml) {
+  const text = Array.from(tblXml.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g))
+    .map((m) => m[1] ?? "")
+    .join("");
+  return (
+    /\bPrepared\b/i.test(text) &&
+    /\bSign\s*\/\s*Date\b/i.test(text) &&
+    (/\bReviewed\b/i.test(text) || /\bApproved\b/i.test(text))
+  );
+}
+
+function extractSignatureTableXmlFromDocx(docxPath) {
+  const zip = new PizZip(fs.readFileSync(docxPath));
+  const docXml = zip.file("word/document.xml")?.asText();
+  if (!docXml) throw new Error(`Missing word/document.xml in ${docxPath}`);
+
+  const matches = [...docXml.matchAll(/<w:tbl\b[^>]*>[\s\S]*?<\/w:tbl>/g)].map(
+    (m) => m[0]
+  );
+  const signatureTables = matches.filter(isSignatureTableXml);
+  if (signatureTables.length === 0) {
+    throw new Error(`No signature table found in ${docxPath}`);
+  }
+  return signatureTables[signatureTables.length - 1];
+}
+
+function blankSignatureDataRow(dataRowXml) {
+  return dataRowXml.replace(
+    /<w:t[^>]*>[^<]*<\/w:t>/g,
+    '<w:t xml:space="preserve"></w:t>'
+  );
+}
+
+/** Two-row QC/QA reviewer table matching docs/Draft Investigation (DEV-QC-26-001).docx import. */
+function buildBlankReviewerSignatureTable() {
+  const source = extractSignatureTableXmlFromDocx(SIGNATURE_LAYOUT_SOURCE);
+  const rows = [...source.matchAll(/<w:tr\b[^>]*>[\s\S]*?<\/w:tr>/g)].map((m) => m[0]);
+  if (rows.length < 2) {
+    throw new Error("Signature layout source must contain header and data rows");
+  }
+  const tblPr = source.match(/<w:tblPr>[\s\S]*?<\/w:tblPr>/)?.[0] ?? "";
+  return `<w:tbl>${tblPr}${rows[0]}${blankSignatureDataRow(rows[1])}</w:tbl>`;
+}
+
+function replaceLastSignatureTable(xml, replacementTableXml) {
+  const candidates = [];
+  const tblRe = /<w:tbl\b[^>]*>[\s\S]*?<\/w:tbl>/g;
+  let match;
+  while ((match = tblRe.exec(xml)) !== null) {
+    if (!isSignatureTableXml(match[0])) continue;
+    candidates.push({
+      start: match.index,
+      end: match.index + match[0].length,
+    });
+  }
+  if (candidates.length === 0) {
+    throw new Error("No signature table found in reference template");
+  }
+  const last = candidates[candidates.length - 1];
+  return xml.substring(0, last.start) + replacementTableXml + xml.substring(last.end);
 }
 
 // Keep in sync with src/lib/export/docx-form-checkbox.ts
@@ -44,20 +127,16 @@ function formCheckboxFieldXml(checked, fieldName) {
 }
 
 function makeInvestigationToolsParagraph() {
-  const textRun = (text, bold = true) => {
-    const bTag = bold ? "<w:b/>" : "<w:bCs/>";
-    return `<w:r><w:rPr>${bTag}<w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr><w:t xml:space="preserve">${text}</w:t></w:r>`;
-  };
   return (
     "<w:p><w:pPr><w:spacing w:before=\"60\" w:line=\"276\" w:lineRule=\"auto\"/>" +
     "<w:jc w:val=\"left\"/><w:rPr><w:b/><w:sz w:val=\"24\"/><w:szCs w:val=\"24\"/></w:rPr></w:pPr>" +
-    textRun("Investigation tool used:  ") +
+    textRun("Investigation tool used:  ", { bold: true }) +
     formCheckboxFieldXml(false, "toolSixM") +
-    textRun(" 6M     ") +
+    textRun(" 6M     ", { bold: true }) +
     formCheckboxFieldXml(false, "toolFiveWhy") +
-    textRun(" 5 Why     ") +
+    textRun(" 5 Why     ", { bold: true }) +
     formCheckboxFieldXml(false, "toolBrainstorming") +
-    textRun(" Brainstorming") +
+    textRun(" Brainstorming", { bold: true }) +
     "</w:p>"
   );
 }
@@ -150,7 +229,7 @@ R.set(1, rebuildRow(rows[1].xml, makeInvestigationToolsParagraph()));
 
 // Row 2: Other Tools label + value
 R.set(2, rebuildRow(rows[2].xml,
-  makePara("Other Tools (If any): {otherToolsDisplay}", { bold: true })
+  makeLabelValuePara("Other Tools (If any): ", "{otherToolsDisplay}")
 ));
 
 // Row 3: Other Tools old value → empty
@@ -158,70 +237,54 @@ R.set(3, rebuildRow(rows[3].xml, makePara(" ")));
 
 // Row 4: "Define:" label → keep
 
-// Row 5: Define content (checklist + narrative)
+// Row 5: Define content (narrative includes template checkpoints from DB)
 R.set(5, rebuildRow(rows[5].xml, makeParas([
-  'Following checks shall be considered while writing the \u201CDefine\u201D section.',
-  '1. Clearly define what happens actually.',
-  '2. Explain what is different than expected.',
-  '3. Mention the location where the deviation has occurred.',
-  '4. Date/time of deviation occurrence and date/time of detection.',
-  '5. Mention the name of personnel who is involved in the deviation.',
-  '6. Mention initial scope of deviation (impacted product/Material/Equipment/System/Batches/etc.)',
-  '',
   '{@defineNarrativeXml}',
 ])));
 
 // Row 6: "Details Investigation:" label → keep
 
-// Row 7: Measure (COMBINED: label + checklist + narrative content)
-R.set(7, rebuildRow(rows[7].xml, makeParas([
-  'Measure:',
-  'Following checks shall be considered while writing the \u201CMeasure\u201D section.',
-  '1. Does the summary provide relevant facts and data/information reviewed?',
-  '2. Is a summary of the analysis of the factors and data provided?',
-  '3. Is a conclusion statement of the analysis and review provided?',
-  '4. If there were Regulatory Notification, were details provided?',
-  '5. Is the report written in a logical flow and easily understood by the reader?',
-  '',
-  '{@measureNarrativeXml}',
-])));
+// Row 7: Measure (label + narrative content from DB)
+R.set(7, rebuildRow(rows[7].xml,
+  makePara("Measure:", { bold: true }) + makeParas(["{@measureNarrativeXml}"])
+));
 
 // Row 8: "Analyze:" label → keep
 
 // Row 9: 6M Method content
-R.set(9, rebuildRow(rows[9].xml, makeParas([
-  '6 M Method (If Applicable):',
-  'Man: {sixMMan}',
-  'Machine: {sixMMachine}',
-  'Measurement: {sixMMeasurement}',
-  'Material: {sixMMaterial}',
-  'Method: {sixMMethod}',
-  'Milieu (Environment): {sixMMilieu}',
-  'Conclusion: {sixMConclusion}',
-])));
+R.set(9, rebuildRow(rows[9].xml,
+  makePara("6 M Method (If Applicable):", { bold: true }) +
+  makeLabelValuePara("Man: ", "{sixMMan}") +
+  makeLabelValuePara("Machine: ", "{sixMMachine}") +
+  makeLabelValuePara("Measurement: ", "{sixMMeasurement}") +
+  makeLabelValuePara("Material: ", "{sixMMaterial}") +
+  makeLabelValuePara("Method: ", "{sixMMethod}") +
+  makeLabelValuePara("Milieu (Environment): ", "{sixMMilieu}") +
+  makeLabelValuePara("Conclusion: ", "{sixMConclusion}")
+));
 
 // Row 10: 6M Note → keep
 
 // Row 11: 5 Why content (chain + conclusion live in one narrative field)
-R.set(11, rebuildRow(rows[11].xml, makeParas([
-  '5 Why Approach (If Applicable):',
-  '{@fiveWhyNarrativeXml}',
-])));
+R.set(11, rebuildRow(rows[11].xml,
+  makePara("5 Why Approach (If Applicable):", { bold: true }) +
+  makeParas(["{@fiveWhyNarrativeXml}"])
+));
 
 // Row 12: Brainstorming
-R.set(12, rebuildRow(rows[12].xml, makeParas([
-  'Brainstorming:',
-  '{@brainstormingXml}',
-])));
+R.set(12, rebuildRow(rows[12].xml,
+  makePara("Brainstorming:", { bold: true }) +
+  makeParas(["{@brainstormingXml}"])
+));
 
-// Row 13: Other Tool #1
-R.set(13, rebuildRow(rows[13].xml, makeParas([
-  'Other Tool if Any:',
-  '{@analyzeOtherToolsXml}',
-])));
+// Row 13: Other Tool #1 — label-only duplicate row (value lives on row 14)
+R.set(13, rebuildRow(rows[13].xml, makePara("Other Tool if Any:", { bold: true })));
 
-// Row 14: Other Tool #2 (duplicate) → empty
-R.set(14, rebuildRow(rows[14].xml, makePara(" ")));
+// Row 14: Other Tool #2 — label + value on the following line(s)
+R.set(14, rebuildRow(rows[14].xml,
+  makePara("Other Tool if Any:", { bold: true }) +
+  makeParas(["{@analyzeOtherToolsXml}"])
+));
 
 // Row 15: Investigation Outcome label → keep
 // Row 16: Investigation Outcome content
@@ -235,25 +298,18 @@ R.set(18, rebuildRow(rows[18].xml, makeParas([
 
 // Row 19: Impact Assessment label → keep
 // Row 20: Impact Assessment content
-R.set(20, rebuildRow(rows[20].xml, makeParas([
-  'System: {impactSystem}',
-  'Document: {impactDocument}',
-  'Product: {impactProduct}',
-  'Equipment: {impactEquipment}',
-  'Patient safety / Past Batches: {impactPatientSafety}',
-])));
+R.set(20, rebuildRow(rows[20].xml,
+  makeLabelValuePara("System: ", "{impactSystem}") +
+  makeLabelValuePara("Document: ", "{impactDocument}") +
+  makeLabelValuePara("Product: ", "{impactProduct}") +
+  makeLabelValuePara("Equipment: ", "{impactEquipment}") +
+  makeLabelValuePara("Patient safety / Past Batches: ", "{impactPatientSafety}")
+));
 
-// Row 21: Improve (label + checklist combined)
-R.set(21, rebuildRow(rows[21].xml, makeParas([
-  'Improve: Improve section covers the corrective actions.',
-  'Following checks shall be considered while writing the \u201CImprove\u201D section.',
-  '1. Were specific corrective actions identified (including immediate actions)?',
-  '2. Were specific corrective actions identified for each root cause?',
-  '3. Was the corrective action assigned a unique number, responsible person and due date?',
-  '4. Does the action describe the expected outcome that can be verified?',
-  '5. Was effectiveness verification required or not, with rationale documented?',
-  '6. Are the identified corrective actions achievable?',
-])));
+// Row 21: Improve label + checkpoint guidance (matches reference-template row 21)
+R.set(21, rebuildRow(rows[21].xml,
+  makePara("Improve:", { bold: true }) + makeParas(["{@improveNarrativeXml}"])
+));
 
 // Row 22: "Corrective Action:" label → keep
 
@@ -262,16 +318,10 @@ R.set(23, rebuildRow(rows[23].xml, makeParas([
   '{@correctiveActionsXml}',
 ])));
 
-// Row 24: Control (label + checklist combined)
-R.set(24, rebuildRow(rows[24].xml, makeParas([
-  'Control: Control section covers the preventive actions.',
-  'Following checks shall be considered while writing the \u201CControl\u201D section.',
-  '1. Are specific preventive actions identified to prevent recurrence?',
-  '2. Was the preventive action assigned a unique number, responsible person and due date?',
-  '3. Does the action describe the expected outcome that can be verified?',
-  '4. Was effectiveness verification required or not, with rationale documented?',
-  '5. Are the identified preventive actions achievable?',
-])));
+// Row 24: Control label + checkpoint guidance (matches reference-template row 24)
+R.set(24, rebuildRow(rows[24].xml,
+  makePara("Control:", { bold: true }) + makeParas(["{@controlNarrativeXml}"])
+));
 
 // Row 25: "Preventive Action:" label → keep
 
@@ -294,7 +344,7 @@ R.set(30, rebuildRow(rows[30].xml, makeParas([
   '{/attachments}',
 ])));
 
-// Rows 31-32: Signature table → keep
+// Second table (global rows 31–32): QC/QA reviewer sign-off — replaced after row edits
 
 // ─── Apply replacements in reverse order ───
 
@@ -305,6 +355,8 @@ for (const [idx, newRowXml] of sorted) {
     xml = xml.substring(0, row.start) + newRowXml + xml.substring(row.end);
   }
 }
+
+xml = replaceLastSignatureTable(xml, buildBlankReviewerSignatureTable());
 
 // ─── Save ───
 
@@ -318,3 +370,4 @@ fs.writeFileSync(OUTPUT, buf);
 
 console.log(`\nTemplate saved to: ${OUTPUT}`);
 console.log(`Applied ${R.size} row replacements`);
+console.log("Replaced signature table with QC/QA reviewer layout from draft investigation DOCX");

@@ -80,6 +80,25 @@ describe("findPlaceholders", () => {
     });
   });
 
+  it("ignores static SOP acceptance criteria wrapped in brackets", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "If results are within the acceptance criteria [TOC of blank water: Not More Than 100 ppb, %CV: Not More Than 5.0%, and SD: Not More Than 0.5 (either %CV or SD should comply)], then suitability shall be performed.",
+            },
+          ],
+        },
+      ],
+    };
+
+    expect(findPlaceholders(doc, "define", "narrative")).toEqual([]);
+  });
+
   it("treats bracket guidance without to be filled as placeholders but skips numeric citations", () => {
     const doc: JSONContent = {
       type: "doc",

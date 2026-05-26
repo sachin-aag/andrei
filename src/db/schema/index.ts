@@ -7,11 +7,32 @@ import {
   boolean,
   integer,
   uniqueIndex,
+  customType,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 
+/** Postgres bytea column mapped to Node.js Buffer. */
+export const bytea = customType<{ data: Buffer; driverData: string }>({
+  dataType() {
+    return "bytea";
+  },
+  toDriver(value: Buffer): string {
+    return `\\x${value.toString("hex")}`;
+  },
+  fromDriver(value: unknown): Buffer {
+    if (Buffer.isBuffer(value)) return value;
+    if (typeof value === "string") {
+      const hex = value.startsWith("\\x") ? value.slice(2) : value;
+      return Buffer.from(hex, "hex");
+    }
+    throw new Error("Unexpected bytea value from driver");
+  },
+});
+
+export const DOCX_MIME_TYPE =
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
 export const reportStatusEnum = pgEnum("report_status", [
   "draft",
@@ -29,6 +50,7 @@ export const sectionTypeEnum = pgEnum("section_type", [
   "control",
   "documents_reviewed",
   "attachments",
+  "signature_approvals",
 ]);
 
 export const criterionStatusEnum = pgEnum("criterion_status", [
@@ -64,6 +86,28 @@ export const criteriaReviewStatusEnum = pgEnum("criteria_review_status", [
   "completed",
 ]);
 
+export const userRoleEnum = pgEnum("user_role", ["engineer", "manager"]);
+
+export const workspaceUsers = pgTable(
+  "workspace_users",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    email: text("email").notNull(),
+    employeeId: text("employee_id").notNull(),
+    role: userRoleEnum("role").notNull().default("engineer"),
+    title: text("title").notNull().default("Engineer"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    employeeIdUnique: uniqueIndex("workspace_users_employee_id_unique").on(
+      t.employeeId
+    ),
+  })
+);
+
 export const reports = pgTable(
   "reports",
   {
@@ -82,7 +126,7 @@ export const reports = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
-    deviationNoUnique: uniqueIndex("reports_deviation_no_unique").on(t.deviationNo),
+    deviationNoUnique: uniqueIndex("reports_deviation_no_unique").on(t.authorId, t.deviationNo),
   })
 );
 
@@ -101,6 +145,22 @@ export const reportSections = pgTable(
     uniqueSection: uniqueIndex("report_section_unique").on(t.reportId, t.section),
   })
 );
+
+/** Original .docx uploaded at report creation (audit/backup; not loaded on list/get). */
+export const reportSourceDocx = pgTable("report_source_docx", {
+  reportId: text("report_id")
+    .primaryKey()
+    .references(() => reports.id, { onDelete: "cascade" }),
+  filename: text("filename").notNull(),
+  mimeType: text("mime_type").notNull().default(DOCX_MIME_TYPE),
+  sizeBytes: integer("size_bytes").notNull(),
+  sha256: text("sha256").notNull(),
+  data: bytea("data").notNull(),
+  uploadedById: text("uploaded_by_id").notNull(),
+  uploadedAt: timestamp("uploaded_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
 
 export const criteriaEvaluations = pgTable("criteria_evaluations", {
   id: text("id").primaryKey().$defaultFn(() => createId()),
@@ -154,10 +214,18 @@ export const comments = pgTable("comments", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const reportsRelations = relations(reports, ({ many }) => ({
+export const reportsRelations = relations(reports, ({ one, many }) => ({
   sections: many(reportSections),
   evaluations: many(criteriaEvaluations),
   comments: many(comments),
+  sourceDocx: one(reportSourceDocx),
+}));
+
+export const reportSourceDocxRelations = relations(reportSourceDocx, ({ one }) => ({
+  report: one(reports, {
+    fields: [reportSourceDocx.reportId],
+    references: [reports.id],
+  }),
 }));
 
 export const sectionsRelations = relations(reportSections, ({ one, many }) => ({
@@ -196,6 +264,18 @@ export const commentsRelations = relations(comments, ({ one, many }) => ({
   }),
   replies: many(comments, { relationName: "comment_thread" }),
 }));
+
+/**
+ * Persistent cache for Gemini math-extraction results, keyed by SHA-256 of the
+ * source image bytes. Survives report deletion so re-importing the same DOCX
+ * (or a new report with the same formula) never hits the LLM twice.
+ */
+export const mathExtractionCache = pgTable("math_extraction_cache", {
+  imageHash: text("image_hash").primaryKey(),
+  latex: text("latex").notNull(),
+  mathml: text("mathml").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 /** Sample-report human QA (not tied to production `reports` rows). */
 export const criteriaReviewReports = pgTable("criteria_review_reports", {

@@ -9,6 +9,7 @@ import {
   comments,
 } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
+import { listWorkspaceUsers } from "@/lib/auth/workspace-users";
 import { AppShell } from "@/components/layout/app-shell";
 import { ReportProvider } from "@/providers/report-provider";
 import { ReportWorkspace } from "@/components/report/report-workspace";
@@ -53,8 +54,10 @@ export default async function ReviewReportPage({
     user.role === "manager" &&
     (report.status === "submitted" || report.status === "in_review");
 
+  const workspaceUsers = await listWorkspaceUsers();
+
   return (
-    <AppShell user={user}>
+    <AppShell user={user} initialUsers={workspaceUsers}>
       <ReportProvider
         bundle={bundle}
         currentUserId={user.id}

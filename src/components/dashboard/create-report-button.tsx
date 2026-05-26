@@ -35,6 +35,7 @@ export function CreateReportButton() {
   const router = useRouter();
   const managers = getManagers();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isBusy = previewLoading || pending;
 
   const resetForm = () => {
     setDeviationNo("");
@@ -42,6 +43,12 @@ export function CreateReportButton() {
     setDraftFile(null);
     setPreviewLoading(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
+  };
+
+  const handleOpenChange = (next: boolean) => {
+    if (!next && isBusy) return;
+    setOpen(next);
+    if (!next) resetForm();
   };
 
   const handleFileChange = async (file: File | null) => {
@@ -61,7 +68,7 @@ export function CreateReportButton() {
         body: fd,
       });
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
         toast.error(body.error ?? "Could not read that Word file");
         return;
       }
@@ -92,46 +99,63 @@ export function CreateReportButton() {
         body: fd,
       });
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
         toast.error(body.error ?? "Failed to create report");
         return;
       }
-      const data = await res.json();
+      const data = (await res.json()) as { id: string };
+      toast.success("Report created");
       setOpen(false);
       resetForm();
-      toast.success("Report created");
       router.push(`/reports/${data.id}/edit`);
       router.refresh();
     });
   };
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        setOpen(next);
-        if (!next) resetForm();
-      }}
-    >
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
         <Button>
           <Plus className="size-4" /> New Report
         </Button>
       </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Create investigation report</DialogTitle>
-          <DialogDescription>
-            Starts a new deviation investigation report as a draft. Optionally
-            upload an existing Word document (.docx): content under headings named
-            Define, Measure, Analyze, Improve, and Control is placed into those
-            sections. If those headings are missing, the whole document opens in
-            Define.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="grid gap-4 py-2">
-          <div className="grid gap-2">
-            <Label htmlFor="report-upload">Existing report (.docx, optional)</Label>
+      <DialogContent
+        onInteractOutside={(event) => {
+          if (isBusy) event.preventDefault();
+        }}
+        onEscapeKeyDown={(event) => {
+          if (isBusy) event.preventDefault();
+        }}
+      >
+        <div className="relative">
+          {pending && (
+            <div
+              className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-lg bg-[var(--card)]/85 backdrop-blur-[1px]"
+              aria-live="polite"
+              aria-busy="true"
+            >
+              <Loader2
+                className="size-5 animate-spin text-[var(--muted-foreground)]"
+                aria-hidden="true"
+              />
+              <p className="text-sm text-[var(--muted-foreground)]">
+                Creating report…
+              </p>
+            </div>
+          )}
+          <DialogHeader>
+            <DialogTitle>Create investigation report</DialogTitle>
+            <DialogDescription>
+              Starts a new deviation investigation report as a draft. Optionally
+              upload an existing Word document (.docx): content under headings named
+              Define, Measure, Analyze, Improve, and Control is placed into those
+              sections. If those headings are missing, the whole document opens in
+              Define.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-2">
+            <div className="grid gap-2">
+              <Label htmlFor="report-upload">Existing report (.docx, optional)</Label>
             <div className="flex flex-wrap items-center gap-2">
               <Input
                 id="report-upload"
@@ -139,6 +163,7 @@ export function CreateReportButton() {
                 type="file"
                 accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                 className="cursor-pointer file:mr-3 file:inline-flex file:items-center file:justify-start file:rounded-md file:border-0 file:bg-[var(--secondary)] file:px-3 file:py-1 file:text-left file:text-sm"
+                disabled={isBusy}
                 onChange={(e) => {
                   void handleFileChange(e.target.files?.[0] ?? null);
                 }}
@@ -146,7 +171,14 @@ export function CreateReportButton() {
               {draftFile && (
                 <>
                   <span className="flex items-center gap-1.5 text-xs text-[var(--muted-foreground)] max-w-[200px] truncate">
-                    <FileText className="size-3.5 shrink-0" />
+                    {previewLoading ? (
+                      <Loader2
+                        className="size-3.5 shrink-0 animate-spin"
+                        aria-hidden="true"
+                      />
+                    ) : (
+                      <FileText className="size-3.5 shrink-0" aria-hidden="true" />
+                    )}
                     {draftFile.name}
                   </span>
                   <Button
@@ -154,6 +186,7 @@ export function CreateReportButton() {
                     variant="ghost"
                     size="sm"
                     className="h-8 gap-1 text-[var(--muted-foreground)]"
+                    disabled={previewLoading}
                     onClick={() => {
                       void handleFileChange(null);
                     }}
@@ -167,13 +200,22 @@ export function CreateReportButton() {
           </div>
           <div className="grid gap-2">
             <Label htmlFor="deviationNo">Deviation Number</Label>
-            <Input
-              id="deviationNo"
-              placeholder="e.g. DEV/PK/26/001"
-              value={deviationNo}
-              disabled={previewLoading}
-              onChange={(e) => setDeviationNo(e.target.value)}
-            />
+            <div className="relative">
+              <Input
+                id="deviationNo"
+                placeholder="e.g. DEV/PK/26/001"
+                value={deviationNo}
+                disabled={previewLoading || pending}
+                className={previewLoading ? "pr-9" : undefined}
+                onChange={(e) => setDeviationNo(e.target.value)}
+              />
+              {previewLoading && (
+                <Loader2
+                  className="pointer-events-none absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 animate-spin text-[var(--muted-foreground)]"
+                  aria-hidden="true"
+                />
+              )}
+            </div>
             {previewLoading && (
               <p className="text-xs text-[var(--muted-foreground)]">
                 Reading deviation number from Word file…
@@ -182,7 +224,11 @@ export function CreateReportButton() {
           </div>
           <div className="grid gap-2">
             <Label>Assigned Manager (optional)</Label>
-            <Select value={managerId} onValueChange={setManagerId}>
+            <Select
+              value={managerId}
+              onValueChange={setManagerId}
+              disabled={isBusy}
+            >
               <SelectTrigger>
                 <SelectValue placeholder="Pick a manager" />
               </SelectTrigger>
@@ -196,19 +242,22 @@ export function CreateReportButton() {
             </Select>
           </div>
         </div>
-        <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => setOpen(false)}
-            disabled={pending}
-          >
-            Cancel
-          </Button>
-          <Button onClick={submit} disabled={pending || previewLoading}>
-            {pending && <Loader2 className="size-4 animate-spin" />}
-            Create
-          </Button>
-        </DialogFooter>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => handleOpenChange(false)}
+              disabled={isBusy}
+            >
+              Cancel
+            </Button>
+            <Button onClick={submit} disabled={isBusy}>
+              {pending && (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              )}
+              {pending ? "Creating…" : "Create"}
+            </Button>
+          </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   );

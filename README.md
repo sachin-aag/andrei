@@ -172,7 +172,7 @@ Results are upserted into `criteria_evaluations`. When a criterion becomes `met`
 - Top 2×2 table with Date, Deviation No., Investigation tools (editable Word form checkboxes), Other Tools
 - DMAIC sections with checklist guidance, 6M labels, 5-Why pairs, root cause levels, impact assessment
 - CAPA registers (`CA-001`, `PA-001`, …) with responsible person / due date / expected outcome / effectiveness
-- Signature table: Prepared By / Reviewed By (×2) / Approved By QA
+- Signature table: Prepared By QC / Reviewed By QC (×2) / Reviewed By QA / Approved By QA (matches draft investigation layout)
 - Footer: `Confidential and Proprietary` · `Page X of Y` · `SOP/DP/QA/008/F04-R02`
 
 ## Scripts
@@ -215,3 +215,6 @@ Flags: `--input-dir`, `--out`, `--concurrency` (or `-j`), `--report-date`.
 7. Approve; status locks to `Approved`.
 8. Export DOCX and compare side-by-side with `reference-template.docx`.
 9. `npm run typecheck` passes.
+
+
+

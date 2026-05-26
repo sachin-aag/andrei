@@ -31,6 +31,7 @@ export const SUGGEST_TARGET_FIELD_PATTERNS: Record<SectionType, readonly string[
   control: ["preventiveActions"],
   documents_reviewed: [],
   attachments: [],
+  signature_approvals: [],
 };
 
 function patternToRegex(pattern: string): RegExp {

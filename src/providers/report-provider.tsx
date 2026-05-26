@@ -127,6 +127,10 @@ type ReportContextValue = {
     editor: Editor
   ) => () => void;
   getEditor: (section: SectionType, contentPath: string) => Editor | null;
+  /** Key of the last-focused Tiptap field (`section:contentPath`). */
+  activeEditorKey: string | null;
+  setActiveEditor: (section: SectionType, contentPath: string) => void;
+  getActiveEditor: () => Editor | null;
   /** Bumped whenever editors register/unregister or transactions occur. */
   editorTick: number;
 };
@@ -199,7 +203,12 @@ type ReportEvaluationContextValue = Pick<
 
 type ReportEditorsContextValue = Pick<
   ReportContextValue,
-  "registerEditor" | "getEditor" | "editorTick"
+  | "registerEditor"
+  | "getEditor"
+  | "activeEditorKey"
+  | "setActiveEditor"
+  | "getActiveEditor"
+  | "editorTick"
 >;
 
 const ReportDataContext = createContext<ReportDataContextValue | null>(null);
@@ -309,6 +318,7 @@ export function ReportProvider({
    */
   const editorsRef = useRef<Map<string, EditorRegistryEntry>>(new Map());
   const [editorTick, setEditorTick] = useState(0);
+  const [activeEditorKey, setActiveEditorKey] = useState<string | null>(null);
 
   const registerEditor = useCallback(
     (section: SectionType, contentPath: string, editor: Editor) => {
@@ -350,6 +360,15 @@ export function ReportProvider({
     },
     []
   );
+
+  const setActiveEditor = useCallback((section: SectionType, contentPath: string) => {
+    setActiveEditorKey(editorRegistryKey(section, contentPath));
+  }, []);
+
+  const getActiveEditor = useCallback(() => {
+    if (!activeEditorKey) return null;
+    return editorsRef.current.get(activeEditorKey)?.editor ?? null;
+  }, [activeEditorKey]);
 
   const requestCommentFocus = useCallback((commentId: string) => {
     setPendingCommentFocusCommentId(commentId);
@@ -807,9 +826,19 @@ export function ReportProvider({
     () => ({
       registerEditor,
       getEditor,
+      activeEditorKey,
+      setActiveEditor,
+      getActiveEditor,
       editorTick,
     }),
-    [registerEditor, getEditor, editorTick]
+    [
+      registerEditor,
+      getEditor,
+      activeEditorKey,
+      setActiveEditor,
+      getActiveEditor,
+      editorTick,
+    ]
   );
 
   return (

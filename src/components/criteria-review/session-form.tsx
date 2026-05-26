@@ -5,21 +5,12 @@ import {
   useEffect,
   useRef,
   useState,
-  useSyncExternalStore,
 } from "react";
 import { useRouter } from "next/navigation";
 import { Check, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Dialog,
   DialogContent,
@@ -37,9 +28,12 @@ import {
   REASONING_AGREEMENT_LABELS,
   REASONING_AGREEMENTS,
   humanCommentRequired,
+  humanSubAnswerSchema,
+  isHumanSubAnswerComplete,
+  validateHumanReview,
   type CriteriaEvaluationAgreement,
-  type HumanReviewer,
   type HumanSubAnswer,
+  type HumanSubAnswerDraft,
   type ReasoningAgreement,
 } from "@/lib/criteria-review/human-judgment";
 import { resolveHumanReviewCriterionDisplay } from "@/lib/criteria-review/human-review-criteria";
@@ -48,10 +42,24 @@ import type {
   CriteriaReviewReportSection,
 } from "@/lib/criteria-review/report-data";
 import { SECTION_LABELS } from "@/types/sections";
+import { nativeSelectClassName } from "@/components/ui/native-select";
+import { useCriteriaReviewReviewer } from "@/components/criteria-review/reviewer-provider";
 
-const REVIEWER_STORAGE_KEY = "criteria-review:reviewer:v1";
-const CREATE_REVIEWER_VALUE = "__create_reviewer__";
 const AUTOSAVE_DELAY_MS = 1500;
+
+/** Native select values for corrected traffic-light status. */
+function suggestedStatusSelectValue(
+  status: HumanSubAnswer["suggestedStatus"]
+): "" | "met" | "partially_met" | "not_met" {
+  switch (status) {
+    case "met":
+    case "partially_met":
+    case "not_met":
+      return status;
+    default:
+      return "";
+  }
+}
 
 type DraftAnswer = {
   section: CriteriaReviewReportSection["section"];
@@ -61,6 +69,11 @@ type DraftAnswer = {
   comment?: string;
   suggestedStatus?: HumanSubAnswer["suggestedStatus"];
 };
+
+function isDraftAnswerComplete(answer: DraftAnswer | undefined): boolean {
+  if (!answer) return false;
+  return isHumanSubAnswerComplete(answer as HumanSubAnswerDraft);
+}
 
 /** Light-theme-only pills; avoid `dark:` so OS dark mode does not wash out text on white cards. */
 function statusTone(status: string): string {
@@ -76,81 +89,23 @@ function statusTone(status: string): string {
   }
 }
 
-function savedReviewerFromStorage(): HumanReviewer | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = window.localStorage.getItem(REVIEWER_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<HumanReviewer>;
-    const id = parsed.id?.trim();
-    const name = parsed.name?.trim();
-    const employeeId = parsed.employeeId?.trim();
-    return id && name && employeeId ? { id, name, employeeId } : null;
-  } catch {
-    return null;
-  }
-}
-
-const storedReviewerListeners = new Set<() => void>();
-
-function subscribeStoredReviewer(onStoreChange: () => void) {
-  storedReviewerListeners.add(onStoreChange);
-  return () => {
-    storedReviewerListeners.delete(onStoreChange);
-  };
-}
-
-function notifyStoredReviewer() {
-  storedReviewerListeners.forEach((listener) => listener());
-}
-
-function storedReviewerIdFor(reviewerList: HumanReviewer[]): string {
-  const saved = savedReviewerFromStorage();
-  if (saved && reviewerList.some((reviewer) => reviewer.id === saved.id)) {
-    return saved.id;
-  }
-  return "";
-}
-
-function persistReviewer(reviewer: HumanReviewer) {
-  try {
-    window.localStorage.setItem(REVIEWER_STORAGE_KEY, JSON.stringify(reviewer));
-    notifyStoredReviewer();
-  } catch {
-    // localStorage can fail in private browsing; saving can continue without it.
-  }
-}
-
 export function CriteriaReviewSessionForm({
   session,
-  reviewers,
   prevId,
   nextId,
 }: {
   session: CriteriaReviewDatasetItem;
-  reviewers: HumanReviewer[];
   prevId: string | null;
   nextId: string | null;
 }) {
   const router = useRouter();
+  const { selectedReviewer, selectedReviewerId } = useCriteriaReviewReviewer();
   const [saving, setSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
-  const [creatingReviewer, setCreatingReviewer] = useState(false);
-  const [createReviewerOpen, setCreateReviewerOpen] = useState(false);
   const [submitReportOpen, setSubmitReportOpen] = useState(false);
+  const [submitDialogError, setSubmitDialogError] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeSectionIndex, setActiveSectionIndex] = useState(0);
-  const [reviewerOptions, setReviewerOptions] =
-    useState<HumanReviewer[]>(reviewers);
-  const selectedReviewerId = useSyncExternalStore(
-    subscribeStoredReviewer,
-    () => storedReviewerIdFor(reviewerOptions),
-    () => ""
-  );
-  const selectedReviewer = reviewerOptions.find(
-    (reviewer) => reviewer.id === selectedReviewerId
-  );
-  const [newReviewer, setNewReviewer] = useState({ name: "", employeeId: "" });
 
   const initialAnswersForReviewer = useCallback(
     (reviewerId: string): Record<string, DraftAnswer> => {
@@ -175,20 +130,24 @@ export function CriteriaReviewSessionForm({
   );
 
   const [answers, setAnswers] = useState<Record<string, DraftAnswer>>(() =>
-    initialAnswersForReviewer("")
+    initialAnswersForReviewer(selectedReviewerId)
   );
   const loadedAnswersForReviewer = useRef("");
 
   useEffect(() => {
-    if (loadedAnswersForReviewer.current === selectedReviewerId) return;
-    loadedAnswersForReviewer.current = selectedReviewerId;
+    const loadKey = `${session.id}:${selectedReviewerId}`;
+    if (loadedAnswersForReviewer.current === loadKey) return;
+    loadedAnswersForReviewer.current = loadKey;
     setAnswers(initialAnswersForReviewer(selectedReviewerId));
-  }, [selectedReviewerId, initialAnswersForReviewer]);
+    setError(null);
+    setSubmitDialogError(null);
+  }, [session.id, selectedReviewerId, initialAnswersForReviewer]);
 
   const activeSection = session.input.sections[activeSectionIndex] ?? null;
 
   const updateAnswer = useCallback(
     (answerKey: string, patch: Partial<DraftAnswer>) => {
+      setSubmitDialogError(null);
       setAnswers((prev) => ({
         ...prev,
         [answerKey]: { ...prev[answerKey], ...patch } as DraftAnswer,
@@ -200,14 +159,23 @@ export function CriteriaReviewSessionForm({
   // --- Auto-save logic ---
   const autosaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savingRef = useRef(false);
+  const mainScrollRef = useRef<HTMLDivElement>(null);
+
+  const expectedAnswerKeys = session.input.sections.flatMap((section) =>
+    section.criteria.map((criterion) => criterion.answerKey)
+  );
 
   const saveAnswers = useCallback(
-    async (answersToSave: Record<string, DraftAnswer>, complete: boolean): Promise<boolean> => {
-      if (!selectedReviewer) return false;
-      if (savingRef.current) return false;
+    async (
+      answersToSave: Record<string, DraftAnswer>,
+      complete: boolean
+    ): Promise<{ ok: true } | { ok: false; error: string }> => {
+      if (savingRef.current) return { ok: false, error: "Save already in progress" };
       savingRef.current = true;
       setSaving(true);
-      setError(null);
+      if (!complete) {
+        setError(null);
+      }
       try {
         const payload = {
           reviewer: selectedReviewer,
@@ -233,14 +201,16 @@ export function CriteriaReviewSessionForm({
         );
         const data = (await res.json()) as { error?: string };
         if (!res.ok) {
-          setError(data.error ?? "Save failed");
-          return false;
+          const message = data.error ?? "Save failed";
+          setError(message);
+          return { ok: false, error: message };
         }
         setLastSaved(new Date());
-        return true;
+        return { ok: true };
       } catch {
-        setError("Save failed");
-        return false;
+        const message = "Save failed";
+        setError(message);
+        return { ok: false, error: message };
       } finally {
         savingRef.current = false;
         setSaving(false);
@@ -251,7 +221,6 @@ export function CriteriaReviewSessionForm({
 
   // Debounced auto-save: fires AUTOSAVE_DELAY_MS after the last answer change
   useEffect(() => {
-    if (!selectedReviewer) return;
     if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
     autosaveTimer.current = setTimeout(() => {
       void saveAnswers(answers, false);
@@ -261,80 +230,57 @@ export function CriteriaReviewSessionForm({
     };
   }, [answers, selectedReviewer, saveAnswers]);
 
-  const selectReviewer = (reviewerId: string) => {
-    if (reviewerId === CREATE_REVIEWER_VALUE) {
-      setCreateReviewerOpen(true);
-      return;
-    }
-    const nextReviewer = reviewerOptions.find((reviewer) => reviewer.id === reviewerId);
-    if (!nextReviewer) return;
-    loadedAnswersForReviewer.current = reviewerId;
-    setAnswers(initialAnswersForReviewer(reviewerId));
-    persistReviewer(nextReviewer);
-    setError(null);
-  };
-
-  const createReviewer = async () => {
-    const name = newReviewer.name.trim();
-    const employeeId = newReviewer.employeeId.trim();
-    if (!name || !employeeId) {
-      setError("Reviewer name and employee ID are required.");
-      return;
-    }
-    setCreatingReviewer(true);
-    setError(null);
-    try {
-      const res = await fetch("/api/criteria-review/reviewers", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, employeeId }),
-      });
-      const data = (await res.json()) as {
-        reviewer?: HumanReviewer;
-        error?: string;
-      };
-      if (!res.ok || !data.reviewer) {
-        setError(data.error ?? "Could not create reviewer.");
-        return;
-      }
-      setReviewerOptions((prev) => {
-        const withoutDuplicate = prev.filter((r) => r.id !== data.reviewer!.id);
-        return [...withoutDuplicate, data.reviewer!].sort((a, b) =>
-          a.name.localeCompare(b.name)
-        );
-      });
-      setNewReviewer({ name: "", employeeId: "" });
-      loadedAnswersForReviewer.current = data.reviewer.id;
-      setAnswers(initialAnswersForReviewer(data.reviewer.id));
-      persistReviewer(data.reviewer);
-      setCreateReviewerOpen(false);
-    } catch {
-      setError("Could not create reviewer.");
-    } finally {
-      setCreatingReviewer(false);
-    }
-  };
-
   const submitReport = async () => {
-    // Flush any pending autosave first
     if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
-    const saved = await saveAnswers(answers, true);
-    if (saved) {
+    setSubmitDialogError(null);
+    const result = await saveAnswers(answers, true);
+    if (result.ok) {
       setSubmitReportOpen(false);
       router.refresh();
       router.push("/criteria-review");
+    } else {
+      setSubmitDialogError(result.error);
     }
   };
 
-  const isAnswerReviewed = (answer: DraftAnswer | undefined): boolean =>
-    Boolean(answer?.criteriaEvaluationAgreement && answer.reasoningAgreement);
+  const buildCompleteAnswers = useCallback((): HumanSubAnswer[] => {
+    return expectedAnswerKeys.flatMap((key) => {
+      const draft = answers[key];
+      if (!draft) return [];
+      const parsed = humanSubAnswerSchema.safeParse(draft);
+      return parsed.success ? [parsed.data] : [];
+    });
+  }, [answers, expectedAnswerKeys]);
 
-  const reviewedCount = Object.values(answers).filter(isAnswerReviewed).length;
+  const openSubmitDialog = () => {
+    setSubmitDialogError(null);
+    setError(null);
+    const validationError = validateHumanReview(
+      buildCompleteAnswers(),
+      expectedAnswerKeys
+    );
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+    setSubmitReportOpen(true);
+  };
+
+  const reviewedCount = Object.values(answers).filter((answer) =>
+    isDraftAnswerComplete(answer)
+  ).length;
   const totalCriteria = session.metadata.totalCriterionCount;
   const canCompleteReport = totalCriteria > 0 && reviewedCount === totalCriteria;
 
   const sectionReviewedCount = (section: CriteriaReviewReportSection) =>
-    section.criteria.filter((c) => isAnswerReviewed(answers[c.answerKey])).length;
+    section.criteria.filter((c) =>
+      isDraftAnswerComplete(answers[c.answerKey])
+    ).length;
+
+  const goToSection = (index: number) => {
+    setActiveSectionIndex(index);
+    mainScrollRef.current?.scrollTo({ top: 0 });
+  };
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -365,81 +311,25 @@ export function CriteriaReviewSessionForm({
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            <Label htmlFor="reviewer-select" className="text-xs text-[var(--muted-foreground)] whitespace-nowrap">
-              Reviewer
-            </Label>
-            <Select value={selectedReviewerId} onValueChange={selectReviewer}>
-              <SelectTrigger id="reviewer-select" className="h-8 w-56 bg-[var(--card)] text-sm">
-                <SelectValue placeholder="Select reviewer" />
-              </SelectTrigger>
-              <SelectContent>
-                {reviewerOptions.map((reviewer) => (
-                  <SelectItem key={reviewer.id} value={reviewer.id}>
-                    {reviewer.name} ({reviewer.employeeId})
-                  </SelectItem>
-                ))}
-                <SelectItem value={CREATE_REVIEWER_VALUE}>
-                  Create reviewer...
-                </SelectItem>
-              </SelectContent>
-            </Select>
+          <div className="shrink-0 text-right text-sm">
+            <p className="text-xs text-[var(--muted-foreground)]">Signed in as</p>
+            <p className="font-medium">
+              {selectedReviewer.name}{" "}
+              <span className="font-normal text-[var(--muted-foreground)]">
+                ({selectedReviewer.employeeId})
+              </span>
+            </p>
           </div>
         </div>
       </header>
 
-      <Dialog open={createReviewerOpen} onOpenChange={setCreateReviewerOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Create reviewer</DialogTitle>
-            <DialogDescription>
-              Add the reviewer name and employee ID. The reviewer will be available in the dropdown.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="grid gap-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="new-reviewer-name">Name</Label>
-              <Input
-                id="new-reviewer-name"
-                value={newReviewer.name}
-                onChange={(e) =>
-                  setNewReviewer((prev) => ({ ...prev, name: e.target.value }))
-                }
-                placeholder="Reviewer name"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="new-reviewer-employee-id">Employee ID</Label>
-              <Input
-                id="new-reviewer-employee-id"
-                value={newReviewer.employeeId}
-                onChange={(e) =>
-                  setNewReviewer((prev) => ({
-                    ...prev,
-                    employeeId: e.target.value,
-                  }))
-                }
-                placeholder="Employee ID"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => setCreateReviewerOpen(false)}
-            >
-              Cancel
-            </Button>
-            <Button type="button" disabled={creatingReviewer} onClick={createReviewer}>
-              {creatingReviewer ? <Loader2 className="size-4 animate-spin" /> : null}
-              Create reviewer
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={submitReportOpen} onOpenChange={setSubmitReportOpen}>
+      <Dialog
+        open={submitReportOpen}
+        onOpenChange={(open) => {
+          setSubmitReportOpen(open);
+          if (!open) setSubmitDialogError(null);
+        }}
+      >
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Submit report</DialogTitle>
@@ -447,6 +337,11 @@ export function CriteriaReviewSessionForm({
               All {totalCriteria} criteria have been reviewed for this report. Submit this reviewer&apos;s report review?
             </DialogDescription>
           </DialogHeader>
+          {submitDialogError ? (
+            <p className="text-sm text-red-700" role="alert">
+              {submitDialogError}
+            </p>
+          ) : null}
           <DialogFooter>
             <Button
               type="button"
@@ -463,10 +358,10 @@ export function CriteriaReviewSessionForm({
         </DialogContent>
       </Dialog>
 
-      <div className="flex flex-1 min-h-0 overflow-y-auto">
+      <div className="flex min-h-0 flex-1">
         {/* Sidebar: section-level navigation */}
-        <aside className="w-64 shrink-0 border-r border-[var(--border)] p-3">
-          <div className="sticky top-0 space-y-1">
+        <aside className="w-64 shrink-0 overflow-y-auto border-r border-[var(--border)] p-3">
+          <div className="space-y-1">
             {session.input.sections.map((section, idx) => {
               const reviewed = sectionReviewedCount(section);
               const total = section.criteria.length;
@@ -475,7 +370,7 @@ export function CriteriaReviewSessionForm({
                 <button
                   key={section.section}
                   type="button"
-                  onClick={() => setActiveSectionIndex(idx)}
+                  onClick={() => goToSection(idx)}
                   className={cn(
                     "flex w-full items-center justify-between gap-2 rounded-md px-3 py-2.5 text-left text-sm transition-colors",
                     idx === activeSectionIndex
@@ -504,12 +399,8 @@ export function CriteriaReviewSessionForm({
           </div>
         </aside>
 
-        <div className="flex-1 p-6">
-          {!selectedReviewer ? (
-            <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6 text-sm text-[var(--muted-foreground)]">
-              Select or create a reviewer before saving evaluations.
-            </div>
-          ) : activeSection ? (
+        <div ref={mainScrollRef} className="min-h-0 flex-1 overflow-y-auto p-6">
+          {activeSection ? (
             <div className="space-y-6">
               {/* Section content + previous sections */}
               <div className="grid gap-4 xl:grid-cols-2">
@@ -562,13 +453,20 @@ export function CriteriaReviewSessionForm({
                       description: criterion.description,
                     }
                   );
-                  const reviewed = isAnswerReviewed(answer);
+                  const isComplete = isDraftAnswerComplete(answer);
+                  const agreementsSelected = Boolean(
+                    answer.criteriaEvaluationAgreement && answer.reasoningAgreement
+                  );
                   const needsComment =
-                    reviewed &&
+                    agreementsSelected &&
                     humanCommentRequired(
                       answer.criteriaEvaluationAgreement,
                       answer.reasoningAgreement
                     );
+                  const commentTooShort =
+                    needsComment &&
+                    (answer.comment?.trim() ?? "").length > 0 &&
+                    (answer.comment?.trim() ?? "").length < MIN_HUMAN_COMMENT_LENGTH;
                   const needsSuggested = answer.criteriaEvaluationAgreement === "no";
 
                   return (
@@ -586,11 +484,15 @@ export function CriteriaReviewSessionForm({
                             <h3 className="text-sm font-semibold">{display.label}</h3>
                           </div>
                         </div>
-                        {reviewed ? (
-                          <span className="shrink-0 text-xs font-medium text-[var(--muted-foreground)]">
+                        {isComplete ? (
+                          <span className="shrink-0 rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-800">
                             Reviewed
                           </span>
-                        ) : null}
+                        ) : (
+                          <span className="shrink-0 rounded-md border border-red-200 bg-red-50 px-2 py-0.5 text-xs font-medium text-red-800">
+                            Not reviewed
+                          </span>
+                        )}
                       </div>
 
                       {display.description ? (
@@ -634,7 +536,7 @@ export function CriteriaReviewSessionForm({
                                 <label
                                   key={value}
                                   className={cn(
-                                    "flex cursor-pointer items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm transition-colors",
+                                    "relative flex cursor-pointer items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm transition-colors focus-within:ring-1 focus-within:ring-[var(--ring)]",
                                     answer.criteriaEvaluationAgreement === value
                                       ? "border-[var(--brand-600)] bg-[var(--brand-700)]/10"
                                       : "border-[var(--border)] hover:bg-[var(--secondary)]"
@@ -655,7 +557,7 @@ export function CriteriaReviewSessionForm({
                                             : null,
                                       })
                                     }
-                                    className="sr-only"
+                                    className="absolute inset-0 m-0 cursor-pointer opacity-0"
                                   />
                                   {CRITERIA_EVALUATION_AGREEMENT_LABELS[value]}
                                 </label>
@@ -672,7 +574,7 @@ export function CriteriaReviewSessionForm({
                                 <label
                                   key={value}
                                   className={cn(
-                                    "flex cursor-pointer items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm transition-colors",
+                                    "relative flex cursor-pointer items-center gap-1.5 rounded-md border px-3 py-1.5 text-sm transition-colors focus-within:ring-1 focus-within:ring-[var(--ring)]",
                                     answer.reasoningAgreement === value
                                       ? "border-[var(--brand-600)] bg-[var(--brand-700)]/10"
                                       : "border-[var(--border)] hover:bg-[var(--secondary)]"
@@ -687,7 +589,7 @@ export function CriteriaReviewSessionForm({
                                         reasoningAgreement: value,
                                       })
                                     }
-                                    className="sr-only"
+                                    className="absolute inset-0 m-0 cursor-pointer opacity-0"
                                   />
                                   {REASONING_AGREEMENT_LABELS[value]}
                                 </label>
@@ -703,29 +605,23 @@ export function CriteriaReviewSessionForm({
                               >
                                 Correct traffic-light status
                               </Label>
-                              <Select
-                                value={answer.suggestedStatus ?? ""}
-                                onValueChange={(v) =>
+                              <select
+                                id={`suggested-status-${criterion.answerKey}`}
+                                value={suggestedStatusSelectValue(answer.suggestedStatus)}
+                                onChange={(e) =>
                                   updateAnswer(criterion.answerKey, {
-                                    suggestedStatus:
-                                      v as DraftAnswer["suggestedStatus"],
+                                    suggestedStatus: e.target.value
+                                      ? (e.target.value as DraftAnswer["suggestedStatus"])
+                                      : null,
                                   })
                                 }
+                                className={nativeSelectClassName}
                               >
-                                <SelectTrigger
-                                  id={`suggested-status-${criterion.answerKey}`}
-                                  className="h-8 text-sm"
-                                >
-                                  <SelectValue placeholder="Select status" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="met">Met</SelectItem>
-                                  <SelectItem value="partially_met">
-                                    Partially met
-                                  </SelectItem>
-                                  <SelectItem value="not_met">Not met</SelectItem>
-                                </SelectContent>
-                              </Select>
+                                <option value="">Select status</option>
+                                <option value="met">Met</option>
+                                <option value="partially_met">Partially met</option>
+                                <option value="not_met">Not met</option>
+                              </select>
                             </div>
                           ) : null}
 
@@ -735,7 +631,7 @@ export function CriteriaReviewSessionForm({
                                 htmlFor={`comment-${criterion.answerKey}`}
                                 className="text-xs"
                               >
-                                Comment (min {MIN_HUMAN_COMMENT_LENGTH} chars)
+                                Your Reasoning (min {MIN_HUMAN_COMMENT_LENGTH} chars)
                               </Label>
                               <Textarea
                                 id={`comment-${criterion.answerKey}`}
@@ -748,6 +644,11 @@ export function CriteriaReviewSessionForm({
                                 rows={2}
                                 className="resize-y text-sm"
                               />
+                              {commentTooShort ? (
+                                <p className="text-xs text-red-700">
+                                  At least {MIN_HUMAN_COMMENT_LENGTH} characters required
+                                </p>
+                              ) : null}
                             </div>
                           ) : null}
                         </div>
@@ -790,7 +691,7 @@ export function CriteriaReviewSessionForm({
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setActiveSectionIndex((i) => i - 1)}
+                onClick={() => goToSection(activeSectionIndex - 1)}
               >
                 Previous section
               </Button>
@@ -798,7 +699,7 @@ export function CriteriaReviewSessionForm({
             {activeSectionIndex < session.input.sections.length - 1 ? (
               <Button
                 size="sm"
-                onClick={() => setActiveSectionIndex((i) => i + 1)}
+                onClick={() => goToSection(activeSectionIndex + 1)}
               >
                 Next section
               </Button>
@@ -807,8 +708,8 @@ export function CriteriaReviewSessionForm({
           {canCompleteReport ? (
             <Button
               size="sm"
-              disabled={saving || !selectedReviewer}
-              onClick={() => setSubmitReportOpen(true)}
+              disabled={saving}
+              onClick={openSubmitDialog}
             >
               Submit report
             </Button>

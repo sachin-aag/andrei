@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import type { JSONContent } from "@tiptap/core";
 import { describe, expect, it } from "vitest";
 import { reports } from "@/db/schema";
 import type { ImportedReportContent } from "@/lib/import/docx-to-sections";
@@ -51,11 +52,7 @@ function fingerprintComparableString(s: string): string {
   return fp;
 }
 
-function fingerprintFiveWhyNarrative(s: string): string {
-  // The 5-Why block is one verbatim field. Source DOCXs may repeat a "Conclusion:" label or
-  // older exports appended "Not Applicable". Strip trailing residue so fingerprints match on
-  // substantive text only.
-  let fp = fingerprintComparableString(s).replace(/\d+\.(?=Why)/gi, "");
+function stripTrailingRoundTripResidue(fp: string): string {
   for (let i = 0; i < 4; i++) {
     const next = fp
       .replace(/NotApplicable$/i, "")
@@ -66,15 +63,13 @@ function fingerprintFiveWhyNarrative(s: string): string {
   return fp;
 }
 
-/**
- * Standalone uploads carry numbered template preamble in plain text that `generate-report`
- * placeholders do not re-embed. Normalize so upload → export → import compares substantive copy.
- */
-const DEFINE_UPLOAD_HEADING_PREFIX =
-  /^(?:\d+\.)?Mentioninitialscopeofdeviation\(impactedproduct\/Material\/Equipment\/System\/Batches\/etc\.\)/i;
-
-const MEASURE_UPLOAD_GUIDANCE_PREFIX =
-  /^(?:\d+\.)?Doesthesummaryproviderelevantfactsanddata\/informationreviewed\?/i;
+function fingerprintFiveWhyNarrative(s: string): string {
+  // The 5-Why block is one verbatim field. Source DOCXs may repeat a "Conclusion:" label or
+  // older exports appended "Not Applicable". Strip trailing residue so fingerprints match on
+  // substantive text only.
+  const fp = fingerprintComparableString(s).replace(/\d+\.(?=Why)/gi, "");
+  return stripTrailingRoundTripResidue(fp);
+}
 
 function mergedEditableSections(sections: ImportedReportContent["sections"]) {
   return {
@@ -89,17 +84,11 @@ function mergedEditableSections(sections: ImportedReportContent["sections"]) {
 }
 
 function fingerprintDefine(d: DefineSection) {
-  return fingerprintComparableString(richJsonToPlainText(d.narrative)).replace(
-    DEFINE_UPLOAD_HEADING_PREFIX,
-    ""
-  );
+  return fingerprintComparableString(richJsonToPlainText(d.narrative));
 }
 
 function fingerprintMeasure(m: MeasureSection) {
-  const narrative = fingerprintComparableString(richJsonToPlainText(m.narrative)).replace(
-    MEASURE_UPLOAD_GUIDANCE_PREFIX,
-    ""
-  );
+  const narrative = fingerprintComparableString(richJsonToPlainText(m.narrative));
   const reg =
     typeof m.regulatoryNotification === "string"
       ? fingerprintComparableString(m.regulatoryNotification)
@@ -116,9 +105,13 @@ function fingerprintAnalyze(a: AnalyzeSection): Record<string, string> {
   out["fiveWhy.conclusion"] = fingerprintComparableString(a.fiveWhy.conclusion);
   out["brainstorming"] = fingerprintComparableString(a.brainstorming);
   out["otherTools"] = fingerprintComparableString(a.otherTools);
-  out["investigationOutcome"] = fingerprintComparableString(a.investigationOutcome);
+  out["investigationOutcome"] = fingerprintComparableString(
+    richJsonToPlainText(a.investigationOutcome)
+  );
   for (const [k, v] of Object.entries(a.rootCause)) {
-    out[`rootCause.${k}`] = fingerprintComparableString(v);
+    out[`rootCause.${k}`] = fingerprintComparableString(
+      richJsonToPlainText(v as JSONContent)
+    );
   }
   for (const [k, v] of Object.entries(a.impactAssessment)) {
     out[`impactAssessment.${k}`] = fingerprintComparableString(v);
@@ -129,13 +122,17 @@ function fingerprintAnalyze(a: AnalyzeSection): Record<string, string> {
 function fingerprintImprove(i: ImproveSection) {
   return {
     narrative: fingerprintComparableString(richJsonToPlainText(i.narrative)),
-    correctiveActions: fingerprintComparableString(i.correctiveActions),
+    correctiveActions: stripTrailingRoundTripResidue(
+      fingerprintComparableString(i.correctiveActions)
+    ),
   };
 }
 
 function fingerprintControl(c: ControlSection) {
   return {
-    preventiveActions: fingerprintComparableString(c.preventiveActions),
+    preventiveActions: stripTrailingRoundTripResidue(
+      fingerprintComparableString(c.preventiveActions)
+    ),
   };
 }
 
