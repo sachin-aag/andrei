@@ -45,6 +45,12 @@ export function CreateReportButton() {
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
+  const handleOpenChange = (next: boolean) => {
+    if (!next && isBusy) return;
+    setOpen(next);
+    if (!next) resetForm();
+  };
+
   const handleFileChange = async (file: File | null) => {
     setDraftFile(file);
     if (!file) {
@@ -107,14 +113,7 @@ export function CreateReportButton() {
   };
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        if (!next && isBusy) return;
-        setOpen(next);
-        if (!next) resetForm();
-      }}
-    >
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
         <Button>
           <Plus className="size-4" /> New Report
@@ -246,7 +245,7 @@ export function CreateReportButton() {
           <DialogFooter>
             <Button
               variant="outline"
-              onClick={() => setOpen(false)}
+              onClick={() => handleOpenChange(false)}
               disabled={isBusy}
             >
               Cancel
