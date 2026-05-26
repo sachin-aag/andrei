@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { resolveGoogleLanguageModel } from "@/lib/ai/resolve-google-language-model";
+import {
+  getGeminiAuthDiagnostics,
+  resolveGoogleLanguageModel,
+} from "@/lib/ai/resolve-google-language-model";
 
 describe("resolveGoogleLanguageModel", () => {
   const env = process.env;
@@ -37,9 +40,19 @@ describe("resolveGoogleLanguageModel", () => {
     delete process.env.GOOGLE_GENERATIVE_AI_API_KEY;
     delete process.env.AI_GATEWAY_API_KEY;
     delete process.env.VERCEL_OIDC_TOKEN;
+    delete process.env.VERCEL;
 
     expect(() => resolveGoogleLanguageModel("gemini-2.5-flash")).toThrow(
       /No Gemini credentials configured/
     );
+  });
+
+  it("reports auth diagnostics without leaking secrets", () => {
+    process.env.GOOGLE_GENERATIVE_AI_API_KEY = "secret";
+    process.env.AI_GATEWAY_API_KEY = "also-secret";
+    const diag = getGeminiAuthDiagnostics();
+    expect(diag.hasGoogleKey).toBe(true);
+    expect(diag.hasGatewayKey).toBe(true);
+    expect(JSON.stringify(diag)).not.toContain("secret");
   });
 });

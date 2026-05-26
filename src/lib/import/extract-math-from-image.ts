@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
 import { generateText, Output } from "ai";
-import { resolveGoogleLanguageModel } from "@/lib/ai/resolve-google-language-model";
+import {
+  getGeminiAuthDiagnostics,
+  resolveGoogleLanguageModel,
+} from "@/lib/ai/resolve-google-language-model";
 import { convertLatexToMathMl, ensureMathliveSsr } from "@/lib/math/mathlive-ssr";
 import { z } from "zod";
 
@@ -525,7 +528,7 @@ export async function extractMathFromImage(
     }
     latex = parsed.latex;
   } catch (err) {
-    console.error("[extract-math] LLM call failed:", err);
+    console.error("[extract-math] LLM call failed:", err, getGeminiAuthDiagnostics());
     return null;
   }
 
