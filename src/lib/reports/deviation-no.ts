@@ -5,6 +5,20 @@ import { reports } from "@/db/schema";
 export const DUPLICATE_DEVIATION_NO_ERROR =
   "You already have a report with this deviation number";
 
+function postgresCode(error: unknown): string | undefined {
+  let current: unknown = error;
+  for (let depth = 0; depth < 8 && current; depth++) {
+    const code = (current as { code?: string }).code;
+    if (code) return code;
+    current = current instanceof Error ? current.cause : undefined;
+  }
+  return undefined;
+}
+
+export function isPostgresUniqueViolation(error: unknown): boolean {
+  return postgresCode(error) === "23505";
+}
+
 /** Trim only — deviation numbers are compared and stored literally. */
 export function normalizeDeviationNo(value: string): string {
   return value.trim();
