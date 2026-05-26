@@ -189,10 +189,16 @@ describe("docx import", () => {
       /Control section covers the preventive actions|Was the Preventive Action linked/i
     );
 
-    const rootCauseNarrative = imported.sections.analyze.rootCause.narrative;
+    const rootCauseNarrative = richJsonToPlainText(imported.sections.analyze.rootCause.narrative);
     expect(rootCauseNarrative).toContain("Primary Root Cause Level 1");
     expect(rootCauseNarrative).toContain("Equipment / Instrument");
     expect(imported.sections.analyze.rootCause).not.toHaveProperty("primaryLevel1");
+
+    const sig = imported.sections.signature_approvals;
+    expect(sig.table?.type).toBe("table");
+    expect(sig.table?.content?.[0]?.content?.length).toBe(8);
+    expect(sig.headerRowXml).toMatch(/<w:tr\b/);
+    expect(sig.dataRowXml).toMatch(/<w:tr\b/);
   });
 
   it("reads header metadata when values are on the line after the label", () => {

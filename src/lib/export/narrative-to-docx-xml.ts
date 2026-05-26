@@ -277,8 +277,19 @@ function listToXml(node: JSONContent, ctx: DocxExportContext): string {
   const parts: string[] = [];
   for (const item of node.content ?? []) {
     if (item.type === "listItem") {
+      let numbered = true;
       for (const child of item.content ?? []) {
-        parts.push(paragraphToXml(child, false, null, numId, false, ctx));
+        parts.push(
+          paragraphToXml(
+            child,
+            false,
+            null,
+            numbered ? numId : null,
+            false,
+            ctx
+          )
+        );
+        numbered = false;
       }
     }
   }

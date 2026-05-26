@@ -50,6 +50,7 @@ export const sectionTypeEnum = pgEnum("section_type", [
   "control",
   "documents_reviewed",
   "attachments",
+  "signature_approvals",
 ]);
 
 export const criterionStatusEnum = pgEnum("criterion_status", [

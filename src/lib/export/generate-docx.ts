@@ -30,6 +30,19 @@ import {
   loadListNumberingBasesFromZip,
 } from "@/lib/export/docx-numbering";
 import { narrativeToDocxXmlWithContext, plainTextToDocxXml } from "@/lib/export/narrative-to-docx-xml";
+import {
+  normalizeRichField,
+  richJsonToPlainText,
+} from "@/lib/tiptap/rich-text";
+import {
+  splitControlUnifiedText,
+  splitImproveUnifiedText,
+} from "@/lib/improve-control-body-split";
+import {
+  applySignatureBlockToDocxZip,
+  type SignatureBlockSnapshot,
+} from "@/lib/docx/signature-block";
+import type { SignatureApprovalsSection } from "@/types/sections";
 import type { SectionType } from "@/db/schema";
 
 type ReportRow = typeof reportsTable.$inferSelect;
@@ -87,8 +100,28 @@ function buildTemplateData(
   const a = sectionByKey(sections, "analyze") as AnalyzeSection;
   const i = sectionByKey(sections, "improve") as ImproveSection;
   const c = sectionByKey(sections, "control") as ControlSection;
+
+  let improveUnified =
+    typeof i.correctiveActions === "string" ? i.correctiveActions.trim() : "";
+  const improveNarrPlain = richJsonToPlainText(i.narrative).trim();
+  if (improveNarrPlain) {
+    if (!improveUnified) improveUnified = improveNarrPlain;
+    else if (
+      !improveUnified.startsWith(improveNarrPlain) &&
+      !improveNarrPlain.startsWith(improveUnified)
+    ) {
+      improveUnified = `${improveNarrPlain}\n\n${improveUnified}`;
+    }
+  }
+  const { checkpoints: improveCheckpoints, correctiveAction } =
+    splitImproveUnifiedText(improveUnified);
+  const { checkpoints: controlCheckpoints, preventiveAction } =
+    splitControlUnifiedText(
+      typeof c.preventiveActions === "string" ? c.preventiveActions : ""
+    );
   const dr = sectionByKey(sections, "documents_reviewed") as DocumentsReviewedSection;
   const att = sectionByKey(sections, "attachments") as AttachmentsSection;
+  const sig = sectionByKey(sections, "signature_approvals") as SignatureApprovalsSection;
 
   const author = getUser(report.authorId);
   const manager = getUser(report.assignedManagerId ?? undefined);
@@ -124,10 +157,16 @@ function buildTemplateData(
     analyzeOtherToolsXml: plainTextToDocxXml(a.otherTools, ctx),
 
     // Investigation Outcome
-    investigationOutcomeXml: plainTextToDocxXml(a.investigationOutcome, ctx),
+    investigationOutcomeXml: narrativeToDocxXmlWithContext(
+      normalizeRichField(a.investigationOutcome),
+      ctx
+    ).xml,
 
     // Root Cause
-    rootCauseNarrativeXml: plainTextToDocxXml(a.rootCause.narrative, ctx),
+    rootCauseNarrativeXml: narrativeToDocxXmlWithContext(
+      normalizeRichField(a.rootCause.narrative),
+      ctx
+    ).xml,
 
     // Impact Assessment
     impactSystem: na(a.impactAssessment.system),
@@ -136,13 +175,13 @@ function buildTemplateData(
     impactEquipment: na(a.impactAssessment.equipment),
     impactPatientSafety: na(a.impactAssessment.patientSafety),
 
-    // Improve (raw XML for table support)
-    improveNarrativeXml: narrativeToDocxXmlWithContext(i.narrative, ctx).xml,
-    correctiveActionsXml: plainTextToDocxXml(i.correctiveActions, ctx),
+    // Improve — checkpoints in Improve row; narrative in Corrective Action row
+    improveNarrativeXml: plainTextToDocxXml(improveCheckpoints, ctx),
+    correctiveActionsXml: plainTextToDocxXml(correctiveAction, ctx),
 
-    // Control (raw XML for table support)
-    controlNarrativeXml: "",
-    preventiveActionsXml: plainTextToDocxXml(c.preventiveActions, ctx),
+    // Control — checkpoints in Control row; narrative in Preventive Action row
+    controlNarrativeXml: plainTextToDocxXml(controlCheckpoints, ctx),
+    preventiveActionsXml: plainTextToDocxXml(preventiveAction, ctx),
     interimPlan: "Not Applicable",
     finalComments: "Not Applicable",
     regulatoryImpact: "Not Applicable",
@@ -165,10 +204,29 @@ function buildTemplateData(
       attachmentDescription: item.description || item.label,
     })),
 
-    // Signature
+    // Signature (legacy placeholders; row XML applied after render when imported)
     authorName: author?.name ?? "",
     managerName: manager?.name ?? "",
+    _signatureApprovals: sig,
   };
+}
+
+function signatureSnapshotFromSection(
+  sig: SignatureApprovalsSection
+): SignatureBlockSnapshot | null {
+  if (
+    typeof sig.headerRowXml === "string" &&
+    sig.headerRowXml.trim() &&
+    typeof sig.dataRowXml === "string" &&
+    sig.dataRowXml.trim()
+  ) {
+    return {
+      headerRowXml: sig.headerRowXml,
+      dataRowXml: sig.dataRowXml,
+      table: sig.table ?? { type: "table", content: [] },
+    };
+  }
+  return null;
 }
 
 export async function generateReportDocx({
@@ -190,7 +248,12 @@ export async function generateReportDocx({
   const numberingBases = loadListNumberingBasesFromZip(zip);
   const ctx = createDocxExportContext(numberingBases);
   const data = buildTemplateData(report, sections, ctx);
+  const signatureSnapshot = signatureSnapshotFromSection(
+    data._signatureApprovals as SignatureApprovalsSection
+  );
+  delete data._signatureApprovals;
   doc.render(data);
+  applySignatureBlockToDocxZip(doc.getZip(), signatureSnapshot);
   applyInvestigationToolCheckboxes(doc.getZip(), report.toolsUsed);
   applyNumberingToDocxZip(doc.getZip(), ctx);
   applyInlineMediaToDocxZip(doc.getZip(), ctx);

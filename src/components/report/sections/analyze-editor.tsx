@@ -4,6 +4,7 @@ import { type ReactNode } from "react";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
+import { TiptapSectionField } from "@/components/report/tiptap-section-field";
 import {
   useReportData,
   useReportSection,
@@ -32,7 +33,7 @@ const SIX_M_FIELDS: Array<[keyof Omit<{
 export function AnalyzeEditor() {
   const { readOnly } = useReportData();
   const { update } = useReportSection("analyze");
-  const { status, lastSavedAt, value } = useSectionSave("analyze");
+  const { status, lastSavedAt, value, flushSave } = useSectionSave("analyze");
 
   const fieldAnchorProps = (path: string) => ({
     "data-field-anchor": `analyze.${path}`,
@@ -170,22 +171,21 @@ export function AnalyzeEditor() {
           />
         </div>
         <div {...fieldAnchorProps("investigationOutcome")}>
-          <Label>Investigation Outcome</Label>
-          {renderControl(
-            "investigationOutcome",
-            <Textarea
-              value={value.investigationOutcome}
-              disabled={readOnly}
-              className={cn("min-h-[200px]", suggestedControlClass("investigationOutcome"))}
-              onChange={(e) =>
-                update((p) => ({
-                  ...p,
-                  investigationOutcome: e.target.value,
-                }))
-              }
-              placeholder="Summarize the investigation driven by the selected tool(s) and describe the outcome."
-            />
-          )}
+          <TiptapSectionField
+            section="analyze"
+            contentPath="investigationOutcome"
+            label="Investigation Outcome"
+            placeholder="Summarize the investigation driven by the selected tool(s) and describe the outcome."
+            className={cn("grid gap-1.5", suggestedControlClass("investigationOutcome"))}
+            value={value.investigationOutcome}
+            onChange={(doc) =>
+              update((p) => ({
+                ...p,
+                investigationOutcome: doc,
+              }))
+            }
+            onFlushSave={flushSave}
+          />
         </div>
       </section>
 
@@ -196,21 +196,20 @@ export function AnalyzeEditor() {
           Identified Root Cause / Probable Cause
         </h3>
         <div {...fieldAnchorProps("rootCause.narrative")}>
-          <Label>Root cause narrative</Label>
-          {renderControl(
-            "rootCause.narrative",
-            <Textarea
-              value={value.rootCause.narrative}
-              disabled={readOnly}
-              className={cn("min-h-[80px]", suggestedControlClass("rootCause.narrative"))}
-              onChange={(e) =>
-                update((p) => ({
-                  ...p,
-                  rootCause: { ...p.rootCause, narrative: e.target.value },
-                }))
-              }
-            />
-          )}
+          <TiptapSectionField
+            section="analyze"
+            contentPath="rootCause.narrative"
+            label="Root cause narrative"
+            className={cn("grid gap-1.5", suggestedControlClass("rootCause.narrative"))}
+            value={value.rootCause.narrative}
+            onChange={(doc) =>
+              update((p) => ({
+                ...p,
+                rootCause: { ...p.rootCause, narrative: doc },
+              }))
+            }
+            onFlushSave={flushSave}
+          />
         </div>
       </section>
 

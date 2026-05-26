@@ -16,13 +16,29 @@ let xml = zip.file("word/document.xml").asText();
 
 // ─── Helpers ───
 
+function runPr({ bold = false, fontSize = 24 } = {}) {
+  const bTag = bold ? "<w:b/>" : "";
+  return `<w:rPr>${bTag}<w:sz w:val="${fontSize}"/><w:szCs w:val="${fontSize}"/></w:rPr>`;
+}
+
+function textRun(text, { bold = false, fontSize = 24 } = {}) {
+  return `<w:r>${runPr({ bold, fontSize })}<w:t xml:space="preserve">${text}</w:t></w:r>`;
+}
+
 function makePara(text, { bold = false, fontSize = 24 } = {}) {
-  const bTag = bold ? "<w:b/>" : "<w:bCs/>";
-  return `<w:p><w:pPr><w:spacing w:before="60" w:line="276" w:lineRule="auto"/><w:jc w:val="left"/><w:rPr>${bTag}<w:sz w:val="${fontSize}"/><w:szCs w:val="${fontSize}"/></w:rPr></w:pPr><w:r><w:rPr>${bTag}<w:sz w:val="${fontSize}"/><w:szCs w:val="${fontSize}"/></w:rPr><w:t xml:space="preserve">${text}</w:t></w:r></w:p>`;
+  const pPrRPr = runPr({ bold, fontSize });
+  return `<w:p><w:pPr><w:spacing w:before="60" w:line="276" w:lineRule="auto"/><w:jc w:val="left"/>${pPrRPr}</w:pPr>${textRun(text, { bold, fontSize })}</w:p>`;
+}
+
+function makeLabelValuePara(label, valuePlaceholder, { fontSize = 24 } = {}) {
+  return (
+    `<w:p><w:pPr><w:spacing w:before="60" w:line="276" w:lineRule="auto"/><w:jc w:val="left"/>${runPr({ bold: true, fontSize })}</w:pPr>` +
+    `${textRun(label, { bold: true, fontSize })}${textRun(valuePlaceholder, { bold: false, fontSize })}</w:p>`
+  );
 }
 
 function makeParas(lines, opts = {}) {
-  return lines.map(l => makePara(l, opts)).join("");
+  return lines.map((l) => makePara(l, opts)).join("");
 }
 
 // Keep in sync with src/lib/export/docx-form-checkbox.ts
@@ -44,20 +60,16 @@ function formCheckboxFieldXml(checked, fieldName) {
 }
 
 function makeInvestigationToolsParagraph() {
-  const textRun = (text, bold = true) => {
-    const bTag = bold ? "<w:b/>" : "<w:bCs/>";
-    return `<w:r><w:rPr>${bTag}<w:sz w:val="24"/><w:szCs w:val="24"/></w:rPr><w:t xml:space="preserve">${text}</w:t></w:r>`;
-  };
   return (
     "<w:p><w:pPr><w:spacing w:before=\"60\" w:line=\"276\" w:lineRule=\"auto\"/>" +
     "<w:jc w:val=\"left\"/><w:rPr><w:b/><w:sz w:val=\"24\"/><w:szCs w:val=\"24\"/></w:rPr></w:pPr>" +
-    textRun("Investigation tool used:  ") +
+    textRun("Investigation tool used:  ", { bold: true }) +
     formCheckboxFieldXml(false, "toolSixM") +
-    textRun(" 6M     ") +
+    textRun(" 6M     ", { bold: true }) +
     formCheckboxFieldXml(false, "toolFiveWhy") +
-    textRun(" 5 Why     ") +
+    textRun(" 5 Why     ", { bold: true }) +
     formCheckboxFieldXml(false, "toolBrainstorming") +
-    textRun(" Brainstorming") +
+    textRun(" Brainstorming", { bold: true }) +
     "</w:p>"
   );
 }
@@ -150,7 +162,7 @@ R.set(1, rebuildRow(rows[1].xml, makeInvestigationToolsParagraph()));
 
 // Row 2: Other Tools label + value
 R.set(2, rebuildRow(rows[2].xml,
-  makePara("Other Tools (If any): {otherToolsDisplay}", { bold: true })
+  makeLabelValuePara("Other Tools (If any): ", "{otherToolsDisplay}")
 ));
 
 // Row 3: Other Tools old value → empty
@@ -166,44 +178,43 @@ R.set(5, rebuildRow(rows[5].xml, makeParas([
 // Row 6: "Details Investigation:" label → keep
 
 // Row 7: Measure (label + narrative content from DB)
-R.set(7, rebuildRow(rows[7].xml, makeParas([
-  'Measure:',
-  '{@measureNarrativeXml}',
-])));
+R.set(7, rebuildRow(rows[7].xml,
+  makePara("Measure:", { bold: true }) + makeParas(["{@measureNarrativeXml}"])
+));
 
 // Row 8: "Analyze:" label → keep
 
 // Row 9: 6M Method content
-R.set(9, rebuildRow(rows[9].xml, makeParas([
-  '6 M Method (If Applicable):',
-  'Man: {sixMMan}',
-  'Machine: {sixMMachine}',
-  'Measurement: {sixMMeasurement}',
-  'Material: {sixMMaterial}',
-  'Method: {sixMMethod}',
-  'Milieu (Environment): {sixMMilieu}',
-  'Conclusion: {sixMConclusion}',
-])));
+R.set(9, rebuildRow(rows[9].xml,
+  makePara("6 M Method (If Applicable):", { bold: true }) +
+  makeLabelValuePara("Man: ", "{sixMMan}") +
+  makeLabelValuePara("Machine: ", "{sixMMachine}") +
+  makeLabelValuePara("Measurement: ", "{sixMMeasurement}") +
+  makeLabelValuePara("Material: ", "{sixMMaterial}") +
+  makeLabelValuePara("Method: ", "{sixMMethod}") +
+  makeLabelValuePara("Milieu (Environment): ", "{sixMMilieu}") +
+  makeLabelValuePara("Conclusion: ", "{sixMConclusion}")
+));
 
 // Row 10: 6M Note → keep
 
 // Row 11: 5 Why content (chain + conclusion live in one narrative field)
-R.set(11, rebuildRow(rows[11].xml, makeParas([
-  '5 Why Approach (If Applicable):',
-  '{@fiveWhyNarrativeXml}',
-])));
+R.set(11, rebuildRow(rows[11].xml,
+  makePara("5 Why Approach (If Applicable):", { bold: true }) +
+  makeParas(["{@fiveWhyNarrativeXml}"])
+));
 
 // Row 12: Brainstorming
-R.set(12, rebuildRow(rows[12].xml, makeParas([
-  'Brainstorming:',
-  '{@brainstormingXml}',
-])));
+R.set(12, rebuildRow(rows[12].xml,
+  makePara("Brainstorming:", { bold: true }) +
+  makeParas(["{@brainstormingXml}"])
+));
 
 // Row 13: Other Tool #1
-R.set(13, rebuildRow(rows[13].xml, makeParas([
-  'Other Tool if Any:',
-  '{@analyzeOtherToolsXml}',
-])));
+R.set(13, rebuildRow(rows[13].xml,
+  makePara("Other Tool if Any:", { bold: true }) +
+  makeParas(["{@analyzeOtherToolsXml}"])
+));
 
 // Row 14: Other Tool #2 (duplicate) → empty
 R.set(14, rebuildRow(rows[14].xml, makePara(" ")));
@@ -220,18 +231,18 @@ R.set(18, rebuildRow(rows[18].xml, makeParas([
 
 // Row 19: Impact Assessment label → keep
 // Row 20: Impact Assessment content
-R.set(20, rebuildRow(rows[20].xml, makeParas([
-  'System: {impactSystem}',
-  'Document: {impactDocument}',
-  'Product: {impactProduct}',
-  'Equipment: {impactEquipment}',
-  'Patient safety / Past Batches: {impactPatientSafety}',
-])));
+R.set(20, rebuildRow(rows[20].xml,
+  makeLabelValuePara("System: ", "{impactSystem}") +
+  makeLabelValuePara("Document: ", "{impactDocument}") +
+  makeLabelValuePara("Product: ", "{impactProduct}") +
+  makeLabelValuePara("Equipment: ", "{impactEquipment}") +
+  makeLabelValuePara("Patient safety / Past Batches: ", "{impactPatientSafety}")
+));
 
-// Row 21: Improve section label (checkpoints live in correctiveActionsXml)
-R.set(21, rebuildRow(rows[21].xml, makeParas([
-  'Improve:',
-])));
+// Row 21: Improve label + checkpoint guidance (matches reference-template row 21)
+R.set(21, rebuildRow(rows[21].xml,
+  makePara("Improve:", { bold: true }) + makeParas(["{@improveNarrativeXml}"])
+));
 
 // Row 22: "Corrective Action:" label → keep
 
@@ -240,10 +251,10 @@ R.set(23, rebuildRow(rows[23].xml, makeParas([
   '{@correctiveActionsXml}',
 ])));
 
-// Row 24: Control section label (checkpoints live in preventiveActionsXml)
-R.set(24, rebuildRow(rows[24].xml, makeParas([
-  'Control:',
-])));
+// Row 24: Control label + checkpoint guidance (matches reference-template row 24)
+R.set(24, rebuildRow(rows[24].xml,
+  makePara("Control:", { bold: true }) + makeParas(["{@controlNarrativeXml}"])
+));
 
 // Row 25: "Preventive Action:" label → keep
 

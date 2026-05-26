@@ -484,13 +484,81 @@ function findParsedParagraphMatch(
  * vision LLM and converted to editable `mathInline` nodes — see
  * `extractMathFromImage`.
  */
+type EnrichableSections = {
+  define?: { narrative?: JSONContent };
+  measure?: { narrative?: JSONContent };
+  improve?: { narrative?: JSONContent };
+  analyze?: {
+    investigationOutcome?: JSONContent;
+    rootCause?: { narrative?: JSONContent };
+  };
+};
+
+function collectEnrichableDocs(sections: EnrichableSections): JSONContent[] {
+  return [
+    sections.define?.narrative,
+    sections.measure?.narrative,
+    sections.improve?.narrative,
+    sections.analyze?.investigationOutcome,
+    sections.analyze?.rootCause?.narrative,
+  ].filter((n): n is JSONContent => !!n && n.type === "doc");
+}
+
+function enrichParagraphNode(
+  node: JSONContent,
+  parsed: ParsedParagraph[],
+  usedParsed: Set<number>,
+  pIdxRef: { current: number },
+  replaceInParent?: { parent: JSONContent; index: number }
+): void {
+  const expected = normalizePlain(paragraphPlainText(node));
+  const expectedHasMedia = normalizeMediaPlaceholders(expected).includes("[media]");
+  const found = findParsedParagraphMatch(expected, parsed, usedParsed, pIdxRef.current);
+  if (!found) return;
+
+  const { matched, index: matchedIndex } = found;
+  usedParsed.add(matchedIndex);
+  if (!expectedHasMedia) {
+    pIdxRef.current = Math.max(pIdxRef.current, matchedIndex + 1);
+  }
+
+  if (matched.isMathBlock && matched.parts[0]?.kind === "mathBlock") {
+    if (replaceInParent?.parent.content) {
+      replaceParagraphWithMathBlock(replaceInParent.parent, replaceInParent.index, matched.parts[0]);
+    }
+    return;
+  }
+
+  applyPartsToParagraph(node, matched.parts);
+}
+
+function enrichDocFromOoxml(
+  doc: JSONContent,
+  parsed: ParsedParagraph[],
+  usedParsed: Set<number>,
+  pIdxRef: { current: number }
+): void {
+  if (!doc.content?.length) return;
+
+  for (let i = 0; i < doc.content.length; i++) {
+    const node = doc.content[i]!;
+    if (node.type === "paragraph") {
+      enrichParagraphNode(node, parsed, usedParsed, pIdxRef, { parent: doc, index: i });
+      continue;
+    }
+    if (node.type === "table") {
+      for (const row of node.content ?? []) {
+        for (const cell of row.content ?? []) {
+          enrichDocFromOoxml(cell, parsed, usedParsed, pIdxRef);
+        }
+      }
+    }
+  }
+}
+
 export async function enrichNarrativesFromDocxBuffer(
   buffer: Buffer,
-  sections: {
-    define?: { narrative?: JSONContent };
-    measure?: { narrative?: JSONContent };
-    improve?: { narrative?: JSONContent };
-  }
+  sections: EnrichableSections
 ): Promise<void> {
   const xml = readDocumentXml(buffer);
   if (!xml) return;
@@ -504,34 +572,10 @@ export async function enrichNarrativesFromDocxBuffer(
 
   await resolveLegacyMathImages(parsed);
 
-  const narratives = [
-    sections.define?.narrative,
-    sections.measure?.narrative,
-    sections.improve?.narrative,
-  ].filter((n): n is JSONContent => !!n && n.type === "doc");
-
-  for (const narrative of narratives) {
-    if (!narrative.content?.length) continue;
-    let pIdx = 0;
-    const usedParsed = new Set<number>();
-    for (let i = 0; i < narrative.content.length; i++) {
-      const node = narrative.content[i]!;
-      if (node.type !== "paragraph") continue;
-      const expected = normalizePlain(paragraphPlainText(node));
-      const expectedHasMedia = normalizeMediaPlaceholders(expected).includes("[media]");
-      const found = findParsedParagraphMatch(expected, parsed, usedParsed, pIdx);
-      if (!found) continue;
-
-      const { matched, index: matchedIndex } = found;
-      usedParsed.add(matchedIndex);
-      if (!expectedHasMedia) pIdx = Math.max(pIdx, matchedIndex + 1);
-
-      if (matched.isMathBlock && matched.parts[0]?.kind === "mathBlock") {
-        replaceParagraphWithMathBlock(narrative, i, matched.parts[0]);
-      } else {
-        applyPartsToParagraph(node, matched.parts);
-      }
-    }
+  const pIdxRef = { current: 0 };
+  const usedParsed = new Set<number>();
+  for (const narrative of collectEnrichableDocs(sections)) {
+    enrichDocFromOoxml(narrative, parsed, usedParsed, pIdxRef);
   }
 }
 

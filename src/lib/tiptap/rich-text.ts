@@ -5,6 +5,7 @@ import {
 } from "@/lib/tiptap/suggestion-marks";
 import {
   listItemParagraph,
+  listItemParagraphs,
   parseListLine,
   type ListStyle,
 } from "@/lib/tiptap/list-style";
@@ -20,6 +21,33 @@ export function emptyDoc(): JSONContent {
 /** Internal marker for Word soft line breaks preserved from mammoth markdown. */
 export const MAMMOTH_SOFT_BREAK = "\u0001";
 
+function lineWithoutSoftBreak(line: string): string {
+  return line.replace(new RegExp(`${MAMMOTH_SOFT_BREAK}$`), "");
+}
+
+const LIST_ITEM_CONTINUATION_RE = /^Ans\.|^Answer:/i;
+
+/** Lines after a list marker that belong to the same item (e.g. "Ans." under a 5-Why). */
+function collectListItemContinuation(lines: string[], startIndex: number): {
+  paragraphs: string[];
+  nextIndex: number;
+} {
+  const paragraphs: string[] = [];
+  let i = startIndex;
+  while (i < lines.length) {
+    const raw = lineWithoutSoftBreak(lines[i]!);
+    if (!raw.trim()) {
+      i++;
+      continue;
+    }
+    if (parseListLine(raw)) break;
+    if (!LIST_ITEM_CONTINUATION_RE.test(raw.trim())) break;
+    paragraphs.push(raw.trim());
+    i++;
+  }
+  return { paragraphs, nextIndex: i };
+}
+
 /** Convert plain-text narrative to a doc, grouping markdown-style list lines. */
 export function linesToDoc(s: string): JSONContent {
   if (!s.trim()) return emptyDoc();
@@ -30,17 +58,28 @@ export function linesToDoc(s: string): JSONContent {
 
   while (i < lines.length) {
     const line = lines[i]!;
-    const parsed = parseListLine(line.replace(new RegExp(`${MAMMOTH_SOFT_BREAK}$`), ""));
+    const parsed = parseListLine(lineWithoutSoftBreak(line));
 
     if (parsed?.kind === "ordered") {
       const items: JSONContent[] = [];
       while (i < lines.length) {
-        const next = parseListLine(
-          lines[i]!.replace(new RegExp(`${MAMMOTH_SOFT_BREAK}$`), "")
-        );
+        while (i < lines.length && !lineWithoutSoftBreak(lines[i]!).trim()) i++;
+        if (i >= lines.length) break;
+
+        const next = parseListLine(lineWithoutSoftBreak(lines[i]!));
         if (next?.kind !== "ordered") break;
-        items.push(listItemParagraph(next.text));
+
+        const paragraphs = [next.text];
         i++;
+        const continuation = collectListItemContinuation(lines, i);
+        paragraphs.push(...continuation.paragraphs);
+        i = continuation.nextIndex;
+
+        items.push(
+          paragraphs.length === 1
+            ? listItemParagraph(paragraphs[0]!)
+            : listItemParagraphs(paragraphs)
+        );
       }
       content.push({ type: "orderedList", content: items });
       continue;
@@ -50,12 +89,23 @@ export function linesToDoc(s: string): JSONContent {
       const listStyle = parsed.listStyle;
       const items: JSONContent[] = [];
       while (i < lines.length) {
-        const next = parseListLine(
-          lines[i]!.replace(new RegExp(`${MAMMOTH_SOFT_BREAK}$`), "")
-        );
+        while (i < lines.length && !lineWithoutSoftBreak(lines[i]!).trim()) i++;
+        if (i >= lines.length) break;
+
+        const next = parseListLine(lineWithoutSoftBreak(lines[i]!));
         if (next?.kind !== "bullet" || next.listStyle !== listStyle) break;
-        items.push(listItemParagraph(next.text));
+
+        const paragraphs = [next.text];
         i++;
+        const continuation = collectListItemContinuation(lines, i);
+        paragraphs.push(...continuation.paragraphs);
+        i = continuation.nextIndex;
+
+        items.push(
+          paragraphs.length === 1
+            ? listItemParagraph(paragraphs[0]!)
+            : listItemParagraphs(paragraphs)
+        );
       }
       content.push({
         type: "bulletList",

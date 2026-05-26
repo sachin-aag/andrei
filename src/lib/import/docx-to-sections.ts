@@ -25,6 +25,7 @@ import {
 } from "@/lib/import/docx-table-alignment";
 import { enrichNarrativesFromDocxBuffer } from "@/lib/import/docx-rich-content";
 import { stripWordBookmarkAnchors } from "@/lib/import/sanitize-import-html";
+import { extractSignatureBlockFromDocxBuffer } from "@/lib/docx/signature-block";
 
 export type ImportedSections = SectionContentMap;
 
@@ -51,6 +52,7 @@ const SECTION_ORDER: ImportSectionKey[] = [
   "control",
   "documents_reviewed",
   "attachments",
+  "signature_approvals",
 ];
 
 type HeadingMatch = {
@@ -110,6 +112,7 @@ function splitLinesIntoSections(
     control: [],
     documents_reviewed: [],
     attachments: [],
+    signature_approvals: [],
   };
   let current: ImportSectionKey | "preamble" | "ignored" = "preamble";
   let foundHeadings = false;
@@ -149,6 +152,7 @@ function splitLinesIntoSections(
         control: "",
         documents_reviewed: "",
         attachments: "",
+        signature_approvals: "",
       },
       foundHeadings: false,
     };
@@ -353,19 +357,23 @@ function buildAnalyzeFromChunk(text: string): AnalyzeSection {
     otherTools: getBetweenLabels(body, ["Other Tool if Any", "Other Tools (If any)"], [
       "Investigation Outcome",
     ]),
-    investigationOutcome: getBetweenLabels(body, ["Investigation Outcome"], [
-      "Identified Root Cause/ Probable Cause",
-      "Identified Root Cause / Probable Cause",
-      "Impact Assessment (System/ Document/ Product/ Equipment/Patient safety/Past batches)",
-    ]),
+    investigationOutcome: legacyStringToDoc(
+      getBetweenLabels(body, ["Investigation Outcome"], [
+        "Identified Root Cause/ Probable Cause",
+        "Identified Root Cause / Probable Cause",
+        "Impact Assessment (System/ Document/ Product/ Equipment/Patient safety/Past batches)",
+      ])
+    ),
     rootCause: {
-      narrative: getBetweenLabels(
-        body,
-        ["Identified Root Cause/ Probable Cause", "Identified Root Cause / Probable Cause"],
-        [
-          "Impact Assessment (System/ Document/ Product/ Equipment/Patient safety/Past batches)",
-          "Impact Assessment",
-        ]
+      narrative: legacyStringToDoc(
+        getBetweenLabels(
+          body,
+          ["Identified Root Cause/ Probable Cause", "Identified Root Cause / Probable Cause"],
+          [
+            "Impact Assessment (System/ Document/ Product/ Equipment/Patient safety/Past batches)",
+            "Impact Assessment",
+          ]
+        )
       ),
     },
     impactAssessment: {
@@ -719,6 +727,7 @@ export function buildSectionsFromRaw(raw: string): ImportedSections {
       ...EMPTY_CONTENT.attachments,
       items: parseAttachmentsBody(sections.attachments),
     },
+    signature_approvals: { ...EMPTY_CONTENT.signature_approvals },
   };
 }
 
@@ -747,7 +756,21 @@ export async function docxBufferToImportedReportContent(
 
   // Inject table nodes from HTML into narratives where applicable.
   injectTablesFromHtml(html, sections, buffer);
-  await enrichNarrativesFromDocxBuffer(buffer, sections);
+  await enrichNarrativesFromDocxBuffer(buffer, {
+    define: sections.define,
+    measure: sections.measure,
+    improve: sections.improve,
+    analyze: sections.analyze,
+  });
+
+  const signatureBlock = extractSignatureBlockFromDocxBuffer(buffer);
+  if (signatureBlock) {
+    sections.signature_approvals = {
+      table: signatureBlock.table,
+      headerRowXml: signatureBlock.headerRowXml,
+      dataRowXml: signatureBlock.dataRowXml,
+    };
+  }
 
   return {
     sections,
@@ -822,9 +845,20 @@ function injectTablesFromHtml(
     if (!narrative || narrative.type !== "doc" || !narrative.content) continue;
 
     for (const tableNode of sectionTables) {
+      if (isSignatureTipTapTable(tableNode)) continue;
       replaceFlatParagraphsWithTable(narrative, tableNode);
     }
   }
+}
+
+function isSignatureTipTapTable(tableNode: JSONContent): boolean {
+  const cellTexts = extractTableCellTexts(tableNode);
+  const joined = cellTexts.join(" ");
+  return (
+    /\bPrepared\b/i.test(joined) &&
+    /\bSign\/Date\b/i.test(joined) &&
+    (/\bReviewed\b/i.test(joined) || /\bApproved\b/i.test(joined))
+  );
 }
 
 /**

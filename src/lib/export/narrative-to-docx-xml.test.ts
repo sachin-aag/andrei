@@ -447,6 +447,28 @@ describe("narrativeToDocxXml tables", () => {
     expect(xml).toContain("Second");
   });
 
+  it("uses one ordered list for 5-Why chains so numbering runs 1, 2, 3…", () => {
+    const ctx = exportCtx();
+    const xml = plainTextToDocxXml(
+      [
+        "1. WHY: Why did the deviation occur?",
+        "Ans. TOC value was not captured.",
+        "",
+        "2. WHY: Why was the blank water not calibrated?",
+        "Ans. Calibration was skipped.",
+      ].join("\n"),
+      ctx
+    );
+    expect(ctx.allocatedNumIds).toHaveLength(1);
+    const numId = ctx.allocatedNumIds[0]!;
+    const numPrCount = (xml.match(new RegExp(`<w:numId w:val="${numId}"/>`, "g")) ?? [])
+      .length;
+    expect(numPrCount).toBe(2);
+    expect(xml).toContain("WHY: Why did the deviation occur?");
+    expect(xml).toContain("Ans. TOC value was not captured.");
+    expect(xml).toContain("WHY: Why was the blank water not calibrated?");
+  });
+
   it("strips bookmark anchors and preserves full list item text on export", () => {
     const ctx = exportCtx();
     const xml = plainTextToDocxXml(

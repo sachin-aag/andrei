@@ -24,14 +24,24 @@ export function parseListLine(
   return null;
 }
 
+function paragraphNode(text: string) {
+  return {
+    type: "paragraph" as const,
+    content: text.length ? [{ type: "text" as const, text }] : [],
+  };
+}
+
 export function listItemParagraph(text: string) {
   return {
     type: "listItem" as const,
-    content: [
-      {
-        type: "paragraph" as const,
-        content: text.length ? [{ type: "text" as const, text }] : [],
-      },
-    ],
+    content: [paragraphNode(text)],
+  };
+}
+
+/** List item with multiple paragraphs (e.g. 5-Why question + Ans. line). */
+export function listItemParagraphs(texts: string[]) {
+  return {
+    type: "listItem" as const,
+    content: texts.map((text) => paragraphNode(text)),
   };
 }

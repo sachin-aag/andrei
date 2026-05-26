@@ -240,6 +240,8 @@ export type TiptapSectionFieldProps = {
   onChange: (doc: JSONContent) => void;
   /** Persist immediately after accept/reject suggestion (autosave flush). */
   onFlushSave?: () => void | Promise<void>;
+  /** When true, the field stays read-only even in engineer edit mode. */
+  locked?: boolean;
 };
 
 export function TiptapSectionField({
@@ -250,6 +252,7 @@ export function TiptapSectionField({
   className,
   value,
   onChange,
+  locked = false,
 }: TiptapSectionFieldProps) {
   const {
     report,
@@ -327,7 +330,7 @@ export function TiptapSectionField({
     onChangeRef.current = onChange;
   }, [onChange]);
 
-  const editable = !readOnly || trackChangesMode;
+  const editable = !locked && (!readOnly || trackChangesMode);
   const manager = getUser(currentUserId)?.role === "manager";
   const canInlineComment =
     (report.status === "submitted" || report.status === "in_review" || report.status === "draft") &&

@@ -1,4 +1,5 @@
 import type { JSONContent } from "@tiptap/core";
+import { cssColorToWordVal } from "@/lib/tiptap/text-color";
 
 /**
  * Extract data tables from mammoth HTML output and convert each to
@@ -122,9 +123,9 @@ function findAllTableRanges(html: string): TableRange[] {
 }
 
 function isDataTableRange(html: string, range: TableRange): boolean {
+  if (isSignatureTable(html, range)) return false;
   if (range.depth >= 1) return true;
   if (isLayoutWrapper(html, range)) return false;
-  if (isSignatureTable(html, range)) return false;
   return true;
 }
 
@@ -395,6 +396,7 @@ type InlineMarkState = {
   bold?: boolean;
   italic?: boolean;
   underline?: boolean;
+  color?: string;
 };
 
 const BOLD_INLINE_TAGS = new Set(["strong", "b"]);
@@ -420,7 +422,28 @@ function marksFromState(state: InlineMarkState): JSONContent["marks"] | undefine
   if (state.bold) marks.push({ type: "bold" });
   if (state.italic) marks.push({ type: "italic" });
   if (state.underline) marks.push({ type: "underline" });
+  if (state.color) marks.push({ type: "textStyle", attrs: { color: state.color } });
   return marks.length > 0 ? marks : undefined;
+}
+
+function cssColorFromHtml(value: string): string | undefined {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  const hex = trimmed.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+  if (hex) {
+    const word = cssColorToWordVal(trimmed);
+    return word ? `#${word.toLowerCase()}` : undefined;
+  }
+  const rgb = trimmed.match(/^rgb\s*\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/i);
+  if (rgb) {
+    const word = cssColorToWordVal(
+      `#${[rgb[1], rgb[2], rgb[3]]
+        .map((n) => Number(n).toString(16).padStart(2, "0"))
+        .join("")}`
+    );
+    return word ? `#${word.toLowerCase()}` : undefined;
+  }
+  return undefined;
 }
 
 function applySpanStyleToMarkState(state: InlineMarkState, tagHtml: string): void {
@@ -438,6 +461,11 @@ function applySpanStyleToMarkState(state: InlineMarkState, tagHtml: string): voi
   if (fs && fs[1]!.trim().toLowerCase() === "italic") state.italic = true;
   const td = /text-decoration(?:-line)?\s*:\s*([^;]+)/i.exec(style);
   if (td && td[1]!.toLowerCase().includes("underline")) state.underline = true;
+  const color = /(?:^|[;\s])color\s*:\s*([^;]+)/i.exec(style);
+  if (color) {
+    const css = cssColorFromHtml(color[1]!);
+    if (css) state.color = css;
+  }
 }
 
 function cloneMarkState(state: InlineMarkState): InlineMarkState {
@@ -445,6 +473,7 @@ function cloneMarkState(state: InlineMarkState): InlineMarkState {
     bold: state.bold,
     italic: state.italic,
     underline: state.underline,
+    color: state.color,
   };
 }
 

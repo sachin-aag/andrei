@@ -1,7 +1,10 @@
+import type { JSONContent } from "@tiptap/core";
 import type { AnalyzeSection } from "@/types/sections";
 import { stringFieldFromStoredValue } from "@/lib/section-content-normalize";
+import { legacyStringToDoc, normalizeRichField } from "@/lib/tiptap/rich-text";
 
-type LegacyRootCause = AnalyzeSection["rootCause"] & {
+type LegacyRootCause = {
+  narrative?: unknown;
   primaryLevel1?: string;
   secondaryLevel2?: string;
   thirdLevel3?: string;
@@ -14,8 +17,9 @@ type LegacyRootCause = AnalyzeSection["rootCause"] & {
 export function collapseRootCauseFields(
   rc: LegacyRootCause | undefined | null
 ): AnalyzeSection["rootCause"] {
-  if (!rc) return { narrative: "" };
+  if (!rc) return { narrative: legacyStringToDoc("") };
 
+  let narrativeDoc = normalizeRichField(rc.narrative);
   let narrative = stringFieldFromStoredValue(rc.narrative).trim();
   const legacyLevels = [
     ["Primary (Level 1)", rc.primaryLevel1],
@@ -35,7 +39,12 @@ export function collapseRootCauseFields(
 
   if (toAppend.length) {
     narrative = narrative ? `${narrative}\n\n${toAppend.join("\n")}` : toAppend.join("\n");
+    narrativeDoc = legacyStringToDoc(narrative);
   }
 
-  return { narrative };
+  return { narrative: narrativeDoc };
+}
+
+export function rootCausePlainText(narrative: JSONContent | undefined): string {
+  return stringFieldFromStoredValue(narrative).trim();
 }

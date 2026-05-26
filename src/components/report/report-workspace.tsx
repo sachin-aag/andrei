@@ -65,6 +65,13 @@ const SECTION_EDITORS = {
       import("./sections/attachments-editor").then((mod) => mod.AttachmentsEditor),
     { loading: SectionEditorLoading }
   ),
+  signature_approvals: dynamic(
+    () =>
+      import("./sections/signature-approvals-section").then(
+        (mod) => mod.SignatureApprovalsSection
+      ),
+    { loading: SectionEditorLoading }
+  ),
 } satisfies Record<(typeof REPORT_WORKSPACE_SECTIONS)[number], ComponentType>;
 
 export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
