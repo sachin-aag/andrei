@@ -8,7 +8,8 @@ const appRoot = path.dirname(fileURLToPath(import.meta.url));
 const nextConfig: NextConfig = {
   // Playwright hits 127.0.0.1 while Next dev binds localhost; allow HMR/client hydration.
   allowedDevOrigins: ["127.0.0.1"],
-  serverExternalPackages: ["@napi-rs/canvas", "mathlive"],
+  // Keep native / dynamic-require deps external so NFT copies real files (not pnpm symlinks).
+  serverExternalPackages: ["@napi-rs/canvas", "mathlive", "wmf"],
   turbopack: {
     root: appRoot,
   },
@@ -19,13 +20,7 @@ const nextConfig: NextConfig = {
     },
   },
   outputFileTracingIncludes: {
-    "/api/*": [
-      "./templates/**/*",
-      "./node_modules/@napi-rs/canvas/**/*",
-      "./node_modules/@napi-rs/canvas-linux-x64-gnu/**/*",
-      "./node_modules/wmf/dist/**/*",
-      "./node_modules/mathlive/**/*",
-    ],
+    "/api/*": ["./templates/**/*"],
   },
 };
 
