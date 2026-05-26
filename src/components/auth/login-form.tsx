@@ -178,6 +178,7 @@ export function LoginForm({ initialUsers }: { initialUsers: MockUser[] }) {
                         placeholder="Search by name or employee ID"
                         className="h-9 pl-8"
                         autoComplete="off"
+                        onPointerDown={(e) => e.stopPropagation()}
                         onKeyDown={(e) => e.stopPropagation()}
                       />
                     </div>
