@@ -1,4 +1,4 @@
-import { JSDOM } from "jsdom";
+import { DOMParser } from "@xmldom/xmldom";
 import omml2mathml from "omml2mathml";
 import { mml2omml } from "mathml2omml";
 import { convertLatexToMathMl } from "@/lib/math/mathlive-ssr";
@@ -78,8 +78,7 @@ export function ommlFragmentToMathml(ommlFragment: string): string {
     : `<root xmlns:m="${MATH_NS}"><m:oMath>${trimmed}</m:oMath></root>`;
 
   try {
-    const dom = new JSDOM(wrapped, { contentType: "text/xml" });
-    const doc = dom.window.document;
+    const doc = new DOMParser().parseFromString(wrapped, "text/xml");
     const oMath =
       doc.getElementsByTagNameNS(MATH_NS, "oMath")[0] ??
       doc.getElementsByTagName("oMath")[0];
