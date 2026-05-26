@@ -95,8 +95,13 @@ export function allocateListNumId(
   const abstractId = abstractIdForList(bases, listType, listStyle);
   const numId = ctx.nextNumId;
   ctx.nextNumId += 1;
+  // Word keeps a running counter per abstractNumId unless each w:num restarts ilvl 0
+  // (Google Docs restarts automatically). startOverride forces 1, 2, 3… per list block.
   ctx.numberingPatches.push(
-    `<w:num w:numId="${numId}"><w:abstractNumId w:val="${abstractId}"/></w:num>`
+    `<w:num w:numId="${numId}">` +
+      `<w:abstractNumId w:val="${abstractId}"/>` +
+      `<w:lvlOverride w:ilvl="0"><w:startOverride w:val="1"/></w:lvlOverride>` +
+      `</w:num>`
   );
   ctx.allocatedNumIds.push(numId);
   return numId;

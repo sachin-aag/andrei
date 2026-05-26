@@ -46,5 +46,8 @@ describe("allocateListNumId", () => {
     const numbering = zip.file("word/numbering.xml")?.asText() ?? "";
     expect(numbering).toContain(`<w:num w:numId="${first}">`);
     expect(numbering).toContain(`<w:num w:numId="${second}">`);
+    expect(numbering).toContain(
+      `<w:num w:numId="${first}"><w:abstractNumId w:val="${bases.decimal}"/><w:lvlOverride w:ilvl="0"><w:startOverride w:val="1"/></w:lvlOverride></w:num>`
+    );
   });
 });
