@@ -1,3 +1,4 @@
+import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 import { and, eq, ne } from "drizzle-orm";
 import { z } from "zod";
@@ -119,5 +120,6 @@ export async function DELETE(
   }
 
   await db.delete(reports).where(eq(reports.id, reportId));
+  revalidatePath("/");
   return NextResponse.json({ ok: true });
 }

@@ -1,20 +1,14 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { ViewTransition } from "react";
 import { desc, eq, or } from "drizzle-orm";
-import { FileText, ArrowRight } from "lucide-react";
 import { db } from "@/db";
 import { reports } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import { listWorkspaceUsers } from "@/lib/auth/workspace-users";
 import { AppShell } from "@/components/layout/app-shell";
-import { Card } from "@/components/ui/card";
-import { StatusBadge } from "@/components/report/status-badge";
 import { CreateReportButton } from "@/components/dashboard/create-report-button";
-import { DeleteReportButton } from "@/components/dashboard/delete-report-button";
-import { formatDate } from "@/lib/utils";
+import { ReportList } from "@/components/dashboard/report-list";
 import { withTransientRetry } from "@/lib/db/with-transient-retry";
-import type { ReportStatus } from "@/db/schema";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +17,9 @@ export default async function DashboardPage() {
   if (!user) redirect("/login");
 
   const workspaceUsers = await listWorkspaceUsers();
-  const userById = new Map(workspaceUsers.map((entry) => [entry.id, entry]));
+  const usersById = Object.fromEntries(
+    workspaceUsers.map((entry) => [entry.id, { name: entry.name }])
+  );
 
   const myReports =
     user.role === "engineer"
@@ -71,96 +67,15 @@ export default async function DashboardPage() {
         </div>
 
         <div className="flex-1 overflow-auto px-10 py-6">
-          {myReports.length === 0 ? (
-            <EmptyState role={user.role} />
-          ) : (
-            <div className="grid gap-3">
-              {myReports.map((report) => {
-                const author = userById.get(report.authorId);
-                const manager = report.assignedManagerId
-                  ? userById.get(report.assignedManagerId)
-                  : undefined;
-                const canDelete = report.authorId === user.id;
-                return (
-                  <Card
-                    key={report.id}
-                    className="p-5 hover:border-[var(--brand-500)] transition-colors"
-                  >
-                    <div className="group flex items-start justify-between gap-4">
-                      <Link
-                        href={`/reports/${report.id}`}
-                        transitionTypes={["nav-forward"]}
-                        className="min-w-0 flex-1"
-                      >
-                        <div className="flex items-start justify-between gap-4">
-                          <div className="flex items-start gap-3 min-w-0">
-                            <div className="size-10 rounded-lg bg-[var(--brand-700)] flex items-center justify-center shrink-0">
-                              <FileText className="size-5 text-[var(--brand-200)]" />
-                            </div>
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-2 mb-1">
-                                <h3 className="font-semibold truncate">
-                                  {report.deviationNo || "Untitled deviation"}
-                                </h3>
-                                <StatusBadge
-                                  status={report.status as ReportStatus}
-                                />
-                              </div>
-                              <div className="text-xs text-[var(--muted-foreground)] flex flex-wrap items-center gap-3">
-                                <span>Date: {formatDate(report.date)}</span>
-                                <span>·</span>
-                                <span>Author: {author?.name ?? "—"}</span>
-                                {manager && (
-                                  <>
-                                    <span>·</span>
-                                    <span>Manager: {manager.name}</span>
-                                  </>
-                                )}
-                                <span>·</span>
-                                <span>
-                                  Updated: {formatDate(report.updatedAt)}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-2 text-[var(--muted-foreground)] group-hover:text-[var(--brand-300)] transition-colors">
-                            <span className="text-xs">Open</span>
-                            <ArrowRight className="size-4" />
-                          </div>
-                        </div>
-                      </Link>
-                      {canDelete && (
-                        <DeleteReportButton
-                          reportId={report.id}
-                          deviationNo={report.deviationNo || "Untitled deviation"}
-                        />
-                      )}
-                    </div>
-                  </Card>
-                );
-              })}
-            </div>
-          )}
+          <ReportList
+            reports={myReports}
+            currentUserId={user.id}
+            userRole={user.role}
+            usersById={usersById}
+          />
         </div>
       </div>
       </ViewTransition>
     </AppShell>
-  );
-}
-
-function EmptyState({ role }: { role: "engineer" | "manager" }) {
-  return (
-    <div className="flex flex-col items-center justify-center py-20 text-center">
-      <div className="size-16 rounded-2xl bg-[var(--brand-700)] flex items-center justify-center mb-4">
-        <FileText className="size-8 text-[var(--brand-200)]" />
-      </div>
-      <h3 className="text-lg font-semibold mb-1">No reports yet</h3>
-      <p className="text-sm text-[var(--muted-foreground)] max-w-md mb-6">
-        {role === "engineer"
-          ? "Create a new deviation investigation report to get started. Your draft will auto-save as you write."
-          : "Reports submitted by engineers will appear here for your review."}
-      </p>
-      {role === "engineer" && <CreateReportButton />}
-    </div>
   );
 }
