@@ -32,4 +32,6 @@ export function convertLatexToMathMl(
   return convertLatexToMathMlImpl(latex, options);
 }
 
-void ensureMathliveSsr();
+void ensureMathliveSsr().catch((error) => {
+  console.warn("[mathlive-ssr] preload failed:", error);
+});

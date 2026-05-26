@@ -19,7 +19,7 @@ const nextConfig: NextConfig = {
     },
   },
   outputFileTracingIncludes: {
-    "/api/*": ["./templates/**/*"],
+    "/api/*": ["./templates/**/*", "./node_modules/mathlive/**/*"],
   },
 };
 

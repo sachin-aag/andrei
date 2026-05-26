@@ -10,16 +10,17 @@ import {
   describeErrorChain,
   isPostgresUniqueViolation,
 } from "@/lib/debug/report-create-log";
-import { docxBufferToImportedReportContent } from "@/lib/import/docx-to-sections";
-import { readDocxUpload } from "@/lib/import/docx-upload";
-import { persistReportSourceDocx } from "@/lib/reports/persist-source-docx";
+import { seedBlankReportSections } from "@/lib/reports/seed-blank-report-sections";
+import { REPORT_SECTION_ROW_ORDER } from "@/types/sections";
+import type { ImportedReportContent } from "@/lib/import/docx-to-sections";
 import {
   DUPLICATE_DEVIATION_NO_ERROR,
   isDeviationNoTaken,
   normalizeDeviationNo,
 } from "@/lib/reports/deviation-no";
-import { seedBlankReportSections } from "@/lib/reports/seed-blank-report-sections";
-import { REPORT_SECTION_ROW_ORDER } from "@/types/sections";
+
+export const runtime = "nodejs";
+export const maxDuration = 60;
 
 export async function GET() {
   const user = await getCurrentUser();
@@ -71,8 +72,7 @@ export async function POST(req: Request) {
 
     let deviationNo: string;
     let assignedManagerId: string | null;
-    let importedContent: Awaited<ReturnType<typeof docxBufferToImportedReportContent>> | null =
-      null;
+    let importedContent: ImportedReportContent | null = null;
     let sourceUpload: { buffer: Buffer; filename: string } | null = null;
 
     if (contentType.includes("multipart/form-data")) {
@@ -98,6 +98,10 @@ export async function POST(req: Request) {
 
       if (hasFile && file instanceof File) {
         try {
+          const { readDocxUpload } = await import("@/lib/import/docx-upload");
+          const { docxBufferToImportedReportContent } = await import(
+            "@/lib/import/docx-to-sections"
+          );
           log.step("docx-read-start");
           const buf = await readDocxUpload(file);
           log.step("docx-import-start", { bufferBytes: buf.byteLength });
@@ -184,6 +188,7 @@ export async function POST(req: Request) {
 
     if (sourceUpload) {
       try {
+        const { persistReportSourceDocx } = await import("@/lib/reports/persist-source-docx");
         log.step("persist-source-docx", {
           reportId: report.id,
           filename: sourceUpload.filename,

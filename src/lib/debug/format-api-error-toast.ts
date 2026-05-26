@@ -22,10 +22,15 @@ export async function readApiErrorResponse(
   try {
     return { ...(JSON.parse(text) as ApiErrorBody), httpStatus };
   } catch {
+    const isHtml = /^\s*</.test(text) || text.includes("__next_error__");
     return {
       httpStatus,
-      error: `Request failed (HTTP ${httpStatus})`,
-      debugMessage: text.slice(0, 400),
+      error: isHtml
+        ? `Server error (HTTP ${httpStatus}). The API returned an HTML error page instead of JSON — often a crash while loading the route on Vercel.`
+        : `Request failed (HTTP ${httpStatus})`,
+      debugMessage: isHtml
+        ? "Check Vercel function logs for this deployment."
+        : text.slice(0, 400),
     };
   }
 }
@@ -37,17 +42,19 @@ export function formatApiErrorToast(
   const lines: string[] = [];
 
   const main = body.error?.trim();
-  if (main && main !== fallback) {
+  if (main) {
     lines.push(main);
-  } else if (body.debugMessage?.trim()) {
-    lines.push(fallback);
   } else {
-    lines.push(main || fallback);
+    lines.push(fallback);
   }
 
-  if (body.httpStatus) lines.push(`HTTP ${body.httpStatus}`);
+  if (body.httpStatus && !main?.includes(`HTTP ${body.httpStatus}`)) {
+    lines.push(`HTTP ${body.httpStatus}`);
+  }
   if (body.debugStep) lines.push(`Step: ${body.debugStep}`);
-  if (body.debugMessage) lines.push(body.debugMessage);
+  if (body.debugMessage && body.debugMessage !== main) {
+    lines.push(body.debugMessage);
+  }
   if (body.debugDb?.fingerprint) {
     lines.push(`DB: ${body.debugDb.fingerprint}`);
   } else if (body.debugDb?.host) {

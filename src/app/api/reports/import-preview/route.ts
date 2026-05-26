@@ -8,6 +8,9 @@ import { docxBufferToImportedReportContent } from "@/lib/import/docx-to-sections
 import { readDocxUpload } from "@/lib/import/docx-upload";
 import { getCurrentUser } from "@/lib/auth/session";
 
+export const runtime = "nodejs";
+export const maxDuration = 60;
+
 export async function POST(req: Request) {
   const log = createReportCreateLogger("POST /api/reports/import-preview");
 
