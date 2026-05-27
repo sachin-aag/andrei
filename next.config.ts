@@ -20,7 +20,7 @@ const nextConfig: NextConfig = {
     },
   },
   outputFileTracingIncludes: {
-    "/api/*": ["./templates/**/*"],
+    "/api/*": ["./templates/**/*", "./src/lib/import/fonts/**/*.ttf"],
   },
 };
 
