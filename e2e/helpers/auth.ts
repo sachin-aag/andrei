@@ -1,53 +1,29 @@
 import { expect, type Page } from "@playwright/test";
 
-/** Stable mock engineer from `MOCK_USERS` (Test Engineer). */
-const E2E_ENGINEER_USER_ID = "7";
-
-const SITE_ACCESS_PASSWORD =
-  process.env.SITE_ACCESS_PASSWORD ?? "@ndrei@2026";
-
-/** Acquire the site-access cookie via the API if the gate is enabled. */
-async function acquireSiteAccessIfNeeded(page: Page) {
-  const res = await page.request.post("/api/site-access", {
-    data: { password: SITE_ACCESS_PASSWORD },
-    headers: { "Content-Type": "application/json" },
-  });
-  // 503 = gate disabled, anything 2xx = unlocked, 401 = wrong password.
-  if (res.status() === 503) return;
-  if (!res.ok()) {
-    throw new Error(
-      `site-access POST failed: ${res.status()} ${await res.text()}`
-    );
-  }
-}
+const TEST_AUTH_EMAIL =
+  process.env.TEST_AUTH_EMAIL ?? "test.engineer@mjbiopharm.com";
 
 /**
- * Backwards-compat shim — older specs called this after navigating to "/".
- * The API-first login below makes it a no-op, but kept so existing specs
- * compile without changes.
- */
-export async function unlockIfNeeded(_page: Page) {
-  // no-op: loginAsEngineer handles unlock + session via API
-}
-
-/**
- * Mock login as an engineer, entirely via API. Avoids depending on
- * client-side hydration of the login dialog (which can be brittle in CI).
+ * Log in as a test engineer by calling the test-only JWT-minting endpoint.
+ * Requires the app to run with TEST_AUTH_EMAIL set and NODE_ENV !== production.
  */
 export async function loginAsEngineer(page: Page) {
-  await acquireSiteAccessIfNeeded(page);
-
-  const loginRes = await page.request.post("/api/auth/login", {
-    data: { userId: E2E_ENGINEER_USER_ID },
-    headers: { "Content-Type": "application/json" },
-  });
+  const res = await page.request.post("/api/test/login");
   expect(
-    loginRes.ok(),
-    `auth/login failed: ${loginRes.status()} ${await loginRes.text()}`
+    res.ok(),
+    `test login failed (${res.status()}): is TEST_AUTH_EMAIL="${TEST_AUTH_EMAIL}" set and does a matching workspace user exist?`
   ).toBeTruthy();
 
   await page.goto("/");
-  await expect(page.getByRole("button", { name: /new report/i }).first()).toBeVisible({
-    timeout: 30_000,
-  });
+  await expect(
+    page.getByRole("button", { name: /new report/i }).first()
+  ).toBeVisible({ timeout: 30_000 });
+}
+
+/**
+ * Kept for backwards-compatibility with existing specs.
+ * The site-access password gate was replaced by Auth.js authentication.
+ */
+export async function unlockIfNeeded(_page: Page) {
+  // no-op
 }
