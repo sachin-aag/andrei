@@ -5,17 +5,24 @@ import { db } from "@/db";
 import { workspaceUsers } from "@/db/schema";
 import { ensureWorkspaceUsersSeeded } from "@/lib/auth/workspace-users";
 
+function isTestLoginEnabled(): boolean {
+  return (
+    process.env.ALLOW_TEST_LOGIN === "true" &&
+    Boolean(process.env.TEST_AUTH_EMAIL)
+  );
+}
+
 /**
  * Test-only endpoint: mints a valid Auth.js JWT session cookie directly,
- * bypassing the magic link email flow. Only works when TEST_AUTH_EMAIL is set
- * and NODE_ENV is not production.
+ * bypassing the magic link email flow. Only works when ALLOW_TEST_LOGIN=true
+ * and TEST_AUTH_EMAIL is set (Playwright sets both; never enable on Vercel prod).
  *
  * Called by Playwright's loginAsEngineer() helper in CI/dev e2e tests.
  */
 export async function POST() {
   const testEmail = process.env.TEST_AUTH_EMAIL;
 
-  if (process.env.NODE_ENV === "production" || !testEmail) {
+  if (!isTestLoginEnabled() || !testEmail) {
     return NextResponse.json({ error: "Not available" }, { status: 404 });
   }
 

@@ -5,7 +5,7 @@ const TEST_AUTH_EMAIL =
 
 /**
  * Log in as a test engineer by calling the test-only JWT-minting endpoint.
- * Requires the app to run with TEST_AUTH_EMAIL set and NODE_ENV !== production.
+ * Requires ALLOW_TEST_LOGIN=true and TEST_AUTH_EMAIL on the app server (see playwright.config.ts).
  */
 export async function loginAsEngineer(page: Page) {
   const res = await page.request.post("/api/test/login");

@@ -1,8 +1,8 @@
 # Bulk HTML sample evaluation (`pnpm run sample-eval-report`).
 #
 # On pull requests, runs only when evaluation/import/sample code or the sample
-# corpus changes (see `on.pull_request.paths`). Lockfile-only PRs (e.g. auth deps)
-# do not trigger this workflow. After @ai-sdk / Gemini-only dependency bumps, run
+# corpus changes (see `on.pull_request.paths`). Workflow-only, lockfile-only, and
+# auth-only PRs do not trigger. After @ai-sdk / Gemini-only dependency bumps, run
 # workflow_dispatch manually from the Actions tab.
 #
 # API key — add a repository Actions secret:
@@ -28,7 +28,6 @@ on:
     types: [opened, synchronize, reopened]
     # Skip expensive bulk Gemini runs unless evaluation inputs or the sample corpus changed.
     paths:
-      - ".github/workflows/sample-eval-report.yml"
       - "scripts/bulk-sample-evaluation-report.ts"
       - "docs/sample_files/**"
       - "src/lib/ai/**"
