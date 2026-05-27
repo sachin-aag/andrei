@@ -1,8 +1,9 @@
 # Bulk HTML sample evaluation (`pnpm run sample-eval-report`).
 #
-# On pull requests, runs only when paths under evaluation logic, DOCX import, or
-# docs/sample_files/ change (see `on.pull_request.paths`). Manual workflow_dispatch
-# always runs.
+# On pull requests, runs only when evaluation/import/sample code or the sample
+# corpus changes (see `on.pull_request.paths`). Lockfile-only PRs (e.g. auth deps)
+# do not trigger this workflow. After @ai-sdk / Gemini-only dependency bumps, run
+# workflow_dispatch manually from the Actions tab.
 #
 # API key — add a repository Actions secret:
 #   Settings → Secrets and variables → Actions → New repository secret
@@ -36,8 +37,6 @@ on:
       - "src/lib/math/**"
       - "src/lib/tiptap/rich-text.ts"
       - "src/types/sections.ts"
-      - "package.json"
-      - "pnpm-lock.yaml"
   workflow_dispatch:
 
 concurrency:
