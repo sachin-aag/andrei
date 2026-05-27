@@ -92,6 +92,13 @@
       "when": 1780063200000,
       "tag": "0012_signature_approvals",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1748390400000,
+      "tag": "0013_auth_tables",
+      "breakpoints": true
     }
   ]
 }

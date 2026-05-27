@@ -1,14 +1,17 @@
 import Image from "next/image";
 import { redirect } from "next/navigation";
-import { LoginForm } from "@/components/auth/login-form";
+import { MagicLinkForm } from "@/components/auth/magic-link-form";
 import { getCurrentUser } from "@/lib/auth/session";
-import { listWorkspaceUsers } from "@/lib/auth/workspace-users";
 
-export default async function LoginPage() {
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ callbackUrl?: string }>;
+}) {
   const user = await getCurrentUser();
   if (user) redirect("/");
 
-  const users = await listWorkspaceUsers();
+  const { callbackUrl } = await searchParams;
 
   return (
     <div className="min-h-screen flex">
@@ -74,10 +77,10 @@ export default async function LoginPage() {
               Sign in to your workspace
             </h1>
             <p className="text-sm text-[var(--muted-foreground)] mt-2">
-              Site access is granted. Select your name to continue.
+              Enter your work email to receive a sign-in link.
             </p>
           </div>
-          <LoginForm initialUsers={users} />
+          <MagicLinkForm redirectTo={callbackUrl ?? "/"} />
         </div>
       </div>
     </div>
