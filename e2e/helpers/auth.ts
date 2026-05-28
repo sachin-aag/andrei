@@ -24,6 +24,6 @@ export async function loginAsEngineer(page: Page) {
  * Kept for backwards-compatibility with existing specs.
  * The site-access password gate was replaced by Auth.js authentication.
  */
-export async function unlockIfNeeded(_page: Page) {
+export async function unlockIfNeeded() {
   // no-op
 }

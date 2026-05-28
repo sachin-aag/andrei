@@ -165,9 +165,12 @@ export function CriteriaReviewSessionForm({
   const answersRef = useRef(answers);
   const selectedReviewerRef = useRef(selectedReviewer);
   const sessionIdRef = useRef(session.id);
-  answersRef.current = answers;
-  selectedReviewerRef.current = selectedReviewer;
-  sessionIdRef.current = session.id;
+
+  useEffect(() => {
+    answersRef.current = answers;
+    selectedReviewerRef.current = selectedReviewer;
+    sessionIdRef.current = session.id;
+  });
 
   const expectedAnswerKeys = session.input.sections.flatMap((section) =>
     section.criteria.map((criterion) => criterion.answerKey)
@@ -263,7 +266,6 @@ export function CriteriaReviewSessionForm({
         keepalive: true,
       }).catch(() => {});
     };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const submitReport = async () => {
