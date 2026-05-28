@@ -9,10 +9,10 @@ import {
 } from "@/lib/criteria-review/report-data";
 
 type SubmissionRow = typeof schema.criteriaReviewSubmissions.$inferSelect;
-type ReviewerRow = typeof schema.criteriaReviewReviewers.$inferSelect;
+type WorkspaceUserRow = typeof schema.workspaceUsers.$inferSelect;
 type ReportRow = typeof schema.criteriaReviewReports.$inferSelect;
 
-function reviewerFromRow(row: ReviewerRow): HumanReviewer {
+function reviewerFromRow(row: WorkspaceUserRow): HumanReviewer {
   return {
     id: row.id,
     name: row.name,
@@ -23,7 +23,7 @@ function reviewerFromRow(row: ReviewerRow): HumanReviewer {
 function assembleItem(
   report: ReportRow,
   submissions: SubmissionRow[],
-  reviewersById: Map<string, ReviewerRow>
+  reviewersById: Map<string, WorkspaceUserRow>
 ): CriteriaReviewDatasetItem {
   const humanReviews: Record<string, CriteriaReviewForReviewer> = {};
   for (const sub of submissions) {
@@ -74,11 +74,11 @@ async function loadSubmissionsForReports(
 
 async function loadReviewersForIds(
   reviewerIds: string[]
-): Promise<Map<string, ReviewerRow>> {
+): Promise<Map<string, WorkspaceUserRow>> {
   if (reviewerIds.length === 0) return new Map();
 
-  const rows = await db.query.criteriaReviewReviewers.findMany({
-    where: inArray(schema.criteriaReviewReviewers.id, reviewerIds),
+  const rows = await db.query.workspaceUsers.findMany({
+    where: inArray(schema.workspaceUsers.id, reviewerIds),
   });
   return new Map(rows.map((r) => [r.id, r]));
 }
@@ -97,21 +97,6 @@ async function syncHumanReviews(
   humanReviews: NonNullable<CriteriaReviewSessionMetadata["humanReviews"]>
 ): Promise<void> {
   for (const review of Object.values(humanReviews)) {
-    await db
-      .insert(schema.criteriaReviewReviewers)
-      .values({
-        id: review.reviewer.id,
-        name: review.reviewer.name,
-        email: review.reviewer.email,
-      })
-      .onConflictDoUpdate({
-        target: schema.criteriaReviewReviewers.id,
-        set: {
-          name: review.reviewer.name,
-          email: review.reviewer.email,
-        },
-      });
-
     const reviewedAt = review.reviewedAt
       ? new Date(review.reviewedAt)
       : null;

@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import { humanReviewerFromMockUser } from "@/lib/auth/reviewer-from-user";
 import { getCurrentUser } from "@/lib/auth/session";
 import { listWorkspaceUsers } from "@/lib/auth/workspace-users";
 import { canAccessCriteriaReview } from "@/lib/criteria-review/access";
@@ -17,7 +16,7 @@ export default async function CriteriaReviewListPage() {
   if (!canAccessCriteriaReview(user)) redirect("/");
 
   const items = await listCriteriaReviewSessions();
-  const reviewerId = humanReviewerFromMockUser(user).id;
+  const reviewerId = user.id;
   const workspaceUsers = await listWorkspaceUsers();
 
   return (

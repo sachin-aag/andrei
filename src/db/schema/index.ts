@@ -295,23 +295,6 @@ export const criteriaReviewReports = pgTable("criteria_review_reports", {
     .defaultNow(),
 });
 
-export const criteriaReviewReviewers = pgTable(
-  "criteria_review_reviewers",
-  {
-    id: text("id").primaryKey(),
-    name: text("name").notNull(),
-    email: text("email").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (t) => ({
-    emailUnique: uniqueIndex(
-      "criteria_review_reviewers_email_unique"
-    ).on(t.email),
-  })
-);
-
 export const criteriaReviewSubmissions = pgTable(
   "criteria_review_submissions",
   {
@@ -321,7 +304,7 @@ export const criteriaReviewSubmissions = pgTable(
       .references(() => criteriaReviewReports.id, { onDelete: "cascade" }),
     reviewerId: text("reviewer_id")
       .notNull()
-      .references(() => criteriaReviewReviewers.id, { onDelete: "cascade" }),
+      .references(() => workspaceUsers.id, { onDelete: "cascade" }),
     status: criteriaReviewStatusEnum("status").notNull().default("pending"),
     answers: jsonb("answers").notNull().default({}),
     reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
@@ -350,9 +333,9 @@ export const criteriaReviewSubmissionsRelations = relations(
       fields: [criteriaReviewSubmissions.reportId],
       references: [criteriaReviewReports.id],
     }),
-    reviewer: one(criteriaReviewReviewers, {
+    reviewer: one(workspaceUsers, {
       fields: [criteriaReviewSubmissions.reviewerId],
-      references: [criteriaReviewReviewers.id],
+      references: [workspaceUsers.id],
     }),
   })
 );
