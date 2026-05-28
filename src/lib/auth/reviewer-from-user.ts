@@ -4,8 +4,8 @@ import { slugifyCriteriaReviewIdPart } from "@/lib/criteria-review/report-data";
 
 export function humanReviewerFromMockUser(user: MockUser): HumanReviewer {
   return {
-    id: `reviewer-${slugifyCriteriaReviewIdPart(user.employeeId)}`,
+    id: `reviewer-${slugifyCriteriaReviewIdPart(user.email)}`,
     name: user.name,
-    employeeId: user.employeeId,
+    email: user.email,
   };
 }

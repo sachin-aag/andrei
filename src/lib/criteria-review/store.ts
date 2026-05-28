@@ -16,7 +16,7 @@ function reviewerFromRow(row: ReviewerRow): HumanReviewer {
   return {
     id: row.id,
     name: row.name,
-    employeeId: row.employeeId,
+    email: row.email,
   };
 }
 
@@ -102,13 +102,13 @@ async function syncHumanReviews(
       .values({
         id: review.reviewer.id,
         name: review.reviewer.name,
-        employeeId: review.reviewer.employeeId,
+        email: review.reviewer.email,
       })
       .onConflictDoUpdate({
         target: schema.criteriaReviewReviewers.id,
         set: {
           name: review.reviewer.name,
-          employeeId: review.reviewer.employeeId,
+          email: review.reviewer.email,
         },
       });
 

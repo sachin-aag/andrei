@@ -316,7 +316,7 @@ export function CriteriaReviewSessionForm({
             <p className="font-medium">
               {selectedReviewer.name}{" "}
               <span className="font-normal text-[var(--muted-foreground)]">
-                ({selectedReviewer.employeeId})
+                ({selectedReviewer.email})
               </span>
             </p>
           </div>

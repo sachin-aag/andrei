@@ -10,17 +10,28 @@ import { Label } from "@/components/ui/label";
 export function MagicLinkForm({ redirectTo }: { redirectTo?: string }) {
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   const submit = () => {
     if (!email.trim()) return;
+    setError(null);
     startTransition(async () => {
+      const res = await fetch("/api/auth/check-email", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim() }),
+      });
+      const { allowed } = await res.json();
+      if (!allowed) {
+        setError("This email isn't registered. Please contact your admin to get access.");
+        return;
+      }
       await signIn("resend", {
         email: email.trim(),
         redirectTo: redirectTo ?? "/",
         redirect: false,
       });
-      // Always show success to avoid email enumeration
       setSent(true);
     });
   };
@@ -56,13 +67,19 @@ export function MagicLinkForm({ redirectTo }: { redirectTo?: string }) {
           id="email"
           type="email"
           value={email}
-          onChange={(e) => setEmail(e.target.value)}
+          onChange={(e) => {
+            setEmail(e.target.value);
+            if (error) setError(null);
+          }}
           placeholder="you@mjbiopharm.com"
           autoComplete="email"
           onKeyDown={(e) => {
             if (e.key === "Enter") submit();
           }}
         />
+        {error && (
+          <p className="text-sm text-destructive">{error}</p>
+        )}
       </div>
       <Button
         type="button"

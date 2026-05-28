@@ -94,7 +94,6 @@ export const workspaceUsers = pgTable(
     id: text("id").primaryKey(),
     name: text("name").notNull(),
     email: text("email").notNull(),
-    employeeId: text("employee_id").notNull(),
     role: userRoleEnum("role").notNull().default("engineer"),
     title: text("title").notNull().default("Engineer"),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -102,9 +101,7 @@ export const workspaceUsers = pgTable(
       .defaultNow(),
   },
   (t) => ({
-    employeeIdUnique: uniqueIndex("workspace_users_employee_id_unique").on(
-      t.employeeId
-    ),
+    emailUnique: uniqueIndex("workspace_users_email_unique").on(t.email),
   })
 );
 
@@ -303,15 +300,15 @@ export const criteriaReviewReviewers = pgTable(
   {
     id: text("id").primaryKey(),
     name: text("name").notNull(),
-    employeeId: text("employee_id").notNull(),
+    email: text("email").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
   },
   (t) => ({
-    employeeIdUnique: uniqueIndex(
-      "criteria_review_reviewers_employee_id_unique"
-    ).on(t.employeeId),
+    emailUnique: uniqueIndex(
+      "criteria_review_reviewers_email_unique"
+    ).on(t.email),
   })
 );
 

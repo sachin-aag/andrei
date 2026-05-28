@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { getCurrentUser } from "@/lib/auth/session";
-import { employeeIdSchema } from "@/lib/auth/employee-id";
 import { canAccessCriteriaReview } from "@/lib/criteria-review/access";
 import {
   createCriteriaReviewReviewer,
@@ -32,10 +31,10 @@ export async function POST(req: Request) {
 
   const body = (await req.json()) as {
     name?: unknown;
-    employeeId?: unknown;
+    email?: unknown;
   };
   const name = typeof body.name === "string" ? body.name.trim() : "";
-  const employeeIdParse = employeeIdSchema.safeParse(body.employeeId);
+  const email = typeof body.email === "string" ? body.email.trim() : "";
 
   if (!name) {
     return NextResponse.json(
@@ -43,21 +42,15 @@ export async function POST(req: Request) {
       { status: 400 }
     );
   }
-  if (!employeeIdParse.success) {
+  if (!email) {
     return NextResponse.json(
-      {
-        error:
-          employeeIdParse.error.issues[0]?.message ?? "Invalid employee ID.",
-      },
+      { error: "Reviewer email is required." },
       { status: 400 }
     );
   }
 
   try {
-    const reviewer = await createCriteriaReviewReviewer({
-      name,
-      employeeId: employeeIdParse.data,
-    });
+    const reviewer = await createCriteriaReviewReviewer({ name, email });
     return NextResponse.json({ reviewer });
   } catch (error) {
     if (error instanceof ZodError) {

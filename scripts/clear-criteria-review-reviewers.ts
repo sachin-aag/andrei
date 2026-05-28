@@ -65,7 +65,7 @@ async function main() {
   console.log(`Database host: ${databaseHost(databaseUrl)}`);
   console.log(`Reviewers to delete: ${reviewers.length}`);
   for (const reviewer of reviewers) {
-    console.log(`  - ${reviewer.name} (${reviewer.employeeId}) [${reviewer.id}]`);
+    console.log(`  - ${reviewer.name} (${reviewer.email}) [${reviewer.id}]`);
   }
   console.log(`Submissions to delete (cascade): ${submissions.length}`);
   console.log(

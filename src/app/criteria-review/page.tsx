@@ -26,7 +26,7 @@ export default async function CriteriaReviewListPage() {
         <CriteriaReviewListHeader
           reportCount={items.length}
           reviewerName={user.name}
-          reviewerEmployeeId={user.employeeId}
+          reviewerEmail={user.email}
         />
 
         <div className="flex-1 overflow-y-auto p-6">
