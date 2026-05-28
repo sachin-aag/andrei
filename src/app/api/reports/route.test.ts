@@ -46,7 +46,6 @@ const engineer = {
   id: "engineer-1",
   name: "Engineer",
   email: "engineer@example.com",
-  employeeId: "E-001",
   role: "engineer" as const,
   title: "Quality Engineer",
 };
@@ -98,7 +97,6 @@ describe("/api/reports", () => {
       id: "manager-1",
       name: "Manager",
       email: "manager@example.com",
-      employeeId: "M-001",
       role: "manager",
       title: "QA Manager",
     });
@@ -121,7 +119,6 @@ describe("/api/reports", () => {
       id: "engineer-1",
       name: "Engineer",
       email: "engineer@example.com",
-      employeeId: "E-001",
       role: "engineer",
       title: "Quality Engineer",
     });
@@ -146,7 +143,6 @@ describe("/api/reports", () => {
       id: "engineer-1",
       name: "Engineer",
       email: "engineer@example.com",
-      employeeId: "E-001",
       role: "engineer",
       title: "Quality Engineer",
     });

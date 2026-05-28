@@ -42,7 +42,6 @@ describe("PATCH /api/reports/[reportId]/sections/[sectionType]", () => {
       id: "engineer-1",
       name: "Engineer",
       email: "engineer@example.com",
-      employeeId: "E-001",
       role: "engineer",
       title: "Quality Engineer",
     });

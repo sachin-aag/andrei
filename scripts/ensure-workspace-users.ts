@@ -33,7 +33,6 @@ async function main() {
       id text PRIMARY KEY NOT NULL,
       name text NOT NULL,
       email text NOT NULL,
-      employee_id text NOT NULL,
       role user_role NOT NULL DEFAULT 'engineer',
       title text NOT NULL DEFAULT 'Engineer',
       created_at timestamptz NOT NULL DEFAULT now()
@@ -41,18 +40,17 @@ async function main() {
   `;
 
   await sql`
-    CREATE UNIQUE INDEX IF NOT EXISTS workspace_users_employee_id_unique
-    ON workspace_users (employee_id);
+    CREATE UNIQUE INDEX IF NOT EXISTS workspace_users_email_unique
+    ON workspace_users (email);
   `;
 
   for (const user of MOCK_USERS) {
     await sql`
-      INSERT INTO workspace_users (id, name, email, employee_id, role, title)
+      INSERT INTO workspace_users (id, name, email, role, title)
       VALUES (
         ${user.id},
         ${user.name},
         ${user.email},
-        ${user.employeeId},
         ${user.role},
         ${user.title}
       )

@@ -9,7 +9,8 @@ const nextConfig: NextConfig = {
   // Playwright hits 127.0.0.1 while Next dev binds localhost; allow HMR/client hydration.
   allowedDevOrigins: ["127.0.0.1"],
   // Keep native / dynamic-require deps external so NFT copies real files (not pnpm symlinks).
-  serverExternalPackages: ["@napi-rs/canvas", "mathlive", "wmf"],
+  // mathlive omitted: client components import mathlive/static.css, which cannot be externalized.
+  serverExternalPackages: ["@napi-rs/canvas", "wmf"],
   turbopack: {
     root: appRoot,
   },

@@ -67,7 +67,7 @@ const item: CriteriaReviewDatasetItem = {
         reviewer: {
           id: "reviewer-1",
           name: "Reviewer One",
-          employeeId: "1",
+          email: "reviewer.one@mjbiopharm.com",
         },
         status: "in_progress",
         answers: {
@@ -83,7 +83,7 @@ const item: CriteriaReviewDatasetItem = {
         reviewer: {
           id: "reviewer-2",
           name: "Reviewer Two",
-          employeeId: "2",
+          email: "reviewer.two@mjbiopharm.com",
         },
         status: "pending",
         answers: {},

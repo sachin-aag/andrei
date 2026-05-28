@@ -94,7 +94,6 @@ export const workspaceUsers = pgTable(
     id: text("id").primaryKey(),
     name: text("name").notNull(),
     email: text("email").notNull(),
-    employeeId: text("employee_id").notNull(),
     role: userRoleEnum("role").notNull().default("engineer"),
     title: text("title").notNull().default("Engineer"),
     createdAt: timestamp("created_at", { withTimezone: true })
@@ -102,9 +101,7 @@ export const workspaceUsers = pgTable(
       .defaultNow(),
   },
   (t) => ({
-    employeeIdUnique: uniqueIndex("workspace_users_employee_id_unique").on(
-      t.employeeId
-    ),
+    emailUnique: uniqueIndex("workspace_users_email_unique").on(t.email),
   })
 );
 
@@ -298,23 +295,6 @@ export const criteriaReviewReports = pgTable("criteria_review_reports", {
     .defaultNow(),
 });
 
-export const criteriaReviewReviewers = pgTable(
-  "criteria_review_reviewers",
-  {
-    id: text("id").primaryKey(),
-    name: text("name").notNull(),
-    employeeId: text("employee_id").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (t) => ({
-    employeeIdUnique: uniqueIndex(
-      "criteria_review_reviewers_employee_id_unique"
-    ).on(t.employeeId),
-  })
-);
-
 export const criteriaReviewSubmissions = pgTable(
   "criteria_review_submissions",
   {
@@ -324,7 +304,7 @@ export const criteriaReviewSubmissions = pgTable(
       .references(() => criteriaReviewReports.id, { onDelete: "cascade" }),
     reviewerId: text("reviewer_id")
       .notNull()
-      .references(() => criteriaReviewReviewers.id, { onDelete: "cascade" }),
+      .references(() => workspaceUsers.id, { onDelete: "cascade" }),
     status: criteriaReviewStatusEnum("status").notNull().default("pending"),
     answers: jsonb("answers").notNull().default({}),
     reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
@@ -353,9 +333,9 @@ export const criteriaReviewSubmissionsRelations = relations(
       fields: [criteriaReviewSubmissions.reportId],
       references: [criteriaReviewReports.id],
     }),
-    reviewer: one(criteriaReviewReviewers, {
+    reviewer: one(workspaceUsers, {
       fields: [criteriaReviewSubmissions.reviewerId],
-      references: [criteriaReviewReviewers.id],
+      references: [workspaceUsers.id],
     }),
   })
 );
@@ -367,3 +347,5 @@ export type CommentStatus = (typeof commentStatusEnum.enumValues)[number];
 export type CommentKind = (typeof commentKindEnum.enumValues)[number];
 export type CriteriaReviewStatus =
   (typeof criteriaReviewStatusEnum.enumValues)[number];
+
+export * from "./auth";

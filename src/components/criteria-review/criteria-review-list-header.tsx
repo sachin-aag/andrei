@@ -5,11 +5,11 @@ import { ClipboardCheck } from "lucide-react";
 export function CriteriaReviewListHeader({
   reportCount,
   reviewerName,
-  reviewerEmployeeId,
+  reviewerEmail,
 }: {
   reportCount: number;
   reviewerName: string;
-  reviewerEmployeeId: string;
+  reviewerEmail: string;
 }) {
   return (
     <header className="shrink-0 border-b border-[var(--border)] px-6 py-4">
@@ -34,7 +34,7 @@ export function CriteriaReviewListHeader({
           <p className="font-medium">
             {reviewerName}{" "}
             <span className="font-normal text-[var(--muted-foreground)]">
-              ({reviewerEmployeeId})
+              ({reviewerEmail})
             </span>
           </p>
         </div>

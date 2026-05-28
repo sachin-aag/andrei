@@ -1,54 +1,14 @@
-import { asc, eq } from "drizzle-orm";
+import { asc } from "drizzle-orm";
 import { db, schema } from "@/db";
-import { normalizeCriteriaReviewEmployeeId } from "@/lib/auth/employee-id";
-import {
-  humanReviewerSchema,
-  type HumanReviewer,
-} from "@/lib/criteria-review/human-judgment";
-import { slugifyCriteriaReviewIdPart } from "@/lib/criteria-review/report-data";
-
-function reviewerIdForEmployee(employeeId: string): string {
-  return `reviewer-${slugifyCriteriaReviewIdPart(employeeId)}`;
-}
+import type { HumanReviewer } from "@/lib/criteria-review/human-judgment";
 
 export async function listCriteriaReviewReviewers(): Promise<HumanReviewer[]> {
-  const rows = await db.query.criteriaReviewReviewers.findMany({
-    orderBy: [asc(schema.criteriaReviewReviewers.name)],
+  const rows = await db.query.workspaceUsers.findMany({
+    orderBy: [asc(schema.workspaceUsers.name)],
   });
   return rows.map((row) => ({
     id: row.id,
     name: row.name,
-    employeeId: row.employeeId,
+    email: row.email,
   }));
-}
-
-export async function createCriteriaReviewReviewer(params: {
-  name: string;
-  employeeId: string;
-}): Promise<HumanReviewer> {
-  const employeeId = normalizeCriteriaReviewEmployeeId(params.employeeId);
-  const reviewer = humanReviewerSchema.parse({
-    id: reviewerIdForEmployee(employeeId),
-    name: params.name.trim(),
-    employeeId,
-  });
-
-  const existing = await db.query.criteriaReviewReviewers.findFirst({
-    where: eq(schema.criteriaReviewReviewers.employeeId, reviewer.employeeId),
-  });
-  if (existing) {
-    return {
-      id: existing.id,
-      name: existing.name,
-      employeeId: existing.employeeId,
-    };
-  }
-
-  await db.insert(schema.criteriaReviewReviewers).values({
-    id: reviewer.id,
-    name: reviewer.name,
-    employeeId: reviewer.employeeId,
-  });
-
-  return reviewer;
 }
