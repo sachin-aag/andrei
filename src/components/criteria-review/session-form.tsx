@@ -161,6 +161,14 @@ export function CriteriaReviewSessionForm({
   const savingRef = useRef(false);
   const mainScrollRef = useRef<HTMLDivElement>(null);
 
+  // Refs so the unmount flush can read latest values without stale closures
+  const answersRef = useRef(answers);
+  const selectedReviewerRef = useRef(selectedReviewer);
+  const sessionIdRef = useRef(session.id);
+  answersRef.current = answers;
+  selectedReviewerRef.current = selectedReviewer;
+  sessionIdRef.current = session.id;
+
   const expectedAnswerKeys = session.input.sections.flatMap((section) =>
     section.criteria.map((criterion) => criterion.answerKey)
   );
@@ -223,12 +231,40 @@ export function CriteriaReviewSessionForm({
   useEffect(() => {
     if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
     autosaveTimer.current = setTimeout(() => {
+      autosaveTimer.current = null; // timer fired naturally — no longer pending
       void saveAnswers(answers, false);
     }, AUTOSAVE_DELAY_MS);
     return () => {
       if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
     };
   }, [answers, selectedReviewer, saveAnswers]);
+
+  // Flush any pending debounced save when the component unmounts (e.g. page refresh).
+  // Uses keepalive:true so the request survives navigation.
+  useEffect(() => {
+    return () => {
+      if (!autosaveTimer.current) return; // timer already fired or was never set
+      clearTimeout(autosaveTimer.current);
+      autosaveTimer.current = null;
+      const reviewer = selectedReviewerRef.current;
+      const id = sessionIdRef.current;
+      const pendingAnswers = Object.values(answersRef.current).map((a) => ({
+        section: a.section,
+        criterionKey: a.criterionKey,
+        criteriaEvaluationAgreement: a.criteriaEvaluationAgreement || undefined,
+        reasoningAgreement: a.reasoningAgreement || undefined,
+        comment: a.comment?.trim() || undefined,
+        suggestedStatus: a.suggestedStatus ?? undefined,
+      }));
+      fetch(`/api/criteria-review/sessions/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reviewer, answers: pendingAnswers, complete: false }),
+        keepalive: true,
+      }).catch(() => {});
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const submitReport = async () => {
     if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
