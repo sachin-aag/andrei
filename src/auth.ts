@@ -20,6 +20,7 @@ function isAllowedEmail(email: string): boolean {
 export const { handlers, auth, signIn, signOut } = NextAuth({
   // Required when the app is reached via 127.0.0.1, Docker, or CI (not only Vercel).
   trustHost:
+    (!!process.env.VERCEL && process.env.VERCEL_ENV !== "production") ||
     process.env.AUTH_TRUST_HOST === "true" ||
     process.env.AUTH_TRUST_HOST === "1",
   adapter: DrizzleAdapter(db, {
