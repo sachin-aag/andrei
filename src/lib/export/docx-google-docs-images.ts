@@ -1,7 +1,6 @@
 import PizZip from "pizzip";
 import { readRasterDimensions } from "@/lib/export/raster-dimensions";
 
-const EMU_PER_PX = 9525;
 const MIN_RASTER_LONG_EDGE_PX = 320;
 
 type CanvasModule = {
@@ -16,6 +15,8 @@ type CanvasModule = {
 
 function loadCanvasModule(): CanvasModule | null {
   try {
+    // Lazy require so export still works when the optional native binding is missing.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
     return require("@napi-rs/canvas") as CanvasModule;
   } catch {
     return null;
@@ -124,7 +125,7 @@ export async function applyGoogleDocsImageCompat(zip: PizZip): Promise<void> {
   for (const path of xmlPaths) {
     const file = zip.file(path);
     if (!file) continue;
-    let xml = file.asText();
+    const xml = file.asText();
     const next = syncDrawingExtents(stripUseLocalDpiFromXml(xml), mediaDims);
     if (next !== xml) zip.file(path, next);
   }
