@@ -113,9 +113,7 @@ function fingerprintAnalyze(a: AnalyzeSection): Record<string, string> {
       richJsonToPlainText(v as JSONContent)
     );
   }
-  for (const [k, v] of Object.entries(a.impactAssessment)) {
-    out[`impactAssessment.${k}`] = fingerprintComparableString(v);
-  }
+  out["impactAssessment"] = fingerprintComparableString(a.impactAssessment);
   return out;
 }
 

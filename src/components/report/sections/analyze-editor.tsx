@@ -216,41 +216,25 @@ export function AnalyzeEditor() {
       <Separator />
 
       <section className="space-y-3">
-        <h3 className="font-semibold text-[var(--foreground)]">Impact Assessment</h3>
-        <div className="grid gap-3">
-          {(
-            [
-              ["system", "System"],
-              ["document", "Document"],
-              ["product", "Product"],
-              ["equipment", "Equipment"],
-              ["patientSafety", "Patient safety / Past batches"],
-            ] as const
-          ).map(([key, label]) => (
-            <div key={key} {...fieldAnchorProps(`impactAssessment.${key}`)}>
-              <Label>{label}</Label>
-              {renderControl(
-                `impactAssessment.${key}`,
-                <Textarea
-                  value={value.impactAssessment[key]}
-                  disabled={readOnly}
-                  className={cn(
-                    "min-h-[70px]",
-                    suggestedControlClass(`impactAssessment.${key}`)
-                  )}
-                  onChange={(e) =>
-                    update((p) => ({
-                      ...p,
-                      impactAssessment: {
-                        ...p.impactAssessment,
-                        [key]: e.target.value,
-                      },
-                    }))
-                  }
-                />
-              )}
-            </div>
-          ))}
+        <h3 className="font-semibold text-[var(--foreground)]">
+          Impact Assessment (System / Document / Product / Equipment / Patient safety / Past
+          batches)
+        </h3>
+        <div {...fieldAnchorProps("impactAssessment")}>
+          {renderControl(
+            "impactAssessment",
+            <Textarea
+              value={value.impactAssessment}
+              disabled={readOnly}
+              className={cn("min-h-[200px]", suggestedControlClass("impactAssessment"))}
+              onChange={(e) =>
+                update((p) => ({
+                  ...p,
+                  impactAssessment: e.target.value,
+                }))
+              }
+            />
+          )}
         </div>
       </section>
     </SectionShell>

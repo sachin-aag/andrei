@@ -302,6 +302,17 @@ function getLineValue(text: string, label: string): string {
   return getLineValueMaybe(text, label) ?? "";
 }
 
+function parseImpactAssessmentBlock(body: string): string {
+  return getBetweenLabels(
+    body,
+    [
+      "Impact Assessment (System/ Document/ Product/ Equipment/Patient safety/Past batches)",
+      "Impact Assessment",
+    ],
+    ["Improve"]
+  );
+}
+
 function findInlineLabel(text: string, label: string, from = 0): RegExpExecArray | null {
   const re = new RegExp(labelPattern(label), "gi");
   re.lastIndex = from;
@@ -416,15 +427,7 @@ function buildAnalyzeFromChunk(text: string): AnalyzeSection {
         )
       ),
     },
-    impactAssessment: {
-      system: getLineValue(body, "System"),
-      document: getLineValue(body, "Document"),
-      product: getLineValue(body, "Product"),
-      equipment: getLineValue(body, "Equipment"),
-      patientSafety:
-        getLineValueMaybe(body, "Patient safety / Past Batches") ??
-        getLineValue(body, "Patient safety"),
-    },
+    impactAssessment: parseImpactAssessmentBlock(body),
   };
 }
 
@@ -632,11 +635,12 @@ function buildCommentTargets(sections: ImportedSections): CommentTarget[] {
     { section: "analyze", contentPath: "otherTools", kind: "plain", text: sections.analyze.otherTools },
     { section: "analyze", contentPath: "investigationOutcome", kind: "rich", doc: sections.analyze.investigationOutcome },
     { section: "analyze", contentPath: "rootCause.narrative", kind: "rich", doc: sections.analyze.rootCause.narrative },
-    { section: "analyze", contentPath: "impactAssessment.system", kind: "plain", text: sections.analyze.impactAssessment.system },
-    { section: "analyze", contentPath: "impactAssessment.document", kind: "plain", text: sections.analyze.impactAssessment.document },
-    { section: "analyze", contentPath: "impactAssessment.product", kind: "plain", text: sections.analyze.impactAssessment.product },
-    { section: "analyze", contentPath: "impactAssessment.equipment", kind: "plain", text: sections.analyze.impactAssessment.equipment },
-    { section: "analyze", contentPath: "impactAssessment.patientSafety", kind: "plain", text: sections.analyze.impactAssessment.patientSafety },
+    {
+      section: "analyze",
+      contentPath: "impactAssessment",
+      kind: "plain",
+      text: sections.analyze.impactAssessment,
+    },
     { section: "improve", contentPath: "correctiveActions", kind: "plain", text: sections.improve.correctiveActions },
     { section: "control", contentPath: "preventiveActions", kind: "plain", text: sections.control.preventiveActions },
   ];
