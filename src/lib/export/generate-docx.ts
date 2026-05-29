@@ -259,12 +259,19 @@ function buildTemplateData(
       "rootCause.narrative"
     ),
 
-    // Impact Assessment
-    impactSystem: na(a.impactAssessment.system),
-    impactDocument: na(a.impactAssessment.document),
-    impactProduct: na(a.impactAssessment.product),
-    impactEquipment: na(a.impactAssessment.equipment),
-    impactPatientSafety: na(a.impactAssessment.patientSafety),
+    // Impact Assessment (single block)
+    impactAssessmentXml: withWordComments(
+      withWordComments(
+        plainTextToDocxXml(a.impactAssessment, ctx),
+        ctx,
+        comments,
+        "analyze",
+        "impactAssessment"
+      ),
+      ctx,
+      comments,
+      "analyze"
+    ),
 
     // Improve — checkpoints in Improve row; narrative in Corrective Action row
     improveNarrativeXml: improveControlCheckpointsToDocxXml(improveCheckpoints, "improve", ctx),

@@ -298,13 +298,7 @@ R.set(18, rebuildRow(rows[18].xml, makeParas([
 
 // Row 19: Impact Assessment label → keep
 // Row 20: Impact Assessment content
-R.set(20, rebuildRow(rows[20].xml,
-  makeLabelValuePara("System: ", "{impactSystem}") +
-  makeLabelValuePara("Document: ", "{impactDocument}") +
-  makeLabelValuePara("Product: ", "{impactProduct}") +
-  makeLabelValuePara("Equipment: ", "{impactEquipment}") +
-  makeLabelValuePara("Patient safety / Past Batches: ", "{impactPatientSafety}")
-));
+R.set(20, rebuildRow(rows[20].xml, makePara("{@impactAssessmentXml}")));
 
 // Row 21: Improve label + checkpoint guidance (matches reference-template row 21)
 R.set(21, rebuildRow(rows[21].xml,

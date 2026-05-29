@@ -106,6 +106,23 @@ describe("sections merge", () => {
     expect(analyze.rootCause).not.toHaveProperty("primaryLevel1");
   });
 
+  it("folds legacy impact assessment subfields into one text block", () => {
+    const analyze = mergeAnalyzeSection({
+      impactAssessment: {
+        system: "No impact on system.",
+        document: "SOP revision required.",
+        product: "",
+        equipment: "Instrument recalibrated.",
+        patientSafety: "No impact on past batches.",
+      },
+    });
+
+    expect(analyze.impactAssessment).toContain("System: No impact on system.");
+    expect(analyze.impactAssessment).toContain("Document: SOP revision required.");
+    expect(analyze.impactAssessment).toContain("Instrument recalibrated.");
+    expect(analyze.impactAssessment).toContain("Patient safety / Past batches: No impact");
+  });
+
   it("flattens legacy 5-Why rows into a narrative", () => {
     const analyze = mergeAnalyzeSection({
       fiveWhy: {

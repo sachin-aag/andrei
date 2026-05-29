@@ -96,6 +96,12 @@ describe("docx import", () => {
     expect(control).toContain("Preventive Action linked");
     expect(control).toContain("Procedure Error");
 
+    const impact = imported.sections.analyze.impactAssessment;
+    expect(impact).toContain("Performed the detail impact assessment");
+    expect(impact).toContain("System:");
+    expect(impact).toContain("Patient safety/Past Batches");
+    expect(impact).not.toMatch(/^\/\s*Past\s+Batches/i);
+
     const sig = imported.sections.signature_approvals;
     expect(sig.table?.content?.[0]?.content).toHaveLength(5);
     const headerText = (sig.table?.content?.[0]?.content ?? [])
@@ -256,6 +262,35 @@ describe("docx import", () => {
     expect(sig.table?.content?.[0]?.content?.length).toBe(8);
     expect(sig.headerRowXml).toMatch(/<w:tr\b/);
     expect(sig.dataRowXml).toMatch(/<w:tr\b/);
+  });
+
+  it("imports the full impact assessment block as one field", () => {
+    const analyzeBody = [
+      "Impact Assessment (System/ Document/ Product/ Equipment/Patient safety/Past batches):",
+      "",
+      "System: System impact text.",
+      "",
+      "Product: Product impact text.",
+      "",
+      "Instrument: Instrument impact text.",
+      "",
+      "Patient safety/Past Batches:",
+      "",
+      "Performed the detail impact assessment for patient safety and past batches.",
+      "",
+      "Improve:",
+      "Improve section covers the corrective actions",
+    ].join("\n");
+
+    const raw = ["Define:", "Def", "Analyze:", analyzeBody].join("\n");
+    const sections = buildSectionsFromRaw(raw);
+
+    const impact = sections.analyze.impactAssessment;
+    expect(impact).toContain("System impact text.");
+    expect(impact).toContain("Product impact text.");
+    expect(impact).toContain("Instrument impact text.");
+    expect(impact).toContain("Performed the detail impact assessment");
+    expect(impact).not.toMatch(/^\/\s*Past\s+Batches/i);
   });
 
   it("reads analyze other tools from the last duplicate label row", () => {

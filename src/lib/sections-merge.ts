@@ -1,3 +1,4 @@
+import { collapseImpactAssessment } from "@/lib/analyze-impact-assessment";
 import { collapseFiveWhyFields } from "@/lib/analyze-five-why";
 import { collapseRootCauseFields } from "@/lib/analyze-root-cause";
 import type {
@@ -155,7 +156,13 @@ export function mergeAnalyzeSection(content: unknown): AnalyzeSection {
       whys?: Array<{ question?: unknown; answer?: unknown }>;
     };
   };
-  const merged = deepMerge(base, o as Partial<AnalyzeSection>);
+  const impactAssessment = collapseImpactAssessment(
+    "impactAssessment" in o ? o.impactAssessment : base.impactAssessment
+  );
+  const { impactAssessment: _legacyImpact, ...rest } = o as Partial<AnalyzeSection> & {
+    impactAssessment?: unknown;
+  };
+  const merged = deepMerge(base, rest as Partial<AnalyzeSection>);
   const narrative =
     typeof o.fiveWhy?.narrative === "string"
       ? o.fiveWhy.narrative
@@ -174,6 +181,7 @@ export function mergeAnalyzeSection(content: unknown): AnalyzeSection {
     rootCause: collapseRootCauseFields(
       merged.rootCause as Parameters<typeof collapseRootCauseFields>[0]
     ),
+    impactAssessment,
   };
 }
 

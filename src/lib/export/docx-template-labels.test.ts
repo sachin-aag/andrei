@@ -36,8 +36,6 @@ describe("investigation-report-template.docx label formatting", () => {
       "5 Why Approach (If Applicable):",
       "6 M Method (If Applicable):",
       "Man:",
-      "System:",
-      "Document:",
     ]) {
       expect(labelRunXml(xml, label), `expected bold run for ${label}`).toBeTruthy();
     }
@@ -47,13 +45,9 @@ describe("investigation-report-template.docx label formatting", () => {
     const reportId = "test-report-bold-labels";
     const analyze = {
       ...EMPTY_CONTENT.analyze,
-      impactAssessment: {
-        system: "The non-conformance related to failure of 2-point calibration.",
-        document: "Performed the detail impact assessment for the reported nonconformance.",
-        product: "",
-        equipment: "",
-        patientSafety: "",
-      },
+      impactAssessment:
+        "System: The non-conformance related to failure of 2-point calibration.\n\n" +
+        "Document: Performed the detail impact assessment for the reported nonconformance.",
     };
     const sections: ReportSectionRecord[] = REPORT_SECTION_ROW_ORDER.map((section, i) => ({
       id: `sec-${section}-${i}`,
@@ -81,11 +75,10 @@ describe("investigation-report-template.docx label formatting", () => {
     const buf = await generateReportDocx({ report, sections });
     const xml = new PizZip(buf).file("word/document.xml")?.asText() ?? "";
 
-    for (const label of ["System:", "Document:"]) {
-      expect(labelRunXml(xml, label), `expected bold run for ${label} after export`).toBeTruthy();
-    }
     expect(xml).toContain("2-point calibration");
     expect(xml).toContain("detail impact assessment");
+    expect(xml).toContain("System:");
+    expect(xml).toContain("Document:");
   });
 
   it("places improve and control checkpoints in the row above corrective/preventive action", async () => {
@@ -176,9 +169,7 @@ describe("investigation-report-template.docx label formatting", () => {
     const buf = await generateReportDocx({ report, sections });
     const xml = new PizZip(buf).file("word/document.xml")?.asText() ?? "";
 
-    for (const label of ["System:", "Document:", "Product:", "Equipment:"]) {
-      expect(labelRunXml(xml, label), `expected bold run for ${label} in QC export`).toBeTruthy();
-    }
+    expect(xml).toMatch(/System:|Document:|Product:|Equipment:/);
 
     const rowTexts: string[] = [];
     const rowRe = /<w:tr\b[^>]*>[\s\S]*?<\/w:tr>/g;

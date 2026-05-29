@@ -37,13 +37,8 @@ export type AnalyzeSection = {
   rootCause: {
     narrative: JSONContent;
   };
-  impactAssessment: {
-    system: string;
-    document: string;
-    product: string;
-    equipment: string;
-    patientSafety: string;
-  };
+  /** System/Document/Product/Equipment/Patient safety — single block (imported or edited). */
+  impactAssessment: string;
 };
 
 export type ImproveSection = {
@@ -109,13 +104,7 @@ export const EMPTY_CONTENT: SectionContentMap = {
     rootCause: {
       narrative: emptyDoc(),
     },
-    impactAssessment: {
-      system: "",
-      document: "",
-      product: "",
-      equipment: "",
-      patientSafety: "",
-    },
+    impactAssessment: "",
   },
   improve: {
     narrative: emptyDoc(),

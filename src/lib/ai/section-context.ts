@@ -170,13 +170,11 @@ export function contextForPrompt(section: SectionType, content: unknown): string
       "Root cause",
       richJsonToPlainText(normalizeRichField(rootCause?.narrative))
     );
-    pushObjectFields(lines, "Impact assessment", content.impactAssessment, [
-      ["system", "System"],
-      ["document", "Document"],
-      ["product", "Product"],
-      ["equipment", "Equipment"],
-      ["patientSafety", "Patient safety"],
-    ]);
+    pushTextLine(
+      lines,
+      "Impact assessment",
+      typeof content.impactAssessment === "string" ? content.impactAssessment : ""
+    );
   } else if (section === "improve") {
     pushTextLine(lines, "Corrective actions", content.correctiveActions);
   } else if (section === "control") {
