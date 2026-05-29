@@ -50,6 +50,7 @@ import {
   attachCommentsToFirstParagraph,
   type ReportDocxComment,
 } from "@/lib/export/docx-comments";
+import { applyGoogleDocsImageCompat } from "@/lib/export/docx-google-docs-images";
 
 type ReportRow = typeof reportsTable.$inferSelect;
 
@@ -372,6 +373,7 @@ export async function generateReportDocx({
   applyNumberingToDocxZip(doc.getZip(), ctx);
   applyInlineMediaToDocxZip(doc.getZip(), ctx);
   applyWordCommentsToDocxZip(doc.getZip(), ctx);
+  await applyGoogleDocsImageCompat(doc.getZip());
 
   const buf = doc.getZip().generate({
     type: "nodebuffer",
