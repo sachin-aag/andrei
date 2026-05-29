@@ -70,11 +70,11 @@ export function PlainTextSuggestionField({
   /** Keep the preview shell mounted while apply transitions run (avoids height jump). */
   const [applySettling, setApplySettling] = useState(false);
   const previewShellRef = useRef<HTMLDivElement>(null);
-  const editHeightRef = useRef(0);
+  const [editHeight, setEditHeight] = useState(0);
   const [lockedShellHeight, setLockedShellHeight] = useState<number | null>(null);
 
   const onEditLayoutHeight = useCallback((height: number) => {
-    editHeightRef.current = height;
+    setEditHeight((prev) => (prev === height ? prev : height));
   }, []);
 
   const activeComment = useMemo(() => {
@@ -139,9 +139,9 @@ export function PlainTextSuggestionField({
     if (!showInlinePreview) return;
     const el = previewShellRef.current;
     if (!el) return;
-    const next = Math.max(editHeightRef.current, el.scrollHeight);
+    const next = Math.max(editHeight, el.scrollHeight);
     setLockedShellHeight((prev) => (prev === next ? prev : next));
-  }, [showInlinePreview, showSettledText, previewSegments, value, splitPreview]);
+  }, [showInlinePreview, showSettledText, previewSegments, value, splitPreview, editHeight]);
 
   useEffect(() => {
     if (showInlinePreview || lockedShellHeight == null) return;
@@ -357,8 +357,7 @@ export function PlainTextSuggestionField({
           )}
           style={{
             minHeight:
-              lockedShellHeight ??
-              (editHeightRef.current > 0 ? editHeightRef.current : undefined),
+              lockedShellHeight ?? (editHeight > 0 ? editHeight : undefined),
           }}
           aria-label={
             showSettledText

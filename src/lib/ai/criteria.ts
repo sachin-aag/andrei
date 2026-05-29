@@ -245,14 +245,11 @@ export const CONTROL_CRITERIA: CriterionDefinition[] = [
     description:
       "Was effectiveness verification required or not, and the rationale for either " +
       "documented based on the quality impact of the incident? " +
-      "When required, a complete effectiveness verification statement must include four elements: " +
-      "(1) trigger — when verification starts (e.g., after SOP approval, after next calibration); " +
-      "(2) cadence/count — how many cycles or over what period (derive from the calibration schedule " +
-      "mentioned in the section or prior sections, e.g., monthly, quarterly); " +
-      "(3) measurable pass criterion — the specific acceptance limit that failed (e.g., blank TOC NMT 100 ppb); " +
-      "(4) responsible person by Emp. ID. " +
-      "Do NOT use a tracking reference number (e.g., 'Effectiveness Check Number') — that is not a verification method. " +
-      "Mark partially_met if any of the four elements is missing or too vague to be actionable.",
+      "When required, a complete verification statement must address: when verification starts, " +
+      "over how many cycles or what time period, the specific measurable acceptance criterion, " +
+      "and who is responsible. " +
+      "A tracking reference number alone (e.g., 'Effectiveness Check Number') is not a verification method. " +
+      "Mark partially_met if any of these elements is missing or too vague to be actionable.",
   },
   {
     key: "control.interim_plan",
