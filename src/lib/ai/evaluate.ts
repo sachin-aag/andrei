@@ -1,5 +1,5 @@
 import { generateText, Output, type LanguageModel } from "ai";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { resolveGoogleLanguageModel } from "@/lib/ai/resolve-google-language-model";
 import { z } from "zod";
 import type { SectionType, CriterionStatus } from "@/db/schema";
 import { getCriteria } from "./criteria";
@@ -18,6 +18,13 @@ export { PROMPT_VERSION } from "./section-prompts";
 /** Google Generative AI model slug passed through `@ai-sdk/google`. */
 export const CRITERIA_EVAL_GOOGLE_MODEL_ID = "gemini-3.1-flash-lite" as const;
 
+/**
+ * Gemini 3.x models on Vertex AI are only published in the `global` location
+ * (Gemini 2.5 is broadly available, but 3.1-flash-lite returns 404 at
+ * us-central1). See https://cloud.google.com/vertex-ai/generative-ai/docs/models.
+ */
+const CRITERIA_EVAL_VERTEX_LOCATION = "global" as const;
+
 /** Temperature applied to criterion-level `evaluateSection` calls. */
 export const CRITERIA_EVAL_TEMPERATURE = 0 as const;
 
@@ -28,15 +35,9 @@ const evaluationSchemaDescription =
   'Output.object with Zod array "evaluations" (criterionKey, status, reasoning).';
 
 export function resolveEvaluationLanguageModel(): LanguageModel {
-  const googleKey =
-    process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.AI_GATEWAY_API_KEY;
-  if (!googleKey) {
-    throw new Error(
-      "No Gemini API key configured. Set GOOGLE_GENERATIVE_AI_API_KEY (or AI_GATEWAY_API_KEY) in .env.local."
-    );
-  }
-  const google = createGoogleGenerativeAI({ apiKey: googleKey });
-  return google(CRITERIA_EVAL_GOOGLE_MODEL_ID);
+  return resolveGoogleLanguageModel(CRITERIA_EVAL_GOOGLE_MODEL_ID, {
+    vertexLocation: CRITERIA_EVAL_VERTEX_LOCATION,
+  });
 }
 
 function resolveModel(): LanguageModel {

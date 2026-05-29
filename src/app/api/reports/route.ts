@@ -2,9 +2,12 @@ import { NextResponse } from "next/server";
 import { desc, eq, or } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { reports, reportSections } from "@/db/schema";
+import { comments, reports, reportSections } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import type { ImportedReportContent } from "@/lib/import/docx-to-sections";
+import { readDocxUpload } from "@/lib/import/docx-upload";
+import { docxBufferToImportedReportContent } from "@/lib/import/docx-to-sections";
+import { persistReportSourceDocx } from "@/lib/reports/persist-source-docx";
 import {
   DUPLICATE_DEVIATION_NO_ERROR,
   isDeviationNoTaken,
@@ -48,7 +51,75 @@ const createSchema = z.object({
   assignedManagerId: z.string().nullable().optional(),
 });
 
+async function persistImportedComments(
+  reportId: string,
+  importedContent: ImportedReportContent | null
+) {
+  if (!importedContent?.comments.length) return;
+
+  const roots = importedContent.comments.filter(
+    (comment) => !comment.parentExternalCommentId
+  );
+  const replies = importedContent.comments.filter(
+    (comment) => comment.parentExternalCommentId
+  );
+  const idByExternalId = new Map<string, string>();
+
+  for (const comment of roots) {
+    const [inserted] = await db
+      .insert(comments)
+      .values({
+        reportId,
+        section: comment.section,
+        authorId: "word",
+        content: comment.content,
+        anchorText: comment.anchorText,
+        contentPath: comment.contentPath,
+        fromPos: comment.fromPos,
+        toPos: comment.toPos,
+        kind: "word_import",
+        source: "word",
+        externalAuthorName: comment.externalAuthorName,
+        externalAuthorInitials: comment.externalAuthorInitials,
+        externalCommentId: comment.externalCommentId,
+        externalCreatedAt: comment.externalCreatedAt,
+        locked: true,
+      })
+      .returning();
+    if (inserted) idByExternalId.set(comment.externalCommentId, inserted.id);
+  }
+
+  for (const comment of replies) {
+    const parentId = comment.parentExternalCommentId
+      ? idByExternalId.get(comment.parentExternalCommentId)
+      : undefined;
+    const [inserted] = await db
+      .insert(comments)
+      .values({
+        reportId,
+        parentId: parentId ?? null,
+        section: comment.section,
+        authorId: "word",
+        content: comment.content,
+        anchorText: parentId ? "" : comment.anchorText,
+        contentPath: parentId ? null : comment.contentPath,
+        fromPos: parentId ? null : comment.fromPos,
+        toPos: parentId ? null : comment.toPos,
+        kind: "word_import",
+        source: "word",
+        externalAuthorName: comment.externalAuthorName,
+        externalAuthorInitials: comment.externalAuthorInitials,
+        externalCommentId: comment.externalCommentId,
+        externalCreatedAt: comment.externalCreatedAt,
+        locked: true,
+      })
+      .returning();
+    if (inserted) idByExternalId.set(comment.externalCommentId, inserted.id);
+  }
+}
+
 export async function POST(req: Request) {
+  let createdReportId: string | null = null;
   try {
     const user = await getCurrentUser();
     if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -81,10 +152,6 @@ export async function POST(req: Request) {
 
       if (hasFile && file instanceof File) {
         try {
-          const { readDocxUpload } = await import("@/lib/import/docx-upload");
-          const { docxBufferToImportedReportContent } = await import(
-            "@/lib/import/docx-to-sections"
-          );
           const buf = await readDocxUpload(file);
           importedContent = await docxBufferToImportedReportContent(buf);
           sourceUpload = { buffer: buf, filename: file.name };
@@ -142,6 +209,7 @@ export async function POST(req: Request) {
     if (!report) {
       throw new Error("insert(reports).returning() returned no row");
     }
+    createdReportId = report.id;
 
     const blankSections = seedBlankReportSections();
     await db.insert(reportSections).values(
@@ -155,10 +223,9 @@ export async function POST(req: Request) {
         ) as unknown as Record<string, unknown>,
       }))
     );
-
     if (sourceUpload) {
       try {
-        const { persistReportSourceDocx } = await import("@/lib/reports/persist-source-docx");
+        await persistImportedComments(report.id, importedContent);
         await persistReportSourceDocx({
           reportId: report.id,
           buffer: sourceUpload.buffer,
@@ -172,10 +239,15 @@ export async function POST(req: Request) {
           { status: 500 }
         );
       }
+    } else {
+      await persistImportedComments(report.id, importedContent);
     }
 
     return NextResponse.json({ id: report.id, report });
   } catch (e) {
+    if (createdReportId) {
+      await db.delete(reports).where(eq(reports.id, createdReportId));
+    }
     if (isPostgresUniqueViolation(e)) {
       return NextResponse.json({ error: DUPLICATE_DEVIATION_NO_ERROR }, { status: 409 });
     }

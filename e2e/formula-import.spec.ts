@@ -38,7 +38,7 @@ test.describe("legacy equation formula rendering", () => {
     test.setTimeout(120_000);
 
     await page.goto("/");
-    await unlockIfNeeded(page);
+    await unlockIfNeeded();
     await loginAsEngineer(page);
 
     await page.getByRole("button", { name: /new report/i }).first().click();

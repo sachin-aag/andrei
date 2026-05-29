@@ -92,6 +92,34 @@
       "when": 1780063200000,
       "tag": "0012_signature_approvals",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1780149600000,
+      "tag": "0013_auth_tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1780236000000,
+      "tag": "0014_remove_employee_id",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1780322400000,
+      "tag": "0015_reviewer_to_workspace_user",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1780408800000,
+      "tag": "0016_steep_speedball",
+      "breakpoints": true
     }
   ]
 }

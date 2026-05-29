@@ -22,11 +22,6 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import type { MockUser, UserRole } from "@/lib/auth/mock-users";
-import {
-  EMPLOYEE_ID_ERROR,
-  EMPLOYEE_ID_PATTERN,
-  sanitizeEmployeeIdInput,
-} from "@/lib/auth/employee-id";
 
 const CREATE_USER_VALUE = "__create_user__";
 
@@ -42,7 +37,7 @@ export function LoginForm({ initialUsers }: { initialUsers: MockUser[] }) {
   const [createError, setCreateError] = useState<string | null>(null);
   const [newUser, setNewUser] = useState({
     name: "",
-    employeeId: "",
+    email: "",
     role: "engineer" as UserRole,
     title: "",
   });
@@ -53,7 +48,7 @@ export function LoginForm({ initialUsers }: { initialUsers: MockUser[] }) {
     return users.filter(
       (user) =>
         user.name.toLowerCase().includes(q) ||
-        user.employeeId.includes(q) ||
+        user.email.toLowerCase().includes(q) ||
         user.title.toLowerCase().includes(q)
     );
   }, [users, search]);
@@ -75,13 +70,9 @@ export function LoginForm({ initialUsers }: { initialUsers: MockUser[] }) {
 
   const createUser = async () => {
     const name = newUser.name.trim();
-    const employeeId = newUser.employeeId.trim();
-    if (!name || !employeeId) {
-      setCreateError("Name and employee ID are required.");
-      return;
-    }
-    if (!EMPLOYEE_ID_PATTERN.test(employeeId)) {
-      setCreateError(EMPLOYEE_ID_ERROR);
+    const email = newUser.email.trim();
+    if (!name || !email) {
+      setCreateError("Name and email are required.");
       return;
     }
     setCreating(true);
@@ -92,7 +83,7 @@ export function LoginForm({ initialUsers }: { initialUsers: MockUser[] }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name,
-          employeeId,
+          email,
           role: newUser.role,
           title: newUser.title.trim() || undefined,
         }),
@@ -108,7 +99,7 @@ export function LoginForm({ initialUsers }: { initialUsers: MockUser[] }) {
         )
       );
       setSelectedId(data.user.id);
-      setNewUser({ name: "", employeeId: "", role: "engineer", title: "" });
+      setNewUser({ name: "", email: "", role: "engineer", title: "" });
       setCreateOpen(false);
     } catch {
       setCreateError("Could not add user.");
@@ -175,9 +166,10 @@ export function LoginForm({ initialUsers }: { initialUsers: MockUser[] }) {
                         ref={searchInputRef}
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
-                        placeholder="Search by name or employee ID"
+                        placeholder="Search by name or email"
                         className="h-9 pl-8"
                         autoComplete="off"
+                        onPointerDown={(e) => e.stopPropagation()}
                         onKeyDown={(e) => e.stopPropagation()}
                       />
                     </div>
@@ -207,7 +199,7 @@ export function LoginForm({ initialUsers }: { initialUsers: MockUser[] }) {
                           <div className="flex flex-col gap-0.5">
                             <span className="font-medium">{user.name}</span>
                             <span className="text-xs text-[var(--muted-foreground)]">
-                              Emp #{user.employeeId} · {user.title}
+                              {user.email} · {user.title}
                             </span>
                           </div>
                         </SelectItem>
@@ -262,20 +254,16 @@ export function LoginForm({ initialUsers }: { initialUsers: MockUser[] }) {
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="new-user-employee-id">Employee ID</Label>
+              <Label htmlFor="new-user-email">Email</Label>
               <Input
-                id="new-user-employee-id"
-                value={newUser.employeeId}
+                id="new-user-email"
+                type="email"
+                value={newUser.email}
                 onChange={(e) =>
-                  setNewUser((prev) => ({
-                    ...prev,
-                    employeeId: sanitizeEmployeeIdInput(e.target.value),
-                  }))
+                  setNewUser((prev) => ({ ...prev, email: e.target.value }))
                 }
-                placeholder="e.g. 630"
-                inputMode="numeric"
-                pattern="[0-9]*"
-                autoComplete="off"
+                placeholder="e.g. jane.doe@mjbiopharm.com"
+                autoComplete="email"
               />
             </div>
             <div className="grid gap-4 sm:grid-cols-2">

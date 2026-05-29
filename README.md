@@ -47,7 +47,7 @@ cp .env.example .env.local
 #    Neon branches + production isolation: docs/database-environments.md
 npm run db:push            # or: npm run db:generate && npm run db:migrate
 #    See docs/database-schema.md for full table reference and disaster recovery.
-#    If you see Postgres "column ... does not exist" on comments: npm run db:fix-comments
+#    If you see Postgres "column ... does not exist": npm run db:migrate
 
 # 4. Run the dev server
 npm run dev

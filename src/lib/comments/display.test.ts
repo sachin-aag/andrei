@@ -34,6 +34,12 @@ const aiComment = (content: string, evaluationId: string | null = "eval-1"): Com
   toPos: 1,
   status: "open",
   kind: "ai_fix",
+  source: "app",
+  externalAuthorName: null,
+  externalAuthorInitials: null,
+  externalCommentId: null,
+  externalCreatedAt: null,
+  locked: false,
   evaluationId,
   createdAt: "2026-01-01T00:00:00Z",
 });

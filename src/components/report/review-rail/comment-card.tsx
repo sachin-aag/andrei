@@ -65,8 +65,12 @@ export function CommentCard({
   const { getUser } = useUserDirectory();
   const author = getUser(root.authorId);
   const aiFix = isAiFixComment(root);
-  const cardTitle = getCommentCardTitle(root, evaluations);
   const cardPreview = getCommentCardPreview(root);
+  const isImportedWordComment = root.source === "word" || root.kind === "word_import";
+  const authorName = isImportedWordComment
+    ? root.externalAuthorName || "Word reviewer"
+    : author?.name ?? "Unknown";
+  const cardTitle = aiFix ? getCommentCardTitle(root, evaluations) : authorName;
 
   const canReplyOrResolve =
     currentUserId === report.authorId ||
@@ -170,7 +174,7 @@ export function CommentCard({
   };
 
   const initials =
-    (author?.name ?? "?")
+    (root.externalAuthorInitials || authorName || "?")
       .split(" ")
       .map((n) => n[0])
       .slice(0, 2)
@@ -214,6 +218,16 @@ export function CommentCard({
             <span className="text-xs font-semibold truncate">
               {cardTitle}
             </span>
+            {isImportedWordComment && (
+              <span className="text-[10px] text-sky-700 bg-sky-100 border border-sky-200 rounded px-1 py-0.5">
+                Imported from Word
+              </span>
+            )}
+            {root.locked && (
+              <span className="text-[10px] text-[var(--muted-foreground)]">
+                Locked
+              </span>
+            )}
             {root.status === "resolved" ? (
               <span className="text-[10px] text-green-700 flex items-center gap-0.5">
                 <Check className="size-3 shrink-0" />
@@ -274,13 +288,25 @@ export function CommentCard({
       {!active && replies.length > 0 && (() => {
         const lastReply = replies[replies.length - 1];
         const lastAuthor = getUser(lastReply.authorId);
+        const lastAuthorName =
+          lastReply.source === "word" || lastReply.kind === "word_import"
+            ? lastReply.externalAuthorName || "Word reviewer"
+            : lastAuthor?.name ?? "Unknown";
         const uniqueAuthors = [...new Set(replies.map((r) => r.authorId))];
         return (
           <div className="px-3 py-1.5 border-t border-[var(--border)]/50 flex items-center gap-1.5 text-[10px] text-[var(--muted-foreground)]">
             <div className="flex -space-x-1.5">
               {uniqueAuthors.slice(0, 3).map((uid) => {
+                const matchingReply = replies.find((r) => r.authorId === uid);
                 const u = getUser(uid);
-                const ini = (u?.name ?? "?").split(" ").map((n) => n[0]).slice(0, 2).join("") || "?";
+                const name =
+                  matchingReply?.source === "word" || matchingReply?.kind === "word_import"
+                    ? matchingReply.externalAuthorName || "Word reviewer"
+                    : u?.name ?? "?";
+                const ini =
+                  matchingReply?.externalAuthorInitials ||
+                  name.split(" ").map((n) => n[0]).slice(0, 2).join("") ||
+                  "?";
                 return (
                   <div
                     key={uid}
@@ -292,7 +318,7 @@ export function CommentCard({
               })}
             </div>
             <span className="truncate">
-              <span className="font-medium text-[var(--foreground)]">{lastAuthor?.name ?? "Unknown"}</span>
+              <span className="font-medium text-[var(--foreground)]">{lastAuthorName}</span>
               {" replied"}
             </span>
             {replies.length > 1 && (
@@ -308,6 +334,10 @@ export function CommentCard({
             <ul className="space-y-2">
               {replies.map((r) => {
                 const ra = getUser(r.authorId);
+                const replyAuthorName =
+                  r.source === "word" || r.kind === "word_import"
+                    ? r.externalAuthorName || "Word reviewer"
+                    : ra?.name ?? "Unknown";
                 const canDeleteReply =
                   currentUserId === r.authorId || currentUserRole === "manager";
                 return (
@@ -315,7 +345,7 @@ export function CommentCard({
                     <div className="flex items-center gap-1.5 text-[10px] text-[var(--muted-foreground)] mb-0.5">
                       <CornerDownRight className="size-3 shrink-0" />
                       <span className="font-medium text-[var(--foreground)]">
-                        {ra?.name ?? "Unknown"}
+                        {replyAuthorName}
                       </span>
                       <span>· {formatDateTime(r.createdAt)}</span>
                       {canDeleteReply && (

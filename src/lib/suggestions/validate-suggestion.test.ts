@@ -26,6 +26,12 @@ function aiFixComment(
     evaluationId: "e1",
     createdAt: "2026-01-01T00:00:00.000Z",
     ...overrides,
+    source: overrides.source ?? "app",
+    externalAuthorName: overrides.externalAuthorName ?? null,
+    externalAuthorInitials: overrides.externalAuthorInitials ?? null,
+    externalCommentId: overrides.externalCommentId ?? null,
+    externalCreatedAt: overrides.externalCreatedAt ?? null,
+    locked: overrides.locked ?? false,
   };
 }
 

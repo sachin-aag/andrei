@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
-import { generateText, Output, type LanguageModel } from "ai";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import path from "node:path";
+import { generateText, Output } from "ai";
+import {
+  getGeminiAuthDiagnostics,
+  resolveGoogleLanguageModel,
+} from "@/lib/ai/resolve-google-language-model";
 import { convertLatexToMathMl, ensureMathliveSsr } from "@/lib/math/mathlive-ssr";
 import { z } from "zod";
 
@@ -145,12 +149,66 @@ type CanvasLike = {
 
 type CreateCanvas = (width: number, height: number) => CanvasLike;
 
+type GlobalFontsLike = {
+  has(name: string): boolean;
+  registerFromPath(filePath: string, nameAlias?: string): unknown;
+};
+
+type CanvasModule = {
+  createCanvas?: CreateCanvas;
+  GlobalFonts?: GlobalFontsLike;
+};
+
+let fontsRegistered = false;
+
+/**
+ * Equation Editor WMFs render math as text records using fonts like "Symbol",
+ * "Times New Roman", and "Calibri". macOS dev machines ship those fonts, but
+ * Vercel's Amazon Linux runtime does not. Without registration, Skia draws
+ * nothing for those glyphs and we hand Gemini a blank PNG.
+ *
+ * We register bundled OFL replacements under the WMF font names as aliases:
+ *   - Tinos        → Times New Roman, Times (metric-compatible)
+ *   - Arimo        → Arial, Calibri (metric-compatible)
+ *   - STIX Two Math → Symbol, math (Greek + operators)
+ */
+function registerFontsOnce(GlobalFonts: GlobalFontsLike | undefined): void {
+  if (fontsRegistered || !GlobalFonts) return;
+  fontsRegistered = true;
+
+  const fontDir = path.join(process.cwd(), "src", "lib", "import", "fonts");
+  const registrations: Array<{ file: string; aliases: string[] }> = [
+    { file: "Tinos-Regular.ttf", aliases: ["Times New Roman", "Times", "Tinos"] },
+    { file: "Tinos-Italic.ttf", aliases: ["Times New Roman", "Times"] },
+    { file: "Tinos-Bold.ttf", aliases: ["Times New Roman", "Times"] },
+    { file: "Arimo-Regular.ttf", aliases: ["Arial", "Calibri", "Helvetica", "Arimo"] },
+    { file: "STIXTwoMath-Regular.ttf", aliases: ["Symbol", "STIX Two Math", "STIXGeneral"] },
+  ];
+
+  const registered: string[] = [];
+  const failed: string[] = [];
+  for (const { file, aliases } of registrations) {
+    const filePath = path.join(fontDir, file);
+    for (const alias of aliases) {
+      try {
+        const key = GlobalFonts.registerFromPath(filePath, alias);
+        if (key) registered.push(`${file}→${alias}`);
+        else failed.push(`${file}→${alias}`);
+      } catch (err) {
+        failed.push(`${file}→${alias}:${err instanceof Error ? err.message : "err"}`);
+      }
+    }
+  }
+  console.log("[extract-math] fonts registered", { count: registered.length, failed });
+}
+
 function loadCreateCanvas(): CreateCanvas | null {
   try {
     // Lazy require so this module still loads on hosts where the optional
     // native binding is missing — extraction will fail gracefully instead.
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const mod = require("@napi-rs/canvas") as { createCanvas?: CreateCanvas };
+    const mod = require("@napi-rs/canvas") as CanvasModule;
+    registerFontsOnce(mod.GlobalFonts);
     return mod.createCanvas ?? null;
   } catch {
     return null;
@@ -167,17 +225,39 @@ function loadWmfModuleSync(): WmfModule | null {
   }
 }
 
-function wmfBytesToPngBuffer(bytes: Uint8Array, displayWidth?: number): Buffer | null {
+/**
+ * The bundled `wmf` library calls `console.log(p)` for record types it doesn't
+ * know how to render, which floods our logs with `[info] undefined` lines.
+ * Wrap `draw_canvas` to suppress only those specific undefined calls.
+ */
+function drawCanvasQuiet(WMF: WmfModule, bytes: Uint8Array, canvas: unknown): void {
+  const originalLog = console.log;
+  console.log = (...args: unknown[]) => {
+    if (args.length === 1 && args[0] === undefined) return;
+    originalLog.apply(console, args);
+  };
+  try {
+    WMF.draw_canvas(bytes, canvas as HTMLCanvasElement);
+  } finally {
+    console.log = originalLog;
+  }
+}
+
+type WmfRenderOutcome =
+  | { ok: true; png: Buffer; width: number; height: number }
+  | { ok: false; reason: "no_native_modules" | "draw_threw"; error?: unknown };
+
+function wmfBytesToPng(bytes: Uint8Array, displayWidth?: number): WmfRenderOutcome {
   const createCanvas = loadCreateCanvas();
   const WMF = loadWmfModuleSync();
-  if (!createCanvas || !WMF) return null;
+  if (!createCanvas || !WMF) return { ok: false, reason: "no_native_modules" };
 
   const sanitized = sanitizeWmfBytes(bytes);
   const canvas = createCanvas(1, 1);
   try {
-    WMF.draw_canvas(sanitized, canvas as unknown as HTMLCanvasElement);
-  } catch {
-    return null;
+    drawCanvasQuiet(WMF, sanitized, canvas);
+  } catch (error) {
+    return { ok: false, reason: "draw_threw", error };
   }
 
   const targetWidth = displayWidth ?? Math.min(canvas.width, 800);
@@ -187,11 +267,21 @@ function wmfBytesToPngBuffer(bytes: Uint8Array, displayWidth?: number): Buffer |
     const ctx = resized.getContext("2d");
     if (ctx) {
       ctx.drawImage(canvas, 0, 0, targetWidth, targetHeight);
-      return resized.toBuffer("image/png");
+      return {
+        ok: true,
+        png: resized.toBuffer("image/png"),
+        width: targetWidth,
+        height: targetHeight,
+      };
     }
   }
 
-  return canvas.toBuffer("image/png");
+  return {
+    ok: true,
+    png: canvas.toBuffer("image/png"),
+    width: canvas.width,
+    height: canvas.height,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -385,19 +475,10 @@ function previewRaw(raw: string): string {
   return raw.length > 120 ? `${raw.slice(0, 120)}…` : raw;
 }
 
-let cachedModel: LanguageModel | null = null;
+let cachedModel: ReturnType<typeof resolveGoogleLanguageModel> | null = null;
 
-function resolveExtractionModel(): LanguageModel {
-  if (cachedModel) return cachedModel;
-  const googleKey =
-    process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.AI_GATEWAY_API_KEY;
-  if (!googleKey) {
-    throw new Error(
-      "No Gemini API key configured for math extraction. Set GOOGLE_GENERATIVE_AI_API_KEY (or AI_GATEWAY_API_KEY) in .env.local."
-    );
-  }
-  const google = createGoogleGenerativeAI({ apiKey: googleKey });
-  cachedModel = google(MATH_EXTRACT_GOOGLE_MODEL_ID);
+function resolveExtractionModel() {
+  cachedModel ??= resolveGoogleLanguageModel(MATH_EXTRACT_GOOGLE_MODEL_ID);
   return cachedModel;
 }
 
@@ -423,36 +504,26 @@ async function defaultLlmCall(args: {
       ? `Context (surrounding text from the document, may help disambiguate symbols):\n${args.contextHint.trim()}\n\nReturn JSON with the LaTeX for the math expression in the image.`
       : "Return JSON with the LaTeX for the math expression in the image.";
 
-  try {
-    const result = await generateText({
-      model: resolveExtractionModel(),
-      output: Output.object({ schema: mathExtractSchema }),
-      system: SYSTEM_PROMPT,
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: userText },
-            { type: "image", image: args.pngBytes, mediaType: "image/png" },
-          ],
-        },
-      ],
-      temperature: MATH_EXTRACT_TEMPERATURE,
-      maxOutputTokens: MATH_EXTRACT_MAX_OUTPUT_TOKENS,
-      providerOptions: { google: { seed: MATH_EXTRACT_SEED } },
-    });
+  const result = await generateText({
+    model: resolveExtractionModel(),
+    output: Output.object({ schema: mathExtractSchema }),
+    system: SYSTEM_PROMPT,
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "text", text: userText },
+          { type: "image", image: args.pngBytes, mediaType: "image/png" },
+        ],
+      },
+    ],
+    temperature: MATH_EXTRACT_TEMPERATURE,
+    maxOutputTokens: MATH_EXTRACT_MAX_OUTPUT_TOKENS,
+    providerOptions: { google: { seed: MATH_EXTRACT_SEED } },
+  });
 
-    const structuredLatex = result.experimental_output?.latex?.trim() ?? "";
-    if (structuredLatex) return structuredLatex;
-    return result.text;
-  } catch (err: unknown) {
-    const errText =
-      err && typeof err === "object" && "text" in err
-        ? String((err as { text: string }).text)
-        : "";
-    if (errText) return errText;
-    throw err;
-  }
+  const structuredLatex = result.experimental_output?.latex?.trim() ?? "";
+  return structuredLatex || result.text;
 }
 
 // ---------------------------------------------------------------------------
@@ -500,18 +571,37 @@ export async function extractMathFromImage(
     }
   }
 
-  console.log(`[extract-math] gemini call ${shortKey}`);
-
   let pngBytes: Uint8Array | null = null;
+  let pngWidth: number | null = null;
+  let pngHeight: number | null = null;
   if (isWmfMime(input.mime)) {
-    const buf = wmfBytesToPngBuffer(input.bytes, input.displayWidth);
-    if (!buf) return null;
-    pngBytes = buf;
+    const outcome = wmfBytesToPng(input.bytes, input.displayWidth);
+    if (!outcome.ok) {
+      console.error("[extract-math] rejected: wmf_render_failed", {
+        mime: input.mime,
+        byteLength: input.bytes.length,
+        reason: outcome.reason,
+        hasCanvas: !!loadCreateCanvas(),
+        hasWmf: !!loadWmfModuleSync(),
+      });
+      return null;
+    }
+    pngBytes = outcome.png;
+    pngWidth = outcome.width;
+    pngHeight = outcome.height;
   } else if (input.mime === "image/png" || input.mime === "image/jpeg") {
     pngBytes = input.bytes;
   } else {
     return null;
   }
+
+  console.log(`[extract-math] png ready ${shortKey}`, {
+    mime: input.mime,
+    pngBytes: pngBytes.byteLength,
+    pngWidth,
+    pngHeight,
+    contextHintLength: input.contextHint?.length ?? 0,
+  });
 
   let latex: string;
   try {
@@ -521,12 +611,16 @@ export async function extractMathFromImage(
     if ("reject" in parsed) {
       console.error(`[extract-math] rejected: ${parsed.reject}`, {
         preview: previewRaw(raw),
+        pngBytes: pngBytes.byteLength,
+        pngWidth,
+        pngHeight,
+        mime: input.mime,
       });
       return null;
     }
     latex = parsed.latex;
   } catch (err) {
-    console.error("[extract-math] LLM call failed:", err);
+    console.error("[extract-math] LLM call failed:", err, getGeminiAuthDiagnostics());
     return null;
   }
 

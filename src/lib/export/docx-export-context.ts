@@ -7,7 +7,24 @@ export type DocxMediaAsset = {
   heightPx: number;
 };
 
+export type DocxCommentExportEntry = {
+  docxId: number;
+  appId: string;
+  parentAppId: string | null;
+  paraId: string;
+  parentParaId: string | null;
+  authorName: string;
+  authorInitials: string;
+  createdAt: Date;
+  content: string;
+};
+
 import type { ListNumberingBases } from "@/lib/export/docx-numbering";
+import { readRasterDimensions } from "@/lib/export/raster-dimensions";
+
+const MIN_INLINE_EXPORT_WIDTH_PX = 96;
+const MAX_INLINE_EXPORT_WIDTH_PX = 600;
+const EMU_PER_PX = 9525;
 
 export type DocxExportContext = {
   media: DocxMediaAsset[];
@@ -17,6 +34,8 @@ export type DocxExportContext = {
   nextNumId: number;
   numberingPatches: string[];
   allocatedNumIds: number[];
+  comments: DocxCommentExportEntry[];
+  nextCommentId: number;
 };
 
 const EMPTY_NUMBERING_BASES: ListNumberingBases = {
@@ -37,6 +56,8 @@ export function createDocxExportContext(
     nextNumId: numberingBases.maxNumId + 1,
     numberingPatches: [],
     allocatedNumIds: [],
+    comments: [],
+    nextCommentId: 0,
   };
 }
 
@@ -88,12 +109,23 @@ export function registerInlineImage(
   ctx.nextRelNum += 1;
   const relId = `rId${relNum}`;
 
-  const width = Math.max(1, widthPx ?? 400);
-  const height = Math.round(width * 0.75);
+  const dims = readRasterDimensions(parsed.bytes, parsed.mimeType);
+  const intrinsicWidth = dims?.width ?? null;
+  const intrinsicHeight = dims?.height ?? null;
 
-  // EMUs: 914400 per inch; assume 96 DPI → width px * 9525
-  const cx = Math.round(width * 9525);
-  const cy = Math.round(height * 9525);
+  let width = widthPx ?? intrinsicWidth ?? 400;
+  if (intrinsicWidth && width < MIN_INLINE_EXPORT_WIDTH_PX) {
+    width = Math.min(intrinsicWidth, MAX_INLINE_EXPORT_WIDTH_PX);
+  }
+  width = Math.max(1, Math.min(width, MAX_INLINE_EXPORT_WIDTH_PX));
+
+  const height =
+    intrinsicWidth && intrinsicHeight
+      ? Math.max(1, Math.round((width * intrinsicHeight) / intrinsicWidth))
+      : Math.round(width * 0.75);
+
+  const cx = Math.round(width * EMU_PER_PX);
+  const cy = Math.round(height * EMU_PER_PX);
 
   ctx.media.push({
     relId,

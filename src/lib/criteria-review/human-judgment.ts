@@ -1,6 +1,5 @@
 import { z } from "zod";
 import type { CriterionStatus, SectionType } from "@/db/schema";
-import { employeeIdSchema } from "@/lib/auth/employee-id";
 
 export const CRITERIA_EVALUATION_AGREEMENTS = [
   "yes",
@@ -44,7 +43,7 @@ export const REVIEWABLE_SECTION_TYPES = [
 export const humanReviewerSchema = z.object({
   id: z.string().trim().min(1, "Reviewer ID is required."),
   name: z.string().trim().min(1, "Reviewer name is required."),
-  employeeId: employeeIdSchema,
+  email: z.string().email("Valid email is required."),
 });
 
 export const humanSubAnswerSchema = z.object({

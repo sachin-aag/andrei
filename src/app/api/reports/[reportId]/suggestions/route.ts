@@ -36,6 +36,7 @@ import type { JSONContent } from "@tiptap/core";
 import { mergeSection } from "@/lib/sections-merge";
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
+import { normalizeCommentRecord } from "@/lib/comments/normalize";
 import {
   flushLangfuseTraces,
   isLangfuseEnabled,
@@ -102,10 +103,7 @@ async function handleSuggestionsPost(
       ...e,
       updatedAt: e.updatedAt.toISOString(),
     })),
-    commentRows.map((c) => ({
-      ...c,
-      createdAt: c.createdAt.toISOString(),
-    })),
+    commentRows.map((c) => normalizeCommentRecord(c)),
     sectionContent
   );
 

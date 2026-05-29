@@ -16,8 +16,7 @@
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/drizzle-migrate.ts",
-    "db:ensure": "npm run db:fix-comments && npm run db:migrate-suggested-fix && drizzle-kit push",
-    "db:fix-comments": "tsx scripts/ensure-comment-columns.ts",
+    "db:ensure": "npm run db:migrate-suggested-fix && drizzle-kit push",
     "db:ensure-workspace-users": "tsx --env-file=.env --env-file=.env.local scripts/ensure-workspace-users.ts",
     "db:migrate-suggested-fix": "tsx scripts/migrate-suggested-fix.ts",
     "db:push": "drizzle-kit push",
@@ -34,9 +33,12 @@
   "dependencies": {
     "@ai-sdk/gateway": "^3.0.104",
     "@ai-sdk/google": "^3.0.64",
+    "@ai-sdk/google-vertex": "^4.0.137",
+    "@auth/drizzle-adapter": "^1.11.2",
     "@langfuse/otel": "^5.3.0",
     "@langfuse/tracing": "^5.3.0",
     "@napi-rs/canvas": "^1.0.0",
+    "@napi-rs/canvas-linux-x64-gnu": "^1.0.0",
     "@neondatabase/serverless": "^1.1.0",
     "@opentelemetry/sdk-trace-node": "^2.7.1",
     "@paralleldrive/cuid2": "^3.3.0",
@@ -80,6 +82,7 @@
     "mathlive": "^0.109.2",
     "mathml2omml": "^0.5.0",
     "next": "^16.2.4",
+    "next-auth": "5.0.0-beta.31",
     "omml2mathml": "^1.3.0",
     "pg": "8.8.0",
     "pizzip": "^3.2.0",
@@ -91,8 +94,7 @@
     "zod": "^4.3.6"
   },
   "optionalDependencies": {
-    "@napi-rs/canvas-darwin-arm64": "^1.0.0",
-    "@napi-rs/canvas-linux-x64-gnu": "^1.0.0"
+    "@napi-rs/canvas-darwin-arm64": "^1.0.0"
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",

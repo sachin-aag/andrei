@@ -168,7 +168,6 @@ describe("parseParagraphXmlForTest", () => {
   it("removes stub narrative paragraphs superseded by a longer duplicate", () => {
     const stub =
       "Based on the reported nonconformance, verified the analyst workbench for standard preparation and noted that analyst prepared the sucrose stock standard solution (50000 ppb) in 100 ml volumetric flask.";
-    const full = `${stub} Refer Attachment I.`;
     const doc: JSONContent = {
       type: "doc",
       content: [

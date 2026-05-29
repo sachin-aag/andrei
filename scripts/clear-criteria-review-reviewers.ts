@@ -1,12 +1,10 @@
 /**
- * Remove all criteria-review human reviewers and their submissions from Neon.
- * Resets report human_review_status to pending. Reviewer registry rows are deleted.
+ * Remove all criteria-review submissions from Neon and reset report human_review_status.
  *
  *   pnpm run clear-criteria-review-reviewers -- --dry-run
  *   pnpm run clear-criteria-review-reviewers -- --confirm
  *
  * Uses DATABASE_URL from .env / .env.local (same as next dev / seed scripts).
- * Pass production DATABASE_URL explicitly when targeting prod.
  */
 
 import { config as loadEnv } from "dotenv";
@@ -48,10 +46,7 @@ async function main() {
 
   const { db, schema } = await import("@/db");
 
-  const [reviewers, submissions, reports] = await Promise.all([
-    db.query.criteriaReviewReviewers.findMany({
-      orderBy: (t, { asc }) => [asc(t.name)],
-    }),
+  const [submissions, reports] = await Promise.all([
     db.query.criteriaReviewSubmissions.findMany(),
     db.query.criteriaReviewReports.findMany({
       columns: { id: true, humanReviewStatus: true },
@@ -63,11 +58,7 @@ async function main() {
   );
 
   console.log(`Database host: ${databaseHost(databaseUrl)}`);
-  console.log(`Reviewers to delete: ${reviewers.length}`);
-  for (const reviewer of reviewers) {
-    console.log(`  - ${reviewer.name} (${reviewer.employeeId}) [${reviewer.id}]`);
-  }
-  console.log(`Submissions to delete (cascade): ${submissions.length}`);
+  console.log(`Submissions to delete: ${submissions.length}`);
   console.log(
     `Reports to reset to pending: ${reportsWithProgress.length} / ${reports.length}`
   );
@@ -82,19 +73,15 @@ async function main() {
     .set({ humanReviewStatus: "pending", updatedAt: new Date() });
 
   await db
-    .delete(schema.criteriaReviewReviewers)
-    .where(isNotNull(schema.criteriaReviewReviewers.id));
+    .delete(schema.criteriaReviewSubmissions)
+    .where(isNotNull(schema.criteriaReviewSubmissions.id));
 
-  const remainingReviewers = await db
-    .select({ count: sql<number>`count(*)::int` })
-    .from(schema.criteriaReviewReviewers);
-  const remainingSubmissions = await db
+  const remaining = await db
     .select({ count: sql<number>`count(*)::int` })
     .from(schema.criteriaReviewSubmissions);
 
   console.log("\nDone.");
-  console.log(`Remaining reviewers: ${remainingReviewers[0]?.count ?? 0}`);
-  console.log(`Remaining submissions: ${remainingSubmissions[0]?.count ?? 0}`);
+  console.log(`Remaining submissions: ${remaining[0]?.count ?? 0}`);
 }
 
 main().catch((error) => {

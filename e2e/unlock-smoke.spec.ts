@@ -1,14 +1,11 @@
 import { expect, test } from "@playwright/test";
 
-test("auth entry page renders", async ({ page }) => {
-  await page.goto("/unlock");
+test("login page renders with email form", async ({ page }) => {
+  await page.goto("/");
 
-  // Without SITE_ACCESS_PASSWORD: /unlock → /login, which renders LoginForm as
-  // an always-open aria-modal Dialog. The h1 behind it is inaccessible, so
-  // Playwright sees the dialog title "Select user" instead.
+  // Unauthenticated visit to "/" should redirect to /login
   await expect(
-    page.getByRole("heading", {
-      name: /enter access password|sign in to your workspace|select user/i,
-    }),
+    page.getByRole("heading", { name: /sign in to your workspace/i })
   ).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByLabel(/work email/i)).toBeVisible();
 });

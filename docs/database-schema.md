@@ -38,13 +38,11 @@ Concatenate and run the contents of `0000_*.sql` then `0001_*.sql` in a SQL cons
 
 ### Quick fix: missing `comments` columns (error 42703)
 
-If the app fails selecting `content_path` / `from_pos` / `to_pos` on `comments`, apply only those columns (safe to re-run):
+If the app fails with missing column errors on `comments`, run the standard migration:
 
 ```bash
-npm run db:fix-comments
+npm run db:migrate
 ```
-
-This uses [`scripts/ensure-comment-columns.ts`](../scripts/ensure-comment-columns.ts) against `DATABASE_URL` in `.env.local`.
 
 ## Enum types
 

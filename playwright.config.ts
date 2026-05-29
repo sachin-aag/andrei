@@ -31,6 +31,13 @@ export default defineConfig({
       DATABASE_URL:
         process.env.DATABASE_URL ??
         "postgresql://ci:ci@127.0.0.1:5432/ci",
+      ALLOW_TEST_LOGIN: "true",
+      AUTH_URL: process.env.AUTH_URL ?? "http://127.0.0.1:3000",
+      AUTH_TRUST_HOST: "true",
+      TEST_AUTH_EMAIL:
+        process.env.TEST_AUTH_EMAIL ?? "test.engineer@mjbiopharm.com",
+      AUTH_SECRET:
+        process.env.AUTH_SECRET ?? "ci-test-secret-not-for-production-use",
     },
   },
 });

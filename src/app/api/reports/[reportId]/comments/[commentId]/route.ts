@@ -15,6 +15,11 @@ function canResolveThread(user: { id: string; role: string }, report: { authorId
   return user.id === report.authorId;
 }
 
+function canEditCommentContent(user: { id: string; role: string }, comment: { authorId: string }) {
+  if (user.role === "manager") return true;
+  return user.id === comment.authorId;
+}
+
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ reportId: string; commentId: string }> }
@@ -56,6 +61,15 @@ export async function PATCH(
   }
 
   if (parse.data.content != null) {
+    if (row.locked) {
+      return NextResponse.json(
+        { error: "Imported Word comments cannot be edited" },
+        { status: 403 }
+      );
+    }
+    if (!canEditCommentContent(user, row)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
     const [updated] = await db
       .update(comments)
       .set({ content: parse.data.content })
@@ -98,9 +112,11 @@ export async function DELETE(
   const isAiThread =
     row.authorId === "ai" ||
     row.kind.startsWith("ai_");
+  const isImportedThread = row.locked || row.kind === "word_import";
   const canDelete =
     user.id === row.authorId ||
     user.role === "manager" ||
+    (isImportedThread && canResolveThread(user, report)) ||
     (isAiThread && canResolveThread(user, report));
 
   if (!canDelete) {

@@ -1,6 +1,5 @@
 import { asc, eq } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
-import { employeeIdSchema } from "@/lib/auth/employee-id";
 import { db, schema } from "@/db";
 import {
   MOCK_USERS,
@@ -13,7 +12,6 @@ function rowToUser(row: typeof schema.workspaceUsers.$inferSelect): MockUser {
     id: row.id,
     name: row.name,
     email: row.email,
-    employeeId: row.employeeId,
     role: row.role,
     title: row.title,
   };
@@ -24,11 +22,6 @@ function isMissingWorkspaceUsersTable(error: unknown): boolean {
   return err?.code === "42P01" || err?.cause?.code === "42P01";
 }
 
-/**
- * True when the DB is missing/unreachable in a way that should degrade to the
- * built-in mock roster instead of crashing the login page (CI without a real
- * `DATABASE_URL`, local dev without Neon, etc.).
- */
 function isDbUnavailable(error: unknown): boolean {
   if (isMissingWorkspaceUsersTable(error)) return true;
   const err = error as {
@@ -43,9 +36,9 @@ function isDbUnavailable(error: unknown): boolean {
     "EAI_AGAIN",
     "ETIMEDOUT",
     "ECONNRESET",
-    "3D000", // database does not exist
-    "28P01", // invalid password
-    "57P03", // cannot connect now
+    "3D000",
+    "28P01",
+    "57P03",
   ]);
   if (err?.code && codes.has(err.code)) return true;
   if (err?.cause?.code && codes.has(err.cause.code)) return true;
@@ -62,16 +55,6 @@ function sortedMockUsers(): MockUser[] {
   return [...MOCK_USERS].sort((a, b) => a.name.localeCompare(b.name));
 }
 
-function emailForName(name: string, employeeId: string): string {
-  const slug = name
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ".")
-    .replace(/^\.+|\.+$/g, "");
-  const local = slug || `user.${employeeId}`;
-  return `${local}@mjbiopharm.com`;
-}
-
 export async function ensureWorkspaceUsersSeeded(): Promise<void> {
   for (const user of MOCK_USERS) {
     await db
@@ -80,7 +63,6 @@ export async function ensureWorkspaceUsersSeeded(): Promise<void> {
         id: user.id,
         name: user.name,
         email: user.email,
-        employeeId: user.employeeId,
         role: user.role,
         title: user.title,
       })
@@ -130,21 +112,14 @@ export async function getWorkspaceUserById(
 
 export async function createWorkspaceUser(params: {
   name: string;
-  employeeId: string;
+  email: string;
   role?: UserRole;
   title?: string;
-  email?: string;
 }): Promise<MockUser> {
   const name = params.name.trim();
-  const employeeIdParse = employeeIdSchema.safeParse(params.employeeId);
-  if (!employeeIdParse.success) {
-    throw new Error(
-      employeeIdParse.error.issues[0]?.message ?? "Invalid employee ID."
-    );
-  }
-  const employeeId = employeeIdParse.data;
-  if (!name) {
-    throw new Error("Name and employee ID are required.");
+  const email = params.email.trim().toLowerCase();
+  if (!name || !email) {
+    throw new Error("Name and email are required.");
   }
 
   try {
@@ -159,7 +134,7 @@ export async function createWorkspaceUser(params: {
   }
 
   const existing = await db.query.workspaceUsers.findFirst({
-    where: eq(schema.workspaceUsers.employeeId, employeeId),
+    where: eq(schema.workspaceUsers.email, email),
   });
   if (existing) {
     return rowToUser(existing);
@@ -169,8 +144,7 @@ export async function createWorkspaceUser(params: {
   const user: MockUser = {
     id: createId(),
     name,
-    email: params.email?.trim() || emailForName(name, employeeId),
-    employeeId,
+    email,
     role,
     title: params.title?.trim() || (role === "manager" ? "Manager" : "Engineer"),
   };
@@ -179,7 +153,6 @@ export async function createWorkspaceUser(params: {
     id: user.id,
     name: user.name,
     email: user.email,
-    employeeId: user.employeeId,
     role: user.role,
     title: user.title,
   });

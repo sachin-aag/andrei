@@ -1,7 +1,9 @@
 import { NextResponse } from "next/server";
-import { clearSession } from "@/lib/auth/session";
 
 export async function POST() {
-  await clearSession();
-  return NextResponse.json({ ok: true });
+  const response = NextResponse.json({ ok: true });
+  // Clear Auth.js JWT session cookies (both dev and prod variants)
+  response.cookies.delete("authjs.session-token");
+  response.cookies.delete("__Secure-authjs.session-token");
+  return response;
 }

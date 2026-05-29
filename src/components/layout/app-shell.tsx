@@ -174,8 +174,7 @@ export function AppShell({
                     {user.name}
                   </span>
                   <span className="text-[10px] text-[var(--muted-foreground)] truncate">
-                    {user.role === "engineer" ? "Engineer" : "Manager"} · ID{" "}
-                    {user.employeeId}
+                    {user.role === "engineer" ? "Engineer" : "Manager"} · {user.email}
                   </span>
                 </div>
                 <button

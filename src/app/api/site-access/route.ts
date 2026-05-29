@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
-import { clearSession } from "@/lib/auth/session";
 import { setSiteAccessCookie } from "@/lib/site-access-cookie";
 import { mintSiteAccessToken } from "@/lib/site-access-token";
 
@@ -33,7 +32,6 @@ export async function POST(req: Request) {
   }
 
   const token = await mintSiteAccessToken(secret);
-  await clearSession();
   await setSiteAccessCookie(token);
   return NextResponse.json({ ok: true });
 }
