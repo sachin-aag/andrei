@@ -189,6 +189,7 @@ describe("/api/reports", () => {
       sections: Object.fromEntries(
         REPORT_SECTION_ROW_ORDER.map((section) => [section, EMPTY_CONTENT[section]]),
       ),
+      comments: [],
     } as never);
     vi.mocked(persistReportSourceDocx).mockResolvedValueOnce(undefined);
 
@@ -227,6 +228,7 @@ describe("/api/reports", () => {
       sections: Object.fromEntries(
         REPORT_SECTION_ROW_ORDER.map((section) => [section, EMPTY_CONTENT[section]]),
       ),
+      comments: [],
     } as never);
     vi.mocked(persistReportSourceDocx).mockRejectedValueOnce(new Error("storage failed"));
 

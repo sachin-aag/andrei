@@ -7,6 +7,18 @@ export type DocxMediaAsset = {
   heightPx: number;
 };
 
+export type DocxCommentExportEntry = {
+  docxId: number;
+  appId: string;
+  parentAppId: string | null;
+  paraId: string;
+  parentParaId: string | null;
+  authorName: string;
+  authorInitials: string;
+  createdAt: Date;
+  content: string;
+};
+
 import type { ListNumberingBases } from "@/lib/export/docx-numbering";
 
 export type DocxExportContext = {
@@ -17,6 +29,8 @@ export type DocxExportContext = {
   nextNumId: number;
   numberingPatches: string[];
   allocatedNumIds: number[];
+  comments: DocxCommentExportEntry[];
+  nextCommentId: number;
 };
 
 const EMPTY_NUMBERING_BASES: ListNumberingBases = {
@@ -37,6 +51,8 @@ export function createDocxExportContext(
     nextNumId: numberingBases.maxNumId + 1,
     numberingPatches: [],
     allocatedNumIds: [],
+    comments: [],
+    nextCommentId: 0,
   };
 }
 

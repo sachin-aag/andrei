@@ -56,6 +56,12 @@ export type CommentRecord = {
   toPos: number | null;
   status: CommentStatus;
   kind: CommentKind;
+  source: string;
+  externalAuthorName: string | null;
+  externalAuthorInitials: string | null;
+  externalCommentId: string | null;
+  externalCreatedAt: string | null;
+  locked: boolean;
   evaluationId: string | null;
   createdAt: string;
 };

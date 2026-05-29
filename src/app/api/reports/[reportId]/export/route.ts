@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { reports, reportSections } from "@/db/schema";
+import { comments, reports, reportSections } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import { generateReportDocx } from "@/lib/export/generate-docx";
 
@@ -25,6 +25,10 @@ export async function GET(
     .select()
     .from(reportSections)
     .where(eq(reportSections.reportId, reportId));
+  const commentRows = await db
+    .select()
+    .from(comments)
+    .where(eq(comments.reportId, reportId));
 
   const buffer = await generateReportDocx({
     report,
@@ -35,6 +39,7 @@ export async function GET(
       content: r.content,
       updatedAt: r.updatedAt.toISOString(),
     })),
+    comments: commentRows,
   });
 
   const safeDev = (report.deviationNo || "report").replace(/[^a-zA-Z0-9_\-/]/g, "_");

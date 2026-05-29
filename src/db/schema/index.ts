@@ -73,6 +73,7 @@ export const commentStatusEnum = pgEnum("comment_status", [
  */
 export const commentKindEnum = pgEnum("comment_kind", [
   "human",
+  "word_import",
   "ai_fix",
   "ai_grammar",
   "ai_tone",
@@ -203,6 +204,12 @@ export const comments = pgTable("comments", {
   toPos: integer("to_pos"),
   status: commentStatusEnum("status").notNull().default("open"),
   kind: commentKindEnum("kind").notNull().default("human"),
+  source: text("source").notNull().default("app"),
+  externalAuthorName: text("external_author_name"),
+  externalAuthorInitials: text("external_author_initials"),
+  externalCommentId: text("external_comment_id"),
+  externalCreatedAt: timestamp("external_created_at", { withTimezone: true }),
+  locked: boolean("locked").notNull().default(false),
   /** Links AI-generated comments to the criteria evaluation that emitted them. */
   evaluationId: text("evaluation_id").references(
     (): AnyPgColumn => criteriaEvaluations.id,

@@ -23,9 +23,11 @@ import {
   extractTableAlignmentSpecsFromDocxBuffer,
   mergeDocxAlignmentIntoTipTapTableFromSpecs,
 } from "@/lib/import/docx-table-alignment";
+import { extractWordCommentsFromDocxBuffer } from "@/lib/import/docx-comments";
 import { enrichNarrativesFromDocxBuffer } from "@/lib/import/docx-rich-content";
 import { stripWordBookmarkAnchors } from "@/lib/import/sanitize-import-html";
 import { extractSignatureBlockFromDocxBuffer } from "@/lib/docx/signature-block";
+import type { SectionType } from "@/db/schema";
 
 export type ImportedSections = SectionContentMap;
 
@@ -39,6 +41,21 @@ export type ImportedReportContent = {
   sections: ImportedSections;
   toolsUsed: { sixM: boolean; fiveWhy: boolean; brainstorming: boolean };
   header: ImportedReportHeader;
+  comments: ImportedReportComment[];
+};
+
+export type ImportedReportComment = {
+  parentExternalCommentId: string | null;
+  externalCommentId: string;
+  externalAuthorName: string;
+  externalAuthorInitials: string | null;
+  externalCreatedAt: Date | null;
+  content: string;
+  anchorText: string;
+  section: SectionType;
+  contentPath: string | null;
+  fromPos: number | null;
+  toPos: number | null;
 };
 
 type ImportSectionKey = keyof SectionContentMap;
@@ -585,6 +602,209 @@ function parseToolsUsed(raw: string): ImportedReportContent["toolsUsed"] {
   };
 }
 
+type CommentTarget =
+  | {
+      section: SectionType;
+      contentPath: string;
+      kind: "rich";
+      doc: JSONContent;
+    }
+  | {
+      section: SectionType;
+      contentPath: string;
+      kind: "plain";
+      text: string;
+    };
+
+function buildCommentTargets(sections: ImportedSections): CommentTarget[] {
+  return [
+    { section: "define", contentPath: "narrative", kind: "rich", doc: sections.define.narrative },
+    { section: "measure", contentPath: "narrative", kind: "rich", doc: sections.measure.narrative },
+    { section: "analyze", contentPath: "sixM.man", kind: "plain", text: sections.analyze.sixM.man },
+    { section: "analyze", contentPath: "sixM.machine", kind: "plain", text: sections.analyze.sixM.machine },
+    { section: "analyze", contentPath: "sixM.measurement", kind: "plain", text: sections.analyze.sixM.measurement },
+    { section: "analyze", contentPath: "sixM.material", kind: "plain", text: sections.analyze.sixM.material },
+    { section: "analyze", contentPath: "sixM.method", kind: "plain", text: sections.analyze.sixM.method },
+    { section: "analyze", contentPath: "sixM.milieu", kind: "plain", text: sections.analyze.sixM.milieu },
+    { section: "analyze", contentPath: "sixM.conclusion", kind: "plain", text: sections.analyze.sixM.conclusion },
+    { section: "analyze", contentPath: "fiveWhy.narrative", kind: "plain", text: sections.analyze.fiveWhy.narrative },
+    { section: "analyze", contentPath: "brainstorming", kind: "plain", text: sections.analyze.brainstorming },
+    { section: "analyze", contentPath: "otherTools", kind: "plain", text: sections.analyze.otherTools },
+    { section: "analyze", contentPath: "investigationOutcome", kind: "rich", doc: sections.analyze.investigationOutcome },
+    { section: "analyze", contentPath: "rootCause.narrative", kind: "rich", doc: sections.analyze.rootCause.narrative },
+    { section: "analyze", contentPath: "impactAssessment.system", kind: "plain", text: sections.analyze.impactAssessment.system },
+    { section: "analyze", contentPath: "impactAssessment.document", kind: "plain", text: sections.analyze.impactAssessment.document },
+    { section: "analyze", contentPath: "impactAssessment.product", kind: "plain", text: sections.analyze.impactAssessment.product },
+    { section: "analyze", contentPath: "impactAssessment.equipment", kind: "plain", text: sections.analyze.impactAssessment.equipment },
+    { section: "analyze", contentPath: "impactAssessment.patientSafety", kind: "plain", text: sections.analyze.impactAssessment.patientSafety },
+    { section: "improve", contentPath: "correctiveActions", kind: "plain", text: sections.improve.correctiveActions },
+    { section: "control", contentPath: "preventiveActions", kind: "plain", text: sections.control.preventiveActions },
+  ];
+}
+
+function nodeSize(node: JSONContent): number {
+  if (node.type === "text") return (node.text ?? "").length;
+  if (!node.content?.length) return 1;
+  return 2 + node.content.reduce((sum, child) => sum + nodeSize(child), 0);
+}
+
+function buildPlainTextPositionMap(doc: JSONContent): {
+  text: string;
+  positions: number[];
+} {
+  const chunks: string[] = [];
+  const positions: number[] = [];
+
+  function appendText(text: string, startPos: number) {
+    chunks.push(text);
+    for (let i = 0; i < text.length; i++) positions.push(startPos + i);
+  }
+
+  function appendBreak() {
+    chunks.push("\n");
+    positions.push(-1);
+  }
+
+  function walk(node: JSONContent, pos: number): number {
+    if (node.type === "text") {
+      const text = node.text ?? "";
+      appendText(text, pos);
+      return text.length;
+    }
+
+    const children = node.content ?? [];
+    let childPos = pos + 1;
+    for (const child of children) {
+      const size = walk(child, childPos);
+      childPos += size;
+    }
+
+    if (node.type === "paragraph" || node.type === "heading" || node.type === "listItem") {
+      appendBreak();
+    }
+
+    return nodeSize(node);
+  }
+
+  walk(doc, 0);
+  return { text: chunks.join(""), positions };
+}
+
+function normalizedSearchIndex(haystack: string, needle: string): number {
+  const normalizedChars: string[] = [];
+  const rawOffsets: number[] = [];
+  let lastWasSpace = false;
+
+  for (let i = 0; i < haystack.length; i++) {
+    const ch = haystack[i]!;
+    if (/\s/.test(ch)) {
+      if (!lastWasSpace) {
+        normalizedChars.push(" ");
+        rawOffsets.push(i);
+        lastWasSpace = true;
+      }
+      continue;
+    }
+    normalizedChars.push(ch.toLowerCase());
+    rawOffsets.push(i);
+    lastWasSpace = false;
+  }
+
+  const normalizedNeedle = needle.replace(/\s+/g, " ").trim().toLowerCase();
+  if (!normalizedNeedle) return -1;
+  const idx = normalizedChars.join("").indexOf(normalizedNeedle);
+  return idx === -1 ? -1 : rawOffsets[idx] ?? -1;
+}
+
+function findRichAnchorRange(doc: JSONContent, anchorText: string): {
+  fromPos: number;
+  toPos: number;
+} | null {
+  const needle = cleanImportedText(anchorText);
+  if (!needle) return null;
+  const { text, positions } = buildPlainTextPositionMap(doc);
+  const index = normalizedSearchIndex(text, needle);
+  if (index === -1) return null;
+
+  const endIndex = Math.min(text.length, index + needle.length);
+  let fromPos: number | null = null;
+  for (let i = index; i < positions.length; i++) {
+    if ((positions[i] ?? -1) >= 0) {
+      fromPos = positions[i]!;
+      break;
+    }
+  }
+  let toPos: number | null = null;
+  for (let i = Math.max(index, endIndex - 1); i >= 0; i--) {
+    if ((positions[i] ?? -1) >= 0) {
+      toPos = positions[i]! + 1;
+      break;
+    }
+  }
+  if (fromPos == null || toPos == null || toPos <= fromPos) return null;
+  return { fromPos, toPos };
+}
+
+function mapImportedWordComments(
+  buffer: Buffer,
+  sections: ImportedSections
+): ImportedReportComment[] {
+  const targets = buildCommentTargets(sections);
+  return extractWordCommentsFromDocxBuffer(buffer).map((comment) => {
+    const anchorText = cleanImportedText(comment.anchorText);
+    for (const target of targets) {
+      if (comment.section && target.section !== comment.section) continue;
+      if (target.kind === "rich") {
+        const range = findRichAnchorRange(target.doc, anchorText);
+        if (range) {
+          return {
+            parentExternalCommentId: comment.parentExternalCommentId,
+            externalCommentId: comment.externalCommentId,
+            externalAuthorName: comment.authorName,
+            externalAuthorInitials: comment.authorInitials,
+            externalCreatedAt: comment.createdAt,
+            content: comment.content,
+            anchorText,
+            section: target.section,
+            contentPath: target.contentPath,
+            fromPos: range.fromPos,
+            toPos: range.toPos,
+          };
+        }
+      } else if (anchorText && normalizedSearchIndex(target.text, anchorText) !== -1) {
+        return {
+          parentExternalCommentId: comment.parentExternalCommentId,
+          externalCommentId: comment.externalCommentId,
+          externalAuthorName: comment.authorName,
+          externalAuthorInitials: comment.authorInitials,
+          externalCreatedAt: comment.createdAt,
+          content: comment.content,
+          anchorText,
+          section: target.section,
+          contentPath: target.contentPath,
+          fromPos: null,
+          toPos: null,
+        };
+      }
+    }
+
+    const fallbackSection = comment.section ?? "define";
+    return {
+      parentExternalCommentId: comment.parentExternalCommentId,
+      externalCommentId: comment.externalCommentId,
+      externalAuthorName: comment.authorName,
+      externalAuthorInitials: comment.authorInitials,
+      externalCreatedAt: comment.createdAt,
+      content: comment.content,
+      anchorText,
+      section: fallbackSection,
+      contentPath: null,
+      fromPos: null,
+      toPos: null,
+    };
+  });
+}
+
 function parseToolsUsedFromDocxXml(buffer: Buffer): ImportedReportContent["toolsUsed"] | null {
   try {
     const zip = new PizZip(buffer);
@@ -808,6 +1028,7 @@ export async function docxBufferToImportedReportContent(
     sections,
     toolsUsed: parseToolsUsedFromDocxXml(buffer) ?? parseToolsUsed(raw),
     header: parseReportHeaderFromRaw(raw),
+    comments: mapImportedWordComments(buffer, sections),
   };
 }
 
