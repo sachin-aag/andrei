@@ -45,6 +45,11 @@ import {
 } from "@/lib/docx/signature-block";
 import type { SignatureApprovalsSection } from "@/types/sections";
 import type { SectionType } from "@/db/schema";
+import {
+  applyWordCommentsToDocxZip,
+  attachCommentsToFirstParagraph,
+  type ReportDocxComment,
+} from "@/lib/export/docx-comments";
 
 type ReportRow = typeof reportsTable.$inferSelect;
 
@@ -61,6 +66,56 @@ function sectionByKey<K extends keyof SectionContentMap>(
   const row = rows.find((r) => r.section === key);
   if (!row) return EMPTY_CONTENT[key];
   return mergeSection(key as K & SectionType, row.content);
+}
+
+function rootCommentsFor(
+  comments: ReportDocxComment[],
+  section: SectionType,
+  contentPath?: string | null
+): ReportDocxComment[] {
+  return comments.filter(
+    (comment) =>
+      !comment.parentId &&
+      comment.status !== "dismissed" &&
+      comment.section === section &&
+      (contentPath ? comment.contentPath === contentPath : !comment.contentPath)
+  );
+}
+
+function repliesFor(
+  comments: ReportDocxComment[],
+  parentId: string
+): ReportDocxComment[] {
+  return comments.filter(
+    (comment) => comment.parentId === parentId && comment.status !== "dismissed"
+  );
+}
+
+function normalizedAnchorText(comment: ReportDocxComment): string {
+  return comment.anchorText.trim().replace(/\s+/g, " ");
+}
+
+function withWordComments(
+  xml: string,
+  ctx: DocxExportContext,
+  comments: ReportDocxComment[],
+  section: SectionType,
+  contentPath?: string | null
+): string {
+  const roots = rootCommentsFor(comments, section, contentPath).toSorted(
+    (a, b) => normalizedAnchorText(b).length - normalizedAnchorText(a).length
+  );
+
+  return roots.reduce(
+    (currentXml, root) =>
+      attachCommentsToFirstParagraph(
+        currentXml,
+        ctx,
+        root,
+        repliesFor(comments, root.id)
+      ),
+    xml
+  );
 }
 
 function na(value: string | undefined | null): string {
@@ -94,7 +149,8 @@ function composeMeasureXml(m: MeasureSection, ctx: DocxExportContext): string {
 function buildTemplateData(
   report: ReportRow,
   sections: ReportSectionRecord[],
-  ctx: DocxExportContext
+  ctx: DocxExportContext,
+  comments: ReportDocxComment[]
 ): Record<string, unknown> {
   const d = sectionByKey(sections, "define") as DefineSection;
   const m = sectionByKey(sections, "measure") as MeasureSection;
@@ -136,10 +192,26 @@ function buildTemplateData(
     otherToolsDisplay: na(report.otherTools),
 
     // Define — compose all sub-fields into one block (raw XML for table support)
-    defineNarrativeXml: narrativeToDocxXmlWithContext(d.narrative, ctx).xml,
+    defineNarrativeXml: withWordComments(
+      withWordComments(
+        narrativeToDocxXmlWithContext(d.narrative, ctx).xml,
+        ctx,
+        comments,
+        "define",
+        "narrative"
+      ),
+      ctx,
+      comments,
+      "define"
+    ),
 
     // Measure — include regulatory notification if present (raw XML for table support)
-    measureNarrativeXml: composeMeasureXml(m, ctx),
+    measureNarrativeXml: withWordComments(
+      withWordComments(composeMeasureXml(m, ctx), ctx, comments, "measure", "narrative"),
+      ctx,
+      comments,
+      "measure"
+    ),
 
     // Analyze - 6M
     sixMMan: na(a.sixM.man),
@@ -158,16 +230,33 @@ function buildTemplateData(
     analyzeOtherToolsXml: plainTextToDocxXml(a.otherTools, ctx),
 
     // Investigation Outcome
-    investigationOutcomeXml: narrativeToDocxXmlWithContext(
-      normalizeRichField(a.investigationOutcome),
-      ctx
-    ).xml,
+    investigationOutcomeXml: withWordComments(
+      withWordComments(
+        narrativeToDocxXmlWithContext(
+          normalizeRichField(a.investigationOutcome),
+          ctx
+        ).xml,
+        ctx,
+        comments,
+        "analyze",
+        "investigationOutcome"
+      ),
+      ctx,
+      comments,
+      "analyze"
+    ),
 
     // Root Cause
-    rootCauseNarrativeXml: narrativeToDocxXmlWithContext(
-      normalizeRichField(a.rootCause.narrative),
-      ctx
-    ).xml,
+    rootCauseNarrativeXml: withWordComments(
+      narrativeToDocxXmlWithContext(
+        normalizeRichField(a.rootCause.narrative),
+        ctx
+      ).xml,
+      ctx,
+      comments,
+      "analyze",
+      "rootCause.narrative"
+    ),
 
     // Impact Assessment
     impactSystem: na(a.impactAssessment.system),
@@ -178,11 +267,33 @@ function buildTemplateData(
 
     // Improve — checkpoints in Improve row; narrative in Corrective Action row
     improveNarrativeXml: improveControlCheckpointsToDocxXml(improveCheckpoints, "improve", ctx),
-    correctiveActionsXml: plainTextToDocxXml(correctiveAction, ctx),
+    correctiveActionsXml: withWordComments(
+      withWordComments(
+        plainTextToDocxXml(correctiveAction, ctx),
+        ctx,
+        comments,
+        "improve",
+        "correctiveActions"
+      ),
+      ctx,
+      comments,
+      "improve"
+    ),
 
     // Control — checkpoints in Control row; narrative in Preventive Action row
     controlNarrativeXml: improveControlCheckpointsToDocxXml(controlCheckpoints, "control", ctx),
-    preventiveActionsXml: plainTextToDocxXml(preventiveAction, ctx),
+    preventiveActionsXml: withWordComments(
+      withWordComments(
+        plainTextToDocxXml(preventiveAction, ctx),
+        ctx,
+        comments,
+        "control",
+        "preventiveActions"
+      ),
+      ctx,
+      comments,
+      "control"
+    ),
     interimPlan: "Not Applicable",
     finalComments: "Not Applicable",
     regulatoryImpact: "Not Applicable",
@@ -233,9 +344,11 @@ function signatureSnapshotFromSection(
 export async function generateReportDocx({
   report,
   sections,
+  comments = [],
 }: {
   report: ReportRow;
   sections: ReportSectionRecord[];
+  comments?: ReportDocxComment[];
 }): Promise<Buffer> {
   const templateContent = fs.readFileSync(TEMPLATE_PATH);
   const zip = new PizZip(templateContent);
@@ -248,7 +361,7 @@ export async function generateReportDocx({
 
   const numberingBases = loadListNumberingBasesFromZip(zip);
   const ctx = createDocxExportContext(numberingBases);
-  const data = buildTemplateData(report, sections, ctx);
+  const data = buildTemplateData(report, sections, ctx, comments);
   const signatureSnapshot = signatureSnapshotFromSection(
     data._signatureApprovals as SignatureApprovalsSection
   );
@@ -258,6 +371,7 @@ export async function generateReportDocx({
   applyInvestigationToolCheckboxes(doc.getZip(), report.toolsUsed);
   applyNumberingToDocxZip(doc.getZip(), ctx);
   applyInlineMediaToDocxZip(doc.getZip(), ctx);
+  applyWordCommentsToDocxZip(doc.getZip(), ctx);
 
   const buf = doc.getZip().generate({
     type: "nodebuffer",
