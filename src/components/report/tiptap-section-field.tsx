@@ -418,8 +418,8 @@ export function TiptapSectionField({
         TrackChangesKeyboardExtension,
         TrackChangesExtension,
         highlightExtension,
-        placeholderHighlightExtension,
         suggestionWidgetsExtension,
+        placeholderHighlightExtension,
       ],
       content: value,
       editable,
@@ -622,11 +622,12 @@ export function TiptapSectionField({
   }, [activeSuggestionId, contentPath, editor, applySuggestionInEditor]);
 
   const applyExternalValueToEditor = useCallback(() => {
-    if (!editor) return;
-    const cur = JSON.stringify(editor.getJSON());
+    const currentEditor = editor;
+    if (!currentEditor || currentEditor.isDestroyed) return;
+    const cur = JSON.stringify(currentEditor.getJSON());
     const next = JSON.stringify(value);
     if (cur !== next) {
-      editor.commands.setContent(value as Content, { emitUpdate: false });
+      currentEditor.commands.setContent(value as Content, { emitUpdate: false });
     }
   }, [editor, value]);
 
@@ -653,7 +654,6 @@ export function TiptapSectionField({
       json = stripPendingSuggestionsExcept(json, null);
       if (JSON.stringify(json) === before) return;
       editor.commands.setContent(json as Content, { emitUpdate: false });
-      onChangeRef.current(json);
       return;
     }
 
@@ -697,7 +697,9 @@ export function TiptapSectionField({
     if (JSON.stringify(json) === before) return;
 
     editor.commands.setContent(json as Content, { emitUpdate: false });
-    onChangeRef.current(json);
+    // Suggestion preview marks are editor-local UI. Persisting them into section
+    // state makes the external-value sync immediately re-run this effect.
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- only this section's data is read
   }, [
     editor,
     contentPath,
@@ -706,7 +708,11 @@ export function TiptapSectionField({
     narrativeContentKey,
     previewHeld,
     section,
-    sections,
+    // Narrow to only this section's content to avoid cross-section update loops.
+    // The effect only reads `sections[section]` (for validateSuggestionLocate),
+    // so reacting to the full `sections` object causes every section's effect
+    // to re-fire when any other section changes, creating an infinite cascade.
+    sections[section],
   ]);
 
   // Debounced decoration refresh — coalesces hover-driven updates to one per frame.

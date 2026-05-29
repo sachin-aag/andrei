@@ -76,6 +76,70 @@ describe("validateSuggestionLocate", () => {
     expect(v.canApply).toBe(false);
   });
 
+  it("uses unique anchor context to disambiguate repeated delete text", () => {
+    const content = {
+      narrative: {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [
+              {
+                type: "text",
+                text:
+                  "The acceptance criteria as per SOP/DP/QC/045 are clear. " +
+                  "The narrative cites the SOP number (SOP/DP/QC/045) and the acceptance criteria, but not the governing section.",
+              },
+            ],
+          },
+        ],
+      },
+    };
+    const comment = aiFixComment({
+      anchorText:
+        "The narrative cites the SOP number (SOP/DP/QC/045) and the acceptance criteria, but not the governing section.",
+      content: serializeAiFixCommentContent({
+        deleteText: "SOP/DP/QC/045",
+        insertText: "SOP/DP/QC/045, section [Section number: <to be filled>]",
+        reasoning: "",
+      }),
+    });
+
+    const v = validateSuggestionLocate(comment, "define", content);
+
+    expect(v.locateStatus).toBe("locatable");
+    expect(v.canApply).toBe(true);
+  });
+
+  it("still reports ambiguous when the anchor context is repeated", () => {
+    const repeated =
+      "The narrative cites the SOP number (SOP/DP/QC/045) and the acceptance criteria.";
+    const content = {
+      narrative: {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [{ type: "text", text: `${repeated} ${repeated}` }],
+          },
+        ],
+      },
+    };
+    const comment = aiFixComment({
+      anchorText: repeated,
+      content: serializeAiFixCommentContent({
+        deleteText: "SOP/DP/QC/045",
+        insertText: "SOP/DP/QC/045, section [Section number: <to be filled>]",
+        reasoning: "",
+      }),
+    });
+
+    const v = validateSuggestionLocate(comment, "define", content);
+
+    expect(v.locateStatus).toBe("ambiguous");
+    expect(v.canApply).toBe(false);
+  });
+
   it("flags documentChanged when content hash differs from snapshot", () => {
     const hash = sectionContentHash("define", sectionContent);
     const comment = aiFixComment({

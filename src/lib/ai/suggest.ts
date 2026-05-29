@@ -1,6 +1,6 @@
 import { generateText, Output, type LanguageModel } from "ai";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { z } from "zod";
+import { resolveGoogleLanguageModel } from "@/lib/ai/resolve-google-language-model";
 import type { CriterionStatus, SectionType } from "@/db/schema";
 import { contextForPrompt } from "@/lib/ai/section-context";
 import type { AllSectionsContent } from "@/lib/ai/evaluate";
@@ -53,16 +53,13 @@ const suggestionSchema = z.object({
   ),
 });
 
+/** Gemini 3.x on Vertex is served from `global` (same as criteria evaluation). */
+const SUGGEST_VERTEX_LOCATION = "global" as const;
+
 export function resolveSuggestionLanguageModel(): LanguageModel {
-  const googleKey =
-    process.env.GOOGLE_GENERATIVE_AI_API_KEY || process.env.AI_GATEWAY_API_KEY;
-  if (!googleKey) {
-    throw new Error(
-      "No Gemini API key configured. Set GOOGLE_GENERATIVE_AI_API_KEY (or AI_GATEWAY_API_KEY) in .env.local."
-    );
-  }
-  const google = createGoogleGenerativeAI({ apiKey: googleKey });
-  return google(SUGGEST_GOOGLE_MODEL_ID);
+  return resolveGoogleLanguageModel(SUGGEST_GOOGLE_MODEL_ID, {
+    vertexLocation: SUGGEST_VERTEX_LOCATION,
+  });
 }
 
 function resolveModel(): LanguageModel {

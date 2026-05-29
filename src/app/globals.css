@@ -629,12 +629,68 @@
 /* `[Field name: <to be filled>]` markers — visible todos until the user fills them in. */
 .placeholder-todo {
   background-color: rgb(245 158 11 / 0.15);
-  border: 1px dashed rgb(245 158 11 / 0.7);
-  border-radius: 4px;
-  padding: 0 3px;
+  border: none;
+  border-radius: 2px;
+  padding: 0;
   color: rgb(146 64 14);
   font-weight: 500;
   cursor: pointer;
+  /* Inset ring stays inside the decoration span (no bleed past `]`). */
+  box-shadow: inset 0 0 0 1px rgb(245 158 11 / 0.7);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+/* Placeholder + AI suggestion overlap: yellow wins over green track-change styling. */
+.placeholder-todo-over-suggestion,
+.placeholder-todo.placeholder-todo-over-suggestion {
+  background-color: rgb(245 158 11 / 0.38);
+  color: rgb(120 53 15);
+  box-shadow: inset 0 0 0 1px rgb(217 119 6 / 0.9);
+}
+
+.ProseMirror .placeholder-todo .suggestion-insert,
+.ProseMirror .placeholder-todo .suggestion-insert-ai,
+.ProseMirror .placeholder-todo .suggestion-delete,
+.ProseMirror .placeholder-todo .suggestion-delete-ai {
+  background-color: transparent !important;
+  border-bottom-color: transparent !important;
+}
+
+.ProseMirror .placeholder-todo .suggestion-insert-ai::before,
+.ProseMirror .placeholder-todo .suggestion-insert-ai::after,
+.ProseMirror .placeholder-todo .suggestion-delete-ai::before,
+.ProseMirror .placeholder-todo .suggestion-delete-ai::after {
+  display: none !important;
+  content: none !important;
+}
+
+/* Placeholder inside a suggestion run: paint yellow on top; keep green on the rest of the run. */
+.ProseMirror span.suggestion-insert .placeholder-todo,
+.ProseMirror span.suggestion-insert-ai .placeholder-todo,
+.ProseMirror span.suggestion-delete .placeholder-todo,
+.ProseMirror span.suggestion-delete-ai .placeholder-todo {
+  background-color: rgb(245 158 11 / 0.42) !important;
+  border: none;
+  border-radius: 2px;
+  padding: 0;
+  color: rgb(120 53 15);
+  box-shadow: inset 0 0 0 1px rgb(217 119 6 / 0.9);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+/* Trailing sliver when a widget splits a placeholder decoration — collapse, don't hide siblings. */
+.ProseMirror .placeholder-todo:empty {
+  display: inline-block;
+  width: 0;
+  overflow: hidden;
+  padding: 0;
+  margin: 0;
+  vertical-align: bottom;
+  border: none;
+  box-shadow: none !important;
+  background: transparent !important;
 }
 
 /* Plain-text mirror layer — no border/padding so line heights match the textarea. */
@@ -644,4 +700,11 @@
   font-weight: 500;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
+}
+
+.placeholder-todo-mirror.placeholder-todo-over-suggestion,
+.suggestion-insert .placeholder-todo-mirror,
+.suggestion-delete .placeholder-todo-mirror {
+  background-color: rgb(245 158 11 / 0.42);
+  color: rgb(120 53 15);
 }

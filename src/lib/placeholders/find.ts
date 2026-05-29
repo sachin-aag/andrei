@@ -1,5 +1,7 @@
 import type { JSONContent } from "@tiptap/core";
+import type { Node as PMNode } from "@tiptap/pm/model";
 import type { SectionType } from "@/db/schema";
+import { clipBracketPlaceholderText } from "@/lib/text/bracket-span";
 
 export type Placeholder = {
   id: string;
@@ -64,9 +66,10 @@ export function collectPlaceholderSpans(text: string): TextSpan[] {
   BRACKET_SPAN_REGEX.lastIndex = 0;
   let bm: RegExpExecArray | null;
   while ((bm = BRACKET_SPAN_REGEX.exec(text)) !== null) {
-    const seg = bm[0];
-    if (!isActionablePlaceholderBracket(seg)) continue;
+    const raw = bm[0];
+    if (!isActionablePlaceholderBracket(raw)) continue;
 
+    const seg = clipBracketPlaceholderText(raw);
     spans.push({
       fromRel: bm.index,
       toRel: bm.index + seg.length,
@@ -120,14 +123,78 @@ function collectTextChunks(node: JSONContent, pos: number): { chunks: TextChunk[
 
 function pmOffsetToPos(chunks: TextChunk[], offset: number): number {
   let remaining = offset;
-  for (const chunk of chunks) {
-    if (remaining <= chunk.text.length) {
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i]!;
+    if (remaining < chunk.text.length) {
+      return chunk.pmStart + remaining;
+    }
+    if (remaining === chunk.text.length) {
+      const next = chunks[i + 1];
+      if (next) return next.pmStart;
       return chunk.pmStart + remaining;
     }
     remaining -= chunk.text.length;
   }
   const last = chunks[chunks.length - 1];
   return last ? last.pmStart + last.text.length : 0;
+}
+
+function scanPmBlockForPlaceholders(
+  block: PMNode,
+  blockPos: number,
+  section: SectionType,
+  contentPath: string
+): Placeholder[] {
+  const chunks: TextChunk[] = [];
+  block.forEach((child, offset) => {
+    if (child.isText && child.text) {
+      chunks.push({ pmStart: blockPos + 1 + offset, text: child.text });
+    }
+  });
+  if (chunks.length === 0) return [];
+
+  const flat = chunks.map((c) => c.text).join("");
+  const spans = collectPlaceholderSpans(flat);
+
+  return spans.map((s) => {
+    const fromPos = pmOffsetToPos(chunks, s.fromRel);
+    const toPos = pmOffsetToPos(chunks, s.toRel);
+    return {
+      id: `${section}-${contentPath}-${fromPos}`,
+      section,
+      contentPath,
+      fromPos,
+      toPos,
+      text: s.text,
+    };
+  });
+}
+
+/** Scan a live ProseMirror doc (preserves per–text-node boundaries). */
+export function findPlaceholdersInPmDoc(
+  doc: PMNode,
+  section: SectionType,
+  contentPath: string
+): Placeholder[] {
+  const placeholders: Placeholder[] = [];
+  const blockNames = new Set([
+    "paragraph",
+    "heading",
+    "tableCell",
+    "tableHeader",
+    "listItem",
+    "blockquote",
+  ]);
+
+  doc.descendants((node, pos) => {
+    if (!blockNames.has(node.type.name)) return true;
+    placeholders.push(
+      ...scanPmBlockForPlaceholders(node, pos, section, contentPath)
+    );
+    return false;
+  });
+
+  return placeholders;
 }
 
 function scanBlockForPlaceholders(

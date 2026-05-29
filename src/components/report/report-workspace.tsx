@@ -21,6 +21,7 @@ import type { SectionType } from "@/db/schema";
 import type { WorkspaceMode } from "@/providers/report-provider";
 import type { Placeholder } from "@/lib/placeholders/find";
 import { resolvePlaceholderInPmDoc } from "@/lib/placeholders/resolve-in-doc";
+import { EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
 import { REPORT_WORKSPACE_SECTIONS } from "@/types/sections";
 
 export type { WorkspaceMode };
@@ -105,15 +106,22 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
   const handleSectionOverflow = useCallback(
     (overflows: Record<SectionType, number>) => {
       setSectionMinHeights((prev) => {
-        const keys = Object.keys(overflows) as SectionType[];
-        const prevKeys = Object.keys(prev) as SectionType[];
-        if (
-          keys.length === prevKeys.length &&
-          keys.every((k) => Math.abs((prev[k] ?? 0) - (overflows[k] ?? 0)) < 2)
-        ) {
-          return prev;
+        const next: Partial<Record<SectionType, number>> = {};
+        let changed = false;
+
+        for (const section of EVALUATABLE_SECTIONS) {
+          const delta = overflows[section];
+          if (delta != null && delta > 1) {
+            next[section] = Math.ceil(delta);
+          }
+          const prevVal = prev[section] ?? 0;
+          const nextVal = next[section] ?? 0;
+          if (Math.abs(prevVal - nextVal) >= 2) {
+            changed = true;
+          }
         }
-        return overflows;
+
+        return changed ? next : prev;
       });
     },
     []

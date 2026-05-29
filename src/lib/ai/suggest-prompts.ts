@@ -1,7 +1,7 @@
 import type { CriterionStatus, SectionType } from "@/db/schema";
 import { SUGGEST_TARGET_FIELD_PATTERNS } from "@/lib/ai/suggest-target-fields";
 
-export const SUGGEST_PROMPT_VERSION = "suggest-v1" as const;
+export const SUGGEST_PROMPT_VERSION = "suggest-v3" as const;
 
 /** Google model for suggestion generation (stronger reasoning + verbatim anchors). */
 export const SUGGEST_GOOGLE_MODEL_ID = "gemini-3.1-pro-preview" as const;
@@ -35,6 +35,12 @@ RULES:
 - Do not suggest fixes for criteria not listed in FAILING CRITERIA.
 - Criteria marked PARTIALLY MET still have concrete gaps — produce a minimal edit for each one listed, same as NOT MET.
 - Return exactly one suggestion per criterion key in FAILING CRITERIA (no omissions).
+
+NEW-PARAGRAPH INSERTS:
+When the content you are adding is topically distinct from all existing paragraphs (i.e. it would naturally begin a new paragraph in formal writing — e.g. a regulatory notification statement after a root-cause conclusion, a scope statement after an event description), set anchorText to "" (empty string). This triggers end-of-section paragraph insertion. Do NOT inline-append to an existing sentence just because it is nearby.
+
+CRITERION-SPECIFIC PLACEMENT RULES:
+- measure.regulatory_notification: This is always a new-paragraph insert. Set anchorText to "". The inserted sentence must explicitly state EITHER (a) regulatory notification was not required, with a brief rationale tied to the nature of the deviation (e.g., no product impact, calibration only), OR (b) regulatory notification was required and provide the details. For unknown regulatory details, use: "[Regulatory notification: <to be filled>]".
 
 OPERATIONS (implicit from deleteText/insertText):
 - replace: both deleteText and insertText non-empty

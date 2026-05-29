@@ -3,10 +3,14 @@ import { Plugin, PluginKey, TextSelection } from "@tiptap/pm/state";
 import type { EditorState } from "@tiptap/pm/state";
 import { Decoration, DecorationSet } from "@tiptap/pm/view";
 import type { EditorView } from "@tiptap/pm/view";
-import { findPlaceholders } from "../placeholders/find";
+import { findPlaceholdersInPmDoc } from "../placeholders/find";
 import type { Placeholder } from "../placeholders/find";
 import type { SectionType } from "@/db/schema";
-import type { JSONContent } from "@tiptap/core";
+import type { Node as PMNode } from "@tiptap/pm/model";
+import {
+  suggestionDeleteMarkName,
+  suggestionInsertMarkName,
+} from "@/lib/tiptap/suggestion-marks";
 
 const placeholderKey = new PluginKey<PluginStateData>("placeholderHighlights");
 
@@ -20,15 +24,58 @@ type PlaceholderHighlightOptions = {
   contentPath: string;
 };
 
-function buildDecorations(
-  doc: import("@tiptap/pm/model").Node,
+/** True when a placeholder span overlaps pending AI suggestion track-change marks. */
+export function rangeOverlapsPendingSuggestionMarks(
+  doc: PMNode,
+  from: number,
+  to: number
+): boolean {
+  let overlaps = false;
+  doc.nodesBetween(from, to, (node) => {
+    if (overlaps || !node.isText) return !overlaps;
+    for (const mark of node.marks) {
+      const name = mark.type.name;
+      if (name !== suggestionInsertMarkName && name !== suggestionDeleteMarkName) {
+        continue;
+      }
+      const status = (mark.attrs as { status?: string }).status;
+      if (status === "pending") {
+        overlaps = true;
+        return false;
+      }
+    }
+    return true;
+  });
+  return overlaps;
+}
+
+export function buildPlaceholderDecorations(
+  doc: PMNode,
   placeholders: Placeholder[]
 ): DecorationSet {
   const decos: Decoration[] = [];
   for (const p of placeholders) {
+    if (p.toPos <= p.fromPos) continue;
+    const slice = doc.textBetween(p.fromPos, p.toPos);
+    // Skip zero-width slivers when a widget splits an inline decoration.
+    if (!slice.trim() && !p.text.trim()) continue;
+
+    const overSuggestion = rangeOverlapsPendingSuggestionMarks(
+      doc,
+      p.fromPos,
+      p.toPos
+    );
     decos.push(
       Decoration.inline(p.fromPos, p.toPos, {
-        class: "placeholder-todo",
+        class: overSuggestion
+          ? "placeholder-todo placeholder-todo-over-suggestion"
+          : "placeholder-todo",
+        ...(overSuggestion
+          ? {
+              style:
+                "background-color: rgb(245 158 11 / 0.42); color: rgb(120 53 15); box-shadow: inset 0 0 0 1px rgb(217 119 6 / 0.9);",
+            }
+          : {}),
       })
     );
   }
@@ -67,10 +114,8 @@ export const PlaceholderHighlightExtension = Extension.create<PlaceholderHighlig
   addProseMirrorPlugins() {
     const { section, contentPath } = this.options;
 
-    const scanPlaceholders = (doc: import("@tiptap/pm/model").Node): Placeholder[] => {
-      const json = doc.toJSON() as JSONContent;
-      return findPlaceholders(json, section, contentPath);
-    };
+    const scanPlaceholders = (doc: PMNode): Placeholder[] =>
+      findPlaceholdersInPmDoc(doc, section, contentPath);
 
     return [
       new Plugin<PluginStateData>({
@@ -79,7 +124,7 @@ export const PlaceholderHighlightExtension = Extension.create<PlaceholderHighlig
           init(_, { doc }) {
             const placeholders = scanPlaceholders(doc);
             return {
-              decos: buildDecorations(doc, placeholders),
+              decos: buildPlaceholderDecorations(doc, placeholders),
               placeholders,
             };
           },
@@ -87,7 +132,7 @@ export const PlaceholderHighlightExtension = Extension.create<PlaceholderHighlig
             if (tr.docChanged) {
               const placeholders = scanPlaceholders(newState.doc);
               return {
-                decos: buildDecorations(newState.doc, placeholders),
+                decos: buildPlaceholderDecorations(newState.doc, placeholders),
                 placeholders,
               };
             }

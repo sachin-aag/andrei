@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  type RefObject,
   ReactNode,
   useEffect,
   useLayoutEffect,
@@ -48,6 +49,44 @@ export type GutterAnchor = {
 };
 
 const CARD_GAP = 8;
+const HEIGHT_EPSILON = 2;
+
+function measureCardHeights(
+  anchors: GutterAnchor[],
+  cardRefs: RefObject<Record<string, HTMLDivElement | null>>,
+  prev: Record<string, number>
+): Record<string, number> {
+  const next: Record<string, number> = {};
+  let changed = false;
+
+  for (const a of anchors) {
+    const el = cardRefs.current[a.id];
+    const h = el?.getBoundingClientRect().height ?? prev[a.id];
+    if (h == null) continue;
+    next[a.id] = h;
+    if (Math.abs((prev[a.id] ?? 0) - h) > HEIGHT_EPSILON) {
+      changed = true;
+    }
+  }
+
+  if (!changed && Object.keys(prev).length === Object.keys(next).length) {
+    return prev;
+  }
+  return next;
+}
+
+function connectorLinesEqual(
+  a: { id: string; y: number }[],
+  b: { id: string; y: number }[]
+) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (a[i].id !== b[i].id || Math.abs(a[i].y - b[i].y) > 1) {
+      return false;
+    }
+  }
+  return true;
+}
 
 function queryFieldAnchor(section: SectionType, contentPath: string): HTMLElement | null {
   const css = globalThis.CSS;
@@ -170,8 +209,10 @@ export function MarginGutter({ onSectionOverflow }: Props) {
     useReportEvaluations();
   const [layoutVersion, setLayoutVersion] = useState(0);
   const [cardHeights, setCardHeights] = useState<Record<string, number>>({});
+  const cardHeightsRef = useRef<Record<string, number>>({});
   const [anchors, setAnchors] = useState<GutterAnchor[]>([]);
   const [connectorLines, setConnectorLines] = useState<{ id: string; y: number }[]>([]);
+  const connectorLinesRef = useRef<{ id: string; y: number }[]>([]);
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const { getUser } = useUserDirectory();
@@ -374,6 +415,7 @@ export function MarginGutter({ onSectionOverflow }: Props) {
   // Section height overflow: after packing, compute how far cards extend
   // below each section's natural bottom and report the delta so the workspace
   // can apply minHeight to prevent overlap with the next section.
+  const lastOverflowRef = useRef<Record<string, number>>({});
   useEffect(() => {
     if (!onSectionOverflow) return;
     const container = containerRef.current;
@@ -396,31 +438,34 @@ export function MarginGutter({ onSectionOverflow }: Props) {
         overflows[section] = delta;
       }
     }
+
+    // Deduplicate: skip the callback when overflow values haven't meaningfully
+    // changed. Without this guard, section minHeight adjustments cause DOM
+    // resizes that feed back through the ResizeObserver → anchor recomputation
+    // → re-pack → overflow effect loop, hitting React's update depth limit.
+    const prev = lastOverflowRef.current;
+    const keys = new Set([...Object.keys(prev), ...Object.keys(overflows)]);
+    let changed = false;
+    for (const k of keys) {
+      if (Math.abs((prev[k] ?? 0) - (overflows[k] ?? 0)) >= 2) {
+        changed = true;
+        break;
+      }
+    }
+    if (!changed) return;
+    lastOverflowRef.current = overflows;
+
     onSectionOverflow(overflows as Record<SectionType, number>);
   }, [packed, cardHeights, onSectionOverflow]);
 
   // Measure card heights once they render so the packer knows actual sizes.
+  // Depends on anchors only — not packed (packed changes when heights update).
   useLayoutEffect(() => {
-    setCardHeights((prev) => {
-      let changed = false;
-      const next: Record<string, number> = {};
-
-      for (const a of anchors) {
-        const el = cardRefs.current[a.id];
-        const h = el?.getBoundingClientRect().height ?? prev[a.id];
-        if (h == null) continue;
-        next[a.id] = h;
-        if (Math.abs((prev[a.id] ?? 0) - h) > 1) {
-          changed = true;
-        }
-      }
-
-      if (!changed && Object.keys(prev).length === Object.keys(next).length) {
-        return prev;
-      }
-      return next;
-    });
-  }, [packed, anchors, activeAnchorId]);
+    const next = measureCardHeights(anchors, cardRefs, cardHeightsRef.current);
+    if (next === cardHeightsRef.current) return;
+    cardHeightsRef.current = next;
+    setCardHeights(next);
+  }, [anchors]);
 
   useEffect(() => {
     if (typeof ResizeObserver === "undefined") return;
@@ -430,25 +475,10 @@ export function MarginGutter({ onSectionOverflow }: Props) {
       if (frame !== null) return;
       frame = requestAnimationFrame(() => {
         frame = null;
-        setCardHeights((prev) => {
-          let changed = false;
-          const next: Record<string, number> = {};
-
-          for (const a of anchors) {
-            const el = cardRefs.current[a.id];
-            const h = el?.getBoundingClientRect().height ?? prev[a.id];
-            if (h == null) continue;
-            next[a.id] = h;
-            if (Math.abs((prev[a.id] ?? 0) - h) > 1) {
-              changed = true;
-            }
-          }
-
-          if (!changed && Object.keys(prev).length === Object.keys(next).length) {
-            return prev;
-          }
-          return next;
-        });
+        const next = measureCardHeights(anchors, cardRefs, cardHeightsRef.current);
+        if (next === cardHeightsRef.current) return;
+        cardHeightsRef.current = next;
+        setCardHeights(next);
       });
     };
 
@@ -511,7 +541,9 @@ export function MarginGutter({ onSectionOverflow }: Props) {
     if (activeAnchorId) ids.add(activeAnchorId);
     for (const id of hoveredCommentIds) ids.add(id);
     if (ids.size === 0) {
+      if (connectorLinesRef.current.length === 0) return;
       queueMicrotask(() => {
+        connectorLinesRef.current = [];
         setConnectorLines([]);
       });
       return;
@@ -519,7 +551,9 @@ export function MarginGutter({ onSectionOverflow }: Props) {
 
     const container = containerRef.current;
     if (!container) {
+      if (connectorLinesRef.current.length === 0) return;
       queueMicrotask(() => {
+        connectorLinesRef.current = [];
         setConnectorLines([]);
       });
       return;
@@ -536,7 +570,9 @@ export function MarginGutter({ onSectionOverflow }: Props) {
       const y = cardRect.top - containerRect.top + cardRect.height / 2;
       lines.push({ id: a.id, y });
     }
+    if (connectorLinesEqual(connectorLinesRef.current, lines)) return;
     queueMicrotask(() => {
+      connectorLinesRef.current = lines;
       setConnectorLines(lines);
     });
   }, [packed, activeAnchorId, hoveredCommentIds]);

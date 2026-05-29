@@ -1,14 +1,17 @@
 import type { Node as PmNode } from "@tiptap/pm/model";
 import type { JSONContent } from "@tiptap/core";
 import type { SectionType } from "@/db/schema";
-import { findPlaceholders, type Placeholder } from "./find";
+import {
+  findPlaceholdersInPmDoc as scanPlaceholdersInPmDoc,
+  type Placeholder,
+} from "./find";
 
 export function findPlaceholdersInPmDoc(
   doc: PmNode,
   section: SectionType,
   contentPath: string
 ): Placeholder[] {
-  return findPlaceholders(doc.toJSON() as JSONContent, section, contentPath);
+  return scanPlaceholdersInPmDoc(doc, section, contentPath);
 }
 
 /** Map a section-state placeholder to the current ProseMirror document when possible. */

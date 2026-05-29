@@ -6,6 +6,7 @@ import {
   suggestionDeleteMarkName,
   suggestionInsertMarkName,
 } from "@/lib/tiptap/suggestion-marks";
+import { extendPosPastOpenBracketClose } from "@/lib/text/bracket-span";
 
 export const suggestionActionWidgetsRefreshMeta = "suggestionActionWidgetsRefresh";
 
@@ -99,15 +100,17 @@ function widgetEl(evaluationId: string, state: SuggestionActionWidgetState) {
   return wrap;
 }
 
-function collectActionPositions(
+/** Widget anchors after insert marks when present; delete-only suggestions use delete marks. */
+export function collectSuggestionActionWidgetPositions(
   doc: PMNode,
-  state: SuggestionActionWidgetState
-) {
-  const byEvaluationId = new Map<string, number>();
+  actionableEvaluationIds: Set<string>
+): Map<string, number> {
+  const insertEnds = new Map<string, number>();
+  const deleteEnds = new Map<string, number>();
   const insertType = doc.type.schema.marks[suggestionInsertMarkName];
   const deleteType = doc.type.schema.marks[suggestionDeleteMarkName];
 
-  if (!insertType && !deleteType) return byEvaluationId;
+  if (!insertType && !deleteType) return new Map();
 
   doc.descendants((node, pos) => {
     if (!node.isText) return true;
@@ -116,14 +119,37 @@ function collectActionPositions(
       if (mark.type !== insertType && mark.type !== deleteType) continue;
       const attrs = mark.attrs as { id?: string | null; authorId?: string };
       if (!attrs.id || attrs.authorId !== "ai") continue;
-      if (!state.actionableEvaluationIds.has(attrs.id)) continue;
-      const previous = byEvaluationId.get(attrs.id) ?? 0;
-      byEvaluationId.set(attrs.id, Math.max(previous, pos + len));
+      if (!actionableEvaluationIds.has(attrs.id)) continue;
+      const end = pos + len;
+      if (mark.type === insertType) {
+        insertEnds.set(attrs.id, Math.max(insertEnds.get(attrs.id) ?? 0, end));
+      } else {
+        deleteEnds.set(attrs.id, Math.max(deleteEnds.get(attrs.id) ?? 0, end));
+      }
     }
     return true;
   });
 
+  const byEvaluationId = new Map<string, number>();
+  for (const id of actionableEvaluationIds) {
+    const insertEnd = insertEnds.get(id);
+    if (insertEnd != null) {
+      byEvaluationId.set(id, extendPosPastOpenBracketClose(doc, insertEnd));
+      continue;
+    }
+    const deleteEnd = deleteEnds.get(id);
+    if (deleteEnd != null) {
+      byEvaluationId.set(id, extendPosPastOpenBracketClose(doc, deleteEnd));
+    }
+  }
   return byEvaluationId;
+}
+
+function collectActionPositions(
+  doc: PMNode,
+  state: SuggestionActionWidgetState
+) {
+  return collectSuggestionActionWidgetPositions(doc, state.actionableEvaluationIds);
 }
 
 function buildSet(doc: PMNode, state: SuggestionActionWidgetState) {

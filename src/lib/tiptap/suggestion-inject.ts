@@ -1,6 +1,10 @@
 import type { JSONContent } from "@tiptap/core";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
-import { findAnchorInText, collapseWhitespace } from "@/lib/text/normalize-for-anchor";
+import {
+  findAnchorInText,
+  collapseWhitespace,
+  countOccurrences,
+} from "@/lib/text/normalize-for-anchor";
 import {
   suggestionInsertMarkName,
   suggestionDeleteMarkName,
@@ -308,8 +312,8 @@ export function injectSuggestionMarks(
   const deleteNeedle = deleteText || anchorText;
   if (!deleteNeedle) return appendAtEnd(cloned, insertText, attrs);
 
-  let deleteRange = findRangeInFlat(flat, deleteNeedle);
-  if (!deleteRange && anchorText) {
+  let deleteRange: { start: number; end: number } | null = null;
+  if (anchorText) {
     const anchorRange = findRangeInFlat(flat, anchorText);
     if (anchorRange) {
       const slice = flat.slice(anchorRange.start, anchorRange.end);
@@ -324,6 +328,7 @@ export function injectSuggestionMarks(
       }
     }
   }
+  deleteRange ??= findRangeInFlat(flat, deleteNeedle);
 
   if (!deleteRange) {
     if (insertText) return appendAtEnd(cloned, insertText, attrs);
@@ -525,6 +530,21 @@ export function canLocateEditInPlainText(
     if (!anchorText.trim()) return { ok: true };
     const m = findAnchorInText(plainText, anchorText);
     return m ? { ok: true } : { ok: false, reason: "not_found" };
+  }
+
+  if (anchorText.trim()) {
+    const anchorCount = countOccurrences(plainText, anchorText);
+    if (anchorCount === 0) return { ok: false, reason: "not_found" };
+    if (anchorCount > 1) return { ok: false, reason: "ambiguous" };
+
+    const anchorMatch = findAnchorInText(plainText, anchorText);
+    if (!anchorMatch) return { ok: false, reason: "not_found" };
+    const scopedText = plainText.slice(anchorMatch.start, anchorMatch.end);
+    const scopedNeedle = deleteText.trim() || anchorText.trim();
+    const scopedCount = countOccurrences(scopedText, scopedNeedle);
+    if (scopedCount === 0) return { ok: false, reason: "not_found" };
+    if (scopedCount > 1) return { ok: false, reason: "ambiguous" };
+    return { ok: true };
   }
 
   const needle = deleteText.trim() || anchorText.trim();

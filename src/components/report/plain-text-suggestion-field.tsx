@@ -31,6 +31,7 @@ import {
   SUGGESTION_INLINE_REVEAL_DELAY_MS,
   delay,
 } from "@/lib/suggestions/apply-transition";
+import { splitPlainTextWithPlaceholders } from "@/lib/placeholders/plain-text-segments";
 import { cn } from "@/lib/utils";
 import type { CommentRecord } from "@/types/report";
 import type { SectionType } from "@/db/schema";
@@ -133,20 +134,43 @@ export function PlainTextSuggestionField({
     [previewSegments]
   );
 
-  const renderSegment = (seg: PlainTextPreviewSegment, key: number) => {
-    if (seg.kind === "delete") {
+  const renderSuggestionRun = (
+    text: string,
+    suggestionClass: string,
+    key: number
+  ) => {
+    const parts = splitPlainTextWithPlaceholders(text);
+    if (parts.length === 1 && parts[0]!.kind === "text") {
       return (
-        <span key={key} className="suggestion-delete suggestion-delete-fix">
-          {seg.text}
+        <span key={key} className={suggestionClass}>
+          {text}
         </span>
       );
     }
+    return (
+      <span key={key} className={suggestionClass}>
+        {parts.map((part, i) =>
+          part.kind === "placeholder" ? (
+            <span
+              key={i}
+              className="placeholder-todo-mirror placeholder-todo-over-suggestion"
+            >
+              {part.text}
+            </span>
+          ) : (
+            <span key={i}>{part.text}</span>
+          )
+        )}
+      </span>
+    );
+  };
+
+  const renderSegment = (seg: PlainTextPreviewSegment, key: number) => {
+    if (seg.kind === "delete") {
+      return renderSuggestionRun(seg.text, "suggestion-delete suggestion-delete-fix", key);
+    }
     if (seg.kind === "insert") {
-      return (
-        <span key={key} className="suggestion-insert suggestion-insert-fix">
-          {seg.text}
-        </span>
-      );
+      return renderSuggestionRun(seg.text, "suggestion-insert suggestion-insert-fix", key);
     }
     return <span key={key}>{seg.text}</span>;
   };

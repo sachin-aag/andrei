@@ -39,6 +39,11 @@ type SectionContents = Partial<{
   [K in keyof SectionContentMap]: SectionContentMap[K];
 }>;
 
+function sectionContentEqual(a: unknown, b: unknown) {
+  if (Object.is(a, b)) return true;
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
 export type WorkspaceMode = "edit" | "review";
 
 export type EditorRegistryEntry = {
@@ -387,7 +392,9 @@ export function ReportProvider({
     ) => {
       setSections((prev) => {
         const current = (prev[section] ?? EMPTY_CONTENT[section]) as SectionContentMap[K];
-        return { ...prev, [section]: updater(current) };
+        const next = updater(current);
+        if (sectionContentEqual(current, next)) return prev;
+        return { ...prev, [section]: next };
       });
     },
     []
@@ -398,7 +405,11 @@ export function ReportProvider({
       section: K,
       next: SectionContentMap[K]
     ) => {
-      setSections((prev) => ({ ...prev, [section]: next }));
+      setSections((prev) => {
+        const current = (prev[section] ?? EMPTY_CONTENT[section]) as SectionContentMap[K];
+        if (sectionContentEqual(current, next)) return prev;
+        return { ...prev, [section]: next };
+      });
     },
     []
   );
@@ -637,7 +648,7 @@ export function ReportProvider({
       const validation = validateSuggestionLocate(
         active,
         section,
-        sections[section]
+        sections[section as keyof SectionContentMap]
       );
       return validation.canPreview ? active.id : null;
     },
