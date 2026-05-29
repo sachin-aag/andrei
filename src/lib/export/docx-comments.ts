@@ -112,10 +112,6 @@ function commentReferenceXml(docxId: number): string {
   );
 }
 
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 function attachCommentToAnchorText(
   xml: string,
   docxId: number,
