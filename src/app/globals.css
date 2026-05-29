@@ -707,4 +707,14 @@
 .suggestion-delete .placeholder-todo-mirror {
   background-color: rgb(245 158 11 / 0.42);
   color: rgb(120 53 15);
+  font-weight: 500;
+  border-radius: 2px;
+  box-shadow: inset 0 0 0 1px rgb(217 119 6 / 0.9);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+/* Plain-text suggestion preview: placeholders sit beside green runs, not inside them. */
+.placeholder-todo-mirror.placeholder-todo-over-suggestion {
+  border-bottom: 2px solid rgb(22 101 52);
 }

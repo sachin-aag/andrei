@@ -1,7 +1,7 @@
 import type { CriterionStatus, SectionType } from "@/db/schema";
 import { SUGGEST_TARGET_FIELD_PATTERNS } from "@/lib/ai/suggest-target-fields";
 
-export const SUGGEST_PROMPT_VERSION = "suggest-v3" as const;
+export const SUGGEST_PROMPT_VERSION = "suggest-v7" as const;
 
 /** Google model for suggestion generation (stronger reasoning + verbatim anchors). */
 export const SUGGEST_GOOGLE_MODEL_ID = "gemini-3.1-pro-preview" as const;
@@ -31,6 +31,9 @@ RULES:
 - If the only change needed for a criterion is filling an existing placeholder, do not return a suggestion that edits that token; suggest edits elsewhere only when other prose gaps remain.
 - Guidance-only brackets like [batch number] are OK when inserting new missing text; do not overwrite existing placeholders.
 - Do not speculate beyond what the criterion requires. Keep edits minimal.
+- insertText MUST match the writing style, voice, and terminology already present in the section. Do NOT echo the criterion question back as prose (e.g. do not write "The expected outcome of the preventive action is X, which can be verified by Y" — instead continue the action description naturally, stating what will result and how it will be confirmed using the same vocabulary as the surrounding text).
+- Do NOT prefix insertText with document field or section labels (e.g. "Final Comments:", "Interim Plan:", "Preventive Action:", "Regulatory notification:", "Recommended Lot Disposition:", "Effectiveness Verification:", "Conclusion Final Decision:"). These labels are already part of the document template structure. Only insert the prose content itself.
+- Do NOT introduce the term "CAPA" in insertText unless the section content already uses that exact term. If the section describes actions as an SOP revision, corrective action, or preventive action without calling them a CAPA, refer to them by the same terminology used in the section.
 - If the section already has a [Label: <to be filled>] (or similar) for a missing fact, do not add another placeholder for the same fact.
 - Do not suggest fixes for criteria not listed in FAILING CRITERIA.
 - Criteria marked PARTIALLY MET still have concrete gaps — produce a minimal edit for each one listed, same as NOT MET.
@@ -41,6 +44,7 @@ When the content you are adding is topically distinct from all existing paragrap
 
 CRITERION-SPECIFIC PLACEMENT RULES:
 - measure.regulatory_notification: This is always a new-paragraph insert. Set anchorText to "". The inserted sentence must explicitly state EITHER (a) regulatory notification was not required, with a brief rationale tied to the nature of the deviation (e.g., no product impact, calibration only), OR (b) regulatory notification was required and provide the details. For unknown regulatory details, use: "[Regulatory notification: <to be filled>]".
+- improve.effectiveness / control.effectiveness: When effectiveness verification is required, the inserted text must include all four elements: (1) trigger — when verification starts (e.g., "following approval of the revised SOP"); (2) cadence/count — derive from the calibration or activity schedule already described in the section content or prior sections (e.g., if the section mentions monthly calibration, use "next [N] monthly calibrations"); (3) measurable pass criterion — use the specific acceptance limit from the section (e.g., "blank TOC NMT 100 ppb"); (4) responsible person as "[Responsible person: <to be filled>]". Do not state the outcome as "can be verified by X" — state it as "will be verified by [person] by checking [metric] across [count] [cadence] following [trigger]".
 
 OPERATIONS (implicit from deleteText/insertText):
 - replace: both deleteText and insertText non-empty

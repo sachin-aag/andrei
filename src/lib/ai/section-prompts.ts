@@ -6,7 +6,7 @@ import type { SectionType } from "@/db/schema";
  * into the per-section content hash so the next eval pass refreshes all
  * sections after a prompt update.
  */
-export const PROMPT_VERSION = "2026-05-18-44-placeholder-partially-met-only";
+export const PROMPT_VERSION = "2026-05-29-45-no-pa-rationale-guard";
 
 /**
  * Common reviewer rules, scoring system, scope rule, and prompt-injection guard.
@@ -102,7 +102,7 @@ Judge preventive actions and closure content against the template Control checkl
 
 KEY RULES:
 - Every preventive action must link explicitly to a failure mode or root cause from Analyze when actions are listed.
-- If no preventive action is proposed, the section should provide a rationale.
+- If no preventive action is proposed, the section should provide a rationale. If any preventive action IS described, mark control.no_preventive_rationale as "met" regardless of how formally it is structured — formality gaps belong to other criteria.
 - Cover the conclusion: final decision, lot disposition, regulatory notification rationale.
 - Interim controls should be mentioned when CAPA is pending or residual risk remains. If interim control is not required, the section should say why.
 - Final comments, post-investigation impact fields, CAPA verification, and lot disposition must be supported by what is written in the Control text when the template expects them.

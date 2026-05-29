@@ -4,7 +4,7 @@ import * as React from "react";
 import { cn } from "@/lib/utils";
 import { Textarea, type TextareaProps } from "@/components/ui/textarea";
 
-function resizeToContent(el: HTMLTextAreaElement) {
+export function resizeTextareaToContent(el: HTMLTextAreaElement) {
   el.style.height = "auto";
   el.style.height = `${el.scrollHeight}px`;
 }
@@ -20,7 +20,7 @@ export const AutoResizeTextarea = React.forwardRef<
   React.useLayoutEffect(() => {
     const el = innerRef.current;
     if (!el) return;
-    resizeToContent(el);
+    resizeTextareaToContent(el);
   }, [value]);
 
   return (
@@ -29,7 +29,7 @@ export const AutoResizeTextarea = React.forwardRef<
       value={value}
       rows={1}
       onChange={(event) => {
-        resizeToContent(event.currentTarget);
+        resizeTextareaToContent(event.currentTarget);
         onChange?.(event);
       }}
       className={cn("resize-none overflow-hidden", className)}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Label } from "@/components/ui/label";
 import { PlainTextHighlightedInput } from "@/components/report/plain-text-highlighted-input";
@@ -31,6 +31,7 @@ import {
   SUGGESTION_INLINE_REVEAL_DELAY_MS,
   delay,
 } from "@/lib/suggestions/apply-transition";
+import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 import { splitPlainTextWithPlaceholders } from "@/lib/placeholders/plain-text-segments";
 import { cn } from "@/lib/utils";
 import type { CommentRecord } from "@/types/report";
@@ -69,7 +70,12 @@ export function PlainTextSuggestionField({
   /** Keep the preview shell mounted while apply transitions run (avoids height jump). */
   const [applySettling, setApplySettling] = useState(false);
   const previewShellRef = useRef<HTMLDivElement>(null);
+  const editHeightRef = useRef(0);
   const [lockedShellHeight, setLockedShellHeight] = useState<number | null>(null);
+
+  const onEditLayoutHeight = useCallback((height: number) => {
+    editHeightRef.current = height;
+  }, []);
 
   const activeComment = useMemo(() => {
     if (isSuggestionPreviewHeld(section)) return null;
@@ -110,7 +116,7 @@ export function PlainTextSuggestionField({
     return buildPlainTextSuggestionPreview(
       value,
       payload.deleteText,
-      payload.insertText,
+      normalizeSuggestionInsertText(payload.insertText),
       activeComment.anchorText
     );
   }, [activeComment, activeValidation, value]);
@@ -120,12 +126,6 @@ export function PlainTextSuggestionField({
   );
   const showSettledText = applySettling && !activeComment;
 
-  useEffect(() => {
-    if (showInlinePreview || lockedShellHeight == null) return;
-    const id = requestAnimationFrame(() => setLockedShellHeight(null));
-    return () => cancelAnimationFrame(id);
-  }, [showInlinePreview, lockedShellHeight, value]);
-
   const splitPreview = useMemo(
     () =>
       previewSegments
@@ -133,6 +133,21 @@ export function PlainTextSuggestionField({
         : { before: [], suggestion: [], after: [] },
     [previewSegments]
   );
+
+  /** Size preview shell to full content (no in-field scroll), at least the last edit height. */
+  useLayoutEffect(() => {
+    if (!showInlinePreview) return;
+    const el = previewShellRef.current;
+    if (!el) return;
+    const next = Math.max(editHeightRef.current, el.scrollHeight);
+    setLockedShellHeight((prev) => (prev === next ? prev : next));
+  }, [showInlinePreview, showSettledText, previewSegments, value, splitPreview]);
+
+  useEffect(() => {
+    if (showInlinePreview || lockedShellHeight == null) return;
+    const id = requestAnimationFrame(() => setLockedShellHeight(null));
+    return () => cancelAnimationFrame(id);
+  }, [showInlinePreview, lockedShellHeight, value]);
 
   const renderSuggestionRun = (
     text: string,
@@ -148,7 +163,7 @@ export function PlainTextSuggestionField({
       );
     }
     return (
-      <span key={key} className={suggestionClass}>
+      <span key={key}>
         {parts.map((part, i) =>
           part.kind === "placeholder" ? (
             <span
@@ -158,7 +173,9 @@ export function PlainTextSuggestionField({
               {part.text}
             </span>
           ) : (
-            <span key={i}>{part.text}</span>
+            <span key={i} className={suggestionClass}>
+              {part.text}
+            </span>
           )
         )}
       </span>
@@ -338,9 +355,11 @@ export function PlainTextSuggestionField({
             applySettling && "suggestion-field-settling",
             className
           )}
-          style={
-            lockedShellHeight != null ? { minHeight: lockedShellHeight } : undefined
-          }
+          style={{
+            minHeight:
+              lockedShellHeight ??
+              (editHeightRef.current > 0 ? editHeightRef.current : undefined),
+          }}
           aria-label={
             showSettledText
               ? `${label} — applied`
@@ -382,6 +401,7 @@ export function PlainTextSuggestionField({
           placeholder={placeholder}
           className={className}
           shellMinHeight={lockedShellHeight}
+          onEditLayoutHeight={onEditLayoutHeight}
           aria-label={label}
         />
       )}

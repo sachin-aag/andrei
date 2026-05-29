@@ -2,6 +2,7 @@
 
 import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
 import { Textarea } from "@/components/ui/textarea";
+import { resizeTextareaToContent } from "@/components/ui/auto-resize-textarea";
 import { splitPlainTextWithPlaceholders } from "@/lib/placeholders/plain-text-segments";
 import { cn } from "@/lib/utils";
 
@@ -16,6 +17,7 @@ export function PlainTextHighlightedInput({
   placeholder,
   fieldAnchor,
   shellMinHeight,
+  onEditLayoutHeight,
   "aria-label": ariaLabel,
 }: {
   value: string;
@@ -25,6 +27,8 @@ export function PlainTextHighlightedInput({
   placeholder?: string;
   fieldAnchor: string;
   shellMinHeight?: number | null;
+  /** Reports the laid-out edit surface height (for suggestion preview transitions). */
+  onEditLayoutHeight?: (height: number) => void;
   "aria-label"?: string;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -32,18 +36,25 @@ export function PlainTextHighlightedInput({
   const segments = useMemo(() => splitPlainTextWithPlaceholders(value), [value]);
   const hasPlaceholders = segments.some((s) => s.kind === "placeholder");
 
-  const syncMirrorScroll = useCallback(() => {
+  const syncEditHeight = useCallback(() => {
     const textarea = textareaRef.current;
-    const mirror = mirrorRef.current;
-    if (!textarea || !mirror) return;
-    mirror.scrollTop = textarea.scrollTop;
-    mirror.scrollLeft = textarea.scrollLeft;
-  }, []);
+    if (!textarea) return;
+    resizeTextareaToContent(textarea);
+    if (hasPlaceholders) {
+      const mirror = mirrorRef.current;
+      if (mirror) {
+        mirror.style.minHeight = `${textarea.offsetHeight}px`;
+      }
+    }
+    onEditLayoutHeight?.(textarea.offsetHeight);
+  }, [hasPlaceholders, onEditLayoutHeight]);
 
   useLayoutEffect(() => {
-    if (!hasPlaceholders) return;
-    syncMirrorScroll();
-  }, [hasPlaceholders, value, syncMirrorScroll]);
+    syncEditHeight();
+  }, [value, shellMinHeight, syncEditHeight]);
+
+  const lockedMinStyle =
+    shellMinHeight != null ? { minHeight: shellMinHeight } : undefined;
 
   if (!hasPlaceholders) {
     return (
@@ -51,26 +62,30 @@ export function PlainTextHighlightedInput({
         ref={textareaRef}
         data-field-anchor={fieldAnchor}
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => {
+          resizeTextareaToContent(e.currentTarget);
+          onChange(e.target.value);
+          onEditLayoutHeight?.(e.currentTarget.offsetHeight);
+        }}
         disabled={disabled}
         placeholder={placeholder}
         aria-label={ariaLabel}
-        className={cn("text-sm leading-relaxed resize-y", className)}
-        style={shellMinHeight != null ? { minHeight: shellMinHeight } : undefined}
+        className={cn(
+          "text-sm leading-relaxed resize-none overflow-hidden",
+          className
+        )}
+        style={lockedMinStyle}
       />
     );
   }
 
   return (
-    <div
-      className={cn("grid", className)}
-      style={shellMinHeight != null ? { minHeight: shellMinHeight } : undefined}
-    >
+    <div className={cn("grid", className)} style={lockedMinStyle}>
       <div
         ref={mirrorRef}
         aria-hidden
         className={cn(
-          "pointer-events-none col-start-1 row-start-1 overflow-hidden rounded-md border border-transparent bg-[var(--input)] shadow-sm",
+          "pointer-events-none col-start-1 row-start-1 rounded-md border border-transparent bg-[var(--input)] shadow-sm",
           fieldTypography
         )}
       >
@@ -88,13 +103,20 @@ export function PlainTextHighlightedInput({
         ref={textareaRef}
         data-field-anchor={fieldAnchor}
         value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onScroll={syncMirrorScroll}
+        onChange={(e) => {
+          resizeTextareaToContent(e.currentTarget);
+          onChange(e.target.value);
+          const mirror = mirrorRef.current;
+          if (mirror) {
+            mirror.style.minHeight = `${e.currentTarget.offsetHeight}px`;
+          }
+          onEditLayoutHeight?.(e.currentTarget.offsetHeight);
+        }}
         disabled={disabled}
         placeholder={placeholder}
         aria-label={ariaLabel}
         className={cn(
-          "col-start-1 row-start-1 resize-y overflow-y-auto bg-transparent text-transparent caret-[var(--foreground)] selection:bg-primary/20 selection:text-transparent",
+          "col-start-1 row-start-1 resize-none overflow-hidden bg-transparent text-transparent caret-[var(--foreground)] selection:bg-primary/20 selection:text-transparent",
           fieldTypography
         )}
         style={{ WebkitTextFillColor: "transparent" } as React.CSSProperties}

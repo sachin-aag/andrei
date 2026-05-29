@@ -230,8 +230,8 @@ export const CONTROL_CRITERIA: CriterionDefinition[] = [
     key: "control.tracking_fields",
     label: "Unique number, responsible person, due date assigned",
     description:
-      "Was the preventive action assigned a unique number, responsible person and due " +
-      "date so it can be tracked?",
+      "Was the preventive action assigned a unique tracking number (CAPA No., Work Order No., " +
+      "or Breakdown No.), responsible person by Emp. ID, and due date so it can be tracked?",
   },
   {
     key: "control.expected_outcome",
@@ -244,20 +244,41 @@ export const CONTROL_CRITERIA: CriterionDefinition[] = [
     label: "Effectiveness verification documented",
     description:
       "Was effectiveness verification required or not, and the rationale for either " +
-      "documented based on the quality impact of the incident?",
+      "documented based on the quality impact of the incident? " +
+      "When required, a complete effectiveness verification statement must include four elements: " +
+      "(1) trigger — when verification starts (e.g., after SOP approval, after next calibration); " +
+      "(2) cadence/count — how many cycles or over what period (derive from the calibration schedule " +
+      "mentioned in the section or prior sections, e.g., monthly, quarterly); " +
+      "(3) measurable pass criterion — the specific acceptance limit that failed (e.g., blank TOC NMT 100 ppb); " +
+      "(4) responsible person by Emp. ID. " +
+      "Do NOT use a tracking reference number (e.g., 'Effectiveness Check Number') — that is not a verification method. " +
+      "Mark partially_met if any of the four elements is missing or too vague to be actionable.",
   },
   {
     key: "control.interim_plan",
     label: "Interim plan addressed",
     description:
       "Was an interim plan needed to ensure a state of control while preventive " +
-      "actions were implemented? If not, is rationale provided?",
+      "actions were implemented? If not, is rationale provided? " +
+      "An interim plan is only needed when residual risk persists during the implementation gap " +
+      "(e.g., the deviation is ongoing, the instrument or process remains at risk, or the CAPA " +
+      "timeline is long enough that recurrence is plausible in the interim). " +
+      "If the issue has already been corrected and the permanent fix (e.g., SOP revision) will be " +
+      "completed before the next opportunity for recurrence, stating 'no interim plan required' " +
+      "with that rationale is correct and sufficient. " +
+      "Do NOT restate the preventive action itself as an informal verbal instruction and call it an interim plan — " +
+      "that duplicates the fix rather than bridging the gap.",
   },
   {
     key: "control.no_preventive_rationale",
     label: "Rationale when no preventive action is identified",
     description:
-      "Was rationale provided when no preventive action was identified?",
+      "This criterion is ONLY relevant when the section identifies zero preventive actions. " +
+      "If any preventive action is described — even if imperfectly structured or missing tracking fields — " +
+      "mark this criterion 'met' immediately; do not evaluate formality or completeness here " +
+      "(those belong to control.preventive_per_root_cause and control.tracking_fields). " +
+      "Only mark not_met when the section genuinely contains no preventive action AND provides " +
+      "no rationale for why one was not identified.",
   },
   {
     key: "control.final_comments",
