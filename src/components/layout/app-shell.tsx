@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
+import { signOut } from "next-auth/react";
 import { usePathname } from "next/navigation";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
@@ -29,9 +30,8 @@ export function AppShell({
   const [collapsed, setCollapsed] = useState(true);
   const mainId = useId();
 
-  const handleLogout = async () => {
-    await fetch("/api/auth/logout", { method: "POST" });
-    window.location.href = "/login";
+  const handleLogout = () => {
+    void signOut({ callbackUrl: "/login" });
   };
 
   const navItems = [

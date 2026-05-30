@@ -1,11 +1,6 @@
 import { asc, eq } from "drizzle-orm";
-import { createId } from "@paralleldrive/cuid2";
 import { db, schema } from "@/db";
-import {
-  MOCK_USERS,
-  type MockUser,
-  type UserRole,
-} from "@/lib/auth/mock-users-data";
+import { MOCK_USERS, type MockUser } from "@/lib/auth/mock-users-data";
 
 function rowToUser(row: typeof schema.workspaceUsers.$inferSelect): MockUser {
   return {
@@ -108,54 +103,4 @@ export async function getWorkspaceUserById(
     }
     throw error;
   }
-}
-
-export async function createWorkspaceUser(params: {
-  name: string;
-  email: string;
-  role?: UserRole;
-  title?: string;
-}): Promise<MockUser> {
-  const name = params.name.trim();
-  const email = params.email.trim().toLowerCase();
-  if (!name || !email) {
-    throw new Error("Name and email are required.");
-  }
-
-  try {
-    await ensureWorkspaceUsersSeeded();
-  } catch (error) {
-    if (isMissingWorkspaceUsersTable(error)) {
-      throw new Error(
-        "workspace_users table is missing. Run: npm run db:ensure-workspace-users"
-      );
-    }
-    throw error;
-  }
-
-  const existing = await db.query.workspaceUsers.findFirst({
-    where: eq(schema.workspaceUsers.email, email),
-  });
-  if (existing) {
-    return rowToUser(existing);
-  }
-
-  const role = params.role ?? "engineer";
-  const user: MockUser = {
-    id: createId(),
-    name,
-    email,
-    role,
-    title: params.title?.trim() || (role === "manager" ? "Manager" : "Engineer"),
-  };
-
-  await db.insert(schema.workspaceUsers).values({
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    role: user.role,
-    title: user.title,
-  });
-
-  return user;
 }
