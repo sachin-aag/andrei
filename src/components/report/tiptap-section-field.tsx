@@ -643,6 +643,9 @@ export function TiptapSectionField({
   const previewHeld =
     contentPath === "narrative" && isSuggestionPreviewHeld(section);
 
+  // Narrow deps to this section only — avoid re-running when other sections change.
+  const sectionContent = sections[section];
+
   /** Only the active suggestion may have inline marks; inject it when missing. */
   useEffect(() => {
     if (!editor || contentPath !== "narrative") return;
@@ -674,7 +677,7 @@ export function TiptapSectionField({
         const validation = validateSuggestionLocate(
           comment,
           section,
-          sections[section]
+          sectionContent
         );
         if (validation.canPreview) {
           const payload = parseAiFixCommentContent(comment.content);
@@ -699,7 +702,6 @@ export function TiptapSectionField({
     editor.commands.setContent(json as Content, { emitUpdate: false });
     // Suggestion preview marks are editor-local UI. Persisting them into section
     // state makes the external-value sync immediately re-run this effect.
-  // eslint-disable-next-line react-hooks/exhaustive-deps -- only this section's data is read
   }, [
     editor,
     contentPath,
@@ -708,11 +710,7 @@ export function TiptapSectionField({
     narrativeContentKey,
     previewHeld,
     section,
-    // Narrow to only this section's content to avoid cross-section update loops.
-    // The effect only reads `sections[section]` (for validateSuggestionLocate),
-    // so reacting to the full `sections` object causes every section's effect
-    // to re-fire when any other section changes, creating an infinite cascade.
-    sections[section],
+    sectionContent,
   ]);
 
   // Debounced decoration refresh — coalesces hover-driven updates to one per frame.

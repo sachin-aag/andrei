@@ -159,10 +159,10 @@ export function mergeAnalyzeSection(content: unknown): AnalyzeSection {
   const impactAssessment = collapseImpactAssessment(
     "impactAssessment" in o ? o.impactAssessment : base.impactAssessment
   );
-  const { impactAssessment: _legacyImpact, ...rest } = o as Partial<AnalyzeSection> & {
-    impactAssessment?: unknown;
-  };
-  const merged = deepMerge(base, rest as Partial<AnalyzeSection>);
+  const rest = { ...(o as Partial<AnalyzeSection>) };
+  delete (rest as Partial<AnalyzeSection> & { impactAssessment?: unknown })
+    .impactAssessment;
+  const merged = deepMerge(base, rest);
   const narrative =
     typeof o.fiveWhy?.narrative === "string"
       ? o.fiveWhy.narrative

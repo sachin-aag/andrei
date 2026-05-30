@@ -5,7 +5,6 @@ import {
   buildPlaceholderDecorations,
   rangeOverlapsPendingSuggestionMarks,
 } from "@/lib/tiptap/placeholder-highlights";
-import { suggestionInsertMarkName } from "@/lib/tiptap/suggestion-marks";
 
 function schemaWithSuggestionMarks() {
   return new Schema({

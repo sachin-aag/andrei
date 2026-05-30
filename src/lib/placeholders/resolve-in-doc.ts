@@ -1,5 +1,4 @@
 import type { Node as PmNode } from "@tiptap/pm/model";
-import type { JSONContent } from "@tiptap/core";
 import type { SectionType } from "@/db/schema";
 import {
   findPlaceholdersInPmDoc as scanPlaceholdersInPmDoc,
