@@ -44,8 +44,7 @@ import type {
 import { SECTION_LABELS } from "@/types/sections";
 import { nativeSelectClassName } from "@/components/ui/native-select";
 import { useCriteriaReviewReviewer } from "@/components/criteria-review/reviewer-provider";
-
-const AUTOSAVE_DELAY_MS = 1500;
+import { AUTOSAVE_DELAY_MS } from "@/hooks/use-auto-save";
 
 /** Native select values for corrected traffic-light status. */
 function suggestedStatusSelectValue(

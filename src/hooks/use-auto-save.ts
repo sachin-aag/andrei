@@ -2,6 +2,9 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
+/** Debounce before persisting after the last edit (report sections, header, criteria review). */
+export const AUTOSAVE_DELAY_MS = 1500;
+
 export type SaveStatus = "idle" | "saving" | "saved" | "error";
 
 export type AutoSaveContext = {
@@ -27,7 +30,7 @@ function isBenignSaveError(err: unknown, signal?: AbortSignal): boolean {
 export function useAutoSave<T>({
   value,
   onSave,
-  delayMs = 1500,
+  delayMs = AUTOSAVE_DELAY_MS,
   enabled = true,
   beaconUrl,
   serialize,

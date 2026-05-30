@@ -15,7 +15,7 @@ import type {
 import { EMPTY_CONTENT } from "@/types/sections";
 import type { ReportSectionRecord } from "@/types/report";
 import type { reports as reportsTable } from "@/db/schema";
-import { getUser } from "@/lib/auth/mock-users";
+import { getUser } from "@/lib/auth/user-directory";
 import { formatDate } from "@/lib/utils";
 import { fiveWhyTextForExport } from "@/lib/analyze-five-why";
 import { mergeSection } from "@/lib/sections-merge";

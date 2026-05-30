@@ -1,5 +1,5 @@
 import { parseAiFixCommentContent } from "@/lib/ai/suggestion-gating";
-import { getUser } from "@/lib/auth/mock-users";
+import { getUser } from "@/lib/auth/user-directory";
 import type { CommentRecord, EvaluationRecord } from "@/types/report";
 
 const MAX_TITLE_LEN = 72;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
-import type { MockUser } from "@/lib/auth/mock-users";
+import type { WorkspaceUser } from "@/lib/auth/workspace-user";
 import { UserDirectoryProvider } from "@/providers/user-directory-provider";
 import {
   LogOut,
@@ -22,8 +22,8 @@ export function AppShell({
   initialUsers,
   children,
 }: {
-  user: MockUser;
-  initialUsers: MockUser[];
+  user: WorkspaceUser;
+  initialUsers: WorkspaceUser[];
   children: React.ReactNode;
 }) {
   const pathname = usePathname();

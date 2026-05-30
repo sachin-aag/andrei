@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, beforeEach } from "vitest";
+import { hydrateUserDirectory } from "@/lib/auth/user-directory";
 import {
   getAiFixCommentPreview,
   getAiFixCommentTitle,
@@ -96,6 +97,18 @@ describe("getAiFixCommentPreview", () => {
 });
 
 describe("getCommentCardTitle", () => {
+  beforeEach(() => {
+    hydrateUserDirectory([
+      {
+        id: "1",
+        name: "Bhargav Patel",
+        email: "bhargav@mjbiopharm.com",
+        role: "engineer",
+        title: "Quality Engineer - Packing",
+      },
+    ]);
+  });
+
   it("uses author for human comments", () => {
     const human: CommentRecord = {
       ...aiComment("hello"),

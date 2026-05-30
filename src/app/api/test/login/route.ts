@@ -3,7 +3,6 @@ import { encode } from "next-auth/jwt";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { workspaceUsers } from "@/db/schema";
-import { ensureWorkspaceUsersSeeded } from "@/lib/auth/workspace-users";
 
 function isTestLoginEnabled(): boolean {
   return (
@@ -31,7 +30,6 @@ export async function POST() {
     return NextResponse.json({ error: "AUTH_SECRET not set" }, { status: 500 });
   }
 
-  await ensureWorkspaceUsersSeeded();
   const wsUser = await db.query.workspaceUsers.findFirst({
     where: eq(workspaceUsers.email, testEmail),
   });

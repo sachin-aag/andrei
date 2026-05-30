@@ -8,21 +8,21 @@ import {
   useMemo,
   useState,
 } from "react";
-import type { MockUser } from "@/lib/auth/mock-users-data";
+import type { WorkspaceUser } from "@/lib/auth/workspace-user";
 import {
   hydrateUserDirectory,
   lookupUserInDirectory,
 } from "@/lib/auth/user-directory";
 
 type UserDirectoryContextValue = {
-  getUser: (id: string | null | undefined) => MockUser | undefined;
+  getUser: (id: string | null | undefined) => WorkspaceUser | undefined;
 };
 
 const UserDirectoryContext = createContext<UserDirectoryContextValue | null>(
   null
 );
 
-function syncUserDirectory(users: MockUser[]) {
+function syncUserDirectory(users: WorkspaceUser[]) {
   hydrateUserDirectory(users);
 }
 
@@ -30,7 +30,7 @@ export function UserDirectoryProvider({
   initialUsers,
   children,
 }: {
-  initialUsers: MockUser[];
+  initialUsers: WorkspaceUser[];
   children: React.ReactNode;
 }) {
   const [version, setVersion] = useState(0);
@@ -42,7 +42,7 @@ export function UserDirectoryProvider({
   useEffect(() => {
     void fetch("/api/auth/users")
       .then((res) => (res.ok ? res.json() : null))
-      .then((data: { users?: MockUser[] } | null) => {
+      .then((data: { users?: WorkspaceUser[] } | null) => {
         if (!data?.users) return;
         syncUserDirectory(data.users);
         setVersion((current) => current + 1);

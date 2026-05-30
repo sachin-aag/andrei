@@ -5,7 +5,6 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { authAccounts, authUsers, authVerificationTokens } from "@/db/schema/auth";
 import { workspaceUsers } from "@/db/schema";
-import { ensureWorkspaceUsersSeeded } from "@/lib/auth/workspace-users";
 
 const ALLOWED_EMAIL_DOMAINS = ["@mjbiopharm.com"];
 const ALLOWED_EMAILS = ["sachinagrawal272@gmail.com", "aditya.ambani@gmail.com"];
@@ -40,7 +39,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (!user.email) return false;
       if (!isAllowedEmail(user.email)) return false;
       try {
-        await ensureWorkspaceUsersSeeded();
         const wsUser = await db.query.workspaceUsers.findFirst({
           where: eq(workspaceUsers.email, user.email),
         });

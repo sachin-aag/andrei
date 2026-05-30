@@ -1,12 +1,11 @@
 /**
- * Creates workspace_users + user_role enum and seeds the default roster.
+ * Creates workspace_users + user_role enum if missing.
  * Use when db:push was skipped or aborted at the confirmation prompt.
  *
  *   npm run db:ensure-workspace-users
  */
 import { config } from "dotenv";
 import { neon } from "@neondatabase/serverless";
-import { MOCK_USERS } from "../src/lib/auth/mock-users-data";
 
 config({ path: ".env.local" });
 config({ path: ".env" });
@@ -44,23 +43,7 @@ async function main() {
     ON workspace_users (email);
   `;
 
-  for (const user of MOCK_USERS) {
-    await sql`
-      INSERT INTO workspace_users (id, name, email, role, title)
-      VALUES (
-        ${user.id},
-        ${user.name},
-        ${user.email},
-        ${user.role},
-        ${user.title}
-      )
-      ON CONFLICT (id) DO NOTHING;
-    `;
-  }
-
-  console.log(
-    `workspace_users is ready (${MOCK_USERS.length} default users seeded if missing).`
-  );
+  console.log("workspace_users table is ready.");
 }
 
 main().catch((e) => {
