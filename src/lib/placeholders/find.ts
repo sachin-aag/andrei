@@ -12,6 +12,25 @@ export type Placeholder = {
   text: string;
 };
 
+export function placeholderIdForField(
+  section: SectionType,
+  contentPath: string,
+  fromPos: number
+): string {
+  return `${section}-${contentPath}-${fromPos}`;
+}
+
+export function fromPosFromPlaceholderId(
+  id: string,
+  section: SectionType,
+  contentPath: string
+): number | null {
+  const prefix = `${section}-${contentPath}-`;
+  if (!id.startsWith(prefix)) return null;
+  const n = Number(id.slice(prefix.length));
+  return Number.isFinite(n) ? n : null;
+}
+
 /**
  * Regex to find placeholders in the text.
  * Matches a bracketed placeholder containing either `<to be filled>` or

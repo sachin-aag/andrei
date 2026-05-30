@@ -649,6 +649,24 @@
   box-shadow: inset 0 0 0 1px rgb(217 119 6 / 0.9);
 }
 
+/* Panel fill input focused — same placeholder in the narrative editor. */
+.placeholder-todo-active,
+.placeholder-todo.placeholder-todo-active {
+  background-color: rgb(245 158 11 / 0.48) !important;
+  color: rgb(120 53 15) !important;
+  box-shadow:
+    inset 0 0 0 2px rgb(217 119 6),
+    0 0 0 2px rgb(245 158 11 / 0.35) !important;
+}
+
+.placeholder-todo-mirror.placeholder-todo-active {
+  background-color: rgb(245 158 11 / 0.48);
+  color: rgb(120 53 15);
+  box-shadow:
+    inset 0 0 0 2px rgb(217 119 6),
+    0 0 0 2px rgb(245 158 11 / 0.35);
+}
+
 .ProseMirror .placeholder-todo .suggestion-insert,
 .ProseMirror .placeholder-todo .suggestion-insert-ai,
 .ProseMirror .placeholder-todo .suggestion-delete,

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { Schema } from "@tiptap/pm/model";
+import { Decoration } from "@tiptap/pm/view";
 import { findPlaceholdersInPmDoc } from "@/lib/placeholders/find";
 import {
   buildPlaceholderDecorations,
@@ -27,6 +28,13 @@ function schemaWithSuggestionMarks() {
       },
     },
   });
+}
+
+/** Inline decoration classes are stored on an internal field not exposed in .d.ts. */
+function inlineDecorationClass(decoration: Decoration | undefined): string | undefined {
+  return (
+    decoration as Decoration & { type?: { attrs?: { class?: string } } }
+  ).type?.attrs?.class;
 }
 
 describe("buildPlaceholderDecorations", () => {
@@ -69,8 +77,16 @@ describe("buildPlaceholderDecorations", () => {
     expect(slice).toBe(placeholder);
 
     const decos = buildPlaceholderDecorations(doc, placeholders);
-    expect(decos.find(bracket!.fromPos, bracket!.toPos).length).toBeGreaterThan(
-      0
+    const unfocusedDeco = decos.find(bracket!.fromPos, bracket!.toPos)[0];
+    expect(unfocusedDeco).toBeDefined();
+    expect(inlineDecorationClass(unfocusedDeco)).not.toContain(
+      "placeholder-todo-active"
+    );
+
+    const focused = buildPlaceholderDecorations(doc, placeholders, bracket!.id);
+    const focusedDeco = focused.find(bracket!.fromPos, bracket!.toPos)[0];
+    expect(inlineDecorationClass(focusedDeco)).toContain(
+      "placeholder-todo-active"
     );
   });
 });

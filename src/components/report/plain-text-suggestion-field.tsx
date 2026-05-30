@@ -11,6 +11,7 @@ import {
   useReportEvaluations,
   useReportSections,
 } from "@/providers/report-provider";
+import { useUserDirectory } from "@/providers/user-directory-provider";
 import {
   activeSuggestionForSection,
   parseAiFixCommentContent,
@@ -32,9 +33,12 @@ import {
   delay,
 } from "@/lib/suggestions/apply-transition";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
+import {
+  CommentPersistError,
+  patchCommentStatus,
+} from "@/lib/suggestions/persist-comment-status";
 import { splitPlainTextWithPlaceholders } from "@/lib/placeholders/plain-text-segments";
 import { cn } from "@/lib/utils";
-import type { CommentRecord } from "@/types/report";
 import type { SectionType } from "@/db/schema";
 import type { SectionContentMap } from "@/types/sections";
 
@@ -57,7 +61,13 @@ export function PlainTextSuggestionField({
   className?: string;
   placeholder?: string;
 }) {
-  const { report } = useReportData();
+  const { report, readOnly, currentUserId, refresh } = useReportData();
+  const { getUser } = useUserDirectory();
+  const canResolve =
+    !readOnly &&
+    !disabled &&
+    (currentUserId === report.authorId ||
+      getUser(currentUserId)?.role === "manager");
   const { comments, setComments } = useReportComments();
   const {
     evaluations,
@@ -192,30 +202,6 @@ export function PlainTextSuggestionField({
     return <span key={key}>{seg.text}</span>;
   };
 
-  const persistComment = useCallback(
-    async (commentId: string, status: "resolved" | "dismissed") => {
-      const res = await fetch(`/api/reports/${report.id}/comments/${commentId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
-      });
-      if (!res.ok) throw new Error("Failed to update suggestion");
-
-      if (status === "dismissed") {
-        setComments((prev) => prev.filter((c) => c.id !== commentId));
-        return;
-      }
-
-      const data = await res.json();
-      setComments((prev) =>
-        prev.map((c) =>
-          c.id === commentId ? { ...c, ...(data.comment as CommentRecord) } : c
-        )
-      );
-    },
-    [report.id, setComments]
-  );
-
   const saveSection = useCallback(
     async (nextContent: SectionContentMap[typeof section]) => {
       const res = await fetch(`/api/reports/${report.id}/sections/${section}`, {
@@ -229,7 +215,7 @@ export function PlainTextSuggestionField({
   );
 
   const applyActive = useCallback(async () => {
-    if (!activeComment || pending || disabled) return;
+    if (!activeComment || pending || !canResolve) return;
 
     const locateCheck = validateSuggestionLocate(
       activeComment,
@@ -274,19 +260,24 @@ export function PlainTextSuggestionField({
       }
       replaceSection(section, nextSection);
       await saveSection(nextSection);
+      await patchCommentStatus(report.id, activeComment.id, "resolved");
       setComments((prev) =>
         prev.map((c) =>
           c.id === activeComment.id ? { ...c, status: "resolved" as const } : c
         )
       );
       await delay(SUGGESTION_APPLY_SETTLE_MS);
-      await persistComment(activeComment.id, "resolved");
       await delay(SUGGESTION_INLINE_REVEAL_DELAY_MS);
 
       toast.success("Suggestion applied");
     } catch (err) {
       console.error(err);
-      toast.error("Could not apply suggestion");
+      toast.error(
+        err instanceof CommentPersistError
+          ? "Change saved but couldn't mark suggestion as resolved. It may reappear — try dismissing it."
+          : "Could not apply suggestion"
+      );
+      await refresh();
     } finally {
       endSuggestionApplyTransition(section);
       setPending(false);
@@ -295,35 +286,41 @@ export function PlainTextSuggestionField({
   }, [
     activeComment,
     pending,
-    disabled,
+    canResolve,
     section,
     contentPath,
     sections,
+    report.id,
     onChange,
     replaceSection,
     saveSection,
-    persistComment,
     setComments,
+    refresh,
     beginSuggestionApplyTransition,
     endSuggestionApplyTransition,
   ]);
 
   const dismissActive = useCallback(async () => {
-    if (!activeComment || pending || disabled) return;
+    if (!activeComment || pending || !canResolve) return;
 
     setLockedShellHeight(previewShellRef.current?.offsetHeight ?? null);
     setApplySettling(true);
     setPending(true);
     try {
       beginSuggestionApplyTransition(section, activeComment.id);
+      await patchCommentStatus(report.id, activeComment.id, "dismissed");
       setComments((prev) => prev.filter((c) => c.id !== activeComment.id));
-      await persistComment(activeComment.id, "dismissed");
       await delay(SUGGESTION_INLINE_REVEAL_DELAY_MS);
 
       toast.success("Suggestion dismissed");
     } catch (err) {
       console.error(err);
-      toast.error("Could not dismiss suggestion");
+      toast.error(
+        err instanceof CommentPersistError
+          ? err.message
+          : "Could not dismiss suggestion"
+      );
+      await refresh();
     } finally {
       endSuggestionApplyTransition(section);
       setPending(false);
@@ -332,10 +329,11 @@ export function PlainTextSuggestionField({
   }, [
     activeComment,
     pending,
-    disabled,
-    persistComment,
+    canResolve,
+    report.id,
     section,
     setComments,
+    refresh,
     beginSuggestionApplyTransition,
     endSuggestionApplyTransition,
   ]);
@@ -377,7 +375,8 @@ export function PlainTextSuggestionField({
                 <SuggestionInlineActions
                   suggestionId={activeComment.id}
                   pending={pending}
-                  disabled={disabled || !activeValidation?.canApply}
+                  acceptDisabled={!canResolve || !activeValidation?.canApply}
+                  dismissDisabled={!canResolve}
                   onAccept={() => void applyActive()}
                   onDismiss={() => void dismissActive()}
                 />

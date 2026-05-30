@@ -6,16 +6,21 @@ export function SuggestionInlineActions({
   suggestionId,
   pending = false,
   disabled = false,
+  acceptDisabled,
+  dismissDisabled,
   onAccept,
   onDismiss,
 }: {
   suggestionId: string;
   pending?: boolean;
   disabled?: boolean;
+  acceptDisabled?: boolean;
+  dismissDisabled?: boolean;
   onAccept: () => void;
   onDismiss: () => void;
 }) {
-  const busy = pending || disabled;
+  const acceptBusy = pending || (acceptDisabled ?? disabled);
+  const dismissBusy = pending || (dismissDisabled ?? disabled);
 
   return (
     <span
@@ -28,12 +33,12 @@ export function SuggestionInlineActions({
         className="suggestion-action-button suggestion-action-button-accept"
         title={pending ? "Applying suggestion" : "Accept suggestion"}
         aria-label={pending ? "Applying suggestion" : "Accept suggestion"}
-        disabled={busy}
+        disabled={acceptBusy}
         onMouseDown={(e) => e.preventDefault()}
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
-          if (!busy) onAccept();
+          if (!acceptBusy) onAccept();
         }}
       >
         {pending ? (
@@ -48,12 +53,12 @@ export function SuggestionInlineActions({
         className="suggestion-action-button suggestion-action-button-ignore"
         title="Ignore suggestion"
         aria-label="Ignore suggestion"
-        disabled={busy}
+        disabled={dismissBusy}
         onMouseDown={(e) => e.preventDefault()}
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
-          if (!busy) onDismiss();
+          if (!dismissBusy) onDismiss();
         }}
       >
         <X className="size-3.5" />

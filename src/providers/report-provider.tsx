@@ -116,11 +116,21 @@ type ReportContextValue = {
     commentId: string
   ) => void;
   endSuggestionApplyTransition: (section: SectionType) => void;
+  /** Per-section apply/dismiss transition — pauses auto-save while set. */
+  suggestionApplyTransition: Partial<
+    Record<
+      SectionType,
+      { holdInlinePreview: boolean; gutterAnchorCommentId: string }
+    >
+  >;
   /** Set after suggestions succeed — workspace opens Criteria tab for this section. */
   suggestionsFocusSection: SectionType | null;
   clearSuggestionsFocusSection: () => void;
   /** Unfilled `<to be filled>` placeholders across the live document. */
   pendingPlaceholders: Placeholder[];
+  /** Placeholder panel fill input is focused — highlights the matching span in the doc. */
+  focusedPanelPlaceholderId: string | null;
+  setFocusedPanelPlaceholderId: React.Dispatch<React.SetStateAction<string | null>>;
   setEvaluations: React.Dispatch<React.SetStateAction<EvaluationRecord[]>>;
   setComments: React.Dispatch<React.SetStateAction<CommentRecord[]>>;
   refresh: () => Promise<void>;
@@ -161,7 +171,9 @@ type ReportSectionsContextValue = Pick<
 
 type ReportPlaceholdersContextValue = Pick<
   ReportContextValue,
-  "pendingPlaceholders"
+  | "pendingPlaceholders"
+  | "focusedPanelPlaceholderId"
+  | "setFocusedPanelPlaceholderId"
 >;
 
 type ReportSectionContextValue<K extends keyof SectionContentMap> = {
@@ -201,6 +213,7 @@ type ReportEvaluationContextValue = Pick<
   | "isSuggestionPreviewHeld"
   | "beginSuggestionApplyTransition"
   | "endSuggestionApplyTransition"
+  | "suggestionApplyTransition"
   | "suggestionsFocusSection"
   | "clearSuggestionsFocusSection"
   | "setEvaluations"
@@ -300,6 +313,9 @@ export function ReportProvider({
   >({});
 
   const [activeCommentId, setActiveCommentId] = useState<string | null>(null);
+  const [focusedPanelPlaceholderId, setFocusedPanelPlaceholderId] = useState<
+    string | null
+  >(null);
   const [activeAnchorId, setActiveAnchorId] = useState<string | null>(null);
   const [hoveredCommentIds, setHoveredCommentIdsRaw] = useState<string[]>([]);
 
@@ -698,8 +714,12 @@ export function ReportProvider({
   );
 
   const placeholdersValue = useMemo<ReportPlaceholdersContextValue>(
-    () => ({ pendingPlaceholders }),
-    [pendingPlaceholders]
+    () => ({
+      pendingPlaceholders,
+      focusedPanelPlaceholderId,
+      setFocusedPanelPlaceholderId,
+    }),
+    [pendingPlaceholders, focusedPanelPlaceholderId]
   );
 
   const defineSectionValue = useMemo<ReportSectionContextValue<"define">>(
@@ -810,6 +830,7 @@ export function ReportProvider({
       isSuggestionPreviewHeld,
       beginSuggestionApplyTransition,
       endSuggestionApplyTransition,
+      suggestionApplyTransition,
       suggestionsFocusSection,
       clearSuggestionsFocusSection,
       setEvaluations,
@@ -828,6 +849,7 @@ export function ReportProvider({
       isSuggestionPreviewHeld,
       beginSuggestionApplyTransition,
       endSuggestionApplyTransition,
+      suggestionApplyTransition,
       suggestionsFocusSection,
       clearSuggestionsFocusSection,
     ]

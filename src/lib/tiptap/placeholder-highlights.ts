@@ -51,7 +51,8 @@ export function rangeOverlapsPendingSuggestionMarks(
 
 export function buildPlaceholderDecorations(
   doc: PMNode,
-  placeholders: Placeholder[]
+  placeholders: Placeholder[],
+  focusedPlaceholderId: string | null = null
 ): DecorationSet {
   const decos: Decoration[] = [];
   for (const p of placeholders) {
@@ -65,11 +66,18 @@ export function buildPlaceholderDecorations(
       p.fromPos,
       p.toPos
     );
+    const isFocused = focusedPlaceholderId === p.id;
+    const classes = [
+      "placeholder-todo",
+      overSuggestion ? "placeholder-todo-over-suggestion" : null,
+      isFocused ? "placeholder-todo-active" : null,
+    ]
+      .filter(Boolean)
+      .join(" ");
+
     decos.push(
       Decoration.inline(p.fromPos, p.toPos, {
-        class: overSuggestion
-          ? "placeholder-todo placeholder-todo-over-suggestion"
-          : "placeholder-todo",
+        class: classes,
         ...(overSuggestion
           ? {
               style:
@@ -95,6 +103,8 @@ export function isSelectionOverPlaceholder(state: EditorState): boolean {
   );
 }
 
+export const placeholderRefreshMeta = "placeholderRefresh";
+
 /**
  * Tiptap extension that highlights actionable bracketed spans: `to be filled`
  * tokens and other non-numeric `[...]` guidance the model may emit.
@@ -103,72 +113,74 @@ export function isSelectionOverPlaceholder(state: EditorState): boolean {
  * immediately type a replacement — ProseMirror's native selection-replace
  * handles the rest.
  */
-export const PlaceholderHighlightExtension = Extension.create<PlaceholderHighlightOptions>({
-  name: "placeholderHighlights",
-  addOptions() {
-    return {
-      section: "define" as SectionType,
-      contentPath: "narrative",
-    };
-  },
-  addProseMirrorPlugins() {
-    const { section, contentPath } = this.options;
+export function createPlaceholderHighlightExtension(
+  getFocusedPlaceholderId: () => string | null,
+  options: PlaceholderHighlightOptions
+) {
+  const { section, contentPath } = options;
 
-    const scanPlaceholders = (doc: PMNode): Placeholder[] =>
-      findPlaceholdersInPmDoc(doc, section, contentPath);
+  return Extension.create({
+    name: "placeholderHighlights",
+    addProseMirrorPlugins() {
+      const scanPlaceholders = (doc: PMNode): Placeholder[] =>
+        findPlaceholdersInPmDoc(doc, section, contentPath);
 
-    return [
-      new Plugin<PluginStateData>({
-        key: placeholderKey,
-        state: {
-          init(_, { doc }) {
-            const placeholders = scanPlaceholders(doc);
-            return {
-              decos: buildPlaceholderDecorations(doc, placeholders),
-              placeholders,
-            };
-          },
-          apply(tr, prev, _oldState, newState) {
-            if (tr.docChanged) {
-              const placeholders = scanPlaceholders(newState.doc);
+      const rebuild = (doc: PMNode, placeholders: Placeholder[]) => ({
+        decos: buildPlaceholderDecorations(
+          doc,
+          placeholders,
+          getFocusedPlaceholderId()
+        ),
+        placeholders,
+      });
+
+      return [
+        new Plugin<PluginStateData>({
+          key: placeholderKey,
+          state: {
+            init(_, { doc }) {
+              const placeholders = scanPlaceholders(doc);
+              return rebuild(doc, placeholders);
+            },
+            apply(tr, prev, _oldState, newState) {
+              if (tr.docChanged || tr.getMeta(placeholderRefreshMeta)) {
+                const placeholders = scanPlaceholders(newState.doc);
+                return rebuild(newState.doc, placeholders);
+              }
               return {
-                decos: buildPlaceholderDecorations(newState.doc, placeholders),
-                placeholders,
+                decos: prev.decos.map(tr.mapping, tr.doc),
+                placeholders: prev.placeholders,
               };
-            }
-            return {
-              decos: prev.decos.map(tr.mapping, tr.doc),
-              placeholders: prev.placeholders,
-            };
+            },
           },
-        },
-        props: {
-          decorations(state) {
-            return placeholderKey.getState(state)?.decos ?? DecorationSet.empty;
+          props: {
+            decorations(state) {
+              return placeholderKey.getState(state)?.decos ?? DecorationSet.empty;
+            },
+            handleClick(view: EditorView, pos: number, event: MouseEvent) {
+              const target = event.target as HTMLElement;
+              if (!target.closest(".placeholder-todo")) return false;
+
+              const pluginState = placeholderKey.getState(view.state);
+              if (!pluginState) return false;
+
+              const placeholder = pluginState.placeholders.find(
+                (p) => pos >= p.fromPos && pos <= p.toPos
+              );
+              if (!placeholder) return false;
+
+              const $from = view.state.doc.resolve(placeholder.fromPos);
+              const $to = view.state.doc.resolve(placeholder.toPos);
+              view.dispatch(
+                view.state.tr.setSelection(
+                  TextSelection.create(view.state.doc, $from.pos, $to.pos)
+                )
+              );
+              return true;
+            },
           },
-          handleClick(view: EditorView, pos: number, event: MouseEvent) {
-            const target = event.target as HTMLElement;
-            if (!target.closest(".placeholder-todo")) return false;
-
-            const pluginState = placeholderKey.getState(view.state);
-            if (!pluginState) return false;
-
-            const placeholder = pluginState.placeholders.find(
-              (p) => pos >= p.fromPos && pos <= p.toPos
-            );
-            if (!placeholder) return false;
-
-            const $from = view.state.doc.resolve(placeholder.fromPos);
-            const $to = view.state.doc.resolve(placeholder.toPos);
-            view.dispatch(
-              view.state.tr.setSelection(
-                TextSelection.create(view.state.doc, $from.pos, $to.pos)
-              )
-            );
-            return true;
-          },
-        },
-      }),
-    ];
-  },
-});
+        }),
+      ];
+    },
+  });
+}

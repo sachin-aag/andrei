@@ -16,6 +16,7 @@ import {
   useReportEvaluations,
   useReportSections,
 } from "@/providers/report-provider";
+import { useUserDirectory } from "@/providers/user-directory-provider";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
@@ -48,6 +49,10 @@ import {
   waitForAnimation,
 } from "@/lib/suggestions/apply-transition";
 import { applyStructuredFieldSuggestion } from "@/lib/suggestions/apply-field";
+import {
+  CommentPersistError,
+  patchCommentStatus,
+} from "@/lib/suggestions/persist-comment-status";
 import {
   countStaleOpenSuggestions,
   suggestionStaleMessage,
@@ -97,6 +102,9 @@ function buildFrozenCard(
   };
 }
 
+const RESOLVE_HINT =
+  "Only the report author or a manager can act on suggestions.";
+
 function SuggestionCardFace({
   card,
   phase,
@@ -104,6 +112,7 @@ function SuggestionCardFace({
   pending,
   validation,
   queueStaleHint,
+  canResolve,
   onAccept,
   onDismiss,
 }: {
@@ -113,6 +122,7 @@ function SuggestionCardFace({
   pending: boolean;
   validation: SuggestionValidation;
   queueStaleHint: string | null;
+  canResolve: boolean;
   onAccept: () => void;
   onDismiss: () => void;
 }) {
@@ -180,6 +190,10 @@ function SuggestionCardFace({
         <p className="text-[10px] text-[var(--muted-foreground)]">{queueStaleHint}</p>
       ) : null}
 
+      {phase === "steady" && !canResolve ? (
+        <p className="text-[10px] text-[var(--muted-foreground)]">{RESOLVE_HINT}</p>
+      ) : null}
+
       {(payload.deleteText || payload.insertText) && (
         <div
           className={cn(
@@ -225,7 +239,8 @@ function SuggestionCardFace({
               type="button"
               size="sm"
               className="h-7 text-xs"
-              disabled={pending || !validation.canApply}
+              disabled={pending || !canResolve || !validation.canApply}
+              title={!canResolve ? RESOLVE_HINT : undefined}
               onClick={onAccept}
             >
               {pending ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
@@ -236,7 +251,8 @@ function SuggestionCardFace({
               size="sm"
               variant="ghost"
               className="h-7 text-xs"
-              disabled={pending}
+              disabled={pending || !canResolve}
+              title={!canResolve ? RESOLVE_HINT : undefined}
               onClick={onDismiss}
             >
               <X className="size-3" />
@@ -286,6 +302,7 @@ function ExitingSuggestionLayer({
         pending
         validation={LOCATABLE_VALIDATION}
         queueStaleHint={null}
+        canResolve={false}
         onAccept={() => {}}
         onDismiss={() => {}}
       />
@@ -301,6 +318,7 @@ function EnteringSuggestionLayer({
   pending,
   validation,
   queueStaleHint,
+  canResolve,
   onAccept,
   onDismiss,
 }: {
@@ -310,6 +328,7 @@ function EnteringSuggestionLayer({
   pending: boolean;
   validation: SuggestionValidation;
   queueStaleHint: string | null;
+  canResolve: boolean;
   onAccept: () => void;
   onDismiss: () => void;
 }) {
@@ -337,6 +356,7 @@ function EnteringSuggestionLayer({
         pending={pending}
         validation={validation}
         queueStaleHint={queueStaleHint}
+        canResolve={canResolve}
         onAccept={onAccept}
         onDismiss={onDismiss}
       />
@@ -345,7 +365,12 @@ function EnteringSuggestionLayer({
 }
 
 export function SectionSuggestionCard({ section }: { section: SectionType }) {
-  const { report } = useReportData();
+  const { report, readOnly, currentUserId, refresh } = useReportData();
+  const { getUser } = useUserDirectory();
+  const canResolve =
+    !readOnly &&
+    (currentUserId === report.authorId ||
+      getUser(currentUserId)?.role === "manager");
   const {
     evaluations,
     beginSuggestionApplyTransition,
@@ -394,30 +419,6 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
     if (openTotal <= 1 || stale === 0) return null;
     return `${stale} of ${openTotal} suggestions in this section may no longer apply after recent edits.`;
   }, [section, comments, evaluations, sectionContent]);
-
-  const persistComment = useCallback(
-    async (commentId: string, status: "resolved" | "dismissed") => {
-      const res = await fetch(`/api/reports/${report.id}/comments/${commentId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
-      });
-      if (!res.ok) throw new Error("Failed to update suggestion");
-
-      if (status === "dismissed") {
-        setComments((prev) => prev.filter((c) => c.id !== commentId));
-        return;
-      }
-
-      const data = await res.json();
-      setComments((prev) =>
-        prev.map((c) =>
-          c.id === commentId ? { ...c, ...(data.comment as CommentRecord) } : c
-        )
-      );
-    },
-    [report.id, setComments]
-  );
 
   const saveSection = useCallback(
     async (nextContent: SectionContentMap[typeof section]) => {
@@ -488,39 +489,30 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
     [section, sections, replaceSection, saveSection]
   );
 
-  const runQueueTransition = useCallback(
-    async (
-      closingId: string,
-      closingSnapshot: FrozenCard,
-      status: "resolved" | "dismissed"
-    ) => {
-      setFrozenCard(null);
-      setExitingCard(closingSnapshot);
-      setQueueTransition("exit");
-      setPhase("applied");
+  const animateQueueTransition = useCallback(async (closingSnapshot: FrozenCard) => {
+    setFrozenCard(null);
+    setExitingCard(closingSnapshot);
+    setQueueTransition("exit");
+    setPhase("applied");
 
-      await afterPaint();
-      await waitForAnimation(exitRef.current, SUGGESTION_CARD_EXIT_MS);
+    await afterPaint();
+    await waitForAnimation(exitRef.current, SUGGESTION_CARD_EXIT_MS);
 
-      await persistComment(closingId, status);
+    setExitingCard(null);
+    setPhase("preparing-next");
+    await delay(SUGGESTION_NEXT_PREVIEW_DELAY_MS);
 
-      setExitingCard(null);
-      setPhase("preparing-next");
-      await delay(SUGGESTION_NEXT_PREVIEW_DELAY_MS);
+    setQueueTransition("enter");
+    setPhase("steady");
 
-      setQueueTransition("enter");
-      setPhase("steady");
-
-      await afterPaint();
-      await waitForAnimation(enterRef.current, SUGGESTION_CARD_ENTER_MS);
-      await delay(SUGGESTION_INLINE_REVEAL_DELAY_MS);
-      setQueueTransition(null);
-    },
-    [persistComment]
-  );
+    await afterPaint();
+    await waitForAnimation(enterRef.current, SUGGESTION_CARD_ENTER_MS);
+    await delay(SUGGESTION_INLINE_REVEAL_DELAY_MS);
+    setQueueTransition(null);
+  }, []);
 
   const handleAccept = useCallback(async () => {
-    if (!liveCard || pending) return;
+    if (!liveCard || pending || !canResolve) return;
 
     const locateCheck = validateSuggestionLocate(
       liveCard.comment,
@@ -544,6 +536,8 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
       beginSuggestionApplyTransition(section, commentId);
 
       await applyCardToDocument(snapshot);
+      await patchCommentStatus(report.id, commentId, "resolved");
+
       setComments((prev) =>
         prev.map((c) =>
           c.id === commentId ? { ...c, status: "resolved" as const } : c
@@ -553,9 +547,8 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
       await delay(SUGGESTION_APPLY_SETTLE_MS);
 
       if (hasQueue) {
-        await runQueueTransition(commentId, snapshot, "resolved");
+        await animateQueueTransition(snapshot);
       } else {
-        await persistComment(commentId, "resolved");
         setFrozenCard(null);
         setPhase("steady");
         await delay(SUGGESTION_INLINE_REVEAL_DELAY_MS);
@@ -564,7 +557,12 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
       toast.success("Suggestion applied");
     } catch (err) {
       console.error(err);
-      toast.error("Could not apply suggestion");
+      toast.error(
+        err instanceof CommentPersistError
+          ? "Change saved but couldn't mark suggestion as resolved. It may reappear — try dismissing it."
+          : "Could not apply suggestion"
+      );
+      await refresh();
       setFrozenCard(null);
       setExitingCard(null);
       setQueueTransition(null);
@@ -576,18 +574,20 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
   }, [
     liveCard,
     pending,
+    canResolve,
     section,
     sections,
+    report.id,
     applyCardToDocument,
-    runQueueTransition,
-    persistComment,
+    animateQueueTransition,
     setComments,
+    refresh,
     beginSuggestionApplyTransition,
     endSuggestionApplyTransition,
   ]);
 
   const handleDismiss = useCallback(async () => {
-    if (!liveCard || pending) return;
+    if (!liveCard || pending || !canResolve) return;
 
     const snapshot = liveCard;
     const commentId = snapshot.comment.id;
@@ -595,24 +595,37 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
 
     setPending(true);
     setFrozenCard(snapshot);
+    setPhase("applying");
 
     try {
       beginSuggestionApplyTransition(section, commentId);
-      await stripCardFromDocument(snapshot);
+
+      await patchCommentStatus(report.id, commentId, "dismissed");
       setComments((prev) => prev.filter((c) => c.id !== commentId));
 
+      try {
+        await stripCardFromDocument(snapshot);
+      } catch (stripErr) {
+        console.warn("Non-fatal: could not strip suggestion marks", stripErr);
+      }
+
       if (hasQueue) {
-        await runQueueTransition(commentId, snapshot, "dismissed");
+        await animateQueueTransition(snapshot);
       } else {
-        await persistComment(commentId, "dismissed");
         setFrozenCard(null);
+        setPhase("steady");
         await delay(SUGGESTION_INLINE_REVEAL_DELAY_MS);
       }
 
       toast.success("Suggestion dismissed");
     } catch (err) {
       console.error(err);
-      toast.error("Could not dismiss suggestion");
+      toast.error(
+        err instanceof CommentPersistError
+          ? err.message
+          : "Could not dismiss suggestion"
+      );
+      await refresh();
       setFrozenCard(null);
       setExitingCard(null);
       setQueueTransition(null);
@@ -624,11 +637,13 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
   }, [
     liveCard,
     pending,
+    canResolve,
     section,
+    report.id,
     stripCardFromDocument,
-    runQueueTransition,
-    persistComment,
+    animateQueueTransition,
     setComments,
+    refresh,
     beginSuggestionApplyTransition,
     endSuggestionApplyTransition,
   ]);
@@ -659,6 +674,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
         pending={pending}
         validation={activeValidation}
         queueStaleHint={queueStaleHint}
+        canResolve={canResolve}
         onAccept={handleAccept}
         onDismiss={handleDismiss}
       />
@@ -680,6 +696,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
           : LOCATABLE_VALIDATION
       }
       queueStaleHint={phase === "steady" ? queueStaleHint : null}
+      canResolve={canResolve}
       onAccept={handleAccept}
       onDismiss={handleDismiss}
     />

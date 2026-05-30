@@ -3,7 +3,10 @@
 import { useCallback, useLayoutEffect, useMemo, useRef } from "react";
 import { Textarea } from "@/components/ui/textarea";
 import { resizeTextareaToContent } from "@/components/ui/auto-resize-textarea";
+import { fromPosFromPlaceholderId } from "@/lib/placeholders/find";
 import { splitPlainTextWithPlaceholders } from "@/lib/placeholders/plain-text-segments";
+import { useReportPlaceholders } from "@/providers/report-provider";
+import type { SectionType } from "@/db/schema";
 import { cn } from "@/lib/utils";
 
 const fieldTypography =
@@ -33,8 +36,22 @@ export function PlainTextHighlightedInput({
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mirrorRef = useRef<HTMLDivElement>(null);
+  const { focusedPanelPlaceholderId } = useReportPlaceholders();
   const segments = useMemo(() => splitPlainTextWithPlaceholders(value), [value]);
   const hasPlaceholders = segments.some((s) => s.kind === "placeholder");
+
+  const fieldDot = fieldAnchor.indexOf(".");
+  const fieldSection =
+    fieldDot >= 0 ? (fieldAnchor.slice(0, fieldDot) as SectionType) : null;
+  const fieldContentPath = fieldDot >= 0 ? fieldAnchor.slice(fieldDot + 1) : "";
+  const focusedFromPos =
+    fieldSection && fieldContentPath && focusedPanelPlaceholderId
+      ? fromPosFromPlaceholderId(
+          focusedPanelPlaceholderId,
+          fieldSection,
+          fieldContentPath
+        )
+      : null;
 
   const syncEditHeight = useCallback(() => {
     const textarea = textareaRef.current;
@@ -89,15 +106,30 @@ export function PlainTextHighlightedInput({
           fieldTypography
         )}
       >
-        {segments.map((seg, i) =>
-          seg.kind === "placeholder" ? (
-            <span key={i} className="placeholder-todo-mirror">
-              {seg.text}
-            </span>
-          ) : (
-            <span key={i}>{seg.text}</span>
-          )
-        )}
+        {(() => {
+          let offset = 0;
+          return segments.map((seg, i) => {
+            if (seg.kind === "placeholder") {
+              const fromPos = offset;
+              offset += seg.text.length;
+              const isActive =
+                focusedFromPos != null && focusedFromPos === fromPos;
+              return (
+                <span
+                  key={i}
+                  className={cn(
+                    "placeholder-todo-mirror",
+                    isActive && "placeholder-todo-active"
+                  )}
+                >
+                  {seg.text}
+                </span>
+              );
+            }
+            offset += seg.text.length;
+            return <span key={i}>{seg.text}</span>;
+          });
+        })()}
       </div>
       <Textarea
         ref={textareaRef}

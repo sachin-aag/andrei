@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState, type FocusEvent } from "react";
 import { ArrowRight, CheckCircle2, PenLine } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,6 +27,7 @@ import {
 } from "@/lib/placeholders/resolve-in-doc";
 import type { SectionContentMap } from "@/types/sections";
 import type { SectionType } from "@/db/schema";
+import { cn } from "@/lib/utils";
 
 /* ------------------------------------------------------------------ */
 /*  Individual placeholder card                                        */
@@ -38,6 +39,8 @@ function PlaceholderCard({
   onFillValueChange,
   onFill,
   onJump,
+  onFillFocus,
+  onFillBlur,
   beforeCtx,
   afterCtx,
 }: {
@@ -46,10 +49,23 @@ function PlaceholderCard({
   onFillValueChange: (value: string) => void;
   onFill: () => void;
   onJump: () => void;
+  onFillFocus: () => void;
+  onFillBlur: (e: FocusEvent<HTMLInputElement>) => void;
   beforeCtx: string;
   afterCtx: string;
 }) {
   const label = extractPlaceholderLabel(placeholder.text);
+  const [fillFocused, setFillFocused] = useState(false);
+
+  const handleFillFocus = () => {
+    setFillFocused(true);
+    onFillFocus();
+  };
+
+  const handleFillBlur = (e: FocusEvent<HTMLInputElement>) => {
+    setFillFocused(false);
+    onFillBlur(e);
+  };
 
   return (
     <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] overflow-hidden">
@@ -73,7 +89,14 @@ function PlaceholderCard({
       {/* Context: surrounding text with placeholder highlighted */}
       <div className="px-3 py-2 text-xs text-[var(--muted-foreground)] leading-relaxed">
         {beforeCtx && <span>{beforeCtx}</span>}
-        <span className="inline-block px-1 mx-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200 font-medium">
+        <span
+          className={cn(
+            "inline-block px-1 mx-0.5 rounded font-medium border transition-colors",
+            fillFocused
+              ? "bg-amber-200 text-amber-900 border-amber-400 ring-2 ring-amber-400/45"
+              : "bg-amber-100 text-amber-800 border-amber-200"
+          )}
+        >
           {placeholder.text}
         </span>
         {afterCtx && <span>{afterCtx}</span>}
@@ -84,6 +107,8 @@ function PlaceholderCard({
         <Input
           value={fillValue}
           onChange={(e) => onFillValueChange(e.target.value)}
+          onFocus={handleFillFocus}
+          onBlur={handleFillBlur}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               e.preventDefault();
@@ -205,7 +230,8 @@ export function PlaceholdersPanelContent({
   onJumpToPlaceholder: (p: Placeholder) => void;
 }) {
   const { report } = useReportData();
-  const { pendingPlaceholders } = useReportPlaceholders();
+  const { pendingPlaceholders, setFocusedPanelPlaceholderId } =
+    useReportPlaceholders();
   const { sections, replaceSection } = useReportSections();
   const { getEditor } = useReportEditors();
   const [fillValues, setFillValues] = useState<Record<string, string>>({});
@@ -350,6 +376,13 @@ export function PlaceholdersPanelContent({
                     }
                     onFill={() => handleFill(p)}
                     onJump={() => onJumpToPlaceholder(p)}
+                    onFillFocus={() => setFocusedPanelPlaceholderId(p.id)}
+                    onFillBlur={(e) => {
+                      if (e.currentTarget.closest(".rounded-lg")?.contains(e.relatedTarget as Node)) {
+                        return;
+                      }
+                      setFocusedPanelPlaceholderId(null);
+                    }}
                     beforeCtx={beforeCtx}
                     afterCtx={afterCtx}
                   />

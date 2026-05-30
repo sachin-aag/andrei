@@ -38,6 +38,7 @@ import {
   useReportData,
   useReportEditors,
   useReportEvaluations,
+  useReportPlaceholders,
   useReportSections,
 } from "@/providers/report-provider";
 import { Button } from "@/components/ui/button";
@@ -45,9 +46,17 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useUserDirectory } from "@/providers/user-directory-provider";
 import { cn } from "@/lib/utils";
+import {
+  CommentPersistError,
+  patchCommentStatus,
+} from "@/lib/suggestions/persist-comment-status";
 import { createCommentHighlightExtension } from "@/lib/tiptap/comment-highlights";
 import type { CommentHighlightRange, CommentHighlightHandlers } from "@/lib/tiptap/comment-highlights";
-import { PlaceholderHighlightExtension, isSelectionOverPlaceholder } from "@/lib/tiptap/placeholder-highlights";
+import {
+  createPlaceholderHighlightExtension,
+  isSelectionOverPlaceholder,
+  placeholderRefreshMeta,
+} from "@/lib/tiptap/placeholder-highlights";
 import {
   SuggestionInsert,
   SuggestionDelete,
@@ -284,6 +293,7 @@ export function TiptapSectionField({
     workspaceMode,
     currentUserId,
     getSectionId,
+    refresh,
   } = useReportData();
   const {
     comments,
@@ -297,6 +307,11 @@ export function TiptapSectionField({
     pendingCommentFocusCommentId,
     acknowledgeCommentFocus,
   } = useReportComments();
+  const { focusedPanelPlaceholderId } = useReportPlaceholders();
+  const focusedPanelPlaceholderIdRef = useRef(focusedPanelPlaceholderId);
+  useLayoutEffect(() => {
+    focusedPanelPlaceholderIdRef.current = focusedPanelPlaceholderId;
+  }, [focusedPanelPlaceholderId]);
   const { registerEditor, setActiveEditor } = useReportEditors();
   const { activeSuggestionIdForSection, isSuggestionPreviewHeld } =
     useReportEvaluations();
@@ -338,10 +353,11 @@ export function TiptapSectionField({
 
   const placeholderHighlightExtension = useMemo(
     () =>
-      PlaceholderHighlightExtension.configure({
-        section,
-        contentPath,
-      }),
+      // eslint-disable-next-line react-hooks/refs -- ProseMirror calls getter at transaction time
+      createPlaceholderHighlightExtension(
+        () => focusedPanelPlaceholderIdRef.current,
+        { section, contentPath }
+      ),
     [section, contentPath]
   );
 
@@ -537,17 +553,13 @@ export function TiptapSectionField({
 
   const persistSuggestion = useCallback(
     async (commentId: string, status: "resolved" | "dismissed") => {
-      const res = await fetch(`/api/reports/${report.id}/comments/${commentId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
-      });
-      if (!res.ok) throw new Error("Failed to update suggestion");
-      const data = await res.json();
+      await patchCommentStatus(report.id, commentId, status);
       setComments((prev) =>
         status === "dismissed"
           ? prev.filter((c) => c.id !== commentId)
-          : prev.map((c) => (c.id === commentId ? { ...c, ...data.comment } : c))
+          : prev.map((c) =>
+              c.id === commentId ? { ...c, status: "resolved" as const } : c
+            )
       );
     },
     [report.id, setComments]
@@ -575,7 +587,10 @@ export function TiptapSectionField({
         ...(value as Record<string, unknown>),
         narrative: next,
       } as never);
-      await persistSuggestion(suggestionId, "dismissed");
+      await persistSuggestion(
+        suggestionId,
+        mode === "accept" ? "resolved" : "dismissed"
+      );
     },
     [editor, report.id, section, value, replaceSection, persistSuggestion]
   );
@@ -594,6 +609,14 @@ export function TiptapSectionField({
         );
         try {
           await applySuggestionInEditor(id, "accept");
+        } catch (err) {
+          console.error(err);
+          toast.error(
+            err instanceof CommentPersistError
+              ? err.message
+              : "Could not apply suggestion"
+          );
+          await refresh();
         } finally {
           suggestionWidgetStateRef.current.pendingId = null;
           editor?.view.dispatch(
@@ -608,6 +631,14 @@ export function TiptapSectionField({
         );
         try {
           await applySuggestionInEditor(id, "dismiss");
+        } catch (err) {
+          console.error(err);
+          toast.error(
+            err instanceof CommentPersistError
+              ? err.message
+              : "Could not dismiss suggestion"
+          );
+          await refresh();
         } finally {
           suggestionWidgetStateRef.current.pendingId = null;
           editor?.view.dispatch(
@@ -619,7 +650,7 @@ export function TiptapSectionField({
     editor?.view.dispatch(
       editor.state.tr.setMeta(suggestionActionWidgetsRefreshMeta, true)
     );
-  }, [activeSuggestionId, contentPath, editor, applySuggestionInEditor]);
+  }, [activeSuggestionId, contentPath, editor, applySuggestionInEditor, refresh]);
 
   const applyExternalValueToEditor = useCallback(() => {
     const currentEditor = editor;
@@ -733,6 +764,15 @@ export function TiptapSectionField({
       }
     };
   }, [editor, activeCommentId, filteredRanges]);
+
+  useEffect(() => {
+    if (!editor) return;
+    editor.view.dispatch(
+      editor.state.tr
+        .setMeta(placeholderRefreshMeta, true)
+        .setMeta("addToHistory", false)
+    );
+  }, [editor, focusedPanelPlaceholderId, section, contentPath]);
 
   const cancelCommentCompose = useCallback(() => {
     setCommentComposing(false);
