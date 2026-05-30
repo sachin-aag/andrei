@@ -5,6 +5,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { resizeTextareaToContent } from "@/components/ui/auto-resize-textarea";
 import { fromPosFromPlaceholderId } from "@/lib/placeholders/find";
 import { splitPlainTextWithPlaceholders } from "@/lib/placeholders/plain-text-segments";
+import { PlainTextPlaceholderSpans } from "@/components/report/plain-text-placeholder-spans";
 import { useReportPlaceholders } from "@/providers/report-provider";
 import type { SectionType } from "@/db/schema";
 import { cn } from "@/lib/utils";
@@ -106,30 +107,10 @@ export function PlainTextHighlightedInput({
           fieldTypography
         )}
       >
-        {(() => {
-          let offset = 0;
-          return segments.map((seg, i) => {
-            if (seg.kind === "placeholder") {
-              const fromPos = offset;
-              offset += seg.text.length;
-              const isActive =
-                focusedFromPos != null && focusedFromPos === fromPos;
-              return (
-                <span
-                  key={i}
-                  className={cn(
-                    "placeholder-todo-mirror",
-                    isActive && "placeholder-todo-active"
-                  )}
-                >
-                  {seg.text}
-                </span>
-              );
-            }
-            offset += seg.text.length;
-            return <span key={i}>{seg.text}</span>;
-          });
-        })()}
+        <PlainTextPlaceholderSpans
+          text={value}
+          focusedFromPos={focusedFromPos}
+        />
       </div>
       <Textarea
         ref={textareaRef}

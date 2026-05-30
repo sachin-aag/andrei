@@ -4,11 +4,13 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { toast } from "sonner";
 import { Label } from "@/components/ui/label";
 import { PlainTextHighlightedInput } from "@/components/report/plain-text-highlighted-input";
+import { PlainTextPlaceholderSpans } from "@/components/report/plain-text-placeholder-spans";
 import { SuggestionInlineActions } from "@/components/report/suggestion-inline-actions";
 import {
   useReportComments,
   useReportData,
   useReportEvaluations,
+  useReportPlaceholders,
   useReportSections,
 } from "@/providers/report-provider";
 import { useUserDirectory } from "@/providers/user-directory-provider";
@@ -37,7 +39,7 @@ import {
   CommentPersistError,
   patchCommentStatus,
 } from "@/lib/suggestions/persist-comment-status";
-import { splitPlainTextWithPlaceholders } from "@/lib/placeholders/plain-text-segments";
+import { fromPosFromPlaceholderId } from "@/lib/placeholders/find";
 import { cn } from "@/lib/utils";
 import type { SectionType } from "@/db/schema";
 import type { SectionContentMap } from "@/types/sections";
@@ -76,6 +78,7 @@ export function PlainTextSuggestionField({
     endSuggestionApplyTransition,
   } = useReportEvaluations();
   const { sections, replaceSection } = useReportSections();
+  const { focusedPanelPlaceholderId } = useReportPlaceholders();
   const [pending, setPending] = useState(false);
   /** Keep the preview shell mounted while apply transitions run (avoids height jump). */
   const [applySettling, setApplySettling] = useState(false);
@@ -159,47 +162,71 @@ export function PlainTextSuggestionField({
     return () => cancelAnimationFrame(id);
   }, [showInlinePreview, lockedShellHeight, value]);
 
+  const focusedFromPos = useMemo(() => {
+    if (!focusedPanelPlaceholderId) return null;
+    return fromPosFromPlaceholderId(
+      focusedPanelPlaceholderId,
+      section,
+      contentPath
+    );
+  }, [focusedPanelPlaceholderId, section, contentPath]);
+
   const renderSuggestionRun = (
     text: string,
     suggestionClass: string,
-    key: number
+    key: number,
+    baseOffset: number
+  ) => (
+    <PlainTextPlaceholderSpans
+      key={key}
+      text={text}
+      baseOffset={baseOffset}
+      focusedFromPos={focusedFromPos}
+      wrapClassName={cn(suggestionClass, "placeholder-todo-over-suggestion")}
+    />
+  );
+
+  const renderSegment = (
+    seg: PlainTextPreviewSegment,
+    key: number,
+    baseOffset: number
   ) => {
-    const parts = splitPlainTextWithPlaceholders(text);
-    if (parts.length === 1 && parts[0]!.kind === "text") {
-      return (
-        <span key={key} className={suggestionClass}>
-          {text}
-        </span>
+    if (seg.kind === "delete") {
+      return renderSuggestionRun(
+        seg.text,
+        "suggestion-delete suggestion-delete-fix",
+        key,
+        baseOffset
+      );
+    }
+    if (seg.kind === "insert") {
+      return renderSuggestionRun(
+        seg.text,
+        "suggestion-insert suggestion-insert-fix",
+        key,
+        baseOffset
       );
     }
     return (
-      <span key={key}>
-        {parts.map((part, i) =>
-          part.kind === "placeholder" ? (
-            <span
-              key={i}
-              className="placeholder-todo-mirror placeholder-todo-over-suggestion"
-            >
-              {part.text}
-            </span>
-          ) : (
-            <span key={i} className={suggestionClass}>
-              {part.text}
-            </span>
-          )
-        )}
-      </span>
+      <PlainTextPlaceholderSpans
+        key={key}
+        text={seg.text}
+        baseOffset={baseOffset}
+        focusedFromPos={focusedFromPos}
+      />
     );
   };
 
-  const renderSegment = (seg: PlainTextPreviewSegment, key: number) => {
-    if (seg.kind === "delete") {
-      return renderSuggestionRun(seg.text, "suggestion-delete suggestion-delete-fix", key);
-    }
-    if (seg.kind === "insert") {
-      return renderSuggestionRun(seg.text, "suggestion-insert suggestion-insert-fix", key);
-    }
-    return <span key={key}>{seg.text}</span>;
+  const renderPreviewSegments = (
+    segments: PlainTextPreviewSegment[],
+    keyOffset: number
+  ) => {
+    let offset = 0;
+    return segments.map((seg, i) => {
+      const node = renderSegment(seg, keyOffset + i, offset);
+      offset += seg.text.length;
+      return node;
+    });
   };
 
   const saveSection = useCallback(
@@ -364,12 +391,16 @@ export function PlainTextSuggestionField({
           }
         >
           {showSettledText ? (
-            value
+            <PlainTextPlaceholderSpans
+              text={value}
+              focusedFromPos={focusedFromPos}
+            />
           ) : (
             <>
-              {splitPreview.before.map((seg, i) => renderSegment(seg, i))}
-              {splitPreview.suggestion.map((seg, i) =>
-                renderSegment(seg, splitPreview.before.length + i)
+              {renderPreviewSegments(splitPreview.before, 0)}
+              {renderPreviewSegments(
+                splitPreview.suggestion,
+                splitPreview.before.length
               )}
               {activeComment && splitPreview.suggestion.length > 0 ? (
                 <SuggestionInlineActions
@@ -381,11 +412,9 @@ export function PlainTextSuggestionField({
                   onDismiss={() => void dismissActive()}
                 />
               ) : null}
-              {splitPreview.after.map((seg, i) =>
-                renderSegment(
-                  seg,
-                  splitPreview.before.length + splitPreview.suggestion.length + 1 + i
-                )
+              {renderPreviewSegments(
+                splitPreview.after,
+                splitPreview.before.length + splitPreview.suggestion.length + 1
               )}
             </>
           )}

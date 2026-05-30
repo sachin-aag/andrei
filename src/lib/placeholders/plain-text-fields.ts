@@ -6,7 +6,6 @@ import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value
 export const PLAIN_TEXT_PLACEHOLDER_PATHS: Partial<
   Record<SectionType, readonly string[]>
 > = {
-  measure: ["regulatoryNotification"],
   improve: ["correctiveActions"],
   control: ["preventiveActions"],
   analyze: [
@@ -22,14 +21,7 @@ export const PLAIN_TEXT_PLACEHOLDER_PATHS: Partial<
     "otherTools",
     "investigationOutcome",
     "rootCause.narrative",
-    "rootCause.primaryLevel1",
-    "rootCause.secondaryLevel2",
-    "rootCause.thirdLevel3",
-    "impactAssessment.system",
-    "impactAssessment.document",
-    "impactAssessment.product",
-    "impactAssessment.equipment",
-    "impactAssessment.patientSafety",
+    "impactAssessment",
   ],
 };
 
