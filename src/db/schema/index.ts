@@ -97,6 +97,8 @@ export const workspaceUsers = pgTable(
     email: text("email").notNull(),
     role: userRoleEnum("role").notNull().default("engineer"),
     title: text("title").notNull().default("Engineer"),
+    /** Nullable — null means magic-link-only user. Format: hex_salt.hex_hash (scrypt). */
+    passwordHash: text("password_hash"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -105,6 +107,17 @@ export const workspaceUsers = pgTable(
     emailUnique: uniqueIndex("workspace_users_email_unique").on(t.email),
   })
 );
+
+export const passwordResetTokens = pgTable("password_reset_tokens", {
+  id: text("id").primaryKey().$defaultFn(() => createId()),
+  email: text("email").notNull(),
+  /** SHA-256 hash of the raw token sent via email. */
+  tokenHash: text("token_hash").notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  /** Null until the token is consumed. */
+  usedAt: timestamp("used_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 export const reports = pgTable(
   "reports",
