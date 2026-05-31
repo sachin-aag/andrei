@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { FileText, ArrowRight } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { StatusBadge } from "@/components/report/status-badge";
+import type { WorkspaceUser } from "@/lib/auth/workspace-user";
 import { CreateReportButton } from "@/components/dashboard/create-report-button";
 import { DeleteReportButton } from "@/components/dashboard/delete-report-button";
 import { formatDate } from "@/lib/utils";
@@ -21,16 +22,20 @@ type DashboardReport = {
   updatedAt: Date;
 };
 
+type ManagerOption = Pick<WorkspaceUser, "id" | "name" | "title">;
+
 export function ReportList({
   reports,
   currentUserId,
   userRole,
   usersById,
+  managers,
 }: {
   reports: DashboardReport[];
   currentUserId: string;
   userRole: "engineer" | "manager";
   usersById: Record<string, { name: string } | undefined>;
+  managers: ManagerOption[];
 }) {
   const router = useRouter();
   const [deletedIds, setDeletedIds] = useState<Set<string>>(() => new Set());
@@ -46,7 +51,7 @@ export function ReportList({
   };
 
   if (visibleReports.length === 0) {
-    return <EmptyState role={userRole} />;
+    return <EmptyState role={userRole} managers={managers} />;
   }
 
   return (
@@ -117,7 +122,13 @@ export function ReportList({
   );
 }
 
-function EmptyState({ role }: { role: "engineer" | "manager" }) {
+function EmptyState({
+  role,
+  managers,
+}: {
+  role: "engineer" | "manager";
+  managers: ManagerOption[];
+}) {
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center">
       <div className="size-16 rounded-2xl bg-[var(--brand-700)] flex items-center justify-center mb-4">
@@ -129,7 +140,7 @@ function EmptyState({ role }: { role: "engineer" | "manager" }) {
           ? "Create a new deviation investigation report to get started. Your draft will auto-save as you write."
           : "Reports submitted by engineers will appear here for your review."}
       </p>
-      {role === "engineer" && <CreateReportButton />}
+      {role === "engineer" && <CreateReportButton managers={managers} />}
     </div>
   );
 }

@@ -53,7 +53,7 @@ export default async function LoginPage({
           </p>
         </div>
         <div className="relative text-xs">
-          Ref. SOP No.: SOP/DP/QA/008 · Form: SOP/DP/QA/008/F04-R02
+          Ref. SOP No.: SOP/DP/QA/008 
         </div>
       </div>
 

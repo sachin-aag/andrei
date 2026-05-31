@@ -3,18 +3,12 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { workspaceUsers } from "@/db/schema";
 
-const ALLOWED_DOMAINS = ["@mjbiopharm.com"];
-const ALLOWED_EMAILS = ["sachinagrawal272@gmail.com", "aditya.ambani@gmail.com"];
+// No need for redundant allow lists; rely on the database to control allowed users.
 
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => null);
   const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : null;
   if (!email) return NextResponse.json({ allowed: false });
-
-  const domainAllowed =
-    ALLOWED_EMAILS.includes(email) ||
-    ALLOWED_DOMAINS.some((d) => email.endsWith(d));
-  if (!domainAllowed) return NextResponse.json({ allowed: false });
 
   const wsUser = await db.query.workspaceUsers.findFirst({
     where: eq(workspaceUsers.email, email),

@@ -1,6 +1,9 @@
 import type { SectionContentMap } from "@/types/sections";
 import type { SectionType } from "@/db/schema";
-import { findPlaceholders, type Placeholder } from "./find";
+import { findPlaceholders, findPlaceholdersInPlainText, type Placeholder } from "./find";
+import {
+  listPlainTextFieldsForSection,
+} from "./plain-text-fields";
 import type { JSONContent } from "@tiptap/core";
 
 export function collectPlaceholders(
@@ -11,19 +14,24 @@ export function collectPlaceholders(
   for (const [key, content] of Object.entries(sections)) {
     if (!content) continue;
     const section = key as SectionType;
-    
-    // We only scan narrative sections for now, since those are Tiptap docs.
-    // Analyze section has plain text which could also contain placeholders,
-    // but the UI jump-to features rely on Tiptap positions. If needed, we
-    // can extend this to plain text fields.
-    if ("narrative" in content && content.narrative) {
-      all.push(
-        ...findPlaceholders(
-          content.narrative as JSONContent,
-          section,
-          "narrative"
-        )
-      );
+
+    if (
+      typeof content === "object" &&
+      !Array.isArray(content) &&
+      "narrative" in content &&
+      content.narrative
+    ) {
+      const narrative = content.narrative as JSONContent;
+      if (narrative?.type === "doc") {
+        all.push(...findPlaceholders(narrative, section, "narrative"));
+      }
+    }
+
+    for (const { contentPath, text } of listPlainTextFieldsForSection(
+      section,
+      content
+    )) {
+      all.push(...findPlaceholdersInPlainText(text, section, contentPath));
     }
   }
 

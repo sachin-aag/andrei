@@ -1,26 +1,33 @@
-import { useCallback, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useRef, useState, type FocusEvent } from "react";
 import { ArrowRight, CheckCircle2, PenLine } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
+  useReportData,
   useReportEditors,
   useReportPlaceholders,
+  useReportSections,
 } from "@/providers/report-provider";
 import { EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
 import { SectionAccordion, useSectionAccordionState } from "./section-accordion";
 import type { Placeholder } from "@/lib/placeholders/find";
 import { fillPlaceholder } from "@/lib/placeholders/fill";
-
-/** Try to extract a human-readable field label from placeholder text like `[Batch No.: <to be filled>]` */
-function extractLabel(text: string): string {
-  // Strip outer brackets
-  let inner = text.replace(/^\[/, "").replace(/\]$/, "").trim();
-  // Strip `<to be filled>` / `to be filled` suffix
-  inner = inner.replace(/<?\s*to be filled\s*>?/gi, "").trim();
-  // Strip trailing colon/dash
-  inner = inner.replace(/[:\-]+\s*$/, "").trim();
-  return inner || text;
-}
+import { extractPlaceholderLabel } from "@/lib/placeholders/label";
+import { fillPlainTextPlaceholder } from "@/lib/placeholders/fill-plain-text";
+import { isPlainTextPlaceholderField } from "@/lib/placeholders/plain-text-fields";
+import { plainTextPlaceholderContext } from "@/lib/placeholders/plain-text-segments";
+import {
+  setPlainTextFieldValue,
+} from "@/lib/placeholders/plain-text-fields";
+import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
+import {
+  getPlaceholderSurroundingText,
+  placeholderPanelContext,
+  resolvePlaceholderInPmDoc,
+} from "@/lib/placeholders/resolve-in-doc";
+import type { SectionContentMap } from "@/types/sections";
+import type { SectionType } from "@/db/schema";
+import { cn } from "@/lib/utils";
 
 /* ------------------------------------------------------------------ */
 /*  Individual placeholder card                                        */
@@ -32,6 +39,8 @@ function PlaceholderCard({
   onFillValueChange,
   onFill,
   onJump,
+  onFillFocus,
+  onFillBlur,
   beforeCtx,
   afterCtx,
 }: {
@@ -40,10 +49,23 @@ function PlaceholderCard({
   onFillValueChange: (value: string) => void;
   onFill: () => void;
   onJump: () => void;
+  onFillFocus: () => void;
+  onFillBlur: (e: FocusEvent<HTMLInputElement>) => void;
   beforeCtx: string;
   afterCtx: string;
 }) {
-  const label = extractLabel(placeholder.text);
+  const label = extractPlaceholderLabel(placeholder.text);
+  const [fillFocused, setFillFocused] = useState(false);
+
+  const handleFillFocus = () => {
+    setFillFocused(true);
+    onFillFocus();
+  };
+
+  const handleFillBlur = (e: FocusEvent<HTMLInputElement>) => {
+    setFillFocused(false);
+    onFillBlur(e);
+  };
 
   return (
     <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] overflow-hidden">
@@ -67,7 +89,14 @@ function PlaceholderCard({
       {/* Context: surrounding text with placeholder highlighted */}
       <div className="px-3 py-2 text-xs text-[var(--muted-foreground)] leading-relaxed">
         {beforeCtx && <span>{beforeCtx}</span>}
-        <span className="inline-block px-1 mx-0.5 rounded bg-amber-100 text-amber-800 border border-amber-200 font-medium">
+        <span
+          className={cn(
+            "inline-block px-1 mx-0.5 rounded font-medium border transition-colors",
+            fillFocused
+              ? "bg-amber-200 text-amber-900 border-amber-400 ring-2 ring-amber-400/45"
+              : "bg-amber-100 text-amber-800 border-amber-200"
+          )}
+        >
           {placeholder.text}
         </span>
         {afterCtx && <span>{afterCtx}</span>}
@@ -78,6 +107,8 @@ function PlaceholderCard({
         <Input
           value={fillValue}
           onChange={(e) => onFillValueChange(e.target.value)}
+          onFocus={handleFillFocus}
+          onBlur={handleFillBlur}
           onKeyDown={(e) => {
             if (e.key === "Enter") {
               e.preventDefault();
@@ -119,7 +150,7 @@ function ExitingPlaceholderCard({
   onDone: () => void;
 }) {
   const { placeholder, beforeCtx, afterCtx } = snapshot;
-  const label = extractLabel(placeholder.text);
+  const label = extractPlaceholderLabel(placeholder.text);
   const [phase, setPhase] = useState<"enter" | "exit">("enter");
   const doneRef = useRef(false);
   const onDoneRef = useRef(onDone);
@@ -198,7 +229,10 @@ export function PlaceholdersPanelContent({
 }: {
   onJumpToPlaceholder: (p: Placeholder) => void;
 }) {
-  const { pendingPlaceholders } = useReportPlaceholders();
+  const { report } = useReportData();
+  const { pendingPlaceholders, setFocusedPanelPlaceholderId } =
+    useReportPlaceholders();
+  const { sections, replaceSection } = useReportSections();
   const { getEditor } = useReportEditors();
   const [fillValues, setFillValues] = useState<Record<string, string>>({});
   const [exiting, setExiting] = useState<ExitingSnapshot[]>([]);
@@ -213,21 +247,57 @@ export function PlaceholdersPanelContent({
     {} as Record<string, Placeholder[]>,
   );
 
-  const handleFill = (p: Placeholder) => {
+  const handleFill = async (p: Placeholder) => {
     const value = fillValues[p.id]?.trim();
     if (!value) return;
+
+    if (isPlainTextPlaceholderField(p.contentPath)) {
+      const section = p.section as SectionType;
+      const sectionContent = sections[section] as SectionContentMap[typeof section];
+      const fieldText = getPlainTextFieldValue(
+        sectionContent as Record<string, unknown>,
+        p.contentPath
+      );
+      const nextText = fillPlainTextPlaceholder(fieldText, p, value);
+      if (!nextText) return;
+
+      const { beforeCtx, afterCtx } = plainTextPlaceholderContext(fieldText, p);
+      const nextSection = setPlainTextFieldValue(sectionContent, p.contentPath, nextText);
+      replaceSection(section, nextSection);
+
+      const res = await fetch(`/api/reports/${report.id}/sections/${section}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: nextSection }),
+      });
+      if (!res.ok) return;
+
+      setExiting((prev) => [
+        ...prev.filter((x) => x.id !== p.id),
+        { id: p.id, placeholder: p, beforeCtx, afterCtx },
+      ]);
+      setFillValues((prev) => {
+        const next = { ...prev };
+        delete next[p.id];
+        return next;
+      });
+      return;
+    }
+
     const editor = getEditor(p.section, p.contentPath);
     if (!editor) return;
 
-    let beforeCtx = "";
-    let afterCtx = "";
     const doc = editor.state.doc;
-    const from = Math.max(0, p.fromPos - 50);
-    const to = Math.min(doc.content.size, p.toPos + 50);
-    beforeCtx = doc.textBetween(from, p.fromPos, " ");
-    afterCtx = doc.textBetween(p.toPos, to, " ");
+    const live = resolvePlaceholderInPmDoc(doc, p);
+    if (!live) return;
 
-    const success = fillPlaceholder(editor, p, value);
+    const { beforeCtx, afterCtx } = getPlaceholderSurroundingText(
+      doc,
+      live.fromPos,
+      live.toPos
+    );
+
+    const success = fillPlaceholder(editor, live, value);
     if (success) {
       setExiting((prev) => [
         ...prev.filter((x) => x.id !== p.id),
@@ -279,16 +349,22 @@ export function PlaceholdersPanelContent({
           >
             <div className="space-y-2 overflow-x-hidden">
               {list.map((p) => {
-                const editor = getEditor(p.section, p.contentPath);
-                let beforeCtx = "";
-                let afterCtx = "";
-                if (editor) {
-                  const doc = editor.state.doc;
-                  const from = Math.max(0, p.fromPos - 50);
-                  const to = Math.min(doc.content.size, p.toPos + 50);
-                  beforeCtx = doc.textBetween(from, p.fromPos, " ");
-                  afterCtx = doc.textBetween(p.toPos, to, " ");
-                }
+                const { beforeCtx, afterCtx } = isPlainTextPlaceholderField(
+                  p.contentPath
+                )
+                  ? plainTextPlaceholderContext(
+                      getPlainTextFieldValue(
+                        sections[p.section] as Record<string, unknown>,
+                        p.contentPath
+                      ),
+                      p
+                    )
+                  : (() => {
+                      const editor = getEditor(p.section, p.contentPath);
+                      return editor
+                        ? placeholderPanelContext(editor.state.doc, p)
+                        : { beforeCtx: "", afterCtx: "" };
+                    })();
 
                 return (
                   <PlaceholderCard
@@ -300,6 +376,13 @@ export function PlaceholdersPanelContent({
                     }
                     onFill={() => handleFill(p)}
                     onJump={() => onJumpToPlaceholder(p)}
+                    onFillFocus={() => setFocusedPanelPlaceholderId(p.id)}
+                    onFillBlur={(e) => {
+                      if (e.currentTarget.closest(".rounded-lg")?.contains(e.relatedTarget as Node)) {
+                        return;
+                      }
+                      setFocusedPanelPlaceholderId(null);
+                    }}
                     beforeCtx={beforeCtx}
                     afterCtx={afterCtx}
                   />

@@ -2,7 +2,11 @@
 
 import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, Loader2, Sparkles } from "lucide-react";
-import { useReportEvaluations } from "@/providers/report-provider";
+import {
+  useReportComments,
+  useReportEvaluations,
+  useReportSections,
+} from "@/providers/report-provider";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { SectionType } from "@/db/schema";
@@ -14,6 +18,8 @@ import {
   metCount,
   rowsForSection,
 } from "@/lib/ai/criteria-view";
+import { EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
+import { canSuggestFixes } from "@/lib/ai/suggestion-gating";
 import { SECTION_LABELS } from "@/types/sections";
 
 const STATUS_LABEL = {
@@ -147,6 +153,37 @@ export function SectionStatusPill({ section }: { section: SectionType }) {
   );
 }
 
+function StackedAndreiButton({
+  primary,
+  disabled,
+  onClick,
+  spinning,
+}: {
+  primary: string;
+  disabled?: boolean;
+  onClick: () => void;
+  spinning?: boolean;
+}) {
+  return (
+    <Button
+      type="button"
+      size="sm"
+      variant="outline"
+      className="h-auto shrink-0 py-1.5 px-2.5 text-xs bg-[var(--card)] shadow-sm flex flex-col items-center gap-0 leading-tight"
+      disabled={disabled}
+      onClick={onClick}
+    >
+      {spinning ? (
+        <Loader2 className="size-3 animate-spin mb-0.5" />
+      ) : (
+        <Sparkles className="size-3 mb-0.5" />
+      )}
+      <span>{primary}</span>
+      <span className="text-[9px] text-[var(--muted-foreground)] font-normal">by Andrei</span>
+    </Button>
+  );
+}
+
 export function SectionRunEvaluationButton({ section }: { section: SectionType }) {
   const {
     runEvaluation,
@@ -156,21 +193,46 @@ export function SectionRunEvaluationButton({ section }: { section: SectionType }
   const isRunning = runningEvalSections.includes(section);
 
   return (
-    <Button
-      type="button"
-      size="sm"
-      variant="outline"
-      className="h-8 shrink-0 text-xs bg-[var(--card)] shadow-sm"
+    <StackedAndreiButton
+      primary={isRunning ? "Running…" : "Run criteria"}
       disabled={isEvaluating}
+      spinning={isRunning}
       onClick={() => runEvaluation(section)}
-    >
-      {isRunning ? (
-        <Loader2 className="size-3 animate-spin" />
-      ) : (
-        <Sparkles className="size-3" />
-      )}
-      Run it by Andrei
-    </Button>
+    />
+  );
+}
+
+export function SectionSuggestFixesButton({ section }: { section: SectionType }) {
+  const {
+    generateSuggestions,
+    isEvaluating,
+    isSuggesting,
+    runningEvalSections,
+    runningSuggestionSections,
+    evaluations,
+  } = useReportEvaluations();
+  const { comments } = useReportComments();
+  const { sections } = useReportSections();
+  const isRunning = runningSuggestionSections.includes(section);
+  const sectionContent = sections[section];
+  const enabled = canSuggestFixes(
+    section,
+    evaluations,
+    comments,
+    sectionContent,
+    {
+      isEvaluating: isEvaluating || runningEvalSections.includes(section),
+      isSuggesting: isSuggesting || isRunning,
+    }
+  );
+
+  return (
+    <StackedAndreiButton
+      primary={isRunning ? "Suggesting…" : "Suggest fixes"}
+      disabled={!enabled}
+      spinning={isRunning}
+      onClick={() => generateSuggestions(section)}
+    />
   );
 }
 
@@ -178,10 +240,13 @@ export function RunAllEvaluationButton({
   size = "sm",
   variant = "success",
   className,
+  layout = "stacked",
 }: {
   size?: "sm" | "default";
   variant?: "outline" | "secondary" | "default" | "success";
   className?: string;
+  /** `stacked` for the report header; `inline` for tight panels. */
+  layout?: "stacked" | "inline";
 }) {
   const {
     runEvaluation,
@@ -189,28 +254,63 @@ export function RunAllEvaluationButton({
     runningEvalSections,
   } = useReportEvaluations();
 
-  const label = isEvaluating
-    ? runningEvalSections.length > 0
-      ? `Checking… ${runningEvalSections.length} left`
-      : "Checking…"
-    : "Run all by Andrei";
+  const sectionCount = EVALUATABLE_SECTIONS.length;
+  const title = `Run traffic-light criteria on all ${sectionCount} sections (Define, Measure, Analyze, Improve, Control)`;
+
+  const icon = isEvaluating ? (
+    <Loader2 className="size-4 shrink-0 animate-spin" aria-hidden="true" />
+  ) : (
+    <Sparkles className="size-4 shrink-0" aria-hidden="true" />
+  );
+
+  const runningDetail =
+    runningEvalSections.length > 0
+      ? `${runningEvalSections.length} section${runningEvalSections.length === 1 ? "" : "s"} left`
+      : "Starting…";
+
+  if (layout === "inline") {
+    const label = isEvaluating
+      ? runningEvalSections.length > 0
+        ? `Checking criteria… ${runningEvalSections.length} left`
+        : "Checking all sections…"
+      : "Run criteria — all sections";
+
+    return (
+      <Button
+        type="button"
+        size={size}
+        variant={variant}
+        className={cn("gap-1.5", className)}
+        disabled={isEvaluating}
+        onClick={() => runEvaluation()}
+        title={title}
+      >
+        {icon}
+        <span className="truncate">{label}</span>
+      </Button>
+    );
+  }
 
   return (
     <Button
       type="button"
       size={size}
       variant={variant}
-      className={className}
+      className={cn(
+        "h-auto min-h-8 flex-col gap-0.5 py-1.5 px-2.5 whitespace-normal leading-tight",
+        className
+      )}
       disabled={isEvaluating}
       onClick={() => runEvaluation()}
-      title="Run AI checks across every section"
+      title={title}
     >
-      {isEvaluating ? (
-        <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-      ) : (
-        <Sparkles className="size-4" aria-hidden="true" />
-      )}
-      {label}
+      <span className="flex items-center justify-center gap-1.5 text-sm font-medium">
+        {icon}
+        {isEvaluating ? "Checking all sections…" : "Run criteria"}
+      </span>
+      <span className="text-[10px] font-normal opacity-90 text-center">
+        {isEvaluating ? runningDetail : `All ${sectionCount} sections · by Andrei`}
+      </span>
     </Button>
   );
 }

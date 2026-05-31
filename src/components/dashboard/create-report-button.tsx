@@ -23,9 +23,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { getManagers } from "@/lib/auth/mock-users";
+import type { WorkspaceUser } from "@/lib/auth/workspace-user";
 
-export function CreateReportButton() {
+type CreateReportButtonProps = {
+  managers: Pick<WorkspaceUser, "id" | "name" | "title">[];
+};
+
+export function CreateReportButton({ managers }: CreateReportButtonProps) {
   const [open, setOpen] = useState(false);
   const [deviationNo, setDeviationNo] = useState("");
   const [managerId, setManagerId] = useState<string>("");
@@ -33,7 +37,6 @@ export function CreateReportButton() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
-  const managers = getManagers();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const isBusy = previewLoading || pending;
 

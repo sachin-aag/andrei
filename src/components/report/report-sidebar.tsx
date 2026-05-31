@@ -49,6 +49,9 @@ export function ReportSidebar({
   const { pendingPlaceholders } = useReportPlaceholders();
   const { comments } = useReportComments();
   const rootCommentCount = comments.filter((c) => !c.parentId).length;
+  const openSuggestionCount = comments.filter(
+    (c) => !c.parentId && c.kind === "ai_fix" && c.status === "open"
+  ).length;
 
   return (
     <aside
@@ -104,6 +107,8 @@ export function ReportSidebar({
           const badge =
             tab.value === "placeholders" && pendingPlaceholders.length > 0
               ? pendingPlaceholders.length
+              : tab.value === "criteria" && openSuggestionCount > 0
+                ? openSuggestionCount
               : tab.value === "comments" && rootCommentCount > 0
                 ? rootCommentCount
                 : null;

@@ -1,0 +1,25 @@
+# Local Postgres for development (no Neon admin required).
+# Usage: npm run db:local:up && npm run db:push
+# Set in .env.local:
+#   DATABASE_URL=postgresql://andrei:andrei@localhost:5432/andrei_dev
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: andrei-postgres-dev
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: andrei
+      POSTGRES_PASSWORD: andrei
+      POSTGRES_DB: andrei_dev
+    volumes:
+      - andrei_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U andrei -d andrei_dev"]
+      interval: 3s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  andrei_pg_data:

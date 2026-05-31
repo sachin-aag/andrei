@@ -13,7 +13,8 @@ export const DEFINE_CRITERIA: CriterionDefinition[] = [
     description:
       "Does the narrative clearly describe the actual event in concrete, factual terms — " +
       "including the specific activity being performed, the instrument/equipment involved " +
-      "(with ID), and the exact observation or result obtained? " +
+      "(with ID when applicable; for SCADA, the system name such as AGLTS SCADA is sufficient " +
+      "without an E/PR equipment code or version number), and the exact observation or result obtained? " +
       "Vague statements like 'it was observed that results were out of spec' are insufficient; " +
       "the narrative must state what was being done, on what equipment, and what specifically " +
       "was observed (e.g., 'obtained SST result of 115.1% Recovery of Benzoquinone').",
@@ -72,7 +73,10 @@ export const DEFINE_CRITERIA: CriterionDefinition[] = [
       "material names? " +
       "The scope must clearly delineate what is affected and what is not " +
       "(e.g., 'The scope of the deviation was limited to Batch No. B092542503'). " +
-      "Vague scope statements without specific identifiers are insufficient.",
+      "Vague scope statements without specific identifiers are insufficient. " +
+      "For SCADA-related scope, naming the system (e.g., AGLTS SCADA) and the affected " +
+      "time periods or functions is sufficient; a site equipment ID (E/PR/xxx) or version " +
+      "number for the SCADA system is not required.",
   },
 ];
 
@@ -226,8 +230,8 @@ export const CONTROL_CRITERIA: CriterionDefinition[] = [
     key: "control.tracking_fields",
     label: "Unique number, responsible person, due date assigned",
     description:
-      "Was the preventive action assigned a unique number, responsible person and due " +
-      "date so it can be tracked?",
+      "Was the preventive action assigned a unique tracking number (CAPA No., Work Order No., " +
+      "or Breakdown No.), responsible person by Emp. ID, and due date so it can be tracked?",
   },
   {
     key: "control.expected_outcome",
@@ -240,20 +244,38 @@ export const CONTROL_CRITERIA: CriterionDefinition[] = [
     label: "Effectiveness verification documented",
     description:
       "Was effectiveness verification required or not, and the rationale for either " +
-      "documented based on the quality impact of the incident?",
+      "documented based on the quality impact of the incident? " +
+      "When required, a complete verification statement must address: when verification starts, " +
+      "over how many cycles or what time period, the specific measurable acceptance criterion, " +
+      "and who is responsible. " +
+      "A tracking reference number alone (e.g., 'Effectiveness Check Number') is not a verification method. " +
+      "Mark partially_met if any of these elements is missing or too vague to be actionable.",
   },
   {
     key: "control.interim_plan",
     label: "Interim plan addressed",
     description:
       "Was an interim plan needed to ensure a state of control while preventive " +
-      "actions were implemented? If not, is rationale provided?",
+      "actions were implemented? If not, is rationale provided? " +
+      "An interim plan is only needed when residual risk persists during the implementation gap " +
+      "(e.g., the deviation is ongoing, the instrument or process remains at risk, or the CAPA " +
+      "timeline is long enough that recurrence is plausible in the interim). " +
+      "If the issue has already been corrected and the permanent fix (e.g., SOP revision) will be " +
+      "completed before the next opportunity for recurrence, stating 'no interim plan required' " +
+      "with that rationale is correct and sufficient. " +
+      "Do NOT restate the preventive action itself as an informal verbal instruction and call it an interim plan — " +
+      "that duplicates the fix rather than bridging the gap.",
   },
   {
     key: "control.no_preventive_rationale",
     label: "Rationale when no preventive action is identified",
     description:
-      "Was rationale provided when no preventive action was identified?",
+      "This criterion is ONLY relevant when the section identifies zero preventive actions. " +
+      "If any preventive action is described — even if imperfectly structured or missing tracking fields — " +
+      "mark this criterion 'met' immediately; do not evaluate formality or completeness here " +
+      "(those belong to control.preventive_per_root_cause and control.tracking_fields). " +
+      "Only mark not_met when the section genuinely contains no preventive action AND provides " +
+      "no rationale for why one was not identified.",
   },
   {
     key: "control.final_comments",

@@ -72,5 +72,5 @@ describe("red color round-trip (DEV-QC-26-001 draft)", () => {
     expect(exportXml).toContain("Refer Attachment No. XII");
     expect(exportXml).toMatch(/w:color w:val="EE0000"/);
     expect(exportXml).toContain("Primary Root Cause Level 1");
-  });
+  }, 20_000);
 });

@@ -17,6 +17,7 @@ export default async function DashboardPage() {
   if (!user) redirect("/login");
 
   const workspaceUsers = await listWorkspaceUsers();
+  const managers = workspaceUsers.filter((entry) => entry.role === "manager");
   const usersById = Object.fromEntries(
     workspaceUsers.map((entry) => [entry.id, { name: entry.name }])
   );
@@ -63,7 +64,9 @@ export default async function DashboardPage() {
                 : "Review submitted investigation reports from quality engineers."}
             </p>
           </div>
-          {user.role === "engineer" && <CreateReportButton />}
+          {user.role === "engineer" && (
+            <CreateReportButton managers={managers} />
+          )}
         </div>
 
         <div className="flex-1 overflow-auto px-10 py-6">
@@ -72,6 +75,7 @@ export default async function DashboardPage() {
             currentUserId={user.id}
             userRole={user.role}
             usersById={usersById}
+            managers={managers}
           />
         </div>
       </div>

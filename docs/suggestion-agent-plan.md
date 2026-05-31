@@ -77,10 +77,10 @@ const suggestionSchema = z.object({
 ```
 
 - Uses same `resolveEvaluationLanguageModel()` (Gemini 2.5 Flash)
-- Temperature: 0.4 (slightly more creative than eval's 0.2 — we want good prose)
-- One call per section (batches all failing criteria for that section)
-- Validates each suggestion: `anchorText` must be findable in section content (whitespace-tolerant `collapse()` match)
-- Drops invalid suggestions silently (no retry — not worth the latency)
+- Temperature: 0.4, no seed (we want good prose, not reproducibility)
+- One call per section (batches all **gap** failing criteria for that section — see Re-run Policy)
+- Validates each suggestion: layered anchor matching (exact → whitespace-collapsed → Unicode-normalized), `targetField` in per-section allow-list, `deleteText` is a substring of `anchorText`, at least one of `deleteText`/`insertText` non-empty
+- Returns `{ applied[], dropped[{criterionKey, reason}] }` — **never drops silently**. Reasons: `not_found`, `ambiguous`, `overlap`, `block_boundary`, `bad_target_field`, `bad_criterion`, `schema_invalid`
 
 ### 2. New file: `src/lib/ai/suggest-prompts.ts`
 
@@ -92,16 +92,18 @@ System prompt for suggestion generation:
 ### 3. New file: `src/app/api/reports/[reportId]/suggestions/route.ts`
 
 POST endpoint orchestrating the flow:
-1. Receive `{ sections?: SectionType[] }` — **client sends exactly one section** per button click (implementation may still accept an array for tests); do not default to “all sections” from the product UI
-2. Load current evaluations + section content from DB
-3. Filter to `partially_met` / `not_met` criteria
-4. Call `generateSuggestions()` per requested section (typically one; use `Promise.all` when the array has multiple entries, e.g. tests)
-5. For each valid suggestion:
-   - **Narrative**: call `injectSuggestionMarks(doc, anchor, replacement, attrs)` where `attrs.id = evaluationId`, `attrs.authorId = "ai"`, `attrs.kind = "fix"`
-   - **Structured field**: skip Tiptap injection (no narrative to mark)
-   - Create `comments` row: `kind='ai_fix'`, `evaluationId`, `anchorText`, `content=replacementText`, `contentPath=targetField`, `fromPos/toPos` from inject result
-6. Persist updated section JSONContent (with marks) to `reportSections.content`
-7. Return response
+1. Receive `{ section: SectionType }` — **exactly one section per request**. Reject arrays with 400. Tests call `generateSuggestions(section)` directly, not the route, so there's no need for a parallel-across-sections code path (and no risk of fan-out blowing the function budget on a future "regenerate all" misuse).
+2. Load current evaluations + section content from DB.
+3. Compute the **gap set**: failing criteria (`partially_met` / `not_met`) with no open `ai_fix` comment linked via `evaluationId`. If empty → return `{ blocked: true, reason: "no_gap_criteria" }`.
+4. Verify `evaluatedContentHash === currentSectionHash` for the gap criteria; if mismatched → `{ blocked: true, reason: "stale_evaluation" }`.
+5. Call `generateSuggestions(section, gapCriteria)`.
+6. For each valid suggestion:
+   - Mint a fresh `suggestionId` (cuid) used for both the Tiptap mark id and the comment id.
+   - **Narrative**: call `injectSuggestionMarks(doc, { anchorText, deleteText, insertText }, attrs)` where `attrs.id = suggestionId`, `attrs.authorId = AI_AUTHOR_ID` (sentinel — see step 7), `attrs.kind = "fix"`.
+   - **Structured field**: validate `targetField` against `suggest-target-fields.ts` allow-list for this section; skip Tiptap injection.
+   - Create `comments` row: `id=suggestionId`, `kind='ai_fix'`, `evaluationId`, `anchorText`, `content=insertText`, `contentPath=targetField`, `fromPos/toPos` from inject result, `status='open'`.
+7. Persist updated section JSONContent (with marks) to `reportSections.content`.
+8. Return `{ applied: Suggestion[], dropped: { criterionKey, reason }[] }`. Client toasts a summary line per dropped suggestion so the user can act.
 
 ### 4. Modify: `src/providers/report-provider.tsx`
 
@@ -118,21 +120,55 @@ POST endpoint orchestrating the flow:
 
 ### 5. Modify: `src/components/report/criteria-sheet.tsx`
 
-- For each failing criterion that has an `ai_fix` comment: show a suggestion card
-- Card displays: suggested text (or field value), reasoning, Apply/Dismiss buttons
-- **Narrative suggestions**: "Apply" scrolls to the inline mark in editor; "Dismiss" calls `stripSuggestionMarksById()` and updates comment status to `dismissed`
-- **Structured field suggestions**: "Apply" calls section update with the field path + new value; "Dismiss" just dismisses the comment
+**One card at a time per section, severity-ordered.** The panel does not render a stack of open suggestion cards. It picks the single highest-priority open `ai_fix` for that section and renders only that one. After the user accepts or dismisses it, the next card slides in.
 
-### 6. DB migration
+- Selection order: open `ai_fix` comments for the section sorted by
+  1. linked criterion `effectiveStatus`: `not_met` (red) before `partially_met` (yellow),
+  2. then by criterion display order within the section,
+  3. then by comment `createdAt` ascending (stable for same-priority ties).
+- Card displays: linked criterion (with red/yellow pill), suggested change (deleteText → insertText diff or new field value), reasoning, Apply / Dismiss buttons.
+- **Narrative suggestions**: "Apply" scrolls to the inline mark in editor and triggers the per-operation accept animation; "Dismiss" calls `stripSuggestionMarksById()` and updates comment status to `dismissed`.
+- **Structured field suggestions**: "Apply" calls section update with the validated `targetField` path + `insertText`; "Dismiss" just dismisses the comment.
+- After Apply/Dismiss settles, re-query the open set and render the next card. If none remain, show an empty state ("All suggestions resolved — re-run criteria or request more fixes.").
+- Counter in the card header: "Suggestion 1 of N" so the user knows how many remain.
 
-Add `suggestionStatus` column to `criteriaEvaluations`:
-```sql
-ALTER TABLE criteria_evaluations
-  ADD COLUMN suggestion_status text DEFAULT NULL;
--- Values: null (no suggestion), 'pending', 'accepted', 'rejected'
+This keeps the panel focused, makes the red-first ordering visible, and avoids users skimming/applying yellows before resolving reds.
+
+**Inline marks track the active card.** Only the suggestion currently shown on top in the panel reveals its red/green marks in the editor; all other open suggestions' marks stay in the document JSON but are visually hidden so the editor isn't littered with rainbow diffs the user can't act on.
+
+- Track `activeSuggestionId` in report-provider state (the id selected by the severity-ordered query above).
+- Tiptap renders all suggestion marks but applies an `is-inactive` class to any mark whose `id !== activeSuggestionId`. CSS for `.suggestion-insert.is-inactive` and `.suggestion-delete.is-inactive` removes the green/red styling and the strikethrough — the underlying text just renders as normal prose.
+- Inline accept/dismiss action widgets (`suggestion-action-widgets.ts`) are also hidden for inactive marks (no floating buttons over invisible suggestions).
+- When the active card resolves (accept/dismiss) and the next card is selected, the swap is animated: brief fade-in of the new marks (200ms) so the user's eye is drawn to the next change location.
+- This works for both narrative (Tiptap marks) and structured-field suggestions (no marks exist for those, so the active-id logic is a no-op in those sections).
+
+Net effect: the panel and the editor stay in lockstep — one card visible, one set of inline marks visible, in red-first order.
+
+### 6. DB migration — **none required**
+
+Earlier drafts proposed a `suggestionStatus` column on `criteriaEvaluations`. We're not doing that:
+
+- The `comments` table (`kind='ai_fix'`, `status='open'|'resolved'|'dismissed'`, `evaluationId` FK) is already the source of truth.
+- A column would duplicate state and drift — especially once a criterion can have a history (one resolved + one open) or, in the future, multiple open suggestions.
+- The gap-set query ("failing criteria with no open `ai_fix`") is a join, not a column lookup; a column doesn't speed it up.
+
+If join perf becomes an issue, add an index on `comments(report_id, evaluation_id, kind, status)`. Otherwise this feature ships with **zero schema changes**.
+
+### 7. New file: `src/lib/ai/suggest-target-fields.ts`
+
+Per-section allow-list of valid `targetField` dot-paths:
+
+```ts
+export const SUGGEST_TARGET_FIELDS: Record<SectionType, readonly string[]> = {
+  define:  ["narrative"],
+  measure: ["narrative"],
+  analyze: ["narrative", "sixM.man", "sixM.machine", "sixM.method", "sixM.material", "sixM.measurement", "sixM.environment", "rootCause.primaryLevel1", /* ... */],
+  improve: ["narrative", "correctiveActions[].description", "correctiveActions[].owner", /* ... */],
+  control: ["narrative"],
+};
 ```
 
-This tracks per-criterion whether a suggestion exists and its lifecycle, avoiding extra queries to the comments table.
+Server validates each suggestion's `targetField` against this list. Pattern entries like `correctiveActions[].description` match `correctiveActions[0].description`, `correctiveActions[1].description`, etc., but reject arbitrary indices outside the existing array length (prevents `lodash.set` from creating sparse arrays at index 99). Failures → drop with `reason: "bad_target_field"`.
 
 ---
 
@@ -142,6 +178,9 @@ This tracks per-criterion whether a suggestion exists and its lifecycle, avoidin
 |------|------|
 | `src/lib/ai/suggest.ts` | **NEW** — Core generation logic |
 | `src/lib/ai/suggest-prompts.ts` | **NEW** — Prompt templates |
+| `src/lib/ai/suggest-target-fields.ts` | **NEW** — Per-section allow-list of editable dot-paths |
+| `src/lib/tiptap/strip-pending-suggestions.ts` | **NEW** — `cleanViewForPrompt()` for evaluator |
+| `src/lib/text/normalize-for-anchor.ts` | **NEW** — Whitespace + Unicode normalization for layered matching |
 | `src/app/api/reports/[reportId]/suggestions/route.ts` | **NEW** — API endpoint |
 | `src/lib/tiptap/suggestion-inject.ts` | **EXISTING** — `injectSuggestionMarks()`, `stripSuggestionMarksById()` |
 | `src/lib/tiptap/suggestion-marks.ts` | **EXISTING** — Mark definitions, TrackChanges extensions |
@@ -151,7 +190,6 @@ This tracks per-criterion whether a suggestion exists and its lifecycle, avoidin
 | `src/providers/report-provider.tsx` | **MODIFY** — Expose `generateSuggestions(section)`, loading state per section |
 | `src/components/report/sections/section-shell.tsx` | **MODIFY** — Per-section **Suggest fixes** button (only place in app chrome) |
 | `src/components/report/criteria-sheet.tsx` | **MODIFY** — Suggestion cards in panel |
-| `src/db/schema/index.ts` | **MODIFY** — Add `suggestionStatus` column |
 
 ---
 
@@ -167,46 +205,64 @@ For sections like Analyze (6M fields, rootCause, impactAssessment) and Improve (
 
 ---
 
-## Re-run Policy: Block While Pending
+## Re-run Policy: Gap-Filling, Not Blanket Block
 
-If the user tries to run **Suggest fixes** again while pending suggestions exist for that section:
-- **Block suggestion generation** — the endpoint returns an error/warning: "Pending suggestions exist. Accept or dismiss them before generating new ones."
-- The per-section **Suggest fixes** button is disabled (or shows a tooltip) while that section is generating suggestions or while any `suggestionStatus === 'pending'` exists **for that section**.
-- This avoids the complexity of stripping/superseding marks and prevents confusing overlapping suggestions.
+A blanket "block if any open `ai_fix` exists for the section" is too coarse: it strands the user when run #1 only produced fixes for some failing criteria, when re-evaluation surfaces a new failure, or when a pending suggestion has gone stale due to user edits. Instead, gate on **whether there is a failing criterion that does not yet have an open suggestion**, and have the endpoint only generate for that gap set.
 
-**Evaluation itself is NOT blocked** — the user can always re-evaluate criteria (traffic lights update). Only the suggestion generation step is gated on no pending suggestions.
+**Gating (Suggest fixes button enabled when ALL of):**
+- Section has a fresh evaluation: `evaluatedContentHash === currentSectionHash` for that section.
+- There exists at least one criterion with `effectiveStatus ∈ {not_met, partially_met}` that has **no open `ai_fix` comment** linked via `evaluationId`.
+- Section is not currently generating suggestions or evaluating.
 
-Implementation:
-- Before calling `/suggestions`, check: are there any `ai_fix` comments with `status='open'` for these sections?
-- If yes, return `{ blocked: true, reason: "pending_suggestions" }`
-- Client shows toast: "Accept or dismiss existing suggestions before generating new ones"
+If all failing criteria already have open `ai_fix` comments, the button is disabled with tooltip: "Resolve pending suggestions or clear them to request more." (This is the only case the original blanket block was actually right about, and we preserve it.)
+
+**Server behavior on POST `/suggestions`:**
+1. Compute the **gap set** = failing criteria for the requested section with no `ai_fix` comment in `status='open'`.
+2. If the gap set is empty → respond `{ blocked: true, reason: "no_gap_criteria" }` (client toast: "Resolve pending suggestions before requesting more").
+3. Otherwise prompt the LLM **only** over the gap criteria; never re-suggest against a criterion that already has a pending fix. This guarantees no duplicate/competing suggestions per criterion.
+
+**Evaluation is never blocked.** The evaluator always reads the clean view (pending suggestion marks stripped), so pending fixes do not bias re-evaluation.
+
+**Escape hatch.** Keep a per-section "Clear pending suggestions" action for the stale-anchor case (user edited around a pending suggestion and wants to start over without manually dismissing each).
+
+**Dismissed suggestions don't count.** The gating check looks at **open** `ai_fix` comments only. A dismissed suggestion for a still-failing criterion means "that specific suggestion was wrong" — the user can retry it.
 
 ---
 
-## Accept/Dismiss Animation (Fade)
+## Accept/Dismiss Animation (per operation kind)
 
-When user clicks "Accept" on an inline suggestion:
-1. The green `suggestionInsert` text loses its highlight (mark removed → becomes normal text)
-2. The red `suggestionDelete` text fades out via CSS transition (`opacity: 1 → 0` over 200ms, then `max-height: 0` collapse)
-3. After transition completes, the delete-marked nodes are actually removed from the doc
+The generation schema produces three operation kinds (`replace`, `pure insert`, `pure delete`). Each needs its own animation, otherwise insert-only and delete-only cases feel inconsistent or jarring.
 
-Implementation:
-- Add CSS: `.suggestion-delete-fading { opacity: 0; transition: opacity 200ms ease-out; }`
-- On accept: first add a `fading` class to the delete marks, then after 200ms timeout, perform the actual mark removal and content splice
-- The `onAccept` callback in `suggestion-action-widgets.ts` already exists — extend it with the animation step before the DOM mutation
+**Replace (delete + insert):**
+- Accept: fade red delete (`opacity 1→0`, 200ms) → splice it out → unwrap green insert mark (becomes normal text).
+- Dismiss: fade green insert (`opacity 1→0`, 200ms) → splice it out → unwrap red delete mark (becomes normal text).
 
-When user clicks "Dismiss":
-- Green insert text fades out (same 200ms pattern), red delete text returns to normal (loses strikethrough)
-- Uses `stripSuggestionMarksById()` after the fade transition
+**Pure insert (no `deleteText`):**
+- Accept: green insert keeps its position, brief background-color flash (`bg green-100 → transparent`, 200ms) signals the change, then unwrap the mark. No splice.
+- Dismiss: fade green insert (`opacity 1→0`, 200ms) → splice it out.
+
+**Pure delete (no `insertText`):**
+- Accept: fade red delete (`opacity 1→0`, 200ms) → splice it out. No insert to unwrap.
+- Dismiss: brief background-color flash on the red delete to acknowledge → unwrap the delete mark (text returns to normal).
+
+Shared implementation:
+- CSS classes: `.suggestion-fading-out` (opacity transition), `.suggestion-flash-accept` / `.suggestion-flash-dismiss` (background-color transition). Single 200ms duration across all kinds for consistency.
+- `onAccept` / `onDismiss` in `suggestion-action-widgets.ts`: add the appropriate class, `setTimeout(200)`, then perform the actual mark removal / splice via the existing helpers.
+- All animations should respect `prefers-reduced-motion: reduce` — fall back to instant apply.
 
 ---
 
 ## Stale Content Handling
 
-Between evaluation completing and suggestions being applied, the user may have edited the section:
-- Each suggestion stores `evaluatedContentHash` (same hash used by eval dedupe)
-- Before injection, compare current section hash with the hash at eval time
-- If changed: skip injection, mark suggestion as stale, show "Content changed — re-run evaluation" in UI
+The button gating already requires `evaluatedContentHash === currentSectionHash` at **generate time**, so most staleness is caught up front. The remaining case: user edits the section between generation and the apply click.
+
+Rather than blocking on a strict hash check at apply time (which would be hostile given many edits are trivial whitespace/punctuation fixes), **rely on the layered matcher**:
+
+- Apply attempts exact match → whitespace-collapsed → Unicode-normalized.
+- If all three layers fail → mark the comment with a `stale` status, surface in the panel as "Anchor no longer found — content changed since this suggestion was generated," with options to dismiss or jump to the criterion to re-suggest.
+- The matcher's tolerance handles smart-quote swaps, NBSP changes, and minor reflow without false positives on staleness.
+
+This means: hash is the **generation-time gate**, layered matching is the **apply-time gate**, and an explicit `stale` status surfaces only when matching truly fails.
 
 ---
 

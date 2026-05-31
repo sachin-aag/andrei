@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import { toast } from "sonner";
 import {
   useReportData,
+  useReportEvaluations,
   useReportSection,
 } from "@/providers/report-provider";
 import { useAutoSave } from "./use-auto-save";
@@ -16,7 +17,11 @@ export function useSectionSave<K extends keyof SectionContentMap & SectionType>(
   section: K
 ) {
   const { report, readOnly, trackChangesMode } = useReportData();
+  const { runningSuggestionSections, suggestionApplyTransition } =
+    useReportEvaluations();
   const { value } = useReportSection(section);
+  const suggestionInFlight = runningSuggestionSections.includes(section);
+  const applyInFlight = !!suggestionApplyTransition?.[section];
   const [saveBlocked, setSaveBlocked] = useState(false);
 
   const onSave = useCallback(
@@ -56,7 +61,11 @@ export function useSectionSave<K extends keyof SectionContentMap & SectionType>(
   );
 
   const { status, lastSavedAt, flush } = useAutoSave({
-    enabled: (!readOnly || trackChangesMode) && !saveBlocked,
+    enabled:
+      (!readOnly || trackChangesMode) &&
+      !suggestionInFlight &&
+      !applyInFlight &&
+      !saveBlocked,
     value,
     onSave,
     beaconUrl: `/api/reports/${report.id}/sections/${section}`,

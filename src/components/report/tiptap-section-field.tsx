@@ -37,21 +37,50 @@ import {
   useReportComments,
   useReportData,
   useReportEditors,
+  useReportEvaluations,
+  useReportPlaceholders,
+  useReportSections,
 } from "@/providers/report-provider";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useUserDirectory } from "@/providers/user-directory-provider";
 import { cn } from "@/lib/utils";
+import {
+  CommentPersistError,
+  patchCommentStatus,
+} from "@/lib/suggestions/persist-comment-status";
 import { createCommentHighlightExtension } from "@/lib/tiptap/comment-highlights";
 import type { CommentHighlightRange, CommentHighlightHandlers } from "@/lib/tiptap/comment-highlights";
-import { PlaceholderHighlightExtension, isSelectionOverPlaceholder } from "@/lib/tiptap/placeholder-highlights";
+import {
+  createPlaceholderHighlightExtension,
+  isSelectionOverPlaceholder,
+  placeholderRefreshMeta,
+} from "@/lib/tiptap/placeholder-highlights";
 import {
   SuggestionInsert,
   SuggestionDelete,
   TrackChangesExtension,
   TrackChangesKeyboardExtension,
 } from "@/lib/tiptap/suggestion-marks";
+import {
+  createSuggestionActionWidgetsExtension,
+  suggestionActionWidgetsRefreshMeta,
+  type SuggestionActionWidgetState,
+} from "@/lib/tiptap/suggestion-action-widgets";
+import {
+  acceptSuggestionMarksById,
+  injectSuggestionMarks,
+  stripPendingSuggestionsExcept,
+  stripSuggestionMarksById,
+} from "@/lib/tiptap/suggestion-inject";
+import { AI_AUTHOR_ID } from "@/lib/ai/constants";
+import { parseAiFixCommentContent } from "@/lib/ai/suggestion-gating";
+import {
+  buildSuggestionEdit,
+  narrativeHasSuggestionMarks,
+} from "@/lib/suggestions/apply-narrative-suggestion";
+import { validateSuggestionLocate } from "@/lib/suggestions/validate-suggestion";
 import type { SectionType } from "@/db/schema";
 
 function TableEditToolbar({
@@ -264,6 +293,7 @@ export function TiptapSectionField({
     workspaceMode,
     currentUserId,
     getSectionId,
+    refresh,
   } = useReportData();
   const {
     comments,
@@ -277,8 +307,24 @@ export function TiptapSectionField({
     pendingCommentFocusCommentId,
     acknowledgeCommentFocus,
   } = useReportComments();
+  const { focusedPanelPlaceholderId } = useReportPlaceholders();
+  const focusedPanelPlaceholderIdRef = useRef(focusedPanelPlaceholderId);
+  useLayoutEffect(() => {
+    focusedPanelPlaceholderIdRef.current = focusedPanelPlaceholderId;
+  }, [focusedPanelPlaceholderId]);
   const { registerEditor, setActiveEditor } = useReportEditors();
+  const { activeSuggestionIdForSection, isSuggestionPreviewHeld } =
+    useReportEvaluations();
+  const { replaceSection, sections } = useReportSections();
   const { getUser } = useUserDirectory();
+  const activeSuggestionId = activeSuggestionIdForSection(section);
+  const suggestionWidgetStateRef = useRef<SuggestionActionWidgetState>({
+    enabled: true,
+    actionableEvaluationIds: new Set<string>(),
+    pendingId: null as string | null,
+    onAccept: () => {},
+    onIgnore: () => {},
+  });
 
   const rangesRef = useRef<CommentHighlightRange[]>([]);
   const handlersRef = useRef<CommentHighlightHandlers>({
@@ -298,11 +344,29 @@ export function TiptapSectionField({
     [getRanges, getHandlers]
   );
 
+  const suggestionWidgetsExtension = useMemo(
+    () =>
+      // eslint-disable-next-line react-hooks/refs -- ProseMirror reads this getter from plugin callbacks, not during React render
+      createSuggestionActionWidgetsExtension(() => suggestionWidgetStateRef.current),
+    []
+  );
+
+  const placeholderHighlightExtension = useMemo(
+    () =>
+      // eslint-disable-next-line react-hooks/refs -- ProseMirror calls getter at transaction time
+      createPlaceholderHighlightExtension(
+        () => focusedPanelPlaceholderIdRef.current,
+        { section, contentPath }
+      ),
+    [section, contentPath]
+  );
+
   const filteredRanges = useMemo(() => {
     return comments
       .filter(
         (c) =>
           !c.parentId &&
+          c.kind !== "ai_fix" &&
           c.section === section &&
           c.contentPath === contentPath &&
           c.fromPos != null &&
@@ -370,7 +434,8 @@ export function TiptapSectionField({
         TrackChangesKeyboardExtension,
         TrackChangesExtension,
         highlightExtension,
-        PlaceholderHighlightExtension,
+        suggestionWidgetsExtension,
+        placeholderHighlightExtension,
       ],
       content: value,
       editable,
@@ -380,7 +445,7 @@ export function TiptapSectionField({
         onChangeRef.current(json);
       },
     },
-    [highlightExtension, placeholder]
+    [highlightExtension, placeholder, placeholderHighlightExtension, suggestionWidgetsExtension]
   );
 
 
@@ -395,10 +460,8 @@ export function TiptapSectionField({
         if (!editor) return;
         editor.chain().focus().setTextSelection({ from: c.fromPos, to: c.toPos }).run();
       },
-      onAiSuggestionMarkActivate: (evaluationId: string) => {
-        const c = comments.find(
-          (x) => !x.parentId && x.evaluationId === evaluationId
-        );
+      onAiSuggestionMarkActivate: (suggestionId: string) => {
+        const c = comments.find((x) => !x.parentId && x.id === suggestionId);
         if (!c) return;
         setActiveCommentId(c.id);
         setActiveAnchorId(c.id);
@@ -488,18 +551,198 @@ export function TiptapSectionField({
     editor.setEditable(editable);
   }, [editor, editable]);
 
+  const persistSuggestion = useCallback(
+    async (commentId: string, status: "resolved" | "dismissed") => {
+      await patchCommentStatus(report.id, commentId, status);
+      setComments((prev) =>
+        status === "dismissed"
+          ? prev.filter((c) => c.id !== commentId)
+          : prev.map((c) =>
+              c.id === commentId ? { ...c, status: "resolved" as const } : c
+            )
+      );
+    },
+    [report.id, setComments]
+  );
+
+  const applySuggestionInEditor = useCallback(
+    async (suggestionId: string, mode: "accept" | "dismiss") => {
+      if (!editor) return;
+      const json = editor.getJSON() as JSONContent;
+      const next =
+        mode === "accept"
+          ? acceptSuggestionMarksById(json, suggestionId)
+          : stripSuggestionMarksById(json, suggestionId);
+      editor.commands.setContent(next as Content, { emitUpdate: false });
+      onChangeRef.current(next);
+      const res = await fetch(`/api/reports/${report.id}/sections/${section}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          content: { ...(value as Record<string, unknown>), narrative: next },
+        }),
+      });
+      if (!res.ok) throw new Error("Save failed");
+      replaceSection(section, {
+        ...(value as Record<string, unknown>),
+        narrative: next,
+      } as never);
+      await persistSuggestion(
+        suggestionId,
+        mode === "accept" ? "resolved" : "dismissed"
+      );
+    },
+    [editor, report.id, section, value, replaceSection, persistSuggestion]
+  );
+
+  useEffect(() => {
+    const ids = new Set<string>();
+    if (activeSuggestionId) ids.add(activeSuggestionId);
+    suggestionWidgetStateRef.current = {
+      enabled: contentPath === "narrative",
+      actionableEvaluationIds: ids,
+      pendingId: suggestionWidgetStateRef.current.pendingId,
+      onAccept: async (id) => {
+        suggestionWidgetStateRef.current.pendingId = id;
+        editor?.view.dispatch(
+          editor.state.tr.setMeta(suggestionActionWidgetsRefreshMeta, true)
+        );
+        try {
+          await applySuggestionInEditor(id, "accept");
+        } catch (err) {
+          console.error(err);
+          toast.error(
+            err instanceof CommentPersistError
+              ? err.message
+              : "Could not apply suggestion"
+          );
+          await refresh();
+        } finally {
+          suggestionWidgetStateRef.current.pendingId = null;
+          editor?.view.dispatch(
+            editor.state.tr.setMeta(suggestionActionWidgetsRefreshMeta, true)
+          );
+        }
+      },
+      onIgnore: async (id) => {
+        suggestionWidgetStateRef.current.pendingId = id;
+        editor?.view.dispatch(
+          editor.state.tr.setMeta(suggestionActionWidgetsRefreshMeta, true)
+        );
+        try {
+          await applySuggestionInEditor(id, "dismiss");
+        } catch (err) {
+          console.error(err);
+          toast.error(
+            err instanceof CommentPersistError
+              ? err.message
+              : "Could not dismiss suggestion"
+          );
+          await refresh();
+        } finally {
+          suggestionWidgetStateRef.current.pendingId = null;
+          editor?.view.dispatch(
+            editor.state.tr.setMeta(suggestionActionWidgetsRefreshMeta, true)
+          );
+        }
+      },
+    };
+    editor?.view.dispatch(
+      editor.state.tr.setMeta(suggestionActionWidgetsRefreshMeta, true)
+    );
+  }, [activeSuggestionId, contentPath, editor, applySuggestionInEditor, refresh]);
+
   const applyExternalValueToEditor = useCallback(() => {
-    if (!editor) return;
-    const cur = JSON.stringify(editor.getJSON());
+    const currentEditor = editor;
+    if (!currentEditor || currentEditor.isDestroyed) return;
+    const cur = JSON.stringify(currentEditor.getJSON());
     const next = JSON.stringify(value);
     if (cur !== next) {
-      editor.commands.setContent(value as Content, { emitUpdate: false });
+      currentEditor.commands.setContent(value as Content, { emitUpdate: false });
     }
   }, [editor, value]);
 
   useEffect(() => {
     applyExternalValueToEditor();
   }, [applyExternalValueToEditor]);
+
+  const narrativeContentKey =
+    contentPath === "narrative"
+      ? JSON.stringify((value as { narrative?: JSONContent }).narrative ?? null)
+      : "";
+
+  const previewHeld =
+    contentPath === "narrative" && isSuggestionPreviewHeld(section);
+
+  // Narrow deps to this section only — avoid re-running when other sections change.
+  const sectionContent = sections[section];
+
+  /** Only the active suggestion may have inline marks; inject it when missing. */
+  useEffect(() => {
+    if (!editor || contentPath !== "narrative") return;
+
+    let json = editor.getJSON() as JSONContent;
+    const before = JSON.stringify(json);
+
+    if (previewHeld) {
+      json = stripPendingSuggestionsExcept(json, null);
+      if (JSON.stringify(json) === before) return;
+      editor.commands.setContent(json as Content, { emitUpdate: false });
+      return;
+    }
+
+    json = stripPendingSuggestionsExcept(json, activeSuggestionId);
+
+    if (
+      activeSuggestionId &&
+      !narrativeHasSuggestionMarks(json, activeSuggestionId)
+    ) {
+      const comment = comments.find(
+        (c) =>
+          c.id === activeSuggestionId &&
+          c.kind === "ai_fix" &&
+          c.status === "open" &&
+          (c.contentPath === contentPath || c.contentPath === "narrative")
+      );
+      if (comment) {
+        const validation = validateSuggestionLocate(
+          comment,
+          section,
+          sectionContent
+        );
+        if (validation.canPreview) {
+          const payload = parseAiFixCommentContent(comment.content);
+          const edit = buildSuggestionEdit({
+            anchorText: comment.anchorText,
+            deleteText: payload.deleteText,
+            insertText: payload.insertText,
+          });
+          json = injectSuggestionMarks(json, edit, {
+            id: activeSuggestionId,
+            authorId: AI_AUTHOR_ID,
+            status: "pending",
+            createdAt: comment.createdAt,
+            kind: "fix",
+          }).doc;
+        }
+      }
+    }
+
+    if (JSON.stringify(json) === before) return;
+
+    editor.commands.setContent(json as Content, { emitUpdate: false });
+    // Suggestion preview marks are editor-local UI. Persisting them into section
+    // state makes the external-value sync immediately re-run this effect.
+  }, [
+    editor,
+    contentPath,
+    activeSuggestionId,
+    comments,
+    narrativeContentKey,
+    previewHeld,
+    section,
+    sectionContent,
+  ]);
 
   // Debounced decoration refresh — coalesces hover-driven updates to one per frame.
   const hoverRefreshFrame = useRef<number | null>(null);
@@ -521,6 +764,15 @@ export function TiptapSectionField({
       }
     };
   }, [editor, activeCommentId, filteredRanges]);
+
+  useEffect(() => {
+    if (!editor) return;
+    editor.view.dispatch(
+      editor.state.tr
+        .setMeta(placeholderRefreshMeta, true)
+        .setMeta("addToHistory", false)
+    );
+  }, [editor, focusedPanelPlaceholderId, section, contentPath]);
 
   const cancelCommentCompose = useCallback(() => {
     setCommentComposing(false);
@@ -572,9 +824,34 @@ export function TiptapSectionField({
   const tableHAlign = (activeTableCellAttrs?.align as string | undefined) ?? null;
   const tableVAlign = (activeTableCellAttrs?.verticalAlign as string | undefined) ?? null;
 
+  const inactiveSuggestionCss =
+    activeSuggestionId && contentPath === "narrative"
+      ? `
+[data-active-suggestion-id="${activeSuggestionId}"] [data-eval-id]:not([data-eval-id="${activeSuggestionId}"]).suggestion-insert,
+[data-active-suggestion-id="${activeSuggestionId}"] [data-eval-id]:not([data-eval-id="${activeSuggestionId}"]).suggestion-insert-ai,
+[data-active-suggestion-id="${activeSuggestionId}"] [data-eval-id]:not([data-eval-id="${activeSuggestionId}"]).suggestion-insert-ai::before,
+[data-active-suggestion-id="${activeSuggestionId}"] [data-eval-id]:not([data-eval-id="${activeSuggestionId}"]).suggestion-insert-ai::after {
+  display: none !important;
+  content: none !important;
+}
+[data-active-suggestion-id="${activeSuggestionId}"] [data-eval-id]:not([data-eval-id="${activeSuggestionId}"]).suggestion-delete,
+[data-active-suggestion-id="${activeSuggestionId}"] [data-eval-id]:not([data-eval-id="${activeSuggestionId}"]).suggestion-delete-ai {
+  text-decoration: none !important;
+  background-color: transparent !important;
+  color: inherit !important;
+}
+[data-active-suggestion-id="${activeSuggestionId}"] .suggestion-action-widget:not([data-eval-id="${activeSuggestionId}"]) {
+  display: none !important;
+}
+`
+      : "";
+
   return (
     <div className={className}>
-      <div className="mb-1.5">
+      {inactiveSuggestionCss ? (
+        <style dangerouslySetInnerHTML={{ __html: inactiveSuggestionCss }} />
+      ) : null}
+      <div className="mb-1.5 flex flex-wrap items-center gap-2">
         <Label>{label}</Label>
       </div>
 
@@ -704,8 +981,12 @@ export function TiptapSectionField({
           "[&_.ProseMirror]:outline-none",
           "[&_.tiptap-image-inline]:my-1 [&_.tiptap-image-inline]:max-w-full [&_.tiptap-image-inline]:h-auto [&_.tiptap-image-inline]:rounded-sm",
           "[&_.tiptap-math-block]:my-2",
-          !editable && "opacity-90"
+          !editable && "opacity-90",
+          previewHeld && "suggestion-field-settling"
         )}
+        data-field-anchor={`${section}.${contentPath}`}
+        data-active-suggestion-id={activeSuggestionId ?? ""}
+        data-suggestion-preview-held={previewHeld ? "true" : undefined}
       >
         {editor ? <EditorContent editor={editor} /> : null}
       </div>

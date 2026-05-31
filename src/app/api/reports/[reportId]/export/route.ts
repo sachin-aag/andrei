@@ -3,6 +3,8 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { comments, reports, reportSections } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
+import { hydrateUserDirectory } from "@/lib/auth/user-directory";
+import { listWorkspaceUsers } from "@/lib/auth/workspace-users";
 import { generateReportDocx } from "@/lib/export/generate-docx";
 
 export const runtime = "nodejs";
@@ -29,6 +31,8 @@ export async function GET(
     .select()
     .from(comments)
     .where(eq(comments.reportId, reportId));
+
+  hydrateUserDirectory(await listWorkspaceUsers());
 
   const buffer = await generateReportDocx({
     report,

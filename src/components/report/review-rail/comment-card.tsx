@@ -16,9 +16,15 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   useReportComments,
   useReportData,
+  useReportEvaluations,
 } from "@/providers/report-provider";
 import { useUserDirectory } from "@/providers/user-directory-provider";
 import { cn, formatDateTime } from "@/lib/utils";
+import {
+  getCommentCardPreview,
+  getCommentCardTitle,
+  isAiFixComment,
+} from "@/lib/comments/display";
 import { SECTION_LABELS } from "@/types/sections";
 import type { CommentRecord } from "@/types/report";
 import type { SectionType } from "@/db/schema";
@@ -55,12 +61,16 @@ export function CommentCard({
   const [updating, setUpdating] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const { evaluations } = useReportEvaluations();
   const { getUser } = useUserDirectory();
   const author = getUser(root.authorId);
+  const aiFix = isAiFixComment(root);
+  const cardPreview = getCommentCardPreview(root);
   const isImportedWordComment = root.source === "word" || root.kind === "word_import";
   const authorName = isImportedWordComment
     ? root.externalAuthorName || "Word reviewer"
     : author?.name ?? "Unknown";
+  const cardTitle = aiFix ? getCommentCardTitle(root, evaluations) : authorName;
 
   const canReplyOrResolve =
     currentUserId === report.authorId ||
@@ -195,13 +205,18 @@ export function CommentCard({
       )}
     >
       <div className="px-3 py-2 flex items-start gap-2">
-        <div className="size-7 rounded-full bg-[var(--brand-600)] flex items-center justify-center text-[10px] font-semibold shrink-0 text-white">
-          {initials}
+        <div
+          className={cn(
+            "size-7 rounded-full flex items-center justify-center text-[10px] font-semibold shrink-0 text-white",
+            aiFix ? "bg-violet-600" : "bg-[var(--brand-600)]"
+          )}
+        >
+          {aiFix ? "AI" : initials}
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-xs font-semibold truncate">
-              {authorName}
+              {cardTitle}
             </span>
             {isImportedWordComment && (
               <span className="text-[10px] text-sky-700 bg-sky-100 border border-sky-200 rounded px-1 py-0.5">
@@ -261,7 +276,7 @@ export function CommentCard({
             )}
           </div>
           <p className="text-xs text-[var(--foreground)] mt-1 whitespace-pre-wrap leading-snug">
-            {root.content}
+            {cardPreview}
           </p>
           <span className="text-[10px] text-[var(--muted-foreground)]">
             {formatDateTime(root.createdAt)}

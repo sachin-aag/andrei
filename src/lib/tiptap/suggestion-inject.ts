@@ -1,25 +1,28 @@
 import type { JSONContent } from "@tiptap/core";
-import { normalizeBracketPlaceholdersInPlainText } from "@/lib/placeholders/normalize-bracket-placeholders";
+import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
+import {
+  findAnchorInText,
+  collapseWhitespace,
+  countOccurrences,
+} from "@/lib/text/normalize-for-anchor";
 import {
   suggestionInsertMarkName,
   suggestionDeleteMarkName,
   type SuggestionKind,
   type SuggestionStatus,
 } from "@/lib/tiptap/suggestion-marks";
+import { finalizeNarrativeDocAfterSuggestion } from "@/lib/tiptap/finalize-narrative-doc";
 
 /**
  * Server-side equivalent of Tiptap's editor commands for inserting an AI
- * suggestion as a tracked-change pair (suggestionDelete over the anchor +
- * suggestionInsert for the replacement) directly in the persisted JSON doc.
- *
- * Mirrors the whitespace-tolerant matching of `replaceTextInDoc` in rich-text.ts
- * so anchors that drift slightly across save round-trips still match. When the
- * anchor is empty or cannot be found, the replacement is appended as a new
- * paragraph at the end of the section (single edge-case path, per the plan).
- *
- * Returns the new doc plus the ProseMirror absolute positions of the inserted
- * range (where the suggestion comment's fromPos/toPos should anchor).
+ * suggestion as a tracked-change pair directly in the persisted JSON doc.
  */
+
+export type SuggestionEdit = {
+  anchorText: string;
+  deleteText: string;
+  insertText: string;
+};
 
 type InjectAttrs = {
   id: string;
@@ -31,23 +34,15 @@ type InjectAttrs = {
 
 export type InjectResult = {
   doc: JSONContent;
-  /** PM range of the freshly-inserted `suggestionInsert` text. */
   insertFromPos: number;
   insertToPos: number;
-  /** True when the anchor was located and replaced in place; false when appended at end. */
   anchored: boolean;
 };
 
-const collapse = (s: string) => s.replace(/\s+/g, " ").trim();
-
-/** Walk JSON doc; for each text node call `cb(node, refIndex, parent)`. */
 type TextRef = {
   node: JSONContent;
-  /** Parent array reference for splicing if needed. */
   parentArr: JSONContent[];
-  /** Index of `node` within parentArr. */
   indexInParent: number;
-  /** Original character offset within the flat plain-text view of the doc. */
   flatStart: number;
   flatEnd: number;
 };
@@ -76,9 +71,6 @@ function collectTextRefs(doc: JSONContent): { refs: TextRef[]; flat: string } {
       const arr = node.content;
       for (let i = 0; i < arr.length; i++) {
         visit(arr[i]!, arr, i);
-        // Insert a soft separator between sibling block children so a multi-paragraph
-        // anchor still matches across the paragraph boundary (whitespace collapse
-        // will normalize the gap).
         if (
           i < arr.length - 1 &&
           (node.type === "doc" ||
@@ -97,7 +89,6 @@ function collectTextRefs(doc: JSONContent): { refs: TextRef[]; flat: string } {
   return { refs, flat };
 }
 
-/** Compute ProseMirror absolute positions for every text node in the doc. */
 function indexPmPositions(doc: JSONContent): Map<JSONContent, { pmStart: number; pmEnd: number }> {
   const map = new Map<JSONContent, { pmStart: number; pmEnd: number }>();
 
@@ -135,20 +126,18 @@ function splitTextNode(
   const after = original.slice(localEnd);
 
   const baseMarks = ref.node.marks ?? [];
-  const insertMark = {
-    type: suggestionInsertMarkName,
-    attrs: { ...attrs },
-  };
   const deleteMark = {
     type: suggestionDeleteMarkName,
     attrs: { ...attrs },
   };
-  void insertMark; // not used in the per-node split path; pair is composed at call site
 
-  // Replace this single text node with potentially three: prefix, marked middle, suffix.
   const replacements: JSONContent[] = [];
   if (before.length > 0) {
-    replacements.push({ type: "text", text: before, marks: baseMarks.length ? baseMarks : undefined });
+    replacements.push({
+      type: "text",
+      text: before,
+      marks: baseMarks.length ? baseMarks : undefined,
+    });
   }
   if (middle.length > 0) {
     replacements.push({
@@ -158,111 +147,39 @@ function splitTextNode(
     });
   }
   if (after.length > 0) {
-    replacements.push({ type: "text", text: after, marks: baseMarks.length ? baseMarks : undefined });
+    replacements.push({
+      type: "text",
+      text: after,
+      marks: baseMarks.length ? baseMarks : undefined,
+    });
   }
 
   ref.parentArr.splice(ref.indexInParent, 1, ...replacements);
 }
 
-/** Remove `marks` field if empty so we don't bloat the JSON. */
 function cleanupMarks(node: JSONContent) {
   if (node.marks?.length === 0) delete node.marks;
   if (node.content?.length) for (const ch of node.content) cleanupMarks(ch);
 }
 
-export function injectSuggestionMarks(
-  doc: JSONContent,
-  anchorText: string,
-  replacementText: string,
+function findRangeInFlat(
+  flat: string,
+  needle: string
+): { start: number; end: number } | null {
+  const match = findAnchorInText(flat, needle);
+  if (!match) return null;
+  return { start: match.start, end: match.end };
+}
+
+function applyDeleteRange(
+  cloned: JSONContent,
+  refs: TextRef[],
+  origStart: number,
+  origEnd: number,
   attrs: InjectAttrs
-): InjectResult {
-  // Deep-clone so we never mutate the caller's reference.
-  const cloned: JSONContent = JSON.parse(JSON.stringify(doc));
-
-  const trimmedAnchor = (anchorText ?? "").trim();
-  const trimmedReplacement = normalizeBracketPlaceholdersInPlainText(
-    (replacementText ?? "").trim()
-  );
-
-  // ── Edge case: no anchor or empty replacement → append at end ──────────
-  // The plan collapses "anchor missing" + "anchor empty" into one path: a
-  // brand-new paragraph carrying only the suggestionInsert mark.
-  function appendAtEnd(): InjectResult {
-    if (!trimmedReplacement) {
-      // Nothing to insert; degenerate case.
-      return { doc: cloned, insertFromPos: 0, insertToPos: 0, anchored: false };
-    }
-    const insertMark = {
-      type: suggestionInsertMarkName,
-      attrs: { ...attrs },
-    };
-    const para: JSONContent = {
-      type: "paragraph",
-      content: [{ type: "text", text: trimmedReplacement, marks: [insertMark] }],
-    };
-    if (cloned.type !== "doc") {
-      return { doc: cloned, insertFromPos: 0, insertToPos: 0, anchored: false };
-    }
-    cloned.content = [...(cloned.content ?? []), para];
-    // PM positions: end of old doc = (sum of all node sizes). Easiest to
-    // re-index after mutation.
-    const pmIndex = indexPmPositions(cloned);
-    // Find the text node we just inserted (last text in the doc).
-    let last: { pmStart: number; pmEnd: number } | null = null;
-    for (const [, range] of pmIndex) last = range;
-    if (!last) return { doc: cloned, insertFromPos: 0, insertToPos: 0, anchored: false };
-    return {
-      doc: cloned,
-      insertFromPos: last.pmStart,
-      insertToPos: last.pmEnd,
-      anchored: false,
-    };
-  }
-
-  if (!trimmedAnchor || !trimmedReplacement) {
-    return appendAtEnd();
-  }
-
-  // ── Locate the anchor in the flat text (whitespace-tolerant) ───────────
-  const { refs, flat } = collectTextRefs(cloned);
-  if (flat.length === 0) return appendAtEnd();
-
-  const collapsedToOrig: number[] = [];
-  let collapsed = "";
-  let inSpace = true;
-  for (let i = 0; i < flat.length; i++) {
-    const ch = flat[i]!;
-    if (/\s/.test(ch)) {
-      if (!inSpace) {
-        collapsed += " ";
-        collapsedToOrig.push(i);
-        inSpace = true;
-      }
-    } else {
-      collapsed += ch;
-      collapsedToOrig.push(i);
-      inSpace = false;
-    }
-  }
-  while (collapsed.endsWith(" ")) {
-    collapsed = collapsed.slice(0, -1);
-    collapsedToOrig.pop();
-  }
-
-  const needle = collapse(trimmedAnchor);
-  if (!needle) return appendAtEnd();
-
-  const idx = collapsed.indexOf(needle);
-  if (idx === -1) return appendAtEnd();
-
-  const origStart = collapsedToOrig[idx]!;
-  const lastCollapsedIdx = idx + needle.length - 1;
-  const origEnd = collapsedToOrig[lastCollapsedIdx]! + 1;
-
-  // ── Wrap the matched range in suggestionDelete by splitting affected refs ──
-  // Walk affected refs in REVERSE so earlier indices remain valid as we splice.
+): TextRef | null {
   const affected = refs.filter((r) => r.flatEnd > origStart && r.flatStart < origEnd);
-  if (affected.length === 0) return appendAtEnd();
+  if (affected.length === 0) return null;
 
   for (let i = affected.length - 1; i >= 0; i--) {
     const r = affected[i]!;
@@ -272,11 +189,7 @@ export function injectSuggestionMarks(
     splitTextNode(r, localStart, localEnd, attrs);
   }
 
-  // ── Insert the replacement as a new text node carrying suggestionInsert ──
-  // Place it immediately after the LAST node containing the deleted range.
-  // We re-collect refs because the splits invalidated indices.
   const recollected = collectTextRefs(cloned);
-  // Find the last node whose marks include suggestionDelete with our id.
   const ourId = attrs.id;
   let insertAfter: TextRef | null = null;
   for (const r of recollected.refs) {
@@ -287,58 +200,296 @@ export function injectSuggestionMarks(
     );
     if (hasOurDelete) insertAfter = r;
   }
-  if (!insertAfter) {
-    // Splits didn't take — fall back to append-at-end.
-    return appendAtEnd();
-  }
+  return insertAfter;
+}
+
+function insertAfterRef(
+  cloned: JSONContent,
+  insertAfter: TextRef | null,
+  insertText: string,
+  attrs: InjectAttrs
+): JSONContent | null {
+  const trimmed = normalizeSuggestionInsertText(insertText);
+  if (!trimmed) return null;
 
   const insertMark = {
     type: suggestionInsertMarkName,
     attrs: { ...attrs },
   };
-  // Strip any base marks the surrounding text carried that conflict (we
-  // intentionally only carry the suggestionInsert mark on the new text).
   const insertedNode: JSONContent = {
     type: "text",
-    text: trimmedReplacement,
+    text: trimmed,
     marks: [insertMark],
   };
-  insertAfter.parentArr.splice(insertAfter.indexInParent + 1, 0, insertedNode);
 
-  cleanupMarks(cloned);
+  if (insertAfter) {
+    insertAfter.parentArr.splice(insertAfter.indexInParent + 1, 0, insertedNode);
+  } else {
+    const para: JSONContent = {
+      type: "paragraph",
+      content: [insertedNode],
+    };
+    if (cloned.type !== "doc") return insertedNode;
+    cloned.content = [...(cloned.content ?? []), para];
+  }
+  return insertedNode;
+}
 
-  // Compute PM positions for the inserted node.
-  const pmIndex = indexPmPositions(cloned);
-  const range = pmIndex.get(insertedNode);
-  if (!range) {
+function appendAtEnd(
+  cloned: JSONContent,
+  insertText: string,
+  attrs: InjectAttrs
+): InjectResult {
+  const trimmed = normalizeSuggestionInsertText(insertText);
+  if (!trimmed) {
     return { doc: cloned, insertFromPos: 0, insertToPos: 0, anchored: false };
   }
+  const insertedNode = insertAfterRef(cloned, null, trimmed, attrs);
+  if (!insertedNode) {
+    return { doc: cloned, insertFromPos: 0, insertToPos: 0, anchored: false };
+  }
+  cleanupMarks(cloned);
+  const pmIndex = indexPmPositions(cloned);
+  const range = pmIndex.get(insertedNode);
+  if (!range) return { doc: cloned, insertFromPos: 0, insertToPos: 0, anchored: false };
   return {
     doc: cloned,
     insertFromPos: range.pmStart,
     insertToPos: range.pmEnd,
-    anchored: true,
+    anchored: false,
   };
 }
 
-/**
- * Strip every `suggestionInsert` / `suggestionDelete` mark whose `id` matches
- * `markId`. Used by the reconciliation path: when a re-eval supersedes a prior
- * (still-pending) AI suggestion, we wipe its marks before injecting fresh ones.
- *
- * Unlike a "dumb" strip, this removes:
- *   - the suggestionDelete mark from kept text (the original anchor returns).
- *   - the entire text node carrying suggestionInsert (the proposed replacement vanishes).
- */
+export function injectSuggestionMarks(
+  doc: JSONContent,
+  edit: SuggestionEdit,
+  attrs: InjectAttrs
+): InjectResult {
+  const cloned: JSONContent = JSON.parse(JSON.stringify(doc));
+
+  const anchorText = (edit.anchorText ?? "").trim();
+  const deleteText = (edit.deleteText ?? "").trim();
+  const insertText = normalizeSuggestionInsertText(edit.insertText ?? "");
+
+  if (!deleteText && !insertText) {
+    return { doc: cloned, insertFromPos: 0, insertToPos: 0, anchored: false };
+  }
+
+  const { refs, flat } = collectTextRefs(cloned);
+  if (flat.length === 0 && insertText) {
+    return appendAtEnd(cloned, insertText, attrs);
+  }
+
+  // Pure insert after anchor (or append if anchor missing).
+  if (!deleteText && insertText) {
+    if (!anchorText) return appendAtEnd(cloned, insertText, attrs);
+    const anchorRange = findRangeInFlat(flat, anchorText);
+    if (!anchorRange) return appendAtEnd(cloned, insertText, attrs);
+
+    // Re-clone and insert text node after anchor span without delete marks.
+    const fresh = JSON.parse(JSON.stringify(doc)) as JSONContent;
+    const collected = collectTextRefs(fresh);
+    const range = findRangeInFlat(collected.flat, anchorText);
+    if (!range) return appendAtEnd(fresh, insertText, attrs);
+    const affected = collected.refs.filter(
+      (r) => r.flatEnd > range.start && r.flatStart < range.end
+    );
+    const lastRef = affected[affected.length - 1] ?? null;
+    const insertedNode = insertAfterRef(fresh, lastRef, insertText, attrs);
+    cleanupMarks(fresh);
+    if (!insertedNode) return { doc: fresh, insertFromPos: 0, insertToPos: 0, anchored: false };
+    const pmIndex = indexPmPositions(fresh);
+    const pos = pmIndex.get(insertedNode);
+    return {
+      doc: fresh,
+      insertFromPos: pos?.pmStart ?? 0,
+      insertToPos: pos?.pmEnd ?? 0,
+      anchored: true,
+    };
+  }
+
+  // Delete (with optional insert).
+  const deleteNeedle = deleteText || anchorText;
+  if (!deleteNeedle) return appendAtEnd(cloned, insertText, attrs);
+
+  let deleteRange: { start: number; end: number } | null = null;
+  if (anchorText) {
+    const anchorRange = findRangeInFlat(flat, anchorText);
+    if (anchorRange) {
+      const slice = flat.slice(anchorRange.start, anchorRange.end);
+      const inner = findRangeInFlat(slice, deleteNeedle);
+      if (inner) {
+        deleteRange = {
+          start: anchorRange.start + inner.start,
+          end: anchorRange.start + inner.end,
+        };
+      } else if (!deleteText) {
+        deleteRange = anchorRange;
+      }
+    }
+  }
+  deleteRange ??= findRangeInFlat(flat, deleteNeedle);
+
+  if (!deleteRange) {
+    if (insertText) return appendAtEnd(cloned, insertText, attrs);
+    return { doc: cloned, insertFromPos: 0, insertToPos: 0, anchored: false };
+  }
+
+  const insertAfter = applyDeleteRange(cloned, refs, deleteRange.start, deleteRange.end, attrs);
+  let insertedNode: JSONContent | null = null;
+  if (insertText) {
+    insertedNode = insertAfterRef(cloned, insertAfter, insertText, attrs);
+  }
+
+  cleanupMarks(cloned);
+
+  if (insertedNode) {
+    const pmIndex = indexPmPositions(cloned);
+    const range = pmIndex.get(insertedNode);
+    return {
+      doc: cloned,
+      insertFromPos: range?.pmStart ?? 0,
+      insertToPos: range?.pmEnd ?? 0,
+      anchored: true,
+    };
+  }
+
+  if (insertAfter) {
+    const pmIndex = indexPmPositions(cloned);
+    const range = pmIndex.get(insertAfter.node);
+    return {
+      doc: cloned,
+      insertFromPos: range?.pmStart ?? 0,
+      insertToPos: range?.pmEnd ?? 0,
+      anchored: true,
+    };
+  }
+
+  return { doc: cloned, insertFromPos: 0, insertToPos: 0, anchored: false };
+}
+
+/** Accept: keep insert text (unmarked), remove delete-marked text. */
+/** Replace all insert-mark text for a suggestion id (before accept, e.g. after filling placeholders). */
+export function replaceSuggestionInsertPlainText(
+  doc: JSONContent,
+  markId: string,
+  newText: string
+): JSONContent {
+  const cloned: JSONContent = JSON.parse(JSON.stringify(doc));
+  const hits: Array<{ parentArr: JSONContent[]; index: number; node: JSONContent }> = [];
+
+  function walk(node: JSONContent, parentArr: JSONContent[] | null, index: number) {
+    if (node.type === "text" && node.marks?.length) {
+      const isInsert = node.marks.some(
+        (m) =>
+          m.type === suggestionInsertMarkName &&
+          (m.attrs as { id?: string } | undefined)?.id === markId
+      );
+      if (isInsert && parentArr) {
+        hits.push({ parentArr, index, node });
+      }
+    }
+    if (node.content?.length) {
+      for (let i = 0; i < node.content.length; i++) {
+        walk(node.content[i]!, node.content, i);
+      }
+    }
+  }
+
+  walk(cloned, null, 0);
+  if (hits.length === 0) return cloned;
+
+  hits[0]!.node.text = newText;
+  for (let i = hits.length - 1; i >= 1; i--) {
+    const { parentArr, index } = hits[i]!;
+    parentArr.splice(index, 1);
+  }
+  return cloned;
+}
+
+/** Pending AI suggestion mark ids present in a narrative doc. */
+export function collectPendingSuggestionMarkIds(doc: JSONContent): string[] {
+  const ids = new Set<string>();
+
+  function visit(node: JSONContent) {
+    if (node.type === "text" && node.marks?.length) {
+      for (const mark of node.marks) {
+        if (
+          mark.type !== suggestionInsertMarkName &&
+          mark.type !== suggestionDeleteMarkName
+        ) {
+          continue;
+        }
+        const attrs = mark.attrs as { id?: string | null; status?: string };
+        if (attrs?.status !== "pending") continue;
+        if (attrs.id) ids.add(attrs.id);
+      }
+    }
+    node.content?.forEach(visit);
+  }
+
+  visit(doc);
+  return [...ids];
+}
+
+/** Revert every pending suggestion preview except the one currently shown in the UI. */
+export function stripPendingSuggestionsExcept(
+  doc: JSONContent,
+  keepMarkId: string | null
+): JSONContent {
+  let result = doc;
+  for (const id of collectPendingSuggestionMarkIds(doc)) {
+    if (keepMarkId && id === keepMarkId) continue;
+    result = stripSuggestionMarksById(result, id);
+  }
+  return result;
+}
+
+export function acceptSuggestionMarksById(doc: JSONContent, markId: string): JSONContent {
+  const cloned: JSONContent = JSON.parse(JSON.stringify(doc));
+
+  function visit(node: JSONContent) {
+    if (node.content?.length) {
+      for (const ch of node.content) visit(ch);
+
+      node.content = node.content
+        .filter((ch) => {
+          if (ch.type !== "text") return true;
+          const marks = ch.marks ?? [];
+          return !marks.some(
+            (m) =>
+              m.type === suggestionDeleteMarkName &&
+              (m.attrs as { id?: string } | undefined)?.id === markId
+          );
+        })
+        .map((ch) => {
+          if (ch.type !== "text" || !ch.marks?.length) return ch;
+          const nextMarks = ch.marks.filter(
+            (m) =>
+              !(
+                m.type === suggestionInsertMarkName &&
+                (m.attrs as { id?: string } | undefined)?.id === markId
+              )
+          );
+          const out: JSONContent = { ...ch };
+          if (nextMarks.length > 0) out.marks = nextMarks;
+          else delete out.marks;
+          return out;
+        });
+    }
+  }
+
+  visit(cloned);
+  return finalizeNarrativeDocAfterSuggestion(cloned);
+}
+
 export function stripSuggestionMarksById(doc: JSONContent, markId: string): JSONContent {
   const cloned: JSONContent = JSON.parse(JSON.stringify(doc));
 
   function visit(node: JSONContent) {
     if (node.content?.length) {
-      // First recurse so nested cleanup happens before we filter at this level.
       for (const ch of node.content) visit(ch);
 
-      // Drop text nodes that carry suggestionInsert with our id.
       node.content = node.content.filter((ch) => {
         if (ch.type !== "text") return true;
         const marks = ch.marks ?? [];
@@ -349,7 +500,6 @@ export function stripSuggestionMarksById(doc: JSONContent, markId: string): JSON
         );
       });
 
-      // Strip suggestionDelete marks with our id from remaining text nodes.
       for (const ch of node.content) {
         if (ch.type !== "text" || !ch.marks?.length) continue;
         ch.marks = ch.marks.filter(
@@ -366,4 +516,51 @@ export function stripSuggestionMarksById(doc: JSONContent, markId: string): JSON
 
   visit(cloned);
   return cloned;
+}
+
+/** Locate suggestion marks in plain text for validation before apply. */
+export function canLocateEditInPlainText(
+  plainText: string,
+  edit: SuggestionEdit
+): { ok: true } | { ok: false; reason: "not_found" | "ambiguous" } {
+  const { anchorText, deleteText, insertText } = edit;
+  if (!deleteText.trim() && !insertText.trim()) return { ok: false, reason: "not_found" };
+
+  if (!deleteText.trim() && insertText.trim()) {
+    if (!anchorText.trim()) return { ok: true };
+    const m = findAnchorInText(plainText, anchorText);
+    return m ? { ok: true } : { ok: false, reason: "not_found" };
+  }
+
+  if (anchorText.trim()) {
+    const anchorCount = countOccurrences(plainText, anchorText);
+    if (anchorCount === 0) return { ok: false, reason: "not_found" };
+    if (anchorCount > 1) return { ok: false, reason: "ambiguous" };
+
+    const anchorMatch = findAnchorInText(plainText, anchorText);
+    if (!anchorMatch) return { ok: false, reason: "not_found" };
+    const scopedText = plainText.slice(anchorMatch.start, anchorMatch.end);
+    const scopedNeedle = deleteText.trim() || anchorText.trim();
+    const scopedCount = countOccurrences(scopedText, scopedNeedle);
+    if (scopedCount === 0) return { ok: false, reason: "not_found" };
+    if (scopedCount > 1) return { ok: false, reason: "ambiguous" };
+    return { ok: true };
+  }
+
+  const needle = deleteText.trim() || anchorText.trim();
+  const collapsedHay = collapseWhitespace(plainText);
+  const collapsedNeedle = collapseWhitespace(needle);
+  if (!collapsedNeedle) return { ok: false, reason: "not_found" };
+
+  let count = 0;
+  let idx = 0;
+  while (true) {
+    const found = collapsedHay.indexOf(collapsedNeedle, idx);
+    if (found === -1) break;
+    count++;
+    idx = found + 1;
+  }
+  if (count === 0) return { ok: false, reason: "not_found" };
+  if (count > 1) return { ok: false, reason: "ambiguous" };
+  return { ok: true };
 }

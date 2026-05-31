@@ -1,7 +1,7 @@
 import PizZip from "pizzip";
 import type { SectionType } from "@/db/schema";
 import type { DocxExportContext, DocxCommentExportEntry } from "@/lib/export/docx-export-context";
-import { getUser } from "@/lib/auth/mock-users";
+import { getUser } from "@/lib/auth/user-directory";
 
 export type ReportDocxComment = {
   id: string;

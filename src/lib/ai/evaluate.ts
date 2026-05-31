@@ -4,8 +4,14 @@ import { z } from "zod";
 import type { SectionType, CriterionStatus } from "@/db/schema";
 import { getCriteria } from "./criteria";
 import { contextForPrompt } from "./section-context";
-import { buildEvaluationSystemPrompt } from "./section-prompts";
+import { capEvaluationStatusForPlaceholders } from "@/lib/placeholders/evaluation-policy";
+import { plainTextHasEvalPlaceholders } from "@/lib/placeholders/placeholder-eval-prompt";
+import { collectPlaceholders } from "@/lib/placeholders/scan-sections";
+import type { SectionContentMap } from "@/types/sections";
+import { cleanSectionContentForEval } from "@/lib/tiptap/strip-pending-suggestions";
+import { buildEvaluationSystemPrompt, PROMPT_VERSION } from "./section-prompts";
 import { EDITABLE_SECTIONS } from "@/types/sections";
+import { langfuseGenerateTextTelemetry } from "@/lib/observability/langfuse";
 
 export { PROMPT_VERSION } from "./section-prompts";
 
@@ -130,8 +136,24 @@ export type CriterionEvaluationLlmPrompts = {
   userPrompt: string;
 };
 
+function sectionPlainTextForPrompt(section: SectionType, content: unknown): string {
+  const cleaned = cleanSectionContentForEval(section, content);
+  return typeof content === "string"
+    ? String(cleaned)
+    : contextForPrompt(section, cleaned);
+}
+
+/** Plain text for the LLM (pending suggestion marks stripped; placeholders unchanged). */
 function sectionContentForPrompt(section: SectionType, content: unknown): string {
-  return typeof content === "string" ? content : contextForPrompt(section, content);
+  return sectionPlainTextForPrompt(section, content);
+}
+
+/** Exported for criteria review seeding and other human-review tooling. */
+export function formatSectionContentForEvaluation(
+  section: SectionType,
+  content: unknown
+): string {
+  return sectionContentForPrompt(section, content);
 }
 
 /**
@@ -210,6 +232,11 @@ export function buildCriterionEvaluationLlmPrompts({
 
   const priorBlock = buildPriorSectionsBlock(section, allSections);
 
+  const rawContentStr = sectionPlainTextForPrompt(section, content);
+  const placeholderNote = plainTextHasEvalPlaceholders(rawContentStr)
+    ? `\n\nPLACEHOLDER NOTE: SECTION CONTENT includes bracket placeholders the author will fill in later. For this evaluation, treat each [Label: <to be filled>] as if it will contain appropriate factual data matching the label — evaluate whether the right facts are represented in the right places, not whether the bracket text is already a final value. You may note in reasoning that a placeholder still needs completion in the Placeholders panel.`
+    : "";
+
   const userPrompt = `DEVIATION: ${reportContext.deviationNo} (report date: ${
     typeof reportContext.date === "string"
       ? reportContext.date
@@ -221,7 +248,7 @@ SECTION: ${section.toUpperCase()}
 SECTION CONTENT:
 """
 ${contentStr}
-"""${priorBlock}
+"""${priorBlock}${placeholderNote}
 
 CRITERIA TO EVALUATE:
 ${criteria
@@ -286,6 +313,16 @@ export async function evaluateSection({
       prompt: userPrompt,
       temperature: CRITERIA_EVAL_TEMPERATURE,
       ...generationSettings,
+      ...langfuseGenerateTextTelemetry({
+        functionId: "criteria-evaluate-section",
+        metadata: {
+          feature: "criteria-evaluation",
+          section,
+          criterionCount: criteria.length,
+          model: CRITERIA_EVAL_GOOGLE_MODEL_ID,
+          promptVersion: PROMPT_VERSION,
+        },
+      }),
     });
 
     if (result.experimental_output) {
@@ -307,6 +344,11 @@ export async function evaluateSection({
   }
 
   const byKey = new Map(evaluations.map((e) => [e.criterionKey, e]));
+  const hasUnfilledPlaceholders =
+    collectPlaceholders({
+      [section]: content as SectionContentMap[typeof section],
+    }).length > 0;
+
   return criteria.map((c) => {
     const result = byKey.get(c.key);
     if (!result) {
@@ -317,10 +359,15 @@ export async function evaluateSection({
         reasoning: "No evaluation returned by model.",
       };
     }
+    const status = capEvaluationStatusForPlaceholders(
+      result.status as CriterionStatus,
+      result.reasoning,
+      hasUnfilledPlaceholders
+    );
     return {
       criterionKey: c.key,
       criterionLabel: c.label,
-      status: result.status as CriterionStatus,
+      status,
       reasoning: result.reasoning,
     };
   });

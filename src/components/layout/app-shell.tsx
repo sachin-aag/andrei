@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
-import type { MockUser } from "@/lib/auth/mock-users";
+import type { WorkspaceUser } from "@/lib/auth/workspace-user";
 import { UserDirectoryProvider } from "@/providers/user-directory-provider";
 import {
   LogOut,
@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
+import { signOut } from "next-auth/react";
 import { usePathname } from "next/navigation";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
@@ -21,17 +22,16 @@ export function AppShell({
   initialUsers,
   children,
 }: {
-  user: MockUser;
-  initialUsers: MockUser[];
+  user: WorkspaceUser;
+  initialUsers: WorkspaceUser[];
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(true);
   const mainId = useId();
 
-  const handleLogout = async () => {
-    await fetch("/api/auth/logout", { method: "POST" });
-    window.location.href = "/login";
+  const handleLogout = () => {
+    void signOut({ callbackUrl: "/login" });
   };
 
   const navItems = [
