@@ -80,6 +80,22 @@ export function isAiFixComment(comment: CommentRecord): boolean {
   return comment.kind === "ai_fix";
 }
 
+export function isImportedWordComment(comment: CommentRecord): boolean {
+  return (
+    comment.source === "word" ||
+    comment.kind === "word_import" ||
+    comment.authorId === "word"
+  );
+}
+
+/** Display name for comment author (Word import metadata or workspace user). */
+export function getCommentAuthorDisplayName(comment: CommentRecord): string {
+  if (isImportedWordComment(comment)) {
+    return comment.externalAuthorName || "Word reviewer";
+  }
+  return getUser(comment.authorId)?.name ?? "Unknown";
+}
+
 /** Primary heading on a comment card (author name for humans, fix summary for AI). */
 export function getCommentCardTitle(
   comment: CommentRecord,
@@ -88,7 +104,7 @@ export function getCommentCardTitle(
   if (isAiFixComment(comment)) {
     return getAiFixCommentTitle(comment, evaluations);
   }
-  return getUser(comment.authorId)?.name ?? "Unknown";
+  return getCommentAuthorDisplayName(comment);
 }
 
 /** Body preview under the title. */
