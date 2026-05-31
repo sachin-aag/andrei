@@ -353,8 +353,8 @@ export function TiptapSectionField({
 
   const placeholderHighlightExtension = useMemo(
     () =>
-      // eslint-disable-next-line react-hooks/refs -- ProseMirror calls getter at transaction time
       createPlaceholderHighlightExtension(
+        // eslint-disable-next-line react-hooks/refs -- ProseMirror reads getter from plugin callbacks, not during React render
         () => focusedPanelPlaceholderIdRef.current,
         { section, contentPath }
       ),

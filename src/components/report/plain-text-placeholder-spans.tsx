@@ -30,11 +30,16 @@ export function PlainTextPlaceholderSpans({
     return <>{text}</>;
   }
 
-  let offset = baseOffset;
+  const partStartOffsets: number[] = [];
+  let nextOffset = baseOffset;
+  for (const part of parts) {
+    partStartOffsets.push(nextOffset);
+    nextOffset += part.text.length;
+  }
+
   const nodes = parts.map((part, i) => {
     if (part.kind === "placeholder") {
-      const fromPos = offset;
-      offset += part.text.length;
+      const fromPos = partStartOffsets[i]!;
       const isActive = focusedFromPos != null && focusedFromPos === fromPos;
       return (
         <span
@@ -49,7 +54,6 @@ export function PlainTextPlaceholderSpans({
         </span>
       );
     }
-    offset += part.text.length;
     return <span key={i}>{part.text}</span>;
   });
 
