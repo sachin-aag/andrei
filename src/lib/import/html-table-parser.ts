@@ -124,6 +124,7 @@ function findAllTableRanges(html: string): TableRange[] {
 
 function isDataTableRange(html: string, range: TableRange): boolean {
   if (isSignatureTable(html, range)) return false;
+  if (isQuestionnaireLayoutTable(html, range)) return false;
   if (range.depth >= 1) return true;
   if (isLayoutWrapper(html, range)) return false;
   return true;
@@ -139,12 +140,25 @@ function isLayoutWrapper(html: string, range: TableRange): boolean {
 
 function isSignatureTable(html: string, range: TableRange): boolean {
   const content = html.slice(range.contentStart, range.contentEnd);
-  // Signature tables typically contain "Prepared By", "Approved By", "Sign/Date"
+  // Bottom QC/QA sign-off tables should stay out of narrative import; interview
+  // signature tables also contain "Sign/Date" but should be preserved.
   return (
     /\bPrepared\s+By\b/i.test(content) ||
-    /\bApproved\s+By\b/i.test(content) ||
-    /\bSign\/Date\b/i.test(content)
+    /\bApproved\s+By\b/i.test(content)
   );
+}
+
+function isQuestionnaireLayoutTable(html: string, range: TableRange): boolean {
+  const text = stripHtmlTags(html.slice(range.contentStart, range.contentEnd));
+  return (
+    /\bPersonal\s+Interview\b/i.test(text) &&
+    /\bQ\s*1\./i.test(text) &&
+    /\bAns\./i.test(text)
+  );
+}
+
+function stripHtmlTags(html: string): string {
+  return decodeHtmlEntities(html.replace(/<[^>]+>/g, " ")).replace(/\s+/g, " ").trim();
 }
 
 /**

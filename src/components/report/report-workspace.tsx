@@ -21,6 +21,11 @@ import type { SectionType } from "@/db/schema";
 import type { WorkspaceMode } from "@/providers/report-provider";
 import type { Placeholder } from "@/lib/placeholders/find";
 import { resolvePlaceholderInPmDoc } from "@/lib/placeholders/resolve-in-doc";
+import {
+  gutterAnchorIdForComment,
+  scrollToCommentFieldAnchor,
+  scrollToGutterAnchor,
+} from "@/lib/comments/navigate";
 import { EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
 import { REPORT_WORKSPACE_SECTIONS } from "@/types/sections";
 
@@ -87,7 +92,7 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
   } = useReportData();
   const { pendingPlaceholders } = useReportPlaceholders();
   const { getEditor } = useReportEditors();
-  const { requestCommentFocus } = useReportComments();
+  const { requestCommentFocus, comments } = useReportComments();
   const { suggestionsFocusSection, clearSuggestionsFocusSection } =
     useReportEvaluations();
   const [criteriaFocusSection, setCriteriaFocusSection] = useState<
@@ -199,10 +204,10 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
     }
   };
 
-  const jumpToSection = (s: SectionType) => {
+  const jumpToSection = useCallback((s: SectionType) => {
     const el = mainRef.current?.querySelector(`#${s}`);
     if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
+  }, []);
 
   useEffect(() => {
     if (!suggestionsFocusSection) return;
@@ -219,9 +224,26 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
     clearSuggestionsFocusSection,
   ]);
 
-  const jumpToComment = (id: string) => {
-    requestCommentFocus(id);
-  };
+  const jumpToComment = useCallback(
+    (id: string) => {
+      const root = comments.find((c) => c.id === id && !c.parentId);
+      requestCommentFocus(id);
+
+      if (!root) return;
+
+      if (root.section) {
+        jumpToSection(root.section);
+      }
+
+      const reveal = () => {
+        scrollToCommentFieldAnchor(root);
+        scrollToGutterAnchor(gutterAnchorIdForComment(root));
+      };
+
+      requestAnimationFrame(() => requestAnimationFrame(reveal));
+    },
+    [comments, jumpToSection, requestCommentFocus]
+  );
 
   const handleJumpToPlaceholder = (p: Placeholder) => {
     jumpToSection(p.section);

@@ -1298,6 +1298,40 @@ function paragraphText(para: JSONContent): string {
   return para.content.map(paragraphText).join("").trim();
 }
 
+function findOrderedCellTextRun(
+  length: number,
+  textAt: (index: number) => string,
+  start: number,
+  cellTexts: string[]
+): { end: number; matchedCells: number } {
+  let end = start;
+  let expectedIndex = 0;
+  let matchedCells = 0;
+
+  while (end < length && expectedIndex < cellTexts.length) {
+    const text = textAt(end);
+    if (!text) {
+      end++;
+      continue;
+    }
+
+    let matchedIndex = -1;
+    for (let i = expectedIndex; i < cellTexts.length; i++) {
+      if (cellTexts[i] === text) {
+        matchedIndex = i;
+        break;
+      }
+    }
+    if (matchedIndex === -1) break;
+
+    matchedCells++;
+    expectedIndex = matchedIndex + 1;
+    end++;
+  }
+
+  return { end, matchedCells };
+}
+
 /**
  * Find consecutive paragraphs in the narrative whose text matches the table's
  * cell values (in order), and replace them with the table node. The match uses
@@ -1314,11 +1348,6 @@ function replaceFlatParagraphsWithTable(
   const content = narrative.content;
   if (!content?.length) return false;
 
-  // Build a Set of all cell texts for fast membership checks. Guidance
-  // stripping may have removed some cells (e.g. "Date" matches a guidance
-  // line), so we match greedily on the set rather than requiring exact order.
-  const cellTextSet = new Set(cellTexts);
-
   // Find the first paragraph whose text appears in the table's cell values.
   // Use the FIRST header cell as anchor since it's the most distinctive.
   const firstHeaderText = cellTexts[0];
@@ -1333,30 +1362,17 @@ function replaceFlatParagraphsWithTable(
   }
   if (anchorStart === -1) return false;
 
-  // From the anchor, consume consecutive paragraphs whose text either matches
-  // a table cell value or is empty (blank lines between flattened cells).
-  // Stop as soon as we hit a paragraph that doesn't match any cell text.
-  let matchEnd = anchorStart;
-  let matchedCells = 0;
-
-  while (matchEnd < content.length) {
-    const paraT = paragraphText(content[matchEnd]!);
-    if (!paraT) {
-      // Empty paragraph — skip it (mammoth inserts blanks between cells).
-      matchEnd++;
-      continue;
-    }
-    if (cellTextSet.has(paraT)) {
-      matchEnd++;
-      matchedCells++;
-    } else {
-      break;
-    }
-  }
+  const { end: matchEndRaw, matchedCells } = findOrderedCellTextRun(
+    content.length,
+    (index) => paragraphText(content[index]!),
+    anchorStart,
+    cellTexts
+  );
 
   // Require matching at least half the cell texts to avoid false positives.
   if (matchedCells < Math.min(cellTexts.length, 3)) return false;
 
+  let matchEnd = matchEndRaw;
   // Skip trailing empty paragraphs after the table data.
   while (matchEnd < content.length && !paragraphText(content[matchEnd]!)) {
     matchEnd++;
@@ -1373,31 +1389,22 @@ function replaceFlatTextWithPlainTable(text: string, tableNode: JSONContent): st
   if (cellTexts.length === 0 || !tableText) return text;
 
   const lines = text.split(/\r?\n/);
-  const cellTextSet = new Set(cellTexts);
   const firstHeaderText = cellTexts[0];
   if (!firstHeaderText) return text;
 
   const anchorStart = lines.findIndex((line) => line.trim() === firstHeaderText);
   if (anchorStart === -1) return text;
 
-  let matchEnd = anchorStart;
-  let matchedCells = 0;
-  while (matchEnd < lines.length) {
-    const line = lines[matchEnd]!.trim();
-    if (!line) {
-      matchEnd++;
-      continue;
-    }
-    if (cellTextSet.has(line)) {
-      matchEnd++;
-      matchedCells++;
-      continue;
-    }
-    break;
-  }
+  const { end: matchEndRaw, matchedCells } = findOrderedCellTextRun(
+    lines.length,
+    (index) => lines[index]!.trim(),
+    anchorStart,
+    cellTexts
+  );
 
   if (matchedCells < Math.min(cellTexts.length, 3)) return text;
 
+  let matchEnd = matchEndRaw;
   while (matchEnd < lines.length && !lines[matchEnd]!.trim()) {
     matchEnd++;
   }

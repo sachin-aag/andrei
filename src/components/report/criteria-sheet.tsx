@@ -197,11 +197,7 @@ function CommentCard({
   const preview = getCommentCardPreview(comment);
 
   return (
-    <button
-      type="button"
-      className="w-full text-left rounded-md border border-[var(--border)] bg-[var(--card)] p-2.5 hover:border-amber-600/40 cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]"
-      onClick={onJump}
-    >
+    <div className="w-full rounded-md border border-[var(--border)] bg-[var(--card)] p-2.5 hover:border-amber-600/40">
       <div className="flex items-center gap-2 flex-wrap">
         <MessageSquare
           className={cn(
@@ -214,25 +210,38 @@ function CommentCard({
           {title}
         </span>
         {comment.status === "resolved" ? (
-          <span className="text-[10px] text-green-700 ml-auto">
+          <span className="text-[10px] text-green-700 ml-auto shrink-0">
             Resolved
           </span>
+        ) : onJump ? (
+          <button
+            type="button"
+            className="text-[10px] font-medium text-amber-800 hover:text-amber-950 ml-auto shrink-0 transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)] rounded px-0.5"
+            onClick={onJump}
+          >
+            Open
+          </button>
         ) : (
-          <span className="text-[10px] text-amber-800 ml-auto">
+          <span className="text-[10px] text-amber-800 ml-auto shrink-0">
             Open
           </span>
         )}
       </div>
       {preview ? (
-        <p className="text-[11px] text-[var(--muted-foreground)] mt-1 line-clamp-2 leading-snug">
+        <button
+          type="button"
+          className="w-full text-left text-[11px] text-[var(--muted-foreground)] mt-1 line-clamp-2 leading-snug hover:text-[var(--foreground)] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)] rounded"
+          onClick={onJump}
+          disabled={!onJump}
+        >
           {preview}
-        </p>
+        </button>
       ) : null}
       <div className="flex items-center gap-2 mt-1 text-[10px] text-[var(--muted-foreground)]">
         <span>{formatDateTime(comment.createdAt)}</span>
         {replyCount > 0 && <span>· {replyCount} replies</span>}
       </div>
-    </button>
+    </div>
   );
 }
 

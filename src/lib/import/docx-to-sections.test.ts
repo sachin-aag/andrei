@@ -46,6 +46,12 @@ const devPr25008FixturePath = path.join(
   "sample_files",
   "Investigation DEV-PR-25-008.docx"
 );
+const devQc25002FixturePath = path.join(
+  process.cwd(),
+  "docs",
+  "sample_files",
+  "Investigation DEV-QC-25-002.docx"
+);
 
 function collectNodesByType(doc: JSONContent, type: string): JSONContent[] {
   const nodes: JSONContent[] = [];
@@ -484,6 +490,29 @@ describe("docx import", () => {
     expect(nonTableParagraphs).not.toContain("Display Copy");
     expect(nonTableParagraphs).not.toContain(
       "Available/Not Available/ Not Applicable"
+    );
+  });
+
+  it("preserves interview detail/signature tables without turning personal interview questions into a table", async () => {
+    const imported = await docxBufferToImportedReportContent(
+      fs.readFileSync(devQc25002FixturePath)
+    );
+    const fiveWhyContent = imported.sections.analyze.fiveWhy.narrative.content ?? [];
+    const tableTexts = fiveWhyContent
+      .filter((node) => node.type === "table")
+      .map((table) => richJsonToPlainText({ type: "doc", content: [table] }));
+    const personalInterviewTable = tableTexts.find((text) =>
+      /Personal Interview/i.test(text)
+    );
+
+    expect(tableTexts.some((text) => text.includes("Pravin Kolkand"))).toBe(true);
+    expect(tableTexts.some((text) => text.includes("Interview Person Details"))).toBe(
+      true
+    );
+    expect(tableTexts.some((text) => text.includes("Sign/Date | NA"))).toBe(true);
+    expect(personalInterviewTable).toBeUndefined();
+    expect(richJsonToPlainText(imported.sections.analyze.fiveWhy.narrative)).toContain(
+      "Personal Interview (If Applicable):"
     );
   });
 
