@@ -12,12 +12,15 @@ export function PlainTextPlaceholderSpans({
   baseOffset = 0,
   focusedFromPos = null,
   wrapClassName,
+  insideSuggestion = false,
 }: {
   text: string;
   baseOffset?: number;
   focusedFromPos?: number | null;
-  /** Optional class on a wrapper when the whole run is inside a suggestion mark. */
+  /** Track-change styling on the outer wrapper (insert/delete preview runs). */
   wrapClassName?: string;
+  /** When true, only bracket placeholders get the amber-over-suggestion styling. */
+  insideSuggestion?: boolean;
 }) {
   const parts = splitPlainTextWithPlaceholders(text);
   if (parts.length === 1 && parts[0]!.kind === "text") {
@@ -38,6 +41,7 @@ export function PlainTextPlaceholderSpans({
           key={i}
           className={cn(
             "placeholder-todo-mirror",
+            insideSuggestion && "placeholder-todo-over-suggestion",
             isActive && "placeholder-todo-active"
           )}
         >

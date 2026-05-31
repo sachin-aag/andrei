@@ -642,7 +642,6 @@
 }
 
 /* Placeholder + AI suggestion overlap: yellow wins over green track-change styling. */
-.placeholder-todo-over-suggestion,
 .placeholder-todo.placeholder-todo-over-suggestion {
   background-color: rgb(245 158 11 / 0.38);
   color: rgb(120 53 15);

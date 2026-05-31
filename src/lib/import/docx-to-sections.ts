@@ -90,14 +90,26 @@ function labelPattern(labels: string): string {
 
 function sectionHeadingRegex(key: ImportSectionKey): RegExp {
   if (key === "documents_reviewed") {
+    // This regex matches headings for the "documents reviewed" section in a report.
+    // It allows for optional leading numbering (e.g., "3.2 "), the words "document" or "documents" (case-insensitive),
+    // then "reviewed", an optional parenthetical (e.g., "(optional description)"), optional colon or dash after,
+    // and finally captures any remainder as the section content.
     return /^(?:\d+(?:\.\d+)*\.?\s+)?documents?\s+reviewed\b(?:\s*\([^)]*\))?\s*(?::|[-–—])?\s*(.*)$/i;
   }
   if (key === "attachments") {
-    return /^(?:\d+(?:\.\d+)*\.?\s+)?(?:list\s+of\s+attachments?|attachments)\b(?:\s*\([^)]*\))?\s*(?::|[-–—])?\s*(.*)$/i;
+    // This regex matches headings for the "attachments" section in a report.
+    // It allows for optional leading numbering (e.g., "3.2 "), the words "list of" or "attachments" (case-insensitive),
+    // then "reviewed", an optional parenthetical (e.g., "(optional description)"), optional colon or dash after,
+    // and finally captures any remainder as the section content.
+      return /^(?:\d+(?:\.\d+)*\.?\s+)?(?:list\s+of\s+attachments?|attachments)\b(?:\s*\([^)]*\))?\s*(?::|[-–—])?\s*(.*)$/i;
   }
   const label = SECTION_LABELS[key];
   const escaped = escapeRegex(label);
   return new RegExp(
+    // This regex matches headings for other sections in a report.
+    // It allows for optional leading numbering (e.g., "3.2 "), the words "section" or "part" (case-insensitive),
+    // then a Roman numeral (e.g., "iv"), an optional space, then a colon or close parenthesis,
+    // and finally captures any remainder as the section content.
     `^(?:\\d+(?:\\.\\d+)*\\.?\\s+|(?:section|part)\\s+[ivxlcdm]+\\s*[.:)]\\s*)?${escaped}(?:\\s*[:\\-–—]\\s*(.*)|\\s*)$`,
     "i"
   );
@@ -194,7 +206,10 @@ function splitPlainTextIntoSections(raw: string): {
 function unescapeMammothMarkdownEscapes(text: string): string {
   return text.replace(/\\([\\`*_{}[\]()#+\-.!])/g, "$1");
 }
-
+// This regex matches image placeholders in mammoth's markdown output.
+// It allows for optional leading numbering (e.g., "3.2 "), the words "section" or "part" (case-insensitive),
+// then a Roman numeral (e.g., "iv"), an optional space, then a colon or close parenthesis,
+// and finally captures any remainder as the section content.
 const MAMMOTH_MARKDOWN_IMAGE_RE = /!\[[^\]\n]*\]\((?:data:image\/[^)\s]+|[^)\n]+)\)/gi;
 
 /**
@@ -992,13 +1007,6 @@ export function buildSectionsFromRaw(raw: string): ImportedSections {
  * Uses mammoth markdown conversion (normalized to plain text) so Word list numbering
  * is preserved; plain extractRawText omits automatic 1., 2., … prefixes.
  */
-export async function docxBufferToSectionContentMap(
-  buffer: Buffer
-): Promise<ImportedSections> {
-  const imported = await docxBufferToImportedReportContent(buffer);
-  return imported.sections;
-}
-
 export async function docxBufferToImportedReportContent(
   buffer: Buffer
 ): Promise<ImportedReportContent> {
