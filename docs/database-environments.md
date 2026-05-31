@@ -1,13 +1,27 @@
 # Database environments
 
-The app uses a single env var: **`DATABASE_URL`**. Point it at different databases per environment so production data stays isolated from experiments (suggested fixes, migrations, etc.).
+The app uses a single env var: **`DATABASE_URL`**. Different environments point at different Neon branches (or local Docker).
 
-## Option A — Local Docker (tonight, no Neon admin)
+## Automated flow (Vercel + Neon)
 
-Best when you do not have Neon console access.
+When the [Neon/Vercel integration](./neon-vercel-setup.md) has **preview branching** enabled:
+
+| Event | Database | Migrations |
+|-------|----------|------------|
+| **PR opened / updated** | Neon creates an isolated preview branch; Vercel injects its `DATABASE_URL` for that preview deployment only | `pnpm vercel:build` → `db:migrate` then `next build` |
+| **PR closed** | Preview Neon branch deleted (if cleanup enabled in integration) | — |
+| **Merge to `main`** | Production `DATABASE_URL` (Neon `main`) | Same build on production deploy |
+
+Locally you still use `.env.local` or Docker. CI uses `secrets.DATABASE_URL` or a stub (see `.github/workflows/ci.yml`).
+
+**Dashboard setup (one-time):** [neon-vercel-setup.md](./neon-vercel-setup.md)
+
+---
+
+## Option A — Local Docker (no Neon admin)
 
 ```bash
-npm run db:local:up
+pnpm run db:local:up
 ```
 
 In `.env.local`:
@@ -16,104 +30,71 @@ In `.env.local`:
 DATABASE_URL=postgresql://andrei:andrei@localhost:5432/andrei_dev
 ```
 
-Apply schema (use `--force` on an empty DB so drizzle-kit does not skip or prompt):
+Apply schema:
 
 ```bash
 pnpm run db:local:push
-# first-time one-liner: pnpm run db:local:setup
-# or full ensure: pnpm run db:ensure
+# first-time: pnpm run db:local:setup
 ```
 
-Start the app:
+- **Reset**: `pnpm run db:local:reset`
+- **Stop**: `pnpm run db:local:down`
 
-```bash
-npm run dev
-```
-
-- **Empty DB** — good for schema work; seed reports by creating them in the UI.
-- **Reset** (wipe volume): `npm run db:local:reset`
-- **Stop**: `npm run db:local:down`
-
-Local URLs use the `pg` driver; Neon URLs use the serverless HTTP driver (see `src/db/connection.ts`).
+Local URLs use the `pg` driver; Neon URLs use the serverless HTTP driver (`src/db/connection.ts`).
 
 ---
 
-## Option B — Neon branches (when you have Neon or Vercel admin)
+## Option B — Neon branches (manual / shared dev)
 
-Neon **branches** are copy-on-write clones: each branch has its own connection string. Free tier includes branching.
+Use this for local dev against a long-lived **`dev`** branch, or if preview branching is not enabled.
 
-### Recommended layout
+| Environment | Neon branch | `DATABASE_URL` |
+|-------------|-------------|----------------|
+| **Production** | `main` | Vercel → Production |
+| **Preview** (without per-PR branching) | `dev` | Vercel → Preview (static) |
+| **Local** | `dev` | `.env.local` |
 
-| Environment | Neon branch | Where `DATABASE_URL` is set |
-|-------------|-------------|-------------------------------|
-| **Production** | `main` (existing) | Vercel → Production |
-| **Preview / PRs** | `dev` or per-PR preview branch | Vercel → Preview |
-| **Local dev** | `dev` (same as preview) | `.env.local` |
+### Create `dev` (Neon console)
 
-Production keeps the database you use today. Local and preview deployments use a **dev** branch so migrations and AI experiments never touch live reports.
+1. [Neon Console](https://console.neon.tech) → **Branches** → **Create branch** → name `dev`, parent `main`.
+2. Copy pooled connection string → `.env.local` as `DATABASE_URL`.
 
-### Create a dev branch (Neon console)
+### Wire Vercel (production stays on `main`)
 
-1. [Neon Console](https://console.neon.tech) → your project → **Branches**.
-2. **Create branch** → name `dev` → parent `main` (includes current data at branch time).
-3. Open the `dev` branch → **Connection details** → copy the **pooled** `postgresql://…` URL.
-4. Put that URL in `.env.local` as `DATABASE_URL`.
-
-### Wire Vercel (keeps production on `main`)
-
-1. Vercel project → **Settings** → **Environment Variables**.
-2. **Production** — leave `DATABASE_URL` as the existing `main` branch string (do not change).
-3. **Preview** and **Development** — set `DATABASE_URL` to the `dev` branch connection string.
-4. Redeploy or open a new preview.
-
-Pull env locally:
+1. **Production** — `main` branch URL (unchanged).
+2. **Preview** / **Development** — `dev` URL only if you are *not* using per-PR preview branching.
 
 ```bash
 vercel env pull .env.local --environment=development
-# Preview branch URL:
-vercel env pull .env.preview --environment=preview
 ```
-
-You need Vercel project access, not necessarily Neon admin, if a teammate already added the dev branch URL to Preview/Development.
-
-### CLI (if you have a Neon API key)
-
-```bash
-npm i -g neonctl
-neonctl auth
-neonctl branches create --name dev --project-id <project-id>
-neonctl connection-string dev
-```
-
----
-
-## Option C — Neon without branching
-
-If branching is blocked, use a **second Neon project** (or database) for dev and keep the current URL only on Vercel Production. Same env-var pattern as Option B.
 
 ---
 
 ## Migrations
 
-All environments share the same Drizzle schema:
+**Deployed environments (Vercel):** migrations run automatically in `vercel:build` via Drizzle SQL files in `src/db/migrations/`. Do not use `drizzle-kit push` on production.
+
+**Local:**
 
 ```bash
-npm run db:push          # dev schema sync
-npm run db:ensure        # comment columns + suggested_fix + push
+pnpm db:migrate              # uses .env.local over .env
+pnpm db:migrate -- --prod    # production .env only (local CLI)
+pnpm db:generate             # after schema changes in src/db/schema
 ```
 
-Run migrations against **dev/local first**, then production after review.
+Workflow: change schema → `pnpm db:generate` → commit migration SQL → open PR (preview DB migrates on deploy) → merge (production migrates on deploy).
+
+See [database-schema.md](./database-schema.md) for table reference.
 
 ---
 
 ## Quick check
 
 ```bash
-# Which host is configured? (does not print password)
 node -e "const u=new URL(process.env.DATABASE_URL.replace(/^postgres:/,'postgresql:')); console.log(u.hostname, u.pathname)"
 ```
 
-Run with `.env.local` loaded, or:
+With `.env.local` loaded, or:
 
 ```bash
 export $(grep -v '^#' .env.local | xargs) && node -e "..."
