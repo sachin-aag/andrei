@@ -1,10 +1,12 @@
 import NextAuth from "next-auth";
 import Resend from "next-auth/providers/resend";
+import Credentials from "next-auth/providers/credentials";
 import { DrizzleAdapter } from "@auth/drizzle-adapter";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { authAccounts, authUsers, authVerificationTokens } from "@/db/schema/auth";
 import { workspaceUsers } from "@/db/schema";
+import { verifyPassword } from "@/lib/auth/password";
 
 const ALLOWED_EMAIL_DOMAINS = ["@mjbiopharm.com"];
 const ALLOWED_EMAILS = ["sachinagrawal272@gmail.com", "aditya.ambani@gmail.com"];
@@ -31,6 +33,39 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   providers: [
     Resend({
       from: process.env.AUTH_EMAIL_FROM ?? "noreply@andreihealth.com",
+    }),
+    Credentials({
+      credentials: {
+        email: { label: "Email", type: "email" },
+        password: { label: "Password", type: "password" },
+      },
+      async authorize(credentials) {
+        const email = credentials?.email as string | undefined;
+        const password = credentials?.password as string | undefined;
+        if (!email || !password) return null;
+
+        const wsUser = await db.query.workspaceUsers.findFirst({
+          where: eq(workspaceUsers.email, email),
+        });
+        if (!wsUser?.passwordHash) return null;
+
+        const valid = await verifyPassword(password, wsUser.passwordHash);
+        if (!valid) return null;
+
+        // Ensure auth_users row exists (Credentials provider skips the adapter)
+        let authUser = await db.query.authUsers.findFirst({
+          where: eq(authUsers.email, email),
+        });
+        if (!authUser) {
+          const [created] = await db
+            .insert(authUsers)
+            .values({ email, name: wsUser.name, emailVerified: new Date() })
+            .returning();
+          authUser = created;
+        }
+
+        return { id: authUser.id, email: authUser.email, name: wsUser.name };
+      },
     }),
   ],
   session: { strategy: "jwt" },

@@ -1,6 +1,6 @@
 import Image from "next/image";
 import { redirect } from "next/navigation";
-import { MagicLinkForm } from "@/components/auth/magic-link-form";
+import { PasswordLoginForm } from "@/components/auth/password-login-form";
 import { getCurrentUser } from "@/lib/auth/session";
 
 export default async function LoginPage({
@@ -77,10 +77,10 @@ export default async function LoginPage({
               Sign in to your workspace
             </h1>
             <p className="text-sm text-[var(--muted-foreground)] mt-2">
-              Enter your work email to receive a sign-in link.
+              Enter your work email to get started.
             </p>
           </div>
-          <MagicLinkForm redirectTo={callbackUrl ?? "/"} />
+          <PasswordLoginForm redirectTo={callbackUrl ?? "/"} />
         </div>
       </div>
     </div>

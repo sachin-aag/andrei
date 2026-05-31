@@ -120,6 +120,13 @@
       "when": 1780408800000,
       "tag": "0016_steep_speedball",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1780230183692,
+      "tag": "0017_steep_millenium_guard",
+      "breakpoints": true
     }
   ]
 }
