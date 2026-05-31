@@ -1,0 +1,33 @@
+# Delete Neon preview DB branches when a PR closes (merge or close).
+# Native Neon/Vercel cleanup is often delayed (Vercel keeps preview deployments;
+# Neon-managed cleanup may wait until the next preview deploy). See docs/neon-vercel-setup.md.
+name: Cleanup Neon preview branch
+
+on:
+  pull_request:
+    types: [closed]
+
+jobs:
+  delete-branch:
+    if: >-
+      github.event.pull_request.head.ref != 'main' &&
+      github.event.pull_request.head.ref != 'master'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete preview branch (preview/<git-branch>)
+        id: delete-by-ref
+        continue-on-error: true
+        uses: neondatabase/delete-branch-action@v3
+        with:
+          project_id: ${{ vars.NEON_PROJECT_ID }}
+          branch: preview/${{ github.event.pull_request.head.ref }}
+          api_key: ${{ secrets.NEON_API_KEY }}
+
+      - name: Delete preview branch (preview/pr-<n>-<git-branch>)
+        if: steps.delete-by-ref.outcome == 'failure'
+        continue-on-error: true
+        uses: neondatabase/delete-branch-action@v3
+        with:
+          project_id: ${{ vars.NEON_PROJECT_ID }}
+          branch: preview/pr-${{ github.event.number }}-${{ github.event.pull_request.head.ref }}
+          api_key: ${{ secrets.NEON_API_KEY }}
