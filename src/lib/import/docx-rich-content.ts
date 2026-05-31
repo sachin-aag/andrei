@@ -451,7 +451,7 @@ function findParsedParagraphMatch(
 
   const tryRange = (start: number, end: number) => {
     let best: { matched: ParsedParagraph; index: number } | null = null;
-    let bestLen = -1;
+    let bestScore = -1;
     for (let scan = start; scan < end; scan++) {
       if (usedParsed.has(scan)) continue;
       const candidate = parsed[scan]!;
@@ -459,9 +459,32 @@ function findParsedParagraphMatch(
       if (!candidatePlain && !expected) {
         return { matched: candidate, index: scan };
       }
-      if (plainTextMatches(candidatePlain, expected) && candidatePlain.length > bestLen) {
-        bestLen = candidatePlain.length;
-        best = { matched: candidate, index: scan };
+      if (plainTextMatches(candidatePlain, expected)) {
+        // Score candidates so that near-exact matches (same content with
+        // a small suffix/prefix added by Word) beat long narrative paragraphs
+        // that merely contain the expected text as a substring.
+        // A candidate that is a strict superset (starts/ends with expected)
+        // and only slightly longer is scored by its length (higher = better
+        // for richer Word duplicate). A candidate much longer than expected
+        // that merely contains it gets penalised.
+        const lenDiff = candidatePlain.length - expected.length;
+        let score: number;
+        if (lenDiff <= 0) {
+          // Exact or shorter (substring of expected) — score by length
+          score = candidatePlain.length;
+        } else if (lenDiff <= expected.length * 0.5) {
+          // Slightly longer superset (Word duplicate with extra text) —
+          // prefer longer to get richer formatting
+          score = candidatePlain.length;
+        } else {
+          // Much longer — likely a different paragraph that contains
+          // the expected text as a substring. Penalise heavily.
+          score = expected.length - lenDiff;
+        }
+        if (score > bestScore) {
+          bestScore = score;
+          best = { matched: candidate, index: scan };
+        }
       }
     }
     return best;

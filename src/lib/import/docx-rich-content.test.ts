@@ -165,6 +165,19 @@ describe("parseParagraphXmlForTest", () => {
     expect(match?.matched.plainText).toBe(full);
   });
 
+  it("prefers exact table-cell match over a long narrative paragraph containing the same text", () => {
+    const cellText = "Linearity of Auto Injector";
+    const narrativeText =
+      "Analyst prepared the mobile phase and caffeine standard considering the subsequent calibration sequences, for which the mobile phase, column, and standard preparation remained the same. The subsequent calibration sequences include 'Linearity of Auto Injector', 'Linearity of Detector Response', and 'Volume Precision and Carry Over'";
+    const parsed = [
+      { plainText: narrativeText, parts: [{ kind: "text" as const, text: narrativeText }], isMathBlock: false },
+      { plainText: cellText, parts: [{ kind: "text" as const, text: cellText }], isMathBlock: false },
+    ];
+    const match = findParsedParagraphMatchForTest(cellText, parsed, new Set(), 0);
+    expect(match?.index).toBe(1);
+    expect(match?.matched.plainText).toBe(cellText);
+  });
+
   it("removes stub narrative paragraphs superseded by a longer duplicate", () => {
     const stub =
       "Based on the reported nonconformance, verified the analyst workbench for standard preparation and noted that analyst prepared the sucrose stock standard solution (50000 ppb) in 100 ml volumetric flask.";
