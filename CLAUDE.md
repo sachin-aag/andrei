@@ -39,12 +39,12 @@ pnpm db:local:up          # start local Docker Postgres
 - `src/components/report/` — Editor UI: `report-workspace.tsx` (header + tabs + sidebar), per-section editors in `sections/`, `traffic-light-sidebar.tsx` (AI results), `comments-panel.tsx`.
 - `src/components/ui/` — shadcn-style Radix UI primitives.
 - `src/db/schema/` — Drizzle schema: `reports`, `report_sections`, `criteria_evaluations`, `comments`, `workspace_users`, plus NextAuth tables in `auth.ts`.
-- `src/lib/ai/` — AI evaluation pipeline: `criteria.ts` (36 static criteria across 5 DMAIC sections), `evaluate.ts` (generateObject with Gemini), `suggest.ts`, `section-prompts.ts`.
-- `src/lib/export/` — DOCX generation matching `reference-template.docx`. 20+ helper files for sections, tables, signatures, footers.
-- `src/lib/import/` — DOCX parsing with mammoth/PizZip/docxtemplater. Rich content extraction (subscript, superscript, colors, images, math).
+- `src/lib/ai/` — AI evaluation pipeline (see subsystem below).
+- `src/lib/export/` — DOCX generation (see subsystem below).
+- `src/lib/import/` — DOCX parsing (see subsystem below).
 - `src/lib/tiptap/` — TipTap editor extensions and utilities (19 files): rich text helpers, placeholder highlights, suggestion injection.
 - `src/providers/report-provider.tsx` — Centralized client-side state via React Context.
-- `src/hooks/` — `use-auto-save.ts` (1.5s debounce + sendBeacon flush), `use-section-save.ts`.
+- `src/hooks/` — Auto-save hooks (see subsystem below).
 
 ### Data flow
 
@@ -58,13 +58,99 @@ pnpm db:local:up          # start local Docker Postgres
 
 `draft` → `submitted` → `in_review` → `feedback` (back to engineer) or `approved`
 
+### Section types
+
+Define, Measure, Analyze, Improve, Control (DMAIC). Content types in `src/types/sections.ts`.
+
 ### Auth
 
 NextAuth v5 with Drizzle adapter. Credentials (email/password) and Resend (magic link). Mock users defined in `src/lib/auth/mock-users.ts` (2 engineers, 2 managers). JWT-based sessions with `workspaceUserId`.
 
-### Section types
+## Subsystem: DOCX Import
 
-Define, Measure, Analyze, Improve, Control (DMAIC). Content types in `src/types/sections.ts`.
+**Entry point:** `docxBufferToImportedReportContent()` in `src/lib/import/docx-to-sections.ts`
+
+**Pipeline stages:**
+1. Mammoth converts DOCX → markdown (preserves list numbering) and → HTML (preserves table structure)
+2. Markdown split by section heading regex into Define/Measure/Analyze/Improve/Control
+3. `buildSectionsFromRaw()` converts raw text → TipTap JSONContent per section. Analyze gets special handling for 6M fields, 5-Why, root cause levels, impact assessment.
+4. Table injection: HTML tables matched to flat paragraphs by cell-text sequence, replaced with TipTap table nodes. Merged cells expanded (value repeated in every covered row/column).
+5. `enrichNarrativesFromDocxBuffer()` in `docx-rich-content.ts` bypasses mammoth to extract direct OOXML formatting: bold, italic, underline, colors, subscript, superscript, OMML equations (→ MathML), images. Matches OOXML paragraphs to mammoth output by plain-text similarity with media placeholder normalization (`[image:...]` and `[equation]` → `[media]`).
+6. Legacy WMF/EMF equation previews sent to vision LLM for math extraction (falls back to `[formula]` placeholder).
+7. `extractWordCommentsFromDocxBuffer()` extracts comments from comments.xml, maps to sections by anchor text. Duplicate anchors in same section grouped into threads.
+
+**Returns:** `{ sections, toolsUsed, header (date/deviation#), comments }`
+
+**Key invariant:** Anchor text matching uses substring inclusion only when both sides are ≥12 chars, preventing stray short strings from overwriting paragraphs.
+
+## Subsystem: AI Evaluation
+
+**Entry point:** `evaluateSection()` in `src/lib/ai/evaluate.ts`
+
+**Criteria:** 36 static criteria defined in `criteria.ts` — Define (6), Measure (5), Analyze (5), Improve (6), Control (13).
+
+**Pipeline:**
+1. `cleanSectionContentForEval()` strips pending suggestion marks from content
+2. `buildCriterionEvaluationLlmPrompts()` constructs system + user prompt
+   - System prompt defines traffic-light system (met/partially_met/not_met), scope rules, prompt injection guard
+   - User prompt includes: deviation info, section content (via `contextForPrompt()`), prior sections (read-only context only), criteria list
+   - Prompt version tracked in `PROMPT_VERSION` constant — bumping invalidates cached evals
+3. `generateText()` with Gemini 3.1-flash-lite, temperature 0, seed 0 (deterministic)
+4. `capEvaluationStatusForPlaceholders()` caps to partially_met if unfilled placeholders detected (never not_met solely for placeholders)
+5. Results upserted into `criteria_evaluations` table. On re-evaluation, `fixApplied` preserved; `bypassed` cleared.
+
+**Content hash:** `hashContent(cleanedContent, PROMPT_VERSION)` stored with evaluation to detect staleness.
+
+## Subsystem: AI Suggestions
+
+**Entry point:** `generateSuggestionsForSection()` in `src/lib/ai/suggest.ts`
+
+**Pipeline:**
+1. `gapCriteriaForSection()` (in `suggestion-gating.ts`) filters to failing criteria (not_met + partially_met) with no existing open ai_fix comment
+2. Prompt includes each failing criterion with status and reasoning
+3. `generateText()` with Gemini 3.1-pro, temperature 0.4 (variety in phrasing). Schema returns `{ criterionKey, targetField, anchorText, deleteText, insertText, reasoning }`
+4. Gating drops suggestions: bad criterion key, bad target field, empty edit, placeholder-only edit, anchor not found, anchor ambiguous (>1 match)
+5. `sortedOpenSuggestionsForSection()` orders: red first, then yellow, then criterion order. `activeSuggestionForSection()` returns highest-priority for UI.
+
+**Applying suggestions:**
+- Narrative fields: `applyNarrativeSuggestion()` → `injectSuggestionMarks()` adds pending TipTap marks (red strikethrough for delete, green underline for insert) → `acceptSuggestionMarksById()` finalizes
+- Plain text fields: `applyStructuredFieldSuggestion()` navigates dot-path, calls `applyPlainTextEdit()` with `locateUniqueSpan()` (fails if 0 or >1 matches)
+
+**Key invariant:** Anchor must be unique in the target text. Whitespace is normalized for matching (multiple spaces/newlines → single space).
+
+## Subsystem: DOCX Export
+
+**Entry point:** `generateDocx()` in `src/lib/export/generate-docx.ts`
+
+**Pipeline:**
+1. Load template DOCX (`templates/investigation-report-template.docx`) via PizZip + Docxtemplater
+2. Per-section generators convert TipTap JSONContent → Word XML (`<w:p>`, `<w:r>`, `<w:rPr>`) via `narrativeToDocxXmlWithContext()`. Handles bold, italic, underline, colors, subscript, superscript, images, OMML equations.
+3. Analyze section formats 6M fields, 5-Why pairs, investigation outcome, root cause, impact assessment
+4. Improve/Control split into narrative + CA-N/PA-N register tables (`improve-control-checkpoints-docx.ts`)
+5. Post-processing passes:
+   - `applyInvestigationToolCheckboxes()` — toggles SDT checkboxes for 6M/5-Why/Brainstorming
+   - `applyInlineMediaToDocxZip()` — embeds images as base64
+   - `applyNumberingToDocxZip()` — preserves list formatting
+   - `applyWordCommentsToDocxZip()` — injects comments into comments.xml with thread parent/child linking
+   - `applySignatureBlockToDocxZip()` — approval table
+   - `applyGoogleDocsImageCompat()` — image compatibility
+
+**Output:** Binary buffer matching `reference-template.docx` layout (header with logo, DMAIC sections, CAPA registers, signature table, footer with page numbers).
+
+## Subsystem: Auto-Save
+
+**Entry point:** `useAutoSave()` in `src/hooks/use-auto-save.ts`, wrapped by `useSectionSave()` in `use-section-save.ts`
+
+**Behavior:**
+- Serialization-based change detection — skips save if serialized value unchanged (prevents wasted saves on re-renders)
+- 1.5s debounce. During in-flight save, new changes queue as pending; at most one pending save at a time
+- `sendBeacon` fallback on page hide/beforeunload for unsaved changes
+- Returns `{ status: "idle" | "saving" | "saved" | "error", lastSavedAt, flush }`
+
+**`useSectionSave` disables auto-save when:**
+- Report is read-only (unless trackChangesMode)
+- Suggestion is in-flight or being applied (prevents race conditions)
+- Previous save failed (blocks until report reloaded)
 
 ## Testing
 
