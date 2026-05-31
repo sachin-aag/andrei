@@ -228,20 +228,29 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
   const jumpToComment = useCallback(
     (id: string) => {
       const root = comments.find((c) => c.id === id && !c.parentId);
-      requestCommentFocus(id);
-
       if (!root) return;
 
-      if (root.section) {
-        jumpToSection(root.section);
-      }
+      // Set focus state first — this also tells the margin-gutter which card
+      // is active (it will skip its own scroll because we pass skipAutoScroll).
+      requestCommentFocus(id);
 
-      const reveal = () => {
-        scrollToCommentFieldAnchor(root);
-        scrollToGutterAnchor(gutterAnchorIdForComment(root));
-      };
-
-      requestAnimationFrame(() => requestAnimationFrame(reveal));
+      // Wait for the gutter to re-render with updated positions, then do a
+      // single smooth scroll to the gutter card.  Because the gutter card is
+      // positioned at the same vertical offset as the document field, this
+      // also brings the corresponding section text into view.
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          const gutterId = gutterAnchorIdForComment(root);
+          const scrolled = scrollToGutterAnchor(gutterId);
+          if (!scrolled) {
+            // Gutter card not found — fall back to the field anchor or section.
+            const scrolledField = scrollToCommentFieldAnchor(root);
+            if (!scrolledField && root.section) {
+              jumpToSection(root.section);
+            }
+          }
+        })
+      );
     },
     [comments, jumpToSection, requestCommentFocus]
   );

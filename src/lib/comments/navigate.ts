@@ -28,24 +28,30 @@ export function gutterAnchorIdForComment(comment: CommentRecord): string {
 
 /**
  * Smoothly scroll the gutter card with the given anchor id into view.
+ * Returns true if the element was found.
  */
-export function scrollToGutterAnchor(anchorId: string): void {
+export function scrollToGutterAnchor(anchorId: string): boolean {
   const el = document.querySelector<HTMLElement>(
     `[data-gutter-anchor-id="${CSS.escape(anchorId)}"]`
   );
-  el?.scrollIntoView({ behavior: "smooth", block: "center" });
+  if (!el) return false;
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+  return true;
 }
 
 /**
  * Smoothly scroll the document field anchor for a comment into view.
+ * Returns true if an element was found and scrolled to.
  */
-export function scrollToCommentFieldAnchor(comment: CommentRecord): void {
-  if (!comment.section || !comment.contentPath) return;
+export function scrollToCommentFieldAnchor(comment: CommentRecord): boolean {
+  if (!comment.section || !comment.contentPath) return false;
 
   const value = `${comment.section}.${comment.contentPath}`;
   const escaped = CSS.escape(value);
   const el = document.querySelector<HTMLElement>(
     `[data-field-anchor="${escaped}"]`
   );
-  el?.scrollIntoView({ behavior: "smooth", block: "center" });
+  if (!el) return false;
+  el.scrollIntoView({ behavior: "smooth", block: "center" });
+  return true;
 }
