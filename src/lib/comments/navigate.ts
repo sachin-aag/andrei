@@ -1,42 +1,51 @@
 import type { CommentRecord } from "@/types/report";
 
-/** Margin gutter wrapper id for a root comment (matches `margin-gutter` anchor ids). */
+/**
+ * Derive the gutter-anchor DOM id for a comment, matching the logic
+ * in margin-gutter.tsx that assigns anchor ids.
+ */
 export function gutterAnchorIdForComment(comment: CommentRecord): string {
   const isEditorAnchored =
-    comment.section != null &&
-    comment.contentPath != null &&
+    comment.section &&
+    comment.contentPath &&
     comment.fromPos != null &&
     comment.toPos != null;
-  if (isEditorAnchored) return comment.id;
-  if (comment.section && comment.contentPath) return `field:${comment.id}`;
-  if (comment.section) return `unanchored:${comment.id}`;
+
+  if (isEditorAnchored) {
+    return comment.id;
+  }
+
+  if (comment.section && comment.contentPath) {
+    return `field:${comment.id}`;
+  }
+
+  if (comment.section) {
+    return `unanchored:${comment.id}`;
+  }
+
   return comment.id;
 }
 
-function escapeFieldAnchor(value: string): string {
-  return globalThis.CSS?.escape
-    ? globalThis.CSS.escape(value)
-    : value.replace(/"/g, '\\"');
+/**
+ * Smoothly scroll the gutter card with the given anchor id into view.
+ */
+export function scrollToGutterAnchor(anchorId: string): void {
+  const el = document.querySelector<HTMLElement>(
+    `[data-gutter-anchor-id="${CSS.escape(anchorId)}"]`
+  );
+  el?.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
-/** Scroll the document field (plain-text anchor) for a section-level comment. */
+/**
+ * Smoothly scroll the document field anchor for a comment into view.
+ */
 export function scrollToCommentFieldAnchor(comment: CommentRecord): void {
   if (!comment.section || !comment.contentPath) return;
-  if (comment.fromPos != null && comment.toPos != null) return;
 
-  const anchor = document.querySelector<HTMLElement>(
-    `[data-field-anchor="${escapeFieldAnchor(`${comment.section}.${comment.contentPath}`)}"]`
+  const value = `${comment.section}.${comment.contentPath}`;
+  const escaped = CSS.escape(value);
+  const el = document.querySelector<HTMLElement>(
+    `[data-field-anchor="${escaped}"]`
   );
-  if (!anchor) return;
-  anchor.scrollIntoView({ behavior: "smooth", block: "center" });
-  if (anchor instanceof HTMLTextAreaElement) {
-    anchor.focus();
-  }
-}
-
-export function scrollToGutterAnchor(gutterId: string): void {
-  const escaped = escapeFieldAnchor(gutterId);
-  document
-    .querySelector<HTMLElement>(`[data-gutter-anchor-id="${escaped}"]`)
-    ?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  el?.scrollIntoView({ behavior: "smooth", block: "center" });
 }

@@ -222,6 +222,7 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
   }, [
     suggestionsFocusSection,
     clearSuggestionsFocusSection,
+    jumpToSection,
   ]);
 
   const jumpToComment = useCallback(

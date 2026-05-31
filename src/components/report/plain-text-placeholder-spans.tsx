@@ -27,11 +27,18 @@ export function PlainTextPlaceholderSpans({
     return <>{text}</>;
   }
 
-  let offset = baseOffset;
-  const nodes = parts.map((part, i) => {
+  const partsWithOffsets = parts.reduce<Array<{ part: (typeof parts)[number]; fromPos: number }>>(
+    (acc, part) => {
+      const previous = acc.at(-1);
+      const fromPos = previous
+        ? previous.fromPos + previous.part.text.length
+        : baseOffset;
+      return [...acc, { part, fromPos }];
+    },
+    []
+  );
+  const nodes = partsWithOffsets.map(({ part, fromPos }, i) => {
     if (part.kind === "placeholder") {
-      const fromPos = offset;
-      offset += part.text.length;
       const isActive = focusedFromPos != null && focusedFromPos === fromPos;
       return (
         <span
@@ -45,7 +52,6 @@ export function PlainTextPlaceholderSpans({
         </span>
       );
     }
-    offset += part.text.length;
     return <span key={i}>{part.text}</span>;
   });
 
