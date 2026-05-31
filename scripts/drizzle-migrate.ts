@@ -9,16 +9,21 @@ import { runPendingMigrations } from "@/lib/db/run-pending-migrations";
 
 const isProd = process.argv.includes("--prod");
 
-if (isProd) {
-  config({ path: ".env" });
-} else {
-  config({ path: ".env" });
-  config({ path: ".env.local", override: true });
+// Vercel/Neon inject DATABASE_URL per deployment; do not load local .env files over it.
+if (!process.env.DATABASE_URL) {
+  if (isProd) {
+    config({ path: ".env" });
+  } else {
+    config({ path: ".env" });
+    config({ path: ".env.local", override: true });
+  }
 }
 
 const url = process.env.DATABASE_URL;
 if (!url) {
-  console.error("DATABASE_URL is not set (.env.local or .env)");
+  console.error(
+    "DATABASE_URL is not set. On Vercel, ensure the Neon integration is connected. Locally, use .env.local or .env."
+  );
   process.exit(1);
 }
 
@@ -34,7 +39,10 @@ async function main() {
   const dbUrl = url as string;
   const host = databaseHost(dbUrl);
 
-  if (isProd) {
+  const onVercel = Boolean(process.env.VERCEL);
+  if (onVercel) {
+    console.error(`vercel (${process.env.VERCEL_ENV ?? "unknown"})  →  ${host}`);
+  } else if (isProd) {
     console.error(`PROD  →  ${host}`);
   } else {
     console.error(`non-prod  →  ${host}`);
