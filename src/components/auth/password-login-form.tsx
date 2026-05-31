@@ -150,7 +150,7 @@ export function PasswordLoginForm({ redirectTo }: { redirectTo?: string }) {
               Send magic link
             </Button>
             <Link
-              href={`/forgot-password?email=${encodeURIComponent(step.email)}`}
+              href={`/forgot-password?email=${encodeURIComponent(step.email)}&setup=1`}
               className="text-sm text-center text-[var(--brand-600)] hover:underline"
             >
               Set up a password

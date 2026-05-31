@@ -6,12 +6,13 @@ import { getCurrentUser } from "@/lib/auth/session";
 export default async function ForgotPasswordPage({
   searchParams,
 }: {
-  searchParams: Promise<{ email?: string }>;
+  searchParams: Promise<{ email?: string; setup?: string }>;
 }) {
   const user = await getCurrentUser();
   if (user) redirect("/");
 
-  const { email } = await searchParams;
+  const { email, setup } = await searchParams;
+  const isSetup = setup === "1";
 
   return (
     <div className="min-h-screen flex items-center justify-center p-8">
@@ -31,11 +32,12 @@ export default async function ForgotPasswordPage({
         </div>
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">
-            Reset your password
+            {isSetup ? "Set your password" : "Reset your password"}
           </h1>
           <p className="text-sm text-[var(--muted-foreground)] mt-2">
-            Enter your work email and we&apos;ll send you a link to set a new
-            password.
+            {isSetup
+              ? "We\u2019ll send you a link to set up a password for your account."
+              : "Enter your work email and we\u2019ll send you a link to set a new password."}
           </p>
         </div>
         <ForgotPasswordForm defaultEmail={email} />
