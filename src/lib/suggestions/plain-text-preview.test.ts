@@ -52,6 +52,21 @@ describe("buildPlainTextSuggestionPreview", () => {
       { kind: "context", text: "" },
     ]);
   });
+
+  it("places unanchored time placeholders after the only date", () => {
+    const value =
+      "While performing 2 point calibration on 21/05/2026 in Instrument Lab - II.";
+    const segments = buildPlainTextSuggestionPreview(
+      value,
+      "",
+      "at [Time of occurrence/detection: <to be filled>]"
+    );
+    expect(segments).toEqual([
+      { kind: "context", text: "While performing 2 point calibration on 21/05/2026" },
+      { kind: "insert", text: " at [Time of occurrence/detection: <to be filled>]" },
+      { kind: "context", text: " in Instrument Lab - II." },
+    ]);
+  });
 });
 
 describe("splitPlainTextPreviewSegments", () => {

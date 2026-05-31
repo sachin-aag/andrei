@@ -3,6 +3,8 @@ import {
   findAnchorInText,
 } from "@/lib/text/normalize-for-anchor";
 
+const NUMERIC_DATE_PATTERN = /\b\d{1,2}[/-]\d{1,2}[/-]\d{2,4}\b/g;
+
 export function withLeadingSpaceIfNeeded(
   haystack: string,
   insertAt: number,
@@ -25,6 +27,28 @@ export function locateUniqueSpan(
   const match = findAnchorInText(value, trimmed);
   if (!match) return null;
   return { start: match.start, end: match.end };
+}
+
+function isTimePlaceholderInsert(insertText: string): boolean {
+  return /\[[^\]]*\btime\b[^\]]*<to be filled>[^\]]*\]/i.test(insertText);
+}
+
+/**
+ * Some older suggestions were generated as "pure inserts" without an anchor.
+ * For time placeholders, prefer the obvious date in the sentence over the end
+ * of the field so previews/apply stay near the missing fact.
+ */
+export function inferInsertPosition(
+  value: string,
+  insertText: string
+): number | null {
+  if (!isTimePlaceholderInsert(insertText)) return null;
+
+  const matches = Array.from(value.matchAll(NUMERIC_DATE_PATTERN));
+  if (matches.length !== 1) return null;
+
+  const match = matches[0]!;
+  return (match.index ?? 0) + match[0].length;
 }
 
 export type PlainTextEdit = {
@@ -59,7 +83,14 @@ export function applyPlainTextEdit(
     return value.slice(0, insertAt) + insert + value.slice(insertAt);
   }
 
-  if (ins) return value + (value.length > 0 && !/\s$/.test(value) ? " " : "") + ins;
+  if (ins) {
+    const insertAt = inferInsertPosition(value, ins);
+    if (insertAt !== null) {
+      const insert = withLeadingSpaceIfNeeded(value, insertAt, ins);
+      return value.slice(0, insertAt) + insert + value.slice(insertAt);
+    }
+    return value + (value.length > 0 && !/\s$/.test(value) ? " " : "") + ins;
+  }
 
   return null;
 }
