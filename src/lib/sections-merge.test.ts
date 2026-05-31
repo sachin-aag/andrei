@@ -86,7 +86,7 @@ describe("sections merge", () => {
 
     expect(analyze.sixM.man).toBe("Training gap");
     expect(analyze.sixM.machine).toBe("");
-    expect(analyze.fiveWhy.narrative).toBe("");
+    expect(richJsonToPlainText(analyze.fiveWhy.narrative)).toBe("");
   });
 
   it("folds legacy root cause level fields into narrative", () => {
@@ -134,9 +134,10 @@ describe("sections merge", () => {
       },
     });
 
-    expect(analyze.fiveWhy.narrative).toContain("1. Why: Why did logging stop?");
-    expect(analyze.fiveWhy.narrative).toContain("Ans. Communication failed.");
-    expect(analyze.fiveWhy.narrative).toContain("Weak battery caused the drift.");
+    const narrative = richJsonToPlainText(analyze.fiveWhy.narrative);
+    expect(narrative).toContain("1. Why: Why did logging stop?");
+    expect(narrative).toContain("Ans. Communication failed.");
+    expect(narrative).toContain("Weak battery caused the drift.");
     expect(analyze.fiveWhy.conclusion).toBe("");
   });
 

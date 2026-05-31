@@ -1,10 +1,16 @@
 import type { CriterionEvaluationResult } from "@/lib/ai/evaluate";
+import { normalizeRichField, richJsonToPlainText } from "@/lib/tiptap/rich-text";
 
 type AnalyzeTool = "sixM" | "fiveWhy";
 
 export function meaningfulAnalyzeText(value: unknown): boolean {
-  if (typeof value !== "string") return false;
-  const normalized = value.trim().toLowerCase().replace(/\.+$/, "");
+  const text =
+    typeof value === "string"
+      ? value
+      : value && typeof value === "object" && "type" in value
+        ? richJsonToPlainText(normalizeRichField(value))
+        : "";
+  const normalized = text.trim().toLowerCase().replace(/\.+$/, "");
   return normalized.length > 0 && normalized !== "not applicable" && normalized !== "n/a";
 }
 

@@ -26,8 +26,8 @@ export type AnalyzeSection = {
     conclusion: string;
   };
   fiveWhy: {
-    /** Full 5-Why chain and conclusion (single field in the UI). */
-    narrative: string;
+    /** Full 5-Why chain and conclusion (single rich field in the UI). */
+    narrative: JSONContent;
     /** Legacy second slot; always normalized empty after merge / save. */
     conclusion: string;
   };
@@ -95,7 +95,7 @@ export const EMPTY_CONTENT: SectionContentMap = {
       conclusion: "",
     },
     fiveWhy: {
-      narrative: "",
+      narrative: emptyDoc(),
       conclusion: "",
     },
     brainstorming: "",

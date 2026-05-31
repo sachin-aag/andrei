@@ -1,5 +1,5 @@
 import { collapseImpactAssessment } from "@/lib/analyze-impact-assessment";
-import { collapseFiveWhyFields } from "@/lib/analyze-five-why";
+import { collapseFiveWhyFields, normalizeFiveWhyNarrative } from "@/lib/analyze-five-why";
 import { collapseRootCauseFields } from "@/lib/analyze-root-cause";
 import type {
   AnalyzeSection,
@@ -163,10 +163,17 @@ export function mergeAnalyzeSection(content: unknown): AnalyzeSection {
   delete (rest as Partial<AnalyzeSection> & { impactAssessment?: unknown })
     .impactAssessment;
   const merged = deepMerge(base, rest);
-  const narrative =
-    typeof o.fiveWhy?.narrative === "string"
-      ? o.fiveWhy.narrative
-      : coerceFiveWhyRows(o.fiveWhy?.whys, merged.fiveWhy.narrative);
+  const fiveWhyInput = o.fiveWhy;
+  let narrative = merged.fiveWhy.narrative;
+  if (fiveWhyInput && "narrative" in fiveWhyInput) {
+    narrative = normalizeFiveWhyNarrative(fiveWhyInput.narrative);
+  } else {
+    narrative = coerceFiveWhyRows(
+      (fiveWhyInput as { whys?: Array<{ question?: unknown; answer?: unknown }> } | undefined)
+        ?.whys,
+      narrative
+    );
+  }
   const conclusion =
     typeof o.fiveWhy?.conclusion === "string"
       ? o.fiveWhy.conclusion
@@ -241,10 +248,10 @@ function coerceCorrectiveActions(value: unknown, fallback: string): string {
 /* Legacy rows stored 5-Why as question/answer pairs; flatten to the new narrative field. */
 function coerceFiveWhyRows(
   value: Array<{ question?: unknown; answer?: unknown }> | undefined,
-  fallback: string
-): string {
+  fallback: AnalyzeSection["fiveWhy"]["narrative"]
+): AnalyzeSection["fiveWhy"]["narrative"] {
   if (!Array.isArray(value)) return fallback;
-  return value
+  return normalizeFiveWhyNarrative(value
     .map((entry, idx) => {
       const question = typeof entry.question === "string" ? entry.question.trim() : "";
       const answer = typeof entry.answer === "string" ? entry.answer.trim() : "";
@@ -256,7 +263,7 @@ function coerceFiveWhyRows(
         .join("\n");
     })
     .filter(Boolean)
-    .join("\n\n");
+    .join("\n\n"));
 }
 
 export function mergeSignatureApprovalsSection(content: unknown): SignatureApprovalsSection {

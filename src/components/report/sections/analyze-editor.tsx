@@ -12,6 +12,7 @@ import {
 import { useSectionSave } from "@/hooks/use-section-save";
 import { SectionShell } from "./section-shell";
 import { cn } from "@/lib/utils";
+import { normalizeFiveWhyNarrative } from "@/lib/analyze-five-why";
 
 const SIX_M_FIELDS: Array<[keyof Omit<{
   man: string;
@@ -110,29 +111,25 @@ export function AnalyzeEditor() {
         <h3 className="font-semibold text-[var(--foreground)]">5-Why Approach</h3>
         <div className="rounded-md border border-[var(--border)] bg-[var(--secondary)]/40 p-4">
           <div {...fieldAnchorProps("fiveWhy.narrative")}>
-            <Label>5-Why analysis</Label>
-            {renderControl(
-              "fiveWhy.narrative",
-              <Textarea
-                placeholder="Capture each Why and answer, then your conclusion — all in this box (same as the investigation template)."
-                value={value.fiveWhy.narrative}
-                disabled={readOnly}
-                className={cn(
-                  "min-h-[260px]",
-                  suggestedControlClass("fiveWhy.narrative")
-                )}
-                onChange={(e) =>
-                  update((p) => ({
-                    ...p,
-                    fiveWhy: {
-                      ...p.fiveWhy,
-                      narrative: e.target.value,
-                      conclusion: "",
-                    },
-                  }))
-                }
-              />
-            )}
+            <TiptapSectionField
+              section="analyze"
+              contentPath="fiveWhy.narrative"
+              label="5-Why analysis"
+              placeholder="Capture each Why and answer, then your conclusion — all in this box (same as the investigation template)."
+              className={cn("grid gap-1.5", suggestedControlClass("fiveWhy.narrative"))}
+              value={normalizeFiveWhyNarrative(value.fiveWhy.narrative)}
+              onChange={(doc) =>
+                update((p) => ({
+                  ...p,
+                  fiveWhy: {
+                    ...p.fiveWhy,
+                    narrative: doc,
+                    conclusion: "",
+                  },
+                }))
+              }
+              onFlushSave={flushSave}
+            />
           </div>
         </div>
       </section>

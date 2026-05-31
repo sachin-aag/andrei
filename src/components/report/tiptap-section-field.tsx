@@ -308,10 +308,6 @@ export function TiptapSectionField({
     acknowledgeCommentFocus,
   } = useReportComments();
   const { focusedPanelPlaceholderId } = useReportPlaceholders();
-  const focusedPanelPlaceholderIdRef = useRef(focusedPanelPlaceholderId);
-  useLayoutEffect(() => {
-    focusedPanelPlaceholderIdRef.current = focusedPanelPlaceholderId;
-  }, [focusedPanelPlaceholderId]);
   const { registerEditor, setActiveEditor } = useReportEditors();
   const { activeSuggestionIdForSection, isSuggestionPreviewHeld } =
     useReportEvaluations();
@@ -353,12 +349,11 @@ export function TiptapSectionField({
 
   const placeholderHighlightExtension = useMemo(
     () =>
-      // eslint-disable-next-line react-hooks/refs -- ProseMirror calls getter at transaction time
       createPlaceholderHighlightExtension(
-        () => focusedPanelPlaceholderIdRef.current,
+        () => focusedPanelPlaceholderId,
         { section, contentPath }
       ),
-    [section, contentPath]
+    [focusedPanelPlaceholderId, section, contentPath]
   );
 
   const filteredRanges = useMemo(() => {

@@ -3,6 +3,7 @@ import { hydrateUserDirectory } from "@/lib/auth/user-directory";
 import {
   getAiFixCommentPreview,
   getAiFixCommentTitle,
+  getCommentAuthorDisplayName,
   getCommentCardTitle,
 } from "./display";
 import type { CommentRecord, EvaluationRecord } from "@/types/report";
@@ -117,5 +118,31 @@ describe("getCommentCardTitle", () => {
       evaluationId: null,
     };
     expect(getCommentCardTitle(human, [])).toBe("Bhargav Patel");
+  });
+
+  it("uses external author for Word-imported comments", () => {
+    const imported: CommentRecord = {
+      ...aiComment("Regulatory review: Please confirm…"),
+      kind: "word_import",
+      source: "word",
+      authorId: "word",
+      evaluationId: null,
+      externalAuthorName: "Regulatory Reviewer",
+      externalAuthorInitials: "RR",
+    };
+    expect(getCommentCardTitle(imported, [])).toBe("Regulatory Reviewer");
+    expect(getCommentAuthorDisplayName(imported)).toBe("Regulatory Reviewer");
+  });
+
+  it("falls back when Word import has no external author name", () => {
+    const imported: CommentRecord = {
+      ...aiComment("Quality review: …"),
+      kind: "word_import",
+      source: "word",
+      authorId: "word",
+      evaluationId: null,
+      externalAuthorName: null,
+    };
+    expect(getCommentCardTitle(imported, [])).toBe("Word reviewer");
   });
 });

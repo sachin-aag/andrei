@@ -26,6 +26,7 @@ import {
   suggestionDeleteMarkName,
   suggestionInsertMarkName,
 } from "@/lib/tiptap/suggestion-marks";
+import { gutterAnchorIdForComment } from "@/lib/comments/navigate";
 import { cn } from "@/lib/utils";
 import { useUserDirectory } from "@/providers/user-directory-provider";
 import type { Editor } from "@tiptap/react";
@@ -199,6 +200,7 @@ export function MarginGutter({ onSectionOverflow }: Props) {
   const { report, workspaceMode, currentUserId } = useReportData();
   const {
     comments,
+    activeCommentId,
     activeAnchorId,
     setActiveAnchorId,
     setActiveCommentId,
@@ -521,6 +523,25 @@ export function MarginGutter({ onSectionOverflow }: Props) {
     el.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [hoveredCommentIds]);
 
+  // Keep the active comment card in view after sidebar "Open" / focus requests.
+  // Uses instant scroll with block:"nearest" so it doesn't compete with the
+  // smooth scroll that jumpToComment drives from report-workspace.
+  useEffect(() => {
+    if (!activeCommentId) return;
+    const root = comments.find(
+      (c) => c.id === activeCommentId && !c.parentId
+    );
+    if (!root) return;
+
+    const gutterId = gutterAnchorIdForComment(root);
+    const frame = requestAnimationFrame(() => {
+      const el =
+        cardRefs.current[gutterId] ?? cardRefs.current[activeCommentId];
+      el?.scrollIntoView({ block: "nearest" });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [activeCommentId, comments, anchors]);
+
   const activate = (a: GutterAnchor) => {
     setActiveAnchorId(a.id);
     if (a.type === "comment" && a.comment) {
@@ -629,6 +650,7 @@ export function MarginGutter({ onSectionOverflow }: Props) {
         return (
           <div
             key={a.id}
+            data-gutter-anchor-id={a.id}
             ref={(el) => {
               cardRefs.current[a.id] = el;
             }}

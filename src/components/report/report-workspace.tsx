@@ -21,6 +21,11 @@ import type { SectionType } from "@/db/schema";
 import type { WorkspaceMode } from "@/providers/report-provider";
 import type { Placeholder } from "@/lib/placeholders/find";
 import { resolvePlaceholderInPmDoc } from "@/lib/placeholders/resolve-in-doc";
+import {
+  gutterAnchorIdForComment,
+  scrollToCommentFieldAnchor,
+  scrollToGutterAnchor,
+} from "@/lib/comments/navigate";
 import { EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
 import { REPORT_WORKSPACE_SECTIONS } from "@/types/sections";
 
@@ -87,7 +92,7 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
   } = useReportData();
   const { pendingPlaceholders } = useReportPlaceholders();
   const { getEditor } = useReportEditors();
-  const { requestCommentFocus } = useReportComments();
+  const { requestCommentFocus, comments } = useReportComments();
   const { suggestionsFocusSection, clearSuggestionsFocusSection } =
     useReportEvaluations();
   const [criteriaFocusSection, setCriteriaFocusSection] = useState<
@@ -199,10 +204,10 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
     }
   };
 
-  const jumpToSection = (s: SectionType) => {
+  const jumpToSection = useCallback((s: SectionType) => {
     const el = mainRef.current?.querySelector(`#${s}`);
     if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-  };
+  }, []);
 
   useEffect(() => {
     if (!suggestionsFocusSection) return;
@@ -217,11 +222,38 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
   }, [
     suggestionsFocusSection,
     clearSuggestionsFocusSection,
+    jumpToSection,
   ]);
 
-  const jumpToComment = (id: string) => {
-    requestCommentFocus(id);
-  };
+  const jumpToComment = useCallback(
+    (id: string) => {
+      const root = comments.find((c) => c.id === id && !c.parentId);
+      if (!root) return;
+
+      // Set focus state first — this also tells the margin-gutter which card
+      // is active (it will skip its own scroll because we pass skipAutoScroll).
+      requestCommentFocus(id);
+
+      // Wait for the gutter to re-render with updated positions, then do a
+      // single smooth scroll to the gutter card.  Because the gutter card is
+      // positioned at the same vertical offset as the document field, this
+      // also brings the corresponding section text into view.
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          const gutterId = gutterAnchorIdForComment(root);
+          const scrolled = scrollToGutterAnchor(gutterId);
+          if (!scrolled) {
+            // Gutter card not found — fall back to the field anchor or section.
+            const scrolledField = scrollToCommentFieldAnchor(root);
+            if (!scrolledField && root.section) {
+              jumpToSection(root.section);
+            }
+          }
+        })
+      );
+    },
+    [comments, jumpToSection, requestCommentFocus]
+  );
 
   const handleJumpToPlaceholder = (p: Placeholder) => {
     jumpToSection(p.section);

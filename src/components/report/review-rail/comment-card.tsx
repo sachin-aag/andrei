@@ -21,9 +21,11 @@ import {
 import { useUserDirectory } from "@/providers/user-directory-provider";
 import { cn, formatDateTime } from "@/lib/utils";
 import {
+  getCommentAuthorDisplayName,
   getCommentCardPreview,
   getCommentCardTitle,
   isAiFixComment,
+  isImportedWordComment,
 } from "@/lib/comments/display";
 import { SECTION_LABELS } from "@/types/sections";
 import type { CommentRecord } from "@/types/report";
@@ -63,14 +65,11 @@ export function CommentCard({
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
   const { evaluations } = useReportEvaluations();
   const { getUser } = useUserDirectory();
-  const author = getUser(root.authorId);
   const aiFix = isAiFixComment(root);
   const cardPreview = getCommentCardPreview(root);
-  const isImportedWordComment = root.source === "word" || root.kind === "word_import";
-  const authorName = isImportedWordComment
-    ? root.externalAuthorName || "Word reviewer"
-    : author?.name ?? "Unknown";
-  const cardTitle = aiFix ? getCommentCardTitle(root, evaluations) : authorName;
+  const importedWordComment = isImportedWordComment(root);
+  const authorName = getCommentAuthorDisplayName(root);
+  const cardTitle = getCommentCardTitle(root, evaluations);
 
   const canReplyOrResolve =
     currentUserId === report.authorId ||
@@ -194,7 +193,7 @@ export function CommentCard({
         }
       }}
       className={cn(
-        "rounded-md border bg-[var(--card)] shadow-sm text-left transition-all overflow-hidden cursor-pointer",
+        "rounded-md border bg-[var(--card)] shadow-sm text-left transition-all cursor-pointer",
         active
           ? "border-amber-500 ring-2 ring-amber-400/30 bg-amber-50/60"
           : isHovered
@@ -215,32 +214,31 @@ export function CommentCard({
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs font-semibold truncate">
+            <span className="min-w-0 text-xs font-semibold break-words">
               {cardTitle}
             </span>
-            {isImportedWordComment && (
-              <span className="text-[10px] text-sky-700 bg-sky-100 border border-sky-200 rounded px-1 py-0.5">
+            {importedWordComment && (
+              <span className="shrink-0 text-[10px] text-sky-700 bg-sky-100 border border-sky-200 rounded px-1 py-0.5">
                 Imported from Word
               </span>
             )}
             {root.locked && (
-              <span className="text-[10px] text-[var(--muted-foreground)]">
+              <span className="shrink-0 text-[10px] text-[var(--muted-foreground)]">
                 Locked
               </span>
             )}
             {root.status === "resolved" ? (
-              <span className="text-[10px] text-green-700 flex items-center gap-0.5">
+              <span className="shrink-0 text-[10px] text-green-700 flex items-center gap-0.5">
                 <Check className="size-3 shrink-0" />
                 Resolved
               </span>
             ) : (
-              <span className="text-[10px] text-amber-800">Open</span>
+              <span className="shrink-0 text-[10px] text-amber-800">Open</span>
             )}
             {!isAnchored && root.section && (
               <span
                 className={cn(
-                  "text-[10px] text-[var(--muted-foreground)] uppercase tracking-wide",
-                  !canDeleteRoot && "ml-auto"
+                  "shrink-0 text-[10px] text-[var(--muted-foreground)] uppercase tracking-wide"
                 )}
               >
                 {SECTION_LABELS[root.section] ?? root.section}
@@ -275,7 +273,7 @@ export function CommentCard({
               </button>
             )}
           </div>
-          <p className="text-xs text-[var(--foreground)] mt-1 whitespace-pre-wrap leading-snug">
+          <p className="text-xs text-[var(--foreground)] mt-1 whitespace-pre-wrap break-words leading-snug">
             {cardPreview}
           </p>
           <span className="text-[10px] text-[var(--muted-foreground)]">
@@ -287,22 +285,16 @@ export function CommentCard({
       {/* Collapsed reply indicator -- visible when card is NOT active */}
       {!active && replies.length > 0 && (() => {
         const lastReply = replies[replies.length - 1];
-        const lastAuthor = getUser(lastReply.authorId);
-        const lastAuthorName =
-          lastReply.source === "word" || lastReply.kind === "word_import"
-            ? lastReply.externalAuthorName || "Word reviewer"
-            : lastAuthor?.name ?? "Unknown";
+        const lastAuthorName = getCommentAuthorDisplayName(lastReply);
         const uniqueAuthors = [...new Set(replies.map((r) => r.authorId))];
         return (
           <div className="px-3 py-1.5 border-t border-[var(--border)]/50 flex items-center gap-1.5 text-[10px] text-[var(--muted-foreground)]">
             <div className="flex -space-x-1.5">
               {uniqueAuthors.slice(0, 3).map((uid) => {
                 const matchingReply = replies.find((r) => r.authorId === uid);
-                const u = getUser(uid);
-                const name =
-                  matchingReply?.source === "word" || matchingReply?.kind === "word_import"
-                    ? matchingReply.externalAuthorName || "Word reviewer"
-                    : u?.name ?? "?";
+                const name = matchingReply
+                  ? getCommentAuthorDisplayName(matchingReply)
+                  : getUser(uid)?.name ?? "?";
                 const ini =
                   matchingReply?.externalAuthorInitials ||
                   name.split(" ").map((n) => n[0]).slice(0, 2).join("") ||
@@ -329,15 +321,14 @@ export function CommentCard({
       })()}
 
       {active && (
-        <div className="px-3 pb-3 space-y-3 border-t border-[var(--border)]/70 bg-[var(--secondary)]/20 pt-2">
+        <div className="px-3 pb-3 border-t border-[var(--border)]/70 bg-[var(--secondary)]/20 pt-2">
+          <div className="flex gap-2">
+            <div className="size-7 shrink-0" aria-hidden />
+            <div className="min-w-0 flex-1 space-y-3">
           {replies.length > 0 && (
             <ul className="space-y-2">
               {replies.map((r) => {
-                const ra = getUser(r.authorId);
-                const replyAuthorName =
-                  r.source === "word" || r.kind === "word_import"
-                    ? r.externalAuthorName || "Word reviewer"
-                    : ra?.name ?? "Unknown";
+                const replyAuthorName = getCommentAuthorDisplayName(r);
                 const canDeleteReply =
                   currentUserId === r.authorId || currentUserRole === "manager";
                 return (
@@ -377,7 +368,7 @@ export function CommentCard({
                         </button>
                       )}
                     </div>
-                    <p className="whitespace-pre-wrap pl-4 leading-snug">
+                    <p className="whitespace-pre-wrap break-words leading-snug">
                       {r.content}
                     </p>
                   </li>
@@ -472,6 +463,8 @@ export function CommentCard({
               </Button>
             </div>
           )}
+            </div>
+          </div>
         </div>
       )}
     </div>
