@@ -101,7 +101,9 @@ function fingerprintAnalyze(a: AnalyzeSection): Record<string, string> {
   for (const [k, v] of Object.entries(a.sixM)) {
     out[`sixM.${k}`] = fingerprintComparableString(v);
   }
-  out["fiveWhy.narrative"] = fingerprintFiveWhyNarrative(a.fiveWhy.narrative);
+  out["fiveWhy.narrative"] = fingerprintFiveWhyNarrative(
+    richJsonToPlainText(a.fiveWhy.narrative)
+  );
   out["fiveWhy.conclusion"] = fingerprintComparableString(a.fiveWhy.conclusion);
   out["brainstorming"] = fingerprintComparableString(a.brainstorming);
   out["otherTools"] = fingerprintComparableString(a.otherTools);

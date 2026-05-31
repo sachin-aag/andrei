@@ -222,12 +222,13 @@ describe("docx import", () => {
     expect(measureText).toMatch(/Does the summary provide relevant facts/i);
 
     const fiveWhy = imported.sections.analyze.fiveWhy;
-    expect(fiveWhy.narrative).toContain(
+    const fiveWhyText = richJsonToPlainText(fiveWhy.narrative);
+    expect(fiveWhyText).toContain(
       "1. Why was the temperature data not recorded/captured"
     );
-    expect(fiveWhy.narrative).toContain("Ans. Communication failure occurred");
-    expect(fiveWhy.narrative).toContain("Based on the 5-Why analysis");
-    expect(fiveWhy.narrative).toContain("old version software was being used");
+    expect(fiveWhyText).toContain("Ans. Communication failure occurred");
+    expect(fiveWhyText).toContain("Based on the 5-Why analysis");
+    expect(fiveWhyText).toContain("old version software was being used");
     expect(fiveWhy.conclusion).toBe("");
 
     const improveNarrPlain = richJsonToPlainText(imported.sections.improve.narrative);
@@ -485,4 +486,5 @@ describe("docx import", () => {
       "Available/Not Available/ Not Applicable"
     );
   });
+
 });

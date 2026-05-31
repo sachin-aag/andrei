@@ -17,7 +17,7 @@ import type { ReportSectionRecord } from "@/types/report";
 import type { reports as reportsTable } from "@/db/schema";
 import { getUser } from "@/lib/auth/user-directory";
 import { formatDate } from "@/lib/utils";
-import { fiveWhyTextForExport } from "@/lib/analyze-five-why";
+import { collapseFiveWhyFields } from "@/lib/analyze-five-why";
 import { mergeSection } from "@/lib/sections-merge";
 import { applyInvestigationToolCheckboxes } from "@/lib/export/docx-form-checkbox";
 import { applyInlineMediaToDocxZip } from "@/lib/export/docx-inline-media";
@@ -223,8 +223,11 @@ function buildTemplateData(
     sixMMilieu: na(a.sixM.milieu),
     sixMConclusion: na(a.sixM.conclusion),
 
-    // Analyze - 5 Why (single field: chain + conclusion; see analyze-five-why / template)
-    fiveWhyNarrativeXml: plainTextToDocxXml(fiveWhyTextForExport(a.fiveWhy), ctx),
+    // Analyze - 5 Why (single rich field: chain + conclusion; see analyze-five-why / template)
+    fiveWhyNarrativeXml: narrativeToDocxXmlWithContext(
+      collapseFiveWhyFields(a.fiveWhy).narrative,
+      ctx
+    ).xml,
 
     // Analyze - other
     brainstormingXml: plainTextToDocxXml(a.brainstorming, ctx),

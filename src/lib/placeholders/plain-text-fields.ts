@@ -16,7 +16,6 @@ export const PLAIN_TEXT_PLACEHOLDER_PATHS: Partial<
     "sixM.method",
     "sixM.milieu",
     "sixM.conclusion",
-    "fiveWhy.narrative",
     "brainstorming",
     "otherTools",
     "investigationOutcome",

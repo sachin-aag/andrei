@@ -371,7 +371,7 @@ function parseMeasure(text: string): MeasureSection {
  * to be re-stitched downstream.
  */
 function parseFiveWhyBlock(text: string): AnalyzeSection["fiveWhy"] {
-  return { narrative: cleanImportedText(text), conclusion: "" };
+  return { narrative: legacyStringToDoc(cleanImportedNarrativeText(text)), conclusion: "" };
 }
 
 function buildAnalyzeFromChunk(text: string): AnalyzeSection {
@@ -630,7 +630,7 @@ function buildCommentTargets(sections: ImportedSections): CommentTarget[] {
     { section: "analyze", contentPath: "sixM.method", kind: "plain", text: sections.analyze.sixM.method },
     { section: "analyze", contentPath: "sixM.milieu", kind: "plain", text: sections.analyze.sixM.milieu },
     { section: "analyze", contentPath: "sixM.conclusion", kind: "plain", text: sections.analyze.sixM.conclusion },
-    { section: "analyze", contentPath: "fiveWhy.narrative", kind: "plain", text: sections.analyze.fiveWhy.narrative },
+    { section: "analyze", contentPath: "fiveWhy.narrative", kind: "rich", doc: sections.analyze.fiveWhy.narrative },
     { section: "analyze", contentPath: "brainstorming", kind: "plain", text: sections.analyze.brainstorming },
     { section: "analyze", contentPath: "otherTools", kind: "plain", text: sections.analyze.otherTools },
     { section: "analyze", contentPath: "investigationOutcome", kind: "rich", doc: sections.analyze.investigationOutcome },
@@ -646,9 +646,25 @@ function buildCommentTargets(sections: ImportedSections): CommentTarget[] {
   ];
 }
 
+const EMPTY_STRUCTURAL_NODE_TYPES = new Set([
+  "doc",
+  "paragraph",
+  "heading",
+  "blockquote",
+  "bulletList",
+  "orderedList",
+  "listItem",
+  "table",
+  "tableRow",
+  "tableCell",
+  "tableHeader",
+]);
+
 function nodeSize(node: JSONContent): number {
   if (node.type === "text") return (node.text ?? "").length;
-  if (!node.content?.length) return 1;
+  if (!node.content?.length) {
+    return EMPTY_STRUCTURAL_NODE_TYPES.has(node.type ?? "") ? 2 : 1;
+  }
   return 2 + node.content.reduce((sum, child) => sum + nodeSize(child), 0);
 }
 
@@ -1135,18 +1151,75 @@ function injectTablesFromHtml(
     }
   }
 
-  // For each section, replace flat paragraphs with the table nodes.
+  // For each section, replace flat paragraphs/text with the table nodes.
   for (const [sectionKey, sectionTables] of tablesBySection) {
-    const section = sections[sectionKey];
-    const narrative =
-      "narrative" in section ? (section as { narrative: JSONContent }).narrative : null;
-    if (!narrative || narrative.type !== "doc" || !narrative.content) continue;
-
     for (const tableNode of sectionTables) {
       if (isSignatureTipTapTable(tableNode)) continue;
-      replaceFlatParagraphsWithTable(narrative, tableNode);
+      applyTableToImportedSection(sections, sectionKey, tableNode);
     }
   }
+}
+
+function applyTableToImportedSection(
+  sections: ImportedSections,
+  sectionKey: EditableKey,
+  tableNode: JSONContent
+): boolean {
+  const section = sections[sectionKey];
+  if ("narrative" in section && replaceFlatParagraphsWithTable(section.narrative, tableNode)) {
+    return true;
+  }
+
+  if (sectionKey === "analyze") {
+    const analyze = sections.analyze;
+    if (replaceFlatParagraphsWithTable(analyze.investigationOutcome, tableNode)) return true;
+    if (replaceFlatParagraphsWithTable(analyze.rootCause.narrative, tableNode)) return true;
+
+    const sixMKeys = [
+      "man",
+      "machine",
+      "measurement",
+      "material",
+      "method",
+      "milieu",
+      "conclusion",
+    ] as const;
+    for (const key of sixMKeys) {
+      const replaced = replaceFlatTextWithPlainTable(analyze.sixM[key], tableNode);
+      if (replaced !== analyze.sixM[key]) {
+        analyze.sixM[key] = replaced;
+        return true;
+      }
+    }
+
+    if (replaceFlatParagraphsWithTable(analyze.fiveWhy.narrative, tableNode)) return true;
+
+    for (const key of ["brainstorming", "otherTools", "impactAssessment"] as const) {
+      const replaced = replaceFlatTextWithPlainTable(analyze[key], tableNode);
+      if (replaced !== analyze[key]) {
+        analyze[key] = replaced;
+        return true;
+      }
+    }
+  }
+
+  if (sectionKey === "improve") {
+    const replaced = replaceFlatTextWithPlainTable(sections.improve.correctiveActions, tableNode);
+    if (replaced !== sections.improve.correctiveActions) {
+      sections.improve.correctiveActions = replaced;
+      return true;
+    }
+  }
+
+  if (sectionKey === "control") {
+    const replaced = replaceFlatTextWithPlainTable(sections.control.preventiveActions, tableNode);
+    if (replaced !== sections.control.preventiveActions) {
+      sections.control.preventiveActions = replaced;
+      return true;
+    }
+  }
+
+  return false;
 }
 
 function isSignatureTipTapTable(tableNode: JSONContent): boolean {
@@ -1173,6 +1246,31 @@ function extractTableCellTexts(tableNode: JSONContent): string[] {
     }
   }
   return texts;
+}
+
+function extractTableRowsText(tableNode: JSONContent): string[][] {
+  return (tableNode.content ?? []).map((row) =>
+    (row.content ?? []).map((cell) => extractCellParagraphTexts(cell).join("\n").trim())
+  );
+}
+
+function escapeMarkdownTableCell(text: string): string {
+  return text.replace(/\|/g, "\\|").replace(/\s*\n+\s*/g, "<br>");
+}
+
+function tableNodeToPlainMarkdown(tableNode: JSONContent): string {
+  const rows = extractTableRowsText(tableNode).filter((row) => row.some(Boolean));
+  if (rows.length === 0) return "";
+
+  const columnCount = Math.max(...rows.map((row) => row.length));
+  const normalizedRows = rows.map((row) =>
+    Array.from({ length: columnCount }, (_, index) => escapeMarkdownTableCell(row[index] ?? ""))
+  );
+  const header = normalizedRows[0]!;
+  const separator = Array.from({ length: columnCount }, () => "---");
+  const body = normalizedRows.slice(1);
+
+  return [header, separator, ...body].map((row) => `| ${row.join(" | ")} |`).join("\n");
 }
 
 function extractCellParagraphTexts(node: JSONContent): string[] {
@@ -1209,12 +1307,12 @@ function paragraphText(para: JSONContent): string {
 function replaceFlatParagraphsWithTable(
   narrative: JSONContent,
   tableNode: JSONContent
-): void {
+): boolean {
   const cellTexts = extractTableCellTexts(tableNode);
-  if (cellTexts.length === 0) return;
+  if (cellTexts.length === 0) return false;
 
   const content = narrative.content;
-  if (!content?.length) return;
+  if (!content?.length) return false;
 
   // Build a Set of all cell texts for fast membership checks. Guidance
   // stripping may have removed some cells (e.g. "Date" matches a guidance
@@ -1224,7 +1322,7 @@ function replaceFlatParagraphsWithTable(
   // Find the first paragraph whose text appears in the table's cell values.
   // Use the FIRST header cell as anchor since it's the most distinctive.
   const firstHeaderText = cellTexts[0];
-  if (!firstHeaderText) return;
+  if (!firstHeaderText) return false;
 
   let anchorStart = -1;
   for (let i = 0; i < content.length; i++) {
@@ -1233,7 +1331,7 @@ function replaceFlatParagraphsWithTable(
       break;
     }
   }
-  if (anchorStart === -1) return;
+  if (anchorStart === -1) return false;
 
   // From the anchor, consume consecutive paragraphs whose text either matches
   // a table cell value or is empty (blank lines between flattened cells).
@@ -1257,7 +1355,7 @@ function replaceFlatParagraphsWithTable(
   }
 
   // Require matching at least half the cell texts to avoid false positives.
-  if (matchedCells < Math.min(cellTexts.length, 3)) return;
+  if (matchedCells < Math.min(cellTexts.length, 3)) return false;
 
   // Skip trailing empty paragraphs after the table data.
   while (matchEnd < content.length && !paragraphText(content[matchEnd]!)) {
@@ -1266,6 +1364,49 @@ function replaceFlatParagraphsWithTable(
 
   // Replace the flat paragraphs [anchorStart..matchEnd) with the table node.
   content.splice(anchorStart, matchEnd - anchorStart, tableNode);
+  return true;
+}
+
+function replaceFlatTextWithPlainTable(text: string, tableNode: JSONContent): string {
+  const cellTexts = extractTableCellTexts(tableNode);
+  const tableText = tableNodeToPlainMarkdown(tableNode);
+  if (cellTexts.length === 0 || !tableText) return text;
+
+  const lines = text.split(/\r?\n/);
+  const cellTextSet = new Set(cellTexts);
+  const firstHeaderText = cellTexts[0];
+  if (!firstHeaderText) return text;
+
+  const anchorStart = lines.findIndex((line) => line.trim() === firstHeaderText);
+  if (anchorStart === -1) return text;
+
+  let matchEnd = anchorStart;
+  let matchedCells = 0;
+  while (matchEnd < lines.length) {
+    const line = lines[matchEnd]!.trim();
+    if (!line) {
+      matchEnd++;
+      continue;
+    }
+    if (cellTextSet.has(line)) {
+      matchEnd++;
+      matchedCells++;
+      continue;
+    }
+    break;
+  }
+
+  if (matchedCells < Math.min(cellTexts.length, 3)) return text;
+
+  while (matchEnd < lines.length && !lines[matchEnd]!.trim()) {
+    matchEnd++;
+  }
+
+  return cleanImportedText([
+    ...lines.slice(0, anchorStart),
+    tableText,
+    ...lines.slice(matchEnd),
+  ].join("\n"));
 }
 
 function emptyDocFallback(foundHeadings: boolean, raw: string) {

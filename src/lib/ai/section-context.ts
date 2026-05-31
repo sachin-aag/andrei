@@ -158,7 +158,11 @@ export function contextForPrompt(section: SectionType, content: unknown): string
     const fiveWhyCollapsed = collapseFiveWhyFields(
       content.fiveWhy as AnalyzeSection["fiveWhy"]
     );
-    pushTextBlock(lines, "5-Why", fiveWhyCollapsed.narrative);
+    pushTextBlock(
+      lines,
+      "5-Why",
+      richJsonToPlainText(fiveWhyCollapsed.narrative, { tableFormat: "markdown" })
+    );
     pushTextBlock(
       lines,
       "Investigation outcome",

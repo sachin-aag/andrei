@@ -492,6 +492,7 @@ type EnrichableSections = {
   measure?: { narrative?: JSONContent };
   improve?: { narrative?: JSONContent };
   analyze?: {
+    fiveWhy?: { narrative?: JSONContent };
     investigationOutcome?: JSONContent;
     rootCause?: { narrative?: JSONContent };
   };
@@ -502,6 +503,7 @@ function collectEnrichableDocs(sections: EnrichableSections): JSONContent[] {
     sections.define?.narrative,
     sections.measure?.narrative,
     sections.improve?.narrative,
+    sections.analyze?.fiveWhy?.narrative,
     sections.analyze?.investigationOutcome,
     sections.analyze?.rootCause?.narrative,
   ].filter((n): n is JSONContent => !!n && n.type === "doc");
