@@ -6,8 +6,7 @@ import {
 } from "@/providers/report-provider";
 import { useSectionSave } from "@/hooks/use-section-save";
 import { PlainTextSuggestionField } from "@/components/report/plain-text-suggestion-field";
-import { CriteriaChecklist, SectionShell } from "./section-shell";
-import { SECTION_GUIDANCE } from "@/lib/report-section-guidance";
+import { SectionShell } from "./section-shell";
 
 export function ControlEditor() {
   const { readOnly } = useReportData();
@@ -22,8 +21,6 @@ export function ControlEditor() {
       lastSavedAt={lastSavedAt}
       section="control"
     >
-      <CriteriaChecklist items={SECTION_GUIDANCE.control ?? []} ordered />
-
       <PlainTextSuggestionField
         section="control"
         contentPath="preventiveActions"

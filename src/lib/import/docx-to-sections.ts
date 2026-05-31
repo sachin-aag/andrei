@@ -677,7 +677,7 @@ function buildPlainTextPositionMap(doc: JSONContent): {
     }
 
     const children = node.content ?? [];
-    let childPos = pos + 1;
+    let childPos = node.type === "doc" ? pos : pos + 1;
     for (const child of children) {
       const size = walk(child, childPos);
       childPos += size;
@@ -694,7 +694,10 @@ function buildPlainTextPositionMap(doc: JSONContent): {
   return { text: chunks.join(""), positions };
 }
 
-function normalizedSearchIndex(haystack: string, needle: string): number {
+function normalizedSearchMatch(
+  haystack: string,
+  needle: string
+): { start: number; end: number } | null {
   const normalizedChars: string[] = [];
   const rawOffsets: number[] = [];
   let lastWasSpace = false;
@@ -715,9 +718,18 @@ function normalizedSearchIndex(haystack: string, needle: string): number {
   }
 
   const normalizedNeedle = needle.replace(/\s+/g, " ").trim().toLowerCase();
-  if (!normalizedNeedle) return -1;
+  if (!normalizedNeedle) return null;
   const idx = normalizedChars.join("").indexOf(normalizedNeedle);
-  return idx === -1 ? -1 : rawOffsets[idx] ?? -1;
+  if (idx === -1) return null;
+
+  const start = rawOffsets[idx] ?? -1;
+  const lastMatchedRaw = rawOffsets[idx + normalizedNeedle.length - 1] ?? -1;
+  if (start < 0 || lastMatchedRaw < start) return null;
+  return { start, end: lastMatchedRaw + 1 };
+}
+
+function normalizedSearchIndex(haystack: string, needle: string): number {
+  return normalizedSearchMatch(haystack, needle)?.start ?? -1;
 }
 
 function findRichAnchorRange(doc: JSONContent, anchorText: string): {
@@ -727,19 +739,18 @@ function findRichAnchorRange(doc: JSONContent, anchorText: string): {
   const needle = cleanImportedText(anchorText);
   if (!needle) return null;
   const { text, positions } = buildPlainTextPositionMap(doc);
-  const index = normalizedSearchIndex(text, needle);
-  if (index === -1) return null;
+  const match = normalizedSearchMatch(text, needle);
+  if (!match) return null;
 
-  const endIndex = Math.min(text.length, index + needle.length);
   let fromPos: number | null = null;
-  for (let i = index; i < positions.length; i++) {
+  for (let i = match.start; i < positions.length; i++) {
     if ((positions[i] ?? -1) >= 0) {
       fromPos = positions[i]!;
       break;
     }
   }
   let toPos: number | null = null;
-  for (let i = Math.max(index, endIndex - 1); i >= 0; i--) {
+  for (let i = Math.min(positions.length - 1, match.end - 1); i >= 0; i--) {
     if ((positions[i] ?? -1) >= 0) {
       toPos = positions[i]! + 1;
       break;
@@ -749,12 +760,41 @@ function findRichAnchorRange(doc: JSONContent, anchorText: string): {
   return { fromPos, toPos };
 }
 
+function groupDuplicateAnchorReplies(
+  comments: ImportedReportComment[]
+): ImportedReportComment[] {
+  const rootByAnchor = new Map<string, string>();
+
+  return comments.map((comment) => {
+    if (comment.parentExternalCommentId || !comment.anchorText) return comment;
+
+    const key = [
+      comment.section,
+      comment.contentPath ?? "",
+      comment.anchorText.replace(/\s+/g, " ").trim().toLowerCase(),
+    ].join("\u0000");
+    const rootExternalId = rootByAnchor.get(key);
+    if (!rootExternalId) {
+      rootByAnchor.set(key, comment.externalCommentId);
+      return comment;
+    }
+
+    return {
+      ...comment,
+      parentExternalCommentId: rootExternalId,
+      contentPath: null,
+      fromPos: null,
+      toPos: null,
+    };
+  });
+}
+
 function mapImportedWordComments(
   buffer: Buffer,
   sections: ImportedSections
 ): ImportedReportComment[] {
   const targets = buildCommentTargets(sections);
-  return extractWordCommentsFromDocxBuffer(buffer).map((comment) => {
+  const mapped = extractWordCommentsFromDocxBuffer(buffer).map((comment) => {
     const anchorText = cleanImportedText(comment.anchorText);
     for (const target of targets) {
       if (comment.section && target.section !== comment.section) continue;
@@ -807,6 +847,7 @@ function mapImportedWordComments(
       toPos: null,
     };
   });
+  return groupDuplicateAnchorReplies(mapped);
 }
 
 function parseToolsUsedFromDocxXml(buffer: Buffer): ImportedReportContent["toolsUsed"] | null {

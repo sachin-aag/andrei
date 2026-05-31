@@ -6,8 +6,7 @@ import {
 } from "@/providers/report-provider";
 import { useSectionSave } from "@/hooks/use-section-save";
 import { PlainTextSuggestionField } from "@/components/report/plain-text-suggestion-field";
-import { CriteriaChecklist, SectionShell } from "./section-shell";
-import { SECTION_GUIDANCE } from "@/lib/report-section-guidance";
+import { SectionShell } from "./section-shell";
 import { emptyDoc } from "@/lib/tiptap/rich-text";
 
 export function ImproveEditor() {
@@ -23,8 +22,6 @@ export function ImproveEditor() {
       lastSavedAt={lastSavedAt}
       section="improve"
     >
-      <CriteriaChecklist items={SECTION_GUIDANCE.improve ?? []} ordered />
-
       <PlainTextSuggestionField
         section="improve"
         contentPath="correctiveActions"

@@ -194,7 +194,7 @@ export function CommentCard({
         }
       }}
       className={cn(
-        "rounded-md border bg-[var(--card)] shadow-sm text-left transition-all overflow-hidden cursor-pointer",
+        "rounded-md border bg-[var(--card)] shadow-sm text-left transition-all cursor-pointer",
         active
           ? "border-amber-500 ring-2 ring-amber-400/30 bg-amber-50/60"
           : isHovered
@@ -215,32 +215,31 @@ export function CommentCard({
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs font-semibold truncate">
+            <span className="min-w-0 text-xs font-semibold break-words">
               {cardTitle}
             </span>
             {isImportedWordComment && (
-              <span className="text-[10px] text-sky-700 bg-sky-100 border border-sky-200 rounded px-1 py-0.5">
+              <span className="shrink-0 text-[10px] text-sky-700 bg-sky-100 border border-sky-200 rounded px-1 py-0.5">
                 Imported from Word
               </span>
             )}
             {root.locked && (
-              <span className="text-[10px] text-[var(--muted-foreground)]">
+              <span className="shrink-0 text-[10px] text-[var(--muted-foreground)]">
                 Locked
               </span>
             )}
             {root.status === "resolved" ? (
-              <span className="text-[10px] text-green-700 flex items-center gap-0.5">
+              <span className="shrink-0 text-[10px] text-green-700 flex items-center gap-0.5">
                 <Check className="size-3 shrink-0" />
                 Resolved
               </span>
             ) : (
-              <span className="text-[10px] text-amber-800">Open</span>
+              <span className="shrink-0 text-[10px] text-amber-800">Open</span>
             )}
             {!isAnchored && root.section && (
               <span
                 className={cn(
-                  "text-[10px] text-[var(--muted-foreground)] uppercase tracking-wide",
-                  !canDeleteRoot && "ml-auto"
+                  "shrink-0 text-[10px] text-[var(--muted-foreground)] uppercase tracking-wide"
                 )}
               >
                 {SECTION_LABELS[root.section] ?? root.section}
@@ -275,7 +274,7 @@ export function CommentCard({
               </button>
             )}
           </div>
-          <p className="text-xs text-[var(--foreground)] mt-1 whitespace-pre-wrap leading-snug">
+          <p className="text-xs text-[var(--foreground)] mt-1 whitespace-pre-wrap break-words leading-snug">
             {cardPreview}
           </p>
           <span className="text-[10px] text-[var(--muted-foreground)]">
@@ -377,7 +376,7 @@ export function CommentCard({
                         </button>
                       )}
                     </div>
-                    <p className="whitespace-pre-wrap pl-4 leading-snug">
+                    <p className="whitespace-pre-wrap break-words pl-4 leading-snug">
                       {r.content}
                     </p>
                   </li>
