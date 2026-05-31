@@ -1,5 +1,6 @@
 import {
   applyPlainTextEdit,
+  inferInsertPosition,
   locateUniqueSpan,
   withLeadingSpaceIfNeeded,
 } from "./locate-plain-text-edit";
@@ -53,6 +54,16 @@ export function buildPlainTextSuggestionPreview(
   }
 
   if (!del && ins) {
+    const inferredInsertAt = inferInsertPosition(value, ins);
+    if (inferredInsertAt !== null) {
+      const insert = withLeadingSpaceIfNeeded(value, inferredInsertAt, ins);
+      return [
+        { kind: "context", text: value.slice(0, inferredInsertAt) },
+        { kind: "insert", text: insert },
+        { kind: "context", text: value.slice(inferredInsertAt) },
+      ];
+    }
+
     const next = applyPlainTextEdit(value, {
       deleteText: "",
       insertText: ins,

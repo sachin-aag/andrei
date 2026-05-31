@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { comments, reports, reportSections } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import type { ImportedReportContent } from "@/lib/import/docx-to-sections";
+import { docxImportErrorPayload } from "@/lib/import/docx-errors";
 import { readDocxUpload } from "@/lib/import/docx-upload";
 import { docxBufferToImportedReportContent } from "@/lib/import/docx-to-sections";
 import { persistReportSourceDocx } from "@/lib/reports/persist-source-docx";
@@ -156,17 +157,8 @@ export async function POST(req: Request) {
           importedContent = await docxBufferToImportedReportContent(buf);
           sourceUpload = { buffer: buf, filename: file.name };
         } catch (e) {
-          const message = e instanceof Error ? e.message : "";
-          if (message.includes("too large") || message.includes("Only Word")) {
-            return NextResponse.json({ error: message }, { status: 400 });
-          }
-          return NextResponse.json(
-            {
-              error:
-                "Could not read that Word file. Save as .docx and try again, or create without a file.",
-            },
-            { status: 400 }
-          );
+          const { error, status } = docxImportErrorPayload(e, { createFlow: true });
+          return NextResponse.json({ error }, { status });
         }
       }
     } else {
@@ -239,8 +231,6 @@ export async function POST(req: Request) {
           { status: 500 }
         );
       }
-    } else {
-      await persistImportedComments(report.id, importedContent);
     }
 
     return NextResponse.json({ id: report.id, report });

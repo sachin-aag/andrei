@@ -183,6 +183,7 @@ export function PlainTextSuggestionField({
       baseOffset={baseOffset}
       focusedFromPos={focusedFromPos}
       wrapClassName={suggestionClass}
+      insideSuggestion
     />
   );
 

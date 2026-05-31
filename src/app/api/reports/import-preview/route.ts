@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/session";
+import { docxImportErrorPayload } from "@/lib/import/docx-errors";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -32,13 +33,7 @@ export async function POST(req: Request) {
       deviationNo: imported.header.deviationNo?.trim() ?? null,
     });
   } catch (e) {
-    const message = e instanceof Error ? e.message : "";
-    if (message.includes("too large") || message.includes("Only Word")) {
-      return NextResponse.json({ error: message }, { status: 400 });
-    }
-    return NextResponse.json(
-      { error: "Could not read that Word file. Save as .docx and try again." },
-      { status: 400 }
-    );
+    const { error, status } = docxImportErrorPayload(e);
+    return NextResponse.json({ error }, { status });
   }
 }

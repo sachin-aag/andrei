@@ -143,6 +143,9 @@ describe("evaluateSection", () => {
     expect(prompt).toContain(
       "Occurrence date/time and detection date/time are distinct facts"
     );
+    expect(prompt).toContain(
+      "equipment or instrument calibration deviation"
+    );
     expect(prompt).toContain("SCADA:");
     expect(prompt).toContain("Do not rewrite the report");
     expect(prompt).not.toMatch(/<example type="strong"/);

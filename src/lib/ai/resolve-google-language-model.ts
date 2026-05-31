@@ -196,23 +196,47 @@ export type ResolveGoogleLanguageModelOptions = {
   vertexLocation?: string;
 };
 
+function hasVertexWifConfig(): boolean {
+  return Boolean(
+    process.env.GCP_WIF_AUDIENCE?.trim() &&
+      process.env.GCP_SERVICE_ACCOUNT_EMAIL?.trim()
+  );
+}
+
+/** Production on Vercel: exchange OIDC for a Vertex-scoped token via WIF. */
+function canUseVertexWithWif(): boolean {
+  if (!hasVertexWifConfig()) return false;
+  return Boolean(process.env.VERCEL_OIDC_TOKEN?.trim() || process.env.VERCEL);
+}
+
+function shouldUseVertex(): boolean {
+  const vertexProject = process.env.GOOGLE_VERTEX_PROJECT?.trim();
+  if (!vertexProject) return false;
+  if (canUseVertexWithWif()) return true;
+  // Local escape hatch: direct AI Studio key (not Gateway free-tier routing).
+  if (process.env.GOOGLE_GENERATIVE_AI_API_KEY?.trim()) return false;
+  // Match production: Vertex + GCP billing. Do not route eval through AI Gateway
+  // when VERTEX is configured — Gateway free tier blocks gemini-3.1-flash-lite.
+  return true;
+}
+
 /**
  * Resolve a Google Gemini model for server-side AI calls.
  *
  * Priority order:
- * 1. `GOOGLE_VERTEX_PROJECT` set → Vertex AI (uses GCP credits, no API key).
- *    Auth source depends on env: WIF on Vercel when `GCP_WIF_AUDIENCE` +
- *    `GCP_SERVICE_ACCOUNT_EMAIL` are set, otherwise ADC for local dev.
+ * 1. `GOOGLE_VERTEX_PROJECT` → Vertex AI (production: WIF on Vercel; local: ADC via
+ *    `gcloud auth application-default login`). Skipped only when `GOOGLE_GENERATIVE_AI_API_KEY`
+ *    is set (local AI Studio fallback). Not replaced by `AI_GATEWAY_API_KEY` — eval models
+ *    like gemini-3.1-flash-lite are restricted on Gateway free tier.
  * 2. `GOOGLE_GENERATIVE_AI_API_KEY` → direct AI Studio key
- * 3. `AI_GATEWAY_API_KEY` → explicit Vercel AI Gateway key
+ * 3. `AI_GATEWAY_API_KEY` → Vercel AI Gateway (DOCX math extraction, etc.)
  * 4. On Vercel → OIDC via default gateway provider
  */
 export function resolveGoogleLanguageModel(
   googleModelId: string,
   options: ResolveGoogleLanguageModelOptions = {}
 ): LanguageModel {
-  const vertexProject = process.env.GOOGLE_VERTEX_PROJECT?.trim();
-  if (vertexProject) {
+  if (shouldUseVertex()) {
     const location =
       options.vertexLocation ??
       process.env.GOOGLE_VERTEX_LOCATION?.trim() ??

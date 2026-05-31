@@ -71,6 +71,10 @@ export const DEFINE_CRITERIA: CriterionDefinition[] = [
       "Is the initial scope of impact explicitly stated, including specific identifiers " +
       "such as batch numbers, equipment IDs, instrument IDs, affected departments, or " +
       "material names? " +
+      "These categories are alternatives based on the deviation type; an equipment or " +
+      "instrument-only deviation can satisfy scope by naming the affected equipment or " +
+      "instrument with its ID, without also naming product/material/batches when those " +
+      "are not implicated. " +
       "The scope must clearly delineate what is affected and what is not " +
       "(e.g., 'The scope of the deviation was limited to Batch No. B092542503'). " +
       "Vague scope statements without specific identifiers are insufficient. " +

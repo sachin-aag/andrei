@@ -6,7 +6,7 @@ import type { SectionType } from "@/db/schema";
  * into the per-section content hash so the next eval pass refreshes all
  * sections after a prompt update.
  */
-export const PROMPT_VERSION = "2026-05-29-45-no-pa-rationale-guard";
+export const PROMPT_VERSION = "2026-05-31-define-equipment-scope";
 
 /**
  * Common reviewer rules, scoring system, scope rule, and prompt-injection guard.
@@ -60,6 +60,11 @@ KEY RULES:
 - Occurrence date/time and detection date/time are distinct facts. Mark gaps when the section collapses them or omits one required timestamp.
 - Bare references such as "as per SOP" are insufficient when the criterion asks for the governing SOP No. and section.
 - Department-only locations are weaker than specific room/area codes.
+- For define.initial_scope, the slash-list (product/material/equipment/system/batches)
+  is an alternatives list, not a requirement to mention every category. For an
+  equipment or instrument calibration deviation, naming the affected instrument
+  or equipment with a specific ID is sufficient scope unless the section itself
+  indicates product, material, or batch impact also needs to be scoped.
 - Personnel are sufficiently identified by Emp. ID; names, titles, and job functions are not required.
 - SCADA: When the deviation concerns a SCADA system, credit scope and event framing when the narrative names the system (e.g., AGLTS SCADA) and the affected audit-trail periods or functions. Do not mark partially_met or not_met solely because a site equipment ID (E/PR/xxx) or SCADA software version number is absent.`;
 
