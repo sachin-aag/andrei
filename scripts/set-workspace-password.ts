@@ -8,15 +8,35 @@
  *
  * If the email is not in workspace_users, a new row is created (default role: engineer).
  *
- * By default loads DATABASE_URL from .env then .env.local (local overrides).
- * Use --env-file <path> to load a single env file instead (skips .env.local).
+ * Default: loads DATABASE_URL from .env then .env.local (local overrides).
+ * --env-file <path>: loads only the specified file (skips .env.local).
  */
-import { createId } from "@paralleldrive/cuid2";
 import { config as loadEnv } from "dotenv";
-import { eq } from "drizzle-orm";
-import { db } from "@/db";
-import { workspaceUsers } from "@/db/schema";
-import { hashPassword } from "@/lib/auth/password";
+
+// ---------------------------------------------------------------------------
+// 1. Parse --env-file BEFORE any @/db imports (db reads DATABASE_URL on import)
+// ---------------------------------------------------------------------------
+
+function extractEnvFile(argv: string[]): string | undefined {
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === "--env-file" && argv[i + 1]) return argv[i + 1];
+    if (argv[i]?.startsWith("--env-file=")) return argv[i].slice("--env-file=".length);
+  }
+  return undefined;
+}
+
+const envFile = extractEnvFile(process.argv);
+
+if (envFile) {
+  loadEnv({ path: envFile, override: true });
+} else {
+  loadEnv({ path: ".env" });
+  loadEnv({ path: ".env.local", override: true });
+}
+
+// ---------------------------------------------------------------------------
+// 2. Now it's safe to import modules that read DATABASE_URL
+// ---------------------------------------------------------------------------
 
 type UserRole = "engineer" | "manager";
 
@@ -102,29 +122,14 @@ function scriptArgv(): string[] {
     );
 }
 
-function loadEnvFiles(argv: string[]) {
-  const envFileIdx = argv.indexOf("--env-file");
-  const envFileEqArg = argv.find((a) => a.startsWith("--env-file="));
-
-  if (envFileIdx !== -1 || envFileEqArg) {
-    const file = envFileEqArg
-      ? envFileEqArg.slice("--env-file=".length)
-      : argv[envFileIdx + 1];
-    if (!file) {
-      console.error("--env-file requires a path (e.g. --env-file .env)");
-      process.exit(1);
-    }
-    loadEnv({ path: file, override: true });
-    console.log(`Loaded env from: ${file} (skipping .env.local)`);
-  } else {
-    loadEnv({ path: ".env" });
-    loadEnv({ path: ".env.local", override: true });
-  }
-}
-
-loadEnvFiles(process.argv.slice(2));
-
 async function main() {
+  // Dynamic imports — db reads DATABASE_URL which is now set
+  const { createId } = await import("@paralleldrive/cuid2");
+  const { eq } = await import("drizzle-orm");
+  const { db } = await import("@/db");
+  const { workspaceUsers } = await import("@/db/schema");
+  const { hashPassword } = await import("@/lib/auth/password");
+
   const { email, password, role, roleSpecified } = parseArgs(scriptArgv());
 
   if (!email || !password) {
@@ -145,10 +150,9 @@ async function main() {
     process.exit(1);
   }
 
+  const source = envFile ? envFile : ".env + .env.local";
+  console.log(`Env loaded from: ${source}`);
   console.log(`Target database: ${formatDatabaseTarget(databaseUrl)}`);
-  console.log(
-    "Tip: production uses Neon main — put that URL in .env.local, or run: vercel env pull .env.local --environment=production"
-  );
 
   if (password.length < 8) {
     console.error("Password must be at least 8 characters.");
