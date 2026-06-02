@@ -83,19 +83,47 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
     },
     async jwt({ token, user }) {
+      const email =
+        user?.email ??
+        (typeof token.email === "string" ? token.email : undefined);
+      let workspaceUserId = token.workspaceUserId as string | undefined;
+
       if (user?.email) {
         const wsUser = await db.query.workspaceUsers.findFirst({
           where: eq(workspaceUsers.email, user.email),
+          columns: { id: true },
+        });
+        if (wsUser) workspaceUserId = wsUser.id;
+      }
+
+      if (workspaceUserId) {
+        const wsUser = await db.query.workspaceUsers.findFirst({
+          where: eq(workspaceUsers.id, workspaceUserId),
+          columns: { id: true, mustChangePassword: true },
         });
         if (wsUser) {
           token.workspaceUserId = wsUser.id;
+          token.mustChangePassword = wsUser.mustChangePassword;
+        }
+      } else if (email) {
+        const wsUser = await db.query.workspaceUsers.findFirst({
+          where: eq(workspaceUsers.email, email),
+          columns: { id: true, mustChangePassword: true },
+        });
+        if (wsUser) {
+          token.workspaceUserId = wsUser.id;
+          token.mustChangePassword = wsUser.mustChangePassword;
         }
       }
+
       return token;
     },
     async session({ session, token }) {
       if (token.workspaceUserId) {
         session.user.workspaceUserId = token.workspaceUserId as string;
+      }
+      if (typeof token.mustChangePassword === "boolean") {
+        session.user.mustChangePassword = token.mustChangePassword;
       }
       return session;
     },

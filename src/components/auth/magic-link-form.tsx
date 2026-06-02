@@ -6,6 +6,7 @@ import { ArrowRight, Loader2, MailCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { EmailDeliveryHint } from "@/components/auth/email-delivery-hint";
 
 export function MagicLinkForm({ redirectTo }: { redirectTo?: string }) {
   const [email, setEmail] = useState("");
@@ -45,6 +46,7 @@ export function MagicLinkForm({ redirectTo }: { redirectTo?: string }) {
           We sent a sign-in link to <strong>{email}</strong>. Click it to sign
           in.
         </p>
+        <EmailDeliveryHint email={email} />
         <button
           type="button"
           className="text-sm text-[var(--brand-600)] hover:underline"

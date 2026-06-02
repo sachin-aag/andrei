@@ -54,6 +54,16 @@ npm run dev
 # → http://localhost:3000
 ```
 
+### Admin: set a temporary password (when email is blocked)
+
+For users already in `workspace_users`, set a password without sending mail:
+
+```bash
+pnpm run set-workspace-password -- user@mjbiopharm.com 'TemporaryPass123!'
+```
+
+Use the **production** `DATABASE_URL` for real MJ users. On first login they must choose a new password (different from the temporary one). See [docs/email-deliverability.md](docs/email-deliverability.md).
+
 On first load you'll be redirected to `/login`. Pick any mock user:
 
 | Name           | Role     | Employee ID |

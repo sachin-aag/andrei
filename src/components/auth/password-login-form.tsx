@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import Link from "next/link";
+import { EmailDeliveryHint } from "@/components/auth/email-delivery-hint";
 
 type Step =
   | { kind: "email" }
@@ -98,6 +99,7 @@ export function PasswordLoginForm({ redirectTo }: { redirectTo?: string }) {
           We sent a sign-in link to <strong>{step.email}</strong>. Click it to
           sign in.
         </p>
+        <EmailDeliveryHint email={step.email} />
         <button
           type="button"
           className="text-sm text-[var(--brand-600)] hover:underline"
@@ -132,12 +134,20 @@ export function PasswordLoginForm({ redirectTo }: { redirectTo?: string }) {
         </div>
         <div className="rounded-lg border border-[var(--border)] p-4 space-y-3">
           <p className="text-sm">
-            No password set for this account. You can set one up or sign in with
-            a magic link.
+            No password set for this account. If your company blocks sign-in
+            email, set a password or ask your admin for one.
           </p>
           <div className="flex flex-col gap-2">
+            <Button type="button" className="w-full h-11" asChild>
+              <Link
+                href={`/forgot-password?email=${encodeURIComponent(step.email)}&setup=1`}
+              >
+                Set up a password
+              </Link>
+            </Button>
             <Button
               type="button"
+              variant="outline"
               className="w-full h-11"
               disabled={pending}
               onClick={() => sendMagicLink(step.email)}
@@ -147,14 +157,8 @@ export function PasswordLoginForm({ redirectTo }: { redirectTo?: string }) {
               ) : (
                 <ArrowRight className="mr-2 size-4" />
               )}
-              Send magic link
+              Send magic link (email may be blocked)
             </Button>
-            <Link
-              href={`/forgot-password?email=${encodeURIComponent(step.email)}&setup=1`}
-              className="text-sm text-center text-[var(--brand-600)] hover:underline"
-            >
-              Set up a password
-            </Link>
           </div>
         </div>
       </div>

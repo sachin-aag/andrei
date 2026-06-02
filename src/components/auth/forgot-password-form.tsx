@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import Link from "next/link";
+import { EmailDeliveryHint } from "@/components/auth/email-delivery-hint";
 
 export function ForgotPasswordForm({ defaultEmail }: { defaultEmail?: string }) {
   const [email, setEmail] = useState(defaultEmail ?? "");
@@ -39,6 +40,7 @@ export function ForgotPasswordForm({ defaultEmail }: { defaultEmail?: string }) 
           If an account exists for <strong>{email}</strong>, we sent a password
           reset link. Check your inbox.
         </p>
+        <EmailDeliveryHint email={email} />
         <Link
           href="/login"
           className="text-sm text-[var(--brand-600)] hover:underline inline-block"
