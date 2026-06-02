@@ -18,7 +18,7 @@ Andrei sends auth email through **Resend** (`AUTH_RESEND_KEY`, `AUTH_EMAIL_FROM`
 
 Users can also use **Set up a password** on the login flow, but that still sends a reset email — use the script when mail is blocked.
 
-**Requirements:** `DATABASE_URL` must point at the same database as production (Neon `main` for real users). The user must already exist in `workspace_users`.
+**Requirements:** `DATABASE_URL` must point at the same database as production (Neon `main` for real users). If the email is not in `workspace_users`, the script creates a new engineer account (display name derived from the email address).
 
 ## Fixing delivery (longer term)
 

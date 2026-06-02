@@ -56,7 +56,7 @@ npm run dev
 
 ### Admin: set a temporary password (when email is blocked)
 
-For users already in `workspace_users`, set a password without sending mail:
+Set a password without sending mail (creates a new `workspace_users` row if the email is missing):
 
 ```bash
 pnpm run set-workspace-password -- user@mjbiopharm.com 'TemporaryPass123!'
