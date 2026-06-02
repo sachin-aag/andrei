@@ -3,18 +3,16 @@
 import { useState, useTransition } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Loader2, MailCheck, ChevronLeft } from "lucide-react";
+import { ArrowRight, Loader2, ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import Link from "next/link";
-import { EmailDeliveryHint } from "@/components/auth/email-delivery-hint";
 
 type Step =
   | { kind: "email" }
   | { kind: "password"; email: string }
-  | { kind: "no-password"; email: string }
-  | { kind: "magic-link-sent"; email: string };
+  | { kind: "no-password"; email: string };
 
 export function PasswordLoginForm({ redirectTo }: { redirectTo?: string }) {
   const router = useRouter();
@@ -77,45 +75,6 @@ export function PasswordLoginForm({ redirectTo }: { redirectTo?: string }) {
     });
   };
 
-  const sendMagicLink = (targetEmail: string) => {
-    setError(null);
-    startTransition(async () => {
-      await signIn("resend", {
-        email: targetEmail,
-        redirectTo: redirectTo ?? "/",
-        redirect: false,
-      });
-      setStep({ kind: "magic-link-sent", email: targetEmail });
-    });
-  };
-
-  // ── Magic link sent confirmation ──
-  if (step.kind === "magic-link-sent") {
-    return (
-      <div className="text-center space-y-3 py-4">
-        <MailCheck className="size-10 mx-auto text-[var(--brand-600)]" />
-        <h3 className="font-semibold">Check your email</h3>
-        <p className="text-sm text-[var(--muted-foreground)]">
-          We sent a sign-in link to <strong>{step.email}</strong>. Click it to
-          sign in.
-        </p>
-        <EmailDeliveryHint email={step.email} />
-        <button
-          type="button"
-          className="text-sm text-[var(--brand-600)] hover:underline"
-          onClick={() => {
-            setStep({ kind: "email" });
-            setEmail("");
-            setPassword("");
-          }}
-        >
-          Use a different email
-        </button>
-      </div>
-    );
-  }
-
-  // ── No password set ──
   if (step.kind === "no-password") {
     return (
       <div className="space-y-4">
@@ -134,38 +93,21 @@ export function PasswordLoginForm({ redirectTo }: { redirectTo?: string }) {
         </div>
         <div className="rounded-lg border border-[var(--border)] p-4 space-y-3">
           <p className="text-sm">
-            No password set for this account. If your company blocks sign-in
-            email, set a password or ask your admin for one.
+            No password is set for this account. Ask your admin for a temporary
+            password, or set one below if reset email delivery works for you.
           </p>
-          <div className="flex flex-col gap-2">
-            <Button type="button" className="w-full h-11" asChild>
-              <Link
-                href={`/forgot-password?email=${encodeURIComponent(step.email)}&setup=1`}
-              >
-                Set up a password
-              </Link>
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              className="w-full h-11"
-              disabled={pending}
-              onClick={() => sendMagicLink(step.email)}
+          <Button type="button" className="w-full h-11" asChild>
+            <Link
+              href={`/forgot-password?email=${encodeURIComponent(step.email)}&setup=1`}
             >
-              {pending ? (
-                <Loader2 className="mr-2 size-4 animate-spin" />
-              ) : (
-                <ArrowRight className="mr-2 size-4" />
-              )}
-              Send magic link (email may be blocked)
-            </Button>
-          </div>
+              Set up a password
+            </Link>
+          </Button>
         </div>
       </div>
     );
   }
 
-  // ── Password entry ──
   if (step.kind === "password") {
     return (
       <div className="space-y-4">
@@ -214,27 +156,16 @@ export function PasswordLoginForm({ redirectTo }: { redirectTo?: string }) {
           )}
           Sign in
         </Button>
-        <div className="flex items-center justify-between">
-          <Link
-            href={`/forgot-password?email=${encodeURIComponent(step.email)}`}
-            className="text-sm text-[var(--muted-foreground)] hover:underline"
-          >
-            Forgot password?
-          </Link>
-          <button
-            type="button"
-            className="text-sm text-[var(--brand-600)] hover:underline disabled:opacity-50"
-            disabled={pending}
-            onClick={() => sendMagicLink(step.email)}
-          >
-            Use magic link
-          </button>
-        </div>
+        <Link
+          href={`/forgot-password?email=${encodeURIComponent(step.email)}`}
+          className="text-sm text-[var(--muted-foreground)] hover:underline"
+        >
+          Forgot password?
+        </Link>
       </div>
     );
   }
 
-  // ── Email entry (step 1) ──
   return (
     <div className="space-y-4">
       <div className="space-y-2">

@@ -10,6 +10,7 @@ Andrei sends auth email through **Resend** (`AUTH_RESEND_KEY`, `AUTH_EMAIL_FROM`
 
    ```bash
    pnpm run set-workspace-password -- user@mjbiopharm.com 'TemporaryPass123!'
+   pnpm run set-workspace-password -- user@mjbiopharm.com 'TemporaryPass123!' --role manager
    ```
 
 2. The user signs in at https://andrei-v2.vercel.app/login with **email + temporary password**.
@@ -18,7 +19,7 @@ Andrei sends auth email through **Resend** (`AUTH_RESEND_KEY`, `AUTH_EMAIL_FROM`
 
 Users can also use **Set up a password** on the login flow, but that still sends a reset email — use the script when mail is blocked.
 
-**Requirements:** `DATABASE_URL` must point at the same database as production (Neon `main` for real users). If the email is not in `workspace_users`, the script creates a new engineer account (display name derived from the email address).
+**Requirements:** `DATABASE_URL` must point at the same database as production (Neon `main` for real users). The script logs the target host/database on startup — there is no separate branch flag; control it by setting `DATABASE_URL` in `.env.local` (see [database-environments.md](./database-environments.md)). Optional `--role engineer|manager` (default `engineer` for new users; updates role when flag is passed for existing users). New users get a display name derived from the email address.
 
 ## Fixing delivery (longer term)
 
