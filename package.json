@@ -27,10 +27,10 @@
     "db:local:setup": "docker compose up -d && sleep 3 && drizzle-kit push --force",
     "db:local:reset": "docker compose down -v && docker compose up -d && sleep 3 && drizzle-kit push --force",
     "db:studio": "drizzle-kit studio",
+    "set-workspace-password": "tsx scripts/set-workspace-password.ts",
     "sample-eval-report": "tsx scripts/bulk-sample-evaluation-report.ts",
     "seed-criteria-review": "tsx --env-file=.env --env-file=.env.local scripts/seed-criteria-review-dataset.ts",
-    "clear-criteria-review-reviewers": "tsx --env-file=.env --env-file=.env.local scripts/clear-criteria-review-reviewers.ts",
-    "set-workspace-password": "tsx --env-file=.env --env-file=.env.local scripts/set-workspace-password.ts"
+    "clear-criteria-review-reviewers": "tsx --env-file=.env --env-file=.env.local scripts/clear-criteria-review-reviewers.ts"
   },
   "dependencies": {
     "@ai-sdk/gateway": "^3.0.104",

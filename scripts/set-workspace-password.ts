@@ -4,11 +4,12 @@
  *
  *   pnpm run set-workspace-password -- user@mjbiopharm.com 'TemporaryPass123!'
  *   pnpm run set-workspace-password -- user@mjbiopharm.com 'TemporaryPass123!' --role manager
+ *   pnpm run set-workspace-password -- user@mjbiopharm.com 'TemporaryPass123!' --env-file .env
  *
  * If the email is not in workspace_users, a new row is created (default role: engineer).
  *
- * Uses DATABASE_URL from .env then .env.local (see docs/database-environments.md).
- * There is no Neon "branch" flag — whichever connection string is in DATABASE_URL wins.
+ * By default loads DATABASE_URL from .env then .env.local (local overrides).
+ * Use --env-file <path> to load a single env file instead (skips .env.local).
  */
 import { createId } from "@paralleldrive/cuid2";
 import { config as loadEnv } from "dotenv";
@@ -56,6 +57,11 @@ function parseArgs(argv: string[]) {
       role = parseRoleValue(arg.slice("--role=".length));
       continue;
     }
+    if (arg === "--env-file") {
+      i++;
+      continue;
+    }
+    if (arg.startsWith("--env-file=")) continue;
     positionals.push(arg);
   }
 
@@ -96,15 +102,34 @@ function scriptArgv(): string[] {
     );
 }
 
-loadEnv({ path: ".env" });
-loadEnv({ path: ".env.local", override: true });
+function loadEnvFiles(argv: string[]) {
+  const envFileIdx = argv.indexOf("--env-file");
+  const envFileEqArg = argv.find((a) => a.startsWith("--env-file="));
+
+  if (envFileIdx !== -1 || envFileEqArg) {
+    const file = envFileEqArg
+      ? envFileEqArg.slice("--env-file=".length)
+      : argv[envFileIdx + 1];
+    if (!file) {
+      console.error("--env-file requires a path (e.g. --env-file .env)");
+      process.exit(1);
+    }
+    loadEnv({ path: file, override: true });
+    console.log(`Loaded env from: ${file} (skipping .env.local)`);
+  } else {
+    loadEnv({ path: ".env" });
+    loadEnv({ path: ".env.local", override: true });
+  }
+}
+
+loadEnvFiles(process.argv.slice(2));
 
 async function main() {
   const { email, password, role, roleSpecified } = parseArgs(scriptArgv());
 
   if (!email || !password) {
     console.error(
-      "Usage: pnpm run set-workspace-password -- <email> <password> [--role engineer|manager]"
+      "Usage: pnpm run set-workspace-password -- <email> <password> [--role engineer|manager] [--env-file .env]"
     );
     process.exit(1);
   }
