@@ -50,7 +50,7 @@ export async function POST(req: Request) {
 
   await db
     .update(workspaceUsers)
-    .set({ passwordHash: newHash })
+    .set({ passwordHash: newHash, mustChangePassword: false })
     .where(eq(workspaceUsers.email, normalizedEmail));
 
   // Mark token as used

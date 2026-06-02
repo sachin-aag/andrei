@@ -77,7 +77,8 @@ export default async function LoginPage({
               Sign in to your workspace
             </h1>
             <p className="text-sm text-[var(--muted-foreground)] mt-2">
-              Enter your work email to get started.
+              Enter your work email and password. Contact your admin if you need
+              access or a temporary password.
             </p>
           </div>
           <PasswordLoginForm redirectTo={callbackUrl ?? "/"} />

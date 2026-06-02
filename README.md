@@ -54,6 +54,17 @@ npm run dev
 # → http://localhost:3000
 ```
 
+### Admin: set a temporary password (when email is blocked)
+
+Set a password without sending mail (creates a new `workspace_users` row if the email is missing):
+
+```bash
+pnpm run set-workspace-password -- user@mjbiopharm.com 'TemporaryPass123!'
+pnpm run set-workspace-password -- user@mjbiopharm.com 'TemporaryPass123!' --role manager
+```
+
+The script prints which database `DATABASE_URL` points at. For real MJ users, use the **production** Neon `main` URL in `.env.local` (or `vercel env pull .env.local --environment=production`). On first login they must choose a new password (different from the temporary one). See [docs/email-deliverability.md](docs/email-deliverability.md).
+
 On first load you'll be redirected to `/login`. Pick any mock user:
 
 | Name           | Role     | Employee ID |
