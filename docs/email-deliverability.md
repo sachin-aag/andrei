@@ -33,6 +33,34 @@ In [Resend → Domains](https://resend.com/domains), add the sending domain and 
 
 A mailbox like `you@andreihealth.com` does **not** by itself fix Resend delivery — DNS for the domain in Resend does.
 
+#### DMARC policy (`_dmarc` TXT)
+
+DMARC is a single TXT record at `_dmarc` (e.g. `_dmarc.andreihealth.com`). It does not live in Resend — edit it at your DNS host.
+
+| Policy | Meaning | When to use |
+|--------|---------|-------------|
+| `p=none` | Monitor only; failing mail is not blocked by DMARC | First 3–7 days after SPF/DKIM verify |
+| `p=quarantine` | Failing mail should go to spam/junk | After Resend shows **verified** and test magic links deliver |
+| `p=reject` | Failing mail rejected outright | Only after weeks of clean reports at `p=quarantine` |
+
+**Example — monitoring (start here):**
+
+```text
+v=DMARC1; p=none; rua=mailto:dmarc-reports@andreihealth.com
+```
+
+**Example — quarantine (reasonable after a few days of verified sending):**
+
+```text
+v=DMARC1; p=quarantine; rua=mailto:dmarc-reports@andreihealth.com; adkim=s; aspf=s
+```
+
+Replace the `rua` address with a mailbox you read (or omit `rua` if you do not want aggregate reports).
+
+Before `p=quarantine`, confirm in Resend → **Domains** that SPF and DKIM are **verified**, send a production magic link, and check **Emails** for delivered (not bounce). If you use **Google Workspace** for `@andreihealth.com`, enable DKIM in Google Admin too — DMARC applies to all mail using your domain, not only Resend.
+
+`p=quarantine` does not break legitimate Resend or Gmail mail when SPF/DKIM align; it mainly affects spoofed or misconfigured senders.
+
 ### 2. Vercel environment (Production)
 
 | Variable | Example |
