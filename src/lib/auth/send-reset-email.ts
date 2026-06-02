@@ -1,3 +1,5 @@
+import { authBaseUrl } from "@/lib/auth/auth-base-url";
+
 /**
  * Sends a password-reset email via the Resend HTTP API.
  * Reuses the same AUTH_RESEND_KEY and AUTH_EMAIL_FROM used by NextAuth's Resend provider.
@@ -7,13 +9,7 @@ export async function sendResetEmail(email: string, token: string) {
   if (!apiKey) throw new Error("AUTH_RESEND_KEY is not set");
 
   const from = process.env.AUTH_EMAIL_FROM ?? "noreply@andreihealth.com";
-  const baseUrl =
-    process.env.AUTH_URL ??
-    (process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
-      : "http://localhost:3000");
-
-  const resetUrl = `${baseUrl}/reset-password?token=${encodeURIComponent(token)}&email=${encodeURIComponent(email)}`;
+  const resetUrl = `${authBaseUrl()}/reset-password?token=${encodeURIComponent(token)}&email=${encodeURIComponent(email)}`;
 
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
