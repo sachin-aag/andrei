@@ -30,6 +30,7 @@ import {
 import { SECTION_LABELS } from "@/types/sections";
 import type { CommentRecord } from "@/types/report";
 import type { SectionType } from "@/db/schema";
+import { captureEvent } from "@/lib/analytics/events";
 
 function queryFieldAnchor(section: SectionType, contentPath: string): HTMLElement | null {
   const value = `${section}.${contentPath}`;
@@ -147,6 +148,11 @@ export function CommentCard({
         return;
       }
       const data = await res.json();
+      if (status === "resolved") {
+        captureEvent("comment_resolved", { commentId: root.id, reportId: report.id });
+      } else if (status === "dismissed") {
+        captureEvent("comment_dismissed", { commentId: root.id, reportId: report.id });
+      }
       // Dismissed comments drop out of the gutter entirely.
       if (status === "dismissed") {
         setComments((prev) => prev.filter((c) => c.id !== root.id));

@@ -12,6 +12,7 @@ import {
 import { cn } from "@/lib/utils";
 import { SECTION_LABELS } from "@/types/sections";
 import type { SectionType } from "@/db/schema";
+import { captureEvent } from "@/lib/analytics/events";
 
 /**
  * Pinned-at-top-of-section card that lets a manager (review mode) start a new
@@ -45,6 +46,7 @@ export function SectionCommentComposer({ section }: { section: SectionType }) {
         return;
       }
       const data = await res.json();
+      captureEvent("comment_created", { section, reportId: report.id });
       setComments((prev) => [...prev, data.comment]);
       setActiveAnchorId(data.comment.id);
       setDraft("");

@@ -88,6 +88,7 @@
     "omml2mathml": "^1.3.0",
     "pg": "8.8.0",
     "pizzip": "^3.2.0",
+    "posthog-js": "^1.379.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "sonner": "^2.0.7",
