@@ -1,6 +1,7 @@
 "use client";
 
 import { Check, Loader2, X } from "lucide-react";
+import { captureEvent } from "@/lib/analytics/events";
 
 export function SuggestionInlineActions({
   suggestionId,
@@ -38,7 +39,10 @@ export function SuggestionInlineActions({
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
-          if (!acceptBusy) onAccept();
+          if (!acceptBusy) {
+            captureEvent("ai_suggestion_accepted", { suggestionId });
+            onAccept();
+          }
         }}
       >
         {pending ? (
@@ -58,7 +62,10 @@ export function SuggestionInlineActions({
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
-          if (!dismissBusy) onDismiss();
+          if (!dismissBusy) {
+            captureEvent("ai_suggestion_dismissed", { suggestionId });
+            onDismiss();
+          }
         }}
       >
         <X className="size-3.5" />

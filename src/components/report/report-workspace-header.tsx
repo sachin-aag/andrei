@@ -19,6 +19,7 @@ import type { WorkspaceMode } from "@/providers/report-provider";
 import type { ReportRecord } from "@/types/report";
 import { RunAllEvaluationButton } from "./section-status-pill";
 import { StatusBadge } from "./status-badge";
+import { captureEvent } from "@/lib/analytics/events";
 
 type ReportWorkspaceHeaderProps = {
   report: ReportRecord;
@@ -111,6 +112,7 @@ export function ReportWorkspaceHeader({
             href={`/api/reports/${report.id}/export`}
             target="_blank"
             rel="noreferrer"
+            onClick={() => captureEvent("report_exported", { reportId: report.id })}
           >
             <Download className="size-4" aria-hidden="true" />
             Export DOCX

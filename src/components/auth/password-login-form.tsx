@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import Link from "next/link";
+import { captureEvent } from "@/lib/analytics/events";
 
 type Step =
   | { kind: "email" }
@@ -70,6 +71,7 @@ export function PasswordLoginForm({ redirectTo }: { redirectTo?: string }) {
         setError("Invalid password. Please try again.");
         return;
       }
+      captureEvent("user_logged_in");
       router.push(redirectTo ?? "/");
       router.refresh();
     });

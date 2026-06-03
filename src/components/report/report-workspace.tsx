@@ -28,6 +28,7 @@ import {
 } from "@/lib/comments/navigate";
 import { EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
 import { REPORT_WORKSPACE_SECTIONS } from "@/types/sections";
+import { captureEvent } from "@/lib/analytics/events";
 
 export type { WorkspaceMode };
 
@@ -162,6 +163,7 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
         toast.error("Failed to submit");
         return;
       }
+      captureEvent("report_submitted", { reportId: report.id });
       toast.success("Report submitted for review");
       warnIfPlaceholders();
       await refresh();
@@ -179,6 +181,7 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
         toast.error("Failed to approve");
         return;
       }
+      captureEvent("report_approved", { reportId: report.id });
       toast.success("Report approved");
       warnIfPlaceholders();
       await refresh();
@@ -196,6 +199,7 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
         toast.error("Failed to return feedback");
         return;
       }
+      captureEvent("report_feedback_sent", { reportId: report.id });
       toast.success("Feedback returned to author");
       await refresh();
       router.refresh();

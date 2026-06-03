@@ -24,6 +24,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import type { WorkspaceUser } from "@/lib/auth/workspace-user";
+import { captureEvent } from "@/lib/analytics/events";
 
 type CreateReportButtonProps = {
   managers: Pick<WorkspaceUser, "id" | "name" | "title">[];
@@ -107,6 +108,10 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
         return;
       }
       const data = (await res.json()) as { id: string };
+      captureEvent("report_created", {
+        reportId: data.id,
+        fromDocx: !!draftFile,
+      });
       toast.success("Report created");
       setOpen(false);
       resetForm();

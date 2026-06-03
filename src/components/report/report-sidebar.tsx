@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useReportPlaceholders, useReportComments } from "@/providers/report-provider";
+import { captureEvent } from "@/lib/analytics/events";
 import { PlaceholdersPanelContent } from "./placeholders-panel";
 import { CriteriaPanelContent, CommentsPanelContent } from "./criteria-sheet";
 import type { SectionType } from "@/db/schema";
@@ -120,6 +121,7 @@ export function ReportSidebar({
                 type="button"
                 onClick={() => {
                   if (collapsed) onToggleCollapse();
+                  captureEvent("sidebar_tab_changed", { tab: tab.value });
                   onTabChange(tab.value);
                 }}
                 className={cn(
@@ -145,7 +147,10 @@ export function ReportSidebar({
             <button
               key={tab.value}
               type="button"
-              onClick={() => onTabChange(tab.value)}
+              onClick={() => {
+                captureEvent("sidebar_tab_changed", { tab: tab.value });
+                onTabChange(tab.value);
+              }}
               className={cn(
                 "relative flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border transition-colors",
                 activeTab === tab.value

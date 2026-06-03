@@ -21,6 +21,7 @@ import {
 import { EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
 import { canSuggestFixes } from "@/lib/ai/suggestion-gating";
 import { SECTION_LABELS } from "@/types/sections";
+import { captureEvent } from "@/lib/analytics/events";
 
 const STATUS_LABEL = {
   met: "All criteria met",
@@ -197,7 +198,10 @@ export function SectionRunEvaluationButton({ section }: { section: SectionType }
       primary={isRunning ? "Running…" : "Run criteria"}
       disabled={isEvaluating}
       spinning={isRunning}
-      onClick={() => runEvaluation(section)}
+      onClick={() => {
+        captureEvent("ai_evaluation_run", { section, scope: "single" });
+        runEvaluation(section);
+      }}
     />
   );
 }
@@ -231,7 +235,10 @@ export function SectionSuggestFixesButton({ section }: { section: SectionType })
       primary={isRunning ? "Suggesting…" : "Suggest fixes"}
       disabled={!enabled}
       spinning={isRunning}
-      onClick={() => generateSuggestions(section)}
+      onClick={() => {
+        captureEvent("ai_suggestion_generated", { section });
+        generateSuggestions(section);
+      }}
     />
   );
 }
@@ -282,7 +289,10 @@ export function RunAllEvaluationButton({
         variant={variant}
         className={cn("gap-1.5", className)}
         disabled={isEvaluating}
-        onClick={() => runEvaluation()}
+        onClick={() => {
+          captureEvent("ai_evaluation_run", { scope: "all" });
+          runEvaluation();
+        }}
         title={title}
       >
         {icon}
@@ -301,7 +311,10 @@ export function RunAllEvaluationButton({
         className
       )}
       disabled={isEvaluating}
-      onClick={() => runEvaluation()}
+      onClick={() => {
+        captureEvent("ai_evaluation_run", { scope: "all" });
+        runEvaluation();
+      }}
       title={title}
     >
       <span className="flex items-center justify-center gap-1.5 text-sm font-medium">
