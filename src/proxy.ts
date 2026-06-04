@@ -1,6 +1,7 @@
 import { auth } from "@/auth";
 import { NextResponse } from "next/server";
 
+/** Routes reachable without a session (includes Auth.js API for sign-in/out). */
 function isPublicAuthRoute(path: string): boolean {
   return (
     path === "/login" ||
@@ -10,6 +11,15 @@ function isPublicAuthRoute(path: string): boolean {
     path.startsWith("/api/auth-pw/forgot-password") ||
     path.startsWith("/api/auth-pw/reset-password") ||
     path.startsWith("/api/test/")
+  );
+}
+
+/** Auth pages only — signed-in users should leave, but /api/auth/* must stay reachable for logout. */
+function isSignedInAuthPageRoute(path: string): boolean {
+  return (
+    path === "/login" ||
+    path === "/forgot-password" ||
+    path === "/reset-password"
   );
 }
 
@@ -53,7 +63,7 @@ export const proxy = auth((req) => {
     return NextResponse.redirect(new URL("/", req.url));
   }
 
-  if (isPublicAuthRoute(path)) {
+  if (isSignedInAuthPageRoute(path)) {
     return NextResponse.redirect(new URL("/", req.url));
   }
 
