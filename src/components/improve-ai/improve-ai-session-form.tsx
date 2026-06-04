@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Check, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -35,15 +36,11 @@ import {
   type HumanSubAnswer,
   type HumanSubAnswerDraft,
   type ReasoningAgreement,
-} from "@/lib/criteria-review/human-judgment";
-import { resolveHumanReviewCriterionDisplay } from "@/lib/criteria-review/human-review-criteria";
-import type {
-  CriteriaReviewDatasetItem,
-  CriteriaReviewReportSection,
-} from "@/lib/criteria-review/report-data";
+} from "@/lib/improve-ai/human-judgment";
+import { resolveHumanReviewCriterionDisplay } from "@/lib/improve-ai/human-review-criteria";
+import type { ImproveAiSectionView, ImproveAiSessionView } from "@/lib/improve-ai/session-view";
 import { SECTION_LABELS } from "@/types/sections";
 import { nativeSelectClassName } from "@/components/ui/native-select";
-import { useCriteriaReviewReviewer } from "@/components/criteria-review/reviewer-provider";
 import { AUTOSAVE_DELAY_MS } from "@/hooks/use-auto-save";
 
 /** Native select values for corrected traffic-light status. */
@@ -61,7 +58,7 @@ function suggestedStatusSelectValue(
 }
 
 type DraftAnswer = {
-  section: CriteriaReviewReportSection["section"];
+  section: ImproveAiSectionView["section"];
   criterionKey: string;
   criteriaEvaluationAgreement?: CriteriaEvaluationAgreement;
   reasoningAgreement?: ReasoningAgreement;
@@ -88,17 +85,16 @@ function statusTone(status: string): string {
   }
 }
 
-export function CriteriaReviewSessionForm({
+export function ImproveAiSessionForm({
   session,
-  prevId,
-  nextId,
+  userName,
+  userEmail,
 }: {
-  session: CriteriaReviewDatasetItem;
-  prevId: string | null;
-  nextId: string | null;
+  session: ImproveAiSessionView;
+  userName: string;
+  userEmail: string;
 }) {
   const router = useRouter();
-  const { selectedReviewer, selectedReviewerId } = useCriteriaReviewReviewer();
   const [saving, setSaving] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [submitReportOpen, setSubmitReportOpen] = useState(false);
@@ -106,43 +102,33 @@ export function CriteriaReviewSessionForm({
   const [error, setError] = useState<string | null>(null);
   const [activeSectionIndex, setActiveSectionIndex] = useState(0);
 
-  const initialAnswersForReviewer = useCallback(
-    (reviewerId: string): Record<string, DraftAnswer> => {
-      const stored = session.metadata.humanReviews?.[reviewerId]?.answers ?? {};
-      const answers: Record<string, DraftAnswer> = {};
-      for (const section of session.input.sections) {
-        for (const criterion of section.criteria) {
-          const existing = stored[criterion.answerKey];
-          answers[criterion.answerKey] = {
-            section: section.section,
-            criterionKey: criterion.criterionKey,
-            criteriaEvaluationAgreement: existing?.criteriaEvaluationAgreement,
-            reasoningAgreement: existing?.reasoningAgreement,
-            comment: existing?.comment ?? "",
-            suggestedStatus: existing?.suggestedStatus ?? null,
-          };
-        }
+  const initialAnswers = useCallback((): Record<string, DraftAnswer> => {
+    const answers: Record<string, DraftAnswer> = {};
+    for (const section of session.sections) {
+      for (const criterion of section.criteria) {
+        const existing = session.answers[criterion.answerKey];
+        answers[criterion.answerKey] = {
+          section: section.section,
+          criterionKey: criterion.criterionKey,
+          criteriaEvaluationAgreement: existing?.criteriaEvaluationAgreement,
+          reasoningAgreement: existing?.reasoningAgreement,
+          comment: existing?.comment ?? "",
+          suggestedStatus: existing?.suggestedStatus ?? null,
+        };
       }
-      return answers;
-    },
-    [session]
-  );
+    }
+    return answers;
+  }, [session]);
 
-  const [answers, setAnswers] = useState<Record<string, DraftAnswer>>(() =>
-    initialAnswersForReviewer(selectedReviewerId)
-  );
-  const loadedAnswersForReviewer = useRef("");
+  const [answers, setAnswers] = useState<Record<string, DraftAnswer>>(initialAnswers);
 
   useEffect(() => {
-    const loadKey = `${session.id}:${selectedReviewerId}`;
-    if (loadedAnswersForReviewer.current === loadKey) return;
-    loadedAnswersForReviewer.current = loadKey;
-    setAnswers(initialAnswersForReviewer(selectedReviewerId));
+    setAnswers(initialAnswers());
     setError(null);
     setSubmitDialogError(null);
-  }, [session.id, selectedReviewerId, initialAnswersForReviewer]);
+  }, [session.id, initialAnswers]);
 
-  const activeSection = session.input.sections[activeSectionIndex] ?? null;
+  const activeSection = session.sections[activeSectionIndex] ?? null;
 
   const updateAnswer = useCallback(
     (answerKey: string, patch: Partial<DraftAnswer>) => {
@@ -162,16 +148,14 @@ export function CriteriaReviewSessionForm({
 
   // Refs so the unmount flush can read latest values without stale closures
   const answersRef = useRef(answers);
-  const selectedReviewerRef = useRef(selectedReviewer);
   const sessionIdRef = useRef(session.id);
 
   useEffect(() => {
     answersRef.current = answers;
-    selectedReviewerRef.current = selectedReviewer;
     sessionIdRef.current = session.id;
   });
 
-  const expectedAnswerKeys = session.input.sections.flatMap((section) =>
+  const expectedAnswerKeys = session.sections.flatMap((section) =>
     section.criteria.map((criterion) => criterion.answerKey)
   );
 
@@ -188,7 +172,6 @@ export function CriteriaReviewSessionForm({
       }
       try {
         const payload = {
-          reviewer: selectedReviewer,
           answers: Object.values(answersToSave).map((answer) => ({
             section: answer.section,
             criterionKey: answer.criterionKey,
@@ -202,7 +185,7 @@ export function CriteriaReviewSessionForm({
         };
 
         const res = await fetch(
-          `/api/criteria-review/sessions/${encodeURIComponent(session.id)}`,
+          `/api/improve-ai/sessions/${encodeURIComponent(session.id)}`,
           {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
@@ -226,7 +209,7 @@ export function CriteriaReviewSessionForm({
         setSaving(false);
       }
     },
-    [session.id, selectedReviewer]
+    [session.id]
   );
 
   // Debounced auto-save: fires AUTOSAVE_DELAY_MS after the last answer change
@@ -239,7 +222,7 @@ export function CriteriaReviewSessionForm({
     return () => {
       if (autosaveTimer.current) clearTimeout(autosaveTimer.current);
     };
-  }, [answers, selectedReviewer, saveAnswers]);
+  }, [answers, saveAnswers]);
 
   // Flush any pending debounced save when the component unmounts (e.g. page refresh).
   // Uses keepalive:true so the request survives navigation.
@@ -248,7 +231,6 @@ export function CriteriaReviewSessionForm({
       if (!autosaveTimer.current) return; // timer already fired or was never set
       clearTimeout(autosaveTimer.current);
       autosaveTimer.current = null;
-      const reviewer = selectedReviewerRef.current;
       const id = sessionIdRef.current;
       const pendingAnswers = Object.values(answersRef.current).map((a) => ({
         section: a.section,
@@ -258,10 +240,10 @@ export function CriteriaReviewSessionForm({
         comment: a.comment?.trim() || undefined,
         suggestedStatus: a.suggestedStatus ?? undefined,
       }));
-      fetch(`/api/criteria-review/sessions/${encodeURIComponent(id)}`, {
+      fetch(`/api/improve-ai/sessions/${encodeURIComponent(id)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ reviewer, answers: pendingAnswers, complete: false }),
+        body: JSON.stringify({ answers: pendingAnswers, complete: false }),
         keepalive: true,
       }).catch(() => {});
     };
@@ -274,7 +256,7 @@ export function CriteriaReviewSessionForm({
     if (result.ok) {
       setSubmitReportOpen(false);
       router.refresh();
-      router.push("/criteria-review");
+      router.push("/improve-ai");
     } else {
       setSubmitDialogError(result.error);
     }
@@ -306,10 +288,10 @@ export function CriteriaReviewSessionForm({
   const reviewedCount = Object.values(answers).filter((answer) =>
     isDraftAnswerComplete(answer)
   ).length;
-  const totalCriteria = session.metadata.totalCriterionCount;
+  const totalCriteria = session.totalCriterionCount;
   const canCompleteReport = totalCriteria > 0 && reviewedCount === totalCriteria;
 
-  const sectionReviewedCount = (section: CriteriaReviewReportSection) =>
+  const sectionReviewedCount = (section: ImproveAiSectionView) =>
     section.criteria.filter((c) =>
       isDraftAnswerComplete(answers[c.answerKey])
     ).length;
@@ -325,8 +307,14 @@ export function CriteriaReviewSessionForm({
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-4 min-w-0">
             <div className="min-w-0">
-              <div className="flex items-center gap-3">
-                <h1 className="text-lg font-semibold truncate">{session.input.deviationNo}</h1>
+              <Link
+                href="/improve-ai"
+                className="text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+              >
+                ← Improve AI
+              </Link>
+              <div className="flex items-center gap-3 mt-1">
+                <h1 className="text-lg font-semibold truncate">{session.deviationNo}</h1>
                 <span className="shrink-0 text-xs text-[var(--muted-foreground)]">
                   {reviewedCount}/{totalCriteria} reviewed
                 </span>
@@ -343,7 +331,7 @@ export function CriteriaReviewSessionForm({
                 ) : null}
               </div>
               <p className="text-xs text-[var(--muted-foreground)] truncate">
-                {session.input.sourceFile}
+                {session.sourceLabel}
               </p>
             </div>
           </div>
@@ -351,9 +339,9 @@ export function CriteriaReviewSessionForm({
           <div className="shrink-0 text-right text-sm">
             <p className="text-xs text-[var(--muted-foreground)]">Signed in as</p>
             <p className="font-medium">
-              {selectedReviewer.name}{" "}
+              {userName}{" "}
               <span className="font-normal text-[var(--muted-foreground)]">
-                ({selectedReviewer.email})
+                ({userEmail})
               </span>
             </p>
           </div>
@@ -399,7 +387,7 @@ export function CriteriaReviewSessionForm({
         {/* Sidebar: section-level navigation */}
         <aside className="w-64 shrink-0 overflow-y-auto border-r border-[var(--border)] p-3">
           <div className="space-y-1">
-            {session.input.sections.map((section, idx) => {
+            {session.sections.map((section, idx) => {
               const reviewed = sectionReviewedCount(section);
               const total = section.criteria.length;
               const allDone = reviewed === total;
@@ -705,23 +693,7 @@ export function CriteriaReviewSessionForm({
         </div>
       </div>
 
-      <footer className="shrink-0 border-t border-[var(--border)] px-6 py-3 flex flex-wrap items-center gap-2 justify-between">
-        <div className="flex gap-2">
-          {prevId && (
-            <Button variant="outline" size="sm" asChild>
-              <a href={`/criteria-review/${encodeURIComponent(prevId)}`}>
-                Previous report
-              </a>
-            </Button>
-          )}
-          {nextId && (
-            <Button variant="outline" size="sm" asChild>
-              <a href={`/criteria-review/${encodeURIComponent(nextId)}`}>
-                Next report
-              </a>
-            </Button>
-          )}
-        </div>
+      <footer className="shrink-0 border-t border-[var(--border)] px-6 py-3 flex flex-wrap items-center gap-2 justify-end">
         <div className="flex items-center gap-3">
           <div className="flex gap-2">
             {activeSectionIndex > 0 ? (
@@ -733,7 +705,7 @@ export function CriteriaReviewSessionForm({
                 Previous section
               </Button>
             ) : null}
-            {activeSectionIndex < session.input.sections.length - 1 ? (
+            {activeSectionIndex < session.sections.length - 1 ? (
               <Button
                 size="sm"
                 onClick={() => goToSection(activeSectionIndex + 1)}

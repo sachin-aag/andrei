@@ -7,7 +7,7 @@ import {
   LogOut,
   FileText,
   BookOpen,
-  ClipboardCheck,
+  Sparkles,
   PanelLeftClose,
   PanelLeftOpen,
 } from "lucide-react";
@@ -36,7 +36,7 @@ export function AppShell({
 
   const navItems = [
     { href: "/", label: "Reports", icon: FileText },
-    { href: "/criteria-review", label: "Criteria review", icon: ClipboardCheck },
+    { href: "/improve-ai", label: "Improve AI", icon: Sparkles },
   ];
 
   return (

@@ -5,7 +5,7 @@ import {
   isHumanSubAnswerComplete,
   validateHumanReview,
   validateHumanSubAnswer,
-} from "@/lib/criteria-review/human-judgment";
+} from "@/lib/improve-ai/human-judgment";
 
 describe("humanCommentRequired", () => {
   it("is false only when both agreement answers are yes", () => {

@@ -9,6 +9,7 @@ import { StatusBadge } from "@/components/report/status-badge";
 import type { WorkspaceUser } from "@/lib/auth/workspace-user";
 import { CreateReportButton } from "@/components/dashboard/create-report-button";
 import { DeleteReportButton } from "@/components/dashboard/delete-report-button";
+import { EvaluateWithAiButton } from "@/components/dashboard/evaluate-with-ai-button";
 import { formatDate } from "@/lib/utils";
 import type { ReportStatus } from "@/db/schema";
 
@@ -62,6 +63,7 @@ export function ReportList({
           ? usersById[report.assignedManagerId]
           : undefined;
         const canDelete = report.authorId === currentUserId;
+        const canEvaluateWithAi = report.authorId === currentUserId;
 
         return (
           <Card
@@ -107,13 +109,21 @@ export function ReportList({
                   </div>
                 </div>
               </Link>
-              {canDelete && (
-                <DeleteReportButton
-                  reportId={report.id}
-                  deviationNo={report.deviationNo || "Untitled deviation"}
-                  onDeleted={() => handleDeleted(report.id)}
-                />
-              )}
+              <div className="flex shrink-0 flex-col items-end gap-2">
+                {canEvaluateWithAi && (
+                  <EvaluateWithAiButton
+                    reportId={report.id}
+                    deviationNo={report.deviationNo || "Untitled deviation"}
+                  />
+                )}
+                {canDelete && (
+                  <DeleteReportButton
+                    reportId={report.id}
+                    deviationNo={report.deviationNo || "Untitled deviation"}
+                    onDeleted={() => handleDeleted(report.id)}
+                  />
+                )}
+              </div>
             </div>
           </Card>
         );

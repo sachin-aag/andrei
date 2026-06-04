@@ -14,7 +14,7 @@ export const langfuseSpanProcessor = new LangfuseSpanProcessor();
 /**
  * Next.js server instrumentation hook.
  * Langfuse tracing for inline suggestions / evaluation observability.
- * Criteria review data is stored in Neon (see src/lib/criteria-review/store.ts).
+ * Improve AI feedback sessions are stored in Neon (see src/lib/improve-ai/store.ts).
  */
 export function register() {
   if (process.env.NEXT_RUNTIME === "edge") return;
