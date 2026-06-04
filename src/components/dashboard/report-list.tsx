@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FileText, ArrowRight } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { StatusBadge } from "@/components/report/status-badge";
 import type { WorkspaceUser } from "@/lib/auth/workspace-user";
@@ -122,15 +123,16 @@ export function ReportList({
                   </Link>
                 </div>
               </div>
-              <div className="flex shrink-0 items-center gap-1">
-                <Link
-                  href={`/reports/${report.id}`}
-                  transitionTypes={["nav-forward"]}
-                  className="flex items-center gap-2 px-2 py-1 text-[var(--muted-foreground)] transition-colors group-hover:text-[var(--brand-300)]"
-                >
-                  <span className="text-xs">Open</span>
-                  <ArrowRight className="size-4" />
-                </Link>
+              <div className="flex shrink-0 items-start gap-2 pt-0.5">
+                <Button asChild size="sm" className="shrink-0 gap-1.5 shadow-sm">
+                  <Link
+                    href={`/reports/${report.id}`}
+                    transitionTypes={["nav-forward"]}
+                  >
+                    Open
+                    <ArrowRight className="size-4" />
+                  </Link>
+                </Button>
                 {canDelete && (
                   <DeleteReportButton
                     reportId={report.id}
