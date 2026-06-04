@@ -1,6 +1,10 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { desc, eq } from "drizzle-orm";
+import { db } from "@/db";
+import { reports } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
+import { withTransientRetry } from "@/lib/db/with-transient-retry";
 import { listWorkspaceUsers } from "@/lib/auth/workspace-users";
 import { AppShell } from "@/components/layout/app-shell";
 import { ImproveAiListHeader } from "@/components/improve-ai/improve-ai-list-header";
@@ -30,6 +34,17 @@ export default async function ImproveAiListPage() {
   const items = await listImproveAiSessionsForUser(user.id);
   const workspaceUsers = await listWorkspaceUsers();
 
+  const authorReports = await withTransientRetry("improveAi.authorReports", () =>
+    db
+      .select({
+        id: reports.id,
+        deviationNo: reports.deviationNo,
+      })
+      .from(reports)
+      .where(eq(reports.authorId, user.id))
+      .orderBy(desc(reports.updatedAt))
+  );
+
   const rows = await Promise.all(
     items.map(async (item) => {
       const view = await getImproveAiSessionView(item.id, user.id);
@@ -47,13 +62,18 @@ export default async function ImproveAiListPage() {
           sessionCount={items.length}
           userName={user.name}
           userEmail={user.email}
+          reports={authorReports.map((report) => ({
+            id: report.id,
+            deviationNo: report.deviationNo || "Untitled deviation",
+          }))}
         />
 
         <div className="flex-1 overflow-y-auto p-6">
           {rows.length === 0 && (
             <p className="text-sm text-[var(--muted-foreground)]">
-              No AI feedback sessions yet. Upload a Word report or use{" "}
-              <strong>Improve AI</strong> on a report from your dashboard.
+              No AI feedback sessions yet. Use <strong>Evaluate report</strong> to
+              pick an existing report or upload a Word file, or use{" "}
+              <strong>Improve AI</strong> on a report card from your dashboard.
             </p>
           )}
 

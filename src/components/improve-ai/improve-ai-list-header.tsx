@@ -2,16 +2,21 @@
 
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
-import { ImproveAiUploadButton } from "@/components/improve-ai/improve-ai-upload-button";
+import {
+  ImproveAiUploadButton,
+  type ImproveAiReportOption,
+} from "@/components/improve-ai/improve-ai-upload-button";
 
 export function ImproveAiListHeader({
   sessionCount,
   userName,
   userEmail,
+  reports,
 }: {
   sessionCount: number;
   userName: string;
   userEmail: string;
+  reports: ImproveAiReportOption[];
 }) {
   return (
     <header className="shrink-0 border-b border-[var(--border)] px-6 py-4">
@@ -32,7 +37,7 @@ export function ImproveAiListHeader({
           </p>
         </div>
         <div className="flex flex-col items-end gap-2 text-sm">
-          <ImproveAiUploadButton />
+          <ImproveAiUploadButton reports={reports} />
           <p className="text-xs text-[var(--muted-foreground)] text-right">
             Signed in as{" "}
             <span className="font-medium text-[var(--foreground)]">{userName}</span>{" "}
