@@ -6,17 +6,22 @@ import {
   ImproveAiUploadButton,
   type ImproveAiReportOption,
 } from "@/components/improve-ai/improve-ai-upload-button";
+import type { WorkspaceUser } from "@/lib/auth/workspace-user";
+
+type ManagerOption = Pick<WorkspaceUser, "id" | "name" | "title">;
 
 export function ImproveAiListHeader({
   sessionCount,
   userName,
   userEmail,
   reports,
+  managers,
 }: {
   sessionCount: number;
   userName: string;
   userEmail: string;
   reports: ImproveAiReportOption[];
+  managers: ManagerOption[];
 }) {
   return (
     <header className="shrink-0 border-b border-[var(--border)] px-6 py-4">
@@ -37,7 +42,7 @@ export function ImproveAiListHeader({
           </p>
         </div>
         <div className="flex flex-col items-end gap-2 text-sm">
-          <ImproveAiUploadButton reports={reports} />
+          <ImproveAiUploadButton reports={reports} managers={managers} />
           <p className="text-xs text-[var(--muted-foreground)] text-right">
             Signed in as{" "}
             <span className="font-medium text-[var(--foreground)]">{userName}</span>{" "}

@@ -3,14 +3,18 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Sparkles } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 export function EvaluateWithAiButton({
   reportId,
   deviationNo,
+  layout = "stacked",
 }: {
   reportId: string;
   deviationNo: string;
+  layout?: "inline" | "stacked";
 }) {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -33,35 +37,50 @@ export function EvaluateWithAiButton({
         error?: string;
       };
       if (!res.ok || !data.sessionId) {
-        setError(data.error ?? "Could not start evaluation");
+        const message = data.error ?? "Could not start evaluation";
+        if (layout === "inline") {
+          toast.error(message);
+        } else {
+          setError(message);
+        }
         return;
       }
       router.push(`/improve-ai/${encodeURIComponent(data.sessionId)}`);
     } catch {
-      setError("Could not start evaluation");
+      const message = "Could not start evaluation";
+      if (layout === "inline") {
+        toast.error(message);
+      } else {
+        setError(message);
+      }
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="flex flex-col items-end gap-1">
+    <div
+      className={cn(
+        layout === "inline" ? "shrink-0" : "flex flex-col items-end gap-1"
+      )}
+    >
       <Button
         type="button"
         variant="outline"
         size="sm"
+        className={cn(layout === "inline" && "h-7 px-2.5 text-xs")}
         disabled={loading}
         onClick={handleClick}
         title={`Evaluate ${deviationNo} with AI`}
       >
         {loading ? (
-          <Loader2 className="size-4 animate-spin" />
+          <Loader2 className="size-3.5 animate-spin" />
         ) : (
-          <Sparkles className="size-4" />
+          <Sparkles className="size-3.5" />
         )}
         Improve AI
       </Button>
-      {error ? (
+      {layout === "stacked" && error ? (
         <span className="text-[10px] text-red-600 max-w-[140px] text-right">
           {error}
         </span>

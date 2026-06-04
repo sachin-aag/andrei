@@ -33,6 +33,7 @@ export default async function ImproveAiListPage() {
 
   const items = await listImproveAiSessionsForUser(user.id);
   const workspaceUsers = await listWorkspaceUsers();
+  const managers = workspaceUsers.filter((entry) => entry.role === "manager");
 
   const authorReports = await withTransientRetry("improveAi.authorReports", () =>
     db
@@ -65,6 +66,11 @@ export default async function ImproveAiListPage() {
           reports={authorReports.map((report) => ({
             id: report.id,
             deviationNo: report.deviationNo || "Untitled deviation",
+          }))}
+          managers={managers.map((m) => ({
+            id: m.id,
+            name: m.name,
+            title: m.title,
           }))}
         />
 

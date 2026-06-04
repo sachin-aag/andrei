@@ -91,6 +91,7 @@ export async function createReportFromDocxUpload(params: {
   file: File;
   authorId: string;
   deviationNo?: string;
+  assignedManagerId?: string | null;
 }): Promise<CreateReportFromDocxResult> {
   const buf = await readDocxUpload(params.file);
   const importedContent = await docxBufferToImportedReportContent(buf);
@@ -120,6 +121,7 @@ export async function createReportFromDocxUpload(params: {
       .values({
         deviationNo,
         authorId: params.authorId,
+        assignedManagerId: params.assignedManagerId ?? null,
         toolsUsed: importedContent.toolsUsed,
         ...(importedDate ? { date: importedDate } : {}),
         ...(importedOtherTools !== undefined ? { otherTools: importedOtherTools } : {}),

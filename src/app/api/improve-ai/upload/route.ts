@@ -17,6 +17,9 @@ export async function POST(req: Request) {
   const form = await req.formData();
   const file = form.get("file");
   const deviationNoRaw = form.get("deviationNo");
+  const mgrRaw = form.get("assignedManagerId");
+  const assignedManagerId =
+    mgrRaw === "" || mgrRaw === null ? null : String(mgrRaw);
 
   if (!(file instanceof File) || file.size === 0) {
     return NextResponse.json({ error: "A .docx file is required" }, { status: 400 });
@@ -28,6 +31,7 @@ export async function POST(req: Request) {
       authorId: user.id,
       deviationNo:
         typeof deviationNoRaw === "string" ? deviationNoRaw : undefined,
+      assignedManagerId,
     });
 
     const session = await createImproveAiSession({
