@@ -81,10 +81,15 @@ export const commentKindEnum = pgEnum("comment_kind", [
   "ai_redraft",
 ]);
 
-export const criteriaReviewStatusEnum = pgEnum("criteria_review_status", [
-  "pending",
-  "in_progress",
-  "completed",
+export const aiFeedbackSourceTypeEnum = pgEnum("ai_feedback_source_type", [
+  "existing_report",
+  "uploaded_docx",
+]);
+
+export const aiFeedbackSessionStatusEnum = pgEnum("ai_feedback_session_status", [
+  "evaluating",
+  "ready_for_review",
+  "reviewed",
 ]);
 
 export const userRoleEnum = pgEnum("user_role", ["engineer", "manager"]);
@@ -296,68 +301,86 @@ export const mathExtractionCache = pgTable("math_extraction_cache", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-/** Sample-report human QA (not tied to production `reports` rows). */
-export const criteriaReviewReports = pgTable("criteria_review_reports", {
-  id: text("id").primaryKey(),
-  sourceFile: text("source_file").notNull(),
-  deviationNo: text("deviation_no").notNull(),
-  reportDate: text("report_date").notNull(),
-  promptVersion: text("prompt_version").notNull(),
-  totalCriterionCount: integer("total_criterion_count").notNull(),
-  input: jsonb("input").notNull(),
-  expectedOutput: jsonb("expected_output").notNull(),
-  humanReviewStatus: criteriaReviewStatusEnum("human_review_status")
-    .notNull()
-    .default("pending"),
-  createdAt: timestamp("created_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-  updatedAt: timestamp("updated_at", { withTimezone: true })
-    .notNull()
-    .defaultNow(),
-});
-
-export const criteriaReviewSubmissions = pgTable(
-  "criteria_review_submissions",
+/** User-submitted report for Improve AI feedback (links to production `reports`). */
+export const aiFeedbackSessions = pgTable(
+  "ai_feedback_sessions",
   {
     id: text("id").primaryKey().$defaultFn(() => createId()),
     reportId: text("report_id")
       .notNull()
-      .references(() => criteriaReviewReports.id, { onDelete: "cascade" }),
-    reviewerId: text("reviewer_id")
+      .references(() => reports.id, { onDelete: "cascade" }),
+    submittedBy: text("submitted_by")
       .notNull()
       .references(() => workspaceUsers.id, { onDelete: "cascade" }),
-    status: criteriaReviewStatusEnum("status").notNull().default("pending"),
-    answers: jsonb("answers").notNull().default({}),
-    reviewedAt: timestamp("reviewed_at", { withTimezone: true }),
+    sourceType: aiFeedbackSourceTypeEnum("source_type").notNull(),
+    status: aiFeedbackSessionStatusEnum("status")
+      .notNull()
+      .default("evaluating"),
+    sourceLabel: text("source_label").notNull().default(""),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
   },
   (t) => ({
-    reportReviewerUnique: uniqueIndex(
-      "criteria_review_submissions_report_reviewer_unique"
-    ).on(t.reportId, t.reviewerId),
+    reportSubmitterUnique: uniqueIndex(
+      "ai_feedback_sessions_report_submitter_unique"
+    ).on(t.reportId, t.submittedBy),
   })
 );
 
-export const criteriaReviewReportsRelations = relations(
-  criteriaReviewReports,
-  ({ many }) => ({
-    submissions: many(criteriaReviewSubmissions),
+export const aiFeedbackResponses = pgTable(
+  "ai_feedback_responses",
+  {
+    id: text("id").primaryKey().$defaultFn(() => createId()),
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => aiFeedbackSessions.id, { onDelete: "cascade" }),
+    criterionKey: text("criterion_key").notNull(),
+    section: sectionTypeEnum("section").notNull(),
+    aiStatus: criterionStatusEnum("ai_status").notNull(),
+    aiReasoning: text("ai_reasoning").notNull().default(""),
+    criteriaEvaluationAgreement: text("criteria_evaluation_agreement"),
+    reasoningAgreement: text("reasoning_agreement"),
+    humanComment: text("human_comment").notNull().default(""),
+    suggestedStatus: criterionStatusEnum("suggested_status"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    sessionCriterionUnique: uniqueIndex(
+      "ai_feedback_responses_session_criterion_unique"
+    ).on(t.sessionId, t.criterionKey),
   })
 );
 
-export const criteriaReviewSubmissionsRelations = relations(
-  criteriaReviewSubmissions,
-  ({ one }) => ({
-    report: one(criteriaReviewReports, {
-      fields: [criteriaReviewSubmissions.reportId],
-      references: [criteriaReviewReports.id],
+export const aiFeedbackSessionsRelations = relations(
+  aiFeedbackSessions,
+  ({ one, many }) => ({
+    report: one(reports, {
+      fields: [aiFeedbackSessions.reportId],
+      references: [reports.id],
     }),
-    reviewer: one(workspaceUsers, {
-      fields: [criteriaReviewSubmissions.reviewerId],
+    submitter: one(workspaceUsers, {
+      fields: [aiFeedbackSessions.submittedBy],
       references: [workspaceUsers.id],
+    }),
+    responses: many(aiFeedbackResponses),
+  })
+);
+
+export const aiFeedbackResponsesRelations = relations(
+  aiFeedbackResponses,
+  ({ one }) => ({
+    session: one(aiFeedbackSessions, {
+      fields: [aiFeedbackResponses.sessionId],
+      references: [aiFeedbackSessions.id],
     }),
   })
 );
@@ -367,7 +390,9 @@ export type SectionType = (typeof sectionTypeEnum.enumValues)[number];
 export type CriterionStatus = (typeof criterionStatusEnum.enumValues)[number];
 export type CommentStatus = (typeof commentStatusEnum.enumValues)[number];
 export type CommentKind = (typeof commentKindEnum.enumValues)[number];
-export type CriteriaReviewStatus =
-  (typeof criteriaReviewStatusEnum.enumValues)[number];
+export type AiFeedbackSourceType =
+  (typeof aiFeedbackSourceTypeEnum.enumValues)[number];
+export type AiFeedbackSessionStatus =
+  (typeof aiFeedbackSessionStatusEnum.enumValues)[number];
 
 export * from "./auth";
