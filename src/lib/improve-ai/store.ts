@@ -3,6 +3,7 @@ import { db } from "@/db";
 import {
   aiFeedbackResponses,
   aiFeedbackSessions,
+  criteriaEvaluations,
   reportSections,
   reports,
 } from "@/db/schema";
@@ -15,7 +16,11 @@ import {
   buildImproveAiSessionView,
   type ImproveAiSessionView,
 } from "@/lib/improve-ai/session-view";
-import { syncFeedbackResponsesFromEvaluations } from "@/lib/improve-ai/sync-feedback-responses";
+import {
+  clearFeedbackResponses,
+  syncFeedbackResponsesFromEvaluations,
+} from "@/lib/improve-ai/sync-feedback-responses";
+import { isImproveAiSessionStale } from "@/lib/improve-ai/session-staleness";
 import type { HumanSubAnswerDraft } from "@/lib/improve-ai/human-judgment";
 import { humanAnswerKey } from "@/lib/improve-ai/human-judgment";
 import { EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
@@ -115,6 +120,54 @@ export async function getImproveAiSessionView(
     sectionContents,
     responses,
   });
+}
+
+export async function checkImproveAiSessionStale(
+  sessionId: string,
+  reportId: string
+): Promise<boolean> {
+  const [responses, evaluations, sectionContents] = await Promise.all([
+    db
+      .select()
+      .from(aiFeedbackResponses)
+      .where(eq(aiFeedbackResponses.sessionId, sessionId)),
+    db
+      .select()
+      .from(criteriaEvaluations)
+      .where(eq(criteriaEvaluations.reportId, reportId)),
+    loadSectionContents(reportId),
+  ]);
+
+  return isImproveAiSessionStale({
+    responses,
+    evaluations,
+    sectionContents,
+  });
+}
+
+export async function rerunImproveAiSession(
+  sessionId: string,
+  userId: string
+): Promise<typeof aiFeedbackSessions.$inferSelect> {
+  const [session] = await db
+    .select()
+    .from(aiFeedbackSessions)
+    .where(eq(aiFeedbackSessions.id, sessionId));
+  if (!session || session.submittedBy !== userId) {
+    throw new ImproveAiEvaluationError("Session not found", 404);
+  }
+
+  await clearFeedbackResponses(sessionId);
+  await runEvaluationForSession(sessionId);
+
+  const [updated] = await db
+    .select()
+    .from(aiFeedbackSessions)
+    .where(eq(aiFeedbackSessions.id, sessionId));
+  if (!updated) {
+    throw new ImproveAiEvaluationError("Session not found", 404);
+  }
+  return updated;
 }
 
 export async function runEvaluationForSession(sessionId: string): Promise<void> {

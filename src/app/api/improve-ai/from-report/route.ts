@@ -5,8 +5,10 @@ import { db } from "@/db";
 import { reports } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import {
+  checkImproveAiSessionStale,
   createImproveAiSession,
   findImproveAiSessionForReport,
+  rerunImproveAiSession,
 } from "@/lib/improve-ai/store";
 import { ImproveAiEvaluationError } from "@/lib/improve-ai/evaluate-report";
 
@@ -14,6 +16,7 @@ export const maxDuration = 120;
 
 const bodySchema = z.object({
   reportId: z.string().min(1),
+  confirmRerun: z.boolean().optional(),
 });
 
 export async function POST(req: Request) {
@@ -27,7 +30,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }
 
-  const { reportId } = parsed.data;
+  const { reportId, confirmRerun } = parsed.data;
 
   const [report] = await db.select().from(reports).where(eq(reports.id, reportId));
   if (!report) {
@@ -48,13 +51,48 @@ export async function POST(req: Request) {
         sessionId: existing.id,
         reportId,
         existing: true,
+        stale: false,
         status: existing.status,
       });
     }
+
+    const stale = await checkImproveAiSessionStale(existing.id, reportId);
+    if (stale) {
+      if (!confirmRerun) {
+        return NextResponse.json({
+          sessionId: existing.id,
+          reportId,
+          existing: true,
+          stale: true,
+          needsConfirmation: true,
+          status: existing.status,
+        });
+      }
+
+      try {
+        const session = await rerunImproveAiSession(existing.id, user.id);
+        return NextResponse.json({
+          sessionId: session.id,
+          reportId,
+          existing: true,
+          stale: true,
+          rerun: true,
+          status: session.status,
+        });
+      } catch (e) {
+        if (e instanceof ImproveAiEvaluationError) {
+          return NextResponse.json({ error: e.message }, { status: e.status });
+        }
+        const message = e instanceof Error ? e.message : "Evaluation failed";
+        return NextResponse.json({ error: message }, { status: 500 });
+      }
+    }
+
     return NextResponse.json({
       sessionId: existing.id,
       reportId,
       existing: true,
+      stale: false,
       status: existing.status,
     });
   }

@@ -39,6 +39,7 @@ import {
 } from "@/lib/improve-ai/human-judgment";
 import { resolveHumanReviewCriterionDisplay } from "@/lib/improve-ai/human-review-criteria";
 import type { ImproveAiSectionView, ImproveAiSessionView } from "@/lib/improve-ai/session-view";
+import { ImproveAiSectionContent } from "@/components/improve-ai/improve-ai-section-content";
 import { SECTION_LABELS } from "@/types/sections";
 import { nativeSelectClassName } from "@/components/ui/native-select";
 import { AUTOSAVE_DELAY_MS } from "@/hooks/use-auto-save";
@@ -433,9 +434,9 @@ export function ImproveAiSessionForm({
                   <h2 className="mb-3 text-sm font-semibold">
                     {SECTION_LABELS[activeSection.section]} — Section content
                   </h2>
-                  <pre className="max-h-80 overflow-y-auto whitespace-pre-wrap font-sans text-xs leading-relaxed text-[var(--foreground)]">
-                    {activeSection.sectionContent}
-                  </pre>
+                  <div className="max-h-80 overflow-y-auto">
+                    <ImproveAiSectionContent blocks={activeSection.blocks} />
+                  </div>
                 </div>
 
                 <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-4">
@@ -451,9 +452,9 @@ export function ImproveAiSessionForm({
                             <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
                               {SECTION_LABELS[section.section]}
                             </h3>
-                            <pre className="max-h-56 overflow-y-auto whitespace-pre-wrap font-sans text-xs leading-relaxed">
-                              {section.content}
-                            </pre>
+                            <div className="max-h-56 overflow-y-auto">
+                              <ImproveAiSectionContent blocks={section.blocks} />
+                            </div>
                           </div>
                         ))}
                       </div>

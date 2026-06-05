@@ -1,7 +1,12 @@
 import type { SectionType, CriterionStatus } from "@/db/schema";
 import { getCriteria, EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
-import { contextForPrompt } from "@/lib/ai/section-context";
 import { buildEvaluationSystemPrompt } from "@/lib/ai/section-prompts";
+import {
+  blocksToPromptText,
+  buildSectionDisplayBlocks,
+  sectionDisplayBlocksHaveContent,
+  type ImproveAiDisplayBlock,
+} from "@/lib/improve-ai/section-display-blocks";
 import type { AllSectionsContent } from "@/lib/ai/evaluate";
 import { EDITABLE_SECTIONS } from "@/types/sections";
 import {
@@ -23,13 +28,15 @@ export type ImproveAiCriterion = {
 
 export type ImproveAiPreviousSection = {
   section: SectionType;
-  content: string;
+  blocks: ImproveAiDisplayBlock[];
 };
 
 export type ImproveAiSectionView = {
   section: SectionType;
   sectionIndex: number;
+  /** Flat prompt text (LLM parity); UI uses `blocks` for rich preview. */
   sectionContent: string;
+  blocks: ImproveAiDisplayBlock[];
   systemPrompt: string;
   previousSections: ImproveAiPreviousSection[];
   criteria: ImproveAiCriterion[];
@@ -48,10 +55,6 @@ export type ImproveAiSessionView = {
   answers: Record<string, HumanSubAnswerDraft>;
 };
 
-function formatSectionContent(section: SectionType, content: unknown): string {
-  return typeof content === "string" ? content : contextForPrompt(section, content);
-}
-
 function priorSections(section: SectionType): SectionType[] {
   const idx = EDITABLE_SECTIONS.indexOf(section as (typeof EDITABLE_SECTIONS)[number]);
   if (idx <= 0) return [];
@@ -65,9 +68,9 @@ function previousSectionsForView(
   return priorSections(section).flatMap((priorSection) => {
     const content = allSections[priorSection];
     if (!content) return [];
-    const formatted = formatSectionContent(priorSection, content);
-    if (!formatted.trim() || formatted === "{}") return [];
-    return [{ section: priorSection, content: formatted }];
+    const blocks = buildSectionDisplayBlocks(priorSection, content);
+    if (!sectionDisplayBlocksHaveContent(blocks)) return [];
+    return [{ section: priorSection, blocks }];
   });
 }
 
@@ -85,8 +88,9 @@ export function buildImproveAiSessionView(params: {
 
   for (const section of EVALUATABLE_SECTIONS) {
     const content = params.sectionContents[section];
-    const sectionContent = formatSectionContent(section, content);
-    if (!sectionContent.trim() || sectionContent === "{}") continue;
+    const blocks = buildSectionDisplayBlocks(section, content);
+    if (!sectionDisplayBlocksHaveContent(blocks)) continue;
+    const sectionContent = blocksToPromptText(blocks);
 
     const defs = getCriteria(section);
     const criteria: ImproveAiCriterion[] = [];
@@ -112,6 +116,7 @@ export function buildImproveAiSessionView(params: {
       section,
       sectionIndex: sections.length + 1,
       sectionContent,
+      blocks,
       systemPrompt: buildEvaluationSystemPrompt(section),
       previousSections: previousSectionsForView(section, params.sectionContents),
       criteria,

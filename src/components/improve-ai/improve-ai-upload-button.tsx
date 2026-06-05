@@ -21,7 +21,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ImproveAiStaleRerunDialog } from "@/components/improve-ai/improve-ai-stale-rerun-dialog";
 import type { WorkspaceUser } from "@/lib/auth/workspace-user";
+import { startImproveAiFromReport } from "@/lib/improve-ai/client";
 
 export type ImproveAiReportOption = {
   id: string;
@@ -46,9 +48,11 @@ export function ImproveAiUploadButton({
   const [draftFile, setDraftFile] = useState<File | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [confirmRerunOpen, setConfirmRerunOpen] = useState(false);
+  const [confirmingRerun, setConfirmingRerun] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const isBusy = submitting || previewLoading;
+  const isBusy = submitting || previewLoading || confirmingRerun;
 
   const resetForm = () => {
     setSelectedReportId("");
@@ -108,27 +112,30 @@ export function ImproveAiUploadButton({
     if (fileRef.current) fileRef.current.value = "";
   };
 
+  const startFromSelectedReport = async (confirmRerun: boolean) => {
+    const result = await startImproveAiFromReport(selectedReportId, {
+      confirmRerun,
+    });
+    if (!result.ok) {
+      setError(result.error);
+      return false;
+    }
+    if (result.needsConfirmation) {
+      setConfirmRerunOpen(true);
+      return false;
+    }
+    setOpen(false);
+    router.push(`/improve-ai/${encodeURIComponent(result.sessionId)}`);
+    router.refresh();
+    return true;
+  };
+
   const handleSubmit = async () => {
     if (selectedReportId && !draftFile) {
       setSubmitting(true);
       setError(null);
       try {
-        const res = await fetch("/api/improve-ai/from-report", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ reportId: selectedReportId }),
-        });
-        const data = (await res.json()) as {
-          sessionId?: string;
-          error?: string;
-        };
-        if (!res.ok || !data.sessionId) {
-          setError(data.error ?? "Could not start evaluation");
-          return;
-        }
-        setOpen(false);
-        router.push(`/improve-ai/${encodeURIComponent(data.sessionId)}`);
-        router.refresh();
+        await startFromSelectedReport(false);
       } catch {
         setError("Could not start evaluation");
       } finally {
@@ -374,6 +381,25 @@ export function ImproveAiUploadButton({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      <ImproveAiStaleRerunDialog
+        open={confirmRerunOpen}
+        onOpenChange={(next) => {
+          if (!confirmingRerun) setConfirmRerunOpen(next);
+        }}
+        pending={confirmingRerun}
+        onConfirm={async () => {
+          setConfirmingRerun(true);
+          setError(null);
+          try {
+            const navigated = await startFromSelectedReport(true);
+            if (navigated) setConfirmRerunOpen(false);
+          } catch {
+            setError("Could not start evaluation");
+          } finally {
+            setConfirmingRerun(false);
+          }
+        }}
+      />
     </>
   );
 }
