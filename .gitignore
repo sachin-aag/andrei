@@ -62,9 +62,7 @@ package-lock.json
 # Understand Anything knowledge graph
 .understand-anything/
 
-# Local security overview artifacts (not versioned)
-security-overview.md
-security-overview.pptx
+
 
 # Temporary onboarding credentials (sensitive — never commit)
 docs/mj-onboarding-temporary-passwords.md
