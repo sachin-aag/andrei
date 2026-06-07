@@ -43,7 +43,24 @@ jobs:
   e2e:
     name: E2E (Playwright)
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: ci
+          POSTGRES_PASSWORD: ci
+          POSTGRES_DB: ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ci -d ci"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     env:
+      # Isolated Postgres for e2e — do not use shared Neon (schema/user drift).
+      DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/ci
+      AUTH_SECRET: ci-test-secret-not-for-production-use
       GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}
     steps:
       - uses: actions/checkout@v4
@@ -56,6 +73,9 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
+
+      - name: Apply database schema
+        run: pnpm exec drizzle-kit push --force
 
       - uses: actions/cache@v4
         id: playwright-cache
