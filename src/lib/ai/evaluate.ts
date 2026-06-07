@@ -12,6 +12,13 @@ import { cleanSectionContentForEval } from "@/lib/tiptap/strip-pending-suggestio
 import { buildEvaluationSystemPrompt, PROMPT_VERSION } from "./section-prompts";
 import { EDITABLE_SECTIONS } from "@/types/sections";
 import { langfuseGenerateTextTelemetry } from "@/lib/observability/langfuse";
+import {
+  buildEvalGenerationSettings,
+  describeEvalGenerationConfig,
+  modelSkipsSamplingControls,
+  DEFAULT_EVAL_GENERATION_OPTIONS,
+  type EvalGenerationOptions,
+} from "@/lib/eval/eval-generation-options";
 
 export { PROMPT_VERSION } from "./section-prompts";
 
@@ -54,34 +61,63 @@ const evaluationSchema = z.object({
   ),
 });
 
-function generationSettingsForSection() {
-  return {
-    maxOutputTokens: 32768,
-    providerOptions: {
-      google: {
-        seed: CRITERIA_EVAL_SEED,
-      },
-    },
-  };
+function generationSettingsForSection(
+  providerHint?: string,
+  generationOptions: EvalGenerationOptions = DEFAULT_EVAL_GENERATION_OPTIONS,
+  modelId?: string
+) {
+  return buildEvalGenerationSettings({
+    providerHint,
+    modelId,
+    ...generationOptions,
+    effort: generationOptions.effort ?? "none",
+  });
 }
 
-export function describeCriterionEvaluationLlmFootprint(): {
+export function describeCriterionEvaluationLlmFootprint(
+  overrides?: Partial<EvalGenerationOptions> & {
+    providerHint?: string;
+    modelId?: string;
+  }
+): {
   criterionModelId: string;
   criterionProvider: string;
-  criterionTemperature: number;
-  criterionSeed: number;
+  criterionTemperature: number | undefined;
+  criterionSeed: number | undefined;
+  criterionEffort: string;
   criterionStructuredOutput: string;
   criterionGenerationConfig: string;
 } {
-  const gs = generationSettingsForSection();
+  const skipSampling = modelSkipsSamplingControls(
+    overrides?.providerHint,
+    overrides?.modelId
+  );
+  const options: EvalGenerationOptions = {
+    ...(skipSampling
+      ? overrides?.temperature !== undefined
+        ? { temperature: overrides.temperature }
+        : {}
+      : { temperature: overrides?.temperature ?? CRITERIA_EVAL_TEMPERATURE }),
+    ...(skipSampling
+      ? overrides?.seed !== undefined
+        ? { seed: overrides.seed }
+        : {}
+      : { seed: overrides?.seed ?? CRITERIA_EVAL_SEED }),
+    effort: overrides?.effort ?? "none",
+  };
   return {
-    criterionModelId: CRITERIA_EVAL_GOOGLE_MODEL_ID,
+    criterionModelId: overrides?.modelId ?? CRITERIA_EVAL_GOOGLE_MODEL_ID,
     criterionProvider:
       "@ai-sdk/google · Vercel AI SDK generateText (`ai` package) + structured output (`Output.object`)",
-    criterionTemperature: CRITERIA_EVAL_TEMPERATURE,
-    criterionSeed: CRITERIA_EVAL_SEED,
+    criterionTemperature: options.temperature,
+    criterionSeed: options.seed,
+    criterionEffort: options.effort ?? "none",
     criterionStructuredOutput: evaluationSchemaDescription,
-    criterionGenerationConfig: `all sections: maxOutputTokens=${gs.maxOutputTokens}; seed=${CRITERIA_EVAL_SEED}; no thinking (non-reasoning model)`,
+    criterionGenerationConfig: describeEvalGenerationConfig(
+      options,
+      overrides?.providerHint,
+      overrides?.modelId
+    ),
   };
 }
 
@@ -144,7 +180,7 @@ function sectionPlainTextForPrompt(section: SectionType, content: unknown): stri
 }
 
 /** Plain text for the LLM (pending suggestion marks stripped; placeholders unchanged). */
-function sectionContentForPrompt(section: SectionType, content: unknown): string {
+export function sectionContentForPrompt(section: SectionType, content: unknown): string {
   return sectionPlainTextForPrompt(section, content);
 }
 
@@ -267,6 +303,10 @@ export async function evaluateSection({
   content,
   reportContext,
   allSections,
+  model,
+  providerHint,
+  modelId,
+  generationOptions,
 }: {
   section: SectionType;
   content: unknown;
@@ -275,6 +315,14 @@ export async function evaluateSection({
     date: Date | string;
   };
   allSections?: AllSectionsContent;
+  /** Optional override model — when omitted, uses the default Google Gemini model. */
+  model?: LanguageModel;
+  /** Provider hint for generation settings (e.g. seed handling). */
+  providerHint?: string;
+  /** Model id for provider-specific generation constraints. */
+  modelId?: string;
+  /** Temperature, seed, and effort overrides for bulk eval / sweeps. */
+  generationOptions?: EvalGenerationOptions;
 }): Promise<CriterionEvaluationResult[]> {
   const criteria = getCriteria(section);
   if (criteria.length === 0) return [];
@@ -297,7 +345,13 @@ export async function evaluateSection({
 
   const { systemPrompt, userPrompt } = prompts;
 
-  const generationSettings = generationSettingsForSection();
+  const resolvedModel = model ?? resolveModel();
+  const resolvedGenerationOptions = generationOptions ?? DEFAULT_EVAL_GENERATION_OPTIONS;
+  const generationSettings = generationSettingsForSection(
+    providerHint,
+    resolvedGenerationOptions,
+    modelId
+  );
 
   let evaluations: Array<{
     criterionKey: string;
@@ -306,20 +360,23 @@ export async function evaluateSection({
   }>;
 
   try {
+    const { temperature, maxOutputTokens, seed, providerOptions } = generationSettings;
     const result = await generateText({
-      model: resolveModel(),
+      model: resolvedModel,
       output: Output.object({ schema: evaluationSchema }),
       system: systemPrompt,
       prompt: userPrompt,
-      temperature: CRITERIA_EVAL_TEMPERATURE,
-      ...generationSettings,
+      ...(temperature !== undefined ? { temperature } : {}),
+      maxOutputTokens,
+      ...(seed !== undefined ? { seed } : {}),
+      ...(providerOptions ? { providerOptions } : {}),
       ...langfuseGenerateTextTelemetry({
         functionId: "criteria-evaluate-section",
         metadata: {
           feature: "criteria-evaluation",
           section,
           criterionCount: criteria.length,
-          model: CRITERIA_EVAL_GOOGLE_MODEL_ID,
+          model: modelId ?? CRITERIA_EVAL_GOOGLE_MODEL_ID,
           promptVersion: PROMPT_VERSION,
         },
       }),

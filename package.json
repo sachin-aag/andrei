@@ -28,10 +28,13 @@
     "db:local:reset": "docker compose down -v && docker compose up -d && sleep 3 && drizzle-kit push --force",
     "db:studio": "drizzle-kit studio",
     "set-workspace-password": "tsx scripts/set-workspace-password.ts",
-    "sample-eval-report": "tsx scripts/bulk-sample-evaluation-report.ts"
+    "sample-eval-report": "tsx scripts/bulk-sample-evaluation-report.ts",
+    "model-sweep": "tsx scripts/eval/run-model-sweep.ts",
+    "compare-evals": "tsx scripts/eval/compare-eval-runs.ts"
   },
   "dependencies": {
     "@ai-sdk/gateway": "^3.0.104",
+    "@ai-sdk/openai": "^3.0.68",
     "@ai-sdk/google": "^3.0.64",
     "@ai-sdk/google-vertex": "^4.0.137",
     "@auth/drizzle-adapter": "^1.11.2",
