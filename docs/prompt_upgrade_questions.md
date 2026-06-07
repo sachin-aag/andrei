@@ -50,6 +50,7 @@ Once finalized, we'll translate these into prompt changes.
 **Q:** Is "human error" an acceptable root cause?
 
 **Suggested answer:** No, not by itself. The chain must reach a *procedural or systemic gap* that made the human error possible (e.g., "no interlock on the valve" or "SOP did not require a verification step"). Stopping at "human error" without a procedural gap = `not_met`.
+// not yet fed B3 in
 
 ### B4. Speculative steps
 
@@ -74,6 +75,8 @@ Once finalized, we'll translate these into prompt changes.
 **Q:** If the root cause is reached in 3 whys and the remaining slots say "Not Applicable", is that acceptable?
 
 **Suggested answer:** Yes. Unused slots marked N/A are fine as long as the chain logically concluded.
+
+// not yet fed b6, b7
 
 ---
 

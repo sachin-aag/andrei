@@ -5,13 +5,37 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+function formatDateParts(
+  d: Date,
+  getters: { day: () => number; month: () => number; year: () => number }
+): string {
+  const day = String(getters.day()).padStart(2, "0");
+  const month = String(getters.month() + 1).padStart(2, "0");
+  const year = getters.year();
+  return `${day}/${month}/${year}`;
+}
+
+/** Calendar dates stored as UTC midnight (report date, DOCX import). */
+export function formatCalendarDate(
+  date: Date | string | number | null | undefined
+): string {
+  if (!date) return "";
+  const d = typeof date === "object" ? date : new Date(date);
+  return formatDateParts(d, {
+    day: () => d.getUTCDate(),
+    month: () => d.getUTCMonth(),
+    year: () => d.getUTCFullYear(),
+  });
+}
+
 export function formatDate(date: Date | string | number | null | undefined): string {
   if (!date) return "";
   const d = typeof date === "object" ? date : new Date(date);
-  const day = String(d.getDate()).padStart(2, "0");
-  const month = String(d.getMonth() + 1).padStart(2, "0");
-  const year = d.getFullYear();
-  return `${day}/${month}/${year}`;
+  return formatDateParts(d, {
+    day: () => d.getDate(),
+    month: () => d.getMonth(),
+    year: () => d.getFullYear(),
+  });
 }
 
 export function formatDateTime(date: Date | string | number | null | undefined): string {

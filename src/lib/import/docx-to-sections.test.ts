@@ -21,7 +21,7 @@ import {
   mammothMarkdownToImportPlain,
 } from "@/lib/import/docx-to-sections";
 import { richJsonToPlainText } from "@/lib/tiptap/rich-text";
-import { formatDate } from "@/lib/utils";
+import { formatCalendarDate } from "@/lib/utils";
 
 const fixturePath = path.join(
   process.cwd(),
@@ -214,7 +214,7 @@ describe("docx import", () => {
       brainstorming: false,
     });
 
-    expect(formatDate(imported.header.date)).toBe("09/04/2026");
+    expect(formatCalendarDate(imported.header.date)).toBe("09/04/2026");
     expect(imported.header.deviationNo).toBe("DEV/PK/25/002");
     expect(imported.header.otherTools).toBe("Not applicable");
     expect(imported.sections.analyze.otherTools).toBe("Not Applicable");

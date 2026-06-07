@@ -11,7 +11,7 @@ import type { WorkspaceUser } from "@/lib/auth/workspace-user";
 import { CreateReportButton } from "@/components/dashboard/create-report-button";
 import { DeleteReportButton } from "@/components/dashboard/delete-report-button";
 import { EvaluateWithAiButton } from "@/components/dashboard/evaluate-with-ai-button";
-import { formatDate } from "@/lib/utils";
+import { formatCalendarDate, formatDate } from "@/lib/utils";
 import type { ReportStatus } from "@/db/schema";
 
 type DashboardReport = {
@@ -108,7 +108,7 @@ export function ReportList({
                     className="text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
                   >
                     <div className="flex flex-wrap items-center gap-3">
-                      <span>Date: {formatDate(report.date)}</span>
+                      <span>Date: {formatCalendarDate(report.date)}</span>
                       <span>·</span>
                       <span>Author: {author?.name ?? "—"}</span>
                       {manager && (

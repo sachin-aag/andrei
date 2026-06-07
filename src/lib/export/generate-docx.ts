@@ -16,7 +16,7 @@ import { EMPTY_CONTENT } from "@/types/sections";
 import type { ReportSectionRecord } from "@/types/report";
 import type { reports as reportsTable } from "@/db/schema";
 import { getUser } from "@/lib/auth/user-directory";
-import { formatDate } from "@/lib/utils";
+import { formatCalendarDate } from "@/lib/utils";
 import { collapseFiveWhyFields } from "@/lib/analyze-five-why";
 import { mergeSection } from "@/lib/sections-merge";
 import { applyInvestigationToolCheckboxes } from "@/lib/export/docx-form-checkbox";
@@ -186,7 +186,7 @@ function buildTemplateData(
 
   return {
     // Header row
-    date: formatDate(report.date),
+    date: formatCalendarDate(report.date),
     deviationNo: report.deviationNo,
 
     // Investigation-tool checkboxes are Word form fields in the template (see docx-form-checkbox)

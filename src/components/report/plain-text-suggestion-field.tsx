@@ -182,7 +182,7 @@ export function PlainTextSuggestionField({
       text={text}
       baseOffset={baseOffset}
       focusedFromPos={focusedFromPos}
-      wrapClassName={suggestionClass}
+      wrapClassName={cn(suggestionClass, "placeholder-todo-over-suggestion")}
     />
   );
 
