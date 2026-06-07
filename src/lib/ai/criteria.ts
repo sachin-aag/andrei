@@ -71,9 +71,11 @@ export const DEFINE_CRITERIA: CriterionDefinition[] = [
       "Is the initial scope of impact explicitly stated, including specific identifiers " +
       "such as batch numbers, equipment IDs, instrument IDs, affected departments, or " +
       "material names? " +
-      "The scope must clearly delineate what is affected and what is not " +
-      "(e.g., 'The scope of the deviation was limited to Batch No. B092542503'). " +
-      "Vague scope statements without specific identifiers are insufficient. " +
+      "The scope must clearly delineate what is affected and what is not. " +
+      "Rating: generic category without specific IDs (e.g., 'semi-finished and finished " +
+      "product batches were stored' without listing which batches) → partially_met; " +
+      "named batches (e.g., 'scope limited to Batch No. X, Y, Z') → met; " +
+      "completely omitting scope → not_met. " +
       "For SCADA-related scope, naming the system (e.g., AGLTS SCADA) and the affected " +
       "time periods or functions is sufficient; a site equipment ID (E/PR/xxx) or version " +
       "number for the SCADA system is not required.",
@@ -135,12 +137,14 @@ export const ANALYZE_CRITERIA: CriterionDefinition[] = [
     label: "5-Why approach completeness",
     description:
       "6M and 5-Why are alternative root-cause tools; either one, meaningfully " +
-      "completed, satisfies the Analyze section. (Methodology detail—including that " +
-      "the count of “why” steps is not fixed—is in the system prompt.) Mark this " +
-      "criterion 'met' when 5-Why is the active tool, each question is derived " +
-      "from facts in Define/Measure (not generic), each answer introduces new " +
-      "evidence, and a clear conclusion is provided. Also mark it 'met' when the " +
-      "investigation explicitly relies on 6M and 5-Why is documented as 'Not " +
+      "completed, satisfies the Analyze section. Apply the 5-WHY COMPLETENESS STANDARD " +
+      "in the system prompt. Mark 'met' when 5-Why is the active tool, the chain starts " +
+      "from the specific observed deviation in Define/Measure (not a generic statement), " +
+      "each question is derived from section facts, and a clear conclusion is provided. " +
+      "Mark 'partially_met' when the chain reaches a plausible root cause but contains " +
+      "speculative or skipped intermediate steps. Mark 'not_met' when the chain is " +
+      "circular, repeats wording, or the conclusion contradicts the chain. Also mark " +
+      "'met' when the investigation relies on 6M and 5-Why is documented as 'Not " +
       "Applicable' with a brief rationale.",
   },
   {
@@ -179,7 +183,9 @@ export const IMPROVE_CRITERIA: CriterionDefinition[] = [
       "Corrective actions for each root cause / substantiated probable root cause",
     description:
       "Were specific corrective actions identified for each root cause / substantiated " +
-      "probable root cause, as applicable?",
+      "probable root cause, as applicable? When prior section context includes Analyze, " +
+      "compare against root causes identified there. Each contributing factor should be " +
+      "addressed by at least one action; actions targeting a different issue → not_met.",
   },
   {
     key: "improve.tracking_fields",
@@ -217,14 +223,17 @@ export const CONTROL_CRITERIA: CriterionDefinition[] = [
       "Preventive actions for each root cause / substantiated probable root cause",
     description:
       "Were specific preventive actions identified for each root cause / substantiated " +
-      "probable root cause as applicable?",
+      "probable root cause as applicable? When prior section context includes Analyze, " +
+      "each root cause there should be addressed by at least one preventive action.",
   },
   {
     key: "control.linked_to_root_cause",
     label: "Linked to the classification of the root cause",
     description:
       "Was the preventive action linked to the classification of the root cause and " +
-      "explanation given for how it will prevent recurrence?",
+      "explanation given for how it will prevent recurrence? When prior section context " +
+      "includes Analyze, actions must trace to an identified root cause there — " +
+      "otherwise not_met.",
   },
   {
     key: "control.tracking_fields",

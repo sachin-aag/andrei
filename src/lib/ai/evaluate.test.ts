@@ -144,6 +144,9 @@ describe("evaluateSection", () => {
       "Occurrence date/time and detection date/time are distinct facts"
     );
     expect(prompt).toContain("SCADA:");
+    expect(prompt).toContain("INITIAL SCOPE");
+    expect(prompt).toContain("PARTIALLY_MET CALIBRATION");
+    expect(prompt).toContain("JUSTIFIED ABSENCE");
     expect(prompt).toContain("Do not rewrite the report");
     expect(prompt).not.toMatch(/<example type="strong"/);
     expect(prompt).not.toMatch(/<example type="weak"/);
@@ -165,6 +168,8 @@ describe("evaluateSection", () => {
     expect(prompt).toContain("5-Why and 6M are alternatives");
     expect(prompt).toContain("Fewer or more than five questions are acceptable");
     expect(prompt).toContain('jump directly to "human error"');
+    expect(prompt).toContain("5-WHY COMPLETENESS STANDARD");
+    expect(prompt).toContain("speculative or unsupported intermediate steps");
   });
 
   it("includes section-specific roles in measure, improve, and control prompts", async () => {
@@ -181,6 +186,27 @@ describe("evaluateSection", () => {
       expect(prompt).toContain(COMMON_RULE_PHRASE);
       expect(prompt).toContain(`SECTION ROLE - ${section.toUpperCase()}`);
     }
+  });
+
+  it("includes cross-section traceability in improve and control system prompts", async () => {
+    process.env.GOOGLE_GENERATIVE_AI_API_KEY = "test-key";
+
+    mockSingleEval();
+    await evaluateSection({
+      section: "improve",
+      content: "Corrective action assigned.",
+      reportContext: { deviationNo: "DEV-TRACE", date: "2026-05-02" },
+    });
+    expect(lastSystemPrompt()).toContain("CROSS-SECTION TRACEABILITY");
+    expect(lastSystemPrompt()).toContain("improve.per_root_cause");
+
+    mockSingleEval();
+    await evaluateSection({
+      section: "control",
+      content: "Preventive action assigned.",
+      reportContext: { deviationNo: "DEV-TRACE", date: "2026-05-02" },
+    });
+    expect(lastSystemPrompt()).toContain("control.linked_to_root_cause");
   });
 
   it("asks for criteria-only output without suggested fixes", async () => {
