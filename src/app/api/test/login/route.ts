@@ -1,8 +1,44 @@
+import { createId } from "@paralleldrive/cuid2";
 import { NextResponse } from "next/server";
 import { encode } from "next-auth/jwt";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { workspaceUsers } from "@/db/schema";
+
+function displayNameFromEmail(email: string): string {
+  const local = email.split("@")[0] ?? email;
+  const parts = local.split(/[._-]+/).filter(Boolean);
+  if (parts.length === 0) return email;
+  return parts
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(" ");
+}
+
+/** Upsert the Playwright test engineer when ALLOW_TEST_LOGIN is enabled. */
+async function ensureTestWorkspaceUser(email: string) {
+  const existing = await db.query.workspaceUsers.findFirst({
+    where: eq(workspaceUsers.email, email),
+  });
+  if (existing) return existing;
+
+  const [created] = await db
+    .insert(workspaceUsers)
+    .values({
+      id: createId(),
+      name: displayNameFromEmail(email),
+      email,
+      role: "engineer",
+      title: "Test Engineer",
+    })
+    .onConflictDoNothing({ target: workspaceUsers.email })
+    .returning();
+
+  if (created) return created;
+
+  return db.query.workspaceUsers.findFirst({
+    where: eq(workspaceUsers.email, email),
+  });
+}
 
 function isTestLoginEnabled(): boolean {
   return (
@@ -30,9 +66,7 @@ export async function POST() {
     return NextResponse.json({ error: "AUTH_SECRET not set" }, { status: 500 });
   }
 
-  const wsUser = await db.query.workspaceUsers.findFirst({
-    where: eq(workspaceUsers.email, testEmail),
-  });
+  const wsUser = await ensureTestWorkspaceUser(testEmail);
   if (!wsUser) {
     return NextResponse.json(
       { error: `No workspace user with email ${testEmail}` },
