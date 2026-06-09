@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
-import { loginAsEngineer, unlockIfNeeded } from "./helpers/auth";
+import { loginAsEngineer } from "./helpers/auth";
 
 const fixturePath = path.join(
   process.cwd(),
@@ -36,10 +36,6 @@ test.describe("legacy equation formula rendering", () => {
 
   test("imports DOCX formulas as visible inline images in the editor", async ({ page }) => {
     test.setTimeout(120_000);
-
-    await page.goto("/");
-    await unlockIfNeeded();
-    await loginAsEngineer(page);
 
     await page.getByRole("button", { name: /new report/i }).first().click();
     await page.locator("#report-upload").setInputFiles(fixturePath);

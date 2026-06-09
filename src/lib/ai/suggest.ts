@@ -17,6 +17,8 @@ import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-sugg
 import { suggestionEditsPlaceholder } from "@/lib/placeholders/suggestion-placeholder-policy";
 import { cleanSectionContentForEval } from "@/lib/tiptap/strip-pending-suggestions";
 import { EDITABLE_SECTIONS } from "@/types/sections";
+import { isTestSkipSuggestions } from "@/lib/test/ai-bypass";
+import { getStubSuggestionsForSection } from "@/lib/ai/stub-suggestions";
 
 export type SuggestionDropReason =
   | "schema_invalid"
@@ -120,6 +122,41 @@ export async function generateSuggestionsForSection({
 }): Promise<{ suggestions: GeneratedSuggestion[]; dropped: Array<{ criterionKey: string; reason: SuggestionDropReason }> }> {
   if (gapCriteria.length === 0) {
     return { suggestions: [], dropped: [] };
+  }
+
+  if (isTestSkipSuggestions()) {
+    const allowedKeys = new Set(gapCriteria.map((g) => g.criterionKey));
+    const evalIdByKey = new Map(gapCriteria.map((g) => [g.criterionKey, g.evaluationId]));
+    const rawSuggestions = getStubSuggestionsForSection(section, allowedKeys);
+    const suggestions: GeneratedSuggestion[] = [];
+    const dropped: Array<{ criterionKey: string; reason: SuggestionDropReason }> = [];
+    const seenKeys = new Set<string>();
+
+    for (const s of rawSuggestions) {
+      if (seenKeys.has(s.criterionKey)) continue;
+      seenKeys.add(s.criterionKey);
+      if (!isAllowedTargetField(section, s.targetField)) {
+        dropped.push({ criterionKey: s.criterionKey, reason: "bad_target_field" });
+        continue;
+      }
+      if (!s.deleteText.trim() && !s.insertText.trim()) {
+        dropped.push({ criterionKey: s.criterionKey, reason: "empty_edit" });
+        continue;
+      }
+      const evaluationId = evalIdByKey.get(s.criterionKey);
+      if (!evaluationId) continue;
+      suggestions.push({
+        ...s,
+        insertText: normalizeSuggestionInsertText(s.insertText),
+        evaluationId,
+      });
+    }
+    for (const g of gapCriteria) {
+      if (!seenKeys.has(g.criterionKey)) {
+        dropped.push({ criterionKey: g.criterionKey, reason: "schema_invalid" });
+      }
+    }
+    return { suggestions, dropped };
   }
 
   const contentStr = sectionContentForPrompt(section, content);

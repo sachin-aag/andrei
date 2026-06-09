@@ -1,8 +1,9 @@
 import { config as loadEnv } from "dotenv";
 import type { Config } from "drizzle-kit";
 
-loadEnv({ path: ".env.local" });
+// .env.local wins over shell / .env (avoids pushing to Neon when local URL is configured).
 loadEnv({ path: ".env" });
+loadEnv({ path: ".env.local", override: true });
 
 if (!process.env.DATABASE_URL) {
   throw new Error(

@@ -215,6 +215,10 @@ npm run sample-eval-report -- --input-dir ./path/to/docx --out ./my-report.html
 
 Flags: `--input-dir`, `--out`, `--concurrency` (or `-j`), `--report-date`.
 
+## Testing
+
+See **[TESTING.md](TESTING.md)** for how to run tests, view Playwright reports, test-only env vars, and a full catalog of automated and manual cases.
+
 ## Verification checklist
 
 1. Create a report, fill all sections, reload - changes persist (auto-save).
