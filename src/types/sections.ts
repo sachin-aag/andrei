@@ -37,18 +37,18 @@ export type AnalyzeSection = {
   rootCause: {
     narrative: JSONContent;
   };
-  /** System/Document/Product/Equipment/Patient safety — single block (imported or edited). */
-  impactAssessment: string;
+  /** System/Document/Product/Equipment/Patient safety — single rich block. */
+  impactAssessment: JSONContent;
 };
 
 export type ImproveSection = {
   narrative: JSONContent;
-  correctiveActions: string;
+  correctiveActions: JSONContent;
 };
 
 export type ControlSection = {
-  /** All preventive-action and closure content in one free-text field. */
-  preventiveActions: string;
+  /** All preventive-action and closure content in one rich field. */
+  preventiveActions: JSONContent;
 };
 
 export type DocumentsReviewedSection = {
@@ -104,14 +104,14 @@ export const EMPTY_CONTENT: SectionContentMap = {
     rootCause: {
       narrative: emptyDoc(),
     },
-    impactAssessment: "",
+    impactAssessment: emptyDoc(),
   },
   improve: {
     narrative: emptyDoc(),
-    correctiveActions: "",
+    correctiveActions: emptyDoc(),
   },
   control: {
-    preventiveActions: "",
+    preventiveActions: emptyDoc(),
   },
   documents_reviewed: {
     items: [],

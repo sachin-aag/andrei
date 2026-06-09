@@ -142,7 +142,15 @@ type ReportContextValue = {
     editor: Editor
   ) => () => void;
   getEditor: (section: SectionType, contentPath: string) => Editor | null;
-  /** Key of the last-focused Tiptap field (`section:contentPath`). */
+  /** Key of the last-focused field (`section:contentPath`), rich or plain. */
+  activeFieldKey: string | null;
+  activeFieldKind: "rich" | "plain" | null;
+  setActiveField: (
+    section: SectionType,
+    contentPath: string,
+    kind: "rich" | "plain"
+  ) => void;
+  /** Key of the last-focused Tiptap field; null when a plain-text field is active. */
   activeEditorKey: string | null;
   setActiveEditor: (section: SectionType, contentPath: string) => void;
   getActiveEditor: () => Editor | null;
@@ -223,6 +231,9 @@ type ReportEditorsContextValue = Pick<
   ReportContextValue,
   | "registerEditor"
   | "getEditor"
+  | "activeFieldKey"
+  | "activeFieldKind"
+  | "setActiveField"
   | "activeEditorKey"
   | "setActiveEditor"
   | "getActiveEditor"
@@ -339,7 +350,14 @@ export function ReportProvider({
    */
   const editorsRef = useRef<Map<string, EditorRegistryEntry>>(new Map());
   const [editorTick, setEditorTick] = useState(0);
-  const [activeEditorKey, setActiveEditorKey] = useState<string | null>(null);
+  const [activeField, setActiveFieldState] = useState<{
+    key: string;
+    kind: "rich" | "plain";
+  } | null>(null);
+  const activeFieldKey = activeField?.key ?? null;
+  const activeFieldKind = activeField?.kind ?? null;
+  const activeEditorKey =
+    activeField?.kind === "rich" ? activeField.key : null;
 
   const registerEditor = useCallback(
     (section: SectionType, contentPath: string, editor: Editor) => {
@@ -382,9 +400,19 @@ export function ReportProvider({
     []
   );
 
-  const setActiveEditor = useCallback((section: SectionType, contentPath: string) => {
-    setActiveEditorKey(editorRegistryKey(section, contentPath));
-  }, []);
+  const setActiveField = useCallback(
+    (section: SectionType, contentPath: string, kind: "rich" | "plain") => {
+      setActiveFieldState({ key: editorRegistryKey(section, contentPath), kind });
+    },
+    []
+  );
+
+  const setActiveEditor = useCallback(
+    (section: SectionType, contentPath: string) => {
+      setActiveField(section, contentPath, "rich");
+    },
+    [setActiveField]
+  );
 
   const getActiveEditor = useCallback(() => {
     if (!activeEditorKey) return null;
@@ -859,6 +887,9 @@ export function ReportProvider({
     () => ({
       registerEditor,
       getEditor,
+      activeFieldKey,
+      activeFieldKind,
+      setActiveField,
       activeEditorKey,
       setActiveEditor,
       getActiveEditor,
@@ -867,6 +898,9 @@ export function ReportProvider({
     [
       registerEditor,
       getEditor,
+      activeFieldKey,
+      activeFieldKind,
+      setActiveField,
       activeEditorKey,
       setActiveEditor,
       getActiveEditor,

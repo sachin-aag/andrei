@@ -1,8 +1,13 @@
 /**
- * Splits unified Improve/Control free-text (as stored in the app) into template cells:
+ * Splits unified Improve/Control content (as stored in the app) into template cells:
  * checkpoints in the Improve/Control row, narrative in the Corrective/Preventive Action row.
  */
 
+import type { JSONContent } from "@tiptap/core";
+import {
+  emptyDoc,
+  richJsonToPlainText,
+} from "@/lib/tiptap/rich-text";
 import {
   CONTROL_LAST_CHECKPOINT_MARKER,
   IMPROVE_LAST_CHECKPOINT_MARKER,
@@ -151,6 +156,105 @@ export function splitImproveUnifiedText(text: string): {
   return {
     checkpoints: checkpoints.trim(),
     correctiveAction,
+  };
+}
+
+function nodePlainText(node: JSONContent): string {
+  return richJsonToPlainText({ type: "doc", content: [node] }).trim();
+}
+
+function paragraphStartsWithLabel(node: JSONContent, labels: readonly string[]): boolean {
+  const plain = nodePlainText(node);
+  if (!plain) return false;
+  return findLabel(plain, [...labels]) !== null;
+}
+
+function splitRichDocAtLabels(
+  doc: JSONContent,
+  actionLabels: readonly string[],
+  stopLabels: readonly string[]
+): { checkpoints: JSONContent[]; action: JSONContent[] } {
+  const nodes = doc.content ?? [];
+  const checkpoints: JSONContent[] = [];
+  const action: JSONContent[] = [];
+  let phase: "checkpoints" | "action" = "checkpoints";
+
+  for (const node of nodes) {
+    if (phase === "checkpoints" && paragraphStartsWithLabel(node, actionLabels)) {
+      phase = "action";
+      continue;
+    }
+    if (phase === "action" && paragraphStartsWithLabel(node, stopLabels)) {
+      break;
+    }
+    if (phase === "checkpoints") checkpoints.push(node);
+    else action.push(node);
+  }
+
+  return { checkpoints, action };
+}
+
+export function splitImproveUnifiedRichDoc(doc: JSONContent): {
+  checkpoints: string;
+  correctiveActionDoc: JSONContent;
+} {
+  const plain = richJsonToPlainText(doc);
+  const textSplit = splitImproveUnifiedText(plain);
+  if (!textSplit.correctiveAction) {
+    return { checkpoints: textSplit.checkpoints, correctiveActionDoc: emptyDoc() };
+  }
+
+  const { checkpoints: checkpointNodes, action: actionNodes } = splitRichDocAtLabels(
+    doc,
+    IMPROVE_ACTION_LABELS,
+    ["Corrective Actions Register"]
+  );
+
+  const checkpoints =
+    checkpointNodes.length > 0
+      ? richJsonToPlainText({ type: "doc", content: checkpointNodes })
+      : textSplit.checkpoints;
+
+  const correctiveActionDoc =
+    actionNodes.length > 0
+      ? { type: "doc", content: actionNodes }
+      : doc;
+
+  return {
+    checkpoints: checkpoints.trim(),
+    correctiveActionDoc,
+  };
+}
+
+export function splitControlUnifiedRichDoc(doc: JSONContent): {
+  checkpoints: string;
+  preventiveActionDoc: JSONContent;
+} {
+  const plain = richJsonToPlainText(doc);
+  const textSplit = splitControlUnifiedText(plain);
+  if (!textSplit.preventiveAction) {
+    return { checkpoints: textSplit.checkpoints, preventiveActionDoc: emptyDoc() };
+  }
+
+  const { checkpoints: checkpointNodes, action: actionNodes } = splitRichDocAtLabels(
+    doc,
+    CONTROL_ACTION_LABELS,
+    CONTROL_BODY_STOP_LABELS
+  );
+
+  const checkpoints =
+    checkpointNodes.length > 0
+      ? richJsonToPlainText({ type: "doc", content: checkpointNodes })
+      : textSplit.checkpoints;
+
+  const preventiveActionDoc =
+    actionNodes.length > 0
+      ? { type: "doc", content: actionNodes }
+      : doc;
+
+  return {
+    checkpoints: checkpoints.trim(),
+    preventiveActionDoc,
   };
 }
 

@@ -5,13 +5,13 @@ import {
   useReportSection,
 } from "@/providers/report-provider";
 import { useSectionSave } from "@/hooks/use-section-save";
-import { PlainTextSuggestionField } from "@/components/report/plain-text-suggestion-field";
+import { TiptapSectionField } from "@/components/report/tiptap-section-field";
 import { SectionShell } from "./section-shell";
 
 export function ControlEditor() {
   const { readOnly } = useReportData();
   const { update } = useReportSection("control");
-  const { status, lastSavedAt, value } = useSectionSave("control");
+  const { status, lastSavedAt, value, flushSave } = useSectionSave("control");
 
   return (
     <SectionShell
@@ -21,19 +21,21 @@ export function ControlEditor() {
       lastSavedAt={lastSavedAt}
       section="control"
     >
-      <PlainTextSuggestionField
+      <TiptapSectionField
         section="control"
         contentPath="preventiveActions"
         label="Preventive actions"
-        value={value.preventiveActions}
-        disabled={readOnly}
-        className="min-h-[280px]"
         placeholder="Describe preventive actions (per root cause where applicable), tracking IDs, responsible persons, due dates, expected outcomes, effectiveness verification or rationale, and any interim or closure context—in one continuous section."
-        onChange={(next) =>
-          update(() => ({
-            preventiveActions: next,
+        className="grid gap-1.5 scroll-mt-24 min-h-[280px]"
+        value={value.preventiveActions}
+        onChange={(doc) =>
+          update((p) => ({
+            ...p,
+            preventiveActions: doc,
           }))
         }
+        onFlushSave={flushSave}
+        locked={readOnly}
       />
     </SectionShell>
   );

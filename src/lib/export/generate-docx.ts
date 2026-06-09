@@ -32,12 +32,13 @@ import {
 import { narrativeToDocxXmlWithContext, plainTextToDocxXml } from "@/lib/export/narrative-to-docx-xml";
 import { improveControlCheckpointsToDocxXml } from "@/lib/export/improve-control-checkpoints-docx";
 import {
+  legacyStringToDoc,
   normalizeRichField,
   richJsonToPlainText,
 } from "@/lib/tiptap/rich-text";
 import {
-  splitControlUnifiedText,
-  splitImproveUnifiedText,
+  splitControlUnifiedRichDoc,
+  splitImproveUnifiedRichDoc,
 } from "@/lib/improve-control-body-split";
 import {
   applySignatureBlockToDocxZip,
@@ -159,24 +160,19 @@ function buildTemplateData(
   const i = sectionByKey(sections, "improve") as ImproveSection;
   const c = sectionByKey(sections, "control") as ControlSection;
 
-  let improveUnified =
-    typeof i.correctiveActions === "string" ? i.correctiveActions.trim() : "";
+  let improveDoc = normalizeRichField(i.correctiveActions);
   const improveNarrPlain = richJsonToPlainText(i.narrative).trim();
   if (improveNarrPlain) {
-    if (!improveUnified) improveUnified = improveNarrPlain;
-    else if (
-      !improveUnified.startsWith(improveNarrPlain) &&
-      !improveNarrPlain.startsWith(improveUnified)
-    ) {
-      improveUnified = `${improveNarrPlain}\n\n${improveUnified}`;
+    const corPlain = richJsonToPlainText(improveDoc).trim();
+    if (!corPlain) improveDoc = i.narrative;
+    else if (!corPlain.startsWith(improveNarrPlain) && !improveNarrPlain.startsWith(corPlain)) {
+      improveDoc = legacyStringToDoc(`${improveNarrPlain}\n\n${corPlain}`);
     }
   }
-  const { checkpoints: improveCheckpoints, correctiveAction } =
-    splitImproveUnifiedText(improveUnified);
-  const { checkpoints: controlCheckpoints, preventiveAction } =
-    splitControlUnifiedText(
-      typeof c.preventiveActions === "string" ? c.preventiveActions : ""
-    );
+  const { checkpoints: improveCheckpoints, correctiveActionDoc } =
+    splitImproveUnifiedRichDoc(improveDoc);
+  const { checkpoints: controlCheckpoints, preventiveActionDoc } =
+    splitControlUnifiedRichDoc(normalizeRichField(c.preventiveActions));
   const dr = sectionByKey(sections, "documents_reviewed") as DocumentsReviewedSection;
   const att = sectionByKey(sections, "attachments") as AttachmentsSection;
   const sig = sectionByKey(sections, "signature_approvals") as SignatureApprovalsSection;
@@ -265,7 +261,10 @@ function buildTemplateData(
     // Impact Assessment (single block)
     impactAssessmentXml: withWordComments(
       withWordComments(
-        plainTextToDocxXml(a.impactAssessment, ctx),
+        narrativeToDocxXmlWithContext(
+          normalizeRichField(a.impactAssessment),
+          ctx
+        ).xml,
         ctx,
         comments,
         "analyze",
@@ -280,7 +279,7 @@ function buildTemplateData(
     improveNarrativeXml: improveControlCheckpointsToDocxXml(improveCheckpoints, "improve", ctx),
     correctiveActionsXml: withWordComments(
       withWordComments(
-        plainTextToDocxXml(correctiveAction, ctx),
+        narrativeToDocxXmlWithContext(correctiveActionDoc, ctx).xml,
         ctx,
         comments,
         "improve",
@@ -295,7 +294,7 @@ function buildTemplateData(
     controlNarrativeXml: improveControlCheckpointsToDocxXml(controlCheckpoints, "control", ctx),
     preventiveActionsXml: withWordComments(
       withWordComments(
-        plainTextToDocxXml(preventiveAction, ctx),
+        narrativeToDocxXmlWithContext(preventiveActionDoc, ctx).xml,
         ctx,
         comments,
         "control",

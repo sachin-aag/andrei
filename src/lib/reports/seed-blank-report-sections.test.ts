@@ -13,17 +13,19 @@ describe("seedBlankReportSections", () => {
     const measureText = richJsonToPlainText(sections.measure.narrative);
     expect(measureText).toContain("Does the summary provide relevant facts");
 
-    expect(sections.improve.correctiveActions).toContain(
+    const improveCorrectivePlain = richJsonToPlainText(sections.improve.correctiveActions);
+    expect(improveCorrectivePlain).toContain(
       "Improve section covers the corrective actions"
     );
-    expect(sections.improve.correctiveActions).toContain(
+    expect(improveCorrectivePlain).toContain(
       "Following checkpoint shall be considered as guidance only while finalizing"
     );
-    expect(sections.improve.correctiveActions).toMatch(/4\.\s*Are the identified corrective actions achievable/i);
+    expect(improveCorrectivePlain).toMatch(/4\.\s*Are the identified corrective actions achievable/i);
 
-    expect(sections.control.preventiveActions).toContain(
+    const controlPreventivePlain = richJsonToPlainText(sections.control.preventiveActions);
+    expect(controlPreventivePlain).toContain(
       "Control section covers the preventive actions"
     );
-    expect(sections.control.preventiveActions).toMatch(/12\.\s*Are the identified preventive actions achievable/i);
+    expect(controlPreventivePlain).toMatch(/12\.\s*Are the identified preventive actions achievable/i);
   });
 });

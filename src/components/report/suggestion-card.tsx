@@ -29,7 +29,11 @@ import {
   sortedOpenSuggestionsForSection,
   type ParsedAiFixPayload,
 } from "@/lib/ai/suggestion-gating";
-import { isNarrativeTargetField } from "@/lib/ai/suggest-target-fields";
+import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
+import {
+  getRichFieldValue,
+  setRichFieldValue,
+} from "@/lib/suggestions/rich-field-value";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 import {
   acceptPendingNarrativeSuggestion,
@@ -60,7 +64,6 @@ import {
   type SuggestionValidation,
 } from "@/lib/suggestions/validate-suggestion";
 import type { CommentRecord, EvaluationRecord } from "@/types/report";
-import type { JSONContent } from "@tiptap/core";
 import type { SectionType } from "@/db/schema";
 import type { SectionContentMap } from "@/types/sections";
 
@@ -170,7 +173,7 @@ function SuggestionCardFace({
       </div>
 
       {statusLine ? (
-        <p className="text-[11px] text-green-800 font-medium flex items-center gap-1.5">
+        <p className="text-[11px] suggestion-preview-insert font-medium flex items-center gap-1.5 px-1 py-0.5">
           {phase === "applying" ? (
             <Loader2 className="size-3 animate-spin shrink-0" />
           ) : (
@@ -202,16 +205,13 @@ function SuggestionCardFace({
           )}
         >
           {payload.deleteText ? (
-            <p className="text-red-700/90 line-through">{payload.deleteText}</p>
+            <p className="suggestion-preview-delete">{payload.deleteText}</p>
           ) : null}
           {normalizedInsert ? (
-            <p className="text-green-800">
+            <p className="suggestion-preview-insert">
               {normalizedInsert.split(/(\[[^\]]+\])/g).map((part, i) =>
                 part.startsWith("[") ? (
-                  <span
-                    key={i}
-                    className="inline-block px-1 mx-0.5 rounded bg-amber-100 text-amber-900 border border-amber-200 font-medium"
-                  >
+                  <span key={i} className="suggestion-preview-placeholder">
                     {part}
                   </span>
                 ) : (
@@ -438,16 +438,17 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
       const path = comment.contentPath ?? "narrative";
       const current = sections[section] as Record<string, unknown>;
 
-      if (isNarrativeTargetField(path)) {
-        const narrative = current.narrative as JSONContent;
+      if (isRichTargetField(section, path)) {
+        const doc = getRichFieldValue(current, path);
         const edit = buildSuggestionEdit(payload);
-        const nextDoc = narrativeHasSuggestionMarks(narrative, comment.id)
-          ? acceptPendingNarrativeSuggestion(narrative, comment.id)
-          : applyNarrativeSuggestion(narrative, comment.id, edit);
-        const nextSection = {
-          ...current,
-          narrative: nextDoc,
-        } as SectionContentMap[typeof section];
+        const nextDoc = narrativeHasSuggestionMarks(doc, comment.id)
+          ? acceptPendingNarrativeSuggestion(doc, comment.id)
+          : applyNarrativeSuggestion(doc, comment.id, edit);
+        const nextSection = setRichFieldValue(
+          current,
+          path,
+          nextDoc
+        ) as SectionContentMap[typeof section];
         replaceSection(section, nextSection);
         await saveSection(nextSection);
         return;
@@ -473,16 +474,17 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
       const path = comment.contentPath ?? "narrative";
       const current = sections[section] as Record<string, unknown>;
 
-      if (!isNarrativeTargetField(path)) return;
+      if (!isRichTargetField(section, path)) return;
 
-      const narrative = current.narrative as JSONContent;
-      if (!narrativeHasSuggestionMarks(narrative, comment.id)) return;
+      const doc = getRichFieldValue(current, path);
+      if (!narrativeHasSuggestionMarks(doc, comment.id)) return;
 
-      const nextDoc = removePendingNarrativeSuggestion(narrative, comment.id);
-      const nextSection = {
-        ...current,
-        narrative: nextDoc,
-      } as SectionContentMap[typeof section];
+      const nextDoc = removePendingNarrativeSuggestion(doc, comment.id);
+      const nextSection = setRichFieldValue(
+        current,
+        path,
+        nextDoc
+      ) as SectionContentMap[typeof section];
       replaceSection(section, nextSection);
       await saveSection(nextSection);
     },

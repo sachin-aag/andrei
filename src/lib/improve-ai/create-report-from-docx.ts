@@ -11,7 +11,6 @@ import {
   isPostgresUniqueViolation,
   normalizeDeviationNo,
 } from "@/lib/reports/deviation-no";
-import { seedBlankReportSections } from "@/lib/reports/seed-blank-report-sections";
 import { REPORT_SECTION_ROW_ORDER } from "@/types/sections";
 
 async function persistImportedComments(
@@ -131,7 +130,6 @@ export async function createReportFromDocxUpload(params: {
     if (!report) throw new Error("Failed to create report");
     createdReportId = report.id;
 
-    const blankSections = seedBlankReportSections();
     await db.insert(reportSections).values(
       REPORT_SECTION_ROW_ORDER.map((section) => ({
         reportId: report.id,

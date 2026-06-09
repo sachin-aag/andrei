@@ -87,8 +87,8 @@ describe("docx import", () => {
       fs.readFileSync(legacyEquationFixturePath)
     );
 
-    const improve = imported.sections.improve.correctiveActions;
-    const control = imported.sections.control.preventiveActions;
+    const improve = richJsonToPlainText(imported.sections.improve.correctiveActions);
+    const control = richJsonToPlainText(imported.sections.control.preventiveActions);
 
     expect(improve).toMatch(
       /4\.\s*Are the identified corrective actions achievable/i
@@ -102,7 +102,7 @@ describe("docx import", () => {
     expect(control).toContain("Preventive Action linked");
     expect(control).toContain("Procedure Error");
 
-    const impact = imported.sections.analyze.impactAssessment;
+    const impact = richJsonToPlainText(imported.sections.analyze.impactAssessment);
     expect(impact).toContain("Performed the detail impact assessment");
     expect(impact).toContain("System:");
     expect(impact).toContain("Patient safety/Past Batches");
@@ -239,21 +239,22 @@ describe("docx import", () => {
 
     const improveNarrPlain = richJsonToPlainText(imported.sections.improve.narrative);
     expect(improveNarrPlain).toBe("");
-    expect(imported.sections.improve.correctiveActions).toMatch(
+    const improveCorrective = richJsonToPlainText(imported.sections.improve.correctiveActions);
+    expect(improveCorrective).toMatch(
       /Were specific corrective Actions identified|Improve section covers the corrective actions/i
     );
-    expect(imported.sections.improve.correctiveActions).toContain("Corrective Action:");
-    expect(imported.sections.improve.correctiveActions).toContain(
+    expect(improveCorrective).toContain("Corrective Action:");
+    expect(improveCorrective).toContain(
       "The non-conformance is related to temperature data"
     );
-    expect(imported.sections.improve.correctiveActions).toContain(
+    expect(improveCorrective).toContain(
       "Work Order No. WO/PK/26-005"
     );
-    expect(imported.sections.improve.correctiveActions).toMatch(
+    expect(improveCorrective).toMatch(
       /1\.\s*Work Order No\.\s*WO\/PK\/26-005/
     );
 
-    const controlPrev = imported.sections.control.preventiveActions;
+    const controlPrev = richJsonToPlainText(imported.sections.control.preventiveActions);
     expect(controlPrev).toMatch(
       /Control section covers the preventive actions|Was the Preventive Action linked/i
     );
@@ -292,7 +293,7 @@ describe("docx import", () => {
     const raw = ["Define:", "Def", "Analyze:", analyzeBody].join("\n");
     const sections = buildSectionsFromRaw(raw);
 
-    const impact = sections.analyze.impactAssessment;
+    const impact = richJsonToPlainText(sections.analyze.impactAssessment);
     expect(impact).toContain("System impact text.");
     expect(impact).toContain("Product impact text.");
     expect(impact).toContain("Instrument impact text.");
@@ -397,15 +398,15 @@ describe("docx import", () => {
     ].join("\n");
 
     const sections = buildSectionsFromRaw(raw);
-    const improve = sections.improve.correctiveActions;
-    const control = sections.control.preventiveActions;
+    const improve = richJsonToPlainText(sections.improve.correctiveActions);
+    const control = richJsonToPlainText(sections.control.preventiveActions);
 
     expect(improve).toContain(improveQ3);
     expect(improve).toContain(improveQ4);
     expect(improve).toContain("Corrective narrative paragraph.");
     expect(control).toContain(controlQ2);
     expect(control).toContain(
-      "12. Are the identified preventive actions achievable"
+      "Are the identified preventive actions achievable based on the information provided"
     );
     expect(control).toContain("Preventive narrative paragraph.");
   });

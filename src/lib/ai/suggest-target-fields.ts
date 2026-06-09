@@ -18,7 +18,7 @@ export const SUGGEST_TARGET_FIELD_PATTERNS: Record<SectionType, readonly string[
     "rootCause.narrative",
     "impactAssessment",
   ],
-  improve: ["correctiveActions"],
+  improve: ["narrative", "correctiveActions"],
   control: ["preventiveActions"],
   documents_reviewed: [],
   attachments: [],
@@ -38,6 +38,26 @@ export function isAllowedTargetField(section: SectionType, targetField: string):
   return patterns.some((p) => patternToRegex(p).test(targetField));
 }
 
+/** Rich TipTap fields per section (dot paths). */
+export const RICH_FIELD_PATHS: Partial<Record<SectionType, readonly string[]>> = {
+  define: ["narrative"],
+  measure: ["narrative"],
+  analyze: [
+    "fiveWhy.narrative",
+    "investigationOutcome",
+    "rootCause.narrative",
+    "impactAssessment",
+  ],
+  improve: ["narrative", "correctiveActions"],
+  control: ["preventiveActions"],
+};
+
+export function isRichTargetField(section: SectionType, contentPath: string): boolean {
+  const paths = RICH_FIELD_PATHS[section];
+  return paths?.includes(contentPath) ?? false;
+}
+
+/** @deprecated Use isRichTargetField(section, path) — kept for narrative-only call sites during migration. */
 export function isNarrativeTargetField(targetField: string): boolean {
   return targetField === "narrative";
 }

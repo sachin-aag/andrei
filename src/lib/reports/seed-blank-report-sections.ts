@@ -22,12 +22,12 @@ export function seedBlankReportSections(): SectionContentMap {
     } else if (section === "improve") {
       sections.improve = {
         ...sections.improve,
-        correctiveActions: preamble.trimEnd(),
+        correctiveActions: legacyStringToDoc(preamble.trimEnd()),
       };
     } else if (section === "control") {
       sections.control = {
         ...sections.control,
-        preventiveActions: preamble.trimEnd(),
+        preventiveActions: legacyStringToDoc(preamble.trimEnd()),
       };
     }
   }

@@ -1,5 +1,6 @@
 import {
   applyPlainTextEdit,
+  locatePlainTextDeleteSpan,
   locateUniqueSpan,
   withLeadingSpaceIfNeeded,
 } from "./locate-plain-text-edit";
@@ -26,7 +27,10 @@ export function buildPlainTextSuggestionPreview(
   if (!del && !ins) return null;
 
   if (del) {
-    const span = locateUniqueSpan(value, del);
+    const span = locatePlainTextDeleteSpan(value, {
+      anchorText,
+      deleteText: del,
+    });
     if (span) {
       const insert = withLeadingSpaceIfNeeded(value, span.start, ins);
       return [

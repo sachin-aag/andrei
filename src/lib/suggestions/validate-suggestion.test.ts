@@ -140,6 +140,32 @@ describe("validateSuggestionLocate", () => {
     expect(v.canApply).toBe(false);
   });
 
+  it("maps improve narrative comments to correctiveActions plain text", () => {
+    const improveContent = {
+      narrative: { type: "doc", content: [] },
+      correctiveActions:
+        "CA-1: Retrain operator. [Responsible person: <to be filled>]",
+    };
+    const comment = aiFixComment({
+      section: "improve",
+      contentPath: "narrative",
+      anchorText: "CA-1:",
+      content: serializeAiFixCommentContent({
+        deleteText: "",
+        insertText: " Updated tracking.",
+        reasoning: "",
+      }),
+    });
+    const v = validateSuggestionLocate(
+      comment,
+      "improve",
+      improveContent,
+      "correctiveActions"
+    );
+    expect(v.locateStatus).toBe("locatable");
+    expect(v.canPreview).toBe(true);
+  });
+
   it("flags documentChanged when content hash differs from snapshot", () => {
     const hash = sectionContentHash("define", sectionContent);
     const comment = aiFixComment({

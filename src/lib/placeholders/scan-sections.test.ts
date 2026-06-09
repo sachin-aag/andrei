@@ -1,16 +1,16 @@
 import { describe, expect, it } from "vitest";
 import { collectPlaceholders } from "./scan-sections";
-import { emptyDoc } from "@/lib/tiptap/rich-text";
+import { emptyDoc, legacyStringToDoc } from "@/lib/tiptap/rich-text";
 
 describe("collectPlaceholders", () => {
-  it("finds placeholders in improve correctiveActions plain text", () => {
+  it("finds placeholders in improve correctiveActions rich field", () => {
     const text =
       "Action items are tracked under CAPA [CAPA number: <to be filled>], assigned to [Responsible person: <to be filled>], due by [Due date: <to be filled>].";
 
     const found = collectPlaceholders({
       improve: {
         narrative: emptyDoc(),
-        correctiveActions: text,
+        correctiveActions: legacyStringToDoc(text),
       },
     });
 

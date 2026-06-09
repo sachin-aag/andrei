@@ -2,10 +2,7 @@ import { describe, expect, it } from "vitest";
 import { Schema } from "@tiptap/pm/model";
 import { Decoration } from "@tiptap/pm/view";
 import { findPlaceholdersInPmDoc } from "@/lib/placeholders/find";
-import {
-  buildPlaceholderDecorations,
-  rangeOverlapsPendingSuggestionMarks,
-} from "@/lib/tiptap/placeholder-highlights";
+import { buildPlaceholderDecorations } from "@/lib/tiptap/placeholder-highlights";
 
 function schemaWithSuggestionMarks() {
   return new Schema({
@@ -65,14 +62,6 @@ describe("buildPlaceholderDecorations", () => {
     const bracket = placeholders.find((p) => p.text === placeholder);
     expect(bracket).toBeDefined();
 
-    expect(
-      rangeOverlapsPendingSuggestionMarks(
-        doc,
-        bracket!.fromPos,
-        bracket!.toPos
-      )
-    ).toBe(true);
-
     const slice = doc.textBetween(bracket!.fromPos, bracket!.toPos);
     expect(slice).toBe(placeholder);
 
@@ -81,6 +70,9 @@ describe("buildPlaceholderDecorations", () => {
     expect(unfocusedDeco).toBeDefined();
     expect(inlineDecorationClass(unfocusedDeco)).not.toContain(
       "placeholder-todo-active"
+    );
+    expect(inlineDecorationClass(unfocusedDeco)).not.toContain(
+      "placeholder-todo-over-suggestion"
     );
 
     const focused = buildPlaceholderDecorations(doc, placeholders, bracket!.id);

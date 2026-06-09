@@ -174,16 +174,19 @@ export function contextForPrompt(section: SectionType, content: unknown): string
       "Root cause",
       richJsonToPlainText(normalizeRichField(rootCause?.narrative))
     );
-    pushTextLine(
+    pushTextBlock(
       lines,
       "Impact assessment",
-      typeof content.impactAssessment === "string" ? content.impactAssessment : ""
+      richJsonToPlainText(normalizeRichField(content.impactAssessment))
     );
   } else if (section === "improve") {
-    pushTextLine(lines, "Corrective actions", content.correctiveActions);
+    pushTextBlock(
+      lines,
+      "Corrective actions",
+      richJsonToPlainText(normalizeRichField(content.correctiveActions))
+    );
   } else if (section === "control") {
-    const raw =
-      typeof content.preventiveActions === "string" ? content.preventiveActions : "";
+    const raw = richJsonToPlainText(normalizeRichField(content.preventiveActions));
     const stripped = stripLeadingTemplateChecklist(section, raw);
     pushTextLine(lines, "Preventive actions", stripped);
   }
