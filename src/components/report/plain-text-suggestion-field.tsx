@@ -1,14 +1,16 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Label } from "@/components/ui/label";
 import { PlainTextHighlightedInput } from "@/components/report/plain-text-highlighted-input";
+import { PlainTextPlaceholderSpans } from "@/components/report/plain-text-placeholder-spans";
 import { SuggestionInlineActions } from "@/components/report/suggestion-inline-actions";
 import {
   useReportComments,
   useReportData,
   useReportEvaluations,
+  useReportPlaceholders,
   useReportSections,
 } from "@/providers/report-provider";
 import { useUserDirectory } from "@/providers/user-directory-provider";
@@ -17,7 +19,11 @@ import {
   parseAiFixCommentContent,
 } from "@/lib/ai/suggestion-gating";
 import { applyStructuredFieldSuggestion } from "@/lib/suggestions/apply-field";
-import { buildPlainTextSuggestionPreview } from "@/lib/suggestions/plain-text-preview";
+import {
+  buildPlainTextSuggestionPreview,
+  splitPlainTextPreviewSegments,
+  type PlainTextPreviewSegment,
+} from "@/lib/suggestions/plain-text-preview";
 import { resolveSuggestionFieldPath } from "@/lib/suggestions/resolve-suggestion-field-path";
 import {
   suggestionStaleMessage,
@@ -33,8 +39,65 @@ import {
   CommentPersistError,
   patchCommentStatus,
 } from "@/lib/suggestions/persist-comment-status";
+import { fromPosFromPlaceholderId } from "@/lib/placeholders/find";
 import type { SectionType } from "@/db/schema";
 import type { SectionContentMap } from "@/types/sections";
+
+function renderPreviewSegment(
+  seg: PlainTextPreviewSegment,
+  key: number,
+  baseOffset: number,
+  focusedFromPos: number | null
+) {
+  if (seg.kind === "delete") {
+    return (
+      <PlainTextPlaceholderSpans
+        key={key}
+        text={seg.text}
+        baseOffset={baseOffset}
+        focusedFromPos={focusedFromPos}
+        wrapClassName="suggestion-delete suggestion-delete-ai"
+      />
+    );
+  }
+  if (seg.kind === "insert") {
+    return (
+      <PlainTextPlaceholderSpans
+        key={key}
+        text={seg.text}
+        baseOffset={baseOffset}
+        focusedFromPos={focusedFromPos}
+        wrapClassName="suggestion-insert suggestion-insert-ai"
+      />
+    );
+  }
+  return (
+    <PlainTextPlaceholderSpans
+      key={key}
+      text={seg.text}
+      baseOffset={baseOffset}
+      focusedFromPos={focusedFromPos}
+    />
+  );
+}
+
+function previewSegmentsTextLength(segments: PlainTextPreviewSegment[]): number {
+  return segments.reduce((n, seg) => n + seg.text.length, 0);
+}
+
+function renderPreviewSegments(
+  segments: PlainTextPreviewSegment[],
+  keyOffset: number,
+  baseOffset: number,
+  focusedFromPos: number | null
+) {
+  let offset = baseOffset;
+  return segments.map((seg, i) => {
+    const node = renderPreviewSegment(seg, keyOffset + i, offset, focusedFromPos);
+    offset += seg.text.length;
+    return node;
+  });
+}
 
 export function PlainTextSuggestionField({
   section,
@@ -70,8 +133,10 @@ export function PlainTextSuggestionField({
     endSuggestionApplyTransition,
   } = useReportEvaluations();
   const { sections, replaceSection } = useReportSections();
+  const { focusedPanelPlaceholderId } = useReportPlaceholders();
   const [pending, setPending] = useState(false);
   const [applySettling, setApplySettling] = useState(false);
+  const suggestionWidgetAnchorRef = useRef<HTMLSpanElement>(null);
 
   const activeComment = useMemo(() => {
     if (isSuggestionPreviewHeld(section)) return null;
@@ -102,9 +167,10 @@ export function PlainTextSuggestionField({
     return validateSuggestionLocate(
       activeComment,
       section,
-      sections[section]
+      sections[section],
+      contentPath
     );
-  }, [activeComment, section, sections]);
+  }, [activeComment, section, sections, contentPath]);
 
   const previewSegments = useMemo(() => {
     if (!activeComment || !activeValidation?.canPreview) return null;
@@ -117,9 +183,43 @@ export function PlainTextSuggestionField({
     );
   }, [activeComment, activeValidation, value]);
 
-  const showInlineActions = Boolean(
+  const showInlineSuggestion = Boolean(
     activeComment && previewSegments && !applySettling
   );
+
+  const focusedFromPos = useMemo(() => {
+    if (!focusedPanelPlaceholderId) return null;
+    return fromPosFromPlaceholderId(
+      focusedPanelPlaceholderId,
+      section,
+      contentPath
+    );
+  }, [focusedPanelPlaceholderId, section, contentPath]);
+
+  const mirrorContent = useMemo(() => {
+    if (!showInlineSuggestion || !previewSegments) return undefined;
+    const { before, suggestion, after } =
+      splitPlainTextPreviewSegments(previewSegments);
+    const beforeLen = previewSegmentsTextLength(before);
+    const suggestionLen = previewSegmentsTextLength(suggestion);
+    return (
+      <>
+        {renderPreviewSegments(before, 0, 0, focusedFromPos)}
+        {renderPreviewSegments(suggestion, before.length, beforeLen, focusedFromPos)}
+        <span
+          ref={suggestionWidgetAnchorRef}
+          className="inline-block w-0 align-baseline"
+          aria-hidden
+        />
+        {renderPreviewSegments(
+          after,
+          before.length + suggestion.length,
+          beforeLen + suggestionLen,
+          focusedFromPos
+        )}
+      </>
+    );
+  }, [showInlineSuggestion, previewSegments, focusedFromPos]);
 
   const saveSection = useCallback(
     async (nextContent: SectionContentMap[typeof section]) => {
@@ -139,7 +239,8 @@ export function PlainTextSuggestionField({
     const locateCheck = validateSuggestionLocate(
       activeComment,
       section,
-      sections[section]
+      sections[section],
+      contentPath
     );
     if (!locateCheck.canApply) {
       toast.error(suggestionStaleMessage(locateCheck));
@@ -260,16 +361,6 @@ export function PlainTextSuggestionField({
   return (
     <div className="space-y-1.5 scroll-mt-24">
       <Label>{label}</Label>
-      {showInlineActions && activeComment ? (
-        <SuggestionInlineActions
-          suggestionId={activeComment.id}
-          pending={pending}
-          acceptDisabled={!canResolve || !activeValidation?.canApply}
-          dismissDisabled={!canResolve}
-          onAccept={() => void applyActive()}
-          onDismiss={() => void dismissActive()}
-        />
-      ) : null}
       <PlainTextHighlightedInput
         fieldAnchor={fieldAnchor}
         value={value}
@@ -277,6 +368,21 @@ export function PlainTextSuggestionField({
         disabled={disabled}
         placeholder={placeholder}
         className={className}
+        mirrorContent={mirrorContent}
+        suggestionActive={showInlineSuggestion}
+        suggestionWidgetAnchorRef={suggestionWidgetAnchorRef}
+        inlineSuggestionWidget={
+          showInlineSuggestion && activeComment ? (
+            <SuggestionInlineActions
+              suggestionId={activeComment.id}
+              pending={pending}
+              acceptDisabled={!canResolve || !activeValidation?.canApply}
+              dismissDisabled={!canResolve}
+              onAccept={() => void applyActive()}
+              onDismiss={() => void dismissActive()}
+            />
+          ) : undefined
+        }
         aria-label={label}
       />
     </div>

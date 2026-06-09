@@ -325,9 +325,9 @@
   margin: 0 0.125rem;
   border-radius: 2px;
   font-weight: 500;
-  background-color: rgb(22 101 52 / 0.22);
-  color: rgb(20 83 45);
-  box-shadow: inset 0 0 0 1px rgb(22 101 52 / 0.45);
+  background-color: rgb(245 158 11 / 0.22);
+  color: rgb(146 64 14);
+  box-shadow: inset 0 0 0 1px rgb(245 158 11 / 0.7);
 }
 
 .suggestion-action-widget {
@@ -669,14 +669,6 @@
   -webkit-box-decoration-break: clone;
 }
 
-/* Placeholder inside a pending suggestion: stay on the green track-change palette. */
-.placeholder-todo-over-suggestion,
-.placeholder-todo.placeholder-todo-over-suggestion {
-  background-color: rgb(22 101 52 / 0.24);
-  color: rgb(20 83 45);
-  box-shadow: inset 0 0 0 1px rgb(22 101 52 / 0.5);
-}
-
 /* Panel fill input focused — same placeholder in the narrative editor. */
 .placeholder-todo-active,
 .placeholder-todo.placeholder-todo-active {
@@ -695,35 +687,14 @@
     0 0 0 2px rgb(245 158 11 / 0.35);
 }
 
-.ProseMirror .placeholder-todo .suggestion-insert,
-.ProseMirror .placeholder-todo .suggestion-insert-ai,
-.ProseMirror .placeholder-todo .suggestion-delete,
-.ProseMirror .placeholder-todo .suggestion-delete-ai {
-  background-color: transparent !important;
-  border-bottom-color: transparent !important;
-}
-
-.ProseMirror .placeholder-todo .suggestion-insert-ai::before,
-.ProseMirror .placeholder-todo .suggestion-insert-ai::after,
-.ProseMirror .placeholder-todo .suggestion-delete-ai::before,
-.ProseMirror .placeholder-todo .suggestion-delete-ai::after {
-  display: none !important;
-  content: none !important;
-}
-
-/* Placeholder inside a suggestion run: deepen green on brackets only. */
+/* Placeholders inside suggestion runs stay amber (read clearly over green/red tint). */
 .ProseMirror span.suggestion-insert .placeholder-todo,
 .ProseMirror span.suggestion-insert-ai .placeholder-todo,
 .ProseMirror span.suggestion-delete .placeholder-todo,
 .ProseMirror span.suggestion-delete-ai .placeholder-todo {
-  background-color: rgb(22 101 52 / 0.28) !important;
-  border: none;
-  border-radius: 2px;
-  padding: 0;
-  color: rgb(20 83 45);
-  box-shadow: inset 0 0 0 1px rgb(22 101 52 / 0.55);
-  box-decoration-break: clone;
-  -webkit-box-decoration-break: clone;
+  background-color: rgb(245 158 11 / 0.45) !important;
+  color: rgb(120 53 15) !important;
+  box-shadow: inset 0 0 0 1px rgb(245 158 11 / 0.85) !important;
 }
 
 /* Trailing sliver when a widget splits a placeholder decoration — collapse, don't hide siblings. */
@@ -748,19 +719,13 @@
   -webkit-box-decoration-break: clone;
 }
 
-.placeholder-todo-mirror.placeholder-todo-over-suggestion,
 .suggestion-insert .placeholder-todo-mirror,
 .suggestion-delete .placeholder-todo-mirror {
-  background-color: rgb(22 101 52 / 0.28);
-  color: rgb(20 83 45);
+  background-color: rgb(245 158 11 / 0.45);
+  color: rgb(120 53 15);
   font-weight: 500;
   border-radius: 2px;
-  box-shadow: inset 0 0 0 1px rgb(22 101 52 / 0.55);
+  box-shadow: inset 0 0 0 1px rgb(245 158 11 / 0.85);
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
-}
-
-/* Plain-text suggestion preview: placeholders sit beside green runs, not inside them. */
-.placeholder-todo-mirror.placeholder-todo-over-suggestion {
-  border-bottom: 2px solid rgb(22 101 52);
 }

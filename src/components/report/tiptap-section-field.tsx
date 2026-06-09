@@ -880,6 +880,7 @@ export function TiptapSectionField({
       {editor && (
         <BubbleMenu
           editor={editor}
+          appendTo={() => document.body}
           options={{
             placement: "right-end",
             offset: 10,

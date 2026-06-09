@@ -7,10 +7,6 @@ import { findPlaceholdersInPmDoc } from "../placeholders/find";
 import type { Placeholder } from "../placeholders/find";
 import type { SectionType } from "@/db/schema";
 import type { Node as PMNode } from "@tiptap/pm/model";
-import {
-  suggestionDeleteMarkName,
-  suggestionInsertMarkName,
-} from "@/lib/tiptap/suggestion-marks";
 
 const placeholderKey = new PluginKey<PluginStateData>("placeholderHighlights");
 
@@ -24,31 +20,6 @@ type PlaceholderHighlightOptions = {
   contentPath: string;
 };
 
-/** True when a placeholder span overlaps pending AI suggestion track-change marks. */
-export function rangeOverlapsPendingSuggestionMarks(
-  doc: PMNode,
-  from: number,
-  to: number
-): boolean {
-  let overlaps = false;
-  doc.nodesBetween(from, to, (node) => {
-    if (overlaps || !node.isText) return !overlaps;
-    for (const mark of node.marks) {
-      const name = mark.type.name;
-      if (name !== suggestionInsertMarkName && name !== suggestionDeleteMarkName) {
-        continue;
-      }
-      const status = (mark.attrs as { status?: string }).status;
-      if (status === "pending") {
-        overlaps = true;
-        return false;
-      }
-    }
-    return true;
-  });
-  return overlaps;
-}
-
 export function buildPlaceholderDecorations(
   doc: PMNode,
   placeholders: Placeholder[],
@@ -61,15 +32,9 @@ export function buildPlaceholderDecorations(
     // Skip zero-width slivers when a widget splits an inline decoration.
     if (!slice.trim() && !p.text.trim()) continue;
 
-    const overSuggestion = rangeOverlapsPendingSuggestionMarks(
-      doc,
-      p.fromPos,
-      p.toPos
-    );
     const isFocused = focusedPlaceholderId === p.id;
     const classes = [
       "placeholder-todo",
-      overSuggestion ? "placeholder-todo-over-suggestion" : null,
       isFocused ? "placeholder-todo-active" : null,
     ]
       .filter(Boolean)

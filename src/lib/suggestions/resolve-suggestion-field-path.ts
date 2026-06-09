@@ -16,6 +16,32 @@ export function resolveSuggestionFieldPath(
   return path;
 }
 
+/**
+ * Plain-text field path used for locate/preview/apply. Maps legacy improve/control
+ * `narrative` comments to the fields the UI actually edits.
+ */
+export function effectivePlainTextContentPath(
+  section: SectionType,
+  commentContentPath: string | null,
+  fieldContentPath?: string
+): string {
+  if (fieldContentPath) {
+    return resolveSuggestionFieldPath(
+      section,
+      commentContentPath,
+      fieldContentPath
+    );
+  }
+  const path = commentContentPath ?? "narrative";
+  if (section === "improve" && path === "narrative") {
+    return "correctiveActions";
+  }
+  if (section === "control" && path === "narrative") {
+    return "preventiveActions";
+  }
+  return path;
+}
+
 /** `data-field-anchor` value for gutter positioning of an ai_fix comment. */
 export function suggestionFieldAnchorKey(
   section: SectionType,

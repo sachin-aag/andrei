@@ -13,6 +13,7 @@ import {
   type SuggestionEdit,
 } from "@/lib/tiptap/suggestion-inject";
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
+import { effectivePlainTextContentPath } from "@/lib/suggestions/resolve-suggestion-field-path";
 
 export type SuggestionLocateStatus = "locatable" | "not_found" | "ambiguous";
 
@@ -53,9 +54,15 @@ function plainTextForSuggestionField(
 export function validateSuggestionLocate(
   comment: CommentRecord,
   section: SectionType,
-  sectionContent: unknown
+  sectionContent: unknown,
+  /** When validating from a specific plain-text editor, resolves legacy paths. */
+  fieldContentPath?: string
 ): SuggestionValidation {
-  const path = comment.contentPath ?? "narrative";
+  const path = effectivePlainTextContentPath(
+    section,
+    comment.contentPath,
+    fieldContentPath
+  );
   const edit = suggestionEditFromComment(comment);
   const plain = plainTextForSuggestionField(sectionContent, path);
   const loc = canLocateEditInPlainText(plain, edit);

@@ -27,6 +27,38 @@ export function locateUniqueSpan(
   return { start: match.start, end: match.end };
 }
 
+/**
+ * Locate the delete span for a suggestion edit. When anchorText is present,
+ * prefer locating deleteText inside the anchor slice (same order as TipTap
+ * inject + canLocateEditInPlainText) before falling back to the full field.
+ */
+export function locatePlainTextDeleteSpan(
+  value: string,
+  edit: Pick<PlainTextEdit, "anchorText" | "deleteText">
+): { start: number; end: number } | null {
+  const del = edit.deleteText.trim();
+  const anchor = (edit.anchorText ?? "").trim();
+  if (!del) return null;
+
+  if (anchor) {
+    if (countOccurrences(value, anchor) === 1) {
+      const anchorMatch = findAnchorInText(value, anchor);
+      if (anchorMatch) {
+        const scopedText = value.slice(anchorMatch.start, anchorMatch.end);
+        const inner = locateUniqueSpan(scopedText, del);
+        if (inner) {
+          return {
+            start: anchorMatch.start + inner.start,
+            end: anchorMatch.start + inner.end,
+          };
+        }
+      }
+    }
+  }
+
+  return locateUniqueSpan(value, del);
+}
+
 export type PlainTextEdit = {
   anchorText?: string;
   deleteText: string;
@@ -45,7 +77,7 @@ export function applyPlainTextEdit(
   if (!del && !ins) return null;
 
   if (del) {
-    const span = locateUniqueSpan(value, del);
+    const span = locatePlainTextDeleteSpan(value, edit);
     if (!span) return null;
     const insert = withLeadingSpaceIfNeeded(value, span.start, ins);
     return value.slice(0, span.start) + insert + value.slice(span.end);

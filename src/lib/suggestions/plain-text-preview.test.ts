@@ -31,6 +31,20 @@ describe("buildPlainTextSuggestionPreview", () => {
     ).toBeNull();
   });
 
+  it("includes hence in the delete segment when anchored", () => {
+    const value =
+      "wavelength accuracy standard solution, hence by considering the isolated instance preventive action not anticipated for the occurred nonconformance, however to avoid the reoccurrence, tail";
+    const segments = buildPlainTextSuggestionPreview(
+      value,
+      "hence by considering the isolated instance preventive action not anticipated for the occurred nonconformance, however to avoid the reoccurrence,",
+      "to avoid recurrence,",
+      "standard solution, hence by considering the isolated instance preventive action not anticipated for the occurred nonconformance, however to avoid the reoccurrence,"
+    );
+    expect(segments).not.toBeNull();
+    const del = segments!.find((s) => s.kind === "delete");
+    expect(del?.text.startsWith("hence")).toBe(true);
+  });
+
   it("wraps a delete/insert in context", () => {
     const value =
       "hence there is no requirement of Corrective Action.";
