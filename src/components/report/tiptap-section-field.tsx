@@ -739,50 +739,6 @@ export function TiptapSectionField({
     sectionContent,
   ]);
 
-  // #region agent log
-  useEffect(() => {
-    if (!editor || contentPath !== "narrative" || !activeSuggestionId) return;
-    const frame = requestAnimationFrame(() => {
-      const root = editor.view.dom;
-      const sample = (selector: string) =>
-        Array.from(root.querySelectorAll<HTMLElement>(selector)).slice(0, 5).map((el) => ({
-          className: el.className,
-          evalId: el.getAttribute("data-eval-id"),
-          display: getComputedStyle(el).display,
-          backgroundColor: getComputedStyle(el).backgroundColor,
-          color: getComputedStyle(el).color,
-          textDecoration: getComputedStyle(el).textDecorationLine,
-          text: el.textContent?.slice(0, 80) ?? "",
-        }));
-      fetch("http://127.0.0.1:7659/ingest/5cba3a71-99d6-42b5-91fd-4579d5f913e3", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Debug-Session-Id": "ff3da6",
-        },
-        body: JSON.stringify({
-          sessionId: "ff3da6",
-          runId: "pre-fix",
-          hypothesisId: "B,C,E",
-          location: "tiptap-section-field.tsx:suggestionDomAudit",
-          message: "Suggestion mark DOM audit",
-          data: {
-            activeSuggestionId,
-            insertCount: root.querySelectorAll(".suggestion-insert, .suggestion-insert-ai").length,
-            deleteCount: root.querySelectorAll(".suggestion-delete, .suggestion-delete-ai").length,
-            placeholderCount: root.querySelectorAll(".placeholder-todo").length,
-            inserts: sample(".suggestion-insert, .suggestion-insert-ai"),
-            deletes: sample(".suggestion-delete, .suggestion-delete-ai"),
-            placeholders: sample(".placeholder-todo"),
-          },
-          timestamp: Date.now(),
-        }),
-      }).catch(() => {});
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [editor, contentPath, activeSuggestionId, narrativeContentKey]);
-  // #endregion
-
   // Debounced decoration refresh — coalesces hover-driven updates to one per frame.
   const hoverRefreshFrame = useRef<number | null>(null);
   useEffect(() => {

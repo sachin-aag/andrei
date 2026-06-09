@@ -298,8 +298,36 @@
 .suggestion-delete {
   text-decoration: line-through;
   text-decoration-thickness: 2px;
-  color: var(--muted-foreground);
-  background-color: rgb(220 38 38 / 0.08);
+  text-decoration-color: rgb(220 38 38);
+  color: rgb(185 28 28);
+  background-color: rgb(220 38 38 / 0.12);
+}
+
+/* Gutter card preview — matches inline track-change marks above. */
+.suggestion-preview-delete {
+  color: rgb(185 28 28);
+  text-decoration: line-through;
+  text-decoration-thickness: 2px;
+  text-decoration-color: rgb(220 38 38);
+  background-color: rgb(220 38 38 / 0.1);
+  border-radius: 2px;
+}
+
+.suggestion-preview-insert {
+  color: rgb(20 83 45);
+  background-color: rgb(22 101 52 / 0.12);
+  border-radius: 2px;
+}
+
+.suggestion-preview-placeholder {
+  display: inline-block;
+  padding: 0 0.25rem;
+  margin: 0 0.125rem;
+  border-radius: 2px;
+  font-weight: 500;
+  background-color: rgb(22 101 52 / 0.22);
+  color: rgb(20 83 45);
+  box-shadow: inset 0 0 0 1px rgb(22 101 52 / 0.45);
 }
 
 .suggestion-action-widget {
@@ -641,12 +669,12 @@
   -webkit-box-decoration-break: clone;
 }
 
-/* Placeholder + AI suggestion overlap: yellow wins over green track-change styling. */
+/* Placeholder inside a pending suggestion: stay on the green track-change palette. */
 .placeholder-todo-over-suggestion,
 .placeholder-todo.placeholder-todo-over-suggestion {
-  background-color: rgb(245 158 11 / 0.38);
-  color: rgb(120 53 15);
-  box-shadow: inset 0 0 0 1px rgb(217 119 6 / 0.9);
+  background-color: rgb(22 101 52 / 0.24);
+  color: rgb(20 83 45);
+  box-shadow: inset 0 0 0 1px rgb(22 101 52 / 0.5);
 }
 
 /* Panel fill input focused — same placeholder in the narrative editor. */
@@ -683,17 +711,17 @@
   content: none !important;
 }
 
-/* Placeholder inside a suggestion run: paint yellow on top; keep green on the rest of the run. */
+/* Placeholder inside a suggestion run: deepen green on brackets only. */
 .ProseMirror span.suggestion-insert .placeholder-todo,
 .ProseMirror span.suggestion-insert-ai .placeholder-todo,
 .ProseMirror span.suggestion-delete .placeholder-todo,
 .ProseMirror span.suggestion-delete-ai .placeholder-todo {
-  background-color: rgb(245 158 11 / 0.42) !important;
+  background-color: rgb(22 101 52 / 0.28) !important;
   border: none;
   border-radius: 2px;
   padding: 0;
-  color: rgb(120 53 15);
-  box-shadow: inset 0 0 0 1px rgb(217 119 6 / 0.9);
+  color: rgb(20 83 45);
+  box-shadow: inset 0 0 0 1px rgb(22 101 52 / 0.55);
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
 }
@@ -723,11 +751,11 @@
 .placeholder-todo-mirror.placeholder-todo-over-suggestion,
 .suggestion-insert .placeholder-todo-mirror,
 .suggestion-delete .placeholder-todo-mirror {
-  background-color: rgb(245 158 11 / 0.42);
-  color: rgb(120 53 15);
+  background-color: rgb(22 101 52 / 0.28);
+  color: rgb(20 83 45);
   font-weight: 500;
   border-radius: 2px;
-  box-shadow: inset 0 0 0 1px rgb(217 119 6 / 0.9);
+  box-shadow: inset 0 0 0 1px rgb(22 101 52 / 0.55);
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
 }

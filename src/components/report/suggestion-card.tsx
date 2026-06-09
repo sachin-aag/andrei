@@ -129,37 +129,6 @@ function SuggestionCardFace({
   const { payload, normalizedInsert, linkedEval, queueIndex, queueTotal } = card;
   const eff = linkedEval ? effectiveStatus(linkedEval) : "not_evaluated";
 
-  // #region agent log
-  useLayoutEffect(() => {
-    if (phase !== "steady" || (!payload.deleteText && !normalizedInsert)) return;
-    const parts = normalizedInsert
-      ? normalizedInsert.split(/(\[[^\]]+\])/g).filter(Boolean)
-      : [];
-    fetch("http://127.0.0.1:7659/ingest/5cba3a71-99d6-42b5-91fd-4579d5f913e3", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Debug-Session-Id": "ff3da6",
-      },
-      body: JSON.stringify({
-        sessionId: "ff3da6",
-        runId: "pre-fix",
-        hypothesisId: "A",
-        location: "suggestion-card.tsx:SuggestionCardFace",
-        message: "Suggestion card preview segments",
-        data: {
-          deleteLen: payload.deleteText?.length ?? 0,
-          insertLen: normalizedInsert.length,
-          segmentCount: parts.length,
-          bracketSegments: parts.filter((p) => p.startsWith("[")),
-          effStatus: linkedEval ? eff : null,
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-  }, [phase, payload.deleteText, normalizedInsert, linkedEval, eff]);
-  // #endregion
-
   const statusLine =
     phase === "applying"
       ? queueTotal > 1
@@ -201,7 +170,7 @@ function SuggestionCardFace({
       </div>
 
       {statusLine ? (
-        <p className="text-[11px] text-green-800 font-medium flex items-center gap-1.5">
+        <p className="text-[11px] suggestion-preview-insert font-medium flex items-center gap-1.5 px-1 py-0.5">
           {phase === "applying" ? (
             <Loader2 className="size-3 animate-spin shrink-0" />
           ) : (
@@ -233,16 +202,13 @@ function SuggestionCardFace({
           )}
         >
           {payload.deleteText ? (
-            <p className="text-red-700/90 line-through">{payload.deleteText}</p>
+            <p className="suggestion-preview-delete">{payload.deleteText}</p>
           ) : null}
           {normalizedInsert ? (
-            <p className="text-green-800">
+            <p className="suggestion-preview-insert">
               {normalizedInsert.split(/(\[[^\]]+\])/g).map((part, i) =>
                 part.startsWith("[") ? (
-                  <span
-                    key={i}
-                    className="inline-block px-1 mx-0.5 rounded bg-amber-100 text-amber-900 border border-amber-200 font-medium"
-                  >
+                  <span key={i} className="suggestion-preview-placeholder">
                     {part}
                   </span>
                 ) : (

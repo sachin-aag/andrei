@@ -1,16 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Label } from "@/components/ui/label";
 import { PlainTextHighlightedInput } from "@/components/report/plain-text-highlighted-input";
-import { PlainTextPlaceholderSpans } from "@/components/report/plain-text-placeholder-spans";
 import { SuggestionInlineActions } from "@/components/report/suggestion-inline-actions";
 import {
   useReportComments,
   useReportData,
   useReportEvaluations,
-  useReportPlaceholders,
   useReportSections,
 } from "@/providers/report-provider";
 import { useUserDirectory } from "@/providers/user-directory-provider";
@@ -19,11 +17,7 @@ import {
   parseAiFixCommentContent,
 } from "@/lib/ai/suggestion-gating";
 import { applyStructuredFieldSuggestion } from "@/lib/suggestions/apply-field";
-import {
-  buildPlainTextSuggestionPreview,
-  splitPlainTextPreviewSegments,
-  type PlainTextPreviewSegment,
-} from "@/lib/suggestions/plain-text-preview";
+import { buildPlainTextSuggestionPreview } from "@/lib/suggestions/plain-text-preview";
 import { resolveSuggestionFieldPath } from "@/lib/suggestions/resolve-suggestion-field-path";
 import {
   suggestionStaleMessage,
@@ -39,8 +33,6 @@ import {
   CommentPersistError,
   patchCommentStatus,
 } from "@/lib/suggestions/persist-comment-status";
-import { fromPosFromPlaceholderId } from "@/lib/placeholders/find";
-import { cn } from "@/lib/utils";
 import type { SectionType } from "@/db/schema";
 import type { SectionContentMap } from "@/types/sections";
 
@@ -78,17 +70,8 @@ export function PlainTextSuggestionField({
     endSuggestionApplyTransition,
   } = useReportEvaluations();
   const { sections, replaceSection } = useReportSections();
-  const { focusedPanelPlaceholderId } = useReportPlaceholders();
   const [pending, setPending] = useState(false);
-  /** Keep the preview shell mounted while apply transitions run (avoids height jump). */
   const [applySettling, setApplySettling] = useState(false);
-  const previewShellRef = useRef<HTMLDivElement>(null);
-  const [editHeight, setEditHeight] = useState(0);
-  const [lockedShellHeight, setLockedShellHeight] = useState<number | null>(null);
-
-  const onEditLayoutHeight = useCallback((height: number) => {
-    setEditHeight((prev) => (prev === height ? prev : height));
-  }, []);
 
   const activeComment = useMemo(() => {
     if (isSuggestionPreviewHeld(section)) return null;
@@ -134,100 +117,9 @@ export function PlainTextSuggestionField({
     );
   }, [activeComment, activeValidation, value]);
 
-  const showInlinePreview = Boolean(
-    (activeComment && previewSegments) || applySettling
+  const showInlineActions = Boolean(
+    activeComment && previewSegments && !applySettling
   );
-  const showSettledText = applySettling && !activeComment;
-
-  const splitPreview = useMemo(
-    () =>
-      previewSegments
-        ? splitPlainTextPreviewSegments(previewSegments)
-        : { before: [], suggestion: [], after: [] },
-    [previewSegments]
-  );
-
-  /** Size preview shell to full content (no in-field scroll), at least the last edit height. */
-  useLayoutEffect(() => {
-    if (!showInlinePreview) return;
-    const el = previewShellRef.current;
-    if (!el) return;
-    const next = Math.max(editHeight, el.scrollHeight);
-    setLockedShellHeight((prev) => (prev === next ? prev : next));
-  }, [showInlinePreview, showSettledText, previewSegments, value, splitPreview, editHeight]);
-
-  useEffect(() => {
-    if (showInlinePreview || lockedShellHeight == null) return;
-    const id = requestAnimationFrame(() => setLockedShellHeight(null));
-    return () => cancelAnimationFrame(id);
-  }, [showInlinePreview, lockedShellHeight, value]);
-
-  const focusedFromPos = useMemo(() => {
-    if (!focusedPanelPlaceholderId) return null;
-    return fromPosFromPlaceholderId(
-      focusedPanelPlaceholderId,
-      section,
-      contentPath
-    );
-  }, [focusedPanelPlaceholderId, section, contentPath]);
-
-  const renderSuggestionRun = (
-    text: string,
-    suggestionClass: string,
-    key: number,
-    baseOffset: number
-  ) => (
-    <PlainTextPlaceholderSpans
-      key={key}
-      text={text}
-      baseOffset={baseOffset}
-      focusedFromPos={focusedFromPos}
-      wrapClassName={cn(suggestionClass, "placeholder-todo-over-suggestion")}
-    />
-  );
-
-  const renderSegment = (
-    seg: PlainTextPreviewSegment,
-    key: number,
-    baseOffset: number
-  ) => {
-    if (seg.kind === "delete") {
-      return renderSuggestionRun(
-        seg.text,
-        "suggestion-delete suggestion-delete-fix",
-        key,
-        baseOffset
-      );
-    }
-    if (seg.kind === "insert") {
-      return renderSuggestionRun(
-        seg.text,
-        "suggestion-insert suggestion-insert-fix",
-        key,
-        baseOffset
-      );
-    }
-    return (
-      <PlainTextPlaceholderSpans
-        key={key}
-        text={seg.text}
-        baseOffset={baseOffset}
-        focusedFromPos={focusedFromPos}
-      />
-    );
-  };
-
-  const renderPreviewSegments = (
-    segments: PlainTextPreviewSegment[],
-    keyOffset: number
-  ) => {
-    let offset = 0;
-    return segments.map((seg, i) => {
-      const node = renderSegment(seg, keyOffset + i, offset);
-      offset += seg.text.length;
-      return node;
-    });
-  };
 
   const saveSection = useCallback(
     async (nextContent: SectionContentMap[typeof section]) => {
@@ -254,7 +146,6 @@ export function PlainTextSuggestionField({
       return;
     }
 
-    setLockedShellHeight(previewShellRef.current?.offsetHeight ?? null);
     setApplySettling(true);
     setPending(true);
     try {
@@ -330,7 +221,6 @@ export function PlainTextSuggestionField({
   const dismissActive = useCallback(async () => {
     if (!activeComment || pending || !canResolve) return;
 
-    setLockedShellHeight(previewShellRef.current?.offsetHeight ?? null);
     setApplySettling(true);
     setPending(true);
     try {
@@ -370,68 +260,25 @@ export function PlainTextSuggestionField({
   return (
     <div className="space-y-1.5 scroll-mt-24">
       <Label>{label}</Label>
-      {showInlinePreview ? (
-        <div
-          ref={previewShellRef}
-          data-field-anchor={fieldAnchor}
-          className={cn(
-            "w-full rounded-md border border-violet-500/35 bg-[var(--card)] px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap",
-            "ring-1 ring-violet-400/20",
-            applySettling && "suggestion-field-settling",
-            className
-          )}
-          style={{
-            minHeight:
-              lockedShellHeight ?? (editHeight > 0 ? editHeight : undefined),
-          }}
-          aria-label={
-            showSettledText
-              ? `${label} — applied`
-              : `${label} — suggested change preview`
-          }
-        >
-          {showSettledText ? (
-            <PlainTextPlaceholderSpans
-              text={value}
-              focusedFromPos={focusedFromPos}
-            />
-          ) : (
-            <>
-              {renderPreviewSegments(splitPreview.before, 0)}
-              {renderPreviewSegments(
-                splitPreview.suggestion,
-                splitPreview.before.length
-              )}
-              {activeComment && splitPreview.suggestion.length > 0 ? (
-                <SuggestionInlineActions
-                  suggestionId={activeComment.id}
-                  pending={pending}
-                  acceptDisabled={!canResolve || !activeValidation?.canApply}
-                  dismissDisabled={!canResolve}
-                  onAccept={() => void applyActive()}
-                  onDismiss={() => void dismissActive()}
-                />
-              ) : null}
-              {renderPreviewSegments(
-                splitPreview.after,
-                splitPreview.before.length + splitPreview.suggestion.length + 1
-              )}
-            </>
-          )}
-        </div>
-      ) : (
-        <PlainTextHighlightedInput
-          fieldAnchor={fieldAnchor}
-          value={value}
-          onChange={onChange}
-          disabled={disabled}
-          placeholder={placeholder}
-          className={className}
-          shellMinHeight={lockedShellHeight}
-          onEditLayoutHeight={onEditLayoutHeight}
-          aria-label={label}
+      {showInlineActions && activeComment ? (
+        <SuggestionInlineActions
+          suggestionId={activeComment.id}
+          pending={pending}
+          acceptDisabled={!canResolve || !activeValidation?.canApply}
+          dismissDisabled={!canResolve}
+          onAccept={() => void applyActive()}
+          onDismiss={() => void dismissActive()}
         />
-      )}
+      ) : null}
+      <PlainTextHighlightedInput
+        fieldAnchor={fieldAnchor}
+        value={value}
+        onChange={onChange}
+        disabled={disabled}
+        placeholder={placeholder}
+        className={className}
+        aria-label={label}
+      />
     </div>
   );
 }
