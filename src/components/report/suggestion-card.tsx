@@ -129,6 +129,37 @@ function SuggestionCardFace({
   const { payload, normalizedInsert, linkedEval, queueIndex, queueTotal } = card;
   const eff = linkedEval ? effectiveStatus(linkedEval) : "not_evaluated";
 
+  // #region agent log
+  useLayoutEffect(() => {
+    if (phase !== "steady" || (!payload.deleteText && !normalizedInsert)) return;
+    const parts = normalizedInsert
+      ? normalizedInsert.split(/(\[[^\]]+\])/g).filter(Boolean)
+      : [];
+    fetch("http://127.0.0.1:7659/ingest/5cba3a71-99d6-42b5-91fd-4579d5f913e3", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Debug-Session-Id": "ff3da6",
+      },
+      body: JSON.stringify({
+        sessionId: "ff3da6",
+        runId: "pre-fix",
+        hypothesisId: "A",
+        location: "suggestion-card.tsx:SuggestionCardFace",
+        message: "Suggestion card preview segments",
+        data: {
+          deleteLen: payload.deleteText?.length ?? 0,
+          insertLen: normalizedInsert.length,
+          segmentCount: parts.length,
+          bracketSegments: parts.filter((p) => p.startsWith("[")),
+          effStatus: linkedEval ? eff : null,
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+  }, [phase, payload.deleteText, normalizedInsert, linkedEval, eff]);
+  // #endregion
+
   const statusLine =
     phase === "applying"
       ? queueTotal > 1

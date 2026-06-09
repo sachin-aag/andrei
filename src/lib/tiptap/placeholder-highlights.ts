@@ -86,6 +86,31 @@ export function buildPlaceholderDecorations(
           : {}),
       })
     );
+    // #region agent log
+    if (overSuggestion && typeof fetch !== "undefined") {
+      fetch("http://127.0.0.1:7659/ingest/5cba3a71-99d6-42b5-91fd-4579d5f913e3", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Debug-Session-Id": "ff3da6",
+        },
+        body: JSON.stringify({
+          sessionId: "ff3da6",
+          runId: "pre-fix",
+          hypothesisId: "B,E",
+          location: "placeholder-highlights.ts:buildPlaceholderDecorations",
+          message: "Placeholder over suggestion decoration",
+          data: {
+            text: slice.slice(0, 60),
+            spanLen: p.toPos - p.fromPos,
+            fromPos: p.fromPos,
+            toPos: p.toPos,
+          },
+          timestamp: Date.now(),
+        }),
+      }).catch(() => {});
+    }
+    // #endregion
   }
   return DecorationSet.create(doc, decos);
 }
