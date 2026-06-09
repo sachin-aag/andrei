@@ -79,8 +79,9 @@ export function MathNodeView({ node, selected, updateAttributes, editor, getPos 
         <math-field
           ref={fieldRef}
           readOnly
+          onMouseDown={openEditor}
           class={cn(
-            "pointer-events-none border-0 bg-transparent p-0",
+            "cursor-pointer border-0 bg-transparent p-0",
             isBlock ? "block w-full" : "inline-block"
           )}
         />

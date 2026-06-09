@@ -654,6 +654,11 @@
   box-sizing: border-box;
 }
 
+/* Inline preview in the narrative — read-only but must receive clicks to open the editor. */
+.ProseMirror .tiptap-math-node math-field {
+  cursor: pointer;
+}
+
 /* `[Field name: <to be filled>]` markers — visible todos until the user fills them in. */
 .placeholder-todo {
   background-color: rgb(245 158 11 / 0.15);
