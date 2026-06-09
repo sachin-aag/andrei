@@ -13,30 +13,6 @@ export type ImproveAiDisplayBlock =
   | { kind: "plain"; label: string; text: string }
   | { kind: "rich"; label: string; doc: JSONContent };
 
-function stripLeadingTemplateChecklist(section: SectionType, value: string): string {
-  if (section !== "improve" && section !== "control") return value;
-
-  const marker =
-    section === "improve"
-      ? /^improve section covers the corrective actions\s*/i
-      : /^control section covers the preventive actions\s*/i;
-
-  let text = value.trim();
-  if (!marker.test(text)) return value;
-
-  text = text.replace(marker, "").trimStart();
-
-  while (text) {
-    const checklistSentence = text.match(
-      /^(?:(?:is|are|was|were|does|do|did)\b|capa required\b)[^?.]*(?:[?.]\s*|$)/i
-    );
-    if (!checklistSentence) break;
-    text = text.slice(checklistSentence[0].length).trimStart();
-  }
-
-  return text;
-}
-
 function pushPlainBlock(
   blocks: ImproveAiDisplayBlock[],
   label: string,
@@ -108,29 +84,12 @@ export function buildSectionDisplayBlocks(
     );
     const rootCause = content.rootCause as AnalyzeSection["rootCause"] | undefined;
     pushRichBlock(blocks, "Root cause", rootCause?.narrative);
-    pushPlainBlock(
-      blocks,
-      "Impact assessment",
-      typeof content.impactAssessment === "string" ? content.impactAssessment : ""
-    );
+    pushRichBlock(blocks, "Impact assessment", content.impactAssessment);
   } else if (section === "improve") {
-    pushPlainBlock(
-      blocks,
-      "Corrective actions",
-      stripLeadingTemplateChecklist(
-        section,
-        typeof content.correctiveActions === "string" ? content.correctiveActions : ""
-      )
-    );
+    pushRichBlock(blocks, "Corrective actions", content.correctiveActions);
     pushRichBlock(blocks, "Narrative", content.narrative);
   } else if (section === "control") {
-    const raw =
-      typeof content.preventiveActions === "string" ? content.preventiveActions : "";
-    pushPlainBlock(
-      blocks,
-      "Preventive actions",
-      stripLeadingTemplateChecklist(section, raw)
-    );
+    pushRichBlock(blocks, "Preventive actions", content.preventiveActions);
   }
 
   return blocks;

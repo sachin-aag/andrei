@@ -25,14 +25,14 @@ import {
   serializeAiFixCommentContent,
   type ParsedAiFixPayload,
 } from "@/lib/ai/suggestion-gating";
-import { isNarrativeTargetField } from "@/lib/ai/suggest-target-fields";
+import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
+import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import type { AllSectionsContent } from "@/lib/ai/evaluate";
 import {
   canLocateEditInPlainText,
   type SuggestionEdit,
 } from "@/lib/tiptap/suggestion-inject";
 import { richJsonToPlainText } from "@/lib/tiptap/rich-text";
-import type { JSONContent } from "@tiptap/core";
 import { mergeSection } from "@/lib/sections-merge";
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
@@ -157,25 +157,18 @@ async function handleSuggestionsPost(
   }> = [];
   const dropped = [...llmDropped];
 
-  let workingContent = sectionContent as Record<string, unknown>;
+  const workingContent = sectionContent as Record<string, unknown>;
 
-  const narrativeSuggestions = llmSuggestions.filter((s) =>
-    isNarrativeTargetField(s.targetField)
+  const richSuggestions = llmSuggestions.filter((s) =>
+    isRichTargetField(section, s.targetField)
   );
   const structuredSuggestions = llmSuggestions.filter(
-    (s) => !isNarrativeTargetField(s.targetField)
+    (s) => !isRichTargetField(section, s.targetField)
   );
 
-  const narrativeDoc = (workingContent.narrative ?? null) as JSONContent | null;
-  const plain =
-    narrativeDoc?.type === "doc"
-      ? richJsonToPlainText(narrativeDoc, { tableFormat: "markdown" })
-      : "";
-
-  type Ranked = (typeof narrativeSuggestions)[number] & { sortKey: number };
-  const ranked: Ranked[] = [];
-
-  for (const s of narrativeSuggestions) {
+  for (const s of richSuggestions) {
+    const fieldDoc = getRichFieldValue(workingContent, s.targetField);
+    const plain = richJsonToPlainText(fieldDoc, { tableFormat: "markdown" });
     const edit: SuggestionEdit = {
       anchorText: s.anchorText,
       deleteText: s.deleteText,
@@ -187,23 +180,6 @@ async function handleSuggestionsPost(
         criterionKey: s.criterionKey,
         reason: loc.reason === "ambiguous" ? ("ambiguous" as const) : ("not_found" as const),
       });
-      continue;
-    }
-    const match = s.anchorText || s.deleteText;
-    const idx = plain.lastIndexOf(match.slice(0, Math.min(match.length, 32)));
-    ranked.push({ ...s, sortKey: idx === -1 ? 0 : idx });
-  }
-
-  ranked.sort((a, b) => b.sortKey - a.sortKey);
-
-  const narrativeJson =
-    narrativeDoc?.type === "doc"
-      ? (JSON.parse(JSON.stringify(narrativeDoc)) as JSONContent)
-      : null;
-
-  for (const s of ranked) {
-    if (!narrativeJson) {
-      dropped.push({ criterionKey: s.criterionKey, reason: "not_found" });
       continue;
     }
 
@@ -225,7 +201,7 @@ async function handleSuggestionsPost(
       authorId: AI_AUTHOR_ID,
       content: serializeAiFixCommentContent(payload),
       anchorText: s.anchorText,
-      contentPath: "narrative",
+      contentPath: s.targetField,
       fromPos: null,
       toPos: null,
       status: "open",
@@ -239,10 +215,6 @@ async function handleSuggestionsPost(
       evaluationId: s.evaluationId,
       targetField: s.targetField,
     });
-  }
-
-  if (narrativeJson) {
-    workingContent = { ...workingContent, narrative: narrativeJson };
   }
 
   for (const s of structuredSuggestions) {

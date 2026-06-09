@@ -6,8 +6,6 @@ import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value
 export const PLAIN_TEXT_PLACEHOLDER_PATHS: Partial<
   Record<SectionType, readonly string[]>
 > = {
-  improve: ["correctiveActions"],
-  control: ["preventiveActions"],
   analyze: [
     "sixM.man",
     "sixM.machine",
@@ -18,9 +16,6 @@ export const PLAIN_TEXT_PLACEHOLDER_PATHS: Partial<
     "sixM.conclusion",
     "brainstorming",
     "otherTools",
-    "investigationOutcome",
-    "rootCause.narrative",
-    "impactAssessment",
   ],
 };
 

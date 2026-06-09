@@ -115,7 +115,9 @@ function fingerprintAnalyze(a: AnalyzeSection): Record<string, string> {
       richJsonToPlainText(v as JSONContent)
     );
   }
-  out["impactAssessment"] = fingerprintComparableString(a.impactAssessment);
+  out["impactAssessment"] = fingerprintComparableString(
+    richJsonToPlainText(a.impactAssessment)
+  );
   return out;
 }
 
@@ -123,7 +125,7 @@ function fingerprintImprove(i: ImproveSection) {
   return {
     narrative: fingerprintComparableString(richJsonToPlainText(i.narrative)),
     correctiveActions: stripTrailingRoundTripResidue(
-      fingerprintComparableString(i.correctiveActions)
+      fingerprintComparableString(richJsonToPlainText(i.correctiveActions))
     ),
   };
 }
@@ -131,7 +133,7 @@ function fingerprintImprove(i: ImproveSection) {
 function fingerprintControl(c: ControlSection) {
   return {
     preventiveActions: stripTrailingRoundTripResidue(
-      fingerprintComparableString(c.preventiveActions)
+      fingerprintComparableString(richJsonToPlainText(c.preventiveActions))
     ),
   };
 }

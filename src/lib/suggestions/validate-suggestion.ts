@@ -1,8 +1,8 @@
-import type { JSONContent } from "@tiptap/core";
 import type { SectionType } from "@/db/schema";
 import type { CommentRecord, EvaluationRecord } from "@/types/report";
 import { sortedOpenSuggestionsForSection } from "@/lib/ai/suggestion-gating";
-import { isNarrativeTargetField } from "@/lib/ai/suggest-target-fields";
+import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
+import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import {
   parseAiFixCommentContent,
   sectionContentHash,
@@ -37,15 +37,14 @@ export function suggestionEditFromComment(
 }
 
 function plainTextForSuggestionField(
+  section: SectionType,
   sectionContent: unknown,
   contentPath: string
 ): string {
   const record = sectionContent as Record<string, unknown>;
-  if (isNarrativeTargetField(contentPath)) {
-    const narrative = record.narrative as JSONContent | undefined;
-    return narrative?.type === "doc"
-      ? richJsonToPlainText(narrative, { tableFormat: "markdown" })
-      : "";
+  if (isRichTargetField(section, contentPath)) {
+    const doc = getRichFieldValue(record, contentPath);
+    return richJsonToPlainText(doc, { tableFormat: "markdown" });
   }
   return getPlainTextFieldValue(record, contentPath);
 }
@@ -64,7 +63,7 @@ export function validateSuggestionLocate(
     fieldContentPath
   );
   const edit = suggestionEditFromComment(comment);
-  const plain = plainTextForSuggestionField(sectionContent, path);
+  const plain = plainTextForSuggestionField(section, sectionContent, path);
   const loc = canLocateEditInPlainText(plain, edit);
 
   const locateStatus: SuggestionLocateStatus = loc.ok

@@ -24,6 +24,7 @@ import { getTextareaSelectionClientRect } from "@/lib/plain-text/textarea-select
 import {
   useReportComments,
   useReportData,
+  useReportEditors,
   useReportPlaceholders,
 } from "@/providers/report-provider";
 import { useUserDirectory } from "@/providers/user-directory-provider";
@@ -69,6 +70,7 @@ export function PlainTextHighlightedInput({
   const mirrorRef = useRef<HTMLDivElement>(null);
   const shellRef = useRef<HTMLDivElement>(null);
   const { focusedPanelPlaceholderId } = useReportPlaceholders();
+  const { setActiveField } = useReportEditors();
   const { report, workspaceMode, currentUserId, getSectionId } = useReportData();
   const { setComments, setActiveCommentId } = useReportComments();
   const { getUser } = useUserDirectory();
@@ -280,6 +282,11 @@ export function PlainTextHighlightedInput({
     onKeyUp: refreshSelectionUi,
     onMouseUp: handleTextareaMouseUp,
     onDoubleClick: handleTextareaDoubleClick,
+    onFocus: () => {
+      if (fieldSection && fieldContentPath) {
+        setActiveField(fieldSection, fieldContentPath, "plain");
+      }
+    },
     onBlur: () => {
       if (!commentComposing) {
         window.setTimeout(() => clearCommentUi(), 150);

@@ -191,19 +191,21 @@ export function AnalyzeEditor() {
           Impact Assessment (System / Document / Product / Equipment / Patient safety / Past
           batches)
         </h3>
-        <PlainTextSuggestionField
+        <TiptapSectionField
           section="analyze"
           contentPath="impactAssessment"
           label="Impact assessment"
+          placeholder="System, Document, Product, Equipment, Patient safety / Past batches — describe impact for each area as applicable."
+          className="grid gap-1.5 scroll-mt-24 min-h-[200px]"
           value={value.impactAssessment}
-          disabled={readOnly}
-          className="min-h-[200px]"
-          onChange={(next) =>
+          onChange={(doc) =>
             update((p) => ({
               ...p,
-              impactAssessment: next,
+              impactAssessment: doc,
             }))
           }
+          onFlushSave={flushSave}
+          locked={readOnly}
         />
       </section>
     </SectionShell>

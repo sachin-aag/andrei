@@ -14,9 +14,11 @@ import type {
 } from "@/types/sections";
 import { EMPTY_CONTENT } from "@/types/sections";
 import { stringFieldFromStoredValue } from "@/lib/section-content-normalize";
+import type { JSONContent } from "@tiptap/core";
 import {
   appendParagraphsToDoc,
   emptyDoc,
+  legacyStringToDoc,
   normalizeRichField,
   richJsonToPlainText,
 } from "@/lib/tiptap/rich-text";
@@ -71,10 +73,11 @@ export function mergeImproveSection(content: unknown): ImproveSection {
   const narPlain = richJsonToPlainText(narrative).trim();
 
   if (narPlain) {
-    const corTrim = corrective.trim();
-    if (!corTrim) corrective = narPlain;
-    else if (!corTrim.startsWith(narPlain) && !narPlain.startsWith(corTrim))
-      corrective = `${narPlain}\n\n${corrective}`;
+    const corPlain = richJsonToPlainText(corrective).trim();
+    if (!corPlain) corrective = narrative;
+    else if (!corPlain.startsWith(narPlain) && !narPlain.startsWith(corPlain)) {
+      corrective = legacyStringToDoc(`${narPlain}\n\n${corPlain}`);
+    }
   }
 
   return {
@@ -137,10 +140,11 @@ export function mergeControlSection(content: unknown): ControlSection {
   const narPlain = richJsonToPlainText(narrative).trim();
 
   if (narPlain) {
-    const pTrim = preventive.trim();
-    if (!pTrim) preventive = narPlain;
-    else if (!pTrim.startsWith(narPlain) && !narPlain.startsWith(pTrim))
-      preventive = `${narPlain}\n\n${preventive}`;
+    const pPlain = richJsonToPlainText(preventive).trim();
+    if (!pPlain) preventive = narrative;
+    else if (!pPlain.startsWith(narPlain) && !narPlain.startsWith(pPlain)) {
+      preventive = legacyStringToDoc(`${narPlain}\n\n${pPlain}`);
+    }
   }
 
   return {
@@ -192,11 +196,22 @@ export function mergeAnalyzeSection(content: unknown): AnalyzeSection {
   };
 }
 
-/* Legacy rows stored preventiveActions as a structured array; flatten to text. */
-function coercePreventiveActions(value: unknown, fallback: string): string {
-  if (typeof value === "string") return value;
+/* Legacy rows stored preventiveActions as a structured array; flatten to rich doc. */
+function coercePreventiveActions(
+  value: unknown,
+  fallback: JSONContent
+): JSONContent {
+  if (typeof value === "string") return legacyStringToDoc(value);
+  if (
+    value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    (value as JSONContent).type === "doc"
+  ) {
+    return normalizeRichField(value);
+  }
   if (Array.isArray(value)) {
-    return value
+    const plain = value
       .map((entry, idx) => {
         if (!entry || typeof entry !== "object") return "";
         const a = entry as Record<string, unknown>;
@@ -215,15 +230,27 @@ function coercePreventiveActions(value: unknown, fallback: string): string {
       })
       .filter(Boolean)
       .join("\n\n");
+    return legacyStringToDoc(plain);
   }
   return fallback;
 }
 
-/* Legacy rows stored correctiveActions as structured cards; flatten to text. */
-function coerceCorrectiveActions(value: unknown, fallback: string): string {
-  if (typeof value === "string") return value;
+/* Legacy rows stored correctiveActions as structured cards; flatten to rich doc. */
+function coerceCorrectiveActions(
+  value: unknown,
+  fallback: JSONContent
+): JSONContent {
+  if (typeof value === "string") return legacyStringToDoc(value);
+  if (
+    value &&
+    typeof value === "object" &&
+    !Array.isArray(value) &&
+    (value as JSONContent).type === "doc"
+  ) {
+    return normalizeRichField(value);
+  }
   if (Array.isArray(value)) {
-    return value
+    const plain = value
       .map((entry, idx) => {
         if (!entry || typeof entry !== "object") return "";
         const a = entry as Record<string, unknown>;
@@ -241,6 +268,7 @@ function coerceCorrectiveActions(value: unknown, fallback: string): string {
       })
       .filter(Boolean)
       .join("\n\n");
+    return legacyStringToDoc(plain);
   }
   return fallback;
 }

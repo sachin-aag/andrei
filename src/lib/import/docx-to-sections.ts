@@ -427,7 +427,7 @@ function buildAnalyzeFromChunk(text: string): AnalyzeSection {
         )
       ),
     },
-    impactAssessment: parseImpactAssessmentBlock(body),
+    impactAssessment: legacyStringToDoc(parseImpactAssessmentBlock(body)),
   };
 }
 
@@ -638,11 +638,21 @@ function buildCommentTargets(sections: ImportedSections): CommentTarget[] {
     {
       section: "analyze",
       contentPath: "impactAssessment",
-      kind: "plain",
-      text: sections.analyze.impactAssessment,
+      kind: "rich",
+      doc: sections.analyze.impactAssessment,
     },
-    { section: "improve", contentPath: "correctiveActions", kind: "plain", text: sections.improve.correctiveActions },
-    { section: "control", contentPath: "preventiveActions", kind: "plain", text: sections.control.preventiveActions },
+    {
+      section: "improve",
+      contentPath: "correctiveActions",
+      kind: "rich",
+      doc: sections.improve.correctiveActions,
+    },
+    {
+      section: "control",
+      contentPath: "preventiveActions",
+      kind: "rich",
+      doc: sections.control.preventiveActions,
+    },
   ];
 }
 
@@ -1026,11 +1036,11 @@ export function buildSectionsFromRaw(raw: string): ImportedSections {
     improve: {
       ...EMPTY_CONTENT.improve,
       narrative: emptyDoc(),
-      correctiveActions: correctiveActionsUnified,
+      correctiveActions: legacyStringToDoc(correctiveActionsUnified),
     },
     control: {
       ...EMPTY_CONTENT.control,
-      preventiveActions: controlPreventiveUnified,
+      preventiveActions: legacyStringToDoc(controlPreventiveUnified),
     },
     documents_reviewed: {
       ...EMPTY_CONTENT.documents_reviewed,
@@ -1194,27 +1204,25 @@ function applyTableToImportedSection(
 
     if (replaceFlatParagraphsWithTable(analyze.fiveWhy.narrative, tableNode)) return true;
 
-    for (const key of ["brainstorming", "otherTools", "impactAssessment"] as const) {
+    for (const key of ["brainstorming", "otherTools"] as const) {
       const replaced = replaceFlatTextWithPlainTable(analyze[key], tableNode);
       if (replaced !== analyze[key]) {
         analyze[key] = replaced;
         return true;
       }
     }
+
+    if (replaceFlatParagraphsWithTable(analyze.impactAssessment, tableNode)) return true;
   }
 
   if (sectionKey === "improve") {
-    const replaced = replaceFlatTextWithPlainTable(sections.improve.correctiveActions, tableNode);
-    if (replaced !== sections.improve.correctiveActions) {
-      sections.improve.correctiveActions = replaced;
+    if (replaceFlatParagraphsWithTable(sections.improve.correctiveActions, tableNode)) {
       return true;
     }
   }
 
   if (sectionKey === "control") {
-    const replaced = replaceFlatTextWithPlainTable(sections.control.preventiveActions, tableNode);
-    if (replaced !== sections.control.preventiveActions) {
-      sections.control.preventiveActions = replaced;
+    if (replaceFlatParagraphsWithTable(sections.control.preventiveActions, tableNode)) {
       return true;
     }
   }

@@ -20,7 +20,7 @@ import { CommentCard } from "./comment-card";
 import { SectionCommentComposer } from "./section-comment-composer";
 import { SectionSuggestionCard } from "@/components/report/suggestion-card";
 import { EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
-import { isNarrativeTargetField } from "@/lib/ai/suggest-target-fields";
+import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
 import { suggestionFieldAnchorKey } from "@/lib/suggestions/resolve-suggestion-field-path";
 import {
   suggestionDeleteMarkName,
@@ -345,7 +345,7 @@ export function MarginGutter({ onSectionOverflow }: Props) {
       const contentPath = active.contentPath ?? "narrative";
       let centerY: number | null = null;
 
-      if (isNarrativeTargetField(contentPath)) {
+      if (isRichTargetField(section, contentPath)) {
         const editor = getEditor(section, contentPath);
         if (editor) {
           centerY = suggestionCenterYInEditor(

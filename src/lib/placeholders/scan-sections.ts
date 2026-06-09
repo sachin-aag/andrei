@@ -1,10 +1,9 @@
 import type { SectionContentMap } from "@/types/sections";
 import type { SectionType } from "@/db/schema";
+import { RICH_FIELD_PATHS } from "@/lib/ai/suggest-target-fields";
+import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { findPlaceholders, findPlaceholdersInPlainText, type Placeholder } from "./find";
-import {
-  listPlainTextFieldsForSection,
-} from "./plain-text-fields";
-import type { JSONContent } from "@tiptap/core";
+import { listPlainTextFieldsForSection } from "./plain-text-fields";
 
 export function collectPlaceholders(
   sections: Partial<SectionContentMap>
@@ -14,16 +13,12 @@ export function collectPlaceholders(
   for (const [key, content] of Object.entries(sections)) {
     if (!content) continue;
     const section = key as SectionType;
+    const record = content as Record<string, unknown>;
 
-    if (
-      typeof content === "object" &&
-      !Array.isArray(content) &&
-      "narrative" in content &&
-      content.narrative
-    ) {
-      const narrative = content.narrative as JSONContent;
-      if (narrative?.type === "doc") {
-        all.push(...findPlaceholders(narrative, section, "narrative"));
+    for (const contentPath of RICH_FIELD_PATHS[section] ?? []) {
+      const doc = getRichFieldValue(record, contentPath);
+      if (doc.type === "doc") {
+        all.push(...findPlaceholders(doc, section, contentPath));
       }
     }
 

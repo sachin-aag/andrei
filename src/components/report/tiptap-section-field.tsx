@@ -81,6 +81,9 @@ import {
   narrativeHasSuggestionMarks,
 } from "@/lib/suggestions/apply-narrative-suggestion";
 import { validateSuggestionLocate } from "@/lib/suggestions/validate-suggestion";
+import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
+import { setRichFieldValue } from "@/lib/suggestions/rich-field-value";
+import { editorRegistryKey } from "@/providers/report-provider";
 import type { SectionType } from "@/db/schema";
 
 function TableEditToolbar({
@@ -308,7 +311,9 @@ export function TiptapSectionField({
     acknowledgeCommentFocus,
   } = useReportComments();
   const { focusedPanelPlaceholderId } = useReportPlaceholders();
-  const { registerEditor, setActiveEditor } = useReportEditors();
+  const { registerEditor, setActiveEditor, activeEditorKey } = useReportEditors();
+  const isRichField = isRichTargetField(section, contentPath);
+  const thisEditorKey = editorRegistryKey(section, contentPath);
   const { activeSuggestionIdForSection, isSuggestionPreviewHeld } =
     useReportEvaluations();
   const { replaceSection, sections } = useReportSections();
@@ -570,31 +575,28 @@ export function TiptapSectionField({
           : stripSuggestionMarksById(json, suggestionId);
       editor.commands.setContent(next as Content, { emitUpdate: false });
       onChangeRef.current(next);
+      const currentSection = sections[section] as Record<string, unknown>;
+      const nextSection = setRichFieldValue(currentSection, contentPath, next);
       const res = await fetch(`/api/reports/${report.id}/sections/${section}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          content: { ...(value as Record<string, unknown>), narrative: next },
-        }),
+        body: JSON.stringify({ content: nextSection }),
       });
       if (!res.ok) throw new Error("Save failed");
-      replaceSection(section, {
-        ...(value as Record<string, unknown>),
-        narrative: next,
-      } as never);
+      replaceSection(section, nextSection as never);
       await persistSuggestion(
         suggestionId,
         mode === "accept" ? "resolved" : "dismissed"
       );
     },
-    [editor, report.id, section, value, replaceSection, persistSuggestion]
+    [editor, report.id, section, contentPath, sections, replaceSection, persistSuggestion]
   );
 
   useEffect(() => {
     const ids = new Set<string>();
     if (activeSuggestionId) ids.add(activeSuggestionId);
     suggestionWidgetStateRef.current = {
-      enabled: contentPath === "narrative",
+      enabled: isRichField,
       actionableEvaluationIds: ids,
       pendingId: suggestionWidgetStateRef.current.pendingId,
       onAccept: async (id) => {
@@ -645,7 +647,7 @@ export function TiptapSectionField({
     editor?.view.dispatch(
       editor.state.tr.setMeta(suggestionActionWidgetsRefreshMeta, true)
     );
-  }, [activeSuggestionId, contentPath, editor, applySuggestionInEditor, refresh]);
+  }, [activeSuggestionId, isRichField, editor, applySuggestionInEditor, refresh]);
 
   const applyExternalValueToEditor = useCallback(() => {
     const currentEditor = editor;
@@ -661,20 +663,16 @@ export function TiptapSectionField({
     applyExternalValueToEditor();
   }, [applyExternalValueToEditor]);
 
-  const narrativeContentKey =
-    contentPath === "narrative"
-      ? JSON.stringify((value as { narrative?: JSONContent }).narrative ?? null)
-      : "";
+  const richContentKey = isRichField ? JSON.stringify(value) : "";
 
-  const previewHeld =
-    contentPath === "narrative" && isSuggestionPreviewHeld(section);
+  const previewHeld = isRichField && isSuggestionPreviewHeld(section);
 
   // Narrow deps to this section only — avoid re-running when other sections change.
   const sectionContent = sections[section];
 
   /** Only the active suggestion may have inline marks; inject it when missing. */
   useEffect(() => {
-    if (!editor || contentPath !== "narrative") return;
+    if (!editor || !isRichField) return;
 
     let json = editor.getJSON() as JSONContent;
     const before = JSON.stringify(json);
@@ -703,7 +701,8 @@ export function TiptapSectionField({
         const validation = validateSuggestionLocate(
           comment,
           section,
-          sectionContent
+          sectionContent,
+          contentPath
         );
         if (validation.canPreview) {
           const payload = parseAiFixCommentContent(comment.content);
@@ -731,9 +730,10 @@ export function TiptapSectionField({
   }, [
     editor,
     contentPath,
+    isRichField,
     activeSuggestionId,
     comments,
-    narrativeContentKey,
+    richContentKey,
     previewHeld,
     section,
     sectionContent,
@@ -820,7 +820,7 @@ export function TiptapSectionField({
   const tableVAlign = (activeTableCellAttrs?.verticalAlign as string | undefined) ?? null;
 
   const inactiveSuggestionCss =
-    activeSuggestionId && contentPath === "narrative"
+    activeSuggestionId && isRichField
       ? `
 [data-active-suggestion-id="${activeSuggestionId}"] [data-eval-id]:not([data-eval-id="${activeSuggestionId}"]).suggestion-insert,
 [data-active-suggestion-id="${activeSuggestionId}"] [data-eval-id]:not([data-eval-id="${activeSuggestionId}"]).suggestion-insert-ai,
@@ -864,6 +864,7 @@ export function TiptapSectionField({
           }}
           shouldShow={({ editor: ed }) =>
             ed.isEditable &&
+            activeEditorKey === thisEditorKey &&
             ed.isActive("table") &&
             ed.view.hasFocus() &&
             !commentComposing

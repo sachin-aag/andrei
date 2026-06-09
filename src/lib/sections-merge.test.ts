@@ -23,9 +23,10 @@ describe("sections merge", () => {
       ],
     });
 
-    expect(control.preventiveActions).toContain("PA-001");
-    expect(control.preventiveActions).toContain("Description: Retrain operators");
-    expect(control.preventiveActions).toContain("Responsible: QA Manager");
+    const preventivePlain = richJsonToPlainText(control.preventiveActions);
+    expect(preventivePlain).toContain("PA-001");
+    expect(preventivePlain).toContain("Description: Retrain operators");
+    expect(preventivePlain).toContain("Responsible: QA Manager");
   });
 
   it("folds legacy control narrative prose into preventive actions text", () => {
@@ -34,8 +35,9 @@ describe("sections merge", () => {
       preventiveActions: "PA-001: Retrain staff.",
     });
 
-    expect(control.preventiveActions).toContain("Closure narrative before PA table.");
-    expect(control.preventiveActions).toContain("Retrain staff.");
+    const preventivePlain = richJsonToPlainText(control.preventiveActions);
+    expect(preventivePlain).toContain("Closure narrative before PA table.");
+    expect(preventivePlain).toContain("Retrain staff.");
   });
 
   it("coerces legacy corrective action arrays into readable text", () => {
@@ -51,9 +53,10 @@ describe("sections merge", () => {
       ],
     });
 
-    expect(improve.correctiveActions).toContain("CA-001");
-    expect(improve.correctiveActions).toContain("Description: Raise work order");
-    expect(improve.correctiveActions).toContain("Responsible: Engineering");
+    const correctivePlain = richJsonToPlainText(improve.correctiveActions);
+    expect(correctivePlain).toContain("CA-001");
+    expect(correctivePlain).toContain("Description: Raise work order");
+    expect(correctivePlain).toContain("Responsible: Engineering");
   });
 
   it("folds legacy improve narrative prose into corrective actions text", () => {
@@ -63,8 +66,9 @@ describe("sections merge", () => {
     });
 
     expect(richJsonToPlainText(improve.narrative)).toBe("");
-    expect(improve.correctiveActions).toContain("Intro paragraphs before corrective detail.");
-    expect(improve.correctiveActions).toContain("Work order WO-1 closed.");
+    const correctivePlain = richJsonToPlainText(improve.correctiveActions);
+    expect(correctivePlain).toContain("Intro paragraphs before corrective detail.");
+    expect(correctivePlain).toContain("Work order WO-1 closed.");
   });
 
   it("merges documents reviewed item list", () => {
@@ -117,10 +121,11 @@ describe("sections merge", () => {
       },
     });
 
-    expect(analyze.impactAssessment).toContain("System: No impact on system.");
-    expect(analyze.impactAssessment).toContain("Document: SOP revision required.");
-    expect(analyze.impactAssessment).toContain("Instrument recalibrated.");
-    expect(analyze.impactAssessment).toContain("Patient safety / Past batches: No impact");
+    const impactPlain = richJsonToPlainText(analyze.impactAssessment);
+    expect(impactPlain).toContain("System: No impact on system.");
+    expect(impactPlain).toContain("Document: SOP revision required.");
+    expect(impactPlain).toContain("Instrument recalibrated.");
+    expect(impactPlain).toContain("Patient safety / Past batches: No impact");
   });
 
   it("flattens legacy 5-Why rows into a narrative", () => {

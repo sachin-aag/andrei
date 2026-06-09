@@ -5,14 +5,14 @@ import {
   useReportSection,
 } from "@/providers/report-provider";
 import { useSectionSave } from "@/hooks/use-section-save";
-import { PlainTextSuggestionField } from "@/components/report/plain-text-suggestion-field";
+import { TiptapSectionField } from "@/components/report/tiptap-section-field";
 import { SectionShell } from "./section-shell";
 import { emptyDoc } from "@/lib/tiptap/rich-text";
 
 export function ImproveEditor() {
   const { readOnly } = useReportData();
   const { update } = useReportSection("improve");
-  const { status, lastSavedAt, value } = useSectionSave("improve");
+  const { status, lastSavedAt, value, flushSave } = useSectionSave("improve");
 
   return (
     <SectionShell
@@ -22,21 +22,22 @@ export function ImproveEditor() {
       lastSavedAt={lastSavedAt}
       section="improve"
     >
-      <PlainTextSuggestionField
+      <TiptapSectionField
         section="improve"
         contentPath="correctiveActions"
         label="Corrective Action"
-        value={value.correctiveActions}
-        disabled={readOnly}
-        className="min-h-[220px]"
         placeholder="Describe corrective actions taken or proposed, including tracking numbers, responsible persons, due dates, expected outcomes, and effectiveness verification where applicable."
-        onChange={(next) =>
+        className="grid gap-1.5 scroll-mt-24 min-h-[220px]"
+        value={value.correctiveActions}
+        onChange={(doc) =>
           update((p) => ({
             ...p,
             narrative: emptyDoc(),
-            correctiveActions: next,
+            correctiveActions: doc,
           }))
         }
+        onFlushSave={flushSave}
+        locked={readOnly}
       />
     </SectionShell>
   );

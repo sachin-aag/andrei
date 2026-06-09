@@ -72,6 +72,43 @@ function isDraftAnswerComplete(answer: DraftAnswer | undefined): boolean {
   return isHumanSubAnswerComplete(answer as HumanSubAnswerDraft);
 }
 
+function buildInitialAnswers(session: ImproveAiSessionView): Record<string, DraftAnswer> {
+  const answers: Record<string, DraftAnswer> = {};
+  for (const section of session.sections) {
+    for (const criterion of section.criteria) {
+      const existing = session.answers[criterion.answerKey];
+      answers[criterion.answerKey] = {
+        section: section.section,
+        criterionKey: criterion.criterionKey,
+        criteriaEvaluationAgreement: existing?.criteriaEvaluationAgreement,
+        reasoningAgreement: existing?.reasoningAgreement,
+        comment: existing?.comment ?? "",
+        suggestedStatus: existing?.suggestedStatus ?? null,
+      };
+    }
+  }
+  return answers;
+}
+
+export function ImproveAiSessionForm({
+  session,
+  userName,
+  userEmail,
+}: {
+  session: ImproveAiSessionView;
+  userName: string;
+  userEmail: string;
+}) {
+  return (
+    <ImproveAiSessionFormInner
+      key={session.id}
+      session={session}
+      userName={userName}
+      userEmail={userEmail}
+    />
+  );
+}
+
 /** Light-theme-only pills; avoid `dark:` so OS dark mode does not wash out text on white cards. */
 function statusTone(status: string): string {
   switch (status) {
@@ -86,7 +123,7 @@ function statusTone(status: string): string {
   }
 }
 
-export function ImproveAiSessionForm({
+function ImproveAiSessionFormInner({
   session,
   userName,
   userEmail,
@@ -103,31 +140,9 @@ export function ImproveAiSessionForm({
   const [error, setError] = useState<string | null>(null);
   const [activeSectionIndex, setActiveSectionIndex] = useState(0);
 
-  const initialAnswers = useCallback((): Record<string, DraftAnswer> => {
-    const answers: Record<string, DraftAnswer> = {};
-    for (const section of session.sections) {
-      for (const criterion of section.criteria) {
-        const existing = session.answers[criterion.answerKey];
-        answers[criterion.answerKey] = {
-          section: section.section,
-          criterionKey: criterion.criterionKey,
-          criteriaEvaluationAgreement: existing?.criteriaEvaluationAgreement,
-          reasoningAgreement: existing?.reasoningAgreement,
-          comment: existing?.comment ?? "",
-          suggestedStatus: existing?.suggestedStatus ?? null,
-        };
-      }
-    }
-    return answers;
-  }, [session]);
-
-  const [answers, setAnswers] = useState<Record<string, DraftAnswer>>(initialAnswers);
-
-  useEffect(() => {
-    setAnswers(initialAnswers());
-    setError(null);
-    setSubmitDialogError(null);
-  }, [session.id, initialAnswers]);
+  const [answers, setAnswers] = useState<Record<string, DraftAnswer>>(() =>
+    buildInitialAnswers(session)
+  );
 
   const activeSection = session.sections[activeSectionIndex] ?? null;
 
