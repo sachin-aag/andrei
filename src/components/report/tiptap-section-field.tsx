@@ -850,10 +850,10 @@ export function TiptapSectionField({
         <Label>{label}</Label>
       </div>
 
-      {editor && editable && (
+      {editor && editable && activeEditorKey === thisEditorKey && (
         <FloatingMenu
           editor={editor}
-          pluginKey="tableEditFloatingMenu"
+          pluginKey={`tableEditFloatingMenu:${thisEditorKey}`}
           updateDelay={50}
           appendTo={() => document.body}
           options={{
@@ -864,7 +864,6 @@ export function TiptapSectionField({
           }}
           shouldShow={({ editor: ed }) =>
             ed.isEditable &&
-            activeEditorKey === thisEditorKey &&
             ed.isActive("table") &&
             ed.view.hasFocus() &&
             !commentComposing
