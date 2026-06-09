@@ -44,7 +44,7 @@ import {
   setRouteObservationIO,
 } from "@/lib/observability/langfuse";
 
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 const bodySchema = z.object({
   section: z.string(),
