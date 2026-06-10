@@ -8,7 +8,6 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { StatusBadge } from "@/components/report/status-badge";
 import type { WorkspaceUser } from "@/lib/auth/workspace-user";
-import { CreateReportButton } from "@/components/dashboard/create-report-button";
 import { DeleteReportButton } from "@/components/dashboard/delete-report-button";
 import { EvaluateWithAiButton } from "@/components/dashboard/evaluate-with-ai-button";
 import { formatCalendarDate, formatDate } from "@/lib/utils";
@@ -53,7 +52,7 @@ export function ReportList({
   };
 
   if (visibleReports.length === 0) {
-    return <EmptyState role={userRole} managers={managers} />;
+    return <EmptyState role={userRole} />;
   }
 
   return (
@@ -149,25 +148,18 @@ export function ReportList({
   );
 }
 
-function EmptyState({
-  role,
-  managers,
-}: {
-  role: "engineer" | "manager";
-  managers: ManagerOption[];
-}) {
+function EmptyState({ role }: { role: "engineer" | "manager" }) {
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center">
       <div className="size-16 rounded-2xl bg-[var(--brand-700)] flex items-center justify-center mb-4">
         <FileText className="size-8 text-[var(--brand-200)]" />
       </div>
       <h3 className="text-lg font-semibold mb-1">No reports yet</h3>
-      <p className="text-sm text-[var(--muted-foreground)] max-w-md mb-6">
+      <p className="text-sm text-[var(--muted-foreground)] max-w-md">
         {role === "engineer"
-          ? "Create a new deviation investigation report to get started. Your draft will auto-save as you write."
+          ? "Use New Report above to create your first deviation investigation. Your draft will auto-save as you write."
           : "Reports submitted by engineers will appear here for your review."}
       </p>
-      {role === "engineer" && <CreateReportButton managers={managers} />}
     </div>
   );
 }

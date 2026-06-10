@@ -4,6 +4,8 @@ import { loginAsEngineer, loginAsManagerWithResponse } from "./helpers/auth";
 import {
   createReport,
   deleteReport,
+  newReportButton,
+  openNewReportDialog,
   uniqueDeviationNo,
 } from "./helpers/reports";
 
@@ -29,10 +31,7 @@ test.describe("create report", () => {
   });
 
   test("opens create dialog from New Report button", async ({ page }) => {
-    await page.getByRole("button", { name: /new report/i }).click();
-    await expect(
-      page.getByRole("heading", { name: /create investigation report/i })
-    ).toBeVisible();
+    await openNewReportDialog(page);
     await expect(page.locator("#deviationNo")).toBeVisible();
     await expect(page.locator("#report-upload")).toBeVisible();
     await expect(page.getByRole("button", { name: /^create$/i })).toBeVisible();
@@ -40,7 +39,7 @@ test.describe("create report", () => {
   });
 
   test("upload pre-fills deviation number", async ({ page }) => {
-    await page.getByRole("button", { name: /new report/i }).click();
+    await newReportButton(page).click();
     await page.locator("#report-upload").setInputFiles(fixturePath);
     await expect(page.locator("#deviationNo")).not.toHaveValue("", {
       timeout: 30_000,
@@ -48,7 +47,7 @@ test.describe("create report", () => {
   });
 
   test("clear file resets upload", async ({ page }) => {
-    await page.getByRole("button", { name: /new report/i }).click();
+    await newReportButton(page).click();
     await page.locator("#report-upload").setInputFiles(fixturePath);
     await expect(page.getByRole("button", { name: /^clear$/i })).toBeVisible({
       timeout: 30_000,
@@ -58,7 +57,7 @@ test.describe("create report", () => {
   });
 
   test("shows toast when deviation number is empty", async ({ page }) => {
-    await page.getByRole("button", { name: /new report/i }).click();
+    await newReportButton(page).click();
     await page.getByRole("button", { name: /^create$/i }).click();
     await expect(page.getByText(/deviation number is required/i)).toBeVisible();
   });
@@ -69,7 +68,7 @@ test.describe("create report", () => {
     createdReportId = created.id;
 
     await page.goto("/");
-    await page.getByRole("button", { name: /new report/i }).click();
+    await newReportButton(page).click();
     await page.locator("#deviationNo").fill(deviationNo);
     await page.getByRole("button", { name: /^create$/i }).click();
     await expect(
@@ -79,7 +78,7 @@ test.describe("create report", () => {
 
   test("creates blank report and navigates to editor", async ({ page }) => {
     const deviationNo = uniqueDeviationNo("NEW");
-    await page.getByRole("button", { name: /new report/i }).click();
+    await newReportButton(page).click();
     await page.locator("#deviationNo").fill(deviationNo);
     await page.getByRole("button", { name: /^create$/i }).click();
     await expect(page).toHaveURL(/\/reports\/[^/]+\/edit/, { timeout: 30_000 });
@@ -89,7 +88,7 @@ test.describe("create report", () => {
   });
 
   test("cancel closes dialog", async ({ page }) => {
-    await page.getByRole("button", { name: /new report/i }).click();
+    await newReportButton(page).click();
     await page.getByRole("button", { name: /^cancel$/i }).click();
     await expect(
       page.getByRole("heading", { name: /create investigation report/i })
@@ -112,5 +111,5 @@ test.describe("create report", () => {
 
 test("manager does not see New Report button", async ({ page }) => {
   await loginAsManagerWithResponse(page);
-  await expect(page.getByRole("button", { name: /new report/i })).toHaveCount(0);
+  await expect(newReportButton(page)).toHaveCount(0);
 });

@@ -17,12 +17,30 @@ async function testLogin(
     mustChangePassword?: boolean;
   }
 ): Promise<TestLoginResult> {
-  const res = await page.request.post("/api/test/login", { data: body ?? {} });
+  const maxAttempts = 3;
+  let lastMessage = "unknown error";
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    try {
+      const res = await page.request.post("/api/test/login", { data: body ?? {} });
+      if (res.ok()) {
+        return (await res.json()) as TestLoginResult;
+      }
+      lastMessage = `HTTP ${res.status()}`;
+    } catch (error) {
+      lastMessage = error instanceof Error ? error.message : String(error);
+    }
+
+    if (attempt < maxAttempts) {
+      await page.waitForTimeout(300 * attempt);
+    }
+  }
+
   expect(
-    res.ok(),
-    `test login failed (${res.status()}): is ALLOW_TEST_LOGIN enabled and TEST_AUTH_EMAIL="${TEST_AUTH_EMAIL}" set?`
+    false,
+    `test login failed after ${maxAttempts} attempts (${lastMessage}): is ALLOW_TEST_LOGIN enabled and TEST_AUTH_EMAIL="${TEST_AUTH_EMAIL}" set?`
   ).toBeTruthy();
-  return (await res.json()) as TestLoginResult;
+  throw new Error("unreachable");
 }
 
 export async function seedAuthUsers(page: Page): Promise<void> {

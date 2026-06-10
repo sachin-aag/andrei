@@ -38,7 +38,9 @@ test.describe("authentication", () => {
     await expect(page.getByLabel(/^password$/i)).toBeVisible({ timeout: 15_000 });
     await page.getByLabel(/^password$/i).fill("WrongPassword123!");
     await page.getByRole("button", { name: /^sign in$/i }).click();
-    await expect(page.getByText(/invalid password/i)).toBeVisible();
+    await expect(page.getByText(/invalid password/i)).toBeVisible({
+      timeout: 15_000,
+    });
   });
 
   test("logs in via test-login bypass", async ({ page }) => {

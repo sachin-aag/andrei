@@ -19,7 +19,7 @@ import {
   DEFAULT_EVAL_GENERATION_OPTIONS,
   type EvalGenerationOptions,
 } from "@/lib/eval/eval-generation-options";
-import { isTestSkipImproveAiEval } from "@/lib/test/ai-bypass";
+import { isTestSkipEvaluation } from "@/lib/test/ai-bypass";
 import { getStubCriterionEvaluations } from "@/lib/ai/stub-evaluations";
 
 export { PROMPT_VERSION } from "./section-prompts";
@@ -329,7 +329,7 @@ export async function evaluateSection({
   const criteria = getCriteria(section);
   if (criteria.length === 0) return [];
 
-  if (isTestSkipImproveAiEval()) {
+  if (isTestSkipEvaluation()) {
     return getStubCriterionEvaluations(section);
   }
 

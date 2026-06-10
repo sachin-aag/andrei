@@ -84,6 +84,7 @@ export async function postReviewMarginNote(
   const margin = reviewMargin(page);
   await margin.getByPlaceholder(/write a comment for the author/i).fill(text);
   await margin.getByRole("button", { name: /^post$/i }).click();
+  await expect(margin.getByText(text)).toBeVisible({ timeout: 15_000 });
 }
 
 /** Activates a margin comment card and posts a thread reply (edit or review mode). */

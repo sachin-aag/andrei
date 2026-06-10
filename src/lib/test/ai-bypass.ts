@@ -1,9 +1,14 @@
-/** Test-only flags for bypassing live LLM calls in E2E/CI. Never enable in production. */
+/**
+ * Test-only flags for bypassing live LLM calls in E2E/CI.
+ * Never set ALLOW_TEST_* on Vercel production or preview deployments.
+ */
 
-export function isTestSkipImproveAiEval(): boolean {
-  return process.env.ALLOW_TEST_SKIP_IMPROVE_AI_EVAL === "true";
+/** Stubs `evaluateSection()` (report editor + Improve AI) — skips Gemini. */
+export function isTestSkipEvaluation(): boolean {
+  return process.env.ALLOW_TEST_SKIP_EVALUATION === "true";
 }
 
+/** Stubs `generateSuggestionsForSection()` — skips Gemini. */
 export function isTestSkipSuggestions(): boolean {
   return process.env.ALLOW_TEST_SKIP_SUGGESTIONS === "true";
 }

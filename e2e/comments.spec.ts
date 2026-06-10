@@ -5,7 +5,11 @@ import {
   loginAsManagerWithResponse,
 } from "./helpers/auth";
 import { createReport, deleteReport } from "./helpers/reports";
-import { postReviewMarginNote, replyToMarginComment } from "./helpers/workspace";
+import {
+  postReviewMarginNote,
+  replyToMarginComment,
+  reviewMargin,
+} from "./helpers/workspace";
 
 test.describe.configure({ mode: "serial" });
 
@@ -37,7 +41,9 @@ test.describe("comments", () => {
 
     const comment = "Please expand the initial scope section.";
     await postReviewMarginNote(page, "define", comment);
-    await expect(page.getByText(comment)).toBeVisible({ timeout: 15_000 });
+    await expect(reviewMargin(page).getByText(comment)).toBeVisible({
+      timeout: 15_000,
+    });
   });
 
   test("rejects comment over character limit", async ({ page }) => {

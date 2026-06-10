@@ -9,6 +9,18 @@ export function uniqueDeviationNo(prefix = "E2E"): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+/** Header "New Report" on the engineer dashboard. */
+export function newReportButton(page: Page) {
+  return page.getByRole("button", { name: /new report/i });
+}
+
+export async function openNewReportDialog(page: Page): Promise<void> {
+  await newReportButton(page).click();
+  await expect(
+    page.getByRole("heading", { name: /create investigation report/i })
+  ).toBeVisible();
+}
+
 export async function createReport(
   page: Page,
   opts?: {
@@ -17,12 +29,16 @@ export async function createReport(
   }
 ): Promise<CreatedReport> {
   const deviationNo = opts?.deviationNo ?? uniqueDeviationNo();
-  const res = await page.request.post("/api/reports", {
-    data: {
-      deviationNo,
-      assignedManagerId: opts?.assignedManagerId ?? null,
-    },
-  });
+  const payload = {
+    deviationNo,
+    assignedManagerId: opts?.assignedManagerId ?? null,
+  };
+
+  let res = await page.request.post("/api/reports", { data: payload });
+  if (!res.ok()) {
+    await page.waitForTimeout(500);
+    res = await page.request.post("/api/reports", { data: payload });
+  }
   expect(res.ok(), `create report failed (${res.status()})`).toBeTruthy();
   const body = (await res.json()) as {
     id: string;

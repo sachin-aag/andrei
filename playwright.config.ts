@@ -19,7 +19,10 @@ export default defineConfig({
   testDir: "./e2e",
   fullyParallel: true,
   forbidOnly: isCi,
-  retries: isCi ? 2 : 1,
+  // One dev server + local Postgres: cap parallelism to reduce ECONNRESET flakes.
+  workers: isCi ? 2 : 2,
+  timeout: 60_000,
+  retries: 2,
   reporter: isCi ? "github" : "list",
   use: {
     baseURL: process.env.PLAYWRIGHT_BASE_URL ?? playwrightAuthUrl,
@@ -55,12 +58,13 @@ export default defineConfig({
     url: playwrightAuthUrl,
     reuseExistingServer: !isCi,
     timeout: isCi ? 180_000 : 120_000,
+    // Test-only flags — scoped to Playwright's webServer; do not set on Vercel prod/preview.
     env: {
       HOSTNAME: "127.0.0.1",
       PORT: "3000",
       DATABASE_URL: isCi ? (process.env.DATABASE_URL ?? ciDatabaseUrl) : localDatabaseUrl,
       ALLOW_TEST_LOGIN: "true",
-      ALLOW_TEST_SKIP_IMPROVE_AI_EVAL: "true",
+      ALLOW_TEST_SKIP_EVALUATION: "true",
       ALLOW_TEST_SKIP_SUGGESTIONS: "true",
       AUTH_URL: playwrightAuthUrl,
       AUTH_TRUST_HOST: "true",

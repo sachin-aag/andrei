@@ -69,6 +69,8 @@ Single spec:
 pnpm exec playwright test e2e/auth.spec.ts --project=chromium
 ```
 
+**Flaky runs locally?** The full suite (~40 cases × 3 browsers) shares one `pnpm dev` server and one Postgres instance. Under load you may see `ECONNRESET` on `/api/test/login` or timeouts in WebKit — those tests often pass when re-run alone. Mitigations already in `playwright.config.ts`: `workers: 2`, `retries: 2`, `timeout: 60_000`. For day-to-day work, prefer `--project=chromium`. Stop any extra dev server on port 3000 so Playwright owns the process (`reuseExistingServer`).
+
 ### Run everything
 
 ```bash
@@ -105,7 +107,7 @@ In **GitHub Actions**, download the `playwright-results` artifact from the E2E j
 | `e2e/helpers/reports.ts` | `createReport`, `deleteReport`, `seedDefineForEvaluation` |
 | `playwright.config.ts` | Starts dev server with `ALLOW_TEST_LOGIN`, AI stub flags, test auth env |
 
-**Never set `ALLOW_TEST_*` on production Vercel** — test routes return 404 when `ALLOW_TEST_LOGIN` is unset.
+**Never set `ALLOW_TEST_*` on Vercel production or preview** — test routes return 404 when `ALLOW_TEST_LOGIN` is unset; AI stub flags would serve fake traffic-light data if enabled.
 
 ---
 
@@ -117,7 +119,7 @@ Documented in `.env.example` (local / CI only):
 |----------|--------|
 | `ALLOW_TEST_LOGIN=true` | Enables `POST /api/test/login` and `POST /api/test/seed-auth-users` |
 | `TEST_AUTH_EMAIL` | Default engineer email for test login (default: `test.engineer@mjbiopharm.com`) |
-| `ALLOW_TEST_SKIP_IMPROVE_AI_EVAL=true` | Stub criteria evaluation with `src/lib/improve-ai/fixtures/stub-evaluations.json` |
+| `ALLOW_TEST_SKIP_EVALUATION=true` | Stub all `evaluateSection()` calls (report editor + Improve AI) via `src/lib/improve-ai/fixtures/stub-evaluations.json` |
 | `ALLOW_TEST_SKIP_SUGGESTIONS=true` | Stub AI suggestions with `src/lib/ai/fixtures/stub-suggestions.json` |
 
 Playwright sets these automatically in `webServer.env`.

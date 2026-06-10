@@ -1,7 +1,7 @@
 import { config as loadEnv } from "dotenv";
 import type { Config } from "drizzle-kit";
 
-// .env.local wins over shell / .env (avoids pushing to Neon when local URL is configured).
+// Drizzle-kit only: .env.local wins over .env / shell (avoids db:push to Neon when local URL is in .env.local).
 loadEnv({ path: ".env" });
 loadEnv({ path: ".env.local", override: true });
 

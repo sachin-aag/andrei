@@ -14,4 +14,4 @@ Use this checklist on release candidates for flows that are hard to automate (em
 ## Notes
 
 - Automated coverage lives in `pnpm test` (Vitest) and `pnpm test:e2e` (Playwright).
-- E2E uses `ALLOW_TEST_SKIP_*` stubs for AI — manual runs should spot-check live Gemini evaluation periodically.
+- E2E uses `ALLOW_TEST_SKIP_EVALUATION` / `ALLOW_TEST_SKIP_SUGGESTIONS` stubs — manual runs should spot-check live Gemini evaluation periodically.

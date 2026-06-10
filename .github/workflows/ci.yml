@@ -83,12 +83,13 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
 
+      # Always install browser binaries (version must match @playwright/test).
+      # Cache only skips apt system deps; a cache hit without install leaves missing webkit-*/firefox-*.
       - name: Install Playwright browsers
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
-        run: pnpm exec playwright install --with-deps chromium firefox webkit
+        run: pnpm exec playwright install chromium firefox webkit
 
-      - name: Ensure Playwright system deps (cache hit)
-        if: steps.playwright-cache.outputs.cache-hit == 'true'
+      - name: Install Playwright system dependencies
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
         run: pnpm exec playwright install-deps chromium firefox webkit
 
       - run: pnpm run test:e2e
