@@ -2,8 +2,10 @@ import { expect, test } from "@playwright/test";
 import {
   loginAsEngineer,
   loginAsEngineerWithResponse,
+  logoutFromApp,
 } from "./helpers/auth";
-import { expandPrimaryNav } from "./helpers/workspace";
+
+test.describe.configure({ mode: "serial" });
 
 test.describe("authentication", () => {
   test("redirects unauthenticated users to login", async ({ page }) => {
@@ -79,8 +81,6 @@ test.describe("authentication", () => {
 
   test("logs out to login page", async ({ page }) => {
     await loginAsEngineerWithResponse(page);
-    await expandPrimaryNav(page);
-    await page.getByRole("button", { name: /log out/i }).click();
-    await expect(page).toHaveURL(/\/login/);
+    await logoutFromApp(page);
   });
 });

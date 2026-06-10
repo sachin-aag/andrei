@@ -1,4 +1,5 @@
 import { expect, type Page } from "@playwright/test";
+import { expandPrimaryNav } from "./workspace";
 
 const TEST_AUTH_EMAIL =
   process.env.TEST_AUTH_EMAIL ?? "test.engineer@mjbiopharm.com";
@@ -57,7 +58,7 @@ export async function fetchTestManagerUser(page: Page): Promise<TestLoginResult>
 
 export async function loginAsEngineerWithResponse(page: Page): Promise<TestLoginResult> {
   const result = await testLogin(page);
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
   await expect(
     page.getByRole("heading", { name: /my reports/i })
   ).toBeVisible({ timeout: 30_000 });
@@ -70,7 +71,7 @@ export async function loginAsEngineer(page: Page): Promise<void> {
 
 export async function loginAsManagerWithResponse(page: Page): Promise<TestLoginResult> {
   const result = await fetchTestManagerUser(page);
-  await page.goto("/");
+  await page.goto("/", { waitUntil: "domcontentloaded" });
   await expect(
     page.getByRole("heading", { name: /reports queue/i })
   ).toBeVisible({ timeout: 30_000 });
@@ -79,4 +80,16 @@ export async function loginAsManagerWithResponse(page: Page): Promise<TestLoginR
 
 export async function loginAsManager(page: Page): Promise<void> {
   await loginAsManagerWithResponse(page);
+}
+
+/** UI logout via sidebar (next-auth signOut + redirect to /login). */
+export async function logoutFromApp(page: Page): Promise<void> {
+  await expandPrimaryNav(page);
+  await Promise.all([
+    page.waitForURL(/\/login/, { timeout: 15_000 }),
+    page.getByRole("button", { name: /log out/i }).click(),
+  ]);
+  await expect(
+    page.getByRole("heading", { name: /sign in to your workspace/i })
+  ).toBeVisible({ timeout: 15_000 });
 }
