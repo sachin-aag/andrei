@@ -11,9 +11,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Real Neon URL for jobs that exercise the DB (e2e). Lint/typecheck/build
-  # only need a parseable value, so falls back to a stub when the secret
-  # is not configured.
+  # Lint/typecheck/build only need a parseable DATABASE_URL (not a live DB).
+  # E2E uses the service-container Postgres below — never Neon in CI.
   DATABASE_URL: ${{ secrets.DATABASE_URL || 'postgresql://ci:ci@127.0.0.1:5432/ci' }}
 
 jobs:
@@ -58,10 +57,12 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     env:
-      # Isolated Postgres for e2e — do not use shared Neon (schema/user drift).
+      # E2E is self-contained: no production GitHub secrets required.
+      # - Postgres: service container (not secrets.DATABASE_URL / Neon)
+      # - Auth: fixed AUTH_SECRET + ALLOW_TEST_LOGIN (set in playwright.config webServer)
+      # - AI: stubbed via ALLOW_TEST_SKIP_* (no Gemini / Langfuse keys needed)
       DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/ci
       AUTH_SECRET: ci-test-secret-not-for-production-use
-      GOOGLE_GENERATIVE_AI_API_KEY: ${{ secrets.GOOGLE_GENERATIVE_AI_API_KEY }}
     steps:
       - uses: actions/checkout@v4
 

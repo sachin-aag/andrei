@@ -449,6 +449,8 @@ Spot-check **live Gemini** evaluation periodically — E2E stubs AI via `ALLOW_T
 
 Workflow: `.github/workflows/ci.yml`
 
+**GitHub Actions secrets:** E2E does **not** need production secrets. It uses an ephemeral Postgres service, a fixed `AUTH_SECRET`, test-login bypass (`ALLOW_TEST_LOGIN` in `playwright.config.ts`), and stubbed AI (`ALLOW_TEST_SKIP_EVALUATION` / `ALLOW_TEST_SKIP_SUGGESTIONS`). Do **not** point CI E2E at `secrets.DATABASE_URL` (Neon) — that would share real data and drift from schema. Optional repo secrets (`DATABASE_URL`, `GOOGLE_GENERATIVE_AI_API_KEY`, `LANGFUSE_*`) are for Vercel/deploy only; the build job may read `DATABASE_URL` as a parseable stub but never connects. `CredentialsSignin` in E2E logs is expected when the “wrong password” auth test runs.
+
 ---
 
 ## Adding tests
