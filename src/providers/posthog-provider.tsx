@@ -28,12 +28,15 @@ export function PostHogProvider({
   }, []);
 
   useEffect(() => {
-    if (userId) {
-      posthog.identify(userId, {
-        email: email ?? undefined,
-        name: name ?? undefined,
-      });
-    }
+    if (!userId) return;
+
+    posthog.identify(userId, {
+      email: email ?? undefined,
+      name: name ?? undefined,
+    });
+    // Recorder v2 lazy-loads by default; start explicitly once identified so
+    // report editing is captured (not just a hollow shell on pageleave).
+    posthog.startSessionRecording(true);
   }, [userId, email, name]);
 
   return <PHProvider client={posthog}>{children}</PHProvider>;
