@@ -58,4 +58,37 @@ describe("stripPendingSuggestionsExcept", () => {
     const onlyA = stripPendingSuggestionsExcept(both, "suggestion-a");
     expect(collectPendingSuggestionMarkIds(onlyA)).toEqual(["suggestion-a"]);
   });
+
+  it("does not strip human track-change marks", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "hello",
+              marks: [
+                {
+                  type: "suggestionInsert",
+                  attrs: {
+                    id: "human-tc-1",
+                    authorId: "user-123",
+                    status: "pending",
+                    createdAt: "2026-01-01T00:00:00.000Z",
+                    kind: "fix",
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const stripped = stripPendingSuggestionsExcept(doc, null);
+    expect(collectPendingSuggestionMarkIds(stripped)).toEqual(["human-tc-1"]);
+    expect(stripped).toEqual(doc);
+  });
 });
