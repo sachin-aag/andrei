@@ -234,7 +234,12 @@ export const TrackChangesExtension = Extension.create({
           if (editor.storage.trackChanges?.enabled !== true) return null;
           const docChanging = transactions.filter((tr) => tr.docChanged);
           if (docChanging.length === 0) return null;
-          if (docChanging.length > 1) return null;
+          if (docChanging.length > 1) {
+            // #region agent log
+            fetch('http://127.0.0.1:7659/ingest/5cba3a71-99d6-42b5-91fd-4579d5f913e3',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1a0c2f'},body:JSON.stringify({sessionId:'1a0c2f',location:'suggestion-marks.ts:appendTransaction',message:'skipped multi doc-changing transactions',data:{docChangingCount:docChanging.length},timestamp:Date.now(),hypothesisId:'C'})}).catch(()=>{});
+            // #endregion
+            return null;
+          }
 
           const transaction = docChanging[0]!;
           /** Programmatic sync (e.g. setContent) — do not mark baseline text as green insert. */
@@ -265,6 +270,11 @@ export const TrackChangesExtension = Extension.create({
             changed = true;
           }
 
+          // #region agent log
+          if (changed) {
+            fetch('http://127.0.0.1:7659/ingest/5cba3a71-99d6-42b5-91fd-4579d5f913e3',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1a0c2f'},body:JSON.stringify({sessionId:'1a0c2f',location:'suggestion-marks.ts:appendTransaction',message:'track changes insert mark applied',data:{docChangingCount:docChanging.length,newTextLen:newState.doc.textContent.length},timestamp:Date.now(),hypothesisId:'C'})}).catch(()=>{});
+          }
+          // #endregion
           return changed ? tr.setMeta("skipTrackChanges", true) : null;
         },
       }),

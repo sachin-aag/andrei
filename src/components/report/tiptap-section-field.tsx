@@ -70,6 +70,7 @@ import {
 } from "@/lib/tiptap/suggestion-action-widgets";
 import {
   acceptSuggestionMarksById,
+  collectPendingSuggestionMarkIds,
   injectSuggestionMarks,
   stripPendingSuggestionsExcept,
   stripSuggestionMarksById,
@@ -441,6 +442,9 @@ export function TiptapSectionField({
       editable,
       onUpdate: ({ editor: ed }) => {
         const json = ed.getJSON() as JSONContent;
+        // #region agent log
+        fetch('http://127.0.0.1:7659/ingest/5cba3a71-99d6-42b5-91fd-4579d5f913e3',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1a0c2f'},body:JSON.stringify({sessionId:'1a0c2f',location:'tiptap-section-field.tsx:onUpdate',message:'editor onUpdate',data:{section,contentPath,trackChangesMode,textLen:ed.state.doc.textContent.length,pendingMarkIds:collectPendingSuggestionMarkIds(json)},timestamp:Date.now(),hypothesisId:'A,E'})}).catch(()=>{});
+        // #endregion
         // Do not use flushSync here: onUpdate can run during useEffect (e.g. setContent sync), and React 19 forbids flushSync inside lifecycle methods.
         onChangeRef.current(json);
       },
@@ -655,6 +659,9 @@ export function TiptapSectionField({
     const cur = JSON.stringify(currentEditor.getJSON());
     const next = JSON.stringify(value);
     if (cur !== next) {
+      // #region agent log
+      fetch('http://127.0.0.1:7659/ingest/5cba3a71-99d6-42b5-91fd-4579d5f913e3',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1a0c2f'},body:JSON.stringify({sessionId:'1a0c2f',location:'tiptap-section-field.tsx:applyExternalValueToEditor',message:'setContent from external value',data:{section,contentPath,trackChangesMode,curTextLen:currentEditor.state.doc.textContent.length,nextTextLen:JSON.parse(next).content?.[0]?.content?.[0]?.text?.length??-1},timestamp:Date.now(),hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
       currentEditor.commands.setContent(value as Content, { emitUpdate: false });
     }
   }, [editor, value]);
@@ -684,7 +691,15 @@ export function TiptapSectionField({
       return;
     }
 
+    const pendingBeforeStrip = collectPendingSuggestionMarkIds(json);
     json = stripPendingSuggestionsExcept(json, activeSuggestionId);
+    const pendingAfterStrip = collectPendingSuggestionMarkIds(json);
+
+    // #region agent log
+    if (pendingBeforeStrip.length !== pendingAfterStrip.length || JSON.stringify(json) !== before) {
+      fetch('http://127.0.0.1:7659/ingest/5cba3a71-99d6-42b5-91fd-4579d5f913e3',{method:'POST',headers:{'Content-Type':'application/json','X-Debug-Session-Id':'1a0c2f'},body:JSON.stringify({sessionId:'1a0c2f',location:'tiptap-section-field.tsx:suggestionPreviewEffect',message:'strip/inject suggestion effect',data:{section,contentPath,trackChangesMode,activeSuggestionId,pendingBeforeStrip,pendingAfterStrip,willSetContent:JSON.stringify(json)!==before},timestamp:Date.now(),hypothesisId:'A,E'})}).catch(()=>{});
+    }
+    // #endregion
 
     if (
       activeSuggestionId &&
