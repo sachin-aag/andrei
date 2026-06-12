@@ -11,6 +11,8 @@ import {
 const appRoot = path.dirname(fileURLToPath(import.meta.url));
 
 const nextConfig: NextConfig = {
+  // PostHog API uses trailing slashes (/e/, /s/); don't 308-strip them or replay uploads break.
+  skipTrailingSlashRedirect: true,
   // Playwright hits 127.0.0.1 while Next dev binds localhost; allow HMR/client hydration.
   allowedDevOrigins: ["127.0.0.1"],
   // Keep native / dynamic-require deps external so NFT copies real files (not pnpm symlinks).
