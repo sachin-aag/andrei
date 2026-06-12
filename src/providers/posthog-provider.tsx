@@ -21,7 +21,7 @@ export function PostHogProvider({
 }) {
   useEffect(() => {
     posthog.init(process.env.NEXT_PUBLIC_POSTHOG_KEY!, {
-      api_host: process.env.NEXT_PUBLIC_POSTHOG_HOST ?? POSTHOG_PROXY_PATH,
+      api_host: POSTHOG_PROXY_PATH,
       ui_host: POSTHOG_UI_HOST,
       person_profiles: "identified_only",
     });
