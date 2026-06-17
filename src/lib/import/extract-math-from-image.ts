@@ -6,6 +6,7 @@ import {
   resolveGoogleLanguageModel,
 } from "@/lib/ai/resolve-google-language-model";
 import { convertLatexToMathMl, ensureMathliveSsr } from "@/lib/math/mathlive-ssr";
+import { isTestStubMathExtraction } from "@/lib/test/ai-bypass";
 import { z } from "zod";
 
 type WmfModule = {
@@ -46,6 +47,13 @@ const MATH_EXTRACT_SEED = 0 as const;
 const MATH_EXTRACT_MAX_OUTPUT_TOKENS = 1024;
 const CACHE_MAX_ENTRIES = 200;
 const MAX_LATEX_LENGTH = 512;
+
+/** Deterministic stub for E2E/CI when Gemini is unavailable. */
+const TEST_STUB_MATH_EXTRACTION: MathExtractionResult = {
+  latex: "x^2 + y^2",
+  mathml:
+    "<math><mrow><msup><mi>x</mi><mn>2</mn></msup><mo>+</mo><msup><mi>y</mi><mn>2</mn></msup></mrow></math>",
+};
 
 const mathExtractSchema = z.object({
   latex: z
@@ -569,6 +577,13 @@ export async function extractMathFromImage(
       cacheSet(key, dbHit);
       return dbHit;
     }
+  }
+
+  if (isTestStubMathExtraction() && !options.llmCall && isWmfMime(input.mime)) {
+    console.log(`[extract-math] test stub ${shortKey}`);
+    cacheSet(key, TEST_STUB_MATH_EXTRACTION);
+    void dbCacheSet(key, TEST_STUB_MATH_EXTRACTION);
+    return TEST_STUB_MATH_EXTRACTION;
   }
 
   let pngBytes: Uint8Array | null = null;

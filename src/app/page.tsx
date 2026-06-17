@@ -75,7 +75,6 @@ export default async function DashboardPage() {
             currentUserId={user.id}
             userRole={user.role}
             usersById={usersById}
-            managers={managers}
           />
         </div>
       </div>

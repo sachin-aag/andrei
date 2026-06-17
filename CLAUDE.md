@@ -11,7 +11,7 @@ M.J. Biopharm Investigation Report Tool — a Next.js 16 app replacing manual DO
 ```bash
 pnpm install              # install dependencies
 pnpm dev                  # dev server at http://localhost:3000
-pnpm build                # production build
+pnpm build                # production build (pnpm vercel:build for Vercel CI)
 pnpm lint                 # ESLint
 pnpm typecheck            # tsc --noEmit (strict mode)
 pnpm test                 # Vitest (all unit tests, no watch)
@@ -25,6 +25,11 @@ pnpm db:generate          # generate Drizzle migrations
 pnpm db:migrate           # run Drizzle migrations
 pnpm db:studio            # Drizzle Studio GUI
 pnpm db:local:up          # start local Docker Postgres
+pnpm db:local:down        # stop local Docker Postgres
+pnpm db:local:setup       # up + push schema to local DB
+pnpm db:local:reset       # reset local DB (destructive)
+pnpm db:ensure            # ensure required DB tables/enums exist
+pnpm set-workspace-password  # set a workspace user's password (CLI prompt)
 ```
 
 ## Architecture
@@ -35,16 +40,21 @@ pnpm db:local:up          # start local Docker Postgres
 
 ### Key directories
 
-- `src/app/api/reports/[reportId]/` — Route handlers for report CRUD, section auto-save, AI evaluation, comments, submit/approve/feedback workflow, and DOCX export.
-- `src/components/report/` — Editor UI: `report-workspace.tsx` (header + tabs + sidebar), per-section editors in `sections/`, `traffic-light-sidebar.tsx` (AI results), `comments-panel.tsx`.
+- `src/app/api/reports/[reportId]/` — Route handlers for report CRUD, section auto-save (`sections/[sectionType]`), AI evaluation, evaluation bypass (`evaluations/[evalId]`), comments, submit/approve/feedback workflow, and DOCX export.
+- `src/app/improve-ai/` — Improve AI pages: session list and `[sessionId]` review page.
+- `src/app/api/improve-ai/` — API routes for creating sessions (from report or uploaded DOCX), listing sessions, and completing review.
+- `src/components/report/` — Editor UI: `report-workspace.tsx` (header + tabs + sidebar), per-section editors in `sections/`, `report-sidebar.tsx` (AI traffic-light results), `review-rail/` (manager comment margin UI).
+- `src/components/improve-ai/` — Improve AI UI: session form, upload button, section content display, stale-rerun dialog.
 - `src/components/ui/` — shadcn-style Radix UI primitives.
-- `src/db/schema/` — Drizzle schema: `reports`, `report_sections`, `criteria_evaluations`, `comments`, `workspace_users`, plus NextAuth tables in `auth.ts`.
+- `src/db/schema/` — Drizzle schema: `reports`, `reportSections`, `criteriaEvaluations`, `comments`, `workspaceUsers`, `reportSourceDocx` (original .docx as bytea), `mathExtractionCache` (LLM formula cache keyed by image SHA-256), `aiFeedbackSessions`, `aiFeedbackResponses`, `passwordResetTokens`, plus NextAuth tables in `auth.ts`.
 - `src/lib/ai/` — AI evaluation pipeline (see subsystem below).
+- `src/lib/improve-ai/` — Improve AI business logic: session store, session view, human-judgment tracking, response syncing, staleness detection.
 - `src/lib/export/` — DOCX generation (see subsystem below).
 - `src/lib/import/` — DOCX parsing (see subsystem below).
-- `src/lib/tiptap/` — TipTap editor extensions and utilities (19 files): rich text helpers, placeholder highlights, suggestion injection.
+- `src/lib/tiptap/` — TipTap editor extensions and utilities: rich text helpers, placeholder highlights, suggestion injection.
 - `src/providers/report-provider.tsx` — Centralized client-side state via React Context.
 - `src/hooks/` — Auto-save hooks (see subsystem below).
+- `src/proxy.ts` — Next.js middleware logic (auth redirects, `mustChangePassword` enforcement). Exported as `proxy` and re-used by the actual `middleware.ts` entry point.
 
 ### Data flow
 
@@ -60,7 +70,7 @@ pnpm db:local:up          # start local Docker Postgres
 
 ### Section types
 
-Define, Measure, Analyze, Improve, Control (DMAIC). Content types in `src/types/sections.ts`.
+DMAIC (`define`, `measure`, `analyze`, `improve`, `control`) plus three non-editable structural sections: `documents_reviewed`, `attachments`, `signature_approvals`. All are values of the `sectionTypeEnum`. Content types in `src/types/sections.ts`.
 
 ### Auth
 
@@ -151,6 +161,24 @@ NextAuth v5 with Drizzle adapter. Credentials (email/password) and Resend (magic
 - Report is read-only (unless trackChangesMode)
 - Suggestion is in-flight or being applied (prevents race conditions)
 - Previous save failed (blocks until report reloaded)
+
+## Subsystem: Improve AI
+
+**Purpose:** A separate feedback loop where engineers submit a completed report (or upload a reference DOCX) and receive per-criterion AI evaluations they can agree/disagree with. Results train human-judgment data (`aiFeedbackResponses`) separate from the live evaluation cache.
+
+**Entry points:**
+- `POST /api/improve-ai/from-report` — creates a session from an existing report
+- `POST /api/improve-ai/upload` — creates a session from an uploaded DOCX
+- `GET/PATCH /api/improve-ai/sessions/[id]` — fetch/update session
+- `POST /api/improve-ai/sessions/[id]/complete` — mark session as reviewed
+
+**Data flow:**
+1. Session created → status `evaluating` → background evaluation runs `evaluateSection()` for all DMAIC sections
+2. Status transitions to `ready_for_review`; engineer reviews per-criterion AI verdicts in `/improve-ai/[sessionId]`
+3. For each criterion the user records agreement + optional comment → upserted into `aiFeedbackResponses`
+4. `POST .../complete` marks session `reviewed`
+
+**Staleness:** `src/lib/improve-ai/session-staleness.ts` detects when the underlying report has changed since the session was created, prompting a re-run dialog.
 
 ## Testing
 

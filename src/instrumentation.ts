@@ -8,8 +8,14 @@ function langfuseConfigured(): boolean {
   );
 }
 
-/** Shared processor — call `forceFlush()` from serverless routes before exit. */
-export const langfuseSpanProcessor = new LangfuseSpanProcessor();
+let langfuseSpanProcessor: LangfuseSpanProcessor | undefined;
+
+/** Lazily created so CI/test without LANGFUSE_* keys does not warn on import. */
+export function getLangfuseSpanProcessor(): LangfuseSpanProcessor | null {
+  if (!langfuseConfigured()) return null;
+  langfuseSpanProcessor ??= new LangfuseSpanProcessor();
+  return langfuseSpanProcessor;
+}
 
 /**
  * Next.js server instrumentation hook.
@@ -18,10 +24,12 @@ export const langfuseSpanProcessor = new LangfuseSpanProcessor();
  */
 export function register() {
   if (process.env.NEXT_RUNTIME === "edge") return;
-  if (!langfuseConfigured()) return;
+
+  const spanProcessor = getLangfuseSpanProcessor();
+  if (!spanProcessor) return;
 
   const tracerProvider = new NodeTracerProvider({
-    spanProcessors: [langfuseSpanProcessor],
+    spanProcessors: [spanProcessor],
   });
 
   tracerProvider.register();

@@ -1,0 +1,218 @@
+[
+  {
+    "section": "define",
+    "criterionKey": "define.what_happened",
+    "status": "met",
+    "reasoning": "Stub evaluation for automated tests."
+  },
+  {
+    "section": "define",
+    "criterionKey": "define.what_is_different",
+    "status": "partially_met",
+    "reasoning": "Stub evaluation for automated tests."
+  },
+  {
+    "section": "define",
+    "criterionKey": "define.location",
+    "status": "not_met",
+    "reasoning": "Stub evaluation for automated tests."
+  },
+  {
+    "section": "define",
+    "criterionKey": "define.datetime",
+    "status": "met",
+    "reasoning": "Stub evaluation for automated tests."
+  },
+  {
+    "section": "define",
+    "criterionKey": "define.personnel",
+    "status": "partially_met",
+    "reasoning": "Stub evaluation for automated tests."
+  },
+  {
+    "section": "define",
+    "criterionKey": "define.initial_scope",
+    "status": "not_met",
+    "reasoning": "Stub evaluation for automated tests."
+  },
+  {
+    "section": "measure",
+    "criterionKey": "measure.facts_data",
+    "status": "met",
+    "reasoning": "Stub evaluation for automated tests."
+  },
+  {
+    "section": "measure",
+    "criterionKey": "measure.analysis_summary",
+    "status": "partially_met",
+    "reasoning": "Stub evaluation for automated tests."
+  },
+  {
+    "section": "measure",
+    "criterionKey": "measure.conclusion_statement",
+    "status": "not_met",
+    "reasoning": "Stub evaluation for automated tests."
+  },
+  {
+    "section": "measure",
+    "criterionKey": "measure.regulatory_notification",
+    "status": "met",
+    "reasoning": "Stub evaluation for automated tests."
+  },
+  {
+    "section": "measure",
+    "criterionKey": "measure.logical_flow",
+    "status": "partially_met",
+    "reasoning": "Stub evaluation for automated tests."
+  },
+  {
+    "section": "analyze",
+    "criterionKey": "analyze.sixm_completeness",
+    "status": "not_met",
+    "reasoning": "Stub evaluation for automated tests."
+  },
+  {
+    "section": "analyze",
+    "criterionKey": "analyze.fivewhy_completeness",
+    "status": "met",
+    "reasoning": "Stub evaluation for automated tests."
+  },
+  {
+    "section": "analyze",
+    "criterionKey": "analyze.investigation_outcome",
+    "status": "partially_met",
+    "reasoning": "Stub evaluation for automated tests."
+  },
+  {
+    "section": "analyze",
+    "criterionKey": "analyze.root_cause",
+    "status": "not_met",
+    "reasoning": "Stub evaluation for automated tests."
+  },
+  {
+    "section": "analyze",
+    "criterionKey": "analyze.impact_assessment",
+    "status": "met",
+    "reasoning": "Stub evaluation for automated tests."
+  },
+  {
+    "section": "improve",
+    "criterionKey": "improve.specific_actions",
+    "status": "partially_met",
+    "reasoning": "Stub evaluation for automated tests."
+  },
+  {
+    "section": "improve",
+    "criterionKey": "improve.per_root_cause",
+    "status": "not_met",
+    "reasoning": "Stub evaluation for automated tests."
+  },
+  {
+    "section": "improve",
+    "criterionKey": "improve.tracking_fields",
+    "status": "met",
+    "reasoning": "Stub evaluation for automated tests."
+  },
+  {
+    "section": "improve",
+    "criterionKey": "improve.expected_outcome",
+    "status": "partially_met",
+    "reasoning": "Stub evaluation for automated tests."
+  },
+  {
+    "section": "improve",
+    "criterionKey": "improve.effectiveness",
+    "status": "not_met",
+    "reasoning": "Stub evaluation for automated tests."
+  },
+  {
+    "section": "improve",
+    "criterionKey": "improve.achievable",
+    "status": "met",
+    "reasoning": "Stub evaluation for automated tests."
+  },
+  {
+    "section": "control",
+    "criterionKey": "control.preventive_per_root_cause",
+    "status": "partially_met",
+    "reasoning": "Stub evaluation for automated tests."
+  },
+  {
+    "section": "control",
+    "criterionKey": "control.linked_to_root_cause",
+    "status": "not_met",
+    "reasoning": "Stub evaluation for automated tests."
+  },
+  {
+    "section": "control",
+    "criterionKey": "control.tracking_fields",
+    "status": "met",
+    "reasoning": "Stub evaluation for automated tests."
+  },
+  {
+    "section": "control",
+    "criterionKey": "control.expected_outcome",
+    "status": "partially_met",
+    "reasoning": "Stub evaluation for automated tests."
+  },
+  {
+    "section": "control",
+    "criterionKey": "control.effectiveness",
+    "status": "not_met",
+    "reasoning": "Stub evaluation for automated tests."
+  },
+  {
+    "section": "control",
+    "criterionKey": "control.interim_plan",
+    "status": "met",
+    "reasoning": "Stub evaluation for automated tests."
+  },
+  {
+    "section": "control",
+    "criterionKey": "control.no_preventive_rationale",
+    "status": "partially_met",
+    "reasoning": "Stub evaluation for automated tests."
+  },
+  {
+    "section": "control",
+    "criterionKey": "control.final_comments",
+    "status": "not_met",
+    "reasoning": "Stub evaluation for automated tests."
+  },
+  {
+    "section": "control",
+    "criterionKey": "control.impact_fields_complete",
+    "status": "met",
+    "reasoning": "Stub evaluation for automated tests."
+  },
+  {
+    "section": "control",
+    "criterionKey": "control.lot_disposition",
+    "status": "partially_met",
+    "reasoning": "Stub evaluation for automated tests."
+  },
+  {
+    "section": "control",
+    "criterionKey": "control.conclusion_final_decision",
+    "status": "not_met",
+    "reasoning": "Stub evaluation for automated tests."
+  },
+  {
+    "section": "control",
+    "criterionKey": "control.capa_verified",
+    "status": "met",
+    "reasoning": "Stub evaluation for automated tests."
+  },
+  {
+    "section": "control",
+    "criterionKey": "control.conclusion_summary",
+    "status": "partially_met",
+    "reasoning": "Stub evaluation for automated tests."
+  },
+  {
+    "section": "control",
+    "criterionKey": "control.preventive_achievable",
+    "status": "not_met",
+    "reasoning": "Stub evaluation for automated tests."
+  }
+]

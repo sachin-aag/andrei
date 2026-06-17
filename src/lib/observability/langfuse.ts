@@ -36,8 +36,10 @@ export function langfuseGenerateTextTelemetry(options: {
 
 export async function flushLangfuseTraces(): Promise<void> {
   if (!isLangfuseEnabled()) return;
-  const { langfuseSpanProcessor } = await import("@/instrumentation");
-  await langfuseSpanProcessor.forceFlush();
+  const { getLangfuseSpanProcessor } = await import("@/instrumentation");
+  const processor = getLangfuseSpanProcessor();
+  if (!processor) return;
+  await processor.forceFlush();
 }
 
 /** Wrap a route handler without auto-capturing Request/params as I/O. */

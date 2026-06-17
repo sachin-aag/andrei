@@ -2,8 +2,16 @@ import { createId } from "@paralleldrive/cuid2";
 import { NextResponse } from "next/server";
 import { encode } from "next-auth/jwt";
 import { eq } from "drizzle-orm";
+import { z } from "zod";
 import { db } from "@/db";
 import { workspaceUsers } from "@/db/schema";
+import { isTestLoginEnabled } from "@/lib/test/ai-bypass";
+
+const bodySchema = z.object({
+  email: z.string().email().optional(),
+  role: z.enum(["engineer", "manager"]).optional(),
+  mustChangePassword: z.boolean().optional(),
+});
 
 function displayNameFromEmail(email: string): string {
   const local = email.split("@")[0] ?? email;
@@ -14,12 +22,40 @@ function displayNameFromEmail(email: string): string {
     .join(" ");
 }
 
-/** Upsert the Playwright test engineer when ALLOW_TEST_LOGIN is enabled. */
-async function ensureTestWorkspaceUser(email: string) {
+function titleForRole(role: "engineer" | "manager"): string {
+  return role === "manager" ? "Manager" : "Test Engineer";
+}
+
+/** Upsert a Playwright test workspace user when ALLOW_TEST_LOGIN is enabled. */
+async function ensureTestWorkspaceUser(
+  email: string,
+  role: "engineer" | "manager",
+  mustChangePassword: boolean
+) {
   const existing = await db.query.workspaceUsers.findFirst({
     where: eq(workspaceUsers.email, email),
   });
-  if (existing) return existing;
+
+  if (existing) {
+    const needsUpdate =
+      existing.role !== role ||
+      existing.mustChangePassword !== mustChangePassword ||
+      existing.title !== titleForRole(role);
+
+    if (needsUpdate) {
+      const [updated] = await db
+        .update(workspaceUsers)
+        .set({
+          role,
+          title: titleForRole(role),
+          mustChangePassword,
+        })
+        .where(eq(workspaceUsers.id, existing.id))
+        .returning();
+      return updated ?? existing;
+    }
+    return existing;
+  }
 
   const [created] = await db
     .insert(workspaceUsers)
@@ -27,8 +63,9 @@ async function ensureTestWorkspaceUser(email: string) {
       id: createId(),
       name: displayNameFromEmail(email),
       email,
-      role: "engineer",
-      title: "Test Engineer",
+      role,
+      title: titleForRole(role),
+      mustChangePassword,
     })
     .onConflictDoNothing({ target: workspaceUsers.email })
     .returning();
@@ -40,25 +77,19 @@ async function ensureTestWorkspaceUser(email: string) {
   });
 }
 
-function isTestLoginEnabled(): boolean {
-  return (
-    process.env.ALLOW_TEST_LOGIN === "true" &&
-    Boolean(process.env.TEST_AUTH_EMAIL)
-  );
-}
-
 /**
  * Test-only endpoint: mints a valid Auth.js JWT session cookie directly,
  * bypassing the magic link email flow. Only works when ALLOW_TEST_LOGIN=true
  * and TEST_AUTH_EMAIL is set (Playwright sets both; never enable on Vercel prod).
- *
- * Called by Playwright's loginAsEngineer() helper in CI/dev e2e tests.
  */
-export async function POST() {
-  const testEmail = process.env.TEST_AUTH_EMAIL;
-
-  if (!isTestLoginEnabled() || !testEmail) {
+export async function POST(req: Request) {
+  if (!isTestLoginEnabled()) {
     return NextResponse.json({ error: "Not available" }, { status: 404 });
+  }
+
+  const defaultEmail = process.env.TEST_AUTH_EMAIL;
+  if (!defaultEmail) {
+    return NextResponse.json({ error: "TEST_AUTH_EMAIL not set" }, { status: 500 });
   }
 
   const secret = process.env.AUTH_SECRET;
@@ -66,15 +97,21 @@ export async function POST() {
     return NextResponse.json({ error: "AUTH_SECRET not set" }, { status: 500 });
   }
 
-  const wsUser = await ensureTestWorkspaceUser(testEmail);
+  const rawBody = await req.json().catch(() => ({}));
+  const parsed = bodySchema.safeParse(rawBody);
+  const email = (parsed.success ? parsed.data.email : undefined) ?? defaultEmail;
+  const role = parsed.success ? (parsed.data.role ?? "engineer") : "engineer";
+  const mustChangePassword =
+    parsed.success ? (parsed.data.mustChangePassword ?? false) : false;
+
+  const wsUser = await ensureTestWorkspaceUser(email, role, mustChangePassword);
   if (!wsUser) {
     return NextResponse.json(
-      { error: `No workspace user with email ${testEmail}` },
+      { error: `No workspace user with email ${email}` },
       { status: 404 }
     );
   }
 
-  // Auth.js uses the cookie name as HMAC salt for key derivation
   const cookieName = "authjs.session-token";
   const jwt = await encode({
     token: {
@@ -82,13 +119,19 @@ export async function POST() {
       email: wsUser.email,
       name: wsUser.name,
       workspaceUserId: wsUser.id,
+      mustChangePassword: wsUser.mustChangePassword,
     },
     secret,
     salt: cookieName,
     maxAge: 60 * 60 * 24,
   });
 
-  const response = NextResponse.json({ ok: true });
+  const response = NextResponse.json({
+    ok: true,
+    userId: wsUser.id,
+    email: wsUser.email,
+    role: wsUser.role,
+  });
   response.cookies.set(cookieName, jwt, {
     httpOnly: true,
     sameSite: "lax",

@@ -1,0 +1,20 @@
+[
+  {
+    "section": "define",
+    "criterionKey": "define.what_happened",
+    "targetField": "narrative",
+    "anchorText": "The deviation was observed during routine testing.",
+    "deleteText": "routine",
+    "insertText": "scheduled",
+    "reasoning": "Stub suggestion for E2E tests."
+  },
+  {
+    "section": "define",
+    "criterionKey": "define.what_is_different",
+    "targetField": "narrative",
+    "anchorText": "",
+    "deleteText": "",
+    "insertText": " The result exceeded the acceptance criteria per SOP/DP/QC/045.",
+    "reasoning": "Stub insert suggestion for E2E tests."
+  }
+]

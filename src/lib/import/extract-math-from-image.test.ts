@@ -191,4 +191,15 @@ describe("extractMathFromImage", () => {
     );
     expect(result).toBeNull();
   });
+
+  it("returns deterministic stub for WMF when ALLOW_TEST_STUB_MATH_EXTRACTION is set", async () => {
+    vi.stubEnv("ALLOW_TEST_STUB_MATH_EXTRACTION", "true");
+    const result = await extractMathFromImage({
+      bytes: new Uint8Array([1, 2, 3, 4]),
+      mime: "image/x-wmf",
+    });
+    expect(result?.latex).toBe("x^2 + y^2");
+    expect(result?.mathml).toContain("<math");
+    vi.unstubAllEnvs();
+  });
 });
