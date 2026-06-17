@@ -73,6 +73,8 @@ function generationSettingsForSection(
     modelId,
     ...generationOptions,
     effort: generationOptions.effort ?? "none",
+    traceGeminiThoughts: true,
+    defaultGeminiThinkingLevel: "minimal",
   });
 }
 
@@ -118,7 +120,9 @@ export function describeCriterionEvaluationLlmFootprint(
     criterionGenerationConfig: describeEvalGenerationConfig(
       options,
       overrides?.providerHint,
-      overrides?.modelId
+      overrides?.modelId,
+      true,
+      "minimal"
     ),
   };
 }

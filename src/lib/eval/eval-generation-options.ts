@@ -75,6 +75,26 @@ export function formatModelRunLabel(
 type BuildEvalGenerationSettingsArgs = EvalGenerationOptions & {
   providerHint?: string;
   modelId?: string;
+  traceGeminiThoughts?: boolean;
+  defaultGeminiThinkingLevel?: Exclude<EvalEffort, "none">;
+};
+
+type GeminiThinkingConfig = {
+  thinkingLevel: Exclude<EvalEffort, "none">;
+  includeThoughts: boolean;
+};
+
+type GeminiProviderOptions = {
+  seed?: number;
+  thinkingConfig?: GeminiThinkingConfig;
+};
+
+type GenerationProviderOptions = {
+  google?: GeminiProviderOptions;
+  vertex?: GeminiProviderOptions;
+  openai?: {
+    reasoningEffort: "low" | "medium" | "high";
+  };
 };
 
 /** Models that reject temperature (and usually seed) in the AI SDK. */
@@ -98,9 +118,39 @@ function usesGoogleThinkingConfig(providerHint?: string): boolean {
   );
 }
 
+function geminiProviderNamespaces(providerHint?: string): Array<"google" | "vertex"> {
+  if (providerHint === "google") return ["google"];
+  if (providerHint === "vertex") return ["vertex"];
+  if (!providerHint) return ["google", "vertex"];
+  return [];
+}
+
+export function buildGeminiThoughtSummaryProviderOptions({
+  providerHint,
+  seed,
+  thinkingLevel,
+}: {
+  providerHint?: string;
+  seed?: number;
+  thinkingLevel: Exclude<EvalEffort, "none">;
+}): Pick<GenerationProviderOptions, "google" | "vertex"> {
+  const providerOptions: Pick<GenerationProviderOptions, "google" | "vertex"> = {};
+  for (const namespace of geminiProviderNamespaces(providerHint)) {
+    providerOptions[namespace] = {
+      ...(seed !== undefined ? { seed } : {}),
+      thinkingConfig: {
+        thinkingLevel,
+        includeThoughts: true,
+      },
+    };
+  }
+  return providerOptions;
+}
+
 /**
  * Maps unified `effort` to provider-specific thinking / reasoning options.
- * Uses `includeThoughts: false` so structured `Output.object()` parsing stays clean.
+ * Thought summaries are opt-in so bulk model sweeps can keep their previous
+ * output shape unless a traced app call explicitly requests them.
  */
 export function buildEvalGenerationSettings({
   providerHint,
@@ -108,53 +158,19 @@ export function buildEvalGenerationSettings({
   temperature,
   seed,
   effort = "none",
+  traceGeminiThoughts = false,
+  defaultGeminiThinkingLevel = "minimal",
 }: BuildEvalGenerationSettingsArgs): {
   temperature?: number;
   maxOutputTokens: number;
   seed?: number;
-  providerOptions?: {
-    google?: {
-      seed?: number;
-      thinkingConfig?: {
-        thinkingLevel: Exclude<EvalEffort, "none">;
-        includeThoughts: false;
-      };
-    };
-    vertex?: {
-      seed?: number;
-      thinkingConfig?: {
-        thinkingLevel: Exclude<EvalEffort, "none">;
-        includeThoughts: false;
-      };
-    };
-    openai?: {
-      reasoningEffort: "low" | "medium" | "high";
-    };
-  };
+  providerOptions?: GenerationProviderOptions;
 } {
   const base: {
     temperature?: number;
     maxOutputTokens: number;
     seed?: number;
-    providerOptions?: {
-      google?: {
-        seed?: number;
-        thinkingConfig?: {
-          thinkingLevel: Exclude<EvalEffort, "none">;
-          includeThoughts: false;
-        };
-      };
-      vertex?: {
-        seed?: number;
-        thinkingConfig?: {
-          thinkingLevel: Exclude<EvalEffort, "none">;
-          includeThoughts: false;
-        };
-      };
-      openai?: {
-        reasoningEffort: "low" | "medium" | "high";
-      };
-    };
+    providerOptions?: GenerationProviderOptions;
   } = {
     maxOutputTokens: 32768,
   };
@@ -165,25 +181,7 @@ export function buildEvalGenerationSettings({
     base.temperature = temperature;
   }
 
-  const providerOptions: {
-    google?: {
-      seed?: number;
-      thinkingConfig?: {
-        thinkingLevel: Exclude<EvalEffort, "none">;
-        includeThoughts: false;
-      };
-    };
-    vertex?: {
-      seed?: number;
-      thinkingConfig?: {
-        thinkingLevel: Exclude<EvalEffort, "none">;
-        includeThoughts: false;
-      };
-    };
-    openai?: {
-      reasoningEffort: "low" | "medium" | "high";
-    };
-  } = {};
+  const providerOptions: GenerationProviderOptions = {};
 
   if (
     !skipSampling &&
@@ -213,7 +211,7 @@ export function buildEvalGenerationSettings({
         ...providerOptions.vertex,
         thinkingConfig: {
           thinkingLevel: effort,
-          includeThoughts: false,
+          includeThoughts: traceGeminiThoughts,
         },
       };
     } else {
@@ -221,10 +219,19 @@ export function buildEvalGenerationSettings({
         ...providerOptions.google,
         thinkingConfig: {
           thinkingLevel: effort,
-          includeThoughts: false,
+          includeThoughts: traceGeminiThoughts,
         },
       };
     }
+  } else if (traceGeminiThoughts && usesGoogleThinkingConfig(providerHint)) {
+    Object.assign(
+      providerOptions,
+      buildGeminiThoughtSummaryProviderOptions({
+        providerHint,
+        seed,
+        thinkingLevel: defaultGeminiThinkingLevel,
+      })
+    );
   }
 
   if (Object.keys(providerOptions).length > 0) {
@@ -242,7 +249,9 @@ export function buildEvalGenerationSettings({
 export function describeEvalGenerationConfig(
   options: EvalGenerationOptions,
   providerHint?: string,
-  modelId?: string
+  modelId?: string,
+  traceGeminiThoughts = false,
+  defaultGeminiThinkingLevel: Exclude<EvalEffort, "none"> = "minimal"
 ): string {
   const parts = [`maxOutputTokens=32768`];
   if (modelSkipsSamplingControls(providerHint, modelId)) {
@@ -266,14 +275,20 @@ export function describeEvalGenerationConfig(
   }
   const effort = options.effort ?? "none";
   if (effort === "none") {
-    parts.push("effort=none (no thinkingConfig)");
+    if (traceGeminiThoughts && usesGoogleThinkingConfig(providerHint)) {
+      parts.push(
+        `thinkingLevel=${defaultGeminiThinkingLevel}; includeThoughts=true`
+      );
+    } else {
+      parts.push("effort=none (no thinkingConfig)");
+    }
   } else if (providerHint === "openai") {
     parts.push(`reasoningEffort=${effort === "minimal" ? "low" : effort}`);
   } else if (providerHint === "vertex-anthropic") {
     parts.push(`effort=${effort} (ignored for Vertex Anthropic today)`);
   } else {
     parts.push(
-      `thinkingLevel=${effort}; includeThoughts=false (structured output)`
+      `thinkingLevel=${effort}; includeThoughts=${traceGeminiThoughts}`
     );
   }
   return parts.join("; ");
