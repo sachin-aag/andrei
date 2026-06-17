@@ -7,7 +7,6 @@ import { FileText, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { StatusBadge } from "@/components/report/status-badge";
-import type { WorkspaceUser } from "@/lib/auth/workspace-user";
 import { DeleteReportButton } from "@/components/dashboard/delete-report-button";
 import { EvaluateWithAiButton } from "@/components/dashboard/evaluate-with-ai-button";
 import { formatCalendarDate, formatDate } from "@/lib/utils";
@@ -23,20 +22,16 @@ type DashboardReport = {
   updatedAt: Date;
 };
 
-type ManagerOption = Pick<WorkspaceUser, "id" | "name" | "title">;
-
 export function ReportList({
   reports,
   currentUserId,
   userRole,
   usersById,
-  managers,
 }: {
   reports: DashboardReport[];
   currentUserId: string;
   userRole: "engineer" | "manager";
   usersById: Record<string, { name: string } | undefined>;
-  managers: ManagerOption[];
 }) {
   const router = useRouter();
   const [deletedIds, setDeletedIds] = useState<Set<string>>(() => new Set());

@@ -20,7 +20,9 @@ test.describe("authentication", () => {
   test("shows error for unknown email", async ({ page }) => {
     await page.goto("/login");
     await page.getByLabel(/work email/i).fill("nobody@mjbiopharm.com");
-    await page.getByRole("button", { name: /^continue$/i }).click();
+    const continueButton = page.getByRole("button", { name: /^continue$/i });
+    await expect(continueButton).toBeEnabled();
+    await continueButton.click();
     await expect(
       page.getByText(/this email isn't registered/i)
     ).toBeVisible();
@@ -29,14 +31,18 @@ test.describe("authentication", () => {
   test("shows password step for known email with password", async ({ page }) => {
     await page.goto("/login");
     await page.getByLabel(/work email/i).fill("e2e.password@mjbiopharm.com");
-    await page.getByRole("button", { name: /^continue$/i }).click();
+    const continueButton = page.getByRole("button", { name: /^continue$/i });
+    await expect(continueButton).toBeEnabled();
+    await continueButton.click();
     await expect(page.getByLabel(/^password$/i)).toBeVisible({ timeout: 15_000 });
   });
 
   test("shows error for wrong password", async ({ page }) => {
     await page.goto("/login");
     await page.getByLabel(/work email/i).fill("e2e.password@mjbiopharm.com");
-    await page.getByRole("button", { name: /^continue$/i }).click();
+    const continueButton = page.getByRole("button", { name: /^continue$/i });
+    await expect(continueButton).toBeEnabled();
+    await continueButton.click();
     await expect(page.getByLabel(/^password$/i)).toBeVisible({ timeout: 15_000 });
     await page.getByLabel(/^password$/i).fill("WrongPassword123!");
     await page.getByRole("button", { name: /^sign in$/i }).click();
@@ -53,7 +59,9 @@ test.describe("authentication", () => {
   test("shows setup password link for no-password account", async ({ page }) => {
     await page.goto("/login");
     await page.getByLabel(/work email/i).fill("e2e.nopassword@mjbiopharm.com");
-    await page.getByRole("button", { name: /^continue$/i }).click();
+    const continueButton = page.getByRole("button", { name: /^continue$/i });
+    await expect(continueButton).toBeEnabled();
+    await continueButton.click();
     await expect(page.getByRole("link", { name: /set up a password/i })).toBeVisible({
       timeout: 15_000,
     });

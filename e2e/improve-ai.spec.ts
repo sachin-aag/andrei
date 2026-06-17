@@ -149,7 +149,9 @@ test.describe("improve ai", () => {
     await expect(page.locator("#improve-ai-deviation")).not.toHaveValue("", {
       timeout: 30_000,
     });
-    await page.getByRole("button", { name: /upload & evaluate/i }).click();
+    const uploadButton = page.getByRole("button", { name: /upload & evaluate/i });
+    await expect(uploadButton).toBeEnabled({ timeout: 30_000 });
+    await uploadButton.click();
     await expect(page).toHaveURL(/\/improve-ai\/[^/]+/, { timeout: 120_000 });
 
     const match = page.url().match(/\/improve-ai\/([^/]+)/);
