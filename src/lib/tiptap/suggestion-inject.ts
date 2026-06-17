@@ -5,6 +5,7 @@ import {
   collapseWhitespace,
   countOccurrences,
 } from "@/lib/text/normalize-for-anchor";
+import { AI_AUTHOR_ID } from "@/lib/ai/constants";
 import {
   suggestionInsertMarkName,
   suggestionDeleteMarkName,
@@ -407,8 +408,11 @@ export function replaceSuggestionInsertPlainText(
   return cloned;
 }
 
-/** Pending AI suggestion mark ids present in a narrative doc. */
-export function collectPendingSuggestionMarkIds(doc: JSONContent): string[] {
+/** Pending suggestion mark ids present in a narrative doc. */
+export function collectPendingSuggestionMarkIds(
+  doc: JSONContent,
+  authorId?: string
+): string[] {
   const ids = new Set<string>();
 
   function visit(node: JSONContent) {
@@ -420,8 +424,13 @@ export function collectPendingSuggestionMarkIds(doc: JSONContent): string[] {
         ) {
           continue;
         }
-        const attrs = mark.attrs as { id?: string | null; status?: string };
+        const attrs = mark.attrs as {
+          id?: string | null;
+          status?: string;
+          authorId?: string;
+        };
         if (attrs?.status !== "pending") continue;
+        if (authorId != null && attrs.authorId !== authorId) continue;
         if (attrs.id) ids.add(attrs.id);
       }
     }
@@ -432,13 +441,13 @@ export function collectPendingSuggestionMarkIds(doc: JSONContent): string[] {
   return [...ids];
 }
 
-/** Revert every pending suggestion preview except the one currently shown in the UI. */
+/** Revert every pending AI suggestion preview except the one currently shown in the UI. */
 export function stripPendingSuggestionsExcept(
   doc: JSONContent,
   keepMarkId: string | null
 ): JSONContent {
   let result = doc;
-  for (const id of collectPendingSuggestionMarkIds(doc)) {
+  for (const id of collectPendingSuggestionMarkIds(doc, AI_AUTHOR_ID)) {
     if (keepMarkId && id === keepMarkId) continue;
     result = stripSuggestionMarksById(result, id);
   }
