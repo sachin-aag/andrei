@@ -169,6 +169,13 @@
       "when": 1782079500000,
       "tag": "0023_password_strength_code_only",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1782079600000,
+      "tag": "0024_drop_password_reset_token_created_at",
+      "breakpoints": true
     }
   ]
 }

@@ -126,9 +126,6 @@ export const workspaceUsers = pgTable(
     passwordResetTokenExpiresAt: timestamp("password_reset_token_expires_at", {
       withTimezone: true,
     }),
-    passwordResetTokenCreatedAt: timestamp("password_reset_token_created_at", {
-      withTimezone: true,
-    }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

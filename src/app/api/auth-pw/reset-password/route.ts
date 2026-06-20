@@ -95,7 +95,6 @@ export async function POST(req: Request) {
       passwordHistory: updatedHistory,
       passwordResetTokenHash: null,
       passwordResetTokenExpiresAt: null,
-      passwordResetTokenCreatedAt: null,
     })
     .where(eq(workspaceUsers.id, wsUser.id));
 

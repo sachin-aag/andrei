@@ -17,7 +17,6 @@ export async function sendPasswordResetLink(email: string): Promise<void> {
     .set({
       passwordResetTokenHash: tokenHash,
       passwordResetTokenExpiresAt: new Date(now.getTime() + RESET_TOKEN_TTL_MS),
-      passwordResetTokenCreatedAt: now,
     })
     .where(eq(workspaceUsers.email, normalizedEmail));
 
