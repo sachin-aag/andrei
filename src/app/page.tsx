@@ -15,6 +15,7 @@ export const dynamic = "force-dynamic";
 export default async function DashboardPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+  if (user.role === "admin") redirect("/admin/users");
 
   const workspaceUsers = await listWorkspaceUsers();
   const managers = workspaceUsers.filter((entry) => entry.role === "manager");
