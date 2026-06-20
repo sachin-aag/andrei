@@ -88,10 +88,11 @@ test.describe("authentication", () => {
 
   test("locks an account after 3 wrong password attempts", async ({ page }, testInfo) => {
     await page.goto("/login");
-    await page
-      .getByLabel(/work email/i)
-      .fill(scopedEmail("e2e.lockout@mjbiopharm.com", testInfo));
-    await page.getByRole("button", { name: /^continue$/i }).click();
+    const continueButton = await fillEmailAndWaitForContinue(
+      page,
+      scopedEmail("e2e.lockout@mjbiopharm.com", testInfo)
+    );
+    await continueButton.click();
     await expect(page.getByLabel(/^password$/i)).toBeVisible({ timeout: 15_000 });
 
     for (let attempt = 0; attempt < 3; attempt++) {
