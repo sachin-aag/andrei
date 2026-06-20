@@ -171,6 +171,7 @@ test.describe("authentication", () => {
     await expect(page.getByRole("heading", { name: /^profile$/i })).toBeVisible();
     await expect(page.getByLabel(/current password/i)).toBeVisible();
     await expect(page.getByLabel(/^new password$/i)).toBeVisible();
+    await expect(page.getByRole("button", { name: /log out/i })).toBeVisible();
   });
 
   test("password expiry warning can be ignored", async ({ page }, testInfo) => {

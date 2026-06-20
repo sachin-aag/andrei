@@ -5,6 +5,7 @@ import { getPasswordStatusForUser } from "@/lib/auth/password-status";
 import { roleLabel } from "@/lib/auth/roles";
 import { AppShell } from "@/components/layout/app-shell";
 import { ChangeOwnPasswordForm } from "@/components/auth/change-own-password-form";
+import { LogoutButton } from "@/components/auth/logout-button";
 
 export const dynamic = "force-dynamic";
 
@@ -69,6 +70,16 @@ export default async function ProfilePage() {
             </p>
             <div className="mt-5">
               <ChangeOwnPasswordForm />
+            </div>
+          </section>
+
+          <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-5 lg:col-span-2">
+            <h2 className="text-base font-semibold">Session</h2>
+            <p className="mt-1 text-sm text-[var(--muted-foreground)]">
+              Sign out of this workspace on this device.
+            </p>
+            <div className="mt-5">
+              <LogoutButton />
             </div>
           </section>
         </div>

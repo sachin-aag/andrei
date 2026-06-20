@@ -6,18 +6,15 @@ import type { PasswordStatus } from "@/lib/auth/password-status";
 import { UserDirectoryProvider } from "@/providers/user-directory-provider";
 import {
   AlertTriangle,
-  LogOut,
   FileText,
   BookOpen,
   Sparkles,
   Users,
   PanelLeftClose,
   PanelLeftOpen,
-  UserRound,
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
-import { signOut } from "next-auth/react";
 import { usePathname } from "next/navigation";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
@@ -40,10 +37,6 @@ export function AppShell({
   );
   const mainId = useId();
 
-  const handleLogout = () => {
-    void signOut({ callbackUrl: "/login" });
-  };
-
   const navItems = [
     ...(user.role === "admin"
       ? [{ href: "/admin/users", label: "Users", icon: Users }]
@@ -51,8 +44,10 @@ export function AppShell({
           { href: "/", label: "Reports", icon: FileText },
           { href: "/improve-ai", label: "Improve AI", icon: Sparkles },
         ]),
-    { href: "/profile", label: "Profile", icon: UserRound },
   ];
+
+  const isProfileActive =
+    pathname === "/profile" || pathname.startsWith("/profile/");
 
   const dismissPasswordWarning = async () => {
     setShowPasswordWarning(false);
@@ -176,13 +171,27 @@ export function AppShell({
         </nav>
 
         <div className="border-t border-[var(--border)] p-3">
-          <div
+          <Link
+            href="/profile"
+            aria-label="Profile"
+            aria-current={isProfileActive ? "page" : undefined}
+            title={collapsed ? "Profile" : undefined}
             className={cn(
-              "flex items-center gap-3 p-2 rounded-md bg-[var(--secondary)]",
-              collapsed && "justify-center p-1"
+              "flex items-center gap-3 p-2 rounded-md transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]",
+              collapsed && "justify-center p-1",
+              isProfileActive
+                ? "bg-[var(--brand-700)] text-white"
+                : "bg-[var(--secondary)] hover:bg-[var(--secondary)]/80"
             )}
           >
-            <div className="size-8 rounded-full bg-[var(--brand-600)] flex items-center justify-center text-xs font-semibold shrink-0">
+            <div
+              className={cn(
+                "size-8 rounded-full flex items-center justify-center text-xs font-semibold shrink-0",
+                isProfileActive
+                  ? "bg-white/20 text-white"
+                  : "bg-[var(--brand-600)] text-white"
+              )}
+            >
               {user.name
                 .split(" ")
                 .map((n) => n[0])
@@ -190,27 +199,21 @@ export function AppShell({
                 .join("")}
             </div>
             {!collapsed && (
-              <>
-                <div className="flex flex-col min-w-0 flex-1">
-                  <span className="text-xs font-medium truncate">
-                    {user.name}
-                  </span>
-                  <span className="text-[10px] text-[var(--muted-foreground)] truncate">
-                    {roleLabel(user.role)} · {user.email}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  aria-label="Log out"
-                  onClick={handleLogout}
-                  className="text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]"
-                  title="Log out"
+              <div className="flex flex-col min-w-0 flex-1">
+                <span className="text-xs font-medium truncate">{user.name}</span>
+                <span
+                  className={cn(
+                    "text-[10px] truncate",
+                    isProfileActive
+                      ? "text-white/80"
+                      : "text-[var(--muted-foreground)]"
+                  )}
                 >
-                  <LogOut className="size-4" aria-hidden="true" />
-                </button>
-              </>
+                  {roleLabel(user.role)} · {user.email}
+                </span>
+              </div>
             )}
-          </div>
+          </Link>
         </div>
       </aside>
 

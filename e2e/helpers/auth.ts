@@ -1,5 +1,5 @@
 import { expect, type Page } from "@playwright/test";
-import { expandPrimaryNav } from "./workspace";
+import { expandPrimaryNav, primaryNav } from "./workspace";
 import type { UserRole } from "@/lib/auth/roles";
 
 const TEST_AUTH_EMAIL =
@@ -144,9 +144,11 @@ export async function loginAsAdmin(page: Page): Promise<void> {
   await loginAsAdminWithResponse(page);
 }
 
-/** UI logout via sidebar (next-auth signOut + redirect to /login). */
+/** UI logout via profile page (next-auth signOut + redirect to /login). */
 export async function logoutFromApp(page: Page): Promise<void> {
   await expandPrimaryNav(page);
+  await primaryNav(page).getByRole("link", { name: /profile/i }).click();
+  await expect(page.getByRole("heading", { name: /^profile$/i })).toBeVisible();
   await Promise.all([
     page.waitForURL(/\/login/, { timeout: 15_000 }),
     page.getByRole("button", { name: /log out/i }).click(),
