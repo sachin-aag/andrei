@@ -7,7 +7,6 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { hashPassword } from "@/lib/auth/password";
 import { USER_ROLES, defaultTitleForRole } from "@/lib/auth/roles";
 import { adminUserFromRow, listAdminUsers } from "@/lib/admin/users";
-import { getPasswordPolicy } from "@/lib/auth/password-policy";
 
 const createUserSchema = z.object({
   name: z.string().trim().min(1).optional(),
@@ -93,11 +92,7 @@ export async function POST(req: Request) {
       throw new Error("insert(workspaceUsers).returning() returned no row");
     }
 
-    const policy = await getPasswordPolicy();
-    return NextResponse.json(
-      { user: adminUserFromRow(created, policy) },
-      { status: 201 }
-    );
+    return NextResponse.json({ user: adminUserFromRow(created) }, { status: 201 });
   } catch (error) {
     if (isUniqueViolation(error)) {
       return NextResponse.json(

@@ -67,19 +67,26 @@ async function readError(response: Response, fallback: string): Promise<string> 
 export function AdminUsersPanel({
   initialUsers,
   currentUserId,
+  initialPasswordExpiryDays,
 }: {
   initialUsers: AdminUser[];
   currentUserId: string;
+  initialPasswordExpiryDays: number;
 }) {
   const [users, setUsers] = useState(() => sortUsers(initialUsers));
+  const [passwordExpiryDays, setPasswordExpiryDays] = useState(
+    String(initialPasswordExpiryDays)
+  );
+  const [savedPasswordExpiryDays, setSavedPasswordExpiryDays] = useState(
+    initialPasswordExpiryDays
+  );
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm, setCreateForm] = useState<CreateUserForm>(emptyCreateForm);
   const [resetUser, setResetUser] = useState<AdminUser | null>(null);
-  const [expiryResetUser, setExpiryResetUser] = useState<AdminUser | null>(null);
   const [pendingRoleUserId, setPendingRoleUserId] = useState<string | null>(null);
   const [isCreating, startCreateTransition] = useTransition();
   const [isResetting, startResetTransition] = useTransition();
-  const [isResettingExpiry, startExpiryResetTransition] = useTransition();
+  const [isSavingExpiry, startExpirySaveTransition] = useTransition();
 
   const updateUser = (updated: AdminUser) => {
     setUsers((current) =>
@@ -151,24 +158,29 @@ export function AdminUsersPanel({
       });
   };
 
-  const resetPasswordExpiry = () => {
-    if (!expiryResetUser) return;
+  const savePasswordExpiryDays = () => {
+    const expiryDays = Number.parseInt(passwordExpiryDays, 10);
+    if (!Number.isInteger(expiryDays) || expiryDays < 0 || expiryDays > 3650) {
+      toast.error("Enter a whole number of days between 0 and 3650");
+      return;
+    }
 
-    startExpiryResetTransition(async () => {
-      const response = await fetch(
-        `/api/admin/users/${encodeURIComponent(expiryResetUser.id)}/reset-password-expiry`,
-        { method: "POST" }
-      );
+    startExpirySaveTransition(async () => {
+      const response = await fetch("/api/admin/password-policy", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ expiryDays }),
+      });
 
       if (!response.ok) {
-        toast.error(await readError(response, "Could not reset password expiry"));
+        toast.error(await readError(response, "Could not update password expiry"));
         return;
       }
 
-      const data = (await response.json()) as { user: AdminUser };
-      updateUser(data.user);
-      toast.success(`Password expiry reset for ${expiryResetUser.name}`);
-      setExpiryResetUser(null);
+      const data = (await response.json()) as { expiryDays: number };
+      setSavedPasswordExpiryDays(data.expiryDays);
+      setPasswordExpiryDays(String(data.expiryDays));
+      toast.success("Password expiry updated");
     });
   };
 
@@ -199,8 +211,8 @@ export function AdminUsersPanel({
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Users</h1>
           <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-            Create users with temporary passwords, edit roles, send password reset
-            emails, and reset the 90-day password expiry countdown.
+            Create users with temporary passwords, edit roles, and send password
+            reset emails.
           </p>
         </div>
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
@@ -320,6 +332,43 @@ export function AdminUsersPanel({
       </div>
 
       <div className="flex-1 overflow-y-auto px-10 py-6">
+        <section className="mb-6 max-w-md rounded-lg border border-[var(--border)] bg-[var(--card)] p-5">
+          <h2 className="text-base font-semibold">Password expiry</h2>
+          <p className="mt-1 text-sm text-[var(--muted-foreground)]">
+            Number of days before a user must change their password. Set to 0 to
+            disable expiry.
+          </p>
+          <div className="mt-4 flex items-end gap-3">
+            <div className="grid flex-1 gap-2">
+              <Label htmlFor="password-expiry-days">Days</Label>
+              <Input
+                id="password-expiry-days"
+                type="number"
+                min={0}
+                max={3650}
+                inputMode="numeric"
+                value={passwordExpiryDays}
+                disabled={isSavingExpiry}
+                onChange={(event) => setPasswordExpiryDays(event.target.value)}
+              />
+            </div>
+            <Button
+              type="button"
+              disabled={
+                isSavingExpiry ||
+                Number.parseInt(passwordExpiryDays, 10) === savedPasswordExpiryDays
+              }
+              onClick={savePasswordExpiryDays}
+            >
+              {isSavingExpiry ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                "Save"
+              )}
+            </Button>
+          </div>
+        </section>
+
         <div className="overflow-hidden rounded-lg border border-[var(--border)]">
           <table className="w-full text-sm">
             <thead className="bg-[var(--secondary)] text-left">
@@ -378,10 +427,6 @@ export function AdminUsersPanel({
                     {user.hasPassword ? (
                       user.mustChangePassword ? (
                         "Must change password"
-                      ) : user.passwordExpired ? (
-                        "Password expired"
-                      ) : user.passwordDaysRemaining !== null ? (
-                        `Expires in ${user.passwordDaysRemaining} days`
                       ) : (
                         "Password set"
                       )
@@ -390,26 +435,14 @@ export function AdminUsersPanel({
                     )}
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <div className="flex justify-end gap-2">
-                      {user.hasPassword && !user.mustChangePassword ? (
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setExpiryResetUser(user)}
-                        >
-                          Reset expiry
-                        </Button>
-                      ) : null}
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setResetUser(user)}
-                      >
-                        Send reset email
-                      </Button>
-                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setResetUser(user)}
+                    >
+                      Send reset email
+                    </Button>
                   </td>
                 </tr>
               ))}
@@ -417,53 +450,6 @@ export function AdminUsersPanel({
           </table>
         </div>
       </div>
-
-      <Dialog
-        open={expiryResetUser !== null}
-        onOpenChange={(open) => {
-          if (isResettingExpiry) return;
-          if (!open) {
-            setExpiryResetUser(null);
-          }
-        }}
-      >
-        <DialogContent
-          onInteractOutside={(event) => {
-            if (isResettingExpiry) event.preventDefault();
-          }}
-          onEscapeKeyDown={(event) => {
-            if (isResettingExpiry) event.preventDefault();
-          }}
-        >
-          <DialogHeader>
-            <DialogTitle>Reset password expiry</DialogTitle>
-            <DialogDescription>
-              Give {expiryResetUser?.name} another 90 days before their password
-              expires. This does not change their password.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              disabled={isResettingExpiry}
-              onClick={() => {
-                setExpiryResetUser(null);
-              }}
-            >
-              Cancel
-            </Button>
-            <Button
-              type="button"
-              disabled={isResettingExpiry}
-              onClick={resetPasswordExpiry}
-            >
-              {isResettingExpiry && <Loader2 className="size-4 animate-spin" />}
-              Reset expiry
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       <Dialog
         open={resetUser !== null}

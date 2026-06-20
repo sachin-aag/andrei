@@ -6,7 +6,6 @@ import { workspaceUsers } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import { USER_ROLES, defaultTitleForRole } from "@/lib/auth/roles";
 import { adminUserFromRow } from "@/lib/admin/users";
-import { getPasswordPolicy } from "@/lib/auth/password-policy";
 
 const updateUserSchema = z.object({
   role: z.enum(USER_ROLES),
@@ -65,6 +64,5 @@ export async function PATCH(
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
-  const policy = await getPasswordPolicy();
-  return NextResponse.json({ user: adminUserFromRow(updated, policy) });
+  return NextResponse.json({ user: adminUserFromRow(updated) });
 }

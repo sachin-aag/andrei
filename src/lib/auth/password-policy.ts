@@ -70,6 +70,25 @@ export async function getPasswordPolicy(): Promise<PasswordPolicy> {
   return DEFAULT_PASSWORD_POLICY;
 }
 
+export async function updatePasswordExpiryDays(expiryDays: number): Promise<number> {
+  await getPasswordPolicy();
+
+  const [updated] = await db
+    .update(passwordPolicySettings)
+    .set({
+      expiryDays,
+      updatedAt: new Date(),
+    })
+    .where(eq(passwordPolicySettings.id, PASSWORD_POLICY_SETTINGS_ID))
+    .returning();
+
+  if (!updated) {
+    throw new Error("password_policy_settings row missing after ensure");
+  }
+
+  return normalizePolicy(updated).expiryDays;
+}
+
 export function passwordPolicyRequirementText(policy: PasswordPolicy): string {
   const requirements = [`at least ${policy.minLength} characters`];
   if (policy.requireLetter) requirements.push("one letter");
