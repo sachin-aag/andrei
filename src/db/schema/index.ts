@@ -104,7 +104,7 @@ export const workspaceUsers = pgTable(
     title: text("title").notNull().default("Engineer"),
     /** Nullable — null means magic-link-only user. Format: hex_salt.hex_hash (scrypt). */
     passwordHash: text("password_hash"),
-    /** True when an admin set a temporary password; user must choose a new one on next login. */
+    /** True when a temporary password is active; user must choose a new one on next login. */
     mustChangePassword: boolean("must_change_password").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

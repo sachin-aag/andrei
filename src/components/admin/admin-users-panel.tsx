@@ -75,7 +75,6 @@ export function AdminUsersPanel({
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm, setCreateForm] = useState<CreateUserForm>(emptyCreateForm);
   const [resetUser, setResetUser] = useState<AdminUser | null>(null);
-  const [temporaryPassword, setTemporaryPassword] = useState("");
   const [pendingRoleUserId, setPendingRoleUserId] = useState<string | null>(null);
   const [isCreating, startCreateTransition] = useTransition();
   const [isResetting, startResetTransition] = useTransition();
@@ -152,36 +151,22 @@ export function AdminUsersPanel({
 
   const resetPassword = () => {
     if (!resetUser) return;
-    if (temporaryPassword.length < 8) {
-      toast.error("Temporary password must be at least 8 characters");
-      return;
-    }
 
     startResetTransition(async () => {
       const response = await fetch(
         `/api/admin/users/${encodeURIComponent(resetUser.id)}/reset-password`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ temporaryPassword }),
         }
       );
 
       if (!response.ok) {
-        toast.error(await readError(response, "Could not reset password"));
+        toast.error(await readError(response, "Could not send reset email"));
         return;
       }
 
-      setUsers((current) =>
-        current.map((user) =>
-          user.id === resetUser.id
-            ? { ...user, hasPassword: true, mustChangePassword: true }
-            : user
-        )
-      );
-      toast.success("Temporary password set");
+      toast.success(`Password reset email sent to ${resetUser.email}`);
       setResetUser(null);
-      setTemporaryPassword("");
     });
   };
 
@@ -191,7 +176,8 @@ export function AdminUsersPanel({
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Users</h1>
           <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-            Create workspace users, edit roles, and issue temporary passwords.
+            Create users with temporary passwords, edit roles, and send password
+            reset emails.
           </p>
         </div>
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
@@ -212,7 +198,8 @@ export function AdminUsersPanel({
             <DialogHeader>
               <DialogTitle>Create user</DialogTitle>
               <DialogDescription>
-                The temporary password must be changed after first sign-in.
+                Set a temporary password. The user must choose a new password
+                after first sign-in.
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-4 py-2">
@@ -367,7 +354,7 @@ export function AdminUsersPanel({
                   <td className="px-4 py-3 text-[var(--muted-foreground)]">
                     {user.hasPassword ? (
                       user.mustChangePassword ? (
-                        "Temporary password active"
+                      "Must change password"
                       ) : (
                         "Password set"
                       )
@@ -382,7 +369,7 @@ export function AdminUsersPanel({
                       size="sm"
                       onClick={() => setResetUser(user)}
                     >
-                      Reset password
+                      Send reset email
                     </Button>
                   </td>
                 </tr>
@@ -398,7 +385,6 @@ export function AdminUsersPanel({
           if (isResetting) return;
           if (!open) {
             setResetUser(null);
-            setTemporaryPassword("");
           }
         }}
       >
@@ -411,22 +397,12 @@ export function AdminUsersPanel({
           }}
         >
           <DialogHeader>
-            <DialogTitle>Reset password</DialogTitle>
+            <DialogTitle>Send password reset email</DialogTitle>
             <DialogDescription>
-              Set a temporary password for {resetUser?.name}. They will be forced
-              to choose a new password after signing in.
+              Send {resetUser?.name} a secure link to choose their own new
+              password. The link expires in 1 hour.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-2 py-2">
-            <Label htmlFor="admin-reset-password">Temporary password</Label>
-            <Input
-              id="admin-reset-password"
-              type="password"
-              value={temporaryPassword}
-              disabled={isResetting}
-              onChange={(event) => setTemporaryPassword(event.target.value)}
-            />
-          </div>
           <DialogFooter>
             <Button
               type="button"
@@ -434,14 +410,13 @@ export function AdminUsersPanel({
               disabled={isResetting}
               onClick={() => {
                 setResetUser(null);
-                setTemporaryPassword("");
               }}
             >
               Cancel
             </Button>
             <Button type="button" disabled={isResetting} onClick={resetPassword}>
               {isResetting && <Loader2 className="size-4 animate-spin" />}
-              Set temporary password
+              Send reset email
             </Button>
           </DialogFooter>
         </DialogContent>
