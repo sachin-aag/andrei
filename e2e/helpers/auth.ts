@@ -1,5 +1,6 @@
 import { expect, type Page } from "@playwright/test";
 import { expandPrimaryNav } from "./workspace";
+import type { UserRole } from "@/lib/auth/roles";
 
 const TEST_AUTH_EMAIL =
   process.env.TEST_AUTH_EMAIL ?? "test.engineer@mjbiopharm.com";
@@ -7,14 +8,14 @@ const TEST_AUTH_EMAIL =
 export type TestLoginResult = {
   userId: string;
   email: string;
-  role: "engineer" | "manager";
+  role: UserRole;
 };
 
 async function testLogin(
   page: Page,
   body?: {
     email?: string;
-    role?: "engineer" | "manager";
+    role?: UserRole;
     mustChangePassword?: boolean;
   }
 ): Promise<TestLoginResult> {
@@ -82,6 +83,22 @@ export async function loginAsManagerWithResponse(page: Page): Promise<TestLoginR
 
 export async function loginAsManager(page: Page): Promise<void> {
   await loginAsManagerWithResponse(page);
+}
+
+export async function loginAsAdminWithResponse(page: Page): Promise<TestLoginResult> {
+  const result = await testLogin(page, {
+    email: "test.admin@mjbiopharm.com",
+    role: "admin",
+  });
+  await page.goto("/admin/users", { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: /users/i })).toBeVisible({
+    timeout: 30_000,
+  });
+  return result;
+}
+
+export async function loginAsAdmin(page: Page): Promise<void> {
+  await loginAsAdminWithResponse(page);
 }
 
 /** UI logout via sidebar (next-auth signOut + redirect to /login). */

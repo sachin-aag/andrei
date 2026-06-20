@@ -141,6 +141,13 @@
       "when": 1780500000000,
       "tag": "0019_improve_ai_feedback",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1782079200000,
+      "tag": "0020_add_admin_role",
+      "breakpoints": true
     }
   ]
 }

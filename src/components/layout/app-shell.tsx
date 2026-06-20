@@ -8,6 +8,7 @@ import {
   FileText,
   BookOpen,
   Sparkles,
+  Users,
   PanelLeftClose,
   PanelLeftOpen,
 } from "lucide-react";
@@ -17,6 +18,7 @@ import { signOut } from "next-auth/react";
 import { usePathname } from "next/navigation";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
+import { roleLabel } from "@/lib/auth/roles";
 export function AppShell({
   user,
   initialUsers,
@@ -35,8 +37,12 @@ export function AppShell({
   };
 
   const navItems = [
-    { href: "/", label: "Reports", icon: FileText },
-    { href: "/improve-ai", label: "Improve AI", icon: Sparkles },
+    ...(user.role === "admin"
+      ? [{ href: "/admin/users", label: "Users", icon: Users }]
+      : [
+          { href: "/", label: "Reports", icon: FileText },
+          { href: "/improve-ai", label: "Improve AI", icon: Sparkles },
+        ]),
   ];
 
   return (
@@ -117,9 +123,9 @@ export function AppShell({
         </div>
 
         <nav className="flex-1 py-4 px-3 space-y-1">
-          {navItems.map((item, idx) => (
+          {navItems.map((item) => (
             <Link
-              key={idx}
+              key={item.href}
               href={item.href}
               aria-label={collapsed ? item.label : undefined}
               aria-current={pathname === item.href ? "page" : undefined}
@@ -174,7 +180,7 @@ export function AppShell({
                     {user.name}
                   </span>
                   <span className="text-[10px] text-[var(--muted-foreground)] truncate">
-                    {user.role === "engineer" ? "Engineer" : "Manager"} · {user.email}
+                    {roleLabel(user.role)} · {user.email}
                   </span>
                 </div>
                 <button

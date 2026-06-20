@@ -92,7 +92,7 @@ export const aiFeedbackSessionStatusEnum = pgEnum("ai_feedback_session_status", 
   "reviewed",
 ]);
 
-export const userRoleEnum = pgEnum("user_role", ["engineer", "manager"]);
+export const userRoleEnum = pgEnum("user_role", ["engineer", "manager", "admin"]);
 
 export const workspaceUsers = pgTable(
   "workspace_users",
