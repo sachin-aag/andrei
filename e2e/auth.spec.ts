@@ -22,10 +22,16 @@ test.describe("authentication", () => {
     await page.getByLabel(/work email/i).fill("nobody@mjbiopharm.com");
     const continueButton = page.getByRole("button", { name: /^continue$/i });
     await expect(continueButton).toBeEnabled();
+    const checkEmailResponse = page.waitForResponse(
+      (response) =>
+        response.url().includes("/api/auth/check-email") &&
+        response.request().method() === "POST"
+    );
     await continueButton.click();
+    await expect((await checkEmailResponse).ok()).toBeTruthy();
     await expect(
       page.getByText(/this email isn't registered/i)
-    ).toBeVisible();
+    ).toBeVisible({ timeout: 15_000 });
   });
 
   test("shows password step for known email with password", async ({ page }) => {
