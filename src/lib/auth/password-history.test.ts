@@ -6,29 +6,82 @@ vi.mock("@/lib/auth/password", () => ({
 
 import { verifyPassword } from "@/lib/auth/password";
 import {
+  initialPasswordHistory,
   isPasswordRecentlyUsed,
   nextPasswordHistory,
+  recentPasswordHashes,
 } from "@/lib/auth/password-history";
 
+describe("recentPasswordHashes", () => {
+  it("returns stored history when it starts with the current hash", () => {
+    expect(
+      recentPasswordHashes({
+        currentPasswordHash: "current.hash",
+        passwordHistory: ["current.hash", "hash-a", "hash-b"],
+        historyLimit: 3,
+      })
+    ).toEqual(["current.hash", "hash-a", "hash-b"]);
+  });
+
+  it("prepends current hash for legacy rows and trims to historyLimit", () => {
+    expect(
+      recentPasswordHashes({
+        currentPasswordHash: "current.hash",
+        passwordHistory: ["hash-a", "hash-b", "hash-c"],
+        historyLimit: 3,
+      })
+    ).toEqual(["current.hash", "hash-a", "hash-b"]);
+  });
+
+  it("returns only the current hash when history is empty", () => {
+    expect(
+      recentPasswordHashes({
+        currentPasswordHash: "current.hash",
+        passwordHistory: [],
+        historyLimit: 3,
+      })
+    ).toEqual(["current.hash"]);
+  });
+});
+
+describe("initialPasswordHistory", () => {
+  it("stores the active hash as the first entry", () => {
+    expect(initialPasswordHistory("hash-a", 3)).toEqual(["hash-a"]);
+  });
+});
+
 describe("nextPasswordHistory", () => {
-  it("prepends the previous hash and trims to historyLimit - 1", () => {
+  it("stores the new hash first and keeps prior passwords up to historyLimit", () => {
     expect(
       nextPasswordHistory({
+        newPasswordHash: "hash-new",
+        currentHistory: ["hash-c", "hash-a"],
+        previousPasswordHash: "hash-c",
+        historyLimit: 3,
+      })
+    ).toEqual(["hash-new", "hash-c", "hash-a"]);
+  });
+
+  it("includes legacy prior hashes when history excluded the active hash", () => {
+    expect(
+      nextPasswordHistory({
+        newPasswordHash: "hash-new",
         currentHistory: ["hash-a", "hash-b"],
         previousPasswordHash: "hash-c",
         historyLimit: 3,
       })
-    ).toEqual(["hash-c", "hash-a"]);
+    ).toEqual(["hash-new", "hash-c", "hash-a"]);
   });
 
-  it("returns current history when there is no previous hash", () => {
+  it("returns only the new hash when there is no previous hash", () => {
     expect(
       nextPasswordHistory({
-        currentHistory: ["hash-a"],
+        newPasswordHash: "hash-new",
+        currentHistory: [],
         previousPasswordHash: null,
         historyLimit: 3,
       })
-    ).toEqual(["hash-a"]);
+    ).toEqual(["hash-new"]);
   });
 });
 
@@ -44,7 +97,7 @@ describe("isPasswordRecentlyUsed", () => {
       isPasswordRecentlyUsed({
         password: "secret",
         currentPasswordHash: "current.hash",
-        passwordHistory: [],
+        passwordHistory: ["current.hash"],
         historyLimit: 3,
       })
     ).resolves.toBe(true);
@@ -59,7 +112,7 @@ describe("isPasswordRecentlyUsed", () => {
       isPasswordRecentlyUsed({
         password: "secret",
         currentPasswordHash: "current.hash",
-        passwordHistory: ["old.hash"],
+        passwordHistory: ["current.hash", "old.hash"],
         historyLimit: 3,
       })
     ).resolves.toBe(true);

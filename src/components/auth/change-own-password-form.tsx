@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -8,9 +8,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { PasswordCriteriaChecklist } from "@/components/auth/password-criteria-checklist";
 import {
+  getPasswordNotRecentCheck,
   getPasswordStrengthChecks,
 } from "@/lib/auth/password-strength";
 import { cn } from "@/lib/utils";
+
+const PASSWORD_REUSE_CHECK_DEBOUNCE_MS = 300;
 
 export function ChangeOwnPasswordForm() {
   const router = useRouter();
@@ -21,15 +24,69 @@ export function ChangeOwnPasswordForm() {
   );
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordRecentlyUsed, setPasswordRecentlyUsed] = useState<boolean | null>(
+    null
+  );
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [verifyPending, startVerifyTransition] = useTransition();
   const [submitPending, startSubmitTransition] = useTransition();
 
-  const passwordChecks = useMemo(
-    () => getPasswordStrengthChecks(password),
-    [password]
-  );
+  useEffect(() => {
+    if (!currentPasswordVerified || !password) {
+      setPasswordRecentlyUsed(null);
+      return;
+    }
+
+    if (password === currentPassword) {
+      setPasswordRecentlyUsed(true);
+      return;
+    }
+
+    let cancelled = false;
+    const timeoutId = window.setTimeout(() => {
+      void (async () => {
+        const res = await fetch("/api/auth-pw/check-password-reuse", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password }),
+        });
+        if (cancelled) return;
+
+        if (!res.ok) {
+          setPasswordRecentlyUsed(null);
+          return;
+        }
+
+        const data = (await res.json()) as { recentlyUsed?: boolean };
+        if (!cancelled) {
+          setPasswordRecentlyUsed(data.recentlyUsed === true);
+        }
+      })();
+    }, PASSWORD_REUSE_CHECK_DEBOUNCE_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [currentPassword, currentPasswordVerified, password]);
+
+  const passwordChecks = useMemo(() => {
+    const checks = getPasswordStrengthChecks(password);
+    if (!currentPasswordVerified) return checks;
+
+    const notRecentMet =
+      password.length > 0 &&
+      password !== currentPassword &&
+      passwordRecentlyUsed === false;
+
+    return [...checks, getPasswordNotRecentCheck(notRecentMet)];
+  }, [
+    currentPassword,
+    currentPasswordVerified,
+    password,
+    passwordRecentlyUsed,
+  ]);
   const passwordMeetsCriteria = passwordChecks.every((check) => check.met);
   const passwordsMatch =
     password.length > 0 &&
@@ -41,6 +98,7 @@ export function ChangeOwnPasswordForm() {
     setCurrentPasswordError(null);
     setPassword("");
     setConfirmPassword("");
+    setPasswordRecentlyUsed(null);
     setSubmitError(null);
     setSuccess(false);
   };
@@ -102,6 +160,7 @@ export function ChangeOwnPasswordForm() {
       setPassword("");
       setConfirmPassword("");
       setCurrentPasswordVerified(false);
+      setPasswordRecentlyUsed(null);
       setCurrentPasswordError(null);
       setSubmitError(null);
       setSuccess(true);

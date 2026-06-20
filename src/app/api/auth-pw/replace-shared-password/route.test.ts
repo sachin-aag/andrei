@@ -71,7 +71,7 @@ describe("POST /api/auth-pw/replace-shared-password", () => {
       warningDismissed: false,
     });
     vi.mocked(isPasswordRecentlyUsed).mockResolvedValue(false);
-    vi.mocked(nextPasswordHistory).mockReturnValue(["temp.hash"]);
+    vi.mocked(nextPasswordHistory).mockReturnValue(["new.hash", "temp.hash"]);
     const set = vi
       .fn()
       .mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) });
@@ -156,10 +156,11 @@ describe("POST /api/auth-pw/replace-shared-password", () => {
         failedLoginAttempts: 0,
         lockedAt: null,
         passwordExpiryWarningDismissedUntil: null,
-        passwordHistory: ["temp.hash"],
+        passwordHistory: ["new.hash", "temp.hash"],
       })
     );
     expect(nextPasswordHistory).toHaveBeenCalledWith({
+      newPasswordHash: "new.hash",
       currentHistory: [],
       previousPasswordHash: "temp.hash",
       historyLimit: 3,

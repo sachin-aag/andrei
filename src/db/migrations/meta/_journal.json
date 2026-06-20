@@ -176,6 +176,13 @@
       "when": 1782079600000,
       "tag": "0024_drop_password_reset_token_created_at",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1782079700000,
+      "tag": "0025_password_history_includes_current",
+      "breakpoints": true
     }
   ]
 }

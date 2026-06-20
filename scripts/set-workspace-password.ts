@@ -143,7 +143,9 @@ async function main() {
   const { db } = await import("@/db");
   const { workspaceUsers } = await import("@/db/schema");
   const { hashPassword } = await import("@/lib/auth/password");
-  const { nextPasswordHistory } = await import("@/lib/auth/password-history");
+  const { nextPasswordHistory, initialPasswordHistory } = await import(
+    "@/lib/auth/password-history"
+  );
   const { getPasswordPolicy, validatePasswordPolicy } = await import(
     "@/lib/auth/password-policy"
   );
@@ -207,6 +209,7 @@ async function main() {
       lockedAt: null,
       passwordExpiryWarningDismissedUntil: null,
       passwordHistory: nextPasswordHistory({
+        newPasswordHash: passwordHash,
         currentHistory: existing.passwordHistory,
         previousPasswordHash: existing.passwordHash,
         historyLimit: policy.passwordHistoryLimit,
@@ -245,6 +248,10 @@ async function main() {
       failedLoginAttempts: 0,
       lockedAt: null,
       passwordExpiryWarningDismissedUntil: null,
+      passwordHistory: initialPasswordHistory(
+        passwordHash,
+        policy.passwordHistoryLimit
+      ),
     });
 
     console.log(

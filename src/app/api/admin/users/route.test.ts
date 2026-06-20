@@ -19,9 +19,14 @@ vi.mock("@/lib/auth/password", () => ({
   hashPassword: vi.fn(),
 }));
 
+vi.mock("@/lib/auth/password-policy", () => ({
+  getPasswordPolicy: vi.fn(),
+}));
+
 import { db } from "@/db";
 import { getCurrentUser } from "@/lib/auth/session";
 import { hashPassword } from "@/lib/auth/password";
+import { getPasswordPolicy } from "@/lib/auth/password-policy";
 import { GET, POST } from "./route";
 
 const admin = {
@@ -59,6 +64,9 @@ describe("/api/admin/users", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(hashPassword).mockResolvedValue("hashed.password");
+    vi.mocked(getPasswordPolicy).mockResolvedValue({
+      passwordHistoryLimit: 3,
+    } as never);
   });
 
   it("rejects unauthenticated list requests", async () => {
@@ -154,6 +162,14 @@ describe("/api/admin/users", () => {
 
     expect(response.status).toBe(201);
     expect(hashPassword).toHaveBeenCalledWith("TempPass123!");
+    const insertCall = vi.mocked(db.insert).mock.results[0]?.value.values as ReturnType<
+      typeof vi.fn
+    >;
+    expect(insertCall).toHaveBeenCalledWith(
+      expect.objectContaining({
+        passwordHistory: ["hashed.password"],
+      })
+    );
     await expect(response.json()).resolves.toMatchObject({
       user: {
         email: "new.user@mjbiopharm.com",

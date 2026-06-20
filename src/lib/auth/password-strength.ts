@@ -10,10 +10,20 @@ export type PasswordStrengthValidation = {
 };
 
 export type PasswordStrengthCheck = {
-  id: "length" | "letter" | "number" | "special";
+  id: "length" | "letter" | "number" | "special" | "notRecent";
   label: string;
   met: boolean;
 };
+
+export const PASSWORD_NOT_RECENT_LABEL = "Not one of your last 3 passwords";
+
+export function getPasswordNotRecentCheck(met: boolean): PasswordStrengthCheck {
+  return {
+    id: "notRecent",
+    label: PASSWORD_NOT_RECENT_LABEL,
+    met,
+  };
+}
 
 export function passwordStrengthRequirementText(): string {
   const requirements = [`at least ${PASSWORD_MIN_LENGTH} characters`];

@@ -84,6 +84,7 @@ export async function POST(req: Request) {
   const newHash = await hashPassword(password);
   const changedAt = new Date();
   const updatedHistory = nextPasswordHistory({
+    newPasswordHash: newHash,
     currentHistory: wsUser.passwordHistory,
     previousPasswordHash: wsUser.passwordHash,
     historyLimit: policy.passwordHistoryLimit,

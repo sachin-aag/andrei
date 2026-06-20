@@ -116,7 +116,7 @@ export const workspaceUsers = pgTable(
       "password_expiry_warning_dismissed_until",
       { withTimezone: true }
     ),
-    /** Prior password hashes, newest first. Used to block password reuse. */
+    /** Recent password hashes, newest first. Index 0 matches password_hash. Max length = policy limit. */
     passwordHistory: text("password_history")
       .array()
       .notNull()
