@@ -6,7 +6,7 @@ import { ReportWorkspace } from "@/components/report/report-workspace";
 import { getCurrentUser } from "@/lib/auth/session";
 import { listWorkspaceUsers } from "@/lib/auth/workspace-users";
 import { getPasswordStatusForUser } from "@/lib/auth/password-status";
-import { loadReportBundle } from "@/lib/admin/reports";
+import { loadReportBundle } from "@/lib/reports/bundle";
 
 export const dynamic = "force-dynamic";
 

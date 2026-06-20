@@ -1,12 +1,6 @@
-import { and, desc, eq, ne, sql } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
-import {
-  comments,
-  criteriaEvaluations,
-  reports,
-  reportSections,
-} from "@/db/schema";
-import type { ReportBundle } from "@/types/report";
+import { reports } from "@/db/schema";
 import { listAdminUsers, type AdminUser } from "@/lib/admin/users";
 
 export type AdminReportSummary = {
@@ -22,15 +16,6 @@ export type AdminReportSummary = {
 export type AdminReportAuthorOption = AdminUser & {
   reportCount: number;
 };
-
-function serializeBundle(bundle: {
-  report: typeof reports.$inferSelect;
-  sections: (typeof reportSections.$inferSelect)[];
-  evaluations: (typeof criteriaEvaluations.$inferSelect)[];
-  comments: (typeof comments.$inferSelect)[];
-}): ReportBundle {
-  return JSON.parse(JSON.stringify(bundle)) as ReportBundle;
-}
 
 export async function listAdminReportSummaries(
   authorId?: string
@@ -80,38 +65,4 @@ export async function listAdminReportAuthorOptions(): Promise<
     }))
     .filter((user) => user.reportCount > 0 || user.role !== "admin")
     .sort((a, b) => a.name.localeCompare(b.name));
-}
-
-export async function loadReportBundle(
-  reportId: string
-): Promise<ReportBundle | null> {
-  const [report] = await db
-    .select()
-    .from(reports)
-    .where(eq(reports.id, reportId));
-  if (!report) return null;
-
-  const [sectionRows, evals, commentRows] = await Promise.all([
-    db
-      .select()
-      .from(reportSections)
-      .where(eq(reportSections.reportId, reportId)),
-    db
-      .select()
-      .from(criteriaEvaluations)
-      .where(eq(criteriaEvaluations.reportId, reportId)),
-    db
-      .select()
-      .from(comments)
-      .where(
-        and(eq(comments.reportId, reportId), ne(comments.status, "dismissed"))
-      ),
-  ]);
-
-  return serializeBundle({
-    report,
-    sections: sectionRows,
-    evaluations: evals,
-    comments: commentRows,
-  });
 }

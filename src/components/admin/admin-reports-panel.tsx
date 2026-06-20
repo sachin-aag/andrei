@@ -1,15 +1,11 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, ChevronDown, FileText, Search, X } from "lucide-react";
+import { ChevronDown, FileText, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { StatusBadge } from "@/components/report/status-badge";
-import { formatCalendarDate, formatDate } from "@/lib/utils";
-import type { ReportStatus } from "@/db/schema";
+import { ReportCard } from "@/components/report/report-card";
 import type {
   AdminReportAuthorOption,
   AdminReportSummary,
@@ -182,64 +178,14 @@ export function AdminReportsPanel({
                 : undefined;
 
               return (
-                <Card
+                <ReportCard
                   key={report.id}
-                  className="p-5 transition-colors hover:border-[var(--brand-500)]"
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex min-w-0 flex-1 items-start gap-3">
-                      <Link
-                        href={`/admin/reports/${report.id}`}
-                        transitionTypes={["nav-forward"]}
-                        className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-[var(--brand-700)]"
-                      >
-                        <FileText className="size-5 text-[var(--brand-200)]" />
-                      </Link>
-                      <div className="min-w-0 flex-1">
-                        <div className="mb-1 flex min-w-0 flex-wrap items-center gap-2">
-                          <Link
-                            href={`/admin/reports/${report.id}`}
-                            transitionTypes={["nav-forward"]}
-                            className="flex min-w-0 items-center gap-2"
-                          >
-                            <h3 className="truncate font-semibold">
-                              {report.deviationNo || "Untitled deviation"}
-                            </h3>
-                            <StatusBadge status={report.status as ReportStatus} />
-                          </Link>
-                        </div>
-                        <Link
-                          href={`/admin/reports/${report.id}`}
-                          transitionTypes={["nav-forward"]}
-                          className="text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-                        >
-                          <div className="flex flex-wrap items-center gap-3">
-                            <span>Date: {formatCalendarDate(report.date)}</span>
-                            <span>·</span>
-                            <span>Author: {author?.name ?? "—"}</span>
-                            {manager && (
-                              <>
-                                <span>·</span>
-                                <span>Manager: {manager.name}</span>
-                              </>
-                            )}
-                            <span>·</span>
-                            <span>Updated: {formatDate(report.updatedAt)}</span>
-                          </div>
-                        </Link>
-                      </div>
-                    </div>
-                    <Button asChild size="sm" className="shrink-0 gap-1.5 shadow-sm">
-                      <Link
-                        href={`/admin/reports/${report.id}`}
-                        transitionTypes={["nav-forward"]}
-                      >
-                        View
-                        <ArrowRight className="size-4" />
-                      </Link>
-                    </Button>
-                  </div>
-                </Card>
+                  report={report}
+                  href={`/admin/reports/${report.id}`}
+                  authorName={author?.name}
+                  managerName={manager?.name}
+                  openLabel="View"
+                />
               );
             })}
           </div>

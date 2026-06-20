@@ -1,11 +1,12 @@
 import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
-import { and, eq, ne } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { reports, reportSections, criteriaEvaluations, comments } from "@/db/schema";
+import { reports } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import { canViewReport } from "@/lib/reports/access";
+import { loadReportSubtables } from "@/lib/reports/bundle";
 import {
   DUPLICATE_DEVIATION_NO_ERROR,
   isDeviationNoTaken,
@@ -20,6 +21,8 @@ export async function GET(
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { reportId } = await params;
 
+  // Authorize before loading the heavier section/eval/comment rows so a
+  // forbidden request never pays for the full bundle fetch.
   const [report] = await db
     .select()
     .from(reports)
@@ -29,30 +32,10 @@ export async function GET(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const sectionRows = await db
-    .select()
-    .from(reportSections)
-    .where(eq(reportSections.reportId, reportId));
+  const { sections, evaluations, comments } =
+    await loadReportSubtables(reportId);
 
-  const evals = await db
-    .select()
-    .from(criteriaEvaluations)
-    .where(eq(criteriaEvaluations.reportId, reportId));
-
-  // Dismissed comments stay in the DB but are excluded from the bundle so
-  // ignored AI suggestions and dismissed human threads do not clutter the
-  // gutter or the highlight overlay.
-  const commentsRows = await db
-    .select()
-    .from(comments)
-    .where(and(eq(comments.reportId, reportId), ne(comments.status, "dismissed")));
-
-  return NextResponse.json({
-    report,
-    sections: sectionRows,
-    evaluations: evals,
-    comments: commentsRows,
-  });
+  return NextResponse.json({ report, sections, evaluations, comments });
 }
 
 const patchSchema = z.object({
