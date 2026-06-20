@@ -24,22 +24,21 @@ export function ChangeOwnPasswordForm() {
   );
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [passwordRecentlyUsed, setPasswordRecentlyUsed] = useState<boolean | null>(
-    null
-  );
+  const [remotePasswordReuse, setRemotePasswordReuse] = useState<{
+    password: string;
+    recentlyUsed: boolean | null;
+  } | null>(null);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [verifyPending, startVerifyTransition] = useTransition();
   const [submitPending, startSubmitTransition] = useTransition();
 
   useEffect(() => {
-    if (!currentPasswordVerified || !password) {
-      setPasswordRecentlyUsed(null);
-      return;
-    }
-
-    if (password === currentPassword) {
-      setPasswordRecentlyUsed(true);
+    if (
+      !currentPasswordVerified ||
+      !password ||
+      password === currentPassword
+    ) {
       return;
     }
 
@@ -54,13 +53,16 @@ export function ChangeOwnPasswordForm() {
         if (cancelled) return;
 
         if (!res.ok) {
-          setPasswordRecentlyUsed(null);
+          setRemotePasswordReuse({ password, recentlyUsed: null });
           return;
         }
 
         const data = (await res.json()) as { recentlyUsed?: boolean };
         if (!cancelled) {
-          setPasswordRecentlyUsed(data.recentlyUsed === true);
+          setRemotePasswordReuse({
+            password,
+            recentlyUsed: data.recentlyUsed === true,
+          });
         }
       })();
     }, PASSWORD_REUSE_CHECK_DEBOUNCE_MS);
@@ -70,6 +72,18 @@ export function ChangeOwnPasswordForm() {
       window.clearTimeout(timeoutId);
     };
   }, [currentPassword, currentPasswordVerified, password]);
+
+  const passwordRecentlyUsed = useMemo(() => {
+    if (!currentPasswordVerified || !password) return null;
+    if (password === currentPassword) return true;
+    if (remotePasswordReuse?.password !== password) return null;
+    return remotePasswordReuse.recentlyUsed;
+  }, [
+    currentPassword,
+    currentPasswordVerified,
+    password,
+    remotePasswordReuse,
+  ]);
 
   const passwordChecks = useMemo(() => {
     const checks = getPasswordStrengthChecks(password);
@@ -98,7 +112,7 @@ export function ChangeOwnPasswordForm() {
     setCurrentPasswordError(null);
     setPassword("");
     setConfirmPassword("");
-    setPasswordRecentlyUsed(null);
+    setRemotePasswordReuse(null);
     setSubmitError(null);
     setSuccess(false);
   };
@@ -160,7 +174,7 @@ export function ChangeOwnPasswordForm() {
       setPassword("");
       setConfirmPassword("");
       setCurrentPasswordVerified(false);
-      setPasswordRecentlyUsed(null);
+      setRemotePasswordReuse(null);
       setCurrentPasswordError(null);
       setSubmitError(null);
       setSuccess(true);
