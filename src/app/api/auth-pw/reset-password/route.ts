@@ -28,7 +28,7 @@ export async function POST(req: Request) {
   }
 
   const policy = await getPasswordPolicy();
-  const validation = validatePasswordPolicy(password, policy);
+  const validation = validatePasswordPolicy(password);
   if (!validation.ok) {
     return NextResponse.json(
       { error: validation.errors.join(" ") },

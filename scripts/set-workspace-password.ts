@@ -173,7 +173,7 @@ async function main() {
   console.log(`Target database: ${formatDatabaseTarget(databaseUrl)}`);
 
   const policy = await getPasswordPolicy();
-  const validation = validatePasswordPolicy(password, policy);
+  const validation = validatePasswordPolicy(password);
   if (!validation.ok) {
     console.error(validation.errors.join(" "));
     process.exit(1);

@@ -120,13 +120,12 @@ export async function updatePasswordExpiryDays(expiryDays: number): Promise<numb
   return normalizeOperationalPolicy(updated).expiryDays;
 }
 
-export function passwordPolicyRequirementText(_policy?: PasswordPolicy): string {
+export function passwordPolicyRequirementText(): string {
   return passwordStrengthRequirementText();
 }
 
 export function validatePasswordPolicy(
-  password: string,
-  _policy?: PasswordPolicy
+  password: string
 ): PasswordPolicyValidation {
   return validatePasswordStrength(password);
 }
