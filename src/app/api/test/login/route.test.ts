@@ -58,6 +58,10 @@ const adminUser = {
   title: "Admin",
   mustChangePassword: false,
   passwordHash: null,
+  passwordChangedAt: null,
+  failedLoginAttempts: 0,
+  lockedAt: null,
+  passwordExpiryWarningDismissedUntil: null,
   createdAt: new Date("2026-01-01"),
 };
 
