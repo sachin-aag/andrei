@@ -6,7 +6,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { workspaceUsers } from "@/db/schema";
 import { isTestLoginEnabled } from "@/lib/test/ai-bypass";
-import { USER_ROLES, defaultTitleForRole, type UserRole } from "@/lib/auth/roles";
+import { USER_ROLES, type UserRole } from "@/lib/auth/roles";
 
 const bodySchema = z.object({
   email: z.string().email().optional(),
@@ -23,6 +23,21 @@ function displayNameFromEmail(email: string): string {
     .join(" ");
 }
 
+function titleForTestRole(role: UserRole): string {
+  switch (role) {
+    case "engineer":
+      return "Test Engineer";
+    case "manager":
+      return "Manager";
+    case "admin":
+      return "Admin";
+    default: {
+      const exhaustive: never = role;
+      return exhaustive;
+    }
+  }
+}
+
 /** Upsert a Playwright test workspace user when ALLOW_TEST_LOGIN is enabled. */
 async function ensureTestWorkspaceUser(
   email: string,
@@ -37,14 +52,14 @@ async function ensureTestWorkspaceUser(
     const needsUpdate =
       existing.role !== role ||
       existing.mustChangePassword !== mustChangePassword ||
-      existing.title !== defaultTitleForRole(role);
+      existing.title !== titleForTestRole(role);
 
     if (needsUpdate) {
       const [updated] = await db
         .update(workspaceUsers)
         .set({
           role,
-          title: defaultTitleForRole(role),
+          title: titleForTestRole(role),
           mustChangePassword,
         })
         .where(eq(workspaceUsers.id, existing.id))
@@ -61,7 +76,7 @@ async function ensureTestWorkspaceUser(
       name: displayNameFromEmail(email),
       email,
       role,
-      title: defaultTitleForRole(role),
+      title: titleForTestRole(role),
       mustChangePassword,
     })
     .onConflictDoNothing({ target: workspaceUsers.email })
