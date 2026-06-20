@@ -5,6 +5,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { reports, reportSections, criteriaEvaluations, comments } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
+import { canViewReport } from "@/lib/reports/access";
 import {
   DUPLICATE_DEVIATION_NO_ERROR,
   isDeviationNoTaken,
@@ -24,6 +25,9 @@ export async function GET(
     .from(reports)
     .where(eq(reports.id, reportId));
   if (!report) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (!canViewReport(user, report)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   const sectionRows = await db
     .select()

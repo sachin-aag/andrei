@@ -9,6 +9,7 @@ import {
   SectionSuggestFixesButton,
 } from "../section-status-pill";
 import { SectionSuggestionCard } from "../suggestion-card";
+import { useReportData } from "@/providers/report-provider";
 import type { SaveStatus as SaveStatusType } from "@/hooks/use-auto-save";
 import type { SectionType } from "@/db/schema";
 
@@ -29,6 +30,9 @@ export function SectionShell({
   showSaveStatus?: boolean;
   section?: SectionType;
 }) {
+  const { workspaceMode } = useReportData();
+  const showAiActions = workspaceMode !== "view";
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -52,10 +56,12 @@ export function SectionShell({
             <div className="max-w-md flex-1">
               <SectionStatusPill section={section} />
             </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <SectionRunEvaluationButton section={section} />
-              <SectionSuggestFixesButton section={section} />
-            </div>
+            {showAiActions && (
+              <div className="flex flex-wrap items-center gap-2">
+                <SectionRunEvaluationButton section={section} />
+                <SectionSuggestFixesButton section={section} />
+              </div>
+            )}
           </div>
         </div>
       )}
