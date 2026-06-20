@@ -10,13 +10,21 @@ export async function POST(req: NextRequest) {
   const email = typeof body?.email === "string" ? body.email.trim().toLowerCase() : null;
   if (!email) return NextResponse.json({ allowed: false });
 
-  const wsUser = await db.query.workspaceUsers.findFirst({
-    where: eq(workspaceUsers.email, email),
-    columns: { id: true, passwordHash: true, lockedAt: true },
-  });
-  return NextResponse.json({
-    allowed: !!wsUser,
-    hasPassword: !!wsUser?.passwordHash,
-    locked: !!wsUser?.lockedAt,
-  });
+  try {
+    const wsUser = await db.query.workspaceUsers.findFirst({
+      where: eq(workspaceUsers.email, email),
+      columns: { id: true, passwordHash: true, lockedAt: true },
+    });
+    return NextResponse.json({
+      allowed: !!wsUser,
+      hasPassword: !!wsUser?.passwordHash,
+      locked: !!wsUser?.lockedAt,
+    });
+  } catch (error) {
+    console.error("Failed to check auth email", error);
+    return NextResponse.json(
+      { error: "Could not check this email. Please try again." },
+      { status: 500 }
+    );
+  }
 }

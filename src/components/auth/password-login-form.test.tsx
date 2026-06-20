@@ -18,14 +18,22 @@ vi.mock("next/navigation", () => ({
 
 import { signIn } from "next-auth/react";
 
+function jsonResponse(body: unknown, init?: ResponseInit) {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "Content-Type": "application/json" },
+    ...init,
+  });
+}
+
 describe("PasswordLoginForm", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockResolvedValue({
-        json: async () => ({ allowed: true, hasPassword: true }),
-      })
+      vi
+        .fn()
+        .mockResolvedValue(jsonResponse({ allowed: true, hasPassword: true }))
     );
   });
 
@@ -36,13 +44,16 @@ describe("PasswordLoginForm", () => {
   });
 
   it("shows unknown email error", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce({
-      json: async () => ({ allowed: false, hasPassword: false }),
-    } as Response);
+    vi.mocked(fetch).mockResolvedValueOnce(
+      jsonResponse({ allowed: false, hasPassword: false })
+    );
 
     const user = userEvent.setup();
     render(<PasswordLoginForm />);
-    await user.type(screen.getByLabelText(/work email/i), "nobody@mjbiopharm.com");
+    await user.type(
+      screen.getByLabelText(/work email/i),
+      "nobody@mjbiopharm.com"
+    );
     await user.click(screen.getByRole("button", { name: /continue/i }));
 
     expect(
@@ -50,10 +61,31 @@ describe("PasswordLoginForm", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows a readable error when email check fails", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      jsonResponse(
+        { error: "Could not check this email. Please try again." },
+        { status: 500 }
+      )
+    );
+
+    const user = userEvent.setup();
+    render(<PasswordLoginForm />);
+    await user.type(screen.getByLabelText(/work email/i), "user@mjbiopharm.com");
+    await user.click(screen.getByRole("button", { name: /continue/i }));
+
+    expect(
+      await screen.findByText(/could not check this email/i)
+    ).toBeInTheDocument();
+  });
+
   it("advances to the password step", async () => {
     const user = userEvent.setup();
     render(<PasswordLoginForm />);
-    await user.type(screen.getByLabelText(/work email/i), "e2e.password@mjbiopharm.com");
+    await user.type(
+      screen.getByLabelText(/work email/i),
+      "e2e.password@mjbiopharm.com"
+    );
     await user.click(screen.getByRole("button", { name: /continue/i }));
 
     expect(await screen.findByLabelText(/^password$/i)).toBeInTheDocument();
@@ -64,7 +96,10 @@ describe("PasswordLoginForm", () => {
 
     const user = userEvent.setup();
     render(<PasswordLoginForm />);
-    await user.type(screen.getByLabelText(/work email/i), "e2e.password@mjbiopharm.com");
+    await user.type(
+      screen.getByLabelText(/work email/i),
+      "e2e.password@mjbiopharm.com"
+    );
     await user.click(screen.getByRole("button", { name: /continue/i }));
     await user.type(await screen.findByLabelText(/^password$/i), "wrong");
     await user.click(screen.getByRole("button", { name: /sign in/i }));
@@ -73,13 +108,16 @@ describe("PasswordLoginForm", () => {
   });
 
   it("shows setup password link for accounts without a password", async () => {
-    vi.mocked(fetch).mockResolvedValueOnce({
-      json: async () => ({ allowed: true, hasPassword: false }),
-    } as Response);
+    vi.mocked(fetch).mockResolvedValueOnce(
+      jsonResponse({ allowed: true, hasPassword: false })
+    );
 
     const user = userEvent.setup();
     render(<PasswordLoginForm />);
-    await user.type(screen.getByLabelText(/work email/i), "e2e.nopassword@mjbiopharm.com");
+    await user.type(
+      screen.getByLabelText(/work email/i),
+      "e2e.nopassword@mjbiopharm.com"
+    );
     await user.click(screen.getByRole("button", { name: /continue/i }));
 
     expect(
@@ -90,12 +128,14 @@ describe("PasswordLoginForm", () => {
   it("links to forgot password from the password step", async () => {
     const user = userEvent.setup();
     render(<PasswordLoginForm />);
-    await user.type(screen.getByLabelText(/work email/i), "e2e.password@mjbiopharm.com");
+    await user.type(
+      screen.getByLabelText(/work email/i),
+      "e2e.password@mjbiopharm.com"
+    );
     await user.click(screen.getByRole("button", { name: /continue/i }));
 
-    expect(await screen.findByRole("link", { name: /forgot password/i })).toHaveAttribute(
-      "href",
-      expect.stringContaining("/forgot-password")
-    );
+    expect(
+      await screen.findByRole("link", { name: /forgot password/i })
+    ).toHaveAttribute("href", expect.stringContaining("/forgot-password"));
   });
 });
