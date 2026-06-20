@@ -14,6 +14,32 @@ export type TestLoginResult = {
   sessionToken?: string;
 };
 
+const SESSION_COOKIE_NAME = "authjs.session-token";
+
+async function ensureSessionCookie(
+  page: Page,
+  sessionToken: string | undefined
+): Promise<void> {
+  if (!sessionToken) return;
+
+  const cookies = await page.context().cookies();
+  const hasSession = cookies.some(
+    (cookie) => cookie.name === SESSION_COOKIE_NAME && cookie.value === sessionToken
+  );
+  if (hasSession) return;
+
+  await page.context().addCookies([
+    {
+      name: SESSION_COOKIE_NAME,
+      value: sessionToken,
+      url: PLAYWRIGHT_BASE_URL,
+      httpOnly: true,
+      sameSite: "Lax",
+      secure: false,
+    },
+  ]);
+}
+
 async function testLogin(
   page: Page,
   body?: {
@@ -34,19 +60,8 @@ async function testLogin(
       const res = await page.request.post("/api/test/login", { data: body ?? {} });
       if (res.ok()) {
         const result = (await res.json()) as TestLoginResult;
-        if (result.sessionToken) {
-          await page.context().clearCookies();
-          await page.context().addCookies([
-            {
-              name: "authjs.session-token",
-              value: result.sessionToken,
-              url: PLAYWRIGHT_BASE_URL,
-              httpOnly: true,
-              sameSite: "Lax",
-              secure: false,
-            },
-          ]);
-        }
+        // Keep Set-Cookie from the response; only add manually if the jar is missing it.
+        await ensureSessionCookie(page, result.sessionToken);
         return result;
       }
       lastMessage = `HTTP ${res.status()}`;
@@ -64,6 +79,43 @@ async function testLogin(
     `test login failed after ${maxAttempts} attempts (${lastMessage}): is ALLOW_TEST_LOGIN enabled and TEST_AUTH_EMAIL="${TEST_AUTH_EMAIL}" set?`
   ).toBeTruthy();
   throw new Error("unreachable");
+}
+
+type HomeRole = "engineer" | "manager";
+
+const HOME_HEADING: Record<HomeRole, RegExp> = {
+  engineer: /my reports/i,
+  manager: /reports queue/i,
+};
+
+async function waitForHomeDashboard(page: Page, role: HomeRole): Promise<void> {
+  const heading = page.getByRole("heading", { name: HOME_HEADING[role] });
+  const maxAttempts = 3;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    await page.goto("/", { waitUntil: "load" });
+    const url = page.url();
+    if (url.includes("/login")) {
+      if (attempt < maxAttempts) {
+        await page.waitForTimeout(300 * attempt);
+        continue;
+      }
+      expect(
+        false,
+        `expected ${role} home dashboard but landed on login (${url})`
+      ).toBeTruthy();
+    }
+    try {
+      await expect(heading).toBeVisible({ timeout: 15_000 });
+      return;
+    } catch {
+      if (attempt === maxAttempts) {
+        await expect(heading).toBeVisible({ timeout: 30_000 });
+        return;
+      }
+      await page.waitForTimeout(300 * attempt);
+    }
+  }
 }
 
 export async function loginAsTestUser(
@@ -96,16 +148,26 @@ export async function fetchTestManagerUser(page: Page): Promise<TestLoginResult>
   });
 }
 
-export async function loginAsEngineerWithResponse(page: Page): Promise<TestLoginResult> {
+/** Mint a test session without navigating — use before direct page.goto to a deep link. */
+export async function authenticateAsEngineer(page: Page): Promise<TestLoginResult> {
   const result = await testLogin(page, {
     email: "test.engineer@mjbiopharm.com",
     role: "engineer",
   });
   expect(result.role).toBe("engineer");
-  await page.goto("/", { waitUntil: "domcontentloaded" });
-  await expect(
-    page.getByRole("heading", { name: /my reports/i })
-  ).toBeVisible({ timeout: 30_000 });
+  return result;
+}
+
+/** Mint a test session without navigating — use before direct page.goto to a deep link. */
+export async function authenticateAsManager(page: Page): Promise<TestLoginResult> {
+  const result = await fetchTestManagerUser(page);
+  expect(result.role).toBe("manager");
+  return result;
+}
+
+export async function loginAsEngineerWithResponse(page: Page): Promise<TestLoginResult> {
+  const result = await authenticateAsEngineer(page);
+  await waitForHomeDashboard(page, "engineer");
   return result;
 }
 
@@ -114,12 +176,8 @@ export async function loginAsEngineer(page: Page): Promise<void> {
 }
 
 export async function loginAsManagerWithResponse(page: Page): Promise<TestLoginResult> {
-  const result = await fetchTestManagerUser(page);
-  expect(result.role).toBe("manager");
-  await page.goto("/", { waitUntil: "domcontentloaded" });
-  await expect(
-    page.getByRole("heading", { name: /reports queue/i })
-  ).toBeVisible({ timeout: 30_000 });
+  const result = await authenticateAsManager(page);
+  await waitForHomeDashboard(page, "manager");
   return result;
 }
 
