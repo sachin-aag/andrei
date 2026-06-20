@@ -47,7 +47,7 @@ export function EmailDeliveryHint({
               or set a password from the login screen
             </>
           )}
-          . Your admin can also assign a temporary password without email.
+          . Your admin can also send a password reset link.
         </p>
       )}
     </div>

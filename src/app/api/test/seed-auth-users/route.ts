@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { workspaceUsers } from "@/db/schema";
 import { hashPassword } from "@/lib/auth/password";
+import { defaultTitleForRole, type UserRole } from "@/lib/auth/roles";
 import { isTestLoginEnabled } from "@/lib/test/ai-bypass";
 
 function displayNameFromEmail(email: string): string {
@@ -18,7 +19,7 @@ function displayNameFromEmail(email: string): string {
 type SeedUser = {
   email: string;
   password?: string;
-  role: "engineer" | "manager";
+  role: UserRole;
   mustChangePassword?: boolean;
 };
 
@@ -32,13 +33,14 @@ const SEED_USERS: SeedUser[] = [
     mustChangePassword: true,
   },
   { email: "test.manager@mjbiopharm.com", role: "manager" },
+  { email: "test.admin@mjbiopharm.com", role: "admin" },
 ];
 
 async function upsertSeedUser(user: SeedUser) {
   const email = user.email.toLowerCase();
   const passwordHash = user.password ? await hashPassword(user.password) : null;
   const mustChangePassword = user.mustChangePassword ?? false;
-  const title = user.role === "manager" ? "Manager" : "Engineer";
+  const title = defaultTitleForRole(user.role);
 
   const existing = await db.query.workspaceUsers.findFirst({
     where: eq(workspaceUsers.email, email),

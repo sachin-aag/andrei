@@ -1,6 +1,7 @@
 import type { schema } from "@/db";
+import type { UserRole } from "@/lib/auth/roles";
 
-export type UserRole = "engineer" | "manager";
+export type { UserRole } from "@/lib/auth/roles";
 
 export type WorkspaceUser = {
   id: string;

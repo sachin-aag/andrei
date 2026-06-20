@@ -78,7 +78,7 @@ export default async function LoginPage({
             </h1>
             <p className="text-sm text-[var(--muted-foreground)] mt-2">
               Enter your work email and password. Contact your admin if you need
-              access or a temporary password.
+              access or a password reset link.
             </p>
           </div>
           <PasswordLoginForm redirectTo={callbackUrl ?? "/"} />

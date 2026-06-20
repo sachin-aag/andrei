@@ -78,6 +78,21 @@ describe("/api/reports", () => {
     await expect(response.json()).resolves.toEqual({ error: "Unauthorized" });
   });
 
+  it("does not list report queues for admins", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValueOnce({
+      id: "admin-1",
+      name: "Admin",
+      email: "admin@example.com",
+      role: "admin",
+      title: "Admin",
+    });
+
+    const response = await GET();
+
+    expect(response.status).toBe(403);
+    expect(db.select).not.toHaveBeenCalled();
+  });
+
   it("requires authentication for report creation", async () => {
     vi.mocked(getCurrentUser).mockResolvedValueOnce(null);
 
