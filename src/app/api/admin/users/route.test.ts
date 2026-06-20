@@ -110,6 +110,24 @@ describe("/api/admin/users", () => {
     });
   });
 
+  it("rejects weak temporary passwords", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(admin);
+
+    const response = await POST(
+      jsonRequest({
+        email: "weak@mjbiopharm.com",
+        role: "engineer",
+        temporaryPassword: "short1",
+      })
+    );
+
+    expect(response.status).toBe(400);
+    expect(hashPassword).not.toHaveBeenCalled();
+    await expect(response.json()).resolves.toMatchObject({
+      error: expect.stringContaining("8 characters"),
+    });
+  });
+
   it("creates a user for admins with a temporary password", async () => {
     vi.mocked(getCurrentUser).mockResolvedValueOnce(admin);
     mockInsertReturning([

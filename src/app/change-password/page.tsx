@@ -2,10 +2,6 @@ import Image from "next/image";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { ChangeSharedPasswordForm } from "@/components/auth/change-shared-password-form";
-import {
-  getPasswordPolicy,
-  passwordPolicyRequirementText,
-} from "@/lib/auth/password-policy";
 
 export default async function ChangePasswordPage() {
   const session = await auth();
@@ -16,7 +12,6 @@ export default async function ChangePasswordPage() {
     redirect("/");
   }
   const isExpired = !!session.user.passwordExpired;
-  const policy = await getPasswordPolicy();
 
   return (
     <div className="min-h-screen flex items-center justify-center p-8">
@@ -44,11 +39,7 @@ export default async function ChangePasswordPage() {
               : "Your administrator assigned a temporary password. Pick a new one to continue."}
           </p>
         </div>
-        <ChangeSharedPasswordForm
-          email={session.user.email ?? ""}
-          minLength={policy.minLength}
-          passwordRequirements={passwordPolicyRequirementText(policy)}
-        />
+        <ChangeSharedPasswordForm email={session.user.email ?? ""} />
       </div>
     </div>
   );

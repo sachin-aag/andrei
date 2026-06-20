@@ -2,10 +2,6 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/session";
 import { listWorkspaceUsers } from "@/lib/auth/workspace-users";
 import { getPasswordStatusForUser } from "@/lib/auth/password-status";
-import {
-  getPasswordPolicy,
-  passwordPolicyRequirementText,
-} from "@/lib/auth/password-policy";
 import { roleLabel } from "@/lib/auth/roles";
 import { AppShell } from "@/components/layout/app-shell";
 import { ChangeOwnPasswordForm } from "@/components/auth/change-own-password-form";
@@ -16,10 +12,9 @@ export default async function ProfilePage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  const [workspaceUsers, passwordStatus, policy] = await Promise.all([
+  const [workspaceUsers, passwordStatus] = await Promise.all([
     listWorkspaceUsers(),
     getPasswordStatusForUser(user.id),
-    getPasswordPolicy(),
   ]);
 
   return (
@@ -73,10 +68,7 @@ export default async function ProfilePage() {
               You can update your own password at any time.
             </p>
             <div className="mt-5">
-              <ChangeOwnPasswordForm
-                minLength={policy.minLength}
-                passwordRequirements={passwordPolicyRequirementText(policy)}
-              />
+              <ChangeOwnPasswordForm />
             </div>
           </section>
         </div>

@@ -53,7 +53,7 @@ describe("POST /api/auth-pw/replace-shared-password", () => {
     vi.clearAllMocks();
     vi.mocked(hashPassword).mockResolvedValue("new.hash");
     vi.mocked(getPasswordPolicy).mockResolvedValue({
-      minLength: 6,
+      minLength: 8,
       requireLetter: true,
       requireNumber: true,
       requireSpecial: true,

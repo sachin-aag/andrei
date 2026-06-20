@@ -2,10 +2,6 @@ import Image from "next/image";
 import { redirect } from "next/navigation";
 import { ResetPasswordForm } from "@/components/auth/reset-password-form";
 import { getCurrentUser } from "@/lib/auth/session";
-import {
-  getPasswordPolicy,
-  passwordPolicyRequirementText,
-} from "@/lib/auth/password-policy";
 import Link from "next/link";
 
 export default async function ResetPasswordPage({
@@ -39,8 +35,6 @@ export default async function ResetPasswordPage({
       </div>
     );
   }
-  const policy = await getPasswordPolicy();
-
   return (
     <div className="min-h-screen flex items-center justify-center p-8">
       <div className="w-full max-w-sm space-y-6">
@@ -65,12 +59,7 @@ export default async function ResetPasswordPage({
             Choose a strong password for your account.
           </p>
         </div>
-        <ResetPasswordForm
-          token={token}
-          email={email}
-          minLength={policy.minLength}
-          passwordRequirements={passwordPolicyRequirementText(policy)}
-        />
+        <ResetPasswordForm token={token} email={email} />
       </div>
     </div>
   );

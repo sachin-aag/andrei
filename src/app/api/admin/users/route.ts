@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { workspaceUsers } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import { hashPassword } from "@/lib/auth/password";
+import { validatePasswordStrength } from "@/lib/auth/password-strength";
 import { USER_ROLES, defaultTitleForRole } from "@/lib/auth/roles";
 import { adminUserFromRow, listAdminUsers } from "@/lib/admin/users";
 
@@ -12,7 +13,7 @@ const createUserSchema = z.object({
   name: z.string().trim().min(1).optional(),
   email: z.string().trim().email(),
   role: z.enum(USER_ROLES),
-  temporaryPassword: z.string().min(8),
+  temporaryPassword: z.string().min(1),
 });
 
 function displayNameFromEmail(email: string): string {
@@ -68,6 +69,14 @@ export async function POST(req: Request) {
   const parsed = createUserSchema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
+  }
+
+  const passwordValidation = validatePasswordStrength(parsed.data.temporaryPassword);
+  if (!passwordValidation.ok) {
+    return NextResponse.json(
+      { error: passwordValidation.errors.join(" ") },
+      { status: 400 }
+    );
   }
 
   const email = parsed.data.email.toLowerCase();

@@ -7,17 +7,18 @@ import { ArrowRight, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  PASSWORD_MIN_LENGTH,
+  passwordStrengthRequirementText,
+  validatePasswordStrength,
+} from "@/lib/auth/password-strength";
 
 export function ResetPasswordForm({
   token,
   email,
-  minLength,
-  passwordRequirements,
 }: {
   token: string;
   email: string;
-  minLength: number;
-  passwordRequirements: string;
 }) {
   const router = useRouter();
   const [password, setPassword] = useState("");
@@ -31,8 +32,9 @@ export function ResetPasswordForm({
       setError("Passwords do not match.");
       return;
     }
-    if (password.length < minLength) {
-      setError(`Password must be at least ${minLength} characters.`);
+    const validation = validatePasswordStrength(password);
+    if (!validation.ok) {
+      setError(validation.errors.join(" "));
       return;
     }
     setError(null);
@@ -77,11 +79,11 @@ export function ResetPasswordForm({
             setPassword(e.target.value);
             if (error) setError(null);
           }}
-          placeholder={`At least ${minLength} characters`}
+          placeholder={`At least ${PASSWORD_MIN_LENGTH} characters`}
           autoComplete="off"
         />
         <p className="text-xs text-[var(--muted-foreground)]">
-          {passwordRequirements}
+          {passwordStrengthRequirementText()}
         </p>
       </div>
       <div className="space-y-2">

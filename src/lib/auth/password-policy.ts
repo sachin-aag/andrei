@@ -1,27 +1,37 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { passwordPolicySettings } from "@/db/schema";
+import {
+  PASSWORD_MIN_LENGTH,
+  PASSWORD_REQUIRE_LETTER,
+  PASSWORD_REQUIRE_NUMBER,
+  PASSWORD_REQUIRE_SPECIAL,
+  passwordStrengthRequirementText,
+  validatePasswordStrength,
+  type PasswordStrengthValidation,
+} from "@/lib/auth/password-strength";
 
 export const PASSWORD_POLICY_SETTINGS_ID = "default";
 export const PASSWORD_EXPIRY_WARNING_SNOOZE_DAYS = 7;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-export type PasswordPolicy = {
-  minLength: number;
-  requireLetter: boolean;
-  requireNumber: boolean;
-  requireSpecial: boolean;
+export type OperationalPasswordPolicy = {
   expiryDays: number;
   warningDays: number;
   failedLoginAttemptLimit: number;
   passwordHistoryLimit: number;
 };
 
-export type PasswordPolicyValidation = {
-  ok: boolean;
-  errors: string[];
+/** Full policy: code-defined strength rules plus DB-backed operational settings. */
+export type PasswordPolicy = OperationalPasswordPolicy & {
+  minLength: number;
+  requireLetter: boolean;
+  requireNumber: boolean;
+  requireSpecial: boolean;
 };
+
+export type PasswordPolicyValidation = PasswordStrengthValidation;
 
 export type PasswordExpiryState = {
   expiresAt: Date | null;
@@ -37,23 +47,42 @@ type PasswordExpiryInput = {
   passwordExpiryWarningDismissedUntil?: Date | null;
 };
 
-export const DEFAULT_PASSWORD_POLICY: PasswordPolicy = {
-  minLength: 6,
-  requireLetter: true,
-  requireNumber: true,
-  requireSpecial: true,
+const CODE_DEFINED_STRENGTH = {
+  minLength: PASSWORD_MIN_LENGTH,
+  requireLetter: PASSWORD_REQUIRE_LETTER,
+  requireNumber: PASSWORD_REQUIRE_NUMBER,
+  requireSpecial: PASSWORD_REQUIRE_SPECIAL,
+} as const;
+
+export const DEFAULT_OPERATIONAL_PASSWORD_POLICY: OperationalPasswordPolicy = {
   expiryDays: 90,
   warningDays: 14,
   failedLoginAttemptLimit: 3,
   passwordHistoryLimit: 3,
 };
 
-function normalizePolicy(row: Partial<PasswordPolicy> | null | undefined): PasswordPolicy {
+export const DEFAULT_PASSWORD_POLICY: PasswordPolicy = {
+  ...CODE_DEFINED_STRENGTH,
+  ...DEFAULT_OPERATIONAL_PASSWORD_POLICY,
+};
+
+function normalizeOperationalPolicy(
+  row: Partial<OperationalPasswordPolicy> | null | undefined
+): OperationalPasswordPolicy {
   return {
-    ...DEFAULT_PASSWORD_POLICY,
+    ...DEFAULT_OPERATIONAL_PASSWORD_POLICY,
     ...Object.fromEntries(
       Object.entries(row ?? {}).filter(([, value]) => value !== null && value !== undefined)
     ),
+  };
+}
+
+function mergePasswordPolicy(
+  operational: OperationalPasswordPolicy
+): PasswordPolicy {
+  return {
+    ...CODE_DEFINED_STRENGTH,
+    ...operational,
   };
 }
 
@@ -61,11 +90,13 @@ export async function getPasswordPolicy(): Promise<PasswordPolicy> {
   const existing = await db.query.passwordPolicySettings.findFirst({
     where: eq(passwordPolicySettings.id, PASSWORD_POLICY_SETTINGS_ID),
   });
-  if (existing) return normalizePolicy(existing);
+  if (existing) {
+    return mergePasswordPolicy(normalizeOperationalPolicy(existing));
+  }
 
   await db.insert(passwordPolicySettings).values({
     id: PASSWORD_POLICY_SETTINGS_ID,
-    ...DEFAULT_PASSWORD_POLICY,
+    ...DEFAULT_OPERATIONAL_PASSWORD_POLICY,
   });
   return DEFAULT_PASSWORD_POLICY;
 }
@@ -86,37 +117,18 @@ export async function updatePasswordExpiryDays(expiryDays: number): Promise<numb
     throw new Error("password_policy_settings row missing after ensure");
   }
 
-  return normalizePolicy(updated).expiryDays;
+  return normalizeOperationalPolicy(updated).expiryDays;
 }
 
-export function passwordPolicyRequirementText(policy: PasswordPolicy): string {
-  const requirements = [`at least ${policy.minLength} characters`];
-  if (policy.requireLetter) requirements.push("one letter");
-  if (policy.requireNumber) requirements.push("one number");
-  if (policy.requireSpecial) requirements.push("one special character");
-  return `Password must include ${requirements.join(", ")}.`;
+export function passwordPolicyRequirementText(_policy?: PasswordPolicy): string {
+  return passwordStrengthRequirementText();
 }
 
 export function validatePasswordPolicy(
   password: string,
-  policy: PasswordPolicy
+  _policy?: PasswordPolicy
 ): PasswordPolicyValidation {
-  const errors: string[] = [];
-
-  if (password.length < policy.minLength) {
-    errors.push(`Password must be at least ${policy.minLength} characters.`);
-  }
-  if (policy.requireLetter && !/[A-Za-z]/.test(password)) {
-    errors.push("Password must include at least one letter.");
-  }
-  if (policy.requireNumber && !/[0-9]/.test(password)) {
-    errors.push("Password must include at least one number.");
-  }
-  if (policy.requireSpecial && !/[^A-Za-z0-9]/.test(password)) {
-    errors.push("Password must include at least one special character.");
-  }
-
-  return { ok: errors.length === 0, errors };
+  return validatePasswordStrength(password);
 }
 
 export function computePasswordExpiryState(

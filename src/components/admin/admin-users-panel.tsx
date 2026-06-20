@@ -25,6 +25,10 @@ import {
 } from "@/components/ui/select";
 import type { AdminUser } from "@/lib/admin/users";
 import { USER_ROLES, roleLabel, type UserRole } from "@/lib/auth/roles";
+import {
+  passwordStrengthRequirementText,
+  validatePasswordStrength,
+} from "@/lib/auth/password-strength";
 
 type CreateUserForm = {
   name: string;
@@ -103,8 +107,9 @@ export function AdminUsersPanel({
       toast.error("Email is required");
       return;
     }
-    if (createForm.temporaryPassword.length < 8) {
-      toast.error("Temporary password must be at least 8 characters");
+    const validation = validatePasswordStrength(createForm.temporaryPassword);
+    if (!validation.ok) {
+      toast.error(validation.errors.join(" "));
       return;
     }
 
@@ -307,6 +312,9 @@ export function AdminUsersPanel({
                     }))
                   }
                 />
+                <p className="text-xs text-[var(--muted-foreground)]">
+                  {passwordStrengthRequirementText()}
+                </p>
               </div>
             </div>
             <DialogFooter>

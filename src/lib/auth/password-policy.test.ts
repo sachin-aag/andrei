@@ -24,13 +24,13 @@ describe("password policy", () => {
     expect(weak.ok).toBe(false);
     expect(weak.errors).toEqual(
       expect.arrayContaining([
-        "Password must be at least 6 characters.",
+        "Password must be at least 8 characters.",
         "Password must include at least one number.",
         "Password must include at least one special character.",
       ])
     );
 
-    expect(validatePasswordPolicy("abc123!", DEFAULT_PASSWORD_POLICY).ok).toBe(
+    expect(validatePasswordPolicy("abc12345!", DEFAULT_PASSWORD_POLICY).ok).toBe(
       true
     );
   });
