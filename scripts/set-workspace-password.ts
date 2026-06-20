@@ -129,6 +129,10 @@ async function main() {
   const { db } = await import("@/db");
   const { workspaceUsers } = await import("@/db/schema");
   const { hashPassword } = await import("@/lib/auth/password");
+  const { recordPasswordHistory } = await import("@/lib/auth/password-history");
+  const { getPasswordPolicy, validatePasswordPolicy } = await import(
+    "@/lib/auth/password-policy"
+  );
 
   const { email, password, role, roleSpecified } = parseArgs(scriptArgv());
 
@@ -154,26 +158,40 @@ async function main() {
   console.log(`Env loaded from: ${source}`);
   console.log(`Target database: ${formatDatabaseTarget(databaseUrl)}`);
 
-  if (password.length < 8) {
-    console.error("Password must be at least 8 characters.");
+  const policy = await getPasswordPolicy();
+  const validation = validatePasswordPolicy(password, policy);
+  if (!validation.ok) {
+    console.error(validation.errors.join(" "));
     process.exit(1);
   }
 
   const effectiveRole: UserRole = role ?? "engineer";
   const passwordHash = await hashPassword(password);
+  const changedAt = new Date();
 
   const existing = await db.query.workspaceUsers.findFirst({
     where: eq(workspaceUsers.email, email),
-    columns: { id: true, name: true, email: true, role: true },
+    columns: { id: true, name: true, email: true, role: true, passwordHash: true },
   });
 
   if (existing) {
     const update: {
       passwordHash: string;
       mustChangePassword: true;
+      passwordChangedAt: Date;
+      failedLoginAttempts: 0;
+      lockedAt: null;
+      passwordExpiryWarningDismissedUntil: null;
       role?: UserRole;
       title?: string;
-    } = { passwordHash, mustChangePassword: true };
+    } = {
+      passwordHash,
+      mustChangePassword: true,
+      passwordChangedAt: changedAt,
+      failedLoginAttempts: 0,
+      lockedAt: null,
+      passwordExpiryWarningDismissedUntil: null,
+    };
 
     if (role !== undefined) {
       update.role = role;
@@ -184,6 +202,11 @@ async function main() {
       .update(workspaceUsers)
       .set(update)
       .where(eq(workspaceUsers.id, existing.id));
+    await recordPasswordHistory({
+      userId: existing.id,
+      previousPasswordHash: existing.passwordHash,
+      historyLimit: policy.passwordHistoryLimit,
+    });
 
     const roleNote =
       role !== undefined
@@ -203,6 +226,10 @@ async function main() {
       title: titleForRole(effectiveRole),
       passwordHash,
       mustChangePassword: true,
+      passwordChangedAt: changedAt,
+      failedLoginAttempts: 0,
+      lockedAt: null,
+      passwordExpiryWarningDismissedUntil: null,
     });
 
     console.log(

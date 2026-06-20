@@ -7,6 +7,10 @@ import { db } from "@/db";
 import { authAccounts, authUsers, authVerificationTokens } from "@/db/schema/auth";
 import { workspaceUsers } from "@/db/schema";
 import { verifyPassword } from "@/lib/auth/password";
+import {
+  computePasswordExpiryState,
+  getPasswordPolicy,
+} from "@/lib/auth/password-policy";
 
 const ALLOWED_EMAIL_DOMAINS = ["@mjbiopharm.com"];
 const ALLOWED_EMAILS = ["sachinagrawal272@gmail.com", "aditya.ambani@gmail.com"];
@@ -40,17 +44,41 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
-        const email = credentials?.email as string | undefined;
+        const email = (credentials?.email as string | undefined)
+          ?.trim()
+          .toLowerCase();
         const password = credentials?.password as string | undefined;
         if (!email || !password) return null;
 
+        const policy = await getPasswordPolicy();
         const wsUser = await db.query.workspaceUsers.findFirst({
           where: eq(workspaceUsers.email, email),
         });
         if (!wsUser?.passwordHash) return null;
+        if (wsUser.lockedAt) return null;
 
         const valid = await verifyPassword(password, wsUser.passwordHash);
-        if (!valid) return null;
+        if (!valid) {
+          const failedLoginAttempts = wsUser.failedLoginAttempts + 1;
+          await db
+            .update(workspaceUsers)
+            .set({
+              failedLoginAttempts,
+              lockedAt:
+                failedLoginAttempts >= policy.failedLoginAttemptLimit
+                  ? new Date()
+                  : null,
+            })
+            .where(eq(workspaceUsers.id, wsUser.id));
+          return null;
+        }
+
+        if (wsUser.failedLoginAttempts > 0 || wsUser.lockedAt) {
+          await db
+            .update(workspaceUsers)
+            .set({ failedLoginAttempts: 0, lockedAt: null })
+            .where(eq(workspaceUsers.id, wsUser.id));
+        }
 
         // Ensure auth_users row exists (Credentials provider skips the adapter)
         let authUser = await db.query.authUsers.findFirst({
@@ -97,22 +125,40 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
 
       if (workspaceUserId) {
+        const policy = await getPasswordPolicy();
         const wsUser = await db.query.workspaceUsers.findFirst({
           where: eq(workspaceUsers.id, workspaceUserId),
-          columns: { id: true, mustChangePassword: true },
+          columns: {
+            id: true,
+            mustChangePassword: true,
+            passwordHash: true,
+            passwordChangedAt: true,
+            passwordExpiryWarningDismissedUntil: true,
+          },
         });
         if (wsUser) {
+          const expiryState = computePasswordExpiryState(wsUser, policy);
           token.workspaceUserId = wsUser.id;
           token.mustChangePassword = wsUser.mustChangePassword;
+          token.passwordExpired = expiryState.expired;
         }
       } else if (email) {
+        const policy = await getPasswordPolicy();
         const wsUser = await db.query.workspaceUsers.findFirst({
           where: eq(workspaceUsers.email, email),
-          columns: { id: true, mustChangePassword: true },
+          columns: {
+            id: true,
+            mustChangePassword: true,
+            passwordHash: true,
+            passwordChangedAt: true,
+            passwordExpiryWarningDismissedUntil: true,
+          },
         });
         if (wsUser) {
+          const expiryState = computePasswordExpiryState(wsUser, policy);
           token.workspaceUserId = wsUser.id;
           token.mustChangePassword = wsUser.mustChangePassword;
+          token.passwordExpired = expiryState.expired;
         }
       }
 
@@ -124,6 +170,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       }
       if (typeof token.mustChangePassword === "boolean") {
         session.user.mustChangePassword = token.mustChangePassword;
+      }
+      if (typeof token.passwordExpired === "boolean") {
+        session.user.passwordExpired = token.passwordExpired;
       }
       return session;
     },

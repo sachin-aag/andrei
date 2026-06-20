@@ -6,6 +6,7 @@ import {
   pgEnum,
   boolean,
   integer,
+  index,
   uniqueIndex,
   customType,
   type AnyPgColumn,
@@ -106,6 +107,15 @@ export const workspaceUsers = pgTable(
     passwordHash: text("password_hash"),
     /** True when an admin set a temporary password; user must choose a new one on next login. */
     mustChangePassword: boolean("must_change_password").notNull().default(false),
+    /** Set whenever a real password is created or changed. Null for passwordless users. */
+    passwordChangedAt: timestamp("password_changed_at", { withTimezone: true }),
+    failedLoginAttempts: integer("failed_login_attempts").notNull().default(0),
+    /** Non-null means the account is locked until reset/admin password replacement. */
+    lockedAt: timestamp("locked_at", { withTimezone: true }),
+    passwordExpiryWarningDismissedUntil: timestamp(
+      "password_expiry_warning_dismissed_until",
+      { withTimezone: true }
+    ),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -124,6 +134,41 @@ export const passwordResetTokens = pgTable("password_reset_tokens", {
   /** Null until the token is consumed. */
   usedAt: timestamp("used_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const passwordHistory = pgTable(
+  "password_history",
+  {
+    id: text("id").primaryKey().$defaultFn(() => createId()),
+    userId: text("user_id")
+      .notNull()
+      .references(() => workspaceUsers.id, { onDelete: "cascade" }),
+    passwordHash: text("password_hash").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    userCreatedAtIdx: index("password_history_user_created_at_idx").on(
+      t.userId,
+      t.createdAt
+    ),
+  })
+);
+
+export const passwordPolicySettings = pgTable("password_policy_settings", {
+  id: text("id").primaryKey().default("default"),
+  minLength: integer("min_length").notNull().default(6),
+  requireLetter: boolean("require_letter").notNull().default(true),
+  requireNumber: boolean("require_number").notNull().default(true),
+  requireSpecial: boolean("require_special").notNull().default(true),
+  expiryDays: integer("expiry_days").notNull().default(90),
+  warningDays: integer("warning_days").notNull().default(14),
+  failedLoginAttemptLimit: integer("failed_login_attempt_limit")
+    .notNull()
+    .default(3),
+  passwordHistoryLimit: integer("password_history_limit").notNull().default(3),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
 });
 
 export const reports = pgTable(

@@ -27,6 +27,7 @@ function isAllowedWhileMustChangePassword(path: string): boolean {
   return (
     path === "/change-password" ||
     path === "/api/auth-pw/replace-shared-password" ||
+    path === "/api/auth-pw/change-password" ||
     path.startsWith("/api/auth/")
   );
 }
@@ -46,7 +47,7 @@ export const proxy = auth((req) => {
     return NextResponse.redirect(loginUrl);
   }
 
-  if (req.auth.user.mustChangePassword) {
+  if (req.auth.user.mustChangePassword || req.auth.user.passwordExpired) {
     if (isAllowedWhileMustChangePassword(path)) {
       return NextResponse.next();
     }

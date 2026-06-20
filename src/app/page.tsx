@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { reports } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import { listWorkspaceUsers } from "@/lib/auth/workspace-users";
+import { getPasswordStatusForUser } from "@/lib/auth/password-status";
 import { AppShell } from "@/components/layout/app-shell";
 import { CreateReportButton } from "@/components/dashboard/create-report-button";
 import { ReportList } from "@/components/dashboard/report-list";
@@ -16,7 +17,10 @@ export default async function DashboardPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  const workspaceUsers = await listWorkspaceUsers();
+  const [workspaceUsers, passwordStatus] = await Promise.all([
+    listWorkspaceUsers(),
+    getPasswordStatusForUser(user.id),
+  ]);
   const managers = workspaceUsers.filter((entry) => entry.role === "manager");
   const usersById = Object.fromEntries(
     workspaceUsers.map((entry) => [entry.id, { name: entry.name }])
@@ -46,7 +50,11 @@ export default async function DashboardPage() {
         );
 
   return (
-    <AppShell user={user} initialUsers={workspaceUsers}>
+    <AppShell
+      user={user}
+      initialUsers={workspaceUsers}
+      passwordStatus={passwordStatus}
+    >
       <ViewTransition
         enter={{ "nav-back": "nav-back", default: "none" }}
         exit={{ "nav-forward": "nav-forward", default: "none" }}

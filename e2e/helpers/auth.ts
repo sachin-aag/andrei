@@ -16,6 +16,8 @@ async function testLogin(
     email?: string;
     role?: "engineer" | "manager";
     mustChangePassword?: boolean;
+    passwordExpired?: boolean;
+    passwordWarning?: boolean;
   }
 ): Promise<TestLoginResult> {
   await page.context().clearCookies();
@@ -44,6 +46,19 @@ async function testLogin(
     `test login failed after ${maxAttempts} attempts (${lastMessage}): is ALLOW_TEST_LOGIN enabled and TEST_AUTH_EMAIL="${TEST_AUTH_EMAIL}" set?`
   ).toBeTruthy();
   throw new Error("unreachable");
+}
+
+export async function loginAsTestUser(
+  page: Page,
+  body: {
+    email?: string;
+    role?: "engineer" | "manager";
+    mustChangePassword?: boolean;
+    passwordExpired?: boolean;
+    passwordWarning?: boolean;
+  }
+): Promise<TestLoginResult> {
+  return testLogin(page, body);
 }
 
 export async function seedAuthUsers(page: Page): Promise<void> {

@@ -42,10 +42,16 @@ export function PasswordLoginForm({ redirectTo }: { redirectTo?: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: email.trim() }),
       });
-      const { allowed, hasPassword } = await res.json();
+      const { allowed, hasPassword, locked } = await res.json();
       if (!allowed) {
         setError(
           "This email isn't registered. Please contact your admin to get access."
+        );
+        return;
+      }
+      if (locked) {
+        setError(
+          "This account is locked after too many failed password attempts. Please reset your password or contact your admin."
         );
         return;
       }
@@ -68,7 +74,17 @@ export function PasswordLoginForm({ redirectTo }: { redirectTo?: string }) {
         redirect: false,
       });
       if (res?.error) {
-        setError("Invalid password. Please try again.");
+        const statusRes = await fetch("/api/auth/check-email", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: step.email }),
+        });
+        const status = await statusRes.json().catch(() => ({}));
+        setError(
+          status.locked
+            ? "This account is locked after too many failed password attempts. Please reset your password or contact your admin."
+            : "Invalid password. Please try again."
+        );
         return;
       }
       captureEvent("user_logged_in");
@@ -137,7 +153,7 @@ export function PasswordLoginForm({ redirectTo }: { redirectTo?: string }) {
               clearError();
             }}
             placeholder="Enter your password"
-            autoComplete="current-password"
+            autoComplete="off"
             autoFocus
             onKeyDown={(e) => {
               if (e.key === "Enter") submitPassword();

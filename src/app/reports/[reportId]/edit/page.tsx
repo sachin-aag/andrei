@@ -10,6 +10,7 @@ import {
 } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import { listWorkspaceUsers } from "@/lib/auth/workspace-users";
+import { getPasswordStatusForUser } from "@/lib/auth/password-status";
 import { AppShell } from "@/components/layout/app-shell";
 import { ReportProvider } from "@/providers/report-provider";
 import { ReportWorkspace } from "@/components/report/report-workspace";
@@ -46,7 +47,10 @@ export default async function EditReportPage({
     user.id === report.authorId &&
     report.status !== "approved";
 
-  const workspaceUsers = await listWorkspaceUsers();
+  const [workspaceUsers, passwordStatus] = await Promise.all([
+    listWorkspaceUsers(),
+    getPasswordStatusForUser(user.id),
+  ]);
 
   const bundle = JSON.parse(
     JSON.stringify({
@@ -58,7 +62,11 @@ export default async function EditReportPage({
   ) as ReportBundle;
 
   return (
-    <AppShell user={user} initialUsers={workspaceUsers}>
+    <AppShell
+      user={user}
+      initialUsers={workspaceUsers}
+      passwordStatus={passwordStatus}
+    >
       <ReportProvider
         bundle={bundle}
         currentUserId={user.id}

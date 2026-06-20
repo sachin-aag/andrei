@@ -24,6 +24,7 @@ type SeedUser = {
 
 const SEED_USERS: SeedUser[] = [
   { email: "e2e.password@mjbiopharm.com", password: "E2eTestPass123!", role: "engineer" },
+  { email: "e2e.lockout@mjbiopharm.com", password: "E2eLockoutPass123!", role: "engineer" },
   { email: "e2e.nopassword@mjbiopharm.com", role: "engineer" },
   {
     email: "e2e.mustchange@mjbiopharm.com",
@@ -37,6 +38,7 @@ const SEED_USERS: SeedUser[] = [
 async function upsertSeedUser(user: SeedUser) {
   const email = user.email.toLowerCase();
   const passwordHash = user.password ? await hashPassword(user.password) : null;
+  const passwordChangedAt = user.password ? new Date() : null;
   const mustChangePassword = user.mustChangePassword ?? false;
   const title = user.role === "manager" ? "Manager" : "Engineer";
 
@@ -52,6 +54,10 @@ async function upsertSeedUser(user: SeedUser) {
         title,
         passwordHash,
         mustChangePassword,
+        passwordChangedAt,
+        failedLoginAttempts: 0,
+        lockedAt: null,
+        passwordExpiryWarningDismissedUntil: null,
       })
       .where(eq(workspaceUsers.id, existing.id));
     return existing.id;
@@ -66,6 +72,10 @@ async function upsertSeedUser(user: SeedUser) {
     title,
     passwordHash,
     mustChangePassword,
+    passwordChangedAt,
+    failedLoginAttempts: 0,
+    lockedAt: null,
+    passwordExpiryWarningDismissedUntil: null,
   });
   return id;
 }

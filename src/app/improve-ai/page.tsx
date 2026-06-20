@@ -6,6 +6,7 @@ import { reports } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import { withTransientRetry } from "@/lib/db/with-transient-retry";
 import { listWorkspaceUsers } from "@/lib/auth/workspace-users";
+import { getPasswordStatusForUser } from "@/lib/auth/password-status";
 import { AppShell } from "@/components/layout/app-shell";
 import { ImproveAiListHeader } from "@/components/improve-ai/improve-ai-list-header";
 import { listImproveAiSessionsForUser } from "@/lib/improve-ai/store";
@@ -32,7 +33,10 @@ export default async function ImproveAiListPage() {
   if (!user) redirect("/login");
 
   const items = await listImproveAiSessionsForUser(user.id);
-  const workspaceUsers = await listWorkspaceUsers();
+  const [workspaceUsers, passwordStatus] = await Promise.all([
+    listWorkspaceUsers(),
+    getPasswordStatusForUser(user.id),
+  ]);
   const managers = workspaceUsers.filter((entry) => entry.role === "manager");
 
   const authorReports = await withTransientRetry("improveAi.authorReports", () =>
@@ -57,7 +61,11 @@ export default async function ImproveAiListPage() {
   );
 
   return (
-    <AppShell user={user} initialUsers={workspaceUsers}>
+    <AppShell
+      user={user}
+      initialUsers={workspaceUsers}
+      passwordStatus={passwordStatus}
+    >
       <div className="flex flex-col h-full overflow-hidden">
         <ImproveAiListHeader
           sessionCount={items.length}

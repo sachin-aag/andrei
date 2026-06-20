@@ -1,0 +1,146 @@
+import { eq } from "drizzle-orm";
+import { db } from "@/db";
+import { passwordPolicySettings } from "@/db/schema";
+
+export const PASSWORD_POLICY_SETTINGS_ID = "default";
+export const PASSWORD_EXPIRY_WARNING_SNOOZE_DAYS = 7;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+export type PasswordPolicy = {
+  minLength: number;
+  requireLetter: boolean;
+  requireNumber: boolean;
+  requireSpecial: boolean;
+  expiryDays: number;
+  warningDays: number;
+  failedLoginAttemptLimit: number;
+  passwordHistoryLimit: number;
+};
+
+export type PasswordPolicyValidation = {
+  ok: boolean;
+  errors: string[];
+};
+
+export type PasswordExpiryState = {
+  expiresAt: Date | null;
+  daysRemaining: number | null;
+  expired: boolean;
+  warning: boolean;
+  warningDismissed: boolean;
+};
+
+type PasswordExpiryInput = {
+  passwordHash: string | null;
+  passwordChangedAt: Date | null;
+  passwordExpiryWarningDismissedUntil?: Date | null;
+};
+
+export const DEFAULT_PASSWORD_POLICY: PasswordPolicy = {
+  minLength: 6,
+  requireLetter: true,
+  requireNumber: true,
+  requireSpecial: true,
+  expiryDays: 90,
+  warningDays: 14,
+  failedLoginAttemptLimit: 3,
+  passwordHistoryLimit: 3,
+};
+
+function normalizePolicy(row: Partial<PasswordPolicy> | null | undefined): PasswordPolicy {
+  return {
+    ...DEFAULT_PASSWORD_POLICY,
+    ...Object.fromEntries(
+      Object.entries(row ?? {}).filter(([, value]) => value !== null && value !== undefined)
+    ),
+  };
+}
+
+export async function getPasswordPolicy(): Promise<PasswordPolicy> {
+  const existing = await db.query.passwordPolicySettings.findFirst({
+    where: eq(passwordPolicySettings.id, PASSWORD_POLICY_SETTINGS_ID),
+  });
+  if (existing) return normalizePolicy(existing);
+
+  await db.insert(passwordPolicySettings).values({
+    id: PASSWORD_POLICY_SETTINGS_ID,
+    ...DEFAULT_PASSWORD_POLICY,
+  });
+  return DEFAULT_PASSWORD_POLICY;
+}
+
+export function passwordPolicyRequirementText(policy: PasswordPolicy): string {
+  const requirements = [`at least ${policy.minLength} characters`];
+  if (policy.requireLetter) requirements.push("one letter");
+  if (policy.requireNumber) requirements.push("one number");
+  if (policy.requireSpecial) requirements.push("one special character");
+  return `Password must include ${requirements.join(", ")}.`;
+}
+
+export function validatePasswordPolicy(
+  password: string,
+  policy: PasswordPolicy
+): PasswordPolicyValidation {
+  const errors: string[] = [];
+
+  if (password.length < policy.minLength) {
+    errors.push(`Password must be at least ${policy.minLength} characters.`);
+  }
+  if (policy.requireLetter && !/[A-Za-z]/.test(password)) {
+    errors.push("Password must include at least one letter.");
+  }
+  if (policy.requireNumber && !/[0-9]/.test(password)) {
+    errors.push("Password must include at least one number.");
+  }
+  if (policy.requireSpecial && !/[^A-Za-z0-9]/.test(password)) {
+    errors.push("Password must include at least one special character.");
+  }
+
+  return { ok: errors.length === 0, errors };
+}
+
+export function computePasswordExpiryState(
+  user: PasswordExpiryInput,
+  policy: PasswordPolicy,
+  now = new Date()
+): PasswordExpiryState {
+  if (!user.passwordHash || !user.passwordChangedAt || policy.expiryDays <= 0) {
+    return {
+      expiresAt: null,
+      daysRemaining: null,
+      expired: false,
+      warning: false,
+      warningDismissed: false,
+    };
+  }
+
+  const expiresAt = new Date(user.passwordChangedAt.getTime() + policy.expiryDays * DAY_MS);
+  const msRemaining = expiresAt.getTime() - now.getTime();
+  const expired = msRemaining <= 0;
+  const daysRemaining = expired ? 0 : Math.ceil(msRemaining / DAY_MS);
+  const warningDismissed =
+    !!user.passwordExpiryWarningDismissedUntil &&
+    user.passwordExpiryWarningDismissedUntil.getTime() > now.getTime();
+  const warning =
+    !expired &&
+    daysRemaining <= policy.warningDays &&
+    !warningDismissed;
+
+  return {
+    expiresAt,
+    daysRemaining,
+    expired,
+    warning,
+    warningDismissed,
+  };
+}
+
+export function nextPasswordWarningDismissal(
+  expiresAt: Date | null,
+  now = new Date()
+): Date {
+  const snoozeUntil = new Date(now.getTime() + PASSWORD_EXPIRY_WARNING_SNOOZE_DAYS * DAY_MS);
+  if (!expiresAt || snoozeUntil < expiresAt) return snoozeUntil;
+  return expiresAt;
+}

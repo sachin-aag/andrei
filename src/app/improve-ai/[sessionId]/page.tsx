@@ -3,6 +3,7 @@ import { redirect, notFound } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth/session";
 import { listWorkspaceUsers } from "@/lib/auth/workspace-users";
+import { getPasswordStatusForUser } from "@/lib/auth/password-status";
 import { AppShell } from "@/components/layout/app-shell";
 import { ImproveAiSessionForm } from "@/components/improve-ai/improve-ai-session-form";
 import { getImproveAiSessionView } from "@/lib/improve-ai/store";
@@ -21,11 +22,18 @@ export default async function ImproveAiSessionPage({ params }: PageProps) {
   const session = await getImproveAiSessionView(id, user.id);
   if (!session) notFound();
 
-  const workspaceUsers = await listWorkspaceUsers();
+  const [workspaceUsers, passwordStatus] = await Promise.all([
+    listWorkspaceUsers(),
+    getPasswordStatusForUser(user.id),
+  ]);
 
   if (session.status === "evaluating") {
     return (
-      <AppShell user={user} initialUsers={workspaceUsers}>
+      <AppShell
+        user={user}
+        initialUsers={workspaceUsers}
+        passwordStatus={passwordStatus}
+      >
         <div className="flex flex-col items-center justify-center h-full gap-4 p-8 text-center">
           <Loader2 className="size-10 animate-spin text-[var(--brand-500)]" />
           <div>
@@ -45,7 +53,11 @@ export default async function ImproveAiSessionPage({ params }: PageProps) {
 
   if (!session.sections.length) {
     return (
-      <AppShell user={user} initialUsers={workspaceUsers}>
+      <AppShell
+        user={user}
+        initialUsers={workspaceUsers}
+        passwordStatus={passwordStatus}
+      >
         <div className="flex flex-col items-center justify-center h-full gap-4 p-8 text-center">
           <p className="text-sm text-[var(--muted-foreground)]">
             No evaluable section content was found for this report.
@@ -59,7 +71,11 @@ export default async function ImproveAiSessionPage({ params }: PageProps) {
   }
 
   return (
-    <AppShell user={user} initialUsers={workspaceUsers}>
+    <AppShell
+      user={user}
+      initialUsers={workspaceUsers}
+      passwordStatus={passwordStatus}
+    >
       <ImproveAiSessionForm
         session={session}
         userName={user.name}

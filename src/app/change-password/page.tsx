@@ -2,15 +2,21 @@ import Image from "next/image";
 import { redirect } from "next/navigation";
 import { auth } from "@/auth";
 import { ChangeSharedPasswordForm } from "@/components/auth/change-shared-password-form";
+import {
+  getPasswordPolicy,
+  passwordPolicyRequirementText,
+} from "@/lib/auth/password-policy";
 
 export default async function ChangePasswordPage() {
   const session = await auth();
   if (!session?.user?.workspaceUserId) {
     redirect("/login");
   }
-  if (!session.user.mustChangePassword) {
+  if (!session.user.mustChangePassword && !session.user.passwordExpired) {
     redirect("/");
   }
+  const isExpired = !!session.user.passwordExpired;
+  const policy = await getPasswordPolicy();
 
   return (
     <div className="min-h-screen flex items-center justify-center p-8">
@@ -30,14 +36,19 @@ export default async function ChangePasswordPage() {
         </div>
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">
-            Choose your password
+            {isExpired ? "Change your password" : "Choose your password"}
           </h1>
           <p className="text-sm text-[var(--muted-foreground)] mt-2">
-            Your administrator assigned a temporary password. Pick a new one to
-            continue — it must be different from the temporary password.
+            {isExpired
+              ? "Your password has expired. Pick a new one to continue."
+              : "Your administrator assigned a temporary password. Pick a new one to continue."}
           </p>
         </div>
-        <ChangeSharedPasswordForm email={session.user.email ?? ""} />
+        <ChangeSharedPasswordForm
+          email={session.user.email ?? ""}
+          minLength={policy.minLength}
+          passwordRequirements={passwordPolicyRequirementText(policy)}
+        />
       </div>
     </div>
   );

@@ -8,7 +8,15 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-export function ChangeSharedPasswordForm({ email }: { email: string }) {
+export function ChangeSharedPasswordForm({
+  email,
+  minLength,
+  passwordRequirements,
+}: {
+  email: string;
+  minLength: number;
+  passwordRequirements: string;
+}) {
   const router = useRouter();
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
@@ -22,8 +30,8 @@ export function ChangeSharedPasswordForm({ email }: { email: string }) {
       setError("Passwords do not match.");
       return;
     }
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters.");
+    if (password.length < minLength) {
+      setError(`Password must be at least ${minLength} characters.`);
       return;
     }
     setError(null);
@@ -77,10 +85,13 @@ export function ChangeSharedPasswordForm({ email }: { email: string }) {
             setPassword(e.target.value);
             if (error) setError(null);
           }}
-          placeholder="At least 8 characters"
-          autoComplete="new-password"
+          placeholder={`At least ${minLength} characters`}
+          autoComplete="off"
           autoFocus
         />
+        <p className="text-xs text-[var(--muted-foreground)]">
+          {passwordRequirements}
+        </p>
       </div>
       <div className="space-y-2">
         <Label htmlFor="confirm-password">Confirm password</Label>
@@ -93,7 +104,7 @@ export function ChangeSharedPasswordForm({ email }: { email: string }) {
             if (error) setError(null);
           }}
           placeholder="Repeat your password"
-          autoComplete="new-password"
+          autoComplete="off"
           onKeyDown={(e) => {
             if (e.key === "Enter") submit();
           }}

@@ -12,10 +12,11 @@ export async function POST(req: NextRequest) {
 
   const wsUser = await db.query.workspaceUsers.findFirst({
     where: eq(workspaceUsers.email, email),
-    columns: { id: true, passwordHash: true },
+    columns: { id: true, passwordHash: true, lockedAt: true },
   });
   return NextResponse.json({
     allowed: !!wsUser,
     hasPassword: !!wsUser?.passwordHash,
+    locked: !!wsUser?.lockedAt,
   });
 }
