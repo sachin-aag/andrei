@@ -107,24 +107,29 @@ async function handleSuggestionsPost(
     sectionContent
   );
 
-  if (gap.length === 0) {
-    return NextResponse.json(
-      { blocked: true, reason: "no_gap_criteria" },
-      { status: 409 }
-    );
-  }
-
   const hash = sectionContentHash(section, sectionContent);
   const suggestionContentHash = hash;
   const stale = gap.some((g) => g.evaluatedContentHash && g.evaluatedContentHash !== hash);
-  if (stale) {
-    return NextResponse.json(
-      { blocked: true, reason: "stale_evaluation" },
-      { status: 409 }
-    );
-  }
+  const blockedReason =
+    gap.length === 0 ? "no_gap_criteria" : stale ? "stale_evaluation" : null;
 
   const runSuggestions = async (): Promise<Response> => {
+    if (blockedReason) {
+      setRouteObservationIO({
+        output: {
+          reportId,
+          section,
+          blocked: true,
+          reason: blockedReason,
+          gapCriterionCount: gap.length,
+        },
+      });
+      return NextResponse.json(
+        { blocked: true, reason: blockedReason },
+        { status: 409 }
+      );
+    }
+
   const allSectionRows = await db
     .select()
     .from(reportSections)
