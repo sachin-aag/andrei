@@ -25,6 +25,7 @@ type SeedUser = {
 
 const SEED_USERS: SeedUser[] = [
   { email: "e2e.password@mjbiopharm.com", password: "E2eTestPass123!", role: "engineer" },
+  { email: "e2e.lockout@mjbiopharm.com", password: "E2eLockoutPass123!", role: "engineer" },
   { email: "e2e.nopassword@mjbiopharm.com", role: "engineer" },
   {
     email: "e2e.mustchange@mjbiopharm.com",
@@ -36,9 +37,21 @@ const SEED_USERS: SeedUser[] = [
   { email: "test.admin@mjbiopharm.com", role: "admin" },
 ];
 
+function sanitizeScope(value: unknown): string {
+  return typeof value === "string" ? value.toLowerCase().replace(/[^a-z0-9-]+/g, "-") : "";
+}
+
+function scopedEmail(email: string, scope: string): string {
+  if (!scope) return email;
+  const [local, domain] = email.split("@");
+  if (!local || !domain) return email;
+  return `${local}+${scope}@${domain}`;
+}
+
 async function upsertSeedUser(user: SeedUser) {
   const email = user.email.toLowerCase();
   const passwordHash = user.password ? await hashPassword(user.password) : null;
+  const passwordChangedAt = user.password ? new Date() : null;
   const mustChangePassword = user.mustChangePassword ?? false;
   const title = defaultTitleForRole(user.role);
 
@@ -54,6 +67,10 @@ async function upsertSeedUser(user: SeedUser) {
         title,
         passwordHash,
         mustChangePassword,
+        passwordChangedAt,
+        failedLoginAttempts: 0,
+        lockedAt: null,
+        passwordExpiryWarningDismissedUntil: null,
       })
       .where(eq(workspaceUsers.id, existing.id));
     return existing.id;
@@ -68,6 +85,10 @@ async function upsertSeedUser(user: SeedUser) {
     title,
     passwordHash,
     mustChangePassword,
+    passwordChangedAt,
+    failedLoginAttempts: 0,
+    lockedAt: null,
+    passwordExpiryWarningDismissedUntil: null,
   });
   return id;
 }
@@ -75,16 +96,19 @@ async function upsertSeedUser(user: SeedUser) {
 /**
  * Seeds workspace users for password-login E2E tests. Gated like /api/test/login.
  */
-export async function POST() {
+export async function POST(req: Request) {
   if (!isTestLoginEnabled()) {
     return NextResponse.json({ error: "Not available" }, { status: 404 });
   }
 
+  const rawBody = await req.json().catch(() => ({}));
+  const scope = sanitizeScope((rawBody as { scope?: unknown }).scope);
   const seeded: Array<{ email: string; id: string }> = [];
   for (const user of SEED_USERS) {
-    const id = await upsertSeedUser(user);
-    seeded.push({ email: user.email, id });
+    const scopedUser = { ...user, email: scopedEmail(user.email, scope) };
+    const id = await upsertSeedUser(scopedUser);
+    seeded.push({ email: scopedUser.email, id });
   }
 
-  return NextResponse.json({ ok: true, users: seeded });
+  return NextResponse.json({ ok: true, scope, users: seeded });
 }

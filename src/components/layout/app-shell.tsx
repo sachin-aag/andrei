@@ -2,8 +2,10 @@
 
 import { useId, useState } from "react";
 import type { WorkspaceUser } from "@/lib/auth/workspace-user";
+import type { PasswordStatus } from "@/lib/auth/password-status";
 import { UserDirectoryProvider } from "@/providers/user-directory-provider";
 import {
+  AlertTriangle,
   LogOut,
   FileText,
   BookOpen,
@@ -11,6 +13,7 @@ import {
   Users,
   PanelLeftClose,
   PanelLeftOpen,
+  UserRound,
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -22,14 +25,19 @@ import { roleLabel } from "@/lib/auth/roles";
 export function AppShell({
   user,
   initialUsers,
+  passwordStatus,
   children,
 }: {
   user: WorkspaceUser;
   initialUsers: WorkspaceUser[];
+  passwordStatus?: PasswordStatus;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(true);
+  const [showPasswordWarning, setShowPasswordWarning] = useState(
+    !!passwordStatus?.warning
+  );
   const mainId = useId();
 
   const handleLogout = () => {
@@ -43,7 +51,15 @@ export function AppShell({
           { href: "/", label: "Reports", icon: FileText },
           { href: "/improve-ai", label: "Improve AI", icon: Sparkles },
         ]),
+    { href: "/profile", label: "Profile", icon: UserRound },
   ];
+
+  const dismissPasswordWarning = async () => {
+    setShowPasswordWarning(false);
+    await fetch("/api/auth-pw/dismiss-expiry-warning", { method: "POST" }).catch(
+      () => undefined
+    );
+  };
 
   return (
     <UserDirectoryProvider initialUsers={initialUsers}>
@@ -199,6 +215,30 @@ export function AppShell({
       </aside>
 
       <main id={mainId} className="flex-1 overflow-hidden flex flex-col">
+        {showPasswordWarning && passwordStatus ? (
+          <div className="border-b border-amber-300/40 bg-amber-500/10 px-6 py-3 text-sm text-amber-100">
+            <div className="flex flex-wrap items-center gap-3">
+              <AlertTriangle className="size-4 shrink-0" aria-hidden="true" />
+              <p className="flex-1">
+                Your password expires in {passwordStatus.daysRemaining}{" "}
+                {passwordStatus.daysRemaining === 1 ? "day" : "days"}.
+              </p>
+              <Link
+                href="/profile"
+                className="font-medium text-amber-50 underline-offset-4 hover:underline"
+              >
+                Change password
+              </Link>
+              <button
+                type="button"
+                onClick={dismissPasswordWarning}
+                className="text-amber-100/80 underline-offset-4 hover:text-amber-50 hover:underline"
+              >
+                Ignore
+              </button>
+            </div>
+          </div>
+        ) : null}
         {children}
       </main>
     </div>

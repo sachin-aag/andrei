@@ -5,6 +5,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { workspaceUsers } from "@/db/schema";
+import { hashPassword } from "@/lib/auth/password";
 import { isTestLoginEnabled } from "@/lib/test/ai-bypass";
 import { USER_ROLES, type UserRole } from "@/lib/auth/roles";
 
@@ -12,6 +13,8 @@ const bodySchema = z.object({
   email: z.string().email().optional(),
   role: z.enum(USER_ROLES).optional(),
   mustChangePassword: z.boolean().optional(),
+  passwordExpired: z.boolean().optional(),
+  passwordWarning: z.boolean().optional(),
 });
 
 function displayNameFromEmail(email: string): string {
@@ -42,7 +45,9 @@ function titleForTestRole(role: UserRole): string {
 async function ensureTestWorkspaceUser(
   email: string,
   role: UserRole,
-  mustChangePassword: boolean
+  mustChangePassword: boolean,
+  passwordExpired: boolean,
+  passwordWarning: boolean
 ) {
   const existing = await db.query.workspaceUsers.findFirst({
     where: eq(workspaceUsers.email, email),
@@ -52,15 +57,29 @@ async function ensureTestWorkspaceUser(
     const needsUpdate =
       existing.role !== role ||
       existing.mustChangePassword !== mustChangePassword ||
+      passwordExpired ||
+      passwordWarning ||
       existing.title !== titleForTestRole(role);
 
     if (needsUpdate) {
+      const passwordFields = passwordExpired || passwordWarning
+        ? {
+            passwordHash: await hashPassword(
+              passwordExpired ? "E2eExpiredPass123!" : "E2eWarningPass123!"
+            ),
+            passwordChangedAt: new Date(
+              Date.now() - (passwordExpired ? 91 : 80) * 24 * 60 * 60 * 1000
+            ),
+            passwordExpiryWarningDismissedUntil: null,
+          }
+        : {};
       const [updated] = await db
         .update(workspaceUsers)
         .set({
           role,
           title: titleForTestRole(role),
           mustChangePassword,
+          ...passwordFields,
         })
         .where(eq(workspaceUsers.id, existing.id))
         .returning();
@@ -78,6 +97,17 @@ async function ensureTestWorkspaceUser(
       role,
       title: titleForTestRole(role),
       mustChangePassword,
+      passwordHash: passwordExpired || passwordWarning
+        ? await hashPassword(
+            passwordExpired ? "E2eExpiredPass123!" : "E2eWarningPass123!"
+          )
+        : null,
+      passwordChangedAt: passwordExpired || passwordWarning
+        ? new Date(
+            Date.now() - (passwordExpired ? 91 : 80) * 24 * 60 * 60 * 1000
+          )
+        : null,
+      passwordExpiryWarningDismissedUntil: null,
     })
     .onConflictDoNothing({ target: workspaceUsers.email })
     .returning();
@@ -115,8 +145,18 @@ export async function POST(req: Request) {
   const role = parsed.success ? (parsed.data.role ?? "engineer") : "engineer";
   const mustChangePassword =
     parsed.success ? (parsed.data.mustChangePassword ?? false) : false;
+  const passwordExpired =
+    parsed.success ? (parsed.data.passwordExpired ?? false) : false;
+  const passwordWarning =
+    parsed.success ? (parsed.data.passwordWarning ?? false) : false;
 
-  const wsUser = await ensureTestWorkspaceUser(email, role, mustChangePassword);
+  const wsUser = await ensureTestWorkspaceUser(
+    email,
+    role,
+    mustChangePassword,
+    passwordExpired,
+    passwordWarning
+  );
   if (!wsUser) {
     return NextResponse.json(
       { error: `No workspace user with email ${email}` },
@@ -132,6 +172,7 @@ export async function POST(req: Request) {
       name: wsUser.name,
       workspaceUserId: wsUser.id,
       mustChangePassword: wsUser.mustChangePassword,
+      passwordExpired,
     },
     secret,
     salt: cookieName,
@@ -143,6 +184,7 @@ export async function POST(req: Request) {
     userId: wsUser.id,
     email: wsUser.email,
     role: wsUser.role,
+    sessionToken: jwt,
   });
   response.cookies.set(cookieName, jwt, {
     httpOnly: true,

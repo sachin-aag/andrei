@@ -5,6 +5,7 @@ declare module "next-auth" {
     user: {
       workspaceUserId: string;
       mustChangePassword?: boolean;
+      passwordExpired?: boolean;
     } & DefaultSession["user"];
   }
 }
@@ -13,5 +14,6 @@ declare module "next-auth/jwt" {
   interface JWT {
     workspaceUserId?: string;
     mustChangePassword?: boolean;
+    passwordExpired?: boolean;
   }
 }

@@ -204,39 +204,45 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: DUPLICATE_DEVIATION_NO_ERROR }, { status: 409 });
     }
 
-    const [report] = await db
-      .insert(reports)
-      .values({
-        deviationNo: finalDeviationNo,
-        authorId: user.id,
-        assignedManagerId,
-        ...(importedContent
-          ? {
-              toolsUsed: importedContent.toolsUsed,
-              ...(importedDate ? { date: importedDate } : {}),
-              ...(importedOtherTools !== undefined ? { otherTools: importedOtherTools } : {}),
-            }
-          : {}),
-      })
-      .returning();
-
-    if (!report) {
-      throw new Error("insert(reports).returning() returned no row");
-    }
-    createdReportId = report.id;
-
     const blankSections = seedBlankReportSections();
-    await db.insert(reportSections).values(
-      REPORT_SECTION_ROW_ORDER.map((section) => ({
-        reportId: report.id,
-        section,
-        content: (
-          importedContent !== null
-            ? importedContent.sections[section]
-            : blankSections[section]
-        ) as unknown as Record<string, unknown>,
-      }))
-    );
+    const report = await db.transaction(async (tx) => {
+      const [created] = await tx
+        .insert(reports)
+        .values({
+          deviationNo: finalDeviationNo,
+          authorId: user.id,
+          assignedManagerId,
+          ...(importedContent
+            ? {
+                toolsUsed: importedContent.toolsUsed,
+                ...(importedDate ? { date: importedDate } : {}),
+                ...(importedOtherTools !== undefined
+                  ? { otherTools: importedOtherTools }
+                  : {}),
+              }
+            : {}),
+        })
+        .returning();
+
+      if (!created) {
+        throw new Error("insert(reports).returning() returned no row");
+      }
+      createdReportId = created.id;
+
+      await tx.insert(reportSections).values(
+        REPORT_SECTION_ROW_ORDER.map((section) => ({
+          reportId: created.id,
+          section,
+          content: (
+            importedContent !== null
+              ? importedContent.sections[section]
+              : blankSections[section]
+          ) as unknown as Record<string, unknown>,
+        }))
+      );
+
+      return created;
+    });
     if (sourceUpload) {
       try {
         await persistImportedComments(report.id, importedContent);

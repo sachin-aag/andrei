@@ -3,13 +3,15 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { DUPLICATE_DEVIATION_NO_ERROR } from "@/lib/reports/deviation-no";
 import { GET, POST } from "@/app/api/reports/route";
 
-vi.mock("@/db", () => ({
-  db: {
+vi.mock("@/db", () => {
+  const db = {
     select: vi.fn(),
     insert: vi.fn(),
     delete: vi.fn(),
-  },
-}));
+    transaction: vi.fn((callback) => callback(db)),
+  };
+  return { db };
+});
 
 vi.mock("@/lib/auth/session", () => ({
   getCurrentUser: vi.fn(),

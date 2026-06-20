@@ -32,13 +32,13 @@ export function UnlockForm({ nextHref }: { nextHref: string }) {
   };
 
   return (
-    <form onSubmit={submit} className="space-y-4">
+    <form onSubmit={submit} className="space-y-4" autoComplete="off">
       <div className="grid gap-2">
         <Label htmlFor="site-password">Password</Label>
         <Input
           id="site-password"
           type="password"
-          autoComplete="current-password"
+          autoComplete="off"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           className="h-12"

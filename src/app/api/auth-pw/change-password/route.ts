@@ -3,10 +3,9 @@ import { eq } from "drizzle-orm";
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { workspaceUsers } from "@/db/schema";
-import { hashPassword } from "@/lib/auth/password";
+import { hashPassword, verifyPassword } from "@/lib/auth/password";
 import { isPasswordRecentlyUsed, recordPasswordHistory } from "@/lib/auth/password-history";
 import {
-  computePasswordExpiryState,
   getPasswordPolicy,
   validatePasswordPolicy,
 } from "@/lib/auth/password-policy";
@@ -18,12 +17,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { password, confirmPassword } = (await req.json()) as {
+  const { currentPassword, password, confirmPassword } = (await req.json()) as {
+    currentPassword?: string;
     password?: string;
     confirmPassword?: string;
   };
 
-  if (!password || !confirmPassword) {
+  if (!currentPassword || !password || !confirmPassword) {
     return NextResponse.json(
       { error: "Missing required fields." },
       { status: 400 }
@@ -48,24 +48,23 @@ export async function POST(req: Request) {
 
   const wsUser = await db.query.workspaceUsers.findFirst({
     where: eq(workspaceUsers.id, workspaceUserId),
-    columns: {
-      id: true,
-      passwordHash: true,
-      mustChangePassword: true,
-      passwordChangedAt: true,
-      passwordExpiryWarningDismissedUntil: true,
-    },
+    columns: { id: true, passwordHash: true },
   });
-
   if (!wsUser?.passwordHash) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json(
+      { error: "This account does not have a password to change." },
+      { status: 400 }
+    );
   }
 
-  const expiryState = computePasswordExpiryState(wsUser, policy);
-  if (!wsUser.mustChangePassword && !expiryState.expired) {
+  const currentPasswordValid = await verifyPassword(
+    currentPassword,
+    wsUser.passwordHash
+  );
+  if (!currentPasswordValid) {
     return NextResponse.json(
-      { error: "Password change is not required for this account." },
-      { status: 403 }
+      { error: "Current password is incorrect." },
+      { status: 400 }
     );
   }
 
@@ -77,10 +76,7 @@ export async function POST(req: Request) {
   });
   if (reused) {
     return NextResponse.json(
-      {
-        error:
-          "Choose a password you have not used recently.",
-      },
+      { error: "Choose a password you have not used recently." },
       { status: 400 }
     );
   }
