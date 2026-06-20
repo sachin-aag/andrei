@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   PASSWORD_MIN_LENGTH,
+  getPasswordStrengthChecks,
   passwordStrengthRequirementText,
   validatePasswordStrength,
 } from "./password-strength";
@@ -26,5 +27,18 @@ describe("password strength", () => {
       `at least ${PASSWORD_MIN_LENGTH} characters`
     );
     expect(passwordStrengthRequirementText()).toContain("one special character");
+  });
+
+  it("returns per-rule checklist state", () => {
+    const checks = getPasswordStrengthChecks("abc");
+
+    expect(checks.find((check) => check.id === "length")?.met).toBe(false);
+    expect(checks.find((check) => check.id === "number")?.met).toBe(false);
+    expect(checks.find((check) => check.id === "special")?.met).toBe(false);
+    expect(checks.find((check) => check.id === "letter")?.met).toBe(true);
+
+    expect(getPasswordStrengthChecks("abc12345!").every((check) => check.met)).toBe(
+      true
+    );
   });
 });
