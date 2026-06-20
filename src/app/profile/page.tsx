@@ -6,6 +6,7 @@ import {
   getPasswordPolicy,
   passwordPolicyRequirementText,
 } from "@/lib/auth/password-policy";
+import { roleLabel } from "@/lib/auth/roles";
 import { AppShell } from "@/components/layout/app-shell";
 import { ChangeOwnPasswordForm } from "@/components/auth/change-own-password-form";
 
@@ -49,9 +50,7 @@ export default async function ProfilePage() {
               </div>
               <div>
                 <dt className="text-[var(--muted-foreground)]">Role</dt>
-                <dd className="font-medium">
-                  {user.role === "engineer" ? "Engineer" : "Manager"}
-                </dd>
+                <dd className="font-medium">{roleLabel(user.role)}</dd>
               </div>
               {passwordStatus.expiresAt ? (
                 <div>
