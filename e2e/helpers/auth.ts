@@ -61,6 +61,7 @@ export async function fetchTestManagerUser(page: Page): Promise<TestLoginResult>
 
 export async function loginAsEngineerWithResponse(page: Page): Promise<TestLoginResult> {
   const result = await testLogin(page);
+  expect(result.role).toBe("engineer");
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await expect(
     page.getByRole("heading", { name: /my reports/i })
@@ -74,6 +75,7 @@ export async function loginAsEngineer(page: Page): Promise<void> {
 
 export async function loginAsManagerWithResponse(page: Page): Promise<TestLoginResult> {
   const result = await fetchTestManagerUser(page);
+  expect(result.role).toBe("manager");
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await expect(
     page.getByRole("heading", { name: /reports queue/i })
@@ -90,6 +92,7 @@ export async function loginAsAdminWithResponse(page: Page): Promise<TestLoginRes
     email: "test.admin@mjbiopharm.com",
     role: "admin",
   });
+  expect(result.role).toBe("admin");
   await page.goto("/admin/users", { waitUntil: "domcontentloaded" });
   await expect(page.getByRole("heading", { name: /users/i })).toBeVisible({
     timeout: 30_000,
