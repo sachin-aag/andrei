@@ -19,7 +19,16 @@ vi.mock("@/lib/auth/password", () => ({
   hashPassword: vi.fn(),
 }));
 
+vi.mock("@/lib/auth/password-policy", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/auth/password-policy")>();
+  return {
+    ...actual,
+    getPasswordPolicy: vi.fn(),
+  };
+});
+
 import { db } from "@/db";
+import { getPasswordPolicy } from "@/lib/auth/password-policy";
 import { getCurrentUser } from "@/lib/auth/session";
 import { hashPassword } from "@/lib/auth/password";
 import { GET, POST } from "./route";
@@ -38,6 +47,17 @@ const engineer = {
   email: "engineer@mjbiopharm.com",
   role: "engineer" as const,
   title: "Engineer",
+};
+
+const policy = {
+  minLength: 6,
+  requireLetter: true,
+  requireNumber: true,
+  requireSpecial: true,
+  expiryDays: 90,
+  warningDays: 14,
+  failedLoginAttemptLimit: 3,
+  passwordHistoryLimit: 3,
 };
 
 function jsonRequest(body: unknown) {
@@ -59,6 +79,7 @@ describe("/api/admin/users", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(hashPassword).mockResolvedValue("hashed.password");
+    vi.mocked(getPasswordPolicy).mockResolvedValue(policy);
   });
 
   it("rejects unauthenticated list requests", async () => {
@@ -88,6 +109,8 @@ describe("/api/admin/users", () => {
         title: "Manager",
         passwordHash: "hash",
         mustChangePassword: true,
+        passwordChangedAt: null,
+        passwordExpiryWarningDismissedUntil: null,
         createdAt: new Date("2026-01-01T00:00:00.000Z"),
       },
     ] as never);
@@ -105,6 +128,8 @@ describe("/api/admin/users", () => {
           title: "Manager",
           hasPassword: true,
           mustChangePassword: true,
+          passwordDaysRemaining: null,
+          passwordExpired: false,
         },
       ],
     });
@@ -121,6 +146,8 @@ describe("/api/admin/users", () => {
         title: "Admin",
         passwordHash: "hashed.password",
         mustChangePassword: true,
+        passwordChangedAt: null,
+        passwordExpiryWarningDismissedUntil: null,
         createdAt: new Date("2026-01-01T00:00:00.000Z"),
       },
     ]);
@@ -142,6 +169,8 @@ describe("/api/admin/users", () => {
         role: "admin",
         hasPassword: true,
         mustChangePassword: true,
+        passwordDaysRemaining: null,
+        passwordExpired: false,
       },
     });
   });

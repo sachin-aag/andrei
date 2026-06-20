@@ -10,7 +10,16 @@ vi.mock("@/lib/auth/session", () => ({
   getCurrentUser: vi.fn(),
 }));
 
+vi.mock("@/lib/auth/password-policy", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/auth/password-policy")>();
+  return {
+    ...actual,
+    getPasswordPolicy: vi.fn(),
+  };
+});
+
 import { db } from "@/db";
+import { getPasswordPolicy } from "@/lib/auth/password-policy";
 import { getCurrentUser } from "@/lib/auth/session";
 import { PATCH } from "./route";
 
@@ -28,6 +37,17 @@ const manager = {
   email: "manager@mjbiopharm.com",
   role: "manager" as const,
   title: "Manager",
+};
+
+const policy = {
+  minLength: 6,
+  requireLetter: true,
+  requireNumber: true,
+  requireSpecial: true,
+  expiryDays: 90,
+  warningDays: 14,
+  failedLoginAttemptLimit: 3,
+  passwordHistoryLimit: 3,
 };
 
 function jsonRequest(body: unknown) {
@@ -49,6 +69,7 @@ function mockUpdateReturning(rows: unknown[]) {
 describe("PATCH /api/admin/users/[userId]", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(getPasswordPolicy).mockResolvedValue(policy);
   });
 
   it("rejects unauthenticated requests", async () => {
