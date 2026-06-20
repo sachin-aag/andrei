@@ -8,6 +8,10 @@ import { allocateListNumId } from "@/lib/export/docx-numbering";
 import { resolveOmmlFromMathAttrs } from "@/lib/math/omml-mathml";
 import { stripWordBookmarkAnchors } from "@/lib/import/sanitize-import-html";
 import { linesToDoc } from "@/lib/tiptap/rich-text";
+import {
+  suggestionDeleteMarkName,
+  suggestionInsertMarkName,
+} from "@/lib/tiptap/suggestion-marks";
 import { colorFromTextMarks, cssColorToWordVal } from "@/lib/tiptap/text-color";
 
 export type NarrativeDocxXmlResult = {
@@ -84,6 +88,51 @@ export function plainTextToDocxXml(
 
 const DEFAULT_RUN_FONT = "Times New Roman";
 const DEFAULT_RUN_SIZE_HALF_POINTS = "24";
+
+type SuggestionRevision = {
+  id: string;
+  author: string;
+  date: string;
+  type: typeof suggestionInsertMarkName | typeof suggestionDeleteMarkName;
+};
+
+function revisionIdFromMarkId(markId: unknown): string {
+  const source = typeof markId === "string" && markId ? markId : "0";
+  if (/^\d+$/.test(source)) return source;
+  let hash = 0;
+  for (let i = 0; i < source.length; i++) {
+    hash = (hash * 31 + source.charCodeAt(i)) >>> 0;
+  }
+  return String(hash || 1);
+}
+
+function suggestionRevisionFromMarks(
+  marks: JSONContent["marks"]
+): SuggestionRevision | null {
+  const mark =
+    marks?.find((m) => m.type === suggestionDeleteMarkName) ??
+    marks?.find((m) => m.type === suggestionInsertMarkName);
+  if (!mark) return null;
+  return {
+    id: revisionIdFromMarkId(mark.attrs?.id),
+    author:
+      typeof mark.attrs?.authorId === "string" && mark.attrs.authorId.trim()
+        ? mark.attrs.authorId.trim()
+        : "Andrei",
+    date:
+      typeof mark.attrs?.createdAt === "string" && mark.attrs.createdAt.trim()
+        ? mark.attrs.createdAt.trim()
+        : new Date(0).toISOString(),
+    type: mark.type as SuggestionRevision["type"],
+  };
+}
+
+function revisionWrapper(revision: SuggestionRevision, inner: string): string {
+  const tag = revision.type === suggestionDeleteMarkName ? "w:del" : "w:ins";
+  return `<${tag} w:id="${escapeXml(revision.id)}" w:author="${escapeXml(
+    revision.author
+  )}" w:date="${escapeXml(revision.date)}">${inner}</${tag}>`;
+}
 
 /**
  * Max table grid width in dxa (twips), matching investigation template body:
@@ -180,7 +229,7 @@ function inlineNodesToRuns(
       const isUnderline = marks.some((m) => m.type === "underline");
       const isSubscript = marks.some((m) => m.type === "subscript");
       const isSuperscript = marks.some((m) => m.type === "superscript");
-      const color = colorFromTextMarks(marks);
+      const revision = suggestionRevisionFromMarks(marks);
 
       const rPr = runProperties({
         bold: isBold,
@@ -188,20 +237,29 @@ function inlineNodesToRuns(
         underline: isUnderline,
         subscript: isSubscript,
         superscript: isSuperscript,
-        color,
+        color: colorFromTextMarks(marks),
       });
 
       const lines = text.split("\n");
+      const runParts: string[] = [];
       for (let i = 0; i < lines.length; i++) {
         if (i > 0) {
-          parts.push(`<w:r>${rPr}<w:br/></w:r>`);
+          runParts.push(`<w:r>${rPr}<w:br/></w:r>`);
         }
         if (lines[i]) {
-          parts.push(
-            `<w:r>${rPr}<w:t xml:space="preserve">${escapeXml(lines[i]!)}</w:t></w:r>`
+          const textTag =
+            revision?.type === suggestionDeleteMarkName ? "w:delText" : "w:t";
+          runParts.push(
+            `<w:r>${rPr}<${textTag} xml:space="preserve">${escapeXml(
+              lines[i]!
+            )}</${textTag}></w:r>`
           );
         }
       }
+      const runXml = runParts.join("");
+      parts.push(
+        revision && runXml ? revisionWrapper(revision, runXml) : runXml
+      );
     } else if (child.type === "hardBreak") {
       parts.push(`<w:r>${runProperties()}<w:br/></w:r>`);
     } else if (child.type === "imageInline" && ctx) {

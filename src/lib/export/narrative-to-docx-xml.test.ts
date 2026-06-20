@@ -3,13 +3,21 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import type { JSONContent } from "@tiptap/core";
 import PizZip from "pizzip";
+import { reports } from "@/db/schema";
 import { createDocxExportContext } from "@/lib/export/docx-export-context";
+import { generateReportDocx } from "@/lib/export/generate-docx";
 import { loadListNumberingBasesFromZip } from "@/lib/export/docx-numbering";
 import {
   narrativeToDocxXml,
   narrativeToDocxXmlWithContext,
   plainTextToDocxXml,
 } from "@/lib/export/narrative-to-docx-xml";
+import {
+  suggestionDeleteMarkName,
+  suggestionInsertMarkName,
+} from "@/lib/tiptap/suggestion-marks";
+import type { ReportSectionRecord } from "@/types/report";
+import { EMPTY_CONTENT, REPORT_SECTION_ROW_ORDER } from "@/types/sections";
 
 const TEMPLATE_PATH = path.join(
   process.cwd(),
@@ -137,6 +145,205 @@ describe("narrativeToDocxXml tables", () => {
 
     expect(xml).toContain('<w:color w:val="FF0000"/>');
     expect(xml).toContain("Red text");
+  });
+
+  it("exports suggestion insert marks as native Word insert revisions", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "Added text",
+              marks: [
+                {
+                  type: suggestionInsertMarkName,
+                  attrs: {
+                    id: "101",
+                    authorId: "user-1",
+                    createdAt: "2026-01-01T00:00:00.000Z",
+                    status: "pending",
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const xml = narrativeToDocxXml(doc);
+
+    expect(xml).toContain(
+      '<w:ins w:id="101" w:author="user-1" w:date="2026-01-01T00:00:00.000Z">'
+    );
+    expect(xml).toContain('<w:t xml:space="preserve">Added text</w:t>');
+    expect(xml).toContain("</w:ins>");
+    expect(xml).not.toContain("<w:highlight");
+    expect(xml).not.toContain("<w:strike/>");
+  });
+
+  it("exports suggestion delete marks as native Word delete revisions", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "Removed text",
+              marks: [
+                {
+                  type: suggestionDeleteMarkName,
+                  attrs: {
+                    id: "102",
+                    authorId: "user-2",
+                    createdAt: "2026-01-02T00:00:00.000Z",
+                    status: "pending",
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const xml = narrativeToDocxXml(doc);
+
+    expect(xml).toContain(
+      '<w:del w:id="102" w:author="user-2" w:date="2026-01-02T00:00:00.000Z">'
+    );
+    expect(xml).toContain('<w:delText xml:space="preserve">Removed text</w:delText>');
+    expect(xml).toContain("</w:del>");
+    expect(xml).not.toContain('<w:t xml:space="preserve">Removed text</w:t>');
+    expect(xml).not.toContain("<w:highlight");
+    expect(xml).not.toContain("<w:strike/>");
+  });
+
+  it("preserves direct formatting inside native Word delete revisions", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "Deleted red",
+              marks: [
+                {
+                  type: suggestionDeleteMarkName,
+                  attrs: {
+                    id: "103",
+                    authorId: "user-3",
+                    createdAt: "2026-01-03T00:00:00.000Z",
+                    status: "pending",
+                  },
+                },
+                { type: "textStyle", attrs: { color: "#FF0000" } },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const xml = narrativeToDocxXml(doc);
+
+    expect(xml).toContain(
+      '<w:del w:id="103" w:author="user-3" w:date="2026-01-03T00:00:00.000Z">'
+    );
+    expect(xml).toContain('<w:color w:val="FF0000"/>');
+    expect(xml).toContain('<w:delText xml:space="preserve">Deleted red</w:delText>');
+    expect(xml).not.toContain("<w:highlight");
+  });
+
+  it("keeps native Word revisions through full report DOCX generation", async () => {
+    const reportId = "test-report-native-revisions";
+    const iso = new Date("2026-01-01T00:00:00.000Z");
+    const narrative: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "Original ",
+            },
+            {
+              type: "text",
+              text: "added",
+              marks: [
+                {
+                  type: suggestionInsertMarkName,
+                  attrs: {
+                    id: "201",
+                    authorId: "engineer-1",
+                    createdAt: "2026-01-01T00:00:00.000Z",
+                    status: "pending",
+                  },
+                },
+              ],
+            },
+            {
+              type: "text",
+              text: " removed",
+              marks: [
+                {
+                  type: suggestionDeleteMarkName,
+                  attrs: {
+                    id: "202",
+                    authorId: "manager-1",
+                    createdAt: "2026-01-02T00:00:00.000Z",
+                    status: "pending",
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+    const sections: ReportSectionRecord[] = REPORT_SECTION_ROW_ORDER.map((section, i) => ({
+      id: `sec-${section}-${i}`,
+      reportId,
+      section,
+      content:
+        section === "define"
+          ? { ...EMPTY_CONTENT.define, narrative }
+          : EMPTY_CONTENT[section],
+      updatedAt: iso.toISOString(),
+    }));
+    const report: typeof reports.$inferSelect = {
+      id: reportId,
+      deviationNo: "DEV/TEST/REVISIONS",
+      date: iso,
+      toolsUsed: { sixM: false, fiveWhy: false, brainstorming: false },
+      otherTools: "",
+      status: "draft",
+      authorId: "1",
+      assignedManagerId: null,
+      createdAt: iso,
+      updatedAt: iso,
+    };
+
+    const buf = await generateReportDocx({ report, sections });
+    const xml = new PizZip(buf).file("word/document.xml")?.asText() ?? "";
+
+    expect(xml).toContain(
+      '<w:ins w:id="201" w:author="engineer-1" w:date="2026-01-01T00:00:00.000Z">'
+    );
+    expect(xml).toContain('<w:t xml:space="preserve">added</w:t>');
+    expect(xml).toContain(
+      '<w:del w:id="202" w:author="manager-1" w:date="2026-01-02T00:00:00.000Z">'
+    );
+    expect(xml).toContain('<w:delText xml:space="preserve"> removed</w:delText>');
+    expect(xml).not.toContain("<w:highlight");
   });
 
   it("emits Word vertical merge continuation cells for rowspans", () => {
