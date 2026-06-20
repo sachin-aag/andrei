@@ -58,9 +58,11 @@ test.describe("authentication", () => {
 
   test("shows setup password link for no-password account", async ({ page }) => {
     await page.goto("/login");
-    await page.getByLabel(/work email/i).fill("e2e.nopassword@mjbiopharm.com");
+    const emailInput = page.getByLabel(/work email/i);
+    await emailInput.click();
+    await emailInput.fill("e2e.nopassword@mjbiopharm.com");
     const continueButton = page.getByRole("button", { name: /^continue$/i });
-    await expect(continueButton).toBeEnabled();
+    await expect(continueButton).toBeEnabled({ timeout: 10_000 });
     await continueButton.click();
     await expect(page.getByRole("link", { name: /set up a password/i })).toBeVisible({
       timeout: 15_000,

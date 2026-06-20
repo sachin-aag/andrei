@@ -2,7 +2,6 @@ import { expect, test } from "@playwright/test";
 import { loginAsEngineer, loginAsManagerWithResponse } from "./helpers/auth";
 import {
   createReport,
-  deleteReport,
   seedDefineForEvaluation,
 } from "./helpers/reports";
 import {
@@ -29,7 +28,12 @@ test.describe("report editor", () => {
 
   test.afterEach(async ({ page }) => {
     if (reportId) {
-      await deleteReport(page, reportId);
+      const res = await page.request.delete(`/api/reports/${reportId}`);
+      if (!res.ok()) {
+        // Re-authenticate as the report author (engineer) and retry
+        await page.request.post("/api/test/login");
+        await page.request.delete(`/api/reports/${reportId}`);
+      }
       reportId = null;
     }
   });

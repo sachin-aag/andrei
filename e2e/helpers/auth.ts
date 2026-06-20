@@ -18,6 +18,8 @@ async function testLogin(
     mustChangePassword?: boolean;
   }
 ): Promise<TestLoginResult> {
+  await page.context().clearCookies();
+
   const maxAttempts = 3;
   let lastMessage = "unknown error";
 

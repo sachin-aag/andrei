@@ -12,6 +12,7 @@ import {
   SUGGEST_TEMPERATURE,
 } from "@/lib/ai/suggest-prompts";
 import { langfuseGenerateTextTelemetry } from "@/lib/observability/langfuse";
+import { buildGeminiThoughtSummaryProviderOptions } from "@/lib/eval/eval-generation-options";
 import { isAllowedTargetField } from "@/lib/ai/suggest-target-fields";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 import { suggestionEditsPlaceholder } from "@/lib/placeholders/suggestion-placeholder-policy";
@@ -189,6 +190,9 @@ export async function generateSuggestionsForSection({
       })\n\n${userPrompt}`,
       temperature: SUGGEST_TEMPERATURE,
       maxOutputTokens: 16384,
+      providerOptions: buildGeminiThoughtSummaryProviderOptions({
+        thinkingLevel: "high",
+      }),
       ...langfuseGenerateTextTelemetry({
         functionId: "suggest-section-edits",
         metadata: {
