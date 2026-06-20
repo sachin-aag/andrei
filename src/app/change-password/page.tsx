@@ -37,7 +37,7 @@ export default async function ChangePasswordPage() {
             continue — it must be different from the temporary password.
           </p>
         </div>
-        <ChangeSharedPasswordForm />
+        <ChangeSharedPasswordForm email={session.user.email ?? ""} />
       </div>
     </div>
   );

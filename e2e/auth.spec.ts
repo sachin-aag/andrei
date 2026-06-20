@@ -84,6 +84,24 @@ test.describe("authentication", () => {
     ).toBeVisible();
   });
 
+  test("must-change-password users can switch accounts", async ({ page }) => {
+    const res = await page.request.post("/api/test/login", {
+      data: {
+        email: "e2e.mustchange@mjbiopharm.com",
+        mustChangePassword: true,
+      },
+    });
+    expect(res.ok()).toBeTruthy();
+    await page.goto("/change-password");
+    await page
+      .getByRole("button", { name: /use a different account/i })
+      .click();
+    await expect(page).toHaveURL(/\/login/);
+    await expect(
+      page.getByRole("heading", { name: /sign in to your workspace/i })
+    ).toBeVisible();
+  });
+
   test("forgot password page renders", async ({ page }) => {
     await page.goto("/forgot-password");
     await expect(page.getByLabel(/work email/i)).toBeVisible();
