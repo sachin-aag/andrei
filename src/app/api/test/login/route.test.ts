@@ -20,6 +20,13 @@ vi.mock("next-auth/jwt", () => ({
 import { db } from "@/db";
 import { encode } from "next-auth/jwt";
 
+const passwordSchemaDefaults = {
+  passwordHistory: [] as string[],
+  passwordResetTokenHash: null,
+  passwordResetTokenExpiresAt: null,
+  passwordResetTokenCreatedAt: null,
+};
+
 const engineerUser = {
   id: "user-1",
   name: "Test Engineer",
@@ -33,6 +40,7 @@ const engineerUser = {
   lockedAt: null,
   passwordExpiryWarningDismissedUntil: null,
   createdAt: new Date("2026-01-01"),
+  ...passwordSchemaDefaults,
 };
 
 const managerUser = {
@@ -48,6 +56,7 @@ const managerUser = {
   lockedAt: null,
   passwordExpiryWarningDismissedUntil: null,
   createdAt: new Date("2026-01-01"),
+  ...passwordSchemaDefaults,
 };
 
 const adminUser = {
@@ -63,6 +72,7 @@ const adminUser = {
   lockedAt: null,
   passwordExpiryWarningDismissedUntil: null,
   createdAt: new Date("2026-01-01"),
+  ...passwordSchemaDefaults,
 };
 
 describe("POST /api/test/login", () => {

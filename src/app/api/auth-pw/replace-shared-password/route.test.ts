@@ -17,7 +17,7 @@ vi.mock("@/lib/auth/password", () => ({
 
 vi.mock("@/lib/auth/password-history", () => ({
   isPasswordRecentlyUsed: vi.fn(),
-  recordPasswordHistory: vi.fn(),
+  nextPasswordHistory: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/password-policy", () => ({
@@ -31,7 +31,7 @@ import { db } from "@/db";
 import { hashPassword } from "@/lib/auth/password";
 import {
   isPasswordRecentlyUsed,
-  recordPasswordHistory,
+  nextPasswordHistory,
 } from "@/lib/auth/password-history";
 import {
   computePasswordExpiryState,
@@ -71,7 +71,7 @@ describe("POST /api/auth-pw/replace-shared-password", () => {
       warningDismissed: false,
     });
     vi.mocked(isPasswordRecentlyUsed).mockResolvedValue(false);
-    vi.mocked(recordPasswordHistory).mockResolvedValue(undefined);
+    vi.mocked(nextPasswordHistory).mockReturnValue(["temp.hash"]);
     const set = vi
       .fn()
       .mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) });
@@ -91,6 +91,7 @@ describe("POST /api/auth-pw/replace-shared-password", () => {
     vi.mocked(db.query.workspaceUsers.findFirst).mockResolvedValueOnce({
       id: "ws-1",
       passwordHash: "old.hash",
+      passwordHistory: [],
       mustChangePassword: false,
       passwordChangedAt: new Date(),
       passwordExpiryWarningDismissedUntil: null,
@@ -109,6 +110,7 @@ describe("POST /api/auth-pw/replace-shared-password", () => {
     vi.mocked(db.query.workspaceUsers.findFirst).mockResolvedValueOnce({
       id: "ws-1",
       passwordHash: "temp.hash",
+      passwordHistory: [],
       mustChangePassword: true,
       passwordChangedAt: new Date(),
       passwordExpiryWarningDismissedUntil: null,
@@ -132,6 +134,7 @@ describe("POST /api/auth-pw/replace-shared-password", () => {
     vi.mocked(db.query.workspaceUsers.findFirst).mockResolvedValueOnce({
       id: "ws-1",
       passwordHash: "temp.hash",
+      passwordHistory: [],
       mustChangePassword: true,
       passwordChangedAt: new Date(),
       passwordExpiryWarningDismissedUntil: null,
@@ -153,10 +156,11 @@ describe("POST /api/auth-pw/replace-shared-password", () => {
         failedLoginAttempts: 0,
         lockedAt: null,
         passwordExpiryWarningDismissedUntil: null,
+        passwordHistory: ["temp.hash"],
       })
     );
-    expect(recordPasswordHistory).toHaveBeenCalledWith({
-      userId: "ws-1",
+    expect(nextPasswordHistory).toHaveBeenCalledWith({
+      currentHistory: [],
       previousPasswordHash: "temp.hash",
       historyLimit: 3,
     });

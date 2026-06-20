@@ -4,7 +4,7 @@ import { auth } from "@/auth";
 import { db } from "@/db";
 import { workspaceUsers } from "@/db/schema";
 import { hashPassword, verifyPassword } from "@/lib/auth/password";
-import { isPasswordRecentlyUsed, recordPasswordHistory } from "@/lib/auth/password-history";
+import { isPasswordRecentlyUsed, nextPasswordHistory } from "@/lib/auth/password-history";
 import {
   getPasswordPolicy,
   validatePasswordPolicy,
@@ -48,7 +48,7 @@ export async function POST(req: Request) {
 
   const wsUser = await db.query.workspaceUsers.findFirst({
     where: eq(workspaceUsers.id, workspaceUserId),
-    columns: { id: true, passwordHash: true },
+    columns: { id: true, passwordHash: true, passwordHistory: true },
   });
   if (!wsUser?.passwordHash) {
     return NextResponse.json(
@@ -69,9 +69,9 @@ export async function POST(req: Request) {
   }
 
   const reused = await isPasswordRecentlyUsed({
-    userId: wsUser.id,
     password,
     currentPasswordHash: wsUser.passwordHash,
+    passwordHistory: wsUser.passwordHistory,
     historyLimit: policy.passwordHistoryLimit,
   });
   if (reused) {
@@ -83,6 +83,11 @@ export async function POST(req: Request) {
 
   const newHash = await hashPassword(password);
   const changedAt = new Date();
+  const updatedHistory = nextPasswordHistory({
+    currentHistory: wsUser.passwordHistory,
+    previousPasswordHash: wsUser.passwordHash,
+    historyLimit: policy.passwordHistoryLimit,
+  });
   await db
     .update(workspaceUsers)
     .set({
@@ -92,13 +97,9 @@ export async function POST(req: Request) {
       failedLoginAttempts: 0,
       lockedAt: null,
       passwordExpiryWarningDismissedUntil: null,
+      passwordHistory: updatedHistory,
     })
     .where(eq(workspaceUsers.id, wsUser.id));
-  await recordPasswordHistory({
-    userId: wsUser.id,
-    previousPasswordHash: wsUser.passwordHash,
-    historyLimit: policy.passwordHistoryLimit,
-  });
 
   return NextResponse.json({ ok: true });
 }

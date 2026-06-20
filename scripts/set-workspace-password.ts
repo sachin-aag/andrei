@@ -143,7 +143,7 @@ async function main() {
   const { db } = await import("@/db");
   const { workspaceUsers } = await import("@/db/schema");
   const { hashPassword } = await import("@/lib/auth/password");
-  const { recordPasswordHistory } = await import("@/lib/auth/password-history");
+  const { nextPasswordHistory } = await import("@/lib/auth/password-history");
   const { getPasswordPolicy, validatePasswordPolicy } = await import(
     "@/lib/auth/password-policy"
   );
@@ -185,7 +185,7 @@ async function main() {
 
   const existing = await db.query.workspaceUsers.findFirst({
     where: eq(workspaceUsers.email, email),
-    columns: { id: true, name: true, email: true, role: true, passwordHash: true },
+    columns: { id: true, name: true, email: true, role: true, passwordHash: true, passwordHistory: true },
   });
 
   if (existing) {
@@ -196,6 +196,7 @@ async function main() {
       failedLoginAttempts: 0;
       lockedAt: null;
       passwordExpiryWarningDismissedUntil: null;
+      passwordHistory: string[];
       role?: UserRole;
       title?: string;
     } = {
@@ -205,6 +206,11 @@ async function main() {
       failedLoginAttempts: 0,
       lockedAt: null,
       passwordExpiryWarningDismissedUntil: null,
+      passwordHistory: nextPasswordHistory({
+        currentHistory: existing.passwordHistory,
+        previousPasswordHash: existing.passwordHash,
+        historyLimit: policy.passwordHistoryLimit,
+      }),
     };
 
     if (role !== undefined) {
@@ -216,11 +222,6 @@ async function main() {
       .update(workspaceUsers)
       .set(update)
       .where(eq(workspaceUsers.id, existing.id));
-    await recordPasswordHistory({
-      userId: existing.id,
-      previousPasswordHash: existing.passwordHash,
-      historyLimit: policy.passwordHistoryLimit,
-    });
 
     const roleNote =
       role !== undefined

@@ -155,6 +155,13 @@
       "when": 1782079300000,
       "tag": "0021_password_security_policy",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1782079400000,
+      "tag": "0022_password_schema_simplification",
+      "breakpoints": true
     }
   ]
 }
