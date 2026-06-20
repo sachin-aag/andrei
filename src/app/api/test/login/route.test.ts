@@ -50,6 +50,17 @@ const managerUser = {
   createdAt: new Date("2026-01-01"),
 };
 
+const adminUser = {
+  id: "user-3",
+  name: "Test Admin",
+  email: "test.admin@mjbiopharm.com",
+  role: "admin" as const,
+  title: "Admin",
+  mustChangePassword: false,
+  passwordHash: null,
+  createdAt: new Date("2026-01-01"),
+};
+
 describe("POST /api/test/login", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -102,6 +113,25 @@ describe("POST /api/test/login", () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.role).toBe("manager");
+  });
+
+  it("accepts admin role in body", async () => {
+    vi.mocked(db.query.workspaceUsers.findFirst).mockResolvedValue(adminUser);
+
+    const res = await POST(
+      new Request("http://localhost/api/test/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: "test.admin@mjbiopharm.com",
+          role: "admin",
+        }),
+      })
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.role).toBe("admin");
   });
 
   it("includes mustChangePassword in JWT when requested", async () => {

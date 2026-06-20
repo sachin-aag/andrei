@@ -1,10 +1,21 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import {
   loginAsEngineer,
   loginAsEngineerWithResponse,
   loginAsTestUser,
   logoutFromApp,
 } from "./helpers/auth";
+
+async function fillEmailAndWaitForContinue(page: Page, email: string) {
+  const emailInput = page.getByLabel(/work email/i);
+  await expect(emailInput).toBeEditable({ timeout: 15_000 });
+  await emailInput.fill("");
+  await emailInput.pressSequentially(email);
+  await expect(emailInput).toHaveValue(email, { timeout: 10_000 });
+  const continueButton = page.getByRole("button", { name: /^continue$/i });
+  await expect(continueButton).toBeEnabled({ timeout: 15_000 });
+  return continueButton;
+}
 
 test.describe.configure({ mode: "serial" });
 
@@ -20,29 +31,38 @@ test.describe("authentication", () => {
 
   test("shows error for unknown email", async ({ page }) => {
     await page.goto("/login");
-    await page.getByLabel(/work email/i).fill("nobody@mjbiopharm.com");
-    const continueButton = page.getByRole("button", { name: /^continue$/i });
-    await expect(continueButton).toBeEnabled();
+    const continueButton = await fillEmailAndWaitForContinue(
+      page,
+      "nobody@mjbiopharm.com"
+    );
+    const checkEmailResponse = page.waitForResponse(
+      (response) =>
+        response.url().includes("/api/auth/check-email") &&
+        response.request().method() === "POST"
+    );
     await continueButton.click();
+    await expect((await checkEmailResponse).ok()).toBeTruthy();
     await expect(
       page.getByText(/this email isn't registered/i)
-    ).toBeVisible();
+    ).toBeVisible({ timeout: 15_000 });
   });
 
   test("shows password step for known email with password", async ({ page }) => {
     await page.goto("/login");
-    await page.getByLabel(/work email/i).fill("e2e.password@mjbiopharm.com");
-    const continueButton = page.getByRole("button", { name: /^continue$/i });
-    await expect(continueButton).toBeEnabled();
+    const continueButton = await fillEmailAndWaitForContinue(
+      page,
+      "e2e.password@mjbiopharm.com"
+    );
     await continueButton.click();
     await expect(page.getByLabel(/^password$/i)).toBeVisible({ timeout: 15_000 });
   });
 
   test("shows error for wrong password", async ({ page }) => {
     await page.goto("/login");
-    await page.getByLabel(/work email/i).fill("e2e.password@mjbiopharm.com");
-    const continueButton = page.getByRole("button", { name: /^continue$/i });
-    await expect(continueButton).toBeEnabled();
+    const continueButton = await fillEmailAndWaitForContinue(
+      page,
+      "e2e.password@mjbiopharm.com"
+    );
     await continueButton.click();
     await expect(page.getByLabel(/^password$/i)).toBeVisible({ timeout: 15_000 });
     await page.getByLabel(/^password$/i).fill("WrongPassword123!");
@@ -75,11 +95,10 @@ test.describe("authentication", () => {
 
   test("shows setup password link for no-password account", async ({ page }) => {
     await page.goto("/login");
-    const emailInput = page.getByLabel(/work email/i);
-    await emailInput.click();
-    await emailInput.fill("e2e.nopassword@mjbiopharm.com");
-    const continueButton = page.getByRole("button", { name: /^continue$/i });
-    await expect(continueButton).toBeEnabled({ timeout: 10_000 });
+    const continueButton = await fillEmailAndWaitForContinue(
+      page,
+      "e2e.nopassword@mjbiopharm.com"
+    );
     await continueButton.click();
     await expect(page.getByRole("link", { name: /set up a password/i })).toBeVisible({
       timeout: 15_000,

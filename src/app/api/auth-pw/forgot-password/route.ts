@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
-import { createHash, randomBytes } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { workspaceUsers, passwordResetTokens } from "@/db/schema";
-import { sendResetEmail } from "@/lib/auth/send-reset-email";
+import { workspaceUsers } from "@/db/schema";
+import { sendPasswordResetLink } from "@/lib/auth/password-reset";
 
 export async function POST(req: Request) {
   const { email } = (await req.json()) as { email?: string };
@@ -20,17 +19,7 @@ export async function POST(req: Request) {
     });
 
     if (wsUser) {
-      // Generate a random token, store its SHA-256 hash
-      const rawToken = randomBytes(32).toString("hex");
-      const tokenHash = createHash("sha256").update(rawToken).digest("hex");
-
-      await db.insert(passwordResetTokens).values({
-        email: normalizedEmail,
-        tokenHash,
-        expiresAt: new Date(Date.now() + 60 * 60 * 1000), // 1 hour
-      });
-
-      await sendResetEmail(normalizedEmail, rawToken);
+      await sendPasswordResetLink(normalizedEmail);
     }
   } catch (err) {
     // Log but don't leak info to the client

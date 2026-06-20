@@ -24,24 +24,38 @@ export async function GET() {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const rows =
-    user.role === "engineer"
-      ? await db
-          .select()
-          .from(reports)
-          .where(eq(reports.authorId, user.id))
-          .orderBy(desc(reports.updatedAt))
-      : await db
-          .select()
-          .from(reports)
-          .where(
-            or(
-              eq(reports.assignedManagerId, user.id),
-              eq(reports.status, "submitted"),
-              eq(reports.status, "in_review")
-            )
+  let rows;
+  switch (user.role) {
+    case "engineer":
+      rows = await db
+        .select()
+        .from(reports)
+        .where(eq(reports.authorId, user.id))
+        .orderBy(desc(reports.updatedAt));
+      break;
+    case "manager":
+      rows = await db
+        .select()
+        .from(reports)
+        .where(
+          or(
+            eq(reports.assignedManagerId, user.id),
+            eq(reports.status, "submitted"),
+            eq(reports.status, "in_review")
           )
-          .orderBy(desc(reports.updatedAt));
+        )
+        .orderBy(desc(reports.updatedAt));
+      break;
+    case "admin":
+      return NextResponse.json(
+        { error: "Admins manage users from the admin console." },
+        { status: 403 }
+      );
+    default: {
+      const exhaustive: never = user.role;
+      return exhaustive;
+    }
+  }
 
   return NextResponse.json({ reports: rows });
 }

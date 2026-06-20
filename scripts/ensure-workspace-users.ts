@@ -21,11 +21,13 @@ const sql = neon(url);
 async function main() {
   await sql`
     DO $$ BEGIN
-      CREATE TYPE user_role AS ENUM ('engineer', 'manager');
+      CREATE TYPE user_role AS ENUM ('engineer', 'manager', 'admin');
     EXCEPTION
       WHEN duplicate_object THEN NULL;
     END $$;
   `;
+
+  await sql`ALTER TYPE user_role ADD VALUE IF NOT EXISTS 'admin';`;
 
   await sql`
     CREATE TABLE IF NOT EXISTS workspace_users (
@@ -34,8 +36,16 @@ async function main() {
       email text NOT NULL,
       role user_role NOT NULL DEFAULT 'engineer',
       title text NOT NULL DEFAULT 'Engineer',
+      password_hash text,
+      must_change_password boolean NOT NULL DEFAULT false,
       created_at timestamptz NOT NULL DEFAULT now()
     );
+  `;
+
+  await sql`ALTER TABLE workspace_users ADD COLUMN IF NOT EXISTS password_hash text;`;
+  await sql`
+    ALTER TABLE workspace_users
+    ADD COLUMN IF NOT EXISTS must_change_password boolean NOT NULL DEFAULT false;
   `;
 
   await sql`

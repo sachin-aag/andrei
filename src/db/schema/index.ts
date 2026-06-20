@@ -93,7 +93,7 @@ export const aiFeedbackSessionStatusEnum = pgEnum("ai_feedback_session_status", 
   "reviewed",
 ]);
 
-export const userRoleEnum = pgEnum("user_role", ["engineer", "manager"]);
+export const userRoleEnum = pgEnum("user_role", ["engineer", "manager", "admin"]);
 
 export const workspaceUsers = pgTable(
   "workspace_users",
@@ -105,7 +105,7 @@ export const workspaceUsers = pgTable(
     title: text("title").notNull().default("Engineer"),
     /** Nullable — null means magic-link-only user. Format: hex_salt.hex_hash (scrypt). */
     passwordHash: text("password_hash"),
-    /** True when an admin set a temporary password; user must choose a new one on next login. */
+    /** True when a temporary password is active; user must choose a new one on next login. */
     mustChangePassword: boolean("must_change_password").notNull().default(false),
     /** Set whenever a real password is created or changed. Null for passwordless users. */
     passwordChangedAt: timestamp("password_changed_at", { withTimezone: true }),

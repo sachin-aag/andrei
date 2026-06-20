@@ -4,6 +4,7 @@
  *
  *   pnpm run set-workspace-password -- user@mjbiopharm.com 'TemporaryPass123!'
  *   pnpm run set-workspace-password -- user@mjbiopharm.com 'TemporaryPass123!' --role manager
+ *   pnpm run set-workspace-password -- admin@mjbiopharm.com 'TemporaryPass123!' --role admin
  *   pnpm run set-workspace-password -- user@mjbiopharm.com 'TemporaryPass123!' --env-file .env
  *
  * If the email is not in workspace_users, a new row is created (default role: engineer).
@@ -38,7 +39,7 @@ if (envFile) {
 // 2. Now it's safe to import modules that read DATABASE_URL
 // ---------------------------------------------------------------------------
 
-type UserRole = "engineer" | "manager";
+type UserRole = "engineer" | "manager" | "admin";
 
 function displayNameFromEmail(email: string): string {
   const local = email.split("@")[0] ?? email;
@@ -50,13 +51,26 @@ function displayNameFromEmail(email: string): string {
 }
 
 function titleForRole(role: UserRole): string {
-  return role === "manager" ? "Manager" : "Engineer";
+  switch (role) {
+    case "engineer":
+      return "Engineer";
+    case "manager":
+      return "Manager";
+    case "admin":
+      return "Admin";
+    default: {
+      const exhaustive: never = role;
+      return exhaustive;
+    }
+  }
 }
 
 function parseRoleValue(raw: string | undefined): UserRole | undefined {
   if (!raw) return undefined;
   const value = raw.toLowerCase();
-  if (value === "engineer" || value === "manager") return value;
+  if (value === "engineer" || value === "manager" || value === "admin") {
+    return value;
+  }
   return undefined;
 }
 
@@ -138,13 +152,13 @@ async function main() {
 
   if (!email || !password) {
     console.error(
-      "Usage: pnpm run set-workspace-password -- <email> <password> [--role engineer|manager] [--env-file .env]"
+      "Usage: pnpm run set-workspace-password -- <email> <password> [--role engineer|manager|admin] [--env-file .env]"
     );
     process.exit(1);
   }
 
   if (roleSpecified && role === undefined) {
-    console.error("--role must be engineer or manager");
+    console.error("--role must be engineer, manager, or admin");
     process.exit(1);
   }
 

@@ -25,5 +25,8 @@ export default async function ReportEntryPage({
   if (user.role === "manager") {
     redirect(`/reports/${reportId}/review`);
   }
+  if (user.role === "admin") {
+    redirect("/admin/users");
+  }
   redirect(`/reports/${reportId}/edit`);
 }
