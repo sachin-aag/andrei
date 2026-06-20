@@ -67,17 +67,26 @@ async function readError(response: Response, fallback: string): Promise<string> 
 export function AdminUsersPanel({
   initialUsers,
   currentUserId,
+  initialPasswordExpiryDays,
 }: {
   initialUsers: AdminUser[];
   currentUserId: string;
+  initialPasswordExpiryDays: number;
 }) {
   const [users, setUsers] = useState(() => sortUsers(initialUsers));
+  const [passwordExpiryDays, setPasswordExpiryDays] = useState(
+    String(initialPasswordExpiryDays)
+  );
+  const [savedPasswordExpiryDays, setSavedPasswordExpiryDays] = useState(
+    initialPasswordExpiryDays
+  );
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm, setCreateForm] = useState<CreateUserForm>(emptyCreateForm);
   const [resetUser, setResetUser] = useState<AdminUser | null>(null);
   const [pendingRoleUserId, setPendingRoleUserId] = useState<string | null>(null);
   const [isCreating, startCreateTransition] = useTransition();
   const [isResetting, startResetTransition] = useTransition();
+  const [isSavingExpiry, startExpirySaveTransition] = useTransition();
 
   const updateUser = (updated: AdminUser) => {
     setUsers((current) =>
@@ -147,6 +156,32 @@ export function AdminUsersPanel({
       .finally(() => {
         setPendingRoleUserId(null);
       });
+  };
+
+  const savePasswordExpiryDays = () => {
+    const expiryDays = Number.parseInt(passwordExpiryDays, 10);
+    if (!Number.isInteger(expiryDays) || expiryDays < 0 || expiryDays > 3650) {
+      toast.error("Enter a whole number of days between 0 and 3650");
+      return;
+    }
+
+    startExpirySaveTransition(async () => {
+      const response = await fetch("/api/admin/password-policy", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ expiryDays }),
+      });
+
+      if (!response.ok) {
+        toast.error(await readError(response, "Could not update password expiry"));
+        return;
+      }
+
+      const data = (await response.json()) as { expiryDays: number };
+      setSavedPasswordExpiryDays(data.expiryDays);
+      setPasswordExpiryDays(String(data.expiryDays));
+      toast.success("Password expiry updated");
+    });
   };
 
   const resetPassword = () => {
@@ -297,6 +332,43 @@ export function AdminUsersPanel({
       </div>
 
       <div className="flex-1 overflow-y-auto px-10 py-6">
+        <section className="mb-6 max-w-md rounded-lg border border-[var(--border)] bg-[var(--card)] p-5">
+          <h2 className="text-base font-semibold">Password expiry</h2>
+          <p className="mt-1 text-sm text-[var(--muted-foreground)]">
+            Number of days before a user must change their password. Set to 0 to
+            disable expiry.
+          </p>
+          <div className="mt-4 flex items-end gap-3">
+            <div className="grid flex-1 gap-2">
+              <Label htmlFor="password-expiry-days">Days</Label>
+              <Input
+                id="password-expiry-days"
+                type="number"
+                min={0}
+                max={3650}
+                inputMode="numeric"
+                value={passwordExpiryDays}
+                disabled={isSavingExpiry}
+                onChange={(event) => setPasswordExpiryDays(event.target.value)}
+              />
+            </div>
+            <Button
+              type="button"
+              disabled={
+                isSavingExpiry ||
+                Number.parseInt(passwordExpiryDays, 10) === savedPasswordExpiryDays
+              }
+              onClick={savePasswordExpiryDays}
+            >
+              {isSavingExpiry ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                "Save"
+              )}
+            </Button>
+          </div>
+        </section>
+
         <div className="overflow-hidden rounded-lg border border-[var(--border)]">
           <table className="w-full text-sm">
             <thead className="bg-[var(--secondary)] text-left">
@@ -354,7 +426,7 @@ export function AdminUsersPanel({
                   <td className="px-4 py-3 text-[var(--muted-foreground)]">
                     {user.hasPassword ? (
                       user.mustChangePassword ? (
-                      "Must change password"
+                        "Must change password"
                       ) : (
                         "Password set"
                       )
