@@ -97,7 +97,10 @@ export async function fetchTestManagerUser(page: Page): Promise<TestLoginResult>
 }
 
 export async function loginAsEngineerWithResponse(page: Page): Promise<TestLoginResult> {
-  const result = await testLogin(page);
+  const result = await testLogin(page, {
+    email: "test.engineer@mjbiopharm.com",
+    role: "engineer",
+  });
   expect(result.role).toBe("engineer");
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await expect(
