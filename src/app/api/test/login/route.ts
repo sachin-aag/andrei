@@ -184,6 +184,7 @@ export async function POST(req: Request) {
     userId: wsUser.id,
     email: wsUser.email,
     role: wsUser.role,
+    sessionToken: jwt,
   });
   response.cookies.set(cookieName, jwt, {
     httpOnly: true,

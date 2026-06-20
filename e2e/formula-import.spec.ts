@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { expect, test } from "@playwright/test";
 import { loginAsEngineer } from "./helpers/auth";
-import { newReportButton } from "./helpers/reports";
+import { newReportButton, uniqueDeviationNo } from "./helpers/reports";
 
 const fixturePath = path.join(
   process.cwd(),
@@ -35,12 +35,15 @@ test.describe("legacy equation formula rendering", () => {
     createdReportId = null;
   });
 
-  test("imports DOCX formulas as visible inline images in the editor", async ({ page }) => {
+  test("imports DOCX formulas as visible inline images in the editor", async ({ page }, testInfo) => {
     test.setTimeout(120_000);
 
     await newReportButton(page).click();
     await page.locator("#report-upload").setInputFiles(fixturePath);
     await expect(page.locator("#deviationNo")).not.toHaveValue("", { timeout: 30_000 });
+    await page
+      .locator("#deviationNo")
+      .fill(uniqueDeviationNo(`FORMULA-${testInfo.project.name}`));
     await page.getByRole("button", { name: /^create$/i }).click();
 
     await page.waitForURL(/\/reports\/[^/]+\/edit/, { timeout: 60_000 });

@@ -4,11 +4,14 @@ import type { UserRole } from "@/lib/auth/roles";
 
 const TEST_AUTH_EMAIL =
   process.env.TEST_AUTH_EMAIL ?? "test.engineer@mjbiopharm.com";
+const PLAYWRIGHT_BASE_URL =
+  process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3000";
 
 export type TestLoginResult = {
   userId: string;
   email: string;
   role: UserRole;
+  sessionToken?: string;
 };
 
 async function testLogin(
@@ -30,7 +33,21 @@ async function testLogin(
     try {
       const res = await page.request.post("/api/test/login", { data: body ?? {} });
       if (res.ok()) {
-        return (await res.json()) as TestLoginResult;
+        const result = (await res.json()) as TestLoginResult;
+        if (result.sessionToken) {
+          await page.context().clearCookies();
+          await page.context().addCookies([
+            {
+              name: "authjs.session-token",
+              value: result.sessionToken,
+              url: PLAYWRIGHT_BASE_URL,
+              httpOnly: true,
+              sameSite: "Lax",
+              secure: false,
+            },
+          ]);
+        }
+        return result;
       }
       lastMessage = `HTTP ${res.status()}`;
     } catch (error) {
@@ -62,8 +79,13 @@ export async function loginAsTestUser(
   return testLogin(page, body);
 }
 
-export async function seedAuthUsers(page: Page): Promise<void> {
-  const res = await page.request.post("/api/test/seed-auth-users");
+export async function seedAuthUsers(
+  page: Page,
+  body?: { scope?: string }
+): Promise<void> {
+  const res = await page.request.post("/api/test/seed-auth-users", {
+    data: body ?? {},
+  });
   expect(res.ok(), `seed auth users failed (${res.status()})`).toBeTruthy();
 }
 
