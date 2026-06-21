@@ -39,7 +39,10 @@ export function AppShell({
 
   const navItems = [
     ...(user.role === "admin"
-      ? [{ href: "/admin/users", label: "Users", icon: Users }]
+      ? [
+          { href: "/admin/reports", label: "Reports", icon: FileText },
+          { href: "/admin/users", label: "Users", icon: Users },
+        ]
       : [
           { href: "/", label: "Reports", icon: FileText },
           { href: "/improve-ai", label: "Improve AI", icon: Sparkles },

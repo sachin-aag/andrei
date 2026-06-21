@@ -1,20 +1,12 @@
 import { redirect, notFound } from "next/navigation";
 import { ViewTransition } from "react";
-import { eq } from "drizzle-orm";
-import { db } from "@/db";
-import {
-  reports,
-  reportSections,
-  criteriaEvaluations,
-  comments,
-} from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import { listWorkspaceUsers } from "@/lib/auth/workspace-users";
 import { getPasswordStatusForUser } from "@/lib/auth/password-status";
+import { loadReportBundle } from "@/lib/reports/bundle";
 import { AppShell } from "@/components/layout/app-shell";
 import { ReportProvider } from "@/providers/report-provider";
 import { ReportWorkspace } from "@/components/report/report-workspace";
-import type { ReportBundle } from "@/types/report";
 
 export const dynamic = "force-dynamic";
 
@@ -27,33 +19,13 @@ export default async function ReviewReportPage({
   if (!user) redirect("/login");
   const { reportId } = await params;
 
-  const [report] = await db
-    .select()
-    .from(reports)
-    .where(eq(reports.id, reportId));
-  if (!report) notFound();
-
-  const [sectionRows, evals, commentRows] = await Promise.all([
-    db.select().from(reportSections).where(eq(reportSections.reportId, reportId)),
-    db
-      .select()
-      .from(criteriaEvaluations)
-      .where(eq(criteriaEvaluations.reportId, reportId)),
-    db.select().from(comments).where(eq(comments.reportId, reportId)),
-  ]);
-
-  const bundle = JSON.parse(
-    JSON.stringify({
-      report,
-      sections: sectionRows,
-      evaluations: evals,
-      comments: commentRows,
-    })
-  ) as ReportBundle;
+  const bundle = await loadReportBundle(reportId);
+  if (!bundle) notFound();
 
   const initialTrackChangesMode =
     user.role === "manager" &&
-    (report.status === "submitted" || report.status === "in_review");
+    (bundle.report.status === "submitted" ||
+      bundle.report.status === "in_review");
 
   const [workspaceUsers, passwordStatus] = await Promise.all([
     listWorkspaceUsers(),

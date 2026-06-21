@@ -1,31 +1,27 @@
-import { redirect, notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { ViewTransition } from "react";
+import { AppShell } from "@/components/layout/app-shell";
+import { ReportProvider } from "@/providers/report-provider";
+import { ReportWorkspace } from "@/components/report/report-workspace";
 import { getCurrentUser } from "@/lib/auth/session";
 import { listWorkspaceUsers } from "@/lib/auth/workspace-users";
 import { getPasswordStatusForUser } from "@/lib/auth/password-status";
 import { loadReportBundle } from "@/lib/reports/bundle";
-import { AppShell } from "@/components/layout/app-shell";
-import { ReportProvider } from "@/providers/report-provider";
-import { ReportWorkspace } from "@/components/report/report-workspace";
 
 export const dynamic = "force-dynamic";
 
-export default async function EditReportPage({
+export default async function AdminReportViewPage({
   params,
 }: {
   params: Promise<{ reportId: string }>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  const { reportId } = await params;
+  if (user.role !== "admin") redirect("/");
 
+  const { reportId } = await params;
   const bundle = await loadReportBundle(reportId);
   if (!bundle) notFound();
-
-  const canEdit =
-    user.role === "engineer" &&
-    user.id === bundle.report.authorId &&
-    bundle.report.status !== "approved";
 
   const [workspaceUsers, passwordStatus] = await Promise.all([
     listWorkspaceUsers(),
@@ -41,8 +37,8 @@ export default async function EditReportPage({
       <ReportProvider
         bundle={bundle}
         currentUserId={user.id}
-        readOnly={!canEdit}
-        workspaceMode="edit"
+        readOnly
+        workspaceMode="view"
         initialTrackChangesMode={false}
       >
         <ViewTransition
@@ -50,7 +46,7 @@ export default async function EditReportPage({
           exit={{ "nav-back": "nav-back", default: "none" }}
           default="none"
         >
-          <ReportWorkspace mode="edit" />
+          <ReportWorkspace mode="view" />
         </ViewTransition>
       </ReportProvider>
     </AppShell>

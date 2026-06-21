@@ -191,8 +191,8 @@ export async function loginAsAdminWithResponse(page: Page): Promise<TestLoginRes
     role: "admin",
   });
   expect(result.role).toBe("admin");
-  await page.goto("/admin/users", { waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("heading", { name: /users/i })).toBeVisible({
+  await page.goto("/admin/reports", { waitUntil: "domcontentloaded" });
+  await expect(page.getByRole("heading", { name: /^reports$/i })).toBeVisible({
     timeout: 30_000,
   });
   return result;

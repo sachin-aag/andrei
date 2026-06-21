@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { MessageSquare } from "lucide-react";
 import {
   useReportComments,
+  useReportData,
   useReportEvaluations,
 } from "@/providers/report-provider";
 import { RunAllEvaluationButton } from "./section-status-pill";
@@ -369,6 +370,8 @@ export function CriteriaSheet({
   initialSection,
 }: Props) {
   const { comments } = useReportComments();
+  const { workspaceMode } = useReportData();
+  const showAiActions = workspaceMode !== "view";
 
   const rootComments = useMemo(
     () => comments.filter((c) => !c.parentId),
@@ -390,7 +393,9 @@ export function CriteriaSheet({
                 Quick scan of AI criteria and all comment threads.
               </SheetDescription>
             </div>
-            <RunAllEvaluationButton layout="inline" className="h-7 text-xs max-w-[11rem]" />
+            {showAiActions && (
+              <RunAllEvaluationButton layout="inline" className="h-7 text-xs max-w-[11rem]" />
+            )}
           </div>
         </SheetHeader>
         <div className="flex-1 min-h-0 overflow-hidden p-3">
