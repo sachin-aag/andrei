@@ -44,7 +44,7 @@ function sectionContentEqual(a: unknown, b: unknown) {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
-export type WorkspaceMode = "edit" | "review";
+export type WorkspaceMode = "edit" | "review" | "view";
 
 export type EditorRegistryEntry = {
   editor: Editor;
