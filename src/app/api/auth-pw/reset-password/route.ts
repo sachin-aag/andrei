@@ -12,6 +12,7 @@ import {
   getPasswordPolicy,
   validatePasswordPolicy,
 } from "@/lib/auth/password-policy";
+import { auditActorFromId, recordAuditEvent } from "@/lib/audit";
 
 export async function POST(req: Request) {
   const { token, email, password } = (await req.json()) as {
@@ -43,6 +44,7 @@ export async function POST(req: Request) {
     where: eq(workspaceUsers.email, normalizedEmail),
     columns: {
       id: true,
+      name: true,
       passwordHash: true,
       passwordHistory: true,
       passwordResetTokenHash: true,
@@ -98,6 +100,15 @@ export async function POST(req: Request) {
       passwordResetTokenExpiresAt: null,
     })
     .where(eq(workspaceUsers.id, wsUser.id));
+
+  await recordAuditEvent({
+    actor: auditActorFromId(wsUser.id, wsUser.name),
+    action: "auth_password_reset",
+    entityType: "auth",
+    entityId: wsUser.id,
+    summary: "Password reset via email link",
+    metadata: { email: normalizedEmail },
+  });
 
   return NextResponse.json({ ok: true });
 }

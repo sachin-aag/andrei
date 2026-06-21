@@ -183,6 +183,13 @@
       "when": 1782079700000,
       "tag": "0025_password_history_includes_current",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1782079800000,
+      "tag": "0026_audit_trail",
+      "breakpoints": true
     }
   ]
 }

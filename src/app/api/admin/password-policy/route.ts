@@ -5,6 +5,7 @@ import {
   updatePasswordExpiryDays,
 } from "@/lib/auth/password-policy";
 import { getCurrentUser } from "@/lib/auth/session";
+import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
 
 const updateSchema = z.object({
   expiryDays: z.number().int().min(0).max(3650),
@@ -46,7 +47,22 @@ export async function PATCH(req: Request) {
   }
 
   try {
+    const previous = await getPasswordPolicy();
     const expiryDays = await updatePasswordExpiryDays(parsed.data.expiryDays);
+
+    const admin = await getCurrentUser();
+    if (admin) {
+      await recordAuditEvent({
+        actor: auditActorFromUser(admin),
+        action: "policy_updated",
+        entityType: "policy",
+        entityId: "default",
+        summary: "Updated password expiry policy",
+        oldValue: { expiryDays: previous.expiryDays },
+        newValue: { expiryDays },
+      });
+    }
+
     return NextResponse.json({ expiryDays });
   } catch {
     return NextResponse.json(

@@ -37,6 +37,16 @@ vi.mock("@/lib/reports/persist-source-docx", () => ({
   persistReportSourceDocx: vi.fn(),
 }));
 
+vi.mock("@/lib/audit", () => ({
+  auditActorFromUser: vi.fn((user: { id: string; name: string; role: string }) => ({
+    id: user.id,
+    name: user.name,
+    role: user.role,
+  })),
+  recordAuditEvent: vi.fn().mockResolvedValue({ id: "audit-1" }),
+  recordSectionVersion: vi.fn().mockResolvedValue(null),
+}));
+
 import { db } from "@/db";
 import { isDeviationNoTaken } from "@/lib/reports/deviation-no";
 import { readDocxUpload } from "@/lib/import/docx-upload";
@@ -64,6 +74,19 @@ function mockSuccessfulCreate(reportId = "report-1") {
   const values = vi.fn().mockReturnValue({ returning });
   vi.mocked(db.insert).mockReturnValue({ values } as never);
   return { returning, values };
+}
+
+function mockSectionRowsSelect(reportId: string) {
+  const where = vi.fn().mockResolvedValueOnce(
+    REPORT_SECTION_ROW_ORDER.map((section, index) => ({
+      id: `section-${index}`,
+      reportId,
+      section,
+      content: EMPTY_CONTENT[section],
+    }))
+  );
+  const from = vi.fn().mockReturnValue({ where });
+  vi.mocked(db.select).mockReturnValueOnce({ from } as never);
 }
 
 describe("/api/reports", () => {
@@ -181,6 +204,7 @@ describe("/api/reports", () => {
     vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
     vi.mocked(isDeviationNoTaken).mockResolvedValueOnce(false);
     mockSuccessfulCreate();
+    mockSectionRowsSelect("report-1");
 
     const response = await POST(
       new Request("http://localhost/api/reports", {
@@ -197,6 +221,7 @@ describe("/api/reports", () => {
     vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
     vi.mocked(isDeviationNoTaken).mockResolvedValueOnce(false);
     mockSuccessfulCreate("report-with-file");
+    mockSectionRowsSelect("report-with-file");
 
     const buffer = Buffer.from("docx-bytes");
     vi.mocked(readDocxUpload).mockResolvedValueOnce(buffer);

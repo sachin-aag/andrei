@@ -9,6 +9,15 @@ vi.mock("@/lib/auth/password-policy", () => ({
   updatePasswordExpiryDays: vi.fn(),
 }));
 
+vi.mock("@/lib/audit", () => ({
+  auditActorFromUser: vi.fn((user: { id: string; name: string; role: string }) => ({
+    id: user.id,
+    name: user.name,
+    role: user.role,
+  })),
+  recordAuditEvent: vi.fn().mockResolvedValue({ id: "audit-1" }),
+}));
+
 import { getPasswordPolicy, updatePasswordExpiryDays } from "@/lib/auth/password-policy";
 import { getCurrentUser } from "@/lib/auth/session";
 import { GET, PATCH } from "./route";

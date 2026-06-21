@@ -4,27 +4,34 @@ import { db } from "@/db";
 import { workspaceUsers } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import { sendPasswordResetLink } from "@/lib/auth/password-reset";
+import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
 
 async function requireAdmin() {
   const user = await getCurrentUser();
   if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return {
+      user: null,
+      response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
+    };
   }
   if (user.role !== "admin") {
-    return NextResponse.json(
-      { error: "Only admins can manage users" },
-      { status: 403 }
-    );
+    return {
+      user: null,
+      response: NextResponse.json(
+        { error: "Only admins can manage users" },
+        { status: 403 }
+      ),
+    };
   }
-  return null;
+  return { user, response: null };
 }
 
 export async function POST(
   _req: Request,
   { params }: { params: Promise<{ userId: string }> }
 ) {
-  const authResponse = await requireAdmin();
-  if (authResponse) return authResponse;
+  const { user: admin, response } = await requireAdmin();
+  if (response || !admin) return response;
 
   const { userId } = await params;
   const targetUser = await db.query.workspaceUsers.findFirst({
@@ -43,6 +50,15 @@ export async function POST(
       { status: 500 }
     );
   }
+
+  await recordAuditEvent({
+    actor: auditActorFromUser(admin),
+    action: "user_password_reset",
+    entityType: "user",
+    entityId: userId,
+    summary: `Admin triggered password reset for ${targetUser.email}`,
+    metadata: { email: targetUser.email },
+  });
 
   return NextResponse.json({ ok: true, email: targetUser.email });
 }

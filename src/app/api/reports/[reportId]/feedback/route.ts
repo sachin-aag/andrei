@@ -1,11 +1,9 @@
 import { NextResponse } from "next/server";
-import { eq } from "drizzle-orm";
-import { db } from "@/db";
-import { reports } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
+import { handleWorkflowSignRequest } from "@/lib/audit/workflow-handler";
 
 export async function POST(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ reportId: string }> }
 ) {
   const user = await getCurrentUser();
@@ -18,12 +16,13 @@ export async function POST(
   }
   const { reportId } = await params;
 
-  const [updated] = await db
-    .update(reports)
-    .set({ status: "feedback", updatedAt: new Date() })
-    .where(eq(reports.id, reportId))
-    .returning();
-
-  if (!updated) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  return NextResponse.json({ report: updated });
+  return handleWorkflowSignRequest(req, reportId, {
+    user,
+    reportId,
+    meaning: "rejection",
+    newStatus: "feedback",
+    auditAction: "report_feedback",
+    forbiddenMessage: "Only managers can return feedback",
+    authorize: (u) => u.role === "manager",
+  });
 }

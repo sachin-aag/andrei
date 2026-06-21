@@ -7,7 +7,9 @@ import {
   pgEnum,
   boolean,
   integer,
+  bigint,
   uniqueIndex,
+  index,
   customType,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
@@ -94,6 +96,58 @@ export const aiFeedbackSessionStatusEnum = pgEnum("ai_feedback_session_status", 
 ]);
 
 export const userRoleEnum = pgEnum("user_role", ["engineer", "manager", "admin"]);
+
+export const auditActionEnum = pgEnum("audit_action", [
+  "report_created",
+  "report_updated",
+  "report_deleted",
+  "report_submitted",
+  "report_approved",
+  "report_feedback",
+  "section_updated",
+  "comment_created",
+  "comment_updated",
+  "comment_status_changed",
+  "comment_deleted",
+  "suggestion_generated",
+  "suggestion_applied",
+  "evaluation_run",
+  "evaluation_bypassed",
+  "signature_submission",
+  "signature_approval",
+  "signature_rejection",
+  "user_created",
+  "user_updated",
+  "user_password_reset",
+  "policy_updated",
+  "auth_login_success",
+  "auth_login_failed",
+  "auth_account_locked",
+  "auth_password_changed",
+  "auth_password_reset",
+  "improve_ai_session_created",
+  "improve_ai_session_completed",
+  "improve_ai_response_updated",
+]);
+
+export const auditEntityEnum = pgEnum("audit_entity", [
+  "report",
+  "section",
+  "comment",
+  "suggestion",
+  "evaluation",
+  "signature",
+  "user",
+  "policy",
+  "auth",
+  "improve_ai",
+]);
+
+export const signatureMeaningEnum = pgEnum("signature_meaning", [
+  "submission",
+  "approval",
+  "rejection",
+]);
 
 export const workspaceUsers = pgTable(
   "workspace_users",
@@ -407,6 +461,123 @@ export const aiFeedbackResponsesRelations = relations(
   })
 );
 
+/** Append-only Part 11 audit trail (hash chain enforced in DB triggers). */
+export const auditEvents = pgTable(
+  "audit_events",
+  {
+    id: text("id").primaryKey().$defaultFn(() => createId()),
+    seq: bigint("seq", { mode: "number" }).generatedAlwaysAsIdentity().notNull(),
+    reportId: text("report_id"),
+    actorId: text("actor_id").notNull(),
+    actorName: text("actor_name").notNull(),
+    actorRole: text("actor_role").notNull(),
+    action: auditActionEnum("action").notNull(),
+    entityType: auditEntityEnum("entity_type").notNull(),
+    entityId: text("entity_id").notNull(),
+    summary: text("summary").notNull(),
+    oldValue: jsonb("old_value"),
+    newValue: jsonb("new_value"),
+    metadata: jsonb("metadata").notNull().default({}),
+    prevHash: text("prev_hash").notNull().default(""),
+    hash: text("hash").notNull().default(""),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    reportSeqIdx: index("audit_events_report_seq_idx").on(t.reportId, t.seq),
+    actorCreatedIdx: index("audit_events_actor_created_idx").on(
+      t.actorId,
+      t.createdAt
+    ),
+    entityIdx: index("audit_events_entity_idx").on(t.entityType, t.entityId),
+  })
+);
+
+/** Git-like section content history: base snapshot + JSON-Patch diffs. */
+export const sectionContentVersions = pgTable(
+  "section_content_versions",
+  {
+    id: text("id").primaryKey().$defaultFn(() => createId()),
+    reportId: text("report_id")
+      .notNull()
+      .references(() => reports.id, { onDelete: "cascade" }),
+    section: sectionTypeEnum("section").notNull(),
+    versionNo: integer("version_no").notNull(),
+    isSnapshot: boolean("is_snapshot").notNull().default(false),
+    contentSnapshot: jsonb("content_snapshot"),
+    diff: jsonb("diff"),
+    contentHash: text("content_hash").notNull(),
+    auditEventId: text("audit_event_id")
+      .notNull()
+      .references(() => auditEvents.id, { onDelete: "restrict" }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    reportSectionVersionUnique: uniqueIndex(
+      "section_content_versions_report_section_version_unique"
+    ).on(t.reportId, t.section, t.versionNo),
+  })
+);
+
+/** Part 11 Subpart C electronic signature records. */
+export const electronicSignatures = pgTable("electronic_signatures", {
+  id: text("id").primaryKey().$defaultFn(() => createId()),
+  reportId: text("report_id")
+    .notNull()
+    .references(() => reports.id, { onDelete: "cascade" }),
+  signerId: text("signer_id").notNull(),
+  signerName: text("signer_name").notNull(),
+  meaning: signatureMeaningEnum("meaning").notNull(),
+  signedAt: timestamp("signed_at", { withTimezone: true }).notNull().defaultNow(),
+  authMethod: text("auth_method").notNull().default("password"),
+  auditEventId: text("audit_event_id")
+    .notNull()
+    .references(() => auditEvents.id, { onDelete: "restrict" }),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const auditEventsRelations = relations(auditEvents, ({ one, many }) => ({
+  report: one(reports, {
+    fields: [auditEvents.reportId],
+    references: [reports.id],
+  }),
+  sectionVersions: many(sectionContentVersions),
+  signatures: many(electronicSignatures),
+}));
+
+export const sectionContentVersionsRelations = relations(
+  sectionContentVersions,
+  ({ one }) => ({
+    report: one(reports, {
+      fields: [sectionContentVersions.reportId],
+      references: [reports.id],
+    }),
+    auditEvent: one(auditEvents, {
+      fields: [sectionContentVersions.auditEventId],
+      references: [auditEvents.id],
+    }),
+  })
+);
+
+export const electronicSignaturesRelations = relations(
+  electronicSignatures,
+  ({ one }) => ({
+    report: one(reports, {
+      fields: [electronicSignatures.reportId],
+      references: [reports.id],
+    }),
+    auditEvent: one(auditEvents, {
+      fields: [electronicSignatures.auditEventId],
+      references: [auditEvents.id],
+    }),
+  })
+);
+
 export type ReportStatus = (typeof reportStatusEnum.enumValues)[number];
 export type SectionType = (typeof sectionTypeEnum.enumValues)[number];
 export type CriterionStatus = (typeof criterionStatusEnum.enumValues)[number];
@@ -416,5 +587,8 @@ export type AiFeedbackSourceType =
   (typeof aiFeedbackSourceTypeEnum.enumValues)[number];
 export type AiFeedbackSessionStatus =
   (typeof aiFeedbackSessionStatusEnum.enumValues)[number];
+export type AuditAction = (typeof auditActionEnum.enumValues)[number];
+export type AuditEntity = (typeof auditEntityEnum.enumValues)[number];
+export type SignatureMeaning = (typeof signatureMeaningEnum.enumValues)[number];
 
 export * from "./auth";

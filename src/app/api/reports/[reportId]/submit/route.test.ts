@@ -1,18 +1,16 @@
+import { NextResponse } from "next/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-vi.mock("@/db", () => ({
-  db: {
-    select: vi.fn(),
-    update: vi.fn(),
-  },
+vi.mock("@/lib/audit/workflow-handler", () => ({
+  handleWorkflowSignRequest: vi.fn(),
 }));
 
 vi.mock("@/lib/auth/session", () => ({
   getCurrentUser: vi.fn(),
 }));
 
-import { db } from "@/db";
 import { getCurrentUser } from "@/lib/auth/session";
+import { handleWorkflowSignRequest } from "@/lib/audit/workflow-handler";
 import { POST } from "@/app/api/reports/[reportId]/submit/route";
 
 const engineer = {
@@ -29,17 +27,12 @@ const report = {
   status: "draft",
 };
 
-function mockSelectOnce(rows: unknown[]) {
-  const where = vi.fn().mockResolvedValueOnce(rows);
-  const from = vi.fn().mockReturnValue({ where });
-  vi.mocked(db.select).mockReturnValueOnce({ from } as never);
-}
-
-function mockUpdateReturning(rows: unknown[]) {
-  const returning = vi.fn().mockResolvedValueOnce(rows);
-  const where = vi.fn().mockReturnValue({ returning });
-  const set = vi.fn().mockReturnValue({ where });
-  vi.mocked(db.update).mockReturnValueOnce({ set } as never);
+function signedRequest() {
+  return new Request("http://localhost/submit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password: "Secret123!" }),
+  });
 }
 
 describe("POST /api/reports/[reportId]/submit", () => {
@@ -50,7 +43,7 @@ describe("POST /api/reports/[reportId]/submit", () => {
   it("returns 401 when unauthenticated", async () => {
     vi.mocked(getCurrentUser).mockResolvedValueOnce(null);
 
-    const response = await POST(new Request("http://localhost/submit"), {
+    const response = await POST(signedRequest(), {
       params: Promise.resolve({ reportId: "report-1" }),
     });
 
@@ -59,9 +52,11 @@ describe("POST /api/reports/[reportId]/submit", () => {
 
   it("returns 404 when report is missing", async () => {
     vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
-    mockSelectOnce([]);
+    vi.mocked(handleWorkflowSignRequest).mockResolvedValueOnce(
+      NextResponse.json({ error: "Not found" }, { status: 404 })
+    );
 
-    const response = await POST(new Request("http://localhost/submit"), {
+    const response = await POST(signedRequest(), {
       params: Promise.resolve({ reportId: "missing" }),
     });
 
@@ -70,9 +65,11 @@ describe("POST /api/reports/[reportId]/submit", () => {
 
   it("returns 403 when caller is not the author", async () => {
     vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
-    mockSelectOnce([{ ...report, authorId: "other-user" }]);
+    vi.mocked(handleWorkflowSignRequest).mockResolvedValueOnce(
+      NextResponse.json({ error: "Forbidden" }, { status: 403 })
+    );
 
-    const response = await POST(new Request("http://localhost/submit"), {
+    const response = await POST(signedRequest(), {
       params: Promise.resolve({ reportId: report.id }),
     });
 
@@ -81,10 +78,11 @@ describe("POST /api/reports/[reportId]/submit", () => {
 
   it("submits draft report", async () => {
     vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
-    mockSelectOnce([report]);
-    mockUpdateReturning([{ ...report, status: "submitted" }]);
+    vi.mocked(handleWorkflowSignRequest).mockResolvedValueOnce(
+      NextResponse.json({ report: { ...report, status: "submitted" } })
+    );
 
-    const response = await POST(new Request("http://localhost/submit"), {
+    const response = await POST(signedRequest(), {
       params: Promise.resolve({ reportId: report.id }),
     });
 
@@ -92,5 +90,10 @@ describe("POST /api/reports/[reportId]/submit", () => {
     await expect(response.json()).resolves.toEqual({
       report: { ...report, status: "submitted" },
     });
+    expect(handleWorkflowSignRequest).toHaveBeenCalledWith(
+      expect.any(Request),
+      report.id,
+      expect.objectContaining({ meaning: "submission", newStatus: "submitted" })
+    );
   });
 });

@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   ChevronLeft,
   Download,
+  History,
   Loader2,
   MessageSquare,
   Send,
@@ -36,6 +37,7 @@ type ReportWorkspaceHeaderProps = {
   onSubmit: () => void;
   onApprove: () => void;
   onFeedback: () => void;
+  auditHref?: string;
 };
 
 export function ReportWorkspaceHeader({
@@ -53,6 +55,7 @@ export function ReportWorkspaceHeader({
   onSubmit,
   onApprove,
   onFeedback,
+  auditHref,
 }: ReportWorkspaceHeaderProps) {
   const title = report.deviationNo || "Untitled";
   const [navigatingBack, setNavigatingBack] = useState(false);
@@ -107,6 +110,14 @@ export function ReportWorkspaceHeader({
         <Separator orientation="vertical" className="h-6 hidden sm:block" />
 
         <RunAllEvaluationButton />
+        {auditHref ? (
+          <Button variant="outline" size="sm" asChild>
+            <Link href={auditHref}>
+              <History className="size-4" aria-hidden="true" />
+              Audit Trail
+            </Link>
+          </Button>
+        ) : null}
         <Button variant="outline" size="sm" asChild>
           <a
             href={`/api/reports/${report.id}/export`}

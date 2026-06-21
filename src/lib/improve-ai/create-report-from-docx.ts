@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { comments, reports, reportSections } from "@/db/schema";
+import { comments, reports, reportSections, workspaceUsers } from "@/db/schema";
 import type { ImportedReportContent } from "@/lib/import/docx-to-sections";
 import { readDocxUpload } from "@/lib/import/docx-upload";
 import { docxBufferToImportedReportContent } from "@/lib/import/docx-to-sections";
@@ -12,6 +12,12 @@ import {
   normalizeDeviationNo,
 } from "@/lib/reports/deviation-no";
 import { REPORT_SECTION_ROW_ORDER } from "@/types/sections";
+import {
+  auditActorFromId,
+  recordAuditEvent,
+  recordSectionVersion,
+  WORD_ACTOR,
+} from "@/lib/audit";
 
 async function persistImportedComments(
   reportId: string,
@@ -48,7 +54,18 @@ async function persistImportedComments(
         locked: true,
       })
       .returning();
-    if (inserted) idByExternalId.set(comment.externalCommentId, inserted.id);
+    if (inserted) {
+      idByExternalId.set(comment.externalCommentId, inserted.id);
+      await recordAuditEvent({
+        actor: WORD_ACTOR,
+        action: "comment_created",
+        entityType: "comment",
+        entityId: inserted.id,
+        reportId,
+        summary: "Word import comment",
+        newValue: { section: comment.section, kind: "word_import" },
+      });
+    }
   }
 
   for (const comment of replies) {
@@ -76,7 +93,18 @@ async function persistImportedComments(
         locked: true,
       })
       .returning();
-    if (inserted) idByExternalId.set(comment.externalCommentId, inserted.id);
+    if (inserted) {
+      idByExternalId.set(comment.externalCommentId, inserted.id);
+      await recordAuditEvent({
+        actor: WORD_ACTOR,
+        action: "comment_created",
+        entityType: "comment",
+        entityId: inserted.id,
+        reportId,
+        summary: "Word import comment reply",
+        newValue: { section: comment.section, kind: "word_import", parentId },
+      });
+    }
   }
 }
 
@@ -145,6 +173,52 @@ export async function createReportFromDocxUpload(params: {
       filename,
       uploadedById: params.authorId,
     });
+
+    const [author] = await db
+      .select({
+        id: workspaceUsers.id,
+        name: workspaceUsers.name,
+        role: workspaceUsers.role,
+      })
+      .from(workspaceUsers)
+      .where(eq(workspaceUsers.id, params.authorId))
+      .limit(1);
+
+    const actor = author
+      ? { id: author.id, name: author.name, role: author.role }
+      : auditActorFromId(params.authorId);
+
+    await recordAuditEvent({
+      actor,
+      action: "report_created",
+      entityType: "report",
+      entityId: report.id,
+      reportId: report.id,
+      summary: `Created report ${deviationNo} from DOCX upload`,
+      newValue: {
+        deviationNo,
+        authorId: params.authorId,
+        assignedManagerId: params.assignedManagerId ?? null,
+        source: "improve_ai_docx",
+      },
+    });
+
+    const sectionRows = await db
+      .select()
+      .from(reportSections)
+      .where(eq(reportSections.reportId, report.id));
+
+    for (const sectionRow of sectionRows) {
+      await recordSectionVersion({
+        actor,
+        reportId: report.id,
+        sectionId: sectionRow.id,
+        section: sectionRow.section,
+        previousContent: {},
+        newContent: sectionRow.content,
+        forceSnapshot: true,
+      });
+    }
 
     return { reportId: report.id, deviationNo, filename };
   } catch (e) {

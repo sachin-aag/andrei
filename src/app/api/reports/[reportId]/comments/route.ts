@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { comments, reports, sectionTypeEnum } from "@/db/schema";
 import type { SectionType } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
+import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
 
 function canAccessReport(user: { id: string; role: string }, report: { authorId: string; assignedManagerId: string | null }) {
   if (user.role === "manager") return true;
@@ -132,11 +133,37 @@ export async function POST(
     })
     .returning();
 
+  await recordAuditEvent({
+    actor: auditActorFromUser(user),
+    action: "comment_created",
+    entityType: "comment",
+    entityId: inserted.id,
+    reportId,
+    summary: `Comment created${inserted.section ? ` in ${inserted.section}` : ""}`,
+    newValue: {
+      content: inserted.content,
+      section: inserted.section,
+      parentId: inserted.parentId,
+    },
+  });
+
   if (report.status === "submitted") {
+    const previousStatus = report.status;
     await db
       .update(reports)
       .set({ status: "in_review", updatedAt: new Date() })
       .where(eq(reports.id, reportId));
+
+    await recordAuditEvent({
+      actor: auditActorFromUser(user),
+      action: "report_updated",
+      entityType: "report",
+      entityId: reportId,
+      reportId,
+      summary: "Report moved to in_review after first comment",
+      oldValue: { status: previousStatus },
+      newValue: { status: "in_review" },
+    });
   }
 
   return NextResponse.json({ comment: inserted });

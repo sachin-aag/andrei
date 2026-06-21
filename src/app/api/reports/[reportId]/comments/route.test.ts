@@ -12,6 +12,15 @@ vi.mock("@/lib/auth/session", () => ({
   getCurrentUser: vi.fn(),
 }));
 
+vi.mock("@/lib/audit", () => ({
+  auditActorFromUser: vi.fn((user: { id: string; name: string; role: string }) => ({
+    id: user.id,
+    name: user.name,
+    role: user.role,
+  })),
+  recordAuditEvent: vi.fn().mockResolvedValue({ id: "audit-1" }),
+}));
+
 import { db } from "@/db";
 import { getCurrentUser } from "@/lib/auth/session";
 import { GET, POST } from "@/app/api/reports/[reportId]/comments/route";

@@ -10,6 +10,7 @@ import {
   isDeviationNoTaken,
   normalizeDeviationNo,
 } from "@/lib/reports/deviation-no";
+import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
 
 export async function GET(
   _req: Request,
@@ -73,6 +74,14 @@ export async function PATCH(
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { reportId } = await params;
 
+  const [existingReport] = await db
+    .select()
+    .from(reports)
+    .where(eq(reports.id, reportId));
+  if (!existingReport) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   const parse = patchSchema.safeParse(await req.json().catch(() => ({})));
   if (!parse.success) {
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
@@ -99,6 +108,30 @@ export async function PATCH(
     .returning();
 
   if (!updated) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  await recordAuditEvent({
+    actor: auditActorFromUser(user),
+    action: "report_updated",
+    entityType: "report",
+    entityId: reportId,
+    reportId,
+    summary: `Updated report metadata`,
+    oldValue: {
+      deviationNo: existingReport.deviationNo,
+      date: existingReport.date,
+      toolsUsed: existingReport.toolsUsed,
+      otherTools: existingReport.otherTools,
+      assignedManagerId: existingReport.assignedManagerId,
+    },
+    newValue: {
+      deviationNo: updated.deviationNo,
+      date: updated.date,
+      toolsUsed: updated.toolsUsed,
+      otherTools: updated.otherTools,
+      assignedManagerId: updated.assignedManagerId,
+    },
+  });
+
   return NextResponse.json({ report: updated });
 }
 
@@ -118,6 +151,20 @@ export async function DELETE(
   if (existing.authorId !== user.id) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
+
+  await recordAuditEvent({
+    actor: auditActorFromUser(user),
+    action: "report_deleted",
+    entityType: "report",
+    entityId: reportId,
+    reportId,
+    summary: `Deleted report ${existing.deviationNo}`,
+    oldValue: {
+      deviationNo: existing.deviationNo,
+      status: existing.status,
+      authorId: existing.authorId,
+    },
+  });
 
   await db.delete(reports).where(eq(reports.id, reportId));
   revalidatePath("/");

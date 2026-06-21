@@ -29,6 +29,10 @@ import {
 import { EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
 import { REPORT_WORKSPACE_SECTIONS } from "@/types/sections";
 import { captureEvent } from "@/lib/analytics/events";
+import {
+  ElectronicSignatureDialog,
+  type SignatureMeaningUi,
+} from "./electronic-signature-dialog";
 
 export type { WorkspaceMode };
 
@@ -102,6 +106,7 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
   const [submitting, setSubmitting] = useState(false);
   const [approving, setApproving] = useState(false);
   const [sendingFeedback, setSendingFeedback] = useState(false);
+  const [signDialog, setSignDialog] = useState<SignatureMeaningUi | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("criteria");
   const [sectionMinHeights, setSectionMinHeights] = useState<
@@ -156,57 +161,68 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
   };
 
   const handleSubmit = async () => {
-    setSubmitting(true);
-    try {
-      const res = await fetch(`/api/reports/${report.id}/submit`, { method: "POST" });
-      if (!res.ok) {
-        toast.error("Failed to submit");
-        return;
-      }
-      captureEvent("report_submitted", { reportId: report.id });
-      toast.success("Report submitted for review");
-      warnIfPlaceholders();
-      await refresh();
-      router.refresh();
-    } finally {
-      setSubmitting(false);
-    }
+    setSignDialog("submission");
   };
 
   const handleApprove = async () => {
-    setApproving(true);
-    try {
-      const res = await fetch(`/api/reports/${report.id}/approve`, { method: "POST" });
-      if (!res.ok) {
-        toast.error("Failed to approve");
-        return;
-      }
-      captureEvent("report_approved", { reportId: report.id });
-      toast.success("Report approved");
-      warnIfPlaceholders();
-      await refresh();
-      router.refresh();
-    } finally {
-      setApproving(false);
-    }
+    setSignDialog("approval");
   };
 
   const handleFeedback = async () => {
-    setSendingFeedback(true);
+    setSignDialog("rejection");
+  };
+
+  const runSignedAction = async (password: string) => {
+    if (!signDialog) return;
+
+    const endpoints: Record<SignatureMeaningUi, string> = {
+      submission: "submit",
+      approval: "approve",
+      rejection: "feedback",
+    };
+
+    const setLoading = {
+      submission: setSubmitting,
+      approval: setApproving,
+      rejection: setSendingFeedback,
+    }[signDialog];
+
+    setLoading(true);
     try {
-      const res = await fetch(`/api/reports/${report.id}/feedback`, { method: "POST" });
+      const endpoint = endpoints[signDialog];
+      const res = await fetch(`/api/reports/${report.id}/${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
       if (!res.ok) {
-        toast.error("Failed to return feedback");
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        toast.error(body.error ?? "Signing failed");
         return;
       }
-      captureEvent("report_feedback_sent", { reportId: report.id });
-      toast.success("Feedback returned to author");
+
+      if (signDialog === "submission") {
+        captureEvent("report_submitted", { reportId: report.id });
+        toast.success("Report submitted for review");
+        warnIfPlaceholders();
+      } else if (signDialog === "approval") {
+        captureEvent("report_approved", { reportId: report.id });
+        toast.success("Report approved");
+        warnIfPlaceholders();
+      } else {
+        captureEvent("report_feedback_sent", { reportId: report.id });
+        toast.success("Feedback returned to author");
+      }
+
+      setSignDialog(null);
       await refresh();
       router.refresh();
     } finally {
-      setSendingFeedback(false);
+      setLoading(false);
     }
   };
+
+  const signingInFlight = submitting || approving || sendingFeedback;
 
   const jumpToSection = useCallback((s: SectionType) => {
     const el = mainRef.current?.querySelector(`#${s}`);
@@ -294,6 +310,15 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
 
   return (
     <div className="flex h-full flex-col">
+      <ElectronicSignatureDialog
+        open={signDialog != null}
+        meaning={signDialog ?? "submission"}
+        loading={signingInFlight}
+        onOpenChange={(open) => {
+          if (!open && !signingInFlight) setSignDialog(null);
+        }}
+        onConfirm={runSignedAction}
+      />
       <ReportWorkspaceHeader
         report={report}
         mode={mode}
@@ -309,6 +334,7 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
         onSubmit={handleSubmit}
         onApprove={handleApprove}
         onFeedback={handleFeedback}
+        auditHref={`/reports/${report.id}/audit`}
       />
 
       <ReportEditorToolbar />

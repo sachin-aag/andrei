@@ -23,6 +23,15 @@ vi.mock("@/lib/auth/password-policy", () => ({
   getPasswordPolicy: vi.fn(),
 }));
 
+vi.mock("@/lib/audit", () => ({
+  auditActorFromUser: vi.fn((user: { id: string; name: string; role: string }) => ({
+    id: user.id,
+    name: user.name,
+    role: user.role,
+  })),
+  recordAuditEvent: vi.fn().mockResolvedValue({ id: "audit-1" }),
+}));
+
 import { db } from "@/db";
 import { getCurrentUser } from "@/lib/auth/session";
 import { hashPassword } from "@/lib/auth/password";

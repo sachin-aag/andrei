@@ -9,6 +9,7 @@ import {
   getPasswordPolicy,
   validatePasswordPolicy,
 } from "@/lib/auth/password-policy";
+import { auditActorFromId, recordAuditEvent } from "@/lib/audit";
 
 export async function POST(req: Request) {
   const session = await auth();
@@ -48,7 +49,7 @@ export async function POST(req: Request) {
 
   const wsUser = await db.query.workspaceUsers.findFirst({
     where: eq(workspaceUsers.id, workspaceUserId),
-    columns: { id: true, passwordHash: true, passwordHistory: true },
+    columns: { id: true, name: true, passwordHash: true, passwordHistory: true },
   });
   if (!wsUser?.passwordHash) {
     return NextResponse.json(
@@ -101,6 +102,14 @@ export async function POST(req: Request) {
       passwordHistory: updatedHistory,
     })
     .where(eq(workspaceUsers.id, wsUser.id));
+
+  await recordAuditEvent({
+    actor: auditActorFromId(wsUser.id, wsUser.name),
+    action: "auth_password_changed",
+    entityType: "auth",
+    entityId: wsUser.id,
+    summary: "Password changed by user",
+  });
 
   return NextResponse.json({ ok: true });
 }
