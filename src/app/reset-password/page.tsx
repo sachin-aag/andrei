@@ -56,7 +56,8 @@ export default async function ResetPasswordPage({
             Set a new password
           </h1>
           <p className="text-sm text-[var(--muted-foreground)] mt-2">
-            Choose a strong password for your account.
+            Choose a strong password for{" "}
+            <strong className="text-[var(--foreground)]">{email}</strong>.
           </p>
         </div>
         <ResetPasswordForm token={token} email={email} />
