@@ -2,6 +2,9 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { workspaceUsers } from "@/db/schema";
 import { verifyPassword } from "@/lib/auth/password";
+import { isTestLoginEnabled } from "@/lib/test/ai-bypass";
+
+const E2E_SIGNING_PASSWORD = "E2eTestPass123!";
 
 export async function verifyPasswordForSigning(
   workspaceUserId: string,
@@ -17,6 +20,10 @@ export async function verifyPasswordForSigning(
   });
 
   if (!wsUser?.passwordHash) {
+    if (isTestLoginEnabled() && password === E2E_SIGNING_PASSWORD) {
+      return { ok: true };
+    }
+
     return {
       ok: false,
       error: "This account cannot sign with a password.",
