@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { format } from "date-fns";
 import { ChevronLeft, Download, ShieldCheck, ShieldX } from "lucide-react";
@@ -45,23 +45,27 @@ export function AuditTrailPanel({ reportId }: { reportId: string }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(`/api/reports/${reportId}/audit`);
-      if (!res.ok) throw new Error("Failed to load audit trail");
-      setData(await res.json());
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to load audit trail");
-    } finally {
-      setLoading(false);
-    }
-  }, [reportId]);
-
   useEffect(() => {
-    void load();
-  }, [load]);
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const res = await fetch(`/api/reports/${reportId}/audit`);
+        if (cancelled) return;
+        if (!res.ok) throw new Error("Failed to load audit trail");
+        setData(await res.json());
+      } catch (e) {
+        if (cancelled) return;
+        setError(e instanceof Error ? e.message : "Failed to load audit trail");
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [reportId]);
 
   if (loading) {
     return <p className="text-sm text-muted-foreground p-6">Loading audit trail…</p>;

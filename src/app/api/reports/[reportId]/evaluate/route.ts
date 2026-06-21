@@ -30,7 +30,7 @@ import {
   observeRouteHandler,
   setRouteObservationIO,
 } from "@/lib/observability/langfuse";
-import { auditActorFromUser, recordAuditEvent, recordSectionVersion } from "@/lib/audit";
+import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
 
 export const maxDuration = 60;
 

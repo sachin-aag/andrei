@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { format } from "date-fns";
 import { ChevronLeft, Download, ShieldCheck, ShieldX } from "lucide-react";
@@ -21,16 +21,20 @@ export function AdminAuditPanel() {
   const [data, setData] = useState<GlobalAuditPayload | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    const res = await fetch("/api/admin/audit");
-    if (res.ok) setData(await res.json());
-    setLoading(false);
-  }, []);
-
   useEffect(() => {
-    void load();
-  }, [load]);
+    let cancelled = false;
+
+    void (async () => {
+      const res = await fetch("/api/admin/audit");
+      if (cancelled) return;
+      if (res.ok) setData(await res.json());
+      setLoading(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   if (loading) {
     return <p className="text-sm text-muted-foreground p-6">Loading audit trail…</p>;
