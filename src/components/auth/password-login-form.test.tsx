@@ -91,6 +91,31 @@ describe("PasswordLoginForm", () => {
     expect(await screen.findByLabelText(/^password$/i)).toBeInTheDocument();
   });
 
+  it("moves locked accounts to the password step with reset link", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      jsonResponse({ allowed: true, hasPassword: true, locked: true })
+    );
+
+    const user = userEvent.setup();
+    render(<PasswordLoginForm />);
+    await user.type(
+      screen.getByLabelText(/work email/i),
+      "locked@mjbiopharm.com"
+    );
+    await user.click(screen.getByRole("button", { name: /continue/i }));
+
+    expect(
+      await screen.findByText(/this account is locked after too many failed/i)
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText(/^password$/i)).toBeDisabled();
+    expect(
+      screen.getByRole("link", { name: /forgot password/i })
+    ).toHaveAttribute(
+      "href",
+      expect.stringContaining("/forgot-password?email=locked%40mjbiopharm.com")
+    );
+  });
+
   it("shows invalid password error", async () => {
     vi.mocked(signIn).mockResolvedValueOnce({ error: "CredentialsSignin" } as never);
 
