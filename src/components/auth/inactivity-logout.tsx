@@ -21,7 +21,7 @@ export function InactivityLogout({
   timeoutMinutes: number;
   userId: string;
 }) {
-  const timerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+  const timerRef = useRef<number | null>(null);
   const lastResetAtRef = useRef(0);
   const signedOutRef = useRef(false);
 
