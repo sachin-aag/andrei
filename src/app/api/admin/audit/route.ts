@@ -7,7 +7,7 @@ import {
   verifyAuditChain,
 } from "@/lib/audit";
 
-async function requireAdminOrManager() {
+async function requireAdmin() {
   const user = await getCurrentUser();
   if (!user) {
     return {
@@ -15,7 +15,7 @@ async function requireAdminOrManager() {
       response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
     };
   }
-  if (user.role !== "admin" && user.role !== "manager") {
+  if (user.role !== "admin") {
     return {
       user: null,
       response: NextResponse.json({ error: "Forbidden" }, { status: 403 }),
@@ -25,7 +25,7 @@ async function requireAdminOrManager() {
 }
 
 export async function GET(req: Request) {
-  const { user, response } = await requireAdminOrManager();
+  const { user, response } = await requireAdmin();
   if (response || !user) return response;
 
   const url = new URL(req.url);

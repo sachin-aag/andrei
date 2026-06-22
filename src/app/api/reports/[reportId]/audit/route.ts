@@ -10,20 +10,15 @@ import {
   verifyAuditChain,
 } from "@/lib/audit";
 
-function canViewAudit(
-  user: { id: string; role: string },
-  report: { authorId: string; assignedManagerId: string | null }
-) {
-  if (user.role === "admin" || user.role === "manager") return true;
-  return user.id === report.authorId;
-}
-
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ reportId: string }> }
 ) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  if (user.role !== "admin") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
   const { reportId } = await params;
 
   const [report] = await db
@@ -31,9 +26,6 @@ export async function GET(
     .from(reports)
     .where(eq(reports.id, reportId));
   if (!report) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (!canViewAudit(user, report)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-  }
 
   const [events, signatures, versions, chain] = await Promise.all([
     listAuditEvents({ reportId, limit: 1000 }),

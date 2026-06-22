@@ -21,11 +21,7 @@ export default async function ReportAuditPage({
 
   if (!report) redirect("/");
 
-  const canView =
-    user.role === "admin" ||
-    user.role === "manager" ||
-    user.id === report.authorId;
-  if (!canView) redirect("/");
+  if (user.role !== "admin") redirect("/");
 
   return (
     <div className="min-h-full bg-[var(--background)]">

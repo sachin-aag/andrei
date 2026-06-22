@@ -338,7 +338,7 @@ export function ReportWorkspace({
         onSubmit={handleSubmit}
         onApprove={handleApprove}
         onFeedback={handleFeedback}
-        auditHref={`/reports/${report.id}/audit`}
+        auditHref={mode === "view" ? `/reports/${report.id}/audit` : undefined}
         backHref={mode === "view" ? "/admin/reports" : "/"}
         backLabel={mode === "view" ? "Admin Reports" : "Reports"}
       />
