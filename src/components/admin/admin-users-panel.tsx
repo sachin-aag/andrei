@@ -2,7 +2,8 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { History, Loader2, Plus, ShieldCheck } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { History, Loader2, Plus, ShieldCheck, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -62,6 +63,7 @@ export function AdminUsersPanel({
   currentUserId: string;
   initialPasswordExpiryDays: number;
 }) {
+  const router = useRouter();
   const [users, setUsers] = useState(() => sortUsers(initialUsers));
   const [passwordExpiryDays, setPasswordExpiryDays] = useState(
     String(initialPasswordExpiryDays)
@@ -72,15 +74,21 @@ export function AdminUsersPanel({
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm, setCreateForm] = useState<CreateUserForm>(emptyCreateForm);
   const [resetUser, setResetUser] = useState<AdminUser | null>(null);
+  const [deleteUser, setDeleteUser] = useState<AdminUser | null>(null);
   const [pendingRoleUserId, setPendingRoleUserId] = useState<string | null>(null);
   const [isCreating, startCreateTransition] = useTransition();
   const [isResetting, startResetTransition] = useTransition();
+  const [isDeleting, startDeleteTransition] = useTransition();
   const [isSavingExpiry, startExpirySaveTransition] = useTransition();
 
   const updateUser = (updated: AdminUser) => {
     setUsers((current) =>
       sortUsers(current.map((user) => (user.id === updated.id ? updated : user)))
     );
+  };
+
+  const removeUser = (userId: string) => {
+    setUsers((current) => current.filter((user) => user.id !== userId));
   };
 
   const resetCreateForm = () => {
@@ -192,6 +200,27 @@ export function AdminUsersPanel({
 
       toast.success(`Password reset email sent to ${resetUser.email}`);
       setResetUser(null);
+    });
+  };
+
+  const deleteSelectedUser = () => {
+    if (!deleteUser) return;
+
+    startDeleteTransition(async () => {
+      const response = await fetch(
+        `/api/admin/users/${encodeURIComponent(deleteUser.id)}`,
+        { method: "DELETE" }
+      );
+
+      if (!response.ok) {
+        toast.error(await readError(response, "Could not delete user"));
+        return;
+      }
+
+      removeUser(deleteUser.id);
+      toast.success("User deleted");
+      setDeleteUser(null);
+      router.refresh();
     });
   };
 
@@ -430,15 +459,33 @@ export function AdminUsersPanel({
                       "Magic link only"
                     )}
                   </td>
-                  <td className="px-4 py-3 text-right">
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setResetUser(user)}
-                    >
-                      Send reset email
-                    </Button>
+                  <td className="px-4 py-3">
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setResetUser(user)}
+                      >
+                        Send reset email
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="size-8 text-[var(--muted-foreground)] hover:bg-red-50 hover:text-red-600 disabled:hover:bg-transparent disabled:hover:text-[var(--muted-foreground)]"
+                        disabled={user.id === currentUserId}
+                        aria-label={`Delete user ${user.name}`}
+                        title={
+                          user.id === currentUserId
+                            ? "You cannot delete your own account"
+                            : "Delete user"
+                        }
+                        onClick={() => setDeleteUser(user)}
+                      >
+                        <Trash2 className="size-4" />
+                      </Button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -485,6 +532,59 @@ export function AdminUsersPanel({
             <Button type="button" disabled={isResetting} onClick={resetPassword}>
               {isResetting && <Loader2 className="size-4 animate-spin" />}
               Send reset email
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={deleteUser !== null}
+        onOpenChange={(open) => {
+          if (isDeleting) return;
+          if (!open) {
+            setDeleteUser(null);
+          }
+        }}
+      >
+        <DialogContent
+          onInteractOutside={(event) => {
+            if (isDeleting) event.preventDefault();
+          }}
+          onEscapeKeyDown={(event) => {
+            if (isDeleting) event.preventDefault();
+          }}
+        >
+          <DialogHeader>
+            <DialogTitle>Delete user?</DialogTitle>
+            <DialogDescription>
+              This will remove {deleteUser?.name}&apos;s sign-in access. Existing
+              reports and comments remain in the audit history. This cannot be
+              undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={isDeleting}
+              onClick={() => {
+                setDeleteUser(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              disabled={isDeleting}
+              onClick={deleteSelectedUser}
+            >
+              {isDeleting ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Trash2 className="size-4" />
+              )}
+              Delete user
             </Button>
           </DialogFooter>
         </DialogContent>

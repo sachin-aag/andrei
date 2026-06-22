@@ -4,6 +4,7 @@ vi.mock("@/db", () => ({
   db: {
     select: vi.fn(),
     update: vi.fn(),
+    delete: vi.fn(),
   },
 }));
 
@@ -22,7 +23,7 @@ vi.mock("@/lib/audit", () => ({
 
 import { db } from "@/db";
 import { getCurrentUser } from "@/lib/auth/session";
-import { PATCH } from "./route";
+import { DELETE, PATCH } from "./route";
 
 const admin = {
   id: "admin-1",
@@ -48,6 +49,12 @@ function jsonRequest(body: unknown) {
   });
 }
 
+function deleteRequest() {
+  return new Request("http://localhost/api/admin/users/user-1", {
+    method: "DELETE",
+  });
+}
+
 function mockUpdateReturning(rows: unknown[]) {
   const returning = vi.fn().mockResolvedValueOnce(rows);
   const where = vi.fn().mockReturnValue({ returning });
@@ -68,6 +75,19 @@ function mockSelectExistingUser() {
   ]);
   const from = vi.fn().mockReturnValue({ where });
   vi.mocked(db.select).mockReturnValueOnce({ from } as never);
+}
+
+function mockDeleteReturning(rows: unknown[]) {
+  const returning = vi.fn().mockResolvedValueOnce(rows);
+  const where = vi.fn().mockReturnValue({ returning });
+  vi.mocked(db.delete).mockReturnValueOnce({ where } as never);
+  return { where };
+}
+
+function mockDeleteWhere() {
+  const where = vi.fn().mockResolvedValueOnce(undefined);
+  vi.mocked(db.delete).mockReturnValueOnce({ where } as never);
+  return { where };
 }
 
 describe("PATCH /api/admin/users/[userId]", () => {
@@ -135,5 +155,81 @@ describe("PATCH /api/admin/users/[userId]", () => {
         hasPassword: false,
       },
     });
+  });
+});
+
+describe("DELETE /api/admin/users/[userId]", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("rejects unauthenticated requests", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(null);
+
+    const response = await DELETE(deleteRequest(), {
+      params: Promise.resolve({ userId: "user-1" }),
+    });
+
+    expect(response.status).toBe(401);
+    expect(db.delete).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-admin requests", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(manager);
+
+    const response = await DELETE(deleteRequest(), {
+      params: Promise.resolve({ userId: "user-1" }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(db.delete).not.toHaveBeenCalled();
+  });
+
+  it("prevents admins from deleting their own account", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(admin);
+
+    const response = await DELETE(deleteRequest(), {
+      params: Promise.resolve({ userId: "admin-1" }),
+    });
+
+    expect(response.status).toBe(400);
+    expect(db.delete).not.toHaveBeenCalled();
+  });
+
+  it("returns 404 when the target user is missing", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(admin);
+    mockDeleteReturning([]);
+
+    const response = await DELETE(deleteRequest(), {
+      params: Promise.resolve({ userId: "user-1" }),
+    });
+
+    expect(response.status).toBe(404);
+    expect(db.delete).toHaveBeenCalledTimes(1);
+  });
+
+  it("deletes a workspace user and matching auth user for admins", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(admin);
+    mockDeleteReturning([
+      {
+        id: "user-1",
+        name: "User One",
+        email: "user.one@mjbiopharm.com",
+        role: "engineer",
+        title: "Engineer",
+        passwordHash: "old.hash",
+        mustChangePassword: false,
+        createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      },
+    ]);
+    mockDeleteWhere();
+
+    const response = await DELETE(deleteRequest(), {
+      params: Promise.resolve({ userId: "user-1" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(db.delete).toHaveBeenCalledTimes(2);
+    await expect(response.json()).resolves.toEqual({ ok: true });
   });
 });
