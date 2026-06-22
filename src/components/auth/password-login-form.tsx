@@ -3,11 +3,11 @@
 import { useState, useTransition } from "react";
 import { signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { ArrowRight, Loader2, ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import Link from "next/link";
 import { captureEvent } from "@/lib/analytics/events";
 
 type EmailCheckResult =
@@ -16,11 +16,13 @@ type EmailCheckResult =
 
 type Step =
   | { kind: "email" }
-  | { kind: "password"; email: string }
+  | { kind: "password"; email: string; locked: boolean }
   | { kind: "no-password"; email: string };
 
 const EMAIL_CHECK_ERROR =
   "Could not check this email. Please try again or contact your admin.";
+const LOCKED_ACCOUNT_MESSAGE =
+  "This account is locked after too many failed password attempts. Please reset your password or contact your admin.";
 
 async function readEmailCheckResult(res: Response): Promise<EmailCheckResult> {
   const data = await res.json().catch(() => null);
@@ -89,15 +91,13 @@ export function PasswordLoginForm({ redirectTo }: { redirectTo?: string }) {
         );
         return;
       }
+      const trimmed = email.trim();
       if (locked) {
-        setError(
-          "This account is locked after too many failed password attempts. Please reset your password or contact your admin."
-        );
+        setStep({ kind: "password", email: trimmed, locked: true });
         return;
       }
-      const trimmed = email.trim();
       if (hasPassword) {
-        setStep({ kind: "password", email: trimmed });
+        setStep({ kind: "password", email: trimmed, locked: false });
       } else {
         setStep({ kind: "no-password", email: trimmed });
       }
@@ -105,7 +105,7 @@ export function PasswordLoginForm({ redirectTo }: { redirectTo?: string }) {
   };
 
   const submitPassword = () => {
-    if (step.kind !== "password" || !password) return;
+    if (step.kind !== "password" || step.locked || !password) return;
     setError(null);
     startTransition(async () => {
       const res = await signIn("credentials", {
@@ -120,11 +120,12 @@ export function PasswordLoginForm({ redirectTo }: { redirectTo?: string }) {
           body: JSON.stringify({ email: step.email }),
         });
         const status = await statusRes.json().catch(() => ({}));
-        setError(
-          status.locked
-            ? "This account is locked after too many failed password attempts. Please reset your password or contact your admin."
-            : "Invalid password. Please try again."
-        );
+        if (status.locked) {
+          setStep({ kind: "password", email: step.email, locked: true });
+          setError(null);
+        } else {
+          setError("Invalid password. Please try again.");
+        }
         return;
       }
       captureEvent("user_logged_in");
@@ -182,6 +183,11 @@ export function PasswordLoginForm({ redirectTo }: { redirectTo?: string }) {
             Signing in as <strong>{step.email}</strong>
           </p>
         </div>
+        {step.locked ? (
+          <p id="locked-account-warning" className="text-sm text-destructive">
+            {LOCKED_ACCOUNT_MESSAGE}
+          </p>
+        ) : null}
         <div className="space-y-2">
           <Label htmlFor="pw-password">Password</Label>
           <Input
@@ -194,6 +200,10 @@ export function PasswordLoginForm({ redirectTo }: { redirectTo?: string }) {
             }}
             placeholder="Enter your password"
             autoComplete="off"
+            disabled={step.locked || pending}
+            aria-describedby={
+              step.locked ? "locked-account-warning" : undefined
+            }
             autoFocus
             onKeyDown={(e) => {
               if (e.key === "Enter") submitPassword();
@@ -204,7 +214,7 @@ export function PasswordLoginForm({ redirectTo }: { redirectTo?: string }) {
         <Button
           type="button"
           className="w-full h-11"
-          disabled={!password || pending}
+          disabled={step.locked || !password || pending}
           onClick={submitPassword}
         >
           {pending ? (
