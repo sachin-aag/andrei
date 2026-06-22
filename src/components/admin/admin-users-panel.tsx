@@ -18,6 +18,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  INACTIVITY_TIMEOUT_UPDATED_EVENT,
+} from "@/components/auth/inactivity-logout";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -26,6 +29,10 @@ import {
 } from "@/components/ui/select";
 import type { AdminUser } from "@/lib/admin/users";
 import { USER_ROLES, roleLabel, type UserRole } from "@/lib/auth/roles";
+import {
+  MAX_INACTIVITY_TIMEOUT_MINUTES,
+  MIN_INACTIVITY_TIMEOUT_MINUTES,
+} from "@/lib/auth/inactivity-timeout";
 import {
   passwordStrengthRequirementText,
   validatePasswordStrength,
@@ -58,10 +65,12 @@ export function AdminUsersPanel({
   initialUsers,
   currentUserId,
   initialPasswordExpiryDays,
+  initialInactivityTimeoutMinutes,
 }: {
   initialUsers: AdminUser[];
   currentUserId: string;
   initialPasswordExpiryDays: number;
+  initialInactivityTimeoutMinutes: number;
 }) {
   const router = useRouter();
   const [users, setUsers] = useState(() => sortUsers(initialUsers));
@@ -71,6 +80,11 @@ export function AdminUsersPanel({
   const [savedPasswordExpiryDays, setSavedPasswordExpiryDays] = useState(
     initialPasswordExpiryDays
   );
+  const [inactivityTimeoutMinutes, setInactivityTimeoutMinutes] = useState(
+    String(initialInactivityTimeoutMinutes)
+  );
+  const [savedInactivityTimeoutMinutes, setSavedInactivityTimeoutMinutes] =
+    useState(initialInactivityTimeoutMinutes);
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm, setCreateForm] = useState<CreateUserForm>(emptyCreateForm);
   const [resetUser, setResetUser] = useState<AdminUser | null>(null);
@@ -80,6 +94,7 @@ export function AdminUsersPanel({
   const [isResetting, startResetTransition] = useTransition();
   const [isDeleting, startDeleteTransition] = useTransition();
   const [isSavingExpiry, startExpirySaveTransition] = useTransition();
+  const [isSavingInactivity, startInactivitySaveTransition] = useTransition();
 
   const updateUser = (updated: AdminUser) => {
     setUsers((current) =>
@@ -179,6 +194,45 @@ export function AdminUsersPanel({
       setSavedPasswordExpiryDays(data.expiryDays);
       setPasswordExpiryDays(String(data.expiryDays));
       toast.success("Password expiry updated");
+    });
+  };
+
+  const saveInactivityTimeoutMinutes = () => {
+    const minutes = Number.parseInt(inactivityTimeoutMinutes, 10);
+    if (
+      !Number.isInteger(minutes) ||
+      minutes < MIN_INACTIVITY_TIMEOUT_MINUTES ||
+      minutes > MAX_INACTIVITY_TIMEOUT_MINUTES
+    ) {
+      toast.error("Enter a whole number of minutes between 0 and 1440");
+      return;
+    }
+
+    startInactivitySaveTransition(async () => {
+      const response = await fetch("/api/admin/password-policy", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ inactivityTimeoutMinutes: minutes }),
+      });
+
+      if (!response.ok) {
+        toast.error(
+          await readError(response, "Could not update inactivity timeout")
+        );
+        return;
+      }
+
+      const data = (await response.json()) as {
+        inactivityTimeoutMinutes: number;
+      };
+      setSavedInactivityTimeoutMinutes(data.inactivityTimeoutMinutes);
+      setInactivityTimeoutMinutes(String(data.inactivityTimeoutMinutes));
+      window.dispatchEvent(
+        new CustomEvent(INACTIVITY_TIMEOUT_UPDATED_EVENT, {
+          detail: { timeoutMinutes: data.inactivityTimeoutMinutes },
+        })
+      );
+      toast.success("Inactivity timeout updated");
     });
   };
 
@@ -362,42 +416,84 @@ export function AdminUsersPanel({
       </div>
 
       <div className="flex-1 overflow-y-auto px-10 py-6">
-        <section className="mb-6 max-w-md rounded-lg border border-[var(--border)] bg-[var(--card)] p-5">
-          <h2 className="text-base font-semibold">Password expiry</h2>
-          <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-            Number of days before a user must change their password. Set to 0 to
-            disable expiry.
-          </p>
-          <div className="mt-4 flex items-end gap-3">
-            <div className="grid flex-1 gap-2">
-              <Label htmlFor="password-expiry-days">Days</Label>
-              <Input
-                id="password-expiry-days"
-                type="number"
-                min={0}
-                max={3650}
-                inputMode="numeric"
-                value={passwordExpiryDays}
-                disabled={isSavingExpiry}
-                onChange={(event) => setPasswordExpiryDays(event.target.value)}
-              />
+        <div className="mb-6 grid max-w-4xl gap-4 lg:grid-cols-2">
+          <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-5">
+            <h2 className="text-base font-semibold">Password expiry</h2>
+            <p className="mt-1 text-sm text-[var(--muted-foreground)]">
+              Number of days before a user must change their password. Set to 0 to
+              disable expiry.
+            </p>
+            <div className="mt-4 flex items-end gap-3">
+              <div className="grid flex-1 gap-2">
+                <Label htmlFor="password-expiry-days">Days</Label>
+                <Input
+                  id="password-expiry-days"
+                  type="number"
+                  min={0}
+                  max={3650}
+                  inputMode="numeric"
+                  value={passwordExpiryDays}
+                  disabled={isSavingExpiry}
+                  onChange={(event) => setPasswordExpiryDays(event.target.value)}
+                />
+              </div>
+              <Button
+                type="button"
+                disabled={
+                  isSavingExpiry ||
+                  Number.parseInt(passwordExpiryDays, 10) === savedPasswordExpiryDays
+                }
+                onClick={savePasswordExpiryDays}
+              >
+                {isSavingExpiry ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  "Save"
+                )}
+              </Button>
             </div>
-            <Button
-              type="button"
-              disabled={
-                isSavingExpiry ||
-                Number.parseInt(passwordExpiryDays, 10) === savedPasswordExpiryDays
-              }
-              onClick={savePasswordExpiryDays}
-            >
-              {isSavingExpiry ? (
-                <Loader2 className="size-4 animate-spin" />
-              ) : (
-                "Save"
-              )}
-            </Button>
-          </div>
-        </section>
+          </section>
+
+          <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-5">
+            <h2 className="text-base font-semibold">Inactivity logout</h2>
+            <p className="mt-1 text-sm text-[var(--muted-foreground)]">
+              Number of inactive minutes before users are signed out. Set to 0 to
+              disable inactivity logout.
+            </p>
+            <div className="mt-4 flex items-end gap-3">
+              <div className="grid flex-1 gap-2">
+                <Label htmlFor="inactivity-timeout-minutes">Minutes</Label>
+                <Input
+                  id="inactivity-timeout-minutes"
+                  type="number"
+                  min={MIN_INACTIVITY_TIMEOUT_MINUTES}
+                  max={MAX_INACTIVITY_TIMEOUT_MINUTES}
+                  inputMode="numeric"
+                  value={inactivityTimeoutMinutes}
+                  disabled={isSavingInactivity}
+                  onChange={(event) =>
+                    setInactivityTimeoutMinutes(event.target.value)
+                  }
+                />
+              </div>
+              <Button
+                type="button"
+                disabled={
+                  isSavingInactivity ||
+                  Number.parseInt(inactivityTimeoutMinutes, 10) ===
+                    savedInactivityTimeoutMinutes
+                }
+                onClick={saveInactivityTimeoutMinutes}
+              >
+                {isSavingInactivity ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  "Save"
+                )}
+              </Button>
+            </div>
+          </section>
+        </div>
 
         <div className="overflow-hidden rounded-lg border border-[var(--border)]">
           <table className="w-full text-sm">

@@ -6,7 +6,7 @@ vi.mock("@/lib/auth/session", () => ({
 
 vi.mock("@/lib/auth/password-policy", () => ({
   getPasswordPolicy: vi.fn(),
-  updatePasswordExpiryDays: vi.fn(),
+  updatePasswordPolicySettings: vi.fn(),
 }));
 
 vi.mock("@/lib/audit", () => ({
@@ -18,7 +18,10 @@ vi.mock("@/lib/audit", () => ({
   recordAuditEvent: vi.fn().mockResolvedValue({ id: "audit-1" }),
 }));
 
-import { getPasswordPolicy, updatePasswordExpiryDays } from "@/lib/auth/password-policy";
+import {
+  getPasswordPolicy,
+  updatePasswordPolicySettings,
+} from "@/lib/auth/password-policy";
 import { getCurrentUser } from "@/lib/auth/session";
 import { GET, PATCH } from "./route";
 
@@ -44,6 +47,7 @@ const policy = {
   requireNumber: true,
   requireSpecial: true,
   expiryDays: 90,
+  inactivityTimeoutMinutes: 10,
   warningDays: 14,
   failedLoginAttemptLimit: 3,
   passwordHistoryLimit: 3,
@@ -61,7 +65,10 @@ describe("/api/admin/password-policy", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(getPasswordPolicy).mockResolvedValue(policy);
-    vi.mocked(updatePasswordExpiryDays).mockResolvedValue(120);
+    vi.mocked(updatePasswordPolicySettings).mockResolvedValue({
+      ...policy,
+      expiryDays: 120,
+    });
   });
 
   it("rejects unauthenticated GET requests", async () => {
@@ -86,7 +93,10 @@ describe("/api/admin/password-policy", () => {
     const response = await GET();
 
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toEqual({ expiryDays: 90 });
+    await expect(response.json()).resolves.toEqual({
+      expiryDays: 90,
+      inactivityTimeoutMinutes: 10,
+    });
   });
 
   it("rejects invalid PATCH payloads", async () => {
@@ -95,7 +105,7 @@ describe("/api/admin/password-policy", () => {
     const response = await PATCH(patchRequest({ expiryDays: -1 }));
 
     expect(response.status).toBe(400);
-    expect(updatePasswordExpiryDays).not.toHaveBeenCalled();
+    expect(updatePasswordPolicySettings).not.toHaveBeenCalled();
   });
 
   it("updates expiry days for admins", async () => {
@@ -104,7 +114,31 @@ describe("/api/admin/password-policy", () => {
     const response = await PATCH(patchRequest({ expiryDays: 120 }));
 
     expect(response.status).toBe(200);
-    expect(updatePasswordExpiryDays).toHaveBeenCalledWith(120);
-    await expect(response.json()).resolves.toEqual({ expiryDays: 120 });
+    expect(updatePasswordPolicySettings).toHaveBeenCalledWith({
+      expiryDays: 120,
+    });
+    await expect(response.json()).resolves.toEqual({
+      expiryDays: 120,
+      inactivityTimeoutMinutes: 10,
+    });
+  });
+
+  it("updates inactivity timeout minutes for admins", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(admin);
+    vi.mocked(updatePasswordPolicySettings).mockResolvedValueOnce({
+      ...policy,
+      inactivityTimeoutMinutes: 15,
+    });
+
+    const response = await PATCH(patchRequest({ inactivityTimeoutMinutes: 15 }));
+
+    expect(response.status).toBe(200);
+    expect(updatePasswordPolicySettings).toHaveBeenCalledWith({
+      inactivityTimeoutMinutes: 15,
+    });
+    await expect(response.json()).resolves.toEqual({
+      expiryDays: 90,
+      inactivityTimeoutMinutes: 15,
+    });
   });
 });
