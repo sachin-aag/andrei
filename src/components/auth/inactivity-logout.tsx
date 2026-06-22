@@ -24,15 +24,13 @@ export function InactivityLogout({
   timeoutMinutes: number;
   userId: string;
 }) {
-  const [effectiveTimeoutMinutes, setEffectiveTimeoutMinutes] =
-    useState(timeoutMinutes);
+  const [overrideTimeoutMinutes, setOverrideTimeoutMinutes] = useState<
+    number | null
+  >(null);
   const timerRef = useRef<number | null>(null);
   const lastResetAtRef = useRef(0);
   const signedOutRef = useRef(false);
-
-  useEffect(() => {
-    setEffectiveTimeoutMinutes(timeoutMinutes);
-  }, [timeoutMinutes]);
+  const effectiveTimeoutMinutes = overrideTimeoutMinutes ?? timeoutMinutes;
 
   useEffect(() => {
     const onTimeoutUpdated = (event: Event) => {
@@ -41,7 +39,7 @@ export function InactivityLogout({
       ).detail?.timeoutMinutes;
 
       if (typeof nextTimeoutMinutes === "number") {
-        setEffectiveTimeoutMinutes(nextTimeoutMinutes);
+        setOverrideTimeoutMinutes(nextTimeoutMinutes);
       }
     };
 

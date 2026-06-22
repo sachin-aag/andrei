@@ -71,6 +71,9 @@ describe("InactivityLogout", () => {
           detail: { timeoutMinutes: 1 },
         })
       );
+    });
+
+    act(() => {
       vi.advanceTimersByTime(60_000);
     });
 
