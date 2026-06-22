@@ -27,6 +27,7 @@ export default async function ProfilePage() {
       user={user}
       initialUsers={workspaceUsers}
       passwordStatus={passwordStatus}
+      inactivityTimeoutMinutes={policy.inactivityTimeoutMinutes}
     >
       <div className="flex h-full flex-col overflow-auto">
         <div className="border-b border-[var(--border)] px-10 py-6">

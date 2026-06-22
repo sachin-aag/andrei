@@ -161,6 +161,9 @@ export const passwordPolicySettings = pgTable("password_policy_settings", {
   requireNumber: boolean("require_number").notNull().default(true),
   requireSpecial: boolean("require_special").notNull().default(true),
   expiryDays: integer("expiry_days").notNull().default(90),
+  inactivityTimeoutMinutes: integer("inactivity_timeout_minutes")
+    .notNull()
+    .default(10),
   warningDays: integer("warning_days").notNull().default(14),
   failedLoginAttemptLimit: integer("failed_login_attempt_limit")
     .notNull()

@@ -23,7 +23,11 @@ export default async function AdminUsersPage() {
   }));
 
   return (
-    <AppShell user={user} initialUsers={shellUsers}>
+    <AppShell
+      user={user}
+      initialUsers={shellUsers}
+      inactivityTimeoutMinutes={policy.inactivityTimeoutMinutes}
+    >
       <ViewTransition
         enter={{ "nav-forward": "nav-forward", default: "none" }}
         exit={{ "nav-back": "nav-back", default: "none" }}
@@ -33,6 +37,7 @@ export default async function AdminUsersPage() {
           initialUsers={users}
           currentUserId={user.id}
           initialPasswordExpiryDays={policy.expiryDays}
+          initialInactivityTimeoutMinutes={policy.inactivityTimeoutMinutes}
         />
       </ViewTransition>
     </AppShell>

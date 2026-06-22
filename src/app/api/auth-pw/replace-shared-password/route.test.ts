@@ -58,6 +58,7 @@ describe("POST /api/auth-pw/replace-shared-password", () => {
       requireNumber: true,
       requireSpecial: true,
       expiryDays: 90,
+      inactivityTimeoutMinutes: 10,
       warningDays: 14,
       failedLoginAttemptLimit: 3,
       passwordHistoryLimit: 3,

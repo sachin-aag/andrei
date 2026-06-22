@@ -148,6 +148,13 @@
       "when": 1782079200000,
       "tag": "0020_add_admin_role",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1782100000000,
+      "tag": "0021_inactivity_timeout_policy",
+      "breakpoints": true
     }
   ]
 }

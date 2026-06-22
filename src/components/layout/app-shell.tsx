@@ -22,15 +22,20 @@ import { usePathname } from "next/navigation";
 import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { roleLabel } from "@/lib/auth/roles";
+import { DEFAULT_INACTIVITY_TIMEOUT_MINUTES } from "@/lib/auth/inactivity-timeout";
+import { InactivityLogout } from "@/components/auth/inactivity-logout";
+
 export function AppShell({
   user,
   initialUsers,
   passwordStatus,
+  inactivityTimeoutMinutes = DEFAULT_INACTIVITY_TIMEOUT_MINUTES,
   children,
 }: {
   user: WorkspaceUser;
   initialUsers: WorkspaceUser[];
   passwordStatus?: PasswordStatus;
+  inactivityTimeoutMinutes?: number;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -63,7 +68,11 @@ export function AppShell({
 
   return (
     <UserDirectoryProvider initialUsers={initialUsers}>
-    <div className="flex h-screen w-screen overflow-hidden bg-[var(--background)]">
+      <InactivityLogout
+        timeoutMinutes={inactivityTimeoutMinutes}
+        userId={user.id}
+      />
+      <div className="flex h-screen w-screen overflow-hidden bg-[var(--background)]">
       <a
         href={`#${mainId}`}
         className="sr-only focus:not-sr-only focus:absolute focus:left-3 focus:top-3 focus:z-50 focus:rounded-md focus:bg-[var(--card)] focus:px-3 focus:py-2 focus:text-sm focus:shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]"
@@ -241,7 +250,7 @@ export function AppShell({
         ) : null}
         {children}
       </main>
-    </div>
+      </div>
     </UserDirectoryProvider>
   );
 }

@@ -11,6 +11,7 @@ import {
 import { getCurrentUser } from "@/lib/auth/session";
 import { listWorkspaceUsers } from "@/lib/auth/workspace-users";
 import { getPasswordStatusForUser } from "@/lib/auth/password-status";
+import { getPasswordPolicy } from "@/lib/auth/password-policy";
 import { AppShell } from "@/components/layout/app-shell";
 import { ReportProvider } from "@/providers/report-provider";
 import { ReportWorkspace } from "@/components/report/report-workspace";
@@ -47,9 +48,10 @@ export default async function EditReportPage({
     user.id === report.authorId &&
     report.status !== "approved";
 
-  const [workspaceUsers, passwordStatus] = await Promise.all([
+  const [workspaceUsers, passwordStatus, policy] = await Promise.all([
     listWorkspaceUsers(),
     getPasswordStatusForUser(user.id),
+    getPasswordPolicy(),
   ]);
 
   const bundle = JSON.parse(
@@ -66,6 +68,7 @@ export default async function EditReportPage({
       user={user}
       initialUsers={workspaceUsers}
       passwordStatus={passwordStatus}
+      inactivityTimeoutMinutes={policy.inactivityTimeoutMinutes}
     >
       <ReportProvider
         bundle={bundle}

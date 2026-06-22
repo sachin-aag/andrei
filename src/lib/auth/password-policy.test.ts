@@ -18,6 +18,10 @@ import {
 } from "./password-policy";
 
 describe("password policy", () => {
+  it("defaults inactivity logout to 10 minutes", () => {
+    expect(DEFAULT_PASSWORD_POLICY.inactivityTimeoutMinutes).toBe(10);
+  });
+
   it("requires the configured minimum length and complexity", () => {
     const weak = validatePasswordPolicy("abc", DEFAULT_PASSWORD_POLICY);
 

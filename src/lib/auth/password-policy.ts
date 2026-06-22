@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { passwordPolicySettings } from "@/db/schema";
+import { DEFAULT_INACTIVITY_TIMEOUT_MINUTES } from "@/lib/auth/inactivity-timeout";
 
 export const PASSWORD_POLICY_SETTINGS_ID = "default";
 export const PASSWORD_EXPIRY_WARNING_SNOOZE_DAYS = 7;
@@ -13,6 +14,7 @@ export type PasswordPolicy = {
   requireNumber: boolean;
   requireSpecial: boolean;
   expiryDays: number;
+  inactivityTimeoutMinutes: number;
   warningDays: number;
   failedLoginAttemptLimit: number;
   passwordHistoryLimit: number;
@@ -43,16 +45,21 @@ export const DEFAULT_PASSWORD_POLICY: PasswordPolicy = {
   requireNumber: true,
   requireSpecial: true,
   expiryDays: 90,
+  inactivityTimeoutMinutes: DEFAULT_INACTIVITY_TIMEOUT_MINUTES,
   warningDays: 14,
   failedLoginAttemptLimit: 3,
   passwordHistoryLimit: 3,
 };
 
-function normalizePolicy(row: Partial<PasswordPolicy> | null | undefined): PasswordPolicy {
+function normalizePolicy(
+  row: Partial<PasswordPolicy> | null | undefined
+): PasswordPolicy {
   return {
     ...DEFAULT_PASSWORD_POLICY,
     ...Object.fromEntries(
-      Object.entries(row ?? {}).filter(([, value]) => value !== null && value !== undefined)
+      Object.entries(row ?? {}).filter(
+        ([, value]) => value !== null && value !== undefined
+      )
     ),
   };
 }
@@ -70,13 +77,24 @@ export async function getPasswordPolicy(): Promise<PasswordPolicy> {
   return DEFAULT_PASSWORD_POLICY;
 }
 
-export async function updatePasswordExpiryDays(expiryDays: number): Promise<number> {
+export async function updatePasswordExpiryDays(
+  expiryDays: number
+): Promise<number> {
+  const updated = await updatePasswordPolicySettings({ expiryDays });
+  return updated.expiryDays;
+}
+
+export async function updatePasswordPolicySettings(
+  updates: Partial<
+    Pick<PasswordPolicy, "expiryDays" | "inactivityTimeoutMinutes">
+  >
+): Promise<PasswordPolicy> {
   await getPasswordPolicy();
 
   const [updated] = await db
     .update(passwordPolicySettings)
     .set({
-      expiryDays,
+      ...updates,
       updatedAt: new Date(),
     })
     .where(eq(passwordPolicySettings.id, PASSWORD_POLICY_SETTINGS_ID))
@@ -86,7 +104,7 @@ export async function updatePasswordExpiryDays(expiryDays: number): Promise<numb
     throw new Error("password_policy_settings row missing after ensure");
   }
 
-  return normalizePolicy(updated).expiryDays;
+  return normalizePolicy(updated);
 }
 
 export function passwordPolicyRequirementText(policy: PasswordPolicy): string {
