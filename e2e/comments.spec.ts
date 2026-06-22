@@ -6,6 +6,7 @@ import {
   loginAsEngineer,
 } from "./helpers/auth";
 import { createReport, deleteReport } from "./helpers/reports";
+import { signedWorkflowPayload } from "./helpers/signing";
 import {
   postReviewMarginNote,
   replyToMarginComment,
@@ -24,7 +25,10 @@ test.describe("comments", () => {
       assignedManagerId: manager.userId,
     });
     reportId = created.id;
-    await page.request.post(`/api/reports/${reportId}/submit`);
+    const submitRes = await page.request.post(`/api/reports/${reportId}/submit`, {
+      data: signedWorkflowPayload(),
+    });
+    expect(submitRes.ok(), `submit failed (${submitRes.status()})`).toBeTruthy();
   });
 
   test.afterEach(async ({ page }) => {

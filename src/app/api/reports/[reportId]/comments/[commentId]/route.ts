@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { comments, reports } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
+import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
 
 const patchSchema = z.object({
   status: z.enum(["open", "resolved", "dismissed"]).optional(),
@@ -75,6 +76,18 @@ export async function PATCH(
       .set({ content: parse.data.content })
       .where(and(eq(comments.id, commentId), eq(comments.reportId, reportId)))
       .returning();
+
+    await recordAuditEvent({
+      actor: auditActorFromUser(user),
+      action: "comment_updated",
+      entityType: "comment",
+      entityId: commentId,
+      reportId,
+      summary: "Comment content updated",
+      oldValue: { content: row.content },
+      newValue: { content: parse.data.content },
+    });
+
     if (parse.data.status == null) {
       return NextResponse.json({ comment: updated });
     }
@@ -86,6 +99,18 @@ export async function PATCH(
       .set({ status: parse.data.status })
       .where(and(eq(comments.id, threadRootId), eq(comments.reportId, reportId)))
       .returning();
+
+    await recordAuditEvent({
+      actor: auditActorFromUser(user),
+      action: "comment_status_changed",
+      entityType: "comment",
+      entityId: threadRootId,
+      reportId,
+      summary: `Comment thread marked ${parse.data.status}`,
+      oldValue: { status: row.status },
+      newValue: { status: parse.data.status },
+    });
+
     return NextResponse.json({ comment: updated });
   }
 
@@ -128,8 +153,30 @@ export async function DELETE(
       .update(comments)
       .set({ status: "dismissed" })
       .where(and(eq(comments.id, commentId), eq(comments.reportId, reportId)));
+
+    await recordAuditEvent({
+      actor: auditActorFromUser(user),
+      action: "comment_deleted",
+      entityType: "comment",
+      entityId: commentId,
+      reportId,
+      summary: "AI suggestion dismissed",
+      oldValue: { status: row.status },
+      newValue: { status: "dismissed" },
+    });
+
     return NextResponse.json({ ok: true });
   }
+
+  await recordAuditEvent({
+    actor: auditActorFromUser(user),
+    action: "comment_deleted",
+    entityType: "comment",
+    entityId: commentId,
+    reportId,
+    summary: "Comment deleted",
+    oldValue: { content: row.content, status: row.status },
+  });
 
   await db
     .delete(comments)

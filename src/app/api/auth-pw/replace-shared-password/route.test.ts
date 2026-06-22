@@ -26,6 +26,15 @@ vi.mock("@/lib/auth/password-policy", () => ({
   validatePasswordPolicy: vi.fn(),
 }));
 
+vi.mock("@/lib/audit", () => ({
+  auditActorFromId: vi.fn((id: string, name?: string) => ({
+    id,
+    name: name ?? id,
+    role: "unknown",
+  })),
+  recordAuditEvent: vi.fn().mockResolvedValue({ id: "audit-1" }),
+}));
+
 import { auth } from "@/auth";
 import { db } from "@/db";
 import { hashPassword } from "@/lib/auth/password";

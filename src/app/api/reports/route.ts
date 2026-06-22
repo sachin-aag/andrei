@@ -16,6 +16,7 @@ import {
 } from "@/lib/reports/deviation-no";
 import { seedBlankReportSections } from "@/lib/reports/seed-blank-report-sections";
 import { REPORT_SECTION_ROW_ORDER } from "@/types/sections";
+import { auditActorFromUser, recordAuditEvent, recordSectionVersion } from "@/lib/audit";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -257,6 +258,38 @@ export async function POST(req: Request) {
       }
     } else {
       await persistImportedComments(report.id, importedContent);
+    }
+
+    const actor = auditActorFromUser(user);
+    await recordAuditEvent({
+      actor,
+      action: "report_created",
+      entityType: "report",
+      entityId: report.id,
+      reportId: report.id,
+      summary: `Created report ${finalDeviationNo}`,
+      newValue: {
+        deviationNo: finalDeviationNo,
+        authorId: user.id,
+        assignedManagerId,
+      },
+    });
+
+    const sectionRows = await db
+      .select()
+      .from(reportSections)
+      .where(eq(reportSections.reportId, report.id));
+
+    for (const sectionRow of sectionRows) {
+      await recordSectionVersion({
+        actor,
+        reportId: report.id,
+        sectionId: sectionRow.id,
+        section: sectionRow.section,
+        previousContent: {},
+        newContent: sectionRow.content,
+        forceSnapshot: true,
+      });
     }
 
     return NextResponse.json({ id: report.id, report });

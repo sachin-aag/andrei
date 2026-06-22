@@ -45,6 +45,10 @@ import {
   type SignatureBlockSnapshot,
 } from "@/lib/docx/signature-block";
 import type { SignatureApprovalsSection } from "@/types/sections";
+import {
+  applyElectronicSignaturesToDocxZip,
+  type DocxAuditSignature,
+} from "@/lib/export/electronic-signatures-docx";
 import type { SectionType } from "@/db/schema";
 import {
   applyWordCommentsToDocxZip,
@@ -355,10 +359,12 @@ export async function generateReportDocx({
   report,
   sections,
   comments = [],
+  electronicSignatures = [],
 }: {
   report: ReportRow;
   sections: ReportSectionRecord[];
   comments?: ReportDocxComment[];
+  electronicSignatures?: DocxAuditSignature[];
 }): Promise<Buffer> {
   const templateContent = fs.readFileSync(TEMPLATE_PATH);
   const zip = new PizZip(templateContent);
@@ -378,6 +384,7 @@ export async function generateReportDocx({
   delete data._signatureApprovals;
   doc.render(data);
   applySignatureBlockToDocxZip(doc.getZip(), signatureSnapshot);
+  applyElectronicSignaturesToDocxZip(doc.getZip(), electronicSignatures);
   applyInvestigationToolCheckboxes(doc.getZip(), report.toolsUsed);
   applyNumberingToDocxZip(doc.getZip(), ctx);
   applyInlineMediaToDocxZip(doc.getZip(), ctx);

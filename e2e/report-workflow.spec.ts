@@ -11,6 +11,7 @@ import {
   defineSection,
   postReviewMarginNote,
 } from "./helpers/workspace";
+import { signWorkflowAction } from "./helpers/signing";
 
 test.describe.configure({ mode: "serial" });
 
@@ -37,7 +38,7 @@ test.describe("report workflow", () => {
     deviationNo = created.deviationNo;
 
     await page.goto(`/reports/${reportId}/edit`);
-    await page.getByRole("button", { name: /submit for review/i }).click();
+    await signWorkflowAction(page, /submit for review/i);
     await expect(page.getByText(/submitted/i).first()).toBeVisible({
       timeout: 15_000,
     });
@@ -63,7 +64,7 @@ test.describe("report workflow", () => {
     );
     await expect(page.getByText(/comment posted/i)).toBeVisible();
 
-    await page.getByRole("button", { name: /return with feedback/i }).click();
+    await signWorkflowAction(page, /return with feedback/i);
     await expect(page.getByText(/feedback returned to author/i)).toBeVisible({
       timeout: 15_000,
     });
@@ -91,7 +92,7 @@ test.describe("report workflow", () => {
       timeout: 30_000,
     });
 
-    await page.getByRole("button", { name: /submit for review/i }).click();
+    await signWorkflowAction(page, /submit for review/i);
     await expect(page.getByText(/submitted/i).first()).toBeVisible({
       timeout: 15_000,
     });
@@ -101,7 +102,7 @@ test.describe("report workflow", () => {
     test.skip(!reportId, "prior step did not create report");
     await loginAsManager(page);
     await page.goto(`/reports/${reportId}/review`);
-    await page.getByRole("button", { name: /^approve$/i }).click();
+    await signWorkflowAction(page, /^approve$/i);
     await expect(page.getByText(/approved/i).first()).toBeVisible({
       timeout: 15_000,
     });

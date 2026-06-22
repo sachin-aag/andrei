@@ -45,19 +45,19 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           where: eq(workspaceUsers.email, email),
         });
         if (!wsUser?.passwordHash) return null;
-        if (wsUser.lockedAt) return null;
+        if (wsUser.lockedAt) {
+          return null;
+        }
 
         const valid = await verifyPassword(password, wsUser.passwordHash);
         if (!valid) {
           const failedLoginAttempts = wsUser.failedLoginAttempts + 1;
+          const locked = failedLoginAttempts >= policy.failedLoginAttemptLimit;
           await db
             .update(workspaceUsers)
             .set({
               failedLoginAttempts,
-              lockedAt:
-                failedLoginAttempts >= policy.failedLoginAttemptLimit
-                  ? new Date()
-                  : null,
+              lockedAt: locked ? new Date() : null,
             })
             .where(eq(workspaceUsers.id, wsUser.id));
           return null;

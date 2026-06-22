@@ -6,6 +6,7 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { hydrateUserDirectory } from "@/lib/auth/user-directory";
 import { listWorkspaceUsers } from "@/lib/auth/workspace-users";
 import { generateReportDocx } from "@/lib/export/generate-docx";
+import { listReportSignatures } from "@/lib/audit";
 
 export const runtime = "nodejs";
 
@@ -34,6 +35,8 @@ export async function GET(
 
   hydrateUserDirectory(await listWorkspaceUsers());
 
+  const signatures = await listReportSignatures(reportId);
+
   const buffer = await generateReportDocx({
     report,
     sections: sectionRows.map((r) => ({
@@ -44,6 +47,11 @@ export async function GET(
       updatedAt: r.updatedAt.toISOString(),
     })),
     comments: commentRows,
+    electronicSignatures: signatures.map((s) => ({
+      signerName: s.signerName,
+      meaning: s.meaning,
+      signedAt: s.signedAt,
+    })),
   });
 
   const safeDev = (report.deviationNo || "report").replace(/[^a-zA-Z0-9_\-/]/g, "_");

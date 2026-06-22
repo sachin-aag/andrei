@@ -7,6 +7,7 @@ import { workspaceUsers } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import { USER_ROLES, defaultTitleForRole } from "@/lib/auth/roles";
 import { adminUserFromRow } from "@/lib/admin/users";
+import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
 
 const updateUserSchema = z.object({
   role: z.enum(USER_ROLES),
@@ -52,6 +53,11 @@ export async function PATCH(
     );
   }
 
+  const [existing] = await db
+    .select()
+    .from(workspaceUsers)
+    .where(eq(workspaceUsers.id, userId));
+
   const [updated] = await db
     .update(workspaceUsers)
     .set({
@@ -63,6 +69,18 @@ export async function PATCH(
 
   if (!updated) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
+  }
+
+  if (admin && existing) {
+    await recordAuditEvent({
+      actor: auditActorFromUser(admin),
+      action: "user_updated",
+      entityType: "user",
+      entityId: userId,
+      summary: `Updated role for ${updated.email}`,
+      oldValue: { role: existing.role, title: existing.title },
+      newValue: { role: updated.role, title: updated.title },
+    });
   }
 
   return NextResponse.json({ user: adminUserFromRow(updated) });

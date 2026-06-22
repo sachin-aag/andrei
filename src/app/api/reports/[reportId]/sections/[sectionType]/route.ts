@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { reportSections, reports, sectionTypeEnum } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import type { SectionType } from "@/db/schema";
+import { auditActorFromUser, recordSectionVersion } from "@/lib/audit";
 
 function isValidSection(value: string): value is SectionType {
   return (sectionTypeEnum.enumValues as readonly string[]).includes(value);
@@ -68,8 +69,27 @@ async function saveSection(
         content: content as Record<string, unknown>,
       })
       .returning();
+
+    await recordSectionVersion({
+      actor: auditActorFromUser(user),
+      reportId,
+      sectionId: inserted.id,
+      section: sectionType,
+      previousContent: {},
+      newContent: content,
+    });
+
     return NextResponse.json({ section: inserted });
   }
+
+  await recordSectionVersion({
+    actor: auditActorFromUser(user),
+    reportId,
+    sectionId: existing.id,
+    section: sectionType,
+    previousContent: existing.content,
+    newContent: content,
+  });
 
   const [updated] = await db
     .update(reportSections)

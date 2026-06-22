@@ -10,6 +10,7 @@ import {
   getPasswordPolicy,
   validatePasswordPolicy,
 } from "@/lib/auth/password-policy";
+import { auditActorFromId, recordAuditEvent } from "@/lib/audit";
 
 export async function POST(req: Request) {
   const session = await auth();
@@ -106,6 +107,15 @@ export async function POST(req: Request) {
       passwordHistory: updatedHistory,
     })
     .where(eq(workspaceUsers.id, wsUser.id));
+
+  await recordAuditEvent({
+    actor: auditActorFromId(wsUser.id),
+    action: "auth_password_changed",
+    entityType: "auth",
+    entityId: wsUser.id,
+    summary: "Mandatory shared password replaced",
+    metadata: { mustChangePassword: true },
+  });
 
   return NextResponse.json({ ok: true });
 }

@@ -8,6 +8,7 @@ import {
   getPasswordPolicy,
   nextPasswordWarningDismissal,
 } from "@/lib/auth/password-policy";
+import { auditActorFromId, recordAuditEvent } from "@/lib/audit";
 
 export async function POST() {
   const session = await auth();
@@ -44,6 +45,19 @@ export async function POST() {
       ),
     })
     .where(eq(workspaceUsers.id, wsUser.id));
+
+  await recordAuditEvent({
+    actor: auditActorFromId(wsUser.id),
+    action: "user_updated",
+    entityType: "user",
+    entityId: wsUser.id,
+    summary: "Password expiry warning dismissed",
+    metadata: {
+      passwordExpiryWarningDismissedUntil: nextPasswordWarningDismissal(
+        state.expiresAt
+      ).toISOString(),
+    },
+  });
 
   return NextResponse.json({ ok: true });
 }

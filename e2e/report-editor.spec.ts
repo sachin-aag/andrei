@@ -9,6 +9,7 @@ import {
   defineSection,
   reportSidebar,
 } from "./helpers/workspace";
+import { signedWorkflowPayload, signWorkflowAction } from "./helpers/signing";
 
 test.describe.configure({ mode: "serial" });
 
@@ -95,10 +96,17 @@ test.describe("report editor", () => {
   });
 
   test("approved report is read-only for engineer", async ({ page }) => {
-    await page.request.post(`/api/reports/${reportId}/submit`);
+    const submitRes = await page.request.post(`/api/reports/${reportId}/submit`, {
+      data: signedWorkflowPayload(),
+    });
+    expect(submitRes.ok(), `submit failed (${submitRes.status()})`).toBeTruthy();
+
     await authenticateAsManager(page);
-    const approveRes = await page.request.post(`/api/reports/${reportId}/approve`);
-    expect(approveRes.ok()).toBeTruthy();
+    await page.goto(`/reports/${reportId}/review`);
+    await signWorkflowAction(page, /^approve$/i);
+    await expect(page.getByText(/approved/i).first()).toBeVisible({
+      timeout: 15_000,
+    });
 
     await authenticateAsEngineer(page);
     await page.goto(`/reports/${reportId}/edit`);

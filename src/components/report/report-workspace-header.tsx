@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   ChevronLeft,
   Download,
+  History,
   Loader2,
   MessageSquare,
   Send,
@@ -36,6 +37,7 @@ type ReportWorkspaceHeaderProps = {
   onSubmit: () => void;
   onApprove: () => void;
   onFeedback: () => void;
+  auditHref?: string;
   backHref?: string;
   backLabel?: string;
 };
@@ -55,6 +57,7 @@ export function ReportWorkspaceHeader({
   onSubmit,
   onApprove,
   onFeedback,
+  auditHref,
   backHref = "/",
   backLabel = "Reports",
 }: ReportWorkspaceHeaderProps) {
@@ -116,6 +119,14 @@ export function ReportWorkspaceHeader({
             <RunAllEvaluationButton />
           </>
         )}
+        {auditHref ? (
+          <Button variant="outline" size="sm" asChild>
+            <Link href={auditHref}>
+              <History className="size-4" aria-hidden="true" />
+              Audit Trail
+            </Link>
+          </Button>
+        ) : null}
         <Button variant="outline" size="sm" asChild>
           <a
             href={`/api/reports/${report.id}/export`}

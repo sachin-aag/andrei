@@ -190,6 +190,13 @@
       "when": 1782100000000,
       "tag": "0026_inactivity_timeout_policy",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1782100100000,
+      "tag": "0027_audit_trail",
+      "breakpoints": true
     }
   ]
 }

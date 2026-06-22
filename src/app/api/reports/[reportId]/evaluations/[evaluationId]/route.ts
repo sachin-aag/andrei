@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { criteriaEvaluations } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
+import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
 
 const bodySchema = z.object({
   bypassed: z.boolean().optional(),
@@ -17,7 +18,12 @@ export async function PATCH(
 ) {
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const { evaluationId } = await params;
+  const { evaluationId, reportId } = await params;
+
+  const [existing] = await db
+    .select()
+    .from(criteriaEvaluations)
+    .where(eq(criteriaEvaluations.id, evaluationId));
 
   const parse = bodySchema.safeParse(await req.json().catch(() => ({})));
   if (!parse.success) {
@@ -32,6 +38,19 @@ export async function PATCH(
     })
     .where(eq(criteriaEvaluations.id, evaluationId))
     .returning();
+
+  if (updated && existing) {
+    await recordAuditEvent({
+      actor: auditActorFromUser(user),
+      action: "evaluation_bypassed",
+      entityType: "evaluation",
+      entityId: evaluationId,
+      reportId,
+      summary: `Evaluation bypass toggled for ${existing.criterionKey}`,
+      oldValue: { bypassed: existing.bypassed },
+      newValue: { bypassed: updated.bypassed },
+    });
+  }
 
   return NextResponse.json({ evaluation: updated });
 }

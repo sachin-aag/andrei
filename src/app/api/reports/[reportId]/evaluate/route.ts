@@ -30,6 +30,7 @@ import {
   observeRouteHandler,
   setRouteObservationIO,
 } from "@/lib/observability/langfuse";
+import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
 
 export const maxDuration = 60;
 
@@ -182,6 +183,22 @@ async function handleEvaluatePost(
       .select()
       .from(criteriaEvaluations)
       .where(eq(criteriaEvaluations.reportId, reportId));
+
+    await recordAuditEvent({
+      actor: auditActorFromUser(user),
+      action: "evaluation_run",
+      entityType: "evaluation",
+      entityId: reportId,
+      reportId,
+      summary: `AI evaluation run for ${targetSections.join(", ")}`,
+      newValue: {
+        sections: targetSections,
+        evaluationCount: updatedEvals.length,
+      },
+      metadata: {
+        reason: parsed.success ? parsed.data.reason ?? "manual" : "manual",
+      },
+    });
 
     setRouteObservationIO({
       output: {

@@ -5,6 +5,7 @@ import {
   loginAsManagerWithResponse,
 } from "./helpers/auth";
 import { createReport, deleteReport } from "./helpers/reports";
+import { signedWorkflowPayload } from "./helpers/signing";
 
 test.describe.configure({ mode: "serial" });
 
@@ -33,7 +34,10 @@ test.describe("admin reports view", () => {
     reportId = created.id;
     deviationNo = created.deviationNo;
 
-    await page.request.post(`/api/reports/${reportId}/submit`);
+    const submitRes = await page.request.post(`/api/reports/${reportId}/submit`, {
+      data: signedWorkflowPayload(),
+    });
+    expect(submitRes.ok(), `submit failed (${submitRes.status()})`).toBeTruthy();
 
     await loginAsAdminWithResponse(page);
     await page.goto("/admin/reports", { waitUntil: "domcontentloaded" });

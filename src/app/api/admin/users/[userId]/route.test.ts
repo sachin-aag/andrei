@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/db", () => ({
   db: {
+    select: vi.fn(),
     update: vi.fn(),
     delete: vi.fn(),
   },
@@ -9,6 +10,15 @@ vi.mock("@/db", () => ({
 
 vi.mock("@/lib/auth/session", () => ({
   getCurrentUser: vi.fn(),
+}));
+
+vi.mock("@/lib/audit", () => ({
+  auditActorFromUser: vi.fn((user: { id: string; name: string; role: string }) => ({
+    id: user.id,
+    name: user.name,
+    role: user.role,
+  })),
+  recordAuditEvent: vi.fn().mockResolvedValue({ id: "audit-1" }),
 }));
 
 import { db } from "@/db";
@@ -51,6 +61,20 @@ function mockUpdateReturning(rows: unknown[]) {
   const set = vi.fn().mockReturnValue({ where });
   vi.mocked(db.update).mockReturnValueOnce({ set } as never);
   return { set };
+}
+
+function mockSelectExistingUser() {
+  const where = vi.fn().mockResolvedValueOnce([
+    {
+      id: "user-1",
+      name: "User One",
+      email: "user.one@mjbiopharm.com",
+      role: "engineer",
+      title: "Engineer",
+    },
+  ]);
+  const from = vi.fn().mockReturnValue({ where });
+  vi.mocked(db.select).mockReturnValueOnce({ from } as never);
 }
 
 function mockDeleteReturning(rows: unknown[]) {
@@ -104,6 +128,7 @@ describe("PATCH /api/admin/users/[userId]", () => {
 
   it("updates a user role for admins", async () => {
     vi.mocked(getCurrentUser).mockResolvedValueOnce(admin);
+    mockSelectExistingUser();
     const { set } = mockUpdateReturning([
       {
         id: "user-1",

@@ -10,6 +10,7 @@ import { getPasswordPolicy } from "@/lib/auth/password-policy";
 import { validatePasswordStrength } from "@/lib/auth/password-strength";
 import { USER_ROLES, defaultTitleForRole } from "@/lib/auth/roles";
 import { adminUserFromRow, listAdminUsers } from "@/lib/admin/users";
+import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
 
 const createUserSchema = z.object({
   name: z.string().trim().min(1).optional(),
@@ -65,8 +66,8 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const { response } = await requireAdmin();
-  if (response) return response;
+  const { user: admin, response } = await requireAdmin();
+  if (response || !admin) return response;
 
   const parsed = createUserSchema.safeParse(await req.json().catch(() => ({})));
   if (!parsed.success) {
@@ -107,6 +108,15 @@ export async function POST(req: Request) {
     if (!created) {
       throw new Error("insert(workspaceUsers).returning() returned no row");
     }
+
+    await recordAuditEvent({
+      actor: auditActorFromUser(admin),
+      action: "user_created",
+      entityType: "user",
+      entityId: created.id,
+      summary: `Created user ${email}`,
+      newValue: { email, role: parsed.data.role, name },
+    });
 
     return NextResponse.json({ user: adminUserFromRow(created) }, { status: 201 });
   } catch (error) {
