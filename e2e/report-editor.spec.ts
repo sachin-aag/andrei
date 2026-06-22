@@ -9,7 +9,7 @@ import {
   defineSection,
   reportSidebar,
 } from "./helpers/workspace";
-import { signedWorkflowPayload } from "./helpers/signing";
+import { signedWorkflowPayload, signWorkflowAction } from "./helpers/signing";
 
 test.describe.configure({ mode: "serial" });
 
@@ -100,11 +100,13 @@ test.describe("report editor", () => {
       data: signedWorkflowPayload(),
     });
     expect(submitRes.ok(), `submit failed (${submitRes.status()})`).toBeTruthy();
+
     await authenticateAsManager(page);
-    const approveRes = await page.request.post(`/api/reports/${reportId}/approve`, {
-      data: signedWorkflowPayload(),
+    await page.goto(`/reports/${reportId}/review`);
+    await signWorkflowAction(page, /^approve$/i);
+    await expect(page.getByText(/approved/i).first()).toBeVisible({
+      timeout: 15_000,
     });
-    expect(approveRes.ok()).toBeTruthy();
 
     await authenticateAsEngineer(page);
     await page.goto(`/reports/${reportId}/edit`);
