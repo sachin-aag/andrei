@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/db";
+import { authUsers } from "@/db/schema/auth";
 import { workspaceUsers } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import { USER_ROLES, defaultTitleForRole } from "@/lib/auth/roles";
@@ -65,4 +66,33 @@ export async function PATCH(
   }
 
   return NextResponse.json({ user: adminUserFromRow(updated) });
+}
+
+export async function DELETE(
+  _req: Request,
+  { params }: { params: Promise<{ userId: string }> }
+) {
+  const { user: admin, response } = await requireAdmin();
+  if (response) return response;
+
+  const { userId } = await params;
+  if (admin?.id === userId) {
+    return NextResponse.json(
+      { error: "Admins cannot delete their own account." },
+      { status: 400 }
+    );
+  }
+
+  const [deleted] = await db
+    .delete(workspaceUsers)
+    .where(eq(workspaceUsers.id, userId))
+    .returning();
+
+  if (!deleted) {
+    return NextResponse.json({ error: "User not found" }, { status: 404 });
+  }
+
+  await db.delete(authUsers).where(eq(authUsers.email, deleted.email));
+
+  return NextResponse.json({ ok: true });
 }
