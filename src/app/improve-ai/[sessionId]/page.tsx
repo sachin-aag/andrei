@@ -4,6 +4,7 @@ import { Loader2 } from "lucide-react";
 import { getCurrentUser } from "@/lib/auth/session";
 import { listWorkspaceUsers } from "@/lib/auth/workspace-users";
 import { getPasswordStatusForUser } from "@/lib/auth/password-status";
+import { getPasswordPolicy } from "@/lib/auth/password-policy";
 import { AppShell } from "@/components/layout/app-shell";
 import { ImproveAiSessionForm } from "@/components/improve-ai/improve-ai-session-form";
 import { getImproveAiSessionView } from "@/lib/improve-ai/store";
@@ -22,9 +23,10 @@ export default async function ImproveAiSessionPage({ params }: PageProps) {
   const session = await getImproveAiSessionView(id, user.id);
   if (!session) notFound();
 
-  const [workspaceUsers, passwordStatus] = await Promise.all([
+  const [workspaceUsers, passwordStatus, policy] = await Promise.all([
     listWorkspaceUsers(),
     getPasswordStatusForUser(user.id),
+    getPasswordPolicy(),
   ]);
 
   if (session.status === "evaluating") {
@@ -33,6 +35,7 @@ export default async function ImproveAiSessionPage({ params }: PageProps) {
         user={user}
         initialUsers={workspaceUsers}
         passwordStatus={passwordStatus}
+        inactivityTimeoutMinutes={policy.inactivityTimeoutMinutes}
       >
         <div className="flex flex-col items-center justify-center h-full gap-4 p-8 text-center">
           <Loader2 className="size-10 animate-spin text-[var(--brand-500)]" />
@@ -57,6 +60,7 @@ export default async function ImproveAiSessionPage({ params }: PageProps) {
         user={user}
         initialUsers={workspaceUsers}
         passwordStatus={passwordStatus}
+        inactivityTimeoutMinutes={policy.inactivityTimeoutMinutes}
       >
         <div className="flex flex-col items-center justify-center h-full gap-4 p-8 text-center">
           <p className="text-sm text-[var(--muted-foreground)]">
@@ -75,6 +79,7 @@ export default async function ImproveAiSessionPage({ params }: PageProps) {
       user={user}
       initialUsers={workspaceUsers}
       passwordStatus={passwordStatus}
+      inactivityTimeoutMinutes={policy.inactivityTimeoutMinutes}
     >
       <ImproveAiSessionForm
         session={session}

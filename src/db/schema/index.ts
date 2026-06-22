@@ -138,6 +138,9 @@ export const workspaceUsers = pgTable(
 export const passwordPolicySettings = pgTable("password_policy_settings", {
   id: text("id").primaryKey().default("default"),
   expiryDays: integer("expiry_days").notNull().default(90),
+  inactivityTimeoutMinutes: integer("inactivity_timeout_minutes")
+    .notNull()
+    .default(10),
   warningDays: integer("warning_days").notNull().default(14),
   failedLoginAttemptLimit: integer("failed_login_attempt_limit")
     .notNull()

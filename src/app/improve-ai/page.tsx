@@ -7,6 +7,7 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { withTransientRetry } from "@/lib/db/with-transient-retry";
 import { listWorkspaceUsers } from "@/lib/auth/workspace-users";
 import { getPasswordStatusForUser } from "@/lib/auth/password-status";
+import { getPasswordPolicy } from "@/lib/auth/password-policy";
 import { AppShell } from "@/components/layout/app-shell";
 import { ImproveAiListHeader } from "@/components/improve-ai/improve-ai-list-header";
 import { listImproveAiSessionsForUser } from "@/lib/improve-ai/store";
@@ -33,9 +34,10 @@ export default async function ImproveAiListPage() {
   if (!user) redirect("/login");
 
   const items = await listImproveAiSessionsForUser(user.id);
-  const [workspaceUsers, passwordStatus] = await Promise.all([
+  const [workspaceUsers, passwordStatus, policy] = await Promise.all([
     listWorkspaceUsers(),
     getPasswordStatusForUser(user.id),
+    getPasswordPolicy(),
   ]);
   const managers = workspaceUsers.filter((entry) => entry.role === "manager");
 
@@ -65,6 +67,7 @@ export default async function ImproveAiListPage() {
       user={user}
       initialUsers={workspaceUsers}
       passwordStatus={passwordStatus}
+      inactivityTimeoutMinutes={policy.inactivityTimeoutMinutes}
     >
       <div className="flex flex-col h-full overflow-hidden">
         <ImproveAiListHeader

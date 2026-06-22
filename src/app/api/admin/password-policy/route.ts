@@ -2,13 +2,29 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import {
   getPasswordPolicy,
-  updatePasswordExpiryDays,
+  updatePasswordPolicySettings,
 } from "@/lib/auth/password-policy";
+import {
+  MAX_INACTIVITY_TIMEOUT_MINUTES,
+  MIN_INACTIVITY_TIMEOUT_MINUTES,
+} from "@/lib/auth/inactivity-timeout";
 import { getCurrentUser } from "@/lib/auth/session";
 
-const updateSchema = z.object({
-  expiryDays: z.number().int().min(0).max(3650),
-});
+const updateSchema = z
+  .object({
+    expiryDays: z.number().int().min(0).max(3650).optional(),
+    inactivityTimeoutMinutes: z
+      .number()
+      .int()
+      .min(MIN_INACTIVITY_TIMEOUT_MINUTES)
+      .max(MAX_INACTIVITY_TIMEOUT_MINUTES)
+      .optional(),
+  })
+  .refine(
+    (value) =>
+      value.expiryDays !== undefined ||
+      value.inactivityTimeoutMinutes !== undefined
+  );
 
 async function requireAdmin() {
   const user = await getCurrentUser();
@@ -33,7 +49,10 @@ export async function GET() {
   if (response) return response;
 
   const policy = await getPasswordPolicy();
-  return NextResponse.json({ expiryDays: policy.expiryDays });
+  return NextResponse.json({
+    expiryDays: policy.expiryDays,
+    inactivityTimeoutMinutes: policy.inactivityTimeoutMinutes,
+  });
 }
 
 export async function PATCH(req: Request) {
@@ -46,8 +65,11 @@ export async function PATCH(req: Request) {
   }
 
   try {
-    const expiryDays = await updatePasswordExpiryDays(parsed.data.expiryDays);
-    return NextResponse.json({ expiryDays });
+    const policy = await updatePasswordPolicySettings(parsed.data);
+    return NextResponse.json({
+      expiryDays: policy.expiryDays,
+      inactivityTimeoutMinutes: policy.inactivityTimeoutMinutes,
+    });
   } catch {
     return NextResponse.json(
       { error: "Could not update password policy." },

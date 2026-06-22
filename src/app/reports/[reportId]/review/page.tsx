@@ -3,6 +3,7 @@ import { ViewTransition } from "react";
 import { getCurrentUser } from "@/lib/auth/session";
 import { listWorkspaceUsers } from "@/lib/auth/workspace-users";
 import { getPasswordStatusForUser } from "@/lib/auth/password-status";
+import { getPasswordPolicy } from "@/lib/auth/password-policy";
 import { loadReportBundle } from "@/lib/reports/bundle";
 import { AppShell } from "@/components/layout/app-shell";
 import { ReportProvider } from "@/providers/report-provider";
@@ -27,9 +28,10 @@ export default async function ReviewReportPage({
     (bundle.report.status === "submitted" ||
       bundle.report.status === "in_review");
 
-  const [workspaceUsers, passwordStatus] = await Promise.all([
+  const [workspaceUsers, passwordStatus, policy] = await Promise.all([
     listWorkspaceUsers(),
     getPasswordStatusForUser(user.id),
+    getPasswordPolicy(),
   ]);
 
   return (
@@ -37,6 +39,7 @@ export default async function ReviewReportPage({
       user={user}
       initialUsers={workspaceUsers}
       passwordStatus={passwordStatus}
+      inactivityTimeoutMinutes={policy.inactivityTimeoutMinutes}
     >
       <ReportProvider
         bundle={bundle}

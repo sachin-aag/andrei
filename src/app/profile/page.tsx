@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { getCurrentUser } from "@/lib/auth/session";
 import { listWorkspaceUsers } from "@/lib/auth/workspace-users";
 import { getPasswordStatusForUser } from "@/lib/auth/password-status";
+import { getPasswordPolicy } from "@/lib/auth/password-policy";
 import { roleLabel } from "@/lib/auth/roles";
 import { AppShell } from "@/components/layout/app-shell";
 import { ChangeOwnPasswordForm } from "@/components/auth/change-own-password-form";
@@ -13,9 +14,10 @@ export default async function ProfilePage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  const [workspaceUsers, passwordStatus] = await Promise.all([
+  const [workspaceUsers, passwordStatus, policy] = await Promise.all([
     listWorkspaceUsers(),
     getPasswordStatusForUser(user.id),
+    getPasswordPolicy(),
   ]);
 
   return (
@@ -23,6 +25,7 @@ export default async function ProfilePage() {
       user={user}
       initialUsers={workspaceUsers}
       passwordStatus={passwordStatus}
+      inactivityTimeoutMinutes={policy.inactivityTimeoutMinutes}
     >
       <div className="flex h-full flex-col overflow-auto">
         <div className="border-b border-[var(--border)] px-10 py-6">
