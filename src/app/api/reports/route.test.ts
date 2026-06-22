@@ -8,7 +8,9 @@ vi.mock("@/db", () => {
     select: vi.fn(),
     insert: vi.fn(),
     delete: vi.fn(),
-    transaction: vi.fn((callback) => callback(db)),
+    transaction: vi.fn(() => {
+      throw new Error("No transactions support in neon-http driver");
+    }),
   };
   return { db };
 });
@@ -215,6 +217,7 @@ describe("/api/reports", () => {
 
     expect(response.status).toBe(200);
     expect(persistReportSourceDocx).not.toHaveBeenCalled();
+    expect(db.transaction).not.toHaveBeenCalled();
   });
 
   it("persists the uploaded source docx after creating the report", async () => {

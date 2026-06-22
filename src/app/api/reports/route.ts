@@ -206,44 +206,40 @@ export async function POST(req: Request) {
     }
 
     const blankSections = seedBlankReportSections();
-    const report = await db.transaction(async (tx) => {
-      const [created] = await tx
-        .insert(reports)
-        .values({
-          deviationNo: finalDeviationNo,
-          authorId: user.id,
-          assignedManagerId,
-          ...(importedContent
-            ? {
-                toolsUsed: importedContent.toolsUsed,
-                ...(importedDate ? { date: importedDate } : {}),
-                ...(importedOtherTools !== undefined
-                  ? { otherTools: importedOtherTools }
-                  : {}),
-              }
-            : {}),
-        })
-        .returning();
+    const [report] = await db
+      .insert(reports)
+      .values({
+        deviationNo: finalDeviationNo,
+        authorId: user.id,
+        assignedManagerId,
+        ...(importedContent
+          ? {
+              toolsUsed: importedContent.toolsUsed,
+              ...(importedDate ? { date: importedDate } : {}),
+              ...(importedOtherTools !== undefined
+                ? { otherTools: importedOtherTools }
+                : {}),
+            }
+          : {}),
+      })
+      .returning();
 
-      if (!created) {
-        throw new Error("insert(reports).returning() returned no row");
-      }
-      createdReportId = created.id;
+    if (!report) {
+      throw new Error("insert(reports).returning() returned no row");
+    }
+    createdReportId = report.id;
 
-      await tx.insert(reportSections).values(
-        REPORT_SECTION_ROW_ORDER.map((section) => ({
-          reportId: created.id,
-          section,
-          content: (
-            importedContent !== null
-              ? importedContent.sections[section]
-              : blankSections[section]
-          ) as unknown as Record<string, unknown>,
-        }))
-      );
-
-      return created;
-    });
+    await db.insert(reportSections).values(
+      REPORT_SECTION_ROW_ORDER.map((section) => ({
+        reportId: report.id,
+        section,
+        content: (
+          importedContent !== null
+            ? importedContent.sections[section]
+            : blankSections[section]
+        ) as unknown as Record<string, unknown>,
+      }))
+    );
     if (sourceUpload) {
       try {
         await persistImportedComments(report.id, importedContent);
@@ -298,10 +294,24 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ id: report.id, report });
   } catch (e) {
-    if (createdReportId) {
-      await db.delete(reports).where(eq(reports.id, createdReportId));
+    const duplicateDeviationNo = isPostgresUniqueViolation(e);
+    if (!duplicateDeviationNo) {
+      console.error("Failed to create report", {
+        reportId: createdReportId,
+        error: e,
+      });
     }
-    if (isPostgresUniqueViolation(e)) {
+    if (createdReportId) {
+      try {
+        await db.delete(reports).where(eq(reports.id, createdReportId));
+      } catch (cleanupError) {
+        console.error("Failed to clean up partial report creation", {
+          reportId: createdReportId,
+          error: cleanupError,
+        });
+      }
+    }
+    if (duplicateDeviationNo) {
       return NextResponse.json({ error: DUPLICATE_DEVIATION_NO_ERROR }, { status: 409 });
     }
     return NextResponse.json({ error: "Failed to create report" }, { status: 500 });
