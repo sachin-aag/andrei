@@ -1,7 +1,10 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { signOut } from "next-auth/react";
+
+export const INACTIVITY_TIMEOUT_UPDATED_EVENT =
+  "mjb:inactivity-timeout-updated";
 
 const MINUTE_MS = 60_000;
 const TIMER_RESET_THROTTLE_MS = 1_000;
@@ -21,19 +24,48 @@ export function InactivityLogout({
   timeoutMinutes: number;
   userId: string;
 }) {
+  const [effectiveTimeoutMinutes, setEffectiveTimeoutMinutes] =
+    useState(timeoutMinutes);
   const timerRef = useRef<number | null>(null);
   const lastResetAtRef = useRef(0);
   const signedOutRef = useRef(false);
 
   useEffect(() => {
+    setEffectiveTimeoutMinutes(timeoutMinutes);
+  }, [timeoutMinutes]);
+
+  useEffect(() => {
+    const onTimeoutUpdated = (event: Event) => {
+      const nextTimeoutMinutes = (
+        event as CustomEvent<{ timeoutMinutes?: unknown }>
+      ).detail?.timeoutMinutes;
+
+      if (typeof nextTimeoutMinutes === "number") {
+        setEffectiveTimeoutMinutes(nextTimeoutMinutes);
+      }
+    };
+
+    window.addEventListener(INACTIVITY_TIMEOUT_UPDATED_EVENT, onTimeoutUpdated);
+    return () => {
+      window.removeEventListener(
+        INACTIVITY_TIMEOUT_UPDATED_EVENT,
+        onTimeoutUpdated
+      );
+    };
+  }, []);
+
+  useEffect(() => {
     signedOutRef.current = false;
     lastResetAtRef.current = 0;
 
-    if (!Number.isFinite(timeoutMinutes) || timeoutMinutes <= 0) {
+    if (
+      !Number.isFinite(effectiveTimeoutMinutes) ||
+      effectiveTimeoutMinutes <= 0
+    ) {
       return;
     }
 
-    const timeoutMs = timeoutMinutes * MINUTE_MS;
+    const timeoutMs = effectiveTimeoutMinutes * MINUTE_MS;
 
     const clearLogoutTimer = () => {
       if (timerRef.current) {
@@ -76,7 +108,7 @@ export function InactivityLogout({
       }
       document.removeEventListener("visibilitychange", onVisibilityChange);
     };
-  }, [timeoutMinutes, userId]);
+  }, [effectiveTimeoutMinutes, userId]);
 
   return null;
 }

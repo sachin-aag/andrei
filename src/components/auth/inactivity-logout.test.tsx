@@ -3,7 +3,10 @@
 import { act, fireEvent, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { signOut } from "next-auth/react";
-import { InactivityLogout } from "@/components/auth/inactivity-logout";
+import {
+  INACTIVITY_TIMEOUT_UPDATED_EVENT,
+  InactivityLogout,
+} from "@/components/auth/inactivity-logout";
 
 vi.mock("next-auth/react", () => ({
   signOut: vi.fn(),
@@ -57,6 +60,21 @@ describe("InactivityLogout", () => {
       vi.advanceTimersByTime(60 * 60_000);
     });
     expect(signOut).not.toHaveBeenCalled();
+  });
+
+  it("uses admin timeout updates without a page reload", () => {
+    render(<InactivityLogout timeoutMinutes={10} userId="user-1" />);
+
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent(INACTIVITY_TIMEOUT_UPDATED_EVENT, {
+          detail: { timeoutMinutes: 1 },
+        })
+      );
+      vi.advanceTimersByTime(60_000);
+    });
+
+    expect(signOut).toHaveBeenCalledWith({ callbackUrl: "/login" });
   });
 });
 

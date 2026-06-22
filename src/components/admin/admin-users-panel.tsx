@@ -17,6 +17,9 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
+  INACTIVITY_TIMEOUT_UPDATED_EVENT,
+} from "@/components/auth/inactivity-logout";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -226,6 +229,11 @@ export function AdminUsersPanel({
       };
       setSavedInactivityTimeoutMinutes(data.inactivityTimeoutMinutes);
       setInactivityTimeoutMinutes(String(data.inactivityTimeoutMinutes));
+      window.dispatchEvent(
+        new CustomEvent(INACTIVITY_TIMEOUT_UPDATED_EVENT, {
+          detail: { timeoutMinutes: data.inactivityTimeoutMinutes },
+        })
+      );
       toast.success("Inactivity timeout updated");
     });
   };
