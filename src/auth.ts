@@ -11,10 +11,6 @@ import {
   computePasswordExpiryState,
   getPasswordPolicy,
 } from "@/lib/auth/password-policy";
-import {
-  auditActorFromId,
-  recordAuditEvent,
-} from "@/lib/audit";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   // Required when the app is reached via 127.0.0.1, Docker, or CI (not only Vercel).
@@ -50,14 +46,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         });
         if (!wsUser?.passwordHash) return null;
         if (wsUser.lockedAt) {
-          await recordAuditEvent({
-            actor: auditActorFromId(wsUser.id, wsUser.name),
-            action: "auth_login_failed",
-            entityType: "auth",
-            entityId: wsUser.id,
-            summary: "Login attempt on locked account",
-            metadata: { email },
-          });
           return null;
         }
 
@@ -72,18 +60,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
               lockedAt: locked ? new Date() : null,
             })
             .where(eq(workspaceUsers.id, wsUser.id));
-
-          await recordAuditEvent({
-            actor: auditActorFromId(wsUser.id, wsUser.name),
-            action: locked ? "auth_account_locked" : "auth_login_failed",
-            entityType: "auth",
-            entityId: wsUser.id,
-            summary: locked
-              ? "Account locked after failed login attempts"
-              : "Failed login attempt",
-            newValue: { failedLoginAttempts },
-            metadata: { email },
-          });
           return null;
         }
 
@@ -105,15 +81,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
             .returning();
           authUser = created;
         }
-
-        await recordAuditEvent({
-          actor: auditActorFromId(wsUser.id, wsUser.name),
-          action: "auth_login_success",
-          entityType: "auth",
-          entityId: wsUser.id,
-          summary: "Successful login",
-          metadata: { email },
-        });
 
         return { id: authUser.id, email: authUser.email, name: wsUser.name };
       },
