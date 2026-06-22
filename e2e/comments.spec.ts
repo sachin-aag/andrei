@@ -1,8 +1,9 @@
 import { expect, test } from "@playwright/test";
 import {
+  authenticateAsEngineer,
+  authenticateAsManager,
   fetchTestManagerUser,
   loginAsEngineer,
-  loginAsManagerWithResponse,
 } from "./helpers/auth";
 import { createReport, deleteReport } from "./helpers/reports";
 import {
@@ -35,7 +36,7 @@ test.describe("comments", () => {
   });
 
   test("manager posts section comment in review mode", async ({ page }) => {
-    await loginAsManagerWithResponse(page);
+    await authenticateAsManager(page);
     await page.goto(`/reports/${reportId}/review`);
     await page.setViewportSize({ width: 1280, height: 900 });
 
@@ -60,7 +61,7 @@ test.describe("comments", () => {
 
   test("engineer replies to manager comment", async ({ page }) => {
     const commentText = "Manager note for reply test.";
-    await loginAsManagerWithResponse(page);
+    await authenticateAsManager(page);
     const postRes = await page.request.post(`/api/reports/${reportId}/comments`, {
       data: {
         content: commentText,
@@ -69,7 +70,7 @@ test.describe("comments", () => {
     });
     expect(postRes.ok()).toBeTruthy();
 
-    await loginAsEngineer(page);
+    await authenticateAsEngineer(page);
     await page.goto(`/reports/${reportId}/edit`);
     await page.setViewportSize({ width: 1280, height: 900 });
     await expect(page).toHaveURL(new RegExp(`/reports/${reportId}/edit$`));

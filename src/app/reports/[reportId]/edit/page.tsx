@@ -1,21 +1,13 @@
 import { redirect, notFound } from "next/navigation";
 import { ViewTransition } from "react";
-import { eq } from "drizzle-orm";
-import { db } from "@/db";
-import {
-  reports,
-  reportSections,
-  criteriaEvaluations,
-  comments,
-} from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import { listWorkspaceUsers } from "@/lib/auth/workspace-users";
 import { getPasswordStatusForUser } from "@/lib/auth/password-status";
 import { getPasswordPolicy } from "@/lib/auth/password-policy";
+import { loadReportBundle } from "@/lib/reports/bundle";
 import { AppShell } from "@/components/layout/app-shell";
 import { ReportProvider } from "@/providers/report-provider";
 import { ReportWorkspace } from "@/components/report/report-workspace";
-import type { ReportBundle } from "@/types/report";
 
 export const dynamic = "force-dynamic";
 
@@ -28,40 +20,19 @@ export default async function EditReportPage({
   if (!user) redirect("/login");
   const { reportId } = await params;
 
-  const [report] = await db
-    .select()
-    .from(reports)
-    .where(eq(reports.id, reportId));
-  if (!report) notFound();
-
-  const [sectionRows, evals, commentRows] = await Promise.all([
-    db.select().from(reportSections).where(eq(reportSections.reportId, reportId)),
-    db
-      .select()
-      .from(criteriaEvaluations)
-      .where(eq(criteriaEvaluations.reportId, reportId)),
-    db.select().from(comments).where(eq(comments.reportId, reportId)),
-  ]);
+  const bundle = await loadReportBundle(reportId);
+  if (!bundle) notFound();
 
   const canEdit =
     user.role === "engineer" &&
-    user.id === report.authorId &&
-    report.status !== "approved";
+    user.id === bundle.report.authorId &&
+    bundle.report.status !== "approved";
 
   const [workspaceUsers, passwordStatus, policy] = await Promise.all([
     listWorkspaceUsers(),
     getPasswordStatusForUser(user.id),
     getPasswordPolicy(),
   ]);
-
-  const bundle = JSON.parse(
-    JSON.stringify({
-      report,
-      sections: sectionRows,
-      evaluations: evals,
-      comments: commentRows,
-    })
-  ) as ReportBundle;
 
   return (
     <AppShell

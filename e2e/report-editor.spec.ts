@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { loginAsEngineer, loginAsManagerWithResponse } from "./helpers/auth";
+import { authenticateAsEngineer, authenticateAsManager, loginAsEngineer } from "./helpers/auth";
 import {
   createReport,
   seedDefineForEvaluation,
@@ -96,11 +96,11 @@ test.describe("report editor", () => {
 
   test("approved report is read-only for engineer", async ({ page }) => {
     await page.request.post(`/api/reports/${reportId}/submit`);
-    await loginAsManagerWithResponse(page);
+    await authenticateAsManager(page);
     const approveRes = await page.request.post(`/api/reports/${reportId}/approve`);
     expect(approveRes.ok()).toBeTruthy();
 
-    await loginAsEngineer(page);
+    await authenticateAsEngineer(page);
     await page.goto(`/reports/${reportId}/edit`);
     await expect(page.getByRole("heading", { name: /^define$/i })).toBeVisible({
       timeout: 30_000,

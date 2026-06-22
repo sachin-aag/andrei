@@ -5,6 +5,9 @@ import { db } from "@/db";
 import { workspaceUsers } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import { hashPassword } from "@/lib/auth/password";
+import { initialPasswordHistory } from "@/lib/auth/password-history";
+import { getPasswordPolicy } from "@/lib/auth/password-policy";
+import { validatePasswordStrength } from "@/lib/auth/password-strength";
 import { USER_ROLES, defaultTitleForRole } from "@/lib/auth/roles";
 import { adminUserFromRow, listAdminUsers } from "@/lib/admin/users";
 
@@ -12,7 +15,7 @@ const createUserSchema = z.object({
   name: z.string().trim().min(1).optional(),
   email: z.string().trim().email(),
   role: z.enum(USER_ROLES),
-  temporaryPassword: z.string().min(8),
+  temporaryPassword: z.string().min(1),
 });
 
 function displayNameFromEmail(email: string): string {
@@ -70,7 +73,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }
 
+  const passwordValidation = validatePasswordStrength(parsed.data.temporaryPassword);
+  if (!passwordValidation.ok) {
+    return NextResponse.json(
+      { error: passwordValidation.errors.join(" ") },
+      { status: 400 }
+    );
+  }
+
   const email = parsed.data.email.toLowerCase();
+  const policy = await getPasswordPolicy();
   const passwordHash = await hashPassword(parsed.data.temporaryPassword);
   const name = parsed.data.name ?? displayNameFromEmail(email);
 
@@ -84,6 +96,10 @@ export async function POST(req: Request) {
         role: parsed.data.role,
         title: defaultTitleForRole(parsed.data.role),
         passwordHash,
+        passwordHistory: initialPasswordHistory(
+          passwordHash,
+          policy.passwordHistoryLimit
+        ),
         mustChangePassword: true,
       })
       .returning();

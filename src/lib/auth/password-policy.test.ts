@@ -23,20 +23,18 @@ describe("password policy", () => {
   });
 
   it("requires the configured minimum length and complexity", () => {
-    const weak = validatePasswordPolicy("abc", DEFAULT_PASSWORD_POLICY);
+    const weak = validatePasswordPolicy("abc");
 
     expect(weak.ok).toBe(false);
     expect(weak.errors).toEqual(
       expect.arrayContaining([
-        "Password must be at least 6 characters.",
+        "Password must be at least 8 characters.",
         "Password must include at least one number.",
         "Password must include at least one special character.",
       ])
     );
 
-    expect(validatePasswordPolicy("abc123!", DEFAULT_PASSWORD_POLICY).ok).toBe(
-      true
-    );
+    expect(validatePasswordPolicy("abc12345!").ok).toBe(true);
   });
 
   it("marks a password as expired after the configured age", () => {

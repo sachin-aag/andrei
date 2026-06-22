@@ -12,7 +12,7 @@ export function reviewMargin(page: Page) {
   return page.getByRole("complementary", { name: "Review margin" });
 }
 
-/** App shell nav starts collapsed — logout is only visible when expanded. */
+/** App shell nav starts collapsed — expand before using footer profile link. */
 export async function expandPrimaryNav(page: Page): Promise<void> {
   const nav = primaryNav(page);
   const expand = nav.getByRole("button", { name: /expand sidebar/i });

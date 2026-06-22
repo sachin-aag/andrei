@@ -1,66 +1,76 @@
-import { desc, eq, inArray } from "drizzle-orm";
-import { db } from "@/db";
-import { passwordHistory } from "@/db/schema";
 import { verifyPassword } from "@/lib/auth/password";
 
-function previousPasswordCount(historyLimit: number): number {
-  return Math.max(0, historyLimit - 1);
-}
-
-export async function isPasswordRecentlyUsed({
-  userId,
-  password,
+/**
+ * Recent password hashes for reuse checks — current first, max `historyLimit`.
+ * Stored `password_history` uses the same shape (index 0 is the active hash).
+ */
+export function recentPasswordHashes({
   currentPasswordHash,
+  passwordHistory,
   historyLimit,
 }: {
-  userId: string;
-  password: string;
   currentPasswordHash: string | null;
+  passwordHistory: string[];
   historyLimit: number;
-}): Promise<boolean> {
-  if (currentPasswordHash && (await verifyPassword(password, currentPasswordHash))) {
-    return true;
+}): string[] {
+  if (passwordHistory.length > 0) {
+    if (!currentPasswordHash || passwordHistory[0] === currentPasswordHash) {
+      return passwordHistory.slice(0, historyLimit);
+    }
+    // Legacy rows where history excluded the active hash.
+    return [currentPasswordHash, ...passwordHistory].slice(0, historyLimit);
   }
 
-  const previousLimit = previousPasswordCount(historyLimit);
-  if (previousLimit === 0) return false;
-
-  const rows = await db.query.passwordHistory.findMany({
-    where: eq(passwordHistory.userId, userId),
-    orderBy: [desc(passwordHistory.createdAt)],
-    limit: previousLimit,
-  });
-
-  for (const row of rows) {
-    if (await verifyPassword(password, row.passwordHash)) return true;
-  }
-
-  return false;
+  return currentPasswordHash ? [currentPasswordHash].slice(0, historyLimit) : [];
 }
 
-export async function recordPasswordHistory({
-  userId,
+/** History after a password change — new hash first (includes current), max `historyLimit`. */
+export function nextPasswordHistory({
+  newPasswordHash,
+  currentHistory,
   previousPasswordHash,
   historyLimit,
 }: {
-  userId: string;
+  newPasswordHash: string;
+  currentHistory: string[];
   previousPasswordHash: string | null;
   historyLimit: number;
-}) {
-  if (previousPasswordHash) {
-    await db.insert(passwordHistory).values({
-      userId,
-      passwordHash: previousPasswordHash,
-    });
+}): string[] {
+  const recentPrior = recentPasswordHashes({
+    currentPasswordHash: previousPasswordHash,
+    passwordHistory: currentHistory,
+    historyLimit,
+  });
+  return [newPasswordHash, ...recentPrior].slice(0, historyLimit);
+}
+
+export function initialPasswordHistory(
+  passwordHash: string,
+  historyLimit: number
+): string[] {
+  return [passwordHash].slice(0, historyLimit);
+}
+
+export async function isPasswordRecentlyUsed({
+  password,
+  currentPasswordHash,
+  passwordHistory,
+  historyLimit,
+}: {
+  password: string;
+  currentPasswordHash: string | null;
+  passwordHistory: string[];
+  historyLimit: number;
+}): Promise<boolean> {
+  const hashes = recentPasswordHashes({
+    currentPasswordHash,
+    passwordHistory,
+    historyLimit,
+  });
+
+  for (const hash of hashes) {
+    if (await verifyPassword(password, hash)) return true;
   }
 
-  const keepPrevious = previousPasswordCount(historyLimit);
-  const rows = await db.query.passwordHistory.findMany({
-    where: eq(passwordHistory.userId, userId),
-    orderBy: [desc(passwordHistory.createdAt)],
-  });
-  const staleIds = rows.slice(keepPrevious).map((row) => row.id);
-  if (staleIds.length > 0) {
-    await db.delete(passwordHistory).where(inArray(passwordHistory.id, staleIds));
-  }
+  return false;
 }

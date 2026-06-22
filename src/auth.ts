@@ -12,16 +12,6 @@ import {
   getPasswordPolicy,
 } from "@/lib/auth/password-policy";
 
-const ALLOWED_EMAIL_DOMAINS = ["@mjbiopharm.com"];
-const ALLOWED_EMAILS = ["sachinagrawal272@gmail.com", "aditya.ambani@gmail.com"];
-
-function isAllowedEmail(email: string): boolean {
-  return (
-    ALLOWED_EMAILS.includes(email) ||
-    ALLOWED_EMAIL_DOMAINS.some((domain) => email.endsWith(domain))
-  );
-}
-
 export const { handlers, auth, signIn, signOut } = NextAuth({
   // Required when the app is reached via 127.0.0.1, Docker, or CI (not only Vercel).
   trustHost:
@@ -100,7 +90,6 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
   callbacks: {
     async signIn({ user }) {
       if (!user.email) return false;
-      if (!isAllowedEmail(user.email)) return false;
       try {
         const wsUser = await db.query.workspaceUsers.findFirst({
           where: eq(workspaceUsers.email, user.email),

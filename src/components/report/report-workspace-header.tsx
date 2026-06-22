@@ -36,6 +36,8 @@ type ReportWorkspaceHeaderProps = {
   onSubmit: () => void;
   onApprove: () => void;
   onFeedback: () => void;
+  backHref?: string;
+  backLabel?: string;
 };
 
 export function ReportWorkspaceHeader({
@@ -53,15 +55,18 @@ export function ReportWorkspaceHeader({
   onSubmit,
   onApprove,
   onFeedback,
+  backHref = "/",
+  backLabel = "Reports",
 }: ReportWorkspaceHeaderProps) {
   const title = report.deviationNo || "Untitled";
   const [navigatingBack, setNavigatingBack] = useState(false);
+  const isViewMode = mode === "view";
 
   return (
     <header className="h-16 border-b border-[var(--border)] bg-[var(--card)] px-6 flex items-center gap-4 shrink-0">
       <Button asChild variant="ghost" size="sm" disabled={navigatingBack}>
         <Link
-          href="/"
+          href={backHref}
           transitionTypes={["nav-back"]}
           onClick={() => setNavigatingBack(true)}
           aria-busy={navigatingBack}
@@ -71,7 +76,7 @@ export function ReportWorkspaceHeader({
           ) : (
             <ChevronLeft className="size-4" aria-hidden="true" />
           )}
-          Reports
+          {backLabel}
         </Link>
       </Button>
       <Separator orientation="vertical" className="h-6" />
@@ -86,27 +91,31 @@ export function ReportWorkspaceHeader({
         </span>
       </div>
       <div className="ml-auto flex items-center gap-3 flex-wrap justify-end">
-        <div className="flex items-center gap-2 flex-wrap">
-          <Checkbox
-            id={`track-changes-toggle-${mode}`}
-            checked={trackChangesMode}
-            onCheckedChange={(v) => onTrackChangesModeChange(v === true)}
-          />
-          <Label
-            htmlFor={`track-changes-toggle-${mode}`}
-            className="text-sm font-normal cursor-pointer whitespace-nowrap"
-          >
-            Track changes
-          </Label>
-          {trackChangesMode && (
-            <span className="text-[10px] uppercase tracking-wide text-amber-800 bg-amber-100 px-2 py-0.5 rounded border border-amber-200/80">
-              On
-            </span>
-          )}
-        </div>
-        <Separator orientation="vertical" className="h-6 hidden sm:block" />
+        {!isViewMode && (
+          <>
+            <div className="flex items-center gap-2 flex-wrap">
+              <Checkbox
+                id={`track-changes-toggle-${mode}`}
+                checked={trackChangesMode}
+                onCheckedChange={(v) => onTrackChangesModeChange(v === true)}
+              />
+              <Label
+                htmlFor={`track-changes-toggle-${mode}`}
+                className="text-sm font-normal cursor-pointer whitespace-nowrap"
+              >
+                Track changes
+              </Label>
+              {trackChangesMode && (
+                <span className="text-[10px] uppercase tracking-wide text-amber-800 bg-amber-100 px-2 py-0.5 rounded border border-amber-200/80">
+                  On
+                </span>
+              )}
+            </div>
+            <Separator orientation="vertical" className="h-6 hidden sm:block" />
 
-        <RunAllEvaluationButton />
+            <RunAllEvaluationButton />
+          </>
+        )}
         <Button variant="outline" size="sm" asChild>
           <a
             href={`/api/reports/${report.id}/export`}

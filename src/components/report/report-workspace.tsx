@@ -83,7 +83,11 @@ const SECTION_EDITORS = {
   ),
 } satisfies Record<(typeof REPORT_WORKSPACE_SECTIONS)[number], ComponentType>;
 
-export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
+export function ReportWorkspace({
+  mode,
+}: {
+  mode: WorkspaceMode;
+}) {
   const {
     report,
     refresh,
@@ -309,6 +313,8 @@ export function ReportWorkspace({ mode }: { mode: WorkspaceMode }) {
         onSubmit={handleSubmit}
         onApprove={handleApprove}
         onFeedback={handleFeedback}
+        backHref={mode === "view" ? "/admin/reports" : "/"}
+        backLabel={mode === "view" ? "Admin Reports" : "Reports"}
       />
 
       <ReportEditorToolbar />

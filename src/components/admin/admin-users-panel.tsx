@@ -3,7 +3,6 @@
 import { useState, useTransition } from "react";
 import { Loader2, Plus, ShieldCheck } from "lucide-react";
 import { toast } from "sonner";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -32,6 +31,10 @@ import {
   MAX_INACTIVITY_TIMEOUT_MINUTES,
   MIN_INACTIVITY_TIMEOUT_MINUTES,
 } from "@/lib/auth/inactivity-timeout";
+import {
+  passwordStrengthRequirementText,
+  validatePasswordStrength,
+} from "@/lib/auth/password-strength";
 
 type CreateUserForm = {
   name: string;
@@ -49,21 +52,6 @@ const emptyCreateForm: CreateUserForm = {
 
 function sortUsers(users: AdminUser[]): AdminUser[] {
   return [...users].sort((a, b) => a.name.localeCompare(b.name));
-}
-
-function roleBadgeVariant(role: UserRole): "default" | "secondary" | "outline" {
-  switch (role) {
-    case "admin":
-      return "default";
-    case "manager":
-      return "secondary";
-    case "engineer":
-      return "outline";
-    default: {
-      const exhaustive: never = role;
-      return exhaustive;
-    }
-  }
 }
 
 async function readError(response: Response, fallback: string): Promise<string> {
@@ -118,8 +106,9 @@ export function AdminUsersPanel({
       toast.error("Email is required");
       return;
     }
-    if (createForm.temporaryPassword.length < 8) {
-      toast.error("Temporary password must be at least 8 characters");
+    const validation = validatePasswordStrength(createForm.temporaryPassword);
+    if (!validation.ok) {
+      toast.error(validation.errors.join(" "));
       return;
     }
 
@@ -361,6 +350,9 @@ export function AdminUsersPanel({
                     }))
                   }
                 />
+                <p className="text-xs text-[var(--muted-foreground)]">
+                  {passwordStrengthRequirementText()}
+                </p>
               </div>
             </div>
             <DialogFooter>
@@ -488,36 +480,31 @@ export function AdminUsersPanel({
                     </div>
                   </td>
                   <td className="px-4 py-3">
-                    <div className="flex items-center gap-2">
-                      <Badge variant={roleBadgeVariant(user.role)}>
-                        {roleLabel(user.role)}
-                      </Badge>
-                      <Select
-                        value={user.role}
-                        disabled={pendingRoleUserId === user.id}
-                        onValueChange={(value) =>
-                          changeRole(user.id, value as UserRole)
-                        }
+                    <Select
+                      value={user.role}
+                      disabled={pendingRoleUserId === user.id}
+                      onValueChange={(value) =>
+                        changeRole(user.id, value as UserRole)
+                      }
+                    >
+                      <SelectTrigger
+                        className="h-8 w-32"
+                        aria-label={`Change role for ${user.name}`}
                       >
-                        <SelectTrigger
-                          className="h-8 w-32"
-                          aria-label={`Change role for ${user.name}`}
-                        >
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {USER_ROLES.map((role) => (
-                            <SelectItem
-                              key={role}
-                              value={role}
-                              disabled={user.id === currentUserId && role !== "admin"}
-                            >
-                              {roleLabel(role)}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {USER_ROLES.map((role) => (
+                          <SelectItem
+                            key={role}
+                            value={role}
+                            disabled={user.id === currentUserId && role !== "admin"}
+                          >
+                            {roleLabel(role)}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   </td>
                   <td className="px-4 py-3 text-[var(--muted-foreground)]">
                     {user.hasPassword ? (

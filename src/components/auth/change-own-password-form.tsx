@@ -1,46 +1,160 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { CheckCircle2, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PasswordCriteriaChecklist } from "@/components/auth/password-criteria-checklist";
+import {
+  getPasswordNotRecentCheck,
+  getPasswordStrengthChecks,
+} from "@/lib/auth/password-strength";
+import { cn } from "@/lib/utils";
 
-export function ChangeOwnPasswordForm({
-  minLength,
-  passwordRequirements,
-}: {
-  minLength: number;
-  passwordRequirements: string;
-}) {
+const PASSWORD_REUSE_CHECK_DEBOUNCE_MS = 300;
+
+export function ChangeOwnPasswordForm() {
   const router = useRouter();
   const [currentPassword, setCurrentPassword] = useState("");
+  const [currentPasswordVerified, setCurrentPasswordVerified] = useState(false);
+  const [currentPasswordError, setCurrentPasswordError] = useState<string | null>(
+    null
+  );
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [remotePasswordReuse, setRemotePasswordReuse] = useState<{
+    password: string;
+    recentlyUsed: boolean | null;
+  } | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
-  const [pending, startTransition] = useTransition();
+  const [verifyPending, startVerifyTransition] = useTransition();
+  const [submitPending, startSubmitTransition] = useTransition();
 
-  const clearMessages = () => {
-    if (error) setError(null);
-    if (success) setSuccess(false);
+  useEffect(() => {
+    if (
+      !currentPasswordVerified ||
+      !password ||
+      password === currentPassword
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    const timeoutId = window.setTimeout(() => {
+      void (async () => {
+        const res = await fetch("/api/auth-pw/check-password-reuse", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password }),
+        });
+        if (cancelled) return;
+
+        if (!res.ok) {
+          setRemotePasswordReuse({ password, recentlyUsed: null });
+          return;
+        }
+
+        const data = (await res.json()) as { recentlyUsed?: boolean };
+        if (!cancelled) {
+          setRemotePasswordReuse({
+            password,
+            recentlyUsed: data.recentlyUsed === true,
+          });
+        }
+      })();
+    }, PASSWORD_REUSE_CHECK_DEBOUNCE_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [currentPassword, currentPasswordVerified, password]);
+
+  const passwordRecentlyUsed = useMemo(() => {
+    if (!currentPasswordVerified || !password) return null;
+    if (password === currentPassword) return true;
+    if (remotePasswordReuse?.password !== password) return null;
+    return remotePasswordReuse.recentlyUsed;
+  }, [
+    currentPassword,
+    currentPasswordVerified,
+    password,
+    remotePasswordReuse,
+  ]);
+
+  const passwordChecks = useMemo(() => {
+    const checks = getPasswordStrengthChecks(password);
+    if (!currentPasswordVerified) return checks;
+
+    const notRecentMet =
+      password.length > 0 &&
+      password !== currentPassword &&
+      passwordRecentlyUsed === false;
+
+    return [...checks, getPasswordNotRecentCheck(notRecentMet)];
+  }, [
+    currentPassword,
+    currentPasswordVerified,
+    password,
+    passwordRecentlyUsed,
+  ]);
+  const passwordMeetsCriteria = passwordChecks.every((check) => check.met);
+  const passwordsMatch =
+    password.length > 0 &&
+    confirmPassword.length > 0 &&
+    password === confirmPassword;
+
+  const resetVerifiedState = () => {
+    setCurrentPasswordVerified(false);
+    setCurrentPasswordError(null);
+    setPassword("");
+    setConfirmPassword("");
+    setRemotePasswordReuse(null);
+    setSubmitError(null);
+    setSuccess(false);
+  };
+
+  const verifyCurrentPassword = () => {
+    if (!currentPassword || verifyPending) return;
+
+    startVerifyTransition(async () => {
+      const res = await fetch("/api/auth-pw/verify-current-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ currentPassword }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setCurrentPasswordVerified(false);
+        setCurrentPasswordError(
+          (data as { error?: string }).error ??
+            "Could not verify your current password."
+        );
+        return;
+      }
+
+      setCurrentPasswordVerified(true);
+      setCurrentPasswordError(null);
+      setSubmitError(null);
+      setSuccess(false);
+    });
   };
 
   const submit = () => {
-    if (!currentPassword || !password || !confirmPassword) return;
-    if (password !== confirmPassword) {
-      setError("Passwords do not match.");
-      setSuccess(false);
-      return;
-    }
-    if (password.length < minLength) {
-      setError(`Password must be at least ${minLength} characters.`);
-      setSuccess(false);
+    if (
+      !currentPasswordVerified ||
+      !passwordMeetsCriteria ||
+      !passwordsMatch ||
+      submitPending
+    ) {
       return;
     }
 
-    startTransition(async () => {
+    startSubmitTransition(async () => {
       const res = await fetch("/api/auth-pw/change-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -48,7 +162,7 @@ export function ChangeOwnPasswordForm({
       });
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        setError(
+        setSubmitError(
           (data as { error?: string }).error ??
             "Could not update your password. Please try again."
         );
@@ -59,7 +173,10 @@ export function ChangeOwnPasswordForm({
       setCurrentPassword("");
       setPassword("");
       setConfirmPassword("");
-      setError(null);
+      setCurrentPasswordVerified(false);
+      setRemotePasswordReuse(null);
+      setCurrentPasswordError(null);
+      setSubmitError(null);
       setSuccess(true);
       router.refresh();
     });
@@ -75,60 +192,156 @@ export function ChangeOwnPasswordForm({
           value={currentPassword}
           onChange={(e) => {
             setCurrentPassword(e.target.value);
-            clearMessages();
+            if (currentPasswordVerified || currentPasswordError) {
+              resetVerifiedState();
+            }
           }}
-          autoComplete="off"
-        />
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="profile-new-password">New password</Label>
-        <Input
-          id="profile-new-password"
-          type="password"
-          value={password}
-          onChange={(e) => {
-            setPassword(e.target.value);
-            clearMessages();
-          }}
-          placeholder={`At least ${minLength} characters`}
-          autoComplete="off"
-        />
-        <p className="text-xs text-[var(--muted-foreground)]">
-          {passwordRequirements}
-        </p>
-      </div>
-      <div className="space-y-2">
-        <Label htmlFor="profile-confirm-password">Confirm new password</Label>
-        <Input
-          id="profile-confirm-password"
-          type="password"
-          value={confirmPassword}
-          onChange={(e) => {
-            setConfirmPassword(e.target.value);
-            clearMessages();
-          }}
-          autoComplete="off"
+          autoComplete="current-password"
+          disabled={verifyPending || submitPending}
+          aria-invalid={currentPasswordError ? true : undefined}
+          aria-describedby={
+            currentPasswordError
+              ? "current-password-error"
+              : currentPasswordVerified
+                ? "current-password-success"
+                : undefined
+          }
           onKeyDown={(e) => {
-            if (e.key === "Enter") submit();
+            if (e.key === "Enter" && !currentPasswordVerified) {
+              e.preventDefault();
+              verifyCurrentPassword();
+            }
           }}
         />
+        {currentPasswordError ? (
+          <p id="current-password-error" className="text-sm text-destructive">
+            {currentPasswordError}
+          </p>
+        ) : null}
+        {currentPasswordVerified ? (
+          <p
+            id="current-password-success"
+            className="flex items-center gap-2 text-sm text-emerald-600"
+          >
+            <CheckCircle2 className="size-4 shrink-0" aria-hidden="true" />
+            Current password verified
+          </p>
+        ) : (
+          <Button
+            type="button"
+            variant="outline"
+            className="h-9"
+            disabled={!currentPassword || verifyPending || submitPending}
+            onClick={verifyCurrentPassword}
+          >
+            {verifyPending ? (
+              <Loader2 className="mr-2 size-4 animate-spin" />
+            ) : null}
+            Verify current password
+          </Button>
+        )}
       </div>
-      {error ? <p className="text-sm text-destructive">{error}</p> : null}
-      {success ? (
-        <p className="flex items-center gap-2 text-sm text-emerald-300">
-          <CheckCircle2 className="size-4" aria-hidden="true" />
-          Password updated.
-        </p>
+
+      {currentPasswordVerified ? (
+        <div className="space-y-4 border-t border-[var(--border)] pt-4">
+          <div className="space-y-2">
+            <Label htmlFor="profile-new-password">New password</Label>
+            <Input
+              id="profile-new-password"
+              type="password"
+              value={password}
+              onChange={(e) => {
+                setPassword(e.target.value);
+                if (submitError) setSubmitError(null);
+                if (success) setSuccess(false);
+              }}
+              autoComplete="new-password"
+              disabled={submitPending}
+              autoFocus
+            />
+            <PasswordCriteriaChecklist
+              checks={passwordChecks}
+              showWhenEmpty={password.length > 0}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="profile-confirm-password">
+              Confirm new password
+            </Label>
+            <Input
+              id="profile-confirm-password"
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => {
+                setConfirmPassword(e.target.value);
+                if (submitError) setSubmitError(null);
+                if (success) setSuccess(false);
+              }}
+              autoComplete="new-password"
+              disabled={submitPending}
+              aria-invalid={
+                confirmPassword.length > 0 && !passwordsMatch ? true : undefined
+              }
+              aria-describedby={
+                confirmPassword.length > 0
+                  ? "confirm-password-status"
+                  : undefined
+              }
+              onKeyDown={(e) => {
+                if (e.key === "Enter") submit();
+              }}
+            />
+            {confirmPassword.length > 0 ? (
+              <p
+                id="confirm-password-status"
+                className={cn(
+                  "flex items-center gap-2 text-xs",
+                  passwordsMatch
+                    ? "text-emerald-600"
+                    : "text-[var(--muted-foreground)]"
+                )}
+              >
+                {passwordsMatch ? (
+                  <>
+                    <CheckCircle2 className="size-3.5 shrink-0" aria-hidden="true" />
+                    Passwords match
+                  </>
+                ) : (
+                  "Passwords do not match yet."
+                )}
+              </p>
+            ) : null}
+          </div>
+
+          {submitError ? (
+            <p className="text-sm text-destructive">{submitError}</p>
+          ) : null}
+          {success ? (
+            <p className="flex items-center gap-2 text-sm text-emerald-600">
+              <CheckCircle2 className="size-4 shrink-0" aria-hidden="true" />
+              Password updated.
+            </p>
+          ) : null}
+
+          <Button
+            type="button"
+            className="h-11 w-full"
+            disabled={
+              !passwordMeetsCriteria ||
+              !passwordsMatch ||
+              submitPending ||
+              verifyPending
+            }
+            onClick={submit}
+          >
+            {submitPending ? (
+              <Loader2 className="mr-2 size-4 animate-spin" />
+            ) : null}
+            Change password
+          </Button>
+        </div>
       ) : null}
-      <Button
-        type="button"
-        className="w-full h-11"
-        disabled={!currentPassword || !password || !confirmPassword || pending}
-        onClick={submit}
-      >
-        {pending ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
-        Change password
-      </Button>
     </div>
   );
 }

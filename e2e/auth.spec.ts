@@ -88,10 +88,11 @@ test.describe("authentication", () => {
 
   test("locks an account after 3 wrong password attempts", async ({ page }, testInfo) => {
     await page.goto("/login");
-    await page
-      .getByLabel(/work email/i)
-      .fill(scopedEmail("e2e.lockout@mjbiopharm.com", testInfo));
-    await page.getByRole("button", { name: /^continue$/i }).click();
+    const continueButton = await fillEmailAndWaitForContinue(
+      page,
+      scopedEmail("e2e.lockout@mjbiopharm.com", testInfo)
+    );
+    await continueButton.click();
     await expect(page.getByLabel(/^password$/i)).toBeVisible({ timeout: 15_000 });
 
     for (let attempt = 0; attempt < 3; attempt++) {
@@ -165,12 +166,25 @@ test.describe("authentication", () => {
     await expect(page.getByLabel(/work email/i)).toBeVisible();
   });
 
-  test("profile page exposes self-service password change", async ({ page }) => {
-    await loginAsEngineer(page);
+  test("profile page exposes self-service password change", async ({ page }, testInfo) => {
+    await loginAsTestUser(page, {
+      email: scopedEmail("e2e.password@mjbiopharm.com", testInfo),
+      role: "engineer",
+    });
     await page.goto("/profile");
     await expect(page.getByRole("heading", { name: /^profile$/i })).toBeVisible();
     await expect(page.getByLabel(/current password/i)).toBeVisible();
-    await expect(page.getByLabel(/^new password$/i)).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /verify current password/i })
+    ).toBeVisible();
+
+    await page.getByLabel(/current password/i).fill("E2eTestPass123!");
+    await page.getByRole("button", { name: /verify current password/i }).click();
+    await expect(page.getByLabel(/^new password$/i)).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByLabel(/confirm new password/i)).toBeVisible();
+    await expect(page.getByRole("button", { name: /log out/i })).toBeVisible();
   });
 
   test("password expiry warning can be ignored", async ({ page }, testInfo) => {

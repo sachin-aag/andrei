@@ -4,6 +4,8 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { workspaceUsers } from "@/db/schema";
 import { hashPassword } from "@/lib/auth/password";
+import { initialPasswordHistory } from "@/lib/auth/password-history";
+import { getPasswordPolicy } from "@/lib/auth/password-policy";
 import { defaultTitleForRole, type UserRole } from "@/lib/auth/roles";
 import { isTestLoginEnabled } from "@/lib/test/ai-bypass";
 
@@ -50,7 +52,12 @@ function scopedEmail(email: string, scope: string): string {
 
 async function upsertSeedUser(user: SeedUser) {
   const email = user.email.toLowerCase();
+  const policy = await getPasswordPolicy();
   const passwordHash = user.password ? await hashPassword(user.password) : null;
+  const passwordHistory =
+    passwordHash !== null
+      ? initialPasswordHistory(passwordHash, policy.passwordHistoryLimit)
+      : [];
   const passwordChangedAt = user.password ? new Date() : null;
   const mustChangePassword = user.mustChangePassword ?? false;
   const title = defaultTitleForRole(user.role);
@@ -66,6 +73,7 @@ async function upsertSeedUser(user: SeedUser) {
         role: user.role,
         title,
         passwordHash,
+        passwordHistory,
         mustChangePassword,
         passwordChangedAt,
         failedLoginAttempts: 0,
@@ -84,6 +92,7 @@ async function upsertSeedUser(user: SeedUser) {
     role: user.role,
     title,
     passwordHash,
+    passwordHistory,
     mustChangePassword,
     passwordChangedAt,
     failedLoginAttempts: 0,

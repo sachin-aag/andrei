@@ -1,39 +1,98 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, ChevronLeft, Loader2 } from "lucide-react";
+import { ArrowRight, CheckCircle2, ChevronLeft, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PasswordCriteriaChecklist } from "@/components/auth/password-criteria-checklist";
+import {
+  getPasswordNotRecentCheck,
+  getPasswordStrengthChecks,
+} from "@/lib/auth/password-strength";
+import { cn } from "@/lib/utils";
+
+const PASSWORD_REUSE_CHECK_DEBOUNCE_MS = 300;
 
 export function ChangeSharedPasswordForm({
   email,
-  minLength,
-  passwordRequirements,
 }: {
   email: string;
-  minLength: number;
-  passwordRequirements: string;
 }) {
   const router = useRouter();
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
+  const [remotePasswordReuse, setRemotePasswordReuse] = useState<{
+    password: string;
+    recentlyUsed: boolean | null;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [switchingAccount, setSwitchingAccount] = useState(false);
 
+  useEffect(() => {
+    if (!password) {
+      return;
+    }
+
+    let cancelled = false;
+    const timeoutId = window.setTimeout(() => {
+      void (async () => {
+        const res = await fetch("/api/auth-pw/check-password-reuse", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ password }),
+        });
+        if (cancelled) return;
+
+        if (!res.ok) {
+          setRemotePasswordReuse({ password, recentlyUsed: null });
+          return;
+        }
+
+        const data = (await res.json()) as { recentlyUsed?: boolean };
+        if (!cancelled) {
+          setRemotePasswordReuse({
+            password,
+            recentlyUsed: data.recentlyUsed === true,
+          });
+        }
+      })();
+    }, PASSWORD_REUSE_CHECK_DEBOUNCE_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [password]);
+
+  const passwordRecentlyUsed = useMemo(() => {
+    if (!password) return null;
+    if (remotePasswordReuse?.password !== password) return null;
+    return remotePasswordReuse.recentlyUsed;
+  }, [password, remotePasswordReuse]);
+
+  const passwordChecks = useMemo(() => {
+    const checks = getPasswordStrengthChecks(password);
+    const notRecentMet =
+      password.length > 0 && passwordRecentlyUsed === false;
+
+    return [...checks, getPasswordNotRecentCheck(notRecentMet)];
+  }, [password, passwordRecentlyUsed]);
+
+  const passwordMeetsCriteria = passwordChecks.every((check) => check.met);
+  const passwordsMatch =
+    password.length > 0 &&
+    confirm.length > 0 &&
+    password === confirm;
+
   const submit = () => {
-    if (!password || !confirm) return;
-    if (password !== confirm) {
-      setError("Passwords do not match.");
+    if (!passwordMeetsCriteria || !passwordsMatch || pending) {
       return;
     }
-    if (password.length < minLength) {
-      setError(`Password must be at least ${minLength} characters.`);
-      return;
-    }
+
     setError(null);
     startTransition(async () => {
       const res = await fetch("/api/auth-pw/replace-shared-password", {
@@ -85,13 +144,14 @@ export function ChangeSharedPasswordForm({
             setPassword(e.target.value);
             if (error) setError(null);
           }}
-          placeholder={`At least ${minLength} characters`}
-          autoComplete="off"
+          autoComplete="new-password"
           autoFocus
+          disabled={pending || switchingAccount}
         />
-        <p className="text-xs text-[var(--muted-foreground)]">
-          {passwordRequirements}
-        </p>
+        <PasswordCriteriaChecklist
+          checks={passwordChecks}
+          showWhenEmpty={password.length > 0}
+        />
       </div>
       <div className="space-y-2">
         <Label htmlFor="confirm-password">Confirm password</Label>
@@ -103,18 +163,49 @@ export function ChangeSharedPasswordForm({
             setConfirm(e.target.value);
             if (error) setError(null);
           }}
-          placeholder="Repeat your password"
-          autoComplete="off"
+          autoComplete="new-password"
+          disabled={pending || switchingAccount}
+          aria-invalid={
+            confirm.length > 0 && !passwordsMatch ? true : undefined
+          }
+          aria-describedby={
+            confirm.length > 0 ? "confirm-password-status" : undefined
+          }
           onKeyDown={(e) => {
             if (e.key === "Enter") submit();
           }}
         />
+        {confirm.length > 0 ? (
+          <p
+            id="confirm-password-status"
+            className={cn(
+              "flex items-center gap-2 text-xs",
+              passwordsMatch
+                ? "text-emerald-600"
+                : "text-[var(--muted-foreground)]"
+            )}
+          >
+            {passwordsMatch ? (
+              <>
+                <CheckCircle2 className="size-3.5 shrink-0" aria-hidden="true" />
+                Passwords match
+              </>
+            ) : (
+              "Passwords do not match yet."
+            )}
+          </p>
+        ) : null}
       </div>
       {error && <p className="text-sm text-destructive">{error}</p>}
       <Button
         type="button"
         className="w-full h-11"
-        disabled={!password || !confirm || pending || switchingAccount}
+        disabled={
+          !passwordMeetsCriteria ||
+          !passwordsMatch ||
+          pending ||
+          switchingAccount
+        }
         onClick={submit}
       >
         {pending ? (

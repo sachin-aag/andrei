@@ -10,10 +10,42 @@ import { Label } from "@/components/ui/label";
 import Link from "next/link";
 import { captureEvent } from "@/lib/analytics/events";
 
+type EmailCheckResult =
+  | { ok: true; allowed: boolean; hasPassword: boolean; locked: boolean }
+  | { ok: false; error: string };
+
 type Step =
   | { kind: "email" }
   | { kind: "password"; email: string }
   | { kind: "no-password"; email: string };
+
+const EMAIL_CHECK_ERROR =
+  "Could not check this email. Please try again or contact your admin.";
+
+async function readEmailCheckResult(res: Response): Promise<EmailCheckResult> {
+  const data = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    return {
+      ok: false,
+      error:
+        typeof data?.error === "string" && data.error
+          ? data.error
+          : EMAIL_CHECK_ERROR,
+    };
+  }
+
+  if (!data || typeof data.allowed !== "boolean") {
+    return { ok: false, error: EMAIL_CHECK_ERROR };
+  }
+
+  return {
+    ok: true,
+    allowed: data.allowed,
+    hasPassword: !!data.hasPassword,
+    locked: !!data.locked,
+  };
+}
 
 export function PasswordLoginForm({ redirectTo }: { redirectTo?: string }) {
   const router = useRouter();
@@ -37,12 +69,20 @@ export function PasswordLoginForm({ redirectTo }: { redirectTo?: string }) {
     if (!email.trim()) return;
     setError(null);
     startTransition(async () => {
-      const res = await fetch("/api/auth/check-email", {
+      const result = await fetch("/api/auth/check-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: email.trim() }),
-      });
-      const { allowed, hasPassword, locked } = await res.json();
+      })
+        .then(readEmailCheckResult)
+        .catch(
+          (): EmailCheckResult => ({ ok: false, error: EMAIL_CHECK_ERROR })
+        );
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      const { allowed, hasPassword, locked } = result;
       if (!allowed) {
         setError(
           "This email isn't registered. Please contact your admin to get access."

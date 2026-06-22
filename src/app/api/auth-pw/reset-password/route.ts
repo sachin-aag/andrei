@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import { createHash } from "node:crypto";
-import { eq, and, isNull } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "@/db";
-import { workspaceUsers, passwordResetTokens } from "@/db/schema";
+import { workspaceUsers } from "@/db/schema";
 import { hashPassword } from "@/lib/auth/password";
-import { isPasswordRecentlyUsed, recordPasswordHistory } from "@/lib/auth/password-history";
+import {
+  isPasswordRecentlyUsed,
+  nextPasswordHistory,
+} from "@/lib/auth/password-history";
 import {
   getPasswordPolicy,
   validatePasswordPolicy,
@@ -25,7 +28,7 @@ export async function POST(req: Request) {
   }
 
   const policy = await getPasswordPolicy();
-  const validation = validatePasswordPolicy(password, policy);
+  const validation = validatePasswordPolicy(password);
   if (!validation.ok) {
     return NextResponse.json(
       { error: validation.errors.join(" ") },
@@ -36,27 +39,23 @@ export async function POST(req: Request) {
   const normalizedEmail = email.trim().toLowerCase();
   const tokenHash = createHash("sha256").update(token).digest("hex");
 
-  // Find a matching, unexpired, unused token
-  const resetToken = await db.query.passwordResetTokens.findFirst({
-    where: and(
-      eq(passwordResetTokens.email, normalizedEmail),
-      eq(passwordResetTokens.tokenHash, tokenHash),
-      isNull(passwordResetTokens.usedAt),
-    ),
-  });
-
-  if (!resetToken || resetToken.expiresAt < new Date()) {
-    return NextResponse.json(
-      { error: "This link is invalid or expired. Please request a new one." },
-      { status: 400 },
-    );
-  }
-
   const wsUser = await db.query.workspaceUsers.findFirst({
     where: eq(workspaceUsers.email, normalizedEmail),
-    columns: { id: true, passwordHash: true },
+    columns: {
+      id: true,
+      passwordHash: true,
+      passwordHistory: true,
+      passwordResetTokenHash: true,
+      passwordResetTokenExpiresAt: true,
+    },
   });
-  if (!wsUser) {
+
+  if (
+    !wsUser?.passwordResetTokenHash ||
+    wsUser.passwordResetTokenHash !== tokenHash ||
+    !wsUser.passwordResetTokenExpiresAt ||
+    wsUser.passwordResetTokenExpiresAt < new Date()
+  ) {
     return NextResponse.json(
       { error: "This link is invalid or expired. Please request a new one." },
       { status: 400 },
@@ -64,9 +63,9 @@ export async function POST(req: Request) {
   }
 
   const reused = await isPasswordRecentlyUsed({
-    userId: wsUser.id,
     password,
     currentPasswordHash: wsUser.passwordHash,
+    passwordHistory: wsUser.passwordHistory,
     historyLimit: policy.passwordHistoryLimit,
   });
   if (reused) {
@@ -76,9 +75,14 @@ export async function POST(req: Request) {
     );
   }
 
-  // Hash the new password and update the workspace user
   const newHash = await hashPassword(password);
   const changedAt = new Date();
+  const updatedHistory = nextPasswordHistory({
+    newPasswordHash: newHash,
+    currentHistory: wsUser.passwordHistory,
+    previousPasswordHash: wsUser.passwordHash,
+    historyLimit: policy.passwordHistoryLimit,
+  });
 
   await db
     .update(workspaceUsers)
@@ -89,19 +93,11 @@ export async function POST(req: Request) {
       failedLoginAttempts: 0,
       lockedAt: null,
       passwordExpiryWarningDismissedUntil: null,
+      passwordHistory: updatedHistory,
+      passwordResetTokenHash: null,
+      passwordResetTokenExpiresAt: null,
     })
     .where(eq(workspaceUsers.id, wsUser.id));
-  await recordPasswordHistory({
-    userId: wsUser.id,
-    previousPasswordHash: wsUser.passwordHash,
-    historyLimit: policy.passwordHistoryLimit,
-  });
-
-  // Mark token as used
-  await db
-    .update(passwordResetTokens)
-    .set({ usedAt: new Date() })
-    .where(eq(passwordResetTokens.id, resetToken.id));
 
   return NextResponse.json({ ok: true });
 }

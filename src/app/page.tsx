@@ -17,7 +17,7 @@ export const dynamic = "force-dynamic";
 export default async function DashboardPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
-  if (user.role === "admin") redirect("/admin/users");
+  if (user.role === "admin") redirect("/admin/reports");
 
   const [workspaceUsers, passwordStatus, policy] = await Promise.all([
     listWorkspaceUsers(),

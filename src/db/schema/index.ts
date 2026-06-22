@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   pgTable,
   text,
@@ -6,7 +7,6 @@ import {
   pgEnum,
   boolean,
   integer,
-  index,
   uniqueIndex,
   customType,
   type AnyPgColumn,
@@ -116,6 +116,16 @@ export const workspaceUsers = pgTable(
       "password_expiry_warning_dismissed_until",
       { withTimezone: true }
     ),
+    /** Recent password hashes, newest first. Index 0 matches password_hash. Max length = policy limit. */
+    passwordHistory: text("password_history")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    /** SHA-256 hash of the active password-reset token, if any. */
+    passwordResetTokenHash: text("password_reset_token_hash"),
+    passwordResetTokenExpiresAt: timestamp("password_reset_token_expires_at", {
+      withTimezone: true,
+    }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -125,41 +135,8 @@ export const workspaceUsers = pgTable(
   })
 );
 
-export const passwordResetTokens = pgTable("password_reset_tokens", {
-  id: text("id").primaryKey().$defaultFn(() => createId()),
-  email: text("email").notNull(),
-  /** SHA-256 hash of the raw token sent via email. */
-  tokenHash: text("token_hash").notNull(),
-  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-  /** Null until the token is consumed. */
-  usedAt: timestamp("used_at", { withTimezone: true }),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
-
-export const passwordHistory = pgTable(
-  "password_history",
-  {
-    id: text("id").primaryKey().$defaultFn(() => createId()),
-    userId: text("user_id")
-      .notNull()
-      .references(() => workspaceUsers.id, { onDelete: "cascade" }),
-    passwordHash: text("password_hash").notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    userCreatedAtIdx: index("password_history_user_created_at_idx").on(
-      t.userId,
-      t.createdAt
-    ),
-  })
-);
-
 export const passwordPolicySettings = pgTable("password_policy_settings", {
   id: text("id").primaryKey().default("default"),
-  minLength: integer("min_length").notNull().default(6),
-  requireLetter: boolean("require_letter").notNull().default(true),
-  requireNumber: boolean("require_number").notNull().default(true),
-  requireSpecial: boolean("require_special").notNull().default(true),
   expiryDays: integer("expiry_days").notNull().default(90),
   inactivityTimeoutMinutes: integer("inactivity_timeout_minutes")
     .notNull()
