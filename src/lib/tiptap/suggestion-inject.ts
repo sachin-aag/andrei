@@ -48,6 +48,33 @@ type TextRef = {
   flatEnd: number;
 };
 
+/**
+ * Block/inline container types whose children must be separated by whitespace in
+ * the flattened anchor-matching string. This MUST stay aligned with how
+ * `richJsonToPlainText` separates blocks (paragraphs, list items, blockquote
+ * paragraphs, table cells/rows), otherwise an anchor that validates as locatable
+ * via the plain-text flattener (which gates the Apply button) can fail to locate
+ * here and silently append the edit at the end of the field.
+ */
+const SEPARATED_CONTAINER_TYPES = new Set([
+  "doc",
+  "paragraph",
+  "heading",
+  "tableCell",
+  "tableHeader",
+  "tableRow",
+  "table",
+  "blockquote",
+  "listItem",
+  "bulletList",
+  "orderedList",
+  "codeBlock",
+]);
+
+function separatesChildren(type: string | undefined): boolean {
+  return type != null && SEPARATED_CONTAINER_TYPES.has(type);
+}
+
 function collectTextRefs(doc: JSONContent): { refs: TextRef[]; flat: string } {
   const refs: TextRef[] = [];
   let flat = "";
@@ -72,14 +99,7 @@ function collectTextRefs(doc: JSONContent): { refs: TextRef[]; flat: string } {
       const arr = node.content;
       for (let i = 0; i < arr.length; i++) {
         visit(arr[i]!, arr, i);
-        if (
-          i < arr.length - 1 &&
-          (node.type === "doc" ||
-            node.type === "paragraph" ||
-            node.type === "heading" ||
-            node.type === "tableCell" ||
-            node.type === "tableHeader")
-        ) {
+        if (i < arr.length - 1 && separatesChildren(node.type)) {
           flat += " ";
         }
       }
