@@ -193,6 +193,8 @@ export function CommentCard({
       onMouseEnter={() => setHoveredCommentIds([root.id])}
       onMouseLeave={() => clearHoveredCommentIds()}
       onKeyDown={(e) => {
+        // Ignore keys bubbled from nested controls (reply textarea, action buttons).
+        if (e.target !== e.currentTarget) return;
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           handleActivate();
