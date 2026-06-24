@@ -12,6 +12,7 @@ import {
   useReportPlaceholders,
 } from "@/providers/report-provider";
 import { ReportHeader } from "./report-header";
+import { ReportDetailsEditDialog } from "./report-details-edit-dialog";
 import { ReportWorkspaceHeader } from "./report-workspace-header";
 import { ReportEditorToolbar } from "./report-editor-toolbar";
 import { MarginGutter } from "./review-rail/margin-gutter";
@@ -94,6 +95,8 @@ export function ReportWorkspace({
 }) {
   const {
     report,
+    setReport,
+    readOnly,
     refresh,
     currentUserId,
     trackChangesMode,
@@ -111,6 +114,8 @@ export function ReportWorkspace({
   const [approving, setApproving] = useState(false);
   const [sendingFeedback, setSendingFeedback] = useState(false);
   const [signDialog, setSignDialog] = useState<SignatureMeaningUi | null>(null);
+  const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
+  const [detailsFormKey, setDetailsFormKey] = useState(0);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("criteria");
   const [sectionMinHeights, setSectionMinHeights] = useState<
@@ -142,7 +147,8 @@ export function ReportWorkspace({
     []
   );
 
-  const { getUser } = useUserDirectory();
+  const { getUser, users } = useUserDirectory();
+  const managers = users.filter((user) => user.role === "manager");
   const assignedManagerIds =
     (report.assignedManagerIds?.length ?? 0) > 0
       ? report.assignedManagerIds ?? []
@@ -331,6 +337,14 @@ export function ReportWorkspace({
         }}
         onConfirm={runSignedAction}
       />
+      <ReportDetailsEditDialog
+        open={detailsDialogOpen}
+        onOpenChange={setDetailsDialogOpen}
+        report={report}
+        managers={managers}
+        onSaved={setReport}
+        formKey={detailsFormKey}
+      />
       <ReportWorkspaceHeader
         report={report}
         mode={mode}
@@ -349,6 +363,11 @@ export function ReportWorkspace({
         auditHref={mode === "view" ? `/reports/${report.id}/audit` : undefined}
         backHref={mode === "view" ? "/admin/reports" : "/"}
         backLabel={mode === "view" ? "Admin Reports" : "Reports"}
+        canEditDetails={mode === "edit" && !readOnly}
+        onEditDetails={() => {
+          setDetailsFormKey((key) => key + 1);
+          setDetailsDialogOpen(true);
+        }}
       />
 
       <ReportEditorToolbar />
