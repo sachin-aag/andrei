@@ -21,7 +21,9 @@ END $$;
 CREATE INDEX IF NOT EXISTS "report_managers_manager_idx" ON "report_managers" USING btree ("manager_id");
 --> statement-breakpoint
 INSERT INTO "report_managers" ("report_id", "manager_id", "sort_order")
-SELECT "id", "assigned_manager_id", 0
-FROM "reports"
-WHERE "assigned_manager_id" IS NOT NULL
+SELECT r."id", r."assigned_manager_id", 0
+FROM "reports" r
+INNER JOIN "workspace_users" w ON w."id" = r."assigned_manager_id"
+WHERE r."assigned_manager_id" IS NOT NULL
+  AND w."role" = 'manager'
 ON CONFLICT DO NOTHING;
