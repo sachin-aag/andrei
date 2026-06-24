@@ -14,6 +14,7 @@ export type ReportCardData = {
   status: string;
   authorId: string;
   assignedManagerId: string | null;
+  assignedManagerIds?: string[];
   updatedAt: Date;
 };
 
@@ -21,7 +22,7 @@ export function ReportCard({
   report,
   href,
   authorName,
-  managerName,
+  managerNames,
   openLabel = "Open",
   titleAction,
   trailingAction,
@@ -29,12 +30,13 @@ export function ReportCard({
   report: ReportCardData;
   href: string;
   authorName: string | undefined;
-  managerName: string | undefined;
+  managerNames: string[];
   openLabel?: string;
   titleAction?: ReactNode;
   trailingAction?: ReactNode;
 }) {
   const title = report.deviationNo || "Untitled deviation";
+  const managerLabel = managerNames.length === 1 ? "Manager" : "Managers";
 
   return (
     <Card className="p-5 transition-colors hover:border-[var(--brand-500)]">
@@ -68,10 +70,12 @@ export function ReportCard({
                 <span>Date: {formatCalendarDate(report.date)}</span>
                 <span>·</span>
                 <span>Author: {authorName ?? "—"}</span>
-                {managerName && (
+                {managerNames.length > 0 && (
                   <>
                     <span>·</span>
-                    <span>Manager: {managerName}</span>
+                    <span>
+                      {managerLabel}: {managerNames.join(", ")}
+                    </span>
                   </>
                 )}
                 <span>·</span>

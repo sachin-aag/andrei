@@ -91,6 +91,16 @@ function mockSectionRowsSelect(reportId: string) {
   vi.mocked(db.select).mockReturnValueOnce({ from } as never);
 }
 
+function mockManagerValidation(managerIds: string[]) {
+  for (let i = 0; i < 2; i++) {
+    const where = vi.fn().mockResolvedValueOnce(
+      managerIds.map((id) => ({ id }))
+    );
+    const from = vi.fn().mockReturnValue({ where });
+    vi.mocked(db.select).mockReturnValueOnce({ from } as never);
+  }
+}
+
 describe("/api/reports", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -218,6 +228,37 @@ describe("/api/reports", () => {
     expect(response.status).toBe(200);
     expect(persistReportSourceDocx).not.toHaveBeenCalled();
     expect(db.transaction).not.toHaveBeenCalled();
+  });
+
+  it("creates a report with multiple assigned managers", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
+    vi.mocked(isDeviationNoTaken).mockResolvedValueOnce(false);
+    mockManagerValidation(["manager-1", "manager-2"]);
+    const { values } = mockSuccessfulCreate("report-multi-manager");
+    mockSectionRowsSelect("report-multi-manager");
+
+    const response = await POST(
+      new Request("http://localhost/api/reports", {
+        method: "POST",
+        body: JSON.stringify({
+          deviationNo: "DEV-001",
+          assignedManagerIds: ["manager-1", "manager-2"],
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(values).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ assignedManagerId: "manager-1" })
+    );
+    expect(values).toHaveBeenNthCalledWith(2, [
+      { reportId: "report-multi-manager", managerId: "manager-1", sortOrder: 0 },
+      { reportId: "report-multi-manager", managerId: "manager-2", sortOrder: 1 },
+    ]);
+    await expect(response.json()).resolves.toMatchObject({
+      report: { assignedManagerIds: ["manager-1", "manager-2"] },
+    });
   });
 
   it("persists the uploaded source docx after creating the report", async () => {

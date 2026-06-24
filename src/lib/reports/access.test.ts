@@ -38,6 +38,15 @@ describe("canViewReport", () => {
     ).toBe(true);
   });
 
+  it("allows any manager assigned in the report manager list", () => {
+    expect(
+      canViewReport(
+        { id: "manager-2", role: "manager" },
+        { ...report, assignedManagerIds: ["manager-1", "manager-2"] }
+      )
+    ).toBe(true);
+  });
+
   it("allows managers to view submitted queue reports", () => {
     expect(
       canViewReport(

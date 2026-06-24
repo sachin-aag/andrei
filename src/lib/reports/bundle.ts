@@ -7,6 +7,10 @@ import {
   reportSections,
 } from "@/db/schema";
 import type { ReportBundle } from "@/types/report";
+import {
+  listReportManagerIds,
+  withAssignedManagerIds,
+} from "@/lib/reports/managers";
 
 // Loads the section/evaluation/comment rows for a report in parallel. Split
 // out from loadReportBundle so callers that authorize on the report row first
@@ -45,7 +49,15 @@ export async function loadReportBundle(
     .where(eq(reports.id, reportId));
   if (!report) return null;
 
-  const subtables = await loadReportSubtables(reportId);
+  const [subtables, managerIds] = await Promise.all([
+    loadReportSubtables(reportId),
+    listReportManagerIds(reportId),
+  ]);
 
-  return JSON.parse(JSON.stringify({ report, ...subtables })) as ReportBundle;
+  return JSON.parse(
+    JSON.stringify({
+      report: withAssignedManagerIds(report, managerIds),
+      ...subtables,
+    })
+  ) as ReportBundle;
 }

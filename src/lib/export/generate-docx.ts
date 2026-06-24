@@ -58,6 +58,7 @@ import {
 import { applyGoogleDocsImageCompat } from "@/lib/export/docx-google-docs-images";
 
 type ReportRow = typeof reportsTable.$inferSelect;
+type ReportRowWithManagers = ReportRow & { assignedManagerIds?: string[] };
 
 const TEMPLATE_PATH = path.join(
   process.cwd(),
@@ -153,7 +154,7 @@ function composeMeasureXml(m: MeasureSection, ctx: DocxExportContext): string {
 }
 
 function buildTemplateData(
-  report: ReportRow,
+  report: ReportRowWithManagers,
   sections: ReportSectionRecord[],
   ctx: DocxExportContext,
   comments: ReportDocxComment[]
@@ -182,7 +183,15 @@ function buildTemplateData(
   const sig = sectionByKey(sections, "signature_approvals") as SignatureApprovalsSection;
 
   const author = getUser(report.authorId);
-  const manager = getUser(report.assignedManagerId ?? undefined);
+  const assignedManagerIds =
+    (report.assignedManagerIds?.length ?? 0) > 0
+      ? report.assignedManagerIds ?? []
+      : report.assignedManagerId
+        ? [report.assignedManagerId]
+        : [];
+  const managerNames = assignedManagerIds
+    .map((id) => getUser(id)?.name)
+    .filter((name): name is string => Boolean(name));
 
   return {
     // Header row
@@ -332,7 +341,7 @@ function buildTemplateData(
 
     // Signature (legacy placeholders; row XML applied after render when imported)
     authorName: author?.name ?? "",
-    managerName: manager?.name ?? "",
+    managerName: managerNames.join(", "),
     _signatureApprovals: sig,
   };
 }
@@ -361,7 +370,7 @@ export async function generateReportDocx({
   comments = [],
   electronicSignatures = [],
 }: {
-  report: ReportRow;
+  report: ReportRowWithManagers;
   sections: ReportSectionRecord[];
   comments?: ReportDocxComment[];
   electronicSignatures?: DocxAuditSignature[];

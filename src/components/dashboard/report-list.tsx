@@ -41,9 +41,15 @@ export function ReportList({
     <div className="grid gap-3">
       {visibleReports.map((report) => {
         const author = usersById[report.authorId];
-        const manager = report.assignedManagerId
-          ? usersById[report.assignedManagerId]
-          : undefined;
+        const managerIds =
+          report.assignedManagerIds && report.assignedManagerIds.length > 0
+            ? report.assignedManagerIds
+            : report.assignedManagerId
+              ? [report.assignedManagerId]
+              : [];
+        const managerNames = managerIds
+          .map((managerId) => usersById[managerId]?.name)
+          .filter((name): name is string => Boolean(name));
         const isOwner = report.authorId === currentUserId;
         const title = report.deviationNo || "Untitled deviation";
 
@@ -53,7 +59,7 @@ export function ReportList({
             report={report}
             href={`/reports/${report.id}`}
             authorName={author?.name}
-            managerName={manager?.name}
+            managerNames={managerNames}
             titleAction={
               isOwner ? (
                 <EvaluateWithAiButton

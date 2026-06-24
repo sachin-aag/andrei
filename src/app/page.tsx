@@ -1,8 +1,8 @@
 import { redirect } from "next/navigation";
 import { ViewTransition } from "react";
-import { desc, eq, or } from "drizzle-orm";
+import { desc, eq, or, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { reports } from "@/db/schema";
+import { reportManagers, reports } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import { listWorkspaceUsers } from "@/lib/auth/workspace-users";
 import { getPasswordStatusForUser } from "@/lib/auth/password-status";
@@ -11,6 +11,10 @@ import { AppShell } from "@/components/layout/app-shell";
 import { CreateReportButton } from "@/components/dashboard/create-report-button";
 import { ReportList } from "@/components/dashboard/report-list";
 import { withTransientRetry } from "@/lib/db/with-transient-retry";
+import {
+  listReportManagerIdsByReportIds,
+  withAssignedManagerIds,
+} from "@/lib/reports/managers";
 
 export const dynamic = "force-dynamic";
 
@@ -29,7 +33,7 @@ export default async function DashboardPage() {
     workspaceUsers.map((entry) => [entry.id, { name: entry.name }])
   );
 
-  const myReports =
+  const reportRows =
     user.role === "engineer"
       ? await withTransientRetry("dashboard.engineerReports", () =>
           db
@@ -45,12 +49,23 @@ export default async function DashboardPage() {
             .where(
               or(
                 eq(reports.assignedManagerId, user.id),
+                sql`exists (
+                  select 1 from ${reportManagers}
+                  where ${reportManagers.reportId} = ${reports.id}
+                  and ${reportManagers.managerId} = ${user.id}
+                )`,
                 eq(reports.status, "submitted"),
                 eq(reports.status, "in_review")
               )
             )
             .orderBy(desc(reports.updatedAt))
         );
+  const managerIdsByReportId = await listReportManagerIdsByReportIds(
+    reportRows.map((report) => report.id)
+  );
+  const myReports = reportRows.map((report) =>
+    withAssignedManagerIds(report, managerIdsByReportId.get(report.id) ?? [])
+  );
 
   return (
     <AppShell

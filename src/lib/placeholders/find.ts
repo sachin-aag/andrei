@@ -210,7 +210,11 @@ export function findPlaceholdersInPmDoc(
     placeholders.push(
       ...scanPmBlockForPlaceholders(node, pos, section, contentPath)
     );
-    return false;
+    // Keep descending: container blocks (blockquote, listItem, tableCell, …)
+    // hold their text inside nested paragraphs. scanPmBlockForPlaceholders only
+    // reads direct text children, so each leaf block is scanned exactly once and
+    // nested placeholders would be missed if we stopped here.
+    return true;
   });
 
   return placeholders;

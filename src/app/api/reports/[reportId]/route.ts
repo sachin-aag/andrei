@@ -13,6 +13,15 @@ import {
   normalizeDeviationNo,
 } from "@/lib/reports/deviation-no";
 import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
+import {
+  assignedManagerIdsForReport,
+  listReportManagerIds,
+  normalizeAssignedManagerIds,
+  primaryAssignedManagerId,
+  syncReportManagers,
+  validateAssignedManagerIds,
+  withAssignedManagerIds,
+} from "@/lib/reports/managers";
 
 export async function GET(
   _req: Request,
@@ -29,14 +38,21 @@ export async function GET(
     .from(reports)
     .where(eq(reports.id, reportId));
   if (!report) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (!canViewReport(user, report)) {
+  const managerIds = await listReportManagerIds(reportId);
+  const reportWithManagers = withAssignedManagerIds(report, managerIds);
+  if (!canViewReport(user, reportWithManagers)) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
   const { sections, evaluations, comments } =
     await loadReportSubtables(reportId);
 
-  return NextResponse.json({ report, sections, evaluations, comments });
+  return NextResponse.json({
+    report: reportWithManagers,
+    sections,
+    evaluations,
+    comments,
+  });
 }
 
 const patchSchema = z.object({
@@ -51,6 +67,7 @@ const patchSchema = z.object({
     .optional(),
   otherTools: z.string().optional(),
   assignedManagerId: z.string().nullable().optional(),
+  assignedManagerIds: z.array(z.string()).optional(),
 });
 
 export async function PATCH(
@@ -68,24 +85,61 @@ export async function PATCH(
   if (!existingReport) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+  if (user.role !== "admin" && user.id !== existingReport.authorId) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+  if (existingReport.status === "approved") {
+    return NextResponse.json(
+      { error: "Approved reports cannot be edited" },
+      { status: 409 }
+    );
+  }
 
   const parse = patchSchema.safeParse(await req.json().catch(() => ({})));
   if (!parse.success) {
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }
 
-  const updates: Record<string, unknown> = { ...parse.data, updatedAt: new Date() };
-  if (parse.data.date) updates.date = new Date(parse.data.date);
+  const parsed = parse.data;
+  const updates: Record<string, unknown> = { updatedAt: new Date() };
+  if (parsed.date) updates.date = new Date(parsed.date);
+  if (parsed.toolsUsed !== undefined) updates.toolsUsed = parsed.toolsUsed;
+  if (parsed.otherTools !== undefined) updates.otherTools = parsed.otherTools;
 
-  if (parse.data.deviationNo !== undefined) {
-    const normalized = normalizeDeviationNo(parse.data.deviationNo);
+  if (parsed.deviationNo !== undefined) {
+    const normalized = normalizeDeviationNo(parsed.deviationNo);
     if (!normalized) {
       return NextResponse.json({ error: "Deviation number is required" }, { status: 400 });
     }
-    if (await isDeviationNoTaken(normalized, user.id, reportId)) {
+    if (await isDeviationNoTaken(normalized, existingReport.authorId, reportId)) {
       return NextResponse.json({ error: DUPLICATE_DEVIATION_NO_ERROR }, { status: 409 });
     }
     updates.deviationNo = normalized;
+  }
+
+  const managerIdsChanged =
+    parsed.assignedManagerIds !== undefined ||
+    parsed.assignedManagerId !== undefined;
+  const nextManagerIds = managerIdsChanged
+    ? parsed.assignedManagerIds !== undefined
+      ? normalizeAssignedManagerIds(parsed.assignedManagerIds)
+      : normalizeAssignedManagerIds([parsed.assignedManagerId ?? null])
+    : undefined;
+  const existingManagerIds = await listReportManagerIds(reportId);
+  const oldAssignedManagerIds = assignedManagerIdsForReport(
+    existingReport,
+    existingManagerIds
+  );
+
+  if (nextManagerIds) {
+    const validation = await validateAssignedManagerIds(nextManagerIds);
+    if (!validation.ok) {
+      return NextResponse.json(
+        { error: "One or more selected reviewers are not managers" },
+        { status: 400 }
+      );
+    }
+    updates.assignedManagerId = primaryAssignedManagerId(nextManagerIds);
   }
 
   const [updated] = await db
@@ -95,6 +149,13 @@ export async function PATCH(
     .returning();
 
   if (!updated) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  if (nextManagerIds) {
+    await syncReportManagers(reportId, nextManagerIds);
+  }
+  const updatedWithManagers = withAssignedManagerIds(
+    updated,
+    nextManagerIds ?? existingManagerIds
+  );
 
   await recordAuditEvent({
     actor: auditActorFromUser(user),
@@ -109,6 +170,7 @@ export async function PATCH(
       toolsUsed: existingReport.toolsUsed,
       otherTools: existingReport.otherTools,
       assignedManagerId: existingReport.assignedManagerId,
+      assignedManagerIds: oldAssignedManagerIds,
     },
     newValue: {
       deviationNo: updated.deviationNo,
@@ -116,10 +178,11 @@ export async function PATCH(
       toolsUsed: updated.toolsUsed,
       otherTools: updated.otherTools,
       assignedManagerId: updated.assignedManagerId,
+      assignedManagerIds: updatedWithManagers.assignedManagerIds,
     },
   });
 
-  return NextResponse.json({ report: updated });
+  return NextResponse.json({ report: updatedWithManagers });
 }
 
 export async function DELETE(

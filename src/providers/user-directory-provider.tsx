@@ -15,6 +15,7 @@ import {
 } from "@/lib/auth/user-directory";
 
 type UserDirectoryContextValue = {
+  users: WorkspaceUser[];
   getUser: (id: string | null | undefined) => WorkspaceUser | undefined;
 };
 
@@ -33,11 +34,13 @@ export function UserDirectoryProvider({
   initialUsers: WorkspaceUser[];
   children: React.ReactNode;
 }) {
+  const [fetchedUsers, setFetchedUsers] = useState<WorkspaceUser[] | null>(null);
   const [version, setVersion] = useState(0);
+  const users = fetchedUsers ?? initialUsers;
 
   useLayoutEffect(() => {
-    syncUserDirectory(initialUsers);
-  }, [initialUsers]);
+    syncUserDirectory(users);
+  }, [users]);
 
   useEffect(() => {
     void fetch("/api/auth/users")
@@ -45,18 +48,20 @@ export function UserDirectoryProvider({
       .then((data: { users?: WorkspaceUser[] } | null) => {
         if (!data?.users) return;
         syncUserDirectory(data.users);
+        setFetchedUsers(data.users);
         setVersion((current) => current + 1);
       });
   }, []);
 
   const value = useMemo(
     () => ({
+      users,
       getUser: (id: string | null | undefined) => {
         void version;
         return lookupUserInDirectory(id);
       },
     }),
-    [version]
+    [users, version]
   );
 
   return (
@@ -67,7 +72,7 @@ export function UserDirectoryProvider({
 export function useUserDirectory(): UserDirectoryContextValue {
   const context = useContext(UserDirectoryContext);
   if (!context) {
-    return { getUser: lookupUserInDirectory };
+    return { users: [], getUser: lookupUserInDirectory };
   }
   return context;
 }
