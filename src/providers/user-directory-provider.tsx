@@ -15,6 +15,7 @@ import {
 } from "@/lib/auth/user-directory";
 
 type UserDirectoryContextValue = {
+  users: WorkspaceUser[];
   getUser: (id: string | null | undefined) => WorkspaceUser | undefined;
 };
 
@@ -33,10 +34,12 @@ export function UserDirectoryProvider({
   initialUsers: WorkspaceUser[];
   children: React.ReactNode;
 }) {
+  const [users, setUsers] = useState(initialUsers);
   const [version, setVersion] = useState(0);
 
   useLayoutEffect(() => {
     syncUserDirectory(initialUsers);
+    setUsers(initialUsers);
   }, [initialUsers]);
 
   useEffect(() => {
@@ -45,18 +48,20 @@ export function UserDirectoryProvider({
       .then((data: { users?: WorkspaceUser[] } | null) => {
         if (!data?.users) return;
         syncUserDirectory(data.users);
+        setUsers(data.users);
         setVersion((current) => current + 1);
       });
   }, []);
 
   const value = useMemo(
     () => ({
+      users,
       getUser: (id: string | null | undefined) => {
         void version;
         return lookupUserInDirectory(id);
       },
     }),
-    [version]
+    [users, version]
   );
 
   return (
@@ -67,7 +72,7 @@ export function UserDirectoryProvider({
 export function useUserDirectory(): UserDirectoryContextValue {
   const context = useContext(UserDirectoryContext);
   if (!context) {
-    return { getUser: lookupUserInDirectory };
+    return { users: [], getUser: lookupUserInDirectory };
   }
   return context;
 }

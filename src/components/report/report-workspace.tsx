@@ -143,7 +143,15 @@ export function ReportWorkspace({
   );
 
   const { getUser } = useUserDirectory();
-  const manager = getUser(report.assignedManagerId ?? undefined);
+  const assignedManagerIds =
+    (report.assignedManagerIds?.length ?? 0) > 0
+      ? report.assignedManagerIds ?? []
+      : report.assignedManagerId
+        ? [report.assignedManagerId]
+        : [];
+  const managerNames = assignedManagerIds
+    .map((id) => getUser(id)?.name)
+    .filter((name): name is string => Boolean(name));
   const author = getUser(report.authorId);
 
   const canSubmit =
@@ -327,7 +335,7 @@ export function ReportWorkspace({
         report={report}
         mode={mode}
         authorName={author?.name}
-        managerName={manager?.name}
+        managerNames={managerNames}
         trackChangesMode={trackChangesMode}
         onTrackChangesModeChange={setTrackChangesMode}
         canSubmit={canSubmit}

@@ -2,6 +2,10 @@ import { desc, eq, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { reports } from "@/db/schema";
 import { listAdminUsers, type AdminUser } from "@/lib/admin/users";
+import {
+  listReportManagerIdsByReportIds,
+  withAssignedManagerIds,
+} from "@/lib/reports/managers";
 
 export type AdminReportSummary = {
   id: string;
@@ -10,6 +14,7 @@ export type AdminReportSummary = {
   status: string;
   authorId: string;
   assignedManagerId: string | null;
+  assignedManagerIds: string[];
   updatedAt: Date;
 };
 
@@ -34,10 +39,22 @@ export async function listAdminReportSummaries(
     .orderBy(desc(reports.updatedAt));
 
   if (authorId) {
-    return query.where(eq(reports.authorId, authorId));
+    const rows = await query.where(eq(reports.authorId, authorId));
+    const managerIdsByReportId = await listReportManagerIdsByReportIds(
+      rows.map((row) => row.id)
+    );
+    return rows.map((row) =>
+      withAssignedManagerIds(row, managerIdsByReportId.get(row.id) ?? [])
+    );
   }
 
-  return query;
+  const rows = await query;
+  const managerIdsByReportId = await listReportManagerIdsByReportIds(
+    rows.map((row) => row.id)
+  );
+  return rows.map((row) =>
+    withAssignedManagerIds(row, managerIdsByReportId.get(row.id) ?? [])
+  );
 }
 
 export async function listAdminReportAuthorOptions(): Promise<

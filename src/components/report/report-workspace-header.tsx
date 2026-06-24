@@ -26,7 +26,7 @@ type ReportWorkspaceHeaderProps = {
   report: ReportRecord;
   mode: WorkspaceMode;
   authorName?: string;
-  managerName?: string;
+  managerNames?: string[];
   trackChangesMode: boolean;
   onTrackChangesModeChange: (next: boolean) => void;
   canSubmit: boolean;
@@ -46,7 +46,7 @@ export function ReportWorkspaceHeader({
   report,
   mode,
   authorName,
-  managerName,
+  managerNames = [],
   trackChangesMode,
   onTrackChangesModeChange,
   canSubmit,
@@ -90,7 +90,7 @@ export function ReportWorkspaceHeader({
         </div>
         <span className="text-xs text-[var(--muted-foreground)] truncate">
           {authorName ?? "Unknown author"}
-          {managerName ? ` \u2192 ${managerName}` : ""}
+          {managerNames.length > 0 ? ` \u2192 ${managerNames.join(", ")}` : ""}
         </span>
       </div>
       <div className="ml-auto flex items-center gap-3 flex-wrap justify-end">

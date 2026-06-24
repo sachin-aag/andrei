@@ -22,6 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { ImproveAiStaleRerunDialog } from "@/components/improve-ai/improve-ai-stale-rerun-dialog";
+import { ManagerSelector } from "@/components/report/manager-selector";
 import type { WorkspaceUser } from "@/lib/auth/workspace-user";
 import { startImproveAiFromReport } from "@/lib/improve-ai/client";
 
@@ -44,7 +45,7 @@ export function ImproveAiUploadButton({
   const [open, setOpen] = useState(false);
   const [selectedReportId, setSelectedReportId] = useState("");
   const [deviationNo, setDeviationNo] = useState("");
-  const [managerId, setManagerId] = useState("");
+  const [managerIds, setManagerIds] = useState<string[]>([]);
   const [draftFile, setDraftFile] = useState<File | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -57,7 +58,7 @@ export function ImproveAiUploadButton({
   const resetForm = () => {
     setSelectedReportId("");
     setDeviationNo("");
-    setManagerId("");
+    setManagerIds([]);
     setDraftFile(null);
     setPreviewLoading(false);
     setError(null);
@@ -107,7 +108,7 @@ export function ImproveAiUploadButton({
     setSelectedReportId(reportId);
     setDraftFile(null);
     setDeviationNo("");
-    setManagerId("");
+    setManagerIds([]);
     setError(null);
     if (fileRef.current) fileRef.current.value = "";
   };
@@ -155,7 +156,9 @@ export function ImproveAiUploadButton({
     const form = new FormData();
     form.append("file", draftFile);
     if (deviationNo.trim()) form.append("deviationNo", deviationNo.trim());
-    form.append("assignedManagerId", managerId || "");
+    for (const managerId of managerIds) {
+      form.append("assignedManagerIds", managerId);
+    }
 
     try {
       const res = await fetch("/api/improve-ai/upload", {
@@ -338,23 +341,14 @@ export function ImproveAiUploadButton({
 
             {draftFile && (
               <div className="grid gap-2">
-                <Label>Assigned manager (optional)</Label>
-                <Select
-                  value={managerId}
-                  onValueChange={setManagerId}
+                <Label>Reviewer managers (optional)</Label>
+                <ManagerSelector
+                  managers={managers}
+                  selectedIds={managerIds}
+                  onSelectedIdsChange={setManagerIds}
                   disabled={isBusy}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Pick a manager" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {managers.map((m) => (
-                      <SelectItem key={m.id} value={m.id}>
-                        {m.name} · {m.title}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  emptyMessage="No managers are available to assign."
+                />
               </div>
             )}
 

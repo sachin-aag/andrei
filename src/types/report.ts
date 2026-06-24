@@ -16,6 +16,7 @@ export type ReportRecord = {
   status: ReportStatus;
   authorId: string;
   assignedManagerId: string | null;
+  assignedManagerIds?: string[];
   createdAt: string;
   updatedAt: string;
 };

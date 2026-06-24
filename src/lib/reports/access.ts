@@ -3,6 +3,7 @@ import type { UserRole } from "@/lib/auth/roles";
 export type ReportAccessRecord = {
   authorId: string;
   assignedManagerId: string | null;
+  assignedManagerIds?: string[] | null;
   status: string;
 };
 
@@ -18,8 +19,14 @@ export function canViewReport(
   if (user.role === "admin") return true;
   if (user.role === "engineer") return user.id === report.authorId;
   if (user.role === "manager") {
+    const assignedManagerIds =
+      report.assignedManagerIds && report.assignedManagerIds.length > 0
+        ? report.assignedManagerIds
+        : report.assignedManagerId
+          ? [report.assignedManagerId]
+          : [];
     return (
-      report.assignedManagerId === user.id ||
+      assignedManagerIds.includes(user.id) ||
       report.status === "submitted" ||
       report.status === "in_review"
     );

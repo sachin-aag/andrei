@@ -16,15 +16,9 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import type { WorkspaceUser } from "@/lib/auth/workspace-user";
 import { captureEvent } from "@/lib/analytics/events";
+import { ManagerSelector } from "@/components/report/manager-selector";
 
 type CreateReportButtonProps = {
   managers: Pick<WorkspaceUser, "id" | "name" | "title">[];
@@ -33,7 +27,7 @@ type CreateReportButtonProps = {
 export function CreateReportButton({ managers }: CreateReportButtonProps) {
   const [open, setOpen] = useState(false);
   const [deviationNo, setDeviationNo] = useState("");
-  const [managerId, setManagerId] = useState<string>("");
+  const [managerIds, setManagerIds] = useState<string[]>([]);
   const [draftFile, setDraftFile] = useState<File | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -43,7 +37,7 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
 
   const resetForm = () => {
     setDeviationNo("");
-    setManagerId("");
+    setManagerIds([]);
     setDraftFile(null);
     setPreviewLoading(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -95,7 +89,9 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
     startTransition(async () => {
       const fd = new FormData();
       fd.append("deviationNo", deviationNo.trim());
-      fd.append("assignedManagerId", managerId || "");
+      for (const managerId of managerIds) {
+        fd.append("assignedManagerIds", managerId);
+      }
       if (draftFile) fd.append("file", draftFile);
 
       const res = await fetch("/api/reports", {
@@ -231,23 +227,14 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
             )}
           </div>
           <div className="grid gap-2">
-            <Label>Assigned Manager (optional)</Label>
-            <Select
-              value={managerId}
-              onValueChange={setManagerId}
+            <Label>Reviewer managers (optional)</Label>
+            <ManagerSelector
+              managers={managers}
+              selectedIds={managerIds}
+              onSelectedIdsChange={setManagerIds}
               disabled={isBusy}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Pick a manager" />
-              </SelectTrigger>
-              <SelectContent>
-                {managers.map((m) => (
-                  <SelectItem key={m.id} value={m.id}>
-                    {m.name} · {m.title}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+              emptyMessage="No managers are available to assign."
+            />
           </div>
         </div>
           <DialogFooter>
