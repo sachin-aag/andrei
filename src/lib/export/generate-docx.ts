@@ -58,6 +58,7 @@ import {
 import { applyGoogleDocsImageCompat } from "@/lib/export/docx-google-docs-images";
 
 type ReportRow = typeof reportsTable.$inferSelect;
+type ReportRowWithManagers = ReportRow & { assignedManagerIds?: string[] };
 
 const TEMPLATE_PATH = path.join(
   process.cwd(),
@@ -153,7 +154,7 @@ function composeMeasureXml(m: MeasureSection, ctx: DocxExportContext): string {
 }
 
 function buildTemplateData(
-  report: ReportRow,
+  report: ReportRowWithManagers,
   sections: ReportSectionRecord[],
   ctx: DocxExportContext,
   comments: ReportDocxComment[]
@@ -369,7 +370,7 @@ export async function generateReportDocx({
   comments = [],
   electronicSignatures = [],
 }: {
-  report: ReportRow;
+  report: ReportRowWithManagers;
   sections: ReportSectionRecord[];
   comments?: ReportDocxComment[];
   electronicSignatures?: DocxAuditSignature[];

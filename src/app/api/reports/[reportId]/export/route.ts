@@ -7,6 +7,10 @@ import { hydrateUserDirectory } from "@/lib/auth/user-directory";
 import { listWorkspaceUsers } from "@/lib/auth/workspace-users";
 import { generateReportDocx } from "@/lib/export/generate-docx";
 import { listReportSignatures } from "@/lib/audit";
+import {
+  listReportManagerIds,
+  withAssignedManagerIds,
+} from "@/lib/reports/managers";
 
 export const runtime = "nodejs";
 
@@ -35,10 +39,13 @@ export async function GET(
 
   hydrateUserDirectory(await listWorkspaceUsers());
 
-  const signatures = await listReportSignatures(reportId);
+  const [signatures, managerIds] = await Promise.all([
+    listReportSignatures(reportId),
+    listReportManagerIds(reportId),
+  ]);
 
   const buffer = await generateReportDocx({
-    report,
+    report: withAssignedManagerIds(report, managerIds),
     sections: sectionRows.map((r) => ({
       id: r.id,
       reportId: r.reportId,

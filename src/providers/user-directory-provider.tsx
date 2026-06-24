@@ -34,13 +34,13 @@ export function UserDirectoryProvider({
   initialUsers: WorkspaceUser[];
   children: React.ReactNode;
 }) {
-  const [users, setUsers] = useState(initialUsers);
+  const [fetchedUsers, setFetchedUsers] = useState<WorkspaceUser[] | null>(null);
   const [version, setVersion] = useState(0);
+  const users = fetchedUsers ?? initialUsers;
 
   useLayoutEffect(() => {
-    syncUserDirectory(initialUsers);
-    setUsers(initialUsers);
-  }, [initialUsers]);
+    syncUserDirectory(users);
+  }, [users]);
 
   useEffect(() => {
     void fetch("/api/auth/users")
@@ -48,7 +48,7 @@ export function UserDirectoryProvider({
       .then((data: { users?: WorkspaceUser[] } | null) => {
         if (!data?.users) return;
         syncUserDirectory(data.users);
-        setUsers(data.users);
+        setFetchedUsers(data.users);
         setVersion((current) => current + 1);
       });
   }, []);
