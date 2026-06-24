@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { authenticateAsEngineer, authenticateAsManager, loginAsEngineer } from "./helpers/auth";
+import { authenticateAsManager, loginAsEngineer, loginAsManager } from "./helpers/auth";
 import {
   createReport,
   seedDefineForEvaluation,
@@ -108,7 +108,7 @@ test.describe("report editor", () => {
       timeout: 15_000,
     });
 
-    await authenticateAsEngineer(page);
+    await loginAsEngineer(page);
     await page.goto(`/reports/${reportId}/edit`);
     await expect(page.getByRole("heading", { name: /^define$/i })).toBeVisible({
       timeout: 30_000,
