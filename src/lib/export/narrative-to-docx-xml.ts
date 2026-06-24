@@ -1,4 +1,5 @@
 import type { JSONContent } from "@tiptap/core";
+import { getUser } from "@/lib/auth/user-directory";
 import {
   createDocxExportContext,
   registerInlineImage,
@@ -106,6 +107,14 @@ function revisionIdFromMarkId(markId: unknown): string {
   return String(hash || 1);
 }
 
+function revisionAuthorFromId(authorId: unknown): string {
+  if (typeof authorId !== "string") return "Unknown";
+  const trimmed = authorId.trim();
+  if (!trimmed) return "Unknown";
+  if (trimmed === "ai") return "AI reviewer";
+  return getUser(trimmed)?.name ?? trimmed;
+}
+
 function suggestionRevisionFromMarks(
   marks: JSONContent["marks"]
 ): SuggestionRevision | null {
@@ -115,10 +124,7 @@ function suggestionRevisionFromMarks(
   if (!mark) return null;
   return {
     id: revisionIdFromMarkId(mark.attrs?.id),
-    author:
-      typeof mark.attrs?.authorId === "string" && mark.attrs.authorId.trim()
-        ? mark.attrs.authorId.trim()
-        : "Andrei",
+    author: revisionAuthorFromId(mark.attrs?.authorId),
     date:
       typeof mark.attrs?.createdAt === "string" && mark.attrs.createdAt.trim()
         ? mark.attrs.createdAt.trim()
