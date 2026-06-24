@@ -15,7 +15,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ManagerSelector } from "@/components/report/manager-selector";
-import { assignedManagerIdsForReport } from "@/lib/reports/managers";
+import { assignedManagerIdsForReport } from "@/lib/reports/assigned-manager-ids";
 import type { WorkspaceUser } from "@/lib/auth/workspace-user";
 import type { ReportRecord } from "@/types/report";
 
