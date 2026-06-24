@@ -8,7 +8,6 @@ import {
 import { createReport, deleteReport } from "./helpers/reports";
 import { signedWorkflowPayload } from "./helpers/signing";
 import {
-  openMarginCommentReply,
   postReviewMarginNote,
   replyToMarginComment,
   reviewMargin,
@@ -83,30 +82,7 @@ test.describe("comments", () => {
       timeout: 30_000,
     });
 
-    const reply = "Engineer reply to manager note.";
-    await replyToMarginComment(page, commentText, reply);
-  });
-
-  test("reply textarea keeps cursor position when typing spaces", async ({ page }) => {
-    const commentText = "Manager note for space typing test.";
-    await authenticateAsManager(page);
-    const postRes = await page.request.post(`/api/reports/${reportId}/comments`, {
-      data: {
-        content: commentText,
-        section: "define",
-      },
-    });
-    expect(postRes.ok()).toBeTruthy();
-
-    await authenticateAsEngineer(page);
-    await page.goto(`/reports/${reportId}/edit`);
-    await page.setViewportSize({ width: 1280, height: 900 });
-
-    await openMarginCommentReply(page, commentText);
-    const replyField = reviewMargin(page).getByPlaceholder(/^reply/i);
-    await replyField.click();
-    await page.keyboard.type("hello world test");
-
-    await expect(replyField).toHaveValue("hello world test");
+    const reply = "Engineer reply with spaces here.";
+    await replyToMarginComment(page, commentText, reply, { typeViaKeyboard: true });
   });
 });

@@ -91,11 +91,19 @@ export async function postReviewMarginNote(
 export async function replyToMarginComment(
   page: Page,
   commentText: string,
-  replyText: string
+  replyText: string,
+  opts?: { typeViaKeyboard?: boolean }
 ): Promise<void> {
   await openMarginCommentReply(page, commentText);
   const margin = reviewMargin(page);
-  await margin.getByPlaceholder(/^reply/i).fill(replyText);
+  const replyField = margin.getByPlaceholder(/^reply/i);
+  if (opts?.typeViaKeyboard) {
+    await replyField.click();
+    await page.keyboard.type(replyText);
+    await expect(replyField).toHaveValue(replyText);
+  } else {
+    await replyField.fill(replyText);
+  }
   await margin.getByRole("button", { name: /^reply$/i }).click();
   await expect(margin.getByText(replyText)).toBeVisible({ timeout: 15_000 });
 }
@@ -108,10 +116,13 @@ export async function openMarginCommentReply(
   await collapseReportSidebar(page);
   const margin = reviewMargin(page);
   await expect(margin.getByText(commentText)).toBeVisible({ timeout: 15_000 });
-  await margin
+  const card = margin
     .locator('[role="button"]')
     .filter({ hasText: commentText })
-    .first()
-    .click();
+    .first();
+  await card.scrollIntoViewIfNeeded();
+  // Keyboard activation avoids the expanded report sidebar overlay intercepting clicks.
+  await card.focus();
+  await page.keyboard.press("Enter");
   await expect(margin.getByPlaceholder(/^reply/i)).toBeVisible({ timeout: 15_000 });
 }
