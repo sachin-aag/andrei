@@ -82,7 +82,7 @@ test.describe("comments", () => {
       timeout: 30_000,
     });
 
-    const reply = "Engineer reply to manager note.";
-    await replyToMarginComment(page, commentText, reply);
+    const reply = "Engineer reply with spaces here.";
+    await replyToMarginComment(page, commentText, reply, { typeViaKeyboard: true });
   });
 });
