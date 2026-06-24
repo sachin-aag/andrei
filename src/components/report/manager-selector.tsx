@@ -9,7 +9,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import type { WorkspaceUser } from "@/lib/auth/workspace-user";
 
@@ -137,47 +136,45 @@ export function ManagerSelector({
             />
           </div>
         </div>
-        <ScrollArea className="max-h-56">
-          <div className="p-1">
-            {filteredManagers.length === 0 ? (
-              <p className="px-2 py-6 text-center text-sm text-[var(--muted-foreground)]">
-                No managers match your search.
-              </p>
-            ) : (
-              filteredManagers.map((manager) => {
-                const checked = selected.has(manager.id);
-                return (
-                  <button
-                    key={manager.id}
-                    type="button"
+        <div className="max-h-56 overflow-y-auto p-1">
+          {filteredManagers.length === 0 ? (
+            <p className="px-2 py-6 text-center text-sm text-[var(--muted-foreground)]">
+              No managers match your search.
+            </p>
+          ) : (
+            filteredManagers.map((manager) => {
+              const checked = selected.has(manager.id);
+              return (
+                <button
+                  key={manager.id}
+                  type="button"
+                  className={cn(
+                    "group flex w-full items-start gap-2 rounded-sm px-2 py-2 text-left text-sm hover:bg-[var(--accent)] hover:text-[var(--accent-foreground)]",
+                    checked && "bg-[var(--secondary)]"
+                  )}
+                  onClick={() => toggleManager(manager.id)}
+                >
+                  <span
                     className={cn(
-                      "flex w-full items-start gap-2 rounded-sm px-2 py-2 text-left text-sm hover:bg-[var(--accent)]",
-                      checked && "bg-[var(--accent)]/60"
+                      "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-sm border border-[var(--border)]",
+                      checked && "border-[var(--primary)] bg-[var(--primary)] text-[var(--primary-foreground)]"
                     )}
-                    onClick={() => toggleManager(manager.id)}
                   >
-                    <span
-                      className={cn(
-                        "mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-sm border border-[var(--border)]",
-                        checked && "border-[var(--primary)] bg-[var(--primary)] text-[var(--primary-foreground)]"
-                      )}
-                    >
-                      {checked ? <Check className="size-3" /> : null}
-                    </span>
-                    <span className="grid min-w-0 gap-0.5">
-                      <span className="font-medium">{manager.name}</span>
-                      {manager.title ? (
-                        <span className="text-xs text-[var(--muted-foreground)]">
-                          {manager.title}
-                        </span>
-                      ) : null}
-                    </span>
-                  </button>
-                );
-              })
-            )}
-          </div>
-        </ScrollArea>
+                    {checked ? <Check className="size-3" /> : null}
+                  </span>
+                  <span className="grid min-w-0 gap-0.5">
+                    <span className="font-medium">{manager.name}</span>
+                    {manager.title ? (
+                      <span className="text-xs text-[var(--muted-foreground)] group-hover:text-[var(--accent-foreground)]/80">
+                        {manager.title}
+                      </span>
+                    ) : null}
+                  </span>
+                </button>
+              );
+            })
+          )}
+        </div>
         {selectedManagers.length > 0 ? (
           <div className="border-t border-[var(--border)] px-3 py-2 text-xs text-[var(--muted-foreground)]">
             {selectedManagers.length} selected
