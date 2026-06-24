@@ -1,0 +1,912 @@
+{
+  "metadata": {
+    "pipeline": "hybrid",
+    "model": "gpt-5.4-mini",
+    "deviation_id": "DEV/IT/25/002",
+    "filename": "Investigation Report Data Archival Procedure (003).docx",
+    "timing": {
+      "regex_sec": 0.004,
+      "gliner_sec": 1.926,
+      "llm_sec": 17.295,
+      "total_sec": 19.226
+    },
+    "usage": {
+      "input_tokens": 6074,
+      "output_tokens": 2762
+    },
+    "phase_entity_counts": {
+      "regex": 20,
+      "gliner": 28
+    }
+  },
+  "entities": {
+    "deviation": {
+      "deviation_id": "DEV/IT/25/002",
+      "department_code": "QC",
+      "category": "Minor",
+      "is_repeat_occurrence": false,
+      "non_conformance_type": "Data integrity / audit trail data loss due to backup overwrite",
+      "non_conformance_summary": "Audit trail data for PH Conductivity Meter I/QC/010 was missing for 28/10/2025 because a backup file was overwritten instead of being archived as a uniquely renamed file."
+    },
+    "temporal_events": [
+      {
+        "event_type": "occurrence",
+        "datetime": "28/10/2025",
+        "actor": "System / IT backup process",
+        "description": "Audit trail data for PH Conductivity Meter I/QC/010 was not captured/was lost for this date."
+      },
+      {
+        "event_type": "detection",
+        "datetime": "17/11/2025",
+        "actor": "QA Personnel (Priya Patole-584)",
+        "description": "QA reviewed the audit trail in QC Department and found audit trail data missing from 14/10/2025 to 28/10/2025, with 28/10/2025 unrecovered."
+      },
+      {
+        "event_type": "reporting",
+        "datetime": "17/11/2025",
+        "actor": "QA Personnel",
+        "description": "QA informed IT and concerned QC personnel/department head of the discrepancy."
+      },
+      {
+        "event_type": "deviation_logging",
+        "datetime": "2025",
+        "actor": "Quality/Deviation process",
+        "description": "Deviation DEV/QC/25/002 was initiated after confirmation that 28/10/2025 data could not be restored."
+      },
+      {
+        "event_type": "investigation_start",
+        "datetime": "17/11/2025",
+        "actor": "QA and IT Personnel",
+        "description": "QA and IT began review of the audit trail and backup availability for the impacted instrument."
+      },
+      {
+        "event_type": "oem_visit",
+        "datetime": "05/02/2026",
+        "actor": "Service Engineer / vendor",
+        "description": "Vendor/service engineer visited MJ Biopharm site to assess the missing data retrieval issue."
+      },
+      {
+        "event_type": "resolution",
+        "datetime": "21/03/2026 17:12",
+        "actor": "Vendor",
+        "description": "Vendor conclusion report was issued stating the backup overwrite mechanism prevented restoration of the 28/10/2025 data."
+      }
+    ],
+    "persons": [
+      {
+        "employee_id": "584",
+        "name": "Priya Patole",
+        "designation": "QA Personnel",
+        "department": "QA",
+        "roles_in_deviation": [
+          "discoverer",
+          "reporter",
+          "investigator"
+        ]
+      },
+      {
+        "employee_id": "IT Personnel",
+        "name": null,
+        "designation": "IT Personnel",
+        "department": "IT",
+        "roles_in_deviation": [
+          "involved_operator",
+          "investigator"
+        ]
+      },
+      {
+        "employee_id": "QC Personnel",
+        "name": null,
+        "designation": "QC Personnel",
+        "department": "QC",
+        "roles_in_deviation": [
+          "interviewee"
+        ]
+      },
+      {
+        "employee_id": "QA Head",
+        "name": null,
+        "designation": "QA Head",
+        "department": "QA",
+        "roles_in_deviation": [
+          "department_head"
+        ]
+      },
+      {
+        "employee_id": "Service Engineer",
+        "name": null,
+        "designation": "Service Engineer",
+        "department": null,
+        "roles_in_deviation": [
+          "oem_representative",
+          "interviewer"
+        ]
+      }
+    ],
+    "equipment": [
+      {
+        "equipment_id": "I/QC/010",
+        "name": "PH Conductivity Meter",
+        "make": null,
+        "type": "equipment",
+        "location_room_id": null,
+        "location_name": "QC Department",
+        "operating_parameters": "Audit trail / backup data retention",
+        "associated_software": "Backup system / NAS server"
+      },
+      {
+        "equipment_id": "NAS Server",
+        "name": "NAS Server",
+        "make": null,
+        "type": "equipment",
+        "location_room_id": null,
+        "location_name": "IT/server storage",
+        "operating_parameters": "Backup storage",
+        "associated_software": null
+      }
+    ],
+    "locations": [
+      {
+        "room_id": "QC Department",
+        "room_name": "QC Department",
+        "floor": null,
+        "functional_area": "Quality Control",
+        "role_in_deviation": "occurrence_location"
+      },
+      {
+        "room_id": "IT/server storage",
+        "room_name": "Server storage / backup path",
+        "floor": null,
+        "functional_area": "IT",
+        "role_in_deviation": "other"
+      },
+      {
+        "room_id": "MJ Biopharm Site",
+        "room_name": "MJ Biopharm Site",
+        "floor": null,
+        "functional_area": "Site",
+        "role_in_deviation": "other"
+      }
+    ],
+    "sop_requirements": [
+      {
+        "sop_number": "SOP/DP/QA/003-R04",
+        "title": null,
+        "clause_number": null,
+        "requirement_text": "Audit trail data shall be available throughout the document retention period.",
+        "role": "violated_requirement"
+      },
+      {
+        "sop_number": "SOP/DP/IT/001",
+        "title": "SOP for Electronic Data Backup and Retrieval",
+        "clause_number": null,
+        "requirement_text": "Instrument procedure data shall be available in the system for audit trail; backup files must be renamed before archiving to avoid overwrite during subsequent backup cycles.",
+        "role": "violated_requirement"
+      },
+      {
+        "sop_number": "SOP/DP/QA/029/F02-R00",
+        "title": "Audit Trail Review Checklist",
+        "clause_number": null,
+        "requirement_text": "QA shall execute audit trail review and complete the associated review checklist.",
+        "role": "referenced_procedure"
+      },
+      {
+        "sop_number": "SOP/DP/QA/029/F01-R00",
+        "title": "Audit Trail Review Sheet",
+        "clause_number": null,
+        "requirement_text": "QA shall record audit trail review details in the prescribed format after review.",
+        "role": "referenced_procedure"
+      },
+      {
+        "sop_number": "SOP/DP/QA/029/F03",
+        "title": "List of equipment/instrument/system with audit trail for each department",
+        "clause_number": "Format III",
+        "requirement_text": "QA shall maintain the departmental list of equipment/instruments/systems requiring audit trail review.",
+        "role": "referenced_procedure"
+      }
+    ],
+    "observed_vs_expected": [
+      {
+        "parameter_name": "Audit trail availability period",
+        "expected_value_or_range": "Available throughout the document retention period / full requested review period",
+        "observed_value": "Missing for 14/10/2025 to 28/10/2025; recovered only up to 27/10/2025",
+        "unit": null,
+        "is_within_spec": false
+      },
+      {
+        "parameter_name": "Data recoverability from backup",
+        "expected_value_or_range": "All audit trail data retrievable from backup",
+        "observed_value": "28/10/2025 data not recoverable due to overwritten backup file",
+        "unit": null,
+        "is_within_spec": false
+      },
+      {
+        "parameter_name": "Backup file handling",
+        "expected_value_or_range": "Backup file shall be renamed before archiving to prevent overwrite",
+        "observed_value": "Backup file was not renamed and was overwritten in the next backup cycle",
+        "unit": null,
+        "is_within_spec": false
+      }
+    ],
+    "products_materials": [
+      {
+        "name": "Batch data / archived batch records",
+        "batch_number": null,
+        "ar_number": null,
+        "storage_condition": null,
+        "disposition": "not affected"
+      }
+    ],
+    "software_systems": [
+      {
+        "system_name": "Backup system",
+        "component": "NAS/server backup file",
+        "function": "Stores audit trail backups"
+      },
+      {
+        "system_name": "Audit trail system",
+        "component": "PH Conductivity Meter I/QC/010",
+        "function": "Records instrument activity and changes"
+      },
+      {
+        "system_name": "GxP Systems",
+        "component": null,
+        "function": "Classified in report as direct- and indirect-impact systems for QA audit trail review"
+      }
+    ],
+    "vendors": [
+      {
+        "vendor_name": "Vendor / OEM",
+        "role": "equipment_manufacturer",
+        "visit_date": "05/02/2026",
+        "findings": "Determined the backup creation file had overwritten previous data because the file was not renamed before the next backup cycle.",
+        "recommendations": "Rename backup files before archiving; align IT SOP/procedure and training with OEM guidance."
+      }
+    ],
+    "alarms_events": [],
+    "work_orders": [],
+    "causal_chain": {
+      "methodology": "Five-Why analysis",
+      "steps": [
+        {
+          "step_number": 1,
+          "why_question": "Why was the audit trail data not available on 28/10/2025?",
+          "answer": "Because the system backup overwrote the existing file instead of archiving it separately.",
+          "is_root_cause": false
+        },
+        {
+          "step_number": 2,
+          "why_question": "Why did the system overwrite the existing file?",
+          "answer": "Because the file was not renamed before archiving, so the system treated it as the same file during the next backup cycle.",
+          "is_root_cause": false
+        },
+        {
+          "step_number": 3,
+          "why_question": "Why was the file not renamed before archiving?",
+          "answer": "Because IT did not follow the OEM vendor manual instructions during initial qualification and subsequent backup operations.",
+          "is_root_cause": false
+        },
+        {
+          "step_number": 4,
+          "why_question": "Why did IT not follow the OEM vendor manual instructions?",
+          "answer": "Because the instruction for mandatory file renaming before archiving was overlooked or not documented and not integrated into IT SOPs/training.",
+          "is_root_cause": false
+        },
+        {
+          "step_number": 5,
+          "why_question": "Why was the instruction overlooked or not integrated into SOPs?",
+          "answer": "Because vendor guidance was not fully captured in the qualification protocol and IT procedures during initial qualification, creating a compliance gap with OEM requirements.",
+          "is_root_cause": true
+        }
+      ],
+      "conclusion": "The missing 28/10/2025 audit trail data was caused by an inadequate backup/archival procedure that allowed overwrite of the previous file because the required file-renaming step from OEM guidance was not incorporated into IT SOPs and qualification documentation."
+    },
+    "root_cause_classification": [
+      {
+        "level_1": "Human error",
+        "level_2": "Omission error",
+        "level_3": "Responsibility boundaries ineffective"
+      },
+      {
+        "level_1": "Method / Procedure",
+        "level_2": "Document lacking details",
+        "level_3": "Vendor instruction not embedded in SOP/protocol"
+      }
+    ],
+    "impact_assessments": [
+      {
+        "domain": "System",
+        "verdict": "Impact",
+        "justification_summary": "The audit trail for the impacted instrument was incomplete because one day of data (28/10/2025) could not be restored from backup, indicating a system/data integrity issue.",
+        "key_evidence": "28/10/2025 audit trail data not available/retrievable"
+      },
+      {
+        "domain": "Document",
+        "verdict": "Impact",
+        "justification_summary": "The IT backup/retrieval procedure lacked sufficient detail to prevent overwrite of archived backups, so the controlled document set did not fully capture the OEM requirement.",
+        "key_evidence": "SOP/DP/IT/001 did not include mandatory backup-file renaming instruction"
+      },
+      {
+        "domain": "Product",
+        "verdict": "No Impact",
+        "justification_summary": "The investigation states batch/product data were available and no product quality consequence was identified from the missing audit trail entry.",
+        "key_evidence": "Batch data has been available; no impact anticipated"
+      },
+      {
+        "domain": "Equipment",
+        "verdict": "Impact",
+        "justification_summary": "The equipment-generated audit trail for PH Conductivity Meter I/QC/010 was incomplete for 28/10/2025, which is an equipment data-record integrity issue.",
+        "key_evidence": "PH Conductivity Meter audit trail missing for 28/10/2025"
+      },
+      {
+        "domain": "Patient Safety / Past Batches",
+        "verdict": "No Impact",
+        "justification_summary": "The report concludes patient safety was not compromised and past batch data remained available via IT/disaster recovery storage.",
+        "key_evidence": "All batches data is available with IT department and no patient safety impact"
+      }
+    ],
+    "corrective_actions": [
+      {
+        "action_type": "immediate",
+        "description": "Identify the equipment/instrument applicable for data archival and prepare the list.",
+        "category": "other",
+        "responsible_person": "QA / IT",
+        "target_date": null
+      }
+    ],
+    "preventive_actions": [
+      {
+        "description": "Revise SOP/DP/IT/001 for procedural clarity so that every backup file generated before archival is renamed with the date to prevent overwrite of current backup data.",
+        "category": "sop_revision",
+        "scope": "Applicable data archival systems / IT backup and retrieval process",
+        "effectiveness_monitoring_required": true,
+        "interim_control_required": false,
+        "linked_root_cause": "Method / Procedure - Document lacking details; Human error - omission of file renaming"
+      }
+    ],
+    "recurrence_history": {
+      "is_repeat": false,
+      "previous_deviation_reference": null,
+      "previous_capa_description": null,
+      "previous_capa_effectiveness": null,
+      "reason_for_recurrence": null
+    },
+    "horizontal_checks": [
+      {
+        "checked_item": "Direct-impact GxP systems audit trail review process",
+        "finding": "no_discrepancy",
+        "details": "Reviewed as part of QA audit trail process; no separate discrepancy reported beyond the current instrument issue."
+      },
+      {
+        "checked_item": "Indirect-impact GxP systems audit trail review process",
+        "finding": "no_discrepancy",
+        "details": "Reviewed as part of QA audit trail process; no separate discrepancy reported beyond the current instrument issue."
+      },
+      {
+        "checked_item": "Backup file handling / rename practice for other instruments/systems",
+        "finding": "discrepancy_found",
+        "details": "The backup overwrite issue indicates a procedural gap that could affect other systems if file-renaming is not consistently applied."
+      }
+    ],
+    "document_references": [
+      {
+        "document_number": "SOP/DP/IT/001",
+        "document_type": "SOP",
+        "title": "SOP for Electronic Data Backup and Retrieval",
+        "status": "in_place"
+      },
+      {
+        "document_number": "DEV/QC/25/002",
+        "document_type": "other",
+        "title": "Deviation form",
+        "status": "in_place"
+      },
+      {
+        "document_number": "SOP/DP/QA/003-R04",
+        "document_type": "SOP",
+        "title": null,
+        "status": "in_place"
+      },
+      {
+        "document_number": "Vendor Manual",
+        "document_type": "other",
+        "title": "OEM vendor manual",
+        "status": "in_place"
+      },
+      {
+        "document_number": "SOP/DP/QA/029/F01-R00",
+        "document_type": "format",
+        "title": "Audit Trail Review Sheet",
+        "status": "in_place"
+      },
+      {
+        "document_number": "SOP/DP/QA/029/F02-R00",
+        "document_type": "checklist",
+        "title": "Audit Trail Review Checklist",
+        "status": "in_place"
+      },
+      {
+        "document_number": "SOP/DP/QA/029/F03",
+        "document_type": "format",
+        "title": "List of equipment/instrument/system with audit trail for each department",
+        "status": "in_place"
+      },
+      {
+        "document_number": "SOP/DP/QA/003",
+        "document_type": "SOP",
+        "role": "referenced_procedure",
+        "source": "regex"
+      }
+    ],
+    "change_controls": [],
+    "gliner_entities": [
+      {
+        "text": "vendor",
+        "label": "vendor company",
+        "score": 0.87,
+        "source": "gliner"
+      },
+      {
+        "text": "Priya Patole-584",
+        "label": "person name",
+        "score": 0.839,
+        "source": "gliner"
+      },
+      {
+        "text": "QC Department",
+        "label": "location area",
+        "score": 0.788,
+        "source": "gliner"
+      },
+      {
+        "text": "I/QC/010",
+        "label": "equipment name",
+        "score": 0.675,
+        "source": "gliner"
+      },
+      {
+        "text": "System",
+        "label": "software system",
+        "score": 0.668,
+        "source": "gliner"
+      },
+      {
+        "text": "OEM",
+        "label": "vendor company",
+        "score": 0.664,
+        "source": "gliner"
+      },
+      {
+        "text": "GxP Systems",
+        "label": "software system",
+        "score": 0.661,
+        "source": "gliner"
+      },
+      {
+        "text": "GxP System",
+        "label": "software system",
+        "score": 0.66,
+        "source": "gliner"
+      },
+      {
+        "text": "water system",
+        "label": "software system",
+        "score": 0.658,
+        "source": "gliner"
+      },
+      {
+        "text": "incubators",
+        "label": "software system",
+        "score": 0.652,
+        "source": "gliner"
+      },
+      {
+        "text": "Vessels",
+        "label": "equipment name",
+        "score": 0.629,
+        "source": "gliner"
+      },
+      {
+        "text": "applicable data archival system",
+        "label": "software system",
+        "score": 0.629,
+        "source": "gliner"
+      },
+      {
+        "text": "privilege matrix",
+        "label": "process parameter",
+        "score": 0.605,
+        "source": "gliner"
+      },
+      {
+        "text": "QA Personnel",
+        "label": "person name",
+        "score": 0.596,
+        "source": "gliner"
+      },
+      {
+        "text": "LBPC",
+        "label": "equipment name",
+        "score": 0.572,
+        "source": "gliner"
+      },
+      {
+        "text": "vitek",
+        "label": "software system",
+        "score": 0.559,
+        "source": "gliner"
+      },
+      {
+        "text": "filling machine",
+        "label": "equipment name",
+        "score": 0.549,
+        "source": "gliner"
+      },
+      {
+        "text": "HPLC",
+        "label": "equipment name",
+        "score": 0.53,
+        "source": "gliner"
+      },
+      {
+        "text": "IT Personnel",
+        "label": "person name",
+        "score": 0.528,
+        "source": "gliner"
+      },
+      {
+        "text": "MJ Biopharm Site",
+        "label": "location area",
+        "score": 0.51,
+        "source": "gliner"
+      },
+      {
+        "text": "PH Conductivity Meter",
+        "label": "software system",
+        "score": 0.494,
+        "source": "gliner"
+      },
+      {
+        "text": "configurations",
+        "label": "process parameter",
+        "score": 0.464,
+        "source": "gliner"
+      },
+      {
+        "text": "I/QC/10",
+        "label": "equipment name",
+        "score": 0.427,
+        "source": "gliner"
+      },
+      {
+        "text": "I/QC/010 Instrument",
+        "label": "software system",
+        "score": 0.42,
+        "source": "gliner"
+      },
+      {
+        "text": "policies",
+        "label": "process parameter",
+        "score": 0.419,
+        "source": "gliner"
+      },
+      {
+        "text": "set points",
+        "label": "process parameter",
+        "score": 0.413,
+        "source": "gliner"
+      },
+      {
+        "text": "site",
+        "label": "location area",
+        "score": 0.411,
+        "source": "gliner"
+      },
+      {
+        "text": "PH Conductivity meter",
+        "label": "equipment name",
+        "score": 0.402,
+        "source": "gliner"
+      }
+    ],
+    "regex_entities": {
+      "equipment_id": [
+        "I/QC/010"
+      ],
+      "sop_number": [
+        "SOP/DP/IT/001",
+        "SOP/DP/QA/003",
+        "SOP/DP/QA/003-R04",
+        "SOP/DP/QA/029/F01-R00",
+        "SOP/DP/QA/029/F02-R00",
+        "SOP/DP/QA/029/F03"
+      ],
+      "deviation_ref": [
+        "DEV/QC/25/002"
+      ],
+      "format_number": [
+        "SOP/DP/QA/029/F01-R00",
+        "SOP/DP/QA/029/F02-R00"
+      ],
+      "date": [
+        "02/11/2025",
+        "05/02/2025",
+        "05/02/2026",
+        "14/10/2005",
+        "14/10/2025",
+        "17/11/2025",
+        "21/03/2026",
+        "27/10/2025",
+        "28/10/2025",
+        "29/10/2025"
+      ]
+    }
+  },
+  "relations": [
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "HAS_CATEGORY",
+      "to": "Minor"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "ORIGINATED_IN_DEPT",
+      "to": "QC"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "HAS_NONCONFORMANCE_TYPE",
+      "to": "Data integrity / audit trail data loss due to backup overwrite"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "HAS_TIMELINE_EVENT",
+      "to": "occurrence:28/10/2025"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "HAS_TIMELINE_EVENT",
+      "to": "detection:17/11/2025"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "HAS_TIMELINE_EVENT",
+      "to": "reporting:17/11/2025"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "HAS_TIMELINE_EVENT",
+      "to": "deviation_logging:2025"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "HAS_TIMELINE_EVENT",
+      "to": "investigation_start:17/11/2025"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "HAS_TIMELINE_EVENT",
+      "to": "oem_visit:05/02/2026"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "HAS_TIMELINE_EVENT",
+      "to": "resolution:21/03/2026 17:12"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "DISCOVERED_BY",
+      "to": "584"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "INVOLVES_PERSON_REPORTER",
+      "to": "584"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "INVOLVES_PERSON_INVESTIGATOR",
+      "to": "584"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "CAUSED_BY_PERSON",
+      "to": "IT Personnel"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "INVOLVES_PERSON_INVESTIGATOR",
+      "to": "IT Personnel"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "INVOLVES_PERSON_INTERVIEWEE",
+      "to": "QC Personnel"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "INVOLVES_PERSON_DEPARTMENT_HEAD",
+      "to": "QA Head"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "INVOLVES_PERSON_OEM_REPRESENTATIVE",
+      "to": "Service Engineer"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "INVOLVES_PERSON_INTERVIEWER",
+      "to": "Service Engineer"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "AFFECTS_EQUIPMENT",
+      "to": "I/QC/010"
+    },
+    {
+      "from": "I/QC/010",
+      "relation": "USES_SOFTWARE",
+      "to": "Backup system / NAS server"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "AFFECTS_EQUIPMENT",
+      "to": "NAS Server"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "OCCURRED_AT",
+      "to": "QC Department"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "RELATED_LOCATION",
+      "to": "IT/server storage"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "RELATED_LOCATION",
+      "to": "MJ Biopharm Site"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "VIOLATES_REQUIREMENT",
+      "to": "SOP/DP/QA/003-R04"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "VIOLATES_REQUIREMENT",
+      "to": "SOP/DP/IT/001"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "REFERENCES_SOP",
+      "to": "SOP/DP/QA/029/F02-R00"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "REFERENCES_SOP",
+      "to": "SOP/DP/QA/029/F01-R00"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "REFERENCES_SOP",
+      "to": "SOP/DP/QA/029/F03 clause Format III"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "HAS_ROOT_CAUSE",
+      "to": "Human error/Omission error/Responsibility boundaries ineffective"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "HAS_ROOT_CAUSE",
+      "to": "Method / Procedure/Document lacking details/Vendor instruction not embedded in SOP/protocol"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "HAS_IMPACT_ASSESSMENT",
+      "to": "System: Impact"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "HAS_IMPACT_ASSESSMENT",
+      "to": "Document: Impact"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "HAS_IMPACT_ASSESSMENT",
+      "to": "Product: No Impact"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "HAS_IMPACT_ASSESSMENT",
+      "to": "Equipment: Impact"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "HAS_IMPACT_ASSESSMENT",
+      "to": "Patient Safety / Past Batches: No Impact"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "HAS_IMMEDIATE_ACTION",
+      "to": "Identify the equipment/instrument applicable for data archival and prepare the l"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "HAS_PREVENTIVE_ACTION",
+      "to": "Revise SOP/DP/IT/001 for procedural clarity so that every backup file generated "
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "INVOLVES_VENDOR",
+      "to": "Vendor / OEM"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "AFFECTS_PRODUCT",
+      "to": "Batch data / archived batch records"
+    },
+    {
+      "from": "why_step_1",
+      "relation": "CAUSED_BY",
+      "to": "why_step_2"
+    },
+    {
+      "from": "why_step_2",
+      "relation": "CAUSED_BY",
+      "to": "why_step_3"
+    },
+    {
+      "from": "why_step_3",
+      "relation": "CAUSED_BY",
+      "to": "why_step_4"
+    },
+    {
+      "from": "why_step_4",
+      "relation": "CAUSED_BY",
+      "to": "why_step_5"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "REFERENCES_DOCUMENT",
+      "to": "SOP/DP/IT/001"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "REFERENCES_DOCUMENT",
+      "to": "DEV/QC/25/002"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "REFERENCES_DOCUMENT",
+      "to": "SOP/DP/QA/003-R04"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "REFERENCES_DOCUMENT",
+      "to": "Vendor Manual"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "REFERENCES_DOCUMENT",
+      "to": "SOP/DP/QA/029/F01-R00"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "REFERENCES_DOCUMENT",
+      "to": "SOP/DP/QA/029/F02-R00"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "REFERENCES_DOCUMENT",
+      "to": "SOP/DP/QA/029/F03"
+    },
+    {
+      "from": "DEV/IT/25/002",
+      "relation": "REFERENCES_DOCUMENT",
+      "to": "SOP/DP/QA/003"
+    }
+  ]
+}

@@ -1,0 +1,1330 @@
+{
+  "metadata": {
+    "pipeline": "hybrid",
+    "model": "gpt-5.4-mini",
+    "deviation_id": "DEV/PR/25/003",
+    "filename": "Investigation DEV-PR-25-003.docx",
+    "timing": {
+      "regex_sec": 0.004,
+      "gliner_sec": 2.038,
+      "llm_sec": 23.093,
+      "total_sec": 25.135
+    },
+    "usage": {
+      "input_tokens": 6477,
+      "output_tokens": 4488
+    },
+    "phase_entity_counts": {
+      "regex": 42,
+      "gliner": 19
+    }
+  },
+  "entities": {
+    "deviation": {
+      "deviation_id": "DEV/PR/25/003",
+      "department_code": "PR",
+      "category": "Minor",
+      "is_repeat_occurrence": true,
+      "non_conformance_type": "Audit trail data not visible / audit trail generation failure in SCADA system",
+      "non_conformance_summary": "Audit trail reports for AGLTS SCADA were not visible for two date ranges because the IFIXALARMS table became full and the scheduled cleanup task was not functioning correctly."
+    },
+    "temporal_events": [
+      {
+        "event_type": "occurrence",
+        "datetime": "31/01/25 to 26/02/25 and 29/03/25 to 26/05/25",
+        "actor": "AGLTS SCADA system",
+        "description": "Audit trail logs were not generated/visible during these periods due to database capacity issue."
+      },
+      {
+        "event_type": "detection",
+        "datetime": "10/04/2025 at approximately 16:30 hrs",
+        "actor": "QA colleague (Employee ID: 893)",
+        "description": "During ATR sheet execution, the audit trail report for 01/03/2025 to 31/03/2025 was found not visible on the AGLTS SCADA system in SCADA Room GF-93."
+      },
+      {
+        "event_type": "detection",
+        "datetime": "15/05/2025",
+        "actor": "QA colleague (Employee ID: 893)",
+        "description": "During ATR sheet execution for April 2025, the audit trail report for 01/04/2025 to 30/04/2025 was again found not visible on the SCADA system."
+      },
+      {
+        "event_type": "reporting",
+        "datetime": "17/05/2025",
+        "actor": "QA / Production / IT",
+        "description": "Work Order WO/PR/25-024 was raised to the IT department to resolve the issue."
+      },
+      {
+        "event_type": "reporting",
+        "datetime": "21/05/2025",
+        "actor": "QA / site",
+        "description": "Remote access form was initiated and the system was granted remote access to OEM."
+      },
+      {
+        "event_type": "oem_visit",
+        "datetime": "27/05/25",
+        "actor": "OEM",
+        "description": "During remote session, OEM identified the IFIXALARMS table full-capacity issue and resolved the problem."
+      },
+      {
+        "event_type": "resolution",
+        "datetime": "27/05/25",
+        "actor": "OEM",
+        "description": "Issue resolved; system resumed generating iFix audit logs and cleanup task was restored."
+      },
+      {
+        "event_type": "deviation_logging",
+        "datetime": "2025-07-22",
+        "actor": "QA",
+        "description": "Deviation DEV/PR/25/003 was investigated/logged using five-why methodology."
+      },
+      {
+        "event_type": "investigation_start",
+        "datetime": "2025-07-22",
+        "actor": "QA",
+        "description": "Formal investigation date recorded for the deviation."
+      }
+    ],
+    "persons": [
+      {
+        "employee_id": "893",
+        "name": null,
+        "designation": null,
+        "department": "QA",
+        "roles_in_deviation": [
+          "discoverer",
+          "interviewee"
+        ]
+      }
+    ],
+    "equipment": [
+      {
+        "equipment_id": "E/PR/078",
+        "name": "AGLTS SCADA system",
+        "make": null,
+        "type": "equipment",
+        "location_room_id": "GF-93",
+        "location_name": "SCADA Room",
+        "operating_parameters": null,
+        "associated_software": "iFix / SCADA audit trail function"
+      },
+      {
+        "equipment_id": "E/PR/064",
+        "name": "Online NVPC and VPC SCADA",
+        "make": null,
+        "type": "equipment",
+        "location_room_id": null,
+        "location_name": null,
+        "operating_parameters": null,
+        "associated_software": "SCADA"
+      },
+      {
+        "equipment_id": "E/PR/068",
+        "name": "Washing machine SCADA",
+        "make": null,
+        "type": "equipment",
+        "location_room_id": null,
+        "location_name": null,
+        "operating_parameters": null,
+        "associated_software": "Factory Talk View"
+      },
+      {
+        "equipment_id": "E/PR/069",
+        "name": "Depyrogenating tunnel SCADA",
+        "make": null,
+        "type": "equipment",
+        "location_room_id": null,
+        "location_name": null,
+        "operating_parameters": null,
+        "associated_software": "Factory Talk View"
+      },
+      {
+        "equipment_id": "E/PR/070",
+        "name": "Filling and Capping machine SCADA",
+        "make": null,
+        "type": "equipment",
+        "location_room_id": null,
+        "location_name": null,
+        "operating_parameters": null,
+        "associated_software": "Factory Talk View"
+      },
+      {
+        "equipment_id": "E/PR/077",
+        "name": "SCADA interface/common system",
+        "make": null,
+        "type": "equipment",
+        "location_room_id": null,
+        "location_name": null,
+        "operating_parameters": null,
+        "associated_software": "Factory Talk View"
+      },
+      {
+        "equipment_id": "I/PR/002",
+        "name": "pH and conductivity meter",
+        "make": null,
+        "type": "instrument",
+        "location_room_id": null,
+        "location_name": null,
+        "operating_parameters": null,
+        "associated_software": null
+      },
+      {
+        "equipment_id": "I/PR/003",
+        "name": "Weighing balance",
+        "make": null,
+        "type": "instrument",
+        "location_room_id": null,
+        "location_name": null,
+        "operating_parameters": null,
+        "associated_software": null
+      },
+      {
+        "equipment_id": "I/PR/004",
+        "name": "Weighing balance",
+        "make": null,
+        "type": "instrument",
+        "location_room_id": null,
+        "location_name": null,
+        "operating_parameters": null,
+        "associated_software": null
+      },
+      {
+        "equipment_id": "I/PR/005",
+        "name": "Weighing balance",
+        "make": null,
+        "type": "instrument",
+        "location_room_id": null,
+        "location_name": null,
+        "operating_parameters": null,
+        "associated_software": null
+      },
+      {
+        "equipment_id": "I/PR/006",
+        "name": "Weighing balance",
+        "make": null,
+        "type": "instrument",
+        "location_room_id": null,
+        "location_name": null,
+        "operating_parameters": null,
+        "associated_software": null
+      },
+      {
+        "equipment_id": "E/PR/018",
+        "name": "Filter Integrity Tester",
+        "make": null,
+        "type": "equipment",
+        "location_room_id": null,
+        "location_name": null,
+        "operating_parameters": null,
+        "associated_software": null
+      },
+      {
+        "equipment_id": "E/PR/019",
+        "name": "HPHV Steam sterilizer",
+        "make": null,
+        "type": "equipment",
+        "location_room_id": null,
+        "location_name": null,
+        "operating_parameters": null,
+        "associated_software": null
+      },
+      {
+        "equipment_id": "E/PR/042",
+        "name": "Dual zone deep freezer/dual zone cold chamber",
+        "make": null,
+        "type": "equipment",
+        "location_room_id": null,
+        "location_name": null,
+        "operating_parameters": null,
+        "associated_software": null
+      },
+      {
+        "equipment_id": "E/PR/043",
+        "name": "Factory talk view for mfg. vessel",
+        "make": null,
+        "type": "equipment",
+        "location_room_id": null,
+        "location_name": null,
+        "operating_parameters": null,
+        "associated_software": "Factory Talk View"
+      },
+      {
+        "equipment_id": "E/PR/044",
+        "name": "Factory talk view for holding vessel",
+        "make": null,
+        "type": "equipment",
+        "location_room_id": null,
+        "location_name": null,
+        "operating_parameters": null,
+        "associated_software": "Factory Talk View"
+      },
+      {
+        "equipment_id": "E/PR/045",
+        "name": "Factory talk view for CIP vessel",
+        "make": null,
+        "type": "equipment",
+        "location_room_id": null,
+        "location_name": null,
+        "operating_parameters": null,
+        "associated_software": "Factory Talk View"
+      },
+      {
+        "equipment_id": "E/PR/046",
+        "name": "Factory talk view system",
+        "make": null,
+        "type": "equipment",
+        "location_room_id": null,
+        "location_name": null,
+        "operating_parameters": null,
+        "associated_software": "Factory Talk View"
+      },
+      {
+        "equipment_id": "E/PR/047",
+        "name": "Factory talk view system",
+        "make": null,
+        "type": "equipment",
+        "location_room_id": null,
+        "location_name": null,
+        "operating_parameters": null,
+        "associated_software": "Factory Talk View"
+      },
+      {
+        "equipment_id": "E/PR/048",
+        "name": "Factory talk view system",
+        "make": null,
+        "type": "equipment",
+        "location_room_id": null,
+        "location_name": null,
+        "operating_parameters": null,
+        "associated_software": "Factory Talk View"
+      },
+      {
+        "equipment_id": "E/PR/050",
+        "name": "Factory talk view system",
+        "make": null,
+        "type": "equipment",
+        "location_room_id": null,
+        "location_name": null,
+        "operating_parameters": null,
+        "associated_software": "Factory Talk View"
+      },
+      {
+        "equipment_id": "E/PR/016",
+        "name": "E/PR/016",
+        "type": "equipment",
+        "source": "regex"
+      },
+      {
+        "equipment_id": "E/PR/017",
+        "name": "E/PR/017",
+        "type": "equipment",
+        "source": "regex"
+      },
+      {
+        "equipment_id": "E/PR/067",
+        "name": "E/PR/067",
+        "type": "equipment",
+        "source": "regex"
+      }
+    ],
+    "locations": [
+      {
+        "room_id": "GF-93",
+        "room_name": "SCADA Room",
+        "floor": "GF",
+        "functional_area": "QA review / SCADA monitoring",
+        "role_in_deviation": "detection_location"
+      }
+    ],
+    "sop_requirements": [
+      {
+        "sop_number": "SOP/DP/QA/029-R00",
+        "title": "Review of Audit Trail Data",
+        "clause_number": "7.12",
+        "requirement_text": "Audit trails must be reviewed at the start of each month within 15 working days.",
+        "role": "violated_requirement"
+      },
+      {
+        "sop_number": "SOP/DP/QA/029",
+        "title": "Review of audit trail",
+        "clause_number": null,
+        "requirement_text": "Audit trail review procedure governing the review and documentation of audit trail data.",
+        "role": "referenced_procedure"
+      },
+      {
+        "sop_number": "SOP/DP/QA/029/F01",
+        "title": "Audit trial review Sheet",
+        "clause_number": null,
+        "requirement_text": "Form used to record audit trail review findings.",
+        "role": "reviewed_document"
+      },
+      {
+        "sop_number": "SOP/DP/QA/029/F02",
+        "title": "Audit trial review checklist",
+        "clause_number": null,
+        "requirement_text": "Checklist used for audit trail review at defined frequency.",
+        "role": "reviewed_document"
+      }
+    ],
+    "observed_vs_expected": [
+      {
+        "parameter_name": "Audit trail report visibility for 01/03/2025 to 31/03/2025",
+        "expected_value_or_range": "Visible/retrievable on AGLTS SCADA system during ATR review",
+        "observed_value": "Not visible on 10/04/2025 during ATR review",
+        "unit": null,
+        "is_within_spec": false
+      },
+      {
+        "parameter_name": "Audit trail report visibility for 01/04/2025 to 30/04/2025",
+        "expected_value_or_range": "Visible/retrievable on AGLTS SCADA system during ATR review",
+        "observed_value": "Not visible on 15/05/2025 during ATR review",
+        "unit": null,
+        "is_within_spec": false
+      },
+      {
+        "parameter_name": "Audit trail generation/storage",
+        "expected_value_or_range": "System should generate and save new audit trails continuously",
+        "observed_value": "System could not generate/save audit trails because IFIXALARMS table reached full capacity and cleanup task failed",
+        "unit": null,
+        "is_within_spec": false
+      }
+    ],
+    "products_materials": [
+      {
+        "name": "Insulin Injection Biphasic Isophane 30:70 100 IU/ml, 3 ml cartridge",
+        "batch_number": "S01240001, S01240002, S01240003, S01240004",
+        "ar_number": null,
+        "storage_condition": null,
+        "disposition": "not affected"
+      },
+      {
+        "name": "Insulin Injection soluble 100 IU/ml, 3 ml cartridge",
+        "batch_number": "S07240001, S07240002, S07240004",
+        "ar_number": null,
+        "storage_condition": null,
+        "disposition": "not affected"
+      },
+      {
+        "name": "Insulin Injection Isophane 100 IU/ml, 3 ml cartridge",
+        "batch_number": "S04240001, S04240002, S04240003",
+        "ar_number": null,
+        "storage_condition": null,
+        "disposition": "not affected"
+      },
+      {
+        "name": "Insulin glargine Injection 100 IU/ml, 3 ml cartridge",
+        "batch_number": "S13240001, S13240002, S13240003, S13240001",
+        "ar_number": null,
+        "storage_condition": null,
+        "disposition": "not affected"
+      },
+      {
+        "name": "Insulin Injection Biphasic Isophane 30:70 40 IU/ml, 10 ml Vial",
+        "batch_number": "S03240001, S03240002, S03250001",
+        "ar_number": null,
+        "storage_condition": null,
+        "disposition": "not affected"
+      },
+      {
+        "name": "Insulin Injection soluble 40 IU/ml, 10 ml Vial",
+        "batch_number": "S09250001, S09250002, S09250003",
+        "ar_number": null,
+        "storage_condition": null,
+        "disposition": "not affected"
+      },
+      {
+        "name": "Insulin Injection Isophane 40 IU/ml, 10 ml vial",
+        "batch_number": "S06250001, S06250003, S06250004",
+        "ar_number": null,
+        "storage_condition": null,
+        "disposition": "not affected"
+      }
+    ],
+    "software_systems": [
+      {
+        "system_name": "AGLTS SCADA system",
+        "component": "iFix audit trail / audit logs",
+        "function": "Audit trail generation and review"
+      },
+      {
+        "system_name": "SCADA",
+        "component": "Audit trail reporting",
+        "function": "Display and store audit trail data"
+      },
+      {
+        "system_name": "IFIXALARMS table",
+        "component": "Database table",
+        "function": "Stores alarm/audit-related records; table fullness prevented generation/saving"
+      },
+      {
+        "system_name": "scheduled cleanup task",
+        "component": "Database maintenance task",
+        "function": "Clears database to prevent full capacity and support audit trail generation"
+      }
+    ],
+    "vendors": [
+      {
+        "vendor_name": "OEM",
+        "role": "equipment_manufacturer",
+        "visit_date": "27/05/25",
+        "findings": "IFIXALARMS table reached full capacity; scheduled cleanup task was not functioning correctly; audit logs from 31/01/25 to 26/02/25 and 29/03/25 to 26/05/25 unrecoverable.",
+        "recommendations": "Cleanup task is now working properly and maintaining the database as intended; issue resolved via remote session."
+      },
+      {
+        "vendor_name": "TEMA SINERGIE",
+        "role": "equipment_manufacturer",
+        "visit_date": null,
+        "findings": "Mentioned as OEM support contacted for the SCADA issue.",
+        "recommendations": null
+      }
+    ],
+    "work_orders": [
+      {
+        "wo_number": "WO/PR/25-024",
+        "type": "work_order",
+        "purpose": "Raised to IT department to resolve missing audit trail visibility on AGLTS SCADA system."
+      }
+    ],
+    "causal_chain": {
+      "methodology": "5-Why",
+      "steps": [
+        {
+          "step_number": 1,
+          "why_question": "Why was remote access form initiated for AGLTS?",
+          "answer": "Because IT department required a remote access form.",
+          "is_root_cause": false
+        },
+        {
+          "step_number": 2,
+          "why_question": "Why did IT department require a remote access form?",
+          "answer": "Because work order WO/PR/25-024 was raised to IT department.",
+          "is_root_cause": false
+        },
+        {
+          "step_number": 3,
+          "why_question": "Why was WO/PR/25-024 raised to IT department?",
+          "answer": "Because the audit log was not visible in the AGLTS SCADA system.",
+          "is_root_cause": false
+        },
+        {
+          "step_number": 4,
+          "why_question": "Why was the audit log not visible in the SCADA system?",
+          "answer": "Because audit log data was not generated in the SCADA system.",
+          "is_root_cause": false
+        },
+        {
+          "step_number": 5,
+          "why_question": "Why was audit log data not generated in the SCADA system?",
+          "answer": "Because the IFIXALARMS table reached full capacity.",
+          "is_root_cause": false
+        },
+        {
+          "step_number": 6,
+          "why_question": "Why did the IFIXALARMS table reach full capacity?",
+          "answer": "Because the IFIXALARMS table prevented the system from generating and saving new audit trails.",
+          "is_root_cause": false
+        },
+        {
+          "step_number": 7,
+          "why_question": "Why did the system fail to generate and save new audit trails?",
+          "answer": "Because the scheduled cleanup task was not functioning correctly.",
+          "is_root_cause": true
+        }
+      ],
+      "conclusion": "The deviation was caused by the scheduled cleanup task not functioning as intended, which led to database fullness (IFIXALARMS table capacity reached) and prevented audit trail generation and saving."
+    },
+    "root_cause_classification": [
+      {
+        "level_1": "Equipment",
+        "level_2": "Computer system",
+        "level_3": "Scheduled cleanup task failure / database table full (IFIXALARMS)"
+      }
+    ],
+    "impact_assessments": [
+      {
+        "domain": "System",
+        "verdict": "No Impact",
+        "justification_summary": "The system was restored by OEM and audit logs are now generated as expected; reports were verified satisfactory after resolution.",
+        "key_evidence": "OEM remote session on 27/05/25 resolved the issue; audit logs verified satisfactory."
+      },
+      {
+        "domain": "Document",
+        "verdict": "Impact",
+        "justification_summary": "The ATR checklist needs to be updated with the deviation number after closure, indicating a documentation update requirement.",
+        "key_evidence": "Deviation number to be updated in ATR checklist."
+      },
+      {
+        "domain": "Product",
+        "verdict": "No Impact",
+        "justification_summary": "All process/operation data and reports were in place and attached with each batch; no discrepancy was observed in reports.",
+        "key_evidence": "Batch manufacturing records and operation reports attached; no discrepancy observed."
+      },
+      {
+        "domain": "Equipment",
+        "verdict": "No Impact",
+        "justification_summary": "The equipment/system continued operating as intended after OEM resolution, with no evidence of operational impact.",
+        "key_evidence": "Cleanup task working properly; system generating iFix audit logs as expected."
+      },
+      {
+        "domain": "Patient Safety / Past Batches",
+        "verdict": "No Impact",
+        "justification_summary": "No discrepancy was observed in reports and the investigation concluded there was no anticipated impact on patient safety or past batches.",
+        "key_evidence": "No discrepancy observed in reports; no impact anticipated on patient safety/past batches."
+      }
+    ],
+    "corrective_actions": [
+      {
+        "action_type": "immediate",
+        "description": "Information given to production head and QA head after identification of the nonconformance and deviation DEV/PR/25/001 initiated.",
+        "category": "other",
+        "responsible_person": null,
+        "target_date": null
+      },
+      {
+        "action_type": "immediate",
+        "description": "Work order WO/PR/25-024 raised to IT/OEM and issue resolved to restore audit trail functionality.",
+        "category": "vendor_escalation",
+        "responsible_person": null,
+        "target_date": "27/05/25"
+      }
+    ],
+    "preventive_actions": [
+      {
+        "description": "No standalone CAPA proposed because OEM resolved the issue, recurrence is not anticipated, and audit trail review/backup-restoration procedures are already in place.",
+        "category": "no_action_required",
+        "scope": "AGLTS SCADA audit trail generation and review",
+        "effectiveness_monitoring_required": false,
+        "interim_control_required": false,
+        "linked_root_cause": "Scheduled cleanup task failure / database full"
+      }
+    ],
+    "recurrence_history": {
+      "is_repeat": true,
+      "previous_deviation_reference": "DEV/QC/25/001",
+      "previous_capa_description": "Mentioned as an incidence at M.J. Biopharm Pune; activities were halted due to that incident.",
+      "previous_capa_effectiveness": "not_executed",
+      "reason_for_recurrence": "The issue recurred because the cleanup task had not been functioning correctly, allowing the IFIXALARMS table to become full again."
+    },
+    "horizontal_checks": [
+      {
+        "checked_item": "pH and conductivity meter (I/PR/002)",
+        "finding": "no_discrepancy",
+        "details": "Audit log review verified as per ATR checklist; no nonconformance observed."
+      },
+      {
+        "checked_item": "Weighing balances (I/PR/003, I/PR/004, I/PR/005, I/PR/006)",
+        "finding": "no_discrepancy",
+        "details": "Audit log review verified; no nonconformance observed."
+      },
+      {
+        "checked_item": "Filter Integrity Tester (E/PR/018)",
+        "finding": "no_discrepancy",
+        "details": "Audit log review verified; no nonconformance observed."
+      },
+      {
+        "checked_item": "Online NVPC and VPC SCADA (E/PR/064)",
+        "finding": "no_discrepancy",
+        "details": "Audit log review verified; no nonconformance observed."
+      },
+      {
+        "checked_item": "Cartridge Tester (E/PR/067)",
+        "finding": "no_discrepancy",
+        "details": "Audit log review verified; no nonconformance observed."
+      },
+      {
+        "checked_item": "HPHV Steam sterilizer (E/PR/019)",
+        "finding": "no_discrepancy",
+        "details": "Audit log review verified; no nonconformance observed."
+      },
+      {
+        "checked_item": "Washing machine and Depyrogenating tunnel SCADA (E/PR/068, E/PR/069, E/PR/077)",
+        "finding": "no_discrepancy",
+        "details": "Audit log review verified; no nonconformance observed."
+      },
+      {
+        "checked_item": "Filling and Capping machine SCADA (E/PR/070, E/PR/077)",
+        "finding": "no_discrepancy",
+        "details": "Audit log review verified; no nonconformance observed."
+      },
+      {
+        "checked_item": "Factory Talk View for mfg./holding/CIP vessels (E/PR/043, E/PR/044, E/PR/045, E/PR/046, E/PR/047, E/PR/048, E/PR/050)",
+        "finding": "no_discrepancy",
+        "details": "Audit log review verified; no nonconformance observed."
+      },
+      {
+        "checked_item": "Dual zone deep freezer / dual zone cold chamber (E/PR/042)",
+        "finding": "no_discrepancy",
+        "details": "Audit log review verified; no nonconformance observed."
+      },
+      {
+        "checked_item": "Potable NVPC (E/PR/016)",
+        "finding": "no_discrepancy",
+        "details": "Audit log review verified; no nonconformance observed."
+      },
+      {
+        "checked_item": "Portable NVPC (E/PR/017)",
+        "finding": "no_discrepancy",
+        "details": "Audit log review verified; no nonconformance observed."
+      }
+    ],
+    "document_references": [
+      {
+        "document_number": "SOP/DP/QA/029",
+        "document_type": "SOP",
+        "title": "Review of audit trail",
+        "status": "in_place"
+      },
+      {
+        "document_number": "SOP/DP/QA/029-R00",
+        "document_type": "SOP",
+        "title": "Review of Audit Trail Data",
+        "status": "in_place"
+      },
+      {
+        "document_number": "SOP/DP/QA/029/F01",
+        "document_type": "format",
+        "title": "Audit trial review Sheet",
+        "status": "in_place"
+      },
+      {
+        "document_number": "SOP/DP/QA/029/F02",
+        "document_type": "checklist",
+        "title": "Audit trial review checklist",
+        "status": "in_place"
+      },
+      {
+        "document_number": "SOP/DP/QA/008-F04",
+        "document_type": "format",
+        "title": "Root Cause Categorization",
+        "status": "in_place"
+      },
+      {
+        "document_number": "SOP/DP/QA/008",
+        "document_type": "SOP",
+        "role": "referenced_procedure",
+        "source": "regex"
+      }
+    ],
+    "change_controls": [],
+    "gliner_entities": [
+      {
+        "text": "OEM",
+        "label": "vendor company",
+        "score": 0.977,
+        "source": "gliner"
+      },
+      {
+        "text": "SCADA",
+        "label": "software system",
+        "score": 0.93,
+        "source": "gliner"
+      },
+      {
+        "text": "SCADA system",
+        "label": "software system",
+        "score": 0.916,
+        "source": "gliner"
+      },
+      {
+        "text": "TEMA SINERGIE",
+        "label": "vendor company",
+        "score": 0.868,
+        "source": "gliner"
+      },
+      {
+        "text": "Computer system",
+        "label": "software system",
+        "score": 0.784,
+        "source": "gliner"
+      },
+      {
+        "text": "system",
+        "label": "software system",
+        "score": 0.745,
+        "source": "gliner"
+      },
+      {
+        "text": "HPHV",
+        "label": "vendor company",
+        "score": 0.744,
+        "source": "gliner"
+      },
+      {
+        "text": "Employee ID: 893",
+        "label": "person name",
+        "score": 0.685,
+        "source": "gliner"
+      },
+      {
+        "text": "QA head",
+        "label": "person name",
+        "score": 0.626,
+        "source": "gliner"
+      },
+      {
+        "text": "SCADA Room",
+        "label": "location area",
+        "score": 0.611,
+        "source": "gliner"
+      },
+      {
+        "text": "GF-93",
+        "label": "location area",
+        "score": 0.587,
+        "source": "gliner"
+      },
+      {
+        "text": "production head",
+        "label": "person name",
+        "score": 0.579,
+        "source": "gliner"
+      },
+      {
+        "text": "QA colleague",
+        "label": "person name",
+        "score": 0.575,
+        "source": "gliner"
+      },
+      {
+        "text": "material",
+        "label": "chemical material",
+        "score": 0.526,
+        "source": "gliner"
+      },
+      {
+        "text": "Portable NVPC",
+        "label": "product name",
+        "score": 0.444,
+        "source": "gliner"
+      },
+      {
+        "text": "Equipment",
+        "label": "equipment name",
+        "score": 0.42,
+        "source": "gliner"
+      },
+      {
+        "text": "AGLTS SCADA system",
+        "label": "software system",
+        "score": 0.417,
+        "source": "gliner"
+      },
+      {
+        "text": "associated system",
+        "label": "software system",
+        "score": 0.413,
+        "source": "gliner"
+      },
+      {
+        "text": "job title",
+        "label": "person name",
+        "score": 0.403,
+        "source": "gliner"
+      }
+    ],
+    "regex_entities": {
+      "equipment_id": [
+        "E/PR/016",
+        "E/PR/017",
+        "E/PR/018",
+        "E/PR/019",
+        "E/PR/042",
+        "E/PR/043",
+        "E/PR/044",
+        "E/PR/045",
+        "E/PR/046",
+        "E/PR/047",
+        "E/PR/048",
+        "E/PR/050",
+        "E/PR/064",
+        "E/PR/067",
+        "E/PR/068",
+        "E/PR/069",
+        "E/PR/070",
+        "E/PR/077",
+        "E/PR/078",
+        "I/PR/002",
+        "I/PR/003",
+        "I/PR/004",
+        "I/PR/005",
+        "I/PR/006"
+      ],
+      "sop_number": [
+        "SOP/DP/QA/008",
+        "SOP/DP/QA/029",
+        "SOP/DP/QA/029-R00",
+        "SOP/DP/QA/029/F01",
+        "SOP/DP/QA/029/F02"
+      ],
+      "employee_id": [
+        "893"
+      ],
+      "room_id": [
+        "GF-93"
+      ],
+      "work_order": [
+        "WO/PR/25-024"
+      ],
+      "deviation_ref": [
+        "DEV/PR/25/001",
+        "DEV/QC/25/001"
+      ],
+      "date": [
+        "01/03/2025",
+        "01/04/2025",
+        "10/04/2025",
+        "15/05/2025",
+        "17/05/2025",
+        "21/05/2025",
+        "30/04/2025",
+        "31/03/2025"
+      ]
+    }
+  },
+  "relations": [
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "HAS_CATEGORY",
+      "to": "Minor"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "ORIGINATED_IN_DEPT",
+      "to": "PR"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "HAS_NONCONFORMANCE_TYPE",
+      "to": "Audit trail data not visible / audit trail generation failure in SCADA system"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "HAS_TIMELINE_EVENT",
+      "to": "occurrence:31/01/25 to 26/02/25 and 29/03/25 to 26/05/25"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "HAS_TIMELINE_EVENT",
+      "to": "detection:10/04/2025 at approximately 16:30 hrs"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "HAS_TIMELINE_EVENT",
+      "to": "detection:15/05/2025"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "HAS_TIMELINE_EVENT",
+      "to": "reporting:17/05/2025"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "HAS_TIMELINE_EVENT",
+      "to": "reporting:21/05/2025"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "HAS_TIMELINE_EVENT",
+      "to": "oem_visit:27/05/25"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "HAS_TIMELINE_EVENT",
+      "to": "resolution:27/05/25"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "HAS_TIMELINE_EVENT",
+      "to": "deviation_logging:2025-07-22"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "HAS_TIMELINE_EVENT",
+      "to": "investigation_start:2025-07-22"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "DISCOVERED_BY",
+      "to": "893"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "INVOLVES_PERSON_INTERVIEWEE",
+      "to": "893"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "AFFECTS_EQUIPMENT",
+      "to": "E/PR/078"
+    },
+    {
+      "from": "E/PR/078",
+      "relation": "LOCATED_AT",
+      "to": "GF-93"
+    },
+    {
+      "from": "E/PR/078",
+      "relation": "USES_SOFTWARE",
+      "to": "iFix / SCADA audit trail function"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "AFFECTS_EQUIPMENT",
+      "to": "E/PR/064"
+    },
+    {
+      "from": "E/PR/064",
+      "relation": "USES_SOFTWARE",
+      "to": "SCADA"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "AFFECTS_EQUIPMENT",
+      "to": "E/PR/068"
+    },
+    {
+      "from": "E/PR/068",
+      "relation": "USES_SOFTWARE",
+      "to": "Factory Talk View"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "AFFECTS_EQUIPMENT",
+      "to": "E/PR/069"
+    },
+    {
+      "from": "E/PR/069",
+      "relation": "USES_SOFTWARE",
+      "to": "Factory Talk View"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "AFFECTS_EQUIPMENT",
+      "to": "E/PR/070"
+    },
+    {
+      "from": "E/PR/070",
+      "relation": "USES_SOFTWARE",
+      "to": "Factory Talk View"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "AFFECTS_EQUIPMENT",
+      "to": "E/PR/077"
+    },
+    {
+      "from": "E/PR/077",
+      "relation": "USES_SOFTWARE",
+      "to": "Factory Talk View"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "AFFECTS_EQUIPMENT",
+      "to": "I/PR/002"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "AFFECTS_EQUIPMENT",
+      "to": "I/PR/003"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "AFFECTS_EQUIPMENT",
+      "to": "I/PR/004"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "AFFECTS_EQUIPMENT",
+      "to": "I/PR/005"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "AFFECTS_EQUIPMENT",
+      "to": "I/PR/006"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "AFFECTS_EQUIPMENT",
+      "to": "E/PR/018"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "AFFECTS_EQUIPMENT",
+      "to": "E/PR/019"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "AFFECTS_EQUIPMENT",
+      "to": "E/PR/042"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "AFFECTS_EQUIPMENT",
+      "to": "E/PR/043"
+    },
+    {
+      "from": "E/PR/043",
+      "relation": "USES_SOFTWARE",
+      "to": "Factory Talk View"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "AFFECTS_EQUIPMENT",
+      "to": "E/PR/044"
+    },
+    {
+      "from": "E/PR/044",
+      "relation": "USES_SOFTWARE",
+      "to": "Factory Talk View"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "AFFECTS_EQUIPMENT",
+      "to": "E/PR/045"
+    },
+    {
+      "from": "E/PR/045",
+      "relation": "USES_SOFTWARE",
+      "to": "Factory Talk View"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "AFFECTS_EQUIPMENT",
+      "to": "E/PR/046"
+    },
+    {
+      "from": "E/PR/046",
+      "relation": "USES_SOFTWARE",
+      "to": "Factory Talk View"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "AFFECTS_EQUIPMENT",
+      "to": "E/PR/047"
+    },
+    {
+      "from": "E/PR/047",
+      "relation": "USES_SOFTWARE",
+      "to": "Factory Talk View"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "AFFECTS_EQUIPMENT",
+      "to": "E/PR/048"
+    },
+    {
+      "from": "E/PR/048",
+      "relation": "USES_SOFTWARE",
+      "to": "Factory Talk View"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "AFFECTS_EQUIPMENT",
+      "to": "E/PR/050"
+    },
+    {
+      "from": "E/PR/050",
+      "relation": "USES_SOFTWARE",
+      "to": "Factory Talk View"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "AFFECTS_EQUIPMENT",
+      "to": "E/PR/016"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "AFFECTS_EQUIPMENT",
+      "to": "E/PR/017"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "AFFECTS_EQUIPMENT",
+      "to": "E/PR/067"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "DETECTED_AT",
+      "to": "GF-93"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "VIOLATES_REQUIREMENT",
+      "to": "SOP/DP/QA/029-R00 clause 7.12"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "REFERENCES_SOP",
+      "to": "SOP/DP/QA/029"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "REVIEWED_DOCUMENT",
+      "to": "SOP/DP/QA/029/F01"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "REVIEWED_DOCUMENT",
+      "to": "SOP/DP/QA/029/F02"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "HAS_ROOT_CAUSE",
+      "to": "Equipment/Computer system/Scheduled cleanup task failure / database table full (IFIXALARMS)"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "HAS_IMPACT_ASSESSMENT",
+      "to": "System: No Impact"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "HAS_IMPACT_ASSESSMENT",
+      "to": "Document: Impact"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "HAS_IMPACT_ASSESSMENT",
+      "to": "Product: No Impact"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "HAS_IMPACT_ASSESSMENT",
+      "to": "Equipment: No Impact"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "HAS_IMPACT_ASSESSMENT",
+      "to": "Patient Safety / Past Batches: No Impact"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "HAS_IMMEDIATE_ACTION",
+      "to": "Information given to production head and QA head after identification of the non"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "HAS_IMMEDIATE_ACTION",
+      "to": "Work order WO/PR/25-024 raised to IT/OEM and issue resolved to restore audit tra"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "HAS_PREVENTIVE_ACTION",
+      "to": "No standalone CAPA proposed because OEM resolved the issue, recurrence is not an"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "TRIGGERED_WORKORDER",
+      "to": "WO/PR/25-024"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "INVOLVES_VENDOR",
+      "to": "OEM"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "INVOLVES_VENDOR",
+      "to": "TEMA SINERGIE"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "AFFECTS_PRODUCT",
+      "to": "Insulin Injection Biphasic Isophane 30:70 100 IU/ml, 3 ml cartridge"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "AFFECTS_PRODUCT",
+      "to": "Insulin Injection soluble 100 IU/ml, 3 ml cartridge"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "AFFECTS_PRODUCT",
+      "to": "Insulin Injection Isophane 100 IU/ml, 3 ml cartridge"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "AFFECTS_PRODUCT",
+      "to": "Insulin glargine Injection 100 IU/ml, 3 ml cartridge"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "AFFECTS_PRODUCT",
+      "to": "Insulin Injection Biphasic Isophane 30:70 40 IU/ml, 10 ml Vial"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "AFFECTS_PRODUCT",
+      "to": "Insulin Injection soluble 40 IU/ml, 10 ml Vial"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "AFFECTS_PRODUCT",
+      "to": "Insulin Injection Isophane 40 IU/ml, 10 ml vial"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "IS_REPEAT_OF",
+      "to": "DEV/QC/25/001"
+    },
+    {
+      "from": "why_step_1",
+      "relation": "CAUSED_BY",
+      "to": "why_step_2"
+    },
+    {
+      "from": "why_step_2",
+      "relation": "CAUSED_BY",
+      "to": "why_step_3"
+    },
+    {
+      "from": "why_step_3",
+      "relation": "CAUSED_BY",
+      "to": "why_step_4"
+    },
+    {
+      "from": "why_step_4",
+      "relation": "CAUSED_BY",
+      "to": "why_step_5"
+    },
+    {
+      "from": "why_step_5",
+      "relation": "CAUSED_BY",
+      "to": "why_step_6"
+    },
+    {
+      "from": "why_step_6",
+      "relation": "CAUSED_BY",
+      "to": "why_step_7"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "REFERENCES_DOCUMENT",
+      "to": "SOP/DP/QA/029"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "REFERENCES_DOCUMENT",
+      "to": "SOP/DP/QA/029-R00"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "REFERENCES_DOCUMENT",
+      "to": "SOP/DP/QA/029/F01"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "REFERENCES_DOCUMENT",
+      "to": "SOP/DP/QA/029/F02"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "REFERENCES_DOCUMENT",
+      "to": "SOP/DP/QA/008-F04"
+    },
+    {
+      "from": "DEV/PR/25/003",
+      "relation": "REFERENCES_DOCUMENT",
+      "to": "SOP/DP/QA/008"
+    }
+  ]
+}

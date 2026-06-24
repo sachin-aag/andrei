@@ -1,0 +1,1129 @@
+{
+  "metadata": {
+    "pipeline": "hybrid",
+    "model": "gpt-5.4-mini",
+    "deviation_id": "DEV/PK/25/002",
+    "filename": "Investigation  DEV-PK-25-002.docx",
+    "timing": {
+      "regex_sec": 0.002,
+      "gliner_sec": 7.827,
+      "llm_sec": 20.899,
+      "total_sec": 28.746
+    },
+    "usage": {
+      "input_tokens": 7712,
+      "output_tokens": 3261
+    },
+    "phase_entity_counts": {
+      "regex": 22,
+      "gliner": 42
+    }
+  },
+  "entities": {
+    "deviation": {
+      "deviation_id": "DEV/PK/25/002",
+      "department_code": "PK",
+      "category": "Major",
+      "is_repeat_occurrence": true,
+      "non_conformance_type": "Data logging / temperature monitoring system failure due to HMI time synchronization loss and communication failure",
+      "non_conformance_summary": "Temperature data from the intermediate walk-in cold room was not captured in the Kyoshi application for a temporary period because the HMI date/time went out of sync, causing communication failure between the HMI and the software."
+    },
+    "temporal_events": [
+      {
+        "event_type": "occurrence",
+        "datetime": "05/02/2026",
+        "actor": "HMI / cold room system",
+        "description": "HMI date and time stopped auto-synchronizing with the current date and time, initiating later communication failure."
+      },
+      {
+        "event_type": "occurrence",
+        "datetime": "06/02/2026 02:08:50 hrs. to 14:10:02 hrs.",
+        "actor": "Cold Room HMI / Kyoshi application",
+        "description": "Seven continuous communication failure alarms occurred during this period."
+      },
+      {
+        "event_type": "occurrence",
+        "datetime": "06/02/2026 03:47 to 06/02/2026 15:31",
+        "actor": "Cold Room HMI / Kyoshi application",
+        "description": "Temperature data was not recorded/captured in the Kyoshi application during this interval."
+      },
+      {
+        "event_type": "detection",
+        "datetime": "06/02/2026 approximately 10:30 hrs.",
+        "actor": "Packing colleague (Employee ID: 1174)",
+        "description": "HMI time mismatch was first identified."
+      },
+      {
+        "event_type": "occurrence",
+        "datetime": "06/02/2026 approximately 15:30 hrs.",
+        "actor": "Cold room HMI",
+        "description": "HMI displayed incorrect date/time as 05/02/2026, 18:30 hrs. (approx.)."
+      },
+      {
+        "event_type": "reporting",
+        "datetime": "06/02/2026",
+        "actor": "Packing colleague (Employee ID: 598)",
+        "description": "Work order WO/PK/26-005 was received for evaluation and verification after initiation."
+      },
+      {
+        "event_type": "deviation_logging",
+        "datetime": "05/03/2026 13:05 hrs.",
+        "actor": "Packing / QA",
+        "description": "Deviation was logged to conduct detailed investigation and determine root cause."
+      },
+      {
+        "event_type": "oem_visit",
+        "datetime": "02/04/2026",
+        "actor": "OEM/service provider (M/s Guru Control System / Guru Controls)",
+        "description": "OEM verified the cold room system and HMI and identified weak batteries and old version software."
+      },
+      {
+        "event_type": "resolution",
+        "datetime": "06/02/2026 15:37 hrs.",
+        "actor": "IT colleague (Employee ID: TR0189)",
+        "description": "HMI time was manually synchronized under WO/PK/26-005, after which data recording resumed."
+      },
+      {
+        "event_type": "investigation_start",
+        "datetime": "04/03/2026",
+        "actor": "Packing colleague (Employee ID: 598) / investigation team",
+        "description": "Temperature, alarm, and audit trail reports were reviewed to confirm the data gap and assess impact."
+      }
+    ],
+    "persons": [
+      {
+        "employee_id": "598",
+        "name": null,
+        "designation": "packing colleague",
+        "department": "Packing",
+        "roles_in_deviation": [
+          "discoverer",
+          "reporter",
+          "interviewee"
+        ]
+      },
+      {
+        "employee_id": "1174",
+        "name": null,
+        "designation": "packing colleague",
+        "department": "Packing",
+        "roles_in_deviation": [
+          "discoverer",
+          "interviewee"
+        ]
+      },
+      {
+        "employee_id": "TR0189",
+        "name": null,
+        "designation": "IT colleague",
+        "department": "IT",
+        "roles_in_deviation": [
+          "involved_operator",
+          "interviewee"
+        ]
+      }
+    ],
+    "equipment": [
+      {
+        "equipment_id": "E/PK/010",
+        "name": "Intermediate Walk-in Cold Room",
+        "make": "Blue Star",
+        "type": "equipment",
+        "location_room_id": "GF-122",
+        "location_name": "packing area",
+        "operating_parameters": "2°C to 8°C",
+        "associated_software": "Kyoshi application"
+      },
+      {
+        "equipment_id": "WO/PK/26-005",
+        "name": "Work Order for HMI time rectification",
+        "make": null,
+        "type": "equipment",
+        "location_room_id": null,
+        "location_name": null,
+        "operating_parameters": null,
+        "associated_software": null
+      },
+      {
+        "equipment_id": "E/QC/019",
+        "name": "E/QC/019",
+        "type": "equipment",
+        "source": "regex"
+      },
+      {
+        "equipment_id": "E/WH/020",
+        "name": "E/WH/020",
+        "type": "equipment",
+        "source": "regex"
+      },
+      {
+        "equipment_id": "E/WH/021",
+        "name": "E/WH/021",
+        "type": "equipment",
+        "source": "regex"
+      },
+      {
+        "equipment_id": "E/WH/022",
+        "name": "E/WH/022",
+        "type": "equipment",
+        "source": "regex"
+      },
+      {
+        "equipment_id": "E/WH/023",
+        "name": "E/WH/023",
+        "type": "equipment",
+        "source": "regex"
+      },
+      {
+        "equipment_id": "E/WH/027",
+        "name": "E/WH/027",
+        "type": "equipment",
+        "source": "regex"
+      }
+    ],
+    "locations": [
+      {
+        "room_id": "GF-122",
+        "room_name": "packing area",
+        "floor": "GF",
+        "functional_area": "packing",
+        "role_in_deviation": "occurrence_location"
+      },
+      {
+        "room_id": "GF-109",
+        "room_name": "packing office",
+        "floor": "GF",
+        "functional_area": "packing",
+        "role_in_deviation": "detection_location"
+      }
+    ],
+    "sop_requirements": [
+      {
+        "sop_number": "SOP/DP/PK/013",
+        "title": "Operation and Cleaning of Intermediate Walk-in Cold Room",
+        "clause_number": "7.4.2",
+        "requirement_text": "The intermediate cold room temperature will be recorded in the system through Kyoshi software.",
+        "role": "violated_requirement"
+      },
+      {
+        "sop_number": "SOP/DP/PK/013",
+        "title": "Operation and Cleaning of Intermediate Walk-in Cold Room",
+        "clause_number": "F03-R01",
+        "requirement_text": "Material Storage and Removal Log for the Intermediate Walk-in Cold Room was reviewed as part of impact verification.",
+        "role": "referenced_procedure"
+      }
+    ],
+    "observed_vs_expected": [
+      {
+        "parameter_name": "Temperature data recording in system",
+        "expected_value_or_range": "Continuous recording in Kyoshi application for the intermediate cold room",
+        "observed_value": "No recording available from 06/02/2026 03:47 to 06/02/2026 15:31",
+        "unit": null,
+        "is_within_spec": false
+      },
+      {
+        "parameter_name": "Cold room temperature",
+        "expected_value_or_range": "2°C to 8°C",
+        "observed_value": "Within acceptable limits at last available verification",
+        "unit": "°C",
+        "is_within_spec": true
+      },
+      {
+        "parameter_name": "Daily MKT value on 06/02/2026",
+        "expected_value_or_range": "2°C to 8°C",
+        "observed_value": "5.35",
+        "unit": "°C",
+        "is_within_spec": true
+      },
+      {
+        "parameter_name": "Communication failure alarms",
+        "expected_value_or_range": "No communication failure alarms",
+        "observed_value": "7 continuous alarms between 02:08:50 hrs. and 14:10:02 hrs. on 06/02/2026",
+        "unit": "count",
+        "is_within_spec": false
+      },
+      {
+        "parameter_name": "HMI date/time synchronization",
+        "expected_value_or_range": "Current date and time",
+        "observed_value": "Displayed 05/02/2026, 18:30 hrs. at approximately 15:30 hrs. on 06/02/2026",
+        "unit": null,
+        "is_within_spec": false
+      }
+    ],
+    "products_materials": [
+      {
+        "name": "Semi-finished product batches",
+        "batch_number": null,
+        "ar_number": null,
+        "storage_condition": "Stored in intermediate walk-in cold room",
+        "disposition": "not affected"
+      },
+      {
+        "name": "Finished product batches",
+        "batch_number": null,
+        "ar_number": null,
+        "storage_condition": "Stored in intermediate walk-in cold room",
+        "disposition": "not affected"
+      },
+      {
+        "name": "Visual inspection defect kits",
+        "batch_number": null,
+        "ar_number": null,
+        "storage_condition": "Stored in intermediate walk-in cold room",
+        "disposition": "not affected"
+      }
+    ],
+    "software_systems": [
+      {
+        "system_name": "Kyoshi application",
+        "component": "Temperature data logging / reporting",
+        "function": "Records cold room temperature data"
+      },
+      {
+        "system_name": "HMI",
+        "component": "Real-time clock / synchronization",
+        "function": "Displays time/date and communicates with Kyoshi application"
+      },
+      {
+        "system_name": "Old version software",
+        "component": "HMI software version",
+        "function": "Potential contributor to synchronization/communication failure"
+      }
+    ],
+    "vendors": [
+      {
+        "vendor_name": "M/s Guru Control System",
+        "role": "service_provider",
+        "visit_date": "02/04/2026",
+        "findings": "Weak batteries used for HMI time functionality and old version software in the HMI",
+        "recommendations": "Replace batteries and upgrade software to prevent recurrence"
+      },
+      {
+        "vendor_name": "OEM",
+        "role": "service_provider",
+        "visit_date": "02/04/2026",
+        "findings": "Confirmed weak battery and old software as likely contributors to failure",
+        "recommendations": "Battery replacement and software upgrade"
+      },
+      {
+        "vendor_name": "Guru Controls",
+        "role": "service_provider",
+        "visit_date": null,
+        "findings": "Same service provider referred to in investigation",
+        "recommendations": null
+      }
+    ],
+    "alarms_events": [
+      {
+        "alarm_type": "communication failure alarm",
+        "count": 7,
+        "time_period": "06/02/2026 02:08:50 hrs. to 14:10:02 hrs.",
+        "equipment_id": "E/PK/010",
+        "consequence": "Temperature data logging in Kyoshi application may have been halted and data was not captured"
+      },
+      {
+        "alarm_type": "temperature excursion alarm",
+        "count": 0,
+        "time_period": "Affected period",
+        "equipment_id": "E/PK/010",
+        "consequence": "No temperature excursion alarms occurred"
+      }
+    ],
+    "work_orders": [
+      {
+        "wo_number": "WO/PK/26-005",
+        "type": "work_order",
+        "purpose": "Initiated to align the HMI time with the current time and restore data logging"
+      }
+    ],
+    "causal_chain": {
+      "methodology": "Five Why",
+      "steps": [
+        {
+          "step_number": 1,
+          "why_question": "Why was the temperature data not recorded/captured in the Intermediate Walk-in Cold Room system software (Kyoshi application)?",
+          "answer": "Communication failure occurred between the Cold Room HMI and the Kyoshi application.",
+          "is_root_cause": false
+        },
+        {
+          "step_number": 2,
+          "why_question": "Why did the communication failure occur?",
+          "answer": "The date and time on the Cold Room HMI were out of synchronization with the current date and time, triggering communication failure alarms and disrupting data logging.",
+          "is_root_cause": false
+        },
+        {
+          "step_number": 3,
+          "why_question": "Why was the date/time out of synchronization with the current date and time on the HMI?",
+          "answer": "The HMI uses coin-cell batteries to maintain the RTC and SRAM during power interruptions; extended power-off periods accelerated battery discharge, and battery degradation/defects or manufacturing quality issues may have contributed to premature failure.",
+          "is_root_cause": true
+        },
+        {
+          "step_number": 4,
+          "why_question": "WHY: Not Applicable",
+          "answer": "Not Applicable",
+          "is_root_cause": false
+        },
+        {
+          "step_number": 5,
+          "why_question": "WHY: Not Applicable",
+          "answer": "Not Applicable",
+          "is_root_cause": false
+        }
+      ],
+      "conclusion": "The data loss was caused by HMI time synchronization loss, driven by battery discharge/failure during prolonged power-off conditions, which led to communication failure with the Kyoshi application."
+    },
+    "root_cause_classification": [
+      {
+        "level_1": "Equipment / Instrument",
+        "level_2": "Electrical Failure",
+        "level_3": "Not Applicable"
+      }
+    ],
+    "impact_assessments": [
+      {
+        "domain": "System",
+        "verdict": "No Impact",
+        "justification_summary": "The system continued operating normally; only temperature data capture was interrupted temporarily and resumed after HMI time correction.",
+        "key_evidence": "Data logging resumed after 06/02/2026 15:37; no temperature excursion alarms"
+      },
+      {
+        "domain": "Document",
+        "verdict": "No Impact",
+        "justification_summary": "Relevant logs and reports were reviewed and no abnormalities were found apart from the temporary data gap; the daily MKT report remained available.",
+        "key_evidence": "Audit trail report showed no non-conformance; daily MKT report available"
+      },
+      {
+        "domain": "Product",
+        "verdict": "No Impact",
+        "justification_summary": "Semi-finished and finished batches were stored during the gap, but temperature remained within limits and no excursion alarms occurred.",
+        "key_evidence": "Daily MKT value 5.35 °C; limit 2 °C to 8 °C"
+      },
+      {
+        "domain": "Equipment",
+        "verdict": "No Impact",
+        "justification_summary": "The cold room itself operated normally; the issue was limited to HMI time synchronization and data recording, not refrigeration performance.",
+        "key_evidence": "Equipment temperature remained within range; only logging stopped"
+      },
+      {
+        "domain": "Patient Safety / Past Batches",
+        "verdict": "No Impact",
+        "justification_summary": "Stored materials were not exposed to out-of-range temperatures and no excursion occurred, so patient safety and previous batches were not impacted.",
+        "key_evidence": "No temperature excursions; MKT within limits"
+      }
+    ],
+    "corrective_actions": [
+      {
+        "action_type": "immediate",
+        "description": "Work Order No. WO/PK/26-005 was initiated to rectify the HMI time asynchronization issue.",
+        "category": "other",
+        "responsible_person": null,
+        "target_date": null
+      },
+      {
+        "action_type": "immediate",
+        "description": "The date and time were corrected through the HMI internal settings for Equipment ID E/PK/010.",
+        "category": "equipment_repair",
+        "responsible_person": "TR0189",
+        "target_date": null
+      },
+      {
+        "action_type": "immediate",
+        "description": "The incident was escalated to the service provider, M/s Guru Control System, for further investigation and support.",
+        "category": "vendor_escalation",
+        "responsible_person": null,
+        "target_date": null
+      },
+      {
+        "action_type": "immediate",
+        "description": "Awareness training on deviation handling was imparted to the concerned personnel.",
+        "category": "awareness_training",
+        "responsible_person": null,
+        "target_date": null
+      },
+      {
+        "action_type": "corrective",
+        "description": "Initiate and track a CAPA form with unique identification, responsibilities, and target completion dates for the corrective actions.",
+        "category": "other",
+        "responsible_person": null,
+        "target_date": null
+      }
+    ],
+    "preventive_actions": [
+      {
+        "description": "Replace HMI batteries for all Blue Star walk-in cold rooms (E/PK/010, E/WH/020, E/WH/022, E/WH/027, E/QC/019) and walk-in deep freezers (E/WH/021, E/WH/023).",
+        "category": "equipment_replacement",
+        "scope": "Blue Star walk-in cold rooms and walk-in deep freezers listed above",
+        "effectiveness_monitoring_required": false,
+        "interim_control_required": false,
+        "linked_root_cause": "Weak/degraded HMI battery causing loss of RTC/time synchronization"
+      },
+      {
+        "description": "Install upgraded software for all Blue Star walk-in cold rooms (E/PK/010, E/WH/020, E/WH/022, E/WH/027, E/QC/019) and walk-in deep freezers (E/WH/021, E/WH/023).",
+        "category": "software_update",
+        "scope": "Blue Star walk-in cold rooms and walk-in deep freezers listed above",
+        "effectiveness_monitoring_required": false,
+        "interim_control_required": false,
+        "linked_root_cause": "Old version software contributing to synchronization/communication failure"
+      }
+    ],
+    "recurrence_history": {
+      "is_repeat": true,
+      "previous_deviation_reference": null,
+      "previous_capa_description": "Previous CAPA identified HMI time synchronization loss due to battery discharge or malfunction; actions included battery replacement for the respective cold room and incorporation of HMI battery verification instructions into the AMC/PM checklist for Blue Star make walk-in cold rooms.",
+      "previous_capa_effectiveness": "not_executed",
+      "reason_for_recurrence": "The CAPA recommendation for battery replacement was not executed because the batteries were considered to be in good condition, allowing recurrence of the synchronization issue."
+    },
+    "horizontal_checks": [
+      {
+        "checked_item": "Blue Star walk-in cold rooms in warehouse areas",
+        "finding": "no_discrepancy",
+        "details": "Checked for similar non-conformance; no discrepancy found."
+      },
+      {
+        "checked_item": "Blue Star deep freezers in warehouse areas",
+        "finding": "no_discrepancy",
+        "details": "Checked for similar non-conformance; no discrepancy found."
+      },
+      {
+        "checked_item": "QC area cold rooms / deep freezers",
+        "finding": "no_discrepancy",
+        "details": "Checked for similar type of non-conformance; none found."
+      }
+    ],
+    "document_references": [
+      {
+        "document_number": "SOP/DP/PK/013",
+        "document_type": "SOP",
+        "title": "Operation and Cleaning of Intermediate Walk-in Cold Room",
+        "status": "in_place"
+      },
+      {
+        "document_number": "SOP/DP/PK/013/F03-R01",
+        "document_type": "format",
+        "title": "Material Storage and Removal Log of the Intermediate Walk-in Cold Room",
+        "status": "in_place"
+      },
+      {
+        "document_number": "SOP/DP/QA/008",
+        "document_type": "SOP",
+        "title": "Root Cause Categorization format",
+        "status": "in_place"
+      }
+    ],
+    "change_controls": [],
+    "gliner_entities": [
+      {
+        "text": "Kyoshi software",
+        "label": "software system",
+        "score": 0.967,
+        "source": "gliner"
+      },
+      {
+        "text": "Guru Controls",
+        "label": "vendor company",
+        "score": 0.964,
+        "source": "gliner"
+      },
+      {
+        "text": "communication failure alarm",
+        "label": "alarm event",
+        "score": 0.96,
+        "source": "gliner"
+      },
+      {
+        "text": "communication failure alarms",
+        "label": "alarm event",
+        "score": 0.945,
+        "source": "gliner"
+      },
+      {
+        "text": "Kyoshi application",
+        "label": "software system",
+        "score": 0.935,
+        "source": "gliner"
+      },
+      {
+        "text": "QC areas",
+        "label": "location area",
+        "score": 0.905,
+        "source": "gliner"
+      },
+      {
+        "text": "GF-122",
+        "label": "location area",
+        "score": 0.883,
+        "source": "gliner"
+      },
+      {
+        "text": "old version software",
+        "label": "software system",
+        "score": 0.882,
+        "source": "gliner"
+      },
+      {
+        "text": "Original Equipment Manufacturer",
+        "label": "vendor company",
+        "score": 0.829,
+        "source": "gliner"
+      },
+      {
+        "text": "Blue Star",
+        "label": "vendor company",
+        "score": 0.795,
+        "source": "gliner"
+      },
+      {
+        "text": "GF-109",
+        "label": "location area",
+        "score": 0.794,
+        "source": "gliner"
+      },
+      {
+        "text": "E/PK/010",
+        "label": "equipment name",
+        "score": 0.784,
+        "source": "gliner"
+      },
+      {
+        "text": "low or high temperature alarms",
+        "label": "alarm event",
+        "score": 0.781,
+        "source": "gliner"
+      },
+      {
+        "text": "Intermediate Walk-in Cold Room",
+        "label": "location area",
+        "score": 0.744,
+        "source": "gliner"
+      },
+      {
+        "text": "temperature excursion alarms",
+        "label": "alarm event",
+        "score": 0.737,
+        "source": "gliner"
+      },
+      {
+        "text": "Upgraded software",
+        "label": "software system",
+        "score": 0.71,
+        "source": "gliner"
+      },
+      {
+        "text": "OEM",
+        "label": "vendor company",
+        "score": 0.662,
+        "source": "gliner"
+      },
+      {
+        "text": "temperature",
+        "label": "process parameter",
+        "score": 0.66,
+        "source": "gliner"
+      },
+      {
+        "text": "packing area",
+        "label": "location area",
+        "score": 0.611,
+        "source": "gliner"
+      },
+      {
+        "text": "Alarm Report",
+        "label": "alarm event",
+        "score": 0.603,
+        "source": "gliner"
+      },
+      {
+        "text": "E/WH/020",
+        "label": "equipment name",
+        "score": 0.599,
+        "source": "gliner"
+      },
+      {
+        "text": "QA Head",
+        "label": "person name",
+        "score": 0.568,
+        "source": "gliner"
+      },
+      {
+        "text": "HMI",
+        "label": "equipment name",
+        "score": 0.566,
+        "source": "gliner"
+      },
+      {
+        "text": "E/WH/021",
+        "label": "equipment name",
+        "score": 0.561,
+        "source": "gliner"
+      },
+      {
+        "text": "Employee ID: 598",
+        "label": "person name",
+        "score": 0.548,
+        "source": "gliner"
+      },
+      {
+        "text": "daily MKT value",
+        "label": "process parameter",
+        "score": 0.542,
+        "source": "gliner"
+      },
+      {
+        "text": "packing colleague",
+        "label": "person name",
+        "score": 0.532,
+        "source": "gliner"
+      },
+      {
+        "text": "E/WH/027",
+        "label": "equipment name",
+        "score": 0.515,
+        "source": "gliner"
+      },
+      {
+        "text": "E/WH/022",
+        "label": "equipment name",
+        "score": 0.508,
+        "source": "gliner"
+      },
+      {
+        "text": "temperature range",
+        "label": "process parameter",
+        "score": 0.501,
+        "source": "gliner"
+      },
+      {
+        "text": "E/PK/010",
+        "label": "location area",
+        "score": 0.492,
+        "source": "gliner"
+      },
+      {
+        "text": "User Head",
+        "label": "person name",
+        "score": 0.49,
+        "source": "gliner"
+      },
+      {
+        "text": "walk-in deep freezers",
+        "label": "equipment name",
+        "score": 0.483,
+        "source": "gliner"
+      },
+      {
+        "text": "2°C to 8°C",
+        "label": "process parameter",
+        "score": 0.48,
+        "source": "gliner"
+      },
+      {
+        "text": "M/s Guru Control System",
+        "label": "software system",
+        "score": 0.468,
+        "source": "gliner"
+      },
+      {
+        "text": "Employee ID: 1174",
+        "label": "person name",
+        "score": 0.461,
+        "source": "gliner"
+      },
+      {
+        "text": "E/WH/023",
+        "label": "equipment name",
+        "score": 0.46,
+        "source": "gliner"
+      },
+      {
+        "text": "System",
+        "label": "software system",
+        "score": 0.458,
+        "source": "gliner"
+      },
+      {
+        "text": "IT colleague",
+        "label": "person name",
+        "score": 0.453,
+        "source": "gliner"
+      },
+      {
+        "text": "Employee ID: TR0189",
+        "label": "person name",
+        "score": 0.44,
+        "source": "gliner"
+      },
+      {
+        "text": "SOP/DP/PK/013",
+        "label": "software system",
+        "score": 0.418,
+        "source": "gliner"
+      },
+      {
+        "text": "E/QC/019",
+        "label": "equipment name",
+        "score": 0.406,
+        "source": "gliner"
+      }
+    ],
+    "regex_entities": {
+      "equipment_id": [
+        "E/PK/010",
+        "E/QC/019",
+        "E/WH/020",
+        "E/WH/021",
+        "E/WH/022",
+        "E/WH/023",
+        "E/WH/027"
+      ],
+      "sop_number": [
+        "SOP/DP/PK/013",
+        "SOP/DP/PK/013/F03-R01",
+        "SOP/DP/QA/008"
+      ],
+      "employee_id": [
+        "1174",
+        "598",
+        "TR0189"
+      ],
+      "room_id": [
+        "GF-109",
+        "GF-122"
+      ],
+      "work_order": [
+        "WO/PK/26-005"
+      ],
+      "format_number": [
+        "SOP/DP/PK/013/F03-R01"
+      ],
+      "date": [
+        "02/04/2026",
+        "04/03/2026",
+        "05/02/2026",
+        "05/03/2026",
+        "06/02/2026"
+      ]
+    }
+  },
+  "relations": [
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "HAS_CATEGORY",
+      "to": "Major"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "ORIGINATED_IN_DEPT",
+      "to": "PK"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "HAS_NONCONFORMANCE_TYPE",
+      "to": "Data logging / temperature monitoring system failure due to HMI time synchronization loss and communication failure"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "HAS_TIMELINE_EVENT",
+      "to": "occurrence:05/02/2026"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "HAS_TIMELINE_EVENT",
+      "to": "occurrence:06/02/2026 02:08:50 hrs. to 14:10:02 hrs."
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "HAS_TIMELINE_EVENT",
+      "to": "occurrence:06/02/2026 03:47 to 06/02/2026 15:31"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "HAS_TIMELINE_EVENT",
+      "to": "detection:06/02/2026 approximately 10:30 hrs."
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "HAS_TIMELINE_EVENT",
+      "to": "occurrence:06/02/2026 approximately 15:30 hrs."
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "HAS_TIMELINE_EVENT",
+      "to": "reporting:06/02/2026"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "HAS_TIMELINE_EVENT",
+      "to": "deviation_logging:05/03/2026 13:05 hrs."
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "HAS_TIMELINE_EVENT",
+      "to": "oem_visit:02/04/2026"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "HAS_TIMELINE_EVENT",
+      "to": "resolution:06/02/2026 15:37 hrs."
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "HAS_TIMELINE_EVENT",
+      "to": "investigation_start:04/03/2026"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "DISCOVERED_BY",
+      "to": "598"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "INVOLVES_PERSON_REPORTER",
+      "to": "598"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "INVOLVES_PERSON_INTERVIEWEE",
+      "to": "598"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "DISCOVERED_BY",
+      "to": "1174"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "INVOLVES_PERSON_INTERVIEWEE",
+      "to": "1174"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "CAUSED_BY_PERSON",
+      "to": "TR0189"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "INVOLVES_PERSON_INTERVIEWEE",
+      "to": "TR0189"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "AFFECTS_EQUIPMENT",
+      "to": "E/PK/010"
+    },
+    {
+      "from": "E/PK/010",
+      "relation": "LOCATED_AT",
+      "to": "GF-122"
+    },
+    {
+      "from": "E/PK/010",
+      "relation": "USES_SOFTWARE",
+      "to": "Kyoshi application"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "AFFECTS_EQUIPMENT",
+      "to": "WO/PK/26-005"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "AFFECTS_EQUIPMENT",
+      "to": "E/QC/019"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "AFFECTS_EQUIPMENT",
+      "to": "E/WH/020"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "AFFECTS_EQUIPMENT",
+      "to": "E/WH/021"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "AFFECTS_EQUIPMENT",
+      "to": "E/WH/022"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "AFFECTS_EQUIPMENT",
+      "to": "E/WH/023"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "AFFECTS_EQUIPMENT",
+      "to": "E/WH/027"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "OCCURRED_AT",
+      "to": "GF-122"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "DETECTED_AT",
+      "to": "GF-109"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "VIOLATES_REQUIREMENT",
+      "to": "SOP/DP/PK/013 clause 7.4.2"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "REFERENCES_SOP",
+      "to": "SOP/DP/PK/013 clause F03-R01"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "HAS_ROOT_CAUSE",
+      "to": "Equipment / Instrument/Electrical Failure/Not Applicable"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "HAS_IMPACT_ASSESSMENT",
+      "to": "System: No Impact"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "HAS_IMPACT_ASSESSMENT",
+      "to": "Document: No Impact"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "HAS_IMPACT_ASSESSMENT",
+      "to": "Product: No Impact"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "HAS_IMPACT_ASSESSMENT",
+      "to": "Equipment: No Impact"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "HAS_IMPACT_ASSESSMENT",
+      "to": "Patient Safety / Past Batches: No Impact"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "HAS_IMMEDIATE_ACTION",
+      "to": "Work Order No. WO/PK/26-005 was initiated to rectify the HMI time asynchronizati"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "HAS_IMMEDIATE_ACTION",
+      "to": "The date and time were corrected through the HMI internal settings for Equipment"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "HAS_IMMEDIATE_ACTION",
+      "to": "The incident was escalated to the service provider, M/s Guru Control System, for"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "HAS_IMMEDIATE_ACTION",
+      "to": "Awareness training on deviation handling was imparted to the concerned personnel"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "HAS_CORRECTIVE_ACTION",
+      "to": "Initiate and track a CAPA form with unique identification, responsibilities, and"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "HAS_PREVENTIVE_ACTION",
+      "to": "Replace HMI batteries for all Blue Star walk-in cold rooms (E/PK/010, E/WH/020, "
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "HAS_PREVENTIVE_ACTION",
+      "to": "Install upgraded software for all Blue Star walk-in cold rooms (E/PK/010, E/WH/0"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "TRIGGERED_WORKORDER",
+      "to": "WO/PK/26-005"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "INVOLVES_VENDOR",
+      "to": "M/s Guru Control System"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "INVOLVES_VENDOR",
+      "to": "OEM"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "INVOLVES_VENDOR",
+      "to": "Guru Controls"
+    },
+    {
+      "from": "E/PK/010",
+      "relation": "TRIGGERED_ALARM",
+      "to": "communication failure alarm"
+    },
+    {
+      "from": "E/PK/010",
+      "relation": "TRIGGERED_ALARM",
+      "to": "temperature excursion alarm"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "AFFECTS_PRODUCT",
+      "to": "Semi-finished product batches"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "AFFECTS_PRODUCT",
+      "to": "Finished product batches"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "AFFECTS_PRODUCT",
+      "to": "Visual inspection defect kits"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "IS_REPEAT_OF",
+      "to": null
+    },
+    {
+      "from": "why_step_1",
+      "relation": "CAUSED_BY",
+      "to": "why_step_2"
+    },
+    {
+      "from": "why_step_2",
+      "relation": "CAUSED_BY",
+      "to": "why_step_3"
+    },
+    {
+      "from": "why_step_3",
+      "relation": "CAUSED_BY",
+      "to": "why_step_4"
+    },
+    {
+      "from": "why_step_4",
+      "relation": "CAUSED_BY",
+      "to": "why_step_5"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "REFERENCES_DOCUMENT",
+      "to": "SOP/DP/PK/013"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "REFERENCES_DOCUMENT",
+      "to": "SOP/DP/PK/013/F03-R01"
+    },
+    {
+      "from": "DEV/PK/25/002",
+      "relation": "REFERENCES_DOCUMENT",
+      "to": "SOP/DP/QA/008"
+    }
+  ]
+}

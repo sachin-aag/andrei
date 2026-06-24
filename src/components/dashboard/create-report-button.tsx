@@ -81,7 +81,7 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
     }
   };
 
-  const submit = () => {
+  const createReport = (destination: "edit" | "guided") => {
     if (!deviationNo.trim()) {
       toast.error("Deviation number is required");
       return;
@@ -108,13 +108,19 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
         reportId: data.id,
         fromDocx: !!draftFile,
       });
-      toast.success("Report created");
       setOpen(false);
       resetForm();
-      router.push(`/reports/${data.id}/edit`);
+      if (destination === "guided") {
+        router.push(`/reports/${data.id}/guided`);
+      } else {
+        toast.success("Report created");
+        router.push(`/reports/${data.id}/edit`);
+      }
       router.refresh();
     });
   };
+
+  const submit = () => createReport("edit");
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -237,19 +243,30 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
             />
           </div>
         </div>
-          <DialogFooter>
+          <DialogFooter className="flex-col gap-2 sm:flex-row">
             <Button
               variant="outline"
               onClick={() => handleOpenChange(false)}
               disabled={isBusy}
+              className="sm:mr-auto"
             >
               Cancel
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => createReport("guided")}
+              disabled={isBusy}
+            >
+              {pending && (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              )}
+              {pending ? "Creating…" : "Start with Guided Flow"}
             </Button>
             <Button onClick={submit} disabled={isBusy}>
               {pending && (
                 <Loader2 className="size-4 animate-spin" aria-hidden="true" />
               )}
-              {pending ? "Creating…" : "Create"}
+              {pending ? "Creating…" : "Create Empty"}
             </Button>
           </DialogFooter>
         </div>

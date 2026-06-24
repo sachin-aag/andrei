@@ -1,0 +1,855 @@
+{
+  "metadata": {
+    "pipeline": "hybrid",
+    "model": "gpt-5.4-mini",
+    "deviation_id": "DEV/PR/25/008",
+    "filename": "Investigation DEV-PR-25-008.docx",
+    "timing": {
+      "regex_sec": 0.004,
+      "gliner_sec": 2.22,
+      "llm_sec": 15.417,
+      "total_sec": 17.641
+    },
+    "usage": {
+      "input_tokens": 6649,
+      "output_tokens": 2857
+    },
+    "phase_entity_counts": {
+      "regex": 11,
+      "gliner": 31
+    }
+  },
+  "entities": {
+    "deviation": {
+      "deviation_id": "DEV/PR/25/008",
+      "department_code": "PR",
+      "category": "Minor",
+      "is_repeat_occurrence": false,
+      "non_conformance_type": "Incorrect cycle selection / procedural non-adherence (human error)",
+      "non_conformance_summary": "The operator inadvertently selected the Sterilizing Chamber Filter Conditioning (SFC) mode instead of the intended Cooling Chamber Sterilization (CCS) mode on the HMI during routine operation."
+    },
+    "temporal_events": [
+      {
+        "event_type": "occurrence",
+        "datetime": "28/03/2026 18:39 hrs",
+        "actor": "Production Operator (Emp. ID: 1077)",
+        "description": "Incorrect SFC cycle was initiated on the Depyrogenating Tunnel instead of CCS."
+      },
+      {
+        "event_type": "detection",
+        "datetime": "29/03/2026 01:06 hrs",
+        "actor": "Production Operator (Emp. ID: 842)",
+        "description": "Non-conformance identified when the cycle was ended after completion."
+      },
+      {
+        "event_type": "deviation_logging",
+        "datetime": "29/03/2026",
+        "actor": "Quality/Investigation record",
+        "description": "Deviation captured in investigation record after detection."
+      },
+      {
+        "event_type": "resolution",
+        "datetime": "29/03/2026 02:25 hrs",
+        "actor": "Production Operator (Emp. ID: 842)",
+        "description": "Intended CCS cycle was initiated after discovery of the wrong cycle."
+      },
+      {
+        "event_type": "resolution",
+        "datetime": "29/03/2026 08:17 hrs",
+        "actor": "Production Operator (Emp. ID: 842)",
+        "description": "CCS cycle completed successfully."
+      },
+      {
+        "event_type": "investigation_start",
+        "datetime": "2026-04-13",
+        "actor": "Investigation team",
+        "description": "Formal investigation completed using DMAIC methodology and 5-Why analysis."
+      },
+      {
+        "event_type": "occurrence",
+        "datetime": "28/03/2026 03:34 hrs to 04:50 hrs",
+        "actor": "Production/Operations",
+        "description": "Equipment cleaning was performed prior to the deviation event."
+      }
+    ],
+    "persons": [
+      {
+        "employee_id": "1077",
+        "name": null,
+        "designation": "Production Operator",
+        "department": "Production",
+        "roles_in_deviation": [
+          "involved_operator"
+        ]
+      },
+      {
+        "employee_id": "842",
+        "name": null,
+        "designation": "Production Operator",
+        "department": "Production",
+        "roles_in_deviation": [
+          "discoverer",
+          "involved_operator"
+        ]
+      }
+    ],
+    "equipment": [
+      {
+        "equipment_id": "E/PR/069",
+        "name": "Depyrogenating Tunnel",
+        "make": null,
+        "type": "equipment",
+        "location_room_id": "GF-61",
+        "location_name": "Washing and Depyrogenation Room",
+        "operating_parameters": "SFC: TE22 310°C, TE32 20°C, PT11 0.55 m/s, PT21 0.75 m/s, PT31 0.75 m/s, PT50 13 Pa, PT51 15 Pa, heating temp increase 1.5°C, conditioning time 20 min, heating temp decrease 1.5°C/min, controlled temp decrease limit 180; CCS: TE22 160°C, TE32 210°C, TE34 220°C, PT11 0.5 m/s, PT21 0.65 m/s, PT31 0.65 m/s, PT61 -2 Pa, sterilization heating temp increase 1.5°C/min, cooling heating temp increase 1.5°C/min, sterilization time 12 min, 4th door position 90 mm",
+        "associated_software": "HMI"
+      }
+    ],
+    "locations": [
+      {
+        "room_id": "GF-61",
+        "room_name": "Washing and Depyrogenation Room",
+        "floor": "GF",
+        "functional_area": "Washing and Depyrogenation",
+        "role_in_deviation": "occurrence_location"
+      }
+    ],
+    "sop_requirements": [
+      {
+        "sop_number": "SOP/DP/PR/041",
+        "title": null,
+        "clause_number": "7.3.3.5",
+        "requirement_text": "SFC mode shall be selected only during installation of new filters; during routine operation the intended CCS mode must be selected after verifying cycle selection before initiation.",
+        "role": "violated_requirement"
+      }
+    ],
+    "observed_vs_expected": [
+      {
+        "parameter_name": "Cycle mode selection",
+        "expected_value_or_range": "CCS mode during routine operation",
+        "observed_value": "SFC mode selected on HMI",
+        "unit": null,
+        "is_within_spec": false
+      },
+      {
+        "parameter_name": "Sterilizing chamber air temperature (SFC)",
+        "expected_value_or_range": "Within validated SFC limits",
+        "observed_value": "310",
+        "unit": "°C",
+        "is_within_spec": true
+      },
+      {
+        "parameter_name": "Cooling chamber air temperature (SFC)",
+        "expected_value_or_range": "Within validated SFC limits",
+        "observed_value": "20",
+        "unit": "°C",
+        "is_within_spec": true
+      },
+      {
+        "parameter_name": "Inlet chamber air speed (SFC)",
+        "expected_value_or_range": "Within validated SFC limits",
+        "observed_value": "0.55",
+        "unit": "m/s",
+        "is_within_spec": true
+      },
+      {
+        "parameter_name": "Sterilizing chamber air speed (SFC)",
+        "expected_value_or_range": "Within validated SFC limits",
+        "observed_value": "0.75",
+        "unit": "m/s",
+        "is_within_spec": true
+      },
+      {
+        "parameter_name": "Cooling chamber air speed (SFC)",
+        "expected_value_or_range": "Within validated SFC limits",
+        "observed_value": "0.75",
+        "unit": "m/s",
+        "is_within_spec": true
+      },
+      {
+        "parameter_name": "Inlet chamber/environment dP (SFC)",
+        "expected_value_or_range": "Within validated SFC limits",
+        "observed_value": "13",
+        "unit": "Pa",
+        "is_within_spec": true
+      },
+      {
+        "parameter_name": "Cooling chamber/environment dP (SFC)",
+        "expected_value_or_range": "Within validated SFC limits",
+        "observed_value": "15",
+        "unit": "Pa",
+        "is_within_spec": true
+      },
+      {
+        "parameter_name": "SFC cycle duration",
+        "expected_value_or_range": "Validated cycle duration",
+        "observed_value": "06:26",
+        "unit": "hours:minutes",
+        "is_within_spec": true
+      },
+      {
+        "parameter_name": "CCS cycle duration",
+        "expected_value_or_range": "Validated cycle duration",
+        "observed_value": "05:52",
+        "unit": "hours:minutes",
+        "is_within_spec": true
+      },
+      {
+        "parameter_name": "HEPA filter air velocity results",
+        "expected_value_or_range": "Specified limits",
+        "observed_value": "DF11 0.57; DF21 0.76; DF22 0.78; DF31 0.76; DF32 0.77",
+        "unit": "m/s",
+        "is_within_spec": true
+      },
+      {
+        "parameter_name": "NVPC results (0.5 micron / 5.0 micron)",
+        "expected_value_or_range": "Specified limits",
+        "observed_value": "L1 767/9; L2 190/13; L3 181/7; L4 6/0; L5 10/1",
+        "unit": "counts",
+        "is_within_spec": true
+      }
+    ],
+    "products_materials": [
+      {
+        "name": "Containers prior to aseptic processing",
+        "batch_number": "B092542503",
+        "ar_number": null,
+        "storage_condition": null,
+        "disposition": "not affected"
+      }
+    ],
+    "software_systems": [
+      {
+        "system_name": "HMI",
+        "component": "Cycle selection interface",
+        "function": "Selection and initiation of depyrogenating tunnel cycle modes"
+      }
+    ],
+    "vendors": [],
+    "alarms_events": [
+      {
+        "alarm_type": "critical alarms",
+        "count": 0,
+        "time_period": "During the unintended SFC cycle",
+        "equipment_id": "E/PR/069",
+        "consequence": "No excursions or abnormal trends; equipment performance remained stable"
+      },
+      {
+        "alarm_type": "excursions",
+        "count": 0,
+        "time_period": "During the unintended SFC cycle",
+        "equipment_id": "E/PR/069",
+        "consequence": "No impact on validated process operation"
+      }
+    ],
+    "work_orders": [
+      {
+        "wo_number": "WO/PR/26-007",
+        "type": "work_order",
+        "purpose": "Referenced work order reviewed in documents"
+      },
+      {
+        "wo_number": "WO/PR/26-012",
+        "type": "work_order",
+        "purpose": "Re-calibration work order used to remediate data capture/calibration issue"
+      }
+    ],
+    "causal_chain": {
+      "methodology": "5-Why",
+      "steps": [
+        {
+          "step_number": 1,
+          "why_question": "Why was the SFC cycle initiated instead of CCS cycle?",
+          "answer": "The production operator (Emp. ID: 1077) selected the incorrect cycle (SFC) on the HMI during operation.",
+          "is_root_cause": false
+        },
+        {
+          "step_number": 2,
+          "why_question": "Why did the operator select the incorrect cycle on the HMI?",
+          "answer": "The operator did not adequately verify the selected cycle before initiating the process.",
+          "is_root_cause": false
+        },
+        {
+          "step_number": 3,
+          "why_question": "Why was the verification of cycle selection not adequately performed?",
+          "answer": "The cycle verification step before initiation was not strictly followed as per SOP requirements.",
+          "is_root_cause": false
+        },
+        {
+          "step_number": 4,
+          "why_question": "Why was the cycle start verification step not strictly adhered to?",
+          "answer": "The activity was routine in nature, leading to a momentary lapse in attention and failure to perform the SOP-defined verification step.",
+          "is_root_cause": false
+        },
+        {
+          "step_number": 5,
+          "why_question": "Why did the lapse in attention occur during a routine activity?",
+          "answer": "Individual human oversight occurred despite the operator being trained, qualified, and the procedure clearly defining the required verification step.",
+          "is_root_cause": true
+        }
+      ],
+      "conclusion": "The deviation was caused by isolated human error: the operator failed to adhere to the SOP-defined verification step prior to cycle initiation. No deficiencies in procedure, system, or equipment were identified."
+    },
+    "root_cause_classification": [
+      {
+        "level_1": "Human Performance",
+        "level_2": "Omission error",
+        "level_3": "Responsibility boundaries ineffective"
+      }
+    ],
+    "impact_assessments": [
+      {
+        "domain": "System",
+        "verdict": "No Impact",
+        "justification_summary": "The depyrogenating tunnel operated within validated parameters during both the unintended SFC cycle and the subsequent CCS cycle, so system performance remained as intended.",
+        "key_evidence": "No critical alarms, excursions, or abnormal trends during the SFC cycle."
+      },
+      {
+        "domain": "Document",
+        "verdict": "No Impact",
+        "justification_summary": "The issue was a procedural non-adherence event, not a document deficiency; the existing SOP already defined the required verification step and no revision was deemed necessary.",
+        "key_evidence": "SOP/DP/PR/041 clause 7.3.3.5."
+      },
+      {
+        "domain": "Product",
+        "verdict": "No Impact",
+        "justification_summary": "The unintended SFC cycle did not involve product exposure, and the intended CCS cycle was subsequently completed successfully within acceptance criteria.",
+        "key_evidence": "CCS cycle completed at 08:17 hrs with all critical parameters within validated limits."
+      },
+      {
+        "domain": "Equipment",
+        "verdict": "No Impact",
+        "justification_summary": "Equipment functioned as intended during both cycles and post-deviation checks confirmed filter velocity and environmental control remained acceptable.",
+        "key_evidence": "HEPA air velocity and NVPC results within specified limits."
+      },
+      {
+        "domain": "Patient Safety / Past Batches",
+        "verdict": "No Impact",
+        "justification_summary": "No product impact or batch issues were identified, and the investigation found no similar prior incidents in historical records.",
+        "key_evidence": "No similar deviations in operator history; regulatory notification not required."
+      }
+    ],
+    "corrective_actions": [
+      {
+        "action_type": "immediate",
+        "description": "Re-perform load cell calibration against Work Order WO/PR/26-012.",
+        "category": "equipment_repair",
+        "responsible_person": null,
+        "target_date": null
+      },
+      {
+        "action_type": "immediate",
+        "description": "Generate and verify recalibration report with correct data capture.",
+        "category": "document_reissuance",
+        "responsible_person": null,
+        "target_date": null
+      },
+      {
+        "action_type": "immediate",
+        "description": "Provide awareness training to concerned operators on correct cycle selection and SOP compliance.",
+        "category": "awareness_training",
+        "responsible_person": null,
+        "target_date": null
+      }
+    ],
+    "preventive_actions": [
+      {
+        "description": "No standalone CAPA proposed because the event was a first-time isolated human error with no equipment, system, or procedure deficiency identified.",
+        "category": "no_action_required",
+        "scope": "Depyrogenating Tunnel E/PR/069 and operator practice for cycle selection",
+        "effectiveness_monitoring_required": false,
+        "interim_control_required": false,
+        "linked_root_cause": "Human Performance / Omission error"
+      }
+    ],
+    "recurrence_history": {
+      "is_repeat": false,
+      "previous_deviation_reference": null,
+      "previous_capa_description": null,
+      "previous_capa_effectiveness": null,
+      "reason_for_recurrence": null
+    },
+    "horizontal_checks": [
+      {
+        "checked_item": "Depyrogenating Tunnel (E/PR/069) cycle data",
+        "finding": "no_discrepancy",
+        "details": "Unintended SFC cycle and subsequent CCS cycle reviewed; both within validated limits."
+      },
+      {
+        "checked_item": "HEPA filter air velocity",
+        "finding": "no_discrepancy",
+        "details": "All measured velocities within specified limits (DF11, DF21, DF22, DF31, DF32)."
+      },
+      {
+        "checked_item": "Non-Viable Particle Count (NVPC) monitoring",
+        "finding": "no_discrepancy",
+        "details": "All 0.5 micron and 5.0 micron counts within specified limits."
+      },
+      {
+        "checked_item": "Environmental monitoring for GF-61",
+        "finding": "no_discrepancy",
+        "details": "Room monitoring during activity period remained within specified limits."
+      }
+    ],
+    "document_references": [
+      {
+        "document_number": "SOP/DP/PR/041",
+        "document_type": "SOP",
+        "title": null,
+        "status": "in_place"
+      },
+      {
+        "document_number": "SOP/DP/QA/008",
+        "document_type": "SOP",
+        "title": "Root Cause Categorization SOP",
+        "status": "in_place"
+      },
+      {
+        "document_number": "B092542503",
+        "document_type": "other",
+        "title": "Batch Manufacturing Record",
+        "status": "in_place"
+      },
+      {
+        "document_number": "WO/PR/26-007",
+        "document_type": "work_order",
+        "title": "Work order",
+        "status": "in_place"
+      },
+      {
+        "document_number": "WO/PR/26-012",
+        "document_type": "work_order",
+        "title": "Recalibration work order",
+        "status": "in_place"
+      }
+    ],
+    "change_controls": [],
+    "gliner_entities": [
+      {
+        "text": "differential pressure",
+        "label": "process parameter",
+        "score": 0.905,
+        "source": "gliner"
+      },
+      {
+        "text": "airflow velocity",
+        "label": "process parameter",
+        "score": 0.885,
+        "source": "gliner"
+      },
+      {
+        "text": "temperature",
+        "label": "process parameter",
+        "score": 0.884,
+        "source": "gliner"
+      },
+      {
+        "text": "Depyrogenating Tunnel",
+        "label": "equipment name",
+        "score": 0.873,
+        "source": "gliner"
+      },
+      {
+        "text": "cycle duration",
+        "label": "process parameter",
+        "score": 0.865,
+        "source": "gliner"
+      },
+      {
+        "text": "critical alarms",
+        "label": "alarm event",
+        "score": 0.859,
+        "source": "gliner"
+      },
+      {
+        "text": "validated parameters",
+        "label": "process parameter",
+        "score": 0.811,
+        "source": "gliner"
+      },
+      {
+        "text": "Washing and Depyrogenation Room",
+        "label": "location area",
+        "score": 0.809,
+        "source": "gliner"
+      },
+      {
+        "text": "production operator",
+        "label": "person name",
+        "score": 0.778,
+        "source": "gliner"
+      },
+      {
+        "text": "excursions",
+        "label": "alarm event",
+        "score": 0.668,
+        "source": "gliner"
+      },
+      {
+        "text": "equipment performance",
+        "label": "process parameter",
+        "score": 0.615,
+        "source": "gliner"
+      },
+      {
+        "text": "Depyrogenating Tunnel",
+        "label": "location area",
+        "score": 0.596,
+        "source": "gliner"
+      },
+      {
+        "text": "GF-61",
+        "label": "location area",
+        "score": 0.581,
+        "source": "gliner"
+      },
+      {
+        "text": "E/PR/069",
+        "label": "equipment name",
+        "score": 0.575,
+        "source": "gliner"
+      },
+      {
+        "text": "Equipment Name",
+        "label": "equipment name",
+        "score": 0.554,
+        "source": "gliner"
+      },
+      {
+        "text": "filter efficiency",
+        "label": "process parameter",
+        "score": 0.532,
+        "source": "gliner"
+      },
+      {
+        "text": "TU-SFC sterilizing chamber air speed",
+        "label": "process parameter",
+        "score": 0.527,
+        "source": "gliner"
+      },
+      {
+        "text": "operator",
+        "label": "person name",
+        "score": 0.522,
+        "source": "gliner"
+      },
+      {
+        "text": "HMI",
+        "label": "software system",
+        "score": 0.513,
+        "source": "gliner"
+      },
+      {
+        "text": "TU-CCS sterilizing chamber air temperature-TE22",
+        "label": "process parameter",
+        "score": 0.505,
+        "source": "gliner"
+      },
+      {
+        "text": "system performance",
+        "label": "process parameter",
+        "score": 0.503,
+        "source": "gliner"
+      },
+      {
+        "text": "Non-Viable Particle Count (NVPC)",
+        "label": "process parameter",
+        "score": 0.495,
+        "source": "gliner"
+      },
+      {
+        "text": "GF-61",
+        "label": "equipment name",
+        "score": 0.482,
+        "source": "gliner"
+      },
+      {
+        "text": "Emp. ID: 1077",
+        "label": "equipment name",
+        "score": 0.48,
+        "source": "gliner"
+      },
+      {
+        "text": "HEPA filter air velocity",
+        "label": "process parameter",
+        "score": 0.458,
+        "source": "gliner"
+      },
+      {
+        "text": "TU-SFC cooling chamber air speed",
+        "label": "process parameter",
+        "score": 0.44,
+        "source": "gliner"
+      },
+      {
+        "text": "air velocity",
+        "label": "process parameter",
+        "score": 0.44,
+        "source": "gliner"
+      },
+      {
+        "text": "TU-SFC",
+        "label": "equipment name",
+        "score": 0.414,
+        "source": "gliner"
+      },
+      {
+        "text": "TU-SFC sterilizing chamber air temperature-TE22",
+        "label": "process parameter",
+        "score": 0.414,
+        "source": "gliner"
+      },
+      {
+        "text": "environmental conditions",
+        "label": "process parameter",
+        "score": 0.41,
+        "source": "gliner"
+      },
+      {
+        "text": "Emp. ID: 842",
+        "label": "person name",
+        "score": 0.407,
+        "source": "gliner"
+      }
+    ],
+    "regex_entities": {
+      "equipment_id": [
+        "E/PR/069"
+      ],
+      "sop_number": [
+        "SOP/DP/PR/041",
+        "SOP/DP/QA/008"
+      ],
+      "employee_id": [
+        "1077",
+        "842"
+      ],
+      "batch_number": [
+        "B092542503"
+      ],
+      "room_id": [
+        "GF-61"
+      ],
+      "work_order": [
+        "WO/PR/26-007",
+        "WO/PR/26-012"
+      ],
+      "date": [
+        "28/03/2026",
+        "29/03/2026"
+      ]
+    }
+  },
+  "relations": [
+    {
+      "from": "DEV/PR/25/008",
+      "relation": "HAS_CATEGORY",
+      "to": "Minor"
+    },
+    {
+      "from": "DEV/PR/25/008",
+      "relation": "ORIGINATED_IN_DEPT",
+      "to": "PR"
+    },
+    {
+      "from": "DEV/PR/25/008",
+      "relation": "HAS_NONCONFORMANCE_TYPE",
+      "to": "Incorrect cycle selection / procedural non-adherence (human error)"
+    },
+    {
+      "from": "DEV/PR/25/008",
+      "relation": "HAS_TIMELINE_EVENT",
+      "to": "occurrence:28/03/2026 18:39 hrs"
+    },
+    {
+      "from": "DEV/PR/25/008",
+      "relation": "HAS_TIMELINE_EVENT",
+      "to": "detection:29/03/2026 01:06 hrs"
+    },
+    {
+      "from": "DEV/PR/25/008",
+      "relation": "HAS_TIMELINE_EVENT",
+      "to": "deviation_logging:29/03/2026"
+    },
+    {
+      "from": "DEV/PR/25/008",
+      "relation": "HAS_TIMELINE_EVENT",
+      "to": "resolution:29/03/2026 02:25 hrs"
+    },
+    {
+      "from": "DEV/PR/25/008",
+      "relation": "HAS_TIMELINE_EVENT",
+      "to": "resolution:29/03/2026 08:17 hrs"
+    },
+    {
+      "from": "DEV/PR/25/008",
+      "relation": "HAS_TIMELINE_EVENT",
+      "to": "investigation_start:2026-04-13"
+    },
+    {
+      "from": "DEV/PR/25/008",
+      "relation": "HAS_TIMELINE_EVENT",
+      "to": "occurrence:28/03/2026 03:34 hrs to 04:50 hrs"
+    },
+    {
+      "from": "DEV/PR/25/008",
+      "relation": "CAUSED_BY_PERSON",
+      "to": "1077"
+    },
+    {
+      "from": "DEV/PR/25/008",
+      "relation": "DISCOVERED_BY",
+      "to": "842"
+    },
+    {
+      "from": "DEV/PR/25/008",
+      "relation": "CAUSED_BY_PERSON",
+      "to": "842"
+    },
+    {
+      "from": "DEV/PR/25/008",
+      "relation": "AFFECTS_EQUIPMENT",
+      "to": "E/PR/069"
+    },
+    {
+      "from": "E/PR/069",
+      "relation": "LOCATED_AT",
+      "to": "GF-61"
+    },
+    {
+      "from": "E/PR/069",
+      "relation": "USES_SOFTWARE",
+      "to": "HMI"
+    },
+    {
+      "from": "DEV/PR/25/008",
+      "relation": "OCCURRED_AT",
+      "to": "GF-61"
+    },
+    {
+      "from": "DEV/PR/25/008",
+      "relation": "VIOLATES_REQUIREMENT",
+      "to": "SOP/DP/PR/041 clause 7.3.3.5"
+    },
+    {
+      "from": "DEV/PR/25/008",
+      "relation": "HAS_ROOT_CAUSE",
+      "to": "Human Performance/Omission error/Responsibility boundaries ineffective"
+    },
+    {
+      "from": "DEV/PR/25/008",
+      "relation": "HAS_IMPACT_ASSESSMENT",
+      "to": "System: No Impact"
+    },
+    {
+      "from": "DEV/PR/25/008",
+      "relation": "HAS_IMPACT_ASSESSMENT",
+      "to": "Document: No Impact"
+    },
+    {
+      "from": "DEV/PR/25/008",
+      "relation": "HAS_IMPACT_ASSESSMENT",
+      "to": "Product: No Impact"
+    },
+    {
+      "from": "DEV/PR/25/008",
+      "relation": "HAS_IMPACT_ASSESSMENT",
+      "to": "Equipment: No Impact"
+    },
+    {
+      "from": "DEV/PR/25/008",
+      "relation": "HAS_IMPACT_ASSESSMENT",
+      "to": "Patient Safety / Past Batches: No Impact"
+    },
+    {
+      "from": "DEV/PR/25/008",
+      "relation": "HAS_IMMEDIATE_ACTION",
+      "to": "Re-perform load cell calibration against Work Order WO/PR/26-012."
+    },
+    {
+      "from": "DEV/PR/25/008",
+      "relation": "HAS_IMMEDIATE_ACTION",
+      "to": "Generate and verify recalibration report with correct data capture."
+    },
+    {
+      "from": "DEV/PR/25/008",
+      "relation": "HAS_IMMEDIATE_ACTION",
+      "to": "Provide awareness training to concerned operators on correct cycle selection and"
+    },
+    {
+      "from": "DEV/PR/25/008",
+      "relation": "HAS_PREVENTIVE_ACTION",
+      "to": "No standalone CAPA proposed because the event was a first-time isolated human er"
+    },
+    {
+      "from": "DEV/PR/25/008",
+      "relation": "TRIGGERED_WORKORDER",
+      "to": "WO/PR/26-007"
+    },
+    {
+      "from": "DEV/PR/25/008",
+      "relation": "TRIGGERED_WORKORDER",
+      "to": "WO/PR/26-012"
+    },
+    {
+      "from": "E/PR/069",
+      "relation": "TRIGGERED_ALARM",
+      "to": "critical alarms"
+    },
+    {
+      "from": "E/PR/069",
+      "relation": "TRIGGERED_ALARM",
+      "to": "excursions"
+    },
+    {
+      "from": "DEV/PR/25/008",
+      "relation": "AFFECTS_PRODUCT",
+      "to": "Containers prior to aseptic processing"
+    },
+    {
+      "from": "why_step_1",
+      "relation": "CAUSED_BY",
+      "to": "why_step_2"
+    },
+    {
+      "from": "why_step_2",
+      "relation": "CAUSED_BY",
+      "to": "why_step_3"
+    },
+    {
+      "from": "why_step_3",
+      "relation": "CAUSED_BY",
+      "to": "why_step_4"
+    },
+    {
+      "from": "why_step_4",
+      "relation": "CAUSED_BY",
+      "to": "why_step_5"
+    },
+    {
+      "from": "DEV/PR/25/008",
+      "relation": "REFERENCES_DOCUMENT",
+      "to": "SOP/DP/PR/041"
+    },
+    {
+      "from": "DEV/PR/25/008",
+      "relation": "REFERENCES_DOCUMENT",
+      "to": "SOP/DP/QA/008"
+    },
+    {
+      "from": "DEV/PR/25/008",
+      "relation": "REFERENCES_DOCUMENT",
+      "to": "B092542503"
+    },
+    {
+      "from": "DEV/PR/25/008",
+      "relation": "REFERENCES_DOCUMENT",
+      "to": "WO/PR/26-007"
+    },
+    {
+      "from": "DEV/PR/25/008",
+      "relation": "REFERENCES_DOCUMENT",
+      "to": "WO/PR/26-012"
+    }
+  ]
+}

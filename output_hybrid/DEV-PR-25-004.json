@@ -1,0 +1,980 @@
+{
+  "metadata": {
+    "pipeline": "hybrid",
+    "model": "gpt-5.4-mini",
+    "deviation_id": "DEV/PR/25/004",
+    "filename": "Investigation DEV-PR-25-004.docx",
+    "timing": {
+      "regex_sec": 0.004,
+      "gliner_sec": 2.21,
+      "llm_sec": 15.764,
+      "total_sec": 17.979
+    },
+    "usage": {
+      "input_tokens": 6935,
+      "output_tokens": 2856
+    },
+    "phase_entity_counts": {
+      "regex": 14,
+      "gliner": 42
+    }
+  },
+  "entities": {
+    "deviation": {
+      "deviation_id": "DEV/PR/25/004",
+      "department_code": "PR",
+      "category": "Minor",
+      "is_repeat_occurrence": true,
+      "non_conformance_type": "Equipment/Instrument malfunction leading to sterilizer cycle temperature overshoot and cycle abort",
+      "non_conformance_summary": "During a PPM sterilization load, the autoclave cycle overheated above the approved temperature range and became stuck in heat-up phase until manually aborted."
+    },
+    "temporal_events": [
+      {
+        "event_type": "occurrence",
+        "datetime": "20/11/2025 at approximately 11:11 hrs",
+        "actor": "Production colleague (Employee ID: 1036)",
+        "description": "Temperature overshoot was identified during the heat-up phase of the PPM load on Cycle No. 3525 / 3515."
+      },
+      {
+        "event_type": "detection",
+        "datetime": "20/11/2025 at 11:46:23 hrs",
+        "actor": "System",
+        "description": "Chamber Condensate Temperature Sensor 1 Fail alarm was triggered for 3 seconds."
+      },
+      {
+        "event_type": "reporting",
+        "datetime": "20/11/2025 at 12:50 hrs",
+        "actor": "Production/QA/Engineering",
+        "description": "Breakdown No. BD/PR/25-018 was raised for rectification."
+      },
+      {
+        "event_type": "deviation_logging",
+        "datetime": "20/11/2025 at 16:07 hrs",
+        "actor": "Deviation system / site quality",
+        "description": "Deviation DEV/PR/25/004 was initiated to investigate the event and identify root cause."
+      },
+      {
+        "event_type": "investigation_start",
+        "datetime": "2025-11-25",
+        "actor": "Investigation team",
+        "description": "Investigation date recorded; DMAIC and five-why analysis used."
+      },
+      {
+        "event_type": "resolution",
+        "datetime": "After repairs; trial cycles 3516, 3517, 3520, 3521",
+        "actor": "Engineering colleague (Employee ID: 921)",
+        "description": "Valve repaired, sensor wiring tightened, trial Bowie Dick / hot leak tests performed and found satisfactory."
+      }
+    ],
+    "persons": [
+      {
+        "employee_id": "1036",
+        "name": null,
+        "designation": null,
+        "department": "Production",
+        "roles_in_deviation": [
+          "discoverer"
+        ]
+      },
+      {
+        "employee_id": "921",
+        "name": null,
+        "designation": "Engineering colleague",
+        "department": "Engineering",
+        "roles_in_deviation": [
+          "interviewer",
+          "investigator",
+          "department_head"
+        ]
+      },
+      {
+        "employee_id": "868",
+        "name": null,
+        "designation": "Engineering colleague",
+        "department": "Engineering",
+        "roles_in_deviation": [
+          "involved_operator"
+        ]
+      }
+    ],
+    "equipment": [
+      {
+        "equipment_id": "E/PR/019",
+        "name": "HPHV Steam Sterilizer",
+        "make": null,
+        "type": "equipment",
+        "location_room_id": "GF-73",
+        "location_name": "Autoclave room",
+        "operating_parameters": "Sterilization temperature range 121.1°C to 124.0°C; chamber pressure 1.03 to 1.3 bar",
+        "associated_software": null
+      },
+      {
+        "equipment_id": "Valve 101",
+        "name": "Jacket steam inlet valve",
+        "make": null,
+        "type": "equipment",
+        "location_room_id": null,
+        "location_name": "Jacket steam inlet line",
+        "operating_parameters": "Should function normally without continuous raw steam ingress",
+        "associated_software": null
+      },
+      {
+        "equipment_id": "T1",
+        "name": "Chamber condensate temperature sensor 1",
+        "make": null,
+        "type": "instrument",
+        "location_room_id": null,
+        "location_name": "Drain point",
+        "operating_parameters": "Sterilization initiation threshold 121.7°C",
+        "associated_software": null
+      },
+      {
+        "equipment_id": "T4",
+        "name": "Temperature sensor T4",
+        "make": null,
+        "type": "instrument",
+        "location_room_id": null,
+        "location_name": "Unloading right top side",
+        "operating_parameters": "Observed maximum 125.7°C during event",
+        "associated_software": null
+      }
+    ],
+    "locations": [
+      {
+        "room_id": "GF-73",
+        "room_name": "Autoclave room",
+        "floor": "GF",
+        "functional_area": "Sterilization / autoclave area",
+        "role_in_deviation": "occurrence_location"
+      },
+      {
+        "room_id": "Unloading area",
+        "room_name": "Unloading area",
+        "floor": null,
+        "functional_area": "Autoclave chamber unloading side",
+        "role_in_deviation": "occurrence_location"
+      }
+    ],
+    "sop_requirements": [
+      {
+        "sop_number": "SOP/DP/PR/018",
+        "title": "Operation and Cleaning of HPHV Steam Sterilizer",
+        "clause_number": "7.6.6.5",
+        "requirement_text": "Maintain sterilization temperature between 121.1°C and 124.0°C during operation.",
+        "role": "violated_requirement"
+      },
+      {
+        "sop_number": "SOP/DP/PR/018-R04",
+        "title": "Operation and Cleaning of HPHV Steam Sterilizer",
+        "clause_number": "7.6.6.5",
+        "requirement_text": "Sterilization temperature must be maintained within 121.1°C to 124.0°C; cycle should not overshoot beyond the upper limit.",
+        "role": "referenced_procedure"
+      },
+      {
+        "sop_number": "SOP/DP/QA/008",
+        "title": "Root Cause Categorization",
+        "clause_number": "F04",
+        "requirement_text": "Use the prescribed root cause categorization format for deviation classification.",
+        "role": "reviewed_document"
+      }
+    ],
+    "observed_vs_expected": [
+      {
+        "parameter_name": "Sterilization temperature",
+        "expected_value_or_range": "121.1°C to 124.0°C",
+        "observed_value": "Maximum 125.7°C (overshoot observed at 125.2°C)",
+        "unit": "°C",
+        "is_within_spec": false
+      },
+      {
+        "parameter_name": "Chamber pressure",
+        "expected_value_or_range": "1.03 to 1.3 bar",
+        "observed_value": "Maximum observed pressure 0.252 bar",
+        "unit": "bar",
+        "is_within_spec": false
+      },
+      {
+        "parameter_name": "Sterilization initiation threshold at drain sensor T1",
+        "expected_value_or_range": "121.7°C",
+        "observed_value": "T1 remained at 105.2°C",
+        "unit": "°C",
+        "is_within_spec": false
+      },
+      {
+        "parameter_name": "Jacket pressure",
+        "expected_value_or_range": "Normal operating range (not specified)",
+        "observed_value": "Increased up to 2.8 bar",
+        "unit": "bar",
+        "is_within_spec": false
+      }
+    ],
+    "products_materials": [
+      {
+        "name": "Insulin Injection Biphasic Isophane Ph. Eur./IP 100 IU/mL, 3 mL Cartridge",
+        "batch_number": "B042527518",
+        "ar_number": null,
+        "storage_condition": null,
+        "disposition": "not affected"
+      },
+      {
+        "name": "PPM (Plunger stopper and combi seals)",
+        "batch_number": null,
+        "ar_number": null,
+        "storage_condition": null,
+        "disposition": "discarded"
+      },
+      {
+        "name": "Glass beads",
+        "batch_number": null,
+        "ar_number": null,
+        "storage_condition": null,
+        "disposition": "reused"
+      }
+    ],
+    "software_systems": [],
+    "vendors": [
+      {
+        "vendor_name": "Vendor of glass beads",
+        "role": "equipment_manufacturer",
+        "visit_date": null,
+        "findings": "Repeated sterilization up to three cycles does not impact glass beads made of USP Class VI compliant material.",
+        "recommendations": "Glass beads can be reused up to three repeat cycles."
+      }
+    ],
+    "alarms_events": [
+      {
+        "alarm_type": "Chamber Condensate Temperature Sensor 1 Fail",
+        "count": 1,
+        "time_period": "3 seconds",
+        "equipment_id": "T1",
+        "consequence": "Sensor fail alarm triggered during heat-up phase."
+      },
+      {
+        "alarm_type": "temperature overshoot alarm",
+        "count": 1,
+        "time_period": "Cycle 3516",
+        "equipment_id": "E/PR/019",
+        "consequence": "Trial cycle aborted due to high jacket pressure."
+      }
+    ],
+    "work_orders": [
+      {
+        "wo_number": "BD/PR/25-018",
+        "type": "breakdown",
+        "purpose": "Rectification of malfunctioning jacket steam inlet valve and sensor wiring issue."
+      }
+    ],
+    "causal_chain": {
+      "methodology": "Five Why",
+      "steps": [
+        {
+          "step_number": 1,
+          "why_question": "Why was the cycle aborted manually in heat up phase?",
+          "answer": "Because the cycle remained stuck in the heat-up phase for approximately 1 hour and 24 minutes.",
+          "is_root_cause": false
+        },
+        {
+          "step_number": 2,
+          "why_question": "Why did the cycle remain stuck in the heat up phase for 1 hour and 24 minutes?",
+          "answer": "Because drain sensor T1 did not reach the required sterilization temperature of 121.1°C.",
+          "is_root_cause": false
+        },
+        {
+          "step_number": 3,
+          "why_question": "Why did drain sensor T1 not reach the required temperature?",
+          "answer": "Because chamber pressure was low, with maximum observed pressure of 0.252 bar.",
+          "is_root_cause": false
+        },
+        {
+          "step_number": 4,
+          "why_question": "Why was the chamber pressure low?",
+          "answer": "Because incoming pure steam to the chamber stopped.",
+          "is_root_cause": false
+        },
+        {
+          "step_number": 5,
+          "why_question": "Why did incoming pure steam stop?",
+          "answer": "Because other chamber sensors reached sterilization temperature, causing control logic to stop pure steam supply despite low chamber pressure.",
+          "is_root_cause": false
+        },
+        {
+          "step_number": 6,
+          "why_question": "Why did all other chamber sensors reach sterilization temperature despite low chamber pressure?",
+          "answer": "Because jacket pressure increased up to 2.8 bar, influencing chamber temperature readings.",
+          "is_root_cause": false
+        },
+        {
+          "step_number": 7,
+          "why_question": "Why did jacket pressure increase up to 2.8 bar?",
+          "answer": "Because raw steam was continuously entering the jacket.",
+          "is_root_cause": false
+        },
+        {
+          "step_number": 8,
+          "why_question": "Why was raw steam continuously entering the jacket?",
+          "answer": "Because the jacket steam inlet valve (Valve 101) was malfunctioning.",
+          "is_root_cause": true
+        }
+      ],
+      "conclusion": "The most probable root cause was malfunction of jacket steam inlet valve (Valve 101), allowing continuous raw steam entry into the jacket and causing abnormal jacket pressure and apparent temperature overshoot."
+    },
+    "root_cause_classification": [
+      {
+        "level_1": "Equipment/Instrument",
+        "level_2": "Mechanical failure",
+        "level_3": "Not Applicable"
+      }
+    ],
+    "impact_assessments": [
+      {
+        "domain": "System",
+        "verdict": "No Impact",
+        "justification_summary": "The issue was rectified through breakdown action, and trial cycles/tests were satisfactory; the sterilizer is operating as intended.",
+        "key_evidence": "BD/PR/25-018 closed after satisfactory trial cycles 3520 and 3521."
+      },
+      {
+        "domain": "Document",
+        "verdict": "Impact",
+        "justification_summary": "PM checklist requires revision to add operational verification of jacket steam inlet valve (101), indicating a procedural/document control gap.",
+        "key_evidence": "No routine verification frequency defined for Valve 101."
+      },
+      {
+        "domain": "Product",
+        "verdict": "No Impact",
+        "justification_summary": "Additional PPM was issued and used for batch activities, and no product quality impact was anticipated.",
+        "key_evidence": "PPM from Cycle 3515 discarded; additional PPM used."
+      },
+      {
+        "domain": "Equipment",
+        "verdict": "No Impact",
+        "justification_summary": "Valve repair and sensor wiring correction restored equipment to intended function, and verification trials were satisfactory.",
+        "key_evidence": "Trial VLT/Bowie Dick and Hot Leak tests satisfactory after rectification."
+      },
+      {
+        "domain": "Patient Safety / Past Batches",
+        "verdict": "No Impact",
+        "justification_summary": "No evidence suggests patient safety risk or adverse impact to past batches; affected consumables were managed appropriately.",
+        "key_evidence": "No regulatory notification required; glass beads reused per vendor recommendation."
+      }
+    ],
+    "corrective_actions": [
+      {
+        "action_type": "immediate",
+        "description": "Inform production head and QA head; raise breakdown BD/PR/25-018 to rectify the issue; perform repairs and verification trials.",
+        "category": "equipment_repair",
+        "responsible_person": null,
+        "target_date": "20/11/2025"
+      },
+      {
+        "action_type": "corrective",
+        "description": "Revise PM checklist to include operation verification of jacket steam inlet valve (101).",
+        "category": "pm_checklist_revision",
+        "responsible_person": null,
+        "target_date": null
+      }
+    ],
+    "preventive_actions": [
+      {
+        "description": "Revise PM checklist to include operation verification of jacket steam inlet valve (101) during PM.",
+        "category": "pm_checklist_revision",
+        "scope": "HPHV Steam Sterilizer E/PR/019 / jacket steam inlet valve (101)",
+        "effectiveness_monitoring_required": false,
+        "interim_control_required": false,
+        "linked_root_cause": "Mechanical failure of jacket steam inlet valve / lack of routine verification"
+      }
+    ],
+    "recurrence_history": {
+      "is_repeat": true,
+      "previous_deviation_reference": "DEV/PR/25/002",
+      "previous_capa_description": "Previous deviation reference noted in the report; current report states the issue occurred for the first time in this context, but also flags recurrence by deviation reference.",
+      "previous_capa_effectiveness": "not_executed",
+      "reason_for_recurrence": "No defined regular frequency existed for verification of jacket steam inlet valve (101), allowing the mechanical issue to go undetected."
+    },
+    "horizontal_checks": [
+      {
+        "checked_item": "Routine Hot Leak Test (Cycle 3520)",
+        "finding": "no_discrepancy",
+        "details": "Found satisfactory after rectification."
+      },
+      {
+        "checked_item": "Bowie Dick Test (Cycle 3521)",
+        "finding": "no_discrepancy",
+        "details": "Found satisfactory after rectification."
+      },
+      {
+        "checked_item": "Trial Bowie Dick cycle 3517",
+        "finding": "no_discrepancy",
+        "details": "After jacket pressure adjustment, trial was satisfactory."
+      },
+      {
+        "checked_item": "Trial cycle 3516",
+        "finding": "discrepancy_found",
+        "details": "Temperature overshoot alarm triggered and cycle aborted due to high jacket pressure."
+      }
+    ],
+    "document_references": [
+      {
+        "document_number": "SOP/DP/PR/018-R03",
+        "document_type": "SOP",
+        "title": "Operation and cleaning of HPHV Steam sterilizer",
+        "status": "revised"
+      },
+      {
+        "document_number": "SOP/DP/PR/018-R04",
+        "document_type": "SOP",
+        "title": "Operation and Cleaning of HPHV Steam Sterilizer",
+        "status": "revised"
+      },
+      {
+        "document_number": "SOP/DP/QA/008-F04",
+        "document_type": "format",
+        "title": "Root Cause Categorization format",
+        "status": "in_place"
+      }
+    ],
+    "change_controls": [],
+    "gliner_entities": [
+      {
+        "text": "aseptic processing area",
+        "label": "location area",
+        "score": 0.886,
+        "source": "gliner"
+      },
+      {
+        "text": "unloading area",
+        "label": "location area",
+        "score": 0.875,
+        "source": "gliner"
+      },
+      {
+        "text": "Valve 101",
+        "label": "equipment name",
+        "score": 0.832,
+        "source": "gliner"
+      },
+      {
+        "text": "HPHV",
+        "label": "vendor company",
+        "score": 0.829,
+        "source": "gliner"
+      },
+      {
+        "text": "USP Class VI compliant material",
+        "label": "chemical material",
+        "score": 0.816,
+        "source": "gliner"
+      },
+      {
+        "text": "Valve No. 101",
+        "label": "equipment name",
+        "score": 0.766,
+        "source": "gliner"
+      },
+      {
+        "text": "chamber pressure",
+        "label": "process parameter",
+        "score": 0.753,
+        "source": "gliner"
+      },
+      {
+        "text": "glass beads",
+        "label": "chemical material",
+        "score": 0.704,
+        "source": "gliner"
+      },
+      {
+        "text": "GF-73",
+        "label": "location area",
+        "score": 0.701,
+        "source": "gliner"
+      },
+      {
+        "text": "Chamber Condensate Temperature Sensor 1 Fail",
+        "label": "alarm event",
+        "score": 0.695,
+        "source": "gliner"
+      },
+      {
+        "text": "engineering colleague",
+        "label": "person name",
+        "score": 0.693,
+        "source": "gliner"
+      },
+      {
+        "text": "Biphasic Isophane",
+        "label": "chemical material",
+        "score": 0.68,
+        "source": "gliner"
+      },
+      {
+        "text": "production colleague",
+        "label": "person name",
+        "score": 0.676,
+        "source": "gliner"
+      },
+      {
+        "text": "autoclave room",
+        "label": "location area",
+        "score": 0.674,
+        "source": "gliner"
+      },
+      {
+        "text": "sensor fail alarm",
+        "label": "alarm event",
+        "score": 0.671,
+        "source": "gliner"
+      },
+      {
+        "text": "E/PR/019",
+        "label": "equipment name",
+        "score": 0.67,
+        "source": "gliner"
+      },
+      {
+        "text": "bowie dick",
+        "label": "equipment name",
+        "score": 0.665,
+        "source": "gliner"
+      },
+      {
+        "text": "Employee ID: 1036",
+        "label": "person name",
+        "score": 0.662,
+        "source": "gliner"
+      },
+      {
+        "text": "QA head",
+        "label": "person name",
+        "score": 0.662,
+        "source": "gliner"
+      },
+      {
+        "text": "production head",
+        "label": "person name",
+        "score": 0.633,
+        "source": "gliner"
+      },
+      {
+        "text": "Cycle No. 3515",
+        "label": "product name",
+        "score": 0.597,
+        "source": "gliner"
+      },
+      {
+        "text": "Employee ID: 921",
+        "label": "person name",
+        "score": 0.595,
+        "source": "gliner"
+      },
+      {
+        "text": "T2",
+        "label": "equipment name",
+        "score": 0.594,
+        "source": "gliner"
+      },
+      {
+        "text": "temperature overshoot alarm",
+        "label": "alarm event",
+        "score": 0.588,
+        "source": "gliner"
+      },
+      {
+        "text": "T1",
+        "label": "equipment name",
+        "score": 0.571,
+        "source": "gliner"
+      },
+      {
+        "text": "Equipment/Instrument",
+        "label": "equipment name",
+        "score": 0.569,
+        "source": "gliner"
+      },
+      {
+        "text": "Breakdown No. BD/PR/25-018",
+        "label": "alarm event",
+        "score": 0.553,
+        "source": "gliner"
+      },
+      {
+        "text": "Deviation No. DEV/PR/25/004",
+        "label": "alarm event",
+        "score": 0.537,
+        "source": "gliner"
+      },
+      {
+        "text": "T5",
+        "label": "equipment name",
+        "score": 0.537,
+        "source": "gliner"
+      },
+      {
+        "text": "T3",
+        "label": "equipment name",
+        "score": 0.521,
+        "source": "gliner"
+      },
+      {
+        "text": "jacket pressure",
+        "label": "process parameter",
+        "score": 0.516,
+        "source": "gliner"
+      },
+      {
+        "text": "T4",
+        "label": "equipment name",
+        "score": 0.507,
+        "source": "gliner"
+      },
+      {
+        "text": "BD/PR/25-018",
+        "label": "vendor company",
+        "score": 0.5,
+        "source": "gliner"
+      },
+      {
+        "text": "HPHV Steam Sterilizer",
+        "label": "equipment name",
+        "score": 0.495,
+        "source": "gliner"
+      },
+      {
+        "text": "Employee Id: 868",
+        "label": "person name",
+        "score": 0.473,
+        "source": "gliner"
+      },
+      {
+        "text": "Insulin Injection Biphasic Isophane Ph. Eur.",
+        "label": "chemical material",
+        "score": 0.472,
+        "source": "gliner"
+      },
+      {
+        "text": "drain sensor",
+        "label": "equipment name",
+        "score": 0.462,
+        "source": "gliner"
+      },
+      {
+        "text": "PPM load",
+        "label": "process parameter",
+        "score": 0.445,
+        "source": "gliner"
+      },
+      {
+        "text": "Cycle No. 3525",
+        "label": "equipment name",
+        "score": 0.423,
+        "source": "gliner"
+      },
+      {
+        "text": "Batch No. B042527518",
+        "label": "equipment name",
+        "score": 0.415,
+        "source": "gliner"
+      },
+      {
+        "text": "raw steam",
+        "label": "chemical material",
+        "score": 0.41,
+        "source": "gliner"
+      },
+      {
+        "text": "material",
+        "label": "chemical material",
+        "score": 0.41,
+        "source": "gliner"
+      }
+    ],
+    "regex_entities": {
+      "equipment_id": [
+        "E/PR/019"
+      ],
+      "sop_number": [
+        "SOP/DP/PR/018",
+        "SOP/DP/PR/018-R03",
+        "SOP/DP/PR/018-R04",
+        "SOP/DP/QA/008"
+      ],
+      "employee_id": [
+        "1036",
+        "868",
+        "921"
+      ],
+      "batch_number": [
+        "B042527518"
+      ],
+      "room_id": [
+        "GF-73"
+      ],
+      "work_order": [
+        "BD/PR/25-018"
+      ],
+      "deviation_ref": [
+        "DEV/PR/25/002",
+        "DEV/PR/25/004"
+      ],
+      "date": [
+        "20/11/2025"
+      ]
+    }
+  },
+  "relations": [
+    {
+      "from": "DEV/PR/25/004",
+      "relation": "HAS_CATEGORY",
+      "to": "Minor"
+    },
+    {
+      "from": "DEV/PR/25/004",
+      "relation": "ORIGINATED_IN_DEPT",
+      "to": "PR"
+    },
+    {
+      "from": "DEV/PR/25/004",
+      "relation": "HAS_NONCONFORMANCE_TYPE",
+      "to": "Equipment/Instrument malfunction leading to sterilizer cycle temperature overshoot and cycle abort"
+    },
+    {
+      "from": "DEV/PR/25/004",
+      "relation": "HAS_TIMELINE_EVENT",
+      "to": "occurrence:20/11/2025 at approximately 11:11 hrs"
+    },
+    {
+      "from": "DEV/PR/25/004",
+      "relation": "HAS_TIMELINE_EVENT",
+      "to": "detection:20/11/2025 at 11:46:23 hrs"
+    },
+    {
+      "from": "DEV/PR/25/004",
+      "relation": "HAS_TIMELINE_EVENT",
+      "to": "reporting:20/11/2025 at 12:50 hrs"
+    },
+    {
+      "from": "DEV/PR/25/004",
+      "relation": "HAS_TIMELINE_EVENT",
+      "to": "deviation_logging:20/11/2025 at 16:07 hrs"
+    },
+    {
+      "from": "DEV/PR/25/004",
+      "relation": "HAS_TIMELINE_EVENT",
+      "to": "investigation_start:2025-11-25"
+    },
+    {
+      "from": "DEV/PR/25/004",
+      "relation": "HAS_TIMELINE_EVENT",
+      "to": "resolution:After repairs; trial cycles 3516, 3517, 3520, 3521"
+    },
+    {
+      "from": "DEV/PR/25/004",
+      "relation": "DISCOVERED_BY",
+      "to": "1036"
+    },
+    {
+      "from": "DEV/PR/25/004",
+      "relation": "INVOLVES_PERSON_INTERVIEWER",
+      "to": "921"
+    },
+    {
+      "from": "DEV/PR/25/004",
+      "relation": "INVOLVES_PERSON_INVESTIGATOR",
+      "to": "921"
+    },
+    {
+      "from": "DEV/PR/25/004",
+      "relation": "INVOLVES_PERSON_DEPARTMENT_HEAD",
+      "to": "921"
+    },
+    {
+      "from": "DEV/PR/25/004",
+      "relation": "CAUSED_BY_PERSON",
+      "to": "868"
+    },
+    {
+      "from": "DEV/PR/25/004",
+      "relation": "AFFECTS_EQUIPMENT",
+      "to": "E/PR/019"
+    },
+    {
+      "from": "E/PR/019",
+      "relation": "LOCATED_AT",
+      "to": "GF-73"
+    },
+    {
+      "from": "DEV/PR/25/004",
+      "relation": "AFFECTS_EQUIPMENT",
+      "to": "Valve 101"
+    },
+    {
+      "from": "DEV/PR/25/004",
+      "relation": "AFFECTS_EQUIPMENT",
+      "to": "T1"
+    },
+    {
+      "from": "DEV/PR/25/004",
+      "relation": "AFFECTS_EQUIPMENT",
+      "to": "T4"
+    },
+    {
+      "from": "DEV/PR/25/004",
+      "relation": "OCCURRED_AT",
+      "to": "GF-73"
+    },
+    {
+      "from": "DEV/PR/25/004",
+      "relation": "OCCURRED_AT",
+      "to": "Unloading area"
+    },
+    {
+      "from": "DEV/PR/25/004",
+      "relation": "VIOLATES_REQUIREMENT",
+      "to": "SOP/DP/PR/018 clause 7.6.6.5"
+    },
+    {
+      "from": "DEV/PR/25/004",
+      "relation": "REFERENCES_SOP",
+      "to": "SOP/DP/PR/018-R04 clause 7.6.6.5"
+    },
+    {
+      "from": "DEV/PR/25/004",
+      "relation": "REVIEWED_DOCUMENT",
+      "to": "SOP/DP/QA/008 clause F04"
+    },
+    {
+      "from": "DEV/PR/25/004",
+      "relation": "HAS_ROOT_CAUSE",
+      "to": "Equipment/Instrument/Mechanical failure/Not Applicable"
+    },
+    {
+      "from": "DEV/PR/25/004",
+      "relation": "HAS_IMPACT_ASSESSMENT",
+      "to": "System: No Impact"
+    },
+    {
+      "from": "DEV/PR/25/004",
+      "relation": "HAS_IMPACT_ASSESSMENT",
+      "to": "Document: Impact"
+    },
+    {
+      "from": "DEV/PR/25/004",
+      "relation": "HAS_IMPACT_ASSESSMENT",
+      "to": "Product: No Impact"
+    },
+    {
+      "from": "DEV/PR/25/004",
+      "relation": "HAS_IMPACT_ASSESSMENT",
+      "to": "Equipment: No Impact"
+    },
+    {
+      "from": "DEV/PR/25/004",
+      "relation": "HAS_IMPACT_ASSESSMENT",
+      "to": "Patient Safety / Past Batches: No Impact"
+    },
+    {
+      "from": "DEV/PR/25/004",
+      "relation": "HAS_IMMEDIATE_ACTION",
+      "to": "Inform production head and QA head; raise breakdown BD/PR/25-018 to rectify the "
+    },
+    {
+      "from": "DEV/PR/25/004",
+      "relation": "HAS_CORRECTIVE_ACTION",
+      "to": "Revise PM checklist to include operation verification of jacket steam inlet valv"
+    },
+    {
+      "from": "DEV/PR/25/004",
+      "relation": "HAS_PREVENTIVE_ACTION",
+      "to": "Revise PM checklist to include operation verification of jacket steam inlet valv"
+    },
+    {
+      "from": "DEV/PR/25/004",
+      "relation": "TRIGGERED_WORKORDER",
+      "to": "BD/PR/25-018"
+    },
+    {
+      "from": "DEV/PR/25/004",
+      "relation": "INVOLVES_VENDOR",
+      "to": "Vendor of glass beads"
+    },
+    {
+      "from": "T1",
+      "relation": "TRIGGERED_ALARM",
+      "to": "Chamber Condensate Temperature Sensor 1 Fail"
+    },
+    {
+      "from": "E/PR/019",
+      "relation": "TRIGGERED_ALARM",
+      "to": "temperature overshoot alarm"
+    },
+    {
+      "from": "DEV/PR/25/004",
+      "relation": "AFFECTS_PRODUCT",
+      "to": "Insulin Injection Biphasic Isophane Ph. Eur./IP 100 IU/mL, 3 mL Cartridge"
+    },
+    {
+      "from": "DEV/PR/25/004",
+      "relation": "AFFECTS_PRODUCT",
+      "to": "PPM (Plunger stopper and combi seals)"
+    },
+    {
+      "from": "DEV/PR/25/004",
+      "relation": "AFFECTS_PRODUCT",
+      "to": "Glass beads"
+    },
+    {
+      "from": "DEV/PR/25/004",
+      "relation": "IS_REPEAT_OF",
+      "to": "DEV/PR/25/002"
+    },
+    {
+      "from": "why_step_1",
+      "relation": "CAUSED_BY",
+      "to": "why_step_2"
+    },
+    {
+      "from": "why_step_2",
+      "relation": "CAUSED_BY",
+      "to": "why_step_3"
+    },
+    {
+      "from": "why_step_3",
+      "relation": "CAUSED_BY",
+      "to": "why_step_4"
+    },
+    {
+      "from": "why_step_4",
+      "relation": "CAUSED_BY",
+      "to": "why_step_5"
+    },
+    {
+      "from": "why_step_5",
+      "relation": "CAUSED_BY",
+      "to": "why_step_6"
+    },
+    {
+      "from": "why_step_6",
+      "relation": "CAUSED_BY",
+      "to": "why_step_7"
+    },
+    {
+      "from": "why_step_7",
+      "relation": "CAUSED_BY",
+      "to": "why_step_8"
+    },
+    {
+      "from": "DEV/PR/25/004",
+      "relation": "REFERENCES_DOCUMENT",
+      "to": "SOP/DP/PR/018-R03"
+    },
+    {
+      "from": "DEV/PR/25/004",
+      "relation": "REFERENCES_DOCUMENT",
+      "to": "SOP/DP/PR/018-R04"
+    },
+    {
+      "from": "DEV/PR/25/004",
+      "relation": "REFERENCES_DOCUMENT",
+      "to": "SOP/DP/QA/008-F04"
+    }
+  ]
+}
