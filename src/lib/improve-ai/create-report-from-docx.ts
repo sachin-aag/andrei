@@ -11,6 +11,12 @@ import {
   isPostgresUniqueViolation,
   normalizeDeviationNo,
 } from "@/lib/reports/deviation-no";
+import {
+  insertReportManagers,
+  normalizeAssignedManagerIds,
+  primaryAssignedManagerId,
+  validateAssignedManagerIds,
+} from "@/lib/reports/managers";
 import { REPORT_SECTION_ROW_ORDER } from "@/types/sections";
 import {
   auditActorFromId,
@@ -119,6 +125,7 @@ export async function createReportFromDocxUpload(params: {
   authorId: string;
   deviationNo?: string;
   assignedManagerId?: string | null;
+  assignedManagerIds?: string[];
 }): Promise<CreateReportFromDocxResult> {
   const buf = await readDocxUpload(params.file);
   const importedContent = await docxBufferToImportedReportContent(buf);
@@ -140,6 +147,14 @@ export async function createReportFromDocxUpload(params: {
 
   const importedDate = importedContent.header.date;
   const importedOtherTools = importedContent.header.otherTools?.trim();
+  const assignedManagerIds = params.assignedManagerIds
+    ? normalizeAssignedManagerIds(params.assignedManagerIds)
+    : normalizeAssignedManagerIds([params.assignedManagerId ?? null]);
+  const validation = await validateAssignedManagerIds(assignedManagerIds);
+  if (!validation.ok) {
+    throw new Error("One or more selected reviewers are not managers");
+  }
+  const assignedManagerId = primaryAssignedManagerId(assignedManagerIds);
 
   let createdReportId: string | null = null;
   try {
@@ -148,7 +163,7 @@ export async function createReportFromDocxUpload(params: {
       .values({
         deviationNo,
         authorId: params.authorId,
-        assignedManagerId: params.assignedManagerId ?? null,
+        assignedManagerId,
         toolsUsed: importedContent.toolsUsed,
         ...(importedDate ? { date: importedDate } : {}),
         ...(importedOtherTools !== undefined ? { otherTools: importedOtherTools } : {}),
@@ -157,6 +172,7 @@ export async function createReportFromDocxUpload(params: {
 
     if (!report) throw new Error("Failed to create report");
     createdReportId = report.id;
+    await insertReportManagers(report.id, assignedManagerIds);
 
     await db.insert(reportSections).values(
       REPORT_SECTION_ROW_ORDER.map((section) => ({
@@ -198,7 +214,8 @@ export async function createReportFromDocxUpload(params: {
       newValue: {
         deviationNo,
         authorId: params.authorId,
-        assignedManagerId: params.assignedManagerId ?? null,
+        assignedManagerId,
+        assignedManagerIds,
         source: "improve_ai_docx",
       },
     });

@@ -10,6 +10,7 @@ import {
   bigint,
   uniqueIndex,
   index,
+  primaryKey,
   customType,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
@@ -224,6 +225,26 @@ export const reports = pgTable(
   })
 );
 
+export const reportManagers = pgTable(
+  "report_managers",
+  {
+    reportId: text("report_id")
+      .notNull()
+      .references(() => reports.id, { onDelete: "cascade" }),
+    managerId: text("manager_id")
+      .notNull()
+      .references(() => workspaceUsers.id, { onDelete: "cascade" }),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.reportId, t.managerId] }),
+    managerIdx: index("report_managers_manager_idx").on(t.managerId),
+  })
+);
+
 export const reportSections = pgTable(
   "report_sections",
   {
@@ -319,6 +340,18 @@ export const reportsRelations = relations(reports, ({ one, many }) => ({
   evaluations: many(criteriaEvaluations),
   comments: many(comments),
   sourceDocx: one(reportSourceDocx),
+  managers: many(reportManagers),
+}));
+
+export const reportManagersRelations = relations(reportManagers, ({ one }) => ({
+  report: one(reports, {
+    fields: [reportManagers.reportId],
+    references: [reports.id],
+  }),
+  manager: one(workspaceUsers, {
+    fields: [reportManagers.managerId],
+    references: [workspaceUsers.id],
+  }),
 }));
 
 export const reportSourceDocxRelations = relations(reportSourceDocx, ({ one }) => ({

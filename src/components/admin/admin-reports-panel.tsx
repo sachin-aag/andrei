@@ -173,9 +173,15 @@ export function AdminReportsPanel({
           <div className="grid gap-3">
             {reports.map((report) => {
               const author = usersById[report.authorId];
-              const manager = report.assignedManagerId
-                ? usersById[report.assignedManagerId]
-                : undefined;
+              const managerIds =
+                report.assignedManagerIds.length > 0
+                  ? report.assignedManagerIds
+                  : report.assignedManagerId
+                    ? [report.assignedManagerId]
+                    : [];
+              const managerNames = managerIds
+                .map((managerId) => usersById[managerId]?.name)
+                .filter((name): name is string => Boolean(name));
 
               return (
                 <ReportCard
@@ -183,7 +189,7 @@ export function AdminReportsPanel({
                   report={report}
                   href={`/admin/reports/${report.id}`}
                   authorName={author?.name}
-                  managerName={manager?.name}
+                  managerNames={managerNames}
                   openLabel="View"
                 />
               );

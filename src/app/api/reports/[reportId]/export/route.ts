@@ -7,6 +7,11 @@ import { hydrateUserDirectory } from "@/lib/auth/user-directory";
 import { listWorkspaceUsers } from "@/lib/auth/workspace-users";
 import { generateReportDocx } from "@/lib/export/generate-docx";
 import { listReportSignatures } from "@/lib/audit";
+import { canViewReport } from "@/lib/reports/access";
+import {
+  listReportManagerIds,
+  withAssignedManagerIds,
+} from "@/lib/reports/managers";
 
 export const runtime = "nodejs";
 
@@ -24,6 +29,12 @@ export async function GET(
     .where(eq(reports.id, reportId));
   if (!report) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
+  const managerIds = await listReportManagerIds(reportId);
+  const reportWithManagers = withAssignedManagerIds(report, managerIds);
+  if (!canViewReport(user, reportWithManagers)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const sectionRows = await db
     .select()
     .from(reportSections)
@@ -38,7 +49,7 @@ export async function GET(
   const signatures = await listReportSignatures(reportId);
 
   const buffer = await generateReportDocx({
-    report,
+    report: reportWithManagers,
     sections: sectionRows.map((r) => ({
       id: r.id,
       reportId: r.reportId,

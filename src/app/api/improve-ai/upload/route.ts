@@ -4,6 +4,7 @@ import { createReportFromDocxUpload } from "@/lib/improve-ai/create-report-from-
 import { createImproveAiSession } from "@/lib/improve-ai/store";
 import { ImproveAiEvaluationError } from "@/lib/improve-ai/evaluate-report";
 import { DUPLICATE_DEVIATION_NO_ERROR } from "@/lib/reports/deviation-no";
+import { managerIdsFromFormData } from "@/lib/reports/managers";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -17,9 +18,7 @@ export async function POST(req: Request) {
   const form = await req.formData();
   const file = form.get("file");
   const deviationNoRaw = form.get("deviationNo");
-  const mgrRaw = form.get("assignedManagerId");
-  const assignedManagerId =
-    mgrRaw === "" || mgrRaw === null ? null : String(mgrRaw);
+  const assignedManagerIds = managerIdsFromFormData(form);
 
   if (!(file instanceof File) || file.size === 0) {
     return NextResponse.json({ error: "A .docx file is required" }, { status: 400 });
@@ -31,7 +30,7 @@ export async function POST(req: Request) {
       authorId: user.id,
       deviationNo:
         typeof deviationNoRaw === "string" ? deviationNoRaw : undefined,
-      assignedManagerId,
+      assignedManagerIds,
     });
 
     const session = await createImproveAiSession({
