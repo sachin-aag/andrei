@@ -93,6 +93,18 @@ export async function replyToMarginComment(
   commentText: string,
   replyText: string
 ): Promise<void> {
+  await openMarginCommentReply(page, commentText);
+  const margin = reviewMargin(page);
+  await margin.getByPlaceholder(/^reply/i).fill(replyText);
+  await margin.getByRole("button", { name: /^reply$/i }).click();
+  await expect(margin.getByText(replyText)).toBeVisible({ timeout: 15_000 });
+}
+
+/** Opens an expanded margin comment card with the reply field focused. */
+export async function openMarginCommentReply(
+  page: Page,
+  commentText: string
+): Promise<void> {
   await collapseReportSidebar(page);
   const margin = reviewMargin(page);
   await expect(margin.getByText(commentText)).toBeVisible({ timeout: 15_000 });
@@ -101,7 +113,5 @@ export async function replyToMarginComment(
     .filter({ hasText: commentText })
     .first()
     .click();
-  await margin.getByPlaceholder(/^reply/i).fill(replyText);
-  await margin.getByRole("button", { name: /^reply$/i }).click();
-  await expect(margin.getByText(replyText)).toBeVisible({ timeout: 15_000 });
+  await expect(margin.getByPlaceholder(/^reply/i)).toBeVisible({ timeout: 15_000 });
 }

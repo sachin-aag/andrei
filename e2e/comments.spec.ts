@@ -8,7 +8,7 @@ import {
 import { createReport, deleteReport } from "./helpers/reports";
 import { signedWorkflowPayload } from "./helpers/signing";
 import {
-  collapseReportSidebar,
+  openMarginCommentReply,
   postReviewMarginNote,
   replyToMarginComment,
   reviewMargin,
@@ -101,17 +101,9 @@ test.describe("comments", () => {
     await authenticateAsEngineer(page);
     await page.goto(`/reports/${reportId}/edit`);
     await page.setViewportSize({ width: 1280, height: 900 });
-    await collapseReportSidebar(page);
 
-    const margin = reviewMargin(page);
-    await expect(margin.getByText(commentText)).toBeVisible({ timeout: 15_000 });
-    await margin
-      .locator('[role="button"]')
-      .filter({ hasText: commentText })
-      .first()
-      .click();
-
-    const replyField = margin.getByPlaceholder(/^reply/i);
+    await openMarginCommentReply(page, commentText);
+    const replyField = reviewMargin(page).getByPlaceholder(/^reply/i);
     await replyField.click();
     await page.keyboard.type("hello world test");
 
