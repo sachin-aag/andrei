@@ -73,4 +73,28 @@ describe("canViewReport", () => {
       )
     ).toBe(false);
   });
+
+  it("allows QA viewers to view active reports", () => {
+    expect(
+      canViewReport({ id: "qa-1", role: "qa" }, report)
+    ).toBe(true);
+  });
+
+  it("denies QA viewers access to tombstoned reports", () => {
+    expect(
+      canViewReport(
+        { id: "qa-1", role: "qa" },
+        { ...report, deletedAt: new Date() }
+      )
+    ).toBe(false);
+  });
+
+  it("allows admins to view tombstoned reports", () => {
+    expect(
+      canViewReport(
+        { id: "admin-1", role: "admin" },
+        { ...report, deletedAt: new Date() }
+      )
+    ).toBe(true);
+  });
 });

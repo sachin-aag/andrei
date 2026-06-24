@@ -184,7 +184,13 @@ export function ReportWorkspace({
     setSignDialog("rejection");
   };
 
-  const runSignedAction = async (password: string) => {
+  const runSignedAction = async ({
+    userId,
+    password,
+  }: {
+    userId: string;
+    password: string;
+  }) => {
     if (!signDialog) return;
 
     const endpoints: Record<SignatureMeaningUi, string> = {
@@ -205,7 +211,7 @@ export function ReportWorkspace({
       const res = await fetch(`/api/reports/${report.id}/${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ password }),
+        body: JSON.stringify({ userId, password }),
       });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
@@ -325,6 +331,7 @@ export function ReportWorkspace({
       <ElectronicSignatureDialog
         open={signDialog != null}
         meaning={signDialog ?? "submission"}
+        defaultUserId={getUser(currentUserId)?.email ?? ""}
         loading={signingInFlight}
         onOpenChange={(open) => {
           if (!open && !signingInFlight) setSignDialog(null);

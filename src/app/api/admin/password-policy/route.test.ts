@@ -96,6 +96,9 @@ describe("/api/admin/password-policy", () => {
     await expect(response.json()).resolves.toEqual({
       expiryDays: 90,
       inactivityTimeoutMinutes: 10,
+      warningDays: 14,
+      failedLoginAttemptLimit: 3,
+      passwordHistoryLimit: 3,
     });
   });
 
@@ -120,6 +123,9 @@ describe("/api/admin/password-policy", () => {
     await expect(response.json()).resolves.toEqual({
       expiryDays: 120,
       inactivityTimeoutMinutes: 10,
+      warningDays: 14,
+      failedLoginAttemptLimit: 3,
+      passwordHistoryLimit: 3,
     });
   });
 
@@ -139,6 +145,9 @@ describe("/api/admin/password-policy", () => {
     await expect(response.json()).resolves.toEqual({
       expiryDays: 90,
       inactivityTimeoutMinutes: 15,
+      warningDays: 14,
+      failedLoginAttemptLimit: 3,
+      passwordHistoryLimit: 3,
     });
   });
 });

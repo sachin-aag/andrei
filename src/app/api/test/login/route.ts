@@ -34,6 +34,8 @@ function titleForTestRole(role: UserRole): string {
       return "Manager";
     case "admin":
       return "Admin";
+    case "qa":
+      return "QA Viewer";
     default: {
       const exhaustive: never = role;
       return exhaustive;

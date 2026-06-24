@@ -1,5 +1,6 @@
+import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
-import { desc, eq, or, sql } from "drizzle-orm";
+import { and, desc, eq, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { comments, reportManagers, reports, reportSections } from "@/db/schema";
@@ -26,6 +27,7 @@ import {
   validateAssignedManagerIds,
   withAssignedManagerIds,
 } from "@/lib/reports/managers";
+import { activeReportsFilter } from "@/lib/reports/tombstone";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -40,7 +42,7 @@ export async function GET() {
       rows = await db
         .select()
         .from(reports)
-        .where(eq(reports.authorId, user.id))
+        .where(and(eq(reports.authorId, user.id), activeReportsFilter()))
         .orderBy(desc(reports.updatedAt));
       break;
     case "manager":
@@ -48,17 +50,27 @@ export async function GET() {
         .select()
         .from(reports)
         .where(
-          or(
-            eq(reports.assignedManagerId, user.id),
-            sql`exists (
+          and(
+            activeReportsFilter(),
+            or(
+              eq(reports.assignedManagerId, user.id),
+              sql`exists (
               select 1 from ${reportManagers}
               where ${reportManagers.reportId} = ${reports.id}
               and ${reportManagers.managerId} = ${user.id}
             )`,
-            eq(reports.status, "submitted"),
-            eq(reports.status, "in_review")
+              eq(reports.status, "submitted"),
+              eq(reports.status, "in_review")
+            )
           )
         )
+        .orderBy(desc(reports.updatedAt));
+      break;
+    case "qa":
+      rows = await db
+        .select()
+        .from(reports)
+        .where(activeReportsFilter())
         .orderBy(desc(reports.updatedAt));
       break;
     case "admin":

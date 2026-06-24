@@ -54,6 +54,9 @@ describe("red color round-trip (DEV-QC-26-001 draft)", () => {
       status: "draft" as const,
       authorId: "1",
       assignedManagerId: "5",
+      reviewedById: null,
+      deletedAt: null,
+      deletedById: null,
       createdAt: iso,
       updatedAt: iso,
     };

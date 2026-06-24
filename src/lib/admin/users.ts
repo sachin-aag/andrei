@@ -11,6 +11,9 @@ export type AdminUser = {
   title: string;
   hasPassword: boolean;
   mustChangePassword: boolean;
+  isActive: boolean;
+  lockedAt: Date | null;
+  deactivatedAt: Date | null;
 };
 
 export function adminUserFromRow(
@@ -24,6 +27,9 @@ export function adminUserFromRow(
     title: row.title,
     hasPassword: row.passwordHash !== null,
     mustChangePassword: row.mustChangePassword,
+    isActive: row.deactivatedAt == null,
+    lockedAt: row.lockedAt,
+    deactivatedAt: row.deactivatedAt,
   };
 }
 
@@ -32,4 +38,10 @@ export async function listAdminUsers(): Promise<AdminUser[]> {
     orderBy: [asc(workspaceUsers.name)],
   });
   return rows.map(adminUserFromRow);
+}
+
+export async function findWorkspaceUserByEmail(email: string) {
+  return db.query.workspaceUsers.findFirst({
+    where: (t, { eq }) => eq(t.email, email.toLowerCase()),
+  });
 }

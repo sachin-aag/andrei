@@ -201,6 +201,21 @@ export async function DELETE(
   if (existing.authorId !== user.id) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
+  if (existing.status === "approved") {
+    return NextResponse.json(
+      { error: "Approved reports cannot be deleted" },
+      { status: 409 }
+    );
+  }
+  if (existing.deletedAt) {
+    return NextResponse.json({ ok: true });
+  }
+
+  const deletedAt = new Date();
+  await db
+    .update(reports)
+    .set({ deletedAt, deletedById: user.id, updatedAt: deletedAt })
+    .where(eq(reports.id, reportId));
 
   await recordAuditEvent({
     actor: auditActorFromUser(user),
@@ -208,15 +223,15 @@ export async function DELETE(
     entityType: "report",
     entityId: reportId,
     reportId,
-    summary: `Deleted report ${existing.deviationNo}`,
+    summary: `Soft-deleted report ${existing.deviationNo}`,
     oldValue: {
       deviationNo: existing.deviationNo,
       status: existing.status,
       authorId: existing.authorId,
     },
+    newValue: { deletedAt: deletedAt.toISOString(), deletedById: user.id },
   });
 
-  await db.delete(reports).where(eq(reports.id, reportId));
   revalidatePath("/");
   return NextResponse.json({ ok: true });
 }

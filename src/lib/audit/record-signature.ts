@@ -7,6 +7,10 @@ import {
 import type { AuditActorSnapshot } from "./actor";
 import { recordAuditEvent } from "./record-audit-event";
 import { checkpointAllSectionsForReport } from "./record-section-version";
+import {
+  computeReportContentHash,
+  computeReportVersionSeq,
+} from "@/lib/reports/compute-content-hash";
 
 const MEANING_TO_ACTION: Record<SignatureMeaning, AuditAction> = {
   submission: "signature_submission",
@@ -29,6 +33,11 @@ export type RecordSignatureInput = {
 export async function recordElectronicSignature(input: RecordSignatureInput) {
   await checkpointAllSectionsForReport(input.reportId);
 
+  const [contentHash, signedVersionSeq] = await Promise.all([
+    computeReportContentHash(input.reportId),
+    computeReportVersionSeq(input.reportId),
+  ]);
+
   const auditEvent = await recordAuditEvent({
     actor: input.actor,
     action: MEANING_TO_ACTION[input.meaning],
@@ -40,6 +49,8 @@ export async function recordElectronicSignature(input: RecordSignatureInput) {
       signerId: input.actor.id,
       signerName: input.actor.name,
       meaning: input.meaning,
+      contentHash,
+      signedVersionSeq,
     },
   });
 
@@ -50,12 +61,14 @@ export async function recordElectronicSignature(input: RecordSignatureInput) {
       signerId: input.actor.id,
       signerName: input.actor.name,
       meaning: input.meaning,
-      authMethod: "password",
+      authMethod: "password+user_id",
+      contentHash,
+      signedVersionSeq,
       auditEventId: auditEvent.id,
     })
     .returning();
 
-  return { signature, auditEvent };
+  return { signature, auditEvent, contentHash, signedVersionSeq };
 }
 
 export async function listSignaturesForReport(reportId: string) {
