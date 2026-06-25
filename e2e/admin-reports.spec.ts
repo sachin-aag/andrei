@@ -4,6 +4,7 @@ import {
   loginAsEngineerWithResponse,
   loginAsManagerWithResponse,
 } from "./helpers/auth";
+import { gotoWithNavigationRetry } from "./helpers/navigation";
 import { createReport, deleteReport } from "./helpers/reports";
 import { signedWorkflowPayload } from "./helpers/signing";
 
@@ -40,7 +41,9 @@ test.describe("admin reports view", () => {
     expect(submitRes.ok(), `submit failed (${submitRes.status()})`).toBeTruthy();
 
     await loginAsAdminWithResponse(page);
-    await page.goto("/admin/reports", { waitUntil: "domcontentloaded" });
+    await gotoWithNavigationRetry(page, "/admin/reports", {
+      waitUntil: "domcontentloaded",
+    });
     await expect(page.getByRole("heading", { name: /^reports$/i })).toBeVisible({
       timeout: 30_000,
     });
@@ -51,7 +54,9 @@ test.describe("admin reports view", () => {
 
     await expect(page.getByText(deviationNo!)).toBeVisible({ timeout: 15_000 });
 
-    await page.goto(`/admin/reports/${reportId}`, { waitUntil: "domcontentloaded" });
+    await gotoWithNavigationRetry(page, `/admin/reports/${reportId}`, {
+      waitUntil: "domcontentloaded",
+    });
     await expect(page.getByRole("link", { name: /admin reports/i })).toBeVisible({
       timeout: 30_000,
     });
@@ -66,7 +71,9 @@ test.describe("admin reports view", () => {
   test("admin report entry redirects from /reports/[id]", async ({ page }) => {
     test.skip(!reportId || !deviationNo, "prior step did not create report");
     await loginAsAdminWithResponse(page);
-    await page.goto(`/reports/${reportId}`, { waitUntil: "domcontentloaded" });
+    await gotoWithNavigationRetry(page, `/reports/${reportId}`, {
+      waitUntil: "domcontentloaded",
+    });
     await expect(page).toHaveURL(new RegExp(`/admin/reports/${reportId}$`));
     await expect(page.getByText(deviationNo!)).toBeVisible({ timeout: 30_000 });
   });
