@@ -3,8 +3,8 @@ import {
   authenticateAsEngineer,
   authenticateAsManager,
   fetchTestManagerUser,
-  loginAsEngineer,
 } from "./helpers/auth";
+import { browserCookieHeaders } from "./helpers/api";
 import { createReport, deleteReport } from "./helpers/reports";
 import { signedWorkflowPayload } from "./helpers/signing";
 import {
@@ -20,20 +20,21 @@ test.describe("comments", () => {
 
   test.beforeEach(async ({ page }) => {
     const manager = await fetchTestManagerUser(page);
-    await loginAsEngineer(page);
+    await authenticateAsEngineer(page);
     const created = await createReport(page, {
       assignedManagerId: manager.userId,
     });
     reportId = created.id;
     const submitRes = await page.request.post(`/api/reports/${reportId}/submit`, {
       data: signedWorkflowPayload(),
+      headers: await browserCookieHeaders(page),
     });
     expect(submitRes.ok(), `submit failed (${submitRes.status()})`).toBeTruthy();
   });
 
   test.afterEach(async ({ page }) => {
     if (reportId) {
-      await loginAsEngineer(page);
+      await authenticateAsEngineer(page);
       await deleteReport(page, reportId);
       reportId = null;
     }
@@ -57,6 +58,7 @@ test.describe("comments", () => {
         content: "x".repeat(1025),
         section: "define",
       },
+      headers: await browserCookieHeaders(page),
     });
     expect(res.status()).toBe(400);
     const body = (await res.json()) as { error?: string };
@@ -66,12 +68,16 @@ test.describe("comments", () => {
   test("engineer replies to manager comment", async ({ page }) => {
     const commentText = "Manager note for reply test.";
     await authenticateAsManager(page);
-    const postRes = await page.request.post(`/api/reports/${reportId}/comments`, {
-      data: {
-        content: commentText,
-        section: "define",
+    const postRes = await page.request.post(
+      `/api/reports/${reportId}/comments`,
+      {
+        data: {
+          content: commentText,
+          section: "define",
+        },
+        headers: await browserCookieHeaders(page),
       },
-    });
+    );
     expect(postRes.ok()).toBeTruthy();
 
     await authenticateAsEngineer(page);
