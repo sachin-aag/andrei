@@ -9,6 +9,7 @@ import {
   History,
   Loader2,
   MessageSquare,
+  Pencil,
   Send,
 } from "lucide-react";
 
@@ -40,6 +41,8 @@ type ReportWorkspaceHeaderProps = {
   auditHref?: string;
   backHref?: string;
   backLabel?: string;
+  canEditDetails?: boolean;
+  onEditDetails?: () => void;
 };
 
 export function ReportWorkspaceHeader({
@@ -60,6 +63,8 @@ export function ReportWorkspaceHeader({
   auditHref,
   backHref = "/",
   backLabel = "Reports",
+  canEditDetails = false,
+  onEditDetails,
 }: ReportWorkspaceHeaderProps) {
   const title = report.deviationNo || "Untitled";
   const [navigatingBack, setNavigatingBack] = useState(false);
@@ -84,9 +89,21 @@ export function ReportWorkspaceHeader({
       </Button>
       <Separator orientation="vertical" className="h-6" />
       <div className="flex flex-col leading-tight min-w-0">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 min-w-0">
           <span className="font-semibold truncate">{title}</span>
           <StatusBadge status={report.status} />
+          {canEditDetails && onEditDetails ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-7 shrink-0 text-[var(--muted-foreground)]"
+              aria-label="Edit deviation number and reviewer managers"
+              onClick={onEditDetails}
+            >
+              <Pencil className="size-3.5" />
+            </Button>
+          ) : null}
         </div>
         <span className="text-xs text-[var(--muted-foreground)] truncate">
           {authorName ?? "Unknown author"}

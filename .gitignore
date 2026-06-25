@@ -59,6 +59,9 @@ package-lock.json
 # Local bulk deviation evaluation HTML (`npm run sample-eval-report`; CI uploads to artifacts instead)
 /reports/
 
+# Local hybrid deviation analysis output (generated JSON/XLSX)
+/output_hybrid/
+
 # Understand Anything knowledge graph
 .understand-anything/
 
