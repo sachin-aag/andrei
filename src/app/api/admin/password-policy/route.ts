@@ -20,11 +20,17 @@ const updateSchema = z
       .min(MIN_INACTIVITY_TIMEOUT_MINUTES)
       .max(MAX_INACTIVITY_TIMEOUT_MINUTES)
       .optional(),
+    warningDays: z.number().int().min(0).max(365).optional(),
+    failedLoginAttemptLimit: z.number().int().min(1).max(20).optional(),
+    passwordHistoryLimit: z.number().int().min(0).max(24).optional(),
   })
   .refine(
     (value) =>
       value.expiryDays !== undefined ||
-      value.inactivityTimeoutMinutes !== undefined
+      value.inactivityTimeoutMinutes !== undefined ||
+      value.warningDays !== undefined ||
+      value.failedLoginAttemptLimit !== undefined ||
+      value.passwordHistoryLimit !== undefined
   );
 
 async function requireAdmin() {
@@ -47,15 +53,22 @@ async function requireAdmin() {
   return { response: null, user };
 }
 
+function policyPayload(policy: Awaited<ReturnType<typeof getPasswordPolicy>>) {
+  return {
+    expiryDays: policy.expiryDays,
+    inactivityTimeoutMinutes: policy.inactivityTimeoutMinutes,
+    warningDays: policy.warningDays,
+    failedLoginAttemptLimit: policy.failedLoginAttemptLimit,
+    passwordHistoryLimit: policy.passwordHistoryLimit,
+  };
+}
+
 export async function GET() {
   const { response } = await requireAdmin();
   if (response) return response;
 
   const policy = await getPasswordPolicy();
-  return NextResponse.json({
-    expiryDays: policy.expiryDays,
-    inactivityTimeoutMinutes: policy.inactivityTimeoutMinutes,
-  });
+  return NextResponse.json(policyPayload(policy));
 }
 
 export async function PATCH(req: Request) {
@@ -78,21 +91,12 @@ export async function PATCH(req: Request) {
         entityType: "policy",
         entityId: "default",
         summary: "Updated password policy",
-        oldValue: {
-          expiryDays: previous.expiryDays,
-          inactivityTimeoutMinutes: previous.inactivityTimeoutMinutes,
-        },
-        newValue: {
-          expiryDays: policy.expiryDays,
-          inactivityTimeoutMinutes: policy.inactivityTimeoutMinutes,
-        },
+        oldValue: policyPayload(previous),
+        newValue: policyPayload(policy),
       });
     }
 
-    return NextResponse.json({
-      expiryDays: policy.expiryDays,
-      inactivityTimeoutMinutes: policy.inactivityTimeoutMinutes,
-    });
+    return NextResponse.json(policyPayload(policy));
   } catch {
     return NextResponse.json(
       { error: "Could not update password policy." },

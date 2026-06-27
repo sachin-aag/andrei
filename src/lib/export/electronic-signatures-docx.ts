@@ -5,6 +5,7 @@ export type DocxAuditSignature = {
   signerName: string;
   meaning: string;
   signedAt: Date;
+  contentHash?: string | null;
 };
 
 function escapeXml(text: string): string {
@@ -18,6 +19,12 @@ function escapeXml(text: string): string {
 function paragraphXml(text: string): string {
   return `<w:p><w:r><w:t xml:space="preserve">${escapeXml(text)}</w:t></w:r></w:p>`;
 }
+
+const MEANING_LABEL: Record<string, string> = {
+  submission: "Submitted for review",
+  approval: "Approved investigation report",
+  rejection: "Returned for feedback",
+};
 
 /** Appends Part 11 electronic signature records to the end of document.xml. */
 export function applyElectronicSignaturesToDocxZip(
@@ -36,10 +43,17 @@ export function applyElectronicSignaturesToDocxZip(
 
   const lines = [
     "Electronic Signatures (21 CFR Part 11)",
-    ...signatures.map(
-      (s) =>
-        `${s.signerName} — ${s.meaning} — ${format(s.signedAt, "yyyy-MM-dd HH:mm:ss 'UTC'")}`
-    ),
+    ...signatures.flatMap((s) => {
+      const meaning = MEANING_LABEL[s.meaning] ?? s.meaning;
+      const timestamp = format(s.signedAt, "yyyy-MM-dd HH:mm:ss 'UTC'");
+      const rows = [
+        `${s.signerName} — ${meaning} — ${timestamp}`,
+      ];
+      if (s.contentHash) {
+        rows.push(`Content hash (SHA-256): ${s.contentHash}`);
+      }
+      return rows;
+    }),
   ];
 
   const block = lines.map((line) => paragraphXml(line)).join("");

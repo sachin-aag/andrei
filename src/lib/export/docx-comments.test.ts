@@ -18,6 +18,9 @@ describe("Word comment export", () => {
       status: "draft",
       authorId: "598",
       assignedManagerId: null,
+      reviewedById: null,
+      deletedAt: null,
+      deletedById: null,
       createdAt: iso,
       updatedAt: iso,
     };

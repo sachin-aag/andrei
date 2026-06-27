@@ -17,7 +17,7 @@ export function ReportList({
 }: {
   reports: DashboardReport[];
   currentUserId: string;
-  userRole: "engineer" | "manager";
+  userRole: "engineer" | "manager" | "qa";
   usersById: Record<string, { name: string } | undefined>;
 }) {
   const router = useRouter();
@@ -85,7 +85,7 @@ export function ReportList({
   );
 }
 
-function EmptyState({ role }: { role: "engineer" | "manager" }) {
+function EmptyState({ role }: { role: "engineer" | "manager" | "qa" }) {
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center">
       <div className="size-16 rounded-2xl bg-[var(--brand-700)] flex items-center justify-center mb-4">
@@ -95,7 +95,9 @@ function EmptyState({ role }: { role: "engineer" | "manager" }) {
       <p className="text-sm text-[var(--muted-foreground)] max-w-md">
         {role === "engineer"
           ? "Use New Report above to create your first deviation investigation. Your draft will auto-save as you write."
-          : "Reports submitted by engineers will appear here for your review."}
+          : role === "qa"
+            ? "No investigation reports are available yet."
+            : "Reports submitted by engineers will appear here for your review."}
       </p>
     </div>
   );

@@ -1,0 +1,1066 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Andrei — 21 CFR Part 11 &amp; ALCOA++ Implemented Capabilities</title>
+
+    <!-- Fonts: Sora (display), IBM Plex Sans (body), IBM Plex Mono (clauses/IDs) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap"
+      rel="stylesheet"
+    />
+
+    <style>
+      /* ===========================================
+         THEME — Andrei brand palette
+         Change these to restyle the whole deck.
+         =========================================== */
+      :root {
+        --navy: #001838;
+        --navy-2: #0a2547;
+        --blue: #3d6fb5;
+        --blue-soft: #5b8ad0;
+        --ink: #0f1e33;
+        --muted: #5b6b82;
+        --bg: #f4f7fb;
+        --bg-2: #eaf0f8;
+        --card: #ffffff;
+        --line: #e2e8f2;
+        --done: #2e9e6b;
+        --road: #c2872e;
+        --skip: #7a8699;
+
+        --font-display: "Sora", sans-serif;
+        --font-body: "IBM Plex Sans", sans-serif;
+        --font-mono: "IBM Plex Mono", monospace;
+
+        /* Typography — clamp() for viewport fitting */
+        --title-size: clamp(2rem, 6vw, 4.5rem);
+        --h2-size: clamp(1.4rem, 3.6vw, 2.6rem);
+        --h3-size: clamp(1rem, 2vw, 1.4rem);
+        --body-size: clamp(0.78rem, 1.35vw, 1.05rem);
+        --small-size: clamp(0.62rem, 1vw, 0.82rem);
+
+        --slide-padding: clamp(1.4rem, 4vw, 4rem);
+        --content-gap: clamp(0.7rem, 2vw, 1.6rem);
+        --element-gap: clamp(0.3rem, 1vw, 0.9rem);
+
+        --ease: cubic-bezier(0.16, 1, 0.3, 1);
+        --dur: 0.7s;
+      }
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      /* ===========================================
+         VIEWPORT FITTING: MANDATORY BASE STYLES
+         =========================================== */
+      html,
+      body {
+        height: 100%;
+        overflow-x: hidden;
+      }
+      html {
+        scroll-snap-type: y mandatory;
+        scroll-behavior: smooth;
+      }
+      body {
+        font-family: var(--font-body);
+        background: var(--bg);
+        color: var(--ink);
+        -webkit-font-smoothing: antialiased;
+      }
+
+      .slide {
+        width: 100vw;
+        height: 100vh;
+        height: 100dvh;
+        overflow: hidden;
+        scroll-snap-align: start;
+        display: flex;
+        flex-direction: column;
+        position: relative;
+        background: var(--bg);
+      }
+      .slide-content {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        max-height: 100%;
+        overflow: hidden;
+        padding: var(--slide-padding);
+      }
+
+      img,
+      .image-container {
+        max-width: 100%;
+        max-height: min(50vh, 400px);
+        object-fit: contain;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
+        gap: clamp(0.5rem, 1.4vw, 1rem);
+      }
+
+      @media (max-height: 700px) {
+        :root {
+          --slide-padding: clamp(1rem, 3vw, 2.4rem);
+          --content-gap: clamp(0.5rem, 1.5vw, 1rem);
+          --h2-size: clamp(1.2rem, 3vw, 2rem);
+        }
+      }
+      @media (max-height: 600px) {
+        :root {
+          --slide-padding: clamp(0.7rem, 2.5vw, 1.6rem);
+          --body-size: clamp(0.7rem, 1.2vw, 0.92rem);
+        }
+        .nav-dots,
+        .keyboard-hint {
+          display: none;
+        }
+      }
+      @media (max-width: 600px) {
+        .grid {
+          grid-template-columns: 1fr;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          animation-duration: 0.01ms !important;
+          transition-duration: 0.2s !important;
+        }
+        html {
+          scroll-behavior: auto;
+        }
+      }
+
+      /* ===========================================
+         REVEAL ANIMATIONS (staggered on slide enter)
+         =========================================== */
+      .reveal {
+        opacity: 0;
+        transform: translateY(26px);
+        transition:
+          opacity var(--dur) var(--ease),
+          transform var(--dur) var(--ease);
+      }
+      .slide.visible .reveal {
+        opacity: 1;
+        transform: translateY(0);
+      }
+      .slide.visible .reveal:nth-child(1) { transition-delay: 0.06s; }
+      .slide.visible .reveal:nth-child(2) { transition-delay: 0.14s; }
+      .slide.visible .reveal:nth-child(3) { transition-delay: 0.22s; }
+      .slide.visible .reveal:nth-child(4) { transition-delay: 0.3s; }
+      .slide.visible .reveal:nth-child(5) { transition-delay: 0.38s; }
+      .slide.visible .reveal:nth-child(6) { transition-delay: 0.46s; }
+      .slide.visible .stagger > * {
+        opacity: 0;
+        transform: translateY(20px);
+        transition:
+          opacity 0.6s var(--ease),
+          transform 0.6s var(--ease);
+      }
+      .slide.visible .stagger > *:nth-child(1) { transition-delay: 0.18s; }
+      .slide.visible .stagger > *:nth-child(2) { transition-delay: 0.26s; }
+      .slide.visible .stagger > *:nth-child(3) { transition-delay: 0.34s; }
+      .slide.visible .stagger > *:nth-child(4) { transition-delay: 0.42s; }
+      .slide.visible .stagger > *:nth-child(5) { transition-delay: 0.5s; }
+      .slide.visible .stagger > *:nth-child(6) { transition-delay: 0.58s; }
+      .slide.visible .stagger > *:nth-child(7) { transition-delay: 0.66s; }
+      .slide.visible .stagger > *:nth-child(8) { transition-delay: 0.74s; }
+      .slide.visible .stagger > *:nth-child(9) { transition-delay: 0.82s; }
+      .slide.visible .stagger > * {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      /* ===========================================
+         SHARED COMPONENTS
+         =========================================== */
+      .topbar {
+        position: absolute;
+        top: clamp(1rem, 2.4vw, 2rem);
+        left: var(--slide-padding);
+        right: var(--slide-padding);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        z-index: 5;
+      }
+      .topbar img {
+        height: clamp(20px, 2.4vw, 30px);
+        width: auto;
+      }
+      .topbar .pagenum {
+        font-family: var(--font-mono);
+        font-size: var(--small-size);
+        color: var(--muted);
+        letter-spacing: 0.04em;
+      }
+
+      .kicker {
+        font-family: var(--font-mono);
+        font-size: var(--small-size);
+        font-weight: 600;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: var(--blue);
+        display: flex;
+        align-items: center;
+        gap: 0.6em;
+      }
+      .kicker::before {
+        content: "";
+        width: clamp(18px, 2vw, 30px);
+        height: 2px;
+        background: var(--blue);
+      }
+
+      h2.slide-title {
+        font-family: var(--font-display);
+        font-weight: 700;
+        font-size: var(--h2-size);
+        line-height: 1.05;
+        color: var(--navy);
+        letter-spacing: -0.01em;
+      }
+      .lede {
+        font-size: var(--body-size);
+        color: var(--muted);
+        max-width: 60ch;
+        line-height: 1.55;
+      }
+
+      /* Cards */
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: clamp(0.8rem, 1.6vw, 1.3rem);
+        display: flex;
+        flex-direction: column;
+        gap: 0.4rem;
+        box-shadow: 0 1px 0 rgba(0, 24, 56, 0.02),
+          0 12px 30px -24px rgba(0, 24, 56, 0.35);
+        position: relative;
+        overflow: hidden;
+      }
+      .card::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0;
+        bottom: 0;
+        width: 3px;
+        background: var(--blue);
+        opacity: 0.85;
+      }
+      .card .card-h {
+        font-family: var(--font-display);
+        font-weight: 600;
+        font-size: var(--h3-size);
+        color: var(--navy);
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        line-height: 1.15;
+      }
+      .card .card-d {
+        font-size: var(--small-size);
+        color: var(--muted);
+        line-height: 1.45;
+      }
+      .card .clause {
+        margin-top: auto;
+      }
+
+      .clause {
+        font-family: var(--font-mono);
+        font-size: clamp(0.55rem, 0.9vw, 0.72rem);
+        color: var(--blue);
+        background: rgba(61, 111, 181, 0.09);
+        border: 1px solid rgba(61, 111, 181, 0.18);
+        padding: 0.15em 0.55em;
+        border-radius: 6px;
+        align-self: flex-start;
+        letter-spacing: 0.02em;
+      }
+
+      /* check icon */
+      .ck {
+        flex: none;
+        width: clamp(16px, 1.8vw, 20px);
+        height: clamp(16px, 1.8vw, 20px);
+        border-radius: 50%;
+        background: var(--done);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .ck svg {
+        width: 62%;
+        height: 62%;
+        stroke: #fff;
+        stroke-width: 3;
+        fill: none;
+      }
+
+      /* status pills */
+      .pill {
+        font-family: var(--font-mono);
+        font-size: clamp(0.55rem, 0.85vw, 0.7rem);
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+        padding: 0.22em 0.6em;
+        border-radius: 999px;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4em;
+      }
+      .pill.done { color: var(--done); background: rgba(46, 158, 107, 0.12); }
+      .pill.road { color: var(--road); background: rgba(194, 135, 46, 0.13); }
+      .pill.skip { color: var(--skip); background: rgba(122, 134, 153, 0.14); }
+      .pill .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+
+      /* bullet list */
+      .blist {
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: clamp(0.4rem, 1.1vh, 0.85rem);
+      }
+      .blist li {
+        font-size: var(--body-size);
+        line-height: 1.4;
+        color: var(--ink);
+        display: flex;
+        gap: 0.7rem;
+        align-items: flex-start;
+      }
+      .blist li b { color: var(--navy); font-weight: 600; }
+      .blist .ck { margin-top: 0.15em; }
+
+      /* ===========================================
+         NAVY (title / divider / closing) slides
+         =========================================== */
+      .slide--navy {
+        background: radial-gradient(
+            120% 120% at 80% 0%,
+            var(--navy-2) 0%,
+            var(--navy) 55%
+          );
+        color: #fff;
+      }
+      .slide--navy h2.slide-title,
+      .slide--navy .card .card-h {
+        color: #fff;
+      }
+      .slide--navy .lede {
+        color: rgba(255, 255, 255, 0.72);
+      }
+      .slide--navy .topbar .pagenum {
+        color: rgba(255, 255, 255, 0.55);
+      }
+      /* subtle grid texture for navy slides */
+      .slide--navy::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background-image: linear-gradient(
+            rgba(255, 255, 255, 0.04) 1px,
+            transparent 1px
+          ),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.04) 1px, transparent 1px);
+        background-size: clamp(34px, 4vw, 60px) clamp(34px, 4vw, 60px);
+        mask-image: radial-gradient(circle at 78% 18%, #000 0%, transparent 62%);
+        pointer-events: none;
+      }
+      .slide--navy .slide-content { z-index: 1; }
+
+      /* glow accent blob */
+      .blob {
+        position: absolute;
+        border-radius: 50%;
+        filter: blur(60px);
+        opacity: 0.55;
+        pointer-events: none;
+      }
+
+      /* TITLE slide specifics */
+      .title-logo { height: clamp(46px, 7vw, 90px); width: auto; margin-bottom: clamp(1rem, 3vh, 2.2rem); }
+      .title-main {
+        font-family: var(--font-display);
+        font-weight: 800;
+        font-size: var(--title-size);
+        line-height: 1.02;
+        letter-spacing: -0.02em;
+        color: #fff;
+        max-width: 18ch;
+      }
+      .title-main .hl { color: var(--blue-soft); }
+      .title-sub {
+        margin-top: clamp(0.8rem, 2vh, 1.4rem);
+        font-size: clamp(0.85rem, 1.6vw, 1.2rem);
+        color: rgba(255, 255, 255, 0.74);
+        font-family: var(--font-mono);
+        letter-spacing: 0.02em;
+      }
+      .title-meta {
+        margin-top: clamp(1.4rem, 3.5vh, 2.6rem);
+        display: flex;
+        gap: clamp(0.5rem, 1.5vw, 1rem);
+        flex-wrap: wrap;
+      }
+      .chip {
+        font-family: var(--font-mono);
+        font-size: var(--small-size);
+        color: rgba(255, 255, 255, 0.9);
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 999px;
+        padding: 0.4em 0.9em;
+      }
+
+      /* header block reused on content slides */
+      .head {
+        display: flex;
+        flex-direction: column;
+        gap: clamp(0.4rem, 1vh, 0.8rem);
+        margin-bottom: var(--content-gap);
+      }
+
+      /* two-column layout */
+      .cols {
+        display: grid;
+        grid-template-columns: 1.05fr 1fr;
+        gap: clamp(1rem, 3vw, 2.6rem);
+        align-items: center;
+      }
+      @media (max-width: 760px) {
+        .cols { grid-template-columns: 1fr; gap: 1rem; }
+      }
+
+      /* hash-chain mini visual */
+      .chain {
+        display: flex;
+        align-items: center;
+        gap: 0.35rem;
+        flex-wrap: wrap;
+        font-family: var(--font-mono);
+        font-size: clamp(0.55rem, 0.85vw, 0.72rem);
+      }
+      .chain .blk {
+        background: rgba(61, 111, 181, 0.08);
+        border: 1px solid rgba(61, 111, 181, 0.25);
+        border-radius: 8px;
+        padding: 0.5rem 0.6rem;
+        color: var(--navy);
+        line-height: 1.3;
+      }
+      .chain .blk span { color: var(--blue); display: block; }
+      .chain .lnk { color: var(--blue); font-weight: 600; }
+
+      /* coverage stat tiles — fixed 3×2 grid, centred */
+      .slide--coverage .slide-content {
+        align-items: center;
+        text-align: center;
+      }
+      .slide--coverage .head {
+        align-items: center;
+        text-align: center;
+        max-width: min(90vw, 720px);
+      }
+      .slide--coverage .kicker {
+        justify-content: center;
+      }
+      .coverage-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        grid-template-rows: repeat(2, auto);
+        gap: clamp(0.55rem, 1.4vw, 1rem);
+        width: 100%;
+        max-width: min(92vw, 980px);
+        margin: var(--content-gap) auto 0;
+      }
+      @media (max-width: 760px) {
+        .coverage-grid {
+          grid-template-columns: repeat(2, 1fr);
+          grid-template-rows: auto;
+        }
+      }
+      .coverage-grid .chain {
+        flex-wrap: wrap;
+        gap: 0.25rem;
+      }
+      .coverage-grid .chain .blk {
+        padding: 0.35rem 0.45rem;
+        font-size: clamp(0.5rem, 0.8vw, 0.65rem);
+      }
+
+      .stat .num {
+        font-family: var(--font-display);
+        font-weight: 800;
+        font-size: clamp(1.5rem, 3vw, 2.4rem);
+        color: var(--blue);
+        line-height: 1;
+      }
+
+      .auth-policy-grid {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: clamp(0.4rem, 1vw, 0.75rem);
+      }
+      .auth-policy-grid .card {
+        padding: clamp(0.55rem, 1.2vw, 0.9rem);
+      }
+      .auth-policy-grid .card-h {
+        font-size: clamp(0.82rem, 1.4vw, 1.05rem);
+      }
+      .auth-policy-grid .card-d {
+        font-size: clamp(0.6rem, 0.95vw, 0.78rem);
+        line-height: 1.35;
+      }
+      .col-heading {
+        font-family: var(--font-display);
+        font-weight: 600;
+        font-size: var(--h3-size);
+        color: var(--navy);
+        margin-bottom: clamp(0.4rem, 1vh, 0.7rem);
+      }
+
+      /* alcoa compact grid */
+      .alcoa {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: clamp(0.45rem, 1.1vw, 0.8rem);
+      }
+      @media (max-width: 760px) {
+        .alcoa { grid-template-columns: repeat(2, 1fr); }
+      }
+      .acard {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 11px;
+        padding: clamp(0.55rem, 1.2vw, 0.85rem);
+        display: flex;
+        flex-direction: column;
+        gap: 0.2rem;
+      }
+      .acard .a-name {
+        font-family: var(--font-display);
+        font-weight: 600;
+        font-size: clamp(0.78rem, 1.3vw, 1.02rem);
+        color: var(--navy);
+      }
+      .acard .a-how {
+        font-size: clamp(0.6rem, 0.95vw, 0.78rem);
+        color: var(--muted);
+        line-height: 1.35;
+      }
+
+      /* progress + nav */
+      .progress-bar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        height: 3px;
+        width: 0;
+        background: linear-gradient(90deg, var(--blue), var(--blue-soft));
+        z-index: 100;
+        transition: width 0.15s linear;
+      }
+      .nav-dots {
+        position: fixed;
+        right: clamp(0.6rem, 1.4vw, 1.4rem);
+        top: 50%;
+        transform: translateY(-50%);
+        display: flex;
+        flex-direction: column;
+        gap: 0.6rem;
+        z-index: 90;
+      }
+      .nav-dots button {
+        width: 9px;
+        height: 9px;
+        border-radius: 50%;
+        border: none;
+        background: rgba(0, 24, 56, 0.22);
+        cursor: pointer;
+        padding: 0;
+        transition: all 0.3s var(--ease);
+      }
+      .nav-dots button.active {
+        background: var(--blue);
+        transform: scale(1.5);
+      }
+      .keyboard-hint {
+        position: fixed;
+        bottom: clamp(0.6rem, 1.4vw, 1.2rem);
+        left: 50%;
+        transform: translateX(-50%);
+        font-family: var(--font-mono);
+        font-size: clamp(0.55rem, 0.85vw, 0.72rem);
+        color: var(--muted);
+        z-index: 90;
+        opacity: 0.7;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="progress-bar" id="progressBar"></div>
+    <nav class="nav-dots" id="navDots" aria-label="Slide navigation"></nav>
+    <div class="keyboard-hint">← → / space to navigate</div>
+
+    <!-- ===========================================
+         SLIDE 1 — TITLE
+         =========================================== -->
+    <section class="slide slide--navy title-slide">
+      <div class="blob" style="width: 38vw; height: 38vw; background: var(--blue); top: -8vw; right: -6vw;"></div>
+      <div class="slide-content">
+        <img class="title-logo reveal" src="assets/andrei-logo-white.png" alt="Andrei" />
+        <h1 class="title-main reveal">
+          Part&nbsp;11 &amp; ALCOA++<br /><span class="hl">Implemented Capabilities</span>
+        </h1>
+        <p class="title-sub reveal">
+          Data-integrity &amp; electronic-records controls already built into the
+          Andrei Investigation Report platform
+        </p>
+        <div class="title-meta reveal">
+          <span class="chip">Prepared for M.J. Biopharm — IT</span>
+          <span class="chip">21 CFR Part 11</span>
+          <span class="chip">ALCOA++</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===========================================
+         SLIDE 2 — SCOPE
+         =========================================== -->
+    <section class="slide">
+      <div class="topbar">
+        <img src="assets/andrei-logo.png" alt="Andrei" />
+        <span class="pagenum">02 / 10</span>
+      </div>
+      <div class="slide-content">
+        <div class="head">
+          <span class="kicker reveal">What this covers</span>
+          <h2 class="slide-title reveal">Scope of this review</h2>
+          <p class="lede reveal">
+            Mapped against the <b>21 CFR Part 11 / ALCOA++ Vendor Design Spec</b>
+            and the <b>MJ Software Checkpoints</b> list. This deck shows the
+            <b>software design features already implemented</b> in Andrei — not
+            procedural or validation activities.
+          </p>
+        </div>
+        <div class="grid stagger" style="margin-top: var(--content-gap)">
+          <div class="card">
+            <div class="card-h"><span class="ck"><svg viewBox="0 0 24 24"><polyline points="4,12 10,18 20,6"/></svg></span>Electronic records</div>
+            <div class="card-d">Reports, sections, comments and evaluations persisted with full history.</div>
+          </div>
+          <div class="card">
+            <div class="card-h"><span class="ck"><svg viewBox="0 0 24 24"><polyline points="4,12 10,18 20,6"/></svg></span>Electronic signatures</div>
+            <div class="card-d">Password-bound submit / review / approve actions (Part 11 Subpart C).</div>
+          </div>
+          <div class="card">
+            <div class="card-h"><span class="ck"><svg viewBox="0 0 24 24"><polyline points="4,12 10,18 20,6"/></svg></span>Audit &amp; access</div>
+            <div class="card-d">Tamper-evident audit trail and role-based access control.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===========================================
+         SLIDE 3 — COVERAGE AT A GLANCE
+         =========================================== -->
+    <section class="slide slide--coverage">
+      <div class="topbar">
+        <img src="assets/andrei-logo.png" alt="Andrei" />
+        <span class="pagenum">03 / 10</span>
+      </div>
+      <div class="slide-content">
+        <div class="head">
+          <span class="kicker reveal">At a glance</span>
+          <h2 class="slide-title reveal">Control areas live today</h2>
+        </div>
+        <div class="coverage-grid stagger">
+          <div class="card stat">
+            <div class="num">RBAC</div>
+            <div class="card-h">Access control</div>
+            <div class="card-d">Unique IDs, roles, admin-managed accounts, lockout.</div>
+            <span class="pill done"><span class="dot"></span>Implemented</span>
+          </div>
+          <div class="card stat">
+            <div class="num">Hash-chained</div>
+            <div class="card-h">Audit trail</div>
+            <div class="card-d">Append-only, SHA-256 linked, exportable, non-disablable.</div>
+            <span class="pill done"><span class="dot"></span>Implemented</span>
+          </div>
+          <div class="card stat">
+            <div class="num">Re-auth</div>
+            <div class="card-h">E-signatures</div>
+            <div class="card-d">Password re-entry at the moment of signing.</div>
+            <span class="pill done"><span class="dot"></span>Implemented</span>
+          </div>
+          <div class="card stat">
+            <div class="num">scrypt</div>
+            <div class="card-h">Password policy</div>
+            <div class="card-d">Complexity, expiry, history, masked entry.</div>
+            <span class="pill done"><span class="dot"></span>Implemented</span>
+          </div>
+          <div class="card stat">
+            <div class="num">Versioned</div>
+            <div class="card-h">Record history</div>
+            <div class="card-d">Prior values retained; never overwritten.</div>
+            <span class="pill done"><span class="dot"></span>Implemented</span>
+          </div>
+          <div class="card stat">
+            <div class="num">TLS</div>
+            <div class="card-h">Encryption</div>
+            <div class="card-d">In transit and at rest (cloud-hosted).</div>
+            <span class="pill done"><span class="dot"></span>Implemented</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===========================================
+         SLIDE 4 — ACCESS CONTROL + PASSWORD POLICY
+         =========================================== -->
+    <section class="slide">
+      <div class="topbar">
+        <img src="assets/andrei-logo.png" alt="Andrei" />
+        <span class="pagenum">04 / 10</span>
+      </div>
+      <div class="slide-content">
+        <div class="head">
+          <span class="kicker reveal">Access control &amp; authentication</span>
+          <h2 class="slide-title reveal">Attributable by design</h2>
+          <div class="reveal"><span class="clause">§11.10(d)</span> <span class="clause">§11.100</span> <span class="clause">§11.300</span> <span class="clause">ALCOA++: Attributable</span></div>
+        </div>
+        <div class="cols stagger" style="margin-top: var(--content-gap); align-items: start">
+          <div>
+            <h3 class="col-heading reveal">User management</h3>
+            <ul class="blist">
+              <li><span class="ck"><svg viewBox="0 0 24 24"><polyline points="4,12 10,18 20,6"/></svg></span><span><b>Unique user IDs</b> — duplicate accounts rejected at creation.</span></li>
+              <li><span class="ck"><svg viewBox="0 0 24 24"><polyline points="4,12 10,18 20,6"/></svg></span><span><b>ID + password</b> login; no shared or generic logins.</span></li>
+              <li><span class="ck"><svg viewBox="0 0 24 24"><polyline points="4,12 10,18 20,6"/></svg></span><span><b>RBAC</b> — Engineer, Manager, Admin — enforced on every route.</span></li>
+              <li><span class="ck"><svg viewBox="0 0 24 24"><polyline points="4,12 10,18 20,6"/></svg></span><span><b>Admin-only</b> account creation, role changes, resets &amp; revocation.</span></li>
+              <li><span class="ck"><svg viewBox="0 0 24 24"><polyline points="4,12 10,18 20,6"/></svg></span><span><b>Access revocation</b> supported; config restricted to administrators.</span></li>
+            </ul>
+          </div>
+          <div>
+            <h3 class="col-heading reveal">Password &amp; session policy</h3>
+            <div class="auth-policy-grid">
+              <div class="card"><div class="card-h">Complexity</div><div class="card-d">Min 8 chars, letter + number + special. Masked; no autosave.</div></div>
+              <div class="card"><div class="card-h">Expiry</div><div class="card-d">Configurable, default <b>90 days</b>, with advance warnings.</div></div>
+              <div class="card"><div class="card-h">Reuse history</div><div class="card-d">Last <b>3 passwords</b> blocked from reuse.</div></div>
+              <div class="card"><div class="card-h">Lockout</div><div class="card-d">Locks after consecutive failed attempts (default 3).</div></div>
+              <div class="card"><div class="card-h">First login</div><div class="card-d">Forced password change; expired passwords gated.</div></div>
+              <div class="card"><div class="card-h">Auto-logout</div><div class="card-d">Inactivity sign-out (default 10 min). Hashing: <b>scrypt</b>.</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===========================================
+         SLIDE 5 — AUDIT TRAIL
+         =========================================== -->
+    <section class="slide slide--coverage">
+      <div class="topbar">
+        <img src="assets/andrei-logo.png" alt="Andrei" />
+        <span class="pagenum">05 / 10</span>
+      </div>
+      <div class="slide-content">
+        <div class="head">
+          <span class="kicker reveal">Audit trail</span>
+          <h2 class="slide-title reveal">Secure &amp; tamper-evident</h2>
+          <div class="reveal"><span class="clause">§11.10(e)</span> <span class="clause">Attributable · Contemporaneous · Complete</span></div>
+        </div>
+        <div class="coverage-grid stagger">
+          <div class="card">
+            <div class="card-h">Automatic logging</div>
+            <div class="card-d"><b>Every</b> create / modify / delete on GxP data is logged automatically and immediately.</div>
+          </div>
+          <div class="card">
+            <div class="card-h">Who, when, what</div>
+            <div class="card-d">User ID, role, system timestamp, and old &amp; new value for each action.</div>
+          </div>
+          <div class="card">
+            <div class="card-h">Append-only</div>
+            <div class="card-d">UPDATE/DELETE blocked at the database — even for administrators.</div>
+          </div>
+          <div class="card">
+            <div class="card-h">Non-disableable</div>
+            <div class="card-d">Audit generation cannot be turned off by any role, including admin.</div>
+          </div>
+          <div class="card">
+            <div class="card-h">Exportable</div>
+            <div class="card-d">Full trail export on demand as CSV or PDF, with chain verification status.</div>
+          </div>
+          <div class="card">
+            <div class="card-h">SHA-256 hash chain</div>
+            <div class="card-d" style="margin-bottom:0.5rem">Each entry cryptographically links to the previous — any edit breaks the chain.</div>
+            <div class="chain">
+              <div class="blk">#142<span>hash a9f…</span></div>
+              <span class="lnk">→</span>
+              <div class="blk">#143<span>prev a9f…</span></div>
+              <span class="lnk">→</span>
+              <div class="blk">#144<span>prev 7c2…</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===========================================
+         SLIDE 6 — DATA INTEGRITY + ELECTRONIC SIGNATURES
+         =========================================== -->
+    <section class="slide">
+      <div class="topbar">
+        <img src="assets/andrei-logo.png" alt="Andrei" />
+        <span class="pagenum">06 / 10</span>
+      </div>
+      <div class="slide-content">
+        <div class="head">
+          <span class="kicker reveal">Data integrity &amp; electronic signatures</span>
+          <h2 class="slide-title reveal">Records you can trust</h2>
+          <div class="reveal"><span class="clause">§11.10(e)</span> <span class="clause">§11.50</span> <span class="clause">§11.200</span> <span class="clause">Original · Complete · Attributable</span></div>
+        </div>
+        <div class="cols stagger" style="margin-top: var(--content-gap); align-items: start">
+          <div>
+            <h3 class="col-heading reveal">Version history &amp; integrity</h3>
+            <ul class="blist">
+              <li><span class="ck"><svg viewBox="0 0 24 24"><polyline points="4,12 10,18 20,6"/></svg></span><span><b>Section versioning</b> — every save stored as snapshot or diff; full history reconstructable.</span></li>
+              <li><span class="ck"><svg viewBox="0 0 24 24"><polyline points="4,12 10,18 20,6"/></svg></span><span><b>Previous values retained</b> electronically — original data never overwritten.</span></li>
+              <li><span class="ck"><svg viewBox="0 0 24 24"><polyline points="4,12 10,18 20,6"/></svg></span><span><b>Checkpoint before signing</b> — content frozen at the moment of each signature.</span></li>
+              <li><span class="ck"><svg viewBox="0 0 24 24"><polyline points="4,12 10,18 20,6"/></svg></span><span><b>Status-based edit locks</b> on submitted and approved reports.</span></li>
+            </ul>
+          </div>
+          <div>
+            <h3 class="col-heading reveal">Signed, attributable actions</h3>
+            <div class="auth-policy-grid">
+              <div class="card"><div class="card-h">Re-authentication</div><div class="card-d">Password re-entered <b>at signing</b> — not satisfied by an active session alone.</div></div>
+              <div class="card"><div class="card-h">Manifestation</div><div class="card-d">Signer <b>name, ID, date/time</b> and <b>meaning</b> (submission / approval / rejection).</div></div>
+              <div class="card"><div class="card-h">Workflow signatures</div><div class="card-d">Submit, return-for-feedback and approve are all signed events.</div></div>
+              <div class="card"><div class="card-h">Carried into export</div><div class="card-d">Signature records appended to exported DOCX as a Part 11 block.</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===========================================
+         SLIDE 7 — ENCRYPTION / SECURITY
+         =========================================== -->
+    <section class="slide">
+      <div class="topbar">
+        <img src="assets/andrei-logo.png" alt="Andrei" />
+        <span class="pagenum">07 / 10</span>
+      </div>
+      <div class="slide-content">
+        <div class="head">
+          <span class="kicker reveal">Data security</span>
+          <h2 class="slide-title reveal">Encryption &amp; hosting</h2>
+          <div class="reveal"><span class="clause">§11.30</span> <span class="clause">Original · Accurate (open systems)</span></div>
+        </div>
+        <div class="grid stagger" style="margin-top: var(--content-gap)">
+          <div class="card"><div class="card-h">In transit</div><div class="card-d">HTTPS/TLS everywhere; database connections require TLS (<span style="font-family:var(--font-mono)">sslmode=require</span>).</div></div>
+          <div class="card"><div class="card-h">At rest</div><div class="card-d">Provider-managed encryption at rest on the managed Postgres backend.</div></div>
+          <div class="card"><div class="card-h">Credentials</div><div class="card-d">Passwords stored as salted <b>scrypt</b> hashes; audit hashes via pgcrypto SHA-256.</div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===========================================
+         SLIDE 12 — ALCOA++ MAPPING
+         =========================================== -->
+    <section class="slide">
+      <div class="topbar">
+        <img src="assets/andrei-logo.png" alt="Andrei" />
+        <span class="pagenum">08 / 10</span>
+      </div>
+      <div class="slide-content">
+        <div class="head">
+          <span class="kicker reveal">ALCOA++</span>
+          <h2 class="slide-title reveal">How each attribute is met</h2>
+        </div>
+        <div class="alcoa stagger" style="margin-top: var(--content-gap)">
+          <div class="acard"><span class="a-name">Attributable</span><span class="a-how">Unique IDs, RBAC, signed actions</span></div>
+          <div class="acard"><span class="a-name">Legible</span><span class="a-how">In-app view + DOCX/PDF export</span></div>
+          <div class="acard"><span class="a-name">Contemporaneous</span><span class="a-how">Immediate, system-timestamped audit</span></div>
+          <div class="acard"><span class="a-name">Original</span><span class="a-how">Source DOCX + version history kept</span></div>
+          <div class="acard"><span class="a-name">Accurate</span><span class="a-how">Old/new values, AI evaluation checks</span></div>
+          <div class="acard"><span class="a-name">Complete</span><span class="a-how">All actions retained, append-only</span></div>
+          <div class="acard"><span class="a-name">Consistent</span><span class="a-how">Sequenced, status-driven workflow</span></div>
+          <div class="acard"><span class="a-name">Enduring</span><span class="a-how">Durable managed Postgres storage</span></div>
+          <div class="acard"><span class="a-name">Available</span><span class="a-how">Retrievable &amp; exportable on demand</span></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===========================================
+         SLIDE 13 — OUT OF SCOPE + ROADMAP
+         =========================================== -->
+    <section class="slide">
+      <div class="topbar">
+        <img src="assets/andrei-logo.png" alt="Andrei" />
+        <span class="pagenum">09 / 10</span>
+      </div>
+      <div class="slide-content">
+        <div class="head">
+          <span class="kicker reveal">Boundaries &amp; next steps</span>
+          <h2 class="slide-title reveal">What we don't cover — and what's next</h2>
+          <p class="lede reveal">A quick answer to two questions IT and QA often ask: <b>“Does this apply to us?”</b> and <b>“What's still missing?”</b></p>
+        </div>
+        <div class="cols" style="margin-top: var(--content-gap); align-items:stretch">
+          <div class="card reveal">
+            <div class="card-h" style="margin-bottom:0.4rem"><span class="pill skip"><span class="dot"></span>Not applicable to Andrei</span></div>
+            <div class="card-d" style="font-size:var(--body-size);line-height:1.5">
+              Some checklist items are written for <b>factory equipment software</b> (PLCs, instruments, alarms). Andrei is a <b>web report editor</b> — it doesn't connect to shop-floor devices, so these clauses don't apply:
+              <br/><br/>
+              • Instrument / PLC input–output lists<br/>
+              • Validating data from connected devices<br/>
+              • Equipment alarm logs &amp; comm-failure alerts<br/>
+              • Antivirus file-exclusion lists<br/>
+              • IQ/OQ/PQ validation <i>(that's a separate validation project, not a software feature)</i>
+            </div>
+          </div>
+          <div class="card reveal">
+            <div class="card-h" style="margin-bottom:0.4rem"><span class="pill road"><span class="dot"></span>Planned enhancements</span></div>
+            <div class="card-d" style="font-size:var(--body-size);line-height:1.5">
+              Features we're aware are still missing and intend to add:
+              <br/><br/>
+              • <b>Reason for change</b> — prompt users to say <i>why</i> they edited a record<br/>
+              • <b>Stricter workflow rules</b> — block out-of-order actions (e.g. approve before review); prevent the same person from reviewing and approving<br/>
+              • <b>Signature tied to version</b> — prove exactly which report content was signed<br/>
+              • <b>Retention settings</b> — configurable archive periods and a single combined export (PDF + machine-readable format)
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===========================================
+         SLIDE 14 — CLOSING
+         =========================================== -->
+    <section class="slide slide--navy">
+      <div class="blob" style="width: 40vw; height: 40vw; background: var(--blue); bottom: -12vw; left: -8vw;"></div>
+      <div class="slide-content" style="align-items:flex-start">
+        <img class="title-logo reveal" src="assets/andrei-logo-white.png" alt="Andrei" />
+        <h2 class="title-main reveal" style="font-size: var(--h2-size)">
+          Built for compliance,<br /><span class="hl">ready for review.</span>
+        </h2>
+        <p class="title-sub reveal">Better Documents. Better Outcomes.</p>
+        <div class="title-meta reveal">
+          <span class="chip">Questions &amp; clause-level walkthrough available on request</span>
+        </div>
+      </div>
+    </section>
+
+    <script>
+      /* ===========================================
+         SLIDE PRESENTATION CONTROLLER
+         Scroll-snap deck with keyboard nav, progress
+         bar, nav dots and reveal-on-enter animations.
+         =========================================== */
+      class SlidePresentation {
+        constructor() {
+          this.slides = Array.from(document.querySelectorAll(".slide"));
+          this.current = 0;
+          this.navDots = document.getElementById("navDots");
+          this.progressBar = document.getElementById("progressBar");
+          this.setupObserver();
+          this.setupDots();
+          this.setupKeys();
+          this.setupProgress();
+        }
+
+        /* Add .visible when a slide enters the viewport → triggers CSS reveals */
+        setupObserver() {
+          const io = new IntersectionObserver(
+            (entries) => {
+              entries.forEach((e) => {
+                if (e.isIntersecting) {
+                  e.target.classList.add("visible");
+                  this.current = this.slides.indexOf(e.target);
+                  this.updateDots();
+                }
+              });
+            },
+            { threshold: 0.55 }
+          );
+          this.slides.forEach((s) => io.observe(s));
+          this.slides[0].classList.add("visible");
+        }
+
+        /* Build (and reset) nav dots */
+        setupDots() {
+          this.navDots.innerHTML = ""; // clear first to avoid duplicates on re-open
+          this.slides.forEach((_, i) => {
+            const b = document.createElement("button");
+            b.setAttribute("aria-label", "Go to slide " + (i + 1));
+            if (i === 0) b.classList.add("active");
+            b.addEventListener("click", () =>
+              this.slides[i].scrollIntoView({ behavior: "smooth" })
+            );
+            this.navDots.appendChild(b);
+          });
+        }
+        updateDots() {
+          Array.from(this.navDots.children).forEach((d, i) =>
+            d.classList.toggle("active", i === this.current)
+          );
+        }
+
+        /* Keyboard navigation */
+        setupKeys() {
+          document.addEventListener("keydown", (e) => {
+            if (["ArrowDown", "ArrowRight", " ", "PageDown"].includes(e.key)) {
+              e.preventDefault();
+              this.go(this.current + 1);
+            } else if (["ArrowUp", "ArrowLeft", "PageUp"].includes(e.key)) {
+              e.preventDefault();
+              this.go(this.current - 1);
+            } else if (e.key === "Home") {
+              this.go(0);
+            } else if (e.key === "End") {
+              this.go(this.slides.length - 1);
+            }
+          });
+        }
+        go(i) {
+          i = Math.max(0, Math.min(this.slides.length - 1, i));
+          this.slides[i].scrollIntoView({ behavior: "smooth" });
+        }
+
+        /* Progress bar tracks scroll position */
+        setupProgress() {
+          const update = () => {
+            const max =
+              document.documentElement.scrollHeight - window.innerHeight;
+            const pct = max > 0 ? (window.scrollY / max) * 100 : 0;
+            this.progressBar.style.width = pct + "%";
+          };
+          window.addEventListener("scroll", update, { passive: true });
+          update();
+        }
+      }
+
+      new SlidePresentation();
+    </script>
+  </body>
+</html>

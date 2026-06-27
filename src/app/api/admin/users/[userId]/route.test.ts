@@ -4,7 +4,6 @@ vi.mock("@/db", () => ({
   db: {
     select: vi.fn(),
     update: vi.fn(),
-    delete: vi.fn(),
   },
 }));
 
@@ -63,7 +62,7 @@ function mockUpdateReturning(rows: unknown[]) {
   return { set };
 }
 
-function mockSelectExistingUser() {
+function mockSelectExistingUser(overrides: Record<string, unknown> = {}) {
   const where = vi.fn().mockResolvedValueOnce([
     {
       id: "user-1",
@@ -71,23 +70,12 @@ function mockSelectExistingUser() {
       email: "user.one@mjbiopharm.com",
       role: "engineer",
       title: "Engineer",
+      deactivatedAt: null,
+      ...overrides,
     },
   ]);
   const from = vi.fn().mockReturnValue({ where });
   vi.mocked(db.select).mockReturnValueOnce({ from } as never);
-}
-
-function mockDeleteReturning(rows: unknown[]) {
-  const returning = vi.fn().mockResolvedValueOnce(rows);
-  const where = vi.fn().mockReturnValue({ returning });
-  vi.mocked(db.delete).mockReturnValueOnce({ where } as never);
-  return { where };
-}
-
-function mockDeleteWhere() {
-  const where = vi.fn().mockResolvedValueOnce(undefined);
-  vi.mocked(db.delete).mockReturnValueOnce({ where } as never);
-  return { where };
 }
 
 describe("PATCH /api/admin/users/[userId]", () => {
@@ -138,6 +126,8 @@ describe("PATCH /api/admin/users/[userId]", () => {
         title: "Manager",
         passwordHash: null,
         mustChangePassword: false,
+        deactivatedAt: null,
+        lockedAt: null,
         createdAt: new Date("2026-01-01T00:00:00.000Z"),
       },
     ]);
@@ -153,6 +143,7 @@ describe("PATCH /api/admin/users/[userId]", () => {
         id: "user-1",
         role: "manager",
         hasPassword: false,
+        isActive: true,
       },
     });
   });
@@ -171,7 +162,7 @@ describe("DELETE /api/admin/users/[userId]", () => {
     });
 
     expect(response.status).toBe(401);
-    expect(db.delete).not.toHaveBeenCalled();
+    expect(db.update).not.toHaveBeenCalled();
   });
 
   it("rejects non-admin requests", async () => {
@@ -182,10 +173,10 @@ describe("DELETE /api/admin/users/[userId]", () => {
     });
 
     expect(response.status).toBe(403);
-    expect(db.delete).not.toHaveBeenCalled();
+    expect(db.update).not.toHaveBeenCalled();
   });
 
-  it("prevents admins from deleting their own account", async () => {
+  it("prevents admins from deactivating their own account", async () => {
     vi.mocked(getCurrentUser).mockResolvedValueOnce(admin);
 
     const response = await DELETE(deleteRequest(), {
@@ -193,24 +184,27 @@ describe("DELETE /api/admin/users/[userId]", () => {
     });
 
     expect(response.status).toBe(400);
-    expect(db.delete).not.toHaveBeenCalled();
+    expect(db.update).not.toHaveBeenCalled();
   });
 
   it("returns 404 when the target user is missing", async () => {
     vi.mocked(getCurrentUser).mockResolvedValueOnce(admin);
-    mockDeleteReturning([]);
+    const where = vi.fn().mockResolvedValueOnce([]);
+    const from = vi.fn().mockReturnValue({ where });
+    vi.mocked(db.select).mockReturnValueOnce({ from } as never);
 
     const response = await DELETE(deleteRequest(), {
       params: Promise.resolve({ userId: "user-1" }),
     });
 
     expect(response.status).toBe(404);
-    expect(db.delete).toHaveBeenCalledTimes(1);
+    expect(db.update).not.toHaveBeenCalled();
   });
 
-  it("deletes a workspace user and matching auth user for admins", async () => {
+  it("deactivates a workspace user for admins", async () => {
     vi.mocked(getCurrentUser).mockResolvedValueOnce(admin);
-    mockDeleteReturning([
+    mockSelectExistingUser();
+    mockUpdateReturning([
       {
         id: "user-1",
         name: "User One",
@@ -219,17 +213,18 @@ describe("DELETE /api/admin/users/[userId]", () => {
         title: "Engineer",
         passwordHash: "old.hash",
         mustChangePassword: false,
+        deactivatedAt: new Date("2026-06-24T00:00:00.000Z"),
+        lockedAt: null,
         createdAt: new Date("2026-01-01T00:00:00.000Z"),
       },
     ]);
-    mockDeleteWhere();
 
     const response = await DELETE(deleteRequest(), {
       params: Promise.resolve({ userId: "user-1" }),
     });
 
     expect(response.status).toBe(200);
-    expect(db.delete).toHaveBeenCalledTimes(2);
+    expect(db.update).toHaveBeenCalledTimes(1);
     await expect(response.json()).resolves.toEqual({ ok: true });
   });
 });

@@ -5,6 +5,7 @@ vi.mock("@/db", () => ({
     query: {
       workspaceUsers: {
         findMany: vi.fn(),
+        findFirst: vi.fn(),
       },
     },
     insert: vi.fn(),
@@ -105,6 +106,8 @@ describe("/api/admin/users", () => {
         title: "Manager",
         passwordHash: "hash",
         mustChangePassword: true,
+        deactivatedAt: null,
+        lockedAt: null,
         createdAt: new Date("2026-01-01T00:00:00.000Z"),
       },
     ] as never);
@@ -122,6 +125,9 @@ describe("/api/admin/users", () => {
           title: "Manager",
           hasPassword: true,
           mustChangePassword: true,
+          isActive: true,
+          lockedAt: null,
+          deactivatedAt: null,
         },
       ],
     });
@@ -147,6 +153,7 @@ describe("/api/admin/users", () => {
 
   it("creates a user for admins with a temporary password", async () => {
     vi.mocked(getCurrentUser).mockResolvedValueOnce(admin);
+    vi.mocked(db.query.workspaceUsers.findFirst).mockResolvedValueOnce(undefined);
     mockInsertReturning([
       {
         id: "user-1",
@@ -156,6 +163,8 @@ describe("/api/admin/users", () => {
         title: "Admin",
         passwordHash: "hashed.password",
         mustChangePassword: true,
+        deactivatedAt: null,
+        lockedAt: null,
         createdAt: new Date("2026-01-01T00:00:00.000Z"),
       },
     ]);
@@ -191,10 +200,11 @@ describe("/api/admin/users", () => {
 
   it("returns 409 for duplicate user emails", async () => {
     vi.mocked(getCurrentUser).mockResolvedValueOnce(admin);
-    const duplicate = Object.assign(new Error("duplicate"), { code: "23505" });
-    const returning = vi.fn().mockRejectedValueOnce(duplicate);
-    const values = vi.fn().mockReturnValue({ returning });
-    vi.mocked(db.insert).mockReturnValueOnce({ values } as never);
+    vi.mocked(db.query.workspaceUsers.findFirst).mockResolvedValueOnce({
+      id: "existing-user",
+      email: "existing@mjbiopharm.com",
+      deactivatedAt: null,
+    } as never);
 
     const response = await POST(
       jsonRequest({

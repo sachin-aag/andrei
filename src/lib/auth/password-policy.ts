@@ -114,9 +114,7 @@ export async function updatePasswordExpiryDays(
 }
 
 export async function updatePasswordPolicySettings(
-  updates: Partial<
-    Pick<PasswordPolicy, "expiryDays" | "inactivityTimeoutMinutes">
-  >
+  updates: Partial<OperationalPasswordPolicy>
 ): Promise<PasswordPolicy> {
   await getPasswordPolicy();
 

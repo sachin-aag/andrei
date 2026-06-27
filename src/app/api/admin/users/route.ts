@@ -9,7 +9,7 @@ import { initialPasswordHistory } from "@/lib/auth/password-history";
 import { getPasswordPolicy } from "@/lib/auth/password-policy";
 import { validatePasswordStrength } from "@/lib/auth/password-strength";
 import { USER_ROLES, defaultTitleForRole } from "@/lib/auth/roles";
-import { adminUserFromRow, listAdminUsers } from "@/lib/admin/users";
+import { adminUserFromRow, listAdminUsers, findWorkspaceUserByEmail } from "@/lib/admin/users";
 import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
 
 const createUserSchema = z.object({
@@ -83,6 +83,18 @@ export async function POST(req: Request) {
   }
 
   const email = parsed.data.email.toLowerCase();
+  const existingEmail = await findWorkspaceUserByEmail(email);
+  if (existingEmail) {
+    return NextResponse.json(
+      {
+        error: existingEmail.deactivatedAt
+          ? "This email belongs to a retired user and cannot be reused."
+          : "A user with this email already exists.",
+      },
+      { status: 409 }
+    );
+  }
+
   const policy = await getPasswordPolicy();
   const passwordHash = await hashPassword(parsed.data.temporaryPassword);
   const name = parsed.data.name ?? displayNameFromEmail(email);

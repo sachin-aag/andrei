@@ -24,6 +24,7 @@ const passwordSchemaDefaults = {
   passwordHistory: [] as string[],
   passwordResetTokenHash: null,
   passwordResetTokenExpiresAt: null,
+  deactivatedAt: null,
 };
 
 const engineerUser = {

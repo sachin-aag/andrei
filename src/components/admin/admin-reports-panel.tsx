@@ -184,14 +184,20 @@ export function AdminReportsPanel({
                 .filter((name): name is string => Boolean(name));
 
               return (
-                <ReportCard
-                  key={report.id}
-                  report={report}
-                  href={`/admin/reports/${report.id}`}
-                  authorName={author?.name}
-                  managerNames={managerNames}
-                  openLabel="View"
-                />
+                <div key={report.id} className="relative">
+                  {report.deletedAt && (
+                    <span className="mb-1 inline-block rounded-full bg-red-500/15 px-2 py-0.5 text-xs font-medium text-red-400">
+                      Deleted {new Date(report.deletedAt).toLocaleDateString()}
+                    </span>
+                  )}
+                  <ReportCard
+                    report={report}
+                    href={`/admin/reports/${report.id}`}
+                    authorName={author?.name}
+                    managerNames={managerNames}
+                    openLabel="View"
+                  />
+                </div>
               );
             })}
           </div>

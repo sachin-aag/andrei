@@ -23,43 +23,51 @@ const MEANING_COPY: Record<
   submission: {
     title: "Sign & Submit Report",
     description:
-      "Re-enter your password to apply your electronic signature. This records who signed, when, and that you are submitting this investigation report for review.",
+      "Re-enter your user ID (email) and password to apply your electronic signature. This records who signed, when, and that you are submitting this investigation report for review.",
     confirm: "Sign & Submit",
   },
   approval: {
     title: "Sign & Approve Report",
     description:
-      "Re-enter your password to apply your electronic signature approving this investigation report.",
+      "Re-enter your user ID (email) and password to apply your electronic signature approving this investigation report.",
     confirm: "Sign & Approve",
   },
   rejection: {
     title: "Sign & Return Feedback",
     description:
-      "Re-enter your password to apply your electronic signature returning this report to the author for feedback.",
+      "Re-enter your user ID (email) and password to apply your electronic signature returning this report to the author for feedback.",
     confirm: "Sign & Return",
   },
+};
+
+export type SigningPayload = {
+  userId: string;
+  password: string;
 };
 
 type ElectronicSignatureDialogProps = {
   open: boolean;
   meaning: SignatureMeaningUi;
+  defaultUserId?: string;
   loading?: boolean;
   onOpenChange: (open: boolean) => void;
-  onConfirm: (password: string) => void | Promise<void>;
+  onConfirm: (payload: SigningPayload) => void | Promise<void>;
 };
 
 export function ElectronicSignatureDialog({
   open,
   meaning,
+  defaultUserId = "",
   loading = false,
   onOpenChange,
   onConfirm,
 }: ElectronicSignatureDialogProps) {
+  const [userId, setUserId] = useState(defaultUserId);
   const [password, setPassword] = useState("");
   const copy = MEANING_COPY[meaning];
 
   const handleConfirm = async () => {
-    await onConfirm(password);
+    await onConfirm({ userId: userId.trim(), password });
     setPassword("");
   };
 
@@ -78,16 +86,29 @@ export function ElectronicSignatureDialog({
           <DialogTitle>{copy.title}</DialogTitle>
           <DialogDescription>{copy.description}</DialogDescription>
         </DialogHeader>
-        <div className="space-y-2">
-          <Label htmlFor="esign-password">Password</Label>
-          <Input
-            id="esign-password"
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            disabled={loading}
-          />
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="esign-user-id">User ID (email)</Label>
+            <Input
+              id="esign-user-id"
+              type="email"
+              autoComplete="username"
+              value={userId}
+              onChange={(e) => setUserId(e.target.value)}
+              disabled={loading}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="esign-password">Password</Label>
+            <Input
+              id="esign-password"
+              type="password"
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              disabled={loading}
+            />
+          </div>
         </div>
         <DialogFooter>
           <Button
@@ -101,7 +122,7 @@ export function ElectronicSignatureDialog({
           <Button
             type="button"
             onClick={() => void handleConfirm()}
-            disabled={loading || !password}
+            disabled={loading || !password || !userId.trim()}
           >
             {loading ? (
               <>

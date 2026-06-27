@@ -372,6 +372,9 @@ describe("narrativeToDocxXml tables", () => {
       status: "draft",
       authorId: "1",
       assignedManagerId: null,
+      reviewedById: null,
+      deletedAt: null,
+      deletedById: null,
       createdAt: iso,
       updatedAt: iso,
     };

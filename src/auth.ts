@@ -45,6 +45,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           where: eq(workspaceUsers.email, email),
         });
         if (!wsUser?.passwordHash) return null;
+        if (wsUser.deactivatedAt) return null;
         if (wsUser.lockedAt) {
           return null;
         }
@@ -94,7 +95,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         const wsUser = await db.query.workspaceUsers.findFirst({
           where: eq(workspaceUsers.email, user.email),
         });
-        return !!wsUser;
+        return !!wsUser && !wsUser.deactivatedAt;
       } catch {
         return false;
       }
@@ -119,13 +120,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           where: eq(workspaceUsers.id, workspaceUserId),
           columns: {
             id: true,
+            deactivatedAt: true,
             mustChangePassword: true,
             passwordHash: true,
             passwordChangedAt: true,
             passwordExpiryWarningDismissedUntil: true,
           },
         });
-        if (wsUser) {
+        if (!wsUser || wsUser.deactivatedAt) {
+          delete token.workspaceUserId;
+        } else if (wsUser) {
           const expiryState = computePasswordExpiryState(wsUser, policy);
           token.workspaceUserId = wsUser.id;
           token.mustChangePassword = wsUser.mustChangePassword;
@@ -137,13 +141,14 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
           where: eq(workspaceUsers.email, email),
           columns: {
             id: true,
+            deactivatedAt: true,
             mustChangePassword: true,
             passwordHash: true,
             passwordChangedAt: true,
             passwordExpiryWarningDismissedUntil: true,
           },
         });
-        if (wsUser) {
+        if (wsUser && !wsUser.deactivatedAt) {
           const expiryState = computePasswordExpiryState(wsUser, policy);
           token.workspaceUserId = wsUser.id;
           token.mustChangePassword = wsUser.mustChangePassword;
