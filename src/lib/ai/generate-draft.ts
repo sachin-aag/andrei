@@ -4,15 +4,12 @@ import { resolveGoogleLanguageModel } from "@/lib/ai/resolve-google-language-mod
 import { langfuseGenerateTextTelemetry } from "@/lib/observability/langfuse";
 import { linesToDoc } from "@/lib/tiptap/rich-text";
 import type { SectionContentMap } from "@/types/sections";
-import type { GeneratedQuestion } from "@/lib/ai/generate-guided-questions";
+import type { AnsweredRecord, EditableSection, Methodology } from "@/lib/ai/generate-next-question";
 import { EDITABLE_SECTIONS } from "@/types/sections";
 
 const DRAFT_MODEL_ID = "gemini-3.1-pro-preview" as const;
 const DRAFT_VERTEX_LOCATION = "global" as const;
 const DRAFT_TEMPERATURE = 0.3 as const;
-
-type EditableSection = (typeof EDITABLE_SECTIONS)[number];
-type Answers = Record<string, string | null>;
 
 function resolveModel() {
   return resolveGoogleLanguageModel(DRAFT_MODEL_ID, {
@@ -20,22 +17,17 @@ function resolveModel() {
   });
 }
 
-/** Build the Q&A block for a section, marking deferred answers as placeholders. */
-function buildQaBlock(
-  section: EditableSection,
-  questions: GeneratedQuestion[],
-  answers: Answers
-): string {
-  const sectionQs = questions.filter((q) => q.section === section);
+/** Build the Q&A block for a section from answered records, marking deferred answers as placeholders. */
+function buildQaBlock(section: EditableSection, answeredRecords: AnsweredRecord[]): string {
+  const sectionQs = answeredRecords.filter((q) => q.section === section);
   if (sectionQs.length === 0) return "(no questions provided for this section)";
 
   return sectionQs
     .map((q) => {
-      const answer = answers[q.id];
-      if (answer === null || answer === undefined) {
+      if (q.answer === null || q.answer === undefined) {
         return `Q: ${q.label}\nA: [NOT PROVIDED — insert placeholder: [${q.label}: <to be filled>]]`;
       }
-      return `Q: ${q.label}\nA: ${answer.trim() || "[left blank]"}`;
+      return `Q: ${q.label}\nA: ${q.answer.trim() || "[left blank]"}`;
     })
     .join("\n\n");
 }
@@ -131,12 +123,12 @@ async function generateSection<T>(
 
 export async function generateGuidedDraft({
   reportContext,
-  questions,
-  answers,
+  answeredQuestions,
+  methodology,
 }: {
   reportContext: { deviationNo: string; date: Date | string };
-  questions: GeneratedQuestion[];
-  answers: Answers;
+  answeredQuestions: AnsweredRecord[];
+  methodology?: Methodology;
 }): Promise<Partial<SectionContentMap>> {
   const dateStr =
     typeof reportContext.date === "string"
@@ -147,7 +139,7 @@ export async function generateGuidedDraft({
   const result: Partial<SectionContentMap> = {};
 
   // --- Define ---
-  const defineQa = buildQaBlock("define", questions, answers);
+  const defineQa = buildQaBlock("define", answeredQuestions);
   const defineResult = await generateSection(
     "define",
     defineOutputSchema,
@@ -166,8 +158,8 @@ Write the Define section narrative.`
   result.define = { narrative: linesToDoc(defineResult.narrative) };
 
   // --- Measure ---
-  const measureQa = buildQaBlock("measure", questions, answers);
-  const hasMeasureQs = questions.some((q) => q.section === "measure");
+  const measureQa = buildQaBlock("measure", answeredQuestions);
+  const hasMeasureQs = answeredQuestions.some((q) => q.section === "measure");
   if (hasMeasureQs) {
     const priorBlock = buildPriorSectionsBlock("measure", generatedText);
     const measureResult = await generateSection(
@@ -193,9 +185,16 @@ Write the Measure section. For "regulatoryNotification", write a single sentence
   }
 
   // --- Analyze ---
-  const analyzeQa = buildQaBlock("analyze", questions, answers);
-  const hasAnalyzeQs = questions.some((q) => q.section === "analyze");
+  const analyzeQa = buildQaBlock("analyze", answeredQuestions);
+  const hasAnalyzeQs = answeredQuestions.some((q) => q.section === "analyze");
   if (hasAnalyzeQs) {
+    const methodologyInstruction =
+      methodology === "5-why"
+        ? 'METHODOLOGY: 5-Why. Focus on the causal chain. 6M fields may be brief ("Not Applicable" with rationale where not directly relevant).'
+        : methodology === "6m"
+          ? "METHODOLOGY: 6M Analysis. Develop each M category in detail. Derive the fiveWhy narrative from the 6M findings."
+          : "METHODOLOGY: Combined 5-Why + 6M. Complete both the 6M analysis and the causal chain in full detail.";
+
     const priorBlock = buildPriorSectionsBlock("analyze", generatedText);
     const analyzeResult = await generateSection(
       "analyze",
@@ -204,7 +203,9 @@ Write the Measure section. For "regulatoryNotification", write a single sentence
       `DEVIATION: ${reportContext.deviationNo} (date: ${dateStr})
 
 SECTION: ANALYZE
-The Analyze section must: complete all 6M fields (Man/Machine/Measurement/Material/Method/Milieu) with findings or "Not Applicable" with rationale, document the 5-Why causal chain with fact-based questions and answers, summarise the investigation outcome, classify the root cause at Level 1/Level 2/Level 3, and assess impact across all five domains (System/Document/Product/Equipment/Patient Safety).
+${methodologyInstruction}
+
+The Analyze section must: complete all 6M fields (Man/Machine/Measurement/Material/Method/Milieu) with findings or "Not Applicable" with rationale, document the 5-Why causal chain, summarise the investigation outcome, classify the root cause at Level 1/Level 2/Level 3, and assess impact across all five domains (System/Document/Product/Equipment/Patient Safety).
 
 Q&A ANSWERS:
 ${analyzeQa}
@@ -213,9 +214,7 @@ ${priorBlock}
 For each 6M field write 1-3 sentences. For "fiveWhy" write the full Why→Answer chain as flowing text. For "investigationOutcome" write a 2-3 sentence summary. For "rootCause" write the three-level classification in the format: "Level 1: [category] | Level 2: [sub-category] | Level 3: [specific cause]". For "impactAssessment" write a structured paragraph covering all five impact domains.`
     );
 
-    if (generatedText.measure) {
-      generatedText.analyze = analyzeResult.investigationOutcome;
-    }
+    generatedText.analyze = analyzeResult.investigationOutcome;
     result.analyze = {
       sixM: analyzeResult.sixM,
       fiveWhy: { narrative: linesToDoc(analyzeResult.fiveWhy), conclusion: "" },
@@ -228,8 +227,8 @@ For each 6M field write 1-3 sentences. For "fiveWhy" write the full Why→Answer
   }
 
   // --- Improve ---
-  const improveQa = buildQaBlock("improve", questions, answers);
-  const hasImproveQs = questions.some((q) => q.section === "improve");
+  const improveQa = buildQaBlock("improve", answeredQuestions);
+  const hasImproveQs = answeredQuestions.some((q) => q.section === "improve");
   if (hasImproveQs) {
     const priorBlock = buildPriorSectionsBlock("improve", generatedText);
     const improveResult = await generateSection(
@@ -254,8 +253,8 @@ Write "narrative" as a prose paragraph summarising the immediate actions. Write 
   }
 
   // --- Control ---
-  const controlQa = buildQaBlock("control", questions, answers);
-  const hasControlQs = questions.some((q) => q.section === "control");
+  const controlQa = buildQaBlock("control", answeredQuestions);
+  const hasControlQs = answeredQuestions.some((q) => q.section === "control");
   if (hasControlQs) {
     const priorBlock = buildPriorSectionsBlock("control", generatedText);
     const controlResult = await generateSection(

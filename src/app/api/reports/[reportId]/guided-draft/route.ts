@@ -9,19 +9,15 @@ import { generateGuidedDraft } from "@/lib/ai/generate-draft";
 import { EDITABLE_SECTIONS } from "@/types/sections";
 
 const bodySchema = z.object({
-  questions: z.array(
+  answeredQuestions: z.array(
     z.object({
-      id: z.string(),
       section: z.enum(["define", "measure", "analyze", "improve", "control"]),
       criteriaKeys: z.array(z.string()),
       label: z.string(),
-      description: z.string().optional(),
-      inputType: z.enum(["text", "textarea", "choice"]),
-      options: z.array(z.string()).optional(),
-      required: z.boolean(),
+      answer: z.string().nullable(),
     })
   ),
-  answers: z.record(z.string(), z.string().nullable()),
+  methodology: z.enum(["5-why", "6m", "combined"]).optional(),
 });
 
 export async function POST(
@@ -53,13 +49,13 @@ export async function POST(
     return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
   }
 
-  const { questions, answers } = parsed.data;
+  const { answeredQuestions, methodology } = parsed.data;
 
   try {
     const generated = await generateGuidedDraft({
       reportContext: { deviationNo: report.deviationNo, date: report.date },
-      questions,
-      answers,
+      answeredQuestions,
+      methodology,
     });
 
     // Save each generated section to the DB

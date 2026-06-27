@@ -4,10 +4,10 @@ import { AutoResizeTextarea } from "@/components/ui/auto-resize-textarea";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Clock } from "lucide-react";
-import type { GeneratedQuestion } from "@/lib/ai/generate-guided-questions";
+import type { NextQuestion } from "@/lib/ai/generate-next-question";
 
 type QuestionItemProps = {
-  question: GeneratedQuestion;
+  question: NextQuestion;
   answer: string | null | undefined;
   onAnswer: (value: string) => void;
   onDefer: () => void;
