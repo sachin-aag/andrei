@@ -1,14 +1,10 @@
 import type { auditEvents } from "@/db/schema";
+import { auditEventsToCsv } from "./audit-csv";
 import { verifyAuditChain } from "./verify-audit-chain";
 
 type AuditRow = typeof auditEvents.$inferSelect;
 
-function escapeCsv(value: string): string {
-  if (/[",\n\r]/.test(value)) {
-    return `"${value.replace(/"/g, '""')}"`;
-  }
-  return value;
-}
+export { auditEventsToCsv } from "./audit-csv";
 
 function formatJson(value: unknown): string {
   if (value === null || value === undefined) return "";
@@ -17,50 +13,6 @@ function formatJson(value: unknown): string {
   } catch {
     return String(value);
   }
-}
-
-export function auditEventsToCsv(events: AuditRow[]): string {
-  const headers = [
-    "seq",
-    "created_at",
-    "actor_id",
-    "actor_name",
-    "actor_role",
-    "action",
-    "entity_type",
-    "entity_id",
-    "report_id",
-    "summary",
-    "old_value",
-    "new_value",
-    "hash",
-    "prev_hash",
-  ];
-
-  const lines = [headers.join(",")];
-  for (const e of events) {
-    lines.push(
-      [
-        String(e.seq),
-        e.createdAt instanceof Date ? e.createdAt.toISOString() : String(e.createdAt),
-        e.actorId,
-        e.actorName,
-        e.actorRole,
-        e.action,
-        e.entityType,
-        e.entityId,
-        e.reportId ?? "",
-        e.summary,
-        formatJson(e.oldValue),
-        formatJson(e.newValue),
-        e.hash,
-        e.prevHash,
-      ]
-        .map((v) => escapeCsv(String(v)))
-        .join(",")
-    );
-  }
-  return lines.join("\n");
 }
 
 /** Minimal PDF: plain text wrapped in PDF objects (no external deps). */
