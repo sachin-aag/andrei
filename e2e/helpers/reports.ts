@@ -1,4 +1,5 @@
 import { expect, type Page } from "@playwright/test";
+import { browserCookieHeaders } from "./api";
 
 export type CreatedReport = {
   id: string;
@@ -34,10 +35,16 @@ export async function createReport(
     assignedManagerId: opts?.assignedManagerId ?? null,
   };
 
-  let res = await page.request.post("/api/reports", { data: payload });
+  let res = await page.request.post("/api/reports", {
+    data: payload,
+    headers: await browserCookieHeaders(page),
+  });
   if (!res.ok()) {
     await page.waitForTimeout(500);
-    res = await page.request.post("/api/reports", { data: payload });
+    res = await page.request.post("/api/reports", {
+      data: payload,
+      headers: await browserCookieHeaders(page),
+    });
   }
   expect(res.ok(), `create report failed (${res.status()})`).toBeTruthy();
   const body = (await res.json()) as {
@@ -67,17 +74,23 @@ export async function seedDefineForEvaluation(
   page: Page,
   reportId: string
 ): Promise<void> {
-  const res = await page.request.patch(`/api/reports/${reportId}/sections/define`, {
-    data: {
-      content: {
-        narrative: DEFINE_EVAL_NARRATIVE,
+  const res = await page.request.patch(
+    `/api/reports/${reportId}/sections/define`,
+    {
+      data: {
+        content: {
+          narrative: DEFINE_EVAL_NARRATIVE,
+        },
       },
-    },
-  });
+      headers: await browserCookieHeaders(page),
+    }
+  );
   expect(res.ok(), `seed define failed (${res.status()})`).toBeTruthy();
 }
 
 export async function deleteReport(page: Page, reportId: string): Promise<void> {
-  const res = await page.request.delete(`/api/reports/${reportId}`);
+  const res = await page.request.delete(`/api/reports/${reportId}`, {
+    headers: await browserCookieHeaders(page),
+  });
   expect(res.ok(), `delete report ${reportId} failed (${res.status()})`).toBeTruthy();
 }

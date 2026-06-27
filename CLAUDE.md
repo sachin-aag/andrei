@@ -19,8 +19,10 @@ pnpm test:watch           # Vitest watch mode
 pnpm test:coverage        # Vitest with v8 coverage
 pnpm test -- src/lib/ai/evaluate.test.ts  # run a single test file
 pnpm test:e2e             # Playwright E2E (chromium, hits 127.0.0.1:3000)
+pnpm exec playwright test e2e/auth.spec.ts --project=chromium  # single E2E spec
 pnpm precommit            # lint + typecheck + test (husky hook)
-pnpm db:push              # apply Drizzle schema directly to DB
+pnpm db:push              # apply Drizzle schema directly to DB (interactive — prompts in TTY)
+pnpm db:local:push        # non-interactive schema push (use in scripts/CI, not pnpm db:push)
 pnpm db:generate          # generate Drizzle migrations
 pnpm db:migrate           # run Drizzle migrations
 pnpm db:studio            # Drizzle Studio GUI
@@ -30,6 +32,12 @@ pnpm db:local:setup       # up + push schema to local DB
 pnpm db:local:reset       # reset local DB (destructive)
 pnpm db:ensure            # ensure required DB tables/enums exist
 pnpm set-workspace-password  # set a workspace user's password (CLI prompt)
+pnpm sample-eval-report   # bulk AI evaluation of sample DOCXs → HTML report (needs gateway key)
+```
+
+**One-time E2E setup:**
+```bash
+pnpm exec playwright install --with-deps chromium firefox webkit
 ```
 
 ## Architecture
@@ -52,6 +60,8 @@ pnpm set-workspace-password  # set a workspace user's password (CLI prompt)
 - `src/lib/export/` — DOCX generation (see subsystem below).
 - `src/lib/import/` — DOCX parsing (see subsystem below).
 - `src/lib/tiptap/` — TipTap editor extensions and utilities: rich text helpers, placeholder highlights, suggestion injection.
+- `src/lib/placeholders/` — Placeholder detection, fill, scan, and evaluation policy.
+- `src/lib/suggestions/` — Suggestion validation, plain-text edit location, comment persistence.
 - `src/providers/report-provider.tsx` — Centralized client-side state via React Context.
 - `src/hooks/` — Auto-save hooks (see subsystem below).
 - `src/proxy.ts` — Next.js middleware logic (auth redirects, `mustChangePassword` enforcement). Exported as `proxy` and re-used by the actual `middleware.ts` entry point.
@@ -75,6 +85,45 @@ DMAIC (`define`, `measure`, `analyze`, `improve`, `control`) plus three non-edit
 ### Auth
 
 NextAuth v5 with Drizzle adapter. Credentials (email/password) and Resend (magic link). Mock users defined in `src/lib/auth/mock-users.ts` (2 engineers, 2 managers). JWT-based sessions with `workspaceUserId`.
+
+## Environment variables
+
+Required in `.env.local` (see `.env.example` for all options):
+
+| Variable | Purpose |
+|----------|---------|
+| `DATABASE_URL` | Postgres connection string. Local Docker: `postgresql://andrei:andrei@localhost:5432/andrei_dev` |
+| `AUTH_SECRET` | NextAuth secret — generate with `openssl rand -base64 32` |
+| `AUTH_RESEND_KEY` | Resend API key for magic-link emails |
+| `AI_GATEWAY_API_KEY` | Vercel AI Gateway key (recommended). AI features fail without this or `GOOGLE_GENERATIVE_AI_API_KEY`. |
+| `GOOGLE_GENERATIVE_AI_API_KEY` | Direct Gemini key (alternative to gateway) |
+
+**Test-only variables** (never set on Vercel production or preview):
+
+| Variable | Effect |
+|----------|--------|
+| `ALLOW_TEST_LOGIN=true` | Enables `POST /api/test/login` bypass |
+| `ALLOW_TEST_SKIP_EVALUATION=true` | Stubs all `evaluateSection()` calls |
+| `ALLOW_TEST_SKIP_SUGGESTIONS=true` | Stubs AI suggestions |
+| `ALLOW_TEST_STUB_MATH_EXTRACTION=true` | Stubs WMF/EMF vision LLM calls |
+
+Playwright sets these automatically in `webServer.env` — do not add them to production Vercel env.
+
+## Local development gotchas
+
+**Postgres not auto-started:** If using a native (non-Docker) Postgres install, start it manually before running the app or DB scripts: `sudo pg_ctlcluster 16 main start`. Connection is via `127.0.0.1`, so `src/db/connection.ts` uses the `pg` driver, not the Neon HTTP driver.
+
+**`pnpm db:push` is interactive:** It prompts in a TTY and fails in non-interactive shells with "Interactive prompts require a TTY". Always use `pnpm db:local:push` in scripts, CI, or when automating schema updates.
+
+**Turbopack route registration bug:** In `pnpm dev`, a newly-added API route can fail to register on its first on-demand compile and return Next's HTML 404 page for every method. Fix: restart the dev server (optionally `rm -rf .next` first). This is a dev-server state issue, not a code bug.
+
+**AI features require a key:** Core flows (login, report CRUD, editor, manager review, DOCX export) work without AI credentials. "Run AI Check" and suggestions fail until `AI_GATEWAY_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` is set in `.env.local`.
+
+**Creating a workspace user locally:**
+```bash
+pnpm set-workspace-password -- bhargav.patel@mjbiopharm.com 'TempPass123!' --role engineer
+```
+The email must be `@mjbiopharm.com`. The account is flagged `mustChangePassword` on first login.
 
 ## Subsystem: DOCX Import
 
@@ -185,6 +234,10 @@ NextAuth v5 with Drizzle adapter. Credentials (email/password) and Resend (magic
 - Vitest config: `vitest.config.ts`, environment `node`, setup file `src/test/setup.ts` (imports `@testing-library/jest-dom/vitest`).
 - E2E: Playwright with chromium, base URL `http://127.0.0.1:3000`, config in `playwright.config.ts`.
 - Test files live alongside source: `*.test.ts` / `*.test.tsx`.
+- Full E2E details, artifact locations, and test catalog: `TESTING.md`.
+- `pnpm precommit` runs lint + typecheck + Vitest only (no E2E). CI runs them in separate jobs.
+
+**E2E infrastructure:** `e2e/auth.setup.ts` seeds users via `POST /api/test/seed-auth-users` before browser tests. Helpers: `e2e/helpers/auth.ts` (`loginAsEngineer`, `loginAsManager`) and `e2e/helpers/reports.ts` (`createReport`, `deleteReport`). Use `uniqueDeviationNo` for isolation and `deleteReport` in `afterEach`.
 
 ## Style
 

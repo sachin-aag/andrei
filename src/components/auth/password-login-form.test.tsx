@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PasswordLoginForm } from "@/components/auth/password-login-form";
@@ -118,6 +118,9 @@ describe("PasswordLoginForm", () => {
 
   it("shows invalid password error", async () => {
     vi.mocked(signIn).mockResolvedValueOnce({ error: "CredentialsSignin" } as never);
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({ allowed: true, hasPassword: true, locked: false })
+    );
 
     const user = userEvent.setup();
     render(<PasswordLoginForm />);
@@ -126,8 +129,14 @@ describe("PasswordLoginForm", () => {
       "e2e.password@mjbiopharm.com"
     );
     await user.click(screen.getByRole("button", { name: /continue/i }));
-    await user.type(await screen.findByLabelText(/^password$/i), "wrong");
-    await user.click(screen.getByRole("button", { name: /sign in/i }));
+
+    const passwordInput = await screen.findByLabelText(/^password$/i);
+    await waitFor(() => expect(passwordInput).not.toBeDisabled());
+    await user.type(passwordInput, "wrong");
+
+    const signInButton = screen.getByRole("button", { name: /sign in/i });
+    await waitFor(() => expect(signInButton).not.toBeDisabled());
+    await user.click(signInButton);
 
     expect(await screen.findByText(/invalid password/i)).toBeInTheDocument();
   });

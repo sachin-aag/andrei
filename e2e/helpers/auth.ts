@@ -1,4 +1,8 @@
 import { expect, type Page } from "@playwright/test";
+import {
+  gotoWithNavigationRetry,
+  parkPageForSessionSwap,
+} from "./navigation";
 import { expandPrimaryNav, primaryNav } from "./workspace";
 import type { UserRole } from "@/lib/auth/roles";
 
@@ -50,6 +54,7 @@ async function testLogin(
     passwordWarning?: boolean;
   }
 ): Promise<TestLoginResult> {
+  await parkPageForSessionSwap(page);
   await page.context().clearCookies();
 
   const maxAttempts = 3;
@@ -93,7 +98,7 @@ async function waitForHomeDashboard(page: Page, role: HomeRole): Promise<void> {
   const maxAttempts = 3;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-    await page.goto("/", { waitUntil: "load" });
+    await gotoWithNavigationRetry(page, "/", { waitUntil: "load" });
     const url = page.url();
     if (url.includes("/login")) {
       if (attempt < maxAttempts) {
@@ -191,7 +196,9 @@ export async function loginAsAdminWithResponse(page: Page): Promise<TestLoginRes
     role: "admin",
   });
   expect(result.role).toBe("admin");
-  await page.goto("/admin/reports", { waitUntil: "domcontentloaded" });
+  await gotoWithNavigationRetry(page, "/admin/reports", {
+    waitUntil: "domcontentloaded",
+  });
   await expect(page.getByRole("heading", { name: /^reports$/i })).toBeVisible({
     timeout: 30_000,
   });

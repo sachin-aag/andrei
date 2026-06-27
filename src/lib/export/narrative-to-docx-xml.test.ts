@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { JSONContent } from "@tiptap/core";
 import PizZip from "pizzip";
 import { reports } from "@/db/schema";
+import { hydrateUserDirectory } from "@/lib/auth/user-directory";
 import { createDocxExportContext } from "@/lib/export/docx-export-context";
 import { generateReportDocx } from "@/lib/export/generate-docx";
 import { loadListNumberingBasesFromZip } from "@/lib/export/docx-numbering";
@@ -183,6 +184,49 @@ describe("narrativeToDocxXml tables", () => {
     expect(xml).toContain("</w:ins>");
     expect(xml).not.toContain("<w:highlight");
     expect(xml).not.toContain("<w:strike/>");
+  });
+
+  it("resolves track-change authorId to workspace user name when directory is hydrated", () => {
+    hydrateUserDirectory([
+      {
+        id: "9",
+        name: "Bhargav Patel",
+        email: "bhargav.patel@mjbiopharm.com",
+        role: "manager",
+        title: "Quality Manager",
+      },
+    ]);
+
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "Testing Track changes function.",
+              marks: [
+                {
+                  type: suggestionInsertMarkName,
+                  attrs: {
+                    id: "101",
+                    authorId: "9",
+                    createdAt: "2026-06-23T10:51:00.000Z",
+                    status: "pending",
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const xml = narrativeToDocxXml(doc);
+
+    expect(xml).toContain('w:author="Bhargav Patel"');
+    expect(xml).not.toContain('w:author="9"');
   });
 
   it("exports suggestion delete marks as native Word delete revisions", () => {

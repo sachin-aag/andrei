@@ -1,7 +1,13 @@
 import { expect, test } from "@playwright/test";
-import { authenticateAsManager, loginAsEngineer, loginAsManager } from "./helpers/auth";
+import {
+  authenticateAsEngineer,
+  authenticateAsManager,
+  loginAsEngineer,
+} from "./helpers/auth";
+import { browserCookieHeaders } from "./helpers/api";
 import {
   createReport,
+  deleteReport,
   seedDefineForEvaluation,
 } from "./helpers/reports";
 import {
@@ -29,12 +35,8 @@ test.describe("report editor", () => {
 
   test.afterEach(async ({ page }) => {
     if (reportId) {
-      const res = await page.request.delete(`/api/reports/${reportId}`);
-      if (!res.ok()) {
-        // Re-authenticate as the report author (engineer) and retry
-        await page.request.post("/api/test/login");
-        await page.request.delete(`/api/reports/${reportId}`);
-      }
+      await authenticateAsEngineer(page);
+      await deleteReport(page, reportId);
       reportId = null;
     }
   });
@@ -75,6 +77,7 @@ test.describe("report editor", () => {
     await seedDefineForEvaluation(page, reportId!);
     const evalRes = await page.request.post(`/api/reports/${reportId}/evaluate`, {
       data: {},
+      headers: await browserCookieHeaders(page),
     });
     expect(evalRes.ok()).toBeTruthy();
 
@@ -98,6 +101,7 @@ test.describe("report editor", () => {
   test("approved report is read-only for engineer", async ({ page }) => {
     const submitRes = await page.request.post(`/api/reports/${reportId}/submit`, {
       data: signedWorkflowPayload(),
+      headers: await browserCookieHeaders(page),
     });
     expect(submitRes.ok(), `submit failed (${submitRes.status()})`).toBeTruthy();
 
@@ -108,7 +112,7 @@ test.describe("report editor", () => {
       timeout: 15_000,
     });
 
-    await loginAsEngineer(page);
+    await authenticateAsEngineer(page);
     await page.goto(`/reports/${reportId}/edit`);
     await expect(page.getByRole("heading", { name: /^define$/i })).toBeVisible({
       timeout: 30_000,

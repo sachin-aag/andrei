@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { CalendarDays, Hash, Users, Wrench } from "lucide-react";
+import { CalendarDays, Wrench } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -10,18 +10,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useAutoSave } from "@/hooks/use-auto-save";
 import { SaveStatus } from "./save-status";
 import { useReportData } from "@/providers/report-provider";
-import { useUserDirectory } from "@/providers/user-directory-provider";
-import { ManagerSelector } from "@/components/report/manager-selector";
 import type { ReportRecord } from "@/types/report";
-
-function initialManagerIds(report: ReportRecord): string[] {
-  const managerIds = report.assignedManagerIds ?? [];
-  return managerIds.length > 0
-    ? managerIds
-    : report.assignedManagerId
-      ? [report.assignedManagerId]
-      : [];
-}
 
 function ReportHeaderForm({
   report,
@@ -32,29 +21,21 @@ function ReportHeaderForm({
   setReport: React.Dispatch<React.SetStateAction<ReportRecord>>;
   readOnly: boolean;
 }) {
-  const [deviationNo, setDeviationNo] = useState(report.deviationNo);
   const [date, setDate] = useState(report.date.slice(0, 10));
   const [toolsUsed, setToolsUsed] = useState(report.toolsUsed);
   const [otherTools, setOtherTools] = useState(report.otherTools);
-  const [assignedManagerIds, setAssignedManagerIds] = useState(() =>
-    initialManagerIds(report)
-  );
-  const { users } = useUserDirectory();
-  const managers = users.filter((user) => user.role === "manager");
 
   const { status, lastSavedAt } = useAutoSave({
     enabled: !readOnly,
-    value: { deviationNo, date, toolsUsed, otherTools, assignedManagerIds },
+    value: { date, toolsUsed, otherTools },
     onSave: async (v, context) => {
       const res = await fetch(`/api/reports/${report.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          deviationNo: v.deviationNo,
           date: new Date(v.date).toISOString(),
           toolsUsed: v.toolsUsed,
           otherTools: v.otherTools,
-          assignedManagerIds: v.assignedManagerIds,
         }),
         signal: context?.signal,
       });
@@ -78,18 +59,6 @@ function ReportHeaderForm({
               value={date}
               disabled={readOnly}
               onChange={(e) => setDate(e.target.value)}
-            />
-          </div>
-          <div className="grid gap-2 flex-1 min-w-[220px]">
-            <Label>
-              <Hash className="inline size-3 mr-1" />
-              Deviation No.
-            </Label>
-            <Input
-              placeholder="DEV/PK/26/001"
-              value={deviationNo}
-              disabled={readOnly}
-              onChange={(e) => setDeviationNo(e.target.value)}
             />
           </div>
           <div className="ml-auto self-end">
@@ -123,20 +92,6 @@ function ReportHeaderForm({
               </label>
             ))}
           </div>
-        </div>
-
-        <div className="grid gap-2">
-          <Label>
-            <Users className="inline size-3 mr-1" />
-            Reviewer managers
-          </Label>
-          <ManagerSelector
-            managers={managers}
-            selectedIds={assignedManagerIds}
-            disabled={readOnly}
-            onSelectedIdsChange={setAssignedManagerIds}
-            emptyMessage="No managers are available to assign."
-          />
         </div>
 
         <div className="grid gap-2">
