@@ -11,7 +11,10 @@ import {
   defineSection,
   postReviewMarginNote,
 } from "./helpers/workspace";
-import { signWorkflowAction } from "./helpers/signing";
+import {
+  signWorkflowAction,
+  TEST_MANAGER_EMAIL,
+} from "./helpers/signing";
 
 test.describe.configure({ mode: "serial" });
 
@@ -64,7 +67,7 @@ test.describe("report workflow", () => {
     );
     await expect(page.getByText(/comment posted/i)).toBeVisible();
 
-    await signWorkflowAction(page, /return with feedback/i);
+    await signWorkflowAction(page, /return with feedback/i, TEST_MANAGER_EMAIL);
     await expect(page.getByText(/feedback returned to author/i)).toBeVisible({
       timeout: 15_000,
     });
@@ -102,7 +105,7 @@ test.describe("report workflow", () => {
     test.skip(!reportId, "prior step did not create report");
     await loginAsManager(page);
     await page.goto(`/reports/${reportId}/review`);
-    await signWorkflowAction(page, /^approve$/i);
+    await signWorkflowAction(page, /^approve$/i, TEST_MANAGER_EMAIL);
     await expect(page.getByText(/approved/i).first()).toBeVisible({
       timeout: 15_000,
     });

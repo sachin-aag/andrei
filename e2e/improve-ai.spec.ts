@@ -1,6 +1,7 @@
 import path from "node:path";
 import { expect, test, type Page } from "@playwright/test";
-import { loginAsEngineer } from "./helpers/auth";
+import { loginAsTestUser, scopedTestEmail } from "./helpers/auth";
+import { TEST_ENGINEER_EMAIL } from "./helpers/signing";
 import {
   createReport,
   deleteReport,
@@ -11,6 +12,20 @@ const fixturePath = path.join(
   process.cwd(),
   "e2e/fixtures/minimal-report.docx"
 );
+
+async function loginAsProjectEngineer(
+  page: Page,
+  projectName: string
+): Promise<void> {
+  await loginAsTestUser(page, {
+    email: scopedTestEmail(TEST_ENGINEER_EMAIL, projectName),
+    role: "engineer",
+  });
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: /my reports/i })).toBeVisible({
+    timeout: 30_000,
+  });
+}
 
 async function waitForSessionReady(page: Page, sessionId: string) {
   await expect
@@ -40,15 +55,15 @@ test.describe("improve ai", () => {
     sessionId = null;
   });
 
-  test("shows empty state on list page", async ({ page }) => {
-    await loginAsEngineer(page);
+  test("shows empty state on list page", async ({ page }, testInfo) => {
+    await loginAsProjectEngineer(page, testInfo.project.name);
     await page.goto("/improve-ai");
     await expect(page.getByText(/no ai feedback sessions yet/i)).toBeVisible();
     await expect(page.getByText(/evaluate report/i).first()).toBeVisible();
   });
 
-  test("creates session from existing report", async ({ page }) => {
-    await loginAsEngineer(page);
+  test("creates session from existing report", async ({ page }, testInfo) => {
+    await loginAsProjectEngineer(page, testInfo.project.name);
     const created = await createReport(page);
     reportId = created.id;
     await seedDefineForEvaluation(page, reportId);
@@ -67,9 +82,9 @@ test.describe("improve ai", () => {
     });
   });
 
-  test("agrees with a criterion on review page", async ({ page }) => {
+  test("agrees with a criterion on review page", async ({ page }, testInfo) => {
     test.setTimeout(120_000);
-    await loginAsEngineer(page);
+    await loginAsProjectEngineer(page, testInfo.project.name);
     const created = await createReport(page);
     reportId = created.id;
     await seedDefineForEvaluation(page, reportId);
@@ -97,8 +112,8 @@ test.describe("improve ai", () => {
       .toBe(true);
   });
 
-  test("completes session after reviewing all criteria", async ({ page }) => {
-    await loginAsEngineer(page);
+  test("completes session after reviewing all criteria", async ({ page }, testInfo) => {
+    await loginAsProjectEngineer(page, testInfo.project.name);
     const created = await createReport(page);
     reportId = created.id;
     await seedDefineForEvaluation(page, reportId);
@@ -141,8 +156,8 @@ test.describe("improve ai", () => {
     });
   });
 
-  test("uploads docx to create session", async ({ page }) => {
-    await loginAsEngineer(page);
+  test("uploads docx to create session", async ({ page }, testInfo) => {
+    await loginAsProjectEngineer(page, testInfo.project.name);
     await page.goto("/improve-ai");
     await page.getByRole("button", { name: /evaluate report/i }).click();
     await page.locator("#improve-ai-file").setInputFiles(fixturePath);

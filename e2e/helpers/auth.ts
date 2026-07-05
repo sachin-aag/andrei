@@ -11,6 +11,13 @@ const TEST_AUTH_EMAIL =
 const PLAYWRIGHT_BASE_URL =
   process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3000";
 
+/** Isolate parallel browser projects sharing one CI database (e.g. improve-ai sessions). */
+export function scopedTestEmail(baseEmail: string, scope: string): string {
+  const [local, domain] = baseEmail.split("@");
+  if (!local || !domain || !scope) return baseEmail;
+  return `${local}+${scope.toLowerCase()}@${domain}`;
+}
+
 export type TestLoginResult = {
   userId: string;
   email: string;

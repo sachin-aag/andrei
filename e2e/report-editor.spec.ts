@@ -15,7 +15,11 @@ import {
   defineSection,
   reportSidebar,
 } from "./helpers/workspace";
-import { signedWorkflowPayload, signWorkflowAction } from "./helpers/signing";
+import {
+  signedWorkflowPayload,
+  signWorkflowAction,
+  TEST_MANAGER_EMAIL,
+} from "./helpers/signing";
 
 test.describe.configure({ mode: "serial" });
 
@@ -107,7 +111,7 @@ test.describe("report editor", () => {
 
     await authenticateAsManager(page);
     await page.goto(`/reports/${reportId}/review`);
-    await signWorkflowAction(page, /^approve$/i);
+    await signWorkflowAction(page, /^approve$/i, TEST_MANAGER_EMAIL);
     await expect(page.getByText(/approved/i).first()).toBeVisible({
       timeout: 15_000,
     });
