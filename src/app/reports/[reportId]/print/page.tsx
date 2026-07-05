@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { reports } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
+import { isAdminRole } from "@/lib/auth/roles";
 import { canViewReport } from "@/lib/reports/access";
 import {
   listReportManagerIds,
@@ -58,8 +59,9 @@ export default async function ReportPrintPage({
         <dd>{report.updatedAt.toISOString()}</dd>
       </dl>
       <p className="mt-8">
-        Use the complete record export for the full audit trail, version history,
-        investigation DOCX, and machine-readable metadata bundle.
+        {isAdminRole(user.role)
+          ? "Use the complete record export for the full audit trail, version history, investigation DOCX, and machine-readable metadata bundle."
+          : "Use the complete record export for version history, investigation DOCX, and machine-readable metadata. Audit trail exports are available to administrators only."}
       </p>
       <style>{`
         @media print {

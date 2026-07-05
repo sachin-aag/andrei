@@ -55,28 +55,41 @@ function reportMetadataXml(
   return lines.filter(Boolean).join("\n");
 }
 
-export async function buildCompleteRecordExportZip(reportId: string) {
+export type CompleteRecordExportOptions = {
+  /** Audit trail artifacts are admin-only (see /api/reports/[reportId]/audit/export). */
+  includeAuditTrail?: boolean;
+};
+
+export async function buildCompleteRecordExportZip(
+  reportId: string,
+  options: CompleteRecordExportOptions = {}
+) {
+  const includeAuditTrail = options.includeAuditTrail ?? false;
   const [report] = await db.select().from(reports).where(eq(reports.id, reportId));
   if (!report) return null;
 
   const managerIds = await listReportManagerIds(reportId);
   const reportWithManagers = withAssignedManagerIds(report, managerIds);
 
-  const [sectionRows, commentRows, auditEvents, signatures, versions] =
-    await Promise.all([
-      db.select().from(reportSections).where(eq(reportSections.reportId, reportId)),
-      db.select().from(comments).where(eq(comments.reportId, reportId)),
-      listAuditEvents({ reportId, limit: 10_000 }),
-      listReportSignatures(reportId),
-      db
-        .select()
-        .from(sectionContentVersions)
-        .where(eq(sectionContentVersions.reportId, reportId)),
-    ]);
+  const [sectionRows, commentRows, signatures, versions] = await Promise.all([
+    db.select().from(reportSections).where(eq(reportSections.reportId, reportId)),
+    db.select().from(comments).where(eq(comments.reportId, reportId)),
+    listReportSignatures(reportId),
+    db
+      .select()
+      .from(sectionContentVersions)
+      .where(eq(sectionContentVersions.reportId, reportId)),
+  ]);
 
-  const [auditCsv, auditPdf, investigationDocx] = await Promise.all([
-    exportAuditEventsCsv(auditEvents),
-    exportAuditEventsPdf(auditEvents),
+  const auditArtifactsPromise = includeAuditTrail
+    ? listAuditEvents({ reportId, limit: 10_000 }).then(async (auditEvents) => ({
+        auditCsv: await exportAuditEventsCsv(auditEvents),
+        auditPdf: await exportAuditEventsPdf(auditEvents),
+      }))
+    : Promise.resolve(null);
+
+  const [auditArtifacts, investigationDocx] = await Promise.all([
+    auditArtifactsPromise,
     generateReportDocx({
       report: reportWithManagers,
       sections: sectionRows.map((row) => ({
@@ -107,8 +120,10 @@ export async function buildCompleteRecordExportZip(reportId: string) {
 
   const zip = new PizZip();
   zip.file("metadata.xml", metadataXml);
-  zip.file("audit-trail.csv", auditCsv);
-  zip.file("audit-trail.pdf", auditPdf);
+  if (auditArtifacts) {
+    zip.file("audit-trail.csv", auditArtifacts.auditCsv);
+    zip.file("audit-trail.pdf", auditArtifacts.auditPdf);
+  }
   zip.file("version-history.csv", versionHistoryCsv);
   zip.file("investigation-report.docx", investigationDocx);
 

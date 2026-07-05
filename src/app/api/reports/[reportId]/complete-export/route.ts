@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/session";
+import { isAdminRole } from "@/lib/auth/roles";
 import { canViewReport } from "@/lib/reports/access";
 import { buildCompleteRecordExportZip } from "@/lib/reports/complete-export";
 import { db } from "@/db";
@@ -29,7 +30,9 @@ export async function GET(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const bundle = await buildCompleteRecordExportZip(reportId);
+  const bundle = await buildCompleteRecordExportZip(reportId, {
+    includeAuditTrail: isAdminRole(user.role),
+  });
   if (!bundle) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const safeDev = (bundle.deviationNo || "report").replace(/[^a-zA-Z0-9_\-/]/g, "_");
