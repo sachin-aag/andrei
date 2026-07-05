@@ -4,6 +4,7 @@ import {
   loginAsEngineerWithResponse,
   loginAsManager,
   loginAsManagerWithResponse,
+  loginAsTestUser,
 } from "./helpers/auth";
 import { createReport, deleteReport } from "./helpers/reports";
 import {
@@ -11,14 +12,19 @@ import {
   defineSection,
   postReviewMarginNote,
 } from "./helpers/workspace";
-import { signWorkflowAction } from "./helpers/signing";
+import {
+  signWorkflowAction,
+  TEST_MANAGER_EMAIL,
+} from "./helpers/signing";
+
+const TEST_APPROVER_EMAIL = "test.approver@mjbiopharm.com";
 
 test.describe.configure({ mode: "serial" });
 
 test.describe("report workflow", () => {
   let reportId: string | null = null;
   let deviationNo: string | null = null;
-  let managerId: string | null = null;
+  let approverId: string | null = null;
 
   test.afterAll(async ({ browser }) => {
     if (!reportId) return;
@@ -29,11 +35,17 @@ test.describe("report workflow", () => {
   });
 
   test("engineer submits report", async ({ page }) => {
-    const manager = await loginAsManagerWithResponse(page);
-    managerId = manager.userId;
+    const reviewer = await loginAsManagerWithResponse(page);
+    const approver = await loginAsTestUser(page, {
+      email: TEST_APPROVER_EMAIL,
+      role: "manager",
+    });
+    approverId = approver.userId;
 
     await loginAsEngineerWithResponse(page);
-    const created = await createReport(page, { assignedManagerId: managerId });
+    const created = await createReport(page, {
+      assignedManagerIds: [reviewer.userId, approver.userId],
+    });
     reportId = created.id;
     deviationNo = created.deviationNo;
 
@@ -64,7 +76,7 @@ test.describe("report workflow", () => {
     );
     await expect(page.getByText(/comment posted/i)).toBeVisible();
 
-    await signWorkflowAction(page, /return with feedback/i);
+    await signWorkflowAction(page, /return with feedback/i, TEST_MANAGER_EMAIL);
     await expect(page.getByText(/feedback returned to author/i)).toBeVisible({
       timeout: 15_000,
     });
@@ -99,10 +111,13 @@ test.describe("report workflow", () => {
   });
 
   test("manager approves report", async ({ page }) => {
-    test.skip(!reportId, "prior step did not create report");
-    await loginAsManager(page);
+    test.skip(!reportId || !approverId, "prior step did not create report");
+    await loginAsTestUser(page, {
+      email: TEST_APPROVER_EMAIL,
+      role: "manager",
+    });
     await page.goto(`/reports/${reportId}/review`);
-    await signWorkflowAction(page, /^approve$/i);
+    await signWorkflowAction(page, /^approve$/i, TEST_APPROVER_EMAIL);
     await expect(page.getByText(/approved/i).first()).toBeVisible({
       timeout: 15_000,
     });

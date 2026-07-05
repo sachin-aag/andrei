@@ -96,7 +96,12 @@ export const aiFeedbackSessionStatusEnum = pgEnum("ai_feedback_session_status", 
   "reviewed",
 ]);
 
-export const userRoleEnum = pgEnum("user_role", ["engineer", "manager", "admin"]);
+export const userRoleEnum = pgEnum("user_role", [
+  "engineer",
+  "manager",
+  "admin",
+  "qa",
+]);
 
 export const auditActionEnum = pgEnum("audit_action", [
   "report_created",
@@ -126,6 +131,10 @@ export const auditActionEnum = pgEnum("audit_action", [
   "improve_ai_session_created",
   "improve_ai_session_completed",
   "improve_ai_response_updated",
+  "report_purged",
+  "user_deactivated",
+  "user_reactivated",
+  "user_unlocked",
 ]);
 
 export const auditEntityEnum = pgEnum("audit_entity", [
@@ -178,6 +187,8 @@ export const workspaceUsers = pgTable(
     passwordResetTokenExpiresAt: timestamp("password_reset_token_expires_at", {
       withTimezone: true,
     }),
+    /** Non-null means the account is deactivated and cannot sign in. */
+    deactivatedAt: timestamp("deactivated_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -217,11 +228,16 @@ export const reports = pgTable(
     status: reportStatusEnum("status").notNull().default("draft"),
     authorId: text("author_id").notNull(),
     assignedManagerId: text("assigned_manager_id"),
+    /** Manager who first reviewed (first comment / in_review actor) for segregation of duties. */
+    reviewedById: text("reviewed_by_id"),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    deletedById: text("deleted_by_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
     deviationNoUnique: uniqueIndex("reports_deviation_no_unique").on(t.authorId, t.deviationNo),
+    deletedAtIdx: index("reports_deleted_at_idx").on(t.deletedAt),
   })
 );
 
@@ -566,10 +582,22 @@ export const electronicSignatures = pgTable("electronic_signatures", {
   meaning: signatureMeaningEnum("meaning").notNull(),
   signedAt: timestamp("signed_at", { withTimezone: true }).notNull().defaultNow(),
   authMethod: text("auth_method").notNull().default("password"),
+  /** SHA-256 hash of all section content at signing time. */
+  contentHash: text("content_hash"),
+  /** Monotonic version sequence across all sections at signing time. */
+  signedVersionSeq: integer("signed_version_seq"),
   auditEventId: text("audit_event_id")
     .notNull()
     .references(() => auditEvents.id, { onDelete: "restrict" }),
   createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const retentionSettings = pgTable("retention_settings", {
+  id: text("id").primaryKey().default("default"),
+  reportRetentionDays: integer("report_retention_days").notNull().default(2555),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
 });

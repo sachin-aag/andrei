@@ -263,16 +263,21 @@ export function AdminUsersPanel({
     startDeleteTransition(async () => {
       const response = await fetch(
         `/api/admin/users/${encodeURIComponent(deleteUser.id)}`,
-        { method: "DELETE" }
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ active: false }),
+        }
       );
 
       if (!response.ok) {
-        toast.error(await readError(response, "Could not delete user"));
+        toast.error(await readError(response, "Could not deactivate user"));
         return;
       }
 
-      removeUser(deleteUser.id);
-      toast.success("User deleted");
+      const data = (await response.json()) as { user: AdminUser };
+      updateUser(data.user);
+      toast.success("User deactivated");
       setDeleteUser(null);
       router.refresh();
     });
@@ -516,6 +521,16 @@ export function AdminUsersPanel({
                     <div className="text-xs text-[var(--muted-foreground)]">
                       {user.email}
                     </div>
+                    {!user.isActive && (
+                      <div className="mt-1 text-xs font-medium text-red-400">
+                        Deactivated
+                      </div>
+                    )}
+                    {user.lockedAt && (
+                      <div className="mt-1 text-xs font-medium text-amber-400">
+                        Locked
+                      </div>
+                    )}
                   </td>
                   <td className="px-4 py-3">
                     <Select
@@ -557,6 +572,40 @@ export function AdminUsersPanel({
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-2">
+                      {user.lockedAt && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            void fetch(
+                              `/api/admin/users/${encodeURIComponent(user.id)}/unlock`,
+                              { method: "POST" }
+                            )
+                              .then(async (response) => {
+                                if (!response.ok) {
+                                  throw new Error(
+                                    await readError(response, "Could not unlock user")
+                                  );
+                                }
+                                return (await response.json()) as { user: AdminUser };
+                              })
+                              .then((data) => {
+                                updateUser(data.user);
+                                toast.success("User unlocked");
+                              })
+                              .catch((error) => {
+                                toast.error(
+                                  error instanceof Error
+                                    ? error.message
+                                    : "Could not unlock user"
+                                );
+                              });
+                          }}
+                        >
+                          Unlock
+                        </Button>
+                      )}
                       <Button
                         type="button"
                         variant="outline"
@@ -570,12 +619,14 @@ export function AdminUsersPanel({
                         variant="ghost"
                         size="icon"
                         className="size-8 text-[var(--muted-foreground)] hover:bg-red-50 hover:text-red-600 disabled:hover:bg-transparent disabled:hover:text-[var(--muted-foreground)]"
-                        disabled={user.id === currentUserId}
-                        aria-label={`Delete user ${user.name}`}
+                        disabled={user.id === currentUserId || !user.isActive}
+                        aria-label={`Deactivate user ${user.name}`}
                         title={
                           user.id === currentUserId
-                            ? "You cannot delete your own account"
-                            : "Delete user"
+                            ? "You cannot deactivate your own account"
+                            : user.isActive
+                              ? "Deactivate user"
+                              : "User already deactivated"
                         }
                         onClick={() => setDeleteUser(user)}
                       >
@@ -651,11 +702,11 @@ export function AdminUsersPanel({
           }}
         >
           <DialogHeader>
-            <DialogTitle>Delete user?</DialogTitle>
+            <DialogTitle>Deactivate user?</DialogTitle>
             <DialogDescription>
-              This will remove {deleteUser?.name}&apos;s sign-in access. Existing
-              reports and comments remain in the audit history. This cannot be
-              undone.
+              This will retire {deleteUser?.name}&apos;s sign-in access. Their user
+              ID and email cannot be reused. Existing reports and audit history are
+              retained.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -680,7 +731,7 @@ export function AdminUsersPanel({
               ) : (
                 <Trash2 className="size-4" />
               )}
-              Delete user
+              Deactivate user
             </Button>
           </DialogFooter>
         </DialogContent>

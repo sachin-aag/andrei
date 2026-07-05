@@ -149,9 +149,17 @@ export async function POST(
 
   if (report.status === "submitted") {
     const previousStatus = report.status;
+    const reviewUpdate: {
+      status: "in_review";
+      updatedAt: Date;
+      reviewedById?: string;
+    } = { status: "in_review", updatedAt: new Date() };
+    if (user.role === "manager" && !report.reviewedById) {
+      reviewUpdate.reviewedById = user.id;
+    }
     await db
       .update(reports)
-      .set({ status: "in_review", updatedAt: new Date() })
+      .set(reviewUpdate)
       .where(eq(reports.id, reportId));
 
     await recordAuditEvent({

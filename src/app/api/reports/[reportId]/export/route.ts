@@ -62,6 +62,7 @@ export async function GET(
       signerName: s.signerName,
       meaning: s.meaning,
       signedAt: s.signedAt,
+      contentHash: s.contentHash,
     })),
   });
 

@@ -5,6 +5,7 @@ import {
   loginAsEngineer,
 } from "./helpers/auth";
 import { browserCookieHeaders } from "./helpers/api";
+import { gotoWithNavigationRetry } from "./helpers/navigation";
 import {
   createReport,
   deleteReport,
@@ -15,7 +16,10 @@ import {
   defineSection,
   reportSidebar,
 } from "./helpers/workspace";
-import { signedWorkflowPayload, signWorkflowAction } from "./helpers/signing";
+import {
+  signedWorkflowPayload,
+  TEST_MANAGER_EMAIL,
+} from "./helpers/signing";
 
 test.describe.configure({ mode: "serial" });
 
@@ -106,14 +110,16 @@ test.describe("report editor", () => {
     expect(submitRes.ok(), `submit failed (${submitRes.status()})`).toBeTruthy();
 
     await authenticateAsManager(page);
-    await page.goto(`/reports/${reportId}/review`);
-    await signWorkflowAction(page, /^approve$/i);
-    await expect(page.getByText(/approved/i).first()).toBeVisible({
-      timeout: 15_000,
+    const approveRes = await page.request.post(`/api/reports/${reportId}/approve`, {
+      data: signedWorkflowPayload(TEST_MANAGER_EMAIL),
+      headers: await browserCookieHeaders(page),
     });
+    expect(approveRes.ok(), `approve failed (${approveRes.status()})`).toBeTruthy();
 
     await authenticateAsEngineer(page);
-    await page.goto(`/reports/${reportId}/edit`);
+    await gotoWithNavigationRetry(page, `/reports/${reportId}/edit`, {
+      waitUntil: "domcontentloaded",
+    });
     await expect(page.getByRole("heading", { name: /^define$/i })).toBeVisible({
       timeout: 30_000,
     });

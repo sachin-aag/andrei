@@ -29,7 +29,10 @@ export default async function AdminReportsPage({
   const [authorOptions, reports, workspaceUsers, passwordStatus] =
     await Promise.all([
       listAdminReportAuthorOptions(),
-      listAdminReportSummaries(selectedUserId ?? undefined),
+      listAdminReportSummaries({
+        authorId: selectedUserId ?? undefined,
+        includeDeleted: true,
+      }),
       listWorkspaceUsers(),
       getPasswordStatusForUser(user.id),
     ]);

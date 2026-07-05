@@ -27,12 +27,16 @@ export async function createReport(
   opts?: {
     deviationNo?: string;
     assignedManagerId?: string | null;
+    assignedManagerIds?: string[];
   }
 ): Promise<CreatedReport> {
   const deviationNo = opts?.deviationNo ?? uniqueDeviationNo();
   const payload = {
     deviationNo,
     assignedManagerId: opts?.assignedManagerId ?? null,
+    ...(opts?.assignedManagerIds
+      ? { assignedManagerIds: opts.assignedManagerIds }
+      : {}),
   };
 
   let res = await page.request.post("/api/reports", {
@@ -92,5 +96,11 @@ export async function deleteReport(page: Page, reportId: string): Promise<void> 
   const res = await page.request.delete(`/api/reports/${reportId}`, {
     headers: await browserCookieHeaders(page),
   });
+  if (res.status() === 409) {
+    const body = (await res.json().catch(() => null)) as { error?: string } | null;
+    if (body?.error === "Approved reports cannot be deleted") {
+      return;
+    }
+  }
   expect(res.ok(), `delete report ${reportId} failed (${res.status()})`).toBeTruthy();
 }

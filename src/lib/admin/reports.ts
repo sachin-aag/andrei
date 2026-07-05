@@ -16,15 +16,18 @@ export type AdminReportSummary = {
   assignedManagerId: string | null;
   assignedManagerIds: string[];
   updatedAt: Date;
+  deletedAt: Date | null;
+  deletedById: string | null;
 };
 
 export type AdminReportAuthorOption = AdminUser & {
   reportCount: number;
 };
 
-export async function listAdminReportSummaries(
-  authorId?: string
-): Promise<AdminReportSummary[]> {
+export async function listAdminReportSummaries(options?: {
+  authorId?: string;
+  includeDeleted?: boolean;
+}): Promise<AdminReportSummary[]> {
   const query = db
     .select({
       id: reports.id,
@@ -34,25 +37,24 @@ export async function listAdminReportSummaries(
       authorId: reports.authorId,
       assignedManagerId: reports.assignedManagerId,
       updatedAt: reports.updatedAt,
+      deletedAt: reports.deletedAt,
+      deletedById: reports.deletedById,
     })
     .from(reports)
     .orderBy(desc(reports.updatedAt));
 
-  if (authorId) {
-    const rows = await query.where(eq(reports.authorId, authorId));
-    const managerIdsByReportId = await listReportManagerIdsByReportIds(
-      rows.map((row) => row.id)
-    );
-    return rows.map((row) =>
-      withAssignedManagerIds(row, managerIdsByReportId.get(row.id) ?? [])
-    );
-  }
+  const rows = options?.authorId
+    ? await query.where(eq(reports.authorId, options.authorId))
+    : await query;
 
-  const rows = await query;
+  const filtered = options?.includeDeleted
+    ? rows
+    : rows.filter((row) => row.deletedAt == null);
+
   const managerIdsByReportId = await listReportManagerIdsByReportIds(
-    rows.map((row) => row.id)
+    filtered.map((row) => row.id)
   );
-  return rows.map((row) =>
+  return filtered.map((row) =>
     withAssignedManagerIds(row, managerIdsByReportId.get(row.id) ?? [])
   );
 }
@@ -68,6 +70,7 @@ export async function listAdminReportAuthorOptions(): Promise<
         reportCount: sql<number>`count(*)::int`,
       })
       .from(reports)
+      .where(sql`${reports.deletedAt} is null`)
       .groupBy(reports.authorId),
   ]);
 

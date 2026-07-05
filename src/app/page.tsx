@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 import { ViewTransition } from "react";
-import { desc, eq, or, sql } from "drizzle-orm";
+import { and, desc, eq, or, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { reportManagers, reports } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
@@ -15,6 +15,7 @@ import {
   listReportManagerIdsByReportIds,
   withAssignedManagerIds,
 } from "@/lib/reports/managers";
+import { activeReportsFilter } from "@/lib/reports/tombstone";
 
 export const dynamic = "force-dynamic";
 
@@ -34,12 +35,20 @@ export default async function DashboardPage() {
   );
 
   const reportRows =
-    user.role === "engineer"
+    user.role === "qa"
+      ? await withTransientRetry("dashboard.qaReports", () =>
+          db
+            .select()
+            .from(reports)
+            .where(activeReportsFilter())
+            .orderBy(desc(reports.updatedAt))
+        )
+      : user.role === "engineer"
       ? await withTransientRetry("dashboard.engineerReports", () =>
           db
             .select()
             .from(reports)
-            .where(eq(reports.authorId, user.id))
+            .where(and(eq(reports.authorId, user.id), activeReportsFilter()))
             .orderBy(desc(reports.updatedAt))
         )
       : await withTransientRetry("dashboard.managerReports", () =>
@@ -47,15 +56,18 @@ export default async function DashboardPage() {
             .select()
             .from(reports)
             .where(
-              or(
-                eq(reports.assignedManagerId, user.id),
-                sql`exists (
+              and(
+                activeReportsFilter(),
+                or(
+                  eq(reports.assignedManagerId, user.id),
+                  sql`exists (
                   select 1 from ${reportManagers}
                   where ${reportManagers.reportId} = ${reports.id}
                   and ${reportManagers.managerId} = ${user.id}
                 )`,
-                eq(reports.status, "submitted"),
-                eq(reports.status, "in_review")
+                  eq(reports.status, "submitted"),
+                  eq(reports.status, "in_review")
+                )
               )
             )
             .orderBy(desc(reports.updatedAt))
@@ -83,12 +95,18 @@ export default async function DashboardPage() {
         <div className="flex items-center justify-between px-10 py-6 border-b border-[var(--border)]">
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">
-              {user.role === "engineer" ? "My Reports" : "Reports Queue"}
+              {user.role === "engineer"
+                ? "My Reports"
+                : user.role === "qa"
+                  ? "All Reports"
+                  : "Reports Queue"}
             </h1>
             <p className="text-sm text-[var(--muted-foreground)] mt-1">
               {user.role === "engineer"
                 ? "Create and manage your deviation investigation reports."
-                : "Review submitted investigation reports from quality engineers."}
+                : user.role === "qa"
+                  ? "Read-only access to investigation reports and audit trails."
+                  : "Review submitted investigation reports from quality engineers."}
             </p>
           </div>
           {user.role === "engineer" && (

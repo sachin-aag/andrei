@@ -178,6 +178,9 @@ function buildMockReport(imported: ImportedReportContent): ReportRow {
     status: "draft",
     authorId: "1",
     assignedManagerId: "5",
+    reviewedById: null,
+    deletedAt: null,
+    deletedById: null,
     createdAt: iso,
     updatedAt: iso,
   };
