@@ -17,6 +17,7 @@
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/drizzle-migrate.ts",
+    "db:verify-auth-schema": "tsx scripts/verify-auth-schema.ts",
     "db:ensure": "npm run db:migrate-suggested-fix && drizzle-kit push",
     "db:ensure-workspace-users": "tsx --env-file=.env --env-file=.env.local scripts/ensure-workspace-users.ts",
     "db:migrate-suggested-fix": "tsx scripts/migrate-suggested-fix.ts",
