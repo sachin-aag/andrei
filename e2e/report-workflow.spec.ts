@@ -24,7 +24,6 @@ test.describe.configure({ mode: "serial" });
 test.describe("report workflow", () => {
   let reportId: string | null = null;
   let deviationNo: string | null = null;
-  let reviewerId: string | null = null;
   let approverId: string | null = null;
 
   test.afterAll(async ({ browser }) => {
@@ -37,7 +36,6 @@ test.describe("report workflow", () => {
 
   test("engineer submits report", async ({ page }) => {
     const reviewer = await loginAsManagerWithResponse(page);
-    reviewerId = reviewer.userId;
     const approver = await loginAsTestUser(page, {
       email: TEST_APPROVER_EMAIL,
       role: "manager",
