@@ -27,12 +27,16 @@ export async function createReport(
   opts?: {
     deviationNo?: string;
     assignedManagerId?: string | null;
+    assignedManagerIds?: string[];
   }
 ): Promise<CreatedReport> {
   const deviationNo = opts?.deviationNo ?? uniqueDeviationNo();
   const payload = {
     deviationNo,
     assignedManagerId: opts?.assignedManagerId ?? null,
+    ...(opts?.assignedManagerIds
+      ? { assignedManagerIds: opts.assignedManagerIds }
+      : {}),
   };
 
   let res = await page.request.post("/api/reports", {
