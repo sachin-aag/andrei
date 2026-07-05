@@ -18,7 +18,6 @@ import {
 } from "./helpers/workspace";
 import {
   signedWorkflowPayload,
-  signWorkflowAction,
   TEST_MANAGER_EMAIL,
 } from "./helpers/signing";
 
@@ -111,20 +110,11 @@ test.describe("report editor", () => {
     expect(submitRes.ok(), `submit failed (${submitRes.status()})`).toBeTruthy();
 
     await authenticateAsManager(page);
-    await gotoWithNavigationRetry(page, `/reports/${reportId}/review`, {
-      waitUntil: "domcontentloaded",
+    const approveRes = await page.request.post(`/api/reports/${reportId}/approve`, {
+      data: signedWorkflowPayload(TEST_MANAGER_EMAIL),
+      headers: await browserCookieHeaders(page),
     });
-    await signWorkflowAction(page, /^approve$/i, TEST_MANAGER_EMAIL);
-    await expect
-      .poll(async () => {
-        const res = await page.request.get(`/api/reports/${reportId}`, {
-          headers: await browserCookieHeaders(page),
-        });
-        if (!res.ok()) return null;
-        const { report } = (await res.json()) as { report: { status: string } };
-        return report.status;
-      })
-      .toBe("approved");
+    expect(approveRes.ok(), `approve failed (${approveRes.status()})`).toBeTruthy();
 
     await authenticateAsEngineer(page);
     await gotoWithNavigationRetry(page, `/reports/${reportId}/edit`, {

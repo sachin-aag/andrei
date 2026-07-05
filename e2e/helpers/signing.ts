@@ -21,4 +21,5 @@ export async function signWorkflowAction(
   await dialog.getByLabel(/user id/i).fill(userId);
   await dialog.getByLabel(/^password$/i).fill(E2E_SIGNING_PASSWORD);
   await dialog.getByRole("button", { name: /^sign &/i }).click();
+  await expect(dialog).toBeHidden({ timeout: 30_000 });
 }
