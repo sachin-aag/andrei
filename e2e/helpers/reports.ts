@@ -1,5 +1,9 @@
 import { expect, type Page } from "@playwright/test";
-import { authenticateAsEngineer } from "./auth";
+import {
+  authenticateAsEngineer,
+  loginAsTestUser,
+  type TestLoginResult,
+} from "./auth";
 import { authSessionCookieHeader, browserCookieHeaders } from "./api";
 
 export type CreatedReport = {
@@ -93,20 +97,88 @@ export async function seedDefineForEvaluation(
   expect(res.ok(), `seed define failed (${res.status()})`).toBeTruthy();
 }
 
-export async function deleteReport(page: Page, reportId: string): Promise<void> {
-  const login = await authenticateAsEngineer(page);
-  const headers = login.sessionToken
+function authHeadersFromLogin(login: TestLoginResult): Record<string, string> {
+  return login.sessionToken
     ? authSessionCookieHeader(login.sessionToken)
-    : await browserCookieHeaders(page);
+    : {};
+}
 
-  const res = await page.request.delete(`/api/reports/${reportId}`, {
-    headers,
-  });
+async function loginAsReportAuthor(
+  page: Page,
+  authorEmail?: string
+): Promise<TestLoginResult> {
+  if (authorEmail) {
+    return loginAsTestUser(page, { email: authorEmail, role: "engineer" });
+  }
+  return authenticateAsEngineer(page);
+}
+
+async function isAcceptedDeleteResponse(
+  res: Awaited<ReturnType<Page["request"]["delete"]>>
+): Promise<boolean> {
+  if (res.ok()) return true;
   if (res.status() === 409) {
     const body = (await res.json().catch(() => null)) as { error?: string } | null;
-    if (body?.error === "Approved reports cannot be deleted") {
+    return body?.error === "Approved reports cannot be deleted";
+  }
+  return false;
+}
+
+export async function deleteReport(
+  page: Page,
+  reportId: string,
+  opts?: { authorEmail?: string }
+): Promise<void> {
+  const currentHeaders = await browserCookieHeaders(page);
+  if (Object.keys(currentHeaders).length > 0) {
+    const currentRes = await page.request.delete(`/api/reports/${reportId}`, {
+      headers: currentHeaders,
+    });
+    if (await isAcceptedDeleteResponse(currentRes)) {
       return;
     }
+    if (currentRes.status() !== 403) {
+      expect(
+        currentRes.ok(),
+        `delete report ${reportId} failed (${currentRes.status()})`
+      ).toBeTruthy();
+    }
+  }
+
+  const login = await loginAsReportAuthor(page, opts?.authorEmail);
+  const headers = authHeadersFromLogin(login);
+  const resolvedHeaders =
+    Object.keys(headers).length > 0 ? headers : await browserCookieHeaders(page);
+
+  const res = await page.request.delete(`/api/reports/${reportId}`, {
+    headers: resolvedHeaders,
+  });
+  if (await isAcceptedDeleteResponse(res)) {
+    return;
   }
   expect(res.ok(), `delete report ${reportId} failed (${res.status()})`).toBeTruthy();
+}
+
+/** Removes all active reports owned by a test engineer (E2E cleanup). */
+export async function deleteAllReportsForAuthor(
+  page: Page,
+  authorEmail: string
+): Promise<void> {
+  const login = await loginAsReportAuthor(page, authorEmail);
+  const headers = authHeadersFromLogin(login);
+  const resolvedHeaders =
+    Object.keys(headers).length > 0 ? headers : await browserCookieHeaders(page);
+  if (Object.keys(resolvedHeaders).length === 0) return;
+
+  const listRes = await page.request.get("/api/reports", {
+    headers: resolvedHeaders,
+  });
+  if (!listRes.ok()) return;
+
+  const body = (await listRes.json()) as { reports: Array<{ id: string }> };
+  for (const report of body.reports) {
+    await page.request.delete(`/api/reports/${report.id}`, {
+      headers: resolvedHeaders,
+    });
+  }
 }

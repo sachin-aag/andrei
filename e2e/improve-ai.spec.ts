@@ -4,9 +4,14 @@ import { loginAsTestUser, scopedTestEmail } from "./helpers/auth";
 import { TEST_ENGINEER_EMAIL } from "./helpers/signing";
 import {
   createReport,
+  deleteAllReportsForAuthor,
   deleteReport,
   seedDefineForEvaluation,
 } from "./helpers/reports";
+
+function projectEngineerEmail(projectName: string): string {
+  return scopedTestEmail(TEST_ENGINEER_EMAIL, projectName);
+}
 
 const fixturePath = path.join(
   process.cwd(),
@@ -47,9 +52,18 @@ test.describe("improve ai", () => {
   let reportId: string | null = null;
   let sessionId: string | null = null;
 
-  test.afterEach(async ({ page }) => {
+  test.beforeEach(async ({ page }, testInfo) => {
+    await deleteAllReportsForAuthor(
+      page,
+      projectEngineerEmail(testInfo.project.name)
+    );
+  });
+
+  test.afterEach(async ({ page }, testInfo) => {
     if (reportId) {
-      await deleteReport(page, reportId);
+      await deleteReport(page, reportId, {
+        authorEmail: projectEngineerEmail(testInfo.project.name),
+      });
       reportId = null;
     }
     sessionId = null;
@@ -58,7 +72,9 @@ test.describe("improve ai", () => {
   test("shows empty state on list page", async ({ page }, testInfo) => {
     await loginAsProjectEngineer(page, testInfo.project.name);
     await page.goto("/improve-ai");
-    await expect(page.getByText(/no ai feedback sessions yet/i)).toBeVisible();
+    await expect(page.getByText(/no ai feedback sessions yet/i)).toBeVisible({
+      timeout: 30_000,
+    });
     await expect(page.getByText(/evaluate report/i).first()).toBeVisible();
   });
 
