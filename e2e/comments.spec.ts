@@ -34,7 +34,6 @@ test.describe("comments", () => {
 
   test.afterEach(async ({ page }) => {
     if (reportId) {
-      await authenticateAsEngineer(page);
       await deleteReport(page, reportId);
       reportId = null;
     }

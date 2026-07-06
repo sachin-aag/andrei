@@ -1,5 +1,6 @@
 import { expect, type Page } from "@playwright/test";
-import { browserCookieHeaders } from "./api";
+import { authenticateAsEngineer } from "./auth";
+import { authSessionCookieHeader, browserCookieHeaders } from "./api";
 
 export type CreatedReport = {
   id: string;
@@ -93,8 +94,13 @@ export async function seedDefineForEvaluation(
 }
 
 export async function deleteReport(page: Page, reportId: string): Promise<void> {
+  const login = await authenticateAsEngineer(page);
+  const headers = login.sessionToken
+    ? authSessionCookieHeader(login.sessionToken)
+    : await browserCookieHeaders(page);
+
   const res = await page.request.delete(`/api/reports/${reportId}`, {
-    headers: await browserCookieHeaders(page),
+    headers,
   });
   if (res.status() === 409) {
     const body = (await res.json().catch(() => null)) as { error?: string } | null;
