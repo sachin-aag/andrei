@@ -7,8 +7,7 @@ import { getPasswordPolicy } from "@/lib/auth/password-policy";
 import { canViewReport } from "@/lib/reports/access";
 import { isReadOnlyRole } from "@/lib/auth/roles";
 import { loadReportBundle } from "@/lib/reports/bundle";
-import { AppShell } from "@/components/layout/app-shell";
-import { ReportProvider } from "@/providers/report-provider";
+import { ReportPageShell } from "@/components/report/report-page-shell";
 import { ReportWorkspace } from "@/components/report/report-workspace";
 
 export const dynamic = "force-dynamic";
@@ -39,27 +38,27 @@ export default async function EditReportPage({
   ]);
 
   return (
-    <AppShell
+    <ReportPageShell
       user={user}
       initialUsers={workspaceUsers}
       passwordStatus={passwordStatus}
       inactivityTimeoutMinutes={policy.inactivityTimeoutMinutes}
+      bundle={bundle}
+      currentUserId={user.id}
+      userRole={user.role}
+      readOnly={!canEdit}
+      workspaceMode="edit"
+      initialTrackChangesMode={false}
+      backHref="/"
+      backLabel="Reports"
     >
-      <ReportProvider
-        bundle={bundle}
-        currentUserId={user.id}
-        readOnly={!canEdit}
-        workspaceMode="edit"
-        initialTrackChangesMode={false}
+      <ViewTransition
+        enter={{ "nav-forward": "nav-forward", default: "none" }}
+        exit={{ "nav-back": "nav-back", default: "none" }}
+        default="none"
       >
-        <ViewTransition
-          enter={{ "nav-forward": "nav-forward", default: "none" }}
-          exit={{ "nav-back": "nav-back", default: "none" }}
-          default="none"
-        >
-          <ReportWorkspace mode="edit" />
-        </ViewTransition>
-      </ReportProvider>
-    </AppShell>
+        <ReportWorkspace mode="edit" />
+      </ViewTransition>
+    </ReportPageShell>
   );
 }

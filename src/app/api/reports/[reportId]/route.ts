@@ -44,7 +44,7 @@ export async function GET(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const { sections, evaluations, comments } =
+  const { sections, evaluations, comments, attachments } =
     await loadReportSubtables(reportId);
 
   return NextResponse.json({
@@ -52,6 +52,7 @@ export async function GET(
     sections,
     evaluations,
     comments,
+    attachments,
   });
 }
 

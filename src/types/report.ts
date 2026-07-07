@@ -67,9 +67,30 @@ export type CommentRecord = {
   createdAt: string;
 };
 
+export type AttachmentProcessingStatus =
+  | "pending"
+  | "processing"
+  | "ready"
+  | "failed";
+
+export type ReportAttachmentRecord = {
+  id: string;
+  reportId: string;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  sha256: string;
+  gcsObjectKey: string;
+  uploadedById: string;
+  uploadedAt: string;
+  processingStatus: AttachmentProcessingStatus;
+  extractedTextKey: string | null;
+};
+
 export type ReportBundle = {
   report: ReportRecord;
   sections: ReportSectionRecord[];
   evaluations: EvaluationRecord[];
   comments: CommentRecord[];
+  attachments: ReportAttachmentRecord[];
 };

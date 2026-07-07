@@ -1,7 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { ViewTransition } from "react";
-import { AppShell } from "@/components/layout/app-shell";
-import { ReportProvider } from "@/providers/report-provider";
+import { ReportPageShell } from "@/components/report/report-page-shell";
 import { ReportWorkspace } from "@/components/report/report-workspace";
 import { getCurrentUser } from "@/lib/auth/session";
 import { listWorkspaceUsers } from "@/lib/auth/workspace-users";
@@ -29,26 +28,26 @@ export default async function AdminReportViewPage({
   ]);
 
   return (
-    <AppShell
+    <ReportPageShell
       user={user}
       initialUsers={workspaceUsers}
       passwordStatus={passwordStatus}
+      bundle={bundle}
+      currentUserId={user.id}
+      userRole={user.role}
+      readOnly
+      workspaceMode="view"
+      initialTrackChangesMode={false}
+      backHref="/admin/reports"
+      backLabel="Admin Reports"
     >
-      <ReportProvider
-        bundle={bundle}
-        currentUserId={user.id}
-        readOnly
-        workspaceMode="view"
-        initialTrackChangesMode={false}
+      <ViewTransition
+        enter={{ "nav-forward": "nav-forward", default: "none" }}
+        exit={{ "nav-back": "nav-back", default: "none" }}
+        default="none"
       >
-        <ViewTransition
-          enter={{ "nav-forward": "nav-forward", default: "none" }}
-          exit={{ "nav-back": "nav-back", default: "none" }}
-          default="none"
-        >
-          <ReportWorkspace mode="view" />
-        </ViewTransition>
-      </ReportProvider>
-    </AppShell>
+        <ReportWorkspace mode="view" />
+      </ViewTransition>
+    </ReportPageShell>
   );
 }

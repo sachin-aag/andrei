@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canViewReport } from "./access";
+import { canModifyReportAttachments, canViewReport } from "./access";
 
 const report = {
   authorId: "engineer-1",
@@ -96,5 +96,60 @@ describe("canViewReport", () => {
         { ...report, deletedAt: new Date() }
       )
     ).toBe(true);
+  });
+});
+
+describe("canModifyReportAttachments", () => {
+  it("allows engineer authors on draft, feedback, and in_review", () => {
+    for (const status of ["draft", "feedback", "in_review"] as const) {
+      expect(
+        canModifyReportAttachments(
+          { id: "engineer-1", role: "engineer" },
+          { ...report, status }
+        )
+      ).toBe(true);
+    }
+  });
+
+  it("denies engineer authors on submitted or approved reports", () => {
+    expect(
+      canModifyReportAttachments(
+        { id: "engineer-1", role: "engineer" },
+        { ...report, status: "submitted" }
+      )
+    ).toBe(false);
+    expect(
+      canModifyReportAttachments(
+        { id: "engineer-1", role: "engineer" },
+        { ...report, status: "approved" }
+      )
+    ).toBe(false);
+  });
+
+  it("allows admins except on approved reports", () => {
+    expect(
+      canModifyReportAttachments(
+        { id: "admin-1", role: "admin" },
+        report
+      )
+    ).toBe(true);
+    expect(
+      canModifyReportAttachments(
+        { id: "admin-1", role: "admin" },
+        { ...report, status: "approved" }
+      )
+    ).toBe(false);
+  });
+
+  it("denies QA and other engineers", () => {
+    expect(
+      canModifyReportAttachments({ id: "qa-1", role: "qa" }, report)
+    ).toBe(false);
+    expect(
+      canModifyReportAttachments(
+        { id: "engineer-2", role: "engineer" },
+        report
+      )
+    ).toBe(false);
   });
 });

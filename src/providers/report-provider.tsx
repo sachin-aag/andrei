@@ -14,6 +14,7 @@ import type { Editor } from "@tiptap/react";
 import type {
   CommentRecord,
   EvaluationRecord,
+  ReportAttachmentRecord,
   ReportBundle,
   ReportRecord,
   ReportSectionRecord,
@@ -34,6 +35,14 @@ import {
 } from "@/lib/ai/first-section-context";
 import { collectPlaceholders } from "@/lib/placeholders/scan-sections";
 import type { Placeholder } from "@/lib/placeholders/find";
+import {
+  deleteReportPdfAttachment,
+  uploadReportPdfAttachment,
+} from "@/lib/attachments/upload-client";
+import { canModifyReportAttachments } from "@/lib/reports/access";
+import type { UserRole } from "@/lib/auth/roles";
+
+export type ReportViewMode = "document" | "attachment";
 
 type SectionContents = Partial<{
   [K in keyof SectionContentMap]: SectionContentMap[K];
@@ -156,6 +165,16 @@ type ReportContextValue = {
   getActiveEditor: () => Editor | null;
   /** Bumped whenever editors register/unregister or transactions occur. */
   editorTick: number;
+  attachments: ReportAttachmentRecord[];
+  viewMode: ReportViewMode;
+  activeAttachmentId: string | null;
+  canModifyAttachments: boolean;
+  openAttachment: (attachmentId: string) => void;
+  closeAttachment: () => void;
+  addAttachment: (file: File) => Promise<void>;
+  removeAttachment: (attachmentId: string) => Promise<void>;
+  jumpToSection: (section: SectionType) => void;
+  registerJumpToSection: (fn: (section: SectionType) => void) => void;
 };
 
 type ReportDataContextValue = Pick<
@@ -246,6 +265,19 @@ const ReportPlaceholdersContext = createContext<ReportPlaceholdersContextValue |
 const ReportCommentsContext = createContext<ReportCommentsContextValue | null>(null);
 const ReportEvaluationContext = createContext<ReportEvaluationContextValue | null>(null);
 const ReportEditorsContext = createContext<ReportEditorsContextValue | null>(null);
+const ReportAttachmentsContext = createContext<Pick<
+  ReportContextValue,
+  | "attachments"
+  | "viewMode"
+  | "activeAttachmentId"
+  | "canModifyAttachments"
+  | "openAttachment"
+  | "closeAttachment"
+  | "addAttachment"
+  | "removeAttachment"
+  | "jumpToSection"
+  | "registerJumpToSection"
+> & { reportId: string } | null>(null);
 const DefineSectionContext = createContext<ReportSectionContextValue<"define"> | null>(null);
 const MeasureSectionContext = createContext<ReportSectionContextValue<"measure"> | null>(null);
 const AnalyzeSectionContext = createContext<ReportSectionContextValue<"analyze"> | null>(null);
@@ -272,6 +304,7 @@ function bundleToSections(rows: ReportSectionRecord[]): SectionContents {
 export function ReportProvider({
   bundle,
   currentUserId,
+  userRole,
   readOnly,
   initialTrackChangesMode = false,
   workspaceMode = "edit",
@@ -279,6 +312,7 @@ export function ReportProvider({
 }: {
   bundle: ReportBundle;
   currentUserId: string;
+  userRole: UserRole;
   readOnly: boolean;
   /** Manager: typically true on review; engineer: false. User can toggle in the workspace header. */
   initialTrackChangesMode?: boolean;
@@ -316,6 +350,14 @@ export function ReportProvider({
       normalizeCommentRecord(c as unknown as Record<string, unknown>)
     )
   );
+  const [attachments, setAttachments] = useState<ReportAttachmentRecord[]>(
+    () => bundle.attachments ?? []
+  );
+  const [viewMode, setViewMode] = useState<ReportViewMode>("document");
+  const [activeAttachmentId, setActiveAttachmentId] = useState<string | null>(
+    null
+  );
+  const jumpToSectionRef = useRef<(section: SectionType) => void>(() => {});
   const [suggestionsFocusSection, setSuggestionsFocusSection] =
     useState<SectionType | null>(null);
   const [isEvaluating, setIsEvaluating] = useState(false);
@@ -479,7 +521,67 @@ export function ReportProvider({
         normalizeCommentRecord(c)
       )
     );
+    setAttachments(data.attachments ?? []);
   }, [bundle.report.id]);
+
+  const canModifyAttachments = useMemo(
+    () =>
+      canModifyReportAttachments({ id: currentUserId, role: userRole }, report),
+    [currentUserId, userRole, report]
+  );
+
+  const openAttachment = useCallback((attachmentId: string) => {
+    setActiveAttachmentId(attachmentId);
+    setViewMode("attachment");
+  }, []);
+
+  const closeAttachment = useCallback(() => {
+    setActiveAttachmentId(null);
+    setViewMode("document");
+  }, []);
+
+  const addAttachment = useCallback(
+    async (file: File) => {
+      const row = await uploadReportPdfAttachment(bundle.report.id, file);
+      setAttachments((prev) => [
+        ...prev,
+        {
+          ...row,
+          uploadedAt:
+            typeof row.uploadedAt === "string"
+              ? row.uploadedAt
+              : new Date(row.uploadedAt as string).toISOString(),
+        },
+      ]);
+    },
+    [bundle.report.id]
+  );
+
+  const removeAttachment = useCallback(
+    async (attachmentId: string) => {
+      await deleteReportPdfAttachment(bundle.report.id, attachmentId);
+      setAttachments((prev) => prev.filter((a) => a.id !== attachmentId));
+      setActiveAttachmentId((current) => {
+        if (current === attachmentId) {
+          setViewMode("document");
+          return null;
+        }
+        return current;
+      });
+    },
+    [bundle.report.id]
+  );
+
+  const jumpToSection = useCallback((section: SectionType) => {
+    jumpToSectionRef.current(section);
+  }, []);
+
+  const registerJumpToSection = useCallback(
+    (fn: (section: SectionType) => void) => {
+      jumpToSectionRef.current = fn;
+    },
+    []
+  );
 
   const getSectionId = useCallback(
     (section: SectionType) =>
@@ -908,6 +1010,35 @@ export function ReportProvider({
     ]
   );
 
+  const attachmentsValue = useMemo(
+    () => ({
+      reportId: bundle.report.id,
+      attachments,
+      viewMode,
+      activeAttachmentId,
+      canModifyAttachments,
+      openAttachment,
+      closeAttachment,
+      addAttachment,
+      removeAttachment,
+      jumpToSection,
+      registerJumpToSection,
+    }),
+    [
+      bundle.report.id,
+      attachments,
+      viewMode,
+      activeAttachmentId,
+      canModifyAttachments,
+      openAttachment,
+      closeAttachment,
+      addAttachment,
+      removeAttachment,
+      jumpToSection,
+      registerJumpToSection,
+    ]
+  );
+
   return (
     <ReportDataContext.Provider value={reportDataValue}>
       <ReportSectionsContext.Provider value={sectionsValue}>
@@ -924,7 +1055,9 @@ export function ReportProvider({
                         <ReportEvaluationContext.Provider value={evaluationValue}>
                           <ReportCommentsContext.Provider value={commentsValue}>
                             <ReportEditorsContext.Provider value={editorsValue}>
-                              {children}
+                              <ReportAttachmentsContext.Provider value={attachmentsValue}>
+                                {children}
+                              </ReportAttachmentsContext.Provider>
                             </ReportEditorsContext.Provider>
                           </ReportCommentsContext.Provider>
                         </ReportEvaluationContext.Provider>
@@ -948,6 +1081,7 @@ export function useReport(): ReportContextValue {
   const evaluations = useReportEvaluations();
   const comments = useReportComments();
   const editors = useReportEditors();
+  const attachmentsCtx = useReportAttachments();
 
   return useMemo(
     () => ({
@@ -957,14 +1091,32 @@ export function useReport(): ReportContextValue {
       ...evaluations,
       ...comments,
       ...editors,
+      attachments: attachmentsCtx.attachments,
+      viewMode: attachmentsCtx.viewMode,
+      activeAttachmentId: attachmentsCtx.activeAttachmentId,
+      canModifyAttachments: attachmentsCtx.canModifyAttachments,
+      openAttachment: attachmentsCtx.openAttachment,
+      closeAttachment: attachmentsCtx.closeAttachment,
+      addAttachment: attachmentsCtx.addAttachment,
+      removeAttachment: attachmentsCtx.removeAttachment,
+      jumpToSection: attachmentsCtx.jumpToSection,
+      registerJumpToSection: attachmentsCtx.registerJumpToSection,
     }),
-    [data, sections, placeholders, evaluations, comments, editors]
+    [data, sections, placeholders, evaluations, comments, editors, attachmentsCtx]
   );
 }
 
 export function useReportData() {
   const ctx = useContext(ReportDataContext);
   if (!ctx) throw new Error("useReportData must be used within ReportProvider");
+  return ctx;
+}
+
+export function useReportAttachments() {
+  const ctx = useContext(ReportAttachmentsContext);
+  if (!ctx) {
+    throw new Error("useReportAttachments must be used within ReportProvider");
+  }
   return ctx;
 }
 

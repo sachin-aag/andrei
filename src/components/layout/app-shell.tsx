@@ -28,12 +28,15 @@ export function AppShell({
   passwordStatus,
   inactivityTimeoutMinutes = DEFAULT_INACTIVITY_TIMEOUT_MINUTES,
   children,
+  navSlot,
 }: {
   user: WorkspaceUser;
   initialUsers: WorkspaceUser[];
   passwordStatus?: PasswordStatus;
   inactivityTimeoutMinutes?: number;
   children: React.ReactNode;
+  /** When set, replaces the default dashboard nav (e.g. report section TOC + attachments). */
+  navSlot?: React.ReactNode | ((collapsed: boolean) => React.ReactNode);
 }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(true);
@@ -145,7 +148,15 @@ export function AppShell({
           </div>
         </div>
 
-        <nav className="flex-1 py-4 px-3 space-y-1">
+        <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto min-h-0">
+          {navSlot ? (
+            typeof navSlot === "function" ? (
+              navSlot(collapsed)
+            ) : (
+              navSlot
+            )
+          ) : (
+            <>
           {navItems.map((item) => (
             <Link
               key={item.href}
@@ -178,6 +189,8 @@ export function AppShell({
                 <BookOpen className="size-4" aria-hidden="true" />
                 <span>SOP/DP/QA/008</span>
               </div>
+            </>
+          )}
             </>
           )}
         </nav>

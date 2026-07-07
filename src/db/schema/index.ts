@@ -135,6 +135,8 @@ export const auditActionEnum = pgEnum("audit_action", [
   "user_deactivated",
   "user_reactivated",
   "user_unlocked",
+  "attachment_uploaded",
+  "attachment_deleted",
 ]);
 
 export const auditEntityEnum = pgEnum("audit_entity", [
@@ -148,7 +150,13 @@ export const auditEntityEnum = pgEnum("audit_entity", [
   "policy",
   "auth",
   "improve_ai",
+  "attachment",
 ]);
+
+export const attachmentProcessingStatusEnum = pgEnum(
+  "attachment_processing_status",
+  ["pending", "processing", "ready", "failed"]
+);
 
 export const signatureMeaningEnum = pgEnum("signature_meaning", [
   "submission",
@@ -293,6 +301,33 @@ export const reportSourceDocx = pgTable("report_source_docx", {
     .defaultNow(),
 });
 
+/** PDF attachments stored in GCS; metadata only in Postgres. */
+export const reportAttachments = pgTable(
+  "report_attachments",
+  {
+    id: text("id").primaryKey().$defaultFn(() => createId()),
+    reportId: text("report_id")
+      .notNull()
+      .references(() => reports.id, { onDelete: "cascade" }),
+    filename: text("filename").notNull(),
+    mimeType: text("mime_type").notNull().default("application/pdf"),
+    sizeBytes: integer("size_bytes").notNull(),
+    sha256: text("sha256").notNull().default(""),
+    gcsObjectKey: text("gcs_object_key").notNull(),
+    uploadedById: text("uploaded_by_id").notNull(),
+    uploadedAt: timestamp("uploaded_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    processingStatus: attachmentProcessingStatusEnum("processing_status")
+      .notNull()
+      .default("pending"),
+    extractedTextKey: text("extracted_text_key"),
+  },
+  (t) => ({
+    reportIdIdx: index("report_attachments_report_id_idx").on(t.reportId),
+  })
+);
+
 export const criteriaEvaluations = pgTable("criteria_evaluations", {
   id: text("id").primaryKey().$defaultFn(() => createId()),
   reportId: text("report_id")
@@ -356,6 +391,7 @@ export const reportsRelations = relations(reports, ({ one, many }) => ({
   evaluations: many(criteriaEvaluations),
   comments: many(comments),
   sourceDocx: one(reportSourceDocx),
+  attachments: many(reportAttachments),
   managers: many(reportManagers),
 }));
 
@@ -376,6 +412,16 @@ export const reportSourceDocxRelations = relations(reportSourceDocx, ({ one }) =
     references: [reports.id],
   }),
 }));
+
+export const reportAttachmentsRelations = relations(
+  reportAttachments,
+  ({ one }) => ({
+    report: one(reports, {
+      fields: [reportAttachments.reportId],
+      references: [reports.id],
+    }),
+  })
+);
 
 export const sectionsRelations = relations(reportSections, ({ one, many }) => ({
   report: one(reports, {
