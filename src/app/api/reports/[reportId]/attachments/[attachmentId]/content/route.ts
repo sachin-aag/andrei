@@ -3,6 +3,7 @@ import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { db } from "@/db";
 import { reportAttachments } from "@/db/schema";
+import { PDF_MIME_TYPE } from "@/lib/attachments/pdf-upload";
 import { requireReportAttachmentAccess } from "@/lib/attachments/route-helpers";
 import { readObjectStream } from "@/lib/storage/gcs";
 
@@ -36,8 +37,9 @@ export async function GET(
 
     return new NextResponse(webStream, {
       headers: {
-        "Content-Type": row.mimeType,
-        "Content-Disposition": `inline; filename="${row.filename.replace(/"/g, "")}"`,
+        "Content-Type": PDF_MIME_TYPE,
+        "Content-Disposition": `inline; filename="${row.filename.replace(/["\r\n]/g, "")}"`,
+        "X-Content-Type-Options": "nosniff",
         "Cache-Control": "private, max-age=60",
       },
     });

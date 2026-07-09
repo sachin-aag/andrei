@@ -18,14 +18,12 @@ export async function uploadReportPdfAttachment(
     throw new Error(validationError);
   }
 
-  const mimeType = file.type || PDF_MIME_TYPE;
-
   const urlRes = await fetch(`/api/reports/${reportId}/attachments/upload-url`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       filename: file.name,
-      mimeType,
+      mimeType: PDF_MIME_TYPE,
       sizeBytes: file.size,
     }),
   });
@@ -44,7 +42,7 @@ export async function uploadReportPdfAttachment(
   const putRes = await fetch(uploadUrl, {
     method: "PUT",
     headers: {
-      "Content-Type": mimeType,
+      "Content-Type": PDF_MIME_TYPE,
       "Content-Length": String(file.size),
     },
     body: file,
@@ -63,7 +61,7 @@ export async function uploadReportPdfAttachment(
       attachmentId,
       objectKey,
       filename: file.name,
-      mimeType,
+      mimeType: PDF_MIME_TYPE,
       sizeBytes: file.size,
       sha256,
     }),

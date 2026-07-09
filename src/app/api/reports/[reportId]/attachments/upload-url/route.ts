@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
-import { validatePdfUploadInput } from "@/lib/attachments/pdf-upload";
+import {
+  PDF_MIME_TYPE,
+  validatePdfUploadInput,
+} from "@/lib/attachments/pdf-upload";
 import {
   newAttachmentId,
   requireReportAttachmentModify,
@@ -48,7 +51,7 @@ export async function POST(
     );
     const uploadUrl = await createResumableUploadUri({
       objectKey,
-      contentType: body.mimeType,
+      contentType: PDF_MIME_TYPE,
       sizeBytes: body.sizeBytes,
     });
 

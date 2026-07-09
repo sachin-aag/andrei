@@ -12,6 +12,26 @@ describe("pdf upload validation", () => {
     ).toBe("Only PDF files are supported");
   });
 
+  it("rejects pdf filenames with non-pdf MIME types", () => {
+    expect(
+      validatePdfUploadInput({
+        filename: "evil.pdf",
+        mimeType: "text/html",
+        sizeBytes: 100,
+      })
+    ).toBe("Only PDF files are supported");
+  });
+
+  it("rejects pdf MIME types without pdf filenames", () => {
+    expect(
+      validatePdfUploadInput({
+        filename: "notes.txt",
+        mimeType: "application/pdf",
+        sizeBytes: 100,
+      })
+    ).toBe("Only PDF files are supported");
+  });
+
   it("rejects oversize files", () => {
     expect(
       validatePdfUploadInput({
@@ -36,5 +56,13 @@ describe("pdf upload validation", () => {
     const file = new File(["x"], "doc.pdf", { type: "application/pdf" });
     Object.defineProperty(file, "size", { value: 50 });
     expect(pdfUploadError(file)).toBeNull();
+  });
+
+  it("rejects File objects with pdf filenames and non-pdf MIME types", () => {
+    const file = new File(["<script></script>"], "evil.pdf", {
+      type: "text/html",
+    });
+    Object.defineProperty(file, "size", { value: 50 });
+    expect(pdfUploadError(file)).toBe("Only PDF files are supported");
   });
 });

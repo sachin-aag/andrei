@@ -2,7 +2,10 @@ import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { reportAttachments } from "@/db/schema";
-import { validatePdfUploadInput } from "@/lib/attachments/pdf-upload";
+import {
+  PDF_MIME_TYPE,
+  validatePdfUploadInput,
+} from "@/lib/attachments/pdf-upload";
 import {
   requireReportAttachmentAccess,
   requireReportAttachmentModify,
@@ -70,6 +73,12 @@ export async function POST(
         { status: 400 }
       );
     }
+    if (metadata.contentType !== PDF_MIME_TYPE) {
+      return NextResponse.json(
+        { error: "Uploaded file content type mismatch" },
+        { status: 400 }
+      );
+    }
 
     const [row] = await db
       .insert(reportAttachments)
@@ -77,7 +86,7 @@ export async function POST(
         id: body.attachmentId,
         reportId,
         filename: body.filename,
-        mimeType: body.mimeType,
+        mimeType: PDF_MIME_TYPE,
         sizeBytes: body.sizeBytes,
         sha256: body.sha256 ?? "",
         gcsObjectKey: body.objectKey,
