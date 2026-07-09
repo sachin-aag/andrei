@@ -30,7 +30,9 @@
     "set-workspace-password": "tsx scripts/set-workspace-password.ts",
     "sample-eval-report": "tsx scripts/bulk-sample-evaluation-report.ts",
     "model-sweep": "tsx scripts/eval/run-model-sweep.ts",
-    "compare-evals": "tsx scripts/eval/compare-eval-runs.ts"
+    "compare-evals": "tsx scripts/eval/compare-eval-runs.ts",
+    "video-cost-probe": "tsx --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/video-cost-probe.ts",
+    "video-model-compare": "tsx --env-file-if-exists=.env --env-file-if-exists=.env.local scripts/video-model-compare.ts"
   },
   "dependencies": {
     "@ai-sdk/gateway": "^3.0.104",
