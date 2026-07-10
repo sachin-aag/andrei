@@ -59,7 +59,9 @@ export function ResetPasswordForm({
         redirect: false,
       });
       if (signInRes?.error) {
-        router.push("/login");
+        setError(
+          "Password was updated, but sign-in failed. Try signing in manually on the login page with your new password."
+        );
         return;
       }
       router.push("/");

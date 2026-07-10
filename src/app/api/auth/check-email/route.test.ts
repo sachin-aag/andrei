@@ -40,11 +40,14 @@ describe("POST /api/auth/check-email", () => {
   });
 
   it("reports password and lock state for registered users", async () => {
-    vi.mocked(db.query.workspaceUsers.findFirst).mockResolvedValueOnce({
-      id: "user-1",
-      passwordHash: "hash",
-      lockedAt: new Date("2026-01-01"),
-    } as never);
+    vi.mocked(db.query.workspaceUsers.findFirst)
+      .mockResolvedValueOnce({
+        id: "user-1",
+        passwordHash: "hash",
+      } as never)
+      .mockResolvedValueOnce({
+        lockedAt: new Date("2026-01-01"),
+      } as never);
 
     const res = await POST(jsonRequest({ email: "User@MJBiopharm.com " }));
 
@@ -72,7 +75,7 @@ describe("POST /api/auth/check-email", () => {
   it("returns JSON when the database query fails", async () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     vi.mocked(db.query.workspaceUsers.findFirst).mockRejectedValueOnce(
-      new Error("column locked_at does not exist")
+      new Error("connection refused")
     );
 
     const res = await POST(jsonRequest({ email: "user@mjbiopharm.com" }));

@@ -43,7 +43,7 @@ export type PasswordExpiryState = {
   warningDismissed: boolean;
 };
 
-type PasswordExpiryInput = {
+export type PasswordExpiryInput = {
   passwordHash: string | null;
   passwordChangedAt: Date | null;
   passwordExpiryWarningDismissedUntil?: Date | null;
@@ -92,18 +92,26 @@ function mergePasswordPolicy(
 }
 
 export async function getPasswordPolicy(): Promise<PasswordPolicy> {
-  const existing = await db.query.passwordPolicySettings.findFirst({
-    where: eq(passwordPolicySettings.id, PASSWORD_POLICY_SETTINGS_ID),
-  });
-  if (existing) {
-    return mergePasswordPolicy(normalizeOperationalPolicy(existing));
-  }
+  try {
+    const existing = await db.query.passwordPolicySettings.findFirst({
+      where: eq(passwordPolicySettings.id, PASSWORD_POLICY_SETTINGS_ID),
+    });
+    if (existing) {
+      return mergePasswordPolicy(normalizeOperationalPolicy(existing));
+    }
 
-  await db.insert(passwordPolicySettings).values({
-    id: PASSWORD_POLICY_SETTINGS_ID,
-    ...DEFAULT_OPERATIONAL_PASSWORD_POLICY,
-  });
-  return DEFAULT_PASSWORD_POLICY;
+    await db.insert(passwordPolicySettings).values({
+      id: PASSWORD_POLICY_SETTINGS_ID,
+      ...DEFAULT_OPERATIONAL_PASSWORD_POLICY,
+    });
+    return DEFAULT_PASSWORD_POLICY;
+  } catch (error) {
+    console.error(
+      "password policy lookup failed; using code defaults until migrations run",
+      error
+    );
+    return DEFAULT_PASSWORD_POLICY;
+  }
 }
 
 export async function updatePasswordExpiryDays(

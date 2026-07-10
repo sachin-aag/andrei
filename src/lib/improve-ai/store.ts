@@ -1,4 +1,5 @@
 import { and, desc, eq } from "drizzle-orm";
+import { activeReportsFilter } from "@/lib/reports/tombstone";
 import { db } from "@/db";
 import {
   aiFeedbackResponses,
@@ -61,7 +62,9 @@ export async function listImproveAiSessionsForUser(
     })
     .from(aiFeedbackSessions)
     .innerJoin(reports, eq(aiFeedbackSessions.reportId, reports.id))
-    .where(eq(aiFeedbackSessions.submittedBy, userId))
+    .where(
+      and(eq(aiFeedbackSessions.submittedBy, userId), activeReportsFilter())
+    )
     .orderBy(desc(aiFeedbackSessions.updatedAt));
 
   return rows.map(({ session, report }) => ({

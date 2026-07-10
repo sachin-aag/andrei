@@ -11,6 +11,13 @@ import {
   computePasswordExpiryState,
   getPasswordPolicy,
 } from "@/lib/auth/password-policy";
+import {
+  clearFailedLoginAttempts,
+  findWorkspaceUserForLogin,
+  loadWorkspaceUserJwtState,
+  loadWorkspaceUserJwtStateByEmail,
+  recordFailedLoginAttempt,
+} from "@/lib/auth/workspace-login";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
   // Required when the app is reached via 127.0.0.1, Docker, or CI (not only Vercel).
@@ -41,9 +48,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!email || !password) return null;
 
         const policy = await getPasswordPolicy();
-        const wsUser = await db.query.workspaceUsers.findFirst({
-          where: eq(workspaceUsers.email, email),
-        });
+        const wsUser = await findWorkspaceUserForLogin(email);
         if (!wsUser?.passwordHash) return null;
         if (wsUser.deactivatedAt) return null;
         if (wsUser.lockedAt) {
@@ -54,21 +59,16 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         if (!valid) {
           const failedLoginAttempts = wsUser.failedLoginAttempts + 1;
           const locked = failedLoginAttempts >= policy.failedLoginAttemptLimit;
-          await db
-            .update(workspaceUsers)
-            .set({
-              failedLoginAttempts,
-              lockedAt: locked ? new Date() : null,
-            })
-            .where(eq(workspaceUsers.id, wsUser.id));
+          await recordFailedLoginAttempt(
+            wsUser.id,
+            failedLoginAttempts,
+            locked
+          );
           return null;
         }
 
         if (wsUser.failedLoginAttempts > 0 || wsUser.lockedAt) {
-          await db
-            .update(workspaceUsers)
-            .set({ failedLoginAttempts: 0, lockedAt: null })
-            .where(eq(workspaceUsers.id, wsUser.id));
+          await clearFailedLoginAttempts(wsUser.id);
         }
 
         // Ensure auth_users row exists (Credentials provider skips the adapter)
@@ -92,9 +92,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     async signIn({ user }) {
       if (!user.email) return false;
       try {
-        const wsUser = await db.query.workspaceUsers.findFirst({
-          where: eq(workspaceUsers.email, user.email),
-        });
+        const wsUser = await findWorkspaceUserForLogin(user.email);
         return !!wsUser && !wsUser.deactivatedAt;
       } catch {
         return false;
@@ -116,20 +114,10 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
       if (workspaceUserId) {
         const policy = await getPasswordPolicy();
-        const wsUser = await db.query.workspaceUsers.findFirst({
-          where: eq(workspaceUsers.id, workspaceUserId),
-          columns: {
-            id: true,
-            deactivatedAt: true,
-            mustChangePassword: true,
-            passwordHash: true,
-            passwordChangedAt: true,
-            passwordExpiryWarningDismissedUntil: true,
-          },
-        });
+        const wsUser = await loadWorkspaceUserJwtState(workspaceUserId);
         if (!wsUser || wsUser.deactivatedAt) {
           delete token.workspaceUserId;
-        } else if (wsUser) {
+        } else {
           const expiryState = computePasswordExpiryState(wsUser, policy);
           token.workspaceUserId = wsUser.id;
           token.mustChangePassword = wsUser.mustChangePassword;
@@ -137,17 +125,7 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
         }
       } else if (email) {
         const policy = await getPasswordPolicy();
-        const wsUser = await db.query.workspaceUsers.findFirst({
-          where: eq(workspaceUsers.email, email),
-          columns: {
-            id: true,
-            deactivatedAt: true,
-            mustChangePassword: true,
-            passwordHash: true,
-            passwordChangedAt: true,
-            passwordExpiryWarningDismissedUntil: true,
-          },
-        });
+        const wsUser = await loadWorkspaceUserJwtStateByEmail(email);
         if (wsUser && !wsUser.deactivatedAt) {
           const expiryState = computePasswordExpiryState(wsUser, policy);
           token.workspaceUserId = wsUser.id;
