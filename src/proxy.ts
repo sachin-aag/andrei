@@ -28,6 +28,7 @@ function isAllowedWhileMustChangePassword(path: string): boolean {
     path === "/change-password" ||
     path === "/api/auth-pw/replace-shared-password" ||
     path === "/api/auth-pw/change-password" ||
+    path === "/api/auth-pw/check-password-reuse" ||
     path.startsWith("/api/auth/")
   );
 }
