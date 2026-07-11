@@ -12,71 +12,51 @@ export const DEFINE_CRITERIA: CriterionDefinition[] = [
     label: "Clearly define what happened actually",
     description:
       "Does the narrative clearly describe the actual event in concrete, factual terms — " +
-      "including the specific activity being performed, the instrument/equipment involved " +
-      "(with ID when applicable; for SCADA, the system name such as AGLTS SCADA is sufficient " +
-      "without an E/PR equipment code or version number), and the exact observation or result obtained? " +
+      "including the specific activity being performed, the instrument or equipment involved " +
+      "(with identifier when applicable), and the exact observation or result obtained? " +
       "Vague statements like 'it was observed that results were out of spec' are insufficient; " +
-      "the narrative must state what was being done, on what equipment, and what specifically " +
-      "was observed (e.g., 'obtained SST result of 115.1% Recovery of Benzoquinone').",
+      "the narrative must state what was being done, on what equipment or system, and what " +
+      "specifically was observed.",
   },
   {
     key: "define.what_is_different",
     label: "Explain what is different than expected",
     description:
-      "Does the narrative explicitly state both the expected standard/acceptance criteria " +
-      "AND the observed deviation from it, with reference to the governing SOP No. " +
-      "(revision number is not required) and relevant section number? " +
-      "For example, stating 'not within acceptance criteria as per SOP/DP/QC/045' is " +
-      "insufficient — the narrative must cite the SOP No. and section " +
-      "(e.g., 'As per SOP No.: SOP/DP/QC/045, " +
-      "Section No.: 7.4.3.26, the results must not be less than 85% & must not be more " +
-      "than 115%').",
+      "Does the narrative explicitly state both the expected standard or acceptance criteria " +
+      "AND the observed deviation from it, with reference to the governing procedure when " +
+      "applicable? Stating only that results were outside acceptance criteria without citing " +
+      "the expected limits or procedure reference is insufficient.",
   },
   {
     key: "define.location",
     label: "Mention the location where the deviation occurred",
     description:
-      "Is a specific physical location identified, including the room name/number or area " +
-      "code (e.g., 'Instrument Lab - II (FF-16)', 'Filling Room (GF-89)')? " +
-      "Simply stating the department or omitting the location entirely is insufficient. " +
-      "The location must be precise enough to trace the deviation to a specific area " +
-      "within the facility.",
+      "Is a specific physical location identified, including the room, area, or site code? " +
+      "Simply stating the department or omitting the location entirely is insufficient.",
   },
   {
     key: "define.datetime",
     label: "Date/time of occurrence and date/time of detection",
     description:
-      "Does the narrative specify both the date AND time (in HH:MM format) of when the " +
-      "deviation occurred, and separately when it was detected/identified? " +
-      "Stating only the date (e.g., 'On 13/03/2026') without the time is insufficient. " +
-      "Stating only a month or year (e.g., 'scheduled for 2025' instead of " +
-      "'scheduled for February 2025') is also insufficient. " +
-      "Both occurrence and detection timestamps must be present with appropriate precision.",
+      "Does the narrative specify both when the deviation occurred and when it was detected? " +
+      "Stating only the date without time precision may be insufficient when timing matters. " +
+      "Both occurrence and detection timestamps should be present with appropriate precision.",
   },
   {
     key: "define.personnel",
     label: "Personnel involved in the deviation",
     description:
-      "Are the personnel who performed the activity, observed the deviation, or are " +
-      "otherwise involved identified by their Employee ID (Emp. ID) only? " +
-      "Generic references such as 'the analyst', 'the operator', or 'the auditor' without " +
-      "an Emp. ID are insufficient, and names, roles, titles, or job functions are not required. " +
-      "Each person mentioned must include their Emp. ID (e.g., 'Emp. ID: 615', " +
-      "'Emp. ID: 1089', 'Emp. ID: 562 and Emp. ID: 252').",
+      "Are personnel who performed the activity, observed the deviation, or are otherwise " +
+      "involved identified clearly (by name, role, or personnel identifier)? Generic references " +
+      "such as 'the analyst' or 'the operator' without any identifying detail are insufficient.",
   },
   {
     key: "define.initial_scope",
     label: "Initial scope (impacted product/material/equipment/system/batches)",
     description:
       "Is the initial scope of impact explicitly stated, including specific identifiers " +
-      "such as batch numbers, equipment IDs, instrument IDs, affected departments, or " +
-      "material names? " +
-      "The scope must clearly delineate what is affected and what is not " +
-      "(e.g., 'The scope of the deviation was limited to Batch No. B092542503'). " +
-      "Vague scope statements without specific identifiers are insufficient. " +
-      "For SCADA-related scope, naming the system (e.g., AGLTS SCADA) and the affected " +
-      "time periods or functions is sufficient; a site equipment ID (E/PR/xxx) or version " +
-      "number for the SCADA system is not required.",
+      "such as batch numbers, equipment IDs, affected systems, or material names? " +
+      "The scope should clearly delineate what is affected and what is not.",
   },
 ];
 
@@ -87,8 +67,8 @@ export const MEASURE_CRITERIA: CriterionDefinition[] = [
       "Relevant facts and data reviewed (environment, process/product history, control limits)",
     description:
       "Does the summary provide relevant facts and data reviewed including environment, " +
-      "process/product history, control limits, etc? If personnel are referenced, Emp. ID " +
-      "is sufficient; names, titles, and job functions are not required.",
+      "process/product history, control limits, etc? Personnel references should be clear " +
+      "when individuals are mentioned.",
   },
   {
     key: "measure.analysis_summary",
@@ -114,6 +94,24 @@ export const MEASURE_CRITERIA: CriterionDefinition[] = [
     label: "Logical flow and readability",
     description:
       "Is the report written in a logical flow and easily understood by the reader?",
+  },
+  {
+    key: "measure.experiment_identified",
+    label: "Experiment identified",
+    description:
+      "When a supporting experiment is referenced, are the experiment number and title clearly stated?",
+  },
+  {
+    key: "measure.experiment_purpose",
+    label: "Experiment purpose stated",
+    description:
+      "Is the purpose of any supporting experiment clearly described?",
+  },
+  {
+    key: "measure.experiment_conclusion",
+    label: "Experiment conclusion stated",
+    description:
+      "Is the conclusion or outcome of any supporting experiment summarized and linked to the investigation?",
   },
 ];
 
@@ -153,7 +151,7 @@ export const ANALYZE_CRITERIA: CriterionDefinition[] = [
     key: "analyze.root_cause",
     label: "Root cause categorization (Level 1, 2, 3)",
     description:
-      "Is the primary, secondary, and third level root cause identified per SOP?",
+      "Is the primary, secondary, and third level root cause identified when a classification scheme is used?",
   },
   {
     key: "analyze.impact_assessment",
@@ -231,7 +229,7 @@ export const CONTROL_CRITERIA: CriterionDefinition[] = [
     label: "Unique number, responsible person, due date assigned",
     description:
       "Was the preventive action assigned a unique tracking number (CAPA No., Work Order No., " +
-      "or Breakdown No.), responsible person by Emp. ID, and due date so it can be tracked?",
+      "or tracking number), responsible person, and due date so it can be tracked?",
   },
   {
     key: "control.expected_outcome",
@@ -260,7 +258,7 @@ export const CONTROL_CRITERIA: CriterionDefinition[] = [
       "An interim plan is only needed when residual risk persists during the implementation gap " +
       "(e.g., the deviation is ongoing, the instrument or process remains at risk, or the CAPA " +
       "timeline is long enough that recurrence is plausible in the interim). " +
-      "If the issue has already been corrected and the permanent fix (e.g., SOP revision) will be " +
+      "If the issue has already been corrected and the permanent fix (e.g., procedure revision) will be " +
       "completed before the next opportunity for recurrence, stating 'no interim plan required' " +
       "with that rationale is correct and sufficient. " +
       "Do NOT restate the preventive action itself as an informal verbal instruction and call it an interim plan — " +
@@ -331,12 +329,34 @@ export const CONTROL_CRITERIA: CriterionDefinition[] = [
   },
 ];
 
+export const CONCLUSION_CRITERIA: CriterionDefinition[] = [
+  {
+    key: "conclusion.summary",
+    label: "Investigation summary",
+    description:
+      "Does the conclusion briefly summarize the root cause, final scope, and impact of the deviation?",
+  },
+  {
+    key: "conclusion.disposition",
+    label: "Disposition and decisions",
+    description:
+      "Are final disposition decisions and rationale clearly stated (e.g., lot/material release, hold, or rejection)?",
+  },
+  {
+    key: "conclusion.closure",
+    label: "Closure completeness",
+    description:
+      "Does the conclusion address remaining actions, regulatory notifications if applicable, and overall investigation closure?",
+  },
+];
+
 export const CRITERIA_BY_SECTION: Partial<Record<SectionType, CriterionDefinition[]>> = {
   define: DEFINE_CRITERIA,
   measure: MEASURE_CRITERIA,
   analyze: ANALYZE_CRITERIA,
   improve: IMPROVE_CRITERIA,
   control: CONTROL_CRITERIA,
+  conclusion: CONCLUSION_CRITERIA,
 };
 
 export const EVALUATABLE_SECTIONS: SectionType[] = [
@@ -345,6 +365,7 @@ export const EVALUATABLE_SECTIONS: SectionType[] = [
   "analyze",
   "improve",
   "control",
+  "conclusion",
 ];
 
 export function getCriteria(section: SectionType): CriterionDefinition[] {

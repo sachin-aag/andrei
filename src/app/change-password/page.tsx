@@ -22,12 +22,12 @@ export default async function ChangePasswordPage() {
               src="/logo.png"
               width={32}
               height={32}
-              alt="MJ Biopharm logo"
+              alt="Andrei logo"
               className="object-contain"
               style={{ width: "auto", height: "auto" }}
             />
           </div>
-          <div className="font-semibold">M.J. Biopharm</div>
+          <div className="font-semibold">Andrei</div>
         </div>
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">

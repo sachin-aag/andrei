@@ -52,6 +52,7 @@ export const sectionTypeEnum = pgEnum("section_type", [
   "analyze",
   "improve",
   "control",
+  "conclusion",
   "documents_reviewed",
   "attachments",
   "signature_approvals",

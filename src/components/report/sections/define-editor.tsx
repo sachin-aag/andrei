@@ -21,7 +21,7 @@ export function DefineEditor() {
         section="define"
         contentPath="narrative"
         label="Details of Investigation (Narrative)"
-        placeholder="On dated DD/MM/YYYY at approximately HH:MM hrs, while performing routine operation at [location], it was observed that… Include: location of deviation, date/time of occurrence & detection, personnel involved by Emp. ID only, and initial scope."
+        placeholder="On dated DD/MM/YYYY at approximately HH:MM hrs, while performing routine operation at [location], it was observed that… Include: location of deviation, date/time of occurrence & detection, personnel involved, and initial scope."
         className="grid gap-2"
         value={value.narrative}
         onChange={(doc) => update((p) => ({ ...p, narrative: doc }))}

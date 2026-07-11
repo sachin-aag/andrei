@@ -145,6 +145,18 @@ export function contextForPrompt(section: SectionType, content: unknown): string
   } else if (section === "measure") {
     pushNarrativeLine(lines, section, content);
     pushTextLine(lines, "Regulatory notification", content.regulatoryNotification);
+    pushTextLine(lines, "Experiment number", content.experimentNumber);
+    pushTextLine(lines, "Experiment title", content.experimentTitle);
+    pushTextBlock(
+      lines,
+      "Experiment purpose",
+      richJsonToPlainText(normalizeRichField(content.purpose))
+    );
+    pushTextBlock(
+      lines,
+      "Experiment conclusion",
+      richJsonToPlainText(normalizeRichField(content.conclusion))
+    );
   } else if (section === "analyze") {
     pushObjectFields(lines, "6M", content.sixM, [
       ["man", "Man"],
@@ -189,6 +201,8 @@ export function contextForPrompt(section: SectionType, content: unknown): string
     const raw = richJsonToPlainText(normalizeRichField(content.preventiveActions));
     const stripped = stripLeadingTemplateChecklist(section, raw);
     pushTextLine(lines, "Preventive actions", stripped);
+  } else if (section === "conclusion") {
+    pushNarrativeLine(lines, section, content);
   }
 
   return lines.length ? lines.join("\n") : fallbackContextForPrompt(content);

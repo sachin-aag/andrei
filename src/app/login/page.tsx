@@ -26,34 +26,33 @@ export default async function LoginPage({
           }}
         />
         <div className="relative flex items-center gap-3">
-          <div className="size-12 rounded-lg bg-white p-1 flex items-center justify-center">
+          <div className="size-12 rounded-lg bg-white/10 p-1 flex items-center justify-center">
             <Image
-              src="/logo.png"
+              src="/logo-white.png"
               width={36}
               height={36}
-              alt="MJ Biopharm logo"
+              alt="Andrei logo"
               className="object-contain"
               style={{ width: "auto", height: "auto" }}
             />
           </div>
           <div>
-            <div className="font-semibold">M.J. Biopharm Private Limited</div>
-            <div className="text-xs">Drug Product · Hinjawadi</div>
+            <div className="font-semibold">Andrei</div>
+            <div className="text-xs text-white/80">Quality Documentation</div>
           </div>
         </div>
         <div className="relative">
           <h2 className="text-4xl font-bold leading-tight mb-3">
-            Investigation Reporting,
+            Document review and drafting,
             <br /> accelerated.
           </h2>
-          <p className="max-w-md">
-            Draft DMAIC deviation reports with AI-assisted quality checks,
-            streamlined manager review, and one-click DOCX export matching
-            SOP/DP/QA/008.
+          <p className="max-w-md text-white/90">
+            Draft investigation reports with AI-assisted quality checks,
+            streamlined manager review, and one-click DOCX export.
           </p>
         </div>
-        <div className="relative text-xs">
-          Ref. SOP No.: SOP/DP/QA/008 
+        <div className="relative text-xs text-white/70">
+          Better documents. Better outcomes.
         </div>
       </div>
 
@@ -65,12 +64,12 @@ export default async function LoginPage({
                 src="/logo.png"
                 width={32}
                 height={32}
-                alt="MJ Biopharm logo"
+                alt="Andrei logo"
                 className="object-contain"
                 style={{ width: "auto", height: "auto" }}
               />
             </div>
-            <div className="font-semibold">M.J. Biopharm</div>
+            <div className="font-semibold">Andrei</div>
           </div>
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">

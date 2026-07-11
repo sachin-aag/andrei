@@ -26,6 +26,9 @@ describe("seedBlankReportSections", () => {
     expect(controlPreventivePlain).toContain(
       "Control section covers the preventive actions"
     );
-    expect(controlPreventivePlain).toMatch(/12\.\s*Are the identified preventive actions achievable/i);
+    expect(controlPreventivePlain).toMatch(/6\.\s*Are the identified preventive actions achievable/i);
+
+    const conclusionText = richJsonToPlainText(sections.conclusion.narrative);
+    expect(conclusionText).toContain("brief summary of root cause");
   });
 });

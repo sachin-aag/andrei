@@ -127,6 +127,7 @@ function splitLinesIntoSections(
     analyze: [],
     improve: [],
     control: [],
+    conclusion: [],
     documents_reviewed: [],
     attachments: [],
     signature_approvals: [],
@@ -167,6 +168,7 @@ function splitLinesIntoSections(
         analyze: "",
         improve: "",
         control: "",
+        conclusion: "",
         documents_reviewed: "",
         attachments: "",
         signature_approvals: "",
@@ -176,7 +178,7 @@ function splitLinesIntoSections(
   }
 
   const sections = {} as Record<ImportSectionKey, string>;
-  for (const key of SECTION_ORDER) {
+  for (const key of Object.keys(buckets) as ImportSectionKey[]) {
     sections[key] = buckets[key].join("\n").trim();
   }
 
@@ -1041,6 +1043,10 @@ export function buildSectionsFromRaw(raw: string): ImportedSections {
     control: {
       ...EMPTY_CONTENT.control,
       preventiveActions: legacyStringToDoc(controlPreventiveUnified),
+    },
+    conclusion: {
+      ...EMPTY_CONTENT.conclusion,
+      narrative: legacyStringToDoc(cleanImportedNarrativeText(sections.conclusion)),
     },
     documents_reviewed: {
       ...EMPTY_CONTENT.documents_reviewed,

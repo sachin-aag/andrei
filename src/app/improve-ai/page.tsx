@@ -39,7 +39,6 @@ export default async function ImproveAiListPage() {
     getPasswordStatusForUser(user.id),
     getPasswordPolicy(),
   ]);
-  const managers = workspaceUsers.filter((entry) => entry.role === "manager");
 
   const authorReports = await withTransientRetry("improveAi.authorReports", () =>
     db
@@ -78,19 +77,14 @@ export default async function ImproveAiListPage() {
             id: report.id,
             deviationNo: report.deviationNo || "Untitled deviation",
           }))}
-          managers={managers.map((m) => ({
-            id: m.id,
-            name: m.name,
-            title: m.title,
-          }))}
         />
 
         <div className="flex-1 overflow-y-auto p-6">
           {rows.length === 0 && (
             <p className="text-sm text-[var(--muted-foreground)]">
               No AI feedback sessions yet. Use <strong>Evaluate report</strong> to
-              pick an existing report or upload a Word file, or use{" "}
-              <strong>Improve AI</strong> on a report card from your dashboard.
+              pick an existing report, or use <strong>Improve AI</strong> on a
+              report card from your dashboard.
             </p>
           )}
 

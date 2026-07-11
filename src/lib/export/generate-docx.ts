@@ -2,8 +2,10 @@ import fs from "node:fs";
 import path from "node:path";
 import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
+import type { JSONContent } from "@tiptap/core";
 import type {
   AnalyzeSection,
+  ConclusionSection,
   ControlSection,
   DefineSection,
   ImproveSection,
@@ -144,13 +146,39 @@ function toRoman(n: number): string {
   return result;
 }
 
+function escapeXmlText(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function boldLabelParagraph(label: string, value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  return (
+    `<w:p><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">${escapeXmlText(label)}</w:t></w:r>` +
+    `<w:r><w:t xml:space="preserve">${escapeXmlText(trimmed)}</w:t></w:r></w:p>`
+  );
+}
+
+function richFieldParagraph(label: string, doc: JSONContent | undefined, ctx: DocxExportContext): string {
+  const plain = richJsonToPlainText(normalizeRichField(doc)).trim();
+  if (!plain) return "";
+  const bodyXml = narrativeToDocxXmlWithContext(normalizeRichField(doc), ctx).xml;
+  const labelXml = `<w:p><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">${escapeXmlText(label)}</w:t></w:r></w:p>`;
+  return labelXml + bodyXml;
+}
+
 function composeMeasureXml(m: MeasureSection, ctx: DocxExportContext): string {
+  const prefix =
+    boldLabelParagraph("Experiment Number: ", m.experimentNumber ?? "") +
+    boldLabelParagraph("Experiment Title: ", m.experimentTitle ?? "") +
+    richFieldParagraph("Purpose: ", m.purpose, ctx) +
+    richFieldParagraph("Experiment Conclusion: ", m.conclusion, ctx);
   const narrativeXml = narrativeToDocxXmlWithContext(m.narrative, ctx).xml;
   if (m.regulatoryNotification?.trim()) {
-    const regXml = `<w:p><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">Regulatory Notification: </w:t></w:r><w:r><w:t xml:space="preserve">${m.regulatoryNotification.trim().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</w:t></w:r></w:p>`;
-    return narrativeXml + regXml;
+    const regXml = `<w:p><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">Regulatory Notification: </w:t></w:r><w:r><w:t xml:space="preserve">${escapeXmlText(m.regulatoryNotification.trim())}</w:t></w:r></w:p>`;
+    return prefix + narrativeXml + regXml;
   }
-  return narrativeXml;
+  return prefix + narrativeXml;
 }
 
 function buildTemplateData(
@@ -164,6 +192,7 @@ function buildTemplateData(
   const a = sectionByKey(sections, "analyze") as AnalyzeSection;
   const i = sectionByKey(sections, "improve") as ImproveSection;
   const c = sectionByKey(sections, "control") as ControlSection;
+  const con = sectionByKey(sections, "conclusion") as ConclusionSection;
 
   let improveDoc = normalizeRichField(i.correctiveActions);
   const improveNarrPlain = richJsonToPlainText(i.narrative).trim();
@@ -326,6 +355,19 @@ function buildTemplateData(
     marketClinical: "Not Applicable",
     lotDisposition: "Not Applicable",
     controlConclusion: "Not Applicable",
+
+    conclusionNarrativeXml: withWordComments(
+      withWordComments(
+        narrativeToDocxXmlWithContext(con.narrative, ctx).xml,
+        ctx,
+        comments,
+        "conclusion",
+        "narrative"
+      ),
+      ctx,
+      comments,
+      "conclusion"
+    ),
 
     // Documents Reviewed
     documentsReviewedXml: plainTextToDocxXml(

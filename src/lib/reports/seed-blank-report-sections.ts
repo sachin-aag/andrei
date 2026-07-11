@@ -4,7 +4,7 @@ import { EMPTY_CONTENT } from "@/types/sections";
 import { buildDefaultGuidancePreamble } from "@/lib/report-section-guidance";
 import { legacyStringToDoc } from "@/lib/tiptap/rich-text";
 
-const SEED_SECTIONS: SectionType[] = ["define", "measure", "improve", "control"];
+const SEED_SECTIONS: SectionType[] = ["define", "measure", "improve", "control", "conclusion"];
 
 /** Default section payloads for reports created without a DOCX upload. */
 export function seedBlankReportSections(): SectionContentMap {
@@ -14,7 +14,7 @@ export function seedBlankReportSections(): SectionContentMap {
     const preamble = buildDefaultGuidancePreamble(section);
     if (!preamble) continue;
 
-    if (section === "define" || section === "measure") {
+    if (section === "define" || section === "measure" || section === "conclusion") {
       sections[section] = {
         ...sections[section],
         narrative: legacyStringToDoc(preamble),

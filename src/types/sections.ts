@@ -8,6 +8,10 @@ export type DefineSection = {
 export type MeasureSection = {
   narrative: JSONContent;
   regulatoryNotification?: string;
+  experimentNumber?: string;
+  experimentTitle?: string;
+  purpose?: JSONContent;
+  conclusion?: JSONContent;
 };
 
 export type FiveWhyEntry = {
@@ -51,6 +55,10 @@ export type ControlSection = {
   preventiveActions: JSONContent;
 };
 
+export type ConclusionSection = {
+  narrative: JSONContent;
+};
+
 export type DocumentsReviewedSection = {
   items: string[];
 };
@@ -72,6 +80,7 @@ export type SectionContentMap = {
   analyze: AnalyzeSection;
   improve: ImproveSection;
   control: ControlSection;
+  conclusion: ConclusionSection;
   documents_reviewed: DocumentsReviewedSection;
   attachments: AttachmentsSection;
   signature_approvals: SignatureApprovalsSection;
@@ -83,6 +92,10 @@ export const EMPTY_CONTENT: SectionContentMap = {
   },
   measure: {
     narrative: emptyDoc(),
+    experimentNumber: "",
+    experimentTitle: "",
+    purpose: emptyDoc(),
+    conclusion: emptyDoc(),
   },
   analyze: {
     sixM: {
@@ -113,6 +126,9 @@ export const EMPTY_CONTENT: SectionContentMap = {
   control: {
     preventiveActions: emptyDoc(),
   },
+  conclusion: {
+    narrative: emptyDoc(),
+  },
   documents_reviewed: {
     items: [],
   },
@@ -130,6 +146,7 @@ export const SECTION_LABELS: Record<keyof SectionContentMap, string> = {
   analyze: "Analyze",
   improve: "Improve",
   control: "Control",
+  conclusion: "Conclusion",
   documents_reviewed: "Documents Reviewed",
   attachments: "Attachments",
   signature_approvals: "Approvals (QC / QA)",
@@ -141,6 +158,7 @@ export const EDITABLE_SECTIONS = [
   "analyze",
   "improve",
   "control",
+  "conclusion",
 ] as const satisfies readonly (keyof SectionContentMap)[];
 
 /** All `report_sections` rows created for a report (DMAIC + document metadata blocks). */

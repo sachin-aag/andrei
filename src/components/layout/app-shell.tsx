@@ -6,8 +6,8 @@ import type { PasswordStatus } from "@/lib/auth/password-status";
 import { UserDirectoryProvider } from "@/providers/user-directory-provider";
 import {
   AlertTriangle,
+  BarChart3,
   FileText,
-  BookOpen,
   Sparkles,
   Users,
   PanelLeftClose,
@@ -16,7 +16,6 @@ import {
 import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
-import { Separator } from "@/components/ui/separator";
 import { cn } from "@/lib/utils";
 import { roleLabel } from "@/lib/auth/roles";
 import { DEFAULT_INACTIVITY_TIMEOUT_MINUTES } from "@/lib/auth/inactivity-timeout";
@@ -50,6 +49,7 @@ export function AppShell({
         ]
       : [
           { href: "/", label: "Reports", icon: FileText },
+          { href: "/insights/dashboard", label: "Insights", icon: BarChart3 },
           { href: "/improve-ai", label: "Improve AI", icon: Sparkles },
         ]),
   ];
@@ -97,7 +97,7 @@ export function AppShell({
                 src="/logo.png"
                 width={28}
                 height={28}
-                alt="MJ Biopharm"
+                alt="Andrei"
                 className="object-contain"
                 style={{ width: "auto", height: "auto" }}
               />
@@ -105,10 +105,10 @@ export function AppShell({
             {!collapsed && (
               <div className="flex flex-col min-w-0 flex-1">
                 <span className="text-xs font-semibold leading-tight truncate">
-                  M.J. Biopharm
+                  Andrei
                 </span>
                 <span className="text-[10px] text-[var(--muted-foreground)] truncate">
-                  Quality Investigations
+                  Quality Documentation
                 </span>
               </div>
             )}
@@ -166,20 +166,6 @@ export function AppShell({
               {!collapsed && item.label}
             </Link>
           ))}
-          {!collapsed && (
-            <>
-              <Separator className="my-3" />
-              <div className="px-3 py-1">
-                <span className="text-[10px] uppercase tracking-wider text-[var(--muted-foreground)]">
-                  Reference
-                </span>
-              </div>
-              <div className="flex items-center gap-3 px-3 py-2 text-xs text-[var(--muted-foreground)]">
-                <BookOpen className="size-4" aria-hidden="true" />
-                <span>SOP/DP/QA/008</span>
-              </div>
-            </>
-          )}
         </nav>
 
         <div className="border-t border-[var(--border)] p-3">

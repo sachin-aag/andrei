@@ -251,6 +251,7 @@ const MeasureSectionContext = createContext<ReportSectionContextValue<"measure">
 const AnalyzeSectionContext = createContext<ReportSectionContextValue<"analyze"> | null>(null);
 const ImproveSectionContext = createContext<ReportSectionContextValue<"improve"> | null>(null);
 const ControlSectionContext = createContext<ReportSectionContextValue<"control"> | null>(null);
+const ConclusionSectionContext = createContext<ReportSectionContextValue<"conclusion"> | null>(null);
 const DocumentsReviewedSectionContext =
   createContext<ReportSectionContextValue<"documents_reviewed"> | null>(null);
 const AttachmentsSectionContext =
@@ -795,6 +796,15 @@ export function ReportProvider({
     [sections.control, updateSection, replaceSection]
   );
 
+  const conclusionSectionValue = useMemo<ReportSectionContextValue<"conclusion">>(
+    () => ({
+      value: (sections.conclusion ?? EMPTY_CONTENT.conclusion) as SectionContentMap["conclusion"],
+      update: (updater) => updateSection("conclusion", updater),
+      replace: (next) => replaceSection("conclusion", next),
+    }),
+    [sections.conclusion, updateSection, replaceSection]
+  );
+
   const documentsReviewedSectionValue = useMemo<
     ReportSectionContextValue<"documents_reviewed">
   >(
@@ -917,19 +927,21 @@ export function ReportProvider({
               <AnalyzeSectionContext.Provider value={analyzeSectionValue}>
                 <ImproveSectionContext.Provider value={improveSectionValue}>
                   <ControlSectionContext.Provider value={controlSectionValue}>
-                    <DocumentsReviewedSectionContext.Provider
-                      value={documentsReviewedSectionValue}
-                    >
-                      <AttachmentsSectionContext.Provider value={attachmentsSectionValue}>
-                        <ReportEvaluationContext.Provider value={evaluationValue}>
-                          <ReportCommentsContext.Provider value={commentsValue}>
-                            <ReportEditorsContext.Provider value={editorsValue}>
-                              {children}
-                            </ReportEditorsContext.Provider>
-                          </ReportCommentsContext.Provider>
-                        </ReportEvaluationContext.Provider>
-                      </AttachmentsSectionContext.Provider>
-                    </DocumentsReviewedSectionContext.Provider>
+                    <ConclusionSectionContext.Provider value={conclusionSectionValue}>
+                      <DocumentsReviewedSectionContext.Provider
+                        value={documentsReviewedSectionValue}
+                      >
+                        <AttachmentsSectionContext.Provider value={attachmentsSectionValue}>
+                          <ReportEvaluationContext.Provider value={evaluationValue}>
+                            <ReportCommentsContext.Provider value={commentsValue}>
+                              <ReportEditorsContext.Provider value={editorsValue}>
+                                {children}
+                              </ReportEditorsContext.Provider>
+                            </ReportCommentsContext.Provider>
+                          </ReportEvaluationContext.Provider>
+                        </AttachmentsSectionContext.Provider>
+                      </DocumentsReviewedSectionContext.Provider>
+                    </ConclusionSectionContext.Provider>
                   </ControlSectionContext.Provider>
                 </ImproveSectionContext.Provider>
               </AnalyzeSectionContext.Provider>
@@ -982,6 +994,7 @@ export function useReportSection<K extends keyof SectionContentMap & SectionType
   const analyze = useContext(AnalyzeSectionContext);
   const improve = useContext(ImproveSectionContext);
   const control = useContext(ControlSectionContext);
+  const conclusion = useContext(ConclusionSectionContext);
   const documentsReviewed = useContext(DocumentsReviewedSectionContext);
   const attachments = useContext(AttachmentsSectionContext);
   if (
@@ -990,6 +1003,7 @@ export function useReportSection<K extends keyof SectionContentMap & SectionType
     !analyze ||
     !improve ||
     !control ||
+    !conclusion ||
     !documentsReviewed ||
     !attachments
   ) {
@@ -1007,6 +1021,8 @@ export function useReportSection<K extends keyof SectionContentMap & SectionType
       return improve as unknown as ReportSectionContextValue<K>;
     case "control":
       return control as unknown as ReportSectionContextValue<K>;
+    case "conclusion":
+      return conclusion as unknown as ReportSectionContextValue<K>;
     case "documents_reviewed":
       return documentsReviewed as unknown as ReportSectionContextValue<K>;
     case "attachments":

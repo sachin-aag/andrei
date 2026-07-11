@@ -62,6 +62,10 @@ export function buildSectionDisplayBlocks(
     pushRichBlock(blocks, "Narrative", content.narrative);
   } else if (section === "measure") {
     pushRichBlock(blocks, "Narrative", content.narrative);
+    pushPlainBlock(blocks, "Experiment number", content.experimentNumber);
+    pushPlainBlock(blocks, "Experiment title", content.experimentTitle);
+    pushRichBlock(blocks, "Experiment purpose", content.purpose);
+    pushRichBlock(blocks, "Experiment conclusion", content.conclusion);
     pushPlainBlock(blocks, "Regulatory notification", content.regulatoryNotification);
   } else if (section === "analyze") {
     pushObjectFields(blocks, "6M", content.sixM, [
@@ -90,6 +94,8 @@ export function buildSectionDisplayBlocks(
     pushRichBlock(blocks, "Narrative", content.narrative);
   } else if (section === "control") {
     pushRichBlock(blocks, "Preventive actions", content.preventiveActions);
+  } else if (section === "conclusion") {
+    pushRichBlock(blocks, "Narrative", content.narrative);
   }
 
   return blocks;

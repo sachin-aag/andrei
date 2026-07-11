@@ -27,18 +27,6 @@ vi.mock("@/lib/reports/deviation-no", async (importOriginal) => {
   };
 });
 
-vi.mock("@/lib/import/docx-upload", () => ({
-  readDocxUpload: vi.fn(),
-}));
-
-vi.mock("@/lib/import/docx-to-sections", () => ({
-  docxBufferToImportedReportContent: vi.fn(),
-}));
-
-vi.mock("@/lib/reports/persist-source-docx", () => ({
-  persistReportSourceDocx: vi.fn(),
-}));
-
 vi.mock("@/lib/audit", () => ({
   auditActorFromUser: vi.fn((user: { id: string; name: string; role: string }) => ({
     id: user.id,
@@ -51,9 +39,6 @@ vi.mock("@/lib/audit", () => ({
 
 import { db } from "@/db";
 import { isDeviationNoTaken } from "@/lib/reports/deviation-no";
-import { readDocxUpload } from "@/lib/import/docx-upload";
-import { docxBufferToImportedReportContent } from "@/lib/import/docx-to-sections";
-import { persistReportSourceDocx } from "@/lib/reports/persist-source-docx";
 import { EMPTY_CONTENT, REPORT_SECTION_ROW_ORDER } from "@/types/sections";
 
 const engineer = {
@@ -190,7 +175,7 @@ describe("/api/reports", () => {
     expect(db.insert).not.toHaveBeenCalled();
   });
 
-  it("checks duplicates using the user-entered deviation number, not only the docx header", async () => {
+  it("checks duplicates using the user-entered deviation number", async () => {
     vi.mocked(getCurrentUser).mockResolvedValueOnce({
       id: "engineer-1",
       name: "Engineer",
@@ -212,7 +197,7 @@ describe("/api/reports", () => {
     expect(db.insert).not.toHaveBeenCalled();
   });
 
-  it("creates a report without persisting source docx when no file is uploaded", async () => {
+  it("creates a report from JSON payload", async () => {
     vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
     vi.mocked(isDeviationNoTaken).mockResolvedValueOnce(false);
     mockSuccessfulCreate();
@@ -226,7 +211,6 @@ describe("/api/reports", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(persistReportSourceDocx).not.toHaveBeenCalled();
     expect(db.transaction).not.toHaveBeenCalled();
   });
 
@@ -258,84 +242,6 @@ describe("/api/reports", () => {
     ]);
     await expect(response.json()).resolves.toMatchObject({
       report: { assignedManagerIds: ["manager-1", "manager-2"] },
-    });
-  });
-
-  it("persists the uploaded source docx after creating the report", async () => {
-    vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
-    vi.mocked(isDeviationNoTaken).mockResolvedValueOnce(false);
-    mockSuccessfulCreate("report-with-file");
-    mockSectionRowsSelect("report-with-file");
-
-    const buffer = Buffer.from("docx-bytes");
-    vi.mocked(readDocxUpload).mockResolvedValueOnce(buffer);
-    vi.mocked(docxBufferToImportedReportContent).mockResolvedValueOnce({
-      header: {},
-      toolsUsed: { sixM: false, fiveWhy: false, brainstorming: false },
-      sections: Object.fromEntries(
-        REPORT_SECTION_ROW_ORDER.map((section) => [section, EMPTY_CONTENT[section]]),
-      ),
-      comments: [],
-    } as never);
-    vi.mocked(persistReportSourceDocx).mockResolvedValueOnce(undefined);
-
-    const form = new FormData();
-    form.set("deviationNo", "DEV-001");
-    form.set("assignedManagerId", "");
-    form.set("file", new File([buffer], "Investigation.docx", { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }));
-
-    const response = await POST(
-      new Request("http://localhost/api/reports", {
-        method: "POST",
-        body: form,
-      }),
-    );
-
-    expect(response.status).toBe(200);
-    expect(persistReportSourceDocx).toHaveBeenCalledWith({
-      reportId: "report-with-file",
-      buffer,
-      filename: "Investigation.docx",
-      uploadedById: engineer.id,
-    });
-    expect(db.delete).not.toHaveBeenCalled();
-  });
-
-  it("rolls back the report when source docx persistence fails", async () => {
-    vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
-    vi.mocked(isDeviationNoTaken).mockResolvedValueOnce(false);
-    mockSuccessfulCreate("report-rollback");
-
-    const buffer = Buffer.from("docx-bytes");
-    vi.mocked(readDocxUpload).mockResolvedValueOnce(buffer);
-    vi.mocked(docxBufferToImportedReportContent).mockResolvedValueOnce({
-      header: {},
-      toolsUsed: { sixM: false, fiveWhy: false, brainstorming: false },
-      sections: Object.fromEntries(
-        REPORT_SECTION_ROW_ORDER.map((section) => [section, EMPTY_CONTENT[section]]),
-      ),
-      comments: [],
-    } as never);
-    vi.mocked(persistReportSourceDocx).mockRejectedValueOnce(new Error("storage failed"));
-
-    const where = vi.fn().mockResolvedValue(undefined);
-    vi.mocked(db.delete).mockReturnValue({ where } as never);
-
-    const form = new FormData();
-    form.set("deviationNo", "DEV-001");
-    form.set("file", new File([buffer], "Investigation.docx"));
-
-    const response = await POST(
-      new Request("http://localhost/api/reports", {
-        method: "POST",
-        body: form,
-      }),
-    );
-
-    expect(response.status).toBe(500);
-    expect(db.delete).toHaveBeenCalled();
-    await expect(response.json()).resolves.toMatchObject({
-      error: "Could not save the uploaded file. Please try again.",
     });
   });
 });

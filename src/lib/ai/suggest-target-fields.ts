@@ -3,7 +3,13 @@ import type { SectionType } from "@/db/schema";
 /** Pattern entries use `[]` for a numeric array index slot. */
 export const SUGGEST_TARGET_FIELD_PATTERNS: Record<SectionType, readonly string[]> = {
   define: ["narrative"],
-  measure: ["narrative"],
+  measure: [
+    "narrative",
+    "experimentNumber",
+    "experimentTitle",
+    "purpose",
+    "conclusion",
+  ],
   analyze: [
     "sixM.man",
     "sixM.machine",
@@ -20,6 +26,7 @@ export const SUGGEST_TARGET_FIELD_PATTERNS: Record<SectionType, readonly string[
   ],
   improve: ["narrative", "correctiveActions"],
   control: ["preventiveActions"],
+  conclusion: ["narrative"],
   documents_reviewed: [],
   attachments: [],
   signature_approvals: [],
@@ -41,7 +48,7 @@ export function isAllowedTargetField(section: SectionType, targetField: string):
 /** Rich TipTap fields per section (dot paths). */
 export const RICH_FIELD_PATHS: Partial<Record<SectionType, readonly string[]>> = {
   define: ["narrative"],
-  measure: ["narrative"],
+  measure: ["narrative", "purpose", "conclusion"],
   analyze: [
     "fiveWhy.narrative",
     "investigationOutcome",
@@ -50,6 +57,7 @@ export const RICH_FIELD_PATHS: Partial<Record<SectionType, readonly string[]>> =
   ],
   improve: ["narrative", "correctiveActions"],
   control: ["preventiveActions"],
+  conclusion: ["narrative"],
 };
 
 export function isRichTargetField(section: SectionType, contentPath: string): boolean {

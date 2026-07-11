@@ -47,18 +47,18 @@ export default async function UnlockPage({
           }}
         />
         <div className="relative flex items-center gap-3">
-          <div className="size-12 rounded-lg bg-white p-1 flex items-center justify-center">
+          <div className="size-12 rounded-lg bg-white/10 p-1 flex items-center justify-center">
             <Image
-              src="/logo.png"
+              src="/logo-white.png"
               width={36}
               height={36}
-              alt="MJ Biopharm logo"
+              alt="Andrei logo"
               className="object-contain"
             />
           </div>
           <div>
-            <div className="font-semibold">M.J. Biopharm Private Limited</div>
-            <div className="text-xs">Drug Product · Hinjawadi</div>
+            <div className="font-semibold">Andrei</div>
+            <div className="text-xs text-white/80">Quality Documentation</div>
           </div>
         </div>
         <div className="relative">
@@ -69,8 +69,8 @@ export default async function UnlockPage({
             Enter the shared access password to continue.
           </p>
         </div>
-        <div className="relative text-xs opacity-80">
-          Ref. SOP No.: SOP/DP/QA/008 · Form: SOP/DP/QA/008/F04-R02
+        <div className="relative text-xs text-white/70">
+          Restricted demo environment
         </div>
       </div>
 
@@ -82,10 +82,10 @@ export default async function UnlockPage({
                 src="/logo.png"
                 width={32}
                 height={32}
-                alt="MJ Biopharm logo"
+                alt="Andrei logo"
               />
             </div>
-            <div className="font-semibold">M.J. Biopharm</div>
+            <div className="font-semibold">Andrei</div>
           </div>
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">

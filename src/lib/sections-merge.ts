@@ -5,6 +5,7 @@ import type {
   AnalyzeSection,
   AttachmentsSection,
   ControlSection,
+  ConclusionSection,
   DefineSection,
   DocumentsReviewedSection,
   ImproveSection,
@@ -55,6 +56,23 @@ export function mergeMeasureSection(content: unknown): MeasureSection {
     ...base,
     ...rest,
     narrative: mergedNarrative,
+    experimentNumber:
+      typeof o.experimentNumber === "string" ? o.experimentNumber : base.experimentNumber,
+    experimentTitle:
+      typeof o.experimentTitle === "string" ? o.experimentTitle : base.experimentTitle,
+    purpose: normalizeRichField(o.purpose ?? base.purpose),
+    conclusion: normalizeRichField(o.conclusion ?? base.conclusion),
+  };
+}
+
+export function mergeConclusionSection(content: unknown): ConclusionSection {
+  const base = EMPTY_CONTENT.conclusion;
+  if (!content || typeof content !== "object") return base;
+  const o = content as Partial<ConclusionSection>;
+  return {
+    ...base,
+    ...o,
+    narrative: normalizeRichField(o.narrative ?? base.narrative),
   };
 }
 
@@ -326,6 +344,8 @@ export function mergeSection<K extends keyof SectionContentMap & SectionType>(
       return mergeImproveSection(content) as SectionContentMap[K];
     case "control":
       return mergeControlSection(content) as SectionContentMap[K];
+    case "conclusion":
+      return mergeConclusionSection(content) as SectionContentMap[K];
     case "documents_reviewed":
       return mergeDocumentsReviewedSection(content) as SectionContentMap[K];
     case "attachments":

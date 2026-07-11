@@ -1,40 +1,40 @@
 @import "tailwindcss";
 
-/* MJ Biopharm brand navy #133782 rgb(19,55,130) — light theme only */
+/* Andrei brand navy #001838 / blue #3d6fb5 — light theme only */
 :root {
   --background: #fafafa;
-  --foreground: #16162b;
+  --foreground: #0f1e33;
   --card: #ffffff;
-  --card-foreground: #16162b;
+  --card-foreground: #0f1e33;
   --popover: #ffffff;
-  --popover-foreground: #16162b;
-  --primary: #403ac8;
+  --popover-foreground: #0f1e33;
+  --primary: #3d6fb5;
   --primary-foreground: #ffffff;
-  --secondary: #f4f4f5;
-  --secondary-foreground: #1f1d4f;
-  --muted: #f4f4f5;
-  --muted-foreground: #5c5c72;
-  --accent: #133782;
+  --secondary: #f4f7fb;
+  --secondary-foreground: #001838;
+  --muted: #f4f7fb;
+  --muted-foreground: #5b6b82;
+  --accent: #001838;
   --accent-foreground: #ffffff;
   --destructive: #dc2626;
   --destructive-foreground: #ffffff;
-  --border: #e5e5e5;
+  --border: #e2e8f2;
   --input: #ffffff;
-  /* Lighter MJ tint for rings / focus visibility on pale surfaces */
-  --ring: #3a62c4;
+  /* Lighter Andrei blue for rings / focus visibility on pale surfaces */
+  --ring: #5b8ad0;
   --radius: 0.5rem;
 
-  --brand: #133782;
-  --brand-50: #eceaff;
-  --brand-100: #d6d1ff;
-  --brand-200: #a9a1f7;
-  --brand-300: #7d72ec;
-  --brand-400: #5b4fe0;
-  --brand-500: #403ac8;
-  --brand-600: #133782;
-  --brand-700: #1f1d4f;
-  --brand-800: #13122e;
-  --brand-900: #090817;
+  --brand: #001838;
+  --brand-50: #eef4fb;
+  --brand-100: #d9e6f5;
+  --brand-200: #b3cce9;
+  --brand-300: #8db3dd;
+  --brand-400: #5b8ad0;
+  --brand-500: #3d6fb5;
+  --brand-600: #001838;
+  --brand-700: #0a2547;
+  --brand-800: #061528;
+  --brand-900: #030c18;
 
   --success: #15803d;
   --warning: #a16207;

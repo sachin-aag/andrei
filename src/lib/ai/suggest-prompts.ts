@@ -1,7 +1,7 @@
 import type { CriterionStatus, SectionType } from "@/db/schema";
 import { SUGGEST_TARGET_FIELD_PATTERNS } from "@/lib/ai/suggest-target-fields";
 
-export const SUGGEST_PROMPT_VERSION = "suggest-v7" as const;
+export const SUGGEST_PROMPT_VERSION = "suggest-v8-andrei" as const;
 
 /** Google model for suggestion generation (stronger reasoning + verbatim anchors). */
 export const SUGGEST_GOOGLE_MODEL_ID = "gemini-3.1-pro-preview" as const;
@@ -16,7 +16,7 @@ export function buildSuggestionSystemPrompt(section: SectionType): string {
       : section === "control"
         ? '\n- For CONTROL, targetField MUST be "preventiveActions". Do not use "narrative".'
         : "";
-  return `You are a pharmaceutical QA writing assistant. You produce precise, minimal text edits for investigation report sections.
+  return `You are a quality documentation writing assistant. You produce precise, minimal text edits for investigation report sections.
 
 RULES:
 - Output JSON only, matching the provided schema.
@@ -27,7 +27,7 @@ RULES:
 - For pure inserts after a word, start insertText with a leading space when it continues the same sentence (e.g. insertText: " regarding the root cause").
 - targetField MUST be one of: ${fields || "narrative"}.${fieldHint}
 - For unknown facts use bracket placeholders: [Label: <to be filled>] (same as the editor). Do NOT use bare <to be filled: …> without square brackets.
-- Assume the author will fill existing placeholders later. Treat them as standing in for the labeled fact — do NOT replace [Label: <to be filled>] with invented concrete text (e.g. do not change [SOP number: <to be filled>] to SOP/DP/QC/045).
+- Assume the author will fill existing placeholders later. Treat them as standing in for the labeled fact — do NOT replace [Label: <to be filled>] with invented concrete text (e.g. do not change [Procedure reference: <to be filled>] to a specific document number).
 - If the only change needed for a criterion is filling an existing placeholder, do not return a suggestion that edits that token; suggest edits elsewhere only when other prose gaps remain.
 - Guidance-only brackets like [batch number] are OK when inserting new missing text; do not overwrite existing placeholders.
 - Do not speculate beyond what the criterion requires. Keep edits minimal.

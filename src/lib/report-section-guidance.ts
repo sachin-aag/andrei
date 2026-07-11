@@ -29,13 +29,12 @@ export const SECTION_GUIDANCE: Partial<Record<SectionType, string[]>> = {
     "Is the Preventive action assigned a unique number, responsible person and due date so it can be tracked? Does the action describe and expected outcome can be verified?",
     "Is an Interim Plan needed to ensure a state the control while the Preventive Actions were implemented?",
     "Is rationale provided when no Preventive Action were identified?",
-    "Does the Final Comments section include rotational to support the conclusion of the investigation and CAPA",
-    "Is each of the impact assessment fields completed correctly — Regulatory Impact, Regulatory notification Product Quality, Validation, Stability, Market/Clinical?",
-    "Does the Recommended Lot disposition match the conclusions of the investigation and Impact assessment?",
-    "Does the Conclusion include final decision and rationale other regulatory notification required?",
-    "CAPA required to release material or batches have been verified to be complete and closed prior to material or batch disposition. Any related CAPA that remain open, but have no impact on the material or batch release and a documented explanation is provided.",
-    "Does the Conclusion include a brief summary of root cause, final scope/impact including rationale for product/material disposition, impact assessment and relevant lot/material/equipment details?",
     "Are the identified preventive actions achievable based on the information provided?",
+  ],
+  conclusion: [
+    "Does the conclusion include a brief summary of root cause and final scope/impact?",
+    "Are final disposition decisions and rationale clearly stated?",
+    "Does the conclusion address regulatory notification if applicable and overall investigation closure?",
   ],
 };
 

@@ -66,6 +66,24 @@
     "reasoning": "Stub evaluation for automated tests."
   },
   {
+    "section": "measure",
+    "criterionKey": "measure.experiment_identified",
+    "status": "not_met",
+    "reasoning": "Stub evaluation for automated tests."
+  },
+  {
+    "section": "measure",
+    "criterionKey": "measure.experiment_purpose",
+    "status": "met",
+    "reasoning": "Stub evaluation for automated tests."
+  },
+  {
+    "section": "measure",
+    "criterionKey": "measure.experiment_conclusion",
+    "status": "partially_met",
+    "reasoning": "Stub evaluation for automated tests."
+  },
+  {
     "section": "analyze",
     "criterionKey": "analyze.sixm_completeness",
     "status": "not_met",
@@ -212,6 +230,24 @@
   {
     "section": "control",
     "criterionKey": "control.preventive_achievable",
+    "status": "not_met",
+    "reasoning": "Stub evaluation for automated tests."
+  },
+  {
+    "section": "conclusion",
+    "criterionKey": "conclusion.summary",
+    "status": "met",
+    "reasoning": "Stub evaluation for automated tests."
+  },
+  {
+    "section": "conclusion",
+    "criterionKey": "conclusion.disposition",
+    "status": "partially_met",
+    "reasoning": "Stub evaluation for automated tests."
+  },
+  {
+    "section": "conclusion",
+    "criterionKey": "conclusion.closure",
     "status": "not_met",
     "reasoning": "Stub evaluation for automated tests."
   }

@@ -22,12 +22,20 @@ describe("applyGoogleDocsImageCompat", () => {
     const after = zip.file("word/media/image1.png")!.asNodeBuffer();
     const afterDims = readPngDimensions(after)!;
     expect(Math.max(afterDims.width, afterDims.height)).toBeGreaterThanOrEqual(320);
-    expect(Math.max(afterDims.width, afterDims.height)).toBeGreaterThan(
-      Math.max(beforeDims.width, beforeDims.height)
-    );
+    if (Math.max(beforeDims.width, beforeDims.height) < 320) {
+      expect(Math.max(afterDims.width, afterDims.height)).toBeGreaterThan(
+        Math.max(beforeDims.width, beforeDims.height)
+      );
+    }
 
     const header2 = zip.file("word/header2.xml")!.asText();
     expect(header2).not.toContain("useLocalDpi");
-    expect(header2).toMatch(/cy="390\d+"/);
+    expect(header2).not.toMatch(/SOP\/DP\/QA\/008/i);
+    expect(header2).not.toMatch(/M\.J\./i);
+    const cyMatch = header2.match(/wp:extent cx="\d+" cy="(\d+)"/);
+    expect(cyMatch).not.toBeNull();
+    const cy = Number(cyMatch![1]);
+    const aspectCy = Math.round((457200 * afterDims.height) / afterDims.width);
+    expect(cy).toBe(aspectCy);
   });
 });

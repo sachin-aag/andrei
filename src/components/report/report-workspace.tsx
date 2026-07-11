@@ -67,6 +67,10 @@ const SECTION_EDITORS = {
     () => import("./sections/control-editor").then((mod) => mod.ControlEditor),
     { loading: SectionEditorLoading }
   ),
+  conclusion: dynamic(
+    () => import("./sections/conclusion-editor").then((mod) => mod.ConclusionEditor),
+    { loading: SectionEditorLoading }
+  ),
   documents_reviewed: dynamic(
     () =>
       import("./sections/documents-reviewed-editor").then(

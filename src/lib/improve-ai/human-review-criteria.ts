@@ -55,6 +55,18 @@ export const HUMAN_REVIEW_CRITERIA_BY_KEY: Record<string, HumanReviewCriterionCo
     label: "Is the report written in a logical flow and easily understood by the reader?",
     description: "Is the report written in a logical flow and easily understood by the reader?",
   },
+  "measure.experiment_identified": {
+    label: "Experiment number and title stated",
+    description: "When a supporting experiment is referenced, are the experiment number and title clearly stated?",
+  },
+  "measure.experiment_purpose": {
+    label: "Experiment purpose stated",
+    description: "Is the purpose of any supporting experiment clearly described?",
+  },
+  "measure.experiment_conclusion": {
+    label: "Experiment conclusion stated",
+    description: "Is the conclusion or outcome of any supporting experiment summarized?",
+  },
   "improve.specific_actions": {
     label:
       "Were specific corrective Actions identified (including applicable Immediate Actions) to remediate the current issue or situation such that the associated system was returned to a state of control/compliance?",
@@ -166,6 +178,21 @@ export const HUMAN_REVIEW_CRITERIA_BY_KEY: Record<string, HumanReviewCriterionCo
     label: "Are the identified preventive actions achievable based on the information provided?",
     description:
       "Are the identified preventive actions achievable based on the information provided?",
+  },
+  "conclusion.summary": {
+    label: "Investigation summary",
+    description:
+      "Does the conclusion briefly summarize the root cause, final scope, and impact of the deviation?",
+  },
+  "conclusion.disposition": {
+    label: "Disposition and decisions",
+    description:
+      "Are final disposition decisions and rationale clearly stated?",
+  },
+  "conclusion.closure": {
+    label: "Closure completeness",
+    description:
+      "Does the conclusion address remaining actions, regulatory notifications if applicable, and overall investigation closure?",
   },
 };
 

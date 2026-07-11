@@ -11,9 +11,9 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "MJ Biopharm - Investigation Report",
+  title: "Andrei — Document Review",
   description:
-    "Quality engineering investigation report tool for M.J. Biopharm Private Limited",
+    "AI document review and drafting for regulated quality teams",
 };
 
 export default async function RootLayout({
