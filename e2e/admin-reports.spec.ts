@@ -57,7 +57,9 @@ test.describe("admin reports view", () => {
     await gotoWithNavigationRetry(page, `/admin/reports/${reportId}`, {
       waitUntil: "domcontentloaded",
     });
-    await expect(page.getByRole("link", { name: /admin reports/i })).toBeVisible({
+    await expect(
+      page.locator("header").getByRole("link", { name: /admin reports/i })
+    ).toBeVisible({
       timeout: 30_000,
     });
     await expect(page.getByText(deviationNo!)).toBeVisible();
