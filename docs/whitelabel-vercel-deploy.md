@@ -217,7 +217,7 @@ Re-run after schema changes or to reset demo content (delete reports in Neon SQL
 | Empty dashboard | Run `pnpm seed-demo-reports` against **demo** Neon |
 | MJ branding on demo | Production branch still `main`; set to `feat/whitelabel` |
 | Prod data on demo | `DATABASE_URL` points at wrong Neon project — must be **`demo`**, not `Andrei V2` |
-| AI Check errors | Add AI gateway / Gemini key to Production |
+| AI Check errors | Add `AI_GATEWAY_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` to Production. If you copied `GOOGLE_VERTEX_PROJECT` from prod, also copy **`GCP_WIF_AUDIENCE`** + **`GCP_SERVICE_ACCOUNT_EMAIL`**, or remove the Vertex vars so the gateway key is used. Partial Vertex config causes `Could not load the default credentials` on Vercel. |
 
 ## Local `.vercel` link
 

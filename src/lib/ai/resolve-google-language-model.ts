@@ -51,6 +51,22 @@ async function getVercelOidcToken(): Promise<string | null> {
 
 const vertexProviderByLocation = new Map<string, ReturnType<typeof createVertex>>();
 
+function hasVertexWifConfig(): boolean {
+  return (
+    Boolean(process.env.GCP_WIF_AUDIENCE?.trim()) &&
+    Boolean(process.env.GCP_SERVICE_ACCOUNT_EMAIL?.trim())
+  );
+}
+
+/** Vertex is only usable when WIF is configured on Vercel, or ADC is available locally. */
+function canUseVertexAuth(): boolean {
+  if (!process.env.GOOGLE_VERTEX_PROJECT?.trim()) return false;
+  if (hasVertexWifConfig()) return true;
+  // Vercel has no ADC — fall through to API key / AI Gateway instead of failing at runtime.
+  if (process.env.VERCEL) return false;
+  return true;
+}
+
 /**
  * Build the Vertex provider for a given location. Authentication source
  * depends on environment:
@@ -211,8 +227,7 @@ export function resolveGoogleLanguageModel(
   googleModelId: string,
   options: ResolveGoogleLanguageModelOptions = {}
 ): LanguageModel {
-  const vertexProject = process.env.GOOGLE_VERTEX_PROJECT?.trim();
-  if (vertexProject) {
+  if (canUseVertexAuth()) {
     const location =
       options.vertexLocation ??
       process.env.GOOGLE_VERTEX_LOCATION?.trim() ??
