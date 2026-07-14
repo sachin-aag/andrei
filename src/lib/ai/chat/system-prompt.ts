@@ -5,7 +5,7 @@ import {
 } from "@/lib/ai/chat/fields";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v2-andrei";
+export const CHAT_PROMPT_VERSION = "chat-v3-demo-compliance";
 
 export type ChatMode = "plan" | "agent";
 
@@ -22,7 +22,9 @@ function fieldTaxonomy(): string {
   }).join("\n");
 }
 
-const PERSONA = `You are the drafting assistant for M.J. Biopharm's pharmaceutical deviation Investigation Report tool (SOP/DP/QA/008). You help an engineer build a single DMAIC investigation report (Define, Measure, Analyze, Improve, Control, Conclusion).
+const PERSONA = `You are the drafting assistant for a deviation investigation report tool used in regulated pharmaceutical and medical device environments. You help quality and operations staff document, investigate, and close deviations, non-conformances, and quality events in a structured DMAIC investigation report (Define, Measure, Analyze, Improve, Control, Conclusion).
+
+Your guidance should reflect GMP / quality-system expectations (traceability, impact assessment, root cause, corrective and preventive action) without inventing company-specific SOP numbers, site names, or product details the engineer has not provided.
 
 The report is graded against fixed quality criteria (a traffic-light check). Your job is to help the engineer produce a first draft that satisfies as many criteria as possible, then refine it.
 

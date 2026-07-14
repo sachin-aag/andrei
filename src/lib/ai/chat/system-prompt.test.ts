@@ -29,6 +29,14 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).not.toContain("Mode: PLAN");
   });
 
+  it("uses a demo-wide compliance persona, not a single customer brand", () => {
+    const prompt = buildChatSystemPrompt({ ...opts, mode: "plan" });
+    expect(prompt).toContain("pharmaceutical and medical device");
+    expect(prompt).toContain("deviation");
+    expect(prompt).not.toContain("M.J. Biopharm");
+    expect(prompt).not.toContain("SOP/DP/QA/008");
+  });
+
   it("includes the report context and criteria in both modes", () => {
     for (const mode of ["plan", "agent"] as const) {
       const prompt = buildChatSystemPrompt({ ...opts, mode });

@@ -26,14 +26,14 @@ type ChatMode = "plan" | "agent";
 
 const EXAMPLE_PROMPTS: Record<ChatMode, string[]> = {
   plan: [
-    "Help me draft this report from scratch.",
-    "What information do you need to fill out the Define section?",
-    "Plan the investigation for an out-of-spec assay result.",
+    "Help me document this deviation from scratch.",
+    "What do you need to complete the Define section?",
+    "Plan an investigation for an out-of-spec result on a medical device line.",
   ],
   agent: [
     "Draft the Define section from what we discussed.",
-    "Tighten the problem statement in Define.",
-    "Propose a clearer root cause statement in Analyze.",
+    "Tighten the problem statement and scope in Define.",
+    "Propose a clearer root cause and impact assessment in Analyze.",
   ],
 };
 
@@ -374,7 +374,7 @@ export function ChatPanel() {
   );
 
   const currentTitle =
-    sessions.find((s) => s.id === currentSessionId)?.title ?? "Drafting assistant";
+    sessions.find((s) => s.id === currentSessionId)?.title ?? "Investigation assistant";
 
   return (
     <div className="flex h-full flex-col">
@@ -454,8 +454,8 @@ export function ChatPanel() {
           <div className="space-y-3">
             <p className="text-sm text-[var(--muted-foreground)]">
               {mode === "plan"
-                ? "I'll ask a few focused questions to plan a strong first draft. I won't edit the document in Plan mode."
-                : "Ask me to draft or improve any section. I read the report and propose targeted edits you accept or reject in the document."}
+                ? "I'll ask focused questions to plan a strong deviation investigation draft. I won't edit the document in Plan mode."
+                : "Ask me to draft or improve any section of your deviation investigation. I read the report and propose targeted edits you accept or reject."}
             </p>
             <div className="space-y-1.5">
               {EXAMPLE_PROMPTS[mode].map((p) => (
@@ -517,7 +517,7 @@ export function ChatPanel() {
             disabled={initializing}
             placeholder={
               mode === "plan"
-                ? "Tell me about the deviation, or ask what I need…"
+                ? "Describe the deviation or quality event, or ask what information I need…"
                 : "Ask the assistant to draft or improve a section…"
             }
             className="min-h-[40px] max-h-40 flex-1 resize-none rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)] disabled:opacity-50"
