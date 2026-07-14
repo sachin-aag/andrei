@@ -144,6 +144,17 @@ Connect the **`demo`** Neon project to **`andrei-demo`** only (Vercel **Storage*
 
 For Production, explicit `DATABASE_URL` env vars override integration defaults. **Disable** per-preview Neon branching on `andrei-demo` unless you want ephemeral PR databases — a static `DATABASE_URL` is simpler for a stable client demo.
 
+### Preview deployments (PR branches)
+
+`andrei-demo` does **not** get a per-PR Neon branch. If you only set `DATABASE_URL` on **Production**, Vercel Preview builds (e.g. `cursor/report-chat-agent-9666`) fail at migrate with `DATABASE_URL is not set`.
+
+Pick one:
+
+| Goal | Setup |
+|------|--------|
+| **Stable demo only** (recommended) | On **andrei-demo** → Environment Variables, add `ANDREI_DEMO_PRODUCTION_ONLY` = `true` (all environments). Non-`feat/whitelabel` branches skip the build via `scripts/vercel-should-build.sh`. |
+| **Working PR previews** | Also enable **Preview** for `DATABASE_URL`, `DATABASE_URL_UNPOOLED`, `AUTH_SECRET`, and AI keys (same demo Neon URL as Production). `AUTH_URL` can stay Production-only — the app falls back to `VERCEL_URL` on previews. |
+
 CLI example (after `vercel link -p andrei-demo -y`):
 
 ```bash
@@ -211,7 +222,8 @@ Re-run after schema changes or to reset demo content (delete reports in Neon SQL
 
 | Symptom | Fix |
 |---------|-----|
-| `DATABASE_URL is not set` on build | Add demo pooled URL to **Production** on `andrei-demo` |
+| `DATABASE_URL is not set` on build (Production) | Add demo pooled URL to **Production** on `andrei-demo` |
+| `DATABASE_URL is not set` on build (Preview / PR branch) | Add demo pooled URL to **Preview** too, **or** set `ANDREI_DEMO_PRODUCTION_ONLY=true` on `andrei-demo` to skip non-`feat/whitelabel` builds |
 | Wrong login redirect | `AUTH_URL` must match deployed URL exactly |
 | **404 on all paths** | Set Framework Preset to **Next.js** on `andrei-demo`, then redeploy |
 | Empty dashboard | Run `pnpm seed-demo-reports` against **demo** Neon |
