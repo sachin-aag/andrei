@@ -91,6 +91,11 @@ export const aiFeedbackSourceTypeEnum = pgEnum("ai_feedback_source_type", [
   "uploaded_docx",
 ]);
 
+export const chatMessageRoleEnum = pgEnum("chat_message_role", [
+  "user",
+  "assistant",
+]);
+
 export const aiFeedbackSessionStatusEnum = pgEnum("ai_feedback_session_status", [
   "evaluating",
   "ready_for_review",
@@ -416,6 +421,37 @@ export const commentsRelations = relations(comments, ({ one, many }) => ({
 }));
 
 /**
+ * Report drafting-assistant chat transcript. One thread per report (Tier 1).
+ * `parts` stores the AI SDK v6 UIMessage `parts` array verbatim (text +
+ * tool-call/tool-result parts), so the transcript rehydrates with the same
+ * proposal cards it showed live. Proposed edits themselves live in `comments`
+ * (kind `ai_fix`), so this table never needs to reference suggestions.
+ */
+export const chatMessages = pgTable(
+  "chat_messages",
+  {
+    id: text("id").primaryKey().$defaultFn(() => createId()),
+    reportId: text("report_id")
+      .notNull()
+      .references(() => reports.id, { onDelete: "cascade" }),
+    role: chatMessageRoleEnum("role").notNull(),
+    /** AI SDK v6 UIMessage.parts (text + tool parts). */
+    parts: jsonb("parts").notNull().default([]),
+    /** workspace_users.id for user turns; null for assistant turns. */
+    authorId: text("author_id"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    reportCreatedIdx: index("chat_messages_report_created_idx").on(
+      t.reportId,
+      t.createdAt
+    ),
+  })
+);
+
+/**
  * Persistent cache for Gemini math-extraction results, keyed by SHA-256 of the
  * source image bytes. Survives report deletion so re-importing the same DOCX
  * (or a new report with the same formula) never hits the LLM twice.
@@ -649,6 +685,7 @@ export type AiFeedbackSourceType =
   (typeof aiFeedbackSourceTypeEnum.enumValues)[number];
 export type AiFeedbackSessionStatus =
   (typeof aiFeedbackSessionStatusEnum.enumValues)[number];
+export type ChatMessageRole = (typeof chatMessageRoleEnum.enumValues)[number];
 export type AuditAction = (typeof auditActionEnum.enumValues)[number];
 export type AuditEntity = (typeof auditEntityEnum.enumValues)[number];
 export type SignatureMeaning = (typeof signatureMeaningEnum.enumValues)[number];
