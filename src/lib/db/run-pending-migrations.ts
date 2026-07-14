@@ -75,58 +75,101 @@ async function applyMigrationStatements(
   }
 }
 
-/**
- * Apply idempotent schema repairs when a migration was journaled without SQL
- * (older deploy bug) or drizzle's timestamp-based migrator skipped it.
- */
-async function repairMissingSchema(pool: pg.Pool): Promise<void> {
-  const repairs: { tag: string; tableName: string }[] = [
-    { tag: "0032_chat_sessions", tableName: "chat_sessions" },
-  ];
+async function clearPhantomJournalRows(
+  pool: pg.Pool,
+  tag: string
+): Promise<void> {
+  const entry = journalEntry(tag);
+  const hash = migrationHash(tag);
 
-  for (const { tag, tableName } of repairs) {
-    if (await tableExists(pool, tableName)) {
-      continue;
-    }
+  await pool.query(`DELETE FROM drizzle.__drizzle_migrations WHERE hash = $1`, [
+    hash,
+  ]);
+  if (entry) {
+    await pool.query(
+      `DELETE FROM drizzle.__drizzle_migrations WHERE created_at = $1`,
+      [entry.when]
+    );
+  }
+}
 
-    const entry = journalEntry(tag);
-    const hash = migrationHash(tag);
+async function recordMigrationIfMissing(
+  pool: pg.Pool,
+  tag: string
+): Promise<void> {
+  const entry = journalEntry(tag);
+  if (!entry) {
+    return;
+  }
 
-    await pool.query(`DELETE FROM drizzle.__drizzle_migrations WHERE hash = $1`, [
-      hash,
-    ]);
-    if (entry) {
-      await pool.query(
-        `DELETE FROM drizzle.__drizzle_migrations WHERE created_at = $1`,
-        [entry.when]
-      );
-    }
+  const hash = migrationHash(tag);
+  const recorded = await recordedMigrationHashes(pool);
+  if (!recorded.has(hash)) {
+    await pool.query(
+      `INSERT INTO drizzle.__drizzle_migrations (hash, created_at) VALUES ($1, $2)`,
+      [hash, entry.when]
+    );
+  }
+}
 
-    if (tableName === "chat_sessions" && (await tableExists(pool, "chat_messages"))) {
-      const sessionIdCol = await pool.query<{ exists: boolean }>(
-        `SELECT EXISTS (
+/** Apply one migration when its primary table is still missing. */
+async function ensureMigrationTable(
+  pool: pg.Pool,
+  tag: string,
+  tableName: string
+): Promise<void> {
+  if (await tableExists(pool, tableName)) {
+    return;
+  }
+
+  await clearPhantomJournalRows(pool, tag);
+
+  if (tag === "0032_chat_sessions" && (await tableExists(pool, "chat_messages"))) {
+    const sessionIdCol = await pool.query<{ exists: boolean }>(
+      `SELECT EXISTS (
           SELECT 1 FROM information_schema.columns
           WHERE table_schema = 'public'
             AND table_name = 'chat_messages'
             AND column_name = 'session_id'
         ) AS exists`
+    );
+    if (sessionIdCol.rows[0]?.exists) {
+      await pool.query(`UPDATE chat_messages SET session_id = NULL`);
+    }
+  }
+
+  await applyMigrationStatements(pool, tag);
+  await recordMigrationIfMissing(pool, tag);
+}
+
+type SchemaRepair = {
+  tag: string;
+  tableName: string;
+  prerequisites?: { tag: string; tableName: string }[];
+};
+
+/**
+ * Apply idempotent schema repairs when a migration was journaled without SQL
+ * (older deploy bug) or drizzle's timestamp-based migrator skipped it.
+ */
+async function repairMissingSchema(pool: pg.Pool): Promise<void> {
+  const repairs: SchemaRepair[] = [
+    {
+      tag: "0032_chat_sessions",
+      tableName: "chat_sessions",
+      prerequisites: [{ tag: "0031_chat_messages", tableName: "chat_messages" }],
+    },
+  ];
+
+  for (const repair of repairs) {
+    for (const prerequisite of repair.prerequisites ?? []) {
+      await ensureMigrationTable(
+        pool,
+        prerequisite.tag,
+        prerequisite.tableName
       );
-      if (sessionIdCol.rows[0]?.exists) {
-        await pool.query(`UPDATE chat_messages SET session_id = NULL`);
-      }
     }
-
-    await applyMigrationStatements(pool, tag);
-
-    if (entry) {
-      const afterApply = await recordedMigrationHashes(pool);
-      if (!afterApply.has(hash)) {
-        await pool.query(
-          `INSERT INTO drizzle.__drizzle_migrations (hash, created_at) VALUES ($1, $2)`,
-          [hash, entry.when]
-        );
-      }
-    }
+    await ensureMigrationTable(pool, repair.tag, repair.tableName);
   }
 }
 
