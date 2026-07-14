@@ -9,6 +9,9 @@ import pg from "pg";
 const migrationsFolder = path.join(process.cwd(), "src/db/migrations");
 const journalPath = path.join(migrationsFolder, "meta/_journal.json");
 
+/** SQL files applied via push + manual baseline but not always in the journal. */
+const EXTRA_MIGRATION_TAGS = ["0030_conclusion_section"] as const;
+
 type JournalEntry = {
   tag: string;
   when: number;
@@ -20,6 +23,32 @@ function migrationHash(tag: string): string {
   return crypto.createHash("sha256").update(query).digest("hex");
 }
 
+async function ensureMigrationsTable(pool: pg.Pool): Promise<void> {
+  await pool.query("CREATE SCHEMA IF NOT EXISTS drizzle");
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS drizzle.__drizzle_migrations (
+      id SERIAL PRIMARY KEY,
+      hash text NOT NULL,
+      created_at bigint
+    )
+  `);
+}
+
+async function recordedMigrationHashes(pool: pg.Pool): Promise<Set<string>> {
+  const result = await pool.query<{ hash: string }>(
+    `SELECT hash FROM drizzle.__drizzle_migrations`
+  );
+  return new Set(result.rows.map((row) => row.hash));
+}
+
+/**
+ * Neon/Vercel DBs are often bootstrapped with `drizzle-kit push` (see
+ * docs/whitelabel-vercel-deploy.md). Without seeding the migration journal,
+ * `migrate()` replays 0000 and fails on types/tables that already exist.
+ *
+ * When `reports` already exists, mark every known migration as applied unless
+ * it is already recorded — then only genuinely new SQL files run on deploy.
+ */
 async function ensurePushBaseline(pool: pg.Pool): Promise<void> {
   const journal = JSON.parse(fs.readFileSync(journalPath, "utf8")) as {
     entries: JournalEntry[];
@@ -31,36 +60,30 @@ async function ensurePushBaseline(pool: pg.Pool): Promise<void> {
       WHERE table_schema = 'public' AND table_name = 'reports'
     ) AS exists`
   );
-  const reportsExists = reportsResult.rows[0]?.exists ?? false;
-
-  const migrationsTableResult = await pool.query<{ exists: boolean }>(
-    `SELECT EXISTS (
-      SELECT 1 FROM information_schema.tables
-      WHERE table_schema = 'drizzle' AND table_name = '__drizzle_migrations'
-    ) AS exists`
-  );
-  if (!migrationsTableResult.rows[0]?.exists) {
+  if (!reportsResult.rows[0]?.exists) {
     return;
   }
 
-  const existingMigrations = await pool.query<{
-    hash: string;
-    created_at: number;
-  }>(
-    `SELECT hash, created_at FROM drizzle.__drizzle_migrations ORDER BY created_at DESC LIMIT 1`
-  );
+  await ensureMigrationsTable(pool);
+  const recorded = await recordedMigrationHashes(pool);
 
-  if (reportsExists && existingMigrations.rows.length === 0) {
-    const baselineTag = "0007_unique_deviation_no";
-    const baseline = journal.entries.find((e) => e.tag === baselineTag);
-    if (!baseline) {
-      throw new Error(`Journal missing baseline tag ${baselineTag}`);
+  const tagsToSeed: { tag: string; when: number }[] = [
+    ...journal.entries.map((entry) => ({ tag: entry.tag, when: entry.when })),
+    ...EXTRA_MIGRATION_TAGS.filter((tag) =>
+      fs.existsSync(path.join(migrationsFolder, `${tag}.sql`))
+    ).map((tag) => ({ tag, when: Date.now() })),
+  ];
+
+  for (const { tag, when } of tagsToSeed) {
+    const hash = migrationHash(tag);
+    if (recorded.has(hash)) {
+      continue;
     }
-    const hash = migrationHash(baseline.tag);
     await pool.query(
       `INSERT INTO drizzle.__drizzle_migrations (hash, created_at) VALUES ($1, $2)`,
-      [hash, baseline.when]
+      [hash, when]
     );
+    recorded.add(hash);
   }
 }
 
