@@ -14,11 +14,13 @@ import {
 import { isAllowedTargetField } from "@/lib/ai/suggest-target-fields";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 import {
+  CHAT_EDITABLE_SECTIONS,
   type ChatSectionScope,
   chatSectionsInScope,
   chatTargetFields,
   isChatEditableSection,
   sectionFieldPlainText,
+  sectionLabel,
 } from "@/lib/ai/chat/fields";
 import { checkProposedEdit, proposedEditHint } from "@/lib/ai/chat/propose-edit";
 
@@ -70,12 +72,13 @@ export function buildChatTools(opts: {
   const sectionScope = opts.sectionScope ?? "all";
   const allowedSections = chatSectionsInScope(sectionScope);
   const sectionEnum = allowedSections as [SectionType, ...SectionType[]];
+  const allSectionEnum = CHAT_EDITABLE_SECTIONS as [SectionType, ...SectionType[]];
   const scopeHint =
     sectionScope === "all"
       ? ""
       : ` Only section "${sectionScope}" is in scope for this chat.`;
 
-  return {
+  const tools: ToolSet = {
     read_section: tool({
       description:
         `Read the current text of an editable section so you can quote exact anchors. Optionally pass specific field paths; otherwise all editable fields are returned.${scopeHint}`,
@@ -211,4 +214,29 @@ export function buildChatTools(opts: {
       },
     }),
   };
+
+  if (sectionScope !== "all" && isChatEditableSection(sectionScope)) {
+    const currentSection = sectionScope;
+    tools.suggest_section_scope = tool({
+      description:
+        "Suggest changing the section focus dropdown when the engineer's request is about a different section than the current focus. Does not change scope — the UI shows a one-click switch.",
+      inputSchema: z.object({
+        suggestedSection: z
+          .enum(allSectionEnum)
+          .describe("Section the engineer should switch the dropdown to."),
+        reason: z
+          .string()
+          .max(200)
+          .describe("One short sentence explaining the mismatch."),
+      }),
+      execute: async ({ suggestedSection, reason }) => ({
+        status: "suggested" as const,
+        currentSection,
+        suggestedSection,
+        reason,
+      }),
+    });
+  }
+
+  return tools;
 }

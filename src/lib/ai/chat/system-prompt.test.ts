@@ -50,6 +50,22 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).not.toContain("[measure]:");
   });
 
+  it("includes scope mismatch guidance when detected", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "plan",
+      sectionScope: "define",
+      scopeMismatch: {
+        currentSection: "define",
+        suggestedSection: "analyze",
+        reason: "Looks like Analyze.",
+      },
+    });
+    expect(prompt).toContain("Section scope mismatch (detected)");
+    expect(prompt).toContain('suggest_section_scope');
+    expect(prompt).toContain("Analyze");
+  });
+
   it("includes the report context and criteria in both modes", () => {
     for (const mode of ["plan", "agent"] as const) {
       const prompt = buildChatSystemPrompt({ ...opts, mode });

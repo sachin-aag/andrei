@@ -15,6 +15,7 @@ import {
   ClipboardList,
   Wrench,
   Check,
+  ArrowRightLeft,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -27,11 +28,16 @@ import {
 } from "@/components/ui/select";
 import { useReportData } from "@/providers/report-provider";
 import { SECTION_LABELS } from "@/types/sections";
+import type { SectionType } from "@/db/schema";
 import {
   CHAT_EDITABLE_SECTIONS,
   CHAT_SECTION_SCOPE_ALL,
   type ChatSectionScope,
 } from "@/lib/ai/chat/fields";
+import {
+  detectSectionScopeMismatch,
+  type SectionScopeMismatch,
+} from "@/lib/ai/chat/section-intent";
 import type { ChatSessionSummary } from "@/lib/ai/chat/sessions";
 
 type ChatMode = "plan" | "agent";
@@ -79,8 +85,53 @@ function sectionLabel(section: unknown): string {
   return typeof section === "string" ? section : "";
 }
 
-function ToolChip({ info }: { info: ToolPartInfo }) {
+function ToolChip({
+  info,
+  onSwitchSectionScope,
+}: {
+  info: ToolPartInfo;
+  onSwitchSectionScope?: (section: SectionType) => void;
+}) {
   const pending = info.state === "input-streaming" || info.state === "input-available";
+
+  if (info.toolName === "suggest_section_scope") {
+    const suggested = info.output?.suggestedSection ?? info.input?.suggestedSection;
+    const reason =
+      typeof info.output?.reason === "string"
+        ? info.output.reason
+        : typeof info.input?.reason === "string"
+          ? info.input.reason
+          : "This question may fit another section better.";
+    const suggestedLabel = sectionLabel(suggested);
+
+    if (pending) {
+      return (
+        <ToolLine icon={<ArrowRightLeft className="size-3.5" />}>
+          Checking section focus…
+        </ToolLine>
+      );
+    }
+
+    return (
+      <div className="rounded-md border border-[var(--primary)]/30 bg-[var(--primary)]/5 px-2.5 py-2 text-[11px] text-[var(--foreground)]">
+        <div className="flex items-start gap-2">
+          <ArrowRightLeft className="mt-0.5 size-3.5 shrink-0 text-[var(--primary)]" />
+          <div className="min-w-0 space-y-1.5">
+            <p className="leading-relaxed">{reason}</p>
+            {typeof suggested === "string" && onSwitchSectionScope && (
+              <button
+                type="button"
+                onClick={() => onSwitchSectionScope(suggested as SectionType)}
+                className="rounded-md border border-[var(--primary)]/40 bg-[var(--card)] px-2 py-1 text-[11px] font-medium text-[var(--primary)] transition-colors hover:bg-[var(--secondary)]"
+              >
+                Switch to {suggestedLabel}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (info.toolName === "read_section") {
     const section = sectionLabel(info.input?.section);
@@ -153,7 +204,44 @@ function ToolLine({
   );
 }
 
-function MessageTurn({ message }: { message: UIMessage }) {
+function ScopeMismatchBanner({
+  mismatch,
+  onSwitch,
+  onDismiss,
+}: {
+  mismatch: SectionScopeMismatch;
+  onSwitch: (section: SectionType) => void;
+  onDismiss: () => void;
+}) {
+  return (
+    <div className="mb-2 flex flex-wrap items-center gap-2 rounded-md border border-[var(--primary)]/30 bg-[var(--primary)]/5 px-2.5 py-2 text-[11px] text-[var(--foreground)]">
+      <ArrowRightLeft className="size-3.5 shrink-0 text-[var(--primary)]" />
+      <span className="min-w-0 flex-1 leading-relaxed">{mismatch.reason}</span>
+      <button
+        type="button"
+        onClick={() => onSwitch(mismatch.suggestedSection)}
+        className="rounded-md border border-[var(--primary)]/40 bg-[var(--card)] px-2 py-1 font-medium text-[var(--primary)] transition-colors hover:bg-[var(--secondary)]"
+      >
+        Switch to {SECTION_LABELS[mismatch.suggestedSection]}
+      </button>
+      <button
+        type="button"
+        onClick={onDismiss}
+        className="rounded-md px-2 py-1 text-[var(--muted-foreground)] transition-colors hover:bg-[var(--secondary)] hover:text-[var(--foreground)]"
+      >
+        Keep {SECTION_LABELS[mismatch.currentSection]}
+      </button>
+    </div>
+  );
+}
+
+function MessageTurn({
+  message,
+  onSwitchSectionScope,
+}: {
+  message: UIMessage;
+  onSwitchSectionScope?: (section: SectionType) => void;
+}) {
   const isUser = message.role === "user";
 
   if (isUser) {
@@ -193,7 +281,15 @@ function MessageTurn({ message }: { message: UIMessage }) {
           );
         }
         const tool = readToolPart(part as UIMessagePart<never, never>);
-        if (tool) return <ToolChip key={i} info={tool} />;
+        if (tool) {
+          return (
+            <ToolChip
+              key={i}
+              info={tool}
+              onSwitchSectionScope={onSwitchSectionScope}
+            />
+          );
+        }
         return null;
       })}
     </div>
@@ -289,6 +385,8 @@ export function ChatPanel() {
   const [input, setInput] = useState("");
   const [mode, setMode] = useState<ChatMode>("agent");
   const [sectionScope, setSectionScope] = useState<ChatSectionScope>(CHAT_SECTION_SCOPE_ALL);
+  const [clientScopeSuggestion, setClientScopeSuggestion] =
+    useState<SectionScopeMismatch | null>(null);
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -406,6 +504,15 @@ export function ChatPanel() {
     return () => document.removeEventListener("mousedown", onClick);
   }, [historyOpen]);
 
+  const applySectionScope = useCallback((section: SectionType) => {
+    setSectionScope(section);
+    setClientScopeSuggestion(null);
+  }, []);
+
+  useEffect(() => {
+    setClientScopeSuggestion(null);
+  }, [sectionScope]);
+
   const send = useCallback(
     async (text: string) => {
       const trimmed = text.trim();
@@ -420,6 +527,7 @@ export function ChatPanel() {
         setCurrentSessionId(sessionId);
       }
       setInput("");
+      setClientScopeSuggestion(detectSectionScopeMismatch(sectionScope, trimmed));
       void sendMessage({ text: trimmed }, { body: { sessionId, mode, sectionScope } });
     },
     [busy, initializing, currentSessionId, createSession, sendMessage, mode, sectionScope]
@@ -528,7 +636,13 @@ export function ChatPanel() {
             </div>
           </div>
         ) : (
-          messages.map((m) => <MessageTurn key={m.id} message={m} />)
+          messages.map((m) => (
+            <MessageTurn
+              key={m.id}
+              message={m}
+              onSwitchSectionScope={applySectionScope}
+            />
+          ))
         )}
         {busy && (
           <div className="flex items-center gap-2 text-xs text-[var(--muted-foreground)]">
@@ -547,6 +661,13 @@ export function ChatPanel() {
           void send(input);
         }}
       >
+        {clientScopeSuggestion && (
+          <ScopeMismatchBanner
+            mismatch={clientScopeSuggestion}
+            onSwitch={applySectionScope}
+            onDismiss={() => setClientScopeSuggestion(null)}
+          />
+        )}
         <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-wrap items-center gap-2">
             <ModeToggle mode={mode} onChange={setMode} disabled={busy} />

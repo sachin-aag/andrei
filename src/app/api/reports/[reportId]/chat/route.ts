@@ -35,6 +35,10 @@ import {
   type ChatSectionScope,
 } from "@/lib/ai/chat/fields";
 import {
+  detectSectionIntentFromText,
+  detectSectionScopeMismatch,
+} from "@/lib/ai/chat/section-intent";
+import {
   createChatSession,
   findChatSession,
   touchChatSession,
@@ -65,13 +69,7 @@ function messageText(message: UIMessage | null): string {
 
 /** Naive keyword routing for the test stub (no LLM). */
 function pickStubSection(text: string): SectionType {
-  const t = text.toLowerCase();
-  if (/\b(measure|measurement plan|experiment)\b/.test(t)) return "measure";
-  if (/\b(analyze|analyse|root cause|5[-\s]?why|fishbone|6m)\b/.test(t)) return "analyze";
-  if (/\b(improve|corrective|capa)\b/.test(t)) return "improve";
-  if (/\b(control|preventive)\b/.test(t)) return "control";
-  if (/\bconclusion\b/.test(t)) return "conclusion";
-  return "define";
+  return detectSectionIntentFromText(text) ?? "define";
 }
 
 export async function POST(
@@ -115,6 +113,7 @@ export async function POST(
   // Persist the newest user turn (best-effort).
   const userMsg = lastUserMessage(messages);
   const userText = messageText(userMsg);
+  const scopeMismatch = detectSectionScopeMismatch(sectionScope, userText);
   if (userMsg) {
     try {
       await db.insert(chatMessages).values({
@@ -175,12 +174,19 @@ export async function POST(
     criteriaOutline: buildCriteriaOutline(sectionScope),
     mode,
     sectionScope,
+    scopeMismatch,
   });
 
   const allTools = buildChatTools({ reportId, canEdit, sectionScope });
-  // Plan mode can read but never edit; strip the edit tool entirely.
   const tools: ToolSet =
-    mode === "plan" ? { read_section: allTools.read_section! } : allTools;
+    mode === "plan"
+      ? {
+          read_section: allTools.read_section!,
+          ...(allTools.suggest_section_scope
+            ? { suggest_section_scope: allTools.suggest_section_scope }
+            : {}),
+        }
+      : allTools;
 
   const model = isTestStubChat()
     ? await (async () => {
@@ -193,6 +199,7 @@ export async function POST(
           mode,
           section,
           targetField,
+          scopeMismatch,
           insertText: `Stubbed drafting insertion addressing "${userText.slice(0, 80)}". [Replace with real content once a Gemini credential is configured.]`,
           reasoning: "Demo stub proposal.",
         });

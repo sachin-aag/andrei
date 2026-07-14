@@ -1,5 +1,5 @@
+import type { SectionScopeMismatch } from "@/lib/ai/chat/section-intent";
 import {
-  CHAT_EDITABLE_SECTIONS,
   type ChatSectionScope,
   chatSectionsInScope,
   chatTargetFields,
@@ -7,7 +7,7 @@ import {
 } from "@/lib/ai/chat/fields";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v4-section-scope";
+export const CHAT_PROMPT_VERSION = "chat-v5-scope-suggest";
 
 export type ChatMode = "plan" | "agent";
 
@@ -37,7 +37,13 @@ The engineer has not narrowed scope. You may plan or draft across any editable s
 The engineer selected **${label}** for this conversation. Focus Plan questions and Agent edits on this section only.
 - Plan mode: ask what is needed to complete ${label}; do not plan other sections unless they change the section dropdown.
 - Agent mode: only call read_section / propose_edit on section "${scope}".
-- If the request clearly belongs elsewhere, say so and suggest switching the section dropdown — do not edit other sections.`;
+- If the request clearly belongs elsewhere, call suggest_section_scope before answering substantively — do not edit other sections.`;
+}
+
+function scopeMismatchBlock(mismatch: SectionScopeMismatch): string {
+  return `## Section scope mismatch (detected)
+The engineer's latest message appears to be about **${sectionLabel(mismatch.suggestedSection)}** [${mismatch.suggestedSection}], but the section dropdown is set to **${sectionLabel(mismatch.currentSection)}** [${mismatch.currentSection}].
+Call suggest_section_scope with suggestedSection="${mismatch.suggestedSection}" and a brief reason BEFORE answering substantively. You may add a short note in prose, but do not read or edit the out-of-scope section until they switch or confirm keeping the current focus.`;
 }
 
 const PERSONA = `You are the drafting assistant for a deviation investigation report tool used in regulated pharmaceutical and medical device environments. You help quality and operations staff document, investigate, and close deviations, non-conformances, and quality events in a structured DMAIC investigation report (Define, Measure, Analyze, Improve, Control, Conclusion).
@@ -83,14 +89,16 @@ export function buildChatSystemPrompt(opts: {
   criteriaOutline: string;
   mode: ChatMode;
   sectionScope?: ChatSectionScope;
+  scopeMismatch?: SectionScopeMismatch | null;
 }): string {
   const { contextMap, criteriaOutline, mode } = opts;
   const sectionScope = opts.sectionScope ?? "all";
   const modeRules = mode === "plan" ? PLAN_RULES : AGENT_RULES;
+  const mismatchBlock = opts.scopeMismatch ? `\n\n${scopeMismatchBlock(opts.scopeMismatch)}` : "";
 
   return `${PERSONA}
 
-${sectionFocusBlock(sectionScope)}
+${sectionFocusBlock(sectionScope)}${mismatchBlock}
 
 ## Editable fields (section → targetField (kind))
 ${fieldTaxonomy(sectionScope)}
