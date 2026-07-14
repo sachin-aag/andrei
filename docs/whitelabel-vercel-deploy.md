@@ -173,9 +173,11 @@ For Production, explicit `DATABASE_URL` env vars override integration defaults. 
 
 ### Preview deployments (PR branches)
 
-`andrei-demo` does **not** get a per-PR Neon branch. With `ANDREI_VERCEL_DEPLOY_SCOPE=demo`, `cursor/*` PR branches **do** build on andrei-demo — add `DATABASE_URL` to **Preview** (same demo Neon pooled URL as Production) or those previews fail at migrate.
+`andrei-demo` does **not** get a per-PR Neon branch. With `ANDREI_VERCEL_DEPLOY_SCOPE=demo`, `cursor/*` PR branches **do** build on andrei-demo — add `DATABASE_URL`, `AUTH_SECRET`, and AI keys to **Preview** (same demo Neon URL / secrets as Production).
 
-Legacy alternative: `ANDREI_DEMO_PRODUCTION_ONLY=true` skips all non-`feat/whitelabel` branches (including `cursor/*` PR previews). Prefer deploy scope instead.
+**Do not** rely on Production `AUTH_URL` on Preview: NextAuth redirects to that host when set. The app overrides `AUTH_URL` to `VERCEL_URL` on Preview deploys (`src/lib/auth/apply-deployment-auth-url.ts`), but you can also leave `AUTH_URL` unchecked for Preview in Vercel.
+
+**Same data as Production is expected** — Preview uses the same demo Neon `DATABASE_URL`, so you see the same seeded reports/users. The preview URL should stay on `andrei-demo-git-…vercel.app` after login.
 
 CLI example (after `vercel link -p andrei-demo -y`):
 
