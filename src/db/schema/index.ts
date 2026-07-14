@@ -421,7 +421,36 @@ export const commentsRelations = relations(comments, ({ one, many }) => ({
 }));
 
 /**
- * Report drafting-assistant chat transcript. One thread per report (Tier 1).
+ * Drafting-assistant chat thread. A report can have many named sessions
+ * (like Cursor's chat history), so an engineer can start a fresh conversation
+ * for a new task without losing prior context. Title is derived from the first
+ * user message and can be blank until then.
+ */
+export const chatSessions = pgTable(
+  "chat_sessions",
+  {
+    id: text("id").primaryKey().$defaultFn(() => createId()),
+    reportId: text("report_id")
+      .notNull()
+      .references(() => reports.id, { onDelete: "cascade" }),
+    title: text("title").notNull().default(""),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    reportUpdatedIdx: index("chat_sessions_report_updated_idx").on(
+      t.reportId,
+      t.updatedAt
+    ),
+  })
+);
+
+/**
+ * Report drafting-assistant chat transcript, grouped into sessions.
  * `parts` stores the AI SDK v6 UIMessage `parts` array verbatim (text +
  * tool-call/tool-result parts), so the transcript rehydrates with the same
  * proposal cards it showed live. Proposed edits themselves live in `comments`
@@ -434,6 +463,10 @@ export const chatMessages = pgTable(
     reportId: text("report_id")
       .notNull()
       .references(() => reports.id, { onDelete: "cascade" }),
+    /** Owning session. Nullable for legacy rows created before sessions existed. */
+    sessionId: text("session_id").references(() => chatSessions.id, {
+      onDelete: "cascade",
+    }),
     role: chatMessageRoleEnum("role").notNull(),
     /** AI SDK v6 UIMessage.parts (text + tool parts). */
     parts: jsonb("parts").notNull().default([]),
@@ -446,6 +479,10 @@ export const chatMessages = pgTable(
   (t) => ({
     reportCreatedIdx: index("chat_messages_report_created_idx").on(
       t.reportId,
+      t.createdAt
+    ),
+    sessionCreatedIdx: index("chat_messages_session_created_idx").on(
+      t.sessionId,
       t.createdAt
     ),
   })

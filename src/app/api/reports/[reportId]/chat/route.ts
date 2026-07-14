@@ -3,12 +3,12 @@ import {
   streamText,
   stepCountIs,
   convertToModelMessages,
+  type ToolSet,
   type UIMessage,
 } from "ai";
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import {
-  reports,
   reportSections,
   criteriaEvaluations,
   comments,
@@ -17,28 +17,30 @@ import {
 import type { SectionType } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import { mergeSection } from "@/lib/sections-merge";
+import { loadAccessibleReport } from "@/lib/ai/chat/access";
 import { buildReportContextMap } from "@/lib/ai/chat/context-map";
-import { buildChatSystemPrompt } from "@/lib/ai/chat/system-prompt";
+import {
+  buildChatSystemPrompt,
+  isChatMode,
+  type ChatMode,
+} from "@/lib/ai/chat/system-prompt";
+import { buildCriteriaOutline } from "@/lib/ai/chat/criteria-outline";
 import { buildChatTools } from "@/lib/ai/chat/tools";
 import { resolveChatLanguageModel } from "@/lib/ai/chat/model";
 import { buildStubChatModel } from "@/lib/ai/chat/stub-model";
 import { primaryFieldForSection } from "@/lib/ai/chat/fields";
+import {
+  createChatSession,
+  findChatSession,
+  touchChatSession,
+} from "@/lib/ai/chat/sessions";
 import { isTestStubChat } from "@/lib/test/ai-bypass";
 import {
   flushLangfuseTraces,
   langfuseGenerateTextTelemetry,
 } from "@/lib/observability/langfuse";
-import type { WorkspaceUser } from "@/lib/auth/workspace-user";
 
 export const maxDuration = 120;
-
-type ReportRow = typeof reports.$inferSelect;
-
-function canAccessReport(user: WorkspaceUser, report: ReportRow): boolean {
-  if (user.id === report.authorId) return true;
-  if (report.assignedManagerId && report.assignedManagerId === user.id) return true;
-  return user.role === "admin" || user.role === "qa" || user.role === "manager";
-}
 
 function lastUserMessage(messages: UIMessage[]): UIMessage | null {
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -76,30 +78,46 @@ export async function POST(
 
   const { reportId } = await params;
 
-  const body = (await req.json().catch(() => ({}))) as { messages?: UIMessage[] };
+  const body = (await req.json().catch(() => ({}))) as {
+    messages?: UIMessage[];
+    sessionId?: string;
+    mode?: string;
+  };
   const messages = Array.isArray(body.messages) ? body.messages : [];
   if (messages.length === 0) {
     return NextResponse.json({ error: "No messages" }, { status: 400 });
   }
+  const mode: ChatMode = isChatMode(body.mode) ? body.mode : "agent";
 
-  const [report] = await db.select().from(reports).where(eq(reports.id, reportId));
-  if (!report) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (!canAccessReport(user, report)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await loadAccessibleReport(reportId, user);
+  if (!access) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const { report } = access;
+  // Plan mode never edits; Agent mode only when the report is still editable.
+  const canEdit = mode === "agent" && access.canEdit;
+
+  // Resolve the session (create one if the client didn't supply a valid id).
+  let sessionId = body.sessionId?.trim() || "";
+  if (sessionId) {
+    const found = await findChatSession(reportId, sessionId);
+    if (!found) sessionId = "";
   }
-
-  const canEdit = report.status !== "approved";
+  if (!sessionId) {
+    sessionId = (await createChatSession(reportId)).id;
+  }
 
   // Persist the newest user turn (best-effort).
   const userMsg = lastUserMessage(messages);
+  const userText = messageText(userMsg);
   if (userMsg) {
     try {
       await db.insert(chatMessages).values({
         reportId,
+        sessionId,
         role: "user",
         parts: userMsg.parts ?? [],
         authorId: user.id,
       });
+      await touchChatSession(sessionId, userText || null);
     } catch (err) {
       console.error("chat: failed to persist user message", err);
     }
@@ -145,20 +163,27 @@ export async function POST(
     })),
   });
 
-  const system = buildChatSystemPrompt(contextMap);
-  const tools = buildChatTools({ reportId, canEdit });
+  const system = buildChatSystemPrompt({
+    contextMap,
+    criteriaOutline: buildCriteriaOutline(),
+    mode,
+  });
+
+  const allTools = buildChatTools({ reportId, canEdit });
+  // Plan mode can read but never edit; strip the edit tool entirely.
+  const tools: ToolSet =
+    mode === "plan" ? { read_section: allTools.read_section! } : allTools;
 
   const model = isTestStubChat()
     ? await (async () => {
-        const text = messageText(userMsg);
-        const section = pickStubSection(text);
+        const section = pickStubSection(userText);
         const targetField = primaryFieldForSection(section);
         return buildStubChatModel({
+          mode,
           section,
           targetField,
-          insertText: `Stubbed drafting insertion addressing "${text.slice(0, 80)}". [Replace with real content once a Gemini credential is configured.]`,
+          insertText: `Stubbed drafting insertion addressing "${userText.slice(0, 80)}". [Replace with real content once a Gemini credential is configured.]`,
           reasoning: "Demo stub proposal.",
-          summaryText: `I proposed an addition to the ${section} section — review the highlighted insertion in the document and accept or reject it.`,
         });
       })()
     : resolveChatLanguageModel();
@@ -168,10 +193,10 @@ export async function POST(
     system,
     messages: await convertToModelMessages(messages),
     tools,
-    stopWhen: stepCountIs(6),
+    stopWhen: stepCountIs(mode === "plan" ? 4 : 8),
     ...langfuseGenerateTextTelemetry({
       functionId: "report-chat",
-      metadata: { reportId, canEdit },
+      metadata: { reportId, sessionId, mode, canEdit },
     }),
   });
 
@@ -183,10 +208,12 @@ export async function POST(
       try {
         await db.insert(chatMessages).values({
           reportId,
+          sessionId,
           role: "assistant",
           parts: responseMessage.parts ?? [],
           authorId: null,
         });
+        await touchChatSession(sessionId, null);
       } catch (err) {
         console.error("chat: failed to persist assistant message", err);
       }
