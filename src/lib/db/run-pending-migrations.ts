@@ -52,28 +52,81 @@ async function tableExists(pool: pg.Pool, tableName: string): Promise<boolean> {
   return result.rows[0]?.exists ?? false;
 }
 
+function journalEntry(tag: string): JournalEntry | undefined {
+  const journal = JSON.parse(fs.readFileSync(journalPath, "utf8")) as {
+    entries: JournalEntry[];
+  };
+  return journal.entries.find((entry) => entry.tag === tag);
+}
+
+async function applyMigrationStatements(
+  pool: pg.Pool,
+  tag: string
+): Promise<void> {
+  const sqlPath = path.join(migrationsFolder, `${tag}.sql`);
+  const sql = fs.readFileSync(sqlPath, "utf8");
+  const statements = sql
+    .split("--> statement-breakpoint")
+    .map((statement) => statement.trim())
+    .filter(Boolean);
+
+  for (const statement of statements) {
+    await pool.query(statement);
+  }
+}
+
 /**
- * Remove journal rows that were baselined without running SQL (older deploy bug).
- * Lets `migrate()` replay the real migration on the next deploy.
+ * Apply idempotent schema repairs when a migration was journaled without SQL
+ * (older deploy bug) or drizzle's timestamp-based migrator skipped it.
  */
-async function repairPhantomBaselines(pool: pg.Pool): Promise<void> {
+async function repairMissingSchema(pool: pg.Pool): Promise<void> {
   const repairs: { tag: string; tableName: string }[] = [
     { tag: "0032_chat_sessions", tableName: "chat_sessions" },
   ];
 
-  const recorded = await recordedMigrationHashes(pool);
   for (const { tag, tableName } of repairs) {
     if (await tableExists(pool, tableName)) {
       continue;
     }
+
+    const entry = journalEntry(tag);
     const hash = migrationHash(tag);
-    if (!recorded.has(hash)) {
-      continue;
-    }
+
     await pool.query(`DELETE FROM drizzle.__drizzle_migrations WHERE hash = $1`, [
       hash,
     ]);
-    recorded.delete(hash);
+    if (entry) {
+      await pool.query(
+        `DELETE FROM drizzle.__drizzle_migrations WHERE created_at = $1`,
+        [entry.when]
+      );
+    }
+
+    if (tableName === "chat_sessions" && (await tableExists(pool, "chat_messages"))) {
+      const sessionIdCol = await pool.query<{ exists: boolean }>(
+        `SELECT EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema = 'public'
+            AND table_name = 'chat_messages'
+            AND column_name = 'session_id'
+        ) AS exists`
+      );
+      if (sessionIdCol.rows[0]?.exists) {
+        await pool.query(`UPDATE chat_messages SET session_id = NULL`);
+      }
+    }
+
+    await applyMigrationStatements(pool, tag);
+
+    if (entry) {
+      const afterApply = await recordedMigrationHashes(pool);
+      if (!afterApply.has(hash)) {
+        await pool.query(
+          `INSERT INTO drizzle.__drizzle_migrations (hash, created_at) VALUES ($1, $2)`,
+          [hash, entry.when]
+        );
+      }
+    }
   }
 }
 
@@ -132,7 +185,7 @@ export async function runPendingMigrations(databaseUrl: string): Promise<void> {
   const pool = new pg.Pool({ connectionString: databaseUrl });
   try {
     await ensureMigrationsTable(pool);
-    await repairPhantomBaselines(pool);
+    await repairMissingSchema(pool);
     await ensurePushBaseline(pool);
     const db = drizzle(pool);
     await migrate(db, { migrationsFolder });
