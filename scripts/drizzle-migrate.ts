@@ -30,9 +30,9 @@ if (!url) {
       "DATABASE_URL is not set for this Vercel Preview deployment.\n" +
         `Branch: ${branch}\n` +
         "andrei-v2: enable Neon preview branching on the Vercel ↔ Neon integration.\n" +
-        "andrei-demo: either add the demo Neon pooled URL to Preview in Settings → Environment Variables,\n" +
-        "or set ANDREI_DEMO_PRODUCTION_ONLY=true on the andrei-demo project to skip non-production builds\n" +
-        "(see docs/whitelabel-vercel-deploy.md)."
+        "andrei-demo: add the demo Neon pooled URL to Preview in Settings → Environment Variables\n" +
+        "(required for cursor/* PR previews when ANDREI_VERCEL_DEPLOY_SCOPE=demo).\n" +
+        "See docs/whitelabel-vercel-deploy.md § Deploy scope."
     );
   } else {
     console.error(

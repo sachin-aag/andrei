@@ -15,6 +15,8 @@ Deploy `feat/whitelabel` as a **standalone demo** (Andrei branding) without touc
 
 Both Vercel projects use the same GitHub repo (`sachin-aag/andrei`) and build command (`pnpm vercel:build` → migrate + build). Schema is applied independently per deploy — no Neon-side schema merge.
 
+**Same repo, two products:** MJ (`main` → `andrei-v2`) and customer demo (`feat/whitelabel` + `cursor/*` → `andrei-demo`). Branch routing is enforced in `scripts/vercel-should-build.sh` via `ANDREI_VERCEL_DEPLOY_SCOPE` on each Vercel project (see § Deploy scope below). Features can start on either line and cherry-pick across; a fork is optional later if the codebases diverge heavily.
+
 **Why a separate Neon project (not a branch on prod)?** The demo is a permanent second product with its own reports and no plan to merge data. A dedicated Neon project gives hard isolation (credentials, console, quotas) and avoids preview-branch cleanup touching demo data.
 
 ## Already done
@@ -65,6 +67,31 @@ pnpm seed-demo-reports
 ```
 
 After bootstrap, `pnpm vercel:build` migrations on deploy stay safe.
+
+## Deploy scope (branch routing) — **required**
+
+Both Vercel projects watch the **same** GitHub repo. Without scope env vars, every push builds on **both** `andrei-v2` and `andrei-demo` (e.g. `cursor/report-chat-agent-9666` incorrectly deploys to MJ).
+
+Set on **each** Vercel project → **Settings → Environment Variables** → enable **Production**, **Preview**, and **Development**:
+
+| Vercel project | Variable | Value |
+|----------------|----------|--------|
+| **andrei-demo** | `ANDREI_VERCEL_DEPLOY_SCOPE` | `demo` |
+| **andrei-v2** | `ANDREI_VERCEL_DEPLOY_SCOPE` | `mj` |
+
+`scripts/vercel-should-build.sh` (in `vercel.json` `ignoreCommand`) then routes:
+
+| Branch pattern | andrei-demo | andrei-v2 |
+|----------------|-------------|-----------|
+| `main` | skip | **build** (production) |
+| `feat/whitelabel` | **build** (production) | skip |
+| `cursor/*` (agent / demo feature PRs) | **build** (preview) | skip |
+| `demo/*` (optional demo feature prefix) | **build** | skip |
+| Other (MJ feature PRs → `main`) | skip | **build** (preview) |
+
+**Demo PR previews** (`cursor/*` → `feat/whitelabel`) still need `DATABASE_URL` on the **Preview** environment on `andrei-demo` (same demo Neon URL as Production). `AUTH_URL` can stay Production-only; previews fall back to `VERCEL_URL`.
+
+**Moving features between products:** develop on the starting line’s branch, then `git cherry-pick` onto `main` or `feat/whitelabel`. No fork required while the core engine stays shared.
 
 ## Still required (one-time dashboard)
 
@@ -146,14 +173,9 @@ For Production, explicit `DATABASE_URL` env vars override integration defaults. 
 
 ### Preview deployments (PR branches)
 
-`andrei-demo` does **not** get a per-PR Neon branch. If you only set `DATABASE_URL` on **Production**, Vercel Preview builds (e.g. `cursor/report-chat-agent-9666`) fail at migrate with `DATABASE_URL is not set`.
+`andrei-demo` does **not** get a per-PR Neon branch. With `ANDREI_VERCEL_DEPLOY_SCOPE=demo`, `cursor/*` PR branches **do** build on andrei-demo — add `DATABASE_URL` to **Preview** (same demo Neon pooled URL as Production) or those previews fail at migrate.
 
-Pick one:
-
-| Goal | Setup |
-|------|--------|
-| **Stable demo only** (recommended) | On **andrei-demo** → Environment Variables, add `ANDREI_DEMO_PRODUCTION_ONLY` = `true` (all environments). Non-`feat/whitelabel` branches skip the build via `scripts/vercel-should-build.sh`. |
-| **Working PR previews** | Also enable **Preview** for `DATABASE_URL`, `DATABASE_URL_UNPOOLED`, `AUTH_SECRET`, and AI keys (same demo Neon URL as Production). `AUTH_URL` can stay Production-only — the app falls back to `VERCEL_URL` on previews. |
+Legacy alternative: `ANDREI_DEMO_PRODUCTION_ONLY=true` skips all non-`feat/whitelabel` branches (including `cursor/*` PR previews). Prefer deploy scope instead.
 
 CLI example (after `vercel link -p andrei-demo -y`):
 
@@ -223,7 +245,8 @@ Re-run after schema changes or to reset demo content (delete reports in Neon SQL
 | Symptom | Fix |
 |---------|-----|
 | `DATABASE_URL is not set` on build (Production) | Add demo pooled URL to **Production** on `andrei-demo` |
-| `DATABASE_URL is not set` on build (Preview / PR branch) | Add demo pooled URL to **Preview** too, **or** set `ANDREI_DEMO_PRODUCTION_ONLY=true` on `andrei-demo` to skip non-`feat/whitelabel` builds |
+| `DATABASE_URL is not set` on build (Preview / PR branch) | Add demo pooled URL to **Preview** on `andrei-demo`, or check `ANDREI_VERCEL_DEPLOY_SCOPE=demo` is set |
+| PR builds on **both** Vercel projects | Set `ANDREI_VERCEL_DEPLOY_SCOPE=demo` on andrei-demo and `mj` on andrei-v2 (all environments) |
 | Wrong login redirect | `AUTH_URL` must match deployed URL exactly |
 | **404 on all paths** | Set Framework Preset to **Next.js** on `andrei-demo`, then redeploy |
 | Empty dashboard | Run `pnpm seed-demo-reports` against **demo** Neon |
