@@ -18,8 +18,20 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useReportData } from "@/providers/report-provider";
 import { SECTION_LABELS } from "@/types/sections";
+import {
+  CHAT_EDITABLE_SECTIONS,
+  CHAT_SECTION_SCOPE_ALL,
+  type ChatSectionScope,
+} from "@/lib/ai/chat/fields";
 import type { ChatSessionSummary } from "@/lib/ai/chat/sessions";
 
 type ChatMode = "plan" | "agent";
@@ -188,6 +200,45 @@ function MessageTurn({ message }: { message: UIMessage }) {
   );
 }
 
+function scopeDescription(scope: ChatSectionScope): string {
+  return scope === CHAT_SECTION_SCOPE_ALL
+    ? "all sections"
+    : SECTION_LABELS[scope];
+}
+
+function SectionScopeSelect({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: ChatSectionScope;
+  onChange: (scope: ChatSectionScope) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <Select
+      value={value}
+      onValueChange={(next) => onChange(next as ChatSectionScope)}
+      disabled={disabled}
+    >
+      <SelectTrigger
+        className="h-8 w-[10.5rem] border-[var(--border)] bg-[var(--secondary)]/30 px-2 text-[11px] font-medium"
+        aria-label="Section focus"
+      >
+        <SelectValue placeholder="Section" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={CHAT_SECTION_SCOPE_ALL}>All sections</SelectItem>
+        {CHAT_EDITABLE_SECTIONS.map((section) => (
+          <SelectItem key={section} value={section}>
+            {SECTION_LABELS[section]}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
 function ModeToggle({
   mode,
   onChange,
@@ -237,6 +288,7 @@ export function ChatPanel() {
   const { report, refresh, readOnly } = useReportData();
   const [input, setInput] = useState("");
   const [mode, setMode] = useState<ChatMode>("agent");
+  const [sectionScope, setSectionScope] = useState<ChatSectionScope>(CHAT_SECTION_SCOPE_ALL);
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -368,9 +420,9 @@ export function ChatPanel() {
         setCurrentSessionId(sessionId);
       }
       setInput("");
-      void sendMessage({ text: trimmed }, { body: { sessionId, mode } });
+      void sendMessage({ text: trimmed }, { body: { sessionId, mode, sectionScope } });
     },
-    [busy, initializing, currentSessionId, createSession, sendMessage, mode]
+    [busy, initializing, currentSessionId, createSession, sendMessage, mode, sectionScope]
   );
 
   const currentTitle =
@@ -454,8 +506,12 @@ export function ChatPanel() {
           <div className="space-y-3">
             <p className="text-sm text-[var(--muted-foreground)]">
               {mode === "plan"
-                ? "I'll ask focused questions to plan a strong deviation investigation draft. I won't edit the document in Plan mode."
-                : "Ask me to draft or improve any section of your deviation investigation. I read the report and propose targeted edits you accept or reject."}
+                ? sectionScope === CHAT_SECTION_SCOPE_ALL
+                  ? "I'll ask focused questions to plan a strong deviation investigation draft. I won't edit the document in Plan mode."
+                  : `Focused on ${scopeDescription(sectionScope)} — I'll ask what we need to complete that section. I won't edit the document in Plan mode.`
+                : sectionScope === CHAT_SECTION_SCOPE_ALL
+                  ? "Ask me to draft or improve any section of your deviation investigation. I read the report and propose targeted edits you accept or reject."
+                  : `Focused on ${scopeDescription(sectionScope)} — ask me to draft or improve that section. I'll propose targeted edits you accept or reject.`}
             </p>
             <div className="space-y-1.5">
               {EXAMPLE_PROMPTS[mode].map((p) => (
@@ -491,10 +547,20 @@ export function ChatPanel() {
           void send(input);
         }}
       >
-        <div className="mb-2 flex items-center justify-between gap-2">
-          <ModeToggle mode={mode} onChange={setMode} disabled={busy} />
+        <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-wrap items-center gap-2">
+            <ModeToggle mode={mode} onChange={setMode} disabled={busy} />
+            <SectionScopeSelect
+              value={sectionScope}
+              onChange={setSectionScope}
+              disabled={busy}
+            />
+          </div>
           <span className="text-[10px] text-[var(--muted-foreground)]">
             {mode === "plan" ? "Asks questions · no edits" : "Drafts · proposes edits"}
+            {sectionScope !== CHAT_SECTION_SCOPE_ALL
+              ? ` · ${scopeDescription(sectionScope)} only`
+              : ""}
           </span>
         </div>
         {readOnly && mode === "agent" && (
@@ -517,8 +583,12 @@ export function ChatPanel() {
             disabled={initializing}
             placeholder={
               mode === "plan"
-                ? "Describe the deviation or quality event, or ask what information I need…"
-                : "Ask the assistant to draft or improve a section…"
+                ? sectionScope === CHAT_SECTION_SCOPE_ALL
+                  ? "Describe the deviation or quality event, or ask what information I need…"
+                  : `What should we capture in ${scopeDescription(sectionScope)}?`
+                : sectionScope === CHAT_SECTION_SCOPE_ALL
+                  ? "Ask the assistant to draft or improve a section…"
+                  : `Ask the assistant to draft or improve ${scopeDescription(sectionScope)}…`
             }
             className="min-h-[40px] max-h-40 flex-1 resize-none rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)] disabled:opacity-50"
           />

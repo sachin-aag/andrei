@@ -37,6 +37,19 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).not.toContain("SOP/DP/QA/008");
   });
 
+  it("scoped mode limits criteria and section focus in the prompt", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      sectionScope: "define",
+      criteriaOutline: "DEFINE_ONLY",
+    });
+    expect(prompt).toContain("Section focus: Define [define]");
+    expect(prompt).toContain('only call read_section / propose_edit on section "define"');
+    expect(prompt).toContain("DEFINE_ONLY");
+    expect(prompt).not.toContain("[measure]:");
+  });
+
   it("includes the report context and criteria in both modes", () => {
     for (const mode of ["plan", "agent"] as const) {
       const prompt = buildChatSystemPrompt({ ...opts, mode });

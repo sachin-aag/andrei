@@ -14,7 +14,8 @@ import {
 import { isAllowedTargetField } from "@/lib/ai/suggest-target-fields";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 import {
-  CHAT_EDITABLE_SECTIONS,
+  type ChatSectionScope,
+  chatSectionsInScope,
   chatTargetFields,
   isChatEditableSection,
   sectionFieldPlainText,
@@ -63,17 +64,23 @@ async function loadMergedSection(
 export function buildChatTools(opts: {
   reportId: string;
   canEdit: boolean;
+  sectionScope?: ChatSectionScope;
 }): ToolSet {
   const { reportId, canEdit } = opts;
+  const sectionScope = opts.sectionScope ?? "all";
+  const allowedSections = chatSectionsInScope(sectionScope);
+  const sectionEnum = allowedSections as [SectionType, ...SectionType[]];
+  const scopeHint =
+    sectionScope === "all"
+      ? ""
+      : ` Only section "${sectionScope}" is in scope for this chat.`;
 
   return {
     read_section: tool({
       description:
-        "Read the current text of an editable section so you can quote exact anchors. Optionally pass specific field paths; otherwise all editable fields are returned.",
+        `Read the current text of an editable section so you can quote exact anchors. Optionally pass specific field paths; otherwise all editable fields are returned.${scopeHint}`,
       inputSchema: z.object({
-        section: z
-          .enum(CHAT_EDITABLE_SECTIONS as [SectionType, ...SectionType[]])
-          .describe("Section to read."),
+        section: z.enum(sectionEnum).describe("Section to read."),
         fields: z
           .array(z.string())
           .optional()
@@ -111,9 +118,9 @@ export function buildChatTools(opts: {
 
     propose_edit: tool({
       description:
-        "Propose ONE targeted, reviewable edit to a single field. The edit appears as an inline tracked-change the engineer accepts or rejects. Read the field first so the anchor is exact.",
+        `Propose ONE targeted, reviewable edit to a single field. The edit appears as an inline tracked-change the engineer accepts or rejects. Read the field first so the anchor is exact.${scopeHint}`,
       inputSchema: z.object({
-        section: z.enum(CHAT_EDITABLE_SECTIONS as [SectionType, ...SectionType[]]),
+        section: z.enum(sectionEnum),
         targetField: z
           .string()
           .describe("In-section field path, e.g. 'narrative' or 'rootCause.narrative'."),

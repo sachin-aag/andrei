@@ -28,7 +28,12 @@ import { buildCriteriaOutline } from "@/lib/ai/chat/criteria-outline";
 import { buildChatTools } from "@/lib/ai/chat/tools";
 import { resolveChatLanguageModel } from "@/lib/ai/chat/model";
 import { buildStubChatModel } from "@/lib/ai/chat/stub-model";
-import { primaryFieldForSection } from "@/lib/ai/chat/fields";
+import {
+  isChatEditableSection,
+  parseChatSectionScope,
+  primaryFieldForSection,
+  type ChatSectionScope,
+} from "@/lib/ai/chat/fields";
 import {
   createChatSession,
   findChatSession,
@@ -82,12 +87,14 @@ export async function POST(
     messages?: UIMessage[];
     sessionId?: string;
     mode?: string;
+    sectionScope?: string;
   };
   const messages = Array.isArray(body.messages) ? body.messages : [];
   if (messages.length === 0) {
     return NextResponse.json({ error: "No messages" }, { status: 400 });
   }
   const mode: ChatMode = isChatMode(body.mode) ? body.mode : "agent";
+  const sectionScope: ChatSectionScope = parseChatSectionScope(body.sectionScope);
 
   const access = await loadAccessibleReport(reportId, user);
   if (!access) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -165,18 +172,22 @@ export async function POST(
 
   const system = buildChatSystemPrompt({
     contextMap,
-    criteriaOutline: buildCriteriaOutline(),
+    criteriaOutline: buildCriteriaOutline(sectionScope),
     mode,
+    sectionScope,
   });
 
-  const allTools = buildChatTools({ reportId, canEdit });
+  const allTools = buildChatTools({ reportId, canEdit, sectionScope });
   // Plan mode can read but never edit; strip the edit tool entirely.
   const tools: ToolSet =
     mode === "plan" ? { read_section: allTools.read_section! } : allTools;
 
   const model = isTestStubChat()
     ? await (async () => {
-        const section = pickStubSection(userText);
+        const section =
+          sectionScope !== "all" && isChatEditableSection(sectionScope)
+            ? sectionScope
+            : pickStubSection(userText);
         const targetField = primaryFieldForSection(section);
         return buildStubChatModel({
           mode,
@@ -196,7 +207,7 @@ export async function POST(
     stopWhen: stepCountIs(mode === "plan" ? 4 : 8),
     ...langfuseGenerateTextTelemetry({
       functionId: "report-chat",
-      metadata: { reportId, sessionId, mode, canEdit },
+      metadata: { reportId, sessionId, mode, sectionScope, canEdit },
     }),
   });
 

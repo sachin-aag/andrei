@@ -1,11 +1,13 @@
 import {
   CHAT_EDITABLE_SECTIONS,
+  type ChatSectionScope,
+  chatSectionsInScope,
   chatTargetFields,
   sectionLabel,
 } from "@/lib/ai/chat/fields";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v3-demo-compliance";
+export const CHAT_PROMPT_VERSION = "chat-v4-section-scope";
 
 export type ChatMode = "plan" | "agent";
 
@@ -13,13 +15,29 @@ export function isChatMode(value: unknown): value is ChatMode {
   return value === "plan" || value === "agent";
 }
 
-function fieldTaxonomy(): string {
-  return CHAT_EDITABLE_SECTIONS.map((section) => {
-    const fields = chatTargetFields(section)
-      .map((f) => `${f.targetField} (${f.kind})`)
-      .join(", ");
-    return `- ${sectionLabel(section)} [${section}]: ${fields}`;
-  }).join("\n");
+function fieldTaxonomy(scope: ChatSectionScope): string {
+  return chatSectionsInScope(scope)
+    .map((section) => {
+      const fields = chatTargetFields(section)
+        .map((f) => `${f.targetField} (${f.kind})`)
+        .join(", ");
+      return `- ${sectionLabel(section)} [${section}]: ${fields}`;
+    })
+    .join("\n");
+}
+
+function sectionFocusBlock(scope: ChatSectionScope): string {
+  if (scope === "all") {
+    return `## Section focus: ALL SECTIONS
+The engineer has not narrowed scope. You may plan or draft across any editable section unless they ask to focus on one.`;
+  }
+
+  const label = sectionLabel(scope);
+  return `## Section focus: ${label} [${scope}]
+The engineer selected **${label}** for this conversation. Focus Plan questions and Agent edits on this section only.
+- Plan mode: ask what is needed to complete ${label}; do not plan other sections unless they change the section dropdown.
+- Agent mode: only call read_section / propose_edit on section "${scope}".
+- If the request clearly belongs elsewhere, say so and suggest switching the section dropdown — do not edit other sections.`;
 }
 
 const PERSONA = `You are the drafting assistant for a deviation investigation report tool used in regulated pharmaceutical and medical device environments. You help quality and operations staff document, investigate, and close deviations, non-conformances, and quality events in a structured DMAIC investigation report (Define, Measure, Analyze, Improve, Control, Conclusion).
@@ -64,14 +82,18 @@ export function buildChatSystemPrompt(opts: {
   contextMap: string;
   criteriaOutline: string;
   mode: ChatMode;
+  sectionScope?: ChatSectionScope;
 }): string {
   const { contextMap, criteriaOutline, mode } = opts;
+  const sectionScope = opts.sectionScope ?? "all";
   const modeRules = mode === "plan" ? PLAN_RULES : AGENT_RULES;
 
   return `${PERSONA}
 
+${sectionFocusBlock(sectionScope)}
+
 ## Editable fields (section → targetField (kind))
-${fieldTaxonomy()}
+${fieldTaxonomy(sectionScope)}
 
 ${modeRules}
 

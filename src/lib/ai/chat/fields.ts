@@ -18,8 +18,26 @@ export const CHAT_EDITABLE_SECTIONS: readonly SectionType[] = [
   "conclusion",
 ];
 
+/** `all` = no section filter; otherwise focus plan/edits on one section. */
+export type ChatSectionScope = SectionType | "all";
+
+export const CHAT_SECTION_SCOPE_ALL = "all" as const;
+
 export function isChatEditableSection(value: string): value is SectionType {
   return (CHAT_EDITABLE_SECTIONS as readonly string[]).includes(value);
+}
+
+export function isChatSectionScope(value: unknown): value is ChatSectionScope {
+  return value === CHAT_SECTION_SCOPE_ALL || isChatEditableSection(String(value));
+}
+
+export function parseChatSectionScope(value: unknown): ChatSectionScope {
+  return isChatSectionScope(value) ? value : CHAT_SECTION_SCOPE_ALL;
+}
+
+/** Sections included in prompt/tools for the current focus. */
+export function chatSectionsInScope(scope: ChatSectionScope): readonly SectionType[] {
+  return scope === CHAT_SECTION_SCOPE_ALL ? CHAT_EDITABLE_SECTIONS : [scope];
 }
 
 export type ChatFieldKind = "rich" | "plain";
