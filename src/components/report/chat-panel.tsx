@@ -318,8 +318,9 @@ function SectionScopeSelect({
       disabled={disabled}
     >
       <SelectTrigger
-        className="h-8 w-[10.5rem] border-[var(--border)] bg-[var(--secondary)]/30 px-2 text-[11px] font-medium"
+        className="h-7 w-[7.5rem] border-[var(--border)] bg-[var(--secondary)]/30 px-2 text-[11px] font-medium"
         aria-label="Section focus"
+        title="Choose which report section to focus on"
       >
         <SelectValue placeholder="Section" />
       </SelectTrigger>
@@ -509,9 +510,10 @@ export function ChatPanel() {
     setClientScopeSuggestion(null);
   }, []);
 
-  useEffect(() => {
+  const changeSectionScope = useCallback((scope: ChatSectionScope) => {
+    setSectionScope(scope);
     setClientScopeSuggestion(null);
-  }, [sectionScope]);
+  }, []);
 
   const send = useCallback(
     async (text: string) => {
@@ -668,21 +670,15 @@ export function ChatPanel() {
             onDismiss={() => setClientScopeSuggestion(null)}
           />
         )}
-        <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-wrap items-center gap-2">
+        <div className="mb-2 flex items-center gap-1.5">
+          <div className="flex min-w-0 items-center gap-1.5">
             <ModeToggle mode={mode} onChange={setMode} disabled={busy} />
             <SectionScopeSelect
               value={sectionScope}
-              onChange={setSectionScope}
+              onChange={changeSectionScope}
               disabled={busy}
             />
           </div>
-          <span className="text-[10px] text-[var(--muted-foreground)]">
-            {mode === "plan" ? "Asks questions · no edits" : "Drafts · proposes edits"}
-            {sectionScope !== CHAT_SECTION_SCOPE_ALL
-              ? ` · ${scopeDescription(sectionScope)} only`
-              : ""}
-          </span>
         </div>
         {readOnly && mode === "agent" && (
           <p className="mb-2 text-[11px] text-[var(--muted-foreground)]">

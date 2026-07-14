@@ -20,7 +20,6 @@ import {
   chatTargetFields,
   isChatEditableSection,
   sectionFieldPlainText,
-  sectionLabel,
 } from "@/lib/ai/chat/fields";
 import { checkProposedEdit, proposedEditHint } from "@/lib/ai/chat/propose-edit";
 

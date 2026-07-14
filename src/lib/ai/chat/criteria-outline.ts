@@ -1,6 +1,5 @@
 import { CRITERIA_BY_SECTION } from "@/lib/ai/criteria";
 import {
-  CHAT_EDITABLE_SECTIONS,
   type ChatSectionScope,
   chatSectionsInScope,
   sectionLabel,
