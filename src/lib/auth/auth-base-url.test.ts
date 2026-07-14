@@ -13,6 +13,18 @@ describe("authBaseUrl", () => {
     expect(authBaseUrl()).toBe("https://andrei-v2.vercel.app");
   });
 
+  it("uses VERCEL_URL on Vercel Preview even when AUTH_URL is production", () => {
+    process.env = {
+      ...env,
+      VERCEL_ENV: "preview",
+      VERCEL_URL: "andrei-demo-git-feature-abc.vercel.app",
+      AUTH_URL: "https://andrei-demo.vercel.app",
+    };
+    expect(authBaseUrl()).toBe(
+      "https://andrei-demo-git-feature-abc.vercel.app"
+    );
+  });
+
   it("falls back to VERCEL_URL", () => {
     process.env = { ...env, VERCEL_URL: "andrei-v2.vercel.app" };
     delete process.env.AUTH_URL;

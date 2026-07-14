@@ -1,3 +1,4 @@
+import "@/lib/auth/apply-deployment-auth-url";
 import NextAuth from "next-auth";
 import Resend from "next-auth/providers/resend";
 import Credentials from "next-auth/providers/credentials";
