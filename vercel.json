@@ -1,5 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "installCommand": "pnpm install --frozen-lockfile",
-  "buildCommand": "pnpm vercel:build"
+  "buildCommand": "pnpm vercel:build",
+  "ignoreCommand": "bash scripts/vercel-should-build.sh"
 }
