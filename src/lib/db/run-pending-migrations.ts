@@ -41,13 +41,50 @@ async function recordedMigrationHashes(pool: pg.Pool): Promise<Set<string>> {
   return new Set(result.rows.map((row) => row.hash));
 }
 
+async function tableExists(pool: pg.Pool, tableName: string): Promise<boolean> {
+  const result = await pool.query<{ exists: boolean }>(
+    `SELECT EXISTS (
+      SELECT 1 FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = $1
+    ) AS exists`,
+    [tableName]
+  );
+  return result.rows[0]?.exists ?? false;
+}
+
+/**
+ * Remove journal rows that were baselined without running SQL (older deploy bug).
+ * Lets `migrate()` replay the real migration on the next deploy.
+ */
+async function repairPhantomBaselines(pool: pg.Pool): Promise<void> {
+  const repairs: { tag: string; tableName: string }[] = [
+    { tag: "0032_chat_sessions", tableName: "chat_sessions" },
+  ];
+
+  const recorded = await recordedMigrationHashes(pool);
+  for (const { tag, tableName } of repairs) {
+    if (await tableExists(pool, tableName)) {
+      continue;
+    }
+    const hash = migrationHash(tag);
+    if (!recorded.has(hash)) {
+      continue;
+    }
+    await pool.query(`DELETE FROM drizzle.__drizzle_migrations WHERE hash = $1`, [
+      hash,
+    ]);
+    recorded.delete(hash);
+  }
+}
+
 /**
  * Neon/Vercel DBs are often bootstrapped with `drizzle-kit push` (see
  * docs/whitelabel-vercel-deploy.md). Without seeding the migration journal,
  * `migrate()` replays 0000 and fails on types/tables that already exist.
  *
- * When `reports` already exists, mark every known migration as applied unless
- * it is already recorded — then only genuinely new SQL files run on deploy.
+ * Only when the journal is **empty** but `reports` already exists, mark every
+ * known migration as applied. If the journal already has rows, new SQL files
+ * must run through `migrate()` — never insert hashes for missing entries.
  */
 async function ensurePushBaseline(pool: pg.Pool): Promise<void> {
   const journal = JSON.parse(fs.readFileSync(journalPath, "utf8")) as {
@@ -66,6 +103,9 @@ async function ensurePushBaseline(pool: pg.Pool): Promise<void> {
 
   await ensureMigrationsTable(pool);
   const recorded = await recordedMigrationHashes(pool);
+  if (recorded.size > 0) {
+    return;
+  }
 
   const tagsToSeed: { tag: string; when: number }[] = [
     ...journal.entries.map((entry) => ({ tag: entry.tag, when: entry.when })),
@@ -91,6 +131,8 @@ async function ensurePushBaseline(pool: pg.Pool): Promise<void> {
 export async function runPendingMigrations(databaseUrl: string): Promise<void> {
   const pool = new pg.Pool({ connectionString: databaseUrl });
   try {
+    await ensureMigrationsTable(pool);
+    await repairPhantomBaselines(pool);
     await ensurePushBaseline(pool);
     const db = drizzle(pool);
     await migrate(db, { migrationsFolder });
