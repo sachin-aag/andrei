@@ -19,8 +19,6 @@ export type PersistedChatMessage = {
   parts: UIMessage["parts"];
 };
 
-const UNTITLED = UNTITLED_SESSION;
-
 export async function listChatSessions(
   reportId: string
 ): Promise<ChatSessionSummary[]> {
@@ -43,7 +41,7 @@ export async function listChatSessions(
 
   return sessions.map((s) => ({
     id: s.id,
-    title: s.title || UNTITLED,
+    title: s.title || UNTITLED_SESSION,
     updatedAt: s.updatedAt.toISOString(),
     messageCount: counts.get(s.id) ?? 0,
   }));
@@ -58,7 +56,7 @@ export async function createChatSession(
     .returning();
   return {
     id: created!.id,
-    title: UNTITLED,
+    title: UNTITLED_SESSION,
     updatedAt: created!.updatedAt.toISOString(),
     messageCount: 0,
   };

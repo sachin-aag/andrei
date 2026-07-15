@@ -214,7 +214,7 @@ export function buildChatTools(opts: {
     }),
   };
 
-  if (sectionScope !== "all" && isChatEditableSection(sectionScope)) {
+  if (sectionScope !== "all") {
     const currentSection = sectionScope;
     tools.suggest_section_scope = tool({
       description:

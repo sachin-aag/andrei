@@ -29,7 +29,6 @@ import { buildChatTools } from "@/lib/ai/chat/tools";
 import { resolveChatLanguageModel } from "@/lib/ai/chat/model";
 import { buildStubChatModel } from "@/lib/ai/chat/stub-model";
 import {
-  isChatEditableSection,
   parseChatSectionScope,
   primaryFieldForSection,
   type ChatSectionScope,
@@ -188,22 +187,17 @@ export async function POST(
         }
       : allTools;
 
+  const stubSection =
+    sectionScope === "all" ? pickStubSection(userText) : sectionScope;
   const model = isTestStubChat()
-    ? await (async () => {
-        const section =
-          sectionScope !== "all" && isChatEditableSection(sectionScope)
-            ? sectionScope
-            : pickStubSection(userText);
-        const targetField = primaryFieldForSection(section);
-        return buildStubChatModel({
-          mode,
-          section,
-          targetField,
-          scopeMismatch,
-          insertText: `Stubbed drafting insertion addressing "${userText.slice(0, 80)}". [Replace with real content once a Gemini credential is configured.]`,
-          reasoning: "Demo stub proposal.",
-        });
-      })()
+    ? await buildStubChatModel({
+        mode,
+        section: stubSection,
+        targetField: primaryFieldForSection(stubSection),
+        scopeMismatch,
+        insertText: `Stubbed drafting insertion addressing "${userText.slice(0, 80)}". [Replace with real content once a Gemini credential is configured.]`,
+        reasoning: "Demo stub proposal.",
+      })
     : resolveChatLanguageModel();
 
   const result = streamText({
