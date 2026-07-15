@@ -34,17 +34,17 @@ export async function buildStubChatModel(plan: StubChatPlan): Promise<LanguageMo
   let call = 0;
 
   const planText =
-    `Before I draft anything, a few quick questions (skip any you don't know — I'll use placeholders):\n\n` +
+    `Before I draft anything, a few quick questions (**skip any you don't know** — I'll use placeholders):\n\n` +
     `1. What exactly happened, and on which equipment or system?\n` +
     `2. When was it detected, and by whom?\n` +
     `3. Which product/batch or material is impacted?\n` +
     `4. Any early idea of the root cause?\n\n` +
-    `Plan: with answers to 1–3 I can draft the ${label} section now (placeholders for gaps) and skip sections I have too little for. ` +
+    `**Plan:** with answers to 1–3 I can draft the ${label} section now (placeholders for gaps) and skip sections I have too little for. ` +
     `Switch to Agent mode when you're ready and I'll generate the draft.`;
 
   const agentSummary =
-    `I drafted an addition to the ${label} section — review the highlighted insertion in the document and accept or reject it. ` +
-    `Replace any [bracketed placeholders] with the real values. I skipped sections I had too little information for.`;
+    `I drafted an addition to the **${label}** section — review the highlighted insertion in the document and accept or reject it. ` +
+    `Replace any \`[bracketed placeholders]\` with the real values. I skipped sections I had too little information for.`;
 
   const mismatch = plan.scopeMismatch;
   const mismatchFollowUp = mismatch

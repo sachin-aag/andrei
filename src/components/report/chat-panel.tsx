@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { ChatMarkdown } from "@/components/report/chat-markdown";
 import {
   Select,
   SelectContent,
@@ -271,14 +272,7 @@ function MessageTurn({
         if (part.type === "text") {
           const text = (part as { text: string }).text;
           if (!text.trim()) return null;
-          return (
-            <div
-              key={i}
-              className="whitespace-pre-wrap text-sm leading-relaxed text-[var(--foreground)]"
-            >
-              {text}
-            </div>
-          );
+          return <ChatMarkdown key={i}>{text}</ChatMarkdown>;
         }
         const tool = readToolPart(part as UIMessagePart<never, never>);
         if (tool) {
