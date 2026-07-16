@@ -6,16 +6,18 @@ import {
   MessageSquare,
   PanelRightClose,
   PanelRightOpen,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useReportPlaceholders, useReportComments } from "@/providers/report-provider";
 import { captureEvent } from "@/lib/analytics/events";
 import { PlaceholdersPanelContent } from "./placeholders-panel";
 import { CriteriaPanelContent, CommentsPanelContent } from "./criteria-sheet";
+import { ChatPanel } from "./chat-panel";
 import type { SectionType } from "@/db/schema";
 import type { Placeholder } from "@/lib/placeholders/find";
 
-export type SidebarTab = "placeholders" | "criteria" | "comments";
+export type SidebarTab = "assistant" | "placeholders" | "criteria" | "comments";
 
 type Props = {
   collapsed: boolean;
@@ -31,6 +33,7 @@ type Props = {
 };
 
 const TABS: { value: SidebarTab; label: string; icon: typeof ListChecks }[] = [
+  { value: "assistant", label: "Assistant", icon: Sparkles },
   { value: "placeholders", label: "Placeholders", icon: FileQuestion },
   { value: "criteria", label: "Criteria", icon: ListChecks },
   { value: "comments", label: "Comments", icon: MessageSquare },
@@ -170,25 +173,31 @@ export function ReportSidebar({
         })}
       </div>
 
-      {/* Scrollable content — only when expanded */}
-      {!collapsed && (
-        <div className="flex-1 overflow-y-auto p-4 min-w-0">
-          {activeTab === "placeholders" && (
-            <PlaceholdersPanelContent
-              onJumpToPlaceholder={onJumpToPlaceholder}
-            />
-          )}
-          {activeTab === "criteria" && (
-            <CriteriaPanelContent
-              onJumpToSection={onJumpToSection}
-              initialSection={initialCriteriaSection}
-            />
-          )}
-          {activeTab === "comments" && (
-            <CommentsPanelContent onJumpToComment={onJumpToComment} />
-          )}
-        </div>
-      )}
+      {/* Content — only when expanded. Assistant manages its own scroll/input
+          layout, so it gets a full-height container without the shared padding. */}
+      {!collapsed &&
+        (activeTab === "assistant" ? (
+          <div className="min-h-0 flex-1">
+            <ChatPanel />
+          </div>
+        ) : (
+          <div className="flex-1 overflow-y-auto p-4 min-w-0">
+            {activeTab === "placeholders" && (
+              <PlaceholdersPanelContent
+                onJumpToPlaceholder={onJumpToPlaceholder}
+              />
+            )}
+            {activeTab === "criteria" && (
+              <CriteriaPanelContent
+                onJumpToSection={onJumpToSection}
+                initialSection={initialCriteriaSection}
+              />
+            )}
+            {activeTab === "comments" && (
+              <CommentsPanelContent onJumpToComment={onJumpToComment} />
+            )}
+          </div>
+        ))}
     </aside>
   );
 }

@@ -18,6 +18,15 @@ export function isTestStubMathExtraction(): boolean {
   return process.env.ALLOW_TEST_STUB_MATH_EXTRACTION === "true";
 }
 
+/**
+ * Drives the report drafting chat with a scripted mock model instead of Gemini.
+ * Lets the whole chat → tool → suggestion → inline-diff spine run end-to-end
+ * with no AI credential (E2E + local demo).
+ */
+export function isTestStubChat(): boolean {
+  return process.env.ALLOW_TEST_STUB_CHAT === "true";
+}
+
 export function isTestLoginEnabled(): boolean {
   return (
     process.env.ALLOW_TEST_LOGIN === "true" &&

@@ -91,6 +91,11 @@ export const aiFeedbackSourceTypeEnum = pgEnum("ai_feedback_source_type", [
   "uploaded_docx",
 ]);
 
+export const chatMessageRoleEnum = pgEnum("chat_message_role", [
+  "user",
+  "assistant",
+]);
+
 export const aiFeedbackSessionStatusEnum = pgEnum("ai_feedback_session_status", [
   "evaluating",
   "ready_for_review",
@@ -416,6 +421,74 @@ export const commentsRelations = relations(comments, ({ one, many }) => ({
 }));
 
 /**
+ * Drafting-assistant chat thread. A report can have many named sessions
+ * (like Cursor's chat history), so an engineer can start a fresh conversation
+ * for a new task without losing prior context. Title is derived from the first
+ * user message and can be blank until then.
+ */
+export const chatSessions = pgTable(
+  "chat_sessions",
+  {
+    id: text("id").primaryKey().$defaultFn(() => createId()),
+    reportId: text("report_id")
+      .notNull()
+      .references(() => reports.id, { onDelete: "cascade" }),
+    title: text("title").notNull().default(""),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    reportUpdatedIdx: index("chat_sessions_report_updated_idx").on(
+      t.reportId,
+      t.updatedAt
+    ),
+  })
+);
+
+/**
+ * Report drafting-assistant chat transcript, grouped into sessions.
+ * `parts` stores the AI SDK v6 UIMessage `parts` array verbatim (text +
+ * tool-call/tool-result parts), so the transcript rehydrates with the same
+ * proposal cards it showed live. Proposed edits themselves live in `comments`
+ * (kind `ai_fix`), so this table never needs to reference suggestions.
+ */
+export const chatMessages = pgTable(
+  "chat_messages",
+  {
+    id: text("id").primaryKey().$defaultFn(() => createId()),
+    reportId: text("report_id")
+      .notNull()
+      .references(() => reports.id, { onDelete: "cascade" }),
+    /** Owning session. Nullable for legacy rows created before sessions existed. */
+    sessionId: text("session_id").references(() => chatSessions.id, {
+      onDelete: "cascade",
+    }),
+    role: chatMessageRoleEnum("role").notNull(),
+    /** AI SDK v6 UIMessage.parts (text + tool parts). */
+    parts: jsonb("parts").notNull().default([]),
+    /** workspace_users.id for user turns; null for assistant turns. */
+    authorId: text("author_id"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    reportCreatedIdx: index("chat_messages_report_created_idx").on(
+      t.reportId,
+      t.createdAt
+    ),
+    sessionCreatedIdx: index("chat_messages_session_created_idx").on(
+      t.sessionId,
+      t.createdAt
+    ),
+  })
+);
+
+/**
  * Persistent cache for Gemini math-extraction results, keyed by SHA-256 of the
  * source image bytes. Survives report deletion so re-importing the same DOCX
  * (or a new report with the same formula) never hits the LLM twice.
@@ -649,6 +722,7 @@ export type AiFeedbackSourceType =
   (typeof aiFeedbackSourceTypeEnum.enumValues)[number];
 export type AiFeedbackSessionStatus =
   (typeof aiFeedbackSessionStatusEnum.enumValues)[number];
+export type ChatMessageRole = (typeof chatMessageRoleEnum.enumValues)[number];
 export type AuditAction = (typeof auditActionEnum.enumValues)[number];
 export type AuditEntity = (typeof auditEntityEnum.enumValues)[number];
 export type SignatureMeaning = (typeof signatureMeaningEnum.enumValues)[number];
