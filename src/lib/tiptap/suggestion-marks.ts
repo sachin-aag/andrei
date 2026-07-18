@@ -8,7 +8,7 @@ declare module "@tiptap/core" {
     };
   }
 }
-import { Plugin, PluginKey } from "@tiptap/pm/state";
+import { Plugin, PluginKey, TextSelection, type EditorState } from "@tiptap/pm/state";
 import { ReplaceStep } from "@tiptap/pm/transform";
 import { createId } from "@paralleldrive/cuid2";
 
@@ -107,6 +107,32 @@ function pendingMarkAttrs(authorId: string) {
     status: "pending" as const,
     createdAt: new Date().toISOString(),
   };
+}
+
+export function trackChangesSelectionReplaceTransaction(
+  state: EditorState,
+  from: number,
+  to: number,
+  text: string,
+  authorId: string
+) {
+  if (from >= to || text.length === 0) return null;
+
+  const deleteMarkType = state.schema.marks[suggestionDeleteMarkName];
+  const insertMarkType = state.schema.marks[suggestionInsertMarkName];
+  if (!deleteMarkType || !insertMarkType) return null;
+
+  const insertAt = to;
+  const insertEnd = insertAt + text.length;
+  const tr = state.tr
+    .addMark(from, to, deleteMarkType.create(pendingMarkAttrs(authorId)))
+    .insertText(text, insertAt, insertAt)
+    .addMark(insertAt, insertEnd, insertMarkType.create(pendingMarkAttrs(authorId)))
+    .setMeta("skipTrackChanges", true);
+
+  tr.setSelection(TextSelection.create(tr.doc, insertEnd));
+
+  return tr;
 }
 
 /**
@@ -229,6 +255,21 @@ export const TrackChangesExtension = Extension.create({
     return [
       new Plugin({
         key: trackChangesInsertKey,
+        props: {
+          handleTextInput(view, from, to, text) {
+            if (editor.storage.trackChanges?.enabled !== true) return false;
+            const tr = trackChangesSelectionReplaceTransaction(
+              view.state,
+              from,
+              to,
+              text,
+              editor.storage.trackChanges?.authorId ?? ""
+            );
+            if (!tr) return false;
+            view.dispatch(tr);
+            return true;
+          },
+        },
         appendTransaction(transactions, oldState, newState) {
           if (transactions.some((tr) => tr.getMeta("skipTrackChanges"))) return null;
           if (editor.storage.trackChanges?.enabled !== true) return null;
