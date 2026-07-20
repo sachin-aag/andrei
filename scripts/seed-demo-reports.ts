@@ -1,10 +1,15 @@
 /**
  * Seed demo investigation reports for the Andrei whitelabel.
  *
- *   pnpm seed-demo-reports
+ *   DATABASE_URL='postgresql://…demo…' pnpm seed-demo-reports
  *
- * Requires demo users (created automatically if missing):
- *   engineer@company.com / manager@company.com — password DemoPass123!
+ * Creates / refreshes demo users (password DemoPass123!, mustChangePassword):
+ *   sachin@andreihealth.com / aditya@andreihealth.com — engineer
+ *   sachin+manager@andreihealth.com / aditya+manager@andreihealth.com — manager
+ *   sachin+admin@andreihealth.com / aditya+admin@andreihealth.com — admin
+ *
+ * Also removes legacy demo logins engineer@company.com / manager@company.com
+ * (reassigns their reports/manager links to the primary sachin accounts).
  *
  * The five demo reports cover medical-device manufacturing deviations
  * (sterilization, aseptic assembly, injection molding, data integrity,
@@ -12,7 +17,7 @@
  * Andrei's AI traffic-light evaluation are all exercised. Content is
  * fictional — no real people, sites, or lot numbers.
  *
- * Re-running is idempotent: existing demo reports (matched by the demo
+ * Re-running is idempotent: existing demo reports (matched by the primary
  * engineer + deviation number) are updated in place, so this doubles as the
  * "refresh demo content" command.
  */
@@ -30,12 +35,39 @@ import { REPORT_SECTION_ROW_ORDER } from "../src/types/sections";
 import type { SectionContentMap } from "../src/types/sections";
 import { EMPTY_CONTENT } from "../src/types/sections";
 
+// Prefer an explicit shell DATABASE_URL (demo Neon) over .env.local.
+const shellDatabaseUrl = process.env.DATABASE_URL;
 config({ path: ".env" });
 config({ path: ".env.local", override: true });
+if (shellDatabaseUrl) {
+  process.env.DATABASE_URL = shellDatabaseUrl;
+}
 
-const ENGINEER_EMAIL = "engineer@company.com";
-const MANAGER_EMAIL = "manager@company.com";
 const DEMO_PASSWORD = "DemoPass123!";
+
+type DemoUserRole = "engineer" | "manager" | "admin";
+
+type DemoUserSpec = {
+  email: string;
+  role: DemoUserRole;
+};
+
+/** Canonical whitelabel demo accounts. */
+const DEMO_USERS: DemoUserSpec[] = [
+  { email: "sachin@andreihealth.com", role: "engineer" },
+  { email: "aditya@andreihealth.com", role: "engineer" },
+  { email: "sachin+manager@andreihealth.com", role: "manager" },
+  { email: "aditya+manager@andreihealth.com", role: "manager" },
+  { email: "sachin+admin@andreihealth.com", role: "admin" },
+  { email: "aditya+admin@andreihealth.com", role: "admin" },
+];
+
+/** Reports are authored / assigned under these primary accounts. */
+const PRIMARY_ENGINEER_EMAIL = "sachin@andreihealth.com";
+const PRIMARY_MANAGER_EMAIL = "sachin+manager@andreihealth.com";
+
+/** Retired placeholder logins — removed after reassignment. */
+const LEGACY_DEMO_EMAILS = ["engineer@company.com", "manager@company.com"] as const;
 
 type DemoReportSpec = {
   deviationNo: string;
@@ -681,33 +713,56 @@ async function findUserIdByEmail(email: string): Promise<string | null> {
   return row?.id ?? null;
 }
 
+function titleForRole(role: DemoUserRole): string {
+  switch (role) {
+    case "engineer":
+      return "Engineer";
+    case "manager":
+      return "Manager";
+    case "admin":
+      return "Admin";
+    default: {
+      const exhaustive: never = role;
+      return exhaustive;
+    }
+  }
+}
+
 function displayNameFromEmail(email: string): string {
   const local = email.split("@")[0] ?? email;
-  const parts = local.split(/[._-]+/).filter(Boolean);
+  // "sachin+manager" → "Sachin Manager"
+  const parts = local.split(/[._+\-]+/).filter(Boolean);
   if (parts.length === 0) return email;
   return parts
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
     .join(" ");
 }
 
-async function ensureDemoUser(
-  email: string,
-  role: "engineer" | "manager"
-): Promise<string> {
+async function ensureDemoUser(email: string, role: DemoUserRole): Promise<string> {
   const existingId = await findUserIdByEmail(email);
-  if (existingId) return existingId;
+  if (existingId) {
+    await db
+      .update(workspaceUsers)
+      .set({
+        role,
+        title: titleForRole(role),
+        name: displayNameFromEmail(email),
+        deactivatedAt: null,
+      })
+      .where(eq(workspaceUsers.id, existingId));
+    return existingId;
+  }
 
   const policy = await getPasswordPolicy();
   const passwordHash = await hashPassword(DEMO_PASSWORD);
   const id = createId();
-  const title = role === "manager" ? "Manager" : "Engineer";
 
   await db.insert(workspaceUsers).values({
     id,
     name: displayNameFromEmail(email),
     email: email.toLowerCase(),
     role,
-    title,
+    title: titleForRole(role),
     passwordHash,
     mustChangePassword: true,
     passwordChangedAt: new Date(),
@@ -721,9 +776,100 @@ async function ensureDemoUser(
   return id;
 }
 
+async function removeLegacyDemoUsers(
+  primaryEngineerId: string,
+  primaryManagerId: string
+): Promise<void> {
+  for (const email of LEGACY_DEMO_EMAILS) {
+    const legacyId = await findUserIdByEmail(email);
+    if (!legacyId) continue;
+
+    const toReassign = await db
+      .select({ id: reports.id })
+      .from(reports)
+      .where(eq(reports.authorId, legacyId));
+    if (toReassign.length > 0) {
+      await db
+        .update(reports)
+        .set({ authorId: primaryEngineerId, updatedAt: new Date() })
+        .where(eq(reports.authorId, legacyId));
+      console.log(
+        `Reassigned ${toReassign.length} report(s) from ${email} → ${PRIMARY_ENGINEER_EMAIL}`
+      );
+    }
+
+    await db
+      .update(reports)
+      .set({ assignedManagerId: primaryManagerId, updatedAt: new Date() })
+      .where(eq(reports.assignedManagerId, legacyId));
+    await db
+      .update(reports)
+      .set({ reviewedById: primaryManagerId, updatedAt: new Date() })
+      .where(eq(reports.reviewedById, legacyId));
+
+    const mgrLinks = await db
+      .select({ reportId: reportManagers.reportId })
+      .from(reportManagers)
+      .where(eq(reportManagers.managerId, legacyId));
+    for (const link of mgrLinks) {
+      await db
+        .delete(reportManagers)
+        .where(
+          and(
+            eq(reportManagers.reportId, link.reportId),
+            eq(reportManagers.managerId, legacyId)
+          )
+        );
+      const [existing] = await db
+        .select({ reportId: reportManagers.reportId })
+        .from(reportManagers)
+        .where(
+          and(
+            eq(reportManagers.reportId, link.reportId),
+            eq(reportManagers.managerId, primaryManagerId)
+          )
+        )
+        .limit(1);
+      if (!existing) {
+        await insertReportManagers(link.reportId, [primaryManagerId]);
+      }
+    }
+
+    await db.delete(workspaceUsers).where(eq(workspaceUsers.id, legacyId));
+    console.log(`Removed legacy demo user ${email}`);
+  }
+}
+
+function formatDatabaseTarget(url: string): string {
+  try {
+    const parsed = new URL(url.replace(/^postgres:\/\//, "postgresql://"));
+    return `${parsed.hostname}${parsed.pathname}`;
+  } catch {
+    return "(unparseable DATABASE_URL)";
+  }
+}
+
 async function main() {
-  const engineerId = await ensureDemoUser(ENGINEER_EMAIL, "engineer");
-  const managerId = await ensureDemoUser(MANAGER_EMAIL, "manager");
+  const databaseUrl = process.env.DATABASE_URL?.trim();
+  if (!databaseUrl) {
+    throw new Error("DATABASE_URL is not set");
+  }
+  console.log(`Target database: ${formatDatabaseTarget(databaseUrl)}`);
+
+  const userIds = new Map<string, string>();
+  for (const user of DEMO_USERS) {
+    const id = await ensureDemoUser(user.email, user.role);
+    userIds.set(user.email, id);
+    console.log(`Ready ${user.email} (${user.role})`);
+  }
+
+  const engineerId = userIds.get(PRIMARY_ENGINEER_EMAIL);
+  const managerId = userIds.get(PRIMARY_MANAGER_EMAIL);
+  if (!engineerId || !managerId) {
+    throw new Error("Primary demo engineer/manager ids missing after ensure");
+  }
+
+  await removeLegacyDemoUsers(engineerId, managerId);
 
   // Refresh demo content: remove any of the demo engineer's reports that are
   // not in the curated set (e.g. earlier thin seed reports). Scoped strictly to

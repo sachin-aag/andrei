@@ -216,15 +216,25 @@ DATABASE_URL='postgresql://…demo…?sslmode=require' pnpm seed-demo-reports
 
 Creates (idempotent on deviation numbers):
 
-- `engineer@company.com` / `manager@company.com` — **`DemoPass123!`** (`mustChangePassword` on first login)
-- 5 reports: `DEV-2026-001` … `005`
+| Email | Role |
+|-------|------|
+| `sachin@andreihealth.com` | engineer (primary report author) |
+| `aditya@andreihealth.com` | engineer |
+| `sachin+manager@andreihealth.com` | manager (primary assignee) |
+| `aditya+manager@andreihealth.com` | manager |
+| `sachin+admin@andreihealth.com` | admin |
+| `aditya+admin@andreihealth.com` | admin |
+
+Password for all: **`DemoPass123!`** (`mustChangePassword` on first login). Removes legacy `engineer@company.com` / `manager@company.com` if present.
+
+- 5 curated reports (e.g. `DEV-STE-26-011`, …)
 
 Re-run after schema changes or to reset demo content (delete reports in Neon SQL editor first if you need a clean slate).
 
 ## 5. Verify
 
 1. https://andrei-demo.vercel.app → Andrei branding
-2. Login `engineer@company.com` → 5 seeded reports
+2. Login `sachin@andreihealth.com` → curated seeded reports
 3. Measure experiment fields + **Conclusion** section
 4. Export DOCX → Andrei header/logo
 5. **Insights** nav → mock pages

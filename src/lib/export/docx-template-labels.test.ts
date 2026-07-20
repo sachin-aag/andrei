@@ -5,7 +5,8 @@ import PizZip from "pizzip";
 import { reports } from "@/db/schema";
 import { generateReportDocx } from "@/lib/export/generate-docx";
 import { docxBufferToImportedReportContent } from "@/lib/import/docx-to-sections";
-import { seedBlankReportSections } from "@/lib/reports/seed-blank-report-sections";
+import { buildDefaultGuidancePreamble } from "@/lib/report-section-guidance";
+import { legacyStringToDoc } from "@/lib/tiptap/rich-text";
 import { EMPTY_CONTENT, REPORT_SECTION_ROW_ORDER } from "@/types/sections";
 import type { ReportSectionRecord } from "@/types/report";
 
@@ -86,7 +87,21 @@ describe("investigation-report-template.docx label formatting", () => {
 
   it("places improve and control checkpoints in the row above corrective/preventive action", async () => {
     const reportId = "test-report-improve-control-rows";
-    const seeded = seedBlankReportSections();
+    const contentWithCheckpoints = {
+      ...EMPTY_CONTENT,
+      improve: {
+        ...EMPTY_CONTENT.improve,
+        correctiveActions: legacyStringToDoc(
+          buildDefaultGuidancePreamble("improve").trimEnd()
+        ),
+      },
+      control: {
+        ...EMPTY_CONTENT.control,
+        preventiveActions: legacyStringToDoc(
+          buildDefaultGuidancePreamble("control").trimEnd()
+        ),
+      },
+    };
     const iso = new Date("2026-03-04T12:00:00.000Z");
     const report: typeof reports.$inferSelect = {
       id: reportId,
@@ -107,7 +122,7 @@ describe("investigation-report-template.docx label formatting", () => {
       id: `sec-${section}-${i}`,
       reportId,
       section,
-      content: seeded[section as keyof typeof seeded],
+      content: contentWithCheckpoints[section as keyof typeof contentWithCheckpoints],
       updatedAt: iso.toISOString(),
     }));
 

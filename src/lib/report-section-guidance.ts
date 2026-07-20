@@ -1,6 +1,9 @@
 import type { SectionType } from "@/db/schema";
 
-/** Template checkpoint copy for blank report seeding and export — not the AI evaluation rubric. */
+/**
+ * Template checkpoint copy used when splitting/formatting imported DOCX content
+ * for export — not the AI evaluation rubric, and not seeded into free-text fields.
+ */
 export const SECTION_GUIDANCE: Partial<Record<SectionType, string[]>> = {
   define: [
     "Clearly define what happens actually.",
@@ -59,7 +62,7 @@ function numberedChecklist(items: string[]): string {
   return items.map((item, index) => `${index + 1}. ${item}`).join("\n");
 }
 
-/** Plain-text preamble seeded into blank reports (matches Word template structure). */
+/** Plain-text preamble matching Word template checkpoint structure (for tests / import helpers). */
 export function buildDefaultGuidancePreamble(section: SectionType): string {
   const items = SECTION_GUIDANCE[section];
   if (!items?.length) return "";

@@ -1,36 +1,12 @@
-import type { SectionType } from "@/db/schema";
 import type { SectionContentMap } from "@/types/sections";
 import { EMPTY_CONTENT } from "@/types/sections";
-import { buildDefaultGuidancePreamble } from "@/lib/report-section-guidance";
-import { legacyStringToDoc } from "@/lib/tiptap/rich-text";
 
-const SEED_SECTIONS: SectionType[] = ["define", "measure", "improve", "control", "conclusion"];
-
-/** Default section payloads for reports created without a DOCX upload. */
+/**
+ * Default section payloads for reports created without a DOCX upload.
+ * Intentionally empty — template checkpoint/criteria lists are not seeded into
+ * free-text fields (they confuse AI suggestions). Checkpoints still appear in
+ * export when present in imported DOCXs.
+ */
 export function seedBlankReportSections(): SectionContentMap {
-  const sections = { ...EMPTY_CONTENT };
-
-  for (const section of SEED_SECTIONS) {
-    const preamble = buildDefaultGuidancePreamble(section);
-    if (!preamble) continue;
-
-    if (section === "define" || section === "measure" || section === "conclusion") {
-      sections[section] = {
-        ...sections[section],
-        narrative: legacyStringToDoc(preamble),
-      };
-    } else if (section === "improve") {
-      sections.improve = {
-        ...sections.improve,
-        correctiveActions: legacyStringToDoc(preamble.trimEnd()),
-      };
-    } else if (section === "control") {
-      sections.control = {
-        ...sections.control,
-        preventiveActions: legacyStringToDoc(preamble.trimEnd()),
-      };
-    }
-  }
-
-  return sections;
+  return { ...EMPTY_CONTENT };
 }
