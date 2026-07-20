@@ -119,14 +119,20 @@ export function DonutChart({
   const circumference = 2 * Math.PI * radius;
 
   // Precompute each segment's arc length and cumulative offset so the render
-  // stays a pure map (no mutation after render completes).
-  let cumulative = 0;
-  const arcs = segments.map((segment) => {
+  // stays a pure map (no mutation after render completes). The offset for a
+  // segment is the sum of all preceding segments' arc lengths.
+  const arcs = segments.reduce<
+    Array<{
+      segment: (typeof segments)[number];
+      length: number;
+      offset: number;
+    }>
+  >((acc, segment) => {
+    const prev = acc[acc.length - 1];
+    const offset = prev ? prev.offset + prev.length : 0;
     const length = (segment.value / total) * circumference;
-    const offset = cumulative;
-    cumulative += length;
-    return { segment, length, offset };
-  });
+    return [...acc, { segment, length, offset }];
+  }, []);
 
   return (
     <div className="flex items-center gap-6">
