@@ -8,6 +8,11 @@ declare module "@tiptap/core" {
     };
   }
 }
+import {
+  Fragment,
+  Slice,
+  type Node as PMNode,
+} from "@tiptap/pm/model";
 import { Plugin, PluginKey, TextSelection, type EditorState } from "@tiptap/pm/state";
 import { ReplaceStep } from "@tiptap/pm/transform";
 import { createId } from "@paralleldrive/cuid2";
@@ -99,6 +104,42 @@ export const SuggestionDelete = Mark.create({
 });
 
 const trackChangesInsertKey = new PluginKey("trackChangesInsertMarks");
+
+function isSuggestionMarkName(name: string): boolean {
+  return (
+    name === suggestionInsertMarkName || name === suggestionDeleteMarkName
+  );
+}
+
+function stripSuggestionMarksFromNode(node: PMNode): PMNode {
+  if (node.isText) {
+    const marks = node.marks.filter((mark) => !isSuggestionMarkName(mark.type.name));
+    return marks.length === node.marks.length ? node : node.mark(marks);
+  }
+  if (node.content.size === 0) return node;
+  return node.copy(stripSuggestionMarksFromFragment(node.content));
+}
+
+function stripSuggestionMarksFromFragment(fragment: Fragment): Fragment {
+  const nodes: PMNode[] = [];
+  fragment.forEach((child) => {
+    nodes.push(stripSuggestionMarksFromNode(child));
+  });
+  return Fragment.from(nodes);
+}
+
+/**
+ * Drop AI / track-change suggestion marks from a clipboard slice so paste never
+ * rehydrates orphan highlights. When track changes is on, appendTransaction
+ * re-marks the inserted range as a fresh insert.
+ */
+export function stripSuggestionMarksFromSlice(slice: Slice): Slice {
+  return new Slice(
+    stripSuggestionMarksFromFragment(slice.content),
+    slice.openStart,
+    slice.openEnd
+  );
+}
 
 function pendingMarkAttrs(authorId: string) {
   return {
@@ -256,6 +297,14 @@ export const TrackChangesExtension = Extension.create({
       new Plugin({
         key: trackChangesInsertKey,
         props: {
+          /**
+           * Always strip source suggestion marks on paste. AI highlights and
+           * prior track-change formatting must not travel with the clipboard;
+           * when TC is enabled, appendTransaction applies fresh insert marks.
+           */
+          transformPasted(slice) {
+            return stripSuggestionMarksFromSlice(slice);
+          },
           handleTextInput(view, from, to, text) {
             if (editor.storage.trackChanges?.enabled !== true) return false;
             const tr = trackChangesSelectionReplaceTransaction(
