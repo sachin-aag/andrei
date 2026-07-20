@@ -117,32 +117,35 @@ export function DonutChart({
   const total = segments.reduce((sum, s) => sum + s.value, 0) || 1;
   const radius = 42;
   const circumference = 2 * Math.PI * radius;
-  let offset = 0;
+
+  // Precompute each segment's arc length and cumulative offset so the render
+  // stays a pure map (no mutation after render completes).
+  let cumulative = 0;
+  const arcs = segments.map((segment) => {
+    const length = (segment.value / total) * circumference;
+    const offset = cumulative;
+    cumulative += length;
+    return { segment, length, offset };
+  });
 
   return (
     <div className="flex items-center gap-6">
       <svg width="120" height="120" viewBox="0 0 120 120" role="img" aria-label="Status distribution">
         <circle cx="60" cy="60" r={radius} fill="none" stroke="var(--secondary)" strokeWidth="16" />
-        {segments.map((segment) => {
-          const length = (segment.value / total) * circumference;
-          const dash = `${length} ${circumference - length}`;
-          const el = (
-            <circle
-              key={segment.label}
-              cx="60"
-              cy="60"
-              r={radius}
-              fill="none"
-              stroke={segment.color}
-              strokeWidth="16"
-              strokeDasharray={dash}
-              strokeDashoffset={-offset}
-              transform="rotate(-90 60 60)"
-            />
-          );
-          offset += length;
-          return el;
-        })}
+        {arcs.map(({ segment, length, offset }) => (
+          <circle
+            key={segment.label}
+            cx="60"
+            cy="60"
+            r={radius}
+            fill="none"
+            stroke={segment.color}
+            strokeWidth="16"
+            strokeDasharray={`${length} ${circumference - length}`}
+            strokeDashoffset={-offset}
+            transform="rotate(-90 60 60)"
+          />
+        ))}
       </svg>
       <ul className="space-y-1 text-sm">
         {segments.map((segment) => (
