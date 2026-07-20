@@ -52,6 +52,21 @@ async function tableExists(pool: pg.Pool, tableName: string): Promise<boolean> {
   return result.rows[0]?.exists ?? false;
 }
 
+async function columnExists(
+  pool: pg.Pool,
+  tableName: string,
+  columnName: string
+): Promise<boolean> {
+  const result = await pool.query<{ exists: boolean }>(
+    `SELECT EXISTS (
+      SELECT 1 FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = $1 AND column_name = $2
+    ) AS exists`,
+    [tableName, columnName]
+  );
+  return result.rows[0]?.exists ?? false;
+}
+
 function journalEntry(tag: string): JournalEntry | undefined {
   const journal = JSON.parse(fs.readFileSync(journalPath, "utf8")) as {
     entries: JournalEntry[];
@@ -149,6 +164,25 @@ type SchemaRepair = {
 };
 
 /**
+ * Re-apply an idempotent migration when a column it adds is missing, even
+ * though its primary table already exists. Push-bootstrapped DBs can end up
+ * with `chat_sessions` present but `chat_messages.session_id` never added, so
+ * the table-only repair below skips it and every chat insert then throws.
+ */
+async function ensureMigrationColumn(
+  pool: pg.Pool,
+  tag: string,
+  tableName: string,
+  columnName: string
+): Promise<void> {
+  if (!(await tableExists(pool, tableName))) return;
+  if (await columnExists(pool, tableName, columnName)) return;
+
+  await applyMigrationStatements(pool, tag);
+  await recordMigrationIfMissing(pool, tag);
+}
+
+/**
  * Apply idempotent schema repairs when a migration was journaled without SQL
  * (older deploy bug) or drizzle's timestamp-based migrator skipped it.
  */
@@ -171,6 +205,14 @@ async function repairMissingSchema(pool: pg.Pool): Promise<void> {
     }
     await ensureMigrationTable(pool, repair.tag, repair.tableName);
   }
+
+  // Column-level repair: table exists but the added column doesn't.
+  await ensureMigrationColumn(
+    pool,
+    "0032_chat_sessions",
+    "chat_messages",
+    "session_id"
+  );
 }
 
 /**

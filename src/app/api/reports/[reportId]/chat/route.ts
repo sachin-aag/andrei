@@ -109,7 +109,10 @@ export async function POST(
     sessionId = (await createChatSession(reportId)).id;
   }
 
-  // Persist the newest user turn (best-effort).
+  // Persist the newest user turn. A failure here silently breaks the thread
+  // (this masked a missing chat_messages.session_id column in prod), so fail
+  // loudly: return 500 so the client's onError toast fires instead of
+  // streaming a reply that would never be saved to history.
   const userMsg = lastUserMessage(messages);
   const userText = messageText(userMsg);
   const scopeMismatch = detectSectionScopeMismatch(sectionScope, userText);
@@ -125,6 +128,10 @@ export async function POST(
       await touchChatSession(sessionId, userText || null);
     } catch (err) {
       console.error("chat: failed to persist user message", err);
+      return NextResponse.json(
+        { error: "Failed to save your message. Please try again." },
+        { status: 500 }
+      );
     }
   }
 
@@ -227,6 +234,8 @@ export async function POST(
         });
         await touchChatSession(sessionId, null);
       } catch (err) {
+        // The reply already streamed to the client, so we can only log here —
+        // a failure means it's missing from history on reload, nothing more.
         console.error("chat: failed to persist assistant message", err);
       }
     },

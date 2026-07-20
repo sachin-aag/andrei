@@ -2,7 +2,7 @@
 
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { emptyDoc, normalizeRichField } from "@/lib/tiptap/rich-text";
+import { normalizeRichField } from "@/lib/tiptap/rich-text";
 import { useReportSection } from "@/providers/report-provider";
 import { useSectionSave } from "@/hooks/use-section-save";
 import { SectionShell } from "./section-shell";
