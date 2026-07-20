@@ -102,10 +102,6 @@ export function AdminUsersPanel({
     );
   };
 
-  const removeUser = (userId: string) => {
-    setUsers((current) => current.filter((user) => user.id !== userId));
-  };
-
   const resetCreateForm = () => {
     setCreateForm(emptyCreateForm);
   };

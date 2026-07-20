@@ -3,7 +3,6 @@ import { db } from "@/db";
 import { reportSections } from "@/db/schema";
 import { hashSectionContent } from "@/lib/audit/content-hash";
 import type { SectionContentMap } from "@/types/sections";
-import type { SectionType } from "@/db/schema";
 
 export async function loadReportSectionContentMap(
   reportId: string
