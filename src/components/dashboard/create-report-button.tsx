@@ -19,6 +19,8 @@ import { Label } from "@/components/ui/label";
 import type { WorkspaceUser } from "@/lib/auth/workspace-user";
 import { captureEvent } from "@/lib/analytics/events";
 import { ManagerSelector } from "@/components/report/manager-selector";
+import { uploadReportPdfAttachment } from "@/lib/attachments/upload-client";
+import { pdfUploadError } from "@/lib/attachments/pdf-upload";
 
 type CreateReportButtonProps = {
   managers: Pick<WorkspaceUser, "id" | "name" | "title">[];
@@ -29,6 +31,7 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
   const [deviationNo, setDeviationNo] = useState("");
   const [managerIds, setManagerIds] = useState<string[]>([]);
   const [draftFile, setDraftFile] = useState<File | null>(null);
+  const [pdfFiles, setPdfFiles] = useState<File[]>([]);
   const [previewLoading, setPreviewLoading] = useState(false);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
@@ -39,6 +42,7 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
     setDeviationNo("");
     setManagerIds([]);
     setDraftFile(null);
+    setPdfFiles([]);
     setPreviewLoading(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
@@ -108,6 +112,21 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
         reportId: data.id,
         fromDocx: !!draftFile,
       });
+
+      if (pdfFiles.length > 0) {
+        for (const pdf of pdfFiles) {
+          try {
+            await uploadReportPdfAttachment(data.id, pdf);
+          } catch (e) {
+            toast.error(
+              e instanceof Error
+                ? `Failed to upload ${pdf.name}: ${e.message}`
+                : `Failed to upload ${pdf.name}`
+            );
+          }
+        }
+      }
+
       toast.success("Report created");
       setOpen(false);
       resetForm();
@@ -201,6 +220,52 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
                 </>
               )}
             </div>
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor="report-pdf-upload">PDF attachments (optional)</Label>
+            <Input
+              id="report-pdf-upload"
+              type="file"
+              accept=".pdf,application/pdf"
+              multiple
+              className="cursor-pointer file:mr-3 file:inline-flex file:items-center file:justify-start file:rounded-md file:border-0 file:bg-[var(--secondary)] file:px-3 file:py-1 file:text-left file:text-sm"
+              disabled={isBusy}
+              onChange={(e) => {
+                const files = Array.from(e.target.files ?? []);
+                const valid: File[] = [];
+                for (const file of files) {
+                  const err = pdfUploadError(file);
+                  if (err) {
+                    toast.error(`${file.name}: ${err}`);
+                  } else {
+                    valid.push(file);
+                  }
+                }
+                if (valid.length) setPdfFiles((prev) => [...prev, ...valid]);
+                e.target.value = "";
+              }}
+            />
+            {pdfFiles.length > 0 && (
+              <ul className="space-y-1 text-xs text-[var(--muted-foreground)]">
+                {pdfFiles.map((file, idx) => (
+                  <li key={`${file.name}-${idx}`} className="flex items-center justify-between gap-2">
+                    <span className="truncate">{file.name}</span>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 px-2"
+                      disabled={isBusy}
+                      onClick={() =>
+                        setPdfFiles((prev) => prev.filter((_, i) => i !== idx))
+                      }
+                    >
+                      <X className="size-3.5" />
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
           <div className="grid gap-2">
             <Label htmlFor="deviationNo">Deviation Number</Label>

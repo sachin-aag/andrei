@@ -5,8 +5,7 @@ import { listWorkspaceUsers } from "@/lib/auth/workspace-users";
 import { getPasswordStatusForUser } from "@/lib/auth/password-status";
 import { getPasswordPolicy } from "@/lib/auth/password-policy";
 import { loadReportBundle } from "@/lib/reports/bundle";
-import { AppShell } from "@/components/layout/app-shell";
-import { ReportProvider } from "@/providers/report-provider";
+import { ReportPageShell } from "@/components/report/report-page-shell";
 import { ReportWorkspace } from "@/components/report/report-workspace";
 
 export const dynamic = "force-dynamic";
@@ -35,27 +34,27 @@ export default async function ReviewReportPage({
   ]);
 
   return (
-    <AppShell
+    <ReportPageShell
       user={user}
       initialUsers={workspaceUsers}
       passwordStatus={passwordStatus}
       inactivityTimeoutMinutes={policy.inactivityTimeoutMinutes}
+      bundle={bundle}
+      currentUserId={user.id}
+      userRole={user.role}
+      readOnly
+      workspaceMode="review"
+      initialTrackChangesMode={initialTrackChangesMode}
+      backHref="/"
+      backLabel="Reports"
     >
-      <ReportProvider
-        bundle={bundle}
-        currentUserId={user.id}
-        readOnly
-        workspaceMode="review"
-        initialTrackChangesMode={initialTrackChangesMode}
+      <ViewTransition
+        enter={{ "nav-forward": "nav-forward", default: "none" }}
+        exit={{ "nav-back": "nav-back", default: "none" }}
+        default="none"
       >
-        <ViewTransition
-          enter={{ "nav-forward": "nav-forward", default: "none" }}
-          exit={{ "nav-back": "nav-back", default: "none" }}
-          default="none"
-        >
-          <ReportWorkspace mode="review" />
-        </ViewTransition>
-      </ReportProvider>
-    </AppShell>
+        <ReportWorkspace mode="review" />
+      </ViewTransition>
+    </ReportPageShell>
   );
 }

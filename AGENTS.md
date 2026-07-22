@@ -56,6 +56,25 @@ or `AI_GATEWAY_API_KEY`), which is not configured here. Core flows — login, re
 CRUD, the DMAIC editor with auto-save, manager review, and DOCX export — work without it.
 "Run AI Check" / suggestions will error until a credential is added to `.env.local`.
 
+### PDF attachments (GCS)
+
+Report PDF attachments are stored in **Google Cloud Storage** (not Neon). Metadata
+lives in `report_attachments`; bytes are uploaded directly from the browser via a
+GCS resumable-upload session URI (avoids Vercel's request body limit).
+
+- Set `GCS_BUCKET` in `.env.local` / Vercel env.
+- Reuses WIF env vars already used for Vertex: `GCP_WIF_AUDIENCE`,
+  `GCP_SERVICE_ACCOUNT_EMAIL`, `GOOGLE_VERTEX_PROJECT`.
+- Service account needs `roles/storage.objectAdmin` on the bucket.
+- Configure bucket **CORS** to allow `PUT` from your app origin(s), e.g.:
+
+  ```json
+  [{"origin":["http://localhost:3000","https://andrei-v2.vercel.app"],"method":["PUT","GET","HEAD"],"responseHeader":["Content-Type","Content-Length"],"maxAgeSeconds":3600}]
+  ```
+
+- Without `GCS_BUCKET` + credentials, attachment upload/view fails; other app flows
+  are unaffected.
+
 ### Tests
 
 - Unit tests (`pnpm test`, Vitest) mock env per-test and need no DB or external services.

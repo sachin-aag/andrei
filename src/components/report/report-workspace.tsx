@@ -5,12 +5,14 @@ import dynamic from "next/dynamic";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import {
+  useReportAttachments,
   useReportComments,
   useReportData,
   useReportEditors,
   useReportEvaluations,
   useReportPlaceholders,
 } from "@/providers/report-provider";
+import { AttachmentViewer } from "./attachment-viewer";
 import { ReportHeader } from "./report-header";
 import { ReportDetailsEditDialog } from "./report-details-edit-dialog";
 import { ReportWorkspaceHeader } from "./report-workspace-header";
@@ -103,6 +105,7 @@ export function ReportWorkspace({
     setTrackChangesMode,
   } = useReportData();
   const { pendingPlaceholders } = useReportPlaceholders();
+  const { viewMode, registerJumpToSection } = useReportAttachments();
   const { getEditor } = useReportEditors();
   const { requestCommentFocus, comments } = useReportComments();
   const { suggestionsFocusSection, clearSuggestionsFocusSection } =
@@ -254,6 +257,10 @@ export function ReportWorkspace({
   }, []);
 
   useEffect(() => {
+    registerJumpToSection(jumpToSection);
+  }, [registerJumpToSection, jumpToSection]);
+
+  useEffect(() => {
     if (!suggestionsFocusSection) return;
     const frame = requestAnimationFrame(() => {
       setCriteriaFocusSection(suggestionsFocusSection);
@@ -380,6 +387,11 @@ export function ReportWorkspace({
       <ReportEditorToolbar />
 
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
+        {viewMode === "attachment" ? (
+          <main className="min-h-0 min-w-0 flex-1 overflow-hidden bg-[var(--background)]">
+            <AttachmentViewer />
+          </main>
+        ) : (
         <main
           ref={mainRef}
           className="min-h-0 min-w-0 flex-1 overflow-auto bg-[var(--background)]"
@@ -411,6 +423,7 @@ export function ReportWorkspace({
             </aside>
           </div>
         </main>
+        )}
 
         <ReportSidebar
           collapsed={sidebarCollapsed}

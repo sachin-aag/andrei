@@ -3,6 +3,7 @@ import { db } from "@/db";
 import {
   comments,
   criteriaEvaluations,
+  reportAttachments,
   reports,
   reportSections,
 } from "@/db/schema";
@@ -20,7 +21,7 @@ import {
 // suggestions and dismissed human threads do not clutter the gutter or the
 // highlight overlay.
 export async function loadReportSubtables(reportId: string) {
-  const [sections, evaluations, commentRows] = await Promise.all([
+  const [sections, evaluations, commentRows, attachments] = await Promise.all([
     db
       .select()
       .from(reportSections)
@@ -35,9 +36,13 @@ export async function loadReportSubtables(reportId: string) {
       .where(
         and(eq(comments.reportId, reportId), ne(comments.status, "dismissed"))
       ),
+    db
+      .select()
+      .from(reportAttachments)
+      .where(eq(reportAttachments.reportId, reportId)),
   ]);
 
-  return { sections, evaluations, comments: commentRows };
+  return { sections, evaluations, comments: commentRows, attachments };
 }
 
 export async function loadReportBundle(
