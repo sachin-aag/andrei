@@ -37,7 +37,15 @@ export type InjectResult = {
   doc: JSONContent;
   insertFromPos: number;
   insertToPos: number;
+  /** Edit was attached to the anchor/delete target (vs appended at end). */
   anchored: boolean;
+  /**
+   * Edit landed where the AI intended. An empty anchor is an intentional
+   * append (located). A provided anchor/delete target that cannot be found
+   * returns `located: false` with the doc UNCHANGED — callers must fail
+   * loudly instead of silently misplacing text.
+   */
+  located: boolean;
 };
 
 type TextRef = {
@@ -256,6 +264,7 @@ function insertAfterRef(
   return insertedNode;
 }
 
+/** Intentional append (empty anchor): insert at the end of the doc. */
 function appendAtEnd(
   cloned: JSONContent,
   insertText: string,
@@ -263,22 +272,30 @@ function appendAtEnd(
 ): InjectResult {
   const trimmed = normalizeSuggestionInsertText(insertText);
   if (!trimmed) {
-    return { doc: cloned, insertFromPos: 0, insertToPos: 0, anchored: false };
+    return { doc: cloned, insertFromPos: 0, insertToPos: 0, anchored: false, located: false };
   }
   const insertedNode = insertAfterRef(cloned, null, trimmed, attrs);
   if (!insertedNode) {
-    return { doc: cloned, insertFromPos: 0, insertToPos: 0, anchored: false };
+    return { doc: cloned, insertFromPos: 0, insertToPos: 0, anchored: false, located: false };
   }
   cleanupMarks(cloned);
   const pmIndex = indexPmPositions(cloned);
   const range = pmIndex.get(insertedNode);
-  if (!range) return { doc: cloned, insertFromPos: 0, insertToPos: 0, anchored: false };
+  if (!range) {
+    return { doc: cloned, insertFromPos: 0, insertToPos: 0, anchored: false, located: false };
+  }
   return {
     doc: cloned,
     insertFromPos: range.pmStart,
     insertToPos: range.pmEnd,
     anchored: false,
+    located: true,
   };
+}
+
+/** Anchor/delete target could not be found: return the doc unchanged. */
+function notLocated(doc: JSONContent): InjectResult {
+  return { doc, insertFromPos: 0, insertToPos: 0, anchored: false, located: false };
 }
 
 export function injectSuggestionMarks(
@@ -293,32 +310,35 @@ export function injectSuggestionMarks(
   const insertText = normalizeSuggestionInsertText(edit.insertText ?? "");
 
   if (!deleteText && !insertText) {
-    return { doc: cloned, insertFromPos: 0, insertToPos: 0, anchored: false };
+    return notLocated(cloned);
   }
 
   const { refs, flat } = collectTextRefs(cloned);
   if (flat.length === 0 && insertText) {
+    // Empty field: an anchored edit cannot locate; an append is intentional.
+    if (anchorText || deleteText) return notLocated(cloned);
     return appendAtEnd(cloned, insertText, attrs);
   }
 
-  // Pure insert after anchor (or append if anchor missing).
+  // Pure insert: empty anchor is an intentional append; a provided anchor
+  // that cannot be found fails loudly (no silent append fallback).
   if (!deleteText && insertText) {
     if (!anchorText) return appendAtEnd(cloned, insertText, attrs);
     const anchorRange = findRangeInFlat(flat, anchorText);
-    if (!anchorRange) return appendAtEnd(cloned, insertText, attrs);
+    if (!anchorRange) return notLocated(cloned);
 
     // Re-clone and insert text node after anchor span without delete marks.
     const fresh = JSON.parse(JSON.stringify(doc)) as JSONContent;
     const collected = collectTextRefs(fresh);
     const range = findRangeInFlat(collected.flat, anchorText);
-    if (!range) return appendAtEnd(fresh, insertText, attrs);
+    if (!range) return notLocated(fresh);
     const affected = collected.refs.filter(
       (r) => r.flatEnd > range.start && r.flatStart < range.end
     );
     const lastRef = affected[affected.length - 1] ?? null;
     const insertedNode = insertAfterRef(fresh, lastRef, insertText, attrs);
     cleanupMarks(fresh);
-    if (!insertedNode) return { doc: fresh, insertFromPos: 0, insertToPos: 0, anchored: false };
+    if (!insertedNode) return notLocated(fresh);
     const pmIndex = indexPmPositions(fresh);
     const pos = pmIndex.get(insertedNode);
     return {
@@ -326,34 +346,30 @@ export function injectSuggestionMarks(
       insertFromPos: pos?.pmStart ?? 0,
       insertToPos: pos?.pmEnd ?? 0,
       anchored: true,
+      located: true,
     };
   }
 
-  // Delete (with optional insert).
-  const deleteNeedle = deleteText || anchorText;
-  if (!deleteNeedle) return appendAtEnd(cloned, insertText, attrs);
-
+  // Delete (with optional insert). deleteText is non-empty here.
   let deleteRange: { start: number; end: number } | null = null;
   if (anchorText) {
     const anchorRange = findRangeInFlat(flat, anchorText);
     if (anchorRange) {
       const slice = flat.slice(anchorRange.start, anchorRange.end);
-      const inner = findRangeInFlat(slice, deleteNeedle);
+      const inner = findRangeInFlat(slice, deleteText);
       if (inner) {
         deleteRange = {
           start: anchorRange.start + inner.start,
           end: anchorRange.start + inner.end,
         };
-      } else if (!deleteText) {
-        deleteRange = anchorRange;
       }
     }
   }
-  deleteRange ??= findRangeInFlat(flat, deleteNeedle);
+  deleteRange ??= findRangeInFlat(flat, deleteText);
 
   if (!deleteRange) {
-    if (insertText) return appendAtEnd(cloned, insertText, attrs);
-    return { doc: cloned, insertFromPos: 0, insertToPos: 0, anchored: false };
+    // Delete target is gone — do NOT append the insert somewhere else.
+    return notLocated(cloned);
   }
 
   const insertAfter = applyDeleteRange(cloned, refs, deleteRange.start, deleteRange.end, attrs);
@@ -372,6 +388,7 @@ export function injectSuggestionMarks(
       insertFromPos: range?.pmStart ?? 0,
       insertToPos: range?.pmEnd ?? 0,
       anchored: true,
+      located: true,
     };
   }
 
@@ -383,10 +400,11 @@ export function injectSuggestionMarks(
       insertFromPos: range?.pmStart ?? 0,
       insertToPos: range?.pmEnd ?? 0,
       anchored: true,
+      located: true,
     };
   }
 
-  return { doc: cloned, insertFromPos: 0, insertToPos: 0, anchored: false };
+  return notLocated(cloned);
 }
 
 /** Accept: keep insert text (unmarked), remove delete-marked text. */

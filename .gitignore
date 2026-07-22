@@ -70,3 +70,18 @@ package-lock.json
 # Temporary onboarding credentials (sensitive — never commit)
 docs/mj-onboarding-temporary-passwords.md
 .env*
+
+# Local video analysis scratch (large media + generated reports)
+/04 Video analysis/
+
+# Large media artifacts (keep out of git)
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.webm
+*.mp3
+*.wav
+*.zip
+*.7z
+*.rar

@@ -26,8 +26,10 @@ import {
 } from "@/lib/ai/criteria-view";
 import {
   parseAiFixCommentContent,
+  parseAiRedraftCommentContent,
   sortedOpenSuggestionsForSection,
   type ParsedAiFixPayload,
+  type ParsedAiRedraftPayload,
 } from "@/lib/ai/suggestion-gating";
 import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
 import {
@@ -53,6 +55,7 @@ import {
   waitForAnimation,
 } from "@/lib/suggestions/apply-transition";
 import { applyStructuredFieldSuggestion } from "@/lib/suggestions/apply-field";
+import { applyRedraftToSection } from "@/lib/suggestions/apply-redraft";
 import {
   CommentPersistError,
   patchCommentStatus,
@@ -77,14 +80,18 @@ const LOCATABLE_VALIDATION: SuggestionValidation = {
   canPreview: true,
 };
 
-type FrozenCard = {
+type FrozenCardBase = {
   comment: CommentRecord;
-  payload: ParsedAiFixPayload;
-  normalizedInsert: string;
   linkedEval: EvaluationRecord | undefined;
   queueIndex: number;
   queueTotal: number;
 };
+
+type FrozenCard = FrozenCardBase &
+  (
+    | { kind: "fix"; payload: ParsedAiFixPayload; normalizedInsert: string }
+    | { kind: "redraft"; redraft: ParsedAiRedraftPayload }
+  );
 
 function buildFrozenCard(
   comment: CommentRecord,
@@ -92,17 +99,41 @@ function buildFrozenCard(
   queueIndex: number,
   queueTotal: number
 ): FrozenCard {
-  const payload = parseAiFixCommentContent(comment.content);
-  return {
+  const base: FrozenCardBase = {
     comment,
-    payload,
-    normalizedInsert: normalizeSuggestionInsertText(payload.insertText),
     linkedEval: comment.evaluationId
       ? evaluations.find((e) => e.id === comment.evaluationId)
       : undefined,
     queueIndex,
     queueTotal,
   };
+  if (comment.kind === "ai_redraft") {
+    return { ...base, kind: "redraft", redraft: parseAiRedraftCommentContent(comment.content) };
+  }
+  const payload = parseAiFixCommentContent(comment.content);
+  return {
+    ...base,
+    kind: "fix",
+    payload,
+    normalizedInsert: normalizeSuggestionInsertText(payload.insertText),
+  };
+}
+
+/** Text with `[placeholder]` spans highlighted. */
+function PlaceholderHighlightedText({ text }: { text: string }) {
+  return (
+    <>
+      {text.split(/(\[[^\]]+\])/g).map((part, i) =>
+        part.startsWith("[") ? (
+          <span key={i} className="suggestion-preview-placeholder">
+            {part}
+          </span>
+        ) : (
+          <span key={i}>{part}</span>
+        )
+      )}
+    </>
+  );
 }
 
 const RESOLVE_HINT =
@@ -129,8 +160,9 @@ function SuggestionCardFace({
   onAccept: () => void;
   onDismiss: () => void;
 }) {
-  const { payload, normalizedInsert, linkedEval, queueIndex, queueTotal } = card;
+  const { linkedEval, queueIndex, queueTotal } = card;
   const eff = linkedEval ? effectiveStatus(linkedEval) : "not_evaluated";
+  const reasoning = card.kind === "fix" ? card.payload.reasoning : card.redraft.reasoning;
 
   const statusLine =
     phase === "applying"
@@ -157,7 +189,7 @@ function SuggestionCardFace({
         )}
       >
         <span className="text-[10px] font-medium text-[var(--muted-foreground)] uppercase tracking-wide">
-          Suggestion {queueIndex} of {queueTotal}
+          {card.kind === "redraft" ? "Full draft" : "Suggestion"} {queueIndex} of {queueTotal}
         </span>
         {linkedEval && (
           <span
@@ -197,36 +229,51 @@ function SuggestionCardFace({
         <p className="text-[10px] text-[var(--muted-foreground)]">{RESOLVE_HINT}</p>
       ) : null}
 
-      {(payload.deleteText || payload.insertText) && (
+      {card.kind === "fix" && (card.payload.deleteText || card.payload.insertText) ? (
         <div
           className={cn(
             "text-xs leading-relaxed space-y-1 transition-opacity duration-300",
             phase !== "steady" && "opacity-70"
           )}
         >
-          {payload.deleteText ? (
-            <p className="suggestion-preview-delete">{payload.deleteText}</p>
+          {card.payload.deleteText ? (
+            <p className="suggestion-preview-delete">{card.payload.deleteText}</p>
           ) : null}
-          {normalizedInsert ? (
+          {card.normalizedInsert ? (
             <p className="suggestion-preview-insert">
-              {normalizedInsert.split(/(\[[^\]]+\])/g).map((part, i) =>
-                part.startsWith("[") ? (
-                  <span key={i} className="suggestion-preview-placeholder">
-                    {part}
-                  </span>
-                ) : (
-                  <span key={i}>{part}</span>
-                )
-              )}
+              <PlaceholderHighlightedText text={card.normalizedInsert} />
             </p>
           ) : null}
         </div>
-      )}
+      ) : null}
+
+      {card.kind === "redraft" ? (
+        <div
+          className={cn(
+            "space-y-1 transition-opacity duration-300",
+            phase !== "steady" && "opacity-70"
+          )}
+        >
+          <p className="text-[10px] text-[var(--muted-foreground)]">
+            Replaces the entire field
+            {card.comment.contentPath ? ` (${card.comment.contentPath})` : ""}.
+          </p>
+          {phase === "steady" && validation.documentChanged ? (
+            <p className="text-[11px] text-amber-900 bg-amber-50 border border-amber-200/80 rounded px-2 py-1.5 leading-snug">
+              The field changed after this draft was created — accepting will replace the
+              current content.
+            </p>
+          ) : null}
+          <div className="suggestion-preview-insert max-h-56 overflow-y-auto whitespace-pre-wrap text-xs leading-relaxed">
+            <PlaceholderHighlightedText text={card.redraft.markdown} />
+          </div>
+        </div>
+      ) : null}
 
       {showActions ? (
         <>
-          {payload.reasoning ? (
-            <p className="text-[11px] text-[var(--muted-foreground)]">{payload.reasoning}</p>
+          {reasoning ? (
+            <p className="text-[11px] text-[var(--muted-foreground)]">{reasoning}</p>
           ) : null}
           {linkedEval?.reasoning ? (
             <p className="text-[11px] text-[var(--muted-foreground)] border-t border-[var(--border)] pt-2">
@@ -434,10 +481,23 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
 
   const applyCardToDocument = useCallback(
     async (card: FrozenCard) => {
-      const { comment, payload } = card;
+      const { comment } = card;
       const path = comment.contentPath ?? "narrative";
       const current = sections[section] as Record<string, unknown>;
 
+      if (card.kind === "redraft") {
+        const nextSection = applyRedraftToSection(
+          current,
+          section,
+          path,
+          card.redraft.markdown
+        ) as SectionContentMap[typeof section];
+        replaceSection(section, nextSection);
+        await saveSection(nextSection);
+        return;
+      }
+
+      const { payload } = card;
       if (isRichTargetField(section, path)) {
         const doc = getRichFieldValue(current, path);
         const edit = buildSuggestionEdit(payload);

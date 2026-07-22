@@ -43,12 +43,7 @@ import {
   observeRouteHandler,
   setRouteObservationIO,
 } from "@/lib/observability/langfuse";
-import {
-  AI_ACTOR,
-  auditActorFromUser,
-  recordAuditEvent,
-  recordSectionVersion,
-} from "@/lib/audit";
+import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
 
 export const maxDuration = 120;
 
@@ -277,42 +272,21 @@ async function handleSuggestionsPost(
     });
   }
 
-  if (applied.length > 0) {
-    await recordSectionVersion({
-      actor: AI_ACTOR,
-      reportId,
-      sectionId: sectionRow.id,
-      section,
-      previousContent: sectionRow.content,
-      newContent: workingContent,
-    });
-
-    await db
-      .update(reportSections)
-      .set({ content: workingContent, updatedAt: new Date() })
-      .where(eq(reportSections.id, sectionRow.id));
-
-    await recordAuditEvent({
-      actor: auditActorFromUser(user),
-      action: "suggestion_applied",
-      entityType: "suggestion",
-      entityId: sectionRow.id,
-      reportId,
-      summary: `Applied ${applied.length} AI suggestion(s) in ${section}`,
-      newValue: {
-        appliedCount: applied.length,
-        criteria: applied.map((a) => a.criterionKey),
-      },
-    });
-  } else if (dropped.length > 0) {
+  // Generation only creates open ai_fix comments — the document is untouched
+  // until a human accepts one (which records suggestion_applied).
+  if (applied.length > 0 || dropped.length > 0) {
     await recordAuditEvent({
       actor: auditActorFromUser(user),
       action: "suggestion_generated",
       entityType: "suggestion",
       entityId: sectionRow.id,
       reportId,
-      summary: `Generated suggestions for ${section} (${dropped.length} dropped)`,
-      newValue: { droppedCount: dropped.length },
+      summary: `Generated ${applied.length} AI suggestion(s) for ${section}${dropped.length > 0 ? ` (${dropped.length} dropped)` : ""}`,
+      newValue: {
+        generatedCount: applied.length,
+        droppedCount: dropped.length,
+        criteria: applied.map((a) => a.criterionKey),
+      },
     });
   }
 

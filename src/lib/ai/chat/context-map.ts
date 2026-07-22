@@ -1,4 +1,5 @@
 import type { SectionType } from "@/db/schema";
+import { isAiSuggestionKind } from "@/lib/ai/suggestion-gating";
 import {
   CHAT_EDITABLE_SECTIONS,
   primaryFieldForSection,
@@ -76,7 +77,8 @@ export function buildReportContextMap(input: BuildContextMapInput): string {
     const state = charCount === 0 ? "empty" : charCount < 120 ? "partial" : "filled";
     const sectionEvals = evaluations.filter((e) => e.section === section);
     const openFixes = comments.filter(
-      (c) => c.section === section && c.kind === "ai_fix" && c.status === "open"
+      (c) =>
+        c.section === section && isAiSuggestionKind(c.kind) && c.status === "open"
     ).length;
 
     lines.push(

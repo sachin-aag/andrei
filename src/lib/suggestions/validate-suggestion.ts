@@ -5,6 +5,7 @@ import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import {
   parseAiFixCommentContent,
+  parseAiRedraftCommentContent,
   sectionContentHash,
 } from "@/lib/ai/suggestion-gating";
 import { richJsonToPlainText } from "@/lib/tiptap/rich-text";
@@ -49,7 +50,7 @@ function plainTextForSuggestionField(
   return getPlainTextFieldValue(record, contentPath);
 }
 
-/** Check whether an open ai_fix still uniquely locates in the current section content. */
+/** Check whether an open AI suggestion still applies to the current section content. */
 export function validateSuggestionLocate(
   comment: CommentRecord,
   section: SectionType,
@@ -57,6 +58,20 @@ export function validateSuggestionLocate(
   /** When validating from a specific plain-text editor, resolves legacy paths. */
   fieldContentPath?: string
 ): SuggestionValidation {
+  const currentHash = sectionContentHash(section, sectionContent);
+
+  // Redrafts replace the whole field — always applicable, never inline-previewed.
+  if (comment.kind === "ai_redraft") {
+    const redraft = parseAiRedraftCommentContent(comment.content);
+    const atGen = redraft.contentHashAtSuggestion;
+    return {
+      locateStatus: "locatable",
+      documentChanged: Boolean(atGen && atGen !== currentHash),
+      canApply: true,
+      canPreview: false,
+    };
+  }
+
   const path = effectivePlainTextContentPath(
     section,
     comment.contentPath,
@@ -71,7 +86,6 @@ export function validateSuggestionLocate(
     : loc.reason;
 
   const payload = parseAiFixCommentContent(comment.content);
-  const currentHash = sectionContentHash(section, sectionContent);
   const atGen = payload.contentHashAtSuggestion;
   const documentChanged = Boolean(atGen && atGen !== currentHash);
 
