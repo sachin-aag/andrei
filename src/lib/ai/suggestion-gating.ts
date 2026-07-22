@@ -122,8 +122,12 @@ export type ParsedAiRedraftPayload = {
   /** Full replacement content for the target field, as GFM-subset markdown. */
   markdown: string;
   reasoning: string;
-  /** Section content hash when this redraft was created (staleness detection). */
-  contentHashAtSuggestion?: string;
+  /**
+   * Hash of the TARGET FIELD's text when this redraft was created. Per-field
+   * (not per-section) so applying one draft never marks drafts for other
+   * fields as stale.
+   */
+  fieldHashAtSuggestion?: string;
 };
 
 export function parseAiRedraftCommentContent(content: string): ParsedAiRedraftPayload {
@@ -133,9 +137,9 @@ export function parseAiRedraftCommentContent(content: string): ParsedAiRedraftPa
       return {
         markdown: parsed.markdown,
         reasoning: typeof parsed.reasoning === "string" ? parsed.reasoning : "",
-        contentHashAtSuggestion:
-          typeof parsed.contentHashAtSuggestion === "string"
-            ? parsed.contentHashAtSuggestion
+        fieldHashAtSuggestion:
+          typeof parsed.fieldHashAtSuggestion === "string"
+            ? parsed.fieldHashAtSuggestion
             : undefined,
       };
     }

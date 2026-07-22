@@ -495,6 +495,8 @@ export function stripPendingSuggestionsExcept(
 export function acceptSuggestionMarksById(doc: JSONContent, markId: string): JSONContent {
   const cloned: JSONContent = JSON.parse(JSON.stringify(doc));
 
+  dropBlocksFullyMarked(cloned, suggestionDeleteMarkName, markId);
+
   function visit(node: JSONContent) {
     if (node.content?.length) {
       for (const ch of node.content) visit(ch);
@@ -530,8 +532,64 @@ export function acceptSuggestionMarksById(doc: JSONContent, markId: string): JSO
   return finalizeNarrativeDocAfterSuggestion(cloned);
 }
 
+function hasMarkWithId(
+  node: JSONContent,
+  markName: string,
+  markId: string
+): boolean {
+  if (node.type === "text") {
+    return (node.marks ?? []).some(
+      (m) =>
+        m.type === markName &&
+        (m.attrs as { id?: string } | undefined)?.id === markId
+    );
+  }
+  return (node.content ?? []).some((ch) => hasMarkWithId(ch, markName, markId));
+}
+
+/** True when the block has any text NOT carrying the given mark for this id. */
+function blockHasTextOutsideMark(
+  node: JSONContent,
+  markName: string,
+  markId: string
+): boolean {
+  if (node.type === "text") {
+    if ((node.text ?? "").length === 0) return false;
+    return !(node.marks ?? []).some(
+      (m) =>
+        m.type === markName &&
+        (m.attrs as { id?: string } | undefined)?.id === markId
+    );
+  }
+  return (node.content ?? []).some((ch) =>
+    blockHasTextOutsideMark(ch, markName, markId)
+  );
+}
+
+/**
+ * Remove top-level blocks whose text is ENTIRELY marked `markName` for this
+ * suggestion (e.g. a paragraph or table that exists only as redraft preview
+ * content). Filtering only their text nodes would leave empty skeletons.
+ */
+function dropBlocksFullyMarked(
+  doc: JSONContent,
+  markName: string,
+  markId: string
+): void {
+  if (!doc.content?.length) return;
+  doc.content = doc.content.filter(
+    (block) =>
+      !(
+        hasMarkWithId(block, markName, markId) &&
+        !blockHasTextOutsideMark(block, markName, markId)
+      )
+  );
+}
+
 export function stripSuggestionMarksById(doc: JSONContent, markId: string): JSONContent {
   const cloned: JSONContent = JSON.parse(JSON.stringify(doc));
+
+  dropBlocksFullyMarked(cloned, suggestionInsertMarkName, markId);
 
   function visit(node: JSONContent) {
     if (node.content?.length) {

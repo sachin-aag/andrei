@@ -3,6 +3,7 @@ import type { CommentRecord, EvaluationRecord } from "@/types/report";
 import { sortedOpenSuggestionsForSection } from "@/lib/ai/suggestion-gating";
 import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
+import { hashContent } from "@/lib/ai/content-hash";
 import {
   parseAiFixCommentContent,
   parseAiRedraftCommentContent,
@@ -50,6 +51,20 @@ function plainTextForSuggestionField(
   return getPlainTextFieldValue(record, contentPath);
 }
 
+/**
+ * Hash of ONE field's text — the staleness snapshot for redrafts. Per-field so
+ * accepting a draft in field A never flags a pending draft in field B.
+ */
+export function fieldContentHash(
+  section: SectionType,
+  sectionContent: unknown,
+  contentPath: string
+): string {
+  return hashContent(
+    plainTextForSuggestionField(section, sectionContent, contentPath)
+  );
+}
+
 /** Check whether an open AI suggestion still applies to the current section content. */
 export function validateSuggestionLocate(
   comment: CommentRecord,
@@ -60,15 +75,21 @@ export function validateSuggestionLocate(
 ): SuggestionValidation {
   const currentHash = sectionContentHash(section, sectionContent);
 
-  // Redrafts replace the whole field — always applicable, never inline-previewed.
+  // Redrafts replace the whole field — always applicable. Staleness compares
+  // the TARGET FIELD's hash only, so accepting other drafts never flags them.
   if (comment.kind === "ai_redraft") {
     const redraft = parseAiRedraftCommentContent(comment.content);
-    const atGen = redraft.contentHashAtSuggestion;
+    const atGen = redraft.fieldHashAtSuggestion;
+    const fieldHash = fieldContentHash(
+      section,
+      sectionContent,
+      comment.contentPath ?? "narrative"
+    );
     return {
       locateStatus: "locatable",
-      documentChanged: Boolean(atGen && atGen !== currentHash),
+      documentChanged: Boolean(atGen && atGen !== fieldHash),
       canApply: true,
-      canPreview: false,
+      canPreview: true,
     };
   }
 

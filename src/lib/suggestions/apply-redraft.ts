@@ -5,6 +5,11 @@ import { normalizeBracketPlaceholdersInPlainText } from "@/lib/placeholders/norm
 import { setRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { setPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
 
+/** The exact plain-text value a redraft produces for a plain field (also used for previews). */
+export function redraftPlainTextValue(markdown: string): string {
+  return normalizeBracketPlaceholdersInPlainText(markdownToPlainText(markdown));
+}
+
 /**
  * Replace an entire field with an ai_redraft's markdown. Rich fields get a
  * converted TipTap doc (tables included); plain fields get flattened text.
@@ -22,6 +27,6 @@ export function applyRedraftToSection(
   return setPlainTextFieldValue(
     content,
     targetField,
-    normalizeBracketPlaceholdersInPlainText(markdownToPlainText(markdown))
+    redraftPlainTextValue(markdown)
   );
 }

@@ -75,7 +75,13 @@ import {
   stripSuggestionMarksById,
 } from "@/lib/tiptap/suggestion-inject";
 import { AI_AUTHOR_ID } from "@/lib/ai/constants";
-import { parseAiFixCommentContent } from "@/lib/ai/suggestion-gating";
+import {
+  isAiSuggestionKind,
+  parseAiFixCommentContent,
+  parseAiRedraftCommentContent,
+} from "@/lib/ai/suggestion-gating";
+import { buildRedraftPreviewDoc } from "@/lib/tiptap/redraft-preview";
+import { markdownToDoc } from "@/lib/tiptap/markdown-to-doc";
 import {
   buildSuggestionEdit,
   narrativeHasSuggestionMarks,
@@ -366,7 +372,7 @@ export function TiptapSectionField({
       .filter(
         (c) =>
           !c.parentId &&
-          c.kind !== "ai_fix" &&
+          !isAiSuggestionKind(c.kind) &&
           c.section === section &&
           c.contentPath === contentPath &&
           c.fromPos != null &&
@@ -693,7 +699,7 @@ export function TiptapSectionField({
       const comment = comments.find(
         (c) =>
           c.id === activeSuggestionId &&
-          c.kind === "ai_fix" &&
+          isAiSuggestionKind(c.kind) &&
           c.status === "open" &&
           (c.contentPath === contentPath || c.contentPath === "narrative")
       );
@@ -704,7 +710,18 @@ export function TiptapSectionField({
           sectionContent,
           contentPath
         );
-        if (validation.canPreview) {
+        if (validation.canPreview && comment.kind === "ai_redraft") {
+          // Full-field redraft: current content struck through, replacement
+          // highlighted. Same mark machinery as fixes handles accept/dismiss.
+          const redraft = parseAiRedraftCommentContent(comment.content);
+          json = buildRedraftPreviewDoc(json, markdownToDoc(redraft.markdown), {
+            id: activeSuggestionId,
+            authorId: AI_AUTHOR_ID,
+            status: "pending",
+            createdAt: comment.createdAt,
+            kind: "redraft",
+          });
+        } else if (validation.canPreview) {
           const payload = parseAiFixCommentContent(comment.content);
           const edit = buildSuggestionEdit({
             anchorText: comment.anchorText,

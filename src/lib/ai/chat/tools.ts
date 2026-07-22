@@ -13,6 +13,7 @@ import {
   sectionContentHash,
 } from "@/lib/ai/suggestion-gating";
 import { isAllowedTargetField } from "@/lib/ai/suggest-target-fields";
+import { fieldContentHash } from "@/lib/suggestions/validate-suggestion";
 import { markdownHasTable } from "@/lib/tiptap/markdown-to-doc";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 import {
@@ -299,7 +300,11 @@ export function buildChatTools(opts: {
           content: serializeAiRedraftCommentContent({
             markdown: normalizeSuggestionInsertText(markdown),
             reasoning,
-            contentHashAtSuggestion: sectionContentHash(section, loaded.content),
+            fieldHashAtSuggestion: fieldContentHash(
+              section,
+              loaded.content,
+              targetField
+            ),
           }),
           anchorText: "",
           contentPath: targetField,

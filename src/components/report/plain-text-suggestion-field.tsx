@@ -17,8 +17,13 @@ import { useUserDirectory } from "@/providers/user-directory-provider";
 import {
   activeSuggestionForSection,
   parseAiFixCommentContent,
+  parseAiRedraftCommentContent,
 } from "@/lib/ai/suggestion-gating";
 import { applyStructuredFieldSuggestion } from "@/lib/suggestions/apply-field";
+import {
+  applyRedraftToSection,
+  redraftPlainTextValue,
+} from "@/lib/suggestions/apply-redraft";
 import {
   buildPlainTextSuggestionPreview,
   splitPlainTextPreviewSegments,
@@ -174,6 +179,17 @@ export function PlainTextSuggestionField({
 
   const previewSegments = useMemo(() => {
     if (!activeComment || !activeValidation?.canPreview) return null;
+
+    // Full-field redraft: whole current value struck, replacement highlighted.
+    if (activeComment.kind === "ai_redraft") {
+      const redraft = parseAiRedraftCommentContent(activeComment.content);
+      const next = redraftPlainTextValue(redraft.markdown);
+      const segments: PlainTextPreviewSegment[] = [];
+      if (value) segments.push({ kind: "delete", text: value });
+      segments.push({ kind: "insert", text: value ? ` ${next}` : next });
+      return segments;
+    }
+
     const payload = parseAiFixCommentContent(activeComment.content);
     return buildPlainTextSuggestionPreview(
       value,
@@ -251,20 +267,31 @@ export function PlainTextSuggestionField({
     setPending(true);
     try {
       beginSuggestionApplyTransition(section, activeComment.id);
-      const payload = parseAiFixCommentContent(activeComment.content);
       const fieldPath = resolveSuggestionFieldPath(
         section,
         activeComment.contentPath,
         contentPath
       );
       const current = sections[section] as Record<string, unknown>;
-      const nextRecord = applyStructuredFieldSuggestion(
-        current,
-        fieldPath,
-        payload.insertText,
-        payload.deleteText,
-        activeComment.anchorText
-      );
+      let nextRecord: Record<string, unknown>;
+      if (activeComment.kind === "ai_redraft") {
+        const redraft = parseAiRedraftCommentContent(activeComment.content);
+        nextRecord = applyRedraftToSection(
+          current,
+          section,
+          fieldPath,
+          redraft.markdown
+        );
+      } else {
+        const payload = parseAiFixCommentContent(activeComment.content);
+        nextRecord = applyStructuredFieldSuggestion(
+          current,
+          fieldPath,
+          payload.insertText,
+          payload.deleteText,
+          activeComment.anchorText
+        );
+      }
       const nextSection = nextRecord as SectionContentMap[typeof section];
       const nextValue = fieldPath
         .split(".")
