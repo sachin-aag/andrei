@@ -47,7 +47,7 @@ describe("CreateReportButton", () => {
     render(<CreateReportButton managers={managers} />);
 
     await user.click(screen.getByRole("button", { name: /new report/i }));
-    await user.click(screen.getByRole("button", { name: /^create$/i }));
+    await user.click(screen.getByRole("button", { name: /^create empty$/i }));
 
     expect(toast.error).toHaveBeenCalledWith("Deviation number is required");
   });

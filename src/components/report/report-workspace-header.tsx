@@ -11,6 +11,7 @@ import {
   MessageSquare,
   Pencil,
   Send,
+  Sparkles,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -136,6 +137,15 @@ export function ReportWorkspaceHeader({
             <RunAllEvaluationButton />
           </>
         )}
+        {mode === "edit" &&
+          (report.status === "draft" || report.status === "feedback") && (
+            <Button variant="outline" size="sm" asChild>
+              <Link href={`/reports/${report.id}/guided`}>
+                <Sparkles className="size-4" aria-hidden="true" />
+                Refine with Andrei
+              </Link>
+            </Button>
+          )}
         {auditHref ? (
           <Button variant="outline" size="sm" asChild>
             <Link href={auditHref}>
