@@ -2,9 +2,13 @@ import { describe, expect, it } from "vitest";
 import type { CommentRecord } from "@/types/report";
 import {
   countStaleOpenSuggestions,
+  fieldContentHash,
   validateSuggestionLocate,
 } from "./validate-suggestion";
-import { serializeAiFixCommentContent } from "@/lib/ai/suggestion-gating";
+import {
+  serializeAiFixCommentContent,
+  serializeAiRedraftCommentContent,
+} from "@/lib/ai/suggestion-gating";
 import { sectionContentHash } from "@/lib/ai/suggestion-gating";
 
 function aiFixComment(
@@ -191,6 +195,94 @@ describe("validateSuggestionLocate", () => {
     const v = validateSuggestionLocate(comment, "define", edited);
     expect(v.documentChanged).toBe(true);
     expect(v.canApply).toBe(false);
+  });
+});
+
+describe("validateSuggestionLocate — ai_redraft", () => {
+  const improveContent = {
+    narrative: { type: "doc", content: [] },
+    correctiveActions: "CA-1: Retrain operator.",
+  };
+
+  function redraftComment(content: string, contentPath: string): CommentRecord {
+    return aiFixComment({
+      content,
+      kind: "ai_redraft",
+      contentPath,
+      anchorText: "",
+      section: "improve",
+    });
+  }
+
+  it("is applicable and previewable", () => {
+    const comment = redraftComment(
+      serializeAiRedraftCommentContent({
+        markdown: "New corrective actions.",
+        reasoning: "",
+        fieldHashAtSuggestion: fieldContentHash(
+          "improve",
+          improveContent,
+          "correctiveActions"
+        ),
+      }),
+      "correctiveActions"
+    );
+    const v = validateSuggestionLocate(comment, "improve", improveContent);
+    expect(v.canApply).toBe(true);
+    expect(v.canPreview).toBe(true);
+    expect(v.documentChanged).toBe(false);
+  });
+
+  it("ignores changes to OTHER fields (per-field staleness)", () => {
+    const comment = redraftComment(
+      serializeAiRedraftCommentContent({
+        markdown: "New corrective actions.",
+        reasoning: "",
+        fieldHashAtSuggestion: fieldContentHash(
+          "improve",
+          improveContent,
+          "correctiveActions"
+        ),
+      }),
+      "correctiveActions"
+    );
+    const otherFieldEdited = {
+      ...improveContent,
+      narrative: {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [{ type: "text", text: "A different narrative now." }],
+          },
+        ],
+      },
+    };
+    const v = validateSuggestionLocate(comment, "improve", otherFieldEdited);
+    expect(v.documentChanged).toBe(false);
+    expect(v.canApply).toBe(true);
+  });
+
+  it("flags documentChanged when the TARGET field itself changed", () => {
+    const comment = redraftComment(
+      serializeAiRedraftCommentContent({
+        markdown: "New corrective actions.",
+        reasoning: "",
+        fieldHashAtSuggestion: fieldContentHash(
+          "improve",
+          improveContent,
+          "correctiveActions"
+        ),
+      }),
+      "correctiveActions"
+    );
+    const targetFieldEdited = {
+      ...improveContent,
+      correctiveActions: "CA-1: Retrain operator. CA-2: Update SOP.",
+    };
+    const v = validateSuggestionLocate(comment, "improve", targetFieldEdited);
+    expect(v.documentChanged).toBe(true);
+    expect(v.canApply).toBe(true);
   });
 });
 

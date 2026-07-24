@@ -188,6 +188,7 @@ export async function POST(
     mode === "plan"
       ? {
           read_section: allTools.read_section!,
+          ask_user: allTools.ask_user!,
           ...(allTools.suggest_section_scope
             ? { suggest_section_scope: allTools.suggest_section_scope }
             : {}),
@@ -212,7 +213,9 @@ export async function POST(
     system,
     messages: await convertToModelMessages(messages),
     tools,
-    stopWhen: stepCountIs(mode === "plan" ? 4 : 8),
+    // Agent mode drafts whole sections field-by-field (read + draft per field),
+    // so it needs a substantially larger step budget than plan mode.
+    stopWhen: stepCountIs(mode === "plan" ? 4 : 24),
     ...langfuseGenerateTextTelemetry({
       functionId: "report-chat",
       metadata: { reportId, sessionId, mode, sectionScope, canEdit },

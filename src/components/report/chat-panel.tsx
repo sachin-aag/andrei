@@ -9,6 +9,7 @@ import {
   Sparkles,
   PencilLine,
   BookOpen,
+  FileText,
   Loader2,
   Plus,
   History,
@@ -20,6 +21,10 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { ChatMarkdown } from "@/components/report/chat-markdown";
+import {
+  AskUserForm,
+  type AskUserQuestionInput,
+} from "@/components/report/chat-ask-user-form";
 import {
   Select,
   SelectContent,
@@ -86,12 +91,27 @@ function sectionLabel(section: unknown): string {
   return typeof section === "string" ? section : "";
 }
 
+function parseAskUserQuestions(input: Record<string, unknown> | undefined): AskUserQuestionInput[] {
+  if (!Array.isArray(input?.questions)) return [];
+  return input.questions.flatMap((q) => {
+    if (typeof q !== "object" || q === null) return [];
+    const question = (q as { question?: unknown }).question;
+    if (typeof question !== "string" || !question.trim()) return [];
+    const hint = (q as { hint?: unknown }).hint;
+    return [{ question, hint: typeof hint === "string" ? hint : undefined }];
+  });
+}
+
 function ToolChip({
   info,
   onSwitchSectionScope,
+  askUserActive,
+  onAnswerQuestions,
 }: {
   info: ToolPartInfo;
   onSwitchSectionScope?: (section: SectionType) => void;
+  askUserActive?: boolean;
+  onAnswerQuestions?: (message: string) => void;
 }) {
   const pending = info.state === "input-streaming" || info.state === "input-available";
 
@@ -175,6 +195,48 @@ function ToolChip({
     );
   }
 
+  if (info.toolName === "draft_field") {
+    const section = sectionLabel(info.input?.section);
+    const field = typeof info.input?.targetField === "string" ? info.input.targetField : "";
+    if (pending) {
+      return (
+        <ToolLine icon={<FileText className="size-3.5" />}>
+          Drafting {section}
+          {field ? ` · ${field}` : ""}…
+        </ToolLine>
+      );
+    }
+    if (info.output?.status === "drafted") {
+      return (
+        <ToolLine icon={<FileText className="size-3.5 text-emerald-500" />} tone="success">
+          Drafted {section}
+          {field ? ` · ${field}` : ""} — review the full draft in the document.
+        </ToolLine>
+      );
+    }
+    const message =
+      typeof info.output?.message === "string"
+        ? info.output.message
+        : "Could not create this draft.";
+    return (
+      <ToolLine icon={<FileText className="size-3.5 text-amber-500" />} tone="warn">
+        Draft not created: {message}
+      </ToolLine>
+    );
+  }
+
+  if (info.toolName === "ask_user") {
+    const questions = parseAskUserQuestions(info.input);
+    if (questions.length === 0) return null;
+    return (
+      <AskUserForm
+        questions={questions}
+        disabled={!askUserActive || !onAnswerQuestions}
+        onSubmit={(message) => onAnswerQuestions?.(message)}
+      />
+    );
+  }
+
   return <ToolLine icon={<Wrench className="size-3.5" />}>{info.toolName}</ToolLine>;
 }
 
@@ -239,9 +301,13 @@ function ScopeMismatchBanner({
 function MessageTurn({
   message,
   onSwitchSectionScope,
+  askUserActive,
+  onAnswerQuestions,
 }: {
   message: UIMessage;
   onSwitchSectionScope?: (section: SectionType) => void;
+  askUserActive?: boolean;
+  onAnswerQuestions?: (message: string) => void;
 }) {
   const isUser = message.role === "user";
 
@@ -281,6 +347,8 @@ function MessageTurn({
               key={i}
               info={tool}
               onSwitchSectionScope={onSwitchSectionScope}
+              askUserActive={askUserActive}
+              onAnswerQuestions={onAnswerQuestions}
             />
           );
         }
@@ -632,11 +700,13 @@ export function ChatPanel() {
             </div>
           </div>
         ) : (
-          messages.map((m) => (
+          messages.map((m, i) => (
             <MessageTurn
               key={m.id}
               message={m}
               onSwitchSectionScope={applySectionScope}
+              askUserActive={i === messages.length - 1 && !busy && !initializing}
+              onAnswerQuestions={(answerText) => void send(answerText)}
             />
           ))
         )}

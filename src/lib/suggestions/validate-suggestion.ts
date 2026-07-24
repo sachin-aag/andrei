@@ -3,8 +3,10 @@ import type { CommentRecord, EvaluationRecord } from "@/types/report";
 import { sortedOpenSuggestionsForSection } from "@/lib/ai/suggestion-gating";
 import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
+import { hashContent } from "@/lib/ai/content-hash";
 import {
   parseAiFixCommentContent,
+  parseAiRedraftCommentContent,
   sectionContentHash,
 } from "@/lib/ai/suggestion-gating";
 import { richJsonToPlainText } from "@/lib/tiptap/rich-text";
@@ -49,7 +51,21 @@ function plainTextForSuggestionField(
   return getPlainTextFieldValue(record, contentPath);
 }
 
-/** Check whether an open ai_fix still uniquely locates in the current section content. */
+/**
+ * Hash of ONE field's text — the staleness snapshot for redrafts. Per-field so
+ * accepting a draft in field A never flags a pending draft in field B.
+ */
+export function fieldContentHash(
+  section: SectionType,
+  sectionContent: unknown,
+  contentPath: string
+): string {
+  return hashContent(
+    plainTextForSuggestionField(section, sectionContent, contentPath)
+  );
+}
+
+/** Check whether an open AI suggestion still applies to the current section content. */
 export function validateSuggestionLocate(
   comment: CommentRecord,
   section: SectionType,
@@ -57,6 +73,26 @@ export function validateSuggestionLocate(
   /** When validating from a specific plain-text editor, resolves legacy paths. */
   fieldContentPath?: string
 ): SuggestionValidation {
+  const currentHash = sectionContentHash(section, sectionContent);
+
+  // Redrafts replace the whole field — always applicable. Staleness compares
+  // the TARGET FIELD's hash only, so accepting other drafts never flags them.
+  if (comment.kind === "ai_redraft") {
+    const redraft = parseAiRedraftCommentContent(comment.content);
+    const atGen = redraft.fieldHashAtSuggestion;
+    const fieldHash = fieldContentHash(
+      section,
+      sectionContent,
+      comment.contentPath ?? "narrative"
+    );
+    return {
+      locateStatus: "locatable",
+      documentChanged: Boolean(atGen && atGen !== fieldHash),
+      canApply: true,
+      canPreview: true,
+    };
+  }
+
   const path = effectivePlainTextContentPath(
     section,
     comment.contentPath,
@@ -71,7 +107,6 @@ export function validateSuggestionLocate(
     : loc.reason;
 
   const payload = parseAiFixCommentContent(comment.content);
-  const currentHash = sectionContentHash(section, sectionContent);
   const atGen = payload.contentHashAtSuggestion;
   const documentChanged = Boolean(atGen && atGen !== currentHash);
 

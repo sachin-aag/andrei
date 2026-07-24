@@ -9,6 +9,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { isAiSuggestionKind } from "@/lib/ai/suggestion-gating";
 import { useReportPlaceholders, useReportComments } from "@/providers/report-provider";
 import { captureEvent } from "@/lib/analytics/events";
 import { PlaceholdersPanelContent } from "./placeholders-panel";
@@ -54,7 +55,7 @@ export function ReportSidebar({
   const { comments } = useReportComments();
   const rootCommentCount = comments.filter((c) => !c.parentId).length;
   const openSuggestionCount = comments.filter(
-    (c) => !c.parentId && c.kind === "ai_fix" && c.status === "open"
+    (c) => !c.parentId && isAiSuggestionKind(c.kind) && c.status === "open"
   ).length;
 
   return (

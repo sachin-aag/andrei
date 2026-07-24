@@ -9,9 +9,12 @@ import { mergeSection } from "@/lib/sections-merge";
 import { AI_AUTHOR_ID } from "@/lib/ai/constants";
 import {
   serializeAiFixCommentContent,
+  serializeAiRedraftCommentContent,
   sectionContentHash,
 } from "@/lib/ai/suggestion-gating";
 import { isAllowedTargetField } from "@/lib/ai/suggest-target-fields";
+import { fieldContentHash } from "@/lib/suggestions/validate-suggestion";
+import { markdownHasTable } from "@/lib/tiptap/markdown-to-doc";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 import {
   CHAT_EDITABLE_SECTIONS,
@@ -38,6 +41,25 @@ export type ProposeEditResult =
   | { status: "not_found"; hint: string }
   | { status: "ambiguous"; hint: string }
   | { status: "too_large"; hint: string };
+
+export type DraftFieldResult =
+  | {
+      status: "drafted";
+      suggestionId: string;
+      section: SectionType;
+      targetField: string;
+      summary: string;
+    }
+  | { status: "not_editable"; message: string }
+  | { status: "invalid_section"; message: string }
+  | { status: "invalid_field"; message: string; allowedFields: string[] }
+  | { status: "section_not_found"; message: string }
+  | { status: "table_not_supported"; message: string };
+
+export type AskUserQuestion = {
+  question: string;
+  hint?: string;
+};
 
 async function loadMergedSection(
   reportId: string,
@@ -211,6 +233,124 @@ export function buildChatTools(opts: {
           summary: reasoning,
         };
       },
+    }),
+
+    draft_field: tool({
+      description:
+        `Draft or fully rewrite ONE field. Provide the COMPLETE replacement content as markdown: paragraphs, '- ' bullets, '1. ' numbered lists, '## ' headings, '**bold**', and GFM tables ('| a | b |' rows with a '| --- |' separator). Use bracketed placeholders like [batch number] for facts you do not know — never invent facts. The engineer reviews the full draft and accepts or rejects it. Use this for empty fields, large rewrites, and any content needing a table; use propose_edit only for small targeted changes.${scopeHint}`,
+      inputSchema: z.object({
+        section: z.enum(sectionEnum),
+        targetField: z
+          .string()
+          .describe("In-section field path, e.g. 'narrative' or 'rootCause.narrative'."),
+        markdown: z
+          .string()
+          .min(1)
+          .describe("Complete replacement content for the field."),
+        reasoning: z
+          .string()
+          .max(300)
+          .describe("One short sentence explaining the draft (shown to the engineer)."),
+      }),
+      execute: async ({
+        section,
+        targetField,
+        markdown,
+        reasoning,
+      }): Promise<DraftFieldResult> => {
+        if (!canEdit) {
+          return {
+            status: "not_editable",
+            message:
+              "This report is not editable in its current state, so drafts cannot be proposed.",
+          };
+        }
+        if (!isChatEditableSection(section)) {
+          return { status: "invalid_section", message: `Unknown section '${section}'.` };
+        }
+        const field = chatTargetFields(section).find(
+          (f) => f.targetField === targetField
+        );
+        if (!field || !isAllowedTargetField(section, targetField)) {
+          return {
+            status: "invalid_field",
+            message: `'${targetField}' is not an editable field of ${section}.`,
+            allowedFields: chatTargetFields(section).map((f) => f.targetField),
+          };
+        }
+        if (field.kind === "plain" && markdownHasTable(markdown)) {
+          return {
+            status: "table_not_supported",
+            message: `'${targetField}' is a plain-text field and cannot hold a table. Put the table in a rich narrative field instead.`,
+          };
+        }
+
+        const loaded = await loadMergedSection(reportId, section);
+        if (!loaded) {
+          return { status: "section_not_found", message: "Section not found." };
+        }
+
+        const suggestionId = createId();
+        await db.insert(comments).values({
+          id: suggestionId,
+          reportId,
+          sectionId: loaded.sectionId,
+          section,
+          authorId: AI_AUTHOR_ID,
+          content: serializeAiRedraftCommentContent({
+            markdown: normalizeSuggestionInsertText(markdown),
+            reasoning,
+            fieldHashAtSuggestion: fieldContentHash(
+              section,
+              loaded.content,
+              targetField
+            ),
+          }),
+          anchorText: "",
+          contentPath: targetField,
+          fromPos: null,
+          toPos: null,
+          status: "open",
+          kind: "ai_redraft",
+          evaluationId: null,
+        });
+
+        return {
+          status: "drafted",
+          suggestionId,
+          section,
+          targetField,
+          summary: reasoning,
+        };
+      },
+    }),
+
+    ask_user: tool({
+      description:
+        "Ask the engineer for facts you are missing. The questions render as a structured form in the chat — NEVER write questions as chat prose or markdown lists. Batch every open question into one call, then stop and wait for the answers.",
+      inputSchema: z.object({
+        questions: z
+          .array(
+            z.object({
+              question: z
+                .string()
+                .min(1)
+                .max(300)
+                .describe("One specific question about a missing fact."),
+              hint: z
+                .string()
+                .max(200)
+                .optional()
+                .describe("Optional expected format or example, e.g. 'e.g. B-2024-117'."),
+            })
+          )
+          .min(1)
+          .max(6),
+      }),
+      execute: async ({ questions }) => ({
+        status: "awaiting_answers" as const,
+        questionCount: questions.length,
+      }),
     }),
   };
 

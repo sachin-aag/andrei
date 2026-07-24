@@ -70,6 +70,9 @@ export function applyNarrativeSuggestion(
     createdAt: new Date().toISOString(),
     kind: "fix",
   });
+  if (!injected.located) {
+    throw new Error("Suggestion could not be located in the current text");
+  }
   return acceptSuggestionMarksById(injected.doc, suggestionId);
 }
 
