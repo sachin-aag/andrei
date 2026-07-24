@@ -7,7 +7,8 @@ import { parseListLine } from "@/lib/tiptap/list-style";
  *
  * Supported (matches what the drafting prompt allows the model to emit):
  * - paragraphs (one line = one paragraph)
- * - headings `#` … `###`
+ * - headings `#` … `###` → rendered as a bold paragraph (the section editor
+ *   schema has no heading node; emitting one makes ProseMirror drop the doc)
  * - bullet (`- `, `* `) and ordered (`1. `) lists
  * - GFM tables (first row = header)
  * - `**bold**` inline emphasis
@@ -41,10 +42,13 @@ export function markdownToDoc(markdown: string): JSONContent {
 
     const heading = /^(#{1,3})\s+(.*)$/.exec(trimmed);
     if (heading) {
+      // The section rich-text editor has no heading node (StarterKit heading:false),
+      // so render markdown headings as a fully bold paragraph. Emitting a `heading`
+      // node here would make ProseMirror reject the whole doc and render nothing.
+      const headingText = heading[2]!.replace(/\*\*([^*]+)\*\*/g, "$1");
       content.push({
-        type: "heading",
-        attrs: { level: heading[1]!.length },
-        content: parseInline(heading[2]!),
+        type: "paragraph",
+        content: [{ type: "text", text: headingText, marks: [{ type: "bold" }] }],
       });
       i++;
       continue;

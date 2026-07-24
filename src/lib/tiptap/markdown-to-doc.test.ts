@@ -22,13 +22,14 @@ describe("markdownToDoc", () => {
     });
   });
 
-  it("converts headings up to level 3", () => {
+  it("renders headings as bold paragraphs (editor has no heading node)", () => {
     const doc = markdownToDoc("## Investigation Summary");
     expect(doc.content).toEqual([
       {
-        type: "heading",
-        attrs: { level: 2 },
-        content: [{ type: "text", text: "Investigation Summary" }],
+        type: "paragraph",
+        content: [
+          { type: "text", text: "Investigation Summary", marks: [{ type: "bold" }] },
+        ],
       },
     ]);
   });

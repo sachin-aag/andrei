@@ -153,10 +153,35 @@ export function legacyStringToDoc(s: string): JSONContent {
   return linesToDoc(s);
 }
 
+/**
+ * Coerce nodes the section editor schema can't render into supported ones.
+ * The editor registers no heading node (StarterKit `heading: false`), so a
+ * stray `heading` (e.g. persisted by an older redraft) would make ProseMirror
+ * reject the entire doc and render blank. Convert it to a bold paragraph.
+ */
+function coerceUnsupportedNodes(node: JSONContent): JSONContent {
+  if (node.type === "heading") {
+    return {
+      type: "paragraph",
+      content: (node.content ?? []).map((child) => {
+        if (child.type !== "text") return coerceUnsupportedNodes(child);
+        const marks = child.marks ?? [];
+        return marks.some((m) => m.type === "bold")
+          ? child
+          : { ...child, marks: [...marks, { type: "bold" }] };
+      }),
+    };
+  }
+  if (node.content?.length) {
+    return { ...node, content: node.content.map(coerceUnsupportedNodes) };
+  }
+  return node;
+}
+
 /** Normalize DB/client value to JSONContent (handles legacy strings). */
 export function normalizeRichField(v: unknown): JSONContent {
   if (v && typeof v === "object" && "type" in v && (v as JSONContent).type === "doc") {
-    return v as JSONContent;
+    return coerceUnsupportedNodes(v as JSONContent);
   }
   if (typeof v === "string") {
     return legacyStringToDoc(v);
