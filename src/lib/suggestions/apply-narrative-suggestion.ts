@@ -2,15 +2,18 @@ import { AI_AUTHOR_ID } from "@/lib/ai/constants";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 import {
   acceptSuggestionMarksById,
-  injectSuggestionMarks,
+  applyAndAcceptRichEdit,
+  isApplyableStatus,
   stripSuggestionMarksById,
   type SuggestionEdit,
-} from "@/lib/tiptap/suggestion-inject";
+} from "@/lib/suggestions/locator";
 import {
   suggestionDeleteMarkName,
   suggestionInsertMarkName,
 } from "@/lib/tiptap/suggestion-marks";
 import type { JSONContent } from "@tiptap/core";
+
+export type { SuggestionEdit };
 
 export function buildSuggestionEdit(payload: {
   anchorText?: string | null;
@@ -36,7 +39,8 @@ export function narrativeHasSuggestionMarks(
         const attrs = m.attrs as { id?: string } | undefined;
         if (
           attrs?.id === suggestionId &&
-          (m.type === suggestionInsertMarkName || m.type === suggestionDeleteMarkName)
+          (m.type === suggestionInsertMarkName ||
+            m.type === suggestionDeleteMarkName)
         ) {
           found = true;
           return;
@@ -63,17 +67,13 @@ export function applyNarrativeSuggestion(
   suggestionId: string,
   edit: SuggestionEdit
 ): JSONContent {
-  const injected = injectSuggestionMarks(narrative, edit, {
-    id: suggestionId,
+  const result = applyAndAcceptRichEdit(narrative, suggestionId, edit, {
     authorId: AI_AUTHOR_ID,
-    status: "pending",
-    createdAt: new Date().toISOString(),
-    kind: "fix",
   });
-  if (!injected.located) {
+  if (!isApplyableStatus(result.status)) {
     throw new Error("Suggestion could not be located in the current text");
   }
-  return acceptSuggestionMarksById(injected.doc, suggestionId);
+  return result.doc;
 }
 
 /** Remove pending suggestion marks if present (legacy pre-apply injections). */

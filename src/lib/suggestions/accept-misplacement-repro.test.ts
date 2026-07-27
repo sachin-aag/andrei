@@ -1,46 +1,22 @@
-import { appendFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import type { JSONContent } from "@tiptap/core";
-import { richJsonToPlainText } from "@/lib/tiptap/rich-text";
 import {
-  canLocateEditInPlainText,
+  acceptSuggestionMarksById,
   injectSuggestionMarks,
   type SuggestionEdit,
 } from "@/lib/tiptap/suggestion-inject";
+import { applyNarrativeSuggestion } from "@/lib/suggestions/apply-narrative-suggestion";
+import { applyPlainTextEdit } from "@/lib/suggestions/locate-plain-text-edit";
+import { buildPlainTextSuggestionPreview } from "@/lib/suggestions/plain-text-preview";
+import {
+  isApplyableStatus,
+  probeRichEdit,
+} from "@/lib/suggestions/locator";
 
 /**
- * Repro for "accepting a suggestion put the text in the wrong place / had to
- * accept several times before it showed up".
- *
- * Hypothesis: the Apply button is gated by `validateSuggestionLocate`, which uses
- * `richJsonToPlainText` (separators between nested blocks). The actual injection
- * uses `collectTextRefs` inside `injectSuggestionMarks`, which inserts NO separator
- * between children of listItem / blockquote / tableRow. So an anchor that spans a
- * nested-block boundary validates as locatable (button enabled) but the injector
- * can't find it -> `anchored: false` -> the insert is appended at the END of the
- * field instead of at the anchor.
+ * Characterization + regression net for the suggestion locate/apply path.
+ * Gate vs apply must agree via the shared locator.
  */
-
-// #region agent log
-function logDivergence(hypothesisId: string, message: string, data: unknown) {
-  try {
-    appendFileSync(
-      "/Users/sachinagrawal/andrei/andrei/.cursor/debug-fa6fae.log",
-      JSON.stringify({
-        sessionId: "fa6fae",
-        runId: "repro",
-        hypothesisId,
-        location: "accept-misplacement-repro.test.ts",
-        message,
-        data,
-        timestamp: Date.now(),
-      }) + "\n"
-    );
-  } catch {
-    /* ignore */
-  }
-}
-// #endregion
 
 const ATTRS = {
   id: "sug-1",
@@ -50,8 +26,12 @@ const ATTRS = {
   kind: "fix" as const,
 };
 
-describe("accept misplacement — validator vs injector flattener divergence", () => {
-  it("blockquote: anchor spans two paragraphs (validator ok, injector appends at end)", () => {
+function gateSaysOk(doc: JSONContent, edit: SuggestionEdit): boolean {
+  return isApplyableStatus(probeRichEdit(doc, edit));
+}
+
+describe("accept misplacement — gate ≡ apply (characterization)", () => {
+  it("blockquote: cross-paragraph delete — gate and apply both locate", () => {
     const doc: JSONContent = {
       type: "doc",
       content: [
@@ -77,24 +57,15 @@ describe("accept misplacement — validator vs injector flattener divergence", (
       insertText: "operator error in the dispensing area",
     };
 
-    const plain = richJsonToPlainText(doc, { tableFormat: "markdown" });
-    const validatorOk = canLocateEditInPlainText(plain, edit).ok;
-
+    const gateOk = gateSaysOk(doc, edit);
     const result = injectSuggestionMarks(doc, edit, ATTRS);
 
-    logDivergence("A", "blockquote anchor across paragraphs", {
-      plain,
-      validatorOk,
-      injectorAnchored: result.anchored,
-    });
-
-    // Button is enabled (validator can locate it)...
-    expect(validatorOk).toBe(true);
-    // ...and after the fix the injector locates it too (no longer appended at end).
-    expect(result.anchored).toBe(true);
+    expect(gateOk).toBe(true);
+    expect(result.located).toBe(true);
+    expect(result.located).toBe(gateOk);
   });
 
-  it("blockquote: pure-insert anchor spans a paragraph boundary (validator ok, injector now locates)", () => {
+  it("blockquote: pure-insert across paragraph boundary — gate and apply both locate", () => {
     const doc: JSONContent = {
       type: "doc",
       content: [
@@ -114,24 +85,164 @@ describe("accept misplacement — validator vs injector flattener divergence", (
       ],
     };
 
-    // Pure insert (no delete) after an anchor that crosses the paragraph break.
     const edit: SuggestionEdit = {
       anchorText: "occurred on the night shift",
       deleteText: "",
       insertText: " (confirmed via CCTV)",
     };
 
-    const plain = richJsonToPlainText(doc, { tableFormat: "markdown" });
-    const validatorOk = canLocateEditInPlainText(plain, edit).ok;
+    const gateOk = gateSaysOk(doc, edit);
     const result = injectSuggestionMarks(doc, edit, ATTRS);
 
-    logDivergence("B", "blockquote pure-insert across paragraphs", {
-      plain,
-      validatorOk,
-      injectorAnchored: result.anchored,
-    });
+    expect(gateOk).toBe(true);
+    expect(result.located).toBe(true);
+    expect(result.located).toBe(gateOk);
+  });
+});
 
-    expect(validatorOk).toBe(true);
-    expect(result.anchored).toBe(true);
+describe("suggestion apply — currently-correct snapshots (characterization)", () => {
+  it("rich single-paragraph replace", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "On dated DD/MM/YYYY at approximately HH:MM hrs, while performing routine operation.",
+            },
+          ],
+        },
+      ],
+    };
+    const edit: SuggestionEdit = {
+      anchorText:
+        "On dated DD/MM/YYYY at approximately HH:MM hrs, while performing routine operation.",
+      deleteText: "DD/MM/YYYY at approximately HH:MM hrs",
+      insertText:
+        "[detection date: <to be filled>] at approximately [time: <to be filled>] hrs",
+    };
+
+    expect(gateSaysOk(doc, edit)).toBe(true);
+    const applied = applyNarrativeSuggestion(doc, "sug-char-1", edit);
+    expect(applied).toMatchSnapshot();
+  });
+
+  it("rich single-paragraph pure insert", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "Initial scope was limited to Line 3 filling operations.",
+            },
+          ],
+        },
+      ],
+    };
+    const edit: SuggestionEdit = {
+      anchorText: "Initial scope was limited to Line 3 filling operations.",
+      deleteText: "",
+      insertText: " The investigation was later expanded to include Line 4.",
+    };
+
+    expect(gateSaysOk(doc, edit)).toBe(true);
+    const applied = applyNarrativeSuggestion(doc, "sug-char-2", edit);
+    expect(applied).toMatchSnapshot();
+  });
+
+  it("rich single-paragraph pure delete", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "The operator likely forgot the interlock, which probably caused the deviation.",
+            },
+          ],
+        },
+      ],
+    };
+    const edit: SuggestionEdit = {
+      anchorText:
+        "The operator likely forgot the interlock, which probably caused the deviation.",
+      deleteText: "likely forgot the interlock, which probably caused",
+      insertText: "",
+    };
+
+    expect(gateSaysOk(doc, edit)).toBe(true);
+    const applied = applyNarrativeSuggestion(doc, "sug-char-3", edit);
+    expect(applied).toMatchSnapshot();
+  });
+
+  it("rich empty-anchor append (new-paragraph insert)", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Root cause analysis complete." }],
+        },
+      ],
+    };
+    const edit: SuggestionEdit = {
+      anchorText: "",
+      deleteText: "",
+      insertText:
+        "Regulatory notification was not required as there was no product impact.",
+    };
+
+    const result = injectSuggestionMarks(doc, edit, ATTRS);
+    expect(result.located).toBe(true);
+    const accepted = acceptSuggestionMarksById(result.doc, ATTRS.id);
+    expect(accepted).toMatchSnapshot();
+  });
+
+  it("plain replace / pure insert / pure delete", () => {
+    expect(
+      applyPlainTextEdit(
+        "hence there is no requirement of Corrective Action.",
+        {
+          deleteText: "hence there is no requirement of Corrective Action.",
+          insertText:
+            "therefore, the following specific preventive action is proposed.",
+        }
+      )
+    ).toMatchSnapshot("plain-replace");
+
+    expect(
+      applyPlainTextEdit(
+        "system is working as per its intended use therefore, the following",
+        {
+          anchorText: "use",
+          deleteText: "",
+          insertText: "regarding the root cause",
+        }
+      )
+    ).toMatchSnapshot("plain-pure-insert");
+
+    expect(
+      applyPlainTextEdit("alpha beta gamma", {
+        anchorText: "alpha beta gamma",
+        deleteText: "beta ",
+        insertText: "",
+      })
+    ).toMatchSnapshot("plain-pure-delete");
+  });
+
+  it("plain preview segments for anchored replace", () => {
+    const segments = buildPlainTextSuggestionPreview(
+      "hence there is no requirement of Corrective Action.",
+      "hence there is no requirement of Corrective Action.",
+      "therefore, the following specific preventive action is proposed."
+    );
+    expect(segments).toMatchSnapshot();
   });
 });

@@ -185,16 +185,16 @@ The email must be `@mjbiopharm.com`. The account is flagged `mustChangePassword`
 
 **Pipeline:**
 1. `gapCriteriaForSection()` (in `suggestion-gating.ts`) filters to failing criteria (not_met + partially_met) with no existing open ai_fix comment
-2. Prompt includes each failing criterion with status and reasoning
+2. Prompt includes each failing criterion with status and reasoning. Editable `SECTION CONTENT` is built by `contextForSuggestionPrompt()` (`suggestion-section-context.ts`) using the **canonical anchor string** (`flattenForAnchor`) — no markdown pipes / `[equation]` tokens. Prior sections stay markdown via `contextForPrompt`. Eval is untouched.
 3. `generateText()` with Gemini 3.1-pro, temperature 0.4 (variety in phrasing). Schema returns `{ criterionKey, targetField, anchorText, deleteText, insertText, reasoning }`
-4. Gating drops suggestions: bad criterion key, bad target field, empty edit, placeholder-only edit, anchor not found, anchor ambiguous (>1 match)
+4. Gating drops suggestions via `probeRichEdit` / `probePlainEdit` (same code path as apply): bad criterion key, bad target field, empty edit, placeholder-only edit, not found, ambiguous, cross-cell
 5. `sortedOpenSuggestionsForSection()` orders: red first, then yellow, then criterion order. `activeSuggestionForSection()` returns highest-priority for UI.
 
-**Applying suggestions:**
-- Narrative fields: `applyNarrativeSuggestion()` → `injectSuggestionMarks()` adds pending TipTap marks (red strikethrough for delete, green underline for insert) → `acceptSuggestionMarksById()` finalizes
-- Plain text fields: `applyStructuredFieldSuggestion()` navigates dot-path, calls `applyPlainTextEdit()` with `locateUniqueSpan()` (fails if 0 or >1 matches)
+**Locator (single matcher):** `src/lib/suggestions/locator.ts` — `flattenForAnchor`, `locateEdit`, `applyEditToRichDoc` / `applyEditToPlainText`, `probeRichEdit` / `probePlainEdit`. Gate ≡ apply is structural (probe is locate without commit).
 
-**Key invariant:** Anchor must be unique in the target text. Whitespace is normalized for matching (multiple spaces/newlines → single space).
+**Applying suggestions:** all three UI surfaces (suggestion card, rich TipTap widget, plain-text field) go through `acceptSuggestion` / `dismissSuggestion` in `accept-suggestion.ts`. Order: locate → apply → PATCH section → flip comment status. Never resolve without a successful apply.
+
+**Key invariant:** Anchor must be unique in the canonical field text. Whitespace is normalized for matching (multiple spaces/newlines → single space). Cross-paragraph deletes are allowed; cross-cell deletes are dropped.
 
 ## Subsystem: DOCX Export
 

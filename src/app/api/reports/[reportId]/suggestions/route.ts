@@ -29,10 +29,11 @@ import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import type { AllSectionsContent } from "@/lib/ai/evaluate";
 import {
-  canLocateEditInPlainText,
+  isApplyableStatus,
+  probePlainEdit,
+  probeRichEdit,
   type SuggestionEdit,
-} from "@/lib/tiptap/suggestion-inject";
-import { richJsonToPlainText } from "@/lib/tiptap/rich-text";
+} from "@/lib/suggestions/locator";
 import { mergeSection } from "@/lib/sections-merge";
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
@@ -174,17 +175,16 @@ async function handleSuggestionsPost(
 
   for (const s of richSuggestions) {
     const fieldDoc = getRichFieldValue(workingContent, s.targetField);
-    const plain = richJsonToPlainText(fieldDoc, { tableFormat: "markdown" });
     const edit: SuggestionEdit = {
       anchorText: s.anchorText,
       deleteText: s.deleteText,
       insertText: s.insertText,
     };
-    const loc = canLocateEditInPlainText(plain, edit);
-    if (!loc.ok) {
+    const status = probeRichEdit(fieldDoc, edit);
+    if (!isApplyableStatus(status)) {
       dropped.push({
         criterionKey: s.criterionKey,
-        reason: loc.reason === "ambiguous" ? ("ambiguous" as const) : ("not_found" as const),
+        reason: status === "ambiguous" ? ("ambiguous" as const) : ("not_found" as const),
       });
       continue;
     }
@@ -231,11 +231,11 @@ async function handleSuggestionsPost(
       deleteText: s.deleteText,
       insertText,
     };
-    const loc = canLocateEditInPlainText(fieldPlain, edit);
-    if (!loc.ok) {
+    const status = probePlainEdit(fieldPlain, edit);
+    if (!isApplyableStatus(status)) {
       dropped.push({
         criterionKey: s.criterionKey,
-        reason: loc.reason === "ambiguous" ? "ambiguous" : "not_found",
+        reason: status === "ambiguous" ? "ambiguous" : "not_found",
       });
       continue;
     }

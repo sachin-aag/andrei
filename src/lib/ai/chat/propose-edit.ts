@@ -1,7 +1,8 @@
 import {
-  canLocateEditInPlainText,
+  isApplyableStatus,
+  probePlainEdit,
   type SuggestionEdit,
-} from "@/lib/tiptap/suggestion-inject";
+} from "@/lib/suggestions/locator";
 import { collapseWhitespace } from "@/lib/text/normalize-for-anchor";
 
 /**
@@ -41,8 +42,11 @@ export function checkProposedEdit(
     insertText: edit.insertText,
   };
 
-  const loc = canLocateEditInPlainText(fieldPlainText, suggestionEdit);
-  if (!loc.ok) return { status: loc.reason };
+  const status = probePlainEdit(fieldPlainText, suggestionEdit);
+  if (!isApplyableStatus(status)) {
+    if (status === "ambiguous") return { status: "ambiguous" };
+    return { status: "not_found" };
+  }
 
   const del = collapseWhitespace(edit.deleteText ?? "");
   if (del.length > 0) {

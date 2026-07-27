@@ -1,9 +1,8 @@
 import {
-  applyPlainTextEdit,
-  locatePlainTextDeleteSpan,
-  locateUniqueSpan,
-  withLeadingSpaceIfNeeded,
-} from "./locate-plain-text-edit";
+  locateEdit,
+  type SuggestionEdit,
+} from "@/lib/suggestions/locator";
+import { withLeadingSpaceIfNeeded } from "./locate-plain-text-edit";
 
 export type PlainTextPreviewSegment = {
   kind: "context" | "delete" | "insert";
@@ -12,7 +11,7 @@ export type PlainTextPreviewSegment = {
 
 /**
  * Build track-change segments for a plain-text field from a pending suggestion.
- * Returns null when the edit cannot be located uniquely in the current value.
+ * Uses the same locateEdit predicate as apply — returns null when not applyable.
  */
 export function buildPlainTextSuggestionPreview(
   value: string,
@@ -20,62 +19,43 @@ export function buildPlainTextSuggestionPreview(
   insertText: string,
   anchorText?: string
 ): PlainTextPreviewSegment[] | null {
-  const del = deleteText.trim();
-  const ins = insertText.trim();
-  const anchor = (anchorText ?? "").trim();
+  const edit: SuggestionEdit = {
+    anchorText: anchorText ?? "",
+    deleteText,
+    insertText,
+  };
+  const loc = locateEdit(value, edit);
 
-  if (!del && !ins) return null;
-
-  if (del) {
-    const span = locatePlainTextDeleteSpan(value, {
-      anchorText,
-      deleteText: del,
-    });
-    if (span) {
-      const insert = withLeadingSpaceIfNeeded(value, span.start, ins);
-      return [
-        { kind: "context", text: value.slice(0, span.start) },
-        { kind: "delete", text: value.slice(span.start, span.end) },
-        { kind: "insert", text: insert },
-        { kind: "context", text: value.slice(span.end) },
-      ];
-    }
-  }
-
-  if (anchor) {
-    const span = locateUniqueSpan(value, anchor);
-    if (span) {
-      const insertAt = span.end;
-      const insert = withLeadingSpaceIfNeeded(value, insertAt, ins);
-      return [
-        { kind: "context", text: value.slice(0, insertAt) },
-        { kind: "insert", text: insert },
-        { kind: "context", text: value.slice(insertAt) },
-      ];
-    }
-    return null;
-  }
-
-  if (!del && ins) {
-    const next = applyPlainTextEdit(value, {
-      deleteText: "",
-      insertText: ins,
-    });
-    if (!next || next === value) {
-      return [
-        { kind: "context", text: value },
-        { kind: "insert", text: ins },
-      ];
-    }
-    const insertAt = value.length;
-    const insert = next.slice(insertAt);
+  if (loc.status === "append") {
+    const ins = insertText.trim();
+    if (!ins) return null;
+    const insert = withLeadingSpaceIfNeeded(value, value.length, ins);
     return [
       { kind: "context", text: value },
       { kind: "insert", text: insert },
     ];
   }
 
-  return null;
+  if (loc.status !== "located") return null;
+
+  const ins = insertText.trim();
+  const insert = withLeadingSpaceIfNeeded(value, loc.deleteStart, ins);
+
+  if (loc.deleteStart < loc.deleteEnd) {
+    return [
+      { kind: "context", text: value.slice(0, loc.deleteStart) },
+      { kind: "delete", text: value.slice(loc.deleteStart, loc.deleteEnd) },
+      { kind: "insert", text: insert },
+      { kind: "context", text: value.slice(loc.deleteEnd) },
+    ];
+  }
+
+  // Pure insert after anchor
+  return [
+    { kind: "context", text: value.slice(0, loc.deleteStart) },
+    { kind: "insert", text: insert },
+    { kind: "context", text: value.slice(loc.deleteStart) },
+  ];
 }
 
 export type SplitPlainTextPreview = {

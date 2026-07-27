@@ -6,7 +6,7 @@ import {
 } from "@/lib/ai/suggest-target-fields";
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
-import { richJsonToPlainText } from "@/lib/tiptap/rich-text";
+import { flattenForAnchor } from "@/lib/suggestions/locator";
 
 /** Sections the drafting chat can read + edit (DMAIC + conclusion). */
 export const CHAT_EDITABLE_SECTIONS: readonly SectionType[] = [
@@ -71,16 +71,17 @@ export function primaryFieldForSection(section: SectionType): string {
   }
 }
 
-/** Current plain-text value of an in-section field (rich flattened to markdown). */
+/**
+ * Current plain-text value of an in-section field.
+ * Rich fields use the canonical anchor string (same as locate/apply).
+ */
 export function sectionFieldPlainText(
   sectionContent: Record<string, unknown>,
   section: SectionType,
   targetField: string
 ): string {
   if (isRichTargetField(section, targetField)) {
-    return richJsonToPlainText(getRichFieldValue(sectionContent, targetField), {
-      tableFormat: "markdown",
-    });
+    return flattenForAnchor(getRichFieldValue(sectionContent, targetField)).text;
   }
   return getPlainTextFieldValue(sectionContent, targetField);
 }

@@ -31,19 +31,7 @@ import {
   type ParsedAiFixPayload,
   type ParsedAiRedraftPayload,
 } from "@/lib/ai/suggestion-gating";
-import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
-import {
-  getRichFieldValue,
-  setRichFieldValue,
-} from "@/lib/suggestions/rich-field-value";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
-import {
-  acceptPendingNarrativeSuggestion,
-  applyNarrativeSuggestion,
-  buildSuggestionEdit,
-  narrativeHasSuggestionMarks,
-  removePendingNarrativeSuggestion,
-} from "@/lib/suggestions/apply-narrative-suggestion";
 import {
   afterPaint,
   delay,
@@ -54,12 +42,11 @@ import {
   SUGGESTION_NEXT_PREVIEW_DELAY_MS,
   waitForAnimation,
 } from "@/lib/suggestions/apply-transition";
-import { applyStructuredFieldSuggestion } from "@/lib/suggestions/apply-field";
-import { applyRedraftToSection } from "@/lib/suggestions/apply-redraft";
 import {
+  acceptSuggestion,
+  dismissSuggestion,
   CommentPersistError,
-  patchCommentStatus,
-} from "@/lib/suggestions/persist-comment-status";
+} from "@/lib/suggestions/accept-suggestion";
 import {
   countStaleOpenSuggestions,
   suggestionStaleMessage,
@@ -69,7 +56,6 @@ import {
 import type { CommentRecord, EvaluationRecord } from "@/types/report";
 import type { SectionType } from "@/db/schema";
 import type { SectionContentMap } from "@/types/sections";
-
 type CardPhase = "steady" | "applying" | "applied" | "preparing-next";
 type QueueTransition = null | "exit" | "enter";
 
@@ -467,90 +453,6 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
     return `${stale} of ${openTotal} suggestions in this section may no longer apply after recent edits.`;
   }, [section, comments, evaluations, sectionContent]);
 
-  const saveSection = useCallback(
-    async (nextContent: SectionContentMap[typeof section]) => {
-      const res = await fetch(`/api/reports/${report.id}/sections/${section}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: nextContent }),
-      });
-      if (!res.ok) throw new Error("Failed to save section");
-    },
-    [report.id, section]
-  );
-
-  const applyCardToDocument = useCallback(
-    async (card: FrozenCard) => {
-      const { comment } = card;
-      const path = comment.contentPath ?? "narrative";
-      const current = sections[section] as Record<string, unknown>;
-
-      if (card.kind === "redraft") {
-        const nextSection = applyRedraftToSection(
-          current,
-          section,
-          path,
-          card.redraft.markdown
-        ) as SectionContentMap[typeof section];
-        replaceSection(section, nextSection);
-        await saveSection(nextSection);
-        return;
-      }
-
-      const { payload } = card;
-      if (isRichTargetField(section, path)) {
-        const doc = getRichFieldValue(current, path);
-        const edit = buildSuggestionEdit(payload);
-        const nextDoc = narrativeHasSuggestionMarks(doc, comment.id)
-          ? acceptPendingNarrativeSuggestion(doc, comment.id)
-          : applyNarrativeSuggestion(doc, comment.id, edit);
-        const nextSection = setRichFieldValue(
-          current,
-          path,
-          nextDoc
-        ) as SectionContentMap[typeof section];
-        replaceSection(section, nextSection);
-        await saveSection(nextSection);
-        return;
-      }
-
-      const nextRecord = applyStructuredFieldSuggestion(
-        current,
-        path,
-        payload.insertText,
-        payload.deleteText,
-        comment.anchorText
-      );
-      const nextSection = nextRecord as SectionContentMap[typeof section];
-      replaceSection(section, nextSection);
-      await saveSection(nextSection);
-    },
-    [section, sections, replaceSection, saveSection]
-  );
-
-  const stripCardFromDocument = useCallback(
-    async (card: FrozenCard) => {
-      const { comment } = card;
-      const path = comment.contentPath ?? "narrative";
-      const current = sections[section] as Record<string, unknown>;
-
-      if (!isRichTargetField(section, path)) return;
-
-      const doc = getRichFieldValue(current, path);
-      if (!narrativeHasSuggestionMarks(doc, comment.id)) return;
-
-      const nextDoc = removePendingNarrativeSuggestion(doc, comment.id);
-      const nextSection = setRichFieldValue(
-        current,
-        path,
-        nextDoc
-      ) as SectionContentMap[typeof section];
-      replaceSection(section, nextSection);
-      await saveSection(nextSection);
-    },
-    [section, sections, replaceSection, saveSection]
-  );
-
   const animateQueueTransition = useCallback(async (closingSnapshot: FrozenCard) => {
     setFrozenCard(null);
     setExitingCard(closingSnapshot);
@@ -597,8 +499,27 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
     try {
       beginSuggestionApplyTransition(section, commentId);
 
-      await applyCardToDocument(snapshot);
-      await patchCommentStatus(report.id, commentId, "resolved");
+      const result = await acceptSuggestion({
+        reportId: report.id,
+        section,
+        comment: snapshot.comment,
+        sectionContent: sections[section] as Record<string, unknown>,
+      });
+      if (!result.ok) {
+        if (result.reason === "status_failed") {
+          throw (
+            result.error instanceof CommentPersistError
+              ? result.error
+              : new CommentPersistError(0, "Could not update suggestion")
+          );
+        }
+        throw new Error(
+          result.reason === "save_failed"
+            ? "Failed to save section"
+            : "Suggestion could not be located"
+        );
+      }
+      replaceSection(section, result.nextSection as SectionContentMap[typeof section]);
 
       setComments((prev) =>
         prev.map((c) =>
@@ -640,7 +561,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
     section,
     sections,
     report.id,
-    applyCardToDocument,
+    replaceSection,
     animateQueueTransition,
     setComments,
     refresh,
@@ -662,14 +583,32 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
     try {
       beginSuggestionApplyTransition(section, commentId);
 
-      await patchCommentStatus(report.id, commentId, "dismissed");
+      const result = await dismissSuggestion({
+        reportId: report.id,
+        section,
+        comment: snapshot.comment,
+        sectionContent: sections[section] as Record<string, unknown>,
+      });
+      if (!result.ok) {
+        if (result.reason === "status_failed") {
+          throw (
+            result.error instanceof CommentPersistError
+              ? result.error
+              : new CommentPersistError(0, "Could not update suggestion")
+          );
+        }
+        throw new Error("Failed to save section");
+      }
+      if (result.nextSection) {
+        replaceSection(
+          section,
+          result.nextSection as SectionContentMap[typeof section]
+        );
+      }
       setComments((prev) => prev.filter((c) => c.id !== commentId));
 
-      try {
-        await stripCardFromDocument(snapshot);
-      } catch (stripErr) {
-        console.warn("Non-fatal: could not strip suggestion marks", stripErr);
-      }
+      setPhase("applied");
+      await delay(SUGGESTION_APPLY_SETTLE_MS);
 
       if (hasQueue) {
         await animateQueueTransition(snapshot);
@@ -701,8 +640,9 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
     pending,
     canResolve,
     section,
+    sections,
     report.id,
-    stripCardFromDocument,
+    replaceSection,
     animateQueueTransition,
     setComments,
     refresh,

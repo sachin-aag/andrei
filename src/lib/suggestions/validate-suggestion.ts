@@ -11,13 +11,19 @@ import {
 } from "@/lib/ai/suggestion-gating";
 import { richJsonToPlainText } from "@/lib/tiptap/rich-text";
 import {
-  canLocateEditInPlainText,
+  isApplyableStatus,
+  probePlainEdit,
+  probeRichEdit,
   type SuggestionEdit,
-} from "@/lib/tiptap/suggestion-inject";
+} from "@/lib/suggestions/locator";
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
 import { effectivePlainTextContentPath } from "@/lib/suggestions/resolve-suggestion-field-path";
 
-export type SuggestionLocateStatus = "locatable" | "not_found" | "ambiguous";
+export type SuggestionLocateStatus =
+  | "locatable"
+  | "not_found"
+  | "ambiguous"
+  | "cross_cell";
 
 export type SuggestionValidation = {
   locateStatus: SuggestionLocateStatus;
@@ -38,7 +44,12 @@ export function suggestionEditFromComment(
   };
 }
 
-function plainTextForSuggestionField(
+/**
+ * Markdown flatten used ONLY for redraft field-hash staleness.
+ * Must stay on richJsonToPlainText so in-flight redraft hashes remain stable
+ * after the locator consolidation (do not reuse the canonical gate flattener).
+ */
+function plainTextForFieldHash(
   section: SectionType,
   sectionContent: unknown,
   contentPath: string
@@ -61,7 +72,7 @@ export function fieldContentHash(
   contentPath: string
 ): string {
   return hashContent(
-    plainTextForSuggestionField(section, sectionContent, contentPath)
+    plainTextForFieldHash(section, sectionContent, contentPath)
   );
 }
 
@@ -99,12 +110,18 @@ export function validateSuggestionLocate(
     fieldContentPath
   );
   const edit = suggestionEditFromComment(comment);
-  const plain = plainTextForSuggestionField(section, sectionContent, path);
-  const loc = canLocateEditInPlainText(plain, edit);
+  const record = sectionContent as Record<string, unknown>;
 
-  const locateStatus: SuggestionLocateStatus = loc.ok
-    ? "locatable"
-    : loc.reason;
+  let locateStatus: SuggestionLocateStatus;
+  if (isRichTargetField(section, path)) {
+    const doc = getRichFieldValue(record, path);
+    const status = probeRichEdit(doc, edit);
+    locateStatus = mapProbeStatus(status);
+  } else {
+    const plain = getPlainTextFieldValue(record, path);
+    const status = probePlainEdit(plain, edit);
+    locateStatus = mapProbeStatus(status);
+  }
 
   const payload = parseAiFixCommentContent(comment.content);
   const atGen = payload.contentHashAtSuggestion;
@@ -116,6 +133,15 @@ export function validateSuggestionLocate(
     canApply: locateStatus === "locatable",
     canPreview: locateStatus === "locatable",
   };
+}
+
+function mapProbeStatus(
+  status: ReturnType<typeof probeRichEdit>
+): SuggestionLocateStatus {
+  if (isApplyableStatus(status)) return "locatable";
+  if (status === "ambiguous") return "ambiguous";
+  if (status === "cross_cell") return "cross_cell";
+  return "not_found";
 }
 
 export function countStaleOpenSuggestions(
@@ -136,6 +162,9 @@ export function countStaleOpenSuggestions(
 export function suggestionStaleMessage(validation: SuggestionValidation): string {
   if (validation.locateStatus === "ambiguous") {
     return "This suggestion matches multiple places in the text. Dismiss it and use Suggest fixes again, or edit manually.";
+  }
+  if (validation.locateStatus === "cross_cell") {
+    return "This suggestion spans multiple table cells and cannot be applied safely. Dismiss it and use Suggest fixes again, or edit manually.";
   }
   if (validation.documentChanged) {
     return "The document changed after this suggestion was created and the edit no longer fits. Dismiss it or run Suggest fixes again.";

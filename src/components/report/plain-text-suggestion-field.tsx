@@ -19,11 +19,12 @@ import {
   parseAiFixCommentContent,
   parseAiRedraftCommentContent,
 } from "@/lib/ai/suggestion-gating";
-import { applyStructuredFieldSuggestion } from "@/lib/suggestions/apply-field";
+import { redraftPlainTextValue } from "@/lib/suggestions/apply-redraft";
 import {
-  applyRedraftToSection,
-  redraftPlainTextValue,
-} from "@/lib/suggestions/apply-redraft";
+  acceptSuggestion,
+  dismissSuggestion,
+  CommentPersistError,
+} from "@/lib/suggestions/accept-suggestion";
 import {
   buildPlainTextSuggestionPreview,
   splitPlainTextPreviewSegments,
@@ -40,10 +41,6 @@ import {
   delay,
 } from "@/lib/suggestions/apply-transition";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
-import {
-  CommentPersistError,
-  patchCommentStatus,
-} from "@/lib/suggestions/persist-comment-status";
 import { fromPosFromPlaceholderId } from "@/lib/placeholders/find";
 import type { SectionType } from "@/db/schema";
 import type { SectionContentMap } from "@/types/sections";
@@ -237,18 +234,6 @@ export function PlainTextSuggestionField({
     );
   }, [showInlineSuggestion, previewSegments, focusedFromPos]);
 
-  const saveSection = useCallback(
-    async (nextContent: SectionContentMap[typeof section]) => {
-      const res = await fetch(`/api/reports/${report.id}/sections/${section}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: nextContent }),
-      });
-      if (!res.ok) throw new Error("Failed to save section");
-    },
-    [report.id, section]
-  );
-
   const applyActive = useCallback(async () => {
     if (!activeComment || pending || !canResolve) return;
 
@@ -272,27 +257,28 @@ export function PlainTextSuggestionField({
         activeComment.contentPath,
         contentPath
       );
-      const current = sections[section] as Record<string, unknown>;
-      let nextRecord: Record<string, unknown>;
-      if (activeComment.kind === "ai_redraft") {
-        const redraft = parseAiRedraftCommentContent(activeComment.content);
-        nextRecord = applyRedraftToSection(
-          current,
-          section,
-          fieldPath,
-          redraft.markdown
-        );
-      } else {
-        const payload = parseAiFixCommentContent(activeComment.content);
-        nextRecord = applyStructuredFieldSuggestion(
-          current,
-          fieldPath,
-          payload.insertText,
-          payload.deleteText,
-          activeComment.anchorText
+      const result = await acceptSuggestion({
+        reportId: report.id,
+        section,
+        comment: activeComment,
+        sectionContent: sections[section] as Record<string, unknown>,
+        fieldContentPath: contentPath,
+      });
+      if (!result.ok) {
+        if (result.reason === "status_failed") {
+          throw (
+            result.error instanceof CommentPersistError
+              ? result.error
+              : new CommentPersistError(0, "Could not update suggestion")
+          );
+        }
+        throw new Error(
+          result.reason === "save_failed"
+            ? "Failed to save section"
+            : "Suggestion could not be located"
         );
       }
-      const nextSection = nextRecord as SectionContentMap[typeof section];
+      const nextSection = result.nextSection as SectionContentMap[typeof section];
       const nextValue = fieldPath
         .split(".")
         .reduce<unknown>((obj, key) => {
@@ -300,13 +286,11 @@ export function PlainTextSuggestionField({
             return (obj as Record<string, unknown>)[key];
           }
           return undefined;
-        }, nextRecord);
+        }, result.nextSection);
       if (typeof nextValue === "string") {
         onChange(nextValue);
       }
       replaceSection(section, nextSection);
-      await saveSection(nextSection);
-      await patchCommentStatus(report.id, activeComment.id, "resolved");
       setComments((prev) =>
         prev.map((c) =>
           c.id === activeComment.id ? { ...c, status: "resolved" as const } : c
@@ -339,7 +323,6 @@ export function PlainTextSuggestionField({
     report.id,
     onChange,
     replaceSection,
-    saveSection,
     setComments,
     refresh,
     beginSuggestionApplyTransition,
@@ -353,7 +336,29 @@ export function PlainTextSuggestionField({
     setPending(true);
     try {
       beginSuggestionApplyTransition(section, activeComment.id);
-      await patchCommentStatus(report.id, activeComment.id, "dismissed");
+      const result = await dismissSuggestion({
+        reportId: report.id,
+        section,
+        comment: activeComment,
+        sectionContent: sections[section] as Record<string, unknown>,
+        fieldContentPath: contentPath,
+      });
+      if (!result.ok) {
+        if (result.reason === "status_failed") {
+          throw (
+            result.error instanceof CommentPersistError
+              ? result.error
+              : new CommentPersistError(0, "Could not update suggestion")
+          );
+        }
+        throw new Error("Failed to save section");
+      }
+      if (result.nextSection) {
+        replaceSection(
+          section,
+          result.nextSection as SectionContentMap[typeof section]
+        );
+      }
       setComments((prev) => prev.filter((c) => c.id !== activeComment.id));
       await delay(SUGGESTION_INLINE_REVEAL_DELAY_MS);
 
@@ -377,6 +382,9 @@ export function PlainTextSuggestionField({
     canResolve,
     report.id,
     section,
+    sections,
+    contentPath,
+    replaceSection,
     setComments,
     refresh,
     beginSuggestionApplyTransition,
