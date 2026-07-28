@@ -1,7 +1,7 @@
 import type { CriterionStatus, SectionType } from "@/db/schema";
 import { SUGGEST_TARGET_FIELD_PATTERNS } from "@/lib/ai/suggest-target-fields";
 
-export const SUGGEST_PROMPT_VERSION = "suggest-v8-andrei" as const;
+export const SUGGEST_PROMPT_VERSION = "suggest-v10-measure-single-field" as const;
 
 /** Google model for suggestion generation (stronger reasoning + verbatim anchors). */
 export const SUGGEST_GOOGLE_MODEL_ID = "gemini-3.1-pro-preview" as const;
@@ -15,13 +15,15 @@ export function buildSuggestionSystemPrompt(section: SectionType): string {
       ? '\n- For IMPROVE, targetField MUST be "correctiveActions" (the corrective action editor). Do not use "narrative".'
       : section === "control"
         ? '\n- For CONTROL, targetField MUST be "preventiveActions". Do not use "narrative".'
-        : "";
+        : section === "measure"
+          ? '\n- For MEASURE, targetField MUST be "narrative" — it is the section\'s only editable field, and it holds the experiment details too.'
+          : "";
   return `You are a quality documentation writing assistant. You produce precise, minimal text edits for investigation report sections.
 
 RULES:
 - Output JSON only, matching the provided schema.
 - Each suggestion fixes ONE failing criterion listed in the user message.
-- anchorText MUST be a verbatim substring from SECTION CONTENT (current section only). Copy punctuation and spacing exactly. Use a long enough span (roughly a full clause) so it appears only once in the section.
+- anchorText MUST be a verbatim substring from SECTION CONTENT (current section only). Copy punctuation and spacing exactly. Use a long enough span (roughly a full clause) so it appears only once in the section. SECTION CONTENT uses plain text only — no markdown table pipes, no list numbers, no [equation]/[image] tokens.
 - deleteText MUST be a verbatim substring of anchorText (or "" for pure insert).
 - insertText is the replacement prose (or "" for pure delete). At least one of deleteText or insertText must be non-empty.
 - For pure inserts after a word, start insertText with a leading space when it continues the same sentence (e.g. insertText: " regarding the root cause").
@@ -44,6 +46,7 @@ When the content you are adding is topically distinct from all existing paragrap
 
 CRITERION-SPECIFIC PLACEMENT RULES:
 - measure.regulatory_notification: targetField MUST be "narrative". This is always a new-paragraph insert. Set anchorText to "". The inserted sentence must explicitly state EITHER (a) regulatory notification was not required, with a brief rationale tied to the nature of the deviation (e.g., no product impact, calibration only), OR (b) regulatory notification was required and provide the details. For unknown regulatory details, use: "[Regulatory notification: <to be filled>]".
+- measure.experiment_identified / measure.experiment_purpose / measure.experiment_conclusion: targetField MUST be "narrative". When the section content does not already discuss the supporting experiment, this is a new-paragraph insert — set anchorText to "" and write a standalone paragraph. For experiment_identified state the experiment number and title, using "[Experiment number: <to be filled>]" / "[Experiment title: <to be filled>]" when unknown. For experiment_purpose state why the experiment was run and which question it answers. For experiment_conclusion state the outcome and how it supports the investigation. Do NOT prefix insertText with labels like "Experiment Number:" or "Purpose:".
 - improve.effectiveness / control.effectiveness: When effectiveness verification is required, the inserted text must include all four elements: (1) trigger — when verification starts (e.g., "following approval of the revised SOP"); (2) cadence/count — derive from the calibration or activity schedule already described in the section content or prior sections (e.g., if the section mentions monthly calibration, use "next [N] monthly calibrations"); (3) measurable pass criterion — use the specific acceptance limit from the section (e.g., "blank TOC NMT 100 ppb"); (4) responsible person as "[Responsible person: <to be filled>]". Do not state the outcome as "can be verified by X" — state it as "will be verified by [person] by checking [metric] across [count] [cadence] following [trigger]".
 
 OPERATIONS (implicit from deleteText/insertText):

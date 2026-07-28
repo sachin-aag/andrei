@@ -1,4 +1,8 @@
-import { parseAiFixCommentContent } from "@/lib/ai/suggestion-gating";
+import {
+  parseAiFixCommentContent,
+  parseAiRedraftCommentContent,
+  isAiSuggestionKind,
+} from "@/lib/ai/suggestion-gating";
 import { getUser } from "@/lib/auth/user-directory";
 import type { CommentRecord, EvaluationRecord } from "@/types/report";
 
@@ -50,6 +54,14 @@ export function getAiFixCommentTitle(
     }
   }
 
+  if (comment.kind === "ai_redraft") {
+    const redraft = parseAiRedraftCommentContent(comment.content);
+    if (redraft.reasoning.trim()) {
+      return truncateAtWord(redraft.reasoning, MAX_TITLE_LEN);
+    }
+    return "Full draft";
+  }
+
   const payload = parseAiFixCommentContent(comment.content);
   if (payload.reasoning.trim()) {
     return truncateAtWord(payload.reasoning, MAX_TITLE_LEN);
@@ -60,8 +72,13 @@ export function getAiFixCommentTitle(
   return "Suggested fix";
 }
 
-/** One- or two-line preview (not raw JSON) for ai_fix comments. */
+/** One- or two-line preview (not raw JSON) for AI suggestion comments. */
 export function getAiFixCommentPreview(comment: CommentRecord): string {
+  if (comment.kind === "ai_redraft") {
+    const redraft = parseAiRedraftCommentContent(comment.content);
+    return truncateAtWord(redraft.markdown, MAX_PREVIEW_LEN);
+  }
+
   const payload = parseAiFixCommentContent(comment.content);
   const insert = collapseWhitespace(payload.insertText);
   const del = collapseWhitespace(payload.deleteText);
@@ -76,8 +93,9 @@ export function getAiFixCommentPreview(comment: CommentRecord): string {
   return "";
 }
 
+/** AI suggestion comments (targeted fixes and full-field redrafts). */
 export function isAiFixComment(comment: CommentRecord): boolean {
-  return comment.kind === "ai_fix";
+  return isAiSuggestionKind(comment.kind);
 }
 
 export function isImportedWordComment(comment: CommentRecord): boolean {

@@ -1,3 +1,4 @@
+import { compactPlaceholderLabel } from "./label";
 import { normalizeBracketPlaceholdersInPlainText } from "./normalize-bracket-placeholders";
 
 /** `<to be filled>` or `<to be filled: label>` (not already inside `[label: …]`). */
@@ -17,7 +18,10 @@ function collapseNestedLabelPlaceholders(text: string): string {
   let out = text;
   while (out !== prev) {
     prev = out;
-    out = out.replace(NESTED_LABEL_PLACEHOLDER, "[$1: <to be filled>]");
+    out = out.replace(NESTED_LABEL_PLACEHOLDER, (_m, label: string) => {
+      const compacted = compactPlaceholderLabel(label);
+      return compacted ? `[${compacted}: <to be filled>]` : "[<to be filled>]";
+    });
   }
   return out;
 }
@@ -25,6 +29,7 @@ function collapseNestedLabelPlaceholders(text: string): string {
 /**
  * Normalizes AI suggestion insert text to the same bracket placeholders used
  * in the editor (`[Label: <to be filled>]`), so Placeholders panel + highlights work.
+ * Also compacts long AI labels to the shared length limit.
  */
 export function normalizeSuggestionInsertText(text: string): string {
   let out = text.trim();
@@ -39,7 +44,10 @@ export function normalizeSuggestionInsertText(text: string): string {
         return "<to be filled>";
       }
       const inner = label?.trim();
-      if (inner) return `[${inner}: <to be filled>]`;
+      if (inner) {
+        const compacted = compactPlaceholderLabel(inner);
+        return compacted ? `[${compacted}: <to be filled>]` : "[<to be filled>]";
+      }
       return "[<to be filled>]";
     }
   );

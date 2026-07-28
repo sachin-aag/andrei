@@ -118,7 +118,49 @@ export function serializeAiFixCommentContent(payload: ParsedAiFixPayload): strin
   return JSON.stringify(payload);
 }
 
-/** Open ai_fix comments for a section, sorted red-first then criterion order. */
+export type ParsedAiRedraftPayload = {
+  /** Full replacement content for the target field, as GFM-subset markdown. */
+  markdown: string;
+  reasoning: string;
+  /**
+   * Hash of the TARGET FIELD's text when this redraft was created. Per-field
+   * (not per-section) so applying one draft never marks drafts for other
+   * fields as stale.
+   */
+  fieldHashAtSuggestion?: string;
+};
+
+export function parseAiRedraftCommentContent(content: string): ParsedAiRedraftPayload {
+  try {
+    const parsed = JSON.parse(content) as Partial<ParsedAiRedraftPayload>;
+    if (parsed && typeof parsed === "object" && typeof parsed.markdown === "string") {
+      return {
+        markdown: parsed.markdown,
+        reasoning: typeof parsed.reasoning === "string" ? parsed.reasoning : "",
+        fieldHashAtSuggestion:
+          typeof parsed.fieldHashAtSuggestion === "string"
+            ? parsed.fieldHashAtSuggestion
+            : undefined,
+      };
+    }
+  } catch {
+    // legacy/plain content: treat the whole string as markdown
+  }
+  return { markdown: content, reasoning: "" };
+}
+
+export function serializeAiRedraftCommentContent(
+  payload: ParsedAiRedraftPayload
+): string {
+  return JSON.stringify(payload);
+}
+
+/** AI suggestion kinds reviewed via the suggestion card. */
+export function isAiSuggestionKind(kind: string): kind is "ai_fix" | "ai_redraft" {
+  return kind === "ai_fix" || kind === "ai_redraft";
+}
+
+/** Open AI suggestions (fixes + redrafts) for a section, red-first then criterion order. */
 export function sortedOpenSuggestionsForSection(
   section: SectionType,
   comments: CommentRecord[],
@@ -128,7 +170,7 @@ export function sortedOpenSuggestionsForSection(
   const open = comments.filter(
     (c) =>
       !c.parentId &&
-      c.kind === "ai_fix" &&
+      isAiSuggestionKind(c.kind) &&
       c.status === "open" &&
       c.section === section
   );

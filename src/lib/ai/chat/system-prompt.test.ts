@@ -13,18 +13,18 @@ describe("isChatMode", () => {
 });
 
 describe("buildChatSystemPrompt", () => {
-  it("plan mode forbids editing and asks questions", () => {
+  it("plan mode forbids editing and asks questions via ask_user", () => {
     const prompt = buildChatSystemPrompt({ ...opts, mode: "plan" });
     expect(prompt).toContain("Mode: PLAN");
-    expect(prompt).toContain("edit tool is disabled");
-    expect(prompt).toContain("follow-up questions");
+    expect(prompt).toContain("edit tools are disabled");
+    expect(prompt).toContain("ask_user");
     expect(prompt).not.toContain("Mode: AGENT");
   });
 
-  it("agent mode enables drafting with skip/placeholder heuristics", () => {
+  it("agent mode enables drafting with draft_field and placeholder heuristics", () => {
     const prompt = buildChatSystemPrompt({ ...opts, mode: "agent" });
     expect(prompt).toContain("Mode: AGENT");
-    expect(prompt).toContain("SKIP the section");
+    expect(prompt).toContain("draft_field");
     expect(prompt).toContain("placeholder");
     expect(prompt).not.toContain("Mode: PLAN");
   });
@@ -45,7 +45,9 @@ describe("buildChatSystemPrompt", () => {
       criteriaOutline: "DEFINE_ONLY",
     });
     expect(prompt).toContain("Section focus: Define [define]");
-    expect(prompt).toContain('only call read_section / propose_edit on section "define"');
+    expect(prompt).toContain(
+      'only call read_section / draft_field / propose_edit on section "define"'
+    );
     expect(prompt).toContain("DEFINE_ONLY");
     expect(prompt).not.toContain("[measure]:");
   });

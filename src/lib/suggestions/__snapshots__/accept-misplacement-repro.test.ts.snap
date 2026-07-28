@@ -1,0 +1,105 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`suggestion apply — currently-correct snapshots (characterization) > plain preview segments for anchored replace 1`] = `
+[
+  {
+    "kind": "context",
+    "text": "",
+  },
+  {
+    "kind": "delete",
+    "text": "hence there is no requirement of Corrective Action.",
+  },
+  {
+    "kind": "insert",
+    "text": "therefore, the following specific preventive action is proposed.",
+  },
+  {
+    "kind": "context",
+    "text": "",
+  },
+]
+`;
+
+exports[`suggestion apply — currently-correct snapshots (characterization) > plain replace / pure insert / pure delete > plain-pure-delete 1`] = `"alpha  gamma"`;
+
+exports[`suggestion apply — currently-correct snapshots (characterization) > plain replace / pure insert / pure delete > plain-pure-insert 1`] = `"system is working as per its intended use regarding the root cause therefore, the following"`;
+
+exports[`suggestion apply — currently-correct snapshots (characterization) > plain replace / pure insert / pure delete > plain-replace 1`] = `"therefore, the following specific preventive action is proposed."`;
+
+exports[`suggestion apply — currently-correct snapshots (characterization) > rich empty-anchor append (new-paragraph insert) 1`] = `
+{
+  "content": [
+    {
+      "content": [
+        {
+          "text": "Root cause analysis complete.",
+          "type": "text",
+        },
+      ],
+      "type": "paragraph",
+    },
+    {
+      "content": [
+        {
+          "text": "Regulatory notification was not required as there was no product impact.",
+          "type": "text",
+        },
+      ],
+      "type": "paragraph",
+    },
+  ],
+  "type": "doc",
+}
+`;
+
+exports[`suggestion apply — currently-correct snapshots (characterization) > rich single-paragraph pure delete 1`] = `
+{
+  "content": [
+    {
+      "content": [
+        {
+          "text": "The operator  the deviation.",
+          "type": "text",
+        },
+      ],
+      "type": "paragraph",
+    },
+  ],
+  "type": "doc",
+}
+`;
+
+exports[`suggestion apply — currently-correct snapshots (characterization) > rich single-paragraph pure insert 1`] = `
+{
+  "content": [
+    {
+      "content": [
+        {
+          "text": "Initial scope was limited to Line 3 filling operations.The investigation was later expanded to include Line 4.",
+          "type": "text",
+        },
+      ],
+      "type": "paragraph",
+    },
+  ],
+  "type": "doc",
+}
+`;
+
+exports[`suggestion apply — currently-correct snapshots (characterization) > rich single-paragraph replace 1`] = `
+{
+  "content": [
+    {
+      "content": [
+        {
+          "text": "On dated [detection date: <to be filled>] at approximately [time: <to be filled>] hrs, while performing routine operation.",
+          "type": "text",
+        },
+      ],
+      "type": "paragraph",
+    },
+  ],
+  "type": "doc",
+}
+`;

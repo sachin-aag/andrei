@@ -1,6 +1,6 @@
 import type { JSONContent } from "@tiptap/core";
 import { describe, expect, it } from "vitest";
-import { findPlaceholders } from "@/lib/placeholders/find";
+import { findPlaceholders, MAX_PLACEHOLDER_LABEL_LENGTH } from "@/lib/placeholders/find";
 
 describe("findPlaceholders", () => {
   it("finds bracketed placeholders with and without angle brackets", () => {
@@ -124,5 +124,46 @@ describe("findPlaceholders", () => {
         "[number]",
       ].sort()
     );
+  });
+
+  it("treats long AI guidance labels as placeholders only after compaction", () => {
+    const long = "[Name/ID of Monitoring System or Refrigerator Unit]";
+    expect(long.slice(1, -1).length).toBeGreaterThan(MAX_PLACEHOLDER_LABEL_LENGTH);
+
+    const beforeDoc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: `The affected equipment/system is ${long}.`,
+            },
+          ],
+        },
+      ],
+    };
+    expect(findPlaceholders(beforeDoc, "define", "narrative")).toEqual([]);
+
+    const compacted =
+      "[Monitoring System or Refrigerator Unit: <to be filled>]";
+    const afterDoc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: `The affected equipment/system is ${compacted}.`,
+            },
+          ],
+        },
+      ],
+    };
+    expect(findPlaceholders(afterDoc, "define", "narrative").map((p) => p.text)).toEqual([
+      compacted,
+    ]);
   });
 });

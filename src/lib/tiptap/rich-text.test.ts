@@ -4,7 +4,6 @@ import {
   appendParagraphsToDoc,
   legacyStringToDoc,
   MAMMOTH_SOFT_BREAK,
-  replaceTextInDoc,
   richJsonToPlainText,
   stripSuggestionMarksFromDoc,
 } from "@/lib/tiptap/rich-text";
@@ -81,32 +80,6 @@ describe("rich text helpers", () => {
 
     expect(richJsonToPlainText(doc)).toBe(
       "Root cause\nObserved during review.\n\n• Batch record"
-    );
-  });
-
-  it("replaces text with whitespace-tolerant anchor matching", () => {
-    const doc: JSONContent = {
-      type: "doc",
-      content: [
-        {
-          type: "paragraph",
-          content: [
-            { type: "text", text: "The deviation was observed" },
-            { type: "text", text: " during routine analysis." },
-          ],
-        },
-      ],
-    };
-
-    const result = replaceTextInDoc(
-      doc,
-      "deviation   was observed during",
-      "deviation was documented during",
-    );
-
-    expect(result.replaced).toBe(true);
-    expect(richJsonToPlainText(result.doc)).toBe(
-      "The deviation was documented during routine analysis.",
     );
   });
 

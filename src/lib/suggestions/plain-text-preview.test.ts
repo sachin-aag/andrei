@@ -24,6 +24,18 @@ describe("buildPlainTextSuggestionPreview", () => {
     ]);
   });
 
+  it("returns null when delete is missing (same as apply)", () => {
+    const value = "the batch was released after review";
+    expect(
+      buildPlainTextSuggestionPreview(
+        value,
+        "was rejected",
+        "was quarantined",
+        "the batch was released after review"
+      )
+    ).toBeNull();
+  });
+
   it("returns null when anchor matches more than once", () => {
     const value = "use the tool and use the spare";
     expect(

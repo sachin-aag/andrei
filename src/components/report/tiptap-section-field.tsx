@@ -46,10 +46,6 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useUserDirectory } from "@/providers/user-directory-provider";
 import { cn } from "@/lib/utils";
-import {
-  CommentPersistError,
-  patchCommentStatus,
-} from "@/lib/suggestions/persist-comment-status";
 import { createCommentHighlightExtension } from "@/lib/tiptap/comment-highlights";
 import type { CommentHighlightRange, CommentHighlightHandlers } from "@/lib/tiptap/comment-highlights";
 import {
@@ -69,22 +65,29 @@ import {
   type SuggestionActionWidgetState,
 } from "@/lib/tiptap/suggestion-action-widgets";
 import {
-  acceptSuggestionMarksById,
   injectSuggestionMarks,
   stripPendingSuggestionsExcept,
-  stripSuggestionMarksById,
 } from "@/lib/tiptap/suggestion-inject";
 import { AI_AUTHOR_ID } from "@/lib/ai/constants";
-import { parseAiFixCommentContent } from "@/lib/ai/suggestion-gating";
 import {
-  buildSuggestionEdit,
-  narrativeHasSuggestionMarks,
-} from "@/lib/suggestions/apply-narrative-suggestion";
+  isAiSuggestionKind,
+  parseAiFixCommentContent,
+  parseAiRedraftCommentContent,
+} from "@/lib/ai/suggestion-gating";
+import { buildRedraftPreviewDoc } from "@/lib/tiptap/redraft-preview";
+import { markdownToDoc } from "@/lib/tiptap/markdown-to-doc";
+import { buildSuggestionEdit, narrativeHasSuggestionMarks } from "@/lib/suggestions/apply-narrative-suggestion";
+import {
+  acceptSuggestion,
+  dismissSuggestion,
+  CommentPersistError,
+} from "@/lib/suggestions/accept-suggestion";
+import { suggestionTargetsField } from "@/lib/suggestions/resolve-suggestion-field-path";
 import { validateSuggestionLocate } from "@/lib/suggestions/validate-suggestion";
 import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
-import { setRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { editorRegistryKey } from "@/providers/report-provider";
 import type { SectionType } from "@/db/schema";
+import type { SectionContentMap } from "@/types/sections";
 
 function TableEditToolbar({
   editor,
@@ -366,7 +369,7 @@ export function TiptapSectionField({
       .filter(
         (c) =>
           !c.parentId &&
-          c.kind !== "ai_fix" &&
+          !isAiSuggestionKind(c.kind) &&
           c.section === section &&
           c.contentPath === contentPath &&
           c.fromPos != null &&
@@ -551,45 +554,68 @@ export function TiptapSectionField({
     editor.setEditable(editable);
   }, [editor, editable]);
 
-  const persistSuggestion = useCallback(
-    async (commentId: string, status: "resolved" | "dismissed") => {
-      await patchCommentStatus(report.id, commentId, status);
+  const applySuggestionInEditor = useCallback(
+    async (suggestionId: string, mode: "accept" | "dismiss") => {
+      const comment = comments.find((c) => c.id === suggestionId);
+      if (!comment) throw new Error("Suggestion not found");
+
+      const currentSection = sections[section] as Record<string, unknown>;
+      const result =
+        mode === "accept"
+          ? await acceptSuggestion({
+              reportId: report.id,
+              section,
+              comment,
+              sectionContent: currentSection,
+              fieldContentPath: contentPath,
+            })
+          : await dismissSuggestion({
+              reportId: report.id,
+              section,
+              comment,
+              sectionContent: currentSection,
+              fieldContentPath: contentPath,
+            });
+
+      if (!result.ok) {
+        if (result.reason === "status_failed") {
+          throw (
+            result.error instanceof CommentPersistError
+              ? result.error
+              : new CommentPersistError(0, "Could not update suggestion")
+          );
+        }
+        throw new Error(
+          result.reason === "save_failed"
+            ? "Save failed"
+            : "Suggestion could not be located"
+        );
+      }
+
+      // Do not mutate editor-local JSON — external-value sync repaints from section state.
+      if (result.nextSection) {
+        replaceSection(
+          section,
+          result.nextSection as SectionContentMap[typeof section]
+        );
+      }
       setComments((prev) =>
-        status === "dismissed"
-          ? prev.filter((c) => c.id !== commentId)
+        mode === "dismiss"
+          ? prev.filter((c) => c.id !== suggestionId)
           : prev.map((c) =>
-              c.id === commentId ? { ...c, status: "resolved" as const } : c
+              c.id === suggestionId ? { ...c, status: "resolved" as const } : c
             )
       );
     },
-    [report.id, setComments]
-  );
-
-  const applySuggestionInEditor = useCallback(
-    async (suggestionId: string, mode: "accept" | "dismiss") => {
-      if (!editor) return;
-      const json = editor.getJSON() as JSONContent;
-      const next =
-        mode === "accept"
-          ? acceptSuggestionMarksById(json, suggestionId)
-          : stripSuggestionMarksById(json, suggestionId);
-      editor.commands.setContent(next as Content, { emitUpdate: false });
-      onChangeRef.current(next);
-      const currentSection = sections[section] as Record<string, unknown>;
-      const nextSection = setRichFieldValue(currentSection, contentPath, next);
-      const res = await fetch(`/api/reports/${report.id}/sections/${section}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: nextSection }),
-      });
-      if (!res.ok) throw new Error("Save failed");
-      replaceSection(section, nextSection as never);
-      await persistSuggestion(
-        suggestionId,
-        mode === "accept" ? "resolved" : "dismissed"
-      );
-    },
-    [editor, report.id, section, contentPath, sections, replaceSection, persistSuggestion]
+    [
+      comments,
+      report.id,
+      section,
+      contentPath,
+      sections,
+      replaceSection,
+      setComments,
+    ]
   );
 
   useEffect(() => {
@@ -693,9 +719,9 @@ export function TiptapSectionField({
       const comment = comments.find(
         (c) =>
           c.id === activeSuggestionId &&
-          c.kind === "ai_fix" &&
+          isAiSuggestionKind(c.kind) &&
           c.status === "open" &&
-          (c.contentPath === contentPath || c.contentPath === "narrative")
+          suggestionTargetsField(section, c.contentPath, contentPath)
       );
       if (comment) {
         const validation = validateSuggestionLocate(
@@ -704,20 +730,35 @@ export function TiptapSectionField({
           sectionContent,
           contentPath
         );
-        if (validation.canPreview) {
+        if (validation.canPreview && comment.kind === "ai_redraft") {
+          // Full-field redraft: current content struck through, replacement
+          // highlighted. Same mark machinery as fixes handles accept/dismiss.
+          const redraft = parseAiRedraftCommentContent(comment.content);
+          json = buildRedraftPreviewDoc(json, markdownToDoc(redraft.markdown), {
+            id: activeSuggestionId,
+            authorId: AI_AUTHOR_ID,
+            status: "pending",
+            createdAt: comment.createdAt,
+            kind: "redraft",
+          });
+        } else if (validation.canPreview) {
           const payload = parseAiFixCommentContent(comment.content);
           const edit = buildSuggestionEdit({
             anchorText: comment.anchorText,
             deleteText: payload.deleteText,
             insertText: payload.insertText,
           });
-          json = injectSuggestionMarks(json, edit, {
+          const injected = injectSuggestionMarks(json, edit, {
             id: activeSuggestionId,
             authorId: AI_AUTHOR_ID,
             status: "pending",
             createdAt: comment.createdAt,
             kind: "fix",
-          }).doc;
+          });
+          // Never paint a preview (or enable inline accept) unless locate succeeded.
+          if (injected.located) {
+            json = injected.doc;
+          }
         }
       }
     }

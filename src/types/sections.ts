@@ -5,6 +5,10 @@ export type DefineSection = {
   narrative: JSONContent;
 };
 
+/**
+ * Single narrative box. The optional fields only exist on legacy stored rows;
+ * `mergeMeasureSection` folds them into `narrative` and drops the keys.
+ */
 export type MeasureSection = {
   narrative: JSONContent;
   regulatoryNotification?: string;
@@ -92,10 +96,6 @@ export const EMPTY_CONTENT: SectionContentMap = {
   },
   measure: {
     narrative: emptyDoc(),
-    experimentNumber: "",
-    experimentTitle: "",
-    purpose: emptyDoc(),
-    conclusion: emptyDoc(),
   },
   analyze: {
     sixM: {

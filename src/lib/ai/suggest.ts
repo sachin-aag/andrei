@@ -3,6 +3,7 @@ import { z } from "zod";
 import { resolveGoogleLanguageModel } from "@/lib/ai/resolve-google-language-model";
 import type { CriterionStatus, SectionType } from "@/db/schema";
 import { contextForPrompt } from "@/lib/ai/section-context";
+import { contextForSuggestionPrompt } from "@/lib/ai/suggestion-section-context";
 import type { AllSectionsContent } from "@/lib/ai/evaluate";
 import {
   buildSuggestionSystemPrompt,
@@ -99,7 +100,8 @@ function buildPriorSectionsBlock(
 
 function sectionContentForPrompt(section: SectionType, content: unknown): string {
   const cleaned = cleanSectionContentForEval(section, content);
-  return contextForPrompt(section, cleaned);
+  // Editable section: canonical anchor string (same as locate/apply).
+  return contextForSuggestionPrompt(section, cleaned);
 }
 
 export async function generateSuggestionsForSection({

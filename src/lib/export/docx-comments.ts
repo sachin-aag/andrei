@@ -1,5 +1,6 @@
 import PizZip from "pizzip";
 import type { SectionType } from "@/db/schema";
+import { formatCommentForExport } from "@/lib/comments/export-format";
 import type { DocxExportContext, DocxCommentExportEntry } from "@/lib/export/docx-export-context";
 import { getUser } from "@/lib/auth/user-directory";
 
@@ -78,6 +79,13 @@ function paraIdFor(appId: string): string {
   return (hash >>> 0).toString(16).toUpperCase().padStart(8, "0");
 }
 
+/** Word comments carry live discussion only; resolved/dismissed history lives in the audit trail. */
+export function shouldExportComment(
+  comment: Pick<ReportDocxComment, "status">
+): boolean {
+  return comment.status === "open";
+}
+
 function registerComment(
   ctx: DocxExportContext,
   comment: ReportDocxComment,
@@ -96,7 +104,7 @@ function registerComment(
     authorName: name,
     authorInitials: comment.externalAuthorInitials || initialsFromName(name),
     createdAt: asDate(comment.externalCreatedAt ?? comment.createdAt),
-    content: comment.content,
+    content: formatCommentForExport(comment),
   };
   ctx.nextCommentId += 1;
   ctx.comments.push(entry);
@@ -161,10 +169,10 @@ export function attachCommentsToFirstParagraph(
   root: ReportDocxComment,
   replies: ReportDocxComment[]
 ): string {
-  if (!xml || root.status === "dismissed") return xml;
+  if (!xml || !shouldExportComment(root)) return xml;
   const rootEntry = registerComment(ctx, root, null);
   for (const reply of replies) {
-    if (reply.status !== "dismissed") registerComment(ctx, reply, rootEntry);
+    if (shouldExportComment(reply)) registerComment(ctx, reply, rootEntry);
   }
 
   const anchoredXml = attachCommentToAnchorText(

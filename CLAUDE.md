@@ -32,7 +32,11 @@ pnpm db:local:setup       # up + push schema to local DB
 pnpm db:local:reset       # reset local DB (destructive)
 pnpm db:ensure            # ensure required DB tables/enums exist
 pnpm set-workspace-password  # set a workspace user's password (CLI prompt)
+pnpm db:ensure-workspace-users  # upsert the mock workspace users into the DB
+pnpm seed-demo-reports    # seed demo reports for the demo engineer (loads .env + .env.local)
 pnpm sample-eval-report   # bulk AI evaluation of sample DOCXs → HTML report (needs gateway key)
+pnpm model-sweep          # run the AI eval across multiple models (scripts/eval/)
+pnpm compare-evals        # diff two eval runs (scripts/eval/)
 ```
 
 **One-time E2E setup:**
@@ -48,23 +52,34 @@ pnpm exec playwright install --with-deps chromium firefox webkit
 
 ### Key directories
 
-- `src/app/api/reports/[reportId]/` — Route handlers for report CRUD, section auto-save (`sections/[sectionType]`), AI evaluation, evaluation bypass (`evaluations/[evalId]`), comments, submit/approve/feedback workflow, and DOCX export.
+- `src/app/api/reports/[reportId]/` — Route handlers for report CRUD, section auto-save (`sections/[sectionType]`), AI `evaluate`, evaluation bypass (`evaluations/[evalId]`), AI `suggestions`, `comments`, `submit`/`approve`/`feedback` workflow, `chat` (AI chat), `audit` (trail), `attachments`, and `export`/`complete-export` (DOCX).
 - `src/app/improve-ai/` — Improve AI pages: session list and `[sessionId]` review page.
 - `src/app/api/improve-ai/` — API routes for creating sessions (from report or uploaded DOCX), listing sessions, and completing review.
+- `src/app/api/reports/[reportId]/chat/` — AI chat sessions/messages scoped to a report (see AI Chat subsystem).
+- `src/app/admin/` + `src/app/api/admin/` — Admin console (audit log viewer, user management, retention/password-policy settings). API: `audit`, `users` (+ `reset-password`, `unlock`), `password-policy`, `retention`, `reports/[reportId]/{purge,source-docx}`.
+- `src/app/insights/` — Analytics dashboards (`dashboard`, `doc-insights`, `management`, `pitfalls`). Currently backed by `src/lib/insights/mock-data.ts`.
+- `src/app/api/site-access/` — Site-wide password gate (see Site Access subsystem).
+- `src/app/{login,change-password,forgot-password,reset-password,unlock,profile}/` — auth/account pages. `src/app/api/auth-pw/` — password-based auth routes (forgot/reset).
 - `src/components/report/` — Editor UI: `report-workspace.tsx` (header + tabs + sidebar), per-section editors in `sections/`, `report-sidebar.tsx` (AI traffic-light results), `review-rail/` (manager comment margin UI).
 - `src/components/improve-ai/` — Improve AI UI: session form, upload button, section content display, stale-rerun dialog.
 - `src/components/ui/` — shadcn-style Radix UI primitives.
-- `src/db/schema/` — Drizzle schema: `reports`, `reportSections`, `criteriaEvaluations`, `comments`, `workspaceUsers`, `reportSourceDocx` (original .docx as bytea), `mathExtractionCache` (LLM formula cache keyed by image SHA-256), `aiFeedbackSessions`, `aiFeedbackResponses`, `passwordResetTokens`, plus NextAuth tables in `auth.ts`.
-- `src/lib/ai/` — AI evaluation pipeline (see subsystem below).
+- `src/db/schema/index.ts` — Drizzle schema (single file, not a directory): `workspaceUsers`, `reports`, `reportManagers` (many managers per report), `reportSections`, `criteriaEvaluations`, `comments`, `chatSessions`/`chatMessages` (AI chat), `reportSourceDocx` (original .docx as bytea), `mathExtractionCache` (LLM formula cache keyed by image SHA-256), `aiFeedbackSessions`/`aiFeedbackResponses` (Improve AI), `auditEvents`/`sectionContentVersions`/`electronicSignatures` (audit subsystem), `passwordPolicySettings`, `retentionSettings`. NextAuth tables + `authUsers` in `auth.ts`.
+- `src/lib/ai/` — AI evaluation, suggestion, and chat pipelines (see subsystems below).
+- `src/lib/audit/` — Hash-chained audit log, section version history, and e-signature workflow (see Audit subsystem).
+- `src/lib/reports/` — Report domain logic: access control (`access.ts`), manager authorization, deviation-no generation, submit validation, source-docx persistence, blank-section seeding, tombstones.
+- `src/lib/admin/` — Admin-console business logic (user/retention/password-policy operations).
 - `src/lib/improve-ai/` — Improve AI business logic: session store, session view, human-judgment tracking, response syncing, staleness detection.
+- `src/lib/analytics/` — PostHog client event capture (`events.ts` enumerates the event names).
+- `src/lib/eval/` — Offline eval harness helpers (model sweep, run comparison).
 - `src/lib/export/` — DOCX generation (see subsystem below).
 - `src/lib/import/` — DOCX parsing (see subsystem below).
-- `src/lib/tiptap/` — TipTap editor extensions and utilities: rich text helpers, placeholder highlights, suggestion injection.
+- `src/lib/tiptap/` — TipTap editor extensions and utilities: rich text helpers, placeholder highlights, suggestion injection, redraft preview.
 - `src/lib/placeholders/` — Placeholder detection, fill, scan, and evaluation policy.
-- `src/lib/suggestions/` — Suggestion validation, plain-text edit location, comment persistence.
+- `src/lib/suggestions/` — Suggestion validation, plain-text edit location, comment persistence, whole-field redraft apply (`apply-redraft.ts`).
+- `src/lib/site-access-token.ts` / `site-access-cookie.ts` — HMAC-signed site-gate token + cookie helpers.
 - `src/providers/report-provider.tsx` — Centralized client-side state via React Context.
 - `src/hooks/` — Auto-save hooks (see subsystem below).
-- `src/proxy.ts` — Next.js middleware logic (auth redirects, `mustChangePassword` enforcement). Exported as `proxy` and re-used by the actual `middleware.ts` entry point.
+- `src/proxy.ts` — Next.js middleware logic (auth redirects, `mustChangePassword`/`passwordExpired` enforcement). Exported as `proxy` and re-used by the actual `middleware.ts` entry point. Note: it does **not** enforce the site-access gate (that lives on the `/unlock` page).
 
 ### Data flow
 
@@ -84,7 +99,9 @@ DMAIC (`define`, `measure`, `analyze`, `improve`, `control`) plus three non-edit
 
 ### Auth
 
-NextAuth v5 with Drizzle adapter. Credentials (email/password) and Resend (magic link). Mock users defined in `src/lib/auth/mock-users.ts` (2 engineers, 2 managers). JWT-based sessions with `workspaceUserId`.
+NextAuth v5 with Drizzle adapter. Credentials (email/password) and Resend (magic link). JWT-based sessions with `workspaceUserId` and `role`. Roles: `engineer`, `manager`, `admin`, `qa` (`src/lib/auth/roles.ts`, `userRoleEnum`). E2E/test seed accounts are created via `POST /api/test/seed-auth-users`; user helpers live in `src/lib/auth/` (`workspace-users.ts`, `user-directory.ts`).
+
+Password lifecycle is enforced beyond NextAuth: `mustChangePassword`/`passwordExpired` force a redirect to `/change-password` (via the proxy); configurable password policy in `passwordPolicySettings`; failed-login lockout with admin unlock at `POST /api/admin/users/[userId]/unlock`; self-service forgot/reset via `/forgot-password`, `/reset-password`, and `src/app/api/auth-pw/`. An optional site-wide password gate (`/unlock`, `POST /api/site-access`) is active only when `SITE_ACCESS_PASSWORD` is set.
 
 ## Environment variables
 
@@ -97,6 +114,8 @@ Required in `.env.local` (see `.env.example` for all options):
 | `AUTH_RESEND_KEY` | Resend API key for magic-link emails |
 | `AI_GATEWAY_API_KEY` | Vercel AI Gateway key (recommended). AI features fail without this or `GOOGLE_GENERATIVE_AI_API_KEY`. |
 | `GOOGLE_GENERATIVE_AI_API_KEY` | Direct Gemini key (alternative to gateway) |
+| `SITE_ACCESS_PASSWORD` | Optional. When set, enables the site-wide password gate at `/unlock`. Unset = gate disabled. |
+| `NEXT_PUBLIC_POSTHOG_KEY` | Optional. Enables PostHog analytics event capture (`src/lib/analytics/`). |
 
 **Test-only variables** (never set on Vercel production or preview):
 
@@ -166,16 +185,16 @@ The email must be `@mjbiopharm.com`. The account is flagged `mustChangePassword`
 
 **Pipeline:**
 1. `gapCriteriaForSection()` (in `suggestion-gating.ts`) filters to failing criteria (not_met + partially_met) with no existing open ai_fix comment
-2. Prompt includes each failing criterion with status and reasoning
+2. Prompt includes each failing criterion with status and reasoning. Editable `SECTION CONTENT` is built by `contextForSuggestionPrompt()` (`suggestion-section-context.ts`) using the **canonical anchor string** (`flattenForAnchor`) — no markdown pipes / `[equation]` tokens. Prior sections stay markdown via `contextForPrompt`. Eval is untouched.
 3. `generateText()` with Gemini 3.1-pro, temperature 0.4 (variety in phrasing). Schema returns `{ criterionKey, targetField, anchorText, deleteText, insertText, reasoning }`
-4. Gating drops suggestions: bad criterion key, bad target field, empty edit, placeholder-only edit, anchor not found, anchor ambiguous (>1 match)
+4. Gating drops suggestions via `probeRichEdit` / `probePlainEdit` (same code path as apply): bad criterion key, bad target field, empty edit, placeholder-only edit, not found, ambiguous, cross-cell
 5. `sortedOpenSuggestionsForSection()` orders: red first, then yellow, then criterion order. `activeSuggestionForSection()` returns highest-priority for UI.
 
-**Applying suggestions:**
-- Narrative fields: `applyNarrativeSuggestion()` → `injectSuggestionMarks()` adds pending TipTap marks (red strikethrough for delete, green underline for insert) → `acceptSuggestionMarksById()` finalizes
-- Plain text fields: `applyStructuredFieldSuggestion()` navigates dot-path, calls `applyPlainTextEdit()` with `locateUniqueSpan()` (fails if 0 or >1 matches)
+**Locator (single matcher):** `src/lib/suggestions/locator.ts` — `flattenForAnchor`, `locateEdit`, `applyEditToRichDoc` / `applyEditToPlainText`, `probeRichEdit` / `probePlainEdit`. Gate ≡ apply is structural (probe is locate without commit).
 
-**Key invariant:** Anchor must be unique in the target text. Whitespace is normalized for matching (multiple spaces/newlines → single space).
+**Applying suggestions:** all three UI surfaces (suggestion card, rich TipTap widget, plain-text field) go through `acceptSuggestion` / `dismissSuggestion` in `accept-suggestion.ts`. Order: locate → apply → PATCH section → flip comment status. Never resolve without a successful apply.
+
+**Key invariant:** Anchor must be unique in the canonical field text. Whitespace is normalized for matching (multiple spaces/newlines → single space). Cross-paragraph deletes are allowed; cross-cell deletes are dropped.
 
 ## Subsystem: DOCX Export
 
@@ -228,6 +247,42 @@ The email must be `@mjbiopharm.com`. The account is flagged `mustChangePassword`
 4. `POST .../complete` marks session `reviewed`
 
 **Staleness:** `src/lib/improve-ai/session-staleness.ts` detects when the underlying report has changed since the session was created, prompting a re-run dialog.
+
+## Subsystem: Audit Trail & E-Signatures
+
+**Purpose:** 21 CFR Part 11-style tamper-evident audit trail, section version history, and electronic signatures on workflow transitions.
+
+**Entry points (all re-exported from `src/lib/audit/index.ts`):**
+- `recordAuditEvent()` (`record-audit-event.ts`) — appends to the hash-chained `auditEvents` table (each row carries `seq` + `prevHash`; hashing matches a DB trigger).
+- `recordSectionVersion()` — snapshots section content into `sectionContentVersions`; `reconstructSection()` rebuilds a section at a given version.
+- `recordElectronicSignature()` / `listSignaturesForReport()` — writes `electronicSignatures` (meaning from `signatureMeaningEnum`).
+- `verifyAuditChain()` — validates monotonic `seq` and `prevHash` linkage; reports the first invalid seq.
+- `verify-password-for-signing.ts` + `workflow-sign.ts` — re-authenticate the user's password before a signed transition; `handleWorkflowSignRequest()` (`workflow-handler.ts`) is the signed submit/approve/feedback handler.
+- Export/review: `export.ts` + `audit-csv.ts` (CSV export), viewed in `src/app/admin/audit/`.
+
+**Key invariant:** The chain is append-only; content edits go through `hashSectionContent()` and version snapshots, never in-place history rewrites.
+
+## Subsystem: AI Chat
+
+**Purpose:** Per-report conversational assistant that can read report context and propose edits.
+
+**Entry point:** `POST /api/reports/[reportId]/chat` — `streamText()` (via `resolveChatLanguageModel()`) with tools from `buildChatTools()`, streamed back with `toUIMessageStreamResponse()`. Sessions/messages persist in `chatSessions`/`chatMessages` and are managed under `chat/sessions/[sessionId]`.
+
+**Logic in `src/lib/ai/chat/`:** `system-prompt.ts` (mode-aware prompt), `context-map.ts` (serializes report state for the model), `fields.ts`/`section-scope.ts` (which sections/fields are in scope), `propose-edit.ts` (validates a proposed edit), `session-title.ts`, `access.ts` (report access guard). `ALLOW_TEST_*` / `stub-model.ts` provide a deterministic model in tests.
+
+## Subsystem: Redrafts
+
+**Purpose:** A suggestion variant that replaces an **entire field** (not an anchored span) with LLM-generated markdown — used for AI-authored rewrites.
+
+**Apply:** `applyRedraftToSection()` in `src/lib/suggestions/apply-redraft.ts` — rich target fields get `markdownToDoc()` (tables included); plain fields get flattened via `redraftPlainTextValue()`. Whole-field replacement, no anchor matching.
+
+**Preview:** `buildRedraftPreviewDoc()` in `src/lib/tiptap/redraft-preview.ts` renders the redraft as inline tracked changes (current content struck through + replacement highlighted) reusing the standard suggestion-mark machinery, so `acceptSuggestionMarksById()`/`stripSuggestionMarksById()` finalize or revert it.
+
+## Subsystem: Site Access Gate
+
+**Purpose:** Optional single shared-password gate in front of the whole site (e.g. for preview deployments), independent of user auth.
+
+**Flow:** Active only when `SITE_ACCESS_PASSWORD` is set. `POST /api/site-access` compares the password (`timingSafeEqual`), mints an HMAC token (`mintSiteAccessToken`), and sets the httpOnly `mjb_site_access` cookie (30-day). The `/unlock` page (`src/app/unlock/page.tsx`) renders the password form and verifies the cookie. Not enforced by `src/proxy.ts`. Distinct from per-user account lockout (`/api/admin/users/[userId]/unlock`).
 
 ## Testing
 
