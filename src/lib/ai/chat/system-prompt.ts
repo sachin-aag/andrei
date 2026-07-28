@@ -33,10 +33,14 @@ The engineer has not narrowed scope. You may plan or draft across any editable s
   }
 
   const label = sectionLabel(scope);
+  const priorReadNote =
+    scope === "analyze"
+      ? `\n- Exception for Analyze method selection: you MAY call read_section on define and measure (read-only) to choose 6M vs 5-Why vs Brainstorming.`
+      : "";
   return `## Section focus: ${label} [${scope}]
 The engineer selected **${label}** for this conversation. Focus Plan questions and Agent edits on this section only.
 - Plan mode: ask what is needed to complete ${label}; do not plan other sections unless they change the section dropdown.
-- Agent mode: only call read_section / draft_field / propose_edit on section "${scope}".
+- Agent mode: only call draft_field / propose_edit / select_analyze_method on section "${scope}". Prefer read_section on "${scope}" too.${priorReadNote}
 - If the request clearly belongs elsewhere, call suggest_section_scope before answering substantively — do not edit other sections.`;
 }
 
@@ -92,23 +96,35 @@ Editing rules:
 4. Never invent regulated facts (batch numbers, dates, results, equipment IDs) — use bracketed placeholders.
 5. After proposing, briefly summarize what you drafted, list placeholders to complete, and name any sections you deliberately skipped and why.`;
 
-const ANALYZE_DRAFTING_RULES = `## Analyze drafting rules (required when drafting Analyze)
-Exactly ONE root-cause method is required: 6M, 5-Why, or Brainstorming. Never draft two methods with real content.
+const ANALYZE_METHOD_HEURISTICS = `Method selection heuristics (exactly ONE of 6M / 5-Why / Brainstorming):
+- If the engineer named a method, use it.
+- Otherwise call read_section on define AND measure first, then infer:
+  - 5-Why — one technical/equipment failure traceable through a chain of mechanisms (the common case at this site).
+  - 6M — multiple contributing factors across man/machine/measurement/material/method/milieu that don't form a single causal chain.
+  - Brainstorming — cause is speculative or evidence is too thin for a structured grid; cross-functional idea capture.
+- If the context map already shows an analyze method, keep it unless the engineer explicitly asks to switch.
+- Never plan or draft two methods with real content. Unused methods become "Not Applicable".
+- Always include Investigation Outcome, Root Cause, and Impact Assessment (all six areas: System, Document, Product, Equipment, Patient safety, Past batches).`;
 
-Method selection:
-1. If the engineer named a method, use it.
-2. Otherwise call read_section on define AND measure first, then infer:
-   - 5-Why — one technical/equipment failure traceable through a chain of mechanisms (the common case at this site).
-   - 6M — multiple contributing factors across man/machine/measurement/material/method/milieu that don't form a single causal chain.
-   - Brainstorming — cause is speculative or evidence is too thin for a structured grid; cross-functional idea capture.
-3. Call select_analyze_method with the chosen method and a one-sentence rationale BEFORE drafting any Analyze field. State the choice and rationale in your reply.
-4. If the context map already shows an analyze method, keep it unless the engineer explicitly asks to switch.
+const ANALYZE_PLAN_RULES = `## Analyze planning rules (required when planning Analyze)
+${ANALYZE_METHOD_HEURISTICS}
 
-After select_analyze_method returns:
-- draft_field the chosen method's fields (draftFields from the tool result).
-- draft_field the literal text "Not Applicable" into every field listed in notApplicableFields (the template forbids deleting 6M questions; unused methods must still be present as N/A).
-- Always draft regardless of method: investigationOutcome, rootCause.narrative, and impactAssessment.
-- impactAssessment MUST cover all six areas as labelled lines — System, Document, Product, Equipment, Patient safety, Past batches — each with a statement or "No impact — <reason>". Never omit an area.`;
+In Plan mode you MUST:
+1. Read define and measure (unless the engineer already named a method or the context map already shows one).
+2. State your recommended method and a one-sentence rationale in prose BEFORE asking more questions.
+3. Then ask_user only for facts still missing for that chosen method plus the always-required fields (investigation outcome, root cause, impact across the six areas). Do not ask 6M-grid questions if you recommended 5-Why, and vice versa.
+4. In your closing PLAN, name the chosen method explicitly (e.g. "Analyze: draft 5-Why; mark 6M and Brainstorming Not Applicable; fill outcome / root cause / six-area impact").`;
+
+const ANALYZE_AGENT_RULES = `## Analyze drafting rules (required when drafting Analyze)
+${ANALYZE_METHOD_HEURISTICS}
+
+In Agent mode you MUST:
+1. Call select_analyze_method with the chosen method and a one-sentence rationale BEFORE drafting any Analyze field. State the choice and rationale in your reply.
+2. After select_analyze_method returns:
+   - draft_field the chosen method's fields (draftFields from the tool result).
+   - draft_field the literal text "Not Applicable" into every field listed in notApplicableFields (the template forbids deleting 6M questions).
+   - Always draft investigationOutcome, rootCause.narrative, and impactAssessment.
+   - impactAssessment MUST cover all six areas as labelled lines — System, Document, Product, Equipment, Patient safety, Past batches — each with a statement or "No impact — <reason>". Never omit an area.`;
 
 export function buildChatSystemPrompt(opts: {
   contextMap: string;
@@ -120,10 +136,13 @@ export function buildChatSystemPrompt(opts: {
   const { contextMap, criteriaOutline, mode } = opts;
   const sectionScope = opts.sectionScope ?? "all";
   const modeRules = mode === "plan" ? PLAN_RULES : AGENT_RULES;
-  const mismatchBlock = opts.scopeMismatch ? `\n\n${scopeMismatchBlock(opts.scopeMismatch)}` : "";
+  const mismatchBlock = opts.scopeMismatch
+    ? `\n\n${scopeMismatchBlock(opts.scopeMismatch)}`
+    : "";
   const analyzeInScope = chatSectionsInScope(sectionScope).includes("analyze");
-  const analyzeBlock =
-    analyzeInScope && mode === "agent" ? `\n\n${ANALYZE_DRAFTING_RULES}` : "";
+  const analyzeBlock = analyzeInScope
+    ? `\n\n${mode === "plan" ? ANALYZE_PLAN_RULES : ANALYZE_AGENT_RULES}`
+    : "";
 
   return `${PERSONA}
 

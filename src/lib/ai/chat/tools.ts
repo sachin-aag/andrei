@@ -123,13 +123,24 @@ export function buildChatTools(opts: {
       ? ""
       : ` Only section "${sectionScope}" is in scope for this chat.`;
   const analyzeInScope = allowedSections.includes("analyze");
+  // When Analyze is in scope, allow reading Define/Measure for method selection
+  // even if the dropdown is narrowed to Analyze (draft/propose stay restricted).
+  const readableSections: SectionType[] = analyzeInScope
+    ? Array.from(
+        new Set<SectionType>([...allowedSections, "define", "measure"])
+      )
+    : [...allowedSections];
+  const readableSectionEnum = readableSections as [SectionType, ...SectionType[]];
 
   const tools: ToolSet = {
     read_section: tool({
       description:
-        `Read the current text of an editable section so you can quote exact anchors. Optionally pass specific field paths; otherwise all editable fields are returned.${scopeHint}`,
+        `Read the current text of an editable section so you can quote exact anchors. Optionally pass specific field paths; otherwise all editable fields are returned.${scopeHint}` +
+        (analyzeInScope && sectionScope === "analyze"
+          ? " You may also read define and measure to choose the Analyze root-cause method."
+          : ""),
       inputSchema: z.object({
-        section: z.enum(sectionEnum).describe("Section to read."),
+        section: z.enum(readableSectionEnum).describe("Section to read."),
         fields: z
           .array(z.string())
           .optional()
@@ -137,6 +148,9 @@ export function buildChatTools(opts: {
       }),
       execute: async ({ section, fields }) => {
         if (!isChatEditableSection(section)) {
+          return { error: "invalid_section" as const };
+        }
+        if (!readableSections.includes(section)) {
           return { error: "invalid_section" as const };
         }
         const loaded = await loadMergedSection(reportId, section);

@@ -45,9 +45,7 @@ describe("buildChatSystemPrompt", () => {
       criteriaOutline: "DEFINE_ONLY",
     });
     expect(prompt).toContain("Section focus: Define [define]");
-    expect(prompt).toContain(
-      'only call read_section / draft_field / propose_edit on section "define"'
-    );
+    expect(prompt).toContain('on section "define"');
     expect(prompt).toContain("DEFINE_ONLY");
     expect(prompt).not.toContain("[measure]:");
   });
@@ -89,22 +87,35 @@ describe("buildChatSystemPrompt", () => {
       sectionScope: "analyze",
     });
     expect(analyzeScope).toContain("## Analyze drafting rules");
-    expect(analyzeScope).toContain("Exactly ONE root-cause method");
+    expect(analyzeScope).toContain("exactly ONE of 6M / 5-Why / Brainstorming");
   });
 
-  it("omits Analyze drafting rules when scoped away from analyze or in plan mode", () => {
+  it("includes Analyze planning rules in plan mode when analyze is in scope", () => {
+    const planAnalyze = buildChatSystemPrompt({
+      ...opts,
+      mode: "plan",
+      sectionScope: "analyze",
+    });
+    expect(planAnalyze).toContain("## Analyze planning rules");
+    expect(planAnalyze).toContain("recommended method");
+    expect(planAnalyze).toContain("read_section on define AND measure");
+    expect(planAnalyze).not.toContain("## Analyze drafting rules");
+  });
+
+  it("omits Analyze rules when scoped away from analyze", () => {
     const defineScope = buildChatSystemPrompt({
       ...opts,
       mode: "agent",
       sectionScope: "define",
     });
     expect(defineScope).not.toContain("## Analyze drafting rules");
+    expect(defineScope).not.toContain("## Analyze planning rules");
 
-    const planMode = buildChatSystemPrompt({
+    const planDefine = buildChatSystemPrompt({
       ...opts,
       mode: "plan",
-      sectionScope: "analyze",
+      sectionScope: "define",
     });
-    expect(planMode).not.toContain("## Analyze drafting rules");
+    expect(planDefine).not.toContain("## Analyze planning rules");
   });
 });

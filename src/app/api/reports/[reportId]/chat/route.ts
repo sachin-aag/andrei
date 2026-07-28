@@ -225,7 +225,7 @@ export async function POST(
     tools,
     // Agent mode drafts whole sections field-by-field (read + draft per field),
     // so it needs a substantially larger step budget than plan mode.
-    stopWhen: stepCountIs(mode === "plan" ? 4 : 24),
+    stopWhen: stepCountIs(mode === "plan" ? 8 : 24),
     ...langfuseGenerateTextTelemetry({
       functionId: "report-chat",
       metadata: { reportId, sessionId, mode, sectionScope, canEdit },
