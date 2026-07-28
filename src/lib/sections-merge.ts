@@ -21,6 +21,7 @@ import {
   emptyDoc,
   legacyStringToDoc,
   normalizeRichField,
+  prependNodesToDoc,
   richJsonToPlainText,
 } from "@/lib/tiptap/rich-text";
 import type { SectionType } from "@/db/schema";
@@ -36,33 +37,69 @@ export function mergeDefineSection(content: unknown): DefineSection {
   };
 }
 
+/** Bold label + value in one paragraph — matches the DOCX export's label rows. */
+function labelledParagraph(label: string, text: string): JSONContent {
+  return {
+    type: "paragraph",
+    content: [
+      { type: "text", marks: [{ type: "bold" }], text: label },
+      { type: "text", text },
+    ],
+  };
+}
+
+/** Bold label paragraph followed by the rich field's own blocks (formatting kept). */
+function labelledRichBlocks(label: string, doc: JSONContent): JSONContent[] {
+  return [
+    { type: "paragraph", content: [{ type: "text", marks: [{ type: "bold" }], text: label }] },
+    ...(doc.content ?? []),
+  ];
+}
+
+/**
+ * Measure is a single narrative box. Legacy rows also stored an experiment
+ * number/title/purpose/conclusion and a regulatory notification; fold them into
+ * the narrative (same order and labels the DOCX export used) and drop the keys
+ * so nothing is orphaned in a field the editor no longer renders.
+ */
 export function mergeMeasureSection(content: unknown): MeasureSection {
   const base = EMPTY_CONTENT.measure;
   if (!content || typeof content !== "object") return base;
   const o = content as Partial<MeasureSection>;
-  const { regulatoryNotification, ...rest } = o;
   const narrative = normalizeRichField(o.narrative ?? base.narrative);
-  const notificationText =
-    typeof regulatoryNotification === "string" ? regulatoryNotification.trim() : "";
-  const mergedNarrative =
-    notificationText && !richJsonToPlainText(narrative).includes(notificationText)
-      ? appendParagraphsToDoc(
-          narrative,
-          `Regulatory Notification: ${notificationText}`
-        )
-      : narrative;
+  const narrativeText = richJsonToPlainText(narrative);
 
-  return {
-    ...base,
-    ...rest,
-    narrative: mergedNarrative,
-    experimentNumber:
-      typeof o.experimentNumber === "string" ? o.experimentNumber : base.experimentNumber,
-    experimentTitle:
-      typeof o.experimentTitle === "string" ? o.experimentTitle : base.experimentTitle,
-    purpose: normalizeRichField(o.purpose ?? base.purpose),
-    conclusion: normalizeRichField(o.conclusion ?? base.conclusion),
+  const prefix: JSONContent[] = [];
+  const pushPlain = (label: string, value: unknown) => {
+    const text = typeof value === "string" ? value.trim() : "";
+    if (!text || narrativeText.includes(text)) return;
+    prefix.push(labelledParagraph(label, text));
   };
+  const pushRich = (label: string, value: unknown) => {
+    if (value === undefined || value === null) return;
+    const doc = normalizeRichField(value);
+    const text = richJsonToPlainText(doc).trim();
+    if (!text || narrativeText.includes(text)) return;
+    prefix.push(...labelledRichBlocks(label, doc));
+  };
+
+  pushPlain("Experiment Number: ", o.experimentNumber);
+  pushPlain("Experiment Title: ", o.experimentTitle);
+  pushRich("Purpose: ", o.purpose);
+  pushRich("Experiment Conclusion: ", o.conclusion);
+
+  let mergedNarrative = prependNodesToDoc(narrative, prefix);
+
+  const notificationText =
+    typeof o.regulatoryNotification === "string" ? o.regulatoryNotification.trim() : "";
+  if (notificationText && !narrativeText.includes(notificationText)) {
+    mergedNarrative = appendParagraphsToDoc(
+      mergedNarrative,
+      `Regulatory Notification: ${notificationText}`
+    );
+  }
+
+  return { narrative: mergedNarrative };
 }
 
 export function mergeConclusionSection(content: unknown): ConclusionSection {

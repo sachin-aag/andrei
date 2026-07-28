@@ -18,7 +18,7 @@ import type {
 } from "@/types/sections";
 import { REPORT_SECTION_ROW_ORDER } from "@/types/sections";
 import type { ReportSectionRecord } from "@/types/report";
-import { richJsonToPlainText } from "@/lib/tiptap/rich-text";
+import { legacyStringToDoc, richJsonToPlainText } from "@/lib/tiptap/rich-text";
 
 /**
  * Integration-ish test: mimics multipart upload parsing + DOCX export (same code paths as
@@ -208,8 +208,36 @@ describe("DOCX upload → export round-trip", () => {
     "Investigation  DEV-PK-25-002.docx"
   );
 
+  /** Parsing the fixture is the slow part; every test in this file uses the same one. */
+  let uploadedFixture: Promise<ImportedReportContent> | null = null;
+  const loadUploaded = () => {
+    uploadedFixture ??= docxBufferToImportedReportContent(
+      fs.readFileSync(fixturePath)
+    );
+    return uploadedFixture;
+  };
+
+  /** Measure narrative text after export → re-import, for one Measure payload. */
+  async function exportedMeasureNarrative(
+    uploaded: ImportedReportContent,
+    measure: MeasureSection
+  ): Promise<string> {
+    const reportRow = buildMockReport(uploaded);
+    const buffer = await generateReportDocx({
+      report: reportRow,
+      sections: buildEditableSectionRecords(reportRow.id, {
+        ...uploaded.sections,
+        measure,
+      }),
+    });
+    const reimported = await docxBufferToImportedReportContent(buffer);
+    return richJsonToPlainText(
+      mergeSection("measure", reimported.sections.measure).narrative
+    );
+  }
+
   it("exported DOCX re-import matches original import (normalized section payloads)", async () => {
-    const uploaded = await docxBufferToImportedReportContent(fs.readFileSync(fixturePath));
+    const uploaded = await loadUploaded();
 
     const reportRow = buildMockReport(uploaded);
     const sectionsInput = buildEditableSectionRecords(reportRow.id, uploaded.sections);
@@ -225,5 +253,41 @@ describe("DOCX upload → export round-trip", () => {
     expect(beforeFp).toEqual(afterFp);
     /** Sanity: define body survives templated export */
     expect(beforeFp.define.length).toBeGreaterThan(50);
+  });
+
+  it("exports legacy Measure fields identically to the folded narrative", async () => {
+    const uploaded = await loadUploaded();
+
+    const legacy: MeasureSection = {
+      narrative: uploaded.sections.measure.narrative,
+      experimentNumber: "EXP-2026-014",
+      experimentTitle: "Probe drift verification",
+      purpose: legacyStringToDoc("Confirm whether the probe drifts under load."),
+      conclusion: legacyStringToDoc("Drift reproduced at 40 C."),
+    };
+    const folded = mergeSection("measure", legacy);
+
+    const [legacyText, foldedText] = await Promise.all([
+      exportedMeasureNarrative(uploaded, legacy),
+      exportedMeasureNarrative(uploaded, folded),
+    ]);
+
+    const legacyFp = fingerprintComparableString(legacyText);
+    expect(legacyFp).toEqual(fingerprintComparableString(foldedText));
+    expect(legacyFp).toContain("ExperimentNumber:EXP-2026-014");
+    expect(legacyFp).toContain("ExperimentConclusion:");
+  });
+
+  it("emits no bare Measure labels for narrative-only content", async () => {
+    const uploaded = await loadUploaded();
+    const text = await exportedMeasureNarrative(uploaded, {
+      narrative: legacyStringToDoc("Reviewed excursion data."),
+    });
+
+    expect(text).toContain("Reviewed excursion data.");
+    expect(text).not.toMatch(/Experiment Number:/);
+    expect(text).not.toMatch(/Experiment Title:/);
+    expect(text).not.toMatch(/Purpose:/);
+    expect(text).not.toMatch(/Experiment Conclusion:/);
   });
 });

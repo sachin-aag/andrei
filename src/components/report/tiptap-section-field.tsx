@@ -82,6 +82,7 @@ import {
   dismissSuggestion,
   CommentPersistError,
 } from "@/lib/suggestions/accept-suggestion";
+import { suggestionTargetsField } from "@/lib/suggestions/resolve-suggestion-field-path";
 import { validateSuggestionLocate } from "@/lib/suggestions/validate-suggestion";
 import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
 import { editorRegistryKey } from "@/providers/report-provider";
@@ -720,7 +721,7 @@ export function TiptapSectionField({
           c.id === activeSuggestionId &&
           isAiSuggestionKind(c.kind) &&
           c.status === "open" &&
-          (c.contentPath === contentPath || c.contentPath === "narrative")
+          suggestionTargetsField(section, c.contentPath, contentPath)
       );
       if (comment) {
         const validation = validateSuggestionLocate(

@@ -30,7 +30,10 @@ import {
   splitPlainTextPreviewSegments,
   type PlainTextPreviewSegment,
 } from "@/lib/suggestions/plain-text-preview";
-import { resolveSuggestionFieldPath } from "@/lib/suggestions/resolve-suggestion-field-path";
+import {
+  resolveSuggestionFieldPath,
+  suggestionTargetsField,
+} from "@/lib/suggestions/resolve-suggestion-field-path";
 import {
   suggestionStaleMessage,
   validateSuggestionLocate,
@@ -145,23 +148,9 @@ export function PlainTextSuggestionField({
     const active = activeSuggestionForSection(section, comments, evaluations);
     if (!active) return null;
 
-    const path = active.contentPath;
-    if (path === contentPath) return active;
-    if (
-      path === "narrative" &&
-      section === "improve" &&
-      contentPath === "correctiveActions"
-    ) {
-      return active;
-    }
-    if (
-      path === "narrative" &&
-      section === "control" &&
-      contentPath === "preventiveActions"
-    ) {
-      return active;
-    }
-    return null;
+    return suggestionTargetsField(section, active.contentPath, contentPath)
+      ? active
+      : null;
   }, [comments, evaluations, contentPath, section, isSuggestionPreviewHeld]);
 
   const activeValidation = useMemo(() => {

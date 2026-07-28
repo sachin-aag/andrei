@@ -46,6 +46,12 @@ export const BRACKET_SPAN_REGEX = /\[[^\]]+\]/g;
 /** Citation-style `[12]` — not treated as an editable placeholder. */
 export const NUMERIC_ONLY_BRACKET = /^\[\s*\d+\s*\]$/;
 
+/**
+ * Max length for a placeholder label (inner text before `: <to be filled>`).
+ * Shared by the scanner and the suggestion/document normalizer so they cannot drift.
+ */
+export const MAX_PLACEHOLDER_LABEL_LENGTH = 40;
+
 type TextSpan = { fromRel: number; toRel: number; text: string };
 
 /**
@@ -67,10 +73,12 @@ export function isActionablePlaceholderBracket(match: string): boolean {
   // QC / SOP limit language in brackets is document copy, not a fill-in field.
   if (/not more than|not less than|\bNMT\b|\bNLT\b/i.test(inner)) return false;
 
-  // Short tokens without label:value structure: [number], [fibers]
+  // Guidance-only labels without `: <to be filled>` — e.g. `[number]`,
+  // `[equipment ID]`. Cap length so long bracketed prose is not treated as a
+  // fill-in field; AI postprocess compacts labels to this same limit.
   if (
     !inner.includes(":") &&
-    inner.length <= 32 &&
+    inner.length <= MAX_PLACEHOLDER_LABEL_LENGTH &&
     /^[\w\s./-]+$/i.test(inner.trim())
   ) {
     return true;

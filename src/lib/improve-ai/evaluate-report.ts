@@ -13,6 +13,7 @@ import {
 import { EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
 import { normalizeAnalyzeToolResults } from "@/lib/ai/evaluate-run-helpers";
 import { hashContent } from "@/lib/ai/content-hash";
+import { mergeSection } from "@/lib/sections-merge";
 import { cleanSectionContentForEval } from "@/lib/tiptap/strip-pending-suggestions";
 import { PROMPT_VERSION } from "@/lib/ai/section-prompts";
 import {
@@ -92,16 +93,20 @@ export async function evaluateReportCriteria(
     existingBySectionId.set(row.sectionId, arr);
   }
 
+  // Merged content everywhere, matching the suggestions route's hash input.
   const allSections: AllSectionsContent = {};
   for (const row of allEvaluatableRows) {
-    allSections[row.section] = row.content;
+    allSections[row.section] = mergeSection(row.section, row.content);
   }
+  const mergedFor = (row: (typeof sectionRows)[number]) =>
+    allSections[row.section] ?? mergeSection(row.section, row.content);
 
   const llmResults = await Promise.all(
     sectionRows.map(async (row) => {
+      const content = mergedFor(row);
       const evaluations = await evaluateSection({
         section: row.section,
-        content: row.content,
+        content,
         reportContext: { deviationNo: report.deviationNo, date: report.date },
         allSections,
       });
@@ -109,7 +114,7 @@ export async function evaluateReportCriteria(
         sectionRow: row,
         evaluations:
           row.section === "analyze"
-            ? normalizeAnalyzeToolResults(row.content, evaluations)
+            ? normalizeAnalyzeToolResults(content, evaluations)
             : evaluations,
       };
     })
@@ -119,7 +124,7 @@ export async function evaluateReportCriteria(
     const existing = existingBySectionId.get(sectionRow.id) ?? [];
     const existingByKey = new Map(existing.map((e) => [e.criterionKey, e]));
     const contentHash = hashContent(
-      cleanSectionContentForEval(sectionRow.section, sectionRow.content),
+      cleanSectionContentForEval(sectionRow.section, mergedFor(sectionRow)),
       PROMPT_VERSION
     );
 

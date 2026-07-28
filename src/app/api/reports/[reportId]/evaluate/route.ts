@@ -18,6 +18,7 @@ import {
   normalizeAnalyzeToolResults,
 } from "@/lib/ai/evaluate-run-helpers";
 import { hashContent } from "@/lib/ai/content-hash";
+import { mergeSection } from "@/lib/sections-merge";
 import { cleanSectionContentForEval } from "@/lib/tiptap/strip-pending-suggestions";
 import { PROMPT_VERSION } from "@/lib/ai/section-prompts";
 import {
@@ -117,16 +118,22 @@ async function handleEvaluatePost(
       existingBySectionId.set(row.sectionId, arr);
     }
 
+    // Evaluate and hash the same merged content the suggestions route sees —
+    // hashing raw content would make legacy rows (whose merge folds fields into
+    // the narrative) permanently report `stale_evaluation`.
     const allSections: AllSectionsContent = {};
     for (const row of allEvaluatableRows) {
-      allSections[row.section] = row.content;
+      allSections[row.section] = mergeSection(row.section, row.content);
     }
+    const mergedFor = (row: (typeof sectionRows)[number]) =>
+      allSections[row.section] ?? mergeSection(row.section, row.content);
 
     const llmResults = await Promise.all(
       sectionRows.map(async (row) => {
+        const content = mergedFor(row);
         const evaluations = await evaluateSection({
           section: row.section,
-          content: row.content,
+          content,
           reportContext: { deviationNo: report.deviationNo, date: report.date },
           allSections,
         });
@@ -134,7 +141,7 @@ async function handleEvaluatePost(
           sectionRow: row,
           evaluations:
             row.section === "analyze"
-              ? normalizeAnalyzeToolResults(row.content, evaluations)
+              ? normalizeAnalyzeToolResults(content, evaluations)
               : evaluations,
         };
       })
@@ -144,7 +151,7 @@ async function handleEvaluatePost(
       const existing = existingBySectionId.get(sectionRow.id) ?? [];
       const existingByKey = new Map(existing.map((e) => [e.criterionKey, e]));
       const contentHash = hashContent(
-        cleanSectionContentForEval(sectionRow.section, sectionRow.content),
+        cleanSectionContentForEval(sectionRow.section, mergedFor(sectionRow)),
         PROMPT_VERSION
       );
 

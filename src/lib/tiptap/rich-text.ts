@@ -442,6 +442,28 @@ export function appendParagraphsToDoc(
   };
 }
 
+function isBlankParagraph(node: JSONContent): boolean {
+  if (node.type !== "paragraph") return false;
+  return (node.content ?? []).every(
+    (child) => child.type === "text" && !(child.text ?? "").trim()
+  );
+}
+
+/**
+ * Prepend `nodes` before the existing content of `doc`. Blank leading
+ * paragraphs are dropped so prepending into an empty doc does not leave a
+ * stray blank line in the middle.
+ */
+export function prependNodesToDoc(
+  doc: JSONContent,
+  nodes: JSONContent[]
+): JSONContent {
+  if (nodes.length === 0 || doc.type !== "doc") return doc;
+  const existing = [...(doc.content ?? [])];
+  while (existing.length > 0 && isBlankParagraph(existing[0]!)) existing.shift();
+  return { ...doc, content: [...nodes, ...existing] };
+}
+
 /** Remove track-change marks from a doc (engineer draft cleanup; keeps manager review marks elsewhere). */
 export function stripSuggestionMarksFromDoc(doc: JSONContent): JSONContent {
   function visit(node: JSONContent): JSONContent {

@@ -21,7 +21,10 @@ import { SectionCommentComposer } from "./section-comment-composer";
 import { SectionSuggestionCard } from "@/components/report/suggestion-card";
 import { EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
 import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
-import { suggestionFieldAnchorKey } from "@/lib/suggestions/resolve-suggestion-field-path";
+import {
+  effectivePlainTextContentPath,
+  suggestionFieldAnchorKey,
+} from "@/lib/suggestions/resolve-suggestion-field-path";
 import {
   suggestionDeleteMarkName,
   suggestionInsertMarkName,
@@ -342,7 +345,8 @@ export function MarginGutter({ onSectionOverflow }: Props) {
       const active = gutterSuggestionCommentForSection(section);
       if (!active) continue;
 
-      const contentPath = active.contentPath ?? "narrative";
+      // Resolve legacy paths so the card centers on the box that previews it.
+      const contentPath = effectivePlainTextContentPath(section, active.contentPath);
       let centerY: number | null = null;
 
       if (isRichTargetField(section, contentPath)) {

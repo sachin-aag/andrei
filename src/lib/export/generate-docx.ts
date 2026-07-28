@@ -55,6 +55,7 @@ import type { SectionType } from "@/db/schema";
 import {
   applyWordCommentsToDocxZip,
   attachCommentsToFirstParagraph,
+  shouldExportComment,
   type ReportDocxComment,
 } from "@/lib/export/docx-comments";
 import { applyGoogleDocsImageCompat } from "@/lib/export/docx-google-docs-images";
@@ -85,7 +86,7 @@ function rootCommentsFor(
   return comments.filter(
     (comment) =>
       !comment.parentId &&
-      comment.status !== "dismissed" &&
+      shouldExportComment(comment) &&
       comment.section === section &&
       (contentPath ? comment.contentPath === contentPath : !comment.contentPath)
   );
@@ -96,7 +97,7 @@ function repliesFor(
   parentId: string
 ): ReportDocxComment[] {
   return comments.filter(
-    (comment) => comment.parentId === parentId && comment.status !== "dismissed"
+    (comment) => comment.parentId === parentId && shouldExportComment(comment)
   );
 }
 

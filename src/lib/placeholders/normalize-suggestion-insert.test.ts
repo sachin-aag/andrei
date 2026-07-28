@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { MAX_PLACEHOLDER_LABEL_LENGTH } from "./find";
 import { normalizeSuggestionInsertText } from "./normalize-suggestion-insert";
 
 describe("normalizeSuggestionInsertText", () => {
@@ -32,5 +33,24 @@ describe("normalizeSuggestionInsertText", () => {
     expect(
       normalizeSuggestionInsertText("[SOP number: [[<to be filled>]] ]")
     ).toBe("[SOP number: <to be filled>]");
+  });
+
+  it("compacts long AI placeholder labels under the shared limit", () => {
+    const out = normalizeSuggestionInsertText(
+      "The affected equipment/system is [Name/ID of Monitoring System or Refrigerator Unit]."
+    );
+    expect(out).toBe(
+      "The affected equipment/system is [Monitoring System or Refrigerator Unit: <to be filled>]."
+    );
+    const label = out.match(/\[(.+?): <to be filled>\]/)?.[1] ?? "";
+    expect(label.length).toBeLessThanOrEqual(MAX_PLACEHOLDER_LABEL_LENGTH);
+  });
+
+  it("compacts long labels from angle-bracket form", () => {
+    expect(
+      normalizeSuggestionInsertText(
+        "<to be filled: Name/ID of Monitoring System or Refrigerator Unit>"
+      )
+    ).toBe("[Monitoring System or Refrigerator Unit: <to be filled>]");
   });
 });
