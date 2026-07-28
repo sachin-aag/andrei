@@ -1,58 +1,64 @@
 import type { CriterionEvaluationResult } from "@/lib/ai/evaluate";
-import { normalizeRichField, richJsonToPlainText } from "@/lib/tiptap/rich-text";
+import {
+  ANALYZE_METHOD_LABELS,
+  detectAnalyzeMethod,
+  existingAnalyzeTool,
+  meaningfulAnalyzeText,
+  type AnalyzeMethod,
+} from "@/lib/analyze/method";
 
-type AnalyzeTool = "sixM" | "fiveWhy";
+export {
+  meaningfulAnalyzeText,
+  existingAnalyzeTool,
+  detectAnalyzeMethod,
+};
+export type { AnalyzeMethod };
 
-export function meaningfulAnalyzeText(value: unknown): boolean {
-  const text =
-    typeof value === "string"
-      ? value
-      : value && typeof value === "object" && "type" in value
-        ? richJsonToPlainText(normalizeRichField(value))
-        : "";
-  const normalized = text.trim().toLowerCase().replace(/\.+$/, "");
-  return normalized.length > 0 && normalized !== "not applicable" && normalized !== "n/a";
-}
-
-export function existingAnalyzeTool(content: unknown): AnalyzeTool | null {
-  if (!content || typeof content !== "object") return null;
-  const c = content as {
-    sixM?: Record<string, unknown>;
-    fiveWhy?: Record<string, unknown>;
-  };
-  const hasSixM = c.sixM
-    ? Object.values(c.sixM).some(meaningfulAnalyzeText)
-    : false;
-  const hasFiveWhy = c.fiveWhy
-    ? [c.fiveWhy.narrative, c.fiveWhy.conclusion].some(meaningfulAnalyzeText)
-    : false;
-
-  if (hasSixM && !hasFiveWhy) return "sixM";
-  if (hasFiveWhy && !hasSixM) return "fiveWhy";
-  return null;
-}
+const TOOL_COMPLETENESS_KEYS = [
+  "analyze.sixm_completeness",
+  "analyze.fivewhy_completeness",
+] as const;
 
 /**
  * After evaluation, if the analyze section has both sixm_completeness and
  * fivewhy_completeness results, check which tool the content actually uses
- * and mark the unused one as "met" with a reasoning note.
+ * and mark unused tool criteria as "met" with a reasoning note.
+ *
+ * 6M / 5-Why / Brainstorming are three alternatives: completing one satisfies
+ * the root-cause tool requirement. When brainstorming is chosen, both
+ * sixm and fivewhy completeness criteria are marked met.
  */
 export function normalizeAnalyzeToolResults(
   content: unknown,
   evaluations: CriterionEvaluationResult[]
 ): CriterionEvaluationResult[] {
-  const chosenTool = existingAnalyzeTool(content);
-  if (!chosenTool) return evaluations;
+  const chosenMethod = detectAnalyzeMethod(content);
+  if (!chosenMethod) return evaluations;
 
-  const unusedKey =
-    chosenTool === "fiveWhy"
-      ? "analyze.sixm_completeness"
-      : "analyze.fivewhy_completeness";
-  const chosenLabel = chosenTool === "fiveWhy" ? "5-Why" : "6M";
-  const unusedLabel = chosenTool === "fiveWhy" ? "6M" : "5-Why";
+  const chosenLabel = ANALYZE_METHOD_LABELS[chosenMethod];
 
   return evaluations.map((evaluation) => {
-    if (evaluation.criterionKey !== unusedKey) return evaluation;
+    if (
+      !(TOOL_COMPLETENESS_KEYS as readonly string[]).includes(
+        evaluation.criterionKey
+      )
+    ) {
+      return evaluation;
+    }
+
+    // Active tool criterion stays as the model graded it.
+    if (
+      (chosenMethod === "sixM" &&
+        evaluation.criterionKey === "analyze.sixm_completeness") ||
+      (chosenMethod === "fiveWhy" &&
+        evaluation.criterionKey === "analyze.fivewhy_completeness")
+    ) {
+      return evaluation;
+    }
+
+    const unusedLabel =
+      evaluation.criterionKey === "analyze.sixm_completeness" ? "6M" : "5-Why";
+
     return {
       ...evaluation,
       status: "met" as const,

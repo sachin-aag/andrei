@@ -75,4 +75,36 @@ describe("buildChatSystemPrompt", () => {
       expect(prompt).toContain("CRITERIA");
     }
   });
+
+  it("includes Analyze drafting rules in agent mode when analyze is in scope", () => {
+    const allScope = buildChatSystemPrompt({ ...opts, mode: "agent" });
+    expect(allScope).toContain("## Analyze drafting rules");
+    expect(allScope).toContain("select_analyze_method");
+    expect(allScope).toContain("Patient safety");
+    expect(allScope).toContain("Past batches");
+
+    const analyzeScope = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      sectionScope: "analyze",
+    });
+    expect(analyzeScope).toContain("## Analyze drafting rules");
+    expect(analyzeScope).toContain("Exactly ONE root-cause method");
+  });
+
+  it("omits Analyze drafting rules when scoped away from analyze or in plan mode", () => {
+    const defineScope = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      sectionScope: "define",
+    });
+    expect(defineScope).not.toContain("## Analyze drafting rules");
+
+    const planMode = buildChatSystemPrompt({
+      ...opts,
+      mode: "plan",
+      sectionScope: "analyze",
+    });
+    expect(planMode).not.toContain("## Analyze drafting rules");
+  });
 });

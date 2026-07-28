@@ -47,6 +47,7 @@ import {
   flushLangfuseTraces,
   langfuseGenerateTextTelemetry,
 } from "@/lib/observability/langfuse";
+import { auditActorFromUser } from "@/lib/audit";
 
 export const maxDuration = 120;
 
@@ -161,6 +162,10 @@ export async function POST(
       deviationNo: report.deviationNo,
       date: report.date,
       status: report.status,
+      toolsUsed: report.toolsUsed as
+        | { sixM?: boolean; fiveWhy?: boolean; brainstorming?: boolean }
+        | null
+        | undefined,
     },
     sections: mergedSections,
     evaluations: evaluations.map((e) => ({
@@ -183,7 +188,12 @@ export async function POST(
     scopeMismatch,
   });
 
-  const allTools = buildChatTools({ reportId, canEdit, sectionScope });
+  const allTools = buildChatTools({
+    reportId,
+    canEdit,
+    sectionScope,
+    actor: auditActorFromUser(user),
+  });
   const tools: ToolSet =
     mode === "plan"
       ? {

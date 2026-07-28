@@ -36,5 +36,32 @@ describe("buildReportContextMap", () => {
     expect(map).toContain("1 open suggestion(s)");
     // analyze root cause is empty
     expect(map).toContain("Analyze [analyze] — empty");
+    expect(map).toContain("analyze method: not chosen");
+  });
+
+  it("surfaces the analyze method from section content and header checkboxes", () => {
+    const map = buildReportContextMap({
+      report: {
+        deviationNo: "DEV-9",
+        date: "2026-02-01",
+        status: "draft",
+        toolsUsed: { sixM: false, fiveWhy: true, brainstorming: false },
+      },
+      sections: {
+        analyze: {
+          fiveWhy: {
+            narrative: docWith("Why 1: seal leak at station 3"),
+            conclusion: "",
+          },
+          rootCause: { narrative: docWith("Seal integrity failure") },
+        },
+      },
+      evaluations: [],
+      comments: [],
+    });
+
+    expect(map).toContain(
+      "analyze method: 5-Why (from section content); header checkbox: 5-Why"
+    );
   });
 });

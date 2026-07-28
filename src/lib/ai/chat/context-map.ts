@@ -6,11 +6,21 @@ import {
   sectionFieldPlainText,
   sectionLabel,
 } from "@/lib/ai/chat/fields";
+import {
+  ANALYZE_METHOD_LABELS,
+  detectAnalyzeMethod,
+  methodFromToolsUsed,
+} from "@/lib/analyze/method";
 
 export type ContextMapReport = {
   deviationNo: string;
   date: Date | string;
   status: string;
+  toolsUsed?: {
+    sixM?: boolean;
+    fiveWhy?: boolean;
+    brainstorming?: boolean;
+  } | null;
 };
 
 export type ContextMapEvaluation = {
@@ -51,6 +61,27 @@ function evalSummary(evals: ContextMapEvaluation[]): string {
   return `${counts.met} met / ${counts.partially_met} partial / ${counts.not_met} not-met`;
 }
 
+function analyzeMethodLine(
+  content: Record<string, unknown>,
+  toolsUsed: ContextMapReport["toolsUsed"]
+): string {
+  const fromContent = detectAnalyzeMethod(content);
+  const fromHeader = methodFromToolsUsed(toolsUsed);
+  if (!fromContent && !fromHeader) {
+    return "    analyze method: not chosen";
+  }
+  const contentPart = fromContent
+    ? `${ANALYZE_METHOD_LABELS[fromContent]} (from section content)`
+    : null;
+  const headerPart = fromHeader
+    ? `header checkbox: ${ANALYZE_METHOD_LABELS[fromHeader]}`
+    : null;
+  if (contentPart && headerPart) {
+    return `    analyze method: ${contentPart}; ${headerPart}`;
+  }
+  return `    analyze method: ${contentPart ?? headerPart}`;
+}
+
 /**
  * Compact per-section "map" injected into the chat system prompt. Lets the
  * agent know which sections exist, their fill state, a one-line gist, and
@@ -87,6 +118,9 @@ export function buildReportContextMap(input: BuildContextMapInput): string {
     );
     if (state !== "empty") {
       lines.push(`    ${primary}: "${summarize(text)}"`);
+    }
+    if (section === "analyze") {
+      lines.push(analyzeMethodLine(content, report.toolsUsed));
     }
   }
 

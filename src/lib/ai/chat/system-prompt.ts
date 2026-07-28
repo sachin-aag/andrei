@@ -7,7 +7,7 @@ import {
 } from "@/lib/ai/chat/fields";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v6-draft-field-ask-user";
+export const CHAT_PROMPT_VERSION = "chat-v7-analyze-method";
 
 export type ChatMode = "plan" | "agent";
 
@@ -76,6 +76,7 @@ Choosing the right tool:
 - draft_field — a FULL draft or rewrite of one field, written as markdown. Use it for empty fields, substantial rewrites, and ANY content with a table. This is the primary drafting tool.
 - propose_edit — one small targeted change (a sentence or phrase) inside existing text, anchored to a verbatim quote. Never use it to write whole paragraphs into an empty field.
 - ask_user — structured questions when facts are missing (see "Asking questions").
+- select_analyze_method — when drafting Analyze, call this ONCE before any Analyze draft_field / propose_edit to lock in the single root-cause method (see the Analyze method-selection block when that section is in scope).
 
 Drafting decisions (important):
 - For each section, judge how much real information you have.
@@ -91,6 +92,24 @@ Editing rules:
 4. Never invent regulated facts (batch numbers, dates, results, equipment IDs) — use bracketed placeholders.
 5. After proposing, briefly summarize what you drafted, list placeholders to complete, and name any sections you deliberately skipped and why.`;
 
+const ANALYZE_DRAFTING_RULES = `## Analyze drafting rules (required when drafting Analyze)
+Exactly ONE root-cause method is required: 6M, 5-Why, or Brainstorming. Never draft two methods with real content.
+
+Method selection:
+1. If the engineer named a method, use it.
+2. Otherwise call read_section on define AND measure first, then infer:
+   - 5-Why — one technical/equipment failure traceable through a chain of mechanisms (the common case at this site).
+   - 6M — multiple contributing factors across man/machine/measurement/material/method/milieu that don't form a single causal chain.
+   - Brainstorming — cause is speculative or evidence is too thin for a structured grid; cross-functional idea capture.
+3. Call select_analyze_method with the chosen method and a one-sentence rationale BEFORE drafting any Analyze field. State the choice and rationale in your reply.
+4. If the context map already shows an analyze method, keep it unless the engineer explicitly asks to switch.
+
+After select_analyze_method returns:
+- draft_field the chosen method's fields (draftFields from the tool result).
+- draft_field the literal text "Not Applicable" into every field listed in notApplicableFields (the template forbids deleting 6M questions; unused methods must still be present as N/A).
+- Always draft regardless of method: investigationOutcome, rootCause.narrative, and impactAssessment.
+- impactAssessment MUST cover all six areas as labelled lines — System, Document, Product, Equipment, Patient safety, Past batches — each with a statement or "No impact — <reason>". Never omit an area.`;
+
 export function buildChatSystemPrompt(opts: {
   contextMap: string;
   criteriaOutline: string;
@@ -102,6 +121,9 @@ export function buildChatSystemPrompt(opts: {
   const sectionScope = opts.sectionScope ?? "all";
   const modeRules = mode === "plan" ? PLAN_RULES : AGENT_RULES;
   const mismatchBlock = opts.scopeMismatch ? `\n\n${scopeMismatchBlock(opts.scopeMismatch)}` : "";
+  const analyzeInScope = chatSectionsInScope(sectionScope).includes("analyze");
+  const analyzeBlock =
+    analyzeInScope && mode === "agent" ? `\n\n${ANALYZE_DRAFTING_RULES}` : "";
 
   return `${PERSONA}
 
@@ -110,7 +132,7 @@ ${sectionFocusBlock(sectionScope)}${mismatchBlock}
 ## Editable fields (section → targetField (kind))
 ${fieldTaxonomy(sectionScope)}
 
-${modeRules}
+${modeRules}${analyzeBlock}
 
 ${QUESTION_RULES}
 

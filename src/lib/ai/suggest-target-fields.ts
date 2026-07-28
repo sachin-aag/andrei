@@ -12,6 +12,7 @@ export const SUGGEST_TARGET_FIELD_PATTERNS: Record<SectionType, readonly string[
     "sixM.method",
     "sixM.milieu",
     "sixM.conclusion",
+    "fiveWhy.narrative",
     "brainstorming",
     "otherTools",
     "investigationOutcome",
