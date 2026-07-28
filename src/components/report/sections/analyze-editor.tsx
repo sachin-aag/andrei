@@ -36,7 +36,7 @@ export function AnalyzeEditor() {
   return (
     <SectionShell
       title="Analyze"
-      description="Investigate the root cause using 6M, 5-Why, and assess impact."
+      description="Investigate the root cause using one of 6M, 5-Why, or Brainstorming, then assess impact. Unused methods should read Not Applicable."
       status={status}
       lastSavedAt={lastSavedAt}
       section="analyze"

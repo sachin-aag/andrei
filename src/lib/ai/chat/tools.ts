@@ -3,7 +3,7 @@ import { z } from "zod";
 import { and, eq } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import { db } from "@/db";
-import { comments, reportSections } from "@/db/schema";
+import { comments, reportSections, reports } from "@/db/schema";
 import type { SectionType } from "@/db/schema";
 import { mergeSection } from "@/lib/sections-merge";
 import { AI_AUTHOR_ID } from "@/lib/ai/constants";
@@ -25,6 +25,17 @@ import {
   sectionFieldPlainText,
 } from "@/lib/ai/chat/fields";
 import { checkProposedEdit, proposedEditHint } from "@/lib/ai/chat/propose-edit";
+import {
+  ANALYZE_METHODS,
+  ANALYZE_METHOD_LABELS,
+  analyzeMethodPlan,
+  toolsUsedForMethod,
+  type AnalyzeMethod,
+} from "@/lib/analyze/method";
+import {
+  type AuditActorSnapshot,
+  recordAuditEvent,
+} from "@/lib/audit";
 
 export type ProposeEditResult =
   | {
@@ -61,6 +72,17 @@ export type AskUserQuestion = {
   hint?: string;
 };
 
+export type SelectAnalyzeMethodResult =
+  | {
+      status: "selected";
+      method: AnalyzeMethod;
+      rationale: string;
+      draftFields: readonly string[];
+      notApplicableFields: readonly string[];
+    }
+  | { status: "not_editable"; message: string }
+  | { status: "report_not_found"; message: string };
+
 async function loadMergedSection(
   reportId: string,
   section: SectionType
@@ -88,8 +110,10 @@ export function buildChatTools(opts: {
   reportId: string;
   canEdit: boolean;
   sectionScope?: ChatSectionScope;
+  /** Acting user for audit events (e.g. select_analyze_method). */
+  actor?: AuditActorSnapshot;
 }): ToolSet {
-  const { reportId, canEdit } = opts;
+  const { reportId, canEdit, actor } = opts;
   const sectionScope = opts.sectionScope ?? "all";
   const allowedSections = chatSectionsInScope(sectionScope);
   const sectionEnum = allowedSections as [SectionType, ...SectionType[]];
@@ -98,13 +122,25 @@ export function buildChatTools(opts: {
     sectionScope === "all"
       ? ""
       : ` Only section "${sectionScope}" is in scope for this chat.`;
+  const analyzeInScope = allowedSections.includes("analyze");
+  // When Analyze is in scope, allow reading Define/Measure for method selection
+  // even if the dropdown is narrowed to Analyze (draft/propose stay restricted).
+  const readableSections: SectionType[] = analyzeInScope
+    ? Array.from(
+        new Set<SectionType>([...allowedSections, "define", "measure"])
+      )
+    : [...allowedSections];
+  const readableSectionEnum = readableSections as [SectionType, ...SectionType[]];
 
   const tools: ToolSet = {
     read_section: tool({
       description:
-        `Read the current text of an editable section so you can quote exact anchors. Optionally pass specific field paths; otherwise all editable fields are returned.${scopeHint}`,
+        `Read the current text of an editable section so you can quote exact anchors. Optionally pass specific field paths; otherwise all editable fields are returned.${scopeHint}` +
+        (analyzeInScope && sectionScope === "analyze"
+          ? " You may also read define and measure to choose the Analyze root-cause method."
+          : ""),
       inputSchema: z.object({
-        section: z.enum(sectionEnum).describe("Section to read."),
+        section: z.enum(readableSectionEnum).describe("Section to read."),
         fields: z
           .array(z.string())
           .optional()
@@ -112,6 +148,9 @@ export function buildChatTools(opts: {
       }),
       execute: async ({ section, fields }) => {
         if (!isChatEditableSection(section)) {
+          return { error: "invalid_section" as const };
+        }
+        if (!readableSections.includes(section)) {
           return { error: "invalid_section" as const };
         }
         const loaded = await loadMergedSection(reportId, section);
@@ -353,6 +392,83 @@ export function buildChatTools(opts: {
       }),
     }),
   };
+
+  if (analyzeInScope && canEdit) {
+    const methodEnum = ANALYZE_METHODS as unknown as [
+      AnalyzeMethod,
+      ...AnalyzeMethod[],
+    ];
+    tools.select_analyze_method = tool({
+      description:
+        "Select exactly ONE Analyze root-cause method (6M, 5-Why, or Brainstorming) before drafting any Analyze fields. Updates the report header tool checkboxes. Call this once per Analyze drafting pass; then draft the returned draftFields and write 'Not Applicable' into notApplicableFields.",
+      inputSchema: z.object({
+        method: z
+          .enum(methodEnum)
+          .describe("The single root-cause method to use for this Analyze pass."),
+        rationale: z
+          .string()
+          .max(300)
+          .describe(
+            "One sentence: why this method fits the failure described in Define/Measure."
+          ),
+      }),
+      execute: async ({
+        method,
+        rationale,
+      }): Promise<SelectAnalyzeMethodResult> => {
+        if (!canEdit) {
+          return {
+            status: "not_editable",
+            message:
+              "This report is not editable in its current state, so the Analyze method cannot be set.",
+          };
+        }
+
+        const [existing] = await db
+          .select({
+            id: reports.id,
+            toolsUsed: reports.toolsUsed,
+          })
+          .from(reports)
+          .where(eq(reports.id, reportId));
+        if (!existing) {
+          return {
+            status: "report_not_found",
+            message: "Report not found.",
+          };
+        }
+
+        const nextToolsUsed = toolsUsedForMethod(method);
+        await db
+          .update(reports)
+          .set({ toolsUsed: nextToolsUsed, updatedAt: new Date() })
+          .where(eq(reports.id, reportId));
+
+        if (actor) {
+          await recordAuditEvent({
+            actor,
+            action: "report_updated",
+            entityType: "report",
+            entityId: reportId,
+            reportId,
+            summary: `Selected Analyze method: ${ANALYZE_METHOD_LABELS[method]}`,
+            oldValue: { toolsUsed: existing.toolsUsed },
+            newValue: { toolsUsed: nextToolsUsed },
+            metadata: { source: "chat_select_analyze_method", rationale },
+          });
+        }
+
+        const plan = analyzeMethodPlan(method);
+        return {
+          status: "selected",
+          method,
+          rationale,
+          draftFields: plan.draftFields,
+          notApplicableFields: plan.notApplicableFields,
+        };
+      },
+    });
+  }
 
   if (sectionScope !== "all") {
     const currentSection = sectionScope;

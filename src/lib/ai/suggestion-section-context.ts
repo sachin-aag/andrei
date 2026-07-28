@@ -121,6 +121,8 @@ export function contextForSuggestionPrompt(
       "5-Why",
       flattenForAnchor(fiveWhyCollapsed.narrative as JSONContent).text
     );
+    pushTextLine(lines, "Brainstorming", content.brainstorming);
+    pushTextLine(lines, "Other tools", content.otherTools);
     pushCanonicalBlock(
       lines,
       "Investigation outcome",

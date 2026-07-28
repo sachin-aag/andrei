@@ -47,6 +47,7 @@ import {
   flushLangfuseTraces,
   langfuseGenerateTextTelemetry,
 } from "@/lib/observability/langfuse";
+import { auditActorFromUser } from "@/lib/audit";
 
 export const maxDuration = 120;
 
@@ -161,6 +162,10 @@ export async function POST(
       deviationNo: report.deviationNo,
       date: report.date,
       status: report.status,
+      toolsUsed: report.toolsUsed as
+        | { sixM?: boolean; fiveWhy?: boolean; brainstorming?: boolean }
+        | null
+        | undefined,
     },
     sections: mergedSections,
     evaluations: evaluations.map((e) => ({
@@ -183,7 +188,12 @@ export async function POST(
     scopeMismatch,
   });
 
-  const allTools = buildChatTools({ reportId, canEdit, sectionScope });
+  const allTools = buildChatTools({
+    reportId,
+    canEdit,
+    sectionScope,
+    actor: auditActorFromUser(user),
+  });
   const tools: ToolSet =
     mode === "plan"
       ? {
@@ -215,7 +225,7 @@ export async function POST(
     tools,
     // Agent mode drafts whole sections field-by-field (read + draft per field),
     // so it needs a substantially larger step budget than plan mode.
-    stopWhen: stepCountIs(mode === "plan" ? 4 : 24),
+    stopWhen: stepCountIs(mode === "plan" ? 8 : 24),
     ...langfuseGenerateTextTelemetry({
       functionId: "report-chat",
       metadata: { reportId, sessionId, mode, sectionScope, canEdit },

@@ -6,7 +6,7 @@ import type { SectionType } from "@/db/schema";
  * into the per-section content hash so the next eval pass refreshes all
  * sections after a prompt update.
  */
-export const PROMPT_VERSION = "andrei-whitelabel-v1";
+export const PROMPT_VERSION = "andrei-whitelabel-v2-analyze-method";
 
 /**
  * Common reviewer rules, scoring system, scope rule, and prompt-injection guard.
@@ -73,19 +73,19 @@ KEY RULES:
 - Mention risk categorization (Major/Minor) with the risk score where the source provides it.`;
 
 const ANALYZE_PROMPT_ADDITION = `SECTION ROLE - ANALYZE:
-Causal reasoning via 5-Why and/or 6M.
+Causal reasoning via exactly one of 5-Why, 6M, or Brainstorming.
 
 KEY RULES:
-- 5-Why and 6M are alternatives. Either one, meaningfully completed, satisfies tool completeness. The unused tool may remain "Not Applicable" with a brief rationale.
+- 5-Why, 6M, and Brainstorming are alternatives. Exactly one, meaningfully completed, satisfies tool completeness. The unused tools may remain "Not Applicable" with a brief rationale.
 - "5-Why" is the name of the methodology, not a requirement to have exactly five questions. Fewer or more than five questions are acceptable when the chain logically reaches the root cause. Investigation reports at this site use chains as short as 3 and as long as 8 questions.
 - Derive each 5-Why question from facts available in the section content. Progression: observed failure -> immediate mechanism -> technical/process cause -> procedural/human/system gap -> preventable root cause.
 - Anti-patterns to refuse: chains that repeat the same wording across whys, chains that jump directly to "human error" without a procedural gap, and questions about events not present in Define/Measure.
-- Investigation Outcome must be consistent with the chosen tool and the categorized root cause level when one is stated.
-- Impact assessment fields (System/Document/Product/Equipment/Patient safety/Past batches) must trace back to Measure evidence.
+- Investigation Outcome and Root Cause identification are always required, regardless of which tool was chosen. Investigation Outcome must be consistent with the chosen tool and the categorized root cause level when one is stated.
+- Impact assessment must cover all six areas (System, Document, Product, Equipment, Patient safety, Past batches) and must trace back to Measure evidence. Each area needs a clear statement or an explicit "No impact" with rationale.
 
 TOOL SELECTION (sixm_completeness vs fivewhy_completeness):
-- If the existing SECTION CONTENT already populates one of sixM.* or fiveWhy.*, treat that as the chosen tool and mark the other tool's criterion as "met" with reasoning like "5-Why methodology used; 6M marked Not Applicable".
-- If neither is populated, pick exactly one tool. Default to 5-Why for chains driven by a single technical/equipment failure traceable through a sequence of mechanisms (the typical equipment-deviation case at this site). Default to 6M when the failure spans multiple human/process/material factors that don't form a single causal chain.`;
+- If the existing SECTION CONTENT already populates one of sixM.*, fiveWhy.*, or brainstorming, treat that as the chosen tool. Mark unused tool criteria as "met" with reasoning like "5-Why methodology used; 6M marked Not Applicable" (or Brainstorming when that is the chosen tool — mark both sixm and fivewhy completeness as met).
+- If neither is populated, pick exactly one tool. Default to 5-Why for chains driven by a single technical/equipment failure traceable through a sequence of mechanisms (the typical equipment-deviation case at this site). Default to 6M when the failure spans multiple human/process/material factors that don't form a single causal chain. Default to Brainstorming when the cause is speculative or evidence is too thin for a structured 6M grid or 5-Why chain.`;
 
 const IMPROVE_PROMPT_ADDITION = `SECTION ROLE - IMPROVE:
 Judge whether corrective actions are specific, traceable, achievable, and mapped to root cause.

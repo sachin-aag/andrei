@@ -175,6 +175,8 @@ export function contextForPrompt(section: SectionType, content: unknown): string
       "5-Why",
       richJsonToPlainText(fiveWhyCollapsed.narrative, { tableFormat: "markdown" })
     );
+    pushTextLine(lines, "Brainstorming", content.brainstorming);
+    pushTextLine(lines, "Other tools", content.otherTools);
     pushTextBlock(
       lines,
       "Investigation outcome",

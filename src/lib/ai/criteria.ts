@@ -120,26 +120,26 @@ export const ANALYZE_CRITERIA: CriterionDefinition[] = [
     key: "analyze.sixm_completeness",
     label: "6M method completeness",
     description:
-      "6M and 5-Why are alternative root-cause tools; either one, meaningfully " +
-      "completed, satisfies the Analyze section. Mark this criterion 'met' when " +
-      "6M is the active tool and all six fields (Man, Machine, Measurement, " +
-      "Material, Method, Milieu) are filled with an answer (even if 'Not " +
-      "Applicable') and a conclusion is provided. Also mark it 'met' when the " +
-      "investigation explicitly relies on 5-Why and 6M is documented as 'Not " +
-      "Applicable' with a brief rationale.",
+      "6M, 5-Why, and Brainstorming are alternative root-cause tools; either one, " +
+      "meaningfully completed, satisfies the Analyze section. Mark this criterion " +
+      "'met' when 6M is the active tool and all six fields (Man, Machine, " +
+      "Measurement, Material, Method, Milieu) are filled with an answer (even if " +
+      "'Not Applicable') and a conclusion is provided. Also mark it 'met' when the " +
+      "investigation explicitly relies on 5-Why or Brainstorming and 6M is " +
+      "documented as 'Not Applicable' with a brief rationale.",
   },
   {
     key: "analyze.fivewhy_completeness",
     label: "5-Why approach completeness",
     description:
-      "6M and 5-Why are alternative root-cause tools; either one, meaningfully " +
-      "completed, satisfies the Analyze section. (Methodology detail—including that " +
+      "6M, 5-Why, and Brainstorming are alternative root-cause tools; either one, " +
+      "meaningfully completed, satisfies the Analyze section. (Methodology detail—including that " +
       "the count of “why” steps is not fixed—is in the system prompt.) Mark this " +
       "criterion 'met' when 5-Why is the active tool, each question is derived " +
       "from facts in Define/Measure (not generic), each answer introduces new " +
       "evidence, and a clear conclusion is provided. Also mark it 'met' when the " +
-      "investigation explicitly relies on 6M and 5-Why is documented as 'Not " +
-      "Applicable' with a brief rationale.",
+      "investigation explicitly relies on 6M or Brainstorming and 5-Why is " +
+      "documented as 'Not Applicable' with a brief rationale.",
   },
   {
     key: "analyze.investigation_outcome",
@@ -156,9 +156,9 @@ export const ANALYZE_CRITERIA: CriterionDefinition[] = [
   {
     key: "analyze.impact_assessment",
     label:
-      "Impact assessment (System/Document/Product/Equipment/Patient safety)",
+      "Impact assessment (System/Document/Product/Equipment/Patient safety/Past batches)",
     description:
-      "Is the impact assessment filled for all five fields with a clear statement for each?",
+      "Is the impact assessment filled for all six areas (System, Document, Product, Equipment, Patient safety, Past batches) with a clear statement for each?",
   },
 ];
 
