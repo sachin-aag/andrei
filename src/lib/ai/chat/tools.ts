@@ -400,7 +400,7 @@ export function buildChatTools(opts: {
     ];
     tools.select_analyze_method = tool({
       description:
-        "Select exactly ONE Analyze root-cause method (6M, 5-Why, or Brainstorming) before drafting any Analyze fields. Updates the report header tool checkboxes. Call this once per Analyze drafting pass; then draft the returned draftFields and write 'Not Applicable' into notApplicableFields.",
+        "Select exactly ONE Analyze root-cause method (6M, 5-Why, or Brainstorming) before drafting any Analyze fields. Updates the report header tool checkboxes. Call this once per Analyze drafting pass; then call draft_field ONCE PER FIELD PATH in draftFields (each call covers only that one dimension — never bundle multiple field paths' content into a single call), and once per field path in notApplicableFields (each written as the literal text 'Not Applicable').",
       inputSchema: z.object({
         method: z
           .enum(methodEnum)

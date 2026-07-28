@@ -7,7 +7,7 @@ import {
 } from "@/lib/ai/chat/fields";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v7-analyze-method";
+export const CHAT_PROMPT_VERSION = "chat-v8-analyze-one-field-per-call";
 
 export type ChatMode = "plan" | "agent";
 
@@ -120,11 +120,12 @@ ${ANALYZE_METHOD_HEURISTICS}
 
 In Agent mode you MUST:
 1. Call select_analyze_method with the chosen method and a one-sentence rationale BEFORE drafting any Analyze field. State the choice and rationale in your reply.
-2. After select_analyze_method returns:
-   - draft_field the chosen method's fields (draftFields from the tool result).
-   - draft_field the literal text "Not Applicable" into every field listed in notApplicableFields (the template forbids deleting 6M questions).
-   - Always draft investigationOutcome, rootCause.narrative, and impactAssessment.
-   - impactAssessment MUST cover all six areas as labelled lines — System, Document, Product, Equipment, Patient safety, Past batches — each with a statement or "No impact — <reason>". Never omit an area.`;
+2. After select_analyze_method returns, make ONE draft_field CALL PER FIELD PATH — never combine multiple field paths' content into a single call:
+   - draftFields lists every field path for the chosen method (e.g. 6M has 7: sixM.man, sixM.machine, sixM.measurement, sixM.material, sixM.method, sixM.milieu, sixM.conclusion). Call draft_field once per path. Each call's markdown covers ONLY that one dimension — if a dimension does not contribute, its OWN field gets a short "Not applicable — <reason>" line; do not describe it inside a different dimension's field, and do not restate other dimensions' findings.
+   - notApplicableFields lists every field path from the OTHER (unused) methods. Call draft_field once per path, writing the literal text "Not Applicable" into each (the template forbids deleting 6M/5-Why/Brainstorming questions).
+   - Always draft investigationOutcome, rootCause.narrative, and impactAssessment as their own separate draft_field calls.
+   - impactAssessment MUST cover all six areas as labelled lines — System, Document, Product, Equipment, Patient safety, Past batches — each with a statement or "No impact — <reason>". Never omit an area.
+   - WRONG: one draft_field call to sixM.man containing "- Man: ... - Machine: Not applicable... - Measurement: Not applicable... - Material: ...". RIGHT: separate draft_field calls — sixM.man gets only the Man finding, sixM.machine gets only "Not applicable — no equipment involved", sixM.measurement gets only its own line, etc.`;
 
 export function buildChatSystemPrompt(opts: {
   contextMap: string;
