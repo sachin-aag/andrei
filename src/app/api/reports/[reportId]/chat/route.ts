@@ -42,6 +42,7 @@ import {
   findChatSession,
   touchChatSession,
 } from "@/lib/ai/chat/sessions";
+import { buildGeminiThoughtSummaryProviderOptions } from "@/lib/eval/eval-generation-options";
 import { isTestStubChat } from "@/lib/test/ai-bypass";
 import {
   flushLangfuseTraces,
@@ -231,6 +232,11 @@ export async function POST(
     // Agent mode drafts whole sections field-by-field (read + draft per field),
     // so it needs a substantially larger step budget than plan mode.
     stopWhen: stepCountIs(mode === "plan" ? 8 : 24),
+    // Thought summaries for Langfuse traces; keep thinkingLevel minimal so the
+    // multi-step tool loop on flash-lite stays responsive.
+    providerOptions: buildGeminiThoughtSummaryProviderOptions({
+      thinkingLevel: "minimal",
+    }),
     ...langfuseGenerateTextTelemetry({
       functionId: "report-chat",
       metadata: { reportId, sessionId, mode, sectionScope, canEdit },
@@ -241,6 +247,9 @@ export async function POST(
 
   return result.toUIMessageStreamResponse({
     originalMessages: messages,
+    // Keep Gemini thought summaries in Langfuse (ai.response.reasoning) only —
+    // do not stream or persist them as chat message parts.
+    sendReasoning: false,
     onFinish: async ({ responseMessage }) => {
       try {
         await db.insert(chatMessages).values({

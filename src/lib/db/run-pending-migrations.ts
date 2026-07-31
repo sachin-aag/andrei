@@ -12,6 +12,15 @@ const journalPath = path.join(migrationsFolder, "meta/_journal.json");
 /** SQL files applied via push + manual baseline but not always in the journal. */
 const EXTRA_MIGRATION_TAGS = ["0030_conclusion_section"] as const;
 
+/**
+ * Stable `created_at` for extra tags. Must sit between neighboring journal
+ * entries (0029…0031). Never use `Date.now()` — drizzle's migrator skips any
+ * journal entry whose `when` is ≤ the max recorded `created_at`.
+ */
+const EXTRA_MIGRATION_WHEN: Record<(typeof EXTRA_MIGRATION_TAGS)[number], number> = {
+  "0030_conclusion_section": 1_782_415_200_000,
+};
+
 type JournalEntry = {
   tag: string;
   when: number;
@@ -183,15 +192,40 @@ async function ensureMigrationColumn(
 }
 
 /**
+ * Fix extra-tag rows seeded with `Date.now()`, which otherwise sit after later
+ * journal `when` values and cause drizzle `migrate()` to skip them forever.
+ */
+async function repairAnomalousMigrationTimestamps(
+  pool: pg.Pool
+): Promise<void> {
+  for (const tag of EXTRA_MIGRATION_TAGS) {
+    const hash = migrationHash(tag);
+    const fixedWhen = EXTRA_MIGRATION_WHEN[tag];
+    await pool.query(
+      `UPDATE drizzle.__drizzle_migrations
+       SET created_at = $1
+       WHERE hash = $2 AND created_at > $1`,
+      [fixedWhen, hash]
+    );
+  }
+}
+
+/**
  * Apply idempotent schema repairs when a migration was journaled without SQL
  * (older deploy bug) or drizzle's timestamp-based migrator skipped it.
  */
 async function repairMissingSchema(pool: pg.Pool): Promise<void> {
+  await repairAnomalousMigrationTimestamps(pool);
+
   const repairs: SchemaRepair[] = [
     {
       tag: "0032_chat_sessions",
       tableName: "chat_sessions",
       prerequisites: [{ tag: "0031_chat_messages", tableName: "chat_messages" }],
+    },
+    {
+      tag: "0033_report_attachments",
+      tableName: "report_attachments",
     },
   ];
 
@@ -213,6 +247,61 @@ async function repairMissingSchema(pool: pg.Pool): Promise<void> {
     "chat_messages",
     "session_id"
   );
+  await ensureMigrationColumn(
+    pool,
+    "0034_audit_canonical_v2",
+    "audit_events",
+    "payload_version"
+  );
+  await ensureAuditHashChainTriggers(pool);
+}
+
+/**
+ * Push-bootstrapped DBs often have `audit_events` without the hash-chain
+ * trigger or `pgcrypto`. 0034 only replaces the function body — recreate the
+ * trigger if missing so inserts actually chain hashes.
+ */
+async function ensureAuditHashChainTriggers(pool: pg.Pool): Promise<void> {
+  if (!(await tableExists(pool, "audit_events"))) return;
+
+  await pool.query(`CREATE EXTENSION IF NOT EXISTS pgcrypto`);
+
+  const trigger = await pool.query<{ exists: boolean }>(
+    `SELECT EXISTS (
+      SELECT 1 FROM pg_trigger
+      WHERE tgrelid = 'audit_events'::regclass
+        AND tgname = 'audit_events_hash_chain'
+        AND NOT tgisinternal
+    ) AS exists`
+  );
+  if (trigger.rows[0]?.exists) return;
+
+  // Ensure the v2 hash function body is present before attaching the trigger.
+  if (await columnExists(pool, "audit_events", "payload_version")) {
+    await applyMigrationStatements(pool, "0034_audit_canonical_v2");
+  }
+
+  await pool.query(`
+    DROP TRIGGER IF EXISTS audit_events_hash_chain ON audit_events;
+    CREATE TRIGGER audit_events_hash_chain
+      BEFORE INSERT ON audit_events
+      FOR EACH ROW
+      EXECUTE FUNCTION audit_events_before_insert();
+  `);
+  await pool.query(`
+    DROP TRIGGER IF EXISTS audit_events_append_only_update ON audit_events;
+    CREATE TRIGGER audit_events_append_only_update
+      BEFORE UPDATE ON audit_events
+      FOR EACH ROW
+      EXECUTE FUNCTION audit_append_only_guard();
+  `);
+  await pool.query(`
+    DROP TRIGGER IF EXISTS audit_events_append_only_delete ON audit_events;
+    CREATE TRIGGER audit_events_append_only_delete
+      BEFORE DELETE ON audit_events
+      FOR EACH ROW
+      EXECUTE FUNCTION audit_append_only_guard();
+  `);
 }
 
 /**
@@ -249,7 +338,7 @@ async function ensurePushBaseline(pool: pg.Pool): Promise<void> {
     ...journal.entries.map((entry) => ({ tag: entry.tag, when: entry.when })),
     ...EXTRA_MIGRATION_TAGS.filter((tag) =>
       fs.existsSync(path.join(migrationsFolder, `${tag}.sql`))
-    ).map((tag) => ({ tag, when: Date.now() })),
+    ).map((tag) => ({ tag, when: EXTRA_MIGRATION_WHEN[tag] })),
   ];
 
   for (const { tag, when } of tagsToSeed) {
