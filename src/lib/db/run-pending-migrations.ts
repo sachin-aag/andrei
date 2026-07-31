@@ -283,15 +283,24 @@ async function ensureAuditHashChainTriggers(pool: pg.Pool): Promise<void> {
 
   await pool.query(`CREATE EXTENSION IF NOT EXISTS pgcrypto`);
 
-  const trigger = await pool.query<{ exists: boolean }>(
-    `SELECT EXISTS (
-      SELECT 1 FROM pg_trigger
-      WHERE tgrelid = 'audit_events'::regclass
-        AND tgname = 'audit_events_hash_chain'
-        AND NOT tgisinternal
-    ) AS exists`
+  const existing = await pool.query<{ tgname: string }>(
+    `SELECT tgname FROM pg_trigger
+     WHERE tgrelid = 'audit_events'::regclass
+       AND NOT tgisinternal
+       AND tgname IN (
+         'audit_events_hash_chain',
+         'audit_events_append_only_update',
+         'audit_events_append_only_delete'
+       )`
   );
-  if (trigger.rows[0]?.exists) return;
+  const have = new Set(existing.rows.map((row) => row.tgname));
+  if (
+    have.has("audit_events_hash_chain") &&
+    have.has("audit_events_append_only_update") &&
+    have.has("audit_events_append_only_delete")
+  ) {
+    return;
+  }
 
   // Ensure the v2 hash function body is present before attaching the trigger.
   // Push-bootstrapped DBs often have columns without PL/pgSQL functions from 0027/0034.
@@ -309,27 +318,33 @@ async function ensureAuditHashChainTriggers(pool: pg.Pool): Promise<void> {
     $$ LANGUAGE plpgsql;
   `);
 
-  await pool.query(`
-    DROP TRIGGER IF EXISTS audit_events_hash_chain ON audit_events;
-    CREATE TRIGGER audit_events_hash_chain
-      BEFORE INSERT ON audit_events
-      FOR EACH ROW
-      EXECUTE FUNCTION audit_events_before_insert();
-  `);
-  await pool.query(`
-    DROP TRIGGER IF EXISTS audit_events_append_only_update ON audit_events;
-    CREATE TRIGGER audit_events_append_only_update
-      BEFORE UPDATE ON audit_events
-      FOR EACH ROW
-      EXECUTE FUNCTION audit_append_only_guard();
-  `);
-  await pool.query(`
-    DROP TRIGGER IF EXISTS audit_events_append_only_delete ON audit_events;
-    CREATE TRIGGER audit_events_append_only_delete
-      BEFORE DELETE ON audit_events
-      FOR EACH ROW
-      EXECUTE FUNCTION audit_append_only_guard();
-  `);
+  if (!have.has("audit_events_hash_chain")) {
+    await pool.query(`
+      DROP TRIGGER IF EXISTS audit_events_hash_chain ON audit_events;
+      CREATE TRIGGER audit_events_hash_chain
+        BEFORE INSERT ON audit_events
+        FOR EACH ROW
+        EXECUTE FUNCTION audit_events_before_insert();
+    `);
+  }
+  if (!have.has("audit_events_append_only_update")) {
+    await pool.query(`
+      DROP TRIGGER IF EXISTS audit_events_append_only_update ON audit_events;
+      CREATE TRIGGER audit_events_append_only_update
+        BEFORE UPDATE ON audit_events
+        FOR EACH ROW
+        EXECUTE FUNCTION audit_append_only_guard();
+    `);
+  }
+  if (!have.has("audit_events_append_only_delete")) {
+    await pool.query(`
+      DROP TRIGGER IF EXISTS audit_events_append_only_delete ON audit_events;
+      CREATE TRIGGER audit_events_append_only_delete
+        BEFORE DELETE ON audit_events
+        FOR EACH ROW
+        EXECUTE FUNCTION audit_append_only_guard();
+    `);
+  }
 }
 
 /**
