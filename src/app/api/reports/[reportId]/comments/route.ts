@@ -3,22 +3,20 @@ import { and, asc, eq, ne } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { comments, reports, sectionTypeEnum } from "@/db/schema";
-import type { SectionType } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
-
-function canAccessReport(user: { id: string; role: string }, report: { authorId: string; assignedManagerId: string | null }) {
-  if (user.role === "manager") return true;
-  return user.id === report.authorId;
-}
+import { requireReportAccess } from "@/lib/reports/require-report-access";
 
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ reportId: string }> }
 ) {
-  const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const currentUser = await getCurrentUser();
   const { reportId } = await params;
+  const access = await requireReportAccess(reportId, currentUser);
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
+  }
 
   // Dismissed comments are kept in the DB for audit / undo but excluded from
   // the UI by default. Pass ?include=dismissed when you genuinely need them.
@@ -56,18 +54,13 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ reportId: string }> }
 ) {
-  const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const currentUser = await getCurrentUser();
   const { reportId } = await params;
-
-  const [report] = await db
-    .select()
-    .from(reports)
-    .where(eq(reports.id, reportId));
-  if (!report) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (!canAccessReport(user, report)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await requireReportAccess(reportId, currentUser);
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
   }
+  const { user, report } = access;
 
   const parse = createSchema.safeParse(await req.json().catch(() => ({})));
   if (!parse.success) {
@@ -123,7 +116,7 @@ export async function POST(
         : parse.data.sectionId ?? null,
       section: threadRoot
         ? threadRoot.section
-        : ((parse.data.section as SectionType | undefined) ?? null),
+        : ((parse.data.section as (typeof sectionValues)[number] | undefined) ?? null),
       authorId: user.id,
       content: parse.data.content,
       anchorText: threadRoot ? "" : parse.data.anchorText ?? "",

@@ -1,0 +1,56 @@
+# PDF Evidence Attachments — Deployment Checklist
+
+Use this before enabling PDF evidence upload in a shared environment.
+CI does **not** validate Gemini visual accuracy; run a manual soak on a
+representative scan after infrastructure gates pass.
+
+## Infrastructure
+
+- [ ] Private GCS bucket with Uniform Bucket-Level Access (UBLA) enabled
+- [ ] Prefer an existing project bucket via `GCS_BUCKET` (prefix separation, not a new bucket)
+- [ ] Lifecycle rule deletes **only** `staging/` and `temp/` prefixes (not permanent evidence)
+- [ ] Exact CORS origins for browser resumable uploads (app production + preview URLs)
+- [ ] WIF trust configured (`GCP_WIF_AUDIENCE`, `GCP_SERVICE_ACCOUNT_EMAIL`) for Vercel OIDC
+- [ ] Least-privilege IAM: object create/read on attachment prefixes + `iam.serviceAccounts.signBlob` / Token Creator for signed URLs — avoid blanket `roles/storage.objectAdmin` on shared buckets
+- [ ] pgvector available on Neon (and local/CI via `pgvector/pgvector:pg16`)
+- [ ] Migrations applied through `0034_audit_canonical_v2` (`pnpm db:migrate` / Vercel build)
+- [ ] Vercel Workflow DevKit available in the deployment region; proxy excludes `/.well-known/workflow/*`
+
+## Application config
+
+- [ ] `GCS_BUCKET` set in Production and Preview
+- [ ] `DOCUMENT_EXTRACT_GOOGLE_MODEL_ID=gemini-3.1-flash-lite`
+- [ ] `DOCUMENT_EMBEDDING_MODEL_ID=gemini-embedding-001`
+- [ ] `DOCUMENT_EXTRACT_LOCATION=global`
+- [ ] Quotas set (`MAX_ATTACHMENT_BYTES`, `MAX_ATTACHMENT_PAGES`, per-report count/bytes)
+- [ ] `ATTACHMENT_STORAGE_BACKEND` is **not** `local` in production
+- [ ] `ALLOW_LOCAL_ATTACHMENT_STORAGE` unset/false in production
+- [ ] `ALLOW_TEST_STUB_DOCUMENT_INGEST` unset/false in production
+- [ ] Langfuse: document prompt/response capture redacted or metadata-only
+- [ ] Organization-approved malware scanner wired, or `ATTACHMENT_MALWARE_SCAN_REQUIRED=true` only after scanner is real (fail closed)
+
+## Product / compliance gates
+
+- [ ] Attachment mutations only in `draft` / `feedback`
+- [ ] Submission blocked while any active attachment is not `ready`
+- [ ] Signed content hash includes sorted evidence manifest
+- [ ] Soft-delete retains GCS bytes; admin purge drains `storage_outbox`
+- [ ] Retention / legal-hold policy documented for evidence PDFs
+- [ ] Evaluation ("AI Check") remains report-only (no PDF evidence)
+
+## Manual soak (credentialed)
+
+Record for a representative ~500-page scan:
+
+| Metric | Value |
+|--------|-------|
+| Pages | |
+| Wall-clock ingest latency | |
+| Extract model / location | gemini-3.1-flash-lite / global |
+| Approx input/output tokens | |
+| Estimated cost (USD) | |
+| Retries / failed batches | |
+| Temp object cleanup verified | |
+| Citation spot-check (filename + page) | |
+
+Expected cost ballpark: about **$1–$2** extract + **$0.05–$0.20** embed per 500-page document.

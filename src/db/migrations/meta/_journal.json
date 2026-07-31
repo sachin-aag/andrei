@@ -225,6 +225,20 @@
       "when": 1782544800000,
       "tag": "0032_chat_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1782631200000,
+      "tag": "0033_report_attachments",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1782717600000,
+      "tag": "0034_audit_canonical_v2",
+      "breakpoints": true
     }
   ]
 }

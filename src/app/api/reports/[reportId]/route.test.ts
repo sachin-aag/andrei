@@ -80,6 +80,7 @@ function mockBundleSelects() {
   mockSelectOnce([]);
   mockSelectOnce([]);
   mockSelectOnce([]);
+  mockOrderedSelectOnce([]);
 }
 
 function mockManagerValidation(managerIds: string[]) {

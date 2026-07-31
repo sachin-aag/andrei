@@ -5,6 +5,7 @@ node_modules/
 # Next.js
 .next/
 out/
+.data/
 
 # Production / analyze
 build/
@@ -85,3 +86,4 @@ docs/mj-onboarding-temporary-passwords.md
 *.zip
 *.7z
 *.rar
+/.swc

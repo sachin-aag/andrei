@@ -11,12 +11,14 @@ import {
   useReportEvaluations,
   useReportPlaceholders,
 } from "@/providers/report-provider";
+import { useReportAttachments } from "@/providers/report-attachments-provider";
 import { ReportHeader } from "./report-header";
 import { ReportDetailsEditDialog } from "./report-details-edit-dialog";
 import { ReportWorkspaceHeader } from "./report-workspace-header";
 import { ReportEditorToolbar } from "./report-editor-toolbar";
 import { MarginGutter } from "./review-rail/margin-gutter";
 import { ReportSidebar, type SidebarTab } from "./report-sidebar";
+import { AttachmentViewer } from "./attachment-viewer";
 import { useUserDirectory } from "@/providers/user-directory-provider";
 import type { SectionType } from "@/db/schema";
 import type { WorkspaceMode } from "@/providers/report-provider";
@@ -111,6 +113,7 @@ export function ReportWorkspace({
   const { requestCommentFocus, comments } = useReportComments();
   const { suggestionsFocusSection, clearSuggestionsFocusSection } =
     useReportEvaluations();
+  const { activeAttachmentId } = useReportAttachments();
   const [criteriaFocusSection, setCriteriaFocusSection] = useState<
     SectionType | undefined
   >();
@@ -391,19 +394,23 @@ export function ReportWorkspace({
           <div className="mx-auto grid grid-cols-1 gap-8 px-6 py-8 pb-24 lg:max-w-[1180px] lg:grid-cols-[minmax(560px,720px)_360px]">
             <div className="space-y-10 min-w-0">
               <ReportHeader />
-              {REPORT_WORKSPACE_SECTIONS.map((s) => {
-                const Editor = SECTION_EDITORS[s];
-                const extra = sectionMinHeights[s];
-                return (
-                  <section
-                    key={s}
-                    id={s}
-                    style={extra ? { paddingBottom: `${extra}px` } : undefined}
-                  >
-                    <Editor />
-                  </section>
-                );
-              })}
+              {activeAttachmentId ? (
+                <AttachmentViewer />
+              ) : (
+                REPORT_WORKSPACE_SECTIONS.map((s) => {
+                  const Editor = SECTION_EDITORS[s];
+                  const extra = sectionMinHeights[s];
+                  return (
+                    <section
+                      key={s}
+                      id={s}
+                      style={extra ? { paddingBottom: `${extra}px` } : undefined}
+                    >
+                      <Editor />
+                    </section>
+                  );
+                })
+              )}
             </div>
             <aside
               className="hidden lg:block relative"

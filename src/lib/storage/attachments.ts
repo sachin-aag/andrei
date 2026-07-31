@@ -1,0 +1,401 @@
+import { createHash } from "node:crypto";
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { Storage } from "@google-cloud/storage";
+import { createId } from "@paralleldrive/cuid2";
+import { createWifAuthClient, getWifConfig } from "@/lib/gcp/wif-token";
+
+export type CreateResumableUploadInput = {
+  objectKey: string;
+  contentType: string;
+  sizeBytes: number;
+};
+
+export type ObjectMetadata = {
+  sizeBytes: number;
+  contentType: string;
+  generation: string;
+  crc32c: string;
+};
+
+export type SignedReadUrlInput = {
+  objectKey: string;
+  generation: string;
+  expiresInSeconds: number;
+};
+
+export interface AttachmentStorage {
+  createResumableUpload(input: CreateResumableUploadInput): Promise<string>;
+  getObjectMetadata(objectKey: string): Promise<ObjectMetadata>;
+  readObjectBuffer(objectKey: string): Promise<Buffer>;
+  writeObjectBuffer(
+    objectKey: string,
+    buffer: Buffer,
+    contentType: string
+  ): Promise<void>;
+  copyObject(fromKey: string, toKey: string): Promise<void>;
+  deleteObject(objectKey: string): Promise<void>;
+  getSignedReadUrl(input: SignedReadUrlInput): Promise<string>;
+}
+
+type LocalUploadSession = {
+  objectKey: string;
+  contentType: string;
+  sizeBytes: number;
+  receivedBytes: number;
+};
+
+const LOCAL_STORAGE_ROOT = path.join(process.cwd(), ".data", "attachments");
+const LOCAL_UPLOAD_SESSIONS_ROOT = path.join(LOCAL_STORAGE_ROOT, "_sessions");
+const LOCAL_UPLOAD_PARTS_ROOT = path.join(LOCAL_STORAGE_ROOT, "_parts");
+
+let cachedStorage: AttachmentStorage | null = null;
+
+export function stagingObjectKey(attachmentId: string): string {
+  return `staging/attachments/${attachmentId}/source.pdf`;
+}
+
+export function permanentObjectKey(
+  reportId: string,
+  attachmentId: string
+): string {
+  return `reports/${reportId}/attachments/${attachmentId}/source.pdf`;
+}
+
+export function tempBatchObjectKey(
+  attachmentId: string,
+  runId: string,
+  batchIndex: number
+): string {
+  return `temp/attachments/${attachmentId}/ingest-runs/${runId}/batches/${batchIndex}.pdf`;
+}
+
+export function getAttachmentStorage(): AttachmentStorage {
+  if (cachedStorage) return cachedStorage;
+
+  const backend = process.env.ATTACHMENT_STORAGE_BACKEND?.trim();
+  const allowLocal = process.env.ALLOW_LOCAL_ATTACHMENT_STORAGE === "true";
+  const shouldUseLocal =
+    backend === "local" && process.env.NODE_ENV !== "production" && allowLocal;
+
+  cachedStorage = shouldUseLocal
+    ? new LocalAttachmentStorage()
+    : new GcsAttachmentStorage(requiredGcsBucket());
+  return cachedStorage;
+}
+
+export function getAttachmentStorageBucketName(): string {
+  const backend = process.env.ATTACHMENT_STORAGE_BACKEND?.trim();
+  const allowLocal = process.env.ALLOW_LOCAL_ATTACHMENT_STORAGE === "true";
+  if (backend === "local" && process.env.NODE_ENV !== "production" && allowLocal) {
+    return "local-attachment-storage";
+  }
+  return requiredGcsBucket();
+}
+
+export function resetAttachmentStorageForTests(): void {
+  cachedStorage = null;
+}
+
+export class GcsAttachmentStorage implements AttachmentStorage {
+  private readonly storage: Storage;
+
+  constructor(private readonly bucketName: string) {
+    const wifConfig = getWifConfig();
+    this.storage = wifConfig
+      ? new Storage({
+          authClient: createWifAuthClient(wifConfig) as never,
+        })
+      : new Storage();
+  }
+
+  async createResumableUpload({
+    objectKey,
+    contentType,
+    sizeBytes,
+  }: CreateResumableUploadInput): Promise<string> {
+    const file = this.file(objectKey);
+    const [uploadUrl] = await file.createResumableUpload({
+      metadata: {
+        contentType,
+        metadata: {
+          expectedSizeBytes: String(sizeBytes),
+        },
+      },
+      preconditionOpts: {
+        ifGenerationMatch: 0,
+      },
+    });
+    return uploadUrl;
+  }
+
+  async getObjectMetadata(objectKey: string): Promise<ObjectMetadata> {
+    const [metadata] = await this.file(objectKey).getMetadata();
+    return {
+      sizeBytes: Number(metadata.size ?? 0),
+      contentType: metadata.contentType ?? "application/octet-stream",
+      generation: String(metadata.generation ?? ""),
+      crc32c: String(metadata.crc32c ?? ""),
+    };
+  }
+
+  async readObjectBuffer(objectKey: string): Promise<Buffer> {
+    const [buffer] = await this.file(objectKey).download();
+    return buffer;
+  }
+
+  async writeObjectBuffer(
+    objectKey: string,
+    buffer: Buffer,
+    contentType: string
+  ): Promise<void> {
+    await this.file(objectKey).save(buffer, {
+      contentType,
+      resumable: false,
+      preconditionOpts: {
+        ifGenerationMatch: 0,
+      },
+    });
+  }
+
+  async copyObject(fromKey: string, toKey: string): Promise<void> {
+    await this.file(fromKey).copy(this.file(toKey), {
+      preconditionOpts: {
+        ifGenerationMatch: 0,
+      },
+    });
+  }
+
+  async deleteObject(objectKey: string): Promise<void> {
+    await this.file(objectKey).delete({ ignoreNotFound: true });
+  }
+
+  async getSignedReadUrl({
+    objectKey,
+    generation,
+    expiresInSeconds,
+  }: SignedReadUrlInput): Promise<string> {
+    const expires = Date.now() + expiresInSeconds * 1000;
+    const [url] = await this.file(objectKey).getSignedUrl({
+      action: "read",
+      expires,
+      version: "v4",
+      extensionHeaders: {},
+      queryParams: {
+        generation,
+      },
+    });
+    return url;
+  }
+
+  private file(objectKey: string) {
+    return this.storage.bucket(this.bucketName).file(objectKey);
+  }
+}
+
+export class LocalAttachmentStorage implements AttachmentStorage {
+  async createResumableUpload({
+    objectKey,
+    contentType,
+    sizeBytes,
+  }: CreateResumableUploadInput): Promise<string> {
+    const sessionId = createId();
+    await ensureLocalDirs();
+    const session: LocalUploadSession = {
+      objectKey,
+      contentType,
+      sizeBytes,
+      receivedBytes: 0,
+    };
+    await writeLocalUploadSession(sessionId, session);
+    return `/api/attachments/local-upload/${sessionId}`;
+  }
+
+  async getObjectMetadata(objectKey: string): Promise<ObjectMetadata> {
+    const metadata = await readLocalObjectMetadata(objectKey);
+    const fileStat = await stat(localObjectPath(objectKey));
+    return {
+      ...metadata,
+      sizeBytes: fileStat.size,
+    };
+  }
+
+  async readObjectBuffer(objectKey: string): Promise<Buffer> {
+    return readFile(localObjectPath(objectKey));
+  }
+
+  async writeObjectBuffer(
+    objectKey: string,
+    buffer: Buffer,
+    contentType: string
+  ): Promise<void> {
+    const objectPath = localObjectPath(objectKey);
+    await mkdir(path.dirname(objectPath), { recursive: true });
+    await writeFile(objectPath, buffer);
+    await writeLocalObjectMetadata(objectKey, buffer, contentType);
+  }
+
+  async copyObject(fromKey: string, toKey: string): Promise<void> {
+    const buffer = await this.readObjectBuffer(fromKey);
+    const metadata = await this.getObjectMetadata(fromKey);
+    await this.writeObjectBuffer(toKey, buffer, metadata.contentType);
+  }
+
+  async deleteObject(objectKey: string): Promise<void> {
+    await rm(localObjectPath(objectKey), { force: true });
+    await rm(localMetadataPath(objectKey), { force: true });
+  }
+
+  async getSignedReadUrl({
+    objectKey,
+    generation,
+    expiresInSeconds,
+  }: SignedReadUrlInput): Promise<string> {
+    const expiresAt = Date.now() + expiresInSeconds * 1000;
+    const params = new URLSearchParams({
+      key: objectKey,
+      generation,
+      expiresAt: String(expiresAt),
+    });
+    return `/api/attachments/local-read?${params.toString()}`;
+  }
+}
+
+export async function appendLocalUploadChunk(
+  sessionId: string,
+  chunk: Buffer,
+  contentRange: string | null
+): Promise<{ complete: boolean; receivedBytes: number }> {
+  const session = await readLocalUploadSession(sessionId);
+  const range = parseContentRange(contentRange);
+  if (range.total !== session.sizeBytes) {
+    throw new Error("Upload size does not match reserved size");
+  }
+  if (range.start !== session.receivedBytes) {
+    return { complete: false, receivedBytes: session.receivedBytes };
+  }
+  if (chunk.byteLength !== range.end - range.start + 1) {
+    throw new Error("Chunk size does not match Content-Range");
+  }
+
+  await ensureLocalDirs();
+  const partPath = localUploadPartPath(sessionId);
+  const prior = session.receivedBytes === 0 ? Buffer.alloc(0) : await readFile(partPath);
+  await writeFile(partPath, Buffer.concat([prior, chunk]));
+
+  const receivedBytes = range.end + 1;
+  const nextSession = { ...session, receivedBytes };
+  await writeLocalUploadSession(sessionId, nextSession);
+  if (receivedBytes !== session.sizeBytes) {
+    return { complete: false, receivedBytes };
+  }
+
+  const objectPath = localObjectPath(session.objectKey);
+  await mkdir(path.dirname(objectPath), { recursive: true });
+  await rename(partPath, objectPath);
+  const buffer = await readFile(objectPath);
+  await writeLocalObjectMetadata(session.objectKey, buffer, session.contentType);
+  await rm(localUploadSessionPath(sessionId), { force: true });
+  return { complete: true, receivedBytes };
+}
+
+function requiredGcsBucket(): string {
+  const bucket = process.env.GCS_BUCKET?.trim();
+  if (!bucket) {
+    throw new Error(
+      "GCS_BUCKET is required unless local attachment storage is explicitly enabled."
+    );
+  }
+  return bucket;
+}
+
+async function ensureLocalDirs(): Promise<void> {
+  await Promise.all([
+    mkdir(LOCAL_STORAGE_ROOT, { recursive: true }),
+    mkdir(LOCAL_UPLOAD_SESSIONS_ROOT, { recursive: true }),
+    mkdir(LOCAL_UPLOAD_PARTS_ROOT, { recursive: true }),
+  ]);
+}
+
+function localObjectPath(objectKey: string): string {
+  const segments = safeObjectKeySegments(objectKey);
+  return path.join(LOCAL_STORAGE_ROOT, "objects", ...segments);
+}
+
+function localMetadataPath(objectKey: string): string {
+  return `${localObjectPath(objectKey)}.metadata.json`;
+}
+
+function localUploadSessionPath(sessionId: string): string {
+  return path.join(LOCAL_UPLOAD_SESSIONS_ROOT, `${sessionId}.json`);
+}
+
+function localUploadPartPath(sessionId: string): string {
+  return path.join(LOCAL_UPLOAD_PARTS_ROOT, `${sessionId}.part`);
+}
+
+function safeObjectKeySegments(objectKey: string): string[] {
+  if (objectKey.startsWith("/") || objectKey.includes("\\")) {
+    throw new Error("Invalid object key");
+  }
+  const segments = objectKey.split("/");
+  if (segments.some((segment) => !segment || segment === "." || segment === "..")) {
+    throw new Error("Invalid object key");
+  }
+  return segments;
+}
+
+async function writeLocalObjectMetadata(
+  objectKey: string,
+  buffer: Buffer,
+  contentType: string
+): Promise<void> {
+  const metadataPath = localMetadataPath(objectKey);
+  await mkdir(path.dirname(metadataPath), { recursive: true });
+  const hash = createHash("sha256").update(buffer).digest("hex");
+  const metadata: ObjectMetadata = {
+    sizeBytes: buffer.byteLength,
+    contentType,
+    generation: String(Date.now()),
+    crc32c: `local-${hash.slice(0, 16)}`,
+  };
+  await writeFile(metadataPath, JSON.stringify(metadata), "utf8");
+}
+
+async function readLocalObjectMetadata(objectKey: string): Promise<ObjectMetadata> {
+  const raw = await readFile(localMetadataPath(objectKey), "utf8");
+  return JSON.parse(raw) as ObjectMetadata;
+}
+
+async function writeLocalUploadSession(
+  sessionId: string,
+  session: LocalUploadSession
+): Promise<void> {
+  await ensureLocalDirs();
+  await writeFile(
+    localUploadSessionPath(sessionId),
+    JSON.stringify(session),
+    "utf8"
+  );
+}
+
+async function readLocalUploadSession(
+  sessionId: string
+): Promise<LocalUploadSession> {
+  const raw = await readFile(localUploadSessionPath(sessionId), "utf8");
+  return JSON.parse(raw) as LocalUploadSession;
+}
+
+function parseContentRange(header: string | null): {
+  start: number;
+  end: number;
+  total: number;
+} {
+  const match = /^bytes (\d+)-(\d+)\/(\d+)$/.exec(header ?? "");
+  if (!match) throw new Error("Missing or invalid Content-Range");
+  return {
+    start: Number(match[1]),
+    end: Number(match[2]),
+    total: Number(match[3]),
+  };
+}

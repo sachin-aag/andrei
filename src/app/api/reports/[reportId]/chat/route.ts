@@ -48,6 +48,7 @@ import {
   langfuseGenerateTextTelemetry,
 } from "@/lib/observability/langfuse";
 import { auditActorFromUser } from "@/lib/audit";
+import { listReadyDocumentsForReport } from "@/lib/attachments/retrieval";
 
 export const maxDuration = 120;
 
@@ -156,6 +157,7 @@ export async function POST(
     .select()
     .from(comments)
     .where(eq(comments.reportId, reportId));
+  const documents = await listReadyDocumentsForReport(reportId);
 
   const contextMap = buildReportContextMap({
     report: {
@@ -178,6 +180,7 @@ export async function POST(
       kind: c.kind,
       status: c.status,
     })),
+    documents,
   });
 
   const system = buildChatSystemPrompt({
@@ -198,6 +201,8 @@ export async function POST(
     mode === "plan"
       ? {
           read_section: allTools.read_section!,
+          search_documents: allTools.search_documents!,
+          read_document_page: allTools.read_document_page!,
           ask_user: allTools.ask_user!,
           ...(allTools.suggest_section_scope
             ? { suggest_section_scope: allTools.suggest_section_scope }

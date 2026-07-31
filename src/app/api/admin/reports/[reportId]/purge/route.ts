@@ -2,9 +2,13 @@ import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { db } from "@/db";
-import { reports } from "@/db/schema";
+import { reportAttachments, reports, storageOutbox } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
+import {
+  collectAttachmentPurgeObjects,
+  processPurgeStorageOutboxRows,
+} from "@/lib/reports/purge-storage-outbox";
 
 const purgeSchema = z.object({
   reason: z.string().trim().min(1).max(2000),
@@ -38,6 +42,17 @@ export async function DELETE(
     );
   }
 
+  const attachmentRows = await db
+    .select({
+      id: reportAttachments.id,
+      stagingObjectKey: reportAttachments.stagingObjectKey,
+      permanentObjectKey: reportAttachments.permanentObjectKey,
+      gcsGeneration: reportAttachments.gcsGeneration,
+    })
+    .from(reportAttachments)
+    .where(eq(reportAttachments.reportId, reportId));
+  const purgeObjects = collectAttachmentPurgeObjects(attachmentRows);
+
   await recordAuditEvent({
     actor: auditActorFromUser(user),
     action: "report_purged",
@@ -54,6 +69,24 @@ export async function DELETE(
     newValue: { reason: parsed.data.reason },
   });
 
+  const outboxRows =
+    purgeObjects.length === 0
+      ? []
+      : await db
+          .insert(storageOutbox)
+          .values(
+            purgeObjects.map((object) => ({
+              kind: "purge_delete",
+              bucket: object.bucket,
+              objectKey: object.objectKey,
+              gcsGeneration: object.gcsGeneration,
+              reportId,
+              attachmentId: object.attachmentId,
+            }))
+          )
+          .returning();
+
   await db.delete(reports).where(eq(reports.id, reportId));
-  return NextResponse.json({ ok: true });
+  const storagePurge = await processPurgeStorageOutboxRows(outboxRows);
+  return NextResponse.json({ ok: true, storagePurge });
 }

@@ -59,11 +59,13 @@ export function buildSuggestionUserPrompt({
   section,
   contentStr,
   priorBlock,
+  evidenceBlock,
   failingCriteria,
 }: {
   section: SectionType;
   contentStr: string;
   priorBlock: string;
+  evidenceBlock?: string;
   failingCriteria: Array<{
     key: string;
     label: string;
@@ -79,7 +81,7 @@ export function buildSuggestionUserPrompt({
 SECTION CONTENT (editable — anchorText must come from here only):
 """
 ${contentStr}
-"""${priorBlock}
+"""${priorBlock}${evidenceBlock ?? ""}
 
 FAILING CRITERIA TO FIX (one suggestion per criterion listed; NOT MET items are highest priority):
 ${failingCriteria

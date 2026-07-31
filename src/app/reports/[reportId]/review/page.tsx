@@ -4,6 +4,7 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { listWorkspaceUsers } from "@/lib/auth/workspace-users";
 import { getPasswordStatusForUser } from "@/lib/auth/password-status";
 import { getPasswordPolicy } from "@/lib/auth/password-policy";
+import { canViewReport } from "@/lib/reports/access";
 import { loadReportBundle } from "@/lib/reports/bundle";
 import { AppShell } from "@/components/layout/app-shell";
 import { ReportProvider } from "@/providers/report-provider";
@@ -22,6 +23,7 @@ export default async function ReviewReportPage({
 
   const bundle = await loadReportBundle(reportId);
   if (!bundle) notFound();
+  if (!canViewReport(user, bundle.report)) notFound();
 
   const initialTrackChangesMode =
     user.role === "manager" &&
@@ -44,6 +46,7 @@ export default async function ReviewReportPage({
       <ReportProvider
         bundle={bundle}
         currentUserId={user.id}
+        currentUserRole={user.role}
         readOnly
         workspaceMode="review"
         initialTrackChangesMode={initialTrackChangesMode}

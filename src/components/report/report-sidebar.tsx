@@ -1,24 +1,40 @@
 "use client";
 
+import { useRef, useState } from "react";
 import {
+  FileText,
   FileQuestion,
   ListChecks,
+  Loader2,
   MessageSquare,
+  Paperclip,
   PanelRightClose,
   PanelRightOpen,
+  RotateCw,
   Sparkles,
+  Trash2,
+  Upload,
 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { isAiSuggestionKind } from "@/lib/ai/suggestion-gating";
 import { useReportPlaceholders, useReportComments } from "@/providers/report-provider";
+import { useReportAttachments } from "@/providers/report-attachments-provider";
 import { captureEvent } from "@/lib/analytics/events";
 import { PlaceholdersPanelContent } from "./placeholders-panel";
 import { CriteriaPanelContent, CommentsPanelContent } from "./criteria-sheet";
 import { ChatPanel } from "./chat-panel";
 import type { SectionType } from "@/db/schema";
+import type { AttachmentProcessingStatus } from "@/db/schema";
 import type { Placeholder } from "@/lib/placeholders/find";
 
-export type SidebarTab = "assistant" | "placeholders" | "criteria" | "comments";
+export type SidebarTab =
+  | "assistant"
+  | "placeholders"
+  | "criteria"
+  | "comments"
+  | "documents";
 
 type Props = {
   collapsed: boolean;
@@ -38,6 +54,7 @@ const TABS: { value: SidebarTab; label: string; icon: typeof ListChecks }[] = [
   { value: "placeholders", label: "Placeholders", icon: FileQuestion },
   { value: "criteria", label: "Criteria", icon: ListChecks },
   { value: "comments", label: "Comments", icon: MessageSquare },
+  { value: "documents", label: "Documents", icon: Paperclip },
 ];
 
 export function ReportSidebar({
@@ -53,6 +70,7 @@ export function ReportSidebar({
 }: Props) {
   const { pendingPlaceholders } = useReportPlaceholders();
   const { comments } = useReportComments();
+  const { attachments } = useReportAttachments();
   const rootCommentCount = comments.filter((c) => !c.parentId).length;
   const openSuggestionCount = comments.filter(
     (c) => !c.parentId && isAiSuggestionKind(c.kind) && c.status === "open"
@@ -116,6 +134,8 @@ export function ReportSidebar({
                 ? openSuggestionCount
               : tab.value === "comments" && rootCommentCount > 0
                 ? rootCommentCount
+              : tab.value === "documents" && attachments.length > 0
+                ? attachments.length
                 : null;
 
           if (collapsed) {
@@ -197,8 +217,211 @@ export function ReportSidebar({
             {activeTab === "comments" && (
               <CommentsPanelContent onJumpToComment={onJumpToComment} />
             )}
+            {activeTab === "documents" && <DocumentsPanelContent />}
           </div>
         ))}
     </aside>
   );
+}
+
+function DocumentsPanelContent() {
+  const {
+    attachments,
+    uploadProgress,
+    canMutateAttachments,
+    activeAttachmentId,
+    openDocument,
+    uploadFiles,
+    removeAttachment,
+    retryAttachment,
+  } = useReportAttachments();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [isUploading, setIsUploading] = useState(false);
+
+  const handleFiles = async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setIsUploading(true);
+    try {
+      await uploadFiles(files);
+    } finally {
+      setIsUploading(false);
+      if (inputRef.current) inputRef.current.value = "";
+    }
+  };
+
+  const handleRemove = async (id: string, filename: string) => {
+    const confirmed = window.confirm(`Remove "${filename}" from this report?`);
+    if (!confirmed) return;
+    await removeAttachment(id);
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h3 className="text-sm font-semibold text-[var(--foreground)]">
+            PDF documents
+          </h3>
+          <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+            Upload source PDFs for report review and AI retrieval.
+          </p>
+        </div>
+        {canMutateAttachments ? (
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={isUploading}
+              onClick={() => inputRef.current?.click()}
+            >
+              {isUploading ? (
+                <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+              ) : (
+                <Upload className="size-4" aria-hidden="true" />
+              )}
+              Upload
+            </Button>
+            <input
+              ref={inputRef}
+              type="file"
+              accept="application/pdf,.pdf"
+              multiple
+              className="hidden"
+              onChange={(event) => void handleFiles(event.target.files)}
+            />
+          </>
+        ) : null}
+      </div>
+
+      {attachments.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-[var(--border)] p-4 text-sm text-[var(--muted-foreground)]">
+          No PDF documents have been attached yet.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {attachments.map((attachment) => {
+            const progress =
+              uploadProgress[attachment.id]?.percent ?? attachment.processingProgress;
+            const isActive = activeAttachmentId === attachment.id;
+            return (
+              <div
+                key={attachment.id}
+                className={cn(
+                  "rounded-lg border border-[var(--border)] bg-[var(--background)] p-3",
+                  isActive && "border-[var(--brand-600)] ring-1 ring-[var(--brand-600)]"
+                )}
+              >
+                <div className="flex items-start gap-2">
+                  <button
+                    type="button"
+                    onClick={() => openDocument(attachment.id)}
+                    className="min-w-0 flex-1 text-left"
+                  >
+                    <span className="flex items-center gap-2 text-sm font-medium text-[var(--foreground)]">
+                      <FileText className="size-4 shrink-0 text-[var(--muted-foreground)]" />
+                      <span className="truncate">{attachment.filename}</span>
+                    </span>
+                    <span className="mt-1 block text-xs text-[var(--muted-foreground)]">
+                      {formatBytes(attachment.sizeBytes)}
+                      {attachment.pageCount ? ` · ${attachment.pageCount} pages` : ""}
+                    </span>
+                  </button>
+                  {canMutateAttachments ? (
+                    <div className="flex shrink-0 items-center gap-1">
+                      {attachment.processingStatus === "failed" ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="size-7"
+                          aria-label={`Retry ${attachment.filename}`}
+                          onClick={() => void retryAttachment(attachment.id)}
+                        >
+                          <RotateCw className="size-3.5" aria-hidden="true" />
+                        </Button>
+                      ) : null}
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="size-7 text-[var(--muted-foreground)] hover:text-[var(--destructive)]"
+                        aria-label={`Remove ${attachment.filename}`}
+                        onClick={() =>
+                          void handleRemove(attachment.id, attachment.filename)
+                        }
+                      >
+                        <Trash2 className="size-3.5" aria-hidden="true" />
+                      </Button>
+                    </div>
+                  ) : null}
+                </div>
+                <div className="mt-3 flex items-center justify-between gap-2">
+                  <AttachmentStatusBadge status={attachment.processingStatus} />
+                  {isNonTerminalStatus(attachment.processingStatus) ? (
+                    <span className="text-xs text-[var(--muted-foreground)]">
+                      {progress}%
+                    </span>
+                  ) : null}
+                </div>
+                {isNonTerminalStatus(attachment.processingStatus) ? (
+                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[var(--secondary)]">
+                    <div
+                      className="h-full rounded-full bg-[var(--brand-600)] transition-[width]"
+                      style={{ width: `${Math.max(0, Math.min(100, progress))}%` }}
+                    />
+                  </div>
+                ) : null}
+                {attachment.processingError ? (
+                  <p className="mt-2 text-xs text-[var(--destructive)]">
+                    {attachment.processingError}
+                  </p>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AttachmentStatusBadge({
+  status,
+}: {
+  status: AttachmentProcessingStatus;
+}) {
+  switch (status) {
+    case "ready":
+      return <Badge variant="success">Ready</Badge>;
+    case "failed":
+      return <Badge variant="destructive">Failed</Badge>;
+    case "uploading":
+      return <Badge variant="secondary">Uploading</Badge>;
+    case "validating":
+      return <Badge variant="secondary">Validating</Badge>;
+    case "queued":
+      return <Badge variant="warning">Queued</Badge>;
+    case "processing":
+      return <Badge variant="warning">Processing</Badge>;
+    default: {
+      const exhaustive: never = status;
+      return exhaustive;
+    }
+  }
+}
+
+function isNonTerminalStatus(status: AttachmentProcessingStatus): boolean {
+  return (
+    status === "uploading" ||
+    status === "validating" ||
+    status === "queued" ||
+    status === "processing"
+  );
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }

@@ -5,7 +5,6 @@ import { eq, inArray, and } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import {
-  reports,
   reportSections,
   criteriaEvaluations,
   sectionTypeEnum,
@@ -32,6 +31,7 @@ import {
   setRouteObservationIO,
 } from "@/lib/observability/langfuse";
 import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
+import { requireReportAccess } from "@/lib/reports/require-report-access";
 
 export const maxDuration = 60;
 
@@ -53,9 +53,13 @@ async function handleEvaluatePost(
   req: Request,
   { params }: { params: Promise<{ reportId: string }> }
 ) {
-  const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const currentUser = await getCurrentUser();
   const { reportId } = await params;
+  const access = await requireReportAccess(reportId, currentUser);
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
+  }
+  const { report, user } = access;
 
   const body = await req.json().catch(() => ({}));
   const parsed = bodySchema.safeParse(body);
@@ -65,12 +69,6 @@ async function handleEvaluatePost(
   const targetSections: SectionType[] = (requestedSections ?? EVALUATABLE_SECTIONS)
     .filter((s): s is SectionType => isValidSection(s))
     .filter((s) => evalSet.has(s));
-
-  const [report] = await db
-    .select()
-    .from(reports)
-    .where(eq(reports.id, reportId));
-  if (!report) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const runEvaluation = async (): Promise<Response> => {
     const sectionRows = await db

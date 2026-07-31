@@ -61,6 +61,11 @@ function mockSelectOrdered(rows: unknown[]) {
   vi.mocked(db.select).mockReturnValueOnce({ from } as never);
 }
 
+function mockAccessSelects(reportRows: unknown[], managerIds: string[] = []) {
+  mockSelectOnce(reportRows);
+  mockSelectOrdered(managerIds.map((managerId) => ({ managerId })));
+}
+
 function mockInsertReturning(row: unknown) {
   const returning = vi.fn().mockResolvedValueOnce([row]);
   const values = vi.fn().mockReturnValue({ returning });
@@ -84,6 +89,7 @@ describe("/api/reports/[reportId]/comments", () => {
 
   it("GET returns comments for authenticated users", async () => {
     vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
+    mockAccessSelects([report], [manager.id]);
     mockSelectOrdered([{ id: "comment-1", content: "Note" }]);
 
     const response = await GET(new Request("http://localhost/comments"), {
@@ -115,7 +121,7 @@ describe("/api/reports/[reportId]/comments", () => {
       ...engineer,
       id: "other-engineer",
     });
-    mockSelectOnce([report]);
+    mockAccessSelects([report], [manager.id]);
 
     const response = await POST(
       new Request("http://localhost/comments", {
@@ -130,7 +136,7 @@ describe("/api/reports/[reportId]/comments", () => {
 
   it("POST inserts a manager comment", async () => {
     vi.mocked(getCurrentUser).mockResolvedValueOnce(manager);
-    mockSelectOnce([report]);
+    mockAccessSelects([report], [manager.id]);
     mockInsertReturning({
       id: "comment-1",
       content: "Please clarify scope.",
@@ -164,7 +170,7 @@ describe("/api/reports/[reportId]/comments", () => {
 
   it("POST rejects content over 1024 characters", async () => {
     vi.mocked(getCurrentUser).mockResolvedValueOnce(manager);
-    mockSelectOnce([report]);
+    mockAccessSelects([report], [manager.id]);
 
     const response = await POST(
       new Request("http://localhost/comments", {
@@ -185,7 +191,7 @@ describe("/api/reports/[reportId]/comments", () => {
 
   it("POST rejects invalid parent comment", async () => {
     vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
-    mockSelectOnce([report]);
+    mockAccessSelects([report], [manager.id]);
     mockSelectOnce([]);
 
     const response = await POST(

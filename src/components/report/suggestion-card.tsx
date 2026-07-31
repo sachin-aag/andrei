@@ -149,6 +149,8 @@ function SuggestionCardFace({
   const { linkedEval, queueIndex, queueTotal } = card;
   const eff = linkedEval ? effectiveStatus(linkedEval) : "not_evaluated";
   const reasoning = card.kind === "fix" ? card.payload.reasoning : card.redraft.reasoning;
+  const evidenceSources =
+    card.kind === "fix" ? (card.payload.evidenceSources ?? []) : [];
 
   const statusLine =
     phase === "applying"
@@ -265,6 +267,19 @@ function SuggestionCardFace({
             <p className="text-[11px] text-[var(--muted-foreground)] border-t border-[var(--border)] pt-2">
               {linkedEval.reasoning}
             </p>
+          ) : null}
+
+          {evidenceSources.length > 0 ? (
+            <div className="text-[10px] text-[var(--muted-foreground)] border-t border-[var(--border)] pt-2 space-y-1">
+              <p className="font-medium text-[var(--foreground)]">Sources</p>
+              <ul className="space-y-1">
+                {evidenceSources.map((source) => (
+                  <li key={source.citationId}>
+                    {source.filename}, p. {source.pageNumber}
+                  </li>
+                ))}
+              </ul>
+            </div>
           ) : null}
 
           <div className="flex flex-wrap gap-2 pt-1">

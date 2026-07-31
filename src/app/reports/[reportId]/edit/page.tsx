@@ -48,6 +48,7 @@ export default async function EditReportPage({
       <ReportProvider
         bundle={bundle}
         currentUserId={user.id}
+        currentUserRole={user.role}
         readOnly={!canEdit}
         workspaceMode="edit"
         initialTrackChangesMode={false}

@@ -19,6 +19,7 @@ import {
   assertSegregationOfDutiesForApproval,
 } from "@/lib/reports/manager-authorization";
 import { listReportManagerIds } from "@/lib/reports/managers";
+import { assertAttachmentsReadyForSubmission } from "@/lib/reports/compute-content-hash";
 import { assertReportReadyForSubmit } from "@/lib/reports/submit-validation";
 import { isReportDeleted } from "@/lib/reports/tombstone";
 
@@ -65,7 +66,19 @@ export async function handleWorkflowSignRequest(
   }
 
   if (options.newStatus === "submitted") {
-    const submitCheck = await assertReportReadyForSubmit(reportId);
+    const [submitCheck, attachmentCheck] = await Promise.all([
+      assertReportReadyForSubmit(reportId),
+      assertAttachmentsReadyForSubmission(reportId),
+    ]);
+    if (!attachmentCheck.ok) {
+      return NextResponse.json(
+        {
+          error: attachmentCheck.message,
+          attachments: attachmentCheck.attachments,
+        },
+        { status: 409 }
+      );
+    }
     if (!submitCheck.ok) {
       return NextResponse.json(
         { error: submitCheck.message, placeholders: submitCheck.placeholders },

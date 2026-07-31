@@ -6,7 +6,6 @@ import { createId } from "@paralleldrive/cuid2";
 import { z } from "zod";
 import { db } from "@/db";
 import {
-  reports,
   reportSections,
   criteriaEvaluations,
   comments,
@@ -45,6 +44,7 @@ import {
   setRouteObservationIO,
 } from "@/lib/observability/langfuse";
 import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
+import { requireReportAccess } from "@/lib/reports/require-report-access";
 
 export const maxDuration = 120;
 
@@ -65,9 +65,13 @@ async function handleSuggestionsPost(
   req: Request,
   { params }: { params: Promise<{ reportId: string }> }
 ) {
-  const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const currentUser = await getCurrentUser();
   const { reportId } = await params;
+  const access = await requireReportAccess(reportId, currentUser);
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
+  }
+  const { report, user } = access;
 
   const body = await req.json().catch(() => ({}));
   const parsed = bodySchema.safeParse(body);
@@ -78,9 +82,6 @@ async function handleSuggestionsPost(
     return NextResponse.json({ error: "Invalid section" }, { status: 400 });
   }
   const section = parsed.data.section;
-
-  const [report] = await db.select().from(reports).where(eq(reports.id, reportId));
-  if (!report) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const [sectionRow] = await db
     .select()
@@ -146,6 +147,7 @@ async function handleSuggestionsPost(
       section,
       content: sectionContent,
       reportContext: { deviationNo: report.deviationNo, date: report.date },
+      reportId,
       allSections,
       gapCriteria: gap.map((g) => ({
         criterionKey: g.criterionKey,
@@ -197,6 +199,7 @@ async function handleSuggestionsPost(
       insertText,
       reasoning: s.reasoning,
       contentHashAtSuggestion: suggestionContentHash,
+      evidenceSources: s.evidenceSources,
     };
 
     await db.insert(comments).values({
@@ -246,6 +249,7 @@ async function handleSuggestionsPost(
       insertText,
       reasoning: s.reasoning,
       contentHashAtSuggestion: suggestionContentHash,
+      evidenceSources: s.evidenceSources,
     };
 
     await db.insert(comments).values({

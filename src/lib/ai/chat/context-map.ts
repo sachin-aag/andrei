@@ -11,6 +11,7 @@ import {
   detectAnalyzeMethod,
   methodFromToolsUsed,
 } from "@/lib/analyze/method";
+import type { ReadyDocumentIndexItem } from "@/lib/attachments/retrieval";
 
 export type ContextMapReport = {
   deviationNo: string;
@@ -41,6 +42,7 @@ export type BuildContextMapInput = {
   sections: Partial<Record<SectionType, Record<string, unknown>>>;
   evaluations: ContextMapEvaluation[];
   comments: ContextMapComment[];
+  documents?: ReadyDocumentIndexItem[];
 };
 
 function summarize(text: string, max = 140): string {
@@ -121,6 +123,20 @@ export function buildReportContextMap(input: BuildContextMapInput): string {
     }
     if (section === "analyze") {
       lines.push(analyzeMethodLine(content, report.toolsUsed));
+    }
+  }
+
+  const documents = input.documents ?? [];
+  lines.push("Documents (ready evidence attachments; use search_documents before citing):");
+  if (documents.length === 0) {
+    lines.push("- none");
+  } else {
+    for (const doc of documents) {
+      const pages =
+        typeof doc.pageCount === "number" && doc.pageCount > 0
+          ? `${doc.pageCount} page${doc.pageCount === 1 ? "" : "s"}`
+          : "page count unknown";
+      lines.push(`- ${doc.filename} [${doc.attachmentId}] — ${pages}`);
     }
   }
 

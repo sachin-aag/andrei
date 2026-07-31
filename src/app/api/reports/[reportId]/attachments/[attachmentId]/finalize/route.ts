@@ -1,0 +1,181 @@
+import { createHash } from "node:crypto";
+import { NextResponse } from "next/server";
+import { and, eq, isNull } from "drizzle-orm";
+import { z } from "zod";
+import { db } from "@/db";
+import { reportAttachments } from "@/db/schema";
+import { toAttachmentDto } from "@/lib/attachments/dto";
+import { getAttachmentLimits } from "@/lib/attachments/limits";
+import { getMalwareScanner } from "@/lib/attachments/malware-scan";
+import { startDocumentIngest } from "@/lib/attachments/start-ingest";
+import { validatePdf } from "@/lib/attachments/validate-pdf";
+import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
+import { getCurrentUser } from "@/lib/auth/session";
+import { requireReportAccess } from "@/lib/reports/require-report-access";
+import { getAttachmentStorage } from "@/lib/storage/attachments";
+
+export const runtime = "nodejs";
+
+const SIZE_TOLERANCE_BYTES = 1024;
+
+const bodySchema = z.object({
+  generation: z.string().optional(),
+});
+
+export async function POST(
+  req: Request,
+  { params }: { params: Promise<{ reportId: string; attachmentId: string }> }
+) {
+  const currentUser = await getCurrentUser();
+  const { reportId, attachmentId } = await params;
+  const access = await requireReportAccess(reportId, currentUser);
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
+  }
+  if (!access.canMutateAttachments) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const body = await req.json().catch(() => ({}));
+  const parsed = bodySchema.safeParse(body);
+  const requestedGeneration = parsed.success ? parsed.data.generation : undefined;
+
+  const [attachment] = await db
+    .select()
+    .from(reportAttachments)
+    .where(
+      and(
+        eq(reportAttachments.id, attachmentId),
+        eq(reportAttachments.reportId, reportId),
+        isNull(reportAttachments.deletedAt)
+      )
+    );
+  if (!attachment) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+  if (
+    attachment.processingStatus === "ready" &&
+    attachment.gcsGeneration &&
+    (!requestedGeneration || requestedGeneration === attachment.gcsGeneration)
+  ) {
+    return NextResponse.json({ attachment: toAttachmentDto(attachment) });
+  }
+
+  await db
+    .update(reportAttachments)
+    .set({
+      processingStatus: "validating",
+      processingProgress: 10,
+      processingError: null,
+    })
+    .where(eq(reportAttachments.id, attachmentId));
+
+  try {
+    const storage = getAttachmentStorage();
+    const limits = getAttachmentLimits();
+    const stagingMetadata = await storage.getObjectMetadata(attachment.stagingObjectKey);
+    if (
+      Math.abs(stagingMetadata.sizeBytes - attachment.sizeBytes) >
+      SIZE_TOLERANCE_BYTES
+    ) {
+      throw new Error("Uploaded file size did not match reservation");
+    }
+    if (stagingMetadata.sizeBytes > limits.maxAttachmentBytes) {
+      throw new Error("Uploaded file exceeds size limit");
+    }
+    if (!isPdfContentType(stagingMetadata.contentType)) {
+      throw new Error("Uploaded object is not application/pdf");
+    }
+
+    const buffer = await storage.readObjectBuffer(attachment.stagingObjectKey);
+    const { pageCount } = await validatePdf(buffer, {
+      maxPages: limits.maxAttachmentPages,
+    });
+    const scanResult = await getMalwareScanner().scan(buffer, attachment.filename);
+    if (!scanResult.ok) {
+      throw new Error(scanResult.reason);
+    }
+
+    const sha256 = createHash("sha256").update(buffer).digest("hex");
+    await promoteObject(
+      attachment.stagingObjectKey,
+      attachment.permanentObjectKey
+    );
+    const permanentMetadata = await storage.getObjectMetadata(
+      attachment.permanentObjectKey
+    );
+
+    const [updated] = await db
+      .update(reportAttachments)
+      .set({
+        processingStatus: "queued",
+        processingProgress: 0,
+        processingError: null,
+        sha256,
+        pageCount,
+        gcsGeneration: permanentMetadata.generation,
+        crc32c: permanentMetadata.crc32c,
+        sizeBytes: permanentMetadata.sizeBytes,
+      })
+      .where(eq(reportAttachments.id, attachmentId))
+      .returning();
+
+    await startDocumentIngest(attachmentId, permanentMetadata.generation);
+    await recordAuditEvent({
+      actor: auditActorFromUser(access.user),
+      action: "attachment_uploaded",
+      entityType: "attachment",
+      entityId: attachmentId,
+      reportId,
+      summary: `Attachment uploaded: ${attachment.filename}`,
+      newValue: {
+        filename: attachment.filename,
+        sizeBytes: permanentMetadata.sizeBytes,
+        pageCount,
+        sha256,
+        generation: permanentMetadata.generation,
+      },
+    });
+
+    return NextResponse.json({ attachment: toAttachmentDto(updated) });
+  } catch (error) {
+    const message = sanitizeFinalizeError(error);
+    await db
+      .update(reportAttachments)
+      .set({
+        processingStatus: "failed",
+        processingProgress: 0,
+        processingError: message,
+      })
+      .where(eq(reportAttachments.id, attachmentId));
+    return NextResponse.json({ error: message }, { status: 400 });
+  }
+}
+
+async function promoteObject(fromKey: string, toKey: string): Promise<void> {
+  const storage = getAttachmentStorage();
+  try {
+    await storage.copyObject(fromKey, toKey);
+  } catch {
+    await storage.getObjectMetadata(toKey);
+  }
+}
+
+function isPdfContentType(contentType: string): boolean {
+  return contentType.toLowerCase().split(";")[0].trim() === "application/pdf";
+}
+
+function sanitizeFinalizeError(error: unknown): string {
+  if (!(error instanceof Error)) return "Attachment validation failed";
+  const message = error.message;
+  if (message.includes("Malware scanning")) {
+    return "Attachment malware scan failed";
+  }
+  if (message.includes("Malware")) {
+    return "Attachment malware scan failed";
+  }
+  if (message.includes("PDF") || message.includes("file") || message.includes("object")) {
+    return message;
+  }
+  return "Attachment validation failed";
+}
