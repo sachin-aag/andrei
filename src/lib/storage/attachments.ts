@@ -57,6 +57,19 @@ const LOCAL_UPLOAD_PARTS_ROOT = path.join(LOCAL_STORAGE_ROOT, "_parts");
 
 let cachedStorage: AttachmentStorage | null = null;
 
+/**
+ * Local disk backend for Playwright / local-only runs.
+ * Gated by explicit dual env flags — never by NODE_ENV alone — so CI can use
+ * `next start` (NODE_ENV=production) with ATTACHMENT_STORAGE_BACKEND=local.
+ * Do not set these flags on Vercel production or preview.
+ */
+export function isLocalAttachmentStorageEnabled(): boolean {
+  return (
+    process.env.ATTACHMENT_STORAGE_BACKEND?.trim() === "local" &&
+    process.env.ALLOW_LOCAL_ATTACHMENT_STORAGE === "true"
+  );
+}
+
 export function stagingObjectKey(attachmentId: string): string {
   return `staging/attachments/${attachmentId}/source.pdf`;
 }
@@ -79,21 +92,14 @@ export function tempBatchObjectKey(
 export function getAttachmentStorage(): AttachmentStorage {
   if (cachedStorage) return cachedStorage;
 
-  const backend = process.env.ATTACHMENT_STORAGE_BACKEND?.trim();
-  const allowLocal = process.env.ALLOW_LOCAL_ATTACHMENT_STORAGE === "true";
-  const shouldUseLocal =
-    backend === "local" && process.env.NODE_ENV !== "production" && allowLocal;
-
-  cachedStorage = shouldUseLocal
+  cachedStorage = isLocalAttachmentStorageEnabled()
     ? new LocalAttachmentStorage()
     : new GcsAttachmentStorage(requiredGcsBucket());
   return cachedStorage;
 }
 
 export function getAttachmentStorageBucketName(): string {
-  const backend = process.env.ATTACHMENT_STORAGE_BACKEND?.trim();
-  const allowLocal = process.env.ALLOW_LOCAL_ATTACHMENT_STORAGE === "true";
-  if (backend === "local" && process.env.NODE_ENV !== "production" && allowLocal) {
+  if (isLocalAttachmentStorageEnabled()) {
     return "local-attachment-storage";
   }
   return requiredGcsBucket();

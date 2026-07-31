@@ -1,14 +1,13 @@
 import { NextResponse } from "next/server";
-import { LocalAttachmentStorage } from "@/lib/storage/attachments";
+import {
+  isLocalAttachmentStorageEnabled,
+  LocalAttachmentStorage,
+} from "@/lib/storage/attachments";
 
 export const runtime = "nodejs";
 
 export async function GET(req: Request) {
-  if (
-    process.env.NODE_ENV === "production" ||
-    process.env.ATTACHMENT_STORAGE_BACKEND !== "local" ||
-    process.env.ALLOW_LOCAL_ATTACHMENT_STORAGE !== "true"
-  ) {
+  if (!isLocalAttachmentStorageEnabled()) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 

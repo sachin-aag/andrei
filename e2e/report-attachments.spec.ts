@@ -13,15 +13,30 @@ async function uploadPdf(page: Page): Promise<string> {
   const bytes = await pdf.save();
   const fileName = `evidence-${createHash("sha256").update(bytes).digest("hex").slice(0, 8)}.pdf`;
 
-  await documentsPanel(page)
-    .locator('input[type="file"]')
-    .setInputFiles({
-      name: fileName,
-      mimeType: "application/pdf",
-      buffer: Buffer.from(bytes),
-    });
+  const panel = documentsPanel(page);
+  const fileInput = panel.locator('input[type="file"]');
+  await expect(fileInput).toBeAttached();
 
-  await expect(page.getByText(fileName)).toBeVisible({ timeout: 30_000 });
+  const uploadUrlResponse = page.waitForResponse(
+    (response) =>
+      response.url().includes("/attachments/upload-url") &&
+      response.request().method() === "POST",
+    { timeout: 30_000 }
+  );
+
+  await fileInput.setInputFiles({
+    name: fileName,
+    mimeType: "application/pdf",
+    buffer: Buffer.from(bytes),
+  });
+
+  const reservation = await uploadUrlResponse;
+  expect(
+    reservation.ok(),
+    `upload-url failed: ${reservation.status()} ${await reservation.text()}`
+  ).toBe(true);
+
+  await expect(panel.getByText(fileName)).toBeVisible({ timeout: 30_000 });
   return fileName;
 }
 

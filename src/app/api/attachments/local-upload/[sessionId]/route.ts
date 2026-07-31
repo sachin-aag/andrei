@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
-import { appendLocalUploadChunk } from "@/lib/storage/attachments";
+import {
+  appendLocalUploadChunk,
+  isLocalAttachmentStorageEnabled,
+} from "@/lib/storage/attachments";
 
 export const runtime = "nodejs";
 
@@ -7,11 +10,7 @@ export async function PUT(
   req: Request,
   { params }: { params: Promise<{ sessionId: string }> }
 ) {
-  if (
-    process.env.NODE_ENV === "production" ||
-    process.env.ATTACHMENT_STORAGE_BACKEND !== "local" ||
-    process.env.ALLOW_LOCAL_ATTACHMENT_STORAGE !== "true"
-  ) {
+  if (!isLocalAttachmentStorageEnabled()) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 

@@ -138,11 +138,20 @@ export function ReportAttachmentsProvider({
         return;
       }
 
-      const { attachmentId, uploadUrl } = await reserveAttachmentUpload({
-        reportId,
-        file,
-        folderId,
-      });
+      let attachmentId: string;
+      let uploadUrl: string;
+      try {
+        ({ attachmentId, uploadUrl } = await reserveAttachmentUpload({
+          reportId,
+          file,
+          folderId,
+        }));
+      } catch (error) {
+        toast.error(
+          error instanceof Error ? error.message : `Could not start upload for ${file.name}`
+        );
+        return;
+      }
 
       upsertAttachment({
         id: attachmentId,

@@ -1,9 +1,11 @@
 import { rm } from "node:fs/promises";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  isLocalAttachmentStorageEnabled,
   LocalAttachmentStorage,
   permanentObjectKey,
+  resetAttachmentStorageForTests,
   stagingObjectKey,
   tempBatchObjectKey,
 } from "./attachments";
@@ -21,6 +23,23 @@ describe("attachment storage key builders", () => {
     expect(tempBatchObjectKey("att_1", "run_1", 2)).toBe(
       "temp/attachments/att_1/ingest-runs/run_1/batches/2.pdf"
     );
+  });
+});
+
+describe("isLocalAttachmentStorageEnabled", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    resetAttachmentStorageForTests();
+  });
+
+  it("requires both explicit flags, including under NODE_ENV=production", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("ATTACHMENT_STORAGE_BACKEND", "local");
+    vi.stubEnv("ALLOW_LOCAL_ATTACHMENT_STORAGE", "true");
+    expect(isLocalAttachmentStorageEnabled()).toBe(true);
+
+    vi.stubEnv("ALLOW_LOCAL_ATTACHMENT_STORAGE", "false");
+    expect(isLocalAttachmentStorageEnabled()).toBe(false);
   });
 });
 
