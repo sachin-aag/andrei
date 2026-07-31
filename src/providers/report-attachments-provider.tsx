@@ -12,7 +12,15 @@ import type { ReactNode } from "react";
 import { toast } from "sonner";
 import type { AttachmentProcessingStatus } from "@/db/schema";
 import { uploadPdfResumable } from "@/lib/attachments/upload-client";
-import type { ReportAttachmentRecord } from "@/types/report";
+import {
+  finalizeAttachmentUpload,
+  isPdfFile,
+  reserveAttachmentUpload,
+} from "@/lib/attachments/upload-pdf";
+import type {
+  ReportAttachmentFolderRecord,
+  ReportAttachmentRecord,
+} from "@/types/report";
 
 type UploadProgress = {
   filename: string;
@@ -26,9 +34,13 @@ type ActiveAttachment = {
   page: number;
 };
 
+/** Null folder id means the top level of the report's document tree. */
+export type FolderId = string | null;
+
 type ReportAttachmentsContextValue = {
   reportId: string;
   attachments: ReportAttachmentRecord[];
+  folders: ReportAttachmentFolderRecord[];
   uploadProgress: Record<string, UploadProgress>;
   canMutateAttachments: boolean;
   activeAttachmentId: string | null;
@@ -36,9 +48,14 @@ type ReportAttachmentsContextValue = {
   activePage: number;
   openDocument: (id: string, page?: number) => void;
   closeDocument: () => void;
-  uploadFiles: (files: FileList) => Promise<void>;
+  uploadFiles: (files: FileList, folderId?: FolderId) => Promise<void>;
   removeAttachment: (id: string) => Promise<void>;
   retryAttachment: (id: string) => Promise<void>;
+  moveAttachment: (id: string, folderId: FolderId) => Promise<void>;
+  createFolder: (name: string, parentId: FolderId) => Promise<string | null>;
+  renameFolder: (id: string, name: string) => Promise<void>;
+  moveFolder: (id: string, parentId: FolderId) => Promise<void>;
+  deleteFolder: (id: string) => Promise<void>;
 };
 
 const ReportAttachmentsContext =
@@ -54,16 +71,20 @@ const NON_TERMINAL_STATUSES = new Set<AttachmentProcessingStatus>([
 export function ReportAttachmentsProvider({
   reportId,
   initialAttachments,
+  initialFolders,
   canMutateAttachments,
   children,
 }: {
   reportId: string;
   initialAttachments: ReportAttachmentRecord[];
+  initialFolders: ReportAttachmentFolderRecord[];
   canMutateAttachments: boolean;
   children: ReactNode;
 }) {
   const [attachments, setAttachments] =
     useState<ReportAttachmentRecord[]>(initialAttachments);
+  const [folders, setFolders] =
+    useState<ReportAttachmentFolderRecord[]>(initialFolders);
   const [uploadProgress, setUploadProgress] = useState<
     Record<string, UploadProgress>
   >({});
@@ -111,37 +132,22 @@ export function ReportAttachmentsProvider({
   }, []);
 
   const uploadOneFile = useCallback(
-    async (file: File) => {
-      if (file.type !== "application/pdf" || !file.name.toLowerCase().endsWith(".pdf")) {
+    async (file: File, folderId: FolderId) => {
+      if (!isPdfFile(file)) {
         toast.error(`${file.name} is not a PDF file.`);
         return;
       }
 
-      const reservationResponse = await fetch(
-        `/api/reports/${reportId}/attachments/upload-url`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            filename: file.name,
-            mimeType: file.type,
-            sizeBytes: file.size,
-          }),
-        }
-      );
-      const reservation = (await reservationResponse.json().catch(() => ({}))) as {
-        attachmentId?: string;
-        uploadUrl?: string;
-        error?: string;
-      };
-      if (!reservationResponse.ok || !reservation.attachmentId || !reservation.uploadUrl) {
-        throw new Error(reservation.error ?? `Could not start upload for ${file.name}`);
-      }
-
-      const now = new Date().toISOString();
-      upsertAttachment({
-        id: reservation.attachmentId,
+      const { attachmentId, uploadUrl } = await reserveAttachmentUpload({
         reportId,
+        file,
+        folderId,
+      });
+
+      upsertAttachment({
+        id: attachmentId,
+        reportId,
+        folderId,
         filename: file.name,
         mimeType: "application/pdf",
         sizeBytes: file.size,
@@ -149,13 +155,13 @@ export function ReportAttachmentsProvider({
         processingStatus: "uploading",
         processingProgress: 0,
         processingError: null,
-        uploadedAt: now,
+        uploadedAt: new Date().toISOString(),
         deletedAt: null,
       });
 
       setUploadProgress((prev) => ({
         ...prev,
-        [reservation.attachmentId!]: {
+        [attachmentId]: {
           filename: file.name,
           uploadedBytes: 0,
           totalBytes: file.size,
@@ -165,14 +171,14 @@ export function ReportAttachmentsProvider({
 
       try {
         await uploadPdfResumable({
-          uploadUrl: reservation.uploadUrl,
+          uploadUrl,
           file,
           onProgress: ({ uploadedBytes, totalBytes }) => {
             const percent =
               totalBytes > 0 ? Math.round((uploadedBytes / totalBytes) * 100) : 0;
             setUploadProgress((prev) => ({
               ...prev,
-              [reservation.attachmentId!]: {
+              [attachmentId]: {
                 filename: file.name,
                 uploadedBytes,
                 totalBytes,
@@ -181,7 +187,7 @@ export function ReportAttachmentsProvider({
             }));
             setAttachments((prev) =>
               prev.map((item) =>
-                item.id === reservation.attachmentId
+                item.id === attachmentId
                   ? { ...item, processingProgress: percent }
                   : item
               )
@@ -189,25 +195,20 @@ export function ReportAttachmentsProvider({
           },
         });
 
-        const finalizeResponse = await fetch(
-          `/api/reports/${reportId}/attachments/${reservation.attachmentId}/finalize`,
-          { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" }
+        upsertAttachment(
+          await finalizeAttachmentUpload({
+            reportId,
+            attachmentId,
+            filename: file.name,
+          })
         );
-        const finalized = (await finalizeResponse.json().catch(() => ({}))) as {
-          attachment?: ReportAttachmentRecord;
-          error?: string;
-        };
-        if (!finalizeResponse.ok || !finalized.attachment) {
-          throw new Error(finalized.error ?? `Could not finalize ${file.name}`);
-        }
-        upsertAttachment(finalized.attachment);
         toast.success(`${file.name} uploaded`);
       } catch (error) {
         const message =
           error instanceof Error ? error.message : `Could not upload ${file.name}`;
         setAttachments((prev) =>
           prev.map((item) =>
-            item.id === reservation.attachmentId
+            item.id === attachmentId
               ? {
                   ...item,
                   processingStatus: "failed",
@@ -221,7 +222,7 @@ export function ReportAttachmentsProvider({
       } finally {
         setUploadProgress((prev) => {
           const next = { ...prev };
-          delete next[reservation.attachmentId!];
+          delete next[attachmentId];
           return next;
         });
         void refreshAttachments();
@@ -231,12 +232,14 @@ export function ReportAttachmentsProvider({
   );
 
   const uploadFiles = useCallback(
-    async (files: FileList) => {
+    async (files: FileList, folderId: FolderId = null) => {
       if (!canMutateAttachments) {
         toast.error("You cannot upload attachments for this report.");
         return;
       }
-      await Promise.all(Array.from(files).map((file) => uploadOneFile(file)));
+      await Promise.all(
+        Array.from(files).map((file) => uploadOneFile(file, folderId))
+      );
     },
     [canMutateAttachments, uploadOneFile]
   );
@@ -293,6 +296,147 @@ export function ReportAttachmentsProvider({
     [canMutateAttachments, reportId, upsertAttachment]
   );
 
+  const moveAttachment = useCallback(
+    async (id: string, folderId: FolderId) => {
+      if (!canMutateAttachments) return;
+
+      const previous = attachments.find((item) => item.id === id)?.folderId ?? null;
+      if (previous === folderId) return;
+
+      setAttachments((prev) =>
+        prev.map((item) => (item.id === id ? { ...item, folderId } : item))
+      );
+
+      const response = await fetch(`/api/reports/${reportId}/attachments/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ folderId }),
+      });
+      if (!response.ok) {
+        const data = (await response.json().catch(() => ({}))) as {
+          error?: string;
+        };
+        setAttachments((prev) =>
+          prev.map((item) =>
+            item.id === id ? { ...item, folderId: previous } : item
+          )
+        );
+        toast.error(data.error ?? "Could not move document");
+      }
+    },
+    [attachments, canMutateAttachments, reportId]
+  );
+
+  const createFolder = useCallback(
+    async (name: string, parentId: FolderId) => {
+      if (!canMutateAttachments) return null;
+
+      const response = await fetch(`/api/reports/${reportId}/attachment-folders`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, parentId }),
+      });
+      const data = (await response.json().catch(() => ({}))) as {
+        folder?: ReportAttachmentFolderRecord;
+        error?: string;
+      };
+      if (!response.ok || !data.folder) {
+        toast.error(data.error ?? "Could not create folder");
+        return null;
+      }
+      const created = data.folder;
+      setFolders((prev) => [...prev, created]);
+      return created.id;
+    },
+    [canMutateAttachments, reportId]
+  );
+
+  const patchFolder = useCallback(
+    async (id: string, body: { name?: string; parentId?: FolderId }) => {
+      if (!canMutateAttachments) return;
+
+      const previous = folders.find((item) => item.id === id);
+      if (!previous) return;
+
+      setFolders((prev) =>
+        prev.map((item) =>
+          item.id === id
+            ? {
+                ...item,
+                name: body.name ?? item.name,
+                parentId: body.parentId !== undefined ? body.parentId : item.parentId,
+              }
+            : item
+        )
+      );
+
+      const response = await fetch(
+        `/api/reports/${reportId}/attachment-folders/${id}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+        }
+      );
+      if (!response.ok) {
+        const data = (await response.json().catch(() => ({}))) as {
+          error?: string;
+        };
+        setFolders((prev) =>
+          prev.map((item) => (item.id === id ? previous : item))
+        );
+        toast.error(data.error ?? "Could not update folder");
+      }
+    },
+    [canMutateAttachments, folders, reportId]
+  );
+
+  const renameFolder = useCallback(
+    async (id: string, name: string) => {
+      await patchFolder(id, { name });
+    },
+    [patchFolder]
+  );
+
+  const moveFolder = useCallback(
+    async (id: string, parentId: FolderId) => {
+      if (id === parentId) return;
+      await patchFolder(id, { parentId });
+    },
+    [patchFolder]
+  );
+
+  const deleteFolder = useCallback(
+    async (id: string) => {
+      if (!canMutateAttachments) return;
+
+      const response = await fetch(
+        `/api/reports/${reportId}/attachment-folders/${id}`,
+        { method: "DELETE" }
+      );
+      if (!response.ok) {
+        const data = (await response.json().catch(() => ({}))) as {
+          error?: string;
+        };
+        toast.error(data.error ?? "Could not delete folder");
+        return;
+      }
+
+      // The server reparents children to the deleted folder's parent.
+      const removed = folders.find((item) => item.id === id);
+      const parentId = removed?.parentId ?? null;
+      setFolders((prev) =>
+        prev
+          .filter((item) => item.id !== id)
+          .map((item) => (item.parentId === id ? { ...item, parentId } : item))
+      );
+      setAttachments((prev) =>
+        prev.map((item) => (item.folderId === id ? { ...item, folderId: parentId } : item))
+      );
+    },
+    [canMutateAttachments, folders, reportId]
+  );
+
   const activeAttachmentRecord = activeAttachment
     ? attachments.find((item) => item.id === activeAttachment.id) ?? null
     : null;
@@ -301,6 +445,7 @@ export function ReportAttachmentsProvider({
     () => ({
       reportId,
       attachments,
+      folders,
       uploadProgress,
       canMutateAttachments,
       activeAttachmentId: activeAttachment?.id ?? null,
@@ -311,10 +456,16 @@ export function ReportAttachmentsProvider({
       uploadFiles,
       removeAttachment,
       retryAttachment,
+      moveAttachment,
+      createFolder,
+      renameFolder,
+      moveFolder,
+      deleteFolder,
     }),
     [
       reportId,
       attachments,
+      folders,
       uploadProgress,
       canMutateAttachments,
       activeAttachment,
@@ -324,6 +475,11 @@ export function ReportAttachmentsProvider({
       uploadFiles,
       removeAttachment,
       retryAttachment,
+      moveAttachment,
+      createFolder,
+      renameFolder,
+      moveFolder,
+      deleteFolder,
     ]
   );
 

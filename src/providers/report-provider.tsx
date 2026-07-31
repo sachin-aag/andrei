@@ -979,6 +979,7 @@ export function ReportProvider({
                                   key={report.id}
                                   reportId={report.id}
                                   initialAttachments={bundle.attachments}
+                                  initialFolders={bundle.attachmentFolders ?? []}
                                   canMutateAttachments={canMutateAttachments}
                                 >
                                   {children}

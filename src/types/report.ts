@@ -72,6 +72,8 @@ export type CommentRecord = {
 export type ReportAttachmentRecord = {
   id: string;
   reportId: string;
+  /** Null = top level of the report's document tree. */
+  folderId: string | null;
   filename: string;
   mimeType: string;
   sizeBytes: number;
@@ -83,10 +85,20 @@ export type ReportAttachmentRecord = {
   deletedAt: string | null;
 };
 
+/** Folder node in a report's document tree. */
+export type ReportAttachmentFolderRecord = {
+  id: string;
+  reportId: string;
+  parentId: string | null;
+  name: string;
+  createdAt: string;
+};
+
 export type ReportBundle = {
   report: ReportRecord;
   sections: ReportSectionRecord[];
   evaluations: EvaluationRecord[];
   comments: CommentRecord[];
   attachments: ReportAttachmentRecord[];
+  attachmentFolders: ReportAttachmentFolderRecord[];
 };

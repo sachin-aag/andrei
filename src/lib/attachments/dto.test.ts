@@ -6,6 +6,7 @@ describe("toAttachmentDto", () => {
     const dto = toAttachmentDto({
       id: "att_1",
       reportId: "rep_1",
+      folderId: "fold_1",
       filename: "batch.pdf",
       mimeType: "application/pdf",
       sizeBytes: 1024,
@@ -28,6 +29,7 @@ describe("toAttachmentDto", () => {
     expect(dto).toEqual({
       id: "att_1",
       reportId: "rep_1",
+      folderId: "fold_1",
       filename: "batch.pdf",
       mimeType: "application/pdf",
       sizeBytes: 1024,

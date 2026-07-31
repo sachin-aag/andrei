@@ -18,6 +18,7 @@ import { ReportWorkspaceHeader } from "./report-workspace-header";
 import { ReportEditorToolbar } from "./report-editor-toolbar";
 import { MarginGutter } from "./review-rail/margin-gutter";
 import { ReportSidebar, type SidebarTab } from "./report-sidebar";
+import { DocumentsPanel } from "./documents/documents-panel";
 import { AttachmentViewer } from "./attachment-viewer";
 import { useUserDirectory } from "@/providers/user-directory-provider";
 import type { SectionType } from "@/db/schema";
@@ -124,6 +125,7 @@ export function ReportWorkspace({
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
   const [detailsFormKey, setDetailsFormKey] = useState(0);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [documentsCollapsed, setDocumentsCollapsed] = useState(false);
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("criteria");
   const [sectionMinHeights, setSectionMinHeights] = useState<
     Partial<Record<SectionType, number>>
@@ -387,6 +389,11 @@ export function ReportWorkspace({
       <ReportEditorToolbar />
 
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
+        <DocumentsPanel
+          collapsed={documentsCollapsed}
+          onToggleCollapse={() => setDocumentsCollapsed((c) => !c)}
+        />
+
         <main
           ref={mainRef}
           className="min-h-0 min-w-0 flex-1 overflow-auto bg-[var(--background)]"

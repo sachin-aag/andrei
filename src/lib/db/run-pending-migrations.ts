@@ -215,6 +215,10 @@ async function repairAnomalousMigrationTimestamps(
  * (older deploy bug) or drizzle's timestamp-based migrator skipped it.
  */
 async function repairMissingSchema(pool: pg.Pool): Promise<void> {
+  // Fresh DB: plain migrate() builds everything in order, and applying a later
+  // migration here first would fail on its foreign keys.
+  if (!(await tableExists(pool, "reports"))) return;
+
   await repairAnomalousMigrationTimestamps(pool);
 
   const repairs: SchemaRepair[] = [
@@ -226,6 +230,13 @@ async function repairMissingSchema(pool: pg.Pool): Promise<void> {
     {
       tag: "0033_report_attachments",
       tableName: "report_attachments",
+    },
+    {
+      tag: "0035_attachment_folders",
+      tableName: "report_attachment_folders",
+      prerequisites: [
+        { tag: "0033_report_attachments", tableName: "report_attachments" },
+      ],
     },
   ];
 
@@ -252,6 +263,12 @@ async function repairMissingSchema(pool: pg.Pool): Promise<void> {
     "0034_audit_canonical_v2",
     "audit_events",
     "payload_version"
+  );
+  await ensureMigrationColumn(
+    pool,
+    "0035_attachment_folders",
+    "report_attachments",
+    "folder_id"
   );
   await ensureAuditHashChainTriggers(pool);
 }

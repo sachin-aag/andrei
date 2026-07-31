@@ -1,13 +1,19 @@
 import { NextResponse } from "next/server";
 import { and, eq, isNull } from "drizzle-orm";
+import { z } from "zod";
 import { db } from "@/db";
 import { reportAttachments } from "@/db/schema";
 import { toAttachmentDto } from "@/lib/attachments/dto";
+import { validateFolderPlacement } from "@/lib/attachments/folders";
 import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth/session";
 import { requireReportAccess } from "@/lib/reports/require-report-access";
 
 export const runtime = "nodejs";
+
+const patchSchema = z.object({
+  folderId: z.string().min(1).nullable(),
+});
 
 export async function GET(
   _req: Request,
@@ -26,6 +32,59 @@ export async function GET(
   }
 
   return NextResponse.json({ attachment: toAttachmentDto(attachment) });
+}
+
+/** Moves an attachment between folders. Folder placement is not audited — it
+ * carries no report content, unlike upload/delete. */
+export async function PATCH(
+  req: Request,
+  { params }: { params: Promise<{ reportId: string; attachmentId: string }> }
+) {
+  const currentUser = await getCurrentUser();
+  const { reportId, attachmentId } = await params;
+  const access = await requireReportAccess(reportId, currentUser);
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
+  }
+  if (!access.canMutateAttachments) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  const parsed = patchSchema.safeParse(await req.json().catch(() => ({})));
+  if (!parsed.success) {
+    return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
+  }
+
+  const attachment = await loadActiveAttachment(reportId, attachmentId);
+  if (!attachment) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
+  const placementError = await validateFolderPlacement({
+    reportId,
+    parentId: parsed.data.folderId,
+    folderId: null,
+  });
+  if (placementError) {
+    return NextResponse.json(
+      { error: placementError.error },
+      { status: placementError.status }
+    );
+  }
+
+  const [updated] = await db
+    .update(reportAttachments)
+    .set({ folderId: parsed.data.folderId })
+    .where(
+      and(
+        eq(reportAttachments.id, attachmentId),
+        eq(reportAttachments.reportId, reportId),
+        isNull(reportAttachments.deletedAt)
+      )
+    )
+    .returning();
+
+  return NextResponse.json({ attachment: toAttachmentDto(updated) });
 }
 
 export async function DELETE(

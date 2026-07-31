@@ -8,6 +8,7 @@ import {
 } from "@/db/schema";
 import type { ReportBundle } from "@/types/report";
 import { listActiveAttachments } from "@/lib/attachments/list-active";
+import { listAttachmentFolders } from "@/lib/attachments/folders";
 import {
   listReportManagerIds,
   withAssignedManagerIds,
@@ -21,25 +22,33 @@ import {
 // suggestions and dismissed human threads do not clutter the gutter or the
 // highlight overlay.
 export async function loadReportSubtables(reportId: string) {
-  const [sections, evaluations, commentRows, attachments] = await Promise.all([
-    db
-      .select()
-      .from(reportSections)
-      .where(eq(reportSections.reportId, reportId)),
-    db
-      .select()
-      .from(criteriaEvaluations)
-      .where(eq(criteriaEvaluations.reportId, reportId)),
-    db
-      .select()
-      .from(comments)
-      .where(
-        and(eq(comments.reportId, reportId), ne(comments.status, "dismissed"))
-      ),
-    listActiveAttachments(reportId),
-  ]);
+  const [sections, evaluations, commentRows, attachments, attachmentFolders] =
+    await Promise.all([
+      db
+        .select()
+        .from(reportSections)
+        .where(eq(reportSections.reportId, reportId)),
+      db
+        .select()
+        .from(criteriaEvaluations)
+        .where(eq(criteriaEvaluations.reportId, reportId)),
+      db
+        .select()
+        .from(comments)
+        .where(
+          and(eq(comments.reportId, reportId), ne(comments.status, "dismissed"))
+        ),
+      listActiveAttachments(reportId),
+      listAttachmentFolders(reportId),
+    ]);
 
-  return { sections, evaluations, comments: commentRows, attachments };
+  return {
+    sections,
+    evaluations,
+    comments: commentRows,
+    attachments,
+    attachmentFolders,
+  };
 }
 
 export async function loadReportBundle(

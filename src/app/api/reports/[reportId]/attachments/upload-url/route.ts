@@ -4,6 +4,7 @@ import { createId } from "@paralleldrive/cuid2";
 import { z } from "zod";
 import { db } from "@/db";
 import { reportAttachments } from "@/db/schema";
+import { validateFolderPlacement } from "@/lib/attachments/folders";
 import { getAttachmentLimits } from "@/lib/attachments/limits";
 import { getCurrentUser } from "@/lib/auth/session";
 import { requireReportAccess } from "@/lib/reports/require-report-access";
@@ -19,6 +20,7 @@ const bodySchema = z.object({
   filename: z.string().min(1).max(255),
   mimeType: z.string().min(1),
   sizeBytes: z.number().int().positive(),
+  folderId: z.string().min(1).nullable().optional(),
 });
 
 export async function POST(
@@ -41,6 +43,7 @@ export async function POST(
   }
 
   const { filename, mimeType, sizeBytes } = parsed.data;
+  const folderId = parsed.data.folderId ?? null;
   if (!filename.toLowerCase().endsWith(".pdf")) {
     return NextResponse.json({ error: "Only PDF files are allowed" }, { status: 400 });
   }
@@ -84,6 +87,18 @@ export async function POST(
     );
   }
 
+  const placementError = await validateFolderPlacement({
+    reportId,
+    parentId: folderId,
+    folderId: null,
+  });
+  if (placementError) {
+    return NextResponse.json(
+      { error: placementError.error },
+      { status: placementError.status }
+    );
+  }
+
   const attachmentId = createId();
   const stagingKey = stagingObjectKey(attachmentId);
   const permanentKey = permanentObjectKey(reportId, attachmentId);
@@ -91,6 +106,7 @@ export async function POST(
   await db.insert(reportAttachments).values({
     id: attachmentId,
     reportId,
+    folderId,
     filename,
     mimeType,
     sizeBytes,

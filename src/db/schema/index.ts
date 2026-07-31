@@ -418,6 +418,40 @@ export const reportSourceDocxRelations = relations(reportSourceDocx, ({ one }) =
 }));
 
 /**
+ * User-defined folders for organising a report's PDF evidence. Purely
+ * organisational: deleting a folder never deletes attachments (see the folder
+ * DELETE route, which reparents children first).
+ */
+export const reportAttachmentFolders = pgTable(
+  "report_attachment_folders",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    reportId: text("report_id")
+      .notNull()
+      .references(() => reports.id, { onDelete: "cascade" }),
+    /** Null = top level of the report's document tree. */
+    parentId: text("parent_id").references(
+      (): AnyPgColumn => reportAttachmentFolders.id,
+      { onDelete: "cascade" }
+    ),
+    name: text("name").notNull(),
+    createdById: text("created_by_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    reportIdx: index("report_attachment_folders_report_idx").on(t.reportId),
+    parentIdx: index("report_attachment_folders_parent_idx").on(t.parentId),
+  })
+);
+
+/**
  * PDF evidence attachments. Source bytes live in GCS; only metadata and
  * integrity fields are stored here. Soft-deleted rows retain bytes for audit.
  */
@@ -430,6 +464,10 @@ export const reportAttachments = pgTable(
     reportId: text("report_id")
       .notNull()
       .references(() => reports.id, { onDelete: "cascade" }),
+    /** Null = top level of the report's document tree. */
+    folderId: text("folder_id").references(() => reportAttachmentFolders.id, {
+      onDelete: "set null",
+    }),
     filename: text("filename").notNull(),
     mimeType: text("mime_type").notNull().default("application/pdf"),
     sizeBytes: integer("size_bytes").notNull().default(0),
@@ -462,6 +500,7 @@ export const reportAttachments = pgTable(
       t.reportId,
       t.deletedAt
     ),
+    folderIdx: index("report_attachments_folder_idx").on(t.folderId),
   })
 );
 
