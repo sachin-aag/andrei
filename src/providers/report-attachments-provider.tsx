@@ -203,6 +203,7 @@ export function ReportAttachmentsProvider({
           })
         );
         toast.success(`${file.name} uploaded`);
+        void refreshAttachments();
       } catch (error) {
         const message =
           error instanceof Error ? error.message : `Could not upload ${file.name}`;
@@ -218,6 +219,12 @@ export function ReportAttachmentsProvider({
               : item
           )
         );
+        // Persist failure so polling/refresh cannot flip the row back to "uploading".
+        await fetch(`/api/reports/${reportId}/attachments/${attachmentId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ uploadFailed: true, error: message }),
+        }).catch(() => undefined);
         toast.error(message);
       } finally {
         setUploadProgress((prev) => {
@@ -225,7 +232,6 @@ export function ReportAttachmentsProvider({
           delete next[attachmentId];
           return next;
         });
-        void refreshAttachments();
       }
     },
     [refreshAttachments, reportId, upsertAttachment]

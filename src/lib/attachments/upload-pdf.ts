@@ -92,21 +92,32 @@ export async function uploadPdfToReport({
     folderId,
   });
 
-  await uploadPdfResumable({
-    uploadUrl,
-    file,
-    onProgress: ({ uploadedBytes, totalBytes }) => {
-      onProgress?.({
-        uploadedBytes,
-        totalBytes,
-        percent: totalBytes > 0 ? Math.round((uploadedBytes / totalBytes) * 100) : 0,
-      });
-    },
-  });
+  try {
+    await uploadPdfResumable({
+      uploadUrl,
+      file,
+      onProgress: ({ uploadedBytes, totalBytes }) => {
+        onProgress?.({
+          uploadedBytes,
+          totalBytes,
+          percent: totalBytes > 0 ? Math.round((uploadedBytes / totalBytes) * 100) : 0,
+        });
+      },
+    });
 
-  return finalizeAttachmentUpload({
-    reportId,
-    attachmentId,
-    filename: file.name,
-  });
+    return await finalizeAttachmentUpload({
+      reportId,
+      attachmentId,
+      filename: file.name,
+    });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : `Could not upload ${file.name}`;
+    await fetch(`/api/reports/${reportId}/attachments/${attachmentId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ uploadFailed: true, error: message }),
+    }).catch(() => undefined);
+    throw error instanceof Error ? error : new Error(message);
+  }
 }

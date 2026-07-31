@@ -9,6 +9,12 @@ export type CreateResumableUploadInput = {
   objectKey: string;
   contentType: string;
   sizeBytes: number;
+  /**
+   * Browser Origin that will PUT chunks. Required for GCS resumable uploads
+   * initiated server-side — without it, PUT responses omit ACAO and the
+   * browser treats a successful upload as a network failure (stuck "uploading").
+   */
+  origin?: string | null;
 };
 
 export type ObjectMetadata = {
@@ -113,9 +119,11 @@ export class GcsAttachmentStorage implements AttachmentStorage {
     objectKey,
     contentType,
     sizeBytes,
+    origin,
   }: CreateResumableUploadInput): Promise<string> {
     const file = this.file(objectKey);
     const [uploadUrl] = await file.createResumableUpload({
+      ...(origin ? { origin } : {}),
       metadata: {
         contentType,
         metadata: {

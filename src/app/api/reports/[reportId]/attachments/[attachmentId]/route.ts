@@ -11,9 +11,17 @@ import { requireReportAccess } from "@/lib/reports/require-report-access";
 
 export const runtime = "nodejs";
 
-const patchSchema = z.object({
-  folderId: z.string().min(1).nullable(),
-});
+const patchSchema = z
+  .object({
+    folderId: z.string().min(1).nullable().optional(),
+    /** Client could not finish the byte PUT (CORS, timeout, network). */
+    uploadFailed: z.literal(true).optional(),
+    error: z.string().max(500).optional(),
+  })
+  .refine(
+    (data) => data.folderId !== undefined || data.uploadFailed === true,
+    { message: "Expected folderId or uploadFailed" }
+  );
 
 export async function GET(
   _req: Request,
@@ -34,8 +42,8 @@ export async function GET(
   return NextResponse.json({ attachment: toAttachmentDto(attachment) });
 }
 
-/** Moves an attachment between folders. Folder placement is not audited — it
- * carries no report content, unlike upload/delete. */
+/** Moves an attachment between folders, or records a client-side upload failure.
+ * Folder placement is not audited — it carries no report content, unlike upload/delete. */
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ reportId: string; attachmentId: string }> }
@@ -60,9 +68,33 @@ export async function PATCH(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
+  if (parsed.data.uploadFailed) {
+    if (attachment.processingStatus !== "uploading") {
+      return NextResponse.json({ attachment: toAttachmentDto(attachment) });
+    }
+    const [updated] = await db
+      .update(reportAttachments)
+      .set({
+        processingStatus: "failed",
+        processingProgress: 0,
+        processingError:
+          parsed.data.error?.trim() || "Upload did not complete",
+      })
+      .where(
+        and(
+          eq(reportAttachments.id, attachmentId),
+          eq(reportAttachments.reportId, reportId),
+          isNull(reportAttachments.deletedAt)
+        )
+      )
+      .returning();
+    return NextResponse.json({ attachment: toAttachmentDto(updated) });
+  }
+
+  const folderId = parsed.data.folderId ?? null;
   const placementError = await validateFolderPlacement({
     reportId,
-    parentId: parsed.data.folderId,
+    parentId: folderId,
     folderId: null,
   });
   if (placementError) {
@@ -74,7 +106,7 @@ export async function PATCH(
 
   const [updated] = await db
     .update(reportAttachments)
-    .set({ folderId: parsed.data.folderId })
+    .set({ folderId })
     .where(
       and(
         eq(reportAttachments.id, attachmentId),

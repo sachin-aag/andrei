@@ -118,11 +118,39 @@ export async function POST(
     uploadedById: access.user.id,
   });
 
-  const uploadUrl = await getAttachmentStorage().createResumableUpload({
-    objectKey: stagingKey,
-    contentType: mimeType,
-    sizeBytes,
-  });
+  try {
+    const uploadUrl = await getAttachmentStorage().createResumableUpload({
+      objectKey: stagingKey,
+      contentType: mimeType,
+      sizeBytes,
+      origin: browserOriginFromRequest(req),
+    });
+    return NextResponse.json({ attachmentId, uploadUrl });
+  } catch (error) {
+    const message =
+      error instanceof Error ? error.message : "Could not create upload URL";
+    await db
+      .update(reportAttachments)
+      .set({
+        processingStatus: "failed",
+        processingProgress: 0,
+        processingError: message,
+      })
+      .where(eq(reportAttachments.id, attachmentId));
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
 
-  return NextResponse.json({ attachmentId, uploadUrl });
+/** Origin the browser will send on PUT — must match the resumable session. */
+function browserOriginFromRequest(req: Request): string | null {
+  const origin = req.headers.get("origin")?.trim();
+  if (origin) return origin;
+
+  const referer = req.headers.get("referer")?.trim();
+  if (!referer) return null;
+  try {
+    return new URL(referer).origin;
+  } catch {
+    return null;
+  }
 }
