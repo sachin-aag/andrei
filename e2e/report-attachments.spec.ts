@@ -64,16 +64,19 @@ test.describe("report PDF documents", () => {
 
   test("uploads a PDF, reaches ready, and opens the viewer", async ({ page }) => {
     const fileName = await uploadPdf(page);
+    const panel = documentsPanel(page);
 
     await expect(
-      documentsPanel(page).locator('[data-document-file][data-status="ready"]')
+      panel.locator('[data-document-file][data-status="ready"]')
     ).toBeVisible({ timeout: 30_000 });
 
-    await page.getByText(fileName).click();
+    // Scope to the Documents panel — a success toast also contains the filename.
+    await panel.getByRole("button", { name: fileName, exact: true }).click();
     await expect(page.getByRole("button", { name: /^back$/i })).toBeVisible({
       timeout: 15_000,
     });
-    await expect(page.locator("iframe")).toBeVisible();
+    // Prefer title over bare iframe — PostHog/rrweb injects another iframe.
+    await expect(page.locator(`iframe[title="${fileName}"]`)).toBeVisible();
   });
 
   test("creates a folder and keeps it after reload", async ({ page }) => {
