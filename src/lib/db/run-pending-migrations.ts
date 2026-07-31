@@ -277,9 +277,20 @@ async function ensureAuditHashChainTriggers(pool: pg.Pool): Promise<void> {
   if (trigger.rows[0]?.exists) return;
 
   // Ensure the v2 hash function body is present before attaching the trigger.
+  // Push-bootstrapped DBs often have columns without PL/pgSQL functions from 0027/0034.
   if (await columnExists(pool, "audit_events", "payload_version")) {
     await applyMigrationStatements(pool, "0034_audit_canonical_v2");
   }
+
+  // 0034 does not define this guard — recreate it so append-only triggers can attach.
+  await pool.query(`
+    CREATE OR REPLACE FUNCTION audit_append_only_guard()
+    RETURNS trigger AS $$
+    BEGIN
+      RAISE EXCEPTION 'Append-only table: % on % is not permitted', TG_OP, TG_TABLE_NAME;
+    END;
+    $$ LANGUAGE plpgsql;
+  `);
 
   await pool.query(`
     DROP TRIGGER IF EXISTS audit_events_hash_chain ON audit_events;
