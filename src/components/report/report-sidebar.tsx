@@ -118,11 +118,13 @@ export function ReportSidebar({
         </button>
       </div>
 
-      {/* Tab buttons — icons only when collapsed, full tabs when expanded */}
+      {/* Tab buttons — icons only when collapsed; wrap when expanded so Documents stays reachable */}
       <div
         className={cn(
           "border-b border-[var(--border)] shrink-0",
-          collapsed ? "px-1 py-2 space-y-1" : "px-2 py-1.5 flex items-center gap-1",
+          collapsed
+            ? "px-1 py-2 space-y-1"
+            : "flex flex-wrap items-center gap-1 px-2 py-1.5",
         )}
       >
         {TABS.map((tab) => {
@@ -176,7 +178,7 @@ export function ReportSidebar({
                 onTabChange(tab.value);
               }}
               className={cn(
-                "relative flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border transition-colors",
+                "relative flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors",
                 activeTab === tab.value
                   ? "bg-[var(--secondary)] text-[var(--foreground)] border-[var(--border)]"
                   : "text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--secondary)]/50 border-transparent hover:border-[var(--border)]",

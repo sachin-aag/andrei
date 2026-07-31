@@ -1,10 +1,19 @@
-function previewDeploymentOrigin(): string | null {
+function toHttpsOrigin(hostOrUrl: string): string {
+  const trimmed = hostOrUrl.trim().replace(/\/$/, "");
+  return trimmed.startsWith("http") ? trimmed : `https://${trimmed}`;
+}
+
+/**
+ * Stable Preview origin for auth redirects and emails.
+ * Prefer `VERCEL_BRANCH_URL` (git-branch alias) over `VERCEL_URL` (per-deployment
+ * host) so opening `*-git-*-….vercel.app` does not bounce to `*-xxxxx-….vercel.app`.
+ */
+export function previewDeploymentOrigin(): string | null {
   if (process.env.VERCEL_ENV !== "preview") return null;
-  const vercelUrl = process.env.VERCEL_URL?.trim();
-  if (!vercelUrl) return null;
-  return vercelUrl.startsWith("http")
-    ? vercelUrl.replace(/\/$/, "")
-    : `https://${vercelUrl}`;
+  const host =
+    process.env.VERCEL_BRANCH_URL?.trim() || process.env.VERCEL_URL?.trim();
+  if (!host) return null;
+  return toHttpsOrigin(host);
 }
 
 /** Canonical app base URL for auth emails (magic link, password reset). */

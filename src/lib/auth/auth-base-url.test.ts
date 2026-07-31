@@ -13,13 +13,28 @@ describe("authBaseUrl", () => {
     expect(authBaseUrl()).toBe("https://andrei-v2.vercel.app");
   });
 
-  it("uses VERCEL_URL on Vercel Preview even when AUTH_URL is production", () => {
+  it("uses VERCEL_BRANCH_URL on Preview even when AUTH_URL is production", () => {
+    process.env = {
+      ...env,
+      VERCEL_ENV: "preview",
+      VERCEL_BRANCH_URL:
+        "andrei-demo-git-demo-attachments-sachin-aags-projects.vercel.app",
+      VERCEL_URL: "andrei-demo-de30iqsdw-sachin-aags-projects.vercel.app",
+      AUTH_URL: "https://demo.andreihealth.com",
+    };
+    expect(authBaseUrl()).toBe(
+      "https://andrei-demo-git-demo-attachments-sachin-aags-projects.vercel.app"
+    );
+  });
+
+  it("falls back to VERCEL_URL on Preview when branch URL is unset", () => {
     process.env = {
       ...env,
       VERCEL_ENV: "preview",
       VERCEL_URL: "andrei-demo-git-feature-abc.vercel.app",
       AUTH_URL: "https://andrei-demo.vercel.app",
     };
+    delete process.env.VERCEL_BRANCH_URL;
     expect(authBaseUrl()).toBe(
       "https://andrei-demo-git-feature-abc.vercel.app"
     );
@@ -28,6 +43,8 @@ describe("authBaseUrl", () => {
   it("falls back to VERCEL_URL", () => {
     process.env = { ...env, VERCEL_URL: "andrei-v2.vercel.app" };
     delete process.env.AUTH_URL;
+    delete process.env.VERCEL_ENV;
+    delete process.env.VERCEL_BRANCH_URL;
     expect(authBaseUrl()).toBe("https://andrei-v2.vercel.app");
   });
 
@@ -35,6 +52,8 @@ describe("authBaseUrl", () => {
     process.env = { ...env };
     delete process.env.AUTH_URL;
     delete process.env.VERCEL_URL;
+    delete process.env.VERCEL_ENV;
+    delete process.env.VERCEL_BRANCH_URL;
     expect(authBaseUrl()).toBe("http://localhost:3000");
   });
 });
