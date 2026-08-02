@@ -6,6 +6,9 @@ representative scan after infrastructure gates pass.
 
 ## Infrastructure
 
+Bucket + CORS + staging/temp lifecycle + runtime SA IAM are managed by
+Terraform in [`infra/gcs`](../infra/gcs/README.md) (`terraform apply` there).
+
 - [ ] Private GCS bucket with Uniform Bucket-Level Access (UBLA) enabled
 - [ ] Prefer an existing project bucket via `GCS_BUCKET` (prefix separation, not a new bucket)
 - [ ] Lifecycle rule deletes **only** `staging/` and `temp/` prefixes (not permanent evidence)
