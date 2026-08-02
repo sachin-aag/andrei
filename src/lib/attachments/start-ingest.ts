@@ -8,11 +8,9 @@ import {
   reportAttachments,
 } from "@/db/schema";
 import { resolveDocumentIngestMode } from "@/lib/attachments/document-ingest-mode";
+import { runDocumentIngest } from "@/lib/attachments/run-document-ingest";
 import { isTestStubDocumentIngest } from "@/lib/test/ai-bypass";
-import {
-  documentIngestWorkflow,
-  runDocumentIngest,
-} from "@/workflows/document-ingest";
+import { documentIngestWorkflow } from "@/workflows/document-ingest";
 
 export { resolveDocumentIngestMode } from "@/lib/attachments/document-ingest-mode";
 
