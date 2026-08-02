@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { ChevronLeft, Download, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -25,8 +26,8 @@ export function AttachmentViewer() {
     );
   }
 
-  const contentUrl = `/api/reports/${reportId}/attachments/${activeAttachment.id}/content?page=${activePage}`;
-  const downloadUrl = `/api/reports/${reportId}/attachments/${activeAttachment.id}/content?download=1`;
+  const contentUrl = `/api/reports/${reportId}/attachments/${activeAttachment.id}/content`;
+  const downloadUrl = `${contentUrl}?download=1`;
   const pageLabel = activeAttachment.pageCount
     ? `Page ${activePage} of ${activeAttachment.pageCount}`
     : `Page ${activePage}`;
@@ -67,11 +68,10 @@ export function AttachmentViewer() {
       </CardHeader>
       <CardContent className="p-0">
         {canPreview ? (
-          <iframe
-            key={contentUrl}
-            src={contentUrl}
+          <PdfPreviewFrame
+            contentUrl={contentUrl}
+            page={activePage}
             title={activeAttachment.filename}
-            className="h-[calc(100vh-16rem)] min-h-[720px] w-full bg-white"
           />
         ) : (
           <div className="p-6 text-sm text-[var(--muted-foreground)]">
@@ -82,6 +82,97 @@ export function AttachmentViewer() {
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function PdfPreviewFrame({
+  contentUrl,
+  page,
+  title,
+}: {
+  contentUrl: string;
+  page: number;
+  title: string;
+}) {
+  const [objectUrl, setObjectUrl] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    let createdUrl: string | null = null;
+
+    async function load() {
+      setLoading(true);
+      setError(null);
+      setObjectUrl(null);
+      try {
+        const response = await fetch(contentUrl, { credentials: "same-origin" });
+        if (!response.ok) {
+          const message = await response.text().catch(() => "");
+          throw new Error(
+            message.includes("{")
+              ? `Preview failed (${response.status})`
+              : `Preview failed (${response.status})`
+          );
+        }
+        const blob = await response.blob();
+        const pdfBlob =
+          blob.type === "application/pdf"
+            ? blob
+            : new Blob([blob], { type: "application/pdf" });
+        createdUrl = URL.createObjectURL(pdfBlob);
+        if (cancelled) {
+          URL.revokeObjectURL(createdUrl);
+          return;
+        }
+        setObjectUrl(createdUrl);
+      } catch (err) {
+        if (!cancelled) {
+          setError(
+            err instanceof Error ? err.message : "Could not load PDF preview"
+          );
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    }
+
+    void load();
+    return () => {
+      cancelled = true;
+      if (createdUrl) URL.revokeObjectURL(createdUrl);
+    };
+  }, [contentUrl]);
+
+  if (loading) {
+    return (
+      <div className="p-6 text-sm text-[var(--muted-foreground)]">
+        Loading preview…
+      </div>
+    );
+  }
+
+  if (error || !objectUrl) {
+    return (
+      <div className="space-y-3 p-6 text-sm">
+        <p className="text-[var(--destructive)]">
+          {error ?? "Could not load PDF preview"}
+        </p>
+        <Button asChild variant="outline" size="sm">
+          <a href={`${contentUrl}?download=1`}>Download PDF instead</a>
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <iframe
+      key={objectUrl}
+      src={`${objectUrl}#page=${page}`}
+      title={title}
+      className="h-[calc(100vh-16rem)] min-h-[720px] w-full bg-white"
+    />
   );
 }
 

@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { Readable } from "node:stream";
 import { Storage } from "@google-cloud/storage";
 import { createId } from "@paralleldrive/cuid2";
 import { createWifAuthClient, getWifConfig } from "@/lib/gcp/wif-token";
@@ -36,6 +38,8 @@ export interface AttachmentStorage {
   createResumableUpload(input: CreateResumableUploadInput): Promise<string>;
   getObjectMetadata(objectKey: string): Promise<ObjectMetadata>;
   readObjectBuffer(objectKey: string): Promise<Buffer>;
+  /** Stream object bytes (preferred for large PDF preview/download on Vercel). */
+  openObjectReadStream(objectKey: string): Promise<ReadableStream<Uint8Array>>;
   writeObjectBuffer(
     objectKey: string,
     buffer: Buffer,
@@ -163,6 +167,13 @@ export class GcsAttachmentStorage implements AttachmentStorage {
     return buffer;
   }
 
+  async openObjectReadStream(
+    objectKey: string
+  ): Promise<ReadableStream<Uint8Array>> {
+    const nodeStream = this.file(objectKey).createReadStream();
+    return Readable.toWeb(nodeStream) as ReadableStream<Uint8Array>;
+  }
+
   async writeObjectBuffer(
     objectKey: string,
     buffer: Buffer,
@@ -248,6 +259,13 @@ export class LocalAttachmentStorage implements AttachmentStorage {
 
   async readObjectBuffer(objectKey: string): Promise<Buffer> {
     return readFile(localObjectPath(objectKey));
+  }
+
+  async openObjectReadStream(
+    objectKey: string
+  ): Promise<ReadableStream<Uint8Array>> {
+    const nodeStream = createReadStream(localObjectPath(objectKey));
+    return Readable.toWeb(nodeStream) as ReadableStream<Uint8Array>;
   }
 
   async writeObjectBuffer(

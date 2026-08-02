@@ -7,7 +7,7 @@ import { requireReportAccess } from "@/lib/reports/require-report-access";
 import { getAttachmentStorage } from "@/lib/storage/attachments";
 
 export const runtime = "nodejs";
-/** Large PDFs are buffered from GCS; keep headroom for max attachment size. */
+/** Stream from GCS; may be multi‑minute for large PDFs. */
 export const maxDuration = 60;
 
 export async function GET(
@@ -45,16 +45,15 @@ export async function GET(
     return NextResponse.json({ error: "Page out of range" }, { status: 400 });
   }
 
-  // Proxy through the app (do not redirect to a GCS signed URL). WIF on Vercel
-  // has no local private key; signed URLs need signBlob and have failed in preview.
-  // Object read already works for finalize/ingest.
-  let buffer: Buffer;
+  // Stream (do not buffer the whole PDF). Buffered responses hit Vercel's ~4.5MB
+  // body limit and leave the iframe blank for typical multi-page PDFs.
+  let stream: ReadableStream<Uint8Array>;
   try {
-    buffer = await getAttachmentStorage().readObjectBuffer(
+    stream = await getAttachmentStorage().openObjectReadStream(
       attachment.permanentObjectKey
     );
   } catch (error) {
-    console.error("[attachment-content] read failed", {
+    console.error("[attachment-content] open stream failed", {
       attachmentId,
       error,
     });
@@ -66,17 +65,16 @@ export async function GET(
 
   const filename = safeFilename(attachment.filename);
   const headers = new Headers({
-    "Content-Type": attachment.mimeType || "application/pdf",
-    "Content-Length": String(buffer.byteLength),
+    "Content-Type": "application/pdf",
     "Cache-Control": "private, max-age=60",
     "Content-Disposition": download
       ? `attachment; filename="${filename}"`
       : `inline; filename="${filename}"`,
+    // Help browsers treat this as embeddable PDF content.
+    "X-Content-Type-Options": "nosniff",
   });
 
-  // Browsers ignore Content-Disposition page fragments; keep ?page= for clients
-  // that open the URL directly. iframe preview shows the full PDF.
-  return new NextResponse(new Uint8Array(buffer), { status: 200, headers });
+  return new NextResponse(stream, { status: 200, headers });
 }
 
 function normalizedPage(raw: string | null): number | null {

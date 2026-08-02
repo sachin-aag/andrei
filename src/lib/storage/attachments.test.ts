@@ -66,6 +66,10 @@ describe("LocalAttachmentStorage", () => {
     await storage.copyObject(sourceKey, targetKey);
     await expect(storage.readObjectBuffer(targetKey)).resolves.toEqual(buffer);
 
+    const stream = await storage.openObjectReadStream(targetKey);
+    const streamed = Buffer.from(await new Response(stream).arrayBuffer());
+    expect(streamed).toEqual(buffer);
+
     await storage.deleteObject(sourceKey);
     await expect(storage.readObjectBuffer(sourceKey)).rejects.toThrow();
   });
