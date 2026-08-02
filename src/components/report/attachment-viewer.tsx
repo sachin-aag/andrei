@@ -8,6 +8,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import type { AttachmentProcessingStatus } from "@/db/schema";
 import { useReportAttachments } from "@/providers/report-attachments-provider";
 
 export function AttachmentViewer() {
@@ -28,7 +29,9 @@ export function AttachmentViewer() {
   const pageLabel = activeAttachment.pageCount
     ? `Page ${activePage} of ${activeAttachment.pageCount}`
     : `Page ${activePage}`;
-  const canPreview = activeAttachment.processingStatus === "ready";
+  // PDF is on permanent storage once pageCount is set (finalize); indexing can still be running.
+  const canPreview = activeAttachment.pageCount != null;
+  const indexing = isIndexingStatus(activeAttachment.processingStatus);
 
   return (
     <Card className="min-h-[calc(100vh-12rem)] overflow-hidden">
@@ -45,6 +48,10 @@ export function AttachmentViewer() {
             </CardTitle>
             <p className="mt-1 text-xs text-[var(--muted-foreground)]">
               {pageLabel}
+              {indexing ? " · Indexing for search…" : null}
+              {canPreview && activeAttachment.processingStatus === "failed"
+                ? " · Indexing failed (preview still available)"
+                : null}
             </p>
           </div>
           {canPreview ? (
@@ -72,10 +79,16 @@ export function AttachmentViewer() {
           />
         ) : (
           <div className="p-6 text-sm text-[var(--muted-foreground)]">
-            This document is not ready to preview yet.
+            {activeAttachment.processingStatus === "failed"
+              ? "This document could not be stored, so it cannot be previewed."
+              : "Upload is still finishing. Preview will be available once the file is stored."}
           </div>
         )}
       </CardContent>
     </Card>
   );
+}
+
+function isIndexingStatus(status: AttachmentProcessingStatus): boolean {
+  return status === "queued" || status === "processing" || status === "validating";
 }
