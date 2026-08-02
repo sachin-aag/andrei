@@ -109,5 +109,8 @@ function sanitizeStartError(error: unknown): string {
   if (error.message.includes("workflow") || error.message.includes("Workflow")) {
     return "Document ingestion workflow could not be started";
   }
+  if (error.message.includes("neon-http") || error.message.includes("transactions")) {
+    return "Document ingestion failed (database driver)";
+  }
   return "Document ingestion could not be started";
 }
