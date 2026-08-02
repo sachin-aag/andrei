@@ -2,6 +2,7 @@ import { rm } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  GcsAttachmentStorage,
   isLocalAttachmentStorageEnabled,
   LocalAttachmentStorage,
   permanentObjectKey,
@@ -9,6 +10,7 @@ import {
   stagingObjectKey,
   tempBatchObjectKey,
 } from "./attachments";
+import { resetWifTokenCache } from "@/lib/gcp/wif-token";
 
 const localRoot = path.join(process.cwd(), ".data", "attachments");
 
@@ -29,6 +31,8 @@ describe("attachment storage key builders", () => {
 describe("isLocalAttachmentStorageEnabled", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    resetWifTokenCache();
     resetAttachmentStorageForTests();
   });
 
@@ -40,6 +44,78 @@ describe("isLocalAttachmentStorageEnabled", () => {
 
     vi.stubEnv("ALLOW_LOCAL_ATTACHMENT_STORAGE", "false");
     expect(isLocalAttachmentStorageEnabled()).toBe(false);
+  });
+});
+
+describe("GcsAttachmentStorage", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.unstubAllGlobals();
+    resetWifTokenCache();
+    resetAttachmentStorageForTests();
+  });
+
+  it("creates a direct signed GCS read URL using WIF signBlob", async () => {
+    vi.stubEnv(
+      "GCP_WIF_AUDIENCE",
+      "//iam.googleapis.com/projects/1/locations/global/workloadIdentityPools/p/providers/v"
+    );
+    vi.stubEnv(
+      "GCP_SERVICE_ACCOUNT_EMAIL",
+      "runtime@example.iam.gserviceaccount.com"
+    );
+    vi.stubEnv("VERCEL_OIDC_TOKEN", "oidc-token");
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ access_token: "federated" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            accessToken: "ya29.access",
+            expireTime: new Date(Date.now() + 3_600_000).toISOString(),
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ signedBlob: "c2lnbmF0dXJl" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const storage = new GcsAttachmentStorage("andrei-test-bucket");
+    const url = await storage.getSignedReadUrl({
+      objectKey: "reports/report 1/attachments/att/source.pdf",
+      generation: "12345",
+      expiresInSeconds: 300,
+      downloadFilename: "source.pdf",
+    });
+
+    const parsed = new URL(url);
+    expect(parsed.origin).toBe("https://storage.googleapis.com");
+    expect(parsed.pathname).toBe(
+      "/andrei-test-bucket/reports/report%201/attachments/att/source.pdf"
+    );
+    expect(parsed.searchParams.get("generation")).toBe("12345");
+    expect(parsed.searchParams.get("X-Goog-Algorithm")).toBe(
+      "GOOG4-RSA-SHA256"
+    );
+    expect(parsed.searchParams.get("X-Goog-SignedHeaders")).toBe("host");
+    expect(parsed.searchParams.get("X-Goog-Signature")).toBe(
+      "7369676e6174757265"
+    );
+    expect(parsed.searchParams.get("response-content-disposition")).toBe(
+      'attachment; filename="source.pdf"'
+    );
+    expect(String(fetchMock.mock.calls[2]![0])).toContain(":signBlob");
   });
 });
 

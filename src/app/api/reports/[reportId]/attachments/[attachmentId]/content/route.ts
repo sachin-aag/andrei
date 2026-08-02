@@ -7,7 +7,7 @@ import { requireReportAccess } from "@/lib/reports/require-report-access";
 import { getAttachmentStorage } from "@/lib/storage/attachments";
 
 export const runtime = "nodejs";
-/** Stream from GCS; may be multi‑minute for large PDFs. */
+/** Fallback proxy stream can be multi-minute for large PDFs. */
 export const maxDuration = 60;
 
 export async function GET(
@@ -41,12 +41,41 @@ export async function GET(
   const searchParams = new URL(req.url).searchParams;
   const page = normalizedPage(searchParams.get("page"));
   const download = searchParams.get("download") === "1";
+  const proxy = searchParams.get("proxy") === "1";
   if (page && attachment.pageCount && page > attachment.pageCount) {
     return NextResponse.json({ error: "Page out of range" }, { status: 400 });
   }
 
-  // Stream (do not buffer the whole PDF). Buffered responses hit Vercel's ~4.5MB
-  // body limit and leave the iframe blank for typical multi-page PDFs.
+  if (!proxy) {
+    try {
+      const signedUrl = await getAttachmentStorage().getSignedReadUrl({
+        objectKey: attachment.permanentObjectKey,
+        generation: attachment.gcsGeneration,
+        expiresInSeconds: 5 * 60,
+        downloadFilename: download ? attachment.filename : undefined,
+      });
+      const redirectUrl = signedUrl.startsWith("/")
+        ? new URL(signedUrl, req.url).toString()
+        : signedUrl;
+      return NextResponse.redirect(
+        download ? redirectUrl : appendPageFragment(redirectUrl, page)
+      );
+    } catch (error) {
+      console.error("[attachment-content] signed url failed", {
+        attachmentId,
+        error,
+      });
+      if (download) {
+        return NextResponse.json(
+          { error: "Could not create attachment download URL" },
+          { status: 502 }
+        );
+      }
+    }
+  }
+
+  // Fallback: stream through the app when signed URLs are unavailable. This is
+  // less efficient than GCS direct access and should not be the primary path.
   let stream: ReadableStream<Uint8Array>;
   try {
     stream = await getAttachmentStorage().openObjectReadStream(
@@ -86,4 +115,10 @@ function normalizedPage(raw: string | null): number | null {
 
 function safeFilename(filename: string): string {
   return filename.replace(/["\r\n]/g, "_") || "document.pdf";
+}
+
+function appendPageFragment(url: string, page: number | null): string {
+  if (!page) return url;
+  const withoutFragment = url.split("#")[0];
+  return `${withoutFragment}#page=${page}`;
 }

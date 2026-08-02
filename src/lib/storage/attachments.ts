@@ -117,14 +117,14 @@ export function resetAttachmentStorageForTests(): void {
 
 export class GcsAttachmentStorage implements AttachmentStorage {
   private readonly storage: Storage;
+  private readonly wifConfig = getWifConfig();
 
   constructor(private readonly bucketName: string) {
-    const wifConfig = getWifConfig();
-    this.storage = wifConfig
+    this.storage = this.wifConfig
       ? new Storage({
-          authClient: createWifAuthClient(wifConfig) as never,
+          authClient: createWifAuthClient(this.wifConfig) as never,
           // Lets GoogleAuth.getCredentials resolve client_email for signBlob.
-          credentials: { client_email: wifConfig.serviceAccountEmail },
+          credentials: { client_email: this.wifConfig.serviceAccountEmail },
           projectId: process.env.GOOGLE_VERTEX_PROJECT?.trim() || undefined,
         })
       : new Storage();
@@ -206,6 +206,18 @@ export class GcsAttachmentStorage implements AttachmentStorage {
     expiresInSeconds,
     downloadFilename,
   }: SignedReadUrlInput): Promise<string> {
+    if (this.wifConfig) {
+      return signedGcsReadUrlWithWif({
+        bucketName: this.bucketName,
+        objectKey,
+        generation,
+        expiresInSeconds,
+        downloadFilename,
+        serviceAccountEmail: this.wifConfig.serviceAccountEmail,
+        sign: createWifAuthClient(this.wifConfig).sign,
+      });
+    }
+
     const expires = Date.now() + expiresInSeconds * 1000;
     const [url] = await this.file(objectKey).getSignedUrl({
       action: "read",
@@ -313,6 +325,102 @@ export class LocalAttachmentStorage implements AttachmentStorage {
 function contentDispositionAttachment(filename: string): string {
   const safe = filename.replace(/["\r\n]/g, "_");
   return `attachment; filename="${safe}"`;
+}
+
+async function signedGcsReadUrlWithWif({
+  bucketName,
+  objectKey,
+  generation,
+  expiresInSeconds,
+  downloadFilename,
+  serviceAccountEmail,
+  sign,
+}: {
+  bucketName: string;
+  objectKey: string;
+  generation: string;
+  expiresInSeconds: number;
+  downloadFilename?: string;
+  serviceAccountEmail: string;
+  sign: (data: string) => Promise<string>;
+}): Promise<string> {
+  const now = new Date();
+  const datestamp = formatGcsDate(now);
+  const timestamp = formatGcsTimestamp(now);
+  const credentialScope = `${datestamp}/auto/storage/goog4_request`;
+  const credential = `${serviceAccountEmail}/${credentialScope}`;
+  const host = "storage.googleapis.com";
+  const canonicalUri = `/${bucketName}/${encodeGcsPath(objectKey)}`;
+  const signedHeaders = "host";
+  const queryParams: Record<string, string> = {
+    "X-Goog-Algorithm": "GOOG4-RSA-SHA256",
+    "X-Goog-Credential": credential,
+    "X-Goog-Date": timestamp,
+    "X-Goog-Expires": String(expiresInSeconds),
+    "X-Goog-SignedHeaders": signedHeaders,
+    generation,
+    "response-content-type": "application/pdf",
+  };
+
+  if (downloadFilename) {
+    queryParams["response-content-disposition"] =
+      contentDispositionAttachment(downloadFilename);
+  }
+
+  const canonicalQuery = canonicalQueryString(queryParams);
+  const canonicalHeaders = `host:${host}\n`;
+  const canonicalRequest = [
+    "GET",
+    canonicalUri,
+    canonicalQuery,
+    canonicalHeaders,
+    signedHeaders,
+    "UNSIGNED-PAYLOAD",
+  ].join("\n");
+  const stringToSign = [
+    "GOOG4-RSA-SHA256",
+    timestamp,
+    credentialScope,
+    createHash("sha256").update(canonicalRequest).digest("hex"),
+  ].join("\n");
+  const signature = Buffer.from(await sign(stringToSign), "base64").toString(
+    "hex"
+  );
+
+  return `https://${host}${canonicalUri}?${canonicalQuery}&X-Goog-Signature=${signature}`;
+}
+
+function canonicalQueryString(params: Record<string, string>): string {
+  return Object.entries(params)
+    .map(([key, value]) => [encodeRfc3986(key), encodeRfc3986(value)] as const)
+    .sort(([leftKey, leftValue], [rightKey, rightValue]) =>
+      leftKey === rightKey
+        ? leftValue.localeCompare(rightValue)
+        : leftKey.localeCompare(rightKey)
+    )
+    .map(([key, value]) => `${key}=${value}`)
+    .join("&");
+}
+
+function encodeGcsPath(pathname: string): string {
+  return pathname.split("/").map(encodeRfc3986).join("/");
+}
+
+function encodeRfc3986(value: string): string {
+  return encodeURIComponent(value).replace(/[!'()*]/g, (char) =>
+    `%${char.charCodeAt(0).toString(16).toUpperCase()}`
+  );
+}
+
+function formatGcsDate(date: Date): string {
+  return date.toISOString().slice(0, 10).replaceAll("-", "");
+}
+
+function formatGcsTimestamp(date: Date): string {
+  return `${formatGcsDate(date)}T${date
+    .toISOString()
+    .slice(11, 19)
+    .replaceAll(":", "")}Z`;
 }
 
 export async function appendLocalUploadChunk(
