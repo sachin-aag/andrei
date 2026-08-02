@@ -9,6 +9,7 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { requireReportAccess } from "@/lib/reports/require-report-access";
 
 export const runtime = "nodejs";
+export const maxDuration = 300;
 
 export async function POST(
   _req: Request,

@@ -15,6 +15,8 @@ import { requireReportAccess } from "@/lib/reports/require-report-access";
 import { getAttachmentStorage } from "@/lib/storage/attachments";
 
 export const runtime = "nodejs";
+/** Inline ingest (preview) can run Vertex extract+embed after the response. */
+export const maxDuration = 300;
 
 const SIZE_TOLERANCE_BYTES = 1024;
 

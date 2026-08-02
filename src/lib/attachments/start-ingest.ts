@@ -1,3 +1,4 @@
+import { after } from "next/server";
 import { eq } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import { start } from "workflow/api";
@@ -6,8 +7,14 @@ import {
   attachmentIngestRuns,
   reportAttachments,
 } from "@/db/schema";
+import { resolveDocumentIngestMode } from "@/lib/attachments/document-ingest-mode";
 import { isTestStubDocumentIngest } from "@/lib/test/ai-bypass";
-import { documentIngestWorkflow } from "@/workflows/document-ingest";
+import {
+  documentIngestWorkflow,
+  runDocumentIngest,
+} from "@/workflows/document-ingest";
+
+export { resolveDocumentIngestMode } from "@/lib/attachments/document-ingest-mode";
 
 export async function startDocumentIngest(
   attachmentId: string,
@@ -15,6 +22,27 @@ export async function startDocumentIngest(
 ): Promise<void> {
   if (isTestStubDocumentIngest()) {
     await markAttachmentReadyForTests(attachmentId, generation);
+    return;
+  }
+
+  if (resolveDocumentIngestMode() === "inline") {
+    after(() =>
+      runDocumentIngest(attachmentId, generation).catch(async (error) => {
+        console.error("[document-ingest] inline run failed", {
+          attachmentId,
+          error,
+        });
+        const message = sanitizeStartError(error);
+        await db
+          .update(reportAttachments)
+          .set({
+            processingStatus: "failed",
+            processingProgress: 0,
+            processingError: message,
+          })
+          .where(eq(reportAttachments.id, attachmentId));
+      })
+    );
     return;
   }
 

@@ -42,12 +42,26 @@ type BatchProcessResult = {
   pageCount: number;
 };
 
+/**
+ * Durable Workflow entry (Vercel Queues). Prefer this in production when World
+ * is healthy. Preview often leaves runs pending — use DOCUMENT_INGEST_MODE=inline.
+ */
 export async function documentIngestWorkflow(
   attachmentId: string,
   generation: string
 ): Promise<void> {
   "use workflow";
+  await runDocumentIngest(attachmentId, generation);
+}
 
+/**
+ * Full extract → embed pipeline without Workflow step isolation.
+ * Safe to call from `after()` (inline mode) or from the workflow wrapper.
+ */
+export async function runDocumentIngest(
+  attachmentId: string,
+  generation: string
+): Promise<void> {
   let init: IngestInit | null = null;
   try {
     init = await initializeIngestRun(attachmentId, generation);
@@ -86,8 +100,6 @@ async function initializeIngestRun(
   attachmentId: string,
   generation: string
 ): Promise<IngestInit> {
-  "use step";
-
   const [attachment] = await db
     .select()
     .from(reportAttachments)
@@ -149,8 +161,6 @@ async function initializeIngestRun(
 }
 
 async function assertAttachmentCurrent(input: IngestInit): Promise<void> {
-  "use step";
-
   const [attachment] = await db
     .select({
       deletedAt: reportAttachments.deletedAt,
@@ -172,8 +182,6 @@ async function splitAndPersistBatches(input: IngestInit): Promise<{
   batchCount: number;
   pageCount: number;
 }> {
-  "use step";
-
   const storage = getAttachmentStorage();
   const sourceBuffer = await storage.readObjectBuffer(input.sourceObjectKey);
   const split = await splitPdfIntoBatches(sourceBuffer);
@@ -229,8 +237,6 @@ async function splitAndPersistBatches(input: IngestInit): Promise<{
 }
 
 async function listBatchIds(runId: string): Promise<string[]> {
-  "use step";
-
   const batches = await db
     .select({ id: documentIngestBatches.id })
     .from(documentIngestBatches)
@@ -240,8 +246,6 @@ async function listBatchIds(runId: string): Promise<string[]> {
 }
 
 async function processBatch(batchId: string): Promise<BatchProcessResult> {
-  "use step";
-
   const [batch] = await db
     .select()
     .from(documentIngestBatches)
@@ -377,8 +381,6 @@ async function updateBatchProgress(
   runId: string,
   attachmentId: string
 ): Promise<{ completedBatchCount: number; progress: number }> {
-  "use step";
-
   const [counts] = await db
     .select({
       batchCount: attachmentIngestRuns.batchCount,
@@ -417,8 +419,6 @@ async function updateBatchProgress(
 }
 
 async function buildDocumentSummary(runId: string): Promise<{ batchCount: number }> {
-  "use step";
-
   const batches = await db
     .select({
       batchIndex: documentIngestBatches.batchIndex,
@@ -441,8 +441,6 @@ async function buildDocumentSummary(runId: string): Promise<{ batchCount: number
 }
 
 async function chunkAndEmbedRun(input: IngestInit): Promise<{ chunkCount: number }> {
-  "use step";
-
   const pages = await db
     .select({
       id: documentPages.id,
@@ -496,8 +494,6 @@ async function chunkAndEmbedRun(input: IngestInit): Promise<{ chunkCount: number
 }
 
 async function markRunReady(input: IngestInit): Promise<void> {
-  "use step";
-
   await db.transaction(async (tx) => {
     await tx
       .update(attachmentIngestRuns)
@@ -538,8 +534,6 @@ async function markRunTerminal(input: {
   status: AttachmentIngestRunStatus;
   message: string;
 }): Promise<void> {
-  "use step";
-
   const completedAt = new Date();
   await db.transaction(async (tx) => {
     if (input.runId) {
@@ -580,8 +574,6 @@ async function markRunTerminal(input: {
 }
 
 async function cleanupTempObjects(runId: string): Promise<{ deletedCount: number }> {
-  "use step";
-
   const batches = await db
     .select({ tempObjectKey: documentIngestBatches.tempObjectKey })
     .from(documentIngestBatches)
