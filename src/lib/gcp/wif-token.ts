@@ -149,6 +149,36 @@ export function createWifAuthClient(config: WifConfig) {
     async getCredentials() {
       return { client_email: config.serviceAccountEmail };
     },
+    /**
+     * IAM Credentials signBlob — required by `@google-cloud/storage`
+     * `getSignedUrl` when there is no local private key (WIF on Vercel).
+     * Returns a base64 signature string (same contract as `GoogleAuth.sign`).
+     */
+    async sign(data: string, endpoint?: string): Promise<string> {
+      const base =
+        endpoint ??
+        "https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/";
+      const url = `${base}${config.serviceAccountEmail}:signBlob`;
+      const token = await getWifAccessToken(config);
+      const res = await fetch(url, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          payload: Buffer.from(data).toString("base64"),
+        }),
+      });
+      if (!res.ok) {
+        throw new Error(`signBlob failed: ${res.status} ${await res.text()}`);
+      }
+      const body = (await res.json()) as { signedBlob?: string };
+      if (!body.signedBlob) {
+        throw new Error("signBlob response missing signedBlob");
+      }
+      return body.signedBlob;
+    },
     async request<T>(opts: WifAuthRequestOptions): Promise<WifAuthResponse<T>> {
       const authHeaders = await client.getRequestHeaders();
       const rawUrl = opts.url ?? opts.uri;

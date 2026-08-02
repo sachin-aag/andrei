@@ -26,6 +26,7 @@ export function AttachmentViewer() {
   }
 
   const contentUrl = `/api/reports/${reportId}/attachments/${activeAttachment.id}/content?page=${activePage}`;
+  const downloadUrl = `/api/reports/${reportId}/attachments/${activeAttachment.id}/content?download=1`;
   const pageLabel = activeAttachment.pageCount
     ? `Page ${activePage} of ${activeAttachment.pageCount}`
     : `Page ${activePage}`;
@@ -56,12 +57,7 @@ export function AttachmentViewer() {
           </div>
           {canPreview ? (
             <Button asChild variant="outline" size="sm">
-              <a
-                href={contentUrl}
-                target="_blank"
-                rel="noreferrer"
-                download={activeAttachment.filename}
-              >
+              <a href={downloadUrl}>
                 <Download className="size-4" aria-hidden="true" />
                 Download
               </a>

@@ -26,10 +26,15 @@ export async function GET(req: Request) {
   }
 
   const buffer = await storage.readObjectBuffer(objectKey);
-  return new Response(new Uint8Array(buffer), {
-    headers: {
-      "Content-Type": metadata.contentType,
-      "Content-Length": String(buffer.byteLength),
-    },
-  });
+  const download = url.searchParams.get("download") === "1";
+  const filename =
+    url.searchParams.get("filename")?.replace(/["\r\n]/g, "_") || "document.pdf";
+  const headers: Record<string, string> = {
+    "Content-Type": metadata.contentType,
+    "Content-Length": String(buffer.byteLength),
+  };
+  if (download) {
+    headers["Content-Disposition"] = `attachment; filename="${filename}"`;
+  }
+  return new Response(new Uint8Array(buffer), { headers });
 }

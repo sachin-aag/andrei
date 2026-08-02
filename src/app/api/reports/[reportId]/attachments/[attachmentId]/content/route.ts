@@ -38,7 +38,9 @@ export async function GET(
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  const page = normalizedPage(new URL(req.url).searchParams.get("page"));
+  const searchParams = new URL(req.url).searchParams;
+  const page = normalizedPage(searchParams.get("page"));
+  const download = searchParams.get("download") === "1";
   if (page && attachment.pageCount && page > attachment.pageCount) {
     return NextResponse.json({ error: "Page out of range" }, { status: 400 });
   }
@@ -47,12 +49,16 @@ export async function GET(
     objectKey: attachment.permanentObjectKey,
     generation: attachment.gcsGeneration,
     expiresInSeconds: SIGNED_URL_TTL_SECONDS,
+    downloadFilename: download ? attachment.filename : undefined,
   });
   const redirectUrl = signedUrl.startsWith("/")
     ? new URL(signedUrl, req.url).toString()
     : signedUrl;
 
-  return NextResponse.redirect(appendPageFragment(redirectUrl, page));
+  // Page fragments only for inline preview; downloads should not open mid-document.
+  return NextResponse.redirect(
+    download ? redirectUrl : appendPageFragment(redirectUrl, page)
+  );
 }
 
 function normalizedPage(raw: string | null): number | null {

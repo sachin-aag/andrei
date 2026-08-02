@@ -28,6 +28,8 @@ export type SignedReadUrlInput = {
   objectKey: string;
   generation: string;
   expiresInSeconds: number;
+  /** When set, GCS returns Content-Disposition: attachment for browser download. */
+  downloadFilename?: string;
 };
 
 export interface AttachmentStorage {
@@ -191,6 +193,7 @@ export class GcsAttachmentStorage implements AttachmentStorage {
     objectKey,
     generation,
     expiresInSeconds,
+    downloadFilename,
   }: SignedReadUrlInput): Promise<string> {
     const expires = Date.now() + expiresInSeconds * 1000;
     const [url] = await this.file(objectKey).getSignedUrl({
@@ -201,6 +204,12 @@ export class GcsAttachmentStorage implements AttachmentStorage {
       queryParams: {
         generation,
       },
+      responseType: "application/pdf",
+      ...(downloadFilename
+        ? {
+            responseDisposition: contentDispositionAttachment(downloadFilename),
+          }
+        : {}),
     });
     return url;
   }
@@ -267,6 +276,7 @@ export class LocalAttachmentStorage implements AttachmentStorage {
     objectKey,
     generation,
     expiresInSeconds,
+    downloadFilename,
   }: SignedReadUrlInput): Promise<string> {
     const expiresAt = Date.now() + expiresInSeconds * 1000;
     const params = new URLSearchParams({
@@ -274,8 +284,17 @@ export class LocalAttachmentStorage implements AttachmentStorage {
       generation,
       expiresAt: String(expiresAt),
     });
+    if (downloadFilename) {
+      params.set("download", "1");
+      params.set("filename", downloadFilename);
+    }
     return `/api/attachments/local-read?${params.toString()}`;
   }
+}
+
+function contentDispositionAttachment(filename: string): string {
+  const safe = filename.replace(/["\r\n]/g, "_");
+  return `attachment; filename="${safe}"`;
 }
 
 export async function appendLocalUploadChunk(

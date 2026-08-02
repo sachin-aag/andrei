@@ -77,4 +77,50 @@ describe("createWifAuthClient", () => {
       "Content-Type": "application/json",
     });
   });
+
+  it("implements sign via IAM signBlob for GCS signed URLs", async () => {
+    vi.stubEnv("VERCEL_OIDC_TOKEN", "oidc-token");
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ access_token: "federated" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      )
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            accessToken: "ya29.access",
+            expireTime: new Date(Date.now() + 3_600_000).toISOString(),
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } }
+        )
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify({ signedBlob: "c2lnbmF0dXJl" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        })
+      );
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = createWifAuthClient(config);
+    const signature = await client.sign("canonical-request-to-sign");
+    expect(signature).toBe("c2lnbmF0dXJl");
+
+    const signCall = fetchMock.mock.calls[2]!;
+    expect(String(signCall[0])).toContain(
+      "runtime@example.iam.gserviceaccount.com:signBlob"
+    );
+    const signInit = signCall[1] as RequestInit;
+    expect(signInit.headers).toMatchObject({
+      Authorization: "Bearer ya29.access",
+    });
+    expect(JSON.parse(String(signInit.body))).toEqual({
+      payload: Buffer.from("canonical-request-to-sign").toString("base64"),
+    });
+  });
 });
