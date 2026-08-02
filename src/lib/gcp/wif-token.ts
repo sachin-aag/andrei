@@ -97,16 +97,147 @@ export async function getWifAccessToken(config: WifConfig): Promise<string> {
   return cachedToken.token;
 }
 
-/** Minimal Google Auth client for SDKs that accept googleAuthOptions.authClient. */
+/** Options accepted by google-auth-library / gaxios-style `request`. */
+export type WifAuthRequestOptions = {
+  url?: string;
+  uri?: string;
+  method?: string;
+  headers?: Record<string, string | string[] | undefined>;
+  data?: unknown;
+  body?: BodyInit | null;
+  responseType?: string;
+  params?: Record<string, string | number | boolean | undefined>;
+  validateStatus?: (status: number) => boolean;
+  signal?: AbortSignal;
+};
+
+export type WifAuthResponse<T> = {
+  data: T;
+  status: number;
+  statusText: string;
+  headers: Record<string, string>;
+  config: WifAuthRequestOptions;
+  request: { responseURL: string };
+};
+
+function flattenHeaders(
+  headers: Record<string, string | string[] | undefined> | undefined
+): Record<string, string> {
+  if (!headers) return {};
+  const out: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    if (value == null) continue;
+    out[key] = Array.isArray(value) ? value.join(", ") : String(value);
+  }
+  return out;
+}
+
+/**
+ * Auth client for SDKs that accept `googleAuthOptions.authClient`.
+ * Must implement `request` — `@google-cloud/storage` resumable uploads call it
+ * via `GoogleAuth.request` → `authClient.request` (not just getRequestHeaders).
+ */
 export function createWifAuthClient(config: WifConfig) {
-  return {
-    async getRequestHeaders() {
+  const client = {
+    async getRequestHeaders(_url?: string) {
       return { Authorization: `Bearer ${await getWifAccessToken(config)}` };
     },
     async getAccessToken() {
       return { token: await getWifAccessToken(config) };
     },
+    /** Used by GoogleAuth.getCredentials / Storage signed URLs. */
+    async getCredentials() {
+      return { client_email: config.serviceAccountEmail };
+    },
+    async request<T>(opts: WifAuthRequestOptions): Promise<WifAuthResponse<T>> {
+      const authHeaders = await client.getRequestHeaders();
+      const rawUrl = opts.url ?? opts.uri;
+      if (!rawUrl) {
+        throw new Error("WIF auth client request requires url");
+      }
+      const url = new URL(rawUrl);
+      if (opts.params) {
+        for (const [key, value] of Object.entries(opts.params)) {
+          if (value == null) continue;
+          url.searchParams.set(key, String(value));
+        }
+      }
+
+      const headers: Record<string, string> = {
+        ...flattenHeaders(opts.headers),
+        ...authHeaders,
+      };
+
+      let body: BodyInit | undefined;
+      if (opts.body != null) {
+        body = opts.body;
+      } else if (opts.data != null) {
+        if (
+          typeof opts.data === "string" ||
+          opts.data instanceof Uint8Array ||
+          (typeof Buffer !== "undefined" && Buffer.isBuffer(opts.data))
+        ) {
+          body = opts.data as BodyInit;
+        } else {
+          if (!headers["Content-Type"] && !headers["content-type"]) {
+            headers["Content-Type"] = "application/json";
+          }
+          body = JSON.stringify(opts.data);
+        }
+      }
+
+      const res = await fetch(url, {
+        method: (opts.method ?? "GET").toUpperCase(),
+        headers,
+        body,
+        signal: opts.signal,
+      });
+
+      const responseHeaders = Object.fromEntries(res.headers.entries());
+      let data: unknown;
+      const responseType = opts.responseType ?? "json";
+      if (responseType === "stream") {
+        data = res.body;
+      } else if (responseType === "text") {
+        data = await res.text();
+      } else if (responseType === "arraybuffer") {
+        data = await res.arrayBuffer();
+      } else {
+        const text = await res.text();
+        if (!text) {
+          data = undefined;
+        } else {
+          try {
+            data = JSON.parse(text) as unknown;
+          } catch {
+            data = text;
+          }
+        }
+      }
+
+      const response: WifAuthResponse<T> = {
+        data: data as T,
+        status: res.status,
+        statusText: res.statusText,
+        headers: responseHeaders,
+        config: opts,
+        request: { responseURL: res.url },
+      };
+
+      const validateStatus =
+        opts.validateStatus ?? ((status) => status >= 200 && status < 300);
+      if (!validateStatus(res.status)) {
+        const error = new Error(
+          `WIF auth request failed with status ${res.status}`
+        ) as Error & { response: WifAuthResponse<T>; config: WifAuthRequestOptions };
+        error.response = response;
+        error.config = opts;
+        throw error;
+      }
+      return response;
+    },
   };
+  return client;
 }
 
 /** Reset cached token (for tests). */

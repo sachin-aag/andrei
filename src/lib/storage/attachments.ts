@@ -117,6 +117,9 @@ export class GcsAttachmentStorage implements AttachmentStorage {
     this.storage = wifConfig
       ? new Storage({
           authClient: createWifAuthClient(wifConfig) as never,
+          // Lets GoogleAuth.getCredentials resolve client_email for signBlob.
+          credentials: { client_email: wifConfig.serviceAccountEmail },
+          projectId: process.env.GOOGLE_VERTEX_PROJECT?.trim() || undefined,
         })
       : new Storage();
   }
