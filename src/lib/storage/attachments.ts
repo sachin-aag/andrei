@@ -383,7 +383,7 @@ async function signedGcsReadUrlWithWif({
     credentialScope,
     createHash("sha256").update(canonicalRequest).digest("hex"),
   ].join("\n");
-  const signature = Buffer.from(await sign(stringToSign), "base64").toString(
+  const signature = decodeBase64Signature(await sign(stringToSign)).toString(
     "hex"
   );
 
@@ -410,6 +410,12 @@ function encodeRfc3986(value: string): string {
   return encodeURIComponent(value).replace(/[!'()*]/g, (char) =>
     `%${char.charCodeAt(0).toString(16).toUpperCase()}`
   );
+}
+
+function decodeBase64Signature(signature: string): Buffer {
+  const normalized = signature.replace(/-/g, "+").replace(/_/g, "/");
+  const paddingLength = (4 - (normalized.length % 4)) % 4;
+  return Buffer.from(`${normalized}${"=".repeat(paddingLength)}`, "base64");
 }
 
 function formatGcsDate(date: Date): string {

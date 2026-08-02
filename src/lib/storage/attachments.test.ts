@@ -84,7 +84,7 @@ describe("GcsAttachmentStorage", () => {
         )
       )
       .mockResolvedValueOnce(
-        new Response(JSON.stringify({ signedBlob: "c2lnbmF0dXJl" }), {
+        new Response(JSON.stringify({ signedBlob: "--__" }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         })
@@ -110,7 +110,7 @@ describe("GcsAttachmentStorage", () => {
     );
     expect(parsed.searchParams.get("X-Goog-SignedHeaders")).toBe("host");
     expect(parsed.searchParams.get("X-Goog-Signature")).toBe(
-      "7369676e6174757265"
+      "fbefff"
     );
     expect(parsed.searchParams.get("response-content-disposition")).toBe(
       'attachment; filename="source.pdf"'
