@@ -7,8 +7,8 @@ import { requireReportAccess } from "@/lib/reports/require-report-access";
 import { getAttachmentStorage } from "@/lib/storage/attachments";
 
 export const runtime = "nodejs";
-
-const SIGNED_URL_TTL_SECONDS = 5 * 60;
+/** Large PDFs are buffered from GCS; keep headroom for max attachment size. */
+export const maxDuration = 60;
 
 export async function GET(
   req: Request,
@@ -45,20 +45,38 @@ export async function GET(
     return NextResponse.json({ error: "Page out of range" }, { status: 400 });
   }
 
-  const signedUrl = await getAttachmentStorage().getSignedReadUrl({
-    objectKey: attachment.permanentObjectKey,
-    generation: attachment.gcsGeneration,
-    expiresInSeconds: SIGNED_URL_TTL_SECONDS,
-    downloadFilename: download ? attachment.filename : undefined,
-  });
-  const redirectUrl = signedUrl.startsWith("/")
-    ? new URL(signedUrl, req.url).toString()
-    : signedUrl;
+  // Proxy through the app (do not redirect to a GCS signed URL). WIF on Vercel
+  // has no local private key; signed URLs need signBlob and have failed in preview.
+  // Object read already works for finalize/ingest.
+  let buffer: Buffer;
+  try {
+    buffer = await getAttachmentStorage().readObjectBuffer(
+      attachment.permanentObjectKey
+    );
+  } catch (error) {
+    console.error("[attachment-content] read failed", {
+      attachmentId,
+      error,
+    });
+    return NextResponse.json(
+      { error: "Could not load attachment content" },
+      { status: 502 }
+    );
+  }
 
-  // Page fragments only for inline preview; downloads should not open mid-document.
-  return NextResponse.redirect(
-    download ? redirectUrl : appendPageFragment(redirectUrl, page)
-  );
+  const filename = safeFilename(attachment.filename);
+  const headers = new Headers({
+    "Content-Type": attachment.mimeType || "application/pdf",
+    "Content-Length": String(buffer.byteLength),
+    "Cache-Control": "private, max-age=60",
+    "Content-Disposition": download
+      ? `attachment; filename="${filename}"`
+      : `inline; filename="${filename}"`,
+  });
+
+  // Browsers ignore Content-Disposition page fragments; keep ?page= for clients
+  // that open the URL directly. iframe preview shows the full PDF.
+  return new NextResponse(new Uint8Array(buffer), { status: 200, headers });
 }
 
 function normalizedPage(raw: string | null): number | null {
@@ -68,8 +86,6 @@ function normalizedPage(raw: string | null): number | null {
   return page;
 }
 
-function appendPageFragment(url: string, page: number | null): string {
-  if (!page) return url;
-  const withoutFragment = url.split("#")[0];
-  return `${withoutFragment}#page=${page}`;
+function safeFilename(filename: string): string {
+  return filename.replace(/["\r\n]/g, "_") || "document.pdf";
 }
