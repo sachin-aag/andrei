@@ -383,22 +383,22 @@ async function signedGcsReadUrlWithWif({
     credentialScope,
     createHash("sha256").update(canonicalRequest).digest("hex"),
   ].join("\n");
-  const signature = decodeBase64Signature(await sign(stringToSign)).toString(
+  const signature = Buffer.from(await sign(stringToSign), "base64").toString(
     "hex"
   );
 
   return `https://${host}${canonicalUri}?${canonicalQuery}&X-Goog-Signature=${signature}`;
 }
 
+/**
+ * GOOG4 requires the encoded params sorted by byte value, not by locale
+ * collation — `localeCompare` is case-insensitive and would order
+ * `generation` before `X-Goog-*`, which GCS rejects as a signature mismatch.
+ */
 function canonicalQueryString(params: Record<string, string>): string {
   return Object.entries(params)
-    .map(([key, value]) => [encodeRfc3986(key), encodeRfc3986(value)] as const)
-    .sort(([leftKey, leftValue], [rightKey, rightValue]) =>
-      leftKey === rightKey
-        ? leftValue.localeCompare(rightValue)
-        : leftKey.localeCompare(rightKey)
-    )
-    .map(([key, value]) => `${key}=${value}`)
+    .map(([key, value]) => `${encodeRfc3986(key)}=${encodeRfc3986(value)}`)
+    .sort((left, right) => (left < right ? -1 : left > right ? 1 : 0))
     .join("&");
 }
 
@@ -410,12 +410,6 @@ function encodeRfc3986(value: string): string {
   return encodeURIComponent(value).replace(/[!'()*]/g, (char) =>
     `%${char.charCodeAt(0).toString(16).toUpperCase()}`
   );
-}
-
-function decodeBase64Signature(signature: string): Buffer {
-  const normalized = signature.replace(/-/g, "+").replace(/_/g, "/");
-  const paddingLength = (4 - (normalized.length % 4)) % 4;
-  return Buffer.from(`${normalized}${"=".repeat(paddingLength)}`, "base64");
 }
 
 function formatGcsDate(date: Date): string {

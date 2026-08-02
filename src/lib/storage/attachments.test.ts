@@ -84,7 +84,7 @@ describe("GcsAttachmentStorage", () => {
         )
       )
       .mockResolvedValueOnce(
-        new Response(JSON.stringify({ signedBlob: "--__" }), {
+        new Response(JSON.stringify({ signedBlob: "c2lnbmF0dXJl" }), {
           status: 200,
           headers: { "Content-Type": "application/json" },
         })
@@ -110,12 +110,19 @@ describe("GcsAttachmentStorage", () => {
     );
     expect(parsed.searchParams.get("X-Goog-SignedHeaders")).toBe("host");
     expect(parsed.searchParams.get("X-Goog-Signature")).toBe(
-      "fbefff"
+      "7369676e6174757265"
     );
     expect(parsed.searchParams.get("response-content-disposition")).toBe(
       'attachment; filename="source.pdf"'
     );
     expect(String(fetchMock.mock.calls[2]![0])).toContain(":signBlob");
+
+    // GCS signs params in byte order; locale ordering would put `generation`
+    // ahead of `X-Goog-*` and fail verification.
+    const signedNames = [...parsed.searchParams.keys()].filter(
+      (name) => name !== "X-Goog-Signature"
+    );
+    expect(signedNames).toEqual([...signedNames].sort());
   });
 });
 
