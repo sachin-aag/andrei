@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { createReadStream } from "node:fs";
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -113,6 +113,58 @@ export function getAttachmentStorageBucketName(): string {
 
 export function resetAttachmentStorageForTests(): void {
   cachedStorage = null;
+}
+
+/**
+ * Local read URLs are bearer-style query params. Bind key + generation +
+ * expiresAt with an HMAC so recipients cannot extend lifetime by editing
+ * expiresAt alone.
+ */
+function localReadSigningSecret(): string {
+  const secret = process.env.AUTH_SECRET?.trim();
+  if (!secret) {
+    throw new Error(
+      "AUTH_SECRET is required to sign local attachment read URLs"
+    );
+  }
+  return secret;
+}
+
+function localReadSignaturePayload(
+  objectKey: string,
+  generation: string,
+  expiresAt: number
+): string {
+  return `${objectKey}\n${generation}\n${expiresAt}`;
+}
+
+export function signLocalReadUrlParams(
+  objectKey: string,
+  generation: string,
+  expiresAt: number
+): string {
+  return createHmac("sha256", localReadSigningSecret())
+    .update(localReadSignaturePayload(objectKey, generation, expiresAt))
+    .digest("base64url");
+}
+
+export function verifyLocalReadUrlParams(
+  objectKey: string,
+  generation: string,
+  expiresAt: number,
+  signature: string | null
+): boolean {
+  if (!signature) return false;
+  let expected: string;
+  try {
+    expected = signLocalReadUrlParams(objectKey, generation, expiresAt);
+  } catch {
+    return false;
+  }
+  const provided = Buffer.from(signature);
+  const expectedBuf = Buffer.from(expected);
+  if (provided.length !== expectedBuf.length) return false;
+  return timingSafeEqual(provided, expectedBuf);
 }
 
 export class GcsAttachmentStorage implements AttachmentStorage {
@@ -313,6 +365,7 @@ export class LocalAttachmentStorage implements AttachmentStorage {
       key: objectKey,
       generation,
       expiresAt: String(expiresAt),
+      sig: signLocalReadUrlParams(objectKey, generation, expiresAt),
     });
     if (downloadFilename) {
       params.set("download", "1");

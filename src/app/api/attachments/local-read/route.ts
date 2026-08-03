@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import {
   isLocalAttachmentStorageEnabled,
   LocalAttachmentStorage,
+  verifyLocalReadUrlParams,
 } from "@/lib/storage/attachments";
 
 export const runtime = "nodejs";
@@ -15,7 +16,14 @@ export async function GET(req: Request) {
   const objectKey = url.searchParams.get("key");
   const generation = url.searchParams.get("generation");
   const expiresAt = Number(url.searchParams.get("expiresAt"));
-  if (!objectKey || !generation || !Number.isFinite(expiresAt) || expiresAt < Date.now()) {
+  const signature = url.searchParams.get("sig");
+  if (
+    !objectKey ||
+    !generation ||
+    !Number.isFinite(expiresAt) ||
+    expiresAt < Date.now() ||
+    !verifyLocalReadUrlParams(objectKey, generation, expiresAt, signature)
+  ) {
     return NextResponse.json({ error: "Expired" }, { status: 403 });
   }
 

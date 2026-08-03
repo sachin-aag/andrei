@@ -7,8 +7,10 @@ import {
   LocalAttachmentStorage,
   permanentObjectKey,
   resetAttachmentStorageForTests,
+  signLocalReadUrlParams,
   stagingObjectKey,
   tempBatchObjectKey,
+  verifyLocalReadUrlParams,
 } from "./attachments";
 import { resetWifTokenCache } from "@/lib/gcp/wif-token";
 
@@ -128,6 +130,7 @@ describe("GcsAttachmentStorage", () => {
 
 describe("LocalAttachmentStorage", () => {
   afterEach(async () => {
+    vi.unstubAllEnvs();
     await rm(localRoot, { recursive: true, force: true });
   });
 
@@ -155,5 +158,51 @@ describe("LocalAttachmentStorage", () => {
 
     await storage.deleteObject(sourceKey);
     await expect(storage.readObjectBuffer(sourceKey)).rejects.toThrow();
+  });
+
+  it("HMAC-binds local read URL expiry so expiresAt cannot be extended alone", async () => {
+    vi.stubEnv("AUTH_SECRET", "local-read-test-secret");
+    const storage = new LocalAttachmentStorage();
+    const objectKey = stagingObjectKey("signed_att");
+    const generation = "gen-1";
+
+    const url = await storage.getSignedReadUrl({
+      objectKey,
+      generation,
+      expiresInSeconds: 300,
+    });
+    const params = new URL(url, "http://localhost").searchParams;
+    const expiresAt = Number(params.get("expiresAt"));
+    const sig = params.get("sig");
+
+    expect(sig).toBeTruthy();
+    expect(verifyLocalReadUrlParams(objectKey, generation, expiresAt, sig)).toBe(
+      true
+    );
+
+    const extendedExpiresAt = expiresAt + 60 * 60 * 1000;
+    expect(
+      verifyLocalReadUrlParams(objectKey, generation, extendedExpiresAt, sig)
+    ).toBe(false);
+    expect(verifyLocalReadUrlParams(objectKey, generation, expiresAt, null)).toBe(
+      false
+    );
+    expect(
+      verifyLocalReadUrlParams(objectKey, "other-gen", expiresAt, sig)
+    ).toBe(false);
+
+    const reminted = signLocalReadUrlParams(
+      objectKey,
+      generation,
+      extendedExpiresAt
+    );
+    expect(
+      verifyLocalReadUrlParams(
+        objectKey,
+        generation,
+        extendedExpiresAt,
+        reminted
+      )
+    ).toBe(true);
   });
 });
