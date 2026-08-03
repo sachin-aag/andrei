@@ -30,6 +30,7 @@
     "set-workspace-password": "tsx scripts/set-workspace-password.ts",
     "seed-demo-reports": "tsx --env-file=.env --env-file=.env.local scripts/seed-demo-reports.ts",
     "sample-eval-report": "tsx scripts/bulk-sample-evaluation-report.ts",
+    "soak:pdf-ingest": "tsx --env-file=.env --env-file=.env.local scripts/soak-document-ingest.ts",
     "model-sweep": "tsx scripts/eval/run-model-sweep.ts",
     "compare-evals": "tsx scripts/eval/compare-eval-runs.ts"
   },

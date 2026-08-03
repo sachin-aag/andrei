@@ -1,7 +1,13 @@
 import { createVertex } from "@ai-sdk/google-vertex";
-import { generateText, Output, type LanguageModel } from "ai";
+import {
+  generateText,
+  NoOutputGeneratedError,
+  Output,
+  type LanguageModel,
+} from "ai";
 import { z } from "zod";
 import { createWifAuthClient, getWifConfig } from "@/lib/gcp/wif-token";
+import { splitPdfIntoBatches } from "@/lib/attachments/pdf-split";
 
 export const DEFAULT_DOCUMENT_EXTRACT_MODEL_ID = "gemini-3.1-flash-lite";
 export const DEFAULT_DOCUMENT_EXTRACT_LOCATION = "global";
@@ -40,10 +46,30 @@ export type ExtractedPage = {
   confidence: number | null;
 };
 
+export type ExtractRecovery = "none" | "salvage" | "per-page-retry";
+
 export type ExtractBatchResult = {
   pages: ExtractedPage[];
   batchSummary: string;
   continuationNote: string;
+  recovery: ExtractRecovery;
+  finishReason?: string;
+  usage?: {
+    inputTokens: number | undefined;
+    outputTokens: number | undefined;
+  };
+};
+
+export type ExtractPdfBatchInput = {
+  pdfBuffer: Buffer;
+  pageStart: number;
+  pageEnd: number;
+  filename: string;
+  modelId: string;
+  previousBatchSummary?: string | null;
+  previousContinuationNote?: string | null;
+  /** Test/soak seam — production callers omit this and use Vertex. */
+  model?: LanguageModel;
 };
 
 const vertexProviderByLocation = new Map<string, ReturnType<typeof createVertex>>();
@@ -77,17 +103,38 @@ export function resolveDocumentExtractModel(modelId: string): LanguageModel {
   return provider(modelId);
 }
 
-export async function extractPdfBatch(input: {
-  pdfBuffer: Buffer;
-  pageStart: number;
-  pageEnd: number;
-  filename: string;
-  modelId: string;
-  previousBatchSummary?: string | null;
-  previousContinuationNote?: string | null;
-}): Promise<ExtractBatchResult> {
+export async function extractPdfBatch(
+  input: ExtractPdfBatchInput
+): Promise<ExtractBatchResult> {
+  const model = input.model ?? resolveDocumentExtractModel(input.modelId);
+  const primary = await extractOnce({ ...input, model });
+
+  if (primary.pages.length > 0) {
+    return primary;
+  }
+
+  if (input.pageStart === input.pageEnd) {
+    throw extractionEmptyError(input.pageStart, input.pageEnd);
+  }
+
+  console.warn(
+    `[document-extract] Multi-page batch produced no pages; retrying per page`,
+    {
+      pageStart: input.pageStart,
+      pageEnd: input.pageEnd,
+      finishReason: primary.finishReason,
+      usage: primary.usage,
+    }
+  );
+
+  return retryPerPage({ ...input, model });
+}
+
+async function extractOnce(
+  input: ExtractPdfBatchInput & { model: LanguageModel }
+): Promise<ExtractBatchResult> {
   const result = await generateText({
-    model: resolveDocumentExtractModel(input.modelId),
+    model: input.model,
     output: Output.object({ schema: extractBatchSchema }),
     system: buildSystemPrompt(),
     messages: [
@@ -111,10 +158,178 @@ export async function extractPdfBatch(input: {
     maxOutputTokens: MAX_OUTPUT_TOKENS,
   });
 
-  const parsed =
-    result.experimental_output ??
-    extractBatchSchema.parse(JSON.parse(result.text || "{}"));
-  return normalizeExtractedBatch(parsed, input.pageStart, input.pageEnd);
+  const usage = {
+    inputTokens: result.usage?.inputTokens,
+    outputTokens: result.usage?.outputTokens,
+  };
+
+  const structured = readStructuredOutput(result, {
+    pageStart: input.pageStart,
+    pageEnd: input.pageEnd,
+    finishReason: result.finishReason,
+    textLength: result.text?.length ?? 0,
+    usage,
+  });
+
+  if (!structured) {
+    return {
+      pages: [],
+      batchSummary: "",
+      continuationNote: "",
+      recovery: "none",
+      finishReason: result.finishReason,
+      usage,
+    };
+  }
+
+  const normalized = normalizeExtractedBatch(
+    structured.data,
+    input.pageStart,
+    input.pageEnd
+  );
+  return {
+    ...normalized,
+    recovery: structured.recovery,
+    finishReason: result.finishReason,
+    usage,
+  };
+}
+
+async function retryPerPage(
+  input: ExtractPdfBatchInput & { model: LanguageModel }
+): Promise<ExtractBatchResult> {
+  const split = await splitPdfIntoBatches(input.pdfBuffer, {
+    preferredPagesPerBatch: 1,
+    maxPagesPerBatch: 1,
+  });
+
+  const recovered: ExtractedPage[] = [];
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let lastFinishReason: string | undefined;
+
+  for (const pageBatch of split.batches) {
+    const absolutePage = input.pageStart + pageBatch.pageStart - 1;
+    try {
+      const pageResult = await extractOnce({
+        pdfBuffer: pageBatch.buffer,
+        pageStart: absolutePage,
+        pageEnd: absolutePage,
+        filename: input.filename,
+        modelId: input.modelId,
+        model: input.model,
+        previousBatchSummary: input.previousBatchSummary,
+        previousContinuationNote: input.previousContinuationNote,
+      });
+      lastFinishReason = pageResult.finishReason;
+      inputTokens += pageResult.usage?.inputTokens ?? 0;
+      outputTokens += pageResult.usage?.outputTokens ?? 0;
+      recovered.push(...pageResult.pages);
+    } catch (error) {
+      console.warn(`[document-extract] Per-page retry failed for page ${absolutePage}`, {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  if (recovered.length === 0) {
+    throw extractionEmptyError(input.pageStart, input.pageEnd);
+  }
+
+  return {
+    pages: recovered,
+    batchSummary: synthesizeBatchSummary(recovered),
+    continuationNote: recovered.at(-1)?.pageContext ?? "",
+    recovery: "per-page-retry",
+    finishReason: lastFinishReason,
+    usage: { inputTokens, outputTokens },
+  };
+}
+
+type StructuredRead = {
+  data: z.infer<typeof extractBatchSchema>;
+  recovery: ExtractRecovery;
+};
+
+function readStructuredOutput(
+  result: {
+    experimental_output?: unknown;
+    output?: unknown;
+    text?: string;
+    finishReason?: string;
+  },
+  context: {
+    pageStart: number;
+    pageEnd: number;
+    finishReason: string | undefined;
+    textLength: number;
+    usage: ExtractBatchResult["usage"];
+  }
+): StructuredRead | null {
+  try {
+    const output = result.experimental_output ?? result.output;
+    if (output != null) {
+      return {
+        data: extractBatchSchema.parse(output),
+        recovery: "none",
+      };
+    }
+  } catch (error) {
+    if (!NoOutputGeneratedError.isInstance(error)) {
+      throw error;
+    }
+    console.warn(
+      `[document-extract] No structured output for pages ${context.pageStart}-${context.pageEnd}`,
+      {
+        finishReason: context.finishReason,
+        textLength: context.textLength,
+        usage: context.usage,
+      }
+    );
+  }
+
+  const salvaged = salvageFromText(result.text);
+  if (salvaged) {
+    console.warn(
+      `[document-extract] Salvaged structured output from text for pages ${context.pageStart}-${context.pageEnd}`,
+      {
+        finishReason: context.finishReason,
+        textLength: context.textLength,
+        pageCount: salvaged.pages.length,
+      }
+    );
+    return { data: salvaged, recovery: "salvage" };
+  }
+
+  return null;
+}
+
+function salvageFromText(
+  text: string | undefined
+): z.infer<typeof extractBatchSchema> | null {
+  if (!text?.trim()) return null;
+  try {
+    const parsed: unknown = JSON.parse(text);
+    const safe = extractBatchSchema.safeParse(parsed);
+    return safe.success ? safe.data : null;
+  } catch {
+    return null;
+  }
+}
+
+function extractionEmptyError(pageStart: number, pageEnd: number): Error {
+  return new Error(
+    `PDF extraction produced no output for pages ${pageStart}-${pageEnd}`
+  );
+}
+
+function synthesizeBatchSummary(pages: ExtractedPage[]): string {
+  const parts = pages
+    .map((page) => page.pageContext.trim() || `Page ${page.pageNumber}`)
+    .filter(Boolean);
+  const joined = parts.join(" ").replace(/\s+/g, " ").trim();
+  if (joined.length <= MAX_CARRY_FORWARD_CHARS) return joined;
+  return `${joined.slice(0, MAX_CARRY_FORWARD_CHARS).trimEnd()}...`;
 }
 
 function buildSystemPrompt(): string {
@@ -163,7 +378,7 @@ function normalizeExtractedBatch(
   raw: z.infer<typeof extractBatchSchema>,
   pageStart: number,
   pageEnd: number
-): ExtractBatchResult {
+): Omit<ExtractBatchResult, "recovery" | "finishReason" | "usage"> {
   const pages = raw.pages
     .filter((page) => page.pageNumber >= pageStart && page.pageNumber <= pageEnd)
     .map((page) => {

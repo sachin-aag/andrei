@@ -44,7 +44,29 @@ Terraform in [`infra/gcs`](../infra/gcs/README.md) (`terraform apply` there).
 
 ## Manual soak (credentialed)
 
-Record for a representative ~500-page scan:
+Use the local soak script (extract only — no DB/GCS; output discarded):
+
+```bash
+pnpm soak:pdf-ingest
+pnpm soak:pdf-ingest -- --batches 3
+pnpm soak:pdf-ingest -- --pages 10-15
+pnpm soak:pdf-ingest -- --file path/to/scan.pdf
+```
+
+Requires `GOOGLE_VERTEX_PROJECT` plus WIF (`GCP_WIF_AUDIENCE`,
+`GCP_SERVICE_ACCOUNT_EMAIL`, `VERCEL_OIDC_TOKEN`) or Application Default
+Credentials (`gcloud auth application-default login`).
+
+Gated CI: [`.github/workflows/pdf-ingest-soak.yml`](../.github/workflows/pdf-ingest-soak.yml)
+(`workflow_dispatch` + nightly). Needs Actions secrets `GOOGLE_VERTEX_PROJECT`
+and `GCP_SERVICE_ACCOUNT_KEY`. Not a required PR check.
+
+Deterministic coverage in normal CI (`pnpm test`):
+
+- `src/lib/attachments/pdf-fixture.test.ts` — parse/split the 74-page sample
+- `src/lib/attachments/extract-batch.test.ts` — salvage + per-page retry paths
+
+Record for a representative ~500-page scan (full app ingest, not just extract):
 
 | Metric | Value |
 |--------|-------|

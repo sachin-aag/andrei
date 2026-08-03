@@ -608,7 +608,11 @@ function sanitizeIngestError(error: unknown): string {
   if (error.message.includes("deleted")) {
     return "Document ingestion was cancelled because the attachment was deleted";
   }
-  if (error.message.includes("PDF") || error.message.includes("embedding")) {
+  if (
+    error.message.includes("PDF") ||
+    error.message.includes("embedding") ||
+    error.message.includes("extraction")
+  ) {
     return error.message.slice(0, 300);
   }
   return "Document ingestion failed";
