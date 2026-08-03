@@ -1,5 +1,5 @@
 import { createId } from "@paralleldrive/cuid2";
-import { and, asc, eq, gte, lte, ne, sql } from "drizzle-orm";
+import { and, asc, eq, gte, inArray, lte, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
   attachmentIngestRuns,
@@ -55,6 +55,7 @@ export async function runDocumentIngest(
   let init: IngestInit | null = null;
   try {
     init = await initializeIngestRun(attachmentId, generation);
+    if (!init) return;
     await assertAttachmentCurrent(init);
     await splitAndPersistBatches(init);
     const batchIds = await listBatchIds(init.runId);
@@ -89,7 +90,7 @@ export async function runDocumentIngest(
 async function initializeIngestRun(
   attachmentId: string,
   generation: string
-): Promise<IngestInit> {
+): Promise<IngestInit | null> {
   const [attachment] = await db
     .select()
     .from(reportAttachments)
@@ -114,7 +115,24 @@ async function initializeIngestRun(
     process.env.DOCUMENT_EMBEDDING_MODEL_ID?.trim() ||
     DEFAULT_DOCUMENT_EMBEDDING_MODEL_ID;
 
-  await db.transaction(async (tx) => {
+  const started = await db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select ${reportAttachments.id} from ${reportAttachments} where ${reportAttachments.id} = ${attachmentId} for update`
+    );
+
+    const [existingRun] = await tx
+      .select({ id: attachmentIngestRuns.id })
+      .from(attachmentIngestRuns)
+      .where(
+        and(
+          eq(attachmentIngestRuns.attachmentId, attachmentId),
+          eq(attachmentIngestRuns.sourceGeneration, generation),
+          inArray(attachmentIngestRuns.status, ["pending", "running", "ready"])
+        )
+      )
+      .limit(1);
+    if (existingRun) return false;
+
     await tx.insert(attachmentIngestRuns).values({
       id: runId,
       attachmentId: attachment.id,
@@ -136,7 +154,10 @@ async function initializeIngestRun(
         processingError: null,
       })
       .where(eq(reportAttachments.id, attachment.id));
+    return true;
   });
+
+  if (!started) return null;
 
   return {
     runId,

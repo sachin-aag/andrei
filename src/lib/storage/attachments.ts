@@ -483,14 +483,16 @@ export async function appendLocalUploadChunk(
 ): Promise<{ complete: boolean; receivedBytes: number }> {
   const session = await readLocalUploadSession(sessionId);
   const range = parseContentRange(contentRange);
-  if (range.total !== session.sizeBytes) {
-    throw new Error("Upload size does not match reserved size");
-  }
+  assertLocalUploadRangeWithinTotal({
+    start: range.start,
+    end: range.end,
+    total: range.total,
+    chunkByteLength: chunk.byteLength,
+    receivedBytes: session.receivedBytes,
+    reservedSizeBytes: session.sizeBytes,
+  });
   if (range.start !== session.receivedBytes) {
     return { complete: false, receivedBytes: session.receivedBytes };
-  }
-  if (chunk.byteLength !== range.end - range.start + 1) {
-    throw new Error("Chunk size does not match Content-Range");
   }
 
   await ensureLocalDirs();
@@ -613,4 +615,31 @@ function parseContentRange(header: string | null): {
     end: Number(match[2]),
     total: Number(match[3]),
   };
+}
+
+/** Exported for unit tests of Content-Range bounds checks. */
+export function assertLocalUploadRangeWithinTotal(input: {
+  start: number;
+  end: number;
+  total: number;
+  chunkByteLength: number;
+  receivedBytes: number;
+  reservedSizeBytes: number;
+}): void {
+  if (input.total !== input.reservedSizeBytes) {
+    throw new Error("Upload size does not match reserved size");
+  }
+  if (input.end < input.start) {
+    throw new Error("Invalid Content-Range");
+  }
+  if (input.end >= input.total || input.start >= input.total) {
+    throw new Error("Content-Range exceeds declared total");
+  }
+  const chunkLength = input.end - input.start + 1;
+  if (input.chunkByteLength !== chunkLength) {
+    throw new Error("Chunk size does not match Content-Range");
+  }
+  if (input.receivedBytes + input.chunkByteLength > input.reservedSizeBytes) {
+    throw new Error("Chunk would exceed reserved upload size");
+  }
 }

@@ -1,18 +1,14 @@
 import { NextResponse } from "next/server";
-import { and, eq, isNull } from "drizzle-orm";
-import { createId } from "@paralleldrive/cuid2";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { reportAttachments } from "@/db/schema";
 import { validateFolderPlacement } from "@/lib/attachments/folders";
 import { getAttachmentLimits } from "@/lib/attachments/limits";
+import { reserveAttachmentUpload } from "@/lib/attachments/reserve-upload";
 import { getCurrentUser } from "@/lib/auth/session";
 import { requireReportAccess } from "@/lib/reports/require-report-access";
-import {
-  getAttachmentStorage,
-  permanentObjectKey,
-  stagingObjectKey,
-} from "@/lib/storage/attachments";
+import { getAttachmentStorage } from "@/lib/storage/attachments";
 
 export const runtime = "nodejs";
 
@@ -62,31 +58,6 @@ export async function POST(
     );
   }
 
-  const activeRows = await db
-    .select({
-      sizeBytes: reportAttachments.sizeBytes,
-    })
-    .from(reportAttachments)
-    .where(
-      and(
-        eq(reportAttachments.reportId, reportId),
-        isNull(reportAttachments.deletedAt)
-      )
-    );
-  const activeSizeBytes = activeRows.reduce((sum, row) => sum + row.sizeBytes, 0);
-  if (activeRows.length >= limits.maxAttachmentsPerReport) {
-    return NextResponse.json(
-      { error: `Report already has ${limits.maxAttachmentsPerReport} attachments` },
-      { status: 400 }
-    );
-  }
-  if (activeSizeBytes + sizeBytes > limits.maxAttachmentBytesPerReport) {
-    return NextResponse.json(
-      { error: "Report attachment storage limit exceeded" },
-      { status: 400 }
-    );
-  }
-
   const placementError = await validateFolderPlacement({
     reportId,
     parentId: folderId,
@@ -99,33 +70,32 @@ export async function POST(
     );
   }
 
-  const attachmentId = createId();
-  const stagingKey = stagingObjectKey(attachmentId);
-  const permanentKey = permanentObjectKey(reportId, attachmentId);
-
-  await db.insert(reportAttachments).values({
-    id: attachmentId,
+  const reserved = await reserveAttachmentUpload({
     reportId,
     folderId,
     filename,
     mimeType,
     sizeBytes,
-    sha256: "",
-    stagingObjectKey: stagingKey,
-    permanentObjectKey: permanentKey,
-    processingStatus: "uploading",
-    processingProgress: 0,
     uploadedById: access.user.id,
   });
+  if (!reserved.ok) {
+    return NextResponse.json(
+      { error: reserved.error },
+      { status: reserved.status }
+    );
+  }
 
   try {
     const uploadUrl = await getAttachmentStorage().createResumableUpload({
-      objectKey: stagingKey,
+      objectKey: reserved.stagingObjectKey,
       contentType: mimeType,
       sizeBytes,
       origin: browserOriginFromRequest(req),
     });
-    return NextResponse.json({ attachmentId, uploadUrl });
+    return NextResponse.json({
+      attachmentId: reserved.attachmentId,
+      uploadUrl,
+    });
   } catch (error) {
     const message =
       error instanceof Error ? error.message : "Could not create upload URL";
@@ -136,7 +106,7 @@ export async function POST(
         processingProgress: 0,
         processingError: message,
       })
-      .where(eq(reportAttachments.id, attachmentId));
+      .where(eq(reportAttachments.id, reserved.attachmentId));
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

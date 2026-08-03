@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { NextResponse } from "next/server";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, inArray, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { reportAttachments } from "@/db/schema";
@@ -19,6 +19,9 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 
 const SIZE_TOLERANCE_BYTES = 1024;
+
+const FINALIZE_CLAIM_STATUSES = ["uploading", "failed"] as const;
+const IN_FLIGHT_STATUSES = ["validating", "queued", "processing"] as const;
 
 const bodySchema = z.object({
   generation: z.string().optional(),
@@ -62,22 +65,54 @@ export async function POST(
   ) {
     return NextResponse.json({ attachment: toAttachmentDto(attachment) });
   }
+  if (
+    IN_FLIGHT_STATUSES.includes(
+      attachment.processingStatus as (typeof IN_FLIGHT_STATUSES)[number]
+    )
+  ) {
+    return NextResponse.json({ attachment: toAttachmentDto(attachment) });
+  }
 
-  await db
+  const [claimed] = await db
     .update(reportAttachments)
     .set({
       processingStatus: "validating",
       processingProgress: 10,
       processingError: null,
     })
-    .where(eq(reportAttachments.id, attachmentId));
+    .where(
+      and(
+        eq(reportAttachments.id, attachmentId),
+        eq(reportAttachments.reportId, reportId),
+        isNull(reportAttachments.deletedAt),
+        inArray(reportAttachments.processingStatus, [...FINALIZE_CLAIM_STATUSES])
+      )
+    )
+    .returning();
+
+  if (!claimed) {
+    const [current] = await db
+      .select()
+      .from(reportAttachments)
+      .where(
+        and(
+          eq(reportAttachments.id, attachmentId),
+          eq(reportAttachments.reportId, reportId),
+          isNull(reportAttachments.deletedAt)
+        )
+      );
+    if (!current) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    return NextResponse.json({ attachment: toAttachmentDto(current) });
+  }
 
   try {
     const storage = getAttachmentStorage();
     const limits = getAttachmentLimits();
-    const stagingMetadata = await storage.getObjectMetadata(attachment.stagingObjectKey);
+    const stagingMetadata = await storage.getObjectMetadata(claimed.stagingObjectKey);
     if (
-      Math.abs(stagingMetadata.sizeBytes - attachment.sizeBytes) >
+      Math.abs(stagingMetadata.sizeBytes - claimed.sizeBytes) >
       SIZE_TOLERANCE_BYTES
     ) {
       throw new Error("Uploaded file size did not match reservation");
@@ -89,22 +124,22 @@ export async function POST(
       throw new Error("Uploaded object is not application/pdf");
     }
 
-    const buffer = await storage.readObjectBuffer(attachment.stagingObjectKey);
+    const buffer = await storage.readObjectBuffer(claimed.stagingObjectKey);
     const { pageCount } = await validatePdf(buffer, {
       maxPages: limits.maxAttachmentPages,
     });
-    const scanResult = await getMalwareScanner().scan(buffer, attachment.filename);
+    const scanResult = await getMalwareScanner().scan(buffer, claimed.filename);
     if (!scanResult.ok) {
       throw new Error(scanResult.reason);
     }
 
     const sha256 = createHash("sha256").update(buffer).digest("hex");
     await promoteObject(
-      attachment.stagingObjectKey,
-      attachment.permanentObjectKey
+      claimed.stagingObjectKey,
+      claimed.permanentObjectKey
     );
     const permanentMetadata = await storage.getObjectMetadata(
-      attachment.permanentObjectKey
+      claimed.permanentObjectKey
     );
 
     const [updated] = await db
@@ -119,8 +154,24 @@ export async function POST(
         crc32c: permanentMetadata.crc32c,
         sizeBytes: permanentMetadata.sizeBytes,
       })
-      .where(eq(reportAttachments.id, attachmentId))
+      .where(
+        and(
+          eq(reportAttachments.id, attachmentId),
+          eq(reportAttachments.processingStatus, "validating")
+        )
+      )
       .returning();
+
+    if (!updated) {
+      const [current] = await db
+        .select()
+        .from(reportAttachments)
+        .where(eq(reportAttachments.id, attachmentId));
+      if (!current) {
+        return NextResponse.json({ error: "Not found" }, { status: 404 });
+      }
+      return NextResponse.json({ attachment: toAttachmentDto(current) });
+    }
 
     await startDocumentIngest(attachmentId, permanentMetadata.generation);
     await recordAuditEvent({
@@ -129,9 +180,9 @@ export async function POST(
       entityType: "attachment",
       entityId: attachmentId,
       reportId,
-      summary: `Attachment uploaded: ${attachment.filename}`,
+      summary: `Attachment uploaded: ${claimed.filename}`,
       newValue: {
-        filename: attachment.filename,
+        filename: claimed.filename,
         sizeBytes: permanentMetadata.sizeBytes,
         pageCount,
         sha256,

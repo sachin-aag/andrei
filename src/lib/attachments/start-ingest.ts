@@ -1,5 +1,5 @@
 import { after } from "next/server";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import { start } from "workflow/api";
 import { db } from "@/db";
@@ -14,6 +14,12 @@ import { documentIngestWorkflow } from "@/workflows/document-ingest";
 
 export { resolveDocumentIngestMode } from "@/lib/attachments/document-ingest-mode";
 
+const ACTIVE_INGEST_STATUSES = ["pending", "running", "ready"] as const;
+
+/**
+ * Start document ingest at most once per attachment generation.
+ * Concurrent finalize/reprocess callers lose the claim and no-op.
+ */
 export async function startDocumentIngest(
   attachmentId: string,
   generation: string
@@ -22,6 +28,9 @@ export async function startDocumentIngest(
     await markAttachmentReadyForTests(attachmentId, generation);
     return;
   }
+
+  const claimed = await claimDocumentIngestStart(attachmentId, generation);
+  if (!claimed) return;
 
   if (resolveDocumentIngestMode() === "inline") {
     after(() =>
@@ -58,6 +67,72 @@ export async function startDocumentIngest(
       .where(eq(reportAttachments.id, attachmentId));
     throw new Error(message);
   }
+}
+
+/**
+ * Serialize ingest starts for one attachment: only the first caller for a
+ * generation proceeds while status is still `queued`.
+ */
+export async function claimDocumentIngestStart(
+  attachmentId: string,
+  generation: string
+): Promise<boolean> {
+  return db.transaction(async (tx) => {
+    await tx.execute(
+      sql`select ${reportAttachments.id} from ${reportAttachments} where ${reportAttachments.id} = ${attachmentId} for update`
+    );
+
+    const [attachment] = await tx
+      .select({
+        processingStatus: reportAttachments.processingStatus,
+        gcsGeneration: reportAttachments.gcsGeneration,
+        deletedAt: reportAttachments.deletedAt,
+      })
+      .from(reportAttachments)
+      .where(eq(reportAttachments.id, attachmentId))
+      .limit(1);
+
+    if (!attachment || attachment.deletedAt) return false;
+    if (
+      attachment.gcsGeneration &&
+      attachment.gcsGeneration !== generation
+    ) {
+      return false;
+    }
+    if (attachment.processingStatus !== "queued") {
+      return false;
+    }
+
+    const [existingRun] = await tx
+      .select({ id: attachmentIngestRuns.id })
+      .from(attachmentIngestRuns)
+      .where(
+        and(
+          eq(attachmentIngestRuns.attachmentId, attachmentId),
+          eq(attachmentIngestRuns.sourceGeneration, generation),
+          inArray(attachmentIngestRuns.status, [...ACTIVE_INGEST_STATUSES])
+        )
+      )
+      .limit(1);
+    if (existingRun) return false;
+
+    const [claimed] = await tx
+      .update(reportAttachments)
+      .set({
+        processingStatus: "processing",
+        processingProgress: 0,
+        processingError: null,
+      })
+      .where(
+        and(
+          eq(reportAttachments.id, attachmentId),
+          eq(reportAttachments.processingStatus, "queued")
+        )
+      )
+      .returning({ id: reportAttachments.id });
+
+    return Boolean(claimed);
+  });
 }
 
 async function markAttachmentReadyForTests(

@@ -3,6 +3,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   GcsAttachmentStorage,
+  assertLocalUploadRangeWithinTotal,
   isLocalAttachmentStorageEnabled,
   LocalAttachmentStorage,
   permanentObjectKey,
@@ -204,5 +205,29 @@ describe("LocalAttachmentStorage", () => {
         reminted
       )
     ).toBe(true);
+  });
+
+  it("rejects Content-Range chunks that exceed the declared total", () => {
+    expect(() =>
+      assertLocalUploadRangeWithinTotal({
+        start: 0,
+        end: 99,
+        total: 50,
+        chunkByteLength: 100,
+        receivedBytes: 0,
+        reservedSizeBytes: 50,
+      })
+    ).toThrow(/exceeds declared total/);
+
+    expect(() =>
+      assertLocalUploadRangeWithinTotal({
+        start: 0,
+        end: 49,
+        total: 50,
+        chunkByteLength: 50,
+        receivedBytes: 0,
+        reservedSizeBytes: 50,
+      })
+    ).not.toThrow();
   });
 });

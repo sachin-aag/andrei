@@ -58,8 +58,31 @@ export async function POST(
       processingProgress: 0,
       processingError: null,
     })
-    .where(eq(reportAttachments.id, attachmentId))
+    .where(
+      and(
+        eq(reportAttachments.id, attachmentId),
+        eq(reportAttachments.processingStatus, "failed"),
+        isNull(reportAttachments.deletedAt)
+      )
+    )
     .returning();
+
+  if (!updated) {
+    const [current] = await db
+      .select()
+      .from(reportAttachments)
+      .where(
+        and(
+          eq(reportAttachments.id, attachmentId),
+          eq(reportAttachments.reportId, reportId),
+          isNull(reportAttachments.deletedAt)
+        )
+      );
+    if (!current) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    }
+    return NextResponse.json({ attachment: toAttachmentDto(current) });
+  }
 
   await startDocumentIngest(attachmentId, attachment.gcsGeneration);
   await recordAuditEvent({
