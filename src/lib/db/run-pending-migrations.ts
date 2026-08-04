@@ -5,6 +5,7 @@ import path from "node:path";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import pg from "pg";
+import { normalizeDatabaseUrl } from "@/db/connection";
 
 const migrationsFolder = path.join(process.cwd(), "src/db/migrations");
 const journalPath = path.join(migrationsFolder, "meta/_journal.json");
@@ -399,7 +400,9 @@ async function ensurePushBaseline(pool: pg.Pool): Promise<void> {
 
 /** Applies pending Drizzle SQL migrations (with push-DB baseline when needed). */
 export async function runPendingMigrations(databaseUrl: string): Promise<void> {
-  const pool = new pg.Pool({ connectionString: databaseUrl });
+  const pool = new pg.Pool({
+    connectionString: normalizeDatabaseUrl(databaseUrl),
+  });
   try {
     await ensureMigrationsTable(pool);
     await repairMissingSchema(pool);
