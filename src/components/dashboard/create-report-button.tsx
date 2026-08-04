@@ -4,6 +4,7 @@ import { useRef, useState, useTransition } from "react";
 import { FileText, Loader2, Plus, Upload, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { AttachmentQuotaDialog } from "@/components/report/documents/attachment-quota-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -18,6 +19,11 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import type { WorkspaceUser } from "@/lib/auth/workspace-user";
 import { captureEvent } from "@/lib/analytics/events";
+import { getAttachmentLimits } from "@/lib/attachments/limits";
+import {
+  formatAttachmentWouldExceedMessage,
+  isAttachmentQuotaError,
+} from "@/lib/attachments/quota-messages";
 import { isPdfFile, uploadPdfToReport } from "@/lib/attachments/upload-pdf";
 import { ManagerSelector } from "@/components/report/manager-selector";
 
@@ -34,6 +40,7 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
   const [managerIds, setManagerIds] = useState<string[]>([]);
   const [uploads, setUploads] = useState<PendingUpload[]>([]);
   const [uploadingCount, setUploadingCount] = useState(0);
+  const [quotaWarning, setQuotaWarning] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
@@ -44,6 +51,7 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
     setDeviationNo("");
     setManagerIds([]);
     setUploads([]);
+    setQuotaWarning(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -63,17 +71,34 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
       }
       accepted.push({ file, percent: 0 });
     }
-    setUploads((prev) => [
-      ...prev,
-      ...accepted.filter(
-        (candidate) =>
-          !prev.some(
-            (existing) =>
-              existing.file.name === candidate.file.name &&
-              existing.file.size === candidate.file.size
-          )
-      ),
-    ]);
+    if (accepted.length === 0) return;
+
+    const max = getAttachmentLimits().maxAttachmentsPerReport;
+    const unique = accepted.filter(
+      (candidate) =>
+        !uploads.some(
+          (existing) =>
+            existing.file.name === candidate.file.name &&
+            existing.file.size === candidate.file.size
+        )
+    );
+    if (unique.length === 0) {
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+    if (uploads.length + unique.length > max) {
+      setQuotaWarning(
+        formatAttachmentWouldExceedMessage({
+          max,
+          remaining: Math.max(0, max - uploads.length),
+          attempted: unique.length,
+        })
+      );
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+
+    setUploads((prev) => [...prev, ...unique]);
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -100,6 +125,26 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
       )
     );
     setUploadingCount(0);
+
+    const quotaRejection = results.find(
+      (result) =>
+        result.status === "rejected" &&
+        result.reason instanceof Error &&
+        isAttachmentQuotaError(result.reason.message)
+    );
+    if (quotaRejection && quotaRejection.status === "rejected") {
+      const reason = quotaRejection.reason;
+      setQuotaWarning(
+        reason instanceof Error
+          ? reason.message
+          : formatAttachmentWouldExceedMessage({
+              max: getAttachmentLimits().maxAttachmentsPerReport,
+              remaining: 0,
+              attempted: uploads.length,
+            })
+      );
+      return;
+    }
 
     const failed = results.filter((result) => result.status === "rejected").length;
     if (failed > 0) {
@@ -149,6 +194,7 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
     uploadingCount > 0 ? "Uploading documents…" : "Creating report…";
 
   return (
+    <>
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
         <Button>
@@ -279,5 +325,10 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
         </div>
       </DialogContent>
     </Dialog>
+    <AttachmentQuotaDialog
+      message={quotaWarning}
+      onDismiss={() => setQuotaWarning(null)}
+    />
+    </>
   );
 }

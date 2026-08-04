@@ -6,11 +6,20 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import type { ReactNode } from "react";
 import { toast } from "sonner";
+import { AttachmentQuotaDialog } from "@/components/report/documents/attachment-quota-dialog";
 import type { AttachmentProcessingStatus } from "@/db/schema";
+import { getAttachmentLimits } from "@/lib/attachments/limits";
+import {
+  formatAttachmentCountLimitMessage,
+  formatAttachmentWouldExceedMessage,
+  isAttachmentCountLimitError,
+  isAttachmentQuotaError,
+} from "@/lib/attachments/quota-messages";
 import { uploadPdfResumable } from "@/lib/attachments/upload-client";
 import {
   finalizeAttachmentUpload,
@@ -90,6 +99,25 @@ export function ReportAttachmentsProvider({
   >({});
   const [activeAttachment, setActiveAttachment] =
     useState<ActiveAttachment | null>(null);
+  const [quotaWarning, setQuotaWarning] = useState<string | null>(null);
+  const quotaWarningShownRef = useRef(false);
+
+  const showQuotaWarning = useCallback((message: string) => {
+    // Parallel uploads can all hit the same quota; keep a single modal.
+    if (quotaWarningShownRef.current) return;
+    quotaWarningShownRef.current = true;
+    const max = getAttachmentLimits().maxAttachmentsPerReport;
+    setQuotaWarning(
+      isAttachmentCountLimitError(message)
+        ? formatAttachmentCountLimitMessage(max)
+        : message
+    );
+  }, []);
+
+  const dismissQuotaWarning = useCallback(() => {
+    quotaWarningShownRef.current = false;
+    setQuotaWarning(null);
+  }, []);
 
   const upsertAttachment = useCallback((attachment: ReportAttachmentRecord) => {
     setAttachments((prev) => {
@@ -147,9 +175,15 @@ export function ReportAttachmentsProvider({
           folderId,
         }));
       } catch (error) {
-        toast.error(
-          error instanceof Error ? error.message : `Could not start upload for ${file.name}`
-        );
+        const message =
+          error instanceof Error
+            ? error.message
+            : `Could not start upload for ${file.name}`;
+        if (isAttachmentQuotaError(message)) {
+          showQuotaWarning(message);
+        } else {
+          toast.error(message);
+        }
         return;
       }
 
@@ -234,7 +268,11 @@ export function ReportAttachmentsProvider({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ uploadFailed: true, error: message }),
         }).catch(() => undefined);
-        toast.error(message);
+        if (isAttachmentQuotaError(message)) {
+          showQuotaWarning(message);
+        } else {
+          toast.error(message);
+        }
       } finally {
         setUploadProgress((prev) => {
           const next = { ...prev };
@@ -243,7 +281,7 @@ export function ReportAttachmentsProvider({
         });
       }
     },
-    [refreshAttachments, reportId, upsertAttachment]
+    [refreshAttachments, reportId, showQuotaWarning, upsertAttachment]
   );
 
   const uploadFiles = useCallback(
@@ -252,11 +290,40 @@ export function ReportAttachmentsProvider({
         toast.error("You cannot upload attachments for this report.");
         return;
       }
+
+      const selected = Array.from(files);
+      const pdfFiles = selected.filter(isPdfFile);
+      for (const file of selected) {
+        if (!isPdfFile(file)) {
+          toast.error(`${file.name} is not a PDF file.`);
+        }
+      }
+      if (pdfFiles.length === 0) return;
+
+      const max = getAttachmentLimits().maxAttachmentsPerReport;
+      const remaining = max - attachments.length;
+      if (pdfFiles.length > remaining) {
+        showQuotaWarning(
+          formatAttachmentWouldExceedMessage({
+            max,
+            remaining: Math.max(0, remaining),
+            attempted: pdfFiles.length,
+          })
+        );
+        return;
+      }
+
+      quotaWarningShownRef.current = false;
       await Promise.all(
-        Array.from(files).map((file) => uploadOneFile(file, folderId))
+        pdfFiles.map((file) => uploadOneFile(file, folderId))
       );
     },
-    [canMutateAttachments, uploadOneFile]
+    [
+      attachments.length,
+      canMutateAttachments,
+      showQuotaWarning,
+      uploadOneFile,
+    ]
   );
 
   const removeAttachment = useCallback(
@@ -501,6 +568,10 @@ export function ReportAttachmentsProvider({
   return (
     <ReportAttachmentsContext.Provider value={value}>
       {children}
+      <AttachmentQuotaDialog
+        message={quotaWarning}
+        onDismiss={dismissQuotaWarning}
+      />
     </ReportAttachmentsContext.Provider>
   );
 }
