@@ -18,7 +18,7 @@ Terraform in [`infra/gcs`](../infra/gcs/README.md) (`terraform apply` there).
 - [ ] pgvector available on Neon (and local/CI via `pgvector/pgvector:pg16`)
 - [ ] Migrations applied through `0034_audit_canonical_v2` (`pnpm db:migrate` / Vercel build)
 - [ ] Vercel Workflow DevKit available in the deployment region; proxy excludes `/.well-known/workflow/*`
-- [ ] Preview: document ingest defaults to **inline** (`after()`). Set `DOCUMENT_INGEST_MODE=workflow` only when Vercel World/Queues reliably drain runs. Production defaults to `workflow`.
+- [ ] Preview: document ingest defaults to **inline** (`after()`). Set `DOCUMENT_INGEST_MODE=workflow` only when Vercel World/Queues reliably drain runs. Production defaults to `workflow`, and falls back to inline if workflow `start()` fails.
 
 ## Application config
 

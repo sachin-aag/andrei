@@ -8,17 +8,26 @@ import {
   reportAttachments,
 } from "@/db/schema";
 import { resolveDocumentIngestMode } from "@/lib/attachments/document-ingest-mode";
+import {
+  sanitizeIngestError,
+  shouldBackfillIngestFailure,
+} from "@/lib/attachments/ingest-errors";
 import { runDocumentIngest } from "@/lib/attachments/run-document-ingest";
 import { isTestStubDocumentIngest } from "@/lib/test/ai-bypass";
 import { documentIngestWorkflow } from "@/workflows/document-ingest";
 
 export { resolveDocumentIngestMode } from "@/lib/attachments/document-ingest-mode";
+export { shouldBackfillIngestFailure } from "@/lib/attachments/ingest-errors";
 
 const ACTIVE_INGEST_STATUSES = ["pending", "running", "ready"] as const;
 
 /**
  * Start document ingest at most once per attachment generation.
  * Concurrent finalize/reprocess callers lose the claim and no-op.
+ *
+ * Prefers Vercel Workflows when configured; if `start()` fails (common when
+ * World/Queues are unhealthy), falls back to inline `after()` ingest so
+ * uploads do not stick on "Document ingestion could not be started".
  */
 export async function startDocumentIngest(
   attachmentId: string,
@@ -33,39 +42,18 @@ export async function startDocumentIngest(
   if (!claimed) return;
 
   if (resolveDocumentIngestMode() === "inline") {
-    after(() =>
-      runDocumentIngest(attachmentId, generation).catch(async (error) => {
-        console.error("[document-ingest] inline run failed", {
-          attachmentId,
-          error,
-        });
-        const message = sanitizeStartError(error);
-        await db
-          .update(reportAttachments)
-          .set({
-            processingStatus: "failed",
-            processingProgress: 0,
-            processingError: message,
-          })
-          .where(eq(reportAttachments.id, attachmentId));
-      })
-    );
+    scheduleInlineIngest(attachmentId, generation);
     return;
   }
 
   try {
     await start(documentIngestWorkflow, [attachmentId, generation]);
   } catch (error) {
-    const message = sanitizeStartError(error);
-    await db
-      .update(reportAttachments)
-      .set({
-        processingStatus: "failed",
-        processingProgress: 0,
-        processingError: message,
-      })
-      .where(eq(reportAttachments.id, attachmentId));
-    throw new Error(message);
+    console.error(
+      "[document-ingest] workflow start failed; falling back to inline",
+      { attachmentId, error }
+    );
+    scheduleInlineIngest(attachmentId, generation);
   }
 }
 
@@ -135,6 +123,49 @@ export async function claimDocumentIngestStart(
   });
 }
 
+function scheduleInlineIngest(attachmentId: string, generation: string): void {
+  after(() =>
+    runDocumentIngest(attachmentId, generation).catch(async (error) => {
+      console.error("[document-ingest] inline run failed", {
+        attachmentId,
+        error,
+      });
+      // runDocumentIngest already marks failed via markRunTerminal — do not
+      // overwrite that message with a generic "could not be started".
+      await ensureFailedIfStillInFlight(attachmentId, error);
+    })
+  );
+}
+
+/**
+ * Safety net when ingest crashes before markRunTerminal can persist failure.
+ * Skips rows that already have a failed/ready terminal status.
+ */
+export async function ensureFailedIfStillInFlight(
+  attachmentId: string,
+  error: unknown
+): Promise<void> {
+  const [row] = await db
+    .select({
+      processingStatus: reportAttachments.processingStatus,
+      processingError: reportAttachments.processingError,
+    })
+    .from(reportAttachments)
+    .where(eq(reportAttachments.id, attachmentId))
+    .limit(1);
+
+  if (!row || !shouldBackfillIngestFailure(row)) return;
+
+  await db
+    .update(reportAttachments)
+    .set({
+      processingStatus: "failed",
+      processingProgress: 0,
+      processingError: sanitizeIngestError(error),
+    })
+    .where(eq(reportAttachments.id, attachmentId));
+}
+
 async function markAttachmentReadyForTests(
   attachmentId: string,
   generation: string
@@ -175,17 +206,4 @@ async function markAttachmentReadyForTests(
       gcsGeneration: generation,
     })
     .where(eq(reportAttachments.id, attachmentId));
-}
-
-function sanitizeStartError(error: unknown): string {
-  if (!(error instanceof Error)) {
-    return "Document ingestion could not be started";
-  }
-  if (error.message.includes("workflow") || error.message.includes("Workflow")) {
-    return "Document ingestion workflow could not be started";
-  }
-  if (error.message.includes("neon-http") || error.message.includes("transactions")) {
-    return "Document ingestion failed (database driver)";
-  }
-  return "Document ingestion could not be started";
 }

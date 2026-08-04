@@ -19,8 +19,14 @@ import {
   DOCUMENT_EXTRACT_PROMPT_VERSION,
   extractPdfBatch,
 } from "@/lib/attachments/extract-batch";
+import {
+  isCancelledIngestError,
+  sanitizeIngestError,
+} from "@/lib/attachments/ingest-errors";
 import { splitPdfIntoBatches } from "@/lib/attachments/pdf-split";
 import { getAttachmentStorage, tempBatchObjectKey } from "@/lib/storage/attachments";
+
+export { sanitizeIngestError } from "@/lib/attachments/ingest-errors";
 
 const PARSER_VERSION = "v1";
 const SUMMARY_MAX_CHARS = 12_000;
@@ -76,7 +82,7 @@ export async function runDocumentIngest(
       runId: init?.runId ?? null,
       attachmentId,
       generation,
-      status: isCancelledError(error) ? "cancelled" : "failed",
+      status: isCancelledIngestError(error) ? "cancelled" : "failed",
       message: sanitizeIngestError(error),
     });
     throw error;
@@ -607,34 +613,4 @@ async function cleanupTempObjects(runId: string): Promise<{ deletedCount: number
 
 function cancelledError(message: string): Error {
   return new Error(`INGEST_CANCELLED: ${message}`);
-}
-
-function isCancelledError(error: unknown): boolean {
-  return error instanceof Error && error.message.startsWith("INGEST_CANCELLED:");
-}
-
-function sanitizeIngestError(error: unknown): string {
-  if (isCancelledError(error)) {
-    return "Document ingestion was cancelled because the attachment changed";
-  }
-  if (!(error instanceof Error)) {
-    return "Document ingestion failed";
-  }
-  if (error.message.includes("GOOGLE_VERTEX_PROJECT")) {
-    return "Document ingestion requires Vertex AI credentials";
-  }
-  if (error.message.includes("source changed")) {
-    return "Document ingestion was cancelled because the attachment changed";
-  }
-  if (error.message.includes("deleted")) {
-    return "Document ingestion was cancelled because the attachment was deleted";
-  }
-  if (
-    error.message.includes("PDF") ||
-    error.message.includes("embedding") ||
-    error.message.includes("extraction")
-  ) {
-    return error.message.slice(0, 300);
-  }
-  return "Document ingestion failed";
 }

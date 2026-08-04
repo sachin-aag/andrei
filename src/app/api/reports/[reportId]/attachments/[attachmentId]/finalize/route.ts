@@ -227,6 +227,10 @@ function sanitizeFinalizeError(error: unknown): string {
   if (message.includes("Malware")) {
     return "Attachment malware scan failed";
   }
+  // Preserve ingest-start / ingest-run messages if they bubble here.
+  if (message.includes("Document ingestion") || message.includes("ingest")) {
+    return message.slice(0, 300);
+  }
   if (message.includes("PDF") || message.includes("file") || message.includes("object")) {
     return message;
   }
