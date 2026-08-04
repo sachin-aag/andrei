@@ -10,7 +10,7 @@ describe("getAttachmentLimits", () => {
     expect(getAttachmentLimits()).toEqual({
       maxAttachmentBytes: 104_857_600,
       maxAttachmentPages: 500,
-      maxAttachmentsPerReport: 20,
+      maxAttachmentsPerReport: 50,
       maxAttachmentBytesPerReport: 524_288_000,
     });
   });
