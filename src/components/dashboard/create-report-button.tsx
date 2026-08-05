@@ -202,6 +202,7 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
         </Button>
       </DialogTrigger>
       <DialogContent
+        className="max-h-[90vh] overflow-y-auto overflow-x-hidden"
         onInteractOutside={(event) => {
           if (busy) event.preventDefault();
         }}
@@ -209,7 +210,7 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
           if (busy) event.preventDefault();
         }}
       >
-        <div className="relative">
+        <div className="relative min-w-0">
           {busy && (
             <div
               className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-lg bg-[var(--card)]/85 backdrop-blur-[1px]"
@@ -229,7 +230,7 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
               Starts a new deviation investigation report as a draft.
             </DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 py-2">
+          <div className="grid min-w-0 gap-4 py-2">
             <div className="grid gap-2">
               <Label htmlFor="deviationNo">Deviation Number</Label>
               <Input
@@ -250,7 +251,7 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
                 emptyMessage="No managers are available to assign."
               />
             </div>
-            <div className="grid gap-2">
+            <div className="grid min-w-0 gap-2">
               <Label>Documents (optional)</Label>
               <button
                 type="button"
@@ -276,21 +277,24 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
                 onChange={(event) => addFiles(event.target.files)}
               />
               {uploads.length > 0 ? (
-                <ul className="space-y-1">
+                <ul className="max-h-48 min-w-0 space-y-1 overflow-y-auto overflow-x-hidden">
                   {uploads.map((upload) => (
                     <li
                       key={upload.file.name}
-                      className="flex items-center gap-2 rounded-md border border-[var(--border)] px-2 py-1.5"
+                      className="flex min-w-0 items-center gap-2 overflow-hidden rounded-md border border-[var(--border)] px-2 py-1.5"
                     >
                       <FileText
                         className="size-4 shrink-0 text-[var(--muted-foreground)]"
                         aria-hidden="true"
                       />
-                      <span className="min-w-0 flex-1 truncate text-sm text-[var(--foreground)]">
+                      <span
+                        className="min-w-0 flex-1 truncate text-sm text-[var(--foreground)]"
+                        title={upload.file.name}
+                      >
                         {upload.file.name}
                       </span>
                       {uploadingCount > 0 ? (
-                        <span className="text-xs tabular-nums text-[var(--muted-foreground)]">
+                        <span className="shrink-0 text-xs tabular-nums text-[var(--muted-foreground)]">
                           {upload.percent}%
                         </span>
                       ) : (
@@ -298,7 +302,7 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
                           type="button"
                           aria-label={`Remove ${upload.file.name}`}
                           onClick={() => removeFile(upload.file.name)}
-                          className="text-[var(--muted-foreground)] hover:text-[var(--destructive)]"
+                          className="shrink-0 text-[var(--muted-foreground)] hover:text-[var(--destructive)]"
                         >
                           <X className="size-3.5" aria-hidden="true" />
                         </button>
