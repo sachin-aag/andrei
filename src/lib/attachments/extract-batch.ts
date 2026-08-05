@@ -374,36 +374,83 @@ Also return:
 - continuationNote: context needed to interpret the next consecutive batch.`;
 }
 
+/**
+ * Map model page numbers onto the absolute [pageStart, pageEnd] range.
+ *
+ * Batch PDFs are sliced with pdf-lib, so the file the model sees is always
+ * pages 1..N. The prompt asks for absolute document page numbers, but the
+ * model often returns relative 1-based indices instead — which the old
+ * absolute-only filter discarded for every batch after the first.
+ */
 function normalizeExtractedBatch(
   raw: z.infer<typeof extractBatchSchema>,
   pageStart: number,
   pageEnd: number
 ): Omit<ExtractBatchResult, "recovery" | "finishReason" | "usage"> {
-  const pages = raw.pages
-    .filter((page) => page.pageNumber >= pageStart && page.pageNumber <= pageEnd)
-    .map((page) => {
-      const tableText = page.tables.length
-        ? `\n\nTables noted: ${page.tables.join("; ")}`
-        : "";
-      const figureText = page.figures.length
-        ? `\n\nFigures noted: ${page.figures.join("; ")}`
-        : "";
-      return {
-        pageNumber: page.pageNumber,
-        transcript: page.transcript.trim(),
-        visualInterpretation:
-          `${page.visualInterpretation.trim()}${tableText}${figureText}`.trim(),
-        pageContext: page.pageContext.trim(),
-        printedPageLabel: page.printedPageLabel?.trim() || null,
-        confidence: page.confidence,
-      };
-    });
+  const remapped = remapExtractedPageNumbers(raw.pages, pageStart, pageEnd);
+  const pages = remapped.map((page) => {
+    const tableText = page.tables.length
+      ? `\n\nTables noted: ${page.tables.join("; ")}`
+      : "";
+    const figureText = page.figures.length
+      ? `\n\nFigures noted: ${page.figures.join("; ")}`
+      : "";
+    return {
+      pageNumber: page.pageNumber,
+      transcript: page.transcript.trim(),
+      visualInterpretation:
+        `${page.visualInterpretation.trim()}${tableText}${figureText}`.trim(),
+      pageContext: page.pageContext.trim(),
+      printedPageLabel: page.printedPageLabel?.trim() || null,
+      confidence: page.confidence,
+    };
+  });
 
   return {
     pages,
     batchSummary: raw.batchSummary.trim(),
     continuationNote: raw.continuationNote.trim(),
   };
+}
+
+type RawExtractPage = z.infer<typeof extractPageSchema>;
+
+export function remapExtractedPageNumbers(
+  pages: RawExtractPage[],
+  pageStart: number,
+  pageEnd: number
+): RawExtractPage[] {
+  const expectedCount = pageEnd - pageStart + 1;
+  if (expectedCount < 1 || pages.length === 0) return [];
+
+  const absolute = pages.filter(
+    (page) => page.pageNumber >= pageStart && page.pageNumber <= pageEnd
+  );
+  if (absolute.length > 0) {
+    return dedupeByPageNumber(absolute);
+  }
+
+  const relative = pages
+    .filter(
+      (page) => page.pageNumber >= 1 && page.pageNumber <= expectedCount
+    )
+    .map((page) => ({
+      ...page,
+      pageNumber: pageStart + page.pageNumber - 1,
+    }));
+  return dedupeByPageNumber(relative);
+}
+
+function dedupeByPageNumber(pages: RawExtractPage[]): RawExtractPage[] {
+  const byNumber = new Map<number, RawExtractPage>();
+  for (const page of pages) {
+    if (!byNumber.has(page.pageNumber)) {
+      byNumber.set(page.pageNumber, page);
+    }
+  }
+  return [...byNumber.values()].toSorted(
+    (left, right) => left.pageNumber - right.pageNumber
+  );
 }
 
 function truncateCarryForward(value: string | null | undefined): string {

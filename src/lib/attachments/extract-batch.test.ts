@@ -12,7 +12,7 @@ vi.mock("ai", async (importOriginal) => {
   };
 });
 
-import { extractPdfBatch } from "./extract-batch";
+import { extractPdfBatch, remapExtractedPageNumbers } from "./extract-batch";
 
 const usage = { inputTokens: 10, outputTokens: 20 };
 
@@ -159,5 +159,66 @@ describe("extractPdfBatch", () => {
         model: stubModel(),
       })
     ).rejects.toThrow("PDF extraction produced no output for pages 22-23");
+  });
+
+  it("remaps relative batch page numbers onto the absolute document range", async () => {
+    // Model sees a 1-page slice and returns pageNumber: 1 instead of 7.
+    generateTextMock.mockResolvedValueOnce(
+      resultWithOutput(batchPayload([pagePayload(1, "page-seven")]), "stop")
+    );
+
+    const result = await extractPdfBatch({
+      pdfBuffer: await pdfWithPages(1),
+      pageStart: 7,
+      pageEnd: 7,
+      filename: "evidence.pdf",
+      modelId: "stub",
+      model: stubModel(),
+    });
+
+    expect(result.pages).toHaveLength(1);
+    expect(result.pages[0]?.pageNumber).toBe(7);
+    expect(result.pages[0]?.transcript).toBe("page-seven");
+  });
+
+  it("remaps a relative multi-page batch (1..N → absolute range)", async () => {
+    generateTextMock.mockResolvedValueOnce(
+      resultWithOutput(
+        batchPayload([pagePayload(1), pagePayload(2), pagePayload(3)]),
+        "stop"
+      )
+    );
+
+    const result = await extractPdfBatch({
+      pdfBuffer: await pdfWithPages(3),
+      pageStart: 4,
+      pageEnd: 6,
+      filename: "evidence.pdf",
+      modelId: "stub",
+      model: stubModel(),
+    });
+
+    expect(result.pages.map((page) => page.pageNumber)).toEqual([4, 5, 6]);
+    expect(generateTextMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("remapExtractedPageNumbers", () => {
+  it("prefers absolute page numbers when present", () => {
+    const pages = remapExtractedPageNumbers(
+      [pagePayload(4), pagePayload(5)],
+      4,
+      6
+    );
+    expect(pages.map((page) => page.pageNumber)).toEqual([4, 5]);
+  });
+
+  it("falls back to relative 1-based indices for sliced batches", () => {
+    const pages = remapExtractedPageNumbers([pagePayload(1)], 7, 7);
+    expect(pages.map((page) => page.pageNumber)).toEqual([7]);
+  });
+
+  it("returns empty when page numbers match neither absolute nor relative", () => {
+    expect(remapExtractedPageNumbers([pagePayload(99)], 4, 6)).toEqual([]);
   });
 });
