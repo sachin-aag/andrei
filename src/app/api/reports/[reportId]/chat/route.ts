@@ -42,12 +42,14 @@ import {
   findChatSession,
   touchChatSession,
 } from "@/lib/ai/chat/sessions";
+import { buildGeminiThoughtSummaryProviderOptions } from "@/lib/eval/eval-generation-options";
 import { isTestStubChat } from "@/lib/test/ai-bypass";
 import {
   flushLangfuseTraces,
   langfuseGenerateTextTelemetry,
 } from "@/lib/observability/langfuse";
 import { auditActorFromUser } from "@/lib/audit";
+import { listReadyDocumentsForReport } from "@/lib/attachments/retrieval";
 
 export const maxDuration = 120;
 
@@ -156,6 +158,7 @@ export async function POST(
     .select()
     .from(comments)
     .where(eq(comments.reportId, reportId));
+  const documents = await listReadyDocumentsForReport(reportId);
 
   const contextMap = buildReportContextMap({
     report: {
@@ -178,6 +181,7 @@ export async function POST(
       kind: c.kind,
       status: c.status,
     })),
+    documents,
   });
 
   const system = buildChatSystemPrompt({
@@ -198,6 +202,8 @@ export async function POST(
     mode === "plan"
       ? {
           read_section: allTools.read_section!,
+          search_documents: allTools.search_documents!,
+          read_document_page: allTools.read_document_page!,
           ask_user: allTools.ask_user!,
           ...(allTools.suggest_section_scope
             ? { suggest_section_scope: allTools.suggest_section_scope }
@@ -226,6 +232,11 @@ export async function POST(
     // Agent mode drafts whole sections field-by-field (read + draft per field),
     // so it needs a substantially larger step budget than plan mode.
     stopWhen: stepCountIs(mode === "plan" ? 8 : 24),
+    // Thought summaries for Langfuse traces; keep thinkingLevel minimal so the
+    // multi-step tool loop on flash-lite stays responsive.
+    providerOptions: buildGeminiThoughtSummaryProviderOptions({
+      thinkingLevel: "minimal",
+    }),
     ...langfuseGenerateTextTelemetry({
       functionId: "report-chat",
       metadata: { reportId, sessionId, mode, sectionScope, canEdit },
@@ -236,6 +247,9 @@ export async function POST(
 
   return result.toUIMessageStreamResponse({
     originalMessages: messages,
+    // Keep Gemini thought summaries in Langfuse (ai.response.reasoning) only —
+    // do not stream or persist them as chat message parts.
+    sendReasoning: false,
     onFinish: async ({ responseMessage }) => {
       try {
         await db.insert(chatMessages).values({

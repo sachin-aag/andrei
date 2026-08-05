@@ -34,6 +34,8 @@ import {
 } from "@/lib/ai/first-section-context";
 import { collectPlaceholders } from "@/lib/placeholders/scan-sections";
 import type { Placeholder } from "@/lib/placeholders/find";
+import type { UserRole } from "@/lib/auth/roles";
+import { ReportAttachmentsProvider } from "@/providers/report-attachments-provider";
 
 type SectionContents = Partial<{
   [K in keyof SectionContentMap]: SectionContentMap[K];
@@ -42,6 +44,32 @@ type SectionContents = Partial<{
 function sectionContentEqual(a: unknown, b: unknown) {
   if (Object.is(a, b)) return true;
   return JSON.stringify(a) === JSON.stringify(b);
+}
+
+function canMutateReportAttachmentsForUser({
+  report,
+  userId,
+  userRole,
+}: {
+  report: ReportRecord;
+  userId: string;
+  userRole: UserRole;
+}) {
+  if (report.status !== "draft" && report.status !== "feedback") return false;
+
+  switch (userRole) {
+    case "admin":
+      return true;
+    case "engineer":
+      return report.authorId === userId;
+    case "manager":
+    case "qa":
+      return false;
+    default: {
+      const exhaustive: never = userRole;
+      return exhaustive;
+    }
+  }
 }
 
 export type WorkspaceMode = "edit" | "review" | "view";
@@ -273,6 +301,7 @@ function bundleToSections(rows: ReportSectionRecord[]): SectionContents {
 export function ReportProvider({
   bundle,
   currentUserId,
+  currentUserRole,
   readOnly,
   initialTrackChangesMode = false,
   workspaceMode = "edit",
@@ -280,6 +309,7 @@ export function ReportProvider({
 }: {
   bundle: ReportBundle;
   currentUserId: string;
+  currentUserRole: UserRole;
   readOnly: boolean;
   /** Manager: typically true on review; engineer: false. User can toggle in the workspace header. */
   initialTrackChangesMode?: boolean;
@@ -707,6 +737,16 @@ export function ReportProvider({
     [sections]
   );
 
+  const canMutateAttachments = useMemo(
+    () =>
+      canMutateReportAttachmentsForUser({
+        report,
+        userId: currentUserId,
+        userRole: currentUserRole,
+      }),
+    [currentUserId, currentUserRole, report]
+  );
+
   const reportDataValue = useMemo<ReportDataContextValue>(
     () => ({
       report,
@@ -935,7 +975,15 @@ export function ReportProvider({
                           <ReportEvaluationContext.Provider value={evaluationValue}>
                             <ReportCommentsContext.Provider value={commentsValue}>
                               <ReportEditorsContext.Provider value={editorsValue}>
-                                {children}
+                                <ReportAttachmentsProvider
+                                  key={report.id}
+                                  reportId={report.id}
+                                  initialAttachments={bundle.attachments}
+                                  initialFolders={bundle.attachmentFolders ?? []}
+                                  canMutateAttachments={canMutateAttachments}
+                                >
+                                  {children}
+                                </ReportAttachmentsProvider>
                               </ReportEditorsContext.Provider>
                             </ReportCommentsContext.Provider>
                           </ReportEvaluationContext.Provider>

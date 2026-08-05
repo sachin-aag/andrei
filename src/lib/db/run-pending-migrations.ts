@@ -5,12 +5,22 @@ import path from "node:path";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import pg from "pg";
+import { normalizeDatabaseUrl } from "@/db/connection";
 
 const migrationsFolder = path.join(process.cwd(), "src/db/migrations");
 const journalPath = path.join(migrationsFolder, "meta/_journal.json");
 
 /** SQL files applied via push + manual baseline but not always in the journal. */
 const EXTRA_MIGRATION_TAGS = ["0030_conclusion_section"] as const;
+
+/**
+ * Stable `created_at` for extra tags. Must sit between neighboring journal
+ * entries (0029…0031). Never use `Date.now()` — drizzle's migrator skips any
+ * journal entry whose `when` is ≤ the max recorded `created_at`.
+ */
+const EXTRA_MIGRATION_WHEN: Record<(typeof EXTRA_MIGRATION_TAGS)[number], number> = {
+  "0030_conclusion_section": 1_782_415_200_000,
+};
 
 type JournalEntry = {
   tag: string;
@@ -183,15 +193,51 @@ async function ensureMigrationColumn(
 }
 
 /**
+ * Fix extra-tag rows seeded with `Date.now()`, which otherwise sit after later
+ * journal `when` values and cause drizzle `migrate()` to skip them forever.
+ */
+async function repairAnomalousMigrationTimestamps(
+  pool: pg.Pool
+): Promise<void> {
+  for (const tag of EXTRA_MIGRATION_TAGS) {
+    const hash = migrationHash(tag);
+    const fixedWhen = EXTRA_MIGRATION_WHEN[tag];
+    await pool.query(
+      `UPDATE drizzle.__drizzle_migrations
+       SET created_at = $1
+       WHERE hash = $2 AND created_at > $1`,
+      [fixedWhen, hash]
+    );
+  }
+}
+
+/**
  * Apply idempotent schema repairs when a migration was journaled without SQL
  * (older deploy bug) or drizzle's timestamp-based migrator skipped it.
  */
 async function repairMissingSchema(pool: pg.Pool): Promise<void> {
+  // Fresh DB: plain migrate() builds everything in order, and applying a later
+  // migration here first would fail on its foreign keys.
+  if (!(await tableExists(pool, "reports"))) return;
+
+  await repairAnomalousMigrationTimestamps(pool);
+
   const repairs: SchemaRepair[] = [
     {
       tag: "0032_chat_sessions",
       tableName: "chat_sessions",
       prerequisites: [{ tag: "0031_chat_messages", tableName: "chat_messages" }],
+    },
+    {
+      tag: "0033_report_attachments",
+      tableName: "report_attachments",
+    },
+    {
+      tag: "0035_attachment_folders",
+      tableName: "report_attachment_folders",
+      prerequisites: [
+        { tag: "0033_report_attachments", tableName: "report_attachments" },
+      ],
     },
   ];
 
@@ -213,6 +259,93 @@ async function repairMissingSchema(pool: pg.Pool): Promise<void> {
     "chat_messages",
     "session_id"
   );
+  await ensureMigrationColumn(
+    pool,
+    "0034_audit_canonical_v2",
+    "audit_events",
+    "payload_version"
+  );
+  await ensureMigrationColumn(
+    pool,
+    "0035_attachment_folders",
+    "report_attachments",
+    "folder_id"
+  );
+  await ensureAuditHashChainTriggers(pool);
+}
+
+/**
+ * Push-bootstrapped DBs often have `audit_events` without the hash-chain
+ * trigger or `pgcrypto`. 0034 only replaces the function body — recreate the
+ * trigger if missing so inserts actually chain hashes.
+ */
+async function ensureAuditHashChainTriggers(pool: pg.Pool): Promise<void> {
+  if (!(await tableExists(pool, "audit_events"))) return;
+
+  await pool.query(`CREATE EXTENSION IF NOT EXISTS pgcrypto`);
+
+  const existing = await pool.query<{ tgname: string }>(
+    `SELECT tgname FROM pg_trigger
+     WHERE tgrelid = 'audit_events'::regclass
+       AND NOT tgisinternal
+       AND tgname IN (
+         'audit_events_hash_chain',
+         'audit_events_append_only_update',
+         'audit_events_append_only_delete'
+       )`
+  );
+  const have = new Set(existing.rows.map((row) => row.tgname));
+  if (
+    have.has("audit_events_hash_chain") &&
+    have.has("audit_events_append_only_update") &&
+    have.has("audit_events_append_only_delete")
+  ) {
+    return;
+  }
+
+  // Ensure the v2 hash function body is present before attaching the trigger.
+  // Push-bootstrapped DBs often have columns without PL/pgSQL functions from 0027/0034.
+  if (await columnExists(pool, "audit_events", "payload_version")) {
+    await applyMigrationStatements(pool, "0034_audit_canonical_v2");
+  }
+
+  // 0034 does not define this guard — recreate it so append-only triggers can attach.
+  await pool.query(`
+    CREATE OR REPLACE FUNCTION audit_append_only_guard()
+    RETURNS trigger AS $$
+    BEGIN
+      RAISE EXCEPTION 'Append-only table: % on % is not permitted', TG_OP, TG_TABLE_NAME;
+    END;
+    $$ LANGUAGE plpgsql;
+  `);
+
+  if (!have.has("audit_events_hash_chain")) {
+    await pool.query(`
+      DROP TRIGGER IF EXISTS audit_events_hash_chain ON audit_events;
+      CREATE TRIGGER audit_events_hash_chain
+        BEFORE INSERT ON audit_events
+        FOR EACH ROW
+        EXECUTE FUNCTION audit_events_before_insert();
+    `);
+  }
+  if (!have.has("audit_events_append_only_update")) {
+    await pool.query(`
+      DROP TRIGGER IF EXISTS audit_events_append_only_update ON audit_events;
+      CREATE TRIGGER audit_events_append_only_update
+        BEFORE UPDATE ON audit_events
+        FOR EACH ROW
+        EXECUTE FUNCTION audit_append_only_guard();
+    `);
+  }
+  if (!have.has("audit_events_append_only_delete")) {
+    await pool.query(`
+      DROP TRIGGER IF EXISTS audit_events_append_only_delete ON audit_events;
+      CREATE TRIGGER audit_events_append_only_delete
+        BEFORE DELETE ON audit_events
+        FOR EACH ROW
+        EXECUTE FUNCTION audit_append_only_guard();
+    `);
+  }
 }
 
 /**
@@ -249,7 +382,7 @@ async function ensurePushBaseline(pool: pg.Pool): Promise<void> {
     ...journal.entries.map((entry) => ({ tag: entry.tag, when: entry.when })),
     ...EXTRA_MIGRATION_TAGS.filter((tag) =>
       fs.existsSync(path.join(migrationsFolder, `${tag}.sql`))
-    ).map((tag) => ({ tag, when: Date.now() })),
+    ).map((tag) => ({ tag, when: EXTRA_MIGRATION_WHEN[tag] })),
   ];
 
   for (const { tag, when } of tagsToSeed) {
@@ -267,7 +400,9 @@ async function ensurePushBaseline(pool: pg.Pool): Promise<void> {
 
 /** Applies pending Drizzle SQL migrations (with push-DB baseline when needed). */
 export async function runPendingMigrations(databaseUrl: string): Promise<void> {
-  const pool = new pg.Pool({ connectionString: databaseUrl });
+  const pool = new pg.Pool({
+    connectionString: normalizeDatabaseUrl(databaseUrl),
+  });
   try {
     await ensureMigrationsTable(pool);
     await repairMissingSchema(pool);

@@ -1,0 +1,99 @@
+# Credentialed PDF extract soak against the real sample fixture.
+#
+# Manual: Actions → PDF ingest soak → Run workflow
+# Nightly: schedule below (informational — not a required PR check)
+#
+# Secrets (Settings → Secrets and variables → Actions):
+#   GOOGLE_VERTEX_PROJECT
+#   GCP_SERVICE_ACCOUNT_KEY  — service account JSON with Vertex AI User
+#
+# Optional:
+#   DOCUMENT_EXTRACT_GOOGLE_MODEL_ID (defaults in code to gemini-3.1-flash-lite)
+#   DOCUMENT_EXTRACT_LOCATION (defaults to global)
+#
+# Fork PRs / missing secrets: job skips cleanly.
+
+name: PDF ingest soak
+
+on:
+  workflow_dispatch:
+    inputs:
+      batches:
+        description: "Max extract batches (empty = all)"
+        required: false
+        default: "3"
+      pages:
+        description: "Optional page range A-B (empty = all selected batches)"
+        required: false
+        default: ""
+  schedule:
+    # 06:00 UTC daily — keep non-blocking / informational
+    - cron: "0 6 * * *"
+
+concurrency:
+  group: pdf-ingest-soak-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  soak:
+    name: Extract soak (Vertex)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: pnpm
+
+      - name: Check Vertex secrets
+        id: key
+        run: |
+          if [ -z "$GOOGLE_VERTEX_PROJECT" ] || [ -z "$GCP_SERVICE_ACCOUNT_KEY" ]; then
+            echo "::notice title=PDF ingest soak skipped::Add GOOGLE_VERTEX_PROJECT and GCP_SERVICE_ACCOUNT_KEY Actions secrets."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          GOOGLE_VERTEX_PROJECT: ${{ secrets.GOOGLE_VERTEX_PROJECT }}
+          GCP_SERVICE_ACCOUNT_KEY: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+
+      - name: Install dependencies
+        if: steps.key.outputs.skip == 'false'
+        run: pnpm install --frozen-lockfile
+
+      - name: Authenticate to Google Cloud
+        if: steps.key.outputs.skip == 'false'
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SERVICE_ACCOUNT_KEY }}
+
+      - name: Run PDF extract soak
+        if: steps.key.outputs.skip == 'false'
+        env:
+          GOOGLE_VERTEX_PROJECT: ${{ secrets.GOOGLE_VERTEX_PROJECT }}
+          DOCUMENT_EXTRACT_GOOGLE_MODEL_ID: ${{ vars.DOCUMENT_EXTRACT_GOOGLE_MODEL_ID }}
+          DOCUMENT_EXTRACT_LOCATION: ${{ vars.DOCUMENT_EXTRACT_LOCATION }}
+        run: |
+          set -euo pipefail
+          EXTRA_ARGS=()
+          BATCHES="${{ github.event.inputs.batches }}"
+          PAGES="${{ github.event.inputs.pages }}"
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            # Nightly: first 3 batches keeps cost bounded
+            EXTRA_ARGS+=(--batches 3)
+          else
+            if [ -n "$BATCHES" ]; then
+              EXTRA_ARGS+=(--batches "$BATCHES")
+            fi
+            if [ -n "$PAGES" ]; then
+              EXTRA_ARGS+=(--pages "$PAGES")
+            fi
+          fi
+          pnpm exec tsx scripts/soak-document-ingest.ts "${EXTRA_ARGS[@]}"

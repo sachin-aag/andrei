@@ -95,24 +95,6 @@ export const MEASURE_CRITERIA: CriterionDefinition[] = [
     description:
       "Is the report written in a logical flow and easily understood by the reader?",
   },
-  {
-    key: "measure.experiment_identified",
-    label: "Experiment identified",
-    description:
-      "When a supporting experiment is referenced, are the experiment number and title clearly stated?",
-  },
-  {
-    key: "measure.experiment_purpose",
-    label: "Experiment purpose stated",
-    description:
-      "Is the purpose of any supporting experiment clearly described?",
-  },
-  {
-    key: "measure.experiment_conclusion",
-    label: "Experiment conclusion stated",
-    description:
-      "Is the conclusion or outcome of any supporting experiment summarized and linked to the investigation?",
-  },
 ];
 
 export const ANALYZE_CRITERIA: CriterionDefinition[] = [

@@ -26,6 +26,14 @@ describe("buildReportContextMap", () => {
         { section: "define", status: "not_met", bypassed: true },
       ],
       comments: [{ section: "define", kind: "ai_fix", status: "open" }],
+      documents: [
+        {
+          attachmentId: "att_123",
+          filename: "Lab Results.pdf",
+          pageCount: 4,
+          ingestRunId: "run_123",
+        },
+      ],
     });
 
     expect(map).toContain("deviation DEV-123");
@@ -37,6 +45,8 @@ describe("buildReportContextMap", () => {
     // analyze root cause is empty
     expect(map).toContain("Analyze [analyze] — empty");
     expect(map).toContain("analyze method: not chosen");
+    expect(map).toContain("Documents (ready evidence attachments");
+    expect(map).toContain("Lab Results.pdf [att_123] — 4 pages");
   });
 
   it("surfaces the analyze method from section content and header checkboxes", () => {

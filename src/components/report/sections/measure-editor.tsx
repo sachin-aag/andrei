@@ -21,7 +21,7 @@ export function MeasureEditor() {
         section="measure"
         contentPath="narrative"
         label="Measurement narrative"
-        placeholder="Summarize the facts, data reviewed, and analysis supporting the measure phase, including any supporting experiment (number, title, purpose, and conclusion)."
+        placeholder="Summarize the facts, data reviewed, and analysis supporting the measure phase."
         className="grid gap-2"
         value={value.narrative}
         onChange={(doc) => update((p) => ({ ...p, narrative: doc }))}

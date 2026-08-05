@@ -19,6 +19,14 @@ export function isTestStubMathExtraction(): boolean {
 }
 
 /**
+ * Marks attachments ready without calling Vertex/Workflow.
+ * Never set ALLOW_TEST_STUB_DOCUMENT_INGEST on Vercel production or preview.
+ */
+export function isTestStubDocumentIngest(): boolean {
+  return process.env.ALLOW_TEST_STUB_DOCUMENT_INGEST === "true";
+}
+
+/**
  * Drives the report drafting chat with a scripted mock model instead of Gemini.
  * Lets the whole chat → tool → suggestion → inline-diff spine run end-to-end
  * with no AI credential (E2E + local demo).

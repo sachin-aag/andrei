@@ -5,6 +5,7 @@ node_modules/
 # Next.js
 .next/
 out/
+.data/
 
 # Production / analyze
 build/
@@ -56,6 +57,18 @@ package-lock.json
 # Optional local certs / keys
 *.pem
 
+# Terraform (infra/gcs)
+**/.terraform/
+**/terraform.tfstate
+**/terraform.tfstate.*
+**/terraform.tfvars
+**/crash.log
+**/override.tf
+**/override.tf.json
+**/*_override.tf
+**/*_override.tf.json
+**/tfplan
+
 # Local bulk deviation evaluation HTML (`npm run sample-eval-report`; CI uploads to artifacts instead)
 /reports/
 
@@ -85,3 +98,4 @@ docs/mj-onboarding-temporary-passwords.md
 *.zip
 *.7z
 *.rar
+/.swc

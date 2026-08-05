@@ -8,10 +8,12 @@ import {
   boolean,
   integer,
   bigint,
+  real,
   uniqueIndex,
   index,
   primaryKey,
   customType,
+  vector,
   type AnyPgColumn,
 } from "drizzle-orm/pg-core";
 import { relations } from "drizzle-orm";
@@ -141,6 +143,9 @@ export const auditActionEnum = pgEnum("audit_action", [
   "user_deactivated",
   "user_reactivated",
   "user_unlocked",
+  "attachment_uploaded",
+  "attachment_deleted",
+  "attachment_reprocessed",
 ]);
 
 export const auditEntityEnum = pgEnum("audit_entity", [
@@ -154,6 +159,34 @@ export const auditEntityEnum = pgEnum("audit_entity", [
   "policy",
   "auth",
   "improve_ai",
+  "attachment",
+]);
+
+export const attachmentProcessingStatusEnum = pgEnum(
+  "attachment_processing_status",
+  ["uploading", "validating", "queued", "processing", "ready", "failed"]
+);
+
+export const attachmentIngestRunStatusEnum = pgEnum(
+  "attachment_ingest_run_status",
+  ["pending", "running", "ready", "failed", "superseded", "cancelled"]
+);
+
+export const documentIngestBatchStatusEnum = pgEnum(
+  "document_ingest_batch_status",
+  ["pending", "running", "ready", "failed", "skipped"]
+);
+
+export const documentChunkSourceKindEnum = pgEnum(
+  "document_chunk_source_kind",
+  ["quote", "visual_interpretation"]
+);
+
+export const storageOutboxStatusEnum = pgEnum("storage_outbox_status", [
+  "pending",
+  "processing",
+  "done",
+  "failed",
 ]);
 
 export const signatureMeaningEnum = pgEnum("signature_meaning", [
@@ -363,6 +396,7 @@ export const reportsRelations = relations(reports, ({ one, many }) => ({
   comments: many(comments),
   sourceDocx: one(reportSourceDocx),
   managers: many(reportManagers),
+  attachments: many(reportAttachments),
 }));
 
 export const reportManagersRelations = relations(reportManagers, ({ one }) => ({
@@ -382,6 +416,268 @@ export const reportSourceDocxRelations = relations(reportSourceDocx, ({ one }) =
     references: [reports.id],
   }),
 }));
+
+/**
+ * User-defined folders for organising a report's PDF evidence. Purely
+ * organisational: deleting a folder never deletes attachments (see the folder
+ * DELETE route, which reparents children first).
+ */
+export const reportAttachmentFolders = pgTable(
+  "report_attachment_folders",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    reportId: text("report_id")
+      .notNull()
+      .references(() => reports.id, { onDelete: "cascade" }),
+    /** Null = top level of the report's document tree. */
+    parentId: text("parent_id").references(
+      (): AnyPgColumn => reportAttachmentFolders.id,
+      { onDelete: "cascade" }
+    ),
+    name: text("name").notNull(),
+    createdById: text("created_by_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    reportIdx: index("report_attachment_folders_report_idx").on(t.reportId),
+    parentIdx: index("report_attachment_folders_parent_idx").on(t.parentId),
+  })
+);
+
+/**
+ * PDF evidence attachments. Source bytes live in GCS; only metadata and
+ * integrity fields are stored here. Soft-deleted rows retain bytes for audit.
+ */
+export const reportAttachments = pgTable(
+  "report_attachments",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    reportId: text("report_id")
+      .notNull()
+      .references(() => reports.id, { onDelete: "cascade" }),
+    /** Null = top level of the report's document tree. */
+    folderId: text("folder_id").references(() => reportAttachmentFolders.id, {
+      onDelete: "set null",
+    }),
+    filename: text("filename").notNull(),
+    mimeType: text("mime_type").notNull().default("application/pdf"),
+    sizeBytes: integer("size_bytes").notNull().default(0),
+    /** Server-computed SHA-256 of source bytes; empty until finalize. */
+    sha256: text("sha256").notNull().default(""),
+    stagingObjectKey: text("staging_object_key").notNull(),
+    permanentObjectKey: text("permanent_object_key").notNull(),
+    /** Exact GCS object generation after promotion; null while staging. */
+    gcsGeneration: text("gcs_generation"),
+    /** Base64 CRC32C from GCS metadata after verification. */
+    crc32c: text("crc32c"),
+    pageCount: integer("page_count"),
+    processingStatus: attachmentProcessingStatusEnum("processing_status")
+      .notNull()
+      .default("uploading"),
+    processingProgress: integer("processing_progress").notNull().default(0),
+    processingError: text("processing_error"),
+    /** Active completed ingest run; FK added in migration to avoid circular create. */
+    activeIngestRunId: text("active_ingest_run_id"),
+    uploadedById: text("uploaded_by_id").notNull(),
+    uploadedAt: timestamp("uploaded_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    deletedById: text("deleted_by_id"),
+  },
+  (t) => ({
+    reportIdIdx: index("report_attachments_report_id_idx").on(t.reportId),
+    reportActiveIdx: index("report_attachments_report_active_idx").on(
+      t.reportId,
+      t.deletedAt
+    ),
+    folderIdx: index("report_attachments_folder_idx").on(t.folderId),
+  })
+);
+
+export const attachmentIngestRuns = pgTable(
+  "attachment_ingest_runs",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    attachmentId: text("attachment_id")
+      .notNull()
+      .references(() => reportAttachments.id, { onDelete: "cascade" }),
+    reportId: text("report_id")
+      .notNull()
+      .references(() => reports.id, { onDelete: "cascade" }),
+    status: attachmentIngestRunStatusEnum("status").notNull().default("pending"),
+    parserVersion: text("parser_version").notNull(),
+    extractModelId: text("extract_model_id").notNull(),
+    extractPromptVersion: text("extract_prompt_version").notNull(),
+    embeddingModelId: text("embedding_model_id").notNull(),
+    embeddingDimensions: integer("embedding_dimensions").notNull().default(768),
+    sourceGeneration: text("source_generation").notNull(),
+    pageCount: integer("page_count"),
+    batchCount: integer("batch_count"),
+    completedBatchCount: integer("completed_batch_count").notNull().default(0),
+    documentSummary: text("document_summary"),
+    error: text("error"),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    attachmentIdx: index("attachment_ingest_runs_attachment_idx").on(
+      t.attachmentId
+    ),
+    reportIdx: index("attachment_ingest_runs_report_idx").on(t.reportId),
+  })
+);
+
+export const documentIngestBatches = pgTable(
+  "document_ingest_batches",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    ingestRunId: text("ingest_run_id")
+      .notNull()
+      .references(() => attachmentIngestRuns.id, { onDelete: "cascade" }),
+    attachmentId: text("attachment_id")
+      .notNull()
+      .references(() => reportAttachments.id, { onDelete: "cascade" }),
+    reportId: text("report_id")
+      .notNull()
+      .references(() => reports.id, { onDelete: "cascade" }),
+    batchIndex: integer("batch_index").notNull(),
+    pageStart: integer("page_start").notNull(),
+    pageEnd: integer("page_end").notNull(),
+    /** Deterministic step key for Workflow retry idempotency. */
+    stepKey: text("step_key").notNull(),
+    tempObjectKey: text("temp_object_key"),
+    status: documentIngestBatchStatusEnum("status").notNull().default("pending"),
+    error: text("error"),
+    batchSummary: text("batch_summary"),
+    continuationNote: text("continuation_note"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (t) => ({
+    runBatchUnique: uniqueIndex("document_ingest_batches_run_batch_unique").on(
+      t.ingestRunId,
+      t.batchIndex
+    ),
+    stepKeyUnique: uniqueIndex("document_ingest_batches_step_key_unique").on(
+      t.stepKey
+    ),
+  })
+);
+
+export const documentPages = pgTable(
+  "document_pages",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    ingestRunId: text("ingest_run_id")
+      .notNull()
+      .references(() => attachmentIngestRuns.id, { onDelete: "cascade" }),
+    attachmentId: text("attachment_id")
+      .notNull()
+      .references(() => reportAttachments.id, { onDelete: "cascade" }),
+    reportId: text("report_id")
+      .notNull()
+      .references(() => reports.id, { onDelete: "cascade" }),
+    pageNumber: integer("page_number").notNull(),
+    printedPageLabel: text("printed_page_label"),
+    transcript: text("transcript").notNull().default(""),
+    visualInterpretation: text("visual_interpretation").notNull().default(""),
+    pageContext: text("page_context"),
+    confidence: real("confidence"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    runPageUnique: uniqueIndex("document_pages_run_page_unique").on(
+      t.ingestRunId,
+      t.pageNumber
+    ),
+    reportIdx: index("document_pages_report_idx").on(t.reportId),
+  })
+);
+
+export const documentChunks = pgTable(
+  "document_chunks",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    ingestRunId: text("ingest_run_id")
+      .notNull()
+      .references(() => attachmentIngestRuns.id, { onDelete: "cascade" }),
+    attachmentId: text("attachment_id")
+      .notNull()
+      .references(() => reportAttachments.id, { onDelete: "cascade" }),
+    reportId: text("report_id")
+      .notNull()
+      .references(() => reports.id, { onDelete: "cascade" }),
+    pageId: text("page_id")
+      .notNull()
+      .references(() => documentPages.id, { onDelete: "cascade" }),
+    pageNumber: integer("page_number").notNull(),
+    ordinal: integer("ordinal").notNull(),
+    rawText: text("raw_text").notNull(),
+    contextualText: text("contextual_text").notNull(),
+    sourceKind: documentChunkSourceKindEnum("source_kind").notNull(),
+    embedding: vector("embedding", { dimensions: 768 }),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    runPageOrdinalUnique: uniqueIndex(
+      "document_chunks_run_page_ordinal_unique"
+    ).on(t.ingestRunId, t.pageNumber, t.ordinal),
+    reportActiveIdx: index("document_chunks_report_idx").on(t.reportId),
+    attachmentIdx: index("document_chunks_attachment_idx").on(t.attachmentId),
+  })
+);
+
+export const storageOutbox = pgTable(
+  "storage_outbox",
+  {
+    id: text("id")
+      .primaryKey()
+      .$defaultFn(() => createId()),
+    kind: text("kind").notNull(),
+    bucket: text("bucket").notNull(),
+    objectKey: text("object_key").notNull(),
+    gcsGeneration: text("gcs_generation"),
+    reportId: text("report_id"),
+    attachmentId: text("attachment_id"),
+    status: storageOutboxStatusEnum("status").notNull().default("pending"),
+    attempts: integer("attempts").notNull().default(0),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    processedAt: timestamp("processed_at", { withTimezone: true }),
+  },
+  (t) => ({
+    statusIdx: index("storage_outbox_status_idx").on(t.status, t.createdAt),
+  })
+);
 
 export const sectionsRelations = relations(reportSections, ({ one, many }) => ({
   report: one(reports, {
@@ -603,6 +899,7 @@ export const auditEvents = pgTable(
     metadata: jsonb("metadata").notNull().default({}),
     prevHash: text("prev_hash").notNull().default(""),
     hash: text("hash").notNull().default(""),
+    payloadVersion: integer("payload_version").notNull().default(1),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -713,6 +1010,66 @@ export const electronicSignaturesRelations = relations(
   })
 );
 
+export const reportAttachmentsRelations = relations(
+  reportAttachments,
+  ({ one, many }) => ({
+    report: one(reports, {
+      fields: [reportAttachments.reportId],
+      references: [reports.id],
+    }),
+    ingestRuns: many(attachmentIngestRuns),
+  })
+);
+
+export const attachmentIngestRunsRelations = relations(
+  attachmentIngestRuns,
+  ({ one, many }) => ({
+    attachment: one(reportAttachments, {
+      fields: [attachmentIngestRuns.attachmentId],
+      references: [reportAttachments.id],
+    }),
+    report: one(reports, {
+      fields: [attachmentIngestRuns.reportId],
+      references: [reports.id],
+    }),
+    batches: many(documentIngestBatches),
+    pages: many(documentPages),
+    chunks: many(documentChunks),
+  })
+);
+
+export const documentIngestBatchesRelations = relations(
+  documentIngestBatches,
+  ({ one }) => ({
+    ingestRun: one(attachmentIngestRuns, {
+      fields: [documentIngestBatches.ingestRunId],
+      references: [attachmentIngestRuns.id],
+    }),
+  })
+);
+
+export const documentPagesRelations = relations(
+  documentPages,
+  ({ one, many }) => ({
+    ingestRun: one(attachmentIngestRuns, {
+      fields: [documentPages.ingestRunId],
+      references: [attachmentIngestRuns.id],
+    }),
+    chunks: many(documentChunks),
+  })
+);
+
+export const documentChunksRelations = relations(documentChunks, ({ one }) => ({
+  ingestRun: one(attachmentIngestRuns, {
+    fields: [documentChunks.ingestRunId],
+    references: [attachmentIngestRuns.id],
+  }),
+  page: one(documentPages, {
+    fields: [documentChunks.pageId],
+    references: [documentPages.id],
+  }),
+}));
+
 export type ReportStatus = (typeof reportStatusEnum.enumValues)[number];
 export type SectionType = (typeof sectionTypeEnum.enumValues)[number];
 export type CriterionStatus = (typeof criterionStatusEnum.enumValues)[number];
@@ -726,5 +1083,15 @@ export type ChatMessageRole = (typeof chatMessageRoleEnum.enumValues)[number];
 export type AuditAction = (typeof auditActionEnum.enumValues)[number];
 export type AuditEntity = (typeof auditEntityEnum.enumValues)[number];
 export type SignatureMeaning = (typeof signatureMeaningEnum.enumValues)[number];
+export type AttachmentProcessingStatus =
+  (typeof attachmentProcessingStatusEnum.enumValues)[number];
+export type AttachmentIngestRunStatus =
+  (typeof attachmentIngestRunStatusEnum.enumValues)[number];
+export type DocumentIngestBatchStatus =
+  (typeof documentIngestBatchStatusEnum.enumValues)[number];
+export type DocumentChunkSourceKind =
+  (typeof documentChunkSourceKindEnum.enumValues)[number];
+export type StorageOutboxStatus =
+  (typeof storageOutboxStatusEnum.enumValues)[number];
 
 export * from "./auth";

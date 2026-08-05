@@ -1,4 +1,5 @@
 import type {
+  AttachmentProcessingStatus,
   CriterionStatus,
   ReportStatus,
   SectionType,
@@ -67,9 +68,37 @@ export type CommentRecord = {
   createdAt: string;
 };
 
+/** Client-facing attachment DTO — never includes object keys or hashes. */
+export type ReportAttachmentRecord = {
+  id: string;
+  reportId: string;
+  /** Null = top level of the report's document tree. */
+  folderId: string | null;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  pageCount: number | null;
+  processingStatus: AttachmentProcessingStatus;
+  processingProgress: number;
+  processingError: string | null;
+  uploadedAt: string;
+  deletedAt: string | null;
+};
+
+/** Folder node in a report's document tree. */
+export type ReportAttachmentFolderRecord = {
+  id: string;
+  reportId: string;
+  parentId: string | null;
+  name: string;
+  createdAt: string;
+};
+
 export type ReportBundle = {
   report: ReportRecord;
   sections: ReportSectionRecord[];
   evaluations: EvaluationRecord[];
   comments: CommentRecord[];
+  attachments: ReportAttachmentRecord[];
+  attachmentFolders: ReportAttachmentFolderRecord[];
 };

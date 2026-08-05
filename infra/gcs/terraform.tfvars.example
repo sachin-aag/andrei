@@ -1,0 +1,11 @@
+project_id                    = "andrei-493614"
+bucket_name                   = "andrei-493614-attachments"
+location                      = "EU"
+runtime_service_account_email = "andrei-vercel@andrei-493614.iam.gserviceaccount.com"
+
+cors_origins = [
+  "https://andrei-demo.vercel.app",
+  "http://localhost:3000",
+]
+
+# staging_temp_age_days = 7

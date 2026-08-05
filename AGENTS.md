@@ -10,8 +10,9 @@ for this environment.
 ### Services
 
 - **Next.js dev server** — the product. Run `pnpm dev` (http://localhost:3000, Turbopack).
-- **PostgreSQL 16** — required; all report/section/eval/comment/user data persists here.
-  Installed natively (not Docker). It is **not** auto-started on boot, so start it before
+- **PostgreSQL 16 + pgvector** — required; all report/section/eval/comment/user
+  data persists here, and PDF evidence chunks use `vector(768)`. Installed
+  natively (not Docker). It is **not** auto-started on boot, so start it before
   running the app or DB scripts:
 
   ```bash
@@ -21,6 +22,20 @@ for this environment.
   Connection is configured in `.env.local` as
   `postgresql://andrei:andrei@127.0.0.1:5432/andrei_dev`. Because the host is `127.0.0.1`,
   `src/db/connection.ts` uses the `pg` driver (not the Neon HTTP driver).
+
+  Native pgvector setup (one-time):
+
+  ```bash
+  # macOS (Homebrew)
+  brew install pgvector
+  # then in psql against andrei_dev:
+  CREATE EXTENSION IF NOT EXISTS vector;
+  ```
+
+  Docker Compose and CI use `pgvector/pgvector:pg16` so the extension is available
+  without a manual install in those environments.
+
+  PDF evidence release gates: see `docs/pdf-evidence-deployment-checklist.md`.
 
 ### Database schema & users (local Postgres gotchas)
 

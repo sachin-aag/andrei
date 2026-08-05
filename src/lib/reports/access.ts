@@ -51,3 +51,16 @@ export function canEditReport(
   if (user.role === "engineer") return user.id === report.authorId;
   return false;
 }
+
+/**
+ * Attachment mutations are allowed only while the evidence set is still
+ * mutable: active draft/feedback reports, for users who may otherwise edit.
+ * Submitted / in-review / approved evidence is immutable.
+ */
+export function canMutateAttachments(
+  user: { id: string; role: UserRole },
+  report: ReportAccessRecord
+): boolean {
+  if (!canEditReport(user, report)) return false;
+  return report.status === "draft" || report.status === "feedback";
+}

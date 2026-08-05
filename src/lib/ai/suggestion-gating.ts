@@ -92,6 +92,16 @@ export type ParsedAiFixPayload = {
   reasoning: string;
   /** Section content hash when this suggestion was created (staleness detection). */
   contentHashAtSuggestion?: string;
+  evidenceSources?: Array<{
+    citationId: string;
+    attachmentId: string;
+    filename: string;
+    pageNumber: number;
+    chunkId: string;
+    sourceKind: string;
+    quote: string;
+    ingestRunId: string;
+  }>;
 };
 
 export function parseAiFixCommentContent(content: string): ParsedAiFixPayload {
@@ -106,6 +116,36 @@ export function parseAiFixCommentContent(content: string): ParsedAiFixPayload {
           typeof parsed.contentHashAtSuggestion === "string"
             ? parsed.contentHashAtSuggestion
             : undefined,
+        evidenceSources: Array.isArray(parsed.evidenceSources)
+          ? parsed.evidenceSources.flatMap((source) => {
+              if (!source || typeof source !== "object") return [];
+              const s = source as Record<string, unknown>;
+              if (
+                typeof s.citationId !== "string" ||
+                typeof s.attachmentId !== "string" ||
+                typeof s.filename !== "string" ||
+                typeof s.pageNumber !== "number" ||
+                typeof s.chunkId !== "string" ||
+                typeof s.sourceKind !== "string" ||
+                typeof s.quote !== "string" ||
+                typeof s.ingestRunId !== "string"
+              ) {
+                return [];
+              }
+              return [
+                {
+                  citationId: s.citationId,
+                  attachmentId: s.attachmentId,
+                  filename: s.filename,
+                  pageNumber: s.pageNumber,
+                  chunkId: s.chunkId,
+                  sourceKind: s.sourceKind,
+                  quote: s.quote,
+                  ingestRunId: s.ingestRunId,
+                },
+              ];
+            })
+          : undefined,
       };
     }
   } catch {
