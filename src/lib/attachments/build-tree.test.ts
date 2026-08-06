@@ -29,6 +29,7 @@ function file(
     reportId: "rep_1",
     folderId,
     filename,
+    description: null,
     mimeType: "application/pdf",
     sizeBytes: 1024,
     pageCount: 1,

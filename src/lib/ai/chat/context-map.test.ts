@@ -30,6 +30,7 @@ describe("buildReportContextMap", () => {
         {
           attachmentId: "att_123",
           filename: "Lab Results.pdf",
+          description: "Dissolution assay results for batch 24A.",
           pageCount: 4,
           ingestRunId: "run_123",
         },
@@ -46,7 +47,9 @@ describe("buildReportContextMap", () => {
     expect(map).toContain("Analyze [analyze] — empty");
     expect(map).toContain("analyze method: not chosen");
     expect(map).toContain("Documents (ready evidence attachments");
-    expect(map).toContain("Lab Results.pdf [att_123] — 4 pages");
+    expect(map).toContain(
+      "Lab Results.pdf [att_123] — 4 pages; user context: Dissolution assay results for batch 24A."
+    );
   });
 
   it("surfaces the analyze method from section content and header checkboxes", () => {

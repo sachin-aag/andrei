@@ -469,6 +469,11 @@ export const reportAttachments = pgTable(
       onDelete: "set null",
     }),
     filename: text("filename").notNull(),
+    /**
+     * Optional user-authored note (2–3 lines) describing why this file matters.
+     * Surfaced in AI chat document context; not embedded into chunk text.
+     */
+    description: text("description"),
     mimeType: text("mime_type").notNull().default("application/pdf"),
     sizeBytes: integer("size_bytes").notNull().default(0),
     /** Server-computed SHA-256 of source bytes; empty until finalize. */

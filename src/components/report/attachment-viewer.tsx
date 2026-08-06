@@ -54,6 +54,11 @@ export function AttachmentViewer() {
                 ? " · Indexing failed (preview still available)"
                 : null}
             </p>
+            {activeAttachment.description ? (
+              <p className="mt-1 line-clamp-3 text-xs leading-snug text-[var(--muted-foreground)]">
+                {activeAttachment.description}
+              </p>
+            ) : null}
           </div>
           {canPreview ? (
             <Button asChild variant="outline" size="sm">

@@ -136,7 +136,14 @@ export function buildReportContextMap(input: BuildContextMapInput): string {
         typeof doc.pageCount === "number" && doc.pageCount > 0
           ? `${doc.pageCount} page${doc.pageCount === 1 ? "" : "s"}`
           : "page count unknown";
-      lines.push(`- ${doc.filename} [${doc.attachmentId}] — ${pages}`);
+      const description = doc.description?.trim();
+      if (description) {
+        lines.push(
+          `- ${doc.filename} [${doc.attachmentId}] — ${pages}; user context: ${summarize(description, 280)}`
+        );
+      } else {
+        lines.push(`- ${doc.filename} [${doc.attachmentId}] — ${pages}`);
+      }
     }
   }
 

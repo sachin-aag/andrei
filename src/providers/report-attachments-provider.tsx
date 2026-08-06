@@ -61,6 +61,11 @@ type ReportAttachmentsContextValue = {
   removeAttachment: (id: string) => Promise<void>;
   retryAttachment: (id: string) => Promise<void>;
   moveAttachment: (id: string, folderId: FolderId) => Promise<void>;
+  renameAttachment: (id: string, filename: string) => Promise<void>;
+  updateAttachmentDescription: (
+    id: string,
+    description: string | null
+  ) => Promise<void>;
   createFolder: (name: string, parentId: FolderId) => Promise<string | null>;
   renameFolder: (id: string, name: string) => Promise<void>;
   moveFolder: (id: string, parentId: FolderId) => Promise<void>;
@@ -192,6 +197,7 @@ export function ReportAttachmentsProvider({
         reportId,
         folderId,
         filename: file.name,
+        description: null,
         mimeType: "application/pdf",
         sizeBytes: file.size,
         pageCount: null,
@@ -409,6 +415,81 @@ export function ReportAttachmentsProvider({
     [attachments, canMutateAttachments, reportId]
   );
 
+  const patchAttachmentMeta = useCallback(
+    async (
+      id: string,
+      body: { filename?: string; description?: string | null },
+      errorMessage: string
+    ) => {
+      if (!canMutateAttachments) return;
+
+      const previous = attachments.find((item) => item.id === id);
+      if (!previous) return;
+
+      const nextFilename = body.filename ?? previous.filename;
+      const nextDescription =
+        body.description !== undefined ? body.description : previous.description;
+
+      if (
+        nextFilename === previous.filename &&
+        nextDescription === previous.description
+      ) {
+        return;
+      }
+
+      setAttachments((prev) =>
+        prev.map((item) =>
+          item.id === id
+            ? {
+                ...item,
+                filename: nextFilename,
+                description: nextDescription,
+              }
+            : item
+        )
+      );
+
+      const response = await fetch(`/api/reports/${reportId}/attachments/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = (await response.json().catch(() => ({}))) as {
+        attachment?: ReportAttachmentRecord;
+        error?: string;
+      };
+      if (!response.ok) {
+        setAttachments((prev) =>
+          prev.map((item) => (item.id === id ? previous : item))
+        );
+        toast.error(data.error ?? errorMessage);
+        return;
+      }
+      if (data.attachment) {
+        upsertAttachment(data.attachment);
+      }
+    },
+    [attachments, canMutateAttachments, reportId, upsertAttachment]
+  );
+
+  const renameAttachment = useCallback(
+    async (id: string, filename: string) => {
+      await patchAttachmentMeta(id, { filename }, "Could not rename document");
+    },
+    [patchAttachmentMeta]
+  );
+
+  const updateAttachmentDescription = useCallback(
+    async (id: string, description: string | null) => {
+      await patchAttachmentMeta(
+        id,
+        { description },
+        "Could not update description"
+      );
+    },
+    [patchAttachmentMeta]
+  );
+
   const createFolder = useCallback(
     async (name: string, parentId: FolderId) => {
       if (!canMutateAttachments) return null;
@@ -539,6 +620,8 @@ export function ReportAttachmentsProvider({
       removeAttachment,
       retryAttachment,
       moveAttachment,
+      renameAttachment,
+      updateAttachmentDescription,
       createFolder,
       renameFolder,
       moveFolder,
@@ -558,6 +641,8 @@ export function ReportAttachmentsProvider({
       removeAttachment,
       retryAttachment,
       moveAttachment,
+      renameAttachment,
+      updateAttachmentDescription,
       createFolder,
       renameFolder,
       moveFolder,

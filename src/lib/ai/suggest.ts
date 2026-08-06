@@ -49,6 +49,7 @@ export type SuggestionEvidenceSource = {
   citationId: string;
   attachmentId: string;
   filename: string;
+  description: string | null;
   pageNumber: number;
   chunkId: string;
   sourceKind: string;
@@ -126,6 +127,7 @@ function toEvidenceSource(result: DocumentSearchResult): SuggestionEvidenceSourc
     citationId: result.citationId,
     attachmentId: result.attachmentId,
     filename: result.filename,
+    description: result.description,
     pageNumber: result.pageNumber,
     chunkId: result.chunkId,
     sourceKind: result.sourceKind,
@@ -142,10 +144,12 @@ function buildEvidenceBlock(
     if (sources.length === 0) continue;
     blocks.push(
       `[${criterionKey}]\n${sources
-        .map(
-          (source, i) =>
-            `${i + 1}. ${source.filename}, p. ${source.pageNumber} (${source.sourceKind}, ${source.citationId})\n   Quote: ${source.quote}`
-        )
+        .map((source, i) => {
+          const context = source.description?.trim()
+            ? `\n   User context: ${source.description.trim()}`
+            : "";
+          return `${i + 1}. ${source.filename}, p. ${source.pageNumber} (${source.sourceKind}, ${source.citationId})${context}\n   Quote: ${source.quote}`;
+        })
         .join("\n")}`
     );
   }
