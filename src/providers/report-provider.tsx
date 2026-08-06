@@ -163,6 +163,17 @@ type ReportContextValue = {
   setComments: React.Dispatch<React.SetStateAction<CommentRecord[]>>;
   refresh: () => Promise<void>;
   getSectionId: (section: SectionType) => string | null;
+  /**
+   * Registers the currently-mounted section's autosave flush so submit/refresh
+   * can force any pending debounced edit to persist before the report locks or
+   * reloads from the server (otherwise a same-tick edit would be lost).
+   */
+  registerSectionFlush: (
+    section: SectionType,
+    flush: () => Promise<void>
+  ) => () => void;
+  /** Await every registered section autosave flush (no-ops when already persisted). */
+  flushPendingSectionSaves: () => Promise<void>;
   /** Tiptap editor registry for the margin-gutter to compute anchor positions. */
   registerEditor: (
     section: SectionType,
@@ -198,6 +209,8 @@ type ReportDataContextValue = Pick<
   | "setReport"
   | "refresh"
   | "getSectionId"
+  | "registerSectionFlush"
+  | "flushPendingSectionSaves"
 >;
 
 type ReportSectionsContextValue = Pick<
@@ -380,6 +393,9 @@ export function ReportProvider({
    * uses these editor refs to compute live anchor coordinates via `view.coordsAtPos`.
    */
   const editorsRef = useRef<Map<string, EditorRegistryEntry>>(new Map());
+  const sectionFlushesRef = useRef<Map<SectionType, () => Promise<void>>>(
+    new Map()
+  );
   const [editorTick, setEditorTick] = useState(0);
   const [activeField, setActiveFieldState] = useState<{
     key: string;
@@ -489,7 +505,37 @@ export function ReportProvider({
     []
   );
 
+  /**
+   * Every mounted section editor registers its autosave flush here so submit
+   * and refresh can persist pending debounced edits before locking/reloading.
+   */
+  const registerSectionFlush = useCallback(
+    (section: SectionType, flush: () => Promise<void>) => {
+      sectionFlushesRef.current.set(section, flush);
+      return () => {
+        if (sectionFlushesRef.current.get(section) === flush) {
+          sectionFlushesRef.current.delete(section);
+        }
+      };
+    },
+    []
+  );
+
+  const flushPendingSectionSaves = useCallback(async () => {
+    const flushes = [...sectionFlushesRef.current.values()];
+    await Promise.all(flushes.map((flush) => flush()));
+  }, []);
+
   const refresh = useCallback(async () => {
+    // Force any pending debounced edit to persist before reloading — otherwise
+    // an edit made in the last ~1.5s could still be un-saved when the fetch
+    // below overwrites local section state.
+    try {
+      await flushPendingSectionSaves();
+    } catch {
+      // Keep refresh usable even if a pending save failed; submit awaits
+      // flushPendingSectionSaves itself and can abort on failure.
+    }
     const res = await fetch(`/api/reports/${bundle.report.id}`);
     if (!res.ok) return;
     const data = (await res.json()) as ReportBundle;
@@ -510,7 +556,7 @@ export function ReportProvider({
         normalizeCommentRecord(c)
       )
     );
-  }, [bundle.report.id]);
+  }, [bundle.report.id, flushPendingSectionSaves]);
 
   const getSectionId = useCallback(
     (section: SectionType) =>
@@ -759,6 +805,8 @@ export function ReportProvider({
       setReport,
       refresh,
       getSectionId,
+      registerSectionFlush,
+      flushPendingSectionSaves,
     }),
     [
       report,
@@ -770,6 +818,8 @@ export function ReportProvider({
       currentUserId,
       refresh,
       getSectionId,
+      registerSectionFlush,
+      flushPendingSectionSaves,
     ]
   );
 

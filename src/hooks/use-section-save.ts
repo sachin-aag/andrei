@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 import {
   useReportData,
@@ -16,11 +16,13 @@ const saveBlockedReports = new Set<string>();
 export function useSectionSave<K extends keyof SectionContentMap & SectionType>(
   section: K
 ) {
-  const { report, readOnly, trackChangesMode } = useReportData();
-  const { runningSuggestionSections, suggestionApplyTransition } =
-    useReportEvaluations();
+  const { report, readOnly, trackChangesMode, registerSectionFlush } =
+    useReportData();
+  const { suggestionApplyTransition } = useReportEvaluations();
   const { value } = useReportSection(section);
-  const suggestionInFlight = runningSuggestionSections.includes(section);
+  // Generation (Suggest fixes / chat) reads a fresh DB snapshot per request and
+  // re-validates anchors at apply time, so autosave stays on while it runs —
+  // only the brief accept/apply transition itself pauses it.
   const applyInFlight = !!suggestionApplyTransition?.[section];
   const [saveBlocked, setSaveBlocked] = useState(false);
 
@@ -62,8 +64,10 @@ export function useSectionSave<K extends keyof SectionContentMap & SectionType>(
 
   const { status, lastSavedAt, flush } = useAutoSave({
     enabled:
-      (!readOnly || trackChangesMode) &&
-      !suggestionInFlight &&
+      ((!readOnly &&
+        report.status !== "submitted" &&
+        report.status !== "approved") ||
+        trackChangesMode) &&
       !applyInFlight &&
       !saveBlocked,
     value,
@@ -71,6 +75,11 @@ export function useSectionSave<K extends keyof SectionContentMap & SectionType>(
     beaconUrl: `/api/reports/${report.id}/sections/${section}`,
     serialize: (v) => JSON.stringify({ content: v }),
   });
+
+  useEffect(
+    () => registerSectionFlush(section, flush),
+    [section, flush, registerSectionFlush]
+  );
 
   return { status, lastSavedAt, value, flushSave: flush };
 }
