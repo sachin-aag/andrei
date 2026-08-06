@@ -251,7 +251,7 @@ export function PlaceholdersPanelContent({
     const value = fillValues[p.id]?.trim();
     if (!value) return;
 
-    if (isPlainTextPlaceholderField(p.contentPath)) {
+    if (isPlainTextPlaceholderField(p.section, p.contentPath)) {
       const section = p.section as SectionType;
       const sectionContent = sections[section] as SectionContentMap[typeof section];
       const fieldText = getPlainTextFieldValue(
@@ -350,6 +350,7 @@ export function PlaceholdersPanelContent({
             <div className="space-y-2 overflow-x-hidden">
               {list.map((p) => {
                 const { beforeCtx, afterCtx } = isPlainTextPlaceholderField(
+                  p.section,
                   p.contentPath
                 )
                   ? plainTextPlaceholderContext(

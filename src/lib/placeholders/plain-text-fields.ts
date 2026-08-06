@@ -19,8 +19,18 @@ export const PLAIN_TEXT_PLACEHOLDER_PATHS: Partial<
   ],
 };
 
-export function isPlainTextPlaceholderField(contentPath: string): boolean {
-  return contentPath !== "narrative";
+/**
+ * True when the field is a plain-text string that may hold bracket placeholders.
+ * Must not treat TipTap rich paths (e.g. `correctiveActions`, `fiveWhy.narrative`)
+ * as plain text — those use `contentPath !== "narrative"` historically and broke
+ * Placeholders panel Confirm.
+ */
+export function isPlainTextPlaceholderField(
+  section: SectionType,
+  contentPath: string
+): boolean {
+  const paths = PLAIN_TEXT_PLACEHOLDER_PATHS[section];
+  return paths?.includes(contentPath) ?? false;
 }
 
 export function listPlainTextFieldsForSection(
