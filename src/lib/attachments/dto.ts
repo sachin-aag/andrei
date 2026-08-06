@@ -14,6 +14,7 @@ export function toAttachmentDto(row: AttachmentRow): ReportAttachmentRecord {
     reportId: row.reportId,
     folderId: row.folderId,
     filename: row.filename,
+    description: row.description ?? null,
     mimeType: row.mimeType,
     sizeBytes: row.sizeBytes,
     pageCount: row.pageCount,
