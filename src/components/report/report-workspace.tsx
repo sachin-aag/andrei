@@ -108,6 +108,7 @@ export function ReportWorkspace({
     currentUserId,
     trackChangesMode,
     setTrackChangesMode,
+    flushPendingSectionSaves,
   } = useReportData();
   const { pendingPlaceholders } = useReportPlaceholders();
   const { getEditor } = useReportEditors();
@@ -222,6 +223,15 @@ export function ReportWorkspace({
 
     setLoading(true);
     try {
+      if (signDialog === "submission") {
+        try {
+          await flushPendingSectionSaves();
+        } catch {
+          toast.error("Could not save pending edits. Fix save errors, then submit again.");
+          return;
+        }
+      }
+
       const endpoint = endpoints[signDialog];
       const res = await fetch(`/api/reports/${report.id}/${endpoint}`, {
         method: "POST",
