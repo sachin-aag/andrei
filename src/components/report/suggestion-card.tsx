@@ -512,7 +512,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
     setPhase("applying");
 
     try {
-      beginSuggestionApplyTransition(section, commentId);
+      beginSuggestionApplyTransition(section, commentId, "accept");
 
       const result = await acceptSuggestion({
         reportId: report.id,
@@ -596,7 +596,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
     setPhase("applying");
 
     try {
-      beginSuggestionApplyTransition(section, commentId);
+      beginSuggestionApplyTransition(section, commentId, "dismiss");
 
       const result = await dismissSuggestion({
         reportId: report.id,

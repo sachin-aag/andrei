@@ -457,19 +457,64 @@
   transition: opacity 0.35s ease;
 }
 
-/* While a suggestion is being applied, the full track-change diff is more
-   detail than needed — drop the strikethrough deletion and soften the
-   incoming text so it settles into place instead of staying sharp the whole
-   time the request is in flight. */
-[data-suggestion-preview-held="true"] .suggestion-delete,
-[data-suggestion-preview-held="true"] .suggestion-delete-ai {
-  display: none;
+/*
+ * While a suggestion is being applied, calm the diff down to a plain preview
+ * of the result: the deleted run fades out and the inserted run sheds its
+ * highlight, so what's left reads as ordinary text.
+ *
+ * Everything here animates opacity/color only — never `display` or `filter`.
+ * Pulling the deleted run out of the flow mid-transition would rewrap the
+ * paragraph and visibly add or drop a line, so it keeps its space until the
+ * real value lands and replaces the preview wholesale.
+ */
+[data-suggestion-preview-held] .suggestion-insert,
+[data-suggestion-preview-held] .suggestion-insert-ai,
+[data-suggestion-preview-held] .suggestion-delete,
+[data-suggestion-preview-held] .suggestion-delete-ai {
+  transition:
+    opacity 240ms ease,
+    color 240ms ease,
+    background-color 240ms ease,
+    border-bottom-color 240ms ease,
+    text-decoration-color 240ms ease;
 }
 
-[data-suggestion-preview-held="true"] .suggestion-insert,
-[data-suggestion-preview-held="true"] .suggestion-insert-ai {
-  filter: blur(2px);
-  transition: filter 0.3s ease;
+/* Accepting: the deletion is on its way out, the insertion becomes the text. */
+[data-suggestion-preview-held="accept"] .suggestion-delete,
+[data-suggestion-preview-held="accept"] .suggestion-delete-ai {
+  opacity: 0;
+  background-color: transparent;
+}
+
+[data-suggestion-preview-held="accept"] .suggestion-insert,
+[data-suggestion-preview-held="accept"] .suggestion-insert-ai {
+  background-color: transparent;
+  border-bottom-color: transparent;
+}
+
+/* Dismissing: the reverse — the insertion goes, the original text stays. */
+[data-suggestion-preview-held="dismiss"] .suggestion-insert,
+[data-suggestion-preview-held="dismiss"] .suggestion-insert-ai {
+  opacity: 0;
+  background-color: transparent;
+  border-bottom-color: transparent;
+}
+
+[data-suggestion-preview-held="dismiss"] .suggestion-delete,
+[data-suggestion-preview-held="dismiss"] .suggestion-delete-ai {
+  color: inherit;
+  background-color: transparent;
+  text-decoration-color: transparent;
+}
+
+/* Sparkle brackets fade with the run they annotate (opacity keeps their box,
+   so the surrounding text does not shift). */
+[data-suggestion-preview-held] .suggestion-insert-ai::before,
+[data-suggestion-preview-held] .suggestion-insert-ai::after,
+[data-suggestion-preview-held] .suggestion-delete-ai::before,
+[data-suggestion-preview-held] .suggestion-delete-ai::after {
+  opacity: 0;
+  transition: opacity 200ms ease;
 }
 
 .suggestion-card-stack {

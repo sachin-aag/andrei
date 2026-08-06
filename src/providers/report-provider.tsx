@@ -74,6 +74,13 @@ function canMutateReportAttachmentsForUser({
 
 export type WorkspaceMode = "edit" | "review" | "view";
 
+/**
+ * Which way a suggestion is being resolved. The inline diff calms down
+ * differently for each: accepting fades the deletion out, dismissing fades the
+ * insertion out.
+ */
+export type SuggestionApplyMode = "accept" | "dismiss";
+
 export type EditorRegistryEntry = {
   editor: Editor;
   section: SectionType;
@@ -141,14 +148,19 @@ type ReportContextValue = {
   /** Call before applying a suggestion; locks gutter anchor and hides next inline preview. */
   beginSuggestionApplyTransition: (
     section: SectionType,
-    commentId: string
+    commentId: string,
+    mode: SuggestionApplyMode
   ) => void;
   endSuggestionApplyTransition: (section: SectionType) => void;
   /** Per-section apply/dismiss transition — pauses auto-save while set. */
   suggestionApplyTransition: Partial<
     Record<
       SectionType,
-      { holdInlinePreview: boolean; gutterAnchorCommentId: string }
+      {
+        holdInlinePreview: boolean;
+        gutterAnchorCommentId: string;
+        mode: SuggestionApplyMode;
+      }
     >
   >;
   /** Set after suggestions succeed — workspace opens Criteria tab for this section. */
@@ -575,6 +587,7 @@ export function ReportProvider({
   type SuggestionApplyTransition = {
     holdInlinePreview: boolean;
     gutterAnchorCommentId: string;
+    mode: SuggestionApplyMode;
   };
   const [suggestionApplyTransition, setSuggestionApplyTransition] = useState<
     Partial<Record<SectionType, SuggestionApplyTransition>>
@@ -723,12 +736,13 @@ export function ReportProvider({
   }, []);
 
   const beginSuggestionApplyTransition = useCallback(
-    (section: SectionType, commentId: string) => {
+    (section: SectionType, commentId: string, mode: SuggestionApplyMode) => {
       setSuggestionApplyTransition((prev) => ({
         ...prev,
         [section]: {
           holdInlinePreview: true,
           gutterAnchorCommentId: commentId,
+          mode,
         },
       }));
     },

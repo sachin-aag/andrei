@@ -40,6 +40,7 @@ import {
 } from "@/lib/suggestions/validate-suggestion";
 import {
   SUGGESTION_APPLY_SETTLE_MS,
+  SUGGESTION_DIFF_FADE_MS,
   SUGGESTION_INLINE_REVEAL_DELAY_MS,
   delay,
 } from "@/lib/suggestions/apply-transition";
@@ -258,19 +259,24 @@ export function PlainTextSuggestionField({
 
     setPending(true);
     try {
-      beginSuggestionApplyTransition(section, activeComment.id);
+      beginSuggestionApplyTransition(section, activeComment.id, "accept");
       const fieldPath = resolveSuggestionFieldPath(
         section,
         activeComment.contentPath,
         contentPath
       );
-      const result = await acceptSuggestion({
-        reportId: report.id,
-        section,
-        comment: activeComment,
-        sectionContent: sections[section] as Record<string, unknown>,
-        fieldContentPath: contentPath,
-      });
+      // Let the diff finish fading before the real value swaps in, so the two
+      // never animate over each other.
+      const [result] = await Promise.all([
+        acceptSuggestion({
+          reportId: report.id,
+          section,
+          comment: activeComment,
+          sectionContent: sections[section] as Record<string, unknown>,
+          fieldContentPath: contentPath,
+        }),
+        delay(SUGGESTION_DIFF_FADE_MS),
+      ]);
       if (!result.ok) {
         if (result.reason === "status_failed") {
           throw (
@@ -343,17 +349,21 @@ export function PlainTextSuggestionField({
   const dismissActive = useCallback(async () => {
     if (!activeComment || pending || !canResolve) return;
 
-    setApplySettling(true);
     setPending(true);
     try {
-      beginSuggestionApplyTransition(section, activeComment.id);
-      const result = await dismissSuggestion({
-        reportId: report.id,
-        section,
-        comment: activeComment,
-        sectionContent: sections[section] as Record<string, unknown>,
-        fieldContentPath: contentPath,
-      });
+      beginSuggestionApplyTransition(section, activeComment.id, "dismiss");
+      // Let the diff finish fading before the preview is torn down, so the
+      // original text is never briefly revealed mid-animation.
+      const [result] = await Promise.all([
+        dismissSuggestion({
+          reportId: report.id,
+          section,
+          comment: activeComment,
+          sectionContent: sections[section] as Record<string, unknown>,
+          fieldContentPath: contentPath,
+        }),
+        delay(SUGGESTION_DIFF_FADE_MS),
+      ]);
       if (!result.ok) {
         if (result.reason === "status_failed") {
           throw (
@@ -371,6 +381,7 @@ export function PlainTextSuggestionField({
         );
       }
       setComments((prev) => prev.filter((c) => c.id !== activeComment.id));
+      setApplySettling(true);
       await delay(SUGGESTION_INLINE_REVEAL_DELAY_MS);
 
       toast.success("Suggestion dismissed");
@@ -411,7 +422,11 @@ export function PlainTextSuggestionField({
         fieldAnchor={fieldAnchor}
         value={value}
         onChange={onChange}
-        suggestionPreviewHeld={isSuggestionPreviewHeld(section)}
+        suggestionPreviewHeld={
+          isSuggestionPreviewHeld(section)
+            ? suggestionApplyTransition[section]?.mode
+            : undefined
+        }
         disabled={disabled}
         placeholder={placeholder}
         className={className}

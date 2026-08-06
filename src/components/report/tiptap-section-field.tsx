@@ -692,6 +692,9 @@ export function TiptapSectionField({
   const richContentKey = isRichField ? JSON.stringify(value) : "";
 
   const previewHeld = isRichField && isSuggestionPreviewHeld(section);
+  const previewHeldMode = previewHeld
+    ? suggestionApplyTransition[section]?.mode
+    : undefined;
 
   // Narrow deps to this section only — avoid re-running when other sections change.
   const sectionContent = sections[section];
@@ -1029,7 +1032,7 @@ export function TiptapSectionField({
         )}
         data-field-anchor={`${section}.${contentPath}`}
         data-active-suggestion-id={activeSuggestionId ?? ""}
-        data-suggestion-preview-held={previewHeld ? "true" : undefined}
+        data-suggestion-preview-held={previewHeldMode}
       >
         {editor ? <EditorContent editor={editor} /> : null}
       </div>
