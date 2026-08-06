@@ -1,7 +1,7 @@
 import { embed, type EmbeddingModel } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createVertex } from "@ai-sdk/google-vertex";
-import { and, desc, eq, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, isNull, notInArray, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { documentChunks, documentPages, reportAttachments } from "@/db/schema";
 import { createWifAuthClient, getWifConfig } from "@/lib/gcp/wif-token";
@@ -30,6 +30,12 @@ export type DocumentSearchResult = {
   citationId: string;
   ingestRunId: string;
   sourceSha256?: string;
+  /**
+   * Only set when the caller restricted the search to specific attachments:
+   * true = from a tagged attachment, false = backfilled from the rest of the
+   * report. Undefined for unrestricted searches.
+   */
+  pinned?: boolean;
 };
 
 export type ClientDocumentSearchResult = Omit<DocumentSearchResult, "sourceSha256">;
@@ -277,22 +283,32 @@ function candidateSelect() {
   };
 }
 
-export async function searchReportDocuments({
+/** Dedupe + drop blanks so an all-empty input behaves like "no filter". */
+export function normalizeAttachmentIdFilter(
+  attachmentIds: readonly string[] | undefined
+): string[] {
+  if (!attachmentIds) return [];
+  return Array.from(
+    new Set(attachmentIds.map((id) => id.trim()).filter((id) => id.length > 0))
+  );
+}
+
+/** One hybrid vector+keyword pass, optionally narrowed to / away from attachments. */
+async function fusedChunkSearch({
   reportId,
-  query,
-  limit = DEFAULT_DOCUMENT_SEARCH_LIMIT,
-  snippetChars = DEFAULT_SNIPPET_CHARS,
+  trimmed,
+  queryVector,
+  limit,
+  includeAttachmentIds = [],
+  excludeAttachmentIds = [],
 }: {
   reportId: string;
-  query: string;
-  limit?: number;
-  snippetChars?: number;
-}): Promise<DocumentSearchResult[]> {
-  const trimmed = query.replace(/\s+/g, " ").trim();
-  if (!trimmed) return [];
-
-  const queryEmbedding = await embedRetrievalQuery(trimmed);
-  const queryVector = vectorLiteral(queryEmbedding);
+  trimmed: string;
+  queryVector: string;
+  limit: number;
+  includeAttachmentIds?: string[];
+  excludeAttachmentIds?: string[];
+}): Promise<CandidateRow[]> {
   const candidateLimit = Math.max(limit * 5, DEFAULT_CANDIDATE_LIMIT);
 
   const activeScope = and(
@@ -300,7 +316,14 @@ export async function searchReportDocuments({
     eq(reportAttachments.reportId, reportId),
     isNull(reportAttachments.deletedAt),
     isNotNull(reportAttachments.activeIngestRunId),
-    eq(documentChunks.ingestRunId, reportAttachments.activeIngestRunId)
+    eq(documentChunks.ingestRunId, reportAttachments.activeIngestRunId),
+    // Empty arrays would generate invalid SQL, so only apply a live filter.
+    ...(includeAttachmentIds.length > 0
+      ? [inArray(documentChunks.attachmentId, includeAttachmentIds)]
+      : []),
+    ...(excludeAttachmentIds.length > 0
+      ? [notInArray(documentChunks.attachmentId, excludeAttachmentIds)]
+      : [])
   );
 
   const vectorRows = await db
@@ -337,7 +360,71 @@ export async function searchReportDocuments({
       { name: "keyword", rows: keywordRows },
     ],
     { k: RRF_K, limit }
-  ).map((row) => toSearchResult(row, { snippetChars }));
+  );
+}
+
+/**
+ * Hybrid search over a report's ready attachments.
+ *
+ * `attachmentIds` (documents the engineer tagged with @) does NOT hard-filter:
+ * tagged documents are searched first, and if they yield fewer than `limit`
+ * hits the remainder is backfilled from the rest of the report. Hard-filtering
+ * would blind the assistant whenever the answer lives in an untagged file.
+ * Results carry `pinned` so the model can tell the two apart.
+ */
+export async function searchReportDocuments({
+  reportId,
+  query,
+  limit = DEFAULT_DOCUMENT_SEARCH_LIMIT,
+  snippetChars = DEFAULT_SNIPPET_CHARS,
+  attachmentIds,
+}: {
+  reportId: string;
+  query: string;
+  limit?: number;
+  snippetChars?: number;
+  attachmentIds?: readonly string[];
+}): Promise<DocumentSearchResult[]> {
+  const trimmed = query.replace(/\s+/g, " ").trim();
+  if (!trimmed) return [];
+
+  const queryEmbedding = await embedRetrievalQuery(trimmed);
+  const queryVector = vectorLiteral(queryEmbedding);
+  const pinnedIds = normalizeAttachmentIdFilter(attachmentIds);
+
+  if (pinnedIds.length === 0) {
+    const rows = await fusedChunkSearch({ reportId, trimmed, queryVector, limit });
+    return rows.map((row) => toSearchResult(row, { snippetChars }));
+  }
+
+  const pinnedRows = await fusedChunkSearch({
+    reportId,
+    trimmed,
+    queryVector,
+    limit,
+    includeAttachmentIds: pinnedIds,
+  });
+  const results = pinnedRows.map((row) => ({
+    ...toSearchResult(row, { snippetChars }),
+    pinned: true,
+  }));
+  if (results.length >= limit) return results;
+
+  // The query embedding is reused, so backfill costs only the extra SQL.
+  const backfillRows = await fusedChunkSearch({
+    reportId,
+    trimmed,
+    queryVector,
+    limit: limit - results.length,
+    excludeAttachmentIds: pinnedIds,
+  });
+  return [
+    ...results,
+    ...backfillRows.map((row) => ({
+      ...toSearchResult(row, { snippetChars }),
+      pinned: false,
+    })),
+  ];
 }
 
 export async function listReadyDocumentsForReport(

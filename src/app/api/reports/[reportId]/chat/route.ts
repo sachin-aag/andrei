@@ -51,6 +51,13 @@ import {
 import { auditActorFromUser } from "@/lib/audit";
 import { listReadyDocumentsForReport } from "@/lib/attachments/retrieval";
 import { sanitizeChatMessagesForModel } from "@/lib/ai/chat/image-parts";
+import {
+  buildMentionBlock,
+  mentionedAttachmentIds,
+  mentionedSections,
+  parseChatMentions,
+  resolveChatMentions,
+} from "@/lib/ai/chat/mentions";
 
 export const maxDuration = 120;
 
@@ -89,6 +96,7 @@ export async function POST(
     sessionId?: string;
     mode?: string;
     sectionScope?: string;
+    mentions?: unknown;
   };
   const messages = sanitizeChatMessagesForModel(
     Array.isArray(body.messages) ? body.messages : []
@@ -98,6 +106,7 @@ export async function POST(
   }
   const mode: ChatMode = isChatMode(body.mode) ? body.mode : "agent";
   const sectionScope: ChatSectionScope = parseChatSectionScope(body.sectionScope);
+  const requestedMentions = parseChatMentions(body.mentions);
 
   const access = await loadAccessibleReport(reportId, user);
   if (!access) return NextResponse.json({ error: "Not found" }, { status: 404 });
@@ -162,6 +171,9 @@ export async function POST(
     .from(comments)
     .where(eq(comments.reportId, reportId));
   const documents = await listReadyDocumentsForReport(reportId);
+  // Resolved against this report's ready documents only, so a tagged
+  // attachment id from another report cannot pull in its evidence.
+  const mentions = resolveChatMentions(requestedMentions, documents);
 
   const contextMap = buildReportContextMap({
     report: {
@@ -193,6 +205,7 @@ export async function POST(
     mode,
     sectionScope,
     scopeMismatch,
+    mentionBlock: buildMentionBlock(mentions),
   });
 
   const allTools = buildChatTools({
@@ -200,6 +213,8 @@ export async function POST(
     canEdit,
     sectionScope,
     actor: auditActorFromUser(user),
+    pinnedAttachmentIds: mentionedAttachmentIds(mentions),
+    mentionedSections: mentionedSections(mentions),
   });
   const tools: ToolSet =
     mode === "plan"
@@ -242,7 +257,15 @@ export async function POST(
     }),
     ...langfuseGenerateTextTelemetry({
       functionId: "report-chat",
-      metadata: { reportId, sessionId, mode, sectionScope, canEdit },
+      metadata: {
+        reportId,
+        sessionId,
+        mode,
+        sectionScope,
+        canEdit,
+        taggedDocuments: mentions.documents.length,
+        taggedSections: mentions.sections.length,
+      },
     }),
   });
 

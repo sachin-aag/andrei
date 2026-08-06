@@ -17,8 +17,25 @@ describe("isChatMode", () => {
 });
 
 describe("buildChatSystemPrompt", () => {
-  it("bumps the prompt version for analyze leave-blank unused methods", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v11-chat-images");
+  it("bumps the prompt version for @ mention tagging", () => {
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v12-at-mentions");
+  });
+
+  it("includes the mention block when the engineer tagged something", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      mentionBlock: "## Tagged by the engineer (@ mentions)\n- batch-coa.pdf [att_1]",
+    });
+    expect(prompt).toContain("Tagged by the engineer");
+    expect(prompt).toContain("batch-coa.pdf [att_1]");
+  });
+
+  it("omits the mention block when nothing was tagged", () => {
+    for (const mentionBlock of [undefined, "", "   "]) {
+      const prompt = buildChatSystemPrompt({ ...opts, mode: "agent", mentionBlock });
+      expect(prompt).not.toContain("Tagged by the engineer");
+    }
   });
 
   it("instructs the model to use user-uploaded chat images as visual evidence", () => {

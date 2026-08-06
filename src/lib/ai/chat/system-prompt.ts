@@ -7,7 +7,7 @@ import {
 } from "@/lib/ai/chat/fields";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v11-chat-images";
+export const CHAT_PROMPT_VERSION = "chat-v12-at-mentions";
 
 export type ChatMode = "plan" | "agent";
 
@@ -147,12 +147,17 @@ export function buildChatSystemPrompt(opts: {
   mode: ChatMode;
   sectionScope?: ChatSectionScope;
   scopeMismatch?: SectionScopeMismatch | null;
+  /** Rendered @ mention block; empty when the engineer tagged nothing. */
+  mentionBlock?: string;
 }): string {
   const { contextMap, criteriaOutline, mode } = opts;
   const sectionScope = opts.sectionScope ?? "all";
   const modeRules = mode === "plan" ? PLAN_RULES : AGENT_RULES;
   const mismatchBlock = opts.scopeMismatch
     ? `\n\n${scopeMismatchBlock(opts.scopeMismatch)}`
+    : "";
+  const mentions = opts.mentionBlock?.trim()
+    ? `\n\n${opts.mentionBlock.trim()}`
     : "";
   const analyzeInScope = chatSectionsInScope(sectionScope).includes("analyze");
   const analyzeBlock = analyzeInScope
@@ -161,7 +166,7 @@ export function buildChatSystemPrompt(opts: {
 
   return `${PERSONA}
 
-${sectionFocusBlock(sectionScope)}${mismatchBlock}
+${sectionFocusBlock(sectionScope)}${mismatchBlock}${mentions}
 
 ## Editable fields (section → targetField (kind))
 ${fieldTaxonomy(sectionScope)}
