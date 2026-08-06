@@ -271,6 +271,12 @@ async function repairMissingSchema(pool: pg.Pool): Promise<void> {
     "report_attachments",
     "folder_id"
   );
+  await ensureMigrationColumn(
+    pool,
+    "0036_attachment_description",
+    "report_attachments",
+    "description"
+  );
   await ensureAuditHashChainTriggers(pool);
 }
 
