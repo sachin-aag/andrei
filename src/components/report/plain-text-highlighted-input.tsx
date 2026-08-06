@@ -45,6 +45,7 @@ export function PlainTextHighlightedInput({
   onEditLayoutHeight,
   mirrorContent,
   suggestionActive,
+  suggestionPreviewHeld,
   inlineSuggestionWidget,
   suggestionWidgetAnchorRef,
   "aria-label": ariaLabel,
@@ -61,6 +62,8 @@ export function PlainTextHighlightedInput({
   /** When set, replaces default placeholder mirror (inline suggestion track-changes). */
   mirrorContent?: ReactNode;
   suggestionActive?: boolean;
+  /** True while the shown suggestion is being applied/dismissed — dims the diff. */
+  suggestionPreviewHeld?: boolean;
   /** Accept/dismiss widget, positioned after the suggestion in the mirror layer. */
   inlineSuggestionWidget?: ReactNode;
   suggestionWidgetAnchorRef?: RefObject<HTMLSpanElement | null>;
@@ -335,6 +338,7 @@ export function PlainTextHighlightedInput({
           "rounded-md ring-1 ring-violet-400/20 border border-violet-500/35"
       )}
       style={lockedMinStyle}
+      data-suggestion-preview-held={suggestionPreviewHeld ? "true" : undefined}
     >
       <div
         ref={mirrorRef}

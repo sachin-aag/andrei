@@ -411,6 +411,7 @@ export function PlainTextSuggestionField({
         fieldAnchor={fieldAnchor}
         value={value}
         onChange={onChange}
+        suggestionPreviewHeld={isSuggestionPreviewHeld(section)}
         disabled={disabled}
         placeholder={placeholder}
         className={className}

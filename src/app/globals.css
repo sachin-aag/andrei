@@ -457,6 +457,21 @@
   transition: opacity 0.35s ease;
 }
 
+/* While a suggestion is being applied, the full track-change diff is more
+   detail than needed — drop the strikethrough deletion and soften the
+   incoming text so it settles into place instead of staying sharp the whole
+   time the request is in flight. */
+[data-suggestion-preview-held="true"] .suggestion-delete,
+[data-suggestion-preview-held="true"] .suggestion-delete-ai {
+  display: none;
+}
+
+[data-suggestion-preview-held="true"] .suggestion-insert,
+[data-suggestion-preview-held="true"] .suggestion-insert-ai {
+  filter: blur(2px);
+  transition: filter 0.3s ease;
+}
+
 .suggestion-card-stack {
   position: relative;
   isolation: isolate;
