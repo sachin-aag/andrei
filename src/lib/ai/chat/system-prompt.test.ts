@@ -17,8 +17,8 @@ describe("isChatMode", () => {
 });
 
 describe("buildChatSystemPrompt", () => {
-  it("bumps the prompt version for document retrieval rules", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v9-document-retrieval");
+  it("bumps the prompt version for analyze leave-blank unused methods", () => {
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v10-analyze-leave-blank");
   });
 
   it("plan mode forbids editing and asks questions via ask_user", () => {
@@ -96,6 +96,11 @@ describe("buildChatSystemPrompt", () => {
     expect(allScope).toContain("select_analyze_method");
     expect(allScope).toContain("Patient safety");
     expect(allScope).toContain("Past batches");
+    expect(allScope).toContain("leaveBlankFields");
+    expect(allScope).toContain("Do NOT call draft_field on any of them");
+    expect(allScope).not.toContain(
+      "Call draft_field once per path, writing the literal text \"Not Applicable\""
+    );
 
     const analyzeScope = buildChatSystemPrompt({
       ...opts,
@@ -115,6 +120,7 @@ describe("buildChatSystemPrompt", () => {
     expect(planAnalyze).toContain("## Analyze planning rules");
     expect(planAnalyze).toContain("recommended method");
     expect(planAnalyze).toContain("read_section on define AND measure");
+    expect(planAnalyze).toContain("leave 6M and Brainstorming blank");
     expect(planAnalyze).not.toContain("## Analyze drafting rules");
   });
 

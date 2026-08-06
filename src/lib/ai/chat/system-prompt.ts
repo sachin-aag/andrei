@@ -7,7 +7,7 @@ import {
 } from "@/lib/ai/chat/fields";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v9-document-retrieval";
+export const CHAT_PROMPT_VERSION = "chat-v10-analyze-leave-blank";
 
 export type ChatMode = "plan" | "agent";
 
@@ -111,7 +111,7 @@ const ANALYZE_METHOD_HEURISTICS = `Method selection heuristics (exactly ONE of 6
   - 6M — multiple contributing factors across man/machine/measurement/material/method/milieu that don't form a single causal chain.
   - Brainstorming — cause is speculative or evidence is too thin for a structured grid; cross-functional idea capture.
 - If the context map already shows an analyze method, keep it unless the engineer explicitly asks to switch.
-- Never plan or draft two methods with real content. Unused methods become "Not Applicable".
+- Never plan or draft two methods with real content. Leave unused methods blank (do not write "Not Applicable" into them — DOCX export fills that).
 - Always include Investigation Outcome, Root Cause, and Impact Assessment (all six areas: System, Document, Product, Equipment, Patient safety, Past batches).`;
 
 const ANALYZE_PLAN_RULES = `## Analyze planning rules (required when planning Analyze)
@@ -121,7 +121,7 @@ In Plan mode you MUST:
 1. Read define and measure (unless the engineer already named a method or the context map already shows one).
 2. State your recommended method and a one-sentence rationale in prose BEFORE asking more questions.
 3. Then ask_user only for facts still missing for that chosen method plus the always-required fields (investigation outcome, root cause, impact across the six areas). Do not ask 6M-grid questions if you recommended 5-Why, and vice versa.
-4. In your closing PLAN, name the chosen method explicitly (e.g. "Analyze: draft 5-Why; mark 6M and Brainstorming Not Applicable; fill outcome / root cause / six-area impact").`;
+4. In your closing PLAN, name the chosen method explicitly (e.g. "Analyze: draft 5-Why only; leave 6M and Brainstorming blank; fill outcome / root cause / six-area impact").`;
 
 const ANALYZE_AGENT_RULES = `## Analyze drafting rules (required when drafting Analyze)
 ${ANALYZE_METHOD_HEURISTICS}
@@ -130,7 +130,7 @@ In Agent mode you MUST:
 1. Call select_analyze_method with the chosen method and a one-sentence rationale BEFORE drafting any Analyze field. State the choice and rationale in your reply.
 2. After select_analyze_method returns, make ONE draft_field CALL PER FIELD PATH — never combine multiple field paths' content into a single call:
    - draftFields lists every field path for the chosen method (e.g. 6M has 7: sixM.man, sixM.machine, sixM.measurement, sixM.material, sixM.method, sixM.milieu, sixM.conclusion). Call draft_field once per path. Each call's markdown covers ONLY that one dimension — if a dimension does not contribute, its OWN field gets a short "Not applicable — <reason>" line; do not describe it inside a different dimension's field, and do not restate other dimensions' findings.
-   - notApplicableFields lists every field path from the OTHER (unused) methods. Call draft_field once per path, writing the literal text "Not Applicable" into each (the template forbids deleting 6M/5-Why/Brainstorming questions).
+   - leaveBlankFields lists every field path from the OTHER (unused) methods. Do NOT call draft_field on any of them — leave those fields empty so the engineer is not flooded with "Not Applicable" suggestion cards. Export fills blank unused-method slots with "Not Applicable".
    - Always draft investigationOutcome, rootCause.narrative, and impactAssessment as their own separate draft_field calls.
    - impactAssessment MUST cover all six areas as labelled lines — System, Document, Product, Equipment, Patient safety, Past batches — each with a statement or "No impact — <reason>". Never omit an area.
    - WRONG: one draft_field call to sixM.man containing "- Man: ... - Machine: Not applicable... - Measurement: Not applicable... - Material: ...". RIGHT: separate draft_field calls — sixM.man gets only the Man finding, sixM.machine gets only "Not applicable — no equipment involved", sixM.measurement gets only its own line, etc.`;

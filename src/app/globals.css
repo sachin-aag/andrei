@@ -448,16 +448,13 @@
   animation: suggestion-card-applied-glow 0.75s ease-out;
 }
 
-/* Brief settle after apply — no inline preview, calm before next suggestion.
-   The dip in opacity is what the transition actually animates; without it the
-   preview-mark strip and the final content swap happen as a hard cut. */
+/* Brief settle after apply — no inline preview, calm before next suggestion. */
 .suggestion-field-settling {
   transition: opacity 0.35s ease;
 }
 
 .suggestion-field-settling .ProseMirror {
   transition: opacity 0.35s ease;
-  opacity: 0.45;
 }
 
 .suggestion-card-stack {

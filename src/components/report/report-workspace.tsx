@@ -127,7 +127,7 @@ export function ReportWorkspace({
   const [detailsFormKey, setDetailsFormKey] = useState(0);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [documentsCollapsed, setDocumentsCollapsed] = useState(false);
-  const [sidebarTab, setSidebarTab] = useState<SidebarTab>("criteria");
+  const [sidebarTab, setSidebarTab] = useState<SidebarTab>("assistant");
   const [sectionMinHeights, setSectionMinHeights] = useState<
     Partial<Record<SectionType, number>>
   >({});

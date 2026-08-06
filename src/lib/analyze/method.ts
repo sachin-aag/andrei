@@ -105,19 +105,21 @@ export function existingAnalyzeTool(content: unknown): AnalyzeTool | null {
 
 export type AnalyzeMethodPlan = {
   draftFields: readonly string[];
-  notApplicableFields: readonly string[];
+  /** Unused methods — leave blank; DOCX export fills "Not Applicable". */
+  leaveBlankFields: readonly string[];
 };
 
 /**
  * Field partition for drafting after a method is selected:
- * draft the chosen method's fields; mark the other methods' fields N/A.
+ * draft the chosen method's fields; leave the other methods blank
+ * (no suggestion cards — export fills N/A).
  */
 export function analyzeMethodPlan(method: AnalyzeMethod): AnalyzeMethodPlan {
   const draftFields = ANALYZE_METHOD_FIELDS[method];
-  const notApplicableFields = ANALYZE_METHODS.filter((m) => m !== method).flatMap(
+  const leaveBlankFields = ANALYZE_METHODS.filter((m) => m !== method).flatMap(
     (m) => ANALYZE_METHOD_FIELDS[m]
   );
-  return { draftFields, notApplicableFields };
+  return { draftFields, leaveBlankFields };
 }
 
 /** Build the report.toolsUsed object with exactly one method checked. */

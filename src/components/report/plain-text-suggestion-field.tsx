@@ -134,6 +134,7 @@ export function PlainTextSuggestionField({
   const {
     evaluations,
     isSuggestionPreviewHeld,
+    suggestionApplyTransition,
     beginSuggestionApplyTransition,
     endSuggestionApplyTransition,
   } = useReportEvaluations();
@@ -144,14 +145,32 @@ export function PlainTextSuggestionField({
   const suggestionWidgetAnchorRef = useRef<HTMLSpanElement>(null);
 
   const activeComment = useMemo(() => {
-    if (isSuggestionPreviewHeld(section)) return null;
+    if (isSuggestionPreviewHeld(section)) {
+      // Keep previewing the suggestion currently being applied/dismissed —
+      // nulling it out here would flash the original wording before the
+      // request resolves and the real result lands.
+      const lockedId = suggestionApplyTransition[section]?.gutterAnchorCommentId;
+      const locked = lockedId
+        ? comments.find((c) => c.id === lockedId)
+        : undefined;
+      return locked && suggestionTargetsField(section, locked.contentPath, contentPath)
+        ? locked
+        : null;
+    }
     const active = activeSuggestionForSection(section, comments, evaluations);
     if (!active) return null;
 
     return suggestionTargetsField(section, active.contentPath, contentPath)
       ? active
       : null;
-  }, [comments, evaluations, contentPath, section, isSuggestionPreviewHeld]);
+  }, [
+    comments,
+    evaluations,
+    contentPath,
+    section,
+    isSuggestionPreviewHeld,
+    suggestionApplyTransition,
+  ]);
 
   const activeValidation = useMemo(() => {
     if (!activeComment) return null;
@@ -237,7 +256,6 @@ export function PlainTextSuggestionField({
       return;
     }
 
-    setApplySettling(true);
     setPending(true);
     try {
       beginSuggestionApplyTransition(section, activeComment.id);
@@ -285,6 +303,10 @@ export function PlainTextSuggestionField({
           c.id === activeComment.id ? { ...c, status: "resolved" as const } : c
         )
       );
+      // Only hide the diff preview once the real value has landed — hiding it
+      // earlier would reveal the stale original text underneath while the
+      // request is still in flight.
+      setApplySettling(true);
       await delay(SUGGESTION_APPLY_SETTLE_MS);
       await delay(SUGGESTION_INLINE_REVEAL_DELAY_MS);
 

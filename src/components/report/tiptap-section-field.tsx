@@ -317,7 +317,7 @@ export function TiptapSectionField({
   const { registerEditor, setActiveEditor, activeEditorKey } = useReportEditors();
   const isRichField = isRichTargetField(section, contentPath);
   const thisEditorKey = editorRegistryKey(section, contentPath);
-  const { activeSuggestionIdForSection, isSuggestionPreviewHeld } =
+  const { activeSuggestionIdForSection, isSuggestionPreviewHeld, suggestionApplyTransition } =
     useReportEvaluations();
   const { replaceSection, sections } = useReportSections();
   const { getUser } = useUserDirectory();
@@ -704,7 +704,12 @@ export function TiptapSectionField({
     const before = JSON.stringify(json);
 
     if (previewHeld) {
-      json = stripPendingSuggestionsExcept(json, null);
+      // Keep showing the suggestion currently being applied/dismissed as-is —
+      // stripping it here (before the request resolves) would flash the
+      // original wording before the real result lands. Only unrelated
+      // previews in this field get cleared for a calm moment.
+      const lockedId = suggestionApplyTransition[section]?.gutterAnchorCommentId ?? null;
+      json = stripPendingSuggestionsExcept(json, lockedId);
       if (JSON.stringify(json) === before) return;
       editor.commands.setContent(json as Content, { emitUpdate: false });
       return;
@@ -778,6 +783,7 @@ export function TiptapSectionField({
     previewHeld,
     section,
     sectionContent,
+    suggestionApplyTransition,
   ]);
 
   // Debounced decoration refresh — coalesces hover-driven updates to one per frame.

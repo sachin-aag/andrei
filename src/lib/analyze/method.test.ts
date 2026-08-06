@@ -101,23 +101,23 @@ describe("existingAnalyzeTool", () => {
 });
 
 describe("analyzeMethodPlan", () => {
-  it("partitions draft vs Not Applicable fields for each method", () => {
+  it("partitions draft vs leave-blank fields for each method", () => {
     const sixM = analyzeMethodPlan("sixM");
     expect(sixM.draftFields).toEqual(ANALYZE_METHOD_FIELDS.sixM);
-    expect(sixM.notApplicableFields).toEqual([
+    expect(sixM.leaveBlankFields).toEqual([
       ...ANALYZE_METHOD_FIELDS.fiveWhy,
       ...ANALYZE_METHOD_FIELDS.brainstorming,
     ]);
 
     const fiveWhy = analyzeMethodPlan("fiveWhy");
     expect(fiveWhy.draftFields).toEqual(["fiveWhy.narrative"]);
-    expect(fiveWhy.notApplicableFields).toContain("sixM.man");
-    expect(fiveWhy.notApplicableFields).toContain("brainstorming");
-    expect(fiveWhy.notApplicableFields).not.toContain("fiveWhy.narrative");
+    expect(fiveWhy.leaveBlankFields).toContain("sixM.man");
+    expect(fiveWhy.leaveBlankFields).toContain("brainstorming");
+    expect(fiveWhy.leaveBlankFields).not.toContain("fiveWhy.narrative");
 
     const brainstorming = analyzeMethodPlan("brainstorming");
     expect(brainstorming.draftFields).toEqual(["brainstorming"]);
-    expect(brainstorming.notApplicableFields).toEqual([
+    expect(brainstorming.leaveBlankFields).toEqual([
       ...ANALYZE_METHOD_FIELDS.sixM,
       ...ANALYZE_METHOD_FIELDS.fiveWhy,
     ]);
