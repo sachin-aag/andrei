@@ -2,7 +2,13 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport, type UIMessage, type UIMessagePart } from "ai";
+import {
+  DefaultChatTransport,
+  isFileUIPart,
+  type FileUIPart,
+  type UIMessage,
+  type UIMessagePart,
+} from "ai";
 import { formatDistanceToNow } from "date-fns";
 import {
   Send,
@@ -17,6 +23,8 @@ import {
   Wrench,
   Check,
   ArrowRightLeft,
+  ImagePlus,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -41,10 +49,21 @@ import {
   type ChatSectionScope,
 } from "@/lib/ai/chat/fields";
 import {
+  CHAT_IMAGE_MAX_BYTES,
+  CHAT_MAX_IMAGES_PER_MESSAGE,
+  isAllowedChatImageMediaType,
+} from "@/lib/ai/chat/image-parts";
+import {
   detectSectionScopeMismatch,
   type SectionScopeMismatch,
 } from "@/lib/ai/chat/section-intent";
 import type { ChatSessionSummary } from "@/lib/ai/chat/sessions";
+import { compressImageFile } from "@/lib/images/compress-image";
+
+type PendingChatImage = {
+  id: string;
+  part: FileUIPart;
+};
 
 type ChatMode = "plan" | "agent";
 
@@ -317,11 +336,27 @@ function MessageTurn({
       .map((p) => p.text)
       .join("\n")
       .trim();
-    if (!text) return null;
+    const images = message.parts.filter(
+      (p): p is FileUIPart => isFileUIPart(p) && p.mediaType.startsWith("image/")
+    );
+    if (!text && images.length === 0) return null;
     return (
       <div className="flex justify-end">
-        <div className="max-w-[92%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-[var(--primary)] px-3 py-2 text-sm text-[var(--primary-foreground)]">
-          {text}
+        <div className="max-w-[92%] space-y-2 rounded-2xl rounded-br-md bg-[var(--primary)] px-3 py-2 text-sm text-[var(--primary-foreground)]">
+          {images.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5">
+              {images.map((image, i) => (
+                // eslint-disable-next-line @next/next/no-img-element -- chat data-URL previews
+                <img
+                  key={`${image.filename ?? "image"}-${i}`}
+                  src={image.url}
+                  alt={image.filename ?? "Attached image"}
+                  className="max-h-40 max-w-full rounded-md border border-white/20 object-contain"
+                />
+              ))}
+            </div>
+          ) : null}
+          {text ? <div className="whitespace-pre-wrap">{text}</div> : null}
         </div>
       </div>
     );
@@ -446,6 +481,8 @@ function ModeToggle({
 export function ChatPanel() {
   const { report, refresh, readOnly } = useReportData();
   const [input, setInput] = useState("");
+  const [pendingImages, setPendingImages] = useState<PendingChatImage[]>([]);
+  const [attaching, setAttaching] = useState(false);
   const [mode, setMode] = useState<ChatMode>("agent");
   const [sectionScope, setSectionScope] = useState<ChatSectionScope>(CHAT_SECTION_SCOPE_ALL);
   const [clientScopeSuggestion, setClientScopeSuggestion] =
@@ -456,6 +493,7 @@ export function ChatPanel() {
   const [initializing, setInitializing] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
   const historyRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const base = `/api/reports/${report.id}/chat`;
 
@@ -529,6 +567,7 @@ export function ChatPanel() {
     setCurrentSessionId(id);
     setMessages([]);
     setInput("");
+    setPendingImages([]);
   }, [createSession, setMessages]);
 
   // Initialize: load sessions, open the most recent or create the first.
@@ -577,10 +616,75 @@ export function ChatPanel() {
     setClientScopeSuggestion(null);
   }, []);
 
+  const addImageFiles = useCallback(
+    async (files: File[]) => {
+      const imageFiles = files.filter((file) => isAllowedChatImageMediaType(file.type));
+      if (imageFiles.length === 0) {
+        toast.error("Please attach a PNG, JPEG, WebP, or GIF image.");
+        return;
+      }
+
+      const remaining = CHAT_MAX_IMAGES_PER_MESSAGE - pendingImages.length;
+      if (remaining <= 0) {
+        toast.error(
+          `You can attach up to ${CHAT_MAX_IMAGES_PER_MESSAGE} images per message.`
+        );
+        return;
+      }
+      if (imageFiles.length > remaining) {
+        toast.error(
+          `You can attach up to ${CHAT_MAX_IMAGES_PER_MESSAGE} images per message.`
+        );
+      }
+
+      setAttaching(true);
+      try {
+        const next: PendingChatImage[] = [];
+        for (const file of imageFiles.slice(0, remaining)) {
+          try {
+            const compressed = await compressImageFile(file, {
+              maxWidthPx: 1280,
+              maxBytes: CHAT_IMAGE_MAX_BYTES,
+              jpegQuality: 0.8,
+            });
+            next.push({
+              id: crypto.randomUUID(),
+              part: {
+                type: "file",
+                mediaType: compressed.mimeType,
+                filename: file.name || "image",
+                url: compressed.dataUrl,
+              },
+            });
+          } catch (err) {
+            toast.error(
+              err instanceof Error ? err.message : `Could not attach ${file.name}`
+            );
+          }
+        }
+
+        if (next.length > 0) {
+          setPendingImages((prev) =>
+            [...prev, ...next].slice(0, CHAT_MAX_IMAGES_PER_MESSAGE)
+          );
+        }
+      } finally {
+        setAttaching(false);
+      }
+    },
+    [pendingImages.length]
+  );
+
+  const removePendingImage = useCallback((id: string) => {
+    setPendingImages((prev) => prev.filter((image) => image.id !== id));
+  }, []);
+
   const send = useCallback(
-    async (text: string) => {
+    async (text: string, images?: PendingChatImage[]) => {
+      const attached = images ?? pendingImages;
       const trimmed = text.trim();
-      if (!trimmed || busy || initializing) return;
+      const files = attached.map((image) => image.part);
+      if ((!trimmed && files.length === 0) || busy || initializing || attaching) return;
       let sessionId = currentSessionId;
       if (!sessionId) {
         sessionId = await createSession();
@@ -591,10 +695,32 @@ export function ChatPanel() {
         setCurrentSessionId(sessionId);
       }
       setInput("");
-      setClientScopeSuggestion(detectSectionScopeMismatch(sectionScope, trimmed));
-      void sendMessage({ text: trimmed }, { body: { sessionId, mode, sectionScope } });
+      setPendingImages([]);
+      if (trimmed) {
+        setClientScopeSuggestion(detectSectionScopeMismatch(sectionScope, trimmed));
+      } else {
+        setClientScopeSuggestion(null);
+      }
+      const body = { sessionId, mode, sectionScope };
+      if (trimmed && files.length > 0) {
+        void sendMessage({ text: trimmed, files }, { body });
+      } else if (files.length > 0) {
+        void sendMessage({ files }, { body });
+      } else {
+        void sendMessage({ text: trimmed }, { body });
+      }
     },
-    [busy, initializing, currentSessionId, createSession, sendMessage, mode, sectionScope]
+    [
+      attaching,
+      busy,
+      initializing,
+      currentSessionId,
+      createSession,
+      sendMessage,
+      mode,
+      sectionScope,
+      pendingImages,
+    ]
   );
 
   const currentTitle =
@@ -691,7 +817,7 @@ export function ChatPanel() {
                   key={p}
                   type="button"
                   disabled={busy || initializing}
-                  onClick={() => send(p)}
+                  onClick={() => void send(p, [])}
                   className="w-full rounded-md border border-[var(--border)] bg-[var(--secondary)]/30 px-3 py-2 text-left text-xs text-[var(--foreground)] transition-colors hover:bg-[var(--secondary)] disabled:opacity-50"
                 >
                   {p}
@@ -706,7 +832,7 @@ export function ChatPanel() {
               message={m}
               onSwitchSectionScope={applySectionScope}
               askUserActive={i === messages.length - 1 && !busy && !initializing}
-              onAnswerQuestions={(answerText) => void send(answerText)}
+              onAnswerQuestions={(answerText) => void send(answerText, [])}
             />
           ))
         )}
@@ -750,10 +876,71 @@ export function ChatPanel() {
             edits cannot be accepted.
           </p>
         )}
+        {pendingImages.length > 0 ? (
+          <div className="mb-2 flex flex-wrap gap-2">
+            {pendingImages.map((image) => (
+              <div
+                key={image.id}
+                className="relative size-16 overflow-hidden rounded-md border border-[var(--border)] bg-[var(--secondary)]/40"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element -- chat data-URL previews */}
+                <img
+                  src={image.part.url}
+                  alt={image.part.filename ?? "Attached image"}
+                  className="size-full object-cover"
+                />
+                <button
+                  type="button"
+                  onClick={() => removePendingImage(image.id)}
+                  aria-label={`Remove ${image.part.filename ?? "image"}`}
+                  className="absolute right-0.5 top-0.5 flex size-5 items-center justify-center rounded-full bg-black/65 text-white hover:bg-black/80"
+                >
+                  <X className="size-3" aria-hidden="true" />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
         <div className="flex items-end gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            multiple
+            className="hidden"
+            onChange={(event) => {
+              const files = Array.from(event.target.files ?? []);
+              event.target.value = "";
+              if (files.length > 0) void addImageFiles(files);
+            }}
+          />
+          <button
+            type="button"
+            disabled={busy || initializing || attaching}
+            aria-label="Attach image"
+            title="Attach image"
+            onClick={() => fileInputRef.current?.click()}
+            className="flex size-9 shrink-0 items-center justify-center rounded-md border border-[var(--border)] text-[var(--muted-foreground)] transition-colors hover:bg-[var(--secondary)] hover:text-[var(--foreground)] disabled:opacity-40"
+          >
+            {attaching ? (
+              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+            ) : (
+              <ImagePlus className="size-4" aria-hidden="true" />
+            )}
+          </button>
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
+            onPaste={(event) => {
+              const items = Array.from(event.clipboardData?.items ?? []);
+              const imageFiles = items
+                .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+                .map((item) => item.getAsFile())
+                .filter((file): file is File => file != null);
+              if (imageFiles.length === 0) return;
+              event.preventDefault();
+              void addImageFiles(imageFiles);
+            }}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
@@ -765,17 +952,22 @@ export function ChatPanel() {
             placeholder={
               mode === "plan"
                 ? sectionScope === CHAT_SECTION_SCOPE_ALL
-                  ? "Describe the deviation or quality event, or ask what information I need…"
-                  : `What should we capture in ${scopeDescription(sectionScope)}?`
+                  ? "Describe the deviation, paste a photo, or ask what information I need…"
+                  : `What should we capture in ${scopeDescription(sectionScope)}? You can paste a photo.`
                 : sectionScope === CHAT_SECTION_SCOPE_ALL
-                  ? "Ask the assistant to draft or improve a section…"
+                  ? "Ask the assistant to draft or improve a section… paste photos for context"
                   : `Ask the assistant to draft or improve ${scopeDescription(sectionScope)}…`
             }
             className="min-h-[40px] max-h-40 flex-1 resize-none rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)] disabled:opacity-50"
           />
           <button
             type="submit"
-            disabled={busy || initializing || !input.trim()}
+            disabled={
+              busy ||
+              initializing ||
+              attaching ||
+              (!input.trim() && pendingImages.length === 0)
+            }
             aria-label="Send message"
             className="flex size-9 items-center justify-center rounded-md bg-[var(--primary)] text-[var(--primary-foreground)] transition-opacity hover:opacity-90 disabled:opacity-40"
           >
