@@ -26,7 +26,7 @@ test.describe("create report", () => {
 
   test("opens create dialog from New Report button", async ({ page }) => {
     await openNewReportDialog(page);
-    await expect(page.locator("#deviationNo")).toBeVisible();
+    await expect(page.locator("#documentNo")).toBeVisible();
     await expect(page.getByRole("button", { name: /^create$/i })).toBeVisible();
     await expect(page.getByRole("button", { name: /^cancel$/i })).toBeVisible();
   });
@@ -44,17 +44,17 @@ test.describe("create report", () => {
 
     await page.goto("/");
     await newReportButton(page).click();
-    await page.locator("#deviationNo").fill(deviationNo);
+    await page.locator("#documentNo").fill(deviationNo);
     await page.getByRole("button", { name: /^create$/i }).click();
     await expect(
-      page.getByText(/already have a report with this deviation number/i)
+      page.getByText(/already have a report with this document number/i)
     ).toBeVisible();
   });
 
   test("creates blank report and navigates to editor", async ({ page }) => {
     const deviationNo = uniqueDeviationNo("NEW");
     await newReportButton(page).click();
-    await page.locator("#deviationNo").fill(deviationNo);
+    await page.locator("#documentNo").fill(deviationNo);
     await page.getByRole("button", { name: /^create$/i }).click();
     await expect(page).toHaveURL(/\/reports\/[^/]+\/edit/, { timeout: 30_000 });
     const match = page.url().match(/\/reports\/([^/]+)\/edit/);
