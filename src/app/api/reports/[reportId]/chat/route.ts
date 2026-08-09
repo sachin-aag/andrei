@@ -51,6 +51,7 @@ import {
 } from "@/lib/observability/langfuse";
 import { auditActorFromUser } from "@/lib/audit";
 import { listReadyDocumentsForReport } from "@/lib/attachments/retrieval";
+import { sanitizeChatMessagesForModel } from "@/lib/ai/chat/image-parts";
 
 export const maxDuration = 120;
 
@@ -90,7 +91,9 @@ export async function POST(
     mode?: string;
     sectionScope?: string;
   };
-  const messages = Array.isArray(body.messages) ? body.messages : [];
+  const messages = sanitizeChatMessagesForModel(
+    Array.isArray(body.messages) ? body.messages : []
+  );
   if (messages.length === 0) {
     return NextResponse.json({ error: "No messages" }, { status: 400 });
   }

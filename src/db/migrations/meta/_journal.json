@@ -251,7 +251,14 @@
       "idx": 35,
       "version": "7",
       "when": 1782890400000,
-      "tag": "0036_document_types",
+      "tag": "0036_attachment_description",
+      "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1782976800000,
+      "tag": "0037_document_types",
       "breakpoints": true
     }
   ]

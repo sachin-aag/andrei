@@ -3,6 +3,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { reportAttachments } from "@/db/schema";
+import { ATTACHMENT_DESCRIPTION_MAX } from "@/lib/attachments/description";
 import { toAttachmentDto } from "@/lib/attachments/dto";
 import { validateFolderPlacement } from "@/lib/attachments/folders";
 import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
@@ -14,13 +15,24 @@ export const runtime = "nodejs";
 const patchSchema = z
   .object({
     folderId: z.string().min(1).nullable().optional(),
+    filename: z.string().trim().min(1).max(255).optional(),
+    /** Null or empty clears the description. */
+    description: z
+      .string()
+      .max(ATTACHMENT_DESCRIPTION_MAX)
+      .nullable()
+      .optional(),
     /** Client could not finish the byte PUT (CORS, timeout, network). */
     uploadFailed: z.literal(true).optional(),
     error: z.string().max(500).optional(),
   })
   .refine(
-    (data) => data.folderId !== undefined || data.uploadFailed === true,
-    { message: "Expected folderId or uploadFailed" }
+    (data) =>
+      data.folderId !== undefined ||
+      data.filename !== undefined ||
+      data.description !== undefined ||
+      data.uploadFailed === true,
+    { message: "Expected folderId, filename, description, or uploadFailed" }
   );
 
 export async function GET(
@@ -42,8 +54,9 @@ export async function GET(
   return NextResponse.json({ attachment: toAttachmentDto(attachment) });
 }
 
-/** Moves an attachment between folders, or records a client-side upload failure.
- * Folder placement is not audited — it carries no report content, unlike upload/delete. */
+/** Moves, renames, or updates description for an attachment; or records upload failure.
+ * Folder placement, rename, and description are not audited — they carry no report
+ * content bytes (unlike upload/delete). Description is user metadata for AI context. */
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ reportId: string; attachmentId: string }> }
@@ -91,22 +104,44 @@ export async function PATCH(
     return NextResponse.json({ attachment: toAttachmentDto(updated) });
   }
 
-  const folderId = parsed.data.folderId ?? null;
-  const placementError = await validateFolderPlacement({
-    reportId,
-    parentId: folderId,
-    folderId: null,
-  });
-  if (placementError) {
-    return NextResponse.json(
-      { error: placementError.error },
-      { status: placementError.status }
-    );
+  const updates: {
+    folderId?: string | null;
+    filename?: string;
+    description?: string | null;
+  } = {};
+
+  if (parsed.data.folderId !== undefined) {
+    const folderId = parsed.data.folderId;
+    const placementError = await validateFolderPlacement({
+      reportId,
+      parentId: folderId,
+      folderId: null,
+    });
+    if (placementError) {
+      return NextResponse.json(
+        { error: placementError.error },
+        { status: placementError.status }
+      );
+    }
+    updates.folderId = folderId;
+  }
+
+  if (parsed.data.filename !== undefined) {
+    updates.filename = parsed.data.filename;
+  }
+
+  if (parsed.data.description !== undefined) {
+    const trimmed = parsed.data.description?.trim() ?? "";
+    updates.description = trimmed.length > 0 ? trimmed : null;
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return NextResponse.json({ attachment: toAttachmentDto(attachment) });
   }
 
   const [updated] = await db
     .update(reportAttachments)
-    .set({ folderId })
+    .set(updates)
     .where(
       and(
         eq(reportAttachments.id, attachmentId),

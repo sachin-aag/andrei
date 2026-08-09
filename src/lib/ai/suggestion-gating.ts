@@ -114,6 +114,7 @@ export type ParsedAiFixPayload = {
     citationId: string;
     attachmentId: string;
     filename: string;
+    description?: string | null;
     pageNumber: number;
     chunkId: string;
     sourceKind: string;
@@ -155,6 +156,8 @@ export function parseAiFixCommentContent(content: string): ParsedAiFixPayload {
                   citationId: s.citationId,
                   attachmentId: s.attachmentId,
                   filename: s.filename,
+                  description:
+                    typeof s.description === "string" ? s.description : null,
                   pageNumber: s.pageNumber,
                   chunkId: s.chunkId,
                   sourceKind: s.sourceKind,

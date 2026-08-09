@@ -127,6 +127,8 @@ export type ReportAttachmentRecord = {
   /** Null = top level of the report's document tree. */
   folderId: string | null;
   filename: string;
+  /** Optional user note (2–3 lines) used as AI document context. */
+  description: string | null;
   mimeType: string;
   sizeBytes: number;
   pageCount: number | null;

@@ -20,6 +20,8 @@ const PAGE_TEXT_LIMIT = 12_000;
 export type DocumentSearchResult = {
   attachmentId: string;
   filename: string;
+  /** Optional user note describing why this file matters. */
+  description: string | null;
   pageNumber: number;
   chunkId: string;
   sourceKind: string;
@@ -35,6 +37,8 @@ export type ClientDocumentSearchResult = Omit<DocumentSearchResult, "sourceSha25
 export type ReadyDocumentIndexItem = {
   attachmentId: string;
   filename: string;
+  /** Optional user note used as AI document context. */
+  description: string | null;
   pageCount: number | null;
   ingestRunId: string;
 };
@@ -42,6 +46,7 @@ export type ReadyDocumentIndexItem = {
 export type DocumentPageRead = {
   attachmentId: string;
   filename: string;
+  description: string | null;
   pageNumber: number;
   printedPageLabel: string | null;
   transcript: string;
@@ -66,6 +71,7 @@ export type RankedFusionResult<T> = T & {
 type CandidateRow = {
   attachmentId: string;
   filename: string;
+  description: string | null;
   pageNumber: number;
   chunkId: string;
   sourceKind: string;
@@ -212,6 +218,7 @@ function toSearchResult(
   return {
     attachmentId: row.attachmentId,
     filename: row.filename,
+    description: row.description ?? null,
     pageNumber: row.pageNumber,
     chunkId: row.chunkId,
     sourceKind: row.sourceKind,
@@ -259,6 +266,7 @@ function candidateSelect() {
   return {
     attachmentId: documentChunks.attachmentId,
     filename: reportAttachments.filename,
+    description: reportAttachments.description,
     pageNumber: documentChunks.pageNumber,
     chunkId: documentChunks.id,
     sourceKind: documentChunks.sourceKind,
@@ -339,6 +347,7 @@ export async function listReadyDocumentsForReport(
     .select({
       attachmentId: reportAttachments.id,
       filename: reportAttachments.filename,
+      description: reportAttachments.description,
       pageCount: reportAttachments.pageCount,
       ingestRunId: reportAttachments.activeIngestRunId,
     })
@@ -358,6 +367,7 @@ export async function listReadyDocumentsForReport(
           {
             attachmentId: row.attachmentId,
             filename: row.filename,
+            description: row.description ?? null,
             pageCount: row.pageCount,
             ingestRunId: row.ingestRunId,
           },
@@ -413,6 +423,7 @@ export async function readDocumentPage({
     .select({
       attachmentId: documentPages.attachmentId,
       filename: reportAttachments.filename,
+      description: reportAttachments.description,
       pageNumber: documentPages.pageNumber,
       printedPageLabel: documentPages.printedPageLabel,
       transcript: documentPages.transcript,
@@ -441,6 +452,7 @@ export async function readDocumentPage({
   if (!row) return null;
   return {
     ...row,
+    description: row.description ?? null,
     transcript: truncateSnippet(row.transcript, PAGE_TEXT_LIMIT),
     visualInterpretation: truncateSnippet(row.visualInterpretation, PAGE_TEXT_LIMIT),
   };

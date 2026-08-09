@@ -18,7 +18,13 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("bumps the prompt version for analyze leave-blank unused methods", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v10-analyze-leave-blank");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v11-chat-images");
+  });
+
+  it("instructs the model to use user-uploaded chat images as visual evidence", () => {
+    const prompt = buildChatSystemPrompt({ ...opts, mode: "agent" });
+    expect(prompt).toContain("User-uploaded chat images");
+    expect(prompt).toContain("untrusted visual evidence");
   });
 
   it("plan mode forbids editing and asks questions via ask_user", () => {
