@@ -59,9 +59,9 @@ export async function DELETE(
     entityType: "report",
     entityId: reportId,
     reportId,
-    summary: `Permanently purged report ${existing.deviationNo}`,
+    summary: `Permanently purged report ${existing.documentNo}`,
     oldValue: {
-      deviationNo: existing.deviationNo,
+      documentNo: existing.documentNo,
       status: existing.status,
       deletedAt: existing.deletedAt,
       deletedById: existing.deletedById,

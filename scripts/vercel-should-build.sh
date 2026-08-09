@@ -4,6 +4,9 @@
 # One GitHub repo, two Vercel projects (andrei-v2 = MJ, andrei-demo = customer demo).
 # Set ANDREI_VERCEL_DEPLOY_SCOPE on each project so branches only build where intended.
 # See docs/whitelabel-vercel-deploy.md § "Deploy scope (branch routing)".
+#
+# Neon preview DB branches are created only when a Preview *deployment* runs. Skipping
+# the build here is what keeps demo-line PRs from creating DBs on the MJ Neon project.
 
 set -euo pipefail
 
@@ -47,8 +50,23 @@ case "$scope" in
       echo "andrei-v2: building MJ-line branch ${ref}"
       exit 1
     fi
-    echo "andrei-v2: skipping branch ${ref} (demo line)"
+    echo "andrei-v2: skipping branch ${ref} (demo line — no MJ Neon preview DB)"
     exit 0
+    ;;
+  "")
+    # Fail-safe: without an explicit scope, never build demo-line branches.
+    # Protects Andrei V2 / MJ Neon if ANDREI_VERCEL_DEPLOY_SCOPE is missing on andrei-v2.
+    # andrei-demo MUST set ANDREI_VERCEL_DEPLOY_SCOPE=demo or its PRs will be skipped here.
+    if is_demo_line_branch; then
+      echo "WARNING: ANDREI_VERCEL_DEPLOY_SCOPE unset; skipping demo-line branch ${ref} (set scope=demo on andrei-demo, scope=mj on andrei-v2)"
+      exit 0
+    fi
+    echo "WARNING: ANDREI_VERCEL_DEPLOY_SCOPE unset; building ${ref} (set scope=mj on andrei-v2)"
+    exit 1
+    ;;
+  *)
+    echo "WARNING: unknown ANDREI_VERCEL_DEPLOY_SCOPE=${scope}; building ${ref}"
+    exit 1
     ;;
 esac
 

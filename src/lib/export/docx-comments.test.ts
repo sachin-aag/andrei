@@ -15,10 +15,13 @@ describe("Word comment export", () => {
   function baseReport(reportId: string, iso: Date): typeof reports.$inferSelect {
     return {
       id: reportId,
-      deviationNo: "DEV/COMMENTS/01",
+      documentType: "investigation_report",
+      documentNo: "DEV/COMMENTS/01",
       date: iso,
-      toolsUsed: { sixM: false, fiveWhy: false, brainstorming: false },
-      otherTools: "",
+      metadata: {
+        toolsUsed: { sixM: false, fiveWhy: false, brainstorming: false },
+        otherTools: "",
+      },
       status: "draft",
       authorId: "598",
       assignedManagerId: null,

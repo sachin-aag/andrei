@@ -596,7 +596,7 @@ export function TiptapSectionField({
       if (result.nextSection) {
         replaceSection(
           section,
-          result.nextSection as SectionContentMap[typeof section]
+          result.nextSection as unknown
         );
       }
       setComments((prev) =>

@@ -1,5 +1,4 @@
 import type { JSONContent } from "@tiptap/core";
-import type { SectionType } from "@/db/schema";
 import {
   CONTROL_SECTION_HEADER,
   CONTROL_SECTION_INTRO,
@@ -168,7 +167,7 @@ function applyCheckpointBoldMarks(
 /** Plain improve/control checkpoint text → Word XML with template-matching bold. */
 export function improveControlCheckpointsToDocxXml(
   text: string | undefined | null,
-  section: Extract<SectionType, "improve" | "control">,
+  section: "improve" | "control",
   ctx: DocxExportContext
 ): string {
   const trimmed = text?.trim() ?? "";

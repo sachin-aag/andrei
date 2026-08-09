@@ -1,3 +1,4 @@
+import type { DocumentType } from "@/db/schema";
 import type { SectionScopeMismatch } from "@/lib/ai/chat/section-intent";
 import {
   type ChatSectionScope,
@@ -15,8 +16,11 @@ export function isChatMode(value: unknown): value is ChatMode {
   return value === "plan" || value === "agent";
 }
 
-function fieldTaxonomy(scope: ChatSectionScope): string {
-  return chatSectionsInScope(scope)
+function fieldTaxonomy(
+  scope: ChatSectionScope,
+  documentType: DocumentType = "investigation_report"
+): string {
+  return chatSectionsInScope(scope, documentType)
     .map((section) => {
       const fields = chatTargetFields(section)
         .map((f) => `${f.targetField} (${f.kind})`)
@@ -140,15 +144,19 @@ export function buildChatSystemPrompt(opts: {
   criteriaOutline: string;
   mode: ChatMode;
   sectionScope?: ChatSectionScope;
+  documentType?: DocumentType;
   scopeMismatch?: SectionScopeMismatch | null;
 }): string {
   const { contextMap, criteriaOutline, mode } = opts;
   const sectionScope = opts.sectionScope ?? "all";
+  const documentType = opts.documentType ?? "investigation_report";
   const modeRules = mode === "plan" ? PLAN_RULES : AGENT_RULES;
   const mismatchBlock = opts.scopeMismatch
     ? `\n\n${scopeMismatchBlock(opts.scopeMismatch)}`
     : "";
-  const analyzeInScope = chatSectionsInScope(sectionScope).includes("analyze");
+  const analyzeInScope = chatSectionsInScope(sectionScope, documentType).includes(
+    "analyze"
+  );
   const analyzeBlock = analyzeInScope
     ? `\n\n${mode === "plan" ? ANALYZE_PLAN_RULES : ANALYZE_AGENT_RULES}`
     : "";
@@ -158,7 +166,7 @@ export function buildChatSystemPrompt(opts: {
 ${sectionFocusBlock(sectionScope)}${mismatchBlock}
 
 ## Editable fields (section → targetField (kind))
-${fieldTaxonomy(sectionScope)}
+${fieldTaxonomy(sectionScope, documentType)}
 
 ${modeRules}${analyzeBlock}
 

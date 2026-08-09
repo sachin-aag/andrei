@@ -8,7 +8,7 @@ import {
   useReportPlaceholders,
   useReportSections,
 } from "@/providers/report-provider";
-import { EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
+import { evaluatableSectionKeys } from "@/lib/ai/criteria-view";
 import { SectionAccordion, useSectionAccordionState } from "./section-accordion";
 import type { Placeholder } from "@/lib/placeholders/find";
 import { fillPlaceholder } from "@/lib/placeholders/fill";
@@ -233,6 +233,7 @@ export function PlaceholdersPanelContent({
   const { pendingPlaceholders, setFocusedPanelPlaceholderId } =
     useReportPlaceholders();
   const { sections, replaceSection } = useReportSections();
+  const evaluatableSections = evaluatableSectionKeys(report.documentType);
   const { getEditor } = useReportEditors();
   const [fillValues, setFillValues] = useState<Record<string, string>>({});
   const [exiting, setExiting] = useState<ExitingSnapshot[]>([]);
@@ -253,7 +254,7 @@ export function PlaceholdersPanelContent({
 
     if (isPlainTextPlaceholderField(p.section, p.contentPath)) {
       const section = p.section as SectionType;
-      const sectionContent = sections[section] as SectionContentMap[typeof section];
+      const sectionContent = sections[section] as unknown;
       const fieldText = getPlainTextFieldValue(
         sectionContent as Record<string, unknown>,
         p.contentPath
@@ -333,7 +334,7 @@ export function PlaceholdersPanelContent({
         {pendingPlaceholders.length} placeholder{pendingPlaceholders.length === 1 ? "" : "s"}{" "}
         left to fill.
       </p>
-      {EVALUATABLE_SECTIONS.map((section) => {
+      {evaluatableSections.map((section) => {
         const list = grouped[section] ?? [];
         const exitingForSection = exiting.filter(
           (e) => e.placeholder.section === section,

@@ -259,6 +259,7 @@ Re-run after schema changes or to reset demo content (delete reports in Neon SQL
 | `DATABASE_URL is not set` on build (Production) | Add demo pooled URL to **Production** on `andrei-demo` |
 | `DATABASE_URL is not set` on build (Preview / PR branch) | Add demo pooled URL to **Preview** on `andrei-demo`, or check `ANDREI_VERCEL_DEPLOY_SCOPE=demo` is set |
 | PR builds on **both** Vercel projects | Set `ANDREI_VERCEL_DEPLOY_SCOPE=demo` on andrei-demo and `mj` on andrei-v2 (all environments) |
+| Demo PR creates a Neon branch on **MJ / Andrei V2** | `andrei-v2` built the PR. Confirm `ANDREI_VERCEL_DEPLOY_SCOPE=mj` on **Preview** (and Production). Demo-line branches (`cursor/*`, `demo/*`, `feat/whitelabel`) must be **Ignored** on `andrei-v2` — that skip is what prevents an MJ Neon preview DB. |
 | Wrong login redirect | `AUTH_URL` must match deployed URL exactly |
 | **404 on all paths** | Set Framework Preset to **Next.js** on `andrei-demo`, then redeploy |
 | Empty dashboard | Run `pnpm seed-demo-reports` against **demo** Neon |

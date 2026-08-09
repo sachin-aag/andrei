@@ -44,7 +44,7 @@ export default async function ImproveAiListPage() {
     db
       .select({
         id: reports.id,
-        deviationNo: reports.deviationNo,
+        documentNo: reports.documentNo,
       })
       .from(reports)
       .where(eq(reports.authorId, user.id))
@@ -75,7 +75,7 @@ export default async function ImproveAiListPage() {
           userEmail={user.email}
           reports={authorReports.map((report) => ({
             id: report.id,
-            deviationNo: report.deviationNo || "Untitled deviation",
+            deviationNo: report.documentNo || "Untitled deviation",
           }))}
         />
 

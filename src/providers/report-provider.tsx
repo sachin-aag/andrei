@@ -24,7 +24,12 @@ import type {
 import { EMPTY_CONTENT, REPORT_SECTION_ROW_ORDER } from "@/types/sections";
 import type { SectionType } from "@/db/schema";
 import { mergeSection } from "@/lib/sections-merge";
-import { EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
+import {
+  getDocumentType,
+  getEvaluatableSections,
+  getGateSection,
+  mergeSectionForType,
+} from "@/lib/document-types";
 import { activeSuggestionForSection } from "@/lib/ai/suggestion-gating";
 import { validateSuggestionLocate } from "@/lib/suggestions/validate-suggestion";
 import { normalizeCommentRecord } from "@/lib/comments/normalize";
@@ -32,14 +37,13 @@ import {
   hasEnoughContextInFirstSection,
   INSUFFICIENT_FIRST_SECTION_MESSAGE,
 } from "@/lib/ai/first-section-context";
+import { designVerificationMetadata } from "@/types/report";
 import { collectPlaceholders } from "@/lib/placeholders/scan-sections";
 import type { Placeholder } from "@/lib/placeholders/find";
 import type { UserRole } from "@/lib/auth/roles";
 import { ReportAttachmentsProvider } from "@/providers/report-attachments-provider";
 
-type SectionContents = Partial<{
-  [K in keyof SectionContentMap]: SectionContentMap[K];
-}>;
+type SectionContents = Partial<SectionContentMap> & Record<string, unknown>;
 
 function sectionContentEqual(a: unknown, b: unknown) {
   if (Object.is(a, b)) return true;
@@ -118,14 +122,11 @@ type ReportContextValue = {
   /** Margin gutter card focus (comment id or `ai:<evaluationId>`). */
   activeAnchorId: string | null;
   setActiveAnchorId: React.Dispatch<React.SetStateAction<string | null>>;
-  updateSection: <K extends keyof SectionContentMap>(
-    section: K,
-    updater: (prev: SectionContentMap[K]) => SectionContentMap[K]
+  updateSection: (
+    section: string,
+    updater: (prev: unknown) => unknown
   ) => void;
-  replaceSection: <K extends keyof SectionContentMap>(
-    section: K,
-    next: SectionContentMap[K]
-  ) => void;
+  replaceSection: (section: string, next: unknown) => void;
   setReport: React.Dispatch<React.SetStateAction<ReportRecord>>;
   runEvaluation: (
     section?: SectionType | SectionType[]
@@ -237,10 +238,10 @@ type ReportPlaceholdersContextValue = Pick<
   | "setFocusedPanelPlaceholderId"
 >;
 
-type ReportSectionContextValue<K extends keyof SectionContentMap> = {
-  value: SectionContentMap[K];
-  update: (updater: (prev: SectionContentMap[K]) => SectionContentMap[K]) => void;
-  replace: (next: SectionContentMap[K]) => void;
+type ReportSectionContextValue<T = unknown> = {
+  value: T;
+  update: (updater: (prev: T) => T) => void;
+  replace: (next: T) => void;
 };
 
 type ReportCommentsContextValue = Pick<
@@ -299,25 +300,41 @@ const ReportPlaceholdersContext = createContext<ReportPlaceholdersContextValue |
 const ReportCommentsContext = createContext<ReportCommentsContextValue | null>(null);
 const ReportEvaluationContext = createContext<ReportEvaluationContextValue | null>(null);
 const ReportEditorsContext = createContext<ReportEditorsContextValue | null>(null);
-const DefineSectionContext = createContext<ReportSectionContextValue<"define"> | null>(null);
-const MeasureSectionContext = createContext<ReportSectionContextValue<"measure"> | null>(null);
-const AnalyzeSectionContext = createContext<ReportSectionContextValue<"analyze"> | null>(null);
-const ImproveSectionContext = createContext<ReportSectionContextValue<"improve"> | null>(null);
-const ControlSectionContext = createContext<ReportSectionContextValue<"control"> | null>(null);
-const ConclusionSectionContext = createContext<ReportSectionContextValue<"conclusion"> | null>(null);
+const DefineSectionContext = createContext<ReportSectionContextValue<SectionContentMap["define"]> | null>(null);
+const MeasureSectionContext = createContext<ReportSectionContextValue<SectionContentMap["measure"]> | null>(null);
+const AnalyzeSectionContext = createContext<ReportSectionContextValue<SectionContentMap["analyze"]> | null>(null);
+const ImproveSectionContext = createContext<ReportSectionContextValue<SectionContentMap["improve"]> | null>(null);
+const ControlSectionContext = createContext<ReportSectionContextValue<SectionContentMap["control"]> | null>(null);
+const ConclusionSectionContext = createContext<ReportSectionContextValue<SectionContentMap["conclusion"]> | null>(null);
 const DocumentsReviewedSectionContext =
-  createContext<ReportSectionContextValue<"documents_reviewed"> | null>(null);
+  createContext<ReportSectionContextValue<SectionContentMap["documents_reviewed"]> | null>(null);
 const AttachmentsSectionContext =
-  createContext<ReportSectionContextValue<"attachments"> | null>(null);
+  createContext<ReportSectionContextValue<SectionContentMap["attachments"]> | null>(null);
 
-function bundleToSections(rows: ReportSectionRecord[]): SectionContents {
+function bundleToSections(
+  rows: ReportSectionRecord[],
+  documentType: ReportRecord["documentType"] = "investigation_report"
+): SectionContents {
+  const def = getDocumentType(documentType);
   const out: Record<string, unknown> = {};
-  for (const section of REPORT_SECTION_ROW_ORDER) {
-    const row = rows.find((r) => r.section === section);
+  for (const section of def.sections.filter((s) => !s.virtual)) {
+    const row = rows.find((r) => r.section === section.key);
     if (row) {
-      out[section] = mergeSection(section, row.content);
+      out[section.key] = mergeSectionForType(
+        documentType,
+        section.key,
+        row.content
+      );
     } else {
-      out[section] = EMPTY_CONTENT[section];
+      out[section.key] = section.emptyContent;
+    }
+  }
+  // Backfill investigation keys if somehow missing
+  if (documentType === "investigation_report") {
+    for (const section of REPORT_SECTION_ROW_ORDER) {
+      if (!(section in out)) {
+        out[section] = EMPTY_CONTENT[section];
+      }
     }
   }
   return out as SectionContents;
@@ -347,7 +364,7 @@ export function ReportProvider({
     bundle.sections
   );
   const [sections, setSections] = useState<SectionContents>(() =>
-    bundleToSections(bundle.sections)
+    bundleToSections(bundle.sections, bundle.report.documentType)
   );
 
   const [trackChangesSync, setTrackChangesSync] = useState({
@@ -489,12 +506,13 @@ export function ReportProvider({
   }, []);
 
   const updateSection = useCallback(
-    <K extends keyof SectionContentMap>(
-      section: K,
-      updater: (prev: SectionContentMap[K]) => SectionContentMap[K]
-    ) => {
+    (section: string, updater: (prev: unknown) => unknown) => {
       setSections((prev) => {
-        const current = (prev[section] ?? EMPTY_CONTENT[section]) as SectionContentMap[K];
+        const current =
+          prev[section] ??
+          (section in EMPTY_CONTENT
+            ? EMPTY_CONTENT[section as keyof SectionContentMap]
+            : {});
         const next = updater(current);
         if (sectionContentEqual(current, next)) return prev;
         return { ...prev, [section]: next };
@@ -503,19 +521,17 @@ export function ReportProvider({
     []
   );
 
-  const replaceSection = useCallback(
-    <K extends keyof SectionContentMap>(
-      section: K,
-      next: SectionContentMap[K]
-    ) => {
-      setSections((prev) => {
-        const current = (prev[section] ?? EMPTY_CONTENT[section]) as SectionContentMap[K];
-        if (sectionContentEqual(current, next)) return prev;
-        return { ...prev, [section]: next };
-      });
-    },
-    []
-  );
+  const replaceSection = useCallback((section: string, next: unknown) => {
+    setSections((prev) => {
+      const current =
+        prev[section] ??
+        (section in EMPTY_CONTENT
+          ? EMPTY_CONTENT[section as keyof SectionContentMap]
+          : {});
+      if (sectionContentEqual(current, next)) return prev;
+      return { ...prev, [section]: next };
+    });
+  }, []);
 
   /**
    * Every mounted section editor registers its autosave flush here so submit
@@ -553,7 +569,7 @@ export function ReportProvider({
     const data = (await res.json()) as ReportBundle;
     setReport(data.report);
     setSectionRows(data.sections);
-    setSections(bundleToSections(data.sections));
+    setSections(bundleToSections(data.sections, data.report.documentType));
     setEvaluations(
       (data.evaluations as EvaluationRecord[]).map((e) => ({
         ...e,
@@ -601,15 +617,34 @@ export function ReportProvider({
 
   const runEvaluation = useCallback(
     async (section?: SectionType | SectionType[]) => {
+      const documentType = report.documentType;
+      const evaluatable = getEvaluatableSections(documentType).map((s) => s.key);
       const targets = section
         ? Array.isArray(section)
           ? section
           : [section]
-        : [...EVALUATABLE_SECTIONS];
-      if (!hasEnoughContextInFirstSection(sectionsRef.current.define)) {
-        toast.error(INSUFFICIENT_FIRST_SECTION_MESSAGE);
-        return;
+        : [...evaluatable];
+
+      const gate = getGateSection(documentType);
+      if (documentType === "investigation_report") {
+        if (!hasEnoughContextInFirstSection(sectionsRef.current.define)) {
+          toast.error(INSUFFICIENT_FIRST_SECTION_MESSAGE);
+          return;
+        }
+      } else if (gate?.key === "cover_page") {
+        const meta = designVerificationMetadata(report);
+        if (
+          !report.documentNo.trim() ||
+          !meta.revision.trim() ||
+          !meta.effectiveDate.trim()
+        ) {
+          toast.error(
+            "Fill Document Number, Revision, and Effective Date on the Cover Page before running the AI check."
+          );
+          return;
+        }
       }
+
       setRunningEvalSections(targets);
       setIsEvaluating(true);
       try {
@@ -645,7 +680,7 @@ export function ReportProvider({
         setRunningEvalSections([]);
       }
     },
-    [bundle.report.id]
+    [bundle.report.id, report]
   );
 
   const generateSuggestions = useCallback(
@@ -855,75 +890,76 @@ export function ReportProvider({
     [pendingPlaceholders, focusedPanelPlaceholderId]
   );
 
-  const defineSectionValue = useMemo<ReportSectionContextValue<"define">>(
+  const defineSectionValue = useMemo<ReportSectionContextValue<SectionContentMap["define"]>>(
     () => ({
       value: (sections.define ?? EMPTY_CONTENT.define) as SectionContentMap["define"],
-      update: (updater) => updateSection("define", updater),
+      update: (updater) => updateSection("define", updater as (prev: unknown) => unknown),
       replace: (next) => replaceSection("define", next),
     }),
     [sections.define, updateSection, replaceSection]
   );
 
-  const measureSectionValue = useMemo<ReportSectionContextValue<"measure">>(
+  const measureSectionValue = useMemo<ReportSectionContextValue<SectionContentMap["measure"]>>(
     () => ({
       value: (sections.measure ?? EMPTY_CONTENT.measure) as SectionContentMap["measure"],
-      update: (updater) => updateSection("measure", updater),
+      update: (updater) => updateSection("measure", updater as (prev: unknown) => unknown),
       replace: (next) => replaceSection("measure", next),
     }),
     [sections.measure, updateSection, replaceSection]
   );
 
-  const analyzeSectionValue = useMemo<ReportSectionContextValue<"analyze">>(
+  const analyzeSectionValue = useMemo<ReportSectionContextValue<SectionContentMap["analyze"]>>(
     () => ({
       value: (sections.analyze ?? EMPTY_CONTENT.analyze) as SectionContentMap["analyze"],
-      update: (updater) => updateSection("analyze", updater),
+      update: (updater) => updateSection("analyze", updater as (prev: unknown) => unknown),
       replace: (next) => replaceSection("analyze", next),
     }),
     [sections.analyze, updateSection, replaceSection]
   );
 
-  const improveSectionValue = useMemo<ReportSectionContextValue<"improve">>(
+  const improveSectionValue = useMemo<ReportSectionContextValue<SectionContentMap["improve"]>>(
     () => ({
       value: (sections.improve ?? EMPTY_CONTENT.improve) as SectionContentMap["improve"],
-      update: (updater) => updateSection("improve", updater),
+      update: (updater) => updateSection("improve", updater as (prev: unknown) => unknown),
       replace: (next) => replaceSection("improve", next),
     }),
     [sections.improve, updateSection, replaceSection]
   );
 
-  const controlSectionValue = useMemo<ReportSectionContextValue<"control">>(
+  const controlSectionValue = useMemo<ReportSectionContextValue<SectionContentMap["control"]>>(
     () => ({
       value: (sections.control ?? EMPTY_CONTENT.control) as SectionContentMap["control"],
-      update: (updater) => updateSection("control", updater),
+      update: (updater) => updateSection("control", updater as (prev: unknown) => unknown),
       replace: (next) => replaceSection("control", next),
     }),
     [sections.control, updateSection, replaceSection]
   );
 
-  const conclusionSectionValue = useMemo<ReportSectionContextValue<"conclusion">>(
+  const conclusionSectionValue = useMemo<ReportSectionContextValue<SectionContentMap["conclusion"]>>(
     () => ({
       value: (sections.conclusion ?? EMPTY_CONTENT.conclusion) as SectionContentMap["conclusion"],
-      update: (updater) => updateSection("conclusion", updater),
+      update: (updater) => updateSection("conclusion", updater as (prev: unknown) => unknown),
       replace: (next) => replaceSection("conclusion", next),
     }),
     [sections.conclusion, updateSection, replaceSection]
   );
 
   const documentsReviewedSectionValue = useMemo<
-    ReportSectionContextValue<"documents_reviewed">
+    ReportSectionContextValue<SectionContentMap["documents_reviewed"]>
   >(
     () => ({
       value: (sections.documents_reviewed ?? EMPTY_CONTENT.documents_reviewed) as SectionContentMap["documents_reviewed"],
-      update: (updater) => updateSection("documents_reviewed", updater),
+      update: (updater) =>
+        updateSection("documents_reviewed", updater as (prev: unknown) => unknown),
       replace: (next) => replaceSection("documents_reviewed", next),
     }),
     [sections.documents_reviewed, updateSection, replaceSection]
   );
 
-  const attachmentsSectionValue = useMemo<ReportSectionContextValue<"attachments">>(
+  const attachmentsSectionValue = useMemo<ReportSectionContextValue<SectionContentMap["attachments"]>>(
     () => ({
       value: (sections.attachments ?? EMPTY_CONTENT.attachments) as SectionContentMap["attachments"],
-      update: (updater) => updateSection("attachments", updater),
+      update: (updater) => updateSection("attachments", updater as (prev: unknown) => unknown),
       replace: (next) => replaceSection("attachments", next),
     }),
     [sections.attachments, updateSection, replaceSection]
@@ -1098,9 +1134,9 @@ export function useReportSections() {
   return ctx;
 }
 
-export function useReportSection<K extends keyof SectionContentMap & SectionType>(
+export function useReportSection<K extends keyof SectionContentMap>(
   section: K
-): ReportSectionContextValue<K> {
+): ReportSectionContextValue<SectionContentMap[K]> {
   const define = useContext(DefineSectionContext);
   const measure = useContext(MeasureSectionContext);
   const analyze = useContext(AnalyzeSectionContext);
@@ -1124,24 +1160,48 @@ export function useReportSection<K extends keyof SectionContentMap & SectionType
 
   switch (section) {
     case "define":
-      return define as unknown as ReportSectionContextValue<K>;
+      return define as unknown as ReportSectionContextValue<SectionContentMap[K]>;
     case "measure":
-      return measure as unknown as ReportSectionContextValue<K>;
+      return measure as unknown as ReportSectionContextValue<SectionContentMap[K]>;
     case "analyze":
-      return analyze as unknown as ReportSectionContextValue<K>;
+      return analyze as unknown as ReportSectionContextValue<SectionContentMap[K]>;
     case "improve":
-      return improve as unknown as ReportSectionContextValue<K>;
+      return improve as unknown as ReportSectionContextValue<SectionContentMap[K]>;
     case "control":
-      return control as unknown as ReportSectionContextValue<K>;
+      return control as unknown as ReportSectionContextValue<SectionContentMap[K]>;
     case "conclusion":
-      return conclusion as unknown as ReportSectionContextValue<K>;
+      return conclusion as unknown as ReportSectionContextValue<SectionContentMap[K]>;
     case "documents_reviewed":
-      return documentsReviewed as unknown as ReportSectionContextValue<K>;
+      return documentsReviewed as unknown as ReportSectionContextValue<SectionContentMap[K]>;
     case "attachments":
-      return attachments as unknown as ReportSectionContextValue<K>;
-    default:
-      throw new Error(`Unknown report section: ${section}`);
+      return attachments as unknown as ReportSectionContextValue<SectionContentMap[K]>;
+    case "signature_approvals":
+      throw new Error("signature_approvals is not editable via useReportSection");
+    default: {
+      const exhaustive: never = section;
+      throw new Error(`Unknown report section: ${exhaustive}`);
+    }
   }
+}
+
+/**
+ * Generic section subscription for non-investigation document types.
+ * Uses the shared sections context rather than per-section React contexts.
+ */
+export function useGenericReportSection<T = unknown>(
+  section: string
+): ReportSectionContextValue<T> {
+  const { sections, updateSection, replaceSection } = useReportSections();
+  const value = (sections[section] ?? {}) as T;
+  return useMemo(
+    () => ({
+      value,
+      update: (updater: (prev: T) => T) =>
+        updateSection(section, (prev) => updater(prev as T)),
+      replace: (next: T) => replaceSection(section, next),
+    }),
+    [section, value, updateSection, replaceSection]
+  );
 }
 
 export function useReportPlaceholders() {

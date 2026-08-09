@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { db } from "@/db";
 import { getCurrentUser } from "@/lib/auth/session";
 import { PATCH } from "@/app/api/reports/[reportId]/sections/[sectionType]/route";
 
@@ -21,6 +22,19 @@ function request() {
   });
 }
 
+function mockReportSelect() {
+  const where = vi.fn().mockResolvedValueOnce([
+    {
+      id: "report-1",
+      authorId: "engineer-1",
+      documentType: "investigation_report",
+      status: "draft",
+    },
+  ]);
+  const from = vi.fn().mockReturnValue({ where });
+  vi.mocked(db.select).mockReturnValueOnce({ from } as never);
+}
+
 describe("PATCH /api/reports/[reportId]/sections/[sectionType]", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -37,7 +51,7 @@ describe("PATCH /api/reports/[reportId]/sections/[sectionType]", () => {
     await expect(response.json()).resolves.toEqual({ error: "Unauthorized" });
   });
 
-  it("rejects unknown section types before touching the database", async () => {
+  it("rejects unknown section types", async () => {
     vi.mocked(getCurrentUser).mockResolvedValueOnce({
       id: "engineer-1",
       name: "Engineer",
@@ -45,6 +59,7 @@ describe("PATCH /api/reports/[reportId]/sections/[sectionType]", () => {
       role: "engineer",
       title: "Quality Engineer",
     });
+    mockReportSelect();
 
     const response = await PATCH(request(), {
       params: Promise.resolve({ reportId: "report-1", sectionType: "unknown" }),

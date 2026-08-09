@@ -3,15 +3,19 @@ import { NextResponse } from "next/server";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { reports } from "@/db/schema";
+import {
+  reports,
+  type InvestigationReportMetadata,
+  type ReportMetadata,
+} from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import { canViewReport } from "@/lib/reports/access";
 import { loadReportSubtables } from "@/lib/reports/bundle";
 import {
-  DUPLICATE_DEVIATION_NO_ERROR,
-  isDeviationNoTaken,
-  normalizeDeviationNo,
-} from "@/lib/reports/deviation-no";
+  DUPLICATE_DOCUMENT_NO_ERROR,
+  isDocumentNoTaken,
+  normalizeDocumentNo,
+} from "@/lib/reports/document-no";
 import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
 import {
   assignedManagerIdsForReport,
@@ -22,6 +26,10 @@ import {
   validateAssignedManagerIds,
   withAssignedManagerIds,
 } from "@/lib/reports/managers";
+import {
+  investigationOtherTools,
+  investigationToolsUsed,
+} from "@/types/report";
 
 export async function GET(
   _req: Request,
@@ -56,8 +64,10 @@ export async function GET(
 }
 
 const patchSchema = z.object({
-  deviationNo: z.string().optional(),
+  documentNo: z.string().optional(),
+  deviationNo: z.string().optional(), // alias for investigation
   date: z.string().optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
   toolsUsed: z
     .object({
       sixM: z.boolean(),
@@ -103,18 +113,53 @@ export async function PATCH(
   const parsed = parse.data;
   const updates: Record<string, unknown> = { updatedAt: new Date() };
   if (parsed.date) updates.date = new Date(parsed.date);
-  if (parsed.toolsUsed !== undefined) updates.toolsUsed = parsed.toolsUsed;
-  if (parsed.otherTools !== undefined) updates.otherTools = parsed.otherTools;
 
-  if (parsed.deviationNo !== undefined) {
-    const normalized = normalizeDeviationNo(parsed.deviationNo);
+  if (parsed.toolsUsed !== undefined || parsed.otherTools !== undefined) {
+    const existingMeta = {
+      ...(existingReport.metadata as ReportMetadata),
+    } as InvestigationReportMetadata & ReportMetadata;
+    const nextMeta: InvestigationReportMetadata = {
+      toolsUsed: parsed.toolsUsed ?? existingMeta.toolsUsed ?? {
+        sixM: false,
+        fiveWhy: false,
+        brainstorming: false,
+      },
+      otherTools:
+        parsed.otherTools ?? existingMeta.otherTools ?? "",
+    };
+    updates.metadata = {
+      ...existingMeta,
+      ...nextMeta,
+    };
+  }
+
+  if (parsed.metadata !== undefined) {
+    updates.metadata = {
+      ...(existingReport.metadata as ReportMetadata),
+      ...parsed.metadata,
+    };
+  }
+
+  const documentNoInput = parsed.documentNo ?? parsed.deviationNo;
+  if (documentNoInput !== undefined) {
+    const normalized = normalizeDocumentNo(documentNoInput);
     if (!normalized) {
-      return NextResponse.json({ error: "Deviation number is required" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Deviation number is required" },
+        { status: 400 }
+      );
     }
-    if (await isDeviationNoTaken(normalized, existingReport.authorId, reportId)) {
-      return NextResponse.json({ error: DUPLICATE_DEVIATION_NO_ERROR }, { status: 409 });
+    if (
+      await isDocumentNoTaken(
+        normalized,
+        existingReport.authorId,
+        existingReport.documentType,
+        reportId
+      )
+    ) {
+      return NextResponse.json({ error: DUPLICATE_DOCUMENT_NO_ERROR }, { status: 409 });
     }
-    updates.deviationNo = normalized;
+    updates.documentNo = normalized;
   }
 
   const managerIdsChanged =
@@ -165,18 +210,20 @@ export async function PATCH(
     reportId,
     summary: `Updated report metadata`,
     oldValue: {
-      deviationNo: existingReport.deviationNo,
+      documentNo: existingReport.documentNo,
       date: existingReport.date,
-      toolsUsed: existingReport.toolsUsed,
-      otherTools: existingReport.otherTools,
+      metadata: existingReport.metadata,
+      toolsUsed: investigationToolsUsed(existingReport),
+      otherTools: investigationOtherTools(existingReport),
       assignedManagerId: existingReport.assignedManagerId,
       assignedManagerIds: oldAssignedManagerIds,
     },
     newValue: {
-      deviationNo: updated.deviationNo,
+      documentNo: updated.documentNo,
       date: updated.date,
-      toolsUsed: updated.toolsUsed,
-      otherTools: updated.otherTools,
+      metadata: updated.metadata,
+      toolsUsed: investigationToolsUsed(updated),
+      otherTools: investigationOtherTools(updated),
       assignedManagerId: updated.assignedManagerId,
       assignedManagerIds: updatedWithManagers.assignedManagerIds,
     },
@@ -223,9 +270,9 @@ export async function DELETE(
     entityType: "report",
     entityId: reportId,
     reportId,
-    summary: `Soft-deleted report ${existing.deviationNo}`,
+    summary: `Soft-deleted report ${existing.documentNo}`,
     oldValue: {
-      deviationNo: existing.deviationNo,
+      documentNo: existing.documentNo,
       status: existing.status,
       authorId: existing.authorId,
     },

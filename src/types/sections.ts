@@ -140,7 +140,7 @@ export const EMPTY_CONTENT: SectionContentMap = {
   },
 };
 
-export const SECTION_LABELS: Record<keyof SectionContentMap, string> = {
+export const SECTION_LABELS: Record<string, string> = {
   define: "Define",
   measure: "Measure",
   analyze: "Analyze",
@@ -150,6 +150,16 @@ export const SECTION_LABELS: Record<keyof SectionContentMap, string> = {
   documents_reviewed: "Documents Reviewed",
   attachments: "Attachments",
   signature_approvals: "Approvals (QC / QA)",
+  // Design verification
+  cover_page: "Cover Page & Document Control",
+  purpose_scope: "Purpose & Scope",
+  references: "References",
+  traceability: "Traceability",
+  test_methods: "Test Methods / Protocol Summary",
+  test_results: "Test Results",
+  deviations: "Deviations & Nonconformances",
+  approval_signoff: "Approval / Sign-off",
+  appendices: "Appendices",
 };
 
 export const EDITABLE_SECTIONS = [

@@ -48,7 +48,17 @@ export const reportStatusEnum = pgEnum("report_status", [
   "approved",
 ]);
 
-export const sectionTypeEnum = pgEnum("section_type", [
+export const documentTypeEnum = pgEnum("document_type", [
+  "investigation_report",
+  "design_verification",
+]);
+
+/**
+ * Section keys are free text validated by the document-type registry.
+ * Kept as a const for investigation_report so existing typed code compiles
+ * during the multi-type transition; new document types add their own keys.
+ */
+export const INVESTIGATION_SECTION_TYPES = [
   "define",
   "measure",
   "analyze",
@@ -58,7 +68,12 @@ export const sectionTypeEnum = pgEnum("section_type", [
   "documents_reviewed",
   "attachments",
   "signature_approvals",
-]);
+] as const;
+
+/** @deprecated Prefer registry validation; retained for investigation typed editors. */
+export const sectionTypeEnum = {
+  enumValues: INVESTIGATION_SECTION_TYPES,
+} as const;
 
 export const criterionStatusEnum = pgEnum("criterion_status", [
   "met",
@@ -253,17 +268,40 @@ export const passwordPolicySettings = pgTable("password_policy_settings", {
     .defaultNow(),
 });
 
+export type InvestigationReportMetadata = {
+  toolsUsed: { sixM: boolean; fiveWhy: boolean; brainstorming: boolean };
+  otherTools: string;
+};
+
+export type DesignVerificationMetadata = {
+  revision: string;
+  effectiveDate: string;
+  productName: string;
+  modelNumber: string;
+  projectName: string;
+  authorName: string;
+  reviewerName: string;
+  approverName: string;
+};
+
+export type ReportMetadata =
+  | InvestigationReportMetadata
+  | DesignVerificationMetadata
+  | Record<string, unknown>;
+
 export const reports = pgTable(
   "reports",
   {
     id: text("id").primaryKey().$defaultFn(() => createId()),
-    deviationNo: text("deviation_no").notNull(),
-    date: timestamp("date", { withTimezone: true }).notNull().defaultNow(),
-    toolsUsed: jsonb("tools_used")
-      .$type<{ sixM: boolean; fiveWhy: boolean; brainstorming: boolean }>()
+    documentType: documentTypeEnum("document_type")
       .notNull()
-      .default({ sixM: false, fiveWhy: false, brainstorming: false }),
-    otherTools: text("other_tools").notNull().default(""),
+      .default("investigation_report"),
+    documentNo: text("document_no").notNull(),
+    date: timestamp("date", { withTimezone: true }).notNull().defaultNow(),
+    metadata: jsonb("metadata")
+      .$type<ReportMetadata>()
+      .notNull()
+      .default({}),
     status: reportStatusEnum("status").notNull().default("draft"),
     authorId: text("author_id").notNull(),
     assignedManagerId: text("assigned_manager_id"),
@@ -275,7 +313,11 @@ export const reports = pgTable(
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
-    deviationNoUnique: uniqueIndex("reports_deviation_no_unique").on(t.authorId, t.deviationNo),
+    documentNoUnique: uniqueIndex("reports_document_no_unique").on(
+      t.authorId,
+      t.documentType,
+      t.documentNo
+    ),
     deletedAtIdx: index("reports_deleted_at_idx").on(t.deletedAt),
   })
 );
@@ -307,7 +349,7 @@ export const reportSections = pgTable(
     reportId: text("report_id")
       .notNull()
       .references(() => reports.id, { onDelete: "cascade" }),
-    section: sectionTypeEnum("section").notNull(),
+    section: text("section").notNull(),
     content: jsonb("content").notNull().default({}),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
@@ -340,7 +382,7 @@ export const criteriaEvaluations = pgTable("criteria_evaluations", {
   sectionId: text("section_id")
     .notNull()
     .references(() => reportSections.id, { onDelete: "cascade" }),
-  section: sectionTypeEnum("section").notNull(),
+  section: text("section").notNull(),
   criterionKey: text("criterion_key").notNull(),
   criterionLabel: text("criterion_label").notNull(),
   status: criterionStatusEnum("status").notNull().default("not_evaluated"),
@@ -367,7 +409,7 @@ export const comments = pgTable("comments", {
   sectionId: text("section_id").references(() => reportSections.id, {
     onDelete: "cascade",
   }),
-  section: sectionTypeEnum("section"),
+  section: text("section"),
   authorId: text("author_id").notNull(),
   content: text("content").notNull(),
   anchorText: text("anchor_text").notNull().default(""),
@@ -834,7 +876,7 @@ export const aiFeedbackResponses = pgTable(
       .notNull()
       .references(() => aiFeedbackSessions.id, { onDelete: "cascade" }),
     criterionKey: text("criterion_key").notNull(),
-    section: sectionTypeEnum("section").notNull(),
+    section: text("section").notNull(),
     aiStatus: criterionStatusEnum("ai_status").notNull(),
     aiReasoning: text("ai_reasoning").notNull().default(""),
     criteriaEvaluationAgreement: text("criteria_evaluation_agreement"),
@@ -922,7 +964,7 @@ export const sectionContentVersions = pgTable(
     reportId: text("report_id")
       .notNull()
       .references(() => reports.id, { onDelete: "cascade" }),
-    section: sectionTypeEnum("section").notNull(),
+    section: text("section").notNull(),
     versionNo: integer("version_no").notNull(),
     isSnapshot: boolean("is_snapshot").notNull().default(false),
     contentSnapshot: jsonb("content_snapshot"),
@@ -1071,7 +1113,11 @@ export const documentChunksRelations = relations(documentChunks, ({ one }) => ({
 }));
 
 export type ReportStatus = (typeof reportStatusEnum.enumValues)[number];
-export type SectionType = (typeof sectionTypeEnum.enumValues)[number];
+export type DocumentType = (typeof documentTypeEnum.enumValues)[number];
+/** Free-text section key; validated by the document-type registry at write time. */
+export type SectionType = string;
+export type InvestigationSectionType =
+  (typeof INVESTIGATION_SECTION_TYPES)[number];
 export type CriterionStatus = (typeof criterionStatusEnum.enumValues)[number];
 export type CommentStatus = (typeof commentStatusEnum.enumValues)[number];
 export type CommentKind = (typeof commentKindEnum.enumValues)[number];

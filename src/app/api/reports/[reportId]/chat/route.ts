@@ -19,6 +19,7 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { mergeSection } from "@/lib/sections-merge";
 import { loadAccessibleReport } from "@/lib/ai/chat/access";
 import { buildReportContextMap } from "@/lib/ai/chat/context-map";
+import { investigationToolsUsed } from "@/types/report";
 import {
   buildChatSystemPrompt,
   isChatMode,
@@ -94,10 +95,14 @@ export async function POST(
     return NextResponse.json({ error: "No messages" }, { status: 400 });
   }
   const mode: ChatMode = isChatMode(body.mode) ? body.mode : "agent";
-  const sectionScope: ChatSectionScope = parseChatSectionScope(body.sectionScope);
+  const accessEarly = await loadAccessibleReport(reportId, user);
+  if (!accessEarly) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const sectionScope: ChatSectionScope = parseChatSectionScope(
+    body.sectionScope,
+    accessEarly.report.documentType
+  );
 
-  const access = await loadAccessibleReport(reportId, user);
-  if (!access) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const access = accessEarly;
   const { report } = access;
   // Plan mode never edits; Agent mode only when the report is still editable.
   const canEdit = mode === "agent" && access.canEdit;
@@ -162,13 +167,10 @@ export async function POST(
 
   const contextMap = buildReportContextMap({
     report: {
-      deviationNo: report.deviationNo,
+      deviationNo: report.documentNo,
       date: report.date,
       status: report.status,
-      toolsUsed: report.toolsUsed as
-        | { sixM?: boolean; fiveWhy?: boolean; brainstorming?: boolean }
-        | null
-        | undefined,
+      toolsUsed: investigationToolsUsed(report),
     },
     sections: mergedSections,
     evaluations: evaluations.map((e) => ({
@@ -186,9 +188,10 @@ export async function POST(
 
   const system = buildChatSystemPrompt({
     contextMap,
-    criteriaOutline: buildCriteriaOutline(sectionScope),
+    criteriaOutline: buildCriteriaOutline(sectionScope, report.documentType),
     mode,
     sectionScope,
+    documentType: report.documentType,
     scopeMismatch,
   });
 
@@ -196,6 +199,7 @@ export async function POST(
     reportId,
     canEdit,
     sectionScope,
+    documentType: report.documentType,
     actor: auditActorFromUser(user),
   });
   const tools: ToolSet =

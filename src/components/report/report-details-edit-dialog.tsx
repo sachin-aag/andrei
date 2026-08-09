@@ -32,7 +32,7 @@ function ReportDetailsEditForm({
   onSaved: (report: ReportRecord) => void;
   onClose: () => void;
 }) {
-  const [deviationNo, setDeviationNo] = useState(report.deviationNo);
+  const [deviationNo, setDeviationNo] = useState(report.documentNo);
   const [assignedManagerIds, setAssignedManagerIds] = useState<string[]>(() =>
     assignedManagerIdsForReport(report)
   );

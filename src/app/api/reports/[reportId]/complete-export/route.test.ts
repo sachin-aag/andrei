@@ -49,7 +49,8 @@ const report = {
   authorId: engineer.id,
   assignedManagerId: null,
   status: "approved",
-  deviationNo: "DEV-001",
+  documentType: "investigation_report",
+  documentNo: "DEV-001",
   createdAt: new Date("2026-01-01T00:00:00.000Z"),
   updatedAt: new Date("2026-01-02T00:00:00.000Z"),
   deletedAt: null,
@@ -71,7 +72,7 @@ describe("GET /api/reports/[reportId]/complete-export", () => {
     vi.mocked(listReportManagerIds).mockResolvedValue([]);
     vi.mocked(buildCompleteRecordExportZip).mockResolvedValue({
       buffer: Buffer.from("zip"),
-      deviationNo: report.deviationNo,
+      documentNo: report.documentNo,
     });
   });
 

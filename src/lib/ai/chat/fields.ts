@@ -1,9 +1,10 @@
-import type { SectionType } from "@/db/schema";
+import type { DocumentType, SectionType } from "@/db/schema";
 import { SECTION_LABELS } from "@/types/sections";
 import {
   SUGGEST_TARGET_FIELD_PATTERNS,
   isRichTargetField,
 } from "@/lib/ai/suggest-target-fields";
+import { getDocumentType } from "@/lib/document-types";
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
 import { flattenForAnchor } from "@/lib/suggestions/locator";
@@ -18,26 +19,54 @@ export const CHAT_EDITABLE_SECTIONS: readonly SectionType[] = [
   "conclusion",
 ];
 
+export function chatEditableSections(
+  documentType: DocumentType = "investigation_report"
+): readonly SectionType[] {
+  if (documentType === "investigation_report") return CHAT_EDITABLE_SECTIONS;
+  return getDocumentType(documentType)
+    .sections.filter((s) => s.editable && !s.virtual)
+    .map((s) => s.key);
+}
+
 /** `all` = no section filter; otherwise focus plan/edits on one section. */
 export type ChatSectionScope = SectionType | "all";
 
 export const CHAT_SECTION_SCOPE_ALL = "all" as const;
 
-export function isChatEditableSection(value: string): value is SectionType {
-  return (CHAT_EDITABLE_SECTIONS as readonly string[]).includes(value);
+export function isChatEditableSection(
+  value: string,
+  documentType: DocumentType = "investigation_report"
+): value is SectionType {
+  return (chatEditableSections(documentType) as readonly string[]).includes(value);
 }
 
-export function isChatSectionScope(value: unknown): value is ChatSectionScope {
-  return value === CHAT_SECTION_SCOPE_ALL || isChatEditableSection(String(value));
+export function isChatSectionScope(
+  value: unknown,
+  documentType: DocumentType = "investigation_report"
+): value is ChatSectionScope {
+  return (
+    value === CHAT_SECTION_SCOPE_ALL ||
+    isChatEditableSection(String(value), documentType)
+  );
 }
 
-export function parseChatSectionScope(value: unknown): ChatSectionScope {
-  return isChatSectionScope(value) ? value : CHAT_SECTION_SCOPE_ALL;
+export function parseChatSectionScope(
+  value: unknown,
+  documentType: DocumentType = "investigation_report"
+): ChatSectionScope {
+  return isChatSectionScope(value, documentType)
+    ? value
+    : CHAT_SECTION_SCOPE_ALL;
 }
 
 /** Sections included in prompt/tools for the current focus. */
-export function chatSectionsInScope(scope: ChatSectionScope): readonly SectionType[] {
-  return scope === CHAT_SECTION_SCOPE_ALL ? CHAT_EDITABLE_SECTIONS : [scope];
+export function chatSectionsInScope(
+  scope: ChatSectionScope,
+  documentType: DocumentType = "investigation_report"
+): readonly SectionType[] {
+  return scope === CHAT_SECTION_SCOPE_ALL
+    ? chatEditableSections(documentType)
+    : [scope];
 }
 
 export type ChatFieldKind = "rich" | "plain";

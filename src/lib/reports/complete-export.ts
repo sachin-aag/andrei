@@ -42,7 +42,7 @@ function reportMetadataXml(
     "<CompleteRecordExport>",
     "  <Report>",
     `    <Id>${escapeXml(report.id)}</Id>`,
-    `    <DeviationNo>${escapeXml(report.deviationNo)}</DeviationNo>`,
+    `    <DeviationNo>${escapeXml(report.documentNo)}</DeviationNo>`,
     `    <Status>${escapeXml(report.status)}</Status>`,
     `    <AuthorId>${escapeXml(report.authorId)}</AuthorId>`,
     `    <CreatedAt>${report.createdAt.toISOString()}</CreatedAt>`,
@@ -237,6 +237,6 @@ export async function buildCompleteRecordExportZip(
 
   return {
     buffer: zip.generate({ type: "nodebuffer", compression: "DEFLATE" }),
-    deviationNo: report.deviationNo,
+    documentNo: report.documentNo,
   };
 }

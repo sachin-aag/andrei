@@ -1,14 +1,10 @@
 import { NextResponse } from "next/server";
 import { and, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { reportSections, reports, sectionTypeEnum } from "@/db/schema";
+import { reportSections, reports } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
-import type { SectionType } from "@/db/schema";
 import { auditActorFromUser, recordSectionVersion } from "@/lib/audit";
-
-function isValidSection(value: string): value is SectionType {
-  return (sectionTypeEnum.enumValues as readonly string[]).includes(value);
-}
+import { isValidSection } from "@/lib/document-types";
 
 /** PATCH and POST use the same body; POST exists for `navigator.sendBeacon` (always POST). */
 async function saveSection(
@@ -18,15 +14,16 @@ async function saveSection(
   const user = await getCurrentUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   const { reportId, sectionType } = await params;
-  if (!isValidSection(sectionType)) {
-    return NextResponse.json({ error: "Invalid section" }, { status: 400 });
-  }
 
   const [report] = await db
     .select()
     .from(reports)
     .where(eq(reports.id, reportId));
   if (!report) return NextResponse.json({ error: "Not found" }, { status: 404 });
+
+  if (!isValidSection(report.documentType, sectionType)) {
+    return NextResponse.json({ error: "Invalid section" }, { status: 400 });
+  }
 
   const engineerAuthor = user.role === "engineer" && user.id === report.authorId;
   const managerUser = user.role === "manager";

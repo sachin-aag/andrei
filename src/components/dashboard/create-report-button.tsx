@@ -36,7 +36,10 @@ type PendingUpload = { file: File; percent: number };
 
 export function CreateReportButton({ managers }: CreateReportButtonProps) {
   const [open, setOpen] = useState(false);
-  const [deviationNo, setDeviationNo] = useState("");
+  const [documentType, setDocumentType] = useState<
+    "investigation_report" | "design_verification"
+  >("investigation_report");
+  const [documentNo, setDocumentNo] = useState("");
   const [managerIds, setManagerIds] = useState<string[]>([]);
   const [uploads, setUploads] = useState<PendingUpload[]>([]);
   const [uploadingCount, setUploadingCount] = useState(0);
@@ -46,9 +49,22 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
   const router = useRouter();
 
   const busy = pending || uploadingCount > 0;
+  const documentNoLabel =
+    documentType === "design_verification"
+      ? "Document Number"
+      : "Deviation Number";
+  const dialogTitle =
+    documentType === "design_verification"
+      ? "Create design verification report"
+      : "Create investigation report";
+  const dialogDescription =
+    documentType === "design_verification"
+      ? "Starts a new design verification report as a draft."
+      : "Starts a new deviation investigation report as a draft.";
 
   const resetForm = () => {
-    setDeviationNo("");
+    setDocumentType("investigation_report");
+    setDocumentNo("");
     setManagerIds([]);
     setUploads([]);
     setQuotaWarning(null);
@@ -155,8 +171,8 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
   };
 
   const submit = () => {
-    if (!deviationNo.trim()) {
-      toast.error("Deviation number is required");
+    if (!documentNo.trim()) {
+      toast.error(`${documentNoLabel} is required`);
       return;
     }
     startTransition(async () => {
@@ -164,7 +180,8 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          deviationNo: deviationNo.trim(),
+          documentType,
+          documentNo: documentNo.trim(),
           assignedManagerIds: managerIds,
         }),
       });
@@ -225,20 +242,45 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
             </div>
           )}
           <DialogHeader>
-            <DialogTitle>Create investigation report</DialogTitle>
-            <DialogDescription>
-              Starts a new deviation investigation report as a draft.
-            </DialogDescription>
+            <DialogTitle>{dialogTitle}</DialogTitle>
+            <DialogDescription>{dialogDescription}</DialogDescription>
           </DialogHeader>
           <div className="grid min-w-0 gap-4 py-2">
             <div className="grid gap-2">
-              <Label htmlFor="deviationNo">Deviation Number</Label>
-              <Input
-                id="deviationNo"
-                placeholder="e.g. DEV/PK/26/001"
-                value={deviationNo}
+              <Label htmlFor="documentType">Document type</Label>
+              <select
+                id="documentType"
+                className="h-9 rounded-md border border-[var(--border)] bg-[var(--card)] px-3 text-sm"
+                value={documentType}
                 disabled={busy}
-                onChange={(e) => setDeviationNo(e.target.value)}
+                onChange={(e) =>
+                  setDocumentType(
+                    e.target.value as
+                      | "investigation_report"
+                      | "design_verification"
+                  )
+                }
+              >
+                <option value="investigation_report">
+                  Investigation Report
+                </option>
+                <option value="design_verification">
+                  Design Verification Report
+                </option>
+              </select>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="documentNo">{documentNoLabel}</Label>
+              <Input
+                id="documentNo"
+                placeholder={
+                  documentType === "design_verification"
+                    ? "e.g. DVR-2026-001"
+                    : "e.g. DEV/PK/26/001"
+                }
+                value={documentNo}
+                disabled={busy}
+                onChange={(e) => setDocumentNo(e.target.value)}
               />
             </div>
             <div className="grid gap-2">

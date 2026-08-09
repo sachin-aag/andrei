@@ -46,6 +46,7 @@ const report = {
   authorId: engineer.id,
   assignedManagerId: manager.id,
   status: "submitted",
+  documentType: "investigation_report" as const,
 };
 
 function mockSelectOnce(rows: unknown[]) {

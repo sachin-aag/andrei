@@ -2,10 +2,11 @@ import { NextResponse } from "next/server";
 import { and, asc, eq, ne } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { comments, reports, sectionTypeEnum } from "@/db/schema";
+import { comments, reports } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
 import { requireReportAccess } from "@/lib/reports/require-report-access";
+import { isValidSection } from "@/lib/document-types";
 
 export async function GET(
   req: Request,
@@ -35,7 +36,6 @@ export async function GET(
   return NextResponse.json({ comments: rows });
 }
 
-const sectionValues = sectionTypeEnum.enumValues;
 const COMMENT_MAX_LENGTH = 1024;
 const REPLY_MAX_LENGTH = 512;
 
@@ -44,7 +44,7 @@ const createSchema = z.object({
   parentId: z.string().optional().nullable(),
   anchorText: z.string().optional().default(""),
   sectionId: z.string().optional(),
-  section: z.enum(sectionValues).optional(),
+  section: z.string().optional(),
   contentPath: z.string().optional().nullable(),
   fromPos: z.number().int().optional().nullable(),
   toPos: z.number().int().optional().nullable(),
@@ -65,6 +65,12 @@ export async function POST(
   const parse = createSchema.safeParse(await req.json().catch(() => ({})));
   if (!parse.success) {
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
+  }
+  if (
+    parse.data.section &&
+    !isValidSection(report.documentType, parse.data.section)
+  ) {
+    return NextResponse.json({ error: "Invalid section" }, { status: 400 });
   }
 
   const requestedParentId = parse.data.parentId ?? null;
@@ -116,7 +122,7 @@ export async function POST(
         : parse.data.sectionId ?? null,
       section: threadRoot
         ? threadRoot.section
-        : ((parse.data.section as (typeof sectionValues)[number] | undefined) ?? null),
+        : (parse.data.section ?? null),
       authorId: user.id,
       content: parse.data.content,
       anchorText: threadRoot ? "" : parse.data.anchorText ?? "",

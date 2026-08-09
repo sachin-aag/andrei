@@ -107,7 +107,7 @@ export async function evaluateReportCriteria(
       const evaluations = await evaluateSection({
         section: row.section,
         content,
-        reportContext: { deviationNo: report.deviationNo, date: report.date },
+        reportContext: { deviationNo: report.documentNo, date: report.date },
         allSections,
       });
       return {

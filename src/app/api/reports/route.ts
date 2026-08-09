@@ -5,13 +5,13 @@ import { db } from "@/db";
 import { reportManagers, reports, reportSections } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import {
-  DUPLICATE_DEVIATION_NO_ERROR,
-  isDeviationNoTaken,
+  DUPLICATE_DOCUMENT_NO_ERROR,
+  isDocumentNoTaken,
   isPostgresUniqueViolation,
-  normalizeDeviationNo,
-} from "@/lib/reports/deviation-no";
+  normalizeDocumentNo,
+} from "@/lib/reports/document-no";
 import { seedBlankReportSections } from "@/lib/reports/seed-blank-report-sections";
-import { REPORT_SECTION_ROW_ORDER } from "@/types/sections";
+import { getDocumentType, getSeedableSections } from "@/lib/document-types";
 import { auditActorFromUser, recordAuditEvent, recordSectionVersion } from "@/lib/audit";
 import {
   insertReportManagers,
@@ -89,7 +89,11 @@ export async function GET() {
 }
 
 const createSchema = z.object({
-  deviationNo: z.string().min(1),
+  documentType: z
+    .enum(["investigation_report", "design_verification"])
+    .default("investigation_report"),
+  documentNo: z.string().min(1).optional(),
+  deviationNo: z.string().min(1).optional(), // alias for investigation
   assignedManagerId: z.string().nullable().optional(),
   assignedManagerIds: z.array(z.string()).optional(),
 });
@@ -111,19 +115,24 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
     }
 
-    const deviationNo = parse.data.deviationNo;
+    const documentType = parse.data.documentType;
+    const def = getDocumentType(documentType);
+    const rawDocumentNo = parse.data.documentNo ?? parse.data.deviationNo;
     const assignedManagerIds = parse.data.assignedManagerIds
       ? normalizeAssignedManagerIds(parse.data.assignedManagerIds)
       : normalizeAssignedManagerIds([parse.data.assignedManagerId ?? null]);
 
-    const finalDeviationNo = normalizeDeviationNo(deviationNo);
+    const finalDocumentNo = normalizeDocumentNo(rawDocumentNo ?? "");
 
-    if (!finalDeviationNo) {
-      return NextResponse.json({ error: "Deviation number is required" }, { status: 400 });
+    if (!finalDocumentNo) {
+      return NextResponse.json(
+        { error: `${def.documentNoLabel} is required` },
+        { status: 400 }
+      );
     }
 
-    if (await isDeviationNoTaken(finalDeviationNo, user.id)) {
-      return NextResponse.json({ error: DUPLICATE_DEVIATION_NO_ERROR }, { status: 409 });
+    if (await isDocumentNoTaken(finalDocumentNo, user.id, documentType)) {
+      return NextResponse.json({ error: DUPLICATE_DOCUMENT_NO_ERROR }, { status: 409 });
     }
 
     const validation = await validateAssignedManagerIds(assignedManagerIds);
@@ -135,11 +144,14 @@ export async function POST(req: Request) {
     }
 
     const assignedManagerId = primaryAssignedManagerId(assignedManagerIds);
-    const blankSections = seedBlankReportSections();
+    const blankSections = seedBlankReportSections(documentType);
+    const seedable = getSeedableSections(documentType);
     const [report] = await db
       .insert(reports)
       .values({
-        deviationNo: finalDeviationNo,
+        documentType,
+        documentNo: finalDocumentNo,
+        metadata: def.defaultMetadata,
         authorId: user.id,
         assignedManagerId,
       })
@@ -152,10 +164,10 @@ export async function POST(req: Request) {
     await insertReportManagers(report.id, assignedManagerIds);
 
     await db.insert(reportSections).values(
-      REPORT_SECTION_ROW_ORDER.map((section) => ({
+      seedable.map((section) => ({
         reportId: report.id,
-        section,
-        content: blankSections[section] as unknown as Record<string, unknown>,
+        section: section.key,
+        content: (blankSections[section.key] ?? {}) as Record<string, unknown>,
       }))
     );
 
@@ -166,9 +178,10 @@ export async function POST(req: Request) {
       entityType: "report",
       entityId: report.id,
       reportId: report.id,
-      summary: `Created report ${finalDeviationNo}`,
+      summary: `Created report ${finalDocumentNo}`,
       newValue: {
-        deviationNo: finalDeviationNo,
+        documentType,
+        documentNo: finalDocumentNo,
         authorId: user.id,
         assignedManagerId,
         assignedManagerIds,
@@ -197,8 +210,8 @@ export async function POST(req: Request) {
       report: withAssignedManagerIds(report, assignedManagerIds),
     });
   } catch (e) {
-    const duplicateDeviationNo = isPostgresUniqueViolation(e);
-    if (!duplicateDeviationNo) {
+    const duplicateDocumentNo = isPostgresUniqueViolation(e);
+    if (!duplicateDocumentNo) {
       console.error("Failed to create report", {
         reportId: createdReportId,
         error: e,
@@ -214,8 +227,8 @@ export async function POST(req: Request) {
         });
       }
     }
-    if (duplicateDeviationNo) {
-      return NextResponse.json({ error: DUPLICATE_DEVIATION_NO_ERROR }, { status: 409 });
+    if (duplicateDocumentNo) {
+      return NextResponse.json({ error: DUPLICATE_DOCUMENT_NO_ERROR }, { status: 409 });
     }
     return NextResponse.json({ error: "Failed to create report" }, { status: 500 });
   }

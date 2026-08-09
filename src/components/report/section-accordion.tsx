@@ -5,7 +5,7 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { SECTION_LABELS } from "@/types/sections";
-import { EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
+import { evaluatableSectionKeys } from "@/lib/ai/criteria-view";
 import type { SectionType } from "@/db/schema";
 
 type SectionAccordionProps = {
@@ -138,7 +138,7 @@ export function SectionAccordion({
 /** Hook to manage open/closed state of section accordions */
 export function useSectionAccordionState(defaultOpen = true) {
   const [openSections, setOpenSections] = useState<Set<SectionType>>(
-    () => new Set(defaultOpen ? EVALUATABLE_SECTIONS : []),
+    () => new Set(defaultOpen ? evaluatableSectionKeys("investigation_report") : []),
   );
 
   const toggle = (section: SectionType) => {

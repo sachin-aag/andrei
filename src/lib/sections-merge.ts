@@ -366,31 +366,42 @@ export function mergeSignatureApprovalsSection(content: unknown): SignatureAppro
   return { table, headerRowXml, dataRowXml };
 }
 
-export function mergeSection<K extends keyof SectionContentMap & SectionType>(
+export function mergeSection<K extends keyof SectionContentMap>(
   section: K,
   content: unknown
-): SectionContentMap[K] {
+): SectionContentMap[K];
+export function mergeSection(section: string, content: unknown): unknown;
+export function mergeSection(
+  section: string,
+  content: unknown
+): unknown {
   switch (section) {
     case "define":
-      return mergeDefineSection(content) as SectionContentMap[K];
+      return mergeDefineSection(content);
     case "measure":
-      return mergeMeasureSection(content) as SectionContentMap[K];
+      return mergeMeasureSection(content);
     case "analyze":
-      return mergeAnalyzeSection(content) as SectionContentMap[K];
+      return mergeAnalyzeSection(content);
     case "improve":
-      return mergeImproveSection(content) as SectionContentMap[K];
+      return mergeImproveSection(content);
     case "control":
-      return mergeControlSection(content) as SectionContentMap[K];
+      return mergeControlSection(content);
     case "conclusion":
-      return mergeConclusionSection(content) as SectionContentMap[K];
+      return mergeConclusionSection(content);
     case "documents_reviewed":
-      return mergeDocumentsReviewedSection(content) as SectionContentMap[K];
+      return mergeDocumentsReviewedSection(content);
     case "attachments":
-      return mergeAttachmentsSection(content) as SectionContentMap[K];
+      return mergeAttachmentsSection(content);
     case "signature_approvals":
-      return mergeSignatureApprovalsSection(content) as SectionContentMap[K];
+      return mergeSignatureApprovalsSection(content);
     default:
-      return mergeGeneric(section, content);
+      if (section in EMPTY_CONTENT) {
+        return mergeGeneric(
+          section as keyof SectionContentMap,
+          content
+        );
+      }
+      return content ?? {};
   }
 }
 

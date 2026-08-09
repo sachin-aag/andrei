@@ -30,8 +30,9 @@ import {
   scrollToCommentFieldAnchor,
   scrollToGutterAnchor,
 } from "@/lib/comments/navigate";
-import { EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
+import { evaluatableSectionKeys } from "@/lib/ai/criteria-view";
 import { REPORT_WORKSPACE_SECTIONS } from "@/types/sections";
+import { getWorkspaceSections } from "@/lib/document-types";
 import { captureEvent } from "@/lib/analytics/events";
 import {
   ElectronicSignatureDialog,
@@ -49,7 +50,7 @@ function SectionEditorLoading() {
   );
 }
 
-const SECTION_EDITORS = {
+const INVESTIGATION_SECTION_EDITORS = {
   define: dynamic(
     () => import("./sections/define-editor").then((mod) => mod.DefineEditor),
     { loading: SectionEditorLoading }
@@ -95,6 +96,78 @@ const SECTION_EDITORS = {
   ),
 } satisfies Record<(typeof REPORT_WORKSPACE_SECTIONS)[number], ComponentType>;
 
+const DV_SECTION_EDITORS: Record<string, ComponentType> = {
+  cover_page: dynamic(
+    () =>
+      import("./sections/dv/cover-page-editor").then((mod) => mod.DvCoverPageEditor),
+    { loading: SectionEditorLoading }
+  ),
+  purpose_scope: dynamic(
+    () =>
+      import("./sections/dv/dv-section-editors").then(
+        (mod) => mod.DvPurposeScopeEditor
+      ),
+    { loading: SectionEditorLoading }
+  ),
+  references: dynamic(
+    () =>
+      import("./sections/dv/dv-section-editors").then(
+        (mod) => mod.DvReferencesEditor
+      ),
+    { loading: SectionEditorLoading }
+  ),
+  traceability: dynamic(
+    () =>
+      import("./sections/dv/dv-section-editors").then(
+        (mod) => mod.DvTraceabilityEditor
+      ),
+    { loading: SectionEditorLoading }
+  ),
+  test_methods: dynamic(
+    () =>
+      import("./sections/dv/dv-section-editors").then(
+        (mod) => mod.DvTestMethodsEditor
+      ),
+    { loading: SectionEditorLoading }
+  ),
+  test_results: dynamic(
+    () =>
+      import("./sections/dv/dv-section-editors").then(
+        (mod) => mod.DvTestResultsEditor
+      ),
+    { loading: SectionEditorLoading }
+  ),
+  deviations: dynamic(
+    () =>
+      import("./sections/dv/dv-section-editors").then(
+        (mod) => mod.DvDeviationsEditor
+      ),
+    { loading: SectionEditorLoading }
+  ),
+  conclusion: dynamic(
+    () =>
+      import("./sections/dv/dv-section-editors").then(
+        (mod) => mod.DvConclusionEditor
+      ),
+    { loading: SectionEditorLoading }
+  ),
+  approval_signoff: dynamic(
+    () =>
+      import("./sections/dv/dv-section-editors").then((mod) => mod.DvApprovalEditor),
+    { loading: SectionEditorLoading }
+  ),
+  appendices: dynamic(
+    () =>
+      import("./sections/dv/dv-section-editors").then(
+        (mod) => mod.DvAppendicesEditor
+      ),
+    { loading: SectionEditorLoading }
+  ),
+};
+
+/** @deprecated Prefer INVESTIGATION_SECTION_EDITORS / DV_SECTION_EDITORS */
+const SECTION_EDITORS = INVESTIGATION_SECTION_EDITORS;
+
 export function ReportWorkspace({
   mode,
 }: {
@@ -139,7 +212,7 @@ export function ReportWorkspace({
         const next: Partial<Record<SectionType, number>> = {};
         let changed = false;
 
-        for (const section of EVALUATABLE_SECTIONS) {
+        for (const section of evaluatableSectionKeys(report.documentType)) {
           const delta = overflows[section];
           if (delta != null && delta > 1) {
             next[section] = Math.ceil(delta);
@@ -414,8 +487,17 @@ export function ReportWorkspace({
               {activeAttachmentId ? (
                 <AttachmentViewer />
               ) : (
-                REPORT_WORKSPACE_SECTIONS.map((s) => {
-                  const Editor = SECTION_EDITORS[s];
+                (report.documentType === "design_verification"
+                  ? getWorkspaceSections("design_verification").map((s) => s.key)
+                  : REPORT_WORKSPACE_SECTIONS
+                ).map((s) => {
+                  const Editor =
+                    report.documentType === "design_verification"
+                      ? DV_SECTION_EDITORS[s]
+                      : INVESTIGATION_SECTION_EDITORS[
+                          s as keyof typeof INVESTIGATION_SECTION_EDITORS
+                        ];
+                  if (!Editor) return null;
                   const extra = sectionMinHeights[s];
                   return (
                     <section

@@ -875,14 +875,14 @@ async function main() {
   // not in the curated set (e.g. earlier thin seed reports). Scoped strictly to
   // the demo engineer so no other author's reports are ever touched. Child rows
   // (sections, evaluations, comments, managers) cascade on report delete.
-  const wantedDeviationNos = DEMO_REPORTS.map((r) => r.deviationNo);
+  const wantedDocumentNos = DEMO_REPORTS.map((r) => r.deviationNo);
   const stale = await db
-    .select({ id: reports.id, deviationNo: reports.deviationNo })
+    .select({ id: reports.id, documentNo: reports.documentNo })
     .from(reports)
     .where(
       and(
         eq(reports.authorId, engineerId),
-        notInArray(reports.deviationNo, wantedDeviationNos)
+        notInArray(reports.documentNo, wantedDocumentNos)
       )
     );
   if (stale.length > 0) {
@@ -892,7 +892,7 @@ async function main() {
         stale.map((r) => r.id)
       )
     );
-    for (const r of stale) console.log(`Removed stale demo report ${r.deviationNo}`);
+    for (const r of stale) console.log(`Removed stale demo report ${r.documentNo}`);
   }
 
   let created = 0;
@@ -910,7 +910,7 @@ async function main() {
       .select({ id: reports.id })
       .from(reports)
       .where(
-        and(eq(reports.authorId, engineerId), eq(reports.deviationNo, spec.deviationNo))
+        and(eq(reports.authorId, engineerId), eq(reports.documentNo, spec.deviationNo))
       )
       .limit(1);
 
@@ -919,8 +919,10 @@ async function main() {
         .update(reports)
         .set({
           status: spec.status,
-          toolsUsed: spec.toolsUsed,
-          otherTools: spec.otherTools ?? "",
+          metadata: {
+            toolsUsed: spec.toolsUsed,
+            otherTools: spec.otherTools ?? "",
+          },
           assignedManagerId: managerId,
           reviewedById: spec.status === "approved" ? managerId : null,
           updatedAt: new Date(),
@@ -947,12 +949,15 @@ async function main() {
     const [report] = await db
       .insert(reports)
       .values({
-        deviationNo: spec.deviationNo,
+        documentType: "investigation_report",
+        documentNo: spec.deviationNo,
         authorId: engineerId,
         assignedManagerId: managerId,
         status: spec.status,
-        toolsUsed: spec.toolsUsed,
-        otherTools: spec.otherTools ?? "",
+        metadata: {
+          toolsUsed: spec.toolsUsed,
+          otherTools: spec.otherTools ?? "",
+        },
         reviewedById: spec.status === "approved" ? managerId : null,
       })
       .returning();

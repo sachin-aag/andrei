@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, Loader2, Sparkles } from "lucide-react";
 import {
   useReportComments,
+  useReportData,
   useReportEvaluations,
   useReportSections,
 } from "@/providers/report-provider";
@@ -15,13 +16,14 @@ import {
   STATUS_TEXT_COLOR,
   aggregateStatus,
   effectiveStatus,
+  evaluatableSectionKeys,
   metCount,
   rowsForSection,
 } from "@/lib/ai/criteria-view";
-import { EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
 import { canSuggestFixes } from "@/lib/ai/suggestion-gating";
 import { SECTION_LABELS } from "@/types/sections";
 import { captureEvent } from "@/lib/analytics/events";
+import { getDocumentType } from "@/lib/document-types";
 
 const STATUS_LABEL = {
   met: "All criteria met",
@@ -54,12 +56,16 @@ function ExpandableReasoning({ text }: { text: string }) {
 }
 
 export function SectionStatusPill({ section }: { section: SectionType }) {
+  const { report } = useReportData();
   const {
     evaluations,
     runningEvalSections,
   } = useReportEvaluations();
   const [open, setOpen] = useState(false);
-  const rows = useMemo(() => rowsForSection(section, evaluations), [evaluations, section]);
+  const rows = useMemo(
+    () => rowsForSection(section, evaluations, report.documentType),
+    [evaluations, section, report.documentType]
+  );
   const isRunning = runningEvalSections.includes(section);
   const [stableRows, setStableRows] = useState(rows);
 
@@ -217,6 +223,7 @@ export function SectionSuggestFixesButton({ section }: { section: SectionType })
   } = useReportEvaluations();
   const { comments } = useReportComments();
   const { sections } = useReportSections();
+  const { report } = useReportData();
   const isRunning = runningSuggestionSections.includes(section);
   const sectionContent = sections[section];
   const enabled = canSuggestFixes(
@@ -227,6 +234,7 @@ export function SectionSuggestFixesButton({ section }: { section: SectionType })
     {
       isEvaluating: isEvaluating || runningEvalSections.includes(section),
       isSuggesting: isSuggesting || isRunning,
+      documentType: report.documentType,
     }
   );
 
@@ -255,14 +263,16 @@ export function RunAllEvaluationButton({
   /** `stacked` for the report header; `inline` for tight panels. */
   layout?: "stacked" | "inline";
 }) {
+  const { report } = useReportData();
   const {
     runEvaluation,
     isEvaluating,
     runningEvalSections,
   } = useReportEvaluations();
 
-  const sectionCount = EVALUATABLE_SECTIONS.length;
-  const title = `Run traffic-light criteria on all ${sectionCount} sections (Define, Measure, Analyze, Improve, Control)`;
+  const sectionCount = evaluatableSectionKeys(report.documentType).length;
+  const typeLabel = getDocumentType(report.documentType).label;
+  const title = `Run traffic-light criteria on all ${sectionCount} sections (${typeLabel})`;
 
   const icon = isEvaluating ? (
     <Loader2 className="size-4 shrink-0 animate-spin" aria-hidden="true" />

@@ -9,7 +9,8 @@ import type { ReportStatus } from "@/db/schema";
 
 export type ReportCardData = {
   id: string;
-  deviationNo: string;
+  documentNo: string;
+  documentType?: "investigation_report" | "design_verification";
   date: Date;
   status: string;
   authorId: string;
@@ -24,6 +25,7 @@ export function ReportCard({
   authorName,
   managerNames,
   openLabel = "Open",
+  displayTitle,
   titleAction,
   trailingAction,
 }: {
@@ -32,10 +34,20 @@ export function ReportCard({
   authorName: string | undefined;
   managerNames: string[];
   openLabel?: string;
+  displayTitle?: string;
   titleAction?: ReactNode;
   trailingAction?: ReactNode;
 }) {
-  const title = report.deviationNo || "Untitled deviation";
+  const title =
+    displayTitle ??
+    (report.documentNo ||
+      (report.documentType === "design_verification"
+        ? "Untitled design verification"
+        : "Untitled deviation"));
+  const typeLabel =
+    report.documentType === "design_verification"
+      ? "Design Verification"
+      : "Investigation";
   const managerLabel = managerNames.length === 1 ? "Manager" : "Managers";
 
   return (
@@ -67,6 +79,8 @@ export function ReportCard({
               className="text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
             >
               <div className="flex flex-wrap items-center gap-3">
+                <span>{typeLabel}</span>
+                <span>·</span>
                 <span>Date: {formatCalendarDate(report.date)}</span>
                 <span>·</span>
                 <span>Author: {authorName ?? "—"}</span>

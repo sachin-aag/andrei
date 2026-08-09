@@ -66,7 +66,7 @@ export async function GET(
     })),
   });
 
-  const safeDev = (report.deviationNo || "report").replace(/[^a-zA-Z0-9_\-/]/g, "_");
+  const safeDev = (report.documentNo || "report").replace(/[^a-zA-Z0-9_\-/]/g, "_");
   const filename = `Investigation_Report_${safeDev.replace(/\//g, "-")}.docx`;
   const body = new Uint8Array(buffer);
   return new NextResponse(body, {

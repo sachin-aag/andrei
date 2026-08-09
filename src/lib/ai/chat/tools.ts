@@ -4,7 +4,12 @@ import { and, eq } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
 import { db } from "@/db";
 import { comments, reportSections, reports } from "@/db/schema";
-import type { SectionType } from "@/db/schema";
+import type {
+  InvestigationReportMetadata,
+  ReportMetadata,
+  SectionType,
+} from "@/db/schema";
+import { investigationToolsUsed } from "@/types/report";
 import { mergeSection } from "@/lib/sections-merge";
 import { AI_AUTHOR_ID } from "@/lib/ai/constants";
 import {
@@ -19,6 +24,7 @@ import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-sugg
 import {
   CHAT_EDITABLE_SECTIONS,
   type ChatSectionScope,
+  chatEditableSections,
   chatSectionsInScope,
   chatTargetFields,
   isChatEditableSection,
@@ -116,14 +122,19 @@ export function buildChatTools(opts: {
   reportId: string;
   canEdit: boolean;
   sectionScope?: ChatSectionScope;
+  documentType?: import("@/db/schema").DocumentType;
   /** Acting user for audit events (e.g. select_analyze_method). */
   actor?: AuditActorSnapshot;
 }): ToolSet {
   const { reportId, canEdit, actor } = opts;
+  const documentType = opts.documentType ?? "investigation_report";
   const sectionScope = opts.sectionScope ?? "all";
-  const allowedSections = chatSectionsInScope(sectionScope);
+  const allowedSections = chatSectionsInScope(sectionScope, documentType);
   const sectionEnum = allowedSections as [SectionType, ...SectionType[]];
-  const allSectionEnum = CHAT_EDITABLE_SECTIONS as [SectionType, ...SectionType[]];
+  const allSectionEnum = chatEditableSections(documentType) as [
+    SectionType,
+    ...SectionType[],
+  ];
   const scopeHint =
     sectionScope === "all"
       ? ""
@@ -153,7 +164,7 @@ export function buildChatTools(opts: {
           .describe("Optional in-section field paths, e.g. ['rootCause.narrative']."),
       }),
       execute: async ({ section, fields }) => {
-        if (!isChatEditableSection(section)) {
+        if (!isChatEditableSection(section, documentType)) {
           return { error: "invalid_section" as const };
         }
         if (!readableSections.includes(section)) {
@@ -276,7 +287,7 @@ export function buildChatTools(opts: {
               "This report is not editable in its current state, so edits cannot be proposed.",
           };
         }
-        if (!isChatEditableSection(section)) {
+        if (!isChatEditableSection(section, documentType)) {
           return { status: "invalid_section", message: `Unknown section '${section}'.` };
         }
         if (!isAllowedTargetField(section, targetField)) {
@@ -361,7 +372,7 @@ export function buildChatTools(opts: {
               "This report is not editable in its current state, so drafts cannot be proposed.",
           };
         }
-        if (!isChatEditableSection(section)) {
+        if (!isChatEditableSection(section, documentType)) {
           return { status: "invalid_section", message: `Unknown section '${section}'.` };
         }
         const field = chatTargetFields(section).find(
@@ -484,7 +495,7 @@ export function buildChatTools(opts: {
         const [existing] = await db
           .select({
             id: reports.id,
-            toolsUsed: reports.toolsUsed,
+            metadata: reports.metadata,
           })
           .from(reports)
           .where(eq(reports.id, reportId));
@@ -495,10 +506,17 @@ export function buildChatTools(opts: {
           };
         }
 
+        const previousToolsUsed = investigationToolsUsed(existing);
         const nextToolsUsed = toolsUsedForMethod(method);
+        const nextMetadata: InvestigationReportMetadata & ReportMetadata = {
+          ...(existing.metadata as ReportMetadata),
+          toolsUsed: nextToolsUsed,
+          otherTools:
+            (existing.metadata as InvestigationReportMetadata).otherTools ?? "",
+        };
         await db
           .update(reports)
-          .set({ toolsUsed: nextToolsUsed, updatedAt: new Date() })
+          .set({ metadata: nextMetadata, updatedAt: new Date() })
           .where(eq(reports.id, reportId));
 
         if (actor) {
@@ -509,7 +527,7 @@ export function buildChatTools(opts: {
             entityId: reportId,
             reportId,
             summary: `Selected Analyze method: ${ANALYZE_METHOD_LABELS[method]}`,
-            oldValue: { toolsUsed: existing.toolsUsed },
+            oldValue: { toolsUsed: previousToolsUsed },
             newValue: { toolsUsed: nextToolsUsed },
             metadata: { source: "chat_select_analyze_method", rationale },
           });

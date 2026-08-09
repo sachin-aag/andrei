@@ -534,7 +534,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
             : "Suggestion could not be located"
         );
       }
-      replaceSection(section, result.nextSection as SectionContentMap[typeof section]);
+      replaceSection(section, result.nextSection as unknown);
 
       setComments((prev) =>
         prev.map((c) =>
@@ -617,7 +617,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
       if (result.nextSection) {
         replaceSection(
           section,
-          result.nextSection as SectionContentMap[typeof section]
+          result.nextSection as unknown
         );
       }
       setComments((prev) => prev.filter((c) => c.id !== commentId));

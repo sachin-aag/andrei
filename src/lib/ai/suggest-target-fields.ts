@@ -1,7 +1,7 @@
 import type { SectionType } from "@/db/schema";
 
 /** Pattern entries use `[]` for a numeric array index slot. */
-export const SUGGEST_TARGET_FIELD_PATTERNS: Record<SectionType, readonly string[]> = {
+export const SUGGEST_TARGET_FIELD_PATTERNS: Record<string, readonly string[]> = {
   define: ["narrative"],
   measure: ["narrative"],
   analyze: [
@@ -41,7 +41,7 @@ export function isAllowedTargetField(section: SectionType, targetField: string):
 }
 
 /** Rich TipTap fields per section (dot paths). */
-export const RICH_FIELD_PATHS: Partial<Record<SectionType, readonly string[]>> = {
+export const RICH_FIELD_PATHS: Partial<Record<string, readonly string[]>> = {
   define: ["narrative"],
   measure: ["narrative"],
   analyze: [

@@ -291,7 +291,7 @@ export function PlainTextSuggestionField({
             : "Suggestion could not be located"
         );
       }
-      const nextSection = result.nextSection as SectionContentMap[typeof section];
+      const nextSection = result.nextSection as unknown;
       const nextValue = fieldPath
         .split(".")
         .reduce<unknown>((obj, key) => {
@@ -377,7 +377,7 @@ export function PlainTextSuggestionField({
       if (result.nextSection) {
         replaceSection(
           section,
-          result.nextSection as SectionContentMap[typeof section]
+          result.nextSection as unknown
         );
       }
       setComments((prev) => prev.filter((c) => c.id !== activeComment.id));

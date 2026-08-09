@@ -1,4 +1,4 @@
-import type { SectionType, CriterionStatus } from "@/db/schema";
+import type { SectionType, CriterionStatus, DocumentType } from "@/db/schema";
 import type { CommentRecord, EvaluationRecord } from "@/types/report";
 import { hashContent } from "@/lib/ai/content-hash";
 import { PROMPT_VERSION } from "@/lib/ai/section-prompts";
@@ -8,7 +8,7 @@ import {
   rowsForSection,
   type CriterionRow,
 } from "@/lib/ai/criteria-view";
-import { getCriteria } from "@/lib/ai/criteria";
+import { getCriteria } from "@/lib/document-types";
 import { shouldSkipSuggestForEvaluation } from "@/lib/placeholders/evaluation-policy";
 
 const FAILING: CriterionStatus[] = ["not_met", "partially_met"];
@@ -26,9 +26,10 @@ export function gapCriteriaForSection(
   section: SectionType,
   evaluations: EvaluationRecord[],
   comments: CommentRecord[],
-  sectionContent: unknown
+  sectionContent: unknown,
+  documentType: DocumentType = "investigation_report"
 ): CriterionRow[] {
-  const rows = rowsForSection(section, evaluations).filter(
+  const rows = rowsForSection(section, evaluations, documentType).filter(
     (r) => !r.isPlaceholder && isFailingStatus(effectiveStatus(r))
   );
   const openFixEvalIds = new Set(
@@ -43,20 +44,21 @@ export function gapCriteriaForSection(
     return !openFixEvalIds.has(r.id);
   });
 
-  return sortGapCriteria(section, gap);
+  return sortGapCriteria(section, gap, documentType);
 }
 
 /** not_met (red) first, then partially_met (yellow), then criterion order. */
 export function sortGapCriteria(
   section: SectionType,
-  rows: CriterionRow[]
+  rows: CriterionRow[],
+  documentType: DocumentType = "investigation_report"
 ): CriterionRow[] {
   return [...rows].sort((a, b) => {
     const priA = STATUS_PRIORITY[effectiveStatus(a)];
     const priB = STATUS_PRIORITY[effectiveStatus(b)];
     if (priA !== priB) return priA - priB;
-    const orderA = criterionDisplayIndex(section, a.criterionKey);
-    const orderB = criterionDisplayIndex(section, b.criterionKey);
+    const orderA = criterionDisplayIndex(section, a.criterionKey, documentType);
+    const orderB = criterionDisplayIndex(section, b.criterionKey, documentType);
     if (orderA !== orderB) return orderA - orderB;
     return a.criterionKey.localeCompare(b.criterionKey);
   });
@@ -67,10 +69,22 @@ export function canSuggestFixes(
   evaluations: EvaluationRecord[],
   comments: CommentRecord[],
   sectionContent: unknown,
-  opts?: { isEvaluating?: boolean; isSuggesting?: boolean }
+  opts?: {
+    isEvaluating?: boolean;
+    isSuggesting?: boolean;
+    documentType?: DocumentType;
+  }
 ): boolean {
   if (opts?.isEvaluating || opts?.isSuggesting) return false;
-  return gapCriteriaForSection(section, evaluations, comments, sectionContent).length > 0;
+  return (
+    gapCriteriaForSection(
+      section,
+      evaluations,
+      comments,
+      sectionContent,
+      opts?.documentType ?? "investigation_report"
+    ).length > 0
+  );
 }
 
 const STATUS_PRIORITY: Record<CriterionStatus, number> = {
@@ -80,8 +94,12 @@ const STATUS_PRIORITY: Record<CriterionStatus, number> = {
   not_evaluated: 3,
 };
 
-export function criterionDisplayIndex(section: SectionType, criterionKey: string): number {
-  const defs = getCriteria(section);
+export function criterionDisplayIndex(
+  section: SectionType,
+  criterionKey: string,
+  documentType: DocumentType = "investigation_report"
+): number {
+  const defs = getCriteria(documentType, section);
   const idx = defs.findIndex((d) => d.key === criterionKey);
   return idx === -1 ? Number.MAX_SAFE_INTEGER : idx;
 }

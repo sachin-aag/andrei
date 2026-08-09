@@ -9,7 +9,6 @@ import {
   reportSections,
   criteriaEvaluations,
   comments,
-  sectionTypeEnum,
 } from "@/db/schema";
 import type { SectionType } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
@@ -33,7 +32,8 @@ import {
   probeRichEdit,
   type SuggestionEdit,
 } from "@/lib/suggestions/locator";
-import { mergeSection } from "@/lib/sections-merge";
+import { mergeSectionForType } from "@/lib/document-types";
+import { isValidSection } from "@/lib/document-types";
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 import { normalizeCommentRecord } from "@/lib/comments/normalize";
@@ -51,10 +51,6 @@ export const maxDuration = 120;
 const bodySchema = z.object({
   section: z.string(),
 });
-
-function isValidSection(v: string): v is SectionType {
-  return (sectionTypeEnum.enumValues as readonly string[]).includes(v);
-}
 
 export const POST = observeRouteHandler(
   "report-suggest-edits",
@@ -78,7 +74,7 @@ async function handleSuggestionsPost(
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }
-  if (!isValidSection(parsed.data.section)) {
+  if (!isValidSection(report.documentType, parsed.data.section)) {
     return NextResponse.json({ error: "Invalid section" }, { status: 400 });
   }
   const section = parsed.data.section;
@@ -99,7 +95,11 @@ async function handleSuggestionsPost(
     .from(comments)
     .where(eq(comments.reportId, reportId));
 
-  const sectionContent = mergeSection(section, sectionRow.content);
+  const sectionContent = mergeSectionForType(
+    report.documentType,
+    section,
+    sectionRow.content
+  );
   const gap = gapCriteriaForSection(
     section,
     evaluations.map((e) => ({
@@ -107,7 +107,8 @@ async function handleSuggestionsPost(
       updatedAt: e.updatedAt.toISOString(),
     })),
     commentRows.map((c) => normalizeCommentRecord(c)),
-    sectionContent
+    sectionContent,
+    report.documentType
   );
 
   const hash = sectionContentHash(section, sectionContent);
@@ -139,14 +140,18 @@ async function handleSuggestionsPost(
     .where(eq(reportSections.reportId, reportId));
   const allSections: AllSectionsContent = {};
   for (const row of allSectionRows) {
-    allSections[row.section] = mergeSection(row.section, row.content);
+    allSections[row.section] = mergeSectionForType(
+      report.documentType,
+      row.section,
+      row.content
+    );
   }
 
   const { suggestions: llmSuggestions, dropped: llmDropped } =
     await generateSuggestionsForSection({
       section,
       content: sectionContent,
-      reportContext: { deviationNo: report.deviationNo, date: report.date },
+      reportContext: { deviationNo: report.documentNo, date: report.date },
       reportId,
       allSections,
       gapCriteria: gap.map((g) => ({
@@ -336,7 +341,7 @@ async function handleSuggestionsPost(
     input: {
       reportId,
       section,
-      deviationNo: report.deviationNo,
+      documentNo: report.documentNo,
       gapCriterionCount: gap.length,
       gapCriteria: gap.map((g) => g.criterionKey),
     },
@@ -352,7 +357,7 @@ async function handleSuggestionsPost(
       metadata: {
         feature: "suggestion-generation",
         section,
-        deviationNo: report.deviationNo,
+        documentNo: report.documentNo,
       },
     },
     runSuggestions

@@ -17,13 +17,13 @@ import {
 } from "@/components/ui/sheet";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { cn, formatDateTime } from "@/lib/utils";
-import { EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
 import {
   STATUS_COLOR,
   STATUS_TEXT_COLOR,
   type CriterionRow,
   aggregateStatus,
   effectiveStatus,
+  evaluatableSectionKeys,
   metCount,
   rowsBySection,
 } from "@/lib/ai/criteria-view";
@@ -90,14 +90,22 @@ export function CriteriaPanelContent({
   onJumpToSection?: (section: SectionType) => void;
   initialSection?: SectionType;
 }) {
+  const { report } = useReportData();
   const {
     evaluations,
     runningEvalSections,
   } = useReportEvaluations();
-  const [openSections, setOpenSections] = useState<Set<SectionType>>(
-    () => new Set(EVALUATABLE_SECTIONS),
+  const evaluatableSections = useMemo(
+    () => evaluatableSectionKeys(report.documentType),
+    [report.documentType]
   );
-  const grouped = useMemo(() => rowsBySection(evaluations), [evaluations]);
+  const [openSections, setOpenSections] = useState<Set<SectionType>>(
+    () => new Set(evaluatableSections),
+  );
+  const grouped = useMemo(
+    () => rowsBySection(evaluations, report.documentType),
+    [evaluations, report.documentType]
+  );
   const [stableRowsBySection, setStableRowsBySection] = useState<
     Map<SectionType, CriterionRow[]>
   >(() => new Map(grouped));
@@ -121,7 +129,7 @@ export function CriteriaPanelContent({
   }, [initialSection]);
 
   let nextStableRowsBySection = stableRowsBySection;
-  for (const section of EVALUATABLE_SECTIONS) {
+  for (const section of evaluatableSections) {
     const isRunning = runningEvalSections.includes(section);
     if (isRunning) continue;
     const rows = grouped.get(section) ?? [];
@@ -138,7 +146,7 @@ export function CriteriaPanelContent({
 
   return (
     <div ref={containerRef} className="space-y-2">
-      {EVALUATABLE_SECTIONS.map((section) => {
+      {evaluatableSections.map((section) => {
         const currentRows = grouped.get(section) ?? [];
         const isRunning = runningEvalSections.includes(section);
         const rows =
@@ -255,9 +263,14 @@ export function CommentsPanelContent({
 }: {
   onJumpToComment?: (commentId: string) => void;
 }) {
+  const { report } = useReportData();
   const { comments } = useReportComments();
+  const sectionKeys = useMemo(
+    () => evaluatableSectionKeys(report.documentType),
+    [report.documentType]
+  );
   const [openSections, setOpenSections] = useState<Set<SectionType>>(
-    () => new Set(EVALUATABLE_SECTIONS),
+    () => new Set(sectionKeys),
   );
 
   const rootComments = useMemo(
@@ -294,7 +307,7 @@ export function CommentsPanelContent({
 
   return (
     <div className="space-y-2">
-      {EVALUATABLE_SECTIONS.map((section) => {
+      {sectionKeys.map((section) => {
         const list = grouped[section] ?? [];
         return (
           <SectionAccordion
