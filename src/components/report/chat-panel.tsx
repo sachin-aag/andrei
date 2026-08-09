@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useChat } from "@ai-sdk/react";
 import {
   DefaultChatTransport,
@@ -41,11 +41,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useReportData } from "@/providers/report-provider";
-import { SECTION_LABELS } from "@/types/sections";
-import type { SectionType } from "@/db/schema";
+import { useReportAttachments } from "@/providers/report-attachments-provider";
+import type { DocumentType, SectionType } from "@/db/schema";
 import {
-  CHAT_EDITABLE_SECTIONS,
   CHAT_SECTION_SCOPE_ALL,
+  chatEditableSections,
+  sectionLabel as chatSectionLabel,
   type ChatSectionScope,
 } from "@/lib/ai/chat/fields";
 import {
@@ -58,6 +59,14 @@ import {
   type SectionScopeMismatch,
 } from "@/lib/ai/chat/section-intent";
 import type { ChatSessionSummary } from "@/lib/ai/chat/sessions";
+import {
+  applyMentionToInput,
+  filterMentionCandidates,
+  findMentionQuery,
+  mentionKey,
+  type MentionCandidate,
+  type MentionQuery,
+} from "@/lib/ai/chat/mention-search";
 import { compressImageFile } from "@/lib/images/compress-image";
 
 type PendingChatImage = {
@@ -104,10 +113,8 @@ function readToolPart(part: UIMessagePart<never, never>): ToolPartInfo | null {
 }
 
 function sectionLabel(section: unknown): string {
-  if (typeof section === "string" && section in SECTION_LABELS) {
-    return SECTION_LABELS[section as keyof typeof SECTION_LABELS];
-  }
-  return typeof section === "string" ? section : "";
+  if (typeof section === "string") return chatSectionLabel(section as SectionType);
+  return "section";
 }
 
 function parseAskUserQuestions(input: Record<string, unknown> | undefined): AskUserQuestionInput[] {
@@ -304,15 +311,112 @@ function ScopeMismatchBanner({
         onClick={() => onSwitch(mismatch.suggestedSection)}
         className="rounded-md border border-[var(--primary)]/40 bg-[var(--card)] px-2 py-1 font-medium text-[var(--primary)] transition-colors hover:bg-[var(--secondary)]"
       >
-        Switch to {SECTION_LABELS[mismatch.suggestedSection]}
+        Switch to {sectionLabel(mismatch.suggestedSection)}
       </button>
       <button
         type="button"
         onClick={onDismiss}
         className="rounded-md px-2 py-1 text-[var(--muted-foreground)] transition-colors hover:bg-[var(--secondary)] hover:text-[var(--foreground)]"
       >
-        Keep {SECTION_LABELS[mismatch.currentSection]}
+        Keep {sectionLabel(mismatch.currentSection)}
       </button>
+    </div>
+  );
+}
+
+function mentionIcon(type: MentionCandidate["type"]) {
+  return type === "document" ? FileText : ClipboardList;
+}
+
+function MentionChips({
+  mentions,
+  onRemove,
+}: {
+  mentions: MentionCandidate[];
+  onRemove: (candidate: MentionCandidate) => void;
+}) {
+  if (mentions.length === 0) return null;
+  return (
+    <div className="mb-2 flex flex-wrap gap-1.5">
+      {mentions.map((mention) => {
+        const Icon = mentionIcon(mention.type);
+        return (
+          <span
+            key={mentionKey(mention.type, mention.id)}
+            className="flex max-w-full items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--secondary)]/50 py-0.5 pl-2 pr-1 text-[11px]"
+          >
+            <Icon className="size-3 shrink-0 text-[var(--primary)]" aria-hidden="true" />
+            <span className="max-w-40 truncate" title={mention.label}>
+              {mention.label}
+            </span>
+            <button
+              type="button"
+              onClick={() => onRemove(mention)}
+              aria-label={`Remove ${mention.label} tag`}
+              className="flex size-4 shrink-0 items-center justify-center rounded-full text-[var(--muted-foreground)] transition-colors hover:bg-[var(--background)] hover:text-[var(--foreground)]"
+            >
+              <X className="size-3" aria-hidden="true" />
+            </button>
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
+function MentionMenu({
+  matches,
+  activeIndex,
+  onSelect,
+}: {
+  matches: MentionCandidate[];
+  activeIndex: number;
+  onSelect: (candidate: MentionCandidate) => void;
+}) {
+  return (
+    <div
+      id="chat-mention-menu"
+      role="listbox"
+      aria-label="Tag a document or section"
+      className="absolute bottom-full left-0 z-50 mb-1 max-h-56 w-full overflow-y-auto rounded-lg border border-[var(--border)] bg-[var(--card)] p-1 shadow-xl"
+    >
+      {matches.map((candidate, index) => {
+        const Icon = mentionIcon(candidate.type);
+        return (
+          <button
+            key={mentionKey(candidate.type, candidate.id)}
+            id={`chat-mention-option-${index}`}
+            type="button"
+            role="option"
+            aria-selected={index === activeIndex}
+            // Keep focus in the textarea so the caret position stays valid.
+            onMouseDown={(event) => {
+              event.preventDefault();
+              onSelect(candidate);
+            }}
+            className={cn(
+              "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-xs transition-colors hover:bg-[var(--secondary)]",
+              index === activeIndex && "bg-[var(--secondary)]"
+            )}
+          >
+            <Icon
+              className="size-3.5 shrink-0 text-[var(--primary)]"
+              aria-hidden="true"
+            />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate font-medium">{candidate.label}</span>
+              {candidate.sublabel ? (
+                <span className="block truncate text-[11px] text-[var(--muted-foreground)]">
+                  {candidate.sublabel}
+                </span>
+              ) : null}
+            </span>
+            <span className="shrink-0 text-[10px] uppercase tracking-wide text-[var(--muted-foreground)]">
+              {candidate.type}
+            </span>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -396,18 +500,21 @@ function MessageTurn({
 function scopeDescription(scope: ChatSectionScope): string {
   return scope === CHAT_SECTION_SCOPE_ALL
     ? "all sections"
-    : SECTION_LABELS[scope];
+    : sectionLabel(scope);
 }
 
 function SectionScopeSelect({
   value,
   onChange,
   disabled,
+  documentType,
 }: {
   value: ChatSectionScope;
   onChange: (scope: ChatSectionScope) => void;
   disabled?: boolean;
+  documentType: DocumentType;
 }) {
+  const sections = chatEditableSections(documentType);
   return (
     <Select
       value={value}
@@ -423,9 +530,9 @@ function SectionScopeSelect({
       </SelectTrigger>
       <SelectContent>
         <SelectItem value={CHAT_SECTION_SCOPE_ALL}>All sections</SelectItem>
-        {CHAT_EDITABLE_SECTIONS.map((section) => (
+        {sections.map((section) => (
           <SelectItem key={section} value={section}>
-            {SECTION_LABELS[section]}
+            {sectionLabel(section)}
           </SelectItem>
         ))}
       </SelectContent>
@@ -480,7 +587,11 @@ function ModeToggle({
 
 export function ChatPanel() {
   const { report, refresh, readOnly } = useReportData();
+  const { attachments } = useReportAttachments();
   const [input, setInput] = useState("");
+  const [mentions, setMentions] = useState<MentionCandidate[]>([]);
+  const [mentionRange, setMentionRange] = useState<MentionQuery | null>(null);
+  const [mentionIndex, setMentionIndex] = useState(0);
   const [pendingImages, setPendingImages] = useState<PendingChatImage[]>([]);
   const [attaching, setAttaching] = useState(false);
   const [mode, setMode] = useState<ChatMode>("agent");
@@ -494,6 +605,8 @@ export function ChatPanel() {
   const scrollRef = useRef<HTMLDivElement>(null);
   const historyRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const pendingCaretRef = useRef<number | null>(null);
 
   const base = `/api/reports/${report.id}/chat`;
 
@@ -513,6 +626,90 @@ export function ChatPanel() {
   });
 
   const busy = status === "submitted" || status === "streaming";
+
+  // Only ready documents are taggable — an attachment still being ingested has
+  // no chunks, so scoping search to it would return nothing.
+  const mentionCandidates = useMemo<MentionCandidate[]>(() => {
+    const documents = attachments
+      .filter((attachment) => attachment.processingStatus === "ready")
+      .map((attachment) => {
+        const description = attachment.description?.trim();
+        const pages =
+          typeof attachment.pageCount === "number" && attachment.pageCount > 0
+            ? `${attachment.pageCount} page${attachment.pageCount === 1 ? "" : "s"}`
+            : undefined;
+        return {
+          type: "document" as const,
+          id: attachment.id,
+          label: attachment.filename,
+          sublabel: description || pages,
+        };
+      });
+    const sections = chatEditableSections(report.documentType).map((section) => ({
+      type: "section" as const,
+      id: section,
+      label: sectionLabel(section),
+    }));
+    return [...documents, ...sections];
+  }, [attachments, report.documentType]);
+
+  const mentionMatches = mentionRange
+    ? filterMentionCandidates(mentionCandidates, mentionRange.query)
+    : [];
+  const mentionMenuOpen = mentionMatches.length > 0;
+  const activeMentionIndex = Math.min(
+    mentionIndex,
+    Math.max(mentionMatches.length - 1, 0)
+  );
+
+  // Restore the caret after a mention replaces the in-progress @ token.
+  useEffect(() => {
+    const caret = pendingCaretRef.current;
+    if (caret == null) return;
+    pendingCaretRef.current = null;
+    const element = textareaRef.current;
+    if (!element) return;
+    element.focus();
+    element.setSelectionRange(caret, caret);
+  }, [input]);
+
+  const updateMentionQuery = useCallback((value: string, caret: number) => {
+    setMentionRange(findMentionQuery(value, caret));
+    setMentionIndex(0);
+  }, []);
+
+  const selectMention = useCallback(
+    (candidate: MentionCandidate) => {
+      if (!mentionRange) return;
+      setInput((current) => {
+        const next = applyMentionToInput(current, mentionRange, candidate);
+        pendingCaretRef.current = next.caret;
+        return next.text;
+      });
+      setMentions((prev) =>
+        prev.some(
+          (mention) =>
+            mentionKey(mention.type, mention.id) ===
+            mentionKey(candidate.type, candidate.id)
+        )
+          ? prev
+          : [...prev, candidate]
+      );
+      setMentionRange(null);
+      setMentionIndex(0);
+    },
+    [mentionRange]
+  );
+
+  const removeMention = useCallback((candidate: MentionCandidate) => {
+    setMentions((prev) =>
+      prev.filter(
+        (mention) =>
+          mentionKey(mention.type, mention.id) !==
+          mentionKey(candidate.type, candidate.id)
+      )
+    );
+  }, []);
 
   const loadSessions = useCallback(async (): Promise<ChatSessionSummary[]> => {
     try {
@@ -568,6 +765,8 @@ export function ChatPanel() {
     setMessages([]);
     setInput("");
     setPendingImages([]);
+    setMentions([]);
+    setMentionRange(null);
   }, [createSession, setMessages]);
 
   // Initialize: load sessions, open the most recent or create the first.
@@ -696,12 +895,21 @@ export function ChatPanel() {
       }
       setInput("");
       setPendingImages([]);
+      setMentionRange(null);
       if (trimmed) {
         setClientScopeSuggestion(detectSectionScopeMismatch(sectionScope, trimmed));
       } else {
         setClientScopeSuggestion(null);
       }
-      const body = { sessionId, mode, sectionScope };
+      // Tags stay in the composer after sending so follow-ups ("now summarize
+      // it") keep the same context until the engineer removes them.
+      const body: Record<string, unknown> = { sessionId, mode, sectionScope };
+      if (mentions.length > 0) {
+        body.mentions = mentions.map((mention) => ({
+          type: mention.type,
+          id: mention.id,
+        }));
+      }
       if (trimmed && files.length > 0) {
         void sendMessage({ text: trimmed, files }, { body });
       } else if (files.length > 0) {
@@ -720,6 +928,7 @@ export function ChatPanel() {
       mode,
       sectionScope,
       pendingImages,
+      mentions,
     ]
   );
 
@@ -867,6 +1076,7 @@ export function ChatPanel() {
               value={sectionScope}
               onChange={changeSectionScope}
               disabled={busy}
+              documentType={report.documentType}
             />
           </div>
         </div>
@@ -876,6 +1086,7 @@ export function ChatPanel() {
             edits cannot be accepted.
           </p>
         )}
+        <MentionChips mentions={mentions} onRemove={removeMention} />
         {pendingImages.length > 0 ? (
           <div className="mb-2 flex flex-wrap gap-2">
             {pendingImages.map((image) => (
@@ -928,38 +1139,88 @@ export function ChatPanel() {
               <ImagePlus className="size-4" aria-hidden="true" />
             )}
           </button>
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onPaste={(event) => {
-              const items = Array.from(event.clipboardData?.items ?? []);
-              const imageFiles = items
-                .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
-                .map((item) => item.getAsFile())
-                .filter((file): file is File => file != null);
-              if (imageFiles.length === 0) return;
-              event.preventDefault();
-              void addImageFiles(imageFiles);
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                void send(input);
+          <div className="relative flex-1">
+            {mentionMenuOpen ? (
+              <MentionMenu
+                matches={mentionMatches}
+                activeIndex={activeMentionIndex}
+                onSelect={selectMention}
+              />
+            ) : null}
+            <textarea
+              ref={textareaRef}
+              value={input}
+              role="combobox"
+              aria-expanded={mentionMenuOpen}
+              aria-controls={mentionMenuOpen ? "chat-mention-menu" : undefined}
+              aria-activedescendant={
+                mentionMenuOpen
+                  ? `chat-mention-option-${activeMentionIndex}`
+                  : undefined
               }
-            }}
-            rows={2}
-            disabled={initializing}
-            placeholder={
-              mode === "plan"
-                ? sectionScope === CHAT_SECTION_SCOPE_ALL
-                  ? "Describe the deviation, paste a photo, or ask what information I need…"
-                  : `What should we capture in ${scopeDescription(sectionScope)}? You can paste a photo.`
-                : sectionScope === CHAT_SECTION_SCOPE_ALL
-                  ? "Ask the assistant to draft or improve a section… paste photos for context"
-                  : `Ask the assistant to draft or improve ${scopeDescription(sectionScope)}…`
-            }
-            className="min-h-[40px] max-h-40 flex-1 resize-none rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)] disabled:opacity-50"
-          />
+              onChange={(e) => {
+                const value = e.target.value;
+                setInput(value);
+                updateMentionQuery(value, e.target.selectionStart ?? value.length);
+              }}
+              onPaste={(event) => {
+                const items = Array.from(event.clipboardData?.items ?? []);
+                const imageFiles = items
+                  .filter(
+                    (item) => item.kind === "file" && item.type.startsWith("image/")
+                  )
+                  .map((item) => item.getAsFile())
+                  .filter((file): file is File => file != null);
+                if (imageFiles.length === 0) return;
+                event.preventDefault();
+                void addImageFiles(imageFiles);
+              }}
+              onKeyDown={(e) => {
+                if (mentionMenuOpen) {
+                  if (e.key === "ArrowDown") {
+                    e.preventDefault();
+                    setMentionIndex((index) => (index + 1) % mentionMatches.length);
+                    return;
+                  }
+                  if (e.key === "ArrowUp") {
+                    e.preventDefault();
+                    setMentionIndex(
+                      (index) =>
+                        (index - 1 + mentionMatches.length) % mentionMatches.length
+                    );
+                    return;
+                  }
+                  if (e.key === "Enter" || e.key === "Tab") {
+                    e.preventDefault();
+                    const candidate = mentionMatches[activeMentionIndex];
+                    if (candidate) selectMention(candidate);
+                    return;
+                  }
+                  if (e.key === "Escape") {
+                    e.preventDefault();
+                    setMentionRange(null);
+                    return;
+                  }
+                }
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  void send(input);
+                }
+              }}
+              rows={2}
+              disabled={initializing}
+              placeholder={
+                mode === "plan"
+                  ? sectionScope === CHAT_SECTION_SCOPE_ALL
+                    ? "Describe the deviation, or type @ to tag a document or section…"
+                    : `What should we capture in ${scopeDescription(sectionScope)}? Type @ to tag a document.`
+                  : sectionScope === CHAT_SECTION_SCOPE_ALL
+                    ? "Ask the assistant to draft or improve a section… type @ to tag a document"
+                    : `Ask the assistant to draft or improve ${scopeDescription(sectionScope)}… @ to tag a document`
+              }
+              className="min-h-[40px] max-h-40 w-full resize-none rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)] disabled:opacity-50"
+            />
+          </div>
           <button
             type="submit"
             disabled={

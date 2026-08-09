@@ -4,7 +4,7 @@ import {
   SUGGEST_TARGET_FIELD_PATTERNS,
   isRichTargetField,
 } from "@/lib/ai/suggest-target-fields";
-import { getDocumentType } from "@/lib/document-types";
+import { getDocumentType, listDocumentTypes } from "@/lib/document-types";
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
 import { flattenForAnchor } from "@/lib/suggestions/locator";
@@ -115,7 +115,13 @@ export function sectionFieldPlainText(
   return getPlainTextFieldValue(sectionContent, targetField);
 }
 
-/** Human label for a section (reuses the workspace labels). */
+/** Human label for a section (workspace labels, then any registered document type). */
 export function sectionLabel(section: SectionType): string {
-  return SECTION_LABELS[section] ?? section;
+  const fromInvestigation = SECTION_LABELS[section];
+  if (fromInvestigation) return fromInvestigation;
+  for (const def of listDocumentTypes()) {
+    const match = def.sections.find((s) => s.key === section);
+    if (match) return match.label;
+  }
+  return section;
 }
