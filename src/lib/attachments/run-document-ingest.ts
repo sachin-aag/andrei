@@ -30,7 +30,7 @@ import { getAttachmentStorage, tempBatchObjectKey } from "@/lib/storage/attachme
 
 export { sanitizeIngestError } from "@/lib/attachments/ingest-errors";
 
-const PARSER_VERSION = "v1";
+const PARSER_VERSION = "v2";
 const SUMMARY_MAX_CHARS = 12_000;
 const FAILED_ATTACHMENT_PROGRESS = 0;
 /** DOCX has no page model; split extracted text into readable pseudo-pages. */
@@ -440,6 +440,16 @@ async function processBatch(batchId: string): Promise<BatchProcessResult> {
       previousBatchSummary: previous[0]?.batchSummary,
       previousContinuationNote: previous[0]?.continuationNote,
     });
+
+    console.info(
+      `[document-ingest] Extracted pages ${batch.pageStart}-${batch.pageEnd}`,
+      {
+        mode: extracted.mode,
+        recovery: extracted.recovery,
+        pageCount: extracted.pages.length,
+        usage: extracted.usage,
+      }
+    );
 
     await db.transaction(async (tx) => {
       await tx

@@ -149,7 +149,12 @@ async function main(): Promise<void> {
           pageStart: batch.pageStart,
           pageEnd: batch.pageEnd,
           recoveredPages: result.pages.length,
+          mode: result.mode,
           recovery: result.recovery,
+          transcriptChars: result.pages.reduce(
+            (total, page) => total + page.transcript.length,
+            0
+          ),
           finishReason: result.finishReason ?? null,
           usage: result.usage ?? null,
           elapsedMs,
