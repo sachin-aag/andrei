@@ -24,7 +24,11 @@ import {
   formatAttachmentWouldExceedMessage,
   isAttachmentQuotaError,
 } from "@/lib/attachments/quota-messages";
-import { isPdfFile, uploadPdfToReport } from "@/lib/attachments/upload-pdf";
+import { ATTACHMENT_ACCEPT_ATTR } from "@/lib/attachments/file-types";
+import {
+  isSupportedAttachmentFile,
+  uploadPdfToReport,
+} from "@/lib/attachments/upload-pdf";
 import { ManagerSelector } from "@/components/report/manager-selector";
 
 type CreateReportButtonProps = {
@@ -81,8 +85,8 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
     if (!files || files.length === 0) return;
     const accepted: PendingUpload[] = [];
     for (const file of Array.from(files)) {
-      if (!isPdfFile(file)) {
-        toast.error(`${file.name} is not a PDF file.`);
+      if (!isSupportedAttachmentFile(file)) {
+        toast.error(`${file.name} is not a PDF or Word (.docx) file.`);
         continue;
       }
       accepted.push({ file, percent: 0 });
@@ -308,12 +312,12 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
                 className="flex items-center justify-center gap-2 rounded-lg border border-dashed border-[var(--border)] px-3 py-4 text-sm text-[var(--muted-foreground)] transition-colors hover:border-[var(--brand-600)] hover:text-[var(--foreground)] disabled:cursor-not-allowed disabled:opacity-60"
               >
                 <Upload className="size-4" aria-hidden="true" />
-                Drop PDFs here or click to browse
+                Drop PDFs or Word docs here or click to browse
               </button>
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="application/pdf,.pdf"
+                accept={ATTACHMENT_ACCEPT_ATTR}
                 multiple
                 className="hidden"
                 onChange={(event) => addFiles(event.target.files)}

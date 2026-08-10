@@ -32,6 +32,8 @@ export type SignedReadUrlInput = {
   expiresInSeconds: number;
   /** When set, GCS returns Content-Disposition: attachment for browser download. */
   downloadFilename?: string;
+  /** Content-Type GCS returns for the object. Defaults to application/pdf. */
+  responseContentType?: string;
 };
 
 export interface AttachmentStorage {
@@ -257,6 +259,7 @@ export class GcsAttachmentStorage implements AttachmentStorage {
     generation,
     expiresInSeconds,
     downloadFilename,
+    responseContentType = "application/pdf",
   }: SignedReadUrlInput): Promise<string> {
     if (this.wifConfig) {
       return signedGcsReadUrlWithWif({
@@ -265,6 +268,7 @@ export class GcsAttachmentStorage implements AttachmentStorage {
         generation,
         expiresInSeconds,
         downloadFilename,
+        responseContentType,
         serviceAccountEmail: this.wifConfig.serviceAccountEmail,
         sign: createWifAuthClient(this.wifConfig).sign,
       });
@@ -279,7 +283,7 @@ export class GcsAttachmentStorage implements AttachmentStorage {
       queryParams: {
         generation,
       },
-      responseType: "application/pdf",
+      responseType: responseContentType,
       ...(downloadFilename
         ? {
             responseDisposition: contentDispositionAttachment(downloadFilename),
@@ -386,6 +390,7 @@ async function signedGcsReadUrlWithWif({
   generation,
   expiresInSeconds,
   downloadFilename,
+  responseContentType = "application/pdf",
   serviceAccountEmail,
   sign,
 }: {
@@ -394,6 +399,7 @@ async function signedGcsReadUrlWithWif({
   generation: string;
   expiresInSeconds: number;
   downloadFilename?: string;
+  responseContentType?: string;
   serviceAccountEmail: string;
   sign: (data: string) => Promise<string>;
 }): Promise<string> {
@@ -412,7 +418,7 @@ async function signedGcsReadUrlWithWif({
     "X-Goog-Expires": String(expiresInSeconds),
     "X-Goog-SignedHeaders": signedHeaders,
     generation,
-    "response-content-type": "application/pdf",
+    "response-content-type": responseContentType,
   };
 
   if (downloadFilename) {

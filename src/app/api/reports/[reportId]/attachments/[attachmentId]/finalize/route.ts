@@ -5,9 +5,11 @@ import { z } from "zod";
 import { db } from "@/db";
 import { reportAttachments } from "@/db/schema";
 import { toAttachmentDto } from "@/lib/attachments/dto";
+import { kindFromMime } from "@/lib/attachments/file-types";
 import { getAttachmentLimits } from "@/lib/attachments/limits";
 import { getMalwareScanner } from "@/lib/attachments/malware-scan";
 import { startDocumentIngest } from "@/lib/attachments/start-ingest";
+import { validateDocx } from "@/lib/attachments/validate-docx";
 import { validatePdf } from "@/lib/attachments/validate-pdf";
 import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth/session";
@@ -120,14 +122,20 @@ export async function POST(
     if (stagingMetadata.sizeBytes > limits.maxAttachmentBytes) {
       throw new Error("Uploaded file exceeds size limit");
     }
-    if (!isPdfContentType(stagingMetadata.contentType)) {
-      throw new Error("Uploaded object is not application/pdf");
+    // Kind is derived from the canonical MIME persisted at reservation time.
+    const kind = kindFromMime(claimed.mimeType);
+    if (!kind) {
+      throw new Error("Unsupported attachment type");
+    }
+    if (kindFromMime(stagingMetadata.contentType) !== kind) {
+      throw new Error("Uploaded object type does not match the reservation");
     }
 
     const buffer = await storage.readObjectBuffer(claimed.stagingObjectKey);
-    const { pageCount } = await validatePdf(buffer, {
-      maxPages: limits.maxAttachmentPages,
-    });
+    const { pageCount } =
+      kind === "docx"
+        ? validateDocx(buffer)
+        : await validatePdf(buffer, { maxPages: limits.maxAttachmentPages });
     const scanResult = await getMalwareScanner().scan(buffer, claimed.filename);
     if (!scanResult.ok) {
       throw new Error(scanResult.reason);
@@ -214,10 +222,6 @@ async function promoteObject(fromKey: string, toKey: string): Promise<void> {
   }
 }
 
-function isPdfContentType(contentType: string): boolean {
-  return contentType.toLowerCase().split(";")[0].trim() === "application/pdf";
-}
-
 function sanitizeFinalizeError(error: unknown): string {
   if (!(error instanceof Error)) return "Attachment validation failed";
   const message = error.message;
@@ -231,7 +235,14 @@ function sanitizeFinalizeError(error: unknown): string {
   if (message.includes("Document ingestion") || message.includes("ingest")) {
     return message.slice(0, 300);
   }
-  if (message.includes("PDF") || message.includes("file") || message.includes("object")) {
+  if (
+    message.includes("PDF") ||
+    message.includes("Word") ||
+    message.includes(".docx") ||
+    message.includes("file") ||
+    message.includes("object") ||
+    message.includes("type")
+  ) {
     return message;
   }
   return "Attachment validation failed";

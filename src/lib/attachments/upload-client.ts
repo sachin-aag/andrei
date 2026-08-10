@@ -1,6 +1,11 @@
 export type UploadPdfResumableInput = {
   uploadUrl: string;
   file: File;
+  /**
+   * Content type for the PUT — must match the type the resumable session was
+   * created with (see upload-url route). Defaults to PDF for legacy callers.
+   */
+  contentType?: string;
   onProgress?: (progress: { uploadedBytes: number; totalBytes: number }) => void;
   signal?: AbortSignal;
   /** Per-chunk timeout. Defaults to 2 minutes. */
@@ -13,6 +18,7 @@ const DEFAULT_CHUNK_TIMEOUT_MS = 120_000;
 export async function uploadPdfResumable({
   uploadUrl,
   file,
+  contentType = "application/pdf",
   onProgress,
   signal,
   chunkTimeoutMs = DEFAULT_CHUNK_TIMEOUT_MS,
@@ -24,13 +30,13 @@ export async function uploadPdfResumable({
     signal?.throwIfAborted();
 
     const endExclusive = Math.min(offset + CHUNK_SIZE_BYTES, file.size);
-    const chunk = file.slice(offset, endExclusive, "application/pdf");
+    const chunk = file.slice(offset, endExclusive, contentType);
     let response: Response;
     try {
       response = await fetch(uploadUrl, {
         method: "PUT",
         headers: {
-          "Content-Type": "application/pdf",
+          "Content-Type": contentType,
           "Content-Range": `bytes ${offset}-${endExclusive - 1}/${file.size}`,
         },
         body: chunk,
