@@ -108,7 +108,7 @@ describe("findPlaceholders", () => {
           content: [
             {
               type: "text",
-              text: 'Observed [description of particulate, e.g., fibers] in [number] vials; see ref [12]. Per [SOP No.: <to be filled>].',
+              text: 'Observed [description of particulate, e.g., fibers] in [number] vials; see ref [12]. Per [SOP No.: <to be filled>]. [Personnel Name(s)] were present.',
             },
           ],
         },
@@ -119,6 +119,7 @@ describe("findPlaceholders", () => {
 
     expect(found.map((p) => p.text).sort()).toEqual(
       [
+        "[Personnel Name(s)]",
         "[SOP No.: <to be filled>]",
         "[description of particulate, e.g., fibers]",
         "[number]",

@@ -24,8 +24,8 @@ function isGuidanceShapedBracket(match: string): boolean {
   if (inner.includes(":")) return false;
 
   const trimmed = inner.trim();
-  // Short / noun-ish labels: `[number]`, `[equipment ID]`.
-  if (/^[\w\s./-]+$/i.test(trimmed)) return true;
+  // Short / noun-ish labels: `[number]`, `[equipment ID]`, `[Personnel Name(s)]`.
+  if (/^[\w\s./'()-]+$/i.test(trimmed)) return true;
   // Long instructional scaffolding from AI drafts (often includes commas):
   // `[Detailed narrative of the observation, including …]`.
   if (

@@ -78,12 +78,13 @@ export function isActionablePlaceholderBracket(match: string): boolean {
   if (/not more than|not less than|\bNMT\b|\bNLT\b/i.test(inner)) return false;
 
   // Guidance-only labels without `: <to be filled>` — e.g. `[number]`,
-  // `[equipment ID]`. Cap length so long bracketed prose is not treated as a
-  // fill-in field; AI postprocess compacts labels to this same limit.
+  // `[equipment ID]`, `[Personnel Name(s)]`. Cap length so long bracketed
+  // prose is not treated as a fill-in field; AI postprocess compacts labels
+  // to this same limit. Parentheses cover plural markers like `(s)`.
   if (
     !inner.includes(":") &&
     inner.length <= MAX_PLACEHOLDER_LABEL_LENGTH &&
-    /^[\w\s./-]+$/i.test(inner.trim())
+    /^[\w\s./'()-]+$/i.test(inner.trim())
   ) {
     return true;
   }

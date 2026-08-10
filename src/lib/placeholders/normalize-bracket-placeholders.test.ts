@@ -24,6 +24,9 @@ describe("normalizeBracketPlaceholdersInPlainText", () => {
       "in [number: <to be filled>] vials"
     );
     expect(
+      normalizeBracketPlaceholdersInPlainText("[Personnel Name(s)] were present")
+    ).toBe("[Personnel Name(s): <to be filled>] were present");
+    expect(
       normalizeBracketPlaceholdersInPlainText(
         "saw [description of particulate, e.g., fibers] here"
       )
