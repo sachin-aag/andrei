@@ -177,7 +177,7 @@ describe("findPlaceholders", () => {
             {
               type: "text",
               text:
-                "as defined in [DV Requriements Convergent Dental.pdf: <to be filled>]. See also [batch-coa.pdf, p. 3] and [protocol.docx].",
+                "as defined in [DV Requriements Convergent Dental.pdf: <to be filled>]. See also [batch-coa.pdf, p. 3], [protocol.docx], [Attachment_XIV, Attachment_VIII], and [Attachment_VIII: <to be filled>].",
             },
           ],
         },

@@ -60,6 +60,11 @@ describe("normalizeSuggestionInsertText", () => {
         "as defined in [DV Requriements Convergent Dental.pdf]."
       )
     ).toBe("as defined in [DV Requriements Convergent Dental.pdf].");
+    expect(
+      normalizeSuggestionInsertText(
+        "Calibration Records [Attachment_XIV, Attachment_VIII]."
+      )
+    ).toBe("Calibration Records [Attachment_XIV, Attachment_VIII].");
   });
 
   it("repairs citation-shaped to-be-filled wrappers on draft insert", () => {
@@ -68,6 +73,9 @@ describe("normalizeSuggestionInsertText", () => {
         "as defined in [DV Requriements Convergent Dental.pdf: <to be filled>]."
       )
     ).toBe("as defined in [DV Requriements Convergent Dental.pdf].");
+    expect(
+      normalizeSuggestionInsertText("[Attachment_VIII: <to be filled>]")
+    ).toBe("[Attachment_VIII]");
   });
 
   it("compacts long comma-containing instructional brackets", () => {

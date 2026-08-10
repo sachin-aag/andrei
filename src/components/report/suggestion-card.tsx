@@ -32,6 +32,7 @@ import {
   type ParsedAiRedraftPayload,
 } from "@/lib/ai/suggestion-gating";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
+import { splitPlainTextWithPlaceholders } from "@/lib/placeholders/plain-text-segments";
 import {
   afterPaint,
   delay,
@@ -115,17 +116,17 @@ function buildFrozenCard(
   };
 }
 
-/** Text with `[placeholder]` spans highlighted. */
+/** Text with actionable `[placeholder]` spans highlighted (citations stay plain). */
 function PlaceholderHighlightedText({ text }: { text: string }) {
   return (
     <>
-      {text.split(/(\[[^\]]+\])/g).map((part, i) =>
-        part.startsWith("[") ? (
+      {splitPlainTextWithPlaceholders(text).map((part, i) =>
+        part.kind === "placeholder" ? (
           <span key={i} className="suggestion-preview-placeholder">
-            {part}
+            {part.text}
           </span>
         ) : (
-          <span key={i}>{part}</span>
+          <span key={i}>{part.text}</span>
         )
       )}
     </>

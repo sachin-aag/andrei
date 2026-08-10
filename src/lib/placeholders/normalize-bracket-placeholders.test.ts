@@ -96,6 +96,14 @@ describe("normalizeBracketPlaceholdersInPlainText", () => {
     ).toBe("see [batch-coa.pdf, p. 3]");
   });
 
+  it("leaves extension-less Attachment exhibit citations unchanged", () => {
+    expect(
+      normalizeBracketPlaceholdersInPlainText(
+        "see [Attachment_XIV, Attachment_VIII] and [Attachment I]."
+      )
+    ).toBe("see [Attachment_XIV, Attachment_VIII] and [Attachment I].");
+  });
+
   it("repairs citations wrongly wrapped as placeholders", () => {
     expect(
       normalizeBracketPlaceholdersInPlainText(
@@ -107,5 +115,15 @@ describe("normalizeBracketPlaceholdersInPlainText", () => {
         "[batch-coa.pdf, p. 3: <to be filled>]"
       )
     ).toBe("[batch-coa.pdf, p. 3]");
+    expect(
+      normalizeBracketPlaceholdersInPlainText(
+        "[Attachment_VIII: <to be filled>]"
+      )
+    ).toBe("[Attachment_VIII]");
+    expect(
+      normalizeBracketPlaceholdersInPlainText(
+        "[Attachment_IX, Attachment_XI,; <to be filled>]"
+      )
+    ).toBe("[Attachment_IX, Attachment_XI]");
   });
 });
