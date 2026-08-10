@@ -80,6 +80,19 @@ describe("getAiFixCommentTitle", () => {
     expect(title).not.toContain("{");
     expect(title.toLowerCase()).toContain("audit");
   });
+
+  it("labels block row ops when reasoning is empty", () => {
+    const c = aiComment(
+      JSON.stringify({
+        insertText: "",
+        deleteText: "",
+        reasoning: "",
+        blockEdit: { op: "deleteRow", anchor: "table", blockIndex: 0, rowAnchor: "PA-02" },
+      }),
+      null
+    );
+    expect(getAiFixCommentTitle(c, [])).toBe("Remove table row");
+  });
 });
 
 describe("getAiFixCommentPreview", () => {
@@ -94,6 +107,18 @@ describe("getAiFixCommentPreview", () => {
     const preview = getAiFixCommentPreview(c);
     expect(preview).not.toContain("deleteText");
     expect(preview).toContain("occurrence date");
+  });
+
+  it("describes a deleteRow block edit", () => {
+    const c = aiComment(
+      JSON.stringify({
+        insertText: "",
+        deleteText: "",
+        reasoning: "",
+        blockEdit: { op: "deleteRow", anchor: "table", blockIndex: 0, rowAnchor: "PA-02" },
+      })
+    );
+    expect(getAiFixCommentPreview(c)).toBe("Removes this table row.");
   });
 });
 

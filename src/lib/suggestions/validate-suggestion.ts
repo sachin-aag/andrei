@@ -3,6 +3,11 @@ import type { CommentRecord, EvaluationRecord } from "@/types/report";
 import { sortedOpenSuggestionsForSection } from "@/lib/ai/suggestion-gating";
 import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
+import {
+  locateBlockIndex,
+  locateRowIndex,
+  locateTableBlockIndex,
+} from "@/lib/suggestions/block-redraft";
 import { hashContent } from "@/lib/ai/content-hash";
 import {
   parseAiFixCommentContent,
@@ -89,6 +94,36 @@ export function validateSuggestionLocate(
   const currentHash = sectionContentHash(section, sectionContent, {
     documentType,
   });
+
+  // Block edits (diff-based structural / insert / delete) locate a whole block,
+  // not an anchored span. Validity = the block still resolves; locate is
+  // authoritative, so a sibling edit changing the field never flags them stale.
+  if (comment.kind === "ai_fix") {
+    const fixPayload = parseAiFixCommentContent(comment.content);
+    if (fixPayload.blockEdit) {
+      const rp = comment.contentPath ?? "narrative";
+      const doc = getRichFieldValue(sectionContent as Record<string, unknown>, rp);
+      const op = fixPayload.blockEdit;
+      let canApply = false;
+      if (op.op === "insert") {
+        canApply = true;
+      } else if (op.op === "insertRow") {
+        canApply = locateTableBlockIndex(doc, op) >= 0;
+      } else if (op.op === "deleteRow") {
+        const tableIdx = locateTableBlockIndex(doc, op);
+        const table = tableIdx >= 0 ? doc.content?.[tableIdx] : undefined;
+        canApply = table != null && locateRowIndex(table, op) >= 0;
+      } else {
+        canApply = locateBlockIndex(doc, op) >= 0;
+      }
+      return {
+        locateStatus: canApply ? "locatable" : "not_found",
+        documentChanged: false,
+        canApply,
+        canPreview: canApply,
+      };
+    }
+  }
 
   // Redrafts replace the whole field — always applicable. Staleness compares
   // the TARGET FIELD's hash only, so accepting other drafts never flags them.

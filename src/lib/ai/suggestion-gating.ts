@@ -167,6 +167,44 @@ export function criterionDisplayIndex(
   return idx === -1 ? Number.MAX_SAFE_INTEGER : idx;
 }
 
+export type ParsedBlockEdit = {
+  op: "replace" | "insert" | "delete" | "insertRow" | "deleteRow";
+  anchor: string;
+  blockIndex: number;
+  proposedMarkdown?: string;
+  tableIndex?: number;
+  rowIndex?: number;
+  rowAnchor?: string;
+};
+
+/** Validate an untrusted block-edit descriptor from persisted / model JSON. */
+export function parseBlockEdit(raw: unknown): ParsedBlockEdit | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const b = raw as Record<string, unknown>;
+  if (
+    b.op !== "replace" &&
+    b.op !== "insert" &&
+    b.op !== "delete" &&
+    b.op !== "insertRow" &&
+    b.op !== "deleteRow"
+  ) {
+    return undefined;
+  }
+  if (typeof b.anchor !== "string") return undefined;
+  const blockIndex =
+    typeof b.blockIndex === "number" && Number.isInteger(b.blockIndex) ? b.blockIndex : -1;
+  const edit: ParsedBlockEdit = { op: b.op, anchor: b.anchor, blockIndex };
+  if (typeof b.proposedMarkdown === "string") edit.proposedMarkdown = b.proposedMarkdown;
+  if (typeof b.tableIndex === "number" && Number.isInteger(b.tableIndex) && b.tableIndex >= 0) {
+    edit.tableIndex = b.tableIndex;
+  }
+  if (typeof b.rowIndex === "number" && Number.isInteger(b.rowIndex) && b.rowIndex >= 0) {
+    edit.rowIndex = b.rowIndex;
+  }
+  if (typeof b.rowAnchor === "string") edit.rowAnchor = b.rowAnchor;
+  return edit;
+}
+
 export type ParsedAiFixPayload = {
   deleteText: string;
   insertText: string;
@@ -175,6 +213,13 @@ export type ParsedAiFixPayload = {
   scope?: EditScope;
   /** Section content hash when this suggestion was created (staleness detection). */
   contentHashAtSuggestion?: string;
+  /**
+   * Present ⇒ this ai_fix is a whole-block / whole-row change (see
+   * `block-redraft.ts`): the anchored delete/insert path does not apply;
+   * instead `proposedMarkdown` is rendered to nodes and the target block or
+   * table row replaced/inserted/deleted. Produced by the field diff.
+   */
+  blockEdit?: ParsedBlockEdit;
   evidenceSources?: Array<{
     citationId: string;
     attachmentId: string;
@@ -197,6 +242,7 @@ export function parseAiFixCommentContent(content: string): ParsedAiFixPayload {
         insertText: typeof parsed.insertText === "string" ? parsed.insertText : "",
         reasoning: typeof parsed.reasoning === "string" ? parsed.reasoning : "",
         scope: parseEditScope(parsed.scope),
+        blockEdit: parseBlockEdit((parsed as { blockEdit?: unknown }).blockEdit),
         contentHashAtSuggestion:
           typeof parsed.contentHashAtSuggestion === "string"
             ? parsed.contentHashAtSuggestion

@@ -11,9 +11,12 @@ import {
   buildCollapsedToRawMap,
   probePlainEdit,
   probeRichEdit,
+  acceptSuggestionMarksById,
   type SuggestionEdit,
 } from "@/lib/suggestions/locator";
 import { buildPlainTextSuggestionPreview } from "@/lib/suggestions/plain-text-preview";
+import { markdownToDoc } from "@/lib/tiptap/markdown-to-doc";
+import { injectBlockEditMarks } from "@/lib/suggestions/block-redraft";
 
 const ATTRS = {
   id: "sug-1",
@@ -525,5 +528,30 @@ describe("locator — scoped edits", () => {
       scope: { kind: "cell", row: 0, col: 0 },
     });
     expect(status).toBe("not_found");
+  });
+});
+
+describe("locator — acceptSuggestionMarksById table rows", () => {
+  it("drops a fully delete-marked table row", () => {
+    const doc = markdownToDoc(
+      "| Action | Due |\n| --- | --- |\n| keep | 1 |\n| drop | 2 |"
+    );
+    const { status, doc: preview } = injectBlockEditMarks(
+      doc,
+      {
+        op: "deleteRow",
+        anchor: "",
+        blockIndex: 0,
+        tableIndex: 0,
+        rowIndex: 2,
+        rowAnchor: "drop",
+      },
+      ATTRS
+    );
+    expect(status).toBe("located");
+    const accepted = acceptSuggestionMarksById(preview, ATTRS.id);
+    const text = flattenForAnchor(accepted).text;
+    expect(text).toContain("keep");
+    expect(text).not.toContain("drop");
   });
 });
