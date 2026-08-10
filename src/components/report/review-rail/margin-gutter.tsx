@@ -211,8 +211,11 @@ export function MarginGutter({ onSectionOverflow }: Props) {
     hoveredCommentIds,
   } = useReportComments();
   const { getEditor, editorTick } = useReportEditors();
-  const { evaluations, gutterSuggestionCommentForSection } =
-    useReportEvaluations();
+  const {
+    evaluations,
+    gutterSuggestionCommentForSection,
+    suggestionApplyTransition,
+  } = useReportEvaluations();
   const [layoutVersion, setLayoutVersion] = useState(0);
   const [cardHeights, setCardHeights] = useState<Record<string, number>>({});
   const cardHeightsRef = useRef<Record<string, number>>({});
@@ -342,9 +345,24 @@ export function MarginGutter({ onSectionOverflow }: Props) {
     }
 
     // 3. Active AI suggestion cards — vertically centered on the target textbox.
+    //    During a queue bridge, park at the previous card's Y so "Go to next"
+    //    stays where the user just acted.
     for (const section of evaluatableSections) {
       const active = gutterSuggestionCommentForSection(section);
       if (!active) continue;
+
+      const parkCenterY = suggestionApplyTransition[section]?.parkCenterY;
+      if (parkCenterY != null) {
+        result.push({
+          id: `suggestion:${section}`,
+          type: "suggestion",
+          desiredTop: parkCenterY,
+          valignCenter: true,
+          section,
+          comment: active,
+        });
+        continue;
+      }
 
       // Resolve legacy paths so the card centers on the box that previews it.
       const contentPath = effectivePlainTextContentPath(section, active.contentPath);
@@ -393,6 +411,7 @@ export function MarginGutter({ onSectionOverflow }: Props) {
     comments,
     evaluations,
     gutterSuggestionCommentForSection,
+    suggestionApplyTransition,
     getEditor,
     editorTick,
     layoutVersion,

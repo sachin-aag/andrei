@@ -147,6 +147,8 @@ export function PlainTextSuggestionField({
 
   const activeComment = useMemo(() => {
     if (isSuggestionPreviewHeld(section)) {
+      // Queue bridge: hold the next inline preview until the user jumps to it.
+      if (suggestionApplyTransition[section]?.bridge) return null;
       // Keep previewing the suggestion currently being applied/dismissed —
       // nulling it out here would flash the original wording before the
       // request resolves and the real result lands.

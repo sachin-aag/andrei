@@ -84,6 +84,11 @@ export type WorkspaceMode = "edit" | "review" | "view";
  */
 export type SuggestionApplyMode = "accept" | "dismiss";
 
+/** Queue handoff: wait for the user to jump to the next off-screen suggestion. */
+export type SuggestionQueueBridge = {
+  nextCommentId: string;
+};
+
 export type EditorRegistryEntry = {
   editor: Editor;
   section: SectionType;
@@ -149,7 +154,16 @@ type ReportContextValue = {
   beginSuggestionApplyTransition: (
     section: SectionType,
     commentId: string,
-    mode: SuggestionApplyMode
+    mode: SuggestionApplyMode,
+    options?: { parkCenterY?: number }
+  ) => void;
+  /**
+   * After apply/dismiss exit: keep preview held and park the gutter card while
+   * the user decides to jump to the next off-screen suggestion.
+   */
+  enterSuggestionQueueBridge: (
+    section: SectionType,
+    bridge: SuggestionQueueBridge
   ) => void;
   endSuggestionApplyTransition: (section: SectionType) => void;
   /** Per-section apply/dismiss transition — pauses auto-save while set. */
@@ -160,6 +174,9 @@ type ReportContextValue = {
         holdInlinePreview: boolean;
         gutterAnchorCommentId: string;
         mode: SuggestionApplyMode;
+        /** Freeze suggestion gutter card Y while transitioning / bridging. */
+        parkCenterY?: number;
+        bridge?: SuggestionQueueBridge;
       }
     >
   >;
@@ -273,6 +290,7 @@ type ReportEvaluationContextValue = Pick<
   | "gutterSuggestionCommentForSection"
   | "isSuggestionPreviewHeld"
   | "beginSuggestionApplyTransition"
+  | "enterSuggestionQueueBridge"
   | "endSuggestionApplyTransition"
   | "suggestionApplyTransition"
   | "suggestionsFocusSection"
@@ -603,6 +621,8 @@ export function ReportProvider({
     holdInlinePreview: boolean;
     gutterAnchorCommentId: string;
     mode: SuggestionApplyMode;
+    parkCenterY?: number;
+    bridge?: SuggestionQueueBridge;
   };
   const [suggestionApplyTransition, setSuggestionApplyTransition] = useState<
     Partial<Record<SectionType, SuggestionApplyTransition>>
@@ -765,15 +785,39 @@ export function ReportProvider({
   }, []);
 
   const beginSuggestionApplyTransition = useCallback(
-    (section: SectionType, commentId: string, mode: SuggestionApplyMode) => {
+    (
+      section: SectionType,
+      commentId: string,
+      mode: SuggestionApplyMode,
+      options?: { parkCenterY?: number }
+    ) => {
       setSuggestionApplyTransition((prev) => ({
         ...prev,
         [section]: {
           holdInlinePreview: true,
           gutterAnchorCommentId: commentId,
           mode,
+          parkCenterY: options?.parkCenterY,
         },
       }));
+    },
+    []
+  );
+
+  const enterSuggestionQueueBridge = useCallback(
+    (section: SectionType, bridge: SuggestionQueueBridge) => {
+      setSuggestionApplyTransition((prev) => {
+        const current = prev[section];
+        if (!current) return prev;
+        return {
+          ...prev,
+          [section]: {
+            ...current,
+            holdInlinePreview: true,
+            bridge,
+          },
+        };
+      });
     },
     []
   );
@@ -794,7 +838,14 @@ export function ReportProvider({
 
   const gutterSuggestionCommentForSection = useCallback(
     (section: SectionType) => {
-      const lockedId = suggestionApplyTransition[section]?.gutterAnchorCommentId;
+      const transition = suggestionApplyTransition[section];
+      if (transition?.bridge) {
+        const next = comments.find(
+          (c) => c.id === transition.bridge!.nextCommentId && c.status === "open"
+        );
+        if (next) return next;
+      }
+      const lockedId = transition?.gutterAnchorCommentId;
       if (lockedId) {
         const locked = comments.find((c) => c.id === lockedId);
         if (locked) return locked;
@@ -1001,6 +1052,7 @@ export function ReportProvider({
       gutterSuggestionCommentForSection,
       isSuggestionPreviewHeld,
       beginSuggestionApplyTransition,
+      enterSuggestionQueueBridge,
       endSuggestionApplyTransition,
       suggestionApplyTransition,
       suggestionsFocusSection,
@@ -1020,6 +1072,7 @@ export function ReportProvider({
       gutterSuggestionCommentForSection,
       isSuggestionPreviewHeld,
       beginSuggestionApplyTransition,
+      enterSuggestionQueueBridge,
       endSuggestionApplyTransition,
       suggestionApplyTransition,
       suggestionsFocusSection,

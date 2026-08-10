@@ -707,6 +707,14 @@ export function TiptapSectionField({
     const before = JSON.stringify(json);
 
     if (previewHeld) {
+      // Queue bridge: don't keep the previous suggestion marks and don't inject
+      // the next one until the user jumps to it.
+      if (suggestionApplyTransition[section]?.bridge) {
+        json = stripPendingSuggestionsExcept(json, null);
+        if (JSON.stringify(json) === before) return;
+        editor.commands.setContent(json as Content, { emitUpdate: false });
+        return;
+      }
       // Keep showing the suggestion currently being applied/dismissed as-is —
       // stripping it here (before the request resolves) would flash the
       // original wording before the real result lands. Only unrelated
