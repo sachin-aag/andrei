@@ -151,7 +151,7 @@ export const SECTION_LABELS: Record<string, string> = {
   attachments: "Attachments",
   signature_approvals: "Approvals (QC / QA)",
   // Design verification
-  cover_page: "Cover Page & Document Control",
+  cover_page: "Cover Page",
   purpose_scope: "Purpose & Scope",
   references: "References",
   traceability: "Traceability",

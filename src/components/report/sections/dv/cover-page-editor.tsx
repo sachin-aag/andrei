@@ -45,7 +45,7 @@ export function DvCoverPageEditor() {
 
   return (
     <SectionShell
-      title="Cover Page & Document Control"
+      title="Cover Page"
       description="Document identity fields used for evaluation and export."
       status="idle"
       lastSavedAt={null}

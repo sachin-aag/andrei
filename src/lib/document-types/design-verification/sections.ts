@@ -215,7 +215,7 @@ export const DV_SECTION_LABELS: Record<
   DesignVerificationSectionKey | typeof DV_COVER_PAGE_SECTION,
   string
 > = {
-  cover_page: "Cover Page & Document Control",
+  cover_page: "Cover Page",
   purpose_scope: "Purpose & Scope",
   references: "References",
   traceability: "Traceability",
