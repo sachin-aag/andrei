@@ -56,6 +56,11 @@ export type DocumentTypeChatConfig = {
   sectionIntentPatterns: ReadonlyArray<
     readonly [SectionType, readonly RegExp[]]
   >;
+  /**
+   * Optional document-type drafting rules appended to the chat system prompt
+   * (e.g. fixed table column schemas for matrix sections).
+   */
+  draftingGuidance?: string;
 };
 
 export type DocxTemplateData = Record<string, unknown>;

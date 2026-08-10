@@ -88,6 +88,78 @@ export const DV_TEST_RESULTS_HEADERS = [
   "Raw Data Ref",
 ] as const;
 
+/** Sections whose TipTap field is a fixed-header matrix (`content.table`). */
+export const DV_TABLE_SECTIONS = ["traceability", "test_results"] as const;
+
+export type DvTableSectionKey = (typeof DV_TABLE_SECTIONS)[number];
+
+export function isDvTableSection(section: string): section is DvTableSectionKey {
+  return (DV_TABLE_SECTIONS as readonly string[]).includes(section);
+}
+
+export function dvTableHeadersForSection(
+  section: DvTableSectionKey
+): readonly string[] {
+  switch (section) {
+    case "traceability":
+      return DV_TRACEABILITY_HEADERS;
+    case "test_results":
+      return DV_TEST_RESULTS_HEADERS;
+    default: {
+      const _exhaustive: never = section;
+      return _exhaustive;
+    }
+  }
+}
+
+function gfmHeaderExample(headers: readonly string[]): string {
+  const cells = headers.join(" | ");
+  const sep = headers.map(() => "---").join(" | ");
+  return `| ${cells} |\n| ${sep} |`;
+}
+
+/**
+ * Prompt block telling chat / suggest models to keep seeded matrix columns.
+ * Shared by chat draftingGuidance and suggest-fix prompts.
+ */
+export function dvFixedTableFormatGuidance(opts?: {
+  /** When set, only describe that section's schema. */
+  section?: DvTableSectionKey;
+  /** "chat" mentions draft_field; "suggest" mentions cell-level edits. */
+  surface?: "chat" | "suggest";
+}): string {
+  const surface = opts?.surface ?? "chat";
+  const sections: DvTableSectionKey[] = opts?.section
+    ? [opts.section]
+    : [...DV_TABLE_SECTIONS];
+
+  const schemas = sections
+    .map((key) => {
+      const label = DV_SECTION_LABELS[key];
+      const headers = dvTableHeadersForSection(key);
+      return `${label} [${key}] — targetField \`table\`:\n${gfmHeaderExample(headers)}`;
+    })
+    .join("\n\n");
+
+  const surfaceRules =
+    surface === "chat"
+      ? `- When drafting or rewriting these sections via draft_field, emit ONE GFM markdown table only (header + separator + data rows). Do not wrap the table in prose paragraphs.
+- Use EXACTLY the headers below, in this order — never rename, reorder, add, or drop columns.
+- If the section already has a table, preserve its header row verbatim and only update or add data rows.
+- Fill known cells; use bracketed placeholders like [requirement ID] for unknowns. Leave optional cells blank rather than inventing new columns.`
+      : `- targetField MUST be "table".
+- Preserve the existing column headers exactly — never rename, reorder, add, or drop columns.
+- Prefer minimal cell-value edits (anchorText from SECTION CONTENT). Do not rewrite the matrix into a different column layout or free-form prose.
+- If filling a gap requires new rows, keep the same header set and column order.`;
+
+  return `## Fixed table formats (required)
+${sections.length === 1 ? "This section" : "These sections"} use a seeded TipTap matrix with a fixed column schema. Stick to that format.
+
+${surfaceRules}
+
+${schemas}`;
+}
+
 function headerRow(headers: readonly string[]): JSONContent {
   return {
     type: "tableRow",

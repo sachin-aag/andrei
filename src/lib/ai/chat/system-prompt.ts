@@ -9,7 +9,7 @@ import {
 import { getDocumentType } from "@/lib/document-types";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v16-section-inline-images";
+export const CHAT_PROMPT_VERSION = "chat-v17-dv-fixed-table-formats";
 
 export type ChatMode = "plan" | "agent";
 
@@ -198,6 +198,10 @@ export function buildChatSystemPrompt(opts: {
     ? `\n\n${mode === "plan" ? ANALYZE_PLAN_RULES : ANALYZE_AGENT_RULES}`
     : "";
 
+  const draftingGuidance = chat.draftingGuidance?.trim()
+    ? `\n\n${chat.draftingGuidance.trim()}`
+    : "";
+
   return `${chat.persona}
 
 ${sectionFocusBlock(sectionScope, analyzeInScope)}${mismatchBlock}${mentions}
@@ -207,7 +211,7 @@ ${fieldTaxonomy(sectionScope, documentType)}
 
 targetField is the in-section path from the list above (usually \`narrative\` or \`table\`). NEVER pass the section key (e.g. purpose_scope, references, test_methods) as targetField.
 
-${modeRules}${analyzeBlock}
+${modeRules}${analyzeBlock}${draftingGuidance}
 
 ${DOCUMENT_RULES}
 

@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("bumps the prompt version when section inline image guidance changes", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v16-section-inline-images");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v17-dv-fixed-table-formats");
   });
 
   it("tells the model never to pass the section key as targetField", () => {
@@ -42,6 +42,26 @@ describe("buildChatSystemPrompt", () => {
     );
     expect(prompt).not.toContain("select_analyze_method");
     expect(prompt).not.toContain("## Analyze drafting rules");
+  });
+
+  it("requires fixed column headers for DV matrix sections", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      documentType: "design_verification",
+    });
+    expect(prompt).toContain("Fixed table formats (required)");
+    expect(prompt).toContain("Requirement ID");
+    expect(prompt).toContain("Risk Control Link");
+    expect(prompt).toContain("Pass/Fail");
+    expect(prompt).toContain("Raw Data Ref");
+    expect(prompt).toContain("never rename, reorder, add, or drop columns");
+  });
+
+  it("omits DV fixed table guidance for investigation reports", () => {
+    const prompt = buildChatSystemPrompt({ ...opts, mode: "agent" });
+    expect(prompt).not.toContain("Fixed table formats (required)");
+    expect(prompt).not.toContain("Risk Control Link");
   });
 
   it("keeps the investigation draft order for investigation reports", () => {

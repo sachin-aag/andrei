@@ -151,6 +151,8 @@ export function contextForSuggestionPrompt(
     pushTextLine(lines, "Preventive actions", stripped);
   } else if (section === "conclusion") {
     pushCanonicalNarrative(lines, section, content);
+  } else if (section === "traceability" || section === "test_results") {
+    pushCanonicalBlock(lines, "Table", canonicalRichText(content.table));
   }
 
   return lines.length ? lines.join("\n") : fallbackContextForPrompt(content);

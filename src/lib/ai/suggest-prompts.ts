@@ -1,23 +1,39 @@
 import type { CriterionStatus, SectionType } from "@/db/schema";
 import { SUGGEST_TARGET_FIELD_PATTERNS } from "@/lib/ai/suggest-target-fields";
+import {
+  dvFixedTableFormatGuidance,
+  isDvTableSection,
+} from "@/lib/document-types/design-verification/sections";
 
-export const SUGGEST_PROMPT_VERSION = "suggest-v11-no-experiment-criteria" as const;
+export const SUGGEST_PROMPT_VERSION = "suggest-v12-dv-fixed-table-formats" as const;
 
 /** Google model for suggestion generation (stronger reasoning + verbatim anchors). */
 export const SUGGEST_GOOGLE_MODEL_ID = "gemini-3.1-pro-preview" as const;
 
 export const SUGGEST_TEMPERATURE = 0.4 as const;
 
+function fieldHintForSection(section: SectionType): string {
+  if (section === "improve") {
+    return '\n- For IMPROVE, targetField MUST be "correctiveActions" (the corrective action editor). Do not use "narrative".';
+  }
+  if (section === "control") {
+    return '\n- For CONTROL, targetField MUST be "preventiveActions". Do not use "narrative".';
+  }
+  if (section === "measure") {
+    return '\n- For MEASURE, targetField MUST be "narrative" — it is the section\'s only editable field.';
+  }
+  if (isDvTableSection(section)) {
+    return '\n- For this matrix section, targetField MUST be "table". Preserve the seeded column headers; edit cell values only.';
+  }
+  return "";
+}
+
 export function buildSuggestionSystemPrompt(section: SectionType): string {
   const fields = SUGGEST_TARGET_FIELD_PATTERNS[section].join(", ");
-  const fieldHint =
-    section === "improve"
-      ? '\n- For IMPROVE, targetField MUST be "correctiveActions" (the corrective action editor). Do not use "narrative".'
-      : section === "control"
-        ? '\n- For CONTROL, targetField MUST be "preventiveActions". Do not use "narrative".'
-        : section === "measure"
-          ? '\n- For MEASURE, targetField MUST be "narrative" — it is the section\'s only editable field.'
-          : "";
+  const fieldHint = fieldHintForSection(section);
+  const tableFormatBlock = isDvTableSection(section)
+    ? `\n\n${dvFixedTableFormatGuidance({ section, surface: "suggest" })}`
+    : "";
   return `You are a quality documentation writing assistant. You produce precise, minimal text edits for investigation report sections.
 
 RULES:
@@ -51,7 +67,7 @@ CRITERION-SPECIFIC PLACEMENT RULES:
 OPERATIONS (implicit from deleteText/insertText):
 - replace: both deleteText and insertText non-empty
 - insert: deleteText empty, insertText non-empty (anchor locates where to insert after)
-- delete: insertText empty, deleteText non-empty`;
+- delete: insertText empty, deleteText non-empty${tableFormatBlock}`;
 }
 
 export function buildSuggestionUserPrompt({

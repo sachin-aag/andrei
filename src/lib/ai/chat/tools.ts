@@ -253,6 +253,10 @@ export function buildChatTools(opts: {
     sectionScope === "all"
       ? ""
       : ` Only section "${sectionScope}" is in scope for this chat.`;
+  const fixedTableHint =
+    documentType === "design_verification"
+      ? " For Traceability and Test Results (`targetField: table`), use the seeded column headers exactly — see Fixed table formats in the system prompt; never invent alternate columns."
+      : "";
   const analyzeInScope = allowedSections.includes("analyze");
   // When Analyze is in scope, allow reading Define/Measure for method selection
   // even if the dropdown is narrowed to Analyze (draft/propose stay restricted).
@@ -529,7 +533,7 @@ export function buildChatTools(opts: {
 
     draft_field: tool({
       description:
-        `Draft or fully rewrite ONE field. Provide the COMPLETE replacement content as markdown: paragraphs, '- ' bullets, '1. ' numbered lists, '## ' headings, '**bold**', and GFM tables ('| a | b |' rows with a '| --- |' separator). Use bracketed placeholders like [batch number] for facts you do not know — never invent facts. The engineer reviews the full draft and accepts or rejects it. Use this for empty fields, large rewrites, and any content needing a table; use propose_edit only for small targeted changes.${scopeHint}`,
+        `Draft or fully rewrite ONE field. Provide the COMPLETE replacement content as markdown: paragraphs, '- ' bullets, '1. ' numbered lists, '## ' headings, '**bold**', and GFM tables ('| a | b |' rows with a '| --- |' separator). Use bracketed placeholders like [batch number] for facts you do not know — never invent facts. The engineer reviews the full draft and accepts or rejects it. Use this for empty fields, large rewrites, and any content needing a table; use propose_edit only for small targeted changes.${scopeHint}${fixedTableHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z

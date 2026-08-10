@@ -205,6 +205,14 @@ export function contextForPrompt(section: SectionType, content: unknown): string
     pushTextLine(lines, "Preventive actions", stripped);
   } else if (section === "conclusion") {
     pushNarrativeLine(lines, section, content);
+  } else if (section === "traceability" || section === "test_results") {
+    pushTextBlock(
+      lines,
+      "Table",
+      richJsonToPlainText(normalizeRichField(content.table), {
+        tableFormat: "markdown",
+      })
+    );
   }
 
   return lines.length ? lines.join("\n") : fallbackContextForPrompt(content);

@@ -20,6 +20,7 @@ import {
   DV_SECTION_KEYS,
   DV_SECTION_LABELS,
   EMPTY_DV_CONTENT,
+  dvFixedTableFormatGuidance,
   type DesignVerificationSectionKey,
   type DesignVerificationSectionMap,
 } from "./design-verification/sections";
@@ -423,6 +424,7 @@ Your guidance should emphasize requirement IDs with revisions, internal consiste
 The report is graded against fixed quality criteria (a traffic-light check). Your job is to help the engineer produce a first draft that satisfies as many criteria as possible, then refine it.
 
 You never write to the document directly. Every change is a PROPOSAL that appears as an inline tracked-change (red delete / green insert) the engineer accepts or rejects.`,
+    draftingGuidance: dvFixedTableFormatGuidance({ surface: "chat" }),
     draftOrder: [
       "purpose_scope",
       "traceability",
