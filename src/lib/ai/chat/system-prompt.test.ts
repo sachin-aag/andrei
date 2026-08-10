@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("bumps the prompt version when section inline image guidance changes", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v17-dv-fixed-table-formats");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v18-scoped-cell-list-edits");
   });
 
   it("tells the model never to pass the section key as targetField", () => {

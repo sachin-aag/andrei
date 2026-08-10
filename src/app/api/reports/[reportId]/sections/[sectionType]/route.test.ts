@@ -68,4 +68,31 @@ describe("PATCH /api/reports/[reportId]/sections/[sectionType]", () => {
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({ error: "Invalid section" });
   });
+
+  it("returns 403 when the author tries to save a submitted report", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValueOnce({
+      id: "engineer-1",
+      name: "Engineer",
+      email: "engineer@example.com",
+      role: "engineer",
+      title: "Quality Engineer",
+    });
+    const where = vi.fn().mockResolvedValueOnce([
+      {
+        id: "report-1",
+        authorId: "engineer-1",
+        documentType: "investigation_report",
+        status: "submitted",
+      },
+    ]);
+    const from = vi.fn().mockReturnValue({ where });
+    vi.mocked(db.select).mockReturnValueOnce({ from } as never);
+
+    const response = await PATCH(request(), {
+      params: Promise.resolve({ reportId: "report-1", sectionType: "define" }),
+    });
+
+    expect(response.status).toBe(403);
+    await expect(response.json()).resolves.toEqual({ error: "Forbidden" });
+  });
 });

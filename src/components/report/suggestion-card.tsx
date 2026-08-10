@@ -46,6 +46,7 @@ import {
   acceptSuggestion,
   dismissSuggestion,
   CommentPersistError,
+  SectionPersistError,
 } from "@/lib/suggestions/accept-suggestion";
 import {
   isSuggestionTargetInViewport,
@@ -664,11 +665,14 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
               : new CommentPersistError(0, "Could not update suggestion")
           );
         }
-        throw new Error(
-          result.reason === "save_failed"
-            ? "Failed to save section"
-            : "Suggestion could not be located"
-        );
+        if (result.reason === "save_failed") {
+          throw (
+            result.error instanceof SectionPersistError
+              ? result.error
+              : new SectionPersistError(0, "Failed to save section")
+          );
+        }
+        throw new Error("Suggestion could not be located");
       }
       replaceSection(section, result.nextSection as unknown);
 
@@ -697,9 +701,11 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
     } catch (err) {
       console.error(err);
       toast.error(
-        err instanceof CommentPersistError
-          ? "Change saved but couldn't mark suggestion as resolved. It may reappear — try dismissing it."
-          : "Could not apply suggestion"
+        err instanceof SectionPersistError
+          ? err.message
+          : err instanceof CommentPersistError
+            ? "Change saved but couldn't mark suggestion as resolved. It may reappear — try dismissing it."
+            : "Could not apply suggestion"
       );
       await refresh();
       setFrozenCard(null);
@@ -763,6 +769,13 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
               : new CommentPersistError(0, "Could not update suggestion")
           );
         }
+        if (result.reason === "save_failed") {
+          throw (
+            result.error instanceof SectionPersistError
+              ? result.error
+              : new SectionPersistError(0, "Failed to save section")
+          );
+        }
         throw new Error("Failed to save section");
       }
       if (result.nextSection) {
@@ -793,7 +806,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
     } catch (err) {
       console.error(err);
       toast.error(
-        err instanceof CommentPersistError
+        err instanceof CommentPersistError || err instanceof SectionPersistError
           ? err.message
           : "Could not dismiss suggestion"
       );

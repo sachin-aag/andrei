@@ -42,6 +42,11 @@ import {
 } from "@/components/ui/select";
 import { useReportData } from "@/providers/report-provider";
 import { useReportAttachments } from "@/providers/report-attachments-provider";
+import { useUserDirectory } from "@/providers/user-directory-provider";
+import {
+  aiSuggestionLockReason,
+  canSaveReportSection,
+} from "@/lib/reports/access";
 import type { DocumentType, SectionType } from "@/db/schema";
 import {
   CHAT_SECTION_SCOPE_ALL,
@@ -550,10 +555,14 @@ function ModeToggle({
   mode,
   onChange,
   disabled,
+  agentDisabled,
+  agentDisabledTitle,
 }: {
   mode: ChatMode;
   onChange: (mode: ChatMode) => void;
   disabled?: boolean;
+  agentDisabled?: boolean;
+  agentDisabledTitle?: string;
 }) {
   const options: { value: ChatMode; label: string; icon: typeof ClipboardList }[] = [
     { value: "plan", label: "Plan", icon: ClipboardList },
@@ -564,11 +573,13 @@ function ModeToggle({
       {options.map((opt) => {
         const Icon = opt.icon;
         const active = mode === opt.value;
+        const optionDisabled =
+          disabled || (opt.value === "agent" && !!agentDisabled);
         return (
           <button
             key={opt.value}
             type="button"
-            disabled={disabled}
+            disabled={optionDisabled}
             onClick={() => onChange(opt.value)}
             className={cn(
               "flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium transition-colors disabled:opacity-50",
@@ -577,9 +588,11 @@ function ModeToggle({
                 : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
             )}
             title={
-              opt.value === "plan"
-                ? "Plan: ask questions and plan the draft (no document edits)"
-                : "Agent: draft and propose edits you accept or reject"
+              opt.value === "agent" && agentDisabled
+                ? agentDisabledTitle
+                : opt.value === "plan"
+                  ? "Plan: ask questions and plan the draft (no document edits)"
+                  : "Agent: draft and propose edits you accept or reject"
             }
           >
             <Icon className="size-3.5" />
@@ -592,7 +605,15 @@ function ModeToggle({
 }
 
 export function ChatPanel() {
-  const { report, refresh, readOnly } = useReportData();
+  const { report, refresh, readOnly, currentUserId } = useReportData();
+  const { getUser } = useUserDirectory();
+  const role = getUser(currentUserId)?.role;
+  const canProposeAiEdits =
+    role != null && canSaveReportSection({ id: currentUserId, role }, report);
+  const editLockReason =
+    role != null
+      ? aiSuggestionLockReason({ id: currentUserId, role }, report)
+      : "You can't propose edits on this report right now.";
   const { attachments } = useReportAttachments();
   const [input, setInput] = useState("");
   const [mentions, setMentions] = useState<MentionCandidate[]>([]);
@@ -678,6 +699,13 @@ export function ChatPanel() {
     element.focus();
     element.setSelectionRange(caret, caret);
   }, [input]);
+
+  // Agent proposes edits — fall back to Plan when the report isn't writable.
+  useEffect(() => {
+    if (!canProposeAiEdits && mode === "agent") {
+      setMode("plan");
+    }
+  }, [canProposeAiEdits, mode]);
 
   const updateMentionQuery = useCallback((value: string, caret: number) => {
     setMentionRange(findMentionQuery(value, caret));
@@ -1080,7 +1108,13 @@ export function ChatPanel() {
         )}
         <div className="mb-2 flex items-center gap-1.5">
           <div className="flex min-w-0 items-center gap-1.5">
-            <ModeToggle mode={mode} onChange={setMode} disabled={busy} />
+            <ModeToggle
+              mode={mode}
+              onChange={setMode}
+              disabled={busy}
+              agentDisabled={!canProposeAiEdits}
+              agentDisabledTitle={editLockReason ?? undefined}
+            />
             <SectionScopeSelect
               value={sectionScope}
               onChange={changeSectionScope}
@@ -1089,12 +1123,18 @@ export function ChatPanel() {
             />
           </div>
         </div>
-        {readOnly && mode === "agent" && (
+        {!canProposeAiEdits ? (
+          <p className="mb-2 text-[11px] text-[var(--muted-foreground)]">
+            {editLockReason ??
+              "You can't propose edits on this report right now."}{" "}
+            Plan mode can still discuss the report.
+          </p>
+        ) : readOnly && mode === "agent" ? (
           <p className="mb-2 text-[11px] text-[var(--muted-foreground)]">
             This report is read-only — the assistant can still discuss it, but proposed
             edits cannot be accepted.
           </p>
-        )}
+        ) : null}
         <MentionChips mentions={mentions} onRemove={removeMention} />
         {pendingImages.length > 0 ? (
           <div className="mb-2 flex flex-wrap gap-2">

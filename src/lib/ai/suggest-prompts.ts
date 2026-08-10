@@ -5,12 +5,19 @@ import {
   isDvTableSection,
 } from "@/lib/document-types/design-verification/sections";
 
-export const SUGGEST_PROMPT_VERSION = "suggest-v12-dv-fixed-table-formats" as const;
+export const SUGGEST_PROMPT_VERSION = "suggest-v13-scoped-cell-list-edits" as const;
 
 /** Google model for suggestion generation (stronger reasoning + verbatim anchors). */
 export const SUGGEST_GOOGLE_MODEL_ID = "gemini-3.1-pro-preview" as const;
 
 export const SUGGEST_TEMPERATURE = 0.4 as const;
+
+/**
+ * Reasoning depth for suggestion generation. Measured: "medium" is ~2x faster
+ * than "high" (~16s vs ~33s on the pro model) with no observed quality loss;
+ * "low" gives no further latency benefit.
+ */
+export const SUGGEST_THINKING_LEVEL = "medium" as const;
 
 function fieldHintForSection(section: SectionType): string {
   if (section === "improve") {
@@ -39,8 +46,9 @@ export function buildSuggestionSystemPrompt(section: SectionType): string {
 RULES:
 - Output JSON only, matching the provided schema.
 - Each suggestion fixes ONE failing criterion listed in the user message.
-- anchorText MUST be a verbatim substring from SECTION CONTENT (current section only). Copy punctuation and spacing exactly. Use a long enough span (roughly a full clause) so it appears only once in the section. SECTION CONTENT uses plain text only — no markdown table pipes, no list numbers, no [equation]/[image] tokens.
-- deleteText MUST be a verbatim substring of anchorText (or "" for pure insert).
+- For PROSE, anchorText MUST be a verbatim substring from SECTION CONTENT (current section only). Copy punctuation and spacing exactly. Use a long enough span (roughly a full clause) so it appears only once in the section. SECTION CONTENT prose uses plain text only — no markdown table pipes, no list numbers, no [equation]/[image] tokens.
+- For a TABLE CELL or LIST ITEM, do NOT use a long anchor. Instead set "scope" to the coordinate shown in SECTION CONTENT: a cell tagged [r,c] → scope {"kind":"cell","row":r,"col":c}; a list item tagged [i] → scope {"kind":"listItem","index":i}. Leave anchorText "". Put ONLY that cell/item's current text in deleteText (or "" to set an empty cell) and the new text in insertText. Never quote the [r,c] / [i] tags, and never let deleteText span two cells or two items.
+- deleteText MUST be a verbatim substring of anchorText (or, for a scoped cell/item edit, the current text of that one cell/item; or "" for a pure insert).
 - insertText is the replacement prose (or "" for pure delete). At least one of deleteText or insertText must be non-empty.
 - For pure inserts after a word, start insertText with a leading space when it continues the same sentence (e.g. insertText: " regarding the root cause").
 - targetField MUST be one of: ${fields || "narrative"}.${fieldHint}
@@ -136,6 +144,17 @@ Pure delete:
   "deleteText": "likely forgot the interlock, which probably caused",
   "insertText": "",
   "reasoning": "Removes speculative language."
+}
+
+Table cell edit (SECTION CONTENT shows "[2,3] Pass"):
+{
+  "criterionKey": "traceability.result_recorded",
+  "targetField": "table",
+  "anchorText": "",
+  "deleteText": "Pass",
+  "insertText": "Fail — see attachment 3",
+  "scope": { "kind": "cell", "row": 2, "col": 3 },
+  "reasoning": "Records the actual result for this test in its cell."
 }
 
 Return one suggestion object per failing criterion key listed above.`;

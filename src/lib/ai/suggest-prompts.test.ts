@@ -6,7 +6,7 @@ import {
 
 describe("buildSuggestionSystemPrompt", () => {
   it("bumps the suggest prompt version when DV table guidance changes", () => {
-    expect(SUGGEST_PROMPT_VERSION).toBe("suggest-v12-dv-fixed-table-formats");
+    expect(SUGGEST_PROMPT_VERSION).toBe("suggest-v13-scoped-cell-list-edits");
   });
 
   it("requires fixed matrix headers for traceability suggest fixes", () => {

@@ -21,6 +21,11 @@ import {
   rowsForSection,
 } from "@/lib/ai/criteria-view";
 import { canSuggestFixes } from "@/lib/ai/suggestion-gating";
+import {
+  aiSuggestionLockReason,
+  canSaveReportSection,
+} from "@/lib/reports/access";
+import { useUserDirectory } from "@/providers/user-directory-provider";
 import { SECTION_LABELS } from "@/types/sections";
 import { captureEvent } from "@/lib/analytics/events";
 import { getDocumentType } from "@/lib/document-types";
@@ -165,11 +170,13 @@ function StackedAndreiButton({
   disabled,
   onClick,
   spinning,
+  title,
 }: {
   primary: string;
   disabled?: boolean;
   onClick: () => void;
   spinning?: boolean;
+  title?: string;
 }) {
   return (
     <Button
@@ -178,6 +185,7 @@ function StackedAndreiButton({
       variant="outline"
       className="h-auto shrink-0 py-1.5 px-2.5 text-xs bg-[var(--card)] shadow-sm flex flex-col items-center gap-0 leading-tight"
       disabled={disabled}
+      title={title}
       onClick={onClick}
     >
       {spinning ? (
@@ -223,28 +231,33 @@ export function SectionSuggestFixesButton({ section }: { section: SectionType })
   } = useReportEvaluations();
   const { comments } = useReportComments();
   const { sections } = useReportSections();
-  const { report } = useReportData();
+  const { report, currentUserId } = useReportData();
+  const { getUser } = useUserDirectory();
+  const role = getUser(currentUserId)?.role;
+  const lockReason =
+    role != null
+      ? aiSuggestionLockReason({ id: currentUserId, role }, report)
+      : "You can't propose edits on this report right now.";
+  const canPropose =
+    role != null && canSaveReportSection({ id: currentUserId, role }, report);
   const isRunning = runningSuggestionSections.includes(section);
   // Cover page criteria hash report.metadata (same as evaluate), not empty section JSON.
   const sectionContent =
     section === "cover_page" ? report.metadata : sections[section];
-  const enabled = canSuggestFixes(
-    section,
-    evaluations,
-    comments,
-    sectionContent,
-    {
+  const enabled =
+    canPropose &&
+    canSuggestFixes(section, evaluations, comments, sectionContent, {
       isEvaluating: isEvaluating || runningEvalSections.includes(section),
       isSuggesting: isSuggesting || isRunning,
       documentType: report.documentType,
       allSections: sections,
-    }
-  );
+    });
 
   return (
     <StackedAndreiButton
       primary={isRunning ? "Suggesting…" : "Suggest fixes"}
       disabled={!enabled}
+      title={!canPropose ? (lockReason ?? undefined) : undefined}
       spinning={isRunning}
       onClick={() => {
         captureEvent("ai_suggestion_generated", { section });

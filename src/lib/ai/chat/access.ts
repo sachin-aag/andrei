@@ -4,7 +4,7 @@ import {
   type ReportWithManagers,
 } from "@/lib/reports/require-report-access";
 
-/** Loads a report the user may view, or null. Editing follows canEditReport. */
+/** Loads a report the user may view, or null. `canEdit` follows canEditReport. */
 export async function loadAccessibleReport(
   reportId: string,
   user: WorkspaceUser

@@ -30,8 +30,10 @@ import {
   isApplyableStatus,
   probePlainEdit,
   probeRichEdit,
+  type LocateStatus,
   type SuggestionEdit,
 } from "@/lib/suggestions/locator";
+import type { SuggestionDropReason } from "@/lib/ai/suggest";
 import { mergeSectionForType } from "@/lib/document-types";
 import { isValidSection } from "@/lib/document-types";
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
@@ -45,8 +47,23 @@ import {
 } from "@/lib/observability/langfuse";
 import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
 import { requireReportAccess } from "@/lib/reports/require-report-access";
+import { canSaveReportSection } from "@/lib/reports/access";
 
 export const maxDuration = 120;
+
+/** Map a non-applyable probe status to a drop reason (kept distinct for telemetry). */
+function dropReasonForProbe(status: LocateStatus): SuggestionDropReason {
+  switch (status) {
+    case "ambiguous":
+      return "ambiguous";
+    case "cross_cell":
+      return "cross_cell";
+    case "bad_scope":
+      return "bad_scope";
+    default:
+      return "not_found";
+  }
+}
 
 const bodySchema = z.object({
   section: z.string(),
@@ -68,6 +85,10 @@ async function handleSuggestionsPost(
     return NextResponse.json({ error: access.error }, { status: access.status });
   }
   const { report, user } = access;
+
+  if (!canSaveReportSection(user, report)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   const body = await req.json().catch(() => ({}));
   const parsed = bodySchema.safeParse(body);
@@ -195,12 +216,13 @@ async function handleSuggestionsPost(
       anchorText: s.anchorText,
       deleteText: s.deleteText,
       insertText: s.insertText,
+      scope: s.scope,
     };
     const status = probeRichEdit(fieldDoc, edit);
     if (!isApplyableStatus(status)) {
       dropped.push({
         criterionKey: s.criterionKey,
-        reason: status === "ambiguous" ? ("ambiguous" as const) : ("not_found" as const),
+        reason: dropReasonForProbe(status),
       });
       continue;
     }
@@ -212,6 +234,7 @@ async function handleSuggestionsPost(
       deleteText: s.deleteText,
       insertText,
       reasoning: s.reasoning,
+      scope: s.scope,
       contentHashAtSuggestion: suggestionContentHash,
       evidenceSources: s.evidenceSources,
     };
@@ -252,7 +275,7 @@ async function handleSuggestionsPost(
     if (!isApplyableStatus(status)) {
       dropped.push({
         criterionKey: s.criterionKey,
-        reason: status === "ambiguous" ? "ambiguous" : "not_found",
+        reason: dropReasonForProbe(status),
       });
       continue;
     }

@@ -5,6 +5,7 @@ import {
   applyAndAcceptRichEdit,
   isApplyableStatus,
   stripSuggestionMarksById,
+  type EditScope,
   type SuggestionEdit,
 } from "@/lib/suggestions/locator";
 import {
@@ -19,11 +20,13 @@ export function buildSuggestionEdit(payload: {
   anchorText?: string | null;
   deleteText: string;
   insertText: string;
+  scope?: EditScope;
 }): SuggestionEdit {
   return {
     anchorText: payload.anchorText?.trim() ?? "",
     deleteText: payload.deleteText,
     insertText: normalizeSuggestionInsertText(payload.insertText),
+    scope: payload.scope,
   };
 }
 

@@ -11,6 +11,7 @@ import {
   SUGGEST_GOOGLE_MODEL_ID,
   SUGGEST_PROMPT_VERSION,
   SUGGEST_TEMPERATURE,
+  SUGGEST_THINKING_LEVEL,
 } from "@/lib/ai/suggest-prompts";
 import { langfuseGenerateTextTelemetry } from "@/lib/observability/langfuse";
 import { buildGeminiThoughtSummaryProviderOptions } from "@/lib/eval/eval-generation-options";
@@ -26,6 +27,8 @@ import {
   verifyCitation,
   type DocumentSearchResult,
 } from "@/lib/attachments/retrieval";
+import type { EditScope } from "@/lib/suggestions/locator";
+import { parseEditScope } from "@/lib/ai/suggestion-gating";
 
 export type SuggestionDropReason =
   | "schema_invalid"
@@ -34,7 +37,9 @@ export type SuggestionDropReason =
   | "empty_edit"
   | "placeholder_edit"
   | "not_found"
-  | "ambiguous";
+  | "ambiguous"
+  | "cross_cell"
+  | "bad_scope";
 
 export type RawSuggestion = {
   criterionKey: string;
@@ -43,6 +48,7 @@ export type RawSuggestion = {
   deleteText: string;
   insertText: string;
   reasoning: string;
+  scope?: EditScope;
 };
 
 export type SuggestionEvidenceSource = {
@@ -71,6 +77,19 @@ const suggestionSchema = z.object({
       deleteText: z.string(),
       insertText: z.string(),
       reasoning: z.string().max(300),
+      // Optional structural target for table cells / list items. Kept as a flat
+      // optional shape (not a union) for reliable provider structured output;
+      // validated into an EditScope via parseEditScope.
+      scope: z
+        .object({
+          kind: z.enum(["cell", "listItem"]),
+          row: z.number().int().optional(),
+          col: z.number().int().optional(),
+          index: z.number().int().optional(),
+          tableIndex: z.number().int().optional(),
+          listIndex: z.number().int().optional(),
+        })
+        .nullish(),
     })
   ),
 });
@@ -302,7 +321,7 @@ export async function generateSuggestionsForSection({
       temperature: SUGGEST_TEMPERATURE,
       maxOutputTokens: 16384,
       providerOptions: buildGeminiThoughtSummaryProviderOptions({
-        thinkingLevel: "high",
+        thinkingLevel: SUGGEST_THINKING_LEVEL,
       }),
       ...langfuseGenerateTextTelemetry({
         functionId: "suggest-section-edits",
@@ -316,14 +335,17 @@ export async function generateSuggestionsForSection({
       }),
     });
 
-    if (result.experimental_output?.suggestions) {
-      return result.experimental_output.suggestions;
-    }
-    if (result.text) {
-      const parsed = JSON.parse(result.text) as { suggestions?: RawSuggestion[] };
-      return parsed.suggestions ?? [];
-    }
-    return [];
+    const rawList = result.experimental_output?.suggestions
+      ? result.experimental_output.suggestions
+      : result.text
+        ? (JSON.parse(result.text) as { suggestions?: RawSuggestion[] })
+            .suggestions ?? []
+        : [];
+    // Normalize the loose schema `scope` into a validated EditScope (or drop it).
+    return rawList.map((s) => ({
+      ...s,
+      scope: parseEditScope((s as { scope?: unknown }).scope),
+    }));
   };
 
   let rawSuggestions: RawSuggestion[] = [];

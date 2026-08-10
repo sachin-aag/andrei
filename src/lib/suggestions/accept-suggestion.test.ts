@@ -3,6 +3,7 @@ import type { CommentRecord } from "@/types/report";
 import {
   acceptSuggestion,
   dismissSuggestion,
+  SectionPersistError,
 } from "@/lib/suggestions/accept-suggestion";
 
 const reportId = "report-1";
@@ -118,6 +119,29 @@ describe("acceptSuggestion / dismissSuggestion (one writer)", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.reason).toBe("not_found");
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("accept returns save_failed with SectionPersistError on 403", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: false, status: 403, json: async () => ({ error: "Forbidden" }) }) as Response)
+    );
+
+    const result = await acceptSuggestion({
+      reportId,
+      section: "define",
+      comment,
+      sectionContent: structuredClone(sectionContent),
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.reason).toBe("save_failed");
+      expect(result.error).toBeInstanceOf(SectionPersistError);
+      expect((result.error as Error).message).toBe(
+        "You can't save changes to this report."
+      );
+    }
   });
 
   it("dismiss flips status without requiring locate", async () => {

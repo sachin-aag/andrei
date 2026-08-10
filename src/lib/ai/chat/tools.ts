@@ -17,7 +17,12 @@ import {
   serializeAiRedraftCommentContent,
   sectionContentHash,
 } from "@/lib/ai/suggestion-gating";
-import { resolveTargetField } from "@/lib/ai/suggest-target-fields";
+import {
+  isRichTargetField,
+  resolveTargetField,
+} from "@/lib/ai/suggest-target-fields";
+import { parseEditScope } from "@/lib/ai/suggestion-gating";
+import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { fieldContentHash } from "@/lib/suggestions/validate-suggestion";
 import { markdownHasTable } from "@/lib/tiptap/markdown-to-doc";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
@@ -91,6 +96,8 @@ export type ProposeEditResult =
   | { status: "section_not_found"; message: string }
   | { status: "not_found"; hint: string }
   | { status: "ambiguous"; hint: string }
+  | { status: "cross_cell"; hint: string }
+  | { status: "bad_scope"; hint: string }
   | { status: "too_large"; hint: string };
 
 export type DraftFieldResult =
@@ -333,6 +340,11 @@ export function buildChatTools(opts: {
             /** Same content with [image:N] markers for describing visuals. */
             readingText: chat.readingText,
             imageCount: chat.imageCount,
+            /**
+             * Coordinate-tagged view for tables/lists. When present, target a
+             * cell/item with propose_edit `scope` instead of a long anchor.
+             */
+            structuredText: chat.structuredText,
           };
         });
 
@@ -456,6 +468,19 @@ export function buildChatTools(opts: {
           .string()
           .default("")
           .describe("New text to add, or '' to only delete."),
+        scope: z
+          .object({
+            kind: z.enum(["cell", "listItem"]),
+            row: z.number().int().optional(),
+            col: z.number().int().optional(),
+            index: z.number().int().optional(),
+            tableIndex: z.number().int().optional(),
+            listIndex: z.number().int().optional(),
+          })
+          .nullish()
+          .describe(
+            "Structural target for a table cell ({kind:'cell',row,col}) or list item ({kind:'listItem',index}). Coordinates are 0-based and read from the labeled R#/C# grid in read_section. Prefer this for tables/lists over a long anchor."
+          ),
         reasoning: z
           .string()
           .max(300)
@@ -467,6 +492,7 @@ export function buildChatTools(opts: {
         anchorText,
         deleteText,
         insertText,
+        scope,
         reasoning,
       }): Promise<ProposeEditResult> => {
         if (!canEdit) {
@@ -493,8 +519,20 @@ export function buildChatTools(opts: {
           return { status: "section_not_found", message: "Section not found." };
         }
 
+        const parsedScope = parseEditScope(scope);
         const fieldText = sectionFieldPlainText(loaded.content, section, resolvedField);
-        const check = checkProposedEdit(fieldText, { anchorText, deleteText, insertText });
+        const isRich = isRichTargetField(section, resolvedField);
+        const fieldDoc = isRich
+          ? getRichFieldValue(
+              loaded.content as Record<string, unknown>,
+              resolvedField
+            )
+          : null;
+        const check = checkProposedEdit(
+          fieldText,
+          { anchorText, deleteText, insertText, scope: parsedScope },
+          fieldDoc
+        );
         if (check.status !== "ok") {
           return { status: check.status, hint: proposedEditHint(check) } as ProposeEditResult;
         }
@@ -511,6 +549,7 @@ export function buildChatTools(opts: {
             deleteText,
             insertText: normalizedInsert,
             reasoning,
+            scope: parsedScope,
             contentHashAtSuggestion: sectionContentHash(section, loaded.content),
           }),
           anchorText,

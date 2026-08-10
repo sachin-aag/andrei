@@ -18,6 +18,7 @@ import type { DocumentType, SectionType } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import { mergeSection } from "@/lib/sections-merge";
 import { loadAccessibleReport } from "@/lib/ai/chat/access";
+import { canSaveReportSection } from "@/lib/reports/access";
 import { buildReportContextMap } from "@/lib/ai/chat/context-map";
 import { investigationToolsUsed } from "@/types/report";
 import {
@@ -124,8 +125,8 @@ export async function POST(
 
   const access = accessEarly;
   const { report } = access;
-  // Plan mode never edits; Agent mode only when the report is still editable.
-  const canEdit = mode === "agent" && access.canEdit;
+  // Plan mode never edits; Agent mode only when section content is still writable.
+  const canEdit = mode === "agent" && canSaveReportSection(user, report);
 
   // Resolve the session (create one if the client didn't supply a valid id).
   let sessionId = body.sessionId?.trim() || "";

@@ -8,6 +8,7 @@ import { getDocumentType, listDocumentTypes } from "@/lib/document-types";
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
 import { flattenForAnchor } from "@/lib/suggestions/locator";
+import { renderStructuredFieldView } from "@/lib/ai/suggestion-section-context";
 import {
   countImagesInDoc,
   flattenDocForChat,
@@ -145,7 +146,13 @@ export function sectionFieldForChat(
   section: SectionType,
   targetField: string,
   collected: SectionInlineImage[]
-): { text: string; readingText: string; imageCount: number } {
+): {
+  text: string;
+  readingText: string;
+  imageCount: number;
+  /** Coordinate-tagged view for table/list fields (present only when useful). */
+  structuredText?: string;
+} {
   if (!isRichTargetField(section, targetField)) {
     const text = getPlainTextFieldValue(sectionContent, targetField);
     return { text, readingText: text, imageCount: 0 };
@@ -157,10 +164,17 @@ export function sectionFieldForChat(
     imageIndexStart: collected.length + 1,
     collected,
   });
+  // Only surface the coordinate grid when the field actually has a table or
+  // list (the renderer tags those with [row,col] / [index]).
+  const structured = renderStructuredFieldView(doc);
+  const structuredText = /\[\d+,\d+\]|\n\[\d+\] /.test(structured)
+    ? structured
+    : undefined;
   return {
     text,
     readingText: chat.readingText,
     imageCount: chat.imageCount,
+    structuredText,
   };
 }
 

@@ -794,3 +794,10 @@
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
 }
+
+/* Sonner defaults the dismiss X to the top-left in LTR; put it top-right. */
+[data-sonner-toaster] {
+  --toast-close-button-start: unset;
+  --toast-close-button-end: 0;
+  --toast-close-button-transform: translate(35%, -35%);
+}

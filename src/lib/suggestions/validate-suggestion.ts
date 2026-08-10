@@ -41,6 +41,7 @@ export function suggestionEditFromComment(
     anchorText: comment.anchorText ?? "",
     deleteText: payload.deleteText,
     insertText: payload.insertText,
+    scope: payload.scope,
   };
 }
 

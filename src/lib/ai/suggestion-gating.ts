@@ -11,6 +11,41 @@ import {
 } from "@/lib/ai/criteria-view";
 import { getCriteria, getDocumentType } from "@/lib/document-types";
 import { shouldSkipSuggestForEvaluation } from "@/lib/placeholders/evaluation-policy";
+import type { EditScope } from "@/lib/suggestions/locator";
+
+/** Validate an untrusted structural scope from persisted / model JSON. */
+export function parseEditScope(raw: unknown): EditScope | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const s = raw as Record<string, unknown>;
+  if (
+    s.kind === "cell" &&
+    typeof s.row === "number" &&
+    typeof s.col === "number" &&
+    Number.isInteger(s.row) &&
+    Number.isInteger(s.col) &&
+    s.row >= 0 &&
+    s.col >= 0
+  ) {
+    const scope: EditScope = { kind: "cell", row: s.row, col: s.col };
+    if (typeof s.tableIndex === "number" && Number.isInteger(s.tableIndex)) {
+      scope.tableIndex = s.tableIndex;
+    }
+    return scope;
+  }
+  if (
+    s.kind === "listItem" &&
+    typeof s.index === "number" &&
+    Number.isInteger(s.index) &&
+    s.index >= 0
+  ) {
+    const scope: EditScope = { kind: "listItem", index: s.index };
+    if (typeof s.listIndex === "number" && Number.isInteger(s.listIndex)) {
+      scope.listIndex = s.listIndex;
+    }
+    return scope;
+  }
+  return undefined;
+}
 
 const FAILING: CriterionStatus[] = ["not_met", "partially_met"];
 
@@ -136,6 +171,8 @@ export type ParsedAiFixPayload = {
   deleteText: string;
   insertText: string;
   reasoning: string;
+  /** Structural target (table cell / list item) for scoped edits. */
+  scope?: EditScope;
   /** Section content hash when this suggestion was created (staleness detection). */
   contentHashAtSuggestion?: string;
   evidenceSources?: Array<{
@@ -159,6 +196,7 @@ export function parseAiFixCommentContent(content: string): ParsedAiFixPayload {
         deleteText: typeof parsed.deleteText === "string" ? parsed.deleteText : "",
         insertText: typeof parsed.insertText === "string" ? parsed.insertText : "",
         reasoning: typeof parsed.reasoning === "string" ? parsed.reasoning : "",
+        scope: parseEditScope(parsed.scope),
         contentHashAtSuggestion:
           typeof parsed.contentHashAtSuggestion === "string"
             ? parsed.contentHashAtSuggestion

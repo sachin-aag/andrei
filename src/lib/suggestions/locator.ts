@@ -22,10 +22,21 @@ import { finalizeNarrativeDocAfterSuggestion } from "@/lib/tiptap/finalize-narra
  *  - NO markdown pipes, NO list numbers, NO "[equation]" / "[image]" tokens.
  */
 
+/**
+ * Structural scope for an edit. When present, matching and apply are confined
+ * to a single table cell (by row/col) or list item (by index), so short or
+ * repeated values resolve uniquely and cross-cell spans are impossible.
+ * `tableIndex` / `listIndex` default to 0 (the first table / list in the field).
+ */
+export type EditScope =
+  | { kind: "cell"; tableIndex?: number; row: number; col: number }
+  | { kind: "listItem"; listIndex?: number; index: number };
+
 export type SuggestionEdit = {
   anchorText: string;
   deleteText: string;
   insertText: string;
+  scope?: EditScope;
 };
 
 export type TextSlice = {
@@ -40,9 +51,31 @@ export type TextSlice = {
   flatEnd: number;
 };
 
+/** A resolved table cell: its position, node, and flat-string span. */
+export type CellRef = {
+  tableIndex: number;
+  row: number;
+  col: number;
+  cellId: number;
+  node: JSONContent;
+  flatStart: number;
+  flatEnd: number;
+};
+
+/** A resolved list item: its list ordinal, index, node, and flat-string span. */
+export type ListItemRef = {
+  listIndex: number;
+  index: number;
+  node: JSONContent;
+  flatStart: number;
+  flatEnd: number;
+};
+
 export type AnchorIndex = {
   text: string;
   resolveRange(start: number, end: number): TextSlice[];
+  cells: CellRef[];
+  listItems: ListItemRef[];
 };
 
 export type LocateStatus =
@@ -51,6 +84,7 @@ export type LocateStatus =
   | "not_found"
   | "ambiguous"
   | "cross_cell"
+  | "bad_scope"
   | "empty_edit";
 
 export type LocateResult =
@@ -262,16 +296,26 @@ function findUniqueAnchorInText(
 
 export function flattenForAnchor(doc: JSONContent): AnchorIndex {
   const refs: TextSlice[] = [];
+  const cells: CellRef[] = [];
+  const listItems: ListItemRef[] = [];
   let flat = "";
   let nextBlockId = 0;
   let nextCellId = 0;
+  let nextTableIndex = 0;
+  let nextListIndex = 0;
 
   function visit(
     node: JSONContent,
     parentArr: JSONContent[] | null,
     idx: number,
     blockId: number,
-    cellId: number | null
+    cellId: number | null,
+    // Structural position, threaded down from the nearest ancestor table/list.
+    tableIndex: number,
+    rowIndex: number,
+    colIndex: number,
+    listIndex: number,
+    itemIndex: number
   ) {
     if (node.type === "hardBreak") {
       flat += "\n";
@@ -303,10 +347,36 @@ export function flattenForAnchor(doc: JSONContent): AnchorIndex {
       return;
     }
 
-    if (!node.content?.length) return;
+    if (!node.content?.length) {
+      // Empty table cells / list items still need a resolvable (zero-width)
+      // span so scoped edits can target and insert into them.
+      const at = flat.length;
+      if (node.type === "tableCell" || node.type === "tableHeader") {
+        cells.push({
+          tableIndex,
+          row: rowIndex,
+          col: colIndex,
+          cellId: nextCellId++,
+          node,
+          flatStart: at,
+          flatEnd: at,
+        });
+      } else if (node.type === "listItem") {
+        listItems.push({
+          listIndex,
+          index: itemIndex,
+          node,
+          flatStart: at,
+          flatEnd: at,
+        });
+      }
+      return;
+    }
 
     let childBlockId = blockId;
     let childCellId = cellId;
+    let childTableIndex = tableIndex;
+    let childListIndex = listIndex;
     if (
       node.type === "paragraph" ||
       node.type === "heading" ||
@@ -319,22 +389,70 @@ export function flattenForAnchor(doc: JSONContent): AnchorIndex {
       childCellId = nextCellId++;
       childBlockId = nextBlockId++;
     }
+    if (node.type === "table") {
+      childTableIndex = nextTableIndex++;
+    }
+    if (node.type === "bulletList" || node.type === "orderedList") {
+      childListIndex = nextListIndex++;
+    }
 
     const arr = node.content;
     const separatesWithNewline = BLOCK_SEPARATOR_TYPES.has(node.type ?? "");
+    const containerFlatStart = flat.length;
 
     for (let i = 0; i < arr.length; i++) {
-      visit(arr[i]!, arr, i, childBlockId, childCellId);
+      // A table's children are rows; a row's children are cells; a list's
+      // children are items. Pass the child's structural index accordingly.
+      const childRowIndex = node.type === "table" ? i : rowIndex;
+      const childColIndex = node.type === "tableRow" ? i : colIndex;
+      const childItemIndex =
+        node.type === "bulletList" || node.type === "orderedList"
+          ? i
+          : itemIndex;
+      visit(
+        arr[i]!,
+        arr,
+        i,
+        childBlockId,
+        childCellId,
+        childTableIndex,
+        childRowIndex,
+        childColIndex,
+        childListIndex,
+        childItemIndex
+      );
       if (i < arr.length - 1 && separatesWithNewline) {
         flat += "\n";
       }
     }
+
+    if (node.type === "tableCell" || node.type === "tableHeader") {
+      cells.push({
+        tableIndex,
+        row: rowIndex,
+        col: colIndex,
+        cellId: childCellId!,
+        node,
+        flatStart: containerFlatStart,
+        flatEnd: flat.length,
+      });
+    } else if (node.type === "listItem") {
+      listItems.push({
+        listIndex,
+        index: itemIndex,
+        node,
+        flatStart: containerFlatStart,
+        flatEnd: flat.length,
+      });
+    }
   }
 
-  visit(doc, null, 0, 0, null);
+  visit(doc, null, 0, 0, null, -1, -1, -1, -1, -1);
 
   return {
     text: flat,
+    cells,
+    listItems,
     resolveRange(start: number, end: number): TextSlice[] {
       if (start < 0 || end < start) return [];
 
@@ -367,6 +485,75 @@ export function flattenForAnchor(doc: JSONContent): AnchorIndex {
       }
       return out;
     },
+  };
+}
+
+/** Resolve a structural scope to its flat-string window and container node. */
+export function resolveScopeWindow(
+  index: AnchorIndex,
+  scope: EditScope
+): { start: number; end: number; node: JSONContent } | null {
+  if (scope.kind === "cell") {
+    const tableIndex = scope.tableIndex ?? 0;
+    const cell = index.cells.find(
+      (c) =>
+        c.tableIndex === tableIndex &&
+        c.row === scope.row &&
+        c.col === scope.col
+    );
+    if (!cell) return null;
+    return { start: cell.flatStart, end: cell.flatEnd, node: cell.node };
+  }
+  const listIndex = scope.listIndex ?? 0;
+  const item = index.listItems.find(
+    (l) => l.listIndex === listIndex && l.index === scope.index
+  );
+  if (!item) return null;
+  return { start: item.flatStart, end: item.flatEnd, node: item.node };
+}
+
+/**
+ * Locate an edit, honoring `edit.scope`. A scoped edit matches only within its
+ * target cell / list-item window and returns offsets in absolute flat coords,
+ * so short or repeated values resolve uniquely and cross-cell spans cannot
+ * form. With no scope this is exactly `locateEdit`.
+ */
+export function locateScopedEdit(
+  index: AnchorIndex,
+  edit: SuggestionEdit
+): LocateResult {
+  if (!edit.scope) return locateEdit(index.text, edit);
+
+  const win = resolveScopeWindow(index, edit.scope);
+  if (!win) return { status: "bad_scope" };
+
+  const anchor = (edit.anchorText ?? "").trim();
+  const del = (edit.deleteText ?? "").trim();
+  const insert = normalizeSuggestionInsertText(edit.insertText ?? "");
+
+  if (!del && !insert) return { status: "empty_edit" };
+
+  // No anchor and no delete text → set the whole container to insertText
+  // (the common "set this cell / list item to X" operation).
+  if (!anchor && !del) {
+    return {
+      status: "located",
+      anchorStart: win.start,
+      anchorEnd: win.end,
+      deleteStart: win.start,
+      deleteEnd: win.end,
+    };
+  }
+
+  const windowText = index.text.slice(win.start, win.end);
+  const inner = locateEdit(windowText, edit);
+  if (inner.status !== "located") return inner;
+  return {
+    status: "located",
+    anchorStart: inner.anchorStart + win.start,
+    anchorEnd: inner.anchorEnd + win.start,
+    deleteStart: inner.deleteStart + win.start,
+    deleteEnd: inner.deleteEnd + win.start,
   };
 }
 
@@ -608,6 +795,31 @@ function insertAfterRef(
   return insertedNode;
 }
 
+/**
+ * Insert an insert-marked text node into an otherwise-empty scoped container
+ * (a blank table cell or list item), creating a paragraph if needed.
+ */
+function insertIntoEmptyContainer(
+  node: JSONContent,
+  insertText: string,
+  attrs: InjectAttrs
+): boolean {
+  const trimmed = normalizeSuggestionInsertText(insertText);
+  if (!trimmed) return false;
+  const textNode: JSONContent = {
+    type: "text",
+    text: trimmed,
+    marks: [{ type: suggestionInsertMarkName, attrs: { ...attrs } }],
+  };
+  if (!node.content || node.content.length === 0) {
+    node.content = [{ type: "paragraph", content: [textNode] }];
+    return true;
+  }
+  const para = node.content.find((c) => c.type === "paragraph") ?? node.content[0]!;
+  para.content = [...(para.content ?? []), textNode];
+  return true;
+}
+
 function checkCrossCell(
   index: AnchorIndex,
   start: number,
@@ -669,7 +881,7 @@ export function applyEditToRichDoc(
   attrs: InjectAttrs
 ): { status: LocateStatus; doc: JSONContent } {
   const index = flattenForAnchor(doc);
-  const located = locateEdit(index.text, edit);
+  const located = locateScopedEdit(index, edit);
 
   if (located.status === "append") {
     const cloned: JSONContent = JSON.parse(JSON.stringify(doc));
@@ -688,13 +900,18 @@ export function applyEditToRichDoc(
     return { status: located.status, doc };
   }
 
-  if (checkCrossCell(index, located.deleteStart, located.deleteEnd)) {
+  // Scoped edits are confined to one cell/item, so cross-cell cannot occur;
+  // the guard only protects un-scoped, whole-field anchoring.
+  if (
+    !edit.scope &&
+    checkCrossCell(index, located.deleteStart, located.deleteEnd)
+  ) {
     return { status: "cross_cell", doc };
   }
 
   const cloned: JSONContent = JSON.parse(JSON.stringify(doc));
   const freshIndex = flattenForAnchor(cloned);
-  const reLocated = locateEdit(freshIndex.text, edit);
+  const reLocated = locateScopedEdit(freshIndex, edit);
   if (reLocated.status !== "located") {
     return { status: reLocated.status, doc: cloned };
   }
@@ -702,6 +919,17 @@ export function applyEditToRichDoc(
   const { deleteStart, deleteEnd, anchorStart, anchorEnd } = reLocated;
   const insertText = normalizeSuggestionInsertText(edit.insertText ?? "");
   let insertAfter: TextSlice | null = null;
+
+  // Blank scoped container (e.g. an empty table cell): there is no text node to
+  // split at, so insert directly into the container node.
+  if (edit.scope && deleteStart === deleteEnd) {
+    const win = resolveScopeWindow(freshIndex, edit.scope);
+    if (win && win.start === win.end && deleteStart === win.start) {
+      const ok = insertIntoEmptyContainer(win.node, insertText, attrs);
+      cleanupMarks(cloned);
+      return { status: ok ? "located" : "empty_edit", doc: cloned };
+    }
+  }
 
   if (deleteStart < deleteEnd) {
     const affected = freshIndex.resolveRange(deleteStart, deleteEnd);
@@ -770,8 +998,8 @@ export function probeRichEdit(
   edit: SuggestionEdit
 ): LocateStatus {
   const index = flattenForAnchor(doc);
-  const located = locateEdit(index.text, edit);
-  if (located.status === "located") {
+  const located = locateScopedEdit(index, edit);
+  if (located.status === "located" && !edit.scope) {
     if (checkCrossCell(index, located.deleteStart, located.deleteEnd)) {
       return "cross_cell";
     }
