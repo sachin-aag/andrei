@@ -15,6 +15,12 @@ import {
   DEFAULT_DOCUMENT_EMBEDDING_MODEL_ID,
   embedDocumentChunks,
 } from "@/lib/attachments/embed-chunks";
+import { describeDocxImages } from "@/lib/attachments/describe-docx-images";
+import {
+  assignDocxImagesToPages,
+  extractDocxEmbeddedImages,
+  formatDocxPageVisualInterpretation,
+} from "@/lib/attachments/docx-images";
 import {
   DEFAULT_DOCUMENT_EXTRACT_MODEL_ID,
   DOCUMENT_EXTRACT_PROMPT_VERSION,
@@ -30,7 +36,7 @@ import { getAttachmentStorage, tempBatchObjectKey } from "@/lib/storage/attachme
 
 export { sanitizeIngestError } from "@/lib/attachments/ingest-errors";
 
-const PARSER_VERSION = "v2";
+const PARSER_VERSION = "v3";
 const SUMMARY_MAX_CHARS = 12_000;
 const FAILED_ATTACHMENT_PROGRESS = 0;
 /** DOCX has no page model; split extracted text into readable pseudo-pages. */
@@ -193,9 +199,9 @@ async function runPdfIngest(init: IngestInit): Promise<void> {
 }
 
 /**
- * DOCX path: extract text with mammoth (no Gemini vision — a .docx is not a
- * visual format), lay it out as pseudo-pages, then reuse the exact same
- * chunk→embed→ready machinery as PDFs so the content is searchable identically.
+ * DOCX path: mammoth for body text, OOXML for embedded rasters (described via
+ * the same Vertex extract model as PDF vision), then the shared chunk→embed
+ * machinery so image descriptions are searchable like PDF visuals.
  */
 async function runDocxIngest(init: IngestInit): Promise<void> {
   await assertAttachmentCurrent(init);
@@ -203,8 +209,43 @@ async function runDocxIngest(init: IngestInit): Promise<void> {
     init.sourceObjectKey
   );
   const { value: rawText } = await mammoth.extractRawText({ buffer });
-  const pages = buildDocxPseudoPages(rawText);
+  let pages = buildDocxPseudoPages(rawText);
 
+  const { images, totalXmlChars } = extractDocxEmbeddedImages(buffer);
+  if (pages.length === 0 && images.length > 0) {
+    pages = [{ pageNumber: 1, text: "" }];
+  }
+
+  const visualByPage = new Map<number, string>();
+  if (images.length > 0) {
+    await db
+      .update(reportAttachments)
+      .set({ processingProgress: 40 })
+      .where(eq(reportAttachments.id, init.attachmentId));
+
+    const descriptions = await describeDocxImages({
+      images,
+      filename: init.filename,
+      modelId: init.extractModelId,
+    });
+    const descriptionByOrdinal = new Map(
+      descriptions.map((entry) => [entry.ordinal, entry.description] as const)
+    );
+    const imagesByPage = assignDocxImagesToPages(pages, images, totalXmlChars);
+    for (const [pageNumber, pageImages] of imagesByPage) {
+      visualByPage.set(
+        pageNumber,
+        formatDocxPageVisualInterpretation(
+          pageImages.map((image) => ({
+            ordinal: image.ordinal,
+            description: descriptionByOrdinal.get(image.ordinal) ?? "",
+          }))
+        )
+      );
+    }
+  }
+
+  await assertAttachmentCurrent(init);
   await db.transaction(async (tx) => {
     await tx
       .delete(documentPages)
@@ -218,7 +259,7 @@ async function runDocxIngest(init: IngestInit): Promise<void> {
           pageNumber: page.pageNumber,
           printedPageLabel: null,
           transcript: page.text,
-          visualInterpretation: "",
+          visualInterpretation: visualByPage.get(page.pageNumber) ?? "",
           pageContext: init.filename,
           confidence: null,
         }))
