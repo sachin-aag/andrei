@@ -21,9 +21,28 @@ function formatAiFixForExport(content: string): string {
   const deleteText = payload.deleteText.trim();
   const insertText = payload.insertText.trim();
   const reasoning = payload.reasoning.trim();
+  const block = payload.blockEdit;
 
   const lines: string[] = [];
   if (reasoning) lines.push(reasoning);
+
+  if (block) {
+    if (block.op === "deleteRow") {
+      lines.push("Suggested change: remove this table row.");
+    } else if (block.op === "delete") {
+      lines.push("Suggested change: remove this block.");
+    } else if (block.proposedMarkdown) {
+      lines.push(
+        block.op === "insertRow"
+          ? "Suggested new table row:"
+          : block.op === "insert"
+            ? "Suggested insertion:"
+            : "Suggested replacement:"
+      );
+      lines.push(normalizeBullets(markdownToPlainText(block.proposedMarkdown)));
+    }
+    return lines.join("\n");
+  }
 
   if (deleteText && insertText) {
     lines.push(`Suggested change: "${deleteText}" → "${insertText}"`);

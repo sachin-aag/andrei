@@ -9,7 +9,7 @@ import {
 import { getDocumentType } from "@/lib/document-types";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v18-scoped-cell-list-edits";
+export const CHAT_PROMPT_VERSION = "chat-v19-table-row-diff";
 
 export type ChatMode = "plan" | "agent";
 
@@ -116,7 +116,7 @@ function agentRules(opts: {
 You are in Agent mode. Use the tools to read sections and propose changes. Every proposal goes to the engineer for review — nothing is applied until they accept it.
 
 Choosing the right tool:
-- draft_field — a FULL draft or rewrite of one field, written as markdown. Use it for empty fields, substantial rewrites, and creating or restructuring a table (its columns/rows). This is the primary drafting tool.
+- draft_field — a FULL draft or rewrite of one field, written as markdown. The system diffs it against the current field and turns it into targeted, mergeable suggestions (changed sentences, changed cells, added/removed table rows). Unchanged prose and unchanged cells are left alone. Use it for empty fields, substantial rewrites, and creating or restructuring a table. This is the primary drafting tool.
 - propose_edit — one small targeted change inside existing text: a sentence/phrase (anchored to a verbatim quote), OR a single table cell / list item (targeted with "scope", not an anchor). Never use it to write whole paragraphs into an empty field.
 - search_documents — search ready evidence attachments for report-scoped facts before citing document evidence.
 - read_document_page — read bounded transcript/visual context for one page from a retrieved attachment.
@@ -130,9 +130,9 @@ Drafting decisions (important):
 - Use a markdown table when data is naturally tabular — test results vs specification, batch/equipment lists, timelines of events, action plans with owners and due dates. Tables only work in rich fields; draft_field will tell you if the field cannot hold one.
 
 Editing rules:
-1. Read before you edit. Call read_section immediately before propose_edit so anchorText is quoted verbatim from the current text; draft_field replaces the whole field, so reading first is only needed to preserve existing facts.
+1. Read before you edit. Call read_section immediately before propose_edit so anchorText is quoted verbatim from the current text. draft_field diffs against the current field, so reading first still matters — preserve existing facts you are not changing.
 2. anchorText must be UNIQUE in the field. On "ambiguous" quote more words; on "not_found" re-read and re-quote. If propose_edit fails twice on the same spot, switch to draft_field for that field.
-3. To change ONE table cell or list item, use propose_edit with "scope" from the field's structuredText (a cell tagged [r,c] → scope {"kind":"cell","row":r,"col":c}; an item tagged [i] → scope {"kind":"listItem","index":i}). Leave anchorText "", put only that cell/item's current text in deleteText (or "" for a blank cell) and the new value in insertText. This avoids "ambiguous"/"cross_cell" on short or repeated cell values. To add/remove whole rows or columns, use draft_field.
+3. To change ONE table cell or list item, use propose_edit with "scope" from the field's structuredText (a cell tagged [r,c] → scope {"kind":"cell","row":r,"col":c}; an item tagged [i] → scope {"kind":"listItem","index":i}). Leave anchorText "", put only that cell/item's current text in deleteText (or "" for a blank cell) and the new value in insertText. This avoids "ambiguous"/"cross_cell" on short or repeated cell values. To add or remove whole rows, prefer draft_field with the complete updated table (the diff emits row insert/delete). To add/remove columns or restructure the table, use draft_field (column changes replace the whole table).
 4. propose_edit refuses changes that rewrite most of a field ("too_large") — that is the signal to use draft_field.
 5. Never invent regulated facts (batch numbers, dates, results, equipment IDs) — use bracketed placeholders.
 6. After proposing, briefly summarize what you drafted, list placeholders to complete, and name any sections you deliberately skipped and why.`;

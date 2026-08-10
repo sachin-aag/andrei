@@ -16,7 +16,9 @@ import {
   serializeAiFixCommentContent,
   serializeAiRedraftCommentContent,
   sectionContentHash,
+  type ParsedAiFixPayload,
 } from "@/lib/ai/suggestion-gating";
+import { diffFieldToEdits } from "@/lib/suggestions/diff-redraft";
 import {
   isRichTargetField,
   resolveTargetField,
@@ -107,6 +109,14 @@ export type DraftFieldResult =
       section: SectionType;
       targetField: string;
       summary: string;
+      /** Number of targeted edits the draft was split into (diff-based). */
+      edits?: number;
+    }
+  | {
+      status: "no_changes";
+      section: SectionType;
+      targetField: string;
+      message: string;
     }
   | { status: "not_editable"; message: string }
   | { status: "invalid_section"; message: string }
@@ -573,7 +583,7 @@ export function buildChatTools(opts: {
 
     draft_field: tool({
       description:
-        `Draft or fully rewrite ONE field. Provide the COMPLETE replacement content as markdown: paragraphs, '- ' bullets, '1. ' numbered lists, '## ' headings, '**bold**', and GFM tables ('| a | b |' rows with a '| --- |' separator). Use bracketed placeholders like [batch number] for facts you do not know — never invent facts. The engineer reviews the full draft and accepts or rejects it. Use this for empty fields, large rewrites, and any content needing a table; use propose_edit only for small targeted changes.${scopeHint}${fixedTableHint}`,
+        `Draft or fully rewrite ONE field. Provide the COMPLETE replacement content as markdown: paragraphs, '- ' bullets, '1. ' numbered lists, '## ' headings, '**bold**', and GFM tables ('| a | b |' rows with a '| --- |' separator). Use bracketed placeholders like [batch number] for facts you do not know — never invent facts. The system diffs your draft against the current field and emits only the changed regions (sentences, cells, added/removed rows) as targeted suggestions — unchanged content is left alone. Use this for empty fields, large rewrites, tables, and row add/remove; use propose_edit only for small targeted changes.${scopeHint}${fixedTableHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
@@ -627,37 +637,121 @@ export function buildChatTools(opts: {
           return { status: "section_not_found", message: "Section not found." };
         }
 
-        const suggestionId = createId();
-        await db.insert(comments).values({
-          id: suggestionId,
-          reportId,
-          sectionId: loaded.sectionId,
-          section,
-          authorId: AI_AUTHOR_ID,
-          content: serializeAiRedraftCommentContent({
-            markdown: normalizeSuggestionInsertText(markdown),
-            reasoning,
-            fieldHashAtSuggestion: fieldContentHash(
-              section,
-              loaded.content,
-              resolvedField
-            ),
-          }),
-          anchorText: "",
-          contentPath: resolvedField,
-          fromPos: null,
-          toPos: null,
-          status: "open",
-          kind: "ai_redraft",
-          evaluationId: null,
-        });
+        // Fallback: one whole-field redraft (plain fields, or a genuine full
+        // rewrite the diff can't express as targeted edits).
+        const insertRedraft = async (): Promise<DraftFieldResult> => {
+          const suggestionId = createId();
+          await db.insert(comments).values({
+            id: suggestionId,
+            reportId,
+            sectionId: loaded.sectionId,
+            section,
+            authorId: AI_AUTHOR_ID,
+            content: serializeAiRedraftCommentContent({
+              markdown: normalizeSuggestionInsertText(markdown),
+              reasoning,
+              fieldHashAtSuggestion: fieldContentHash(
+                section,
+                loaded.content,
+                resolvedField
+              ),
+            }),
+            anchorText: "",
+            contentPath: resolvedField,
+            fromPos: null,
+            toPos: null,
+            status: "open",
+            kind: "ai_redraft",
+            evaluationId: null,
+          });
+          return {
+            status: "drafted",
+            suggestionId,
+            section,
+            targetField: resolvedField,
+            summary: reasoning,
+          };
+        };
+
+        // Plain fields have no rich doc to diff → whole-field redraft.
+        if (!isRichTargetField(section, resolvedField)) {
+          return insertRedraft();
+        }
+
+        // Rich field: diff the proposed draft against the current content and
+        // emit only the changed regions as targeted, mergeable ai_fix edits, so
+        // unchanged narrative and unchanged cells are left untouched.
+        const currentDoc = getRichFieldValue(
+          loaded.content as Record<string, unknown>,
+          resolvedField
+        );
+        const diff = diffFieldToEdits(currentDoc, markdown, reasoning);
+        if (diff.strategy === "redraft") {
+          return insertRedraft();
+        }
+        if (diff.edits.length === 0) {
+          return {
+            status: "no_changes",
+            section,
+            targetField: resolvedField,
+            message:
+              "The draft matches the current content — there is nothing to change.",
+          };
+        }
+
+        const contentHash = sectionContentHash(section, loaded.content);
+        let firstId: string | null = null;
+        for (const edit of diff.edits) {
+          const id = createId();
+          if (!firstId) firstId = id;
+          const payload: ParsedAiFixPayload =
+            edit.kind === "text"
+              ? {
+                  deleteText: edit.deleteText,
+                  insertText: normalizeSuggestionInsertText(edit.insertText),
+                  reasoning: edit.reasoning,
+                  scope: edit.scope,
+                  contentHashAtSuggestion: contentHash,
+                }
+              : {
+                  deleteText: "",
+                  insertText: "",
+                  reasoning: edit.reasoning,
+                  contentHashAtSuggestion: contentHash,
+                  blockEdit: {
+                    op: edit.op,
+                    anchor: edit.anchor,
+                    blockIndex: edit.blockIndex,
+                    proposedMarkdown: edit.proposedMarkdown,
+                    tableIndex: edit.tableIndex,
+                    rowIndex: edit.rowIndex,
+                    rowAnchor: edit.rowAnchor,
+                  },
+                };
+          await db.insert(comments).values({
+            id,
+            reportId,
+            sectionId: loaded.sectionId,
+            section,
+            authorId: AI_AUTHOR_ID,
+            content: serializeAiFixCommentContent(payload),
+            anchorText: edit.kind === "text" ? edit.anchorText : "",
+            contentPath: resolvedField,
+            fromPos: null,
+            toPos: null,
+            status: "open",
+            kind: "ai_fix",
+            evaluationId: null,
+          });
+        }
 
         return {
           status: "drafted",
-          suggestionId,
+          suggestionId: firstId!,
           section,
           targetField: resolvedField,
           summary: reasoning,
+          edits: diff.edits.length,
         };
       },
     }),

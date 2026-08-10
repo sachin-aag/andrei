@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   canSuggestFixes,
   gapCriteriaForSection,
+  parseAiFixCommentContent,
+  parseBlockEdit,
   sectionContentHash,
   sortGapCriteria,
   sortedOpenSuggestionsForSection,
@@ -253,5 +255,61 @@ describe("suggestion-gating", () => {
         allSections: { test_results: resultsContent },
       })
     ).toBe(false);
+  });
+});
+
+describe("parseBlockEdit", () => {
+  it("accepts insertRow / deleteRow with table locators", () => {
+    expect(
+      parseBlockEdit({
+        op: "insertRow",
+        anchor: "Action Due PA-01",
+        blockIndex: 0,
+        tableIndex: 0,
+        rowIndex: 1,
+        rowAnchor: "PA-01",
+        proposedMarkdown: "| Action | Due |\n| --- | --- |\n| PA-03 | 15/06/2026 |",
+      })
+    ).toMatchObject({
+      op: "insertRow",
+      tableIndex: 0,
+      rowIndex: 1,
+      rowAnchor: "PA-01",
+    });
+    expect(
+      parseBlockEdit({
+        op: "deleteRow",
+        anchor: "Action Due PA-02",
+        blockIndex: 0,
+        tableIndex: 0,
+        rowIndex: 2,
+        rowAnchor: "PA-02",
+      })
+    ).toMatchObject({ op: "deleteRow", rowAnchor: "PA-02" });
+  });
+
+  it("rejects unknown ops and round-trips through ai_fix JSON", () => {
+    expect(parseBlockEdit({ op: "merge", anchor: "x", blockIndex: 0 })).toBeUndefined();
+    const parsed = parseAiFixCommentContent(
+      JSON.stringify({
+        deleteText: "",
+        insertText: "",
+        reasoning: "Add a row.",
+        blockEdit: {
+          op: "insertRow",
+          anchor: "table",
+          blockIndex: 0,
+          tableIndex: 0,
+          rowIndex: 1,
+          rowAnchor: "PA-01",
+          proposedMarkdown: "| A | B |\n| --- | --- |\n| 1 | 2 |",
+        },
+      })
+    );
+    expect(parsed.blockEdit).toMatchObject({
+      op: "insertRow",
+      tableIndex: 0,
+      rowAnchor: "PA-01",
+    });
   });
 });

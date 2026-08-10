@@ -15,11 +15,13 @@ import {
 import { applyStructuredFieldSuggestion } from "@/lib/suggestions/apply-field";
 import { applyRedraftToSection } from "@/lib/suggestions/apply-redraft";
 import {
+  acceptSuggestionMarksById,
   isApplyableStatus,
   type LocateStatus,
   probePlainEdit,
   probeRichEdit,
 } from "@/lib/suggestions/locator";
+import { applyBlockEdit } from "@/lib/suggestions/block-redraft";
 import {
   CommentPersistError,
   patchCommentStatus,
@@ -107,6 +109,31 @@ export async function acceptSuggestion(args: {
       path,
       redraft.markdown
     );
+    try {
+      await patchSection(reportId, section, nextSection);
+    } catch (error) {
+      return { ok: false, reason: "save_failed", error };
+    }
+    try {
+      await patchCommentStatus(reportId, comment.id, "resolved");
+    } catch (error) {
+      return { ok: false, reason: "status_failed", error };
+    }
+    return { ok: true, nextSection };
+  }
+
+  // Block edits (diff-based structural / insert / delete) render markdown to
+  // nodes and replace/insert/delete a whole block — not an anchored span.
+  const fixPayload = parseAiFixCommentContent(comment.content);
+  if (fixPayload.blockEdit) {
+    const doc = getRichFieldValue(sectionContent, path);
+    const applied = narrativeHasSuggestionMarks(doc, comment.id)
+      ? { status: "located" as const, doc: acceptSuggestionMarksById(doc, comment.id) }
+      : applyBlockEdit(doc, comment.id, fixPayload.blockEdit);
+    if (applied.status !== "located") {
+      return { ok: false, reason: applied.status };
+    }
+    const nextSection = setRichFieldValue(sectionContent, path, applied.doc);
     try {
       await patchSection(reportId, section, nextSection);
     } catch (error) {

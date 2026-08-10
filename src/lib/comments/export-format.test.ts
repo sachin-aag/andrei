@@ -77,4 +77,45 @@ describe("formatCommentForExport", () => {
       })
     ).toBe('Suggested insertion: "plain insert fallback"');
   });
+
+  it("formats ai_fix deleteRow / insertRow block edits", () => {
+    expect(
+      formatCommentForExport({
+        kind: "ai_fix",
+        content: serializeAiFixCommentContent({
+          deleteText: "",
+          insertText: "",
+          reasoning: "Drop the obsolete action.",
+          blockEdit: {
+            op: "deleteRow",
+            anchor: "table",
+            blockIndex: 0,
+            tableIndex: 0,
+            rowIndex: 2,
+            rowAnchor: "PA-02",
+          },
+        }),
+      })
+    ).toBe("Drop the obsolete action.\nSuggested change: remove this table row.");
+
+    const inserted = formatCommentForExport({
+      kind: "ai_fix",
+      content: serializeAiFixCommentContent({
+        deleteText: "",
+        insertText: "",
+        reasoning: "",
+        blockEdit: {
+          op: "insertRow",
+          anchor: "table",
+          blockIndex: 0,
+          tableIndex: 0,
+          rowIndex: 1,
+          rowAnchor: "PA-01",
+          proposedMarkdown: "| Action | Due |\n| --- | --- |\n| PA-03 | 15/06/2026 |",
+        },
+      }),
+    });
+    expect(inserted).toContain("Suggested new table row:");
+    expect(inserted).toContain("PA-03");
+  });
 });

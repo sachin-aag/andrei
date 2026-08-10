@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("bumps the prompt version when section inline image guidance changes", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v18-scoped-cell-list-edits");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v19-table-row-diff");
   });
 
   it("tells the model never to pass the section key as targetField", () => {
@@ -114,6 +114,7 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("Mode: AGENT");
     expect(prompt).toContain("draft_field");
     expect(prompt).toContain("placeholder");
+    expect(prompt).toContain("diffs it against the current field");
     expect(prompt).not.toContain("Mode: PLAN");
   });
 

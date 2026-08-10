@@ -87,6 +87,7 @@ type FrozenCardBase = {
 type FrozenCard = FrozenCardBase &
   (
     | { kind: "fix"; payload: ParsedAiFixPayload; normalizedInsert: string }
+    | { kind: "block"; payload: ParsedAiFixPayload }
     | { kind: "redraft"; redraft: ParsedAiRedraftPayload }
   );
 
@@ -108,6 +109,9 @@ function buildFrozenCard(
     return { ...base, kind: "redraft", redraft: parseAiRedraftCommentContent(comment.content) };
   }
   const payload = parseAiFixCommentContent(comment.content);
+  if (payload.blockEdit) {
+    return { ...base, kind: "block", payload };
+  }
   return {
     ...base,
     kind: "fix",
@@ -159,7 +163,8 @@ function SuggestionCardFace({
 }) {
   const { linkedEval, queueIndex, queueTotal } = card;
   const eff = linkedEval ? effectiveStatus(linkedEval) : "not_evaluated";
-  const reasoning = card.kind === "fix" ? card.payload.reasoning : card.redraft.reasoning;
+  const reasoning =
+    card.kind === "redraft" ? card.redraft.reasoning : card.payload.reasoning;
   const evidenceSources =
     card.kind === "fix" ? (card.payload.evidenceSources ?? []) : [];
 
@@ -242,6 +247,29 @@ function SuggestionCardFace({
             <p className="suggestion-preview-insert">
               <PlaceholderHighlightedText text={card.normalizedInsert} />
             </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {card.kind === "block" ? (
+        <div
+          className={cn(
+            "space-y-1 transition-opacity duration-300",
+            phase !== "steady" && "opacity-70"
+          )}
+        >
+          {card.payload.blockEdit?.op === "delete" ? (
+            <p className="suggestion-preview-delete text-xs leading-relaxed">
+              Removes this block.
+            </p>
+          ) : card.payload.blockEdit?.op === "deleteRow" ? (
+            <p className="suggestion-preview-delete text-xs leading-relaxed">
+              Removes this table row.
+            </p>
+          ) : card.payload.blockEdit?.proposedMarkdown ? (
+            <div className="suggestion-preview-insert max-h-56 overflow-y-auto whitespace-pre-wrap text-xs leading-relaxed">
+              <PlaceholderHighlightedText text={card.payload.blockEdit.proposedMarkdown} />
+            </div>
           ) : null}
         </div>
       ) : null}

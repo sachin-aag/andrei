@@ -1044,17 +1044,43 @@ function blockHasTextOutsideMark(
   );
 }
 
+/** Drop table rows whose text is fully covered by `markName`/`markId`. */
+function dropMarkedTableRows(
+  node: JSONContent,
+  markName: string,
+  markId: string
+): void {
+  if (!node.content?.length) return;
+  if (node.type === "table") {
+    node.content = node.content.filter(
+      (row) =>
+        !(
+          hasMarkWithId(row, markName, markId) &&
+          !blockHasTextOutsideMark(row, markName, markId)
+        )
+    );
+    return;
+  }
+  for (const child of node.content) {
+    dropMarkedTableRows(child, markName, markId);
+  }
+}
+
 function dropBlocksFullyMarked(
   doc: JSONContent,
   markName: string,
   markId: string
 ): void {
   if (!doc.content?.length) return;
+  for (const block of doc.content) {
+    dropMarkedTableRows(block, markName, markId);
+  }
   doc.content = doc.content.filter(
     (block) =>
       !(
-        hasMarkWithId(block, markName, markId) &&
-        !blockHasTextOutsideMark(block, markName, markId)
+        (block.type === "table" && (!block.content || block.content.length === 0)) ||
+        (hasMarkWithId(block, markName, markId) &&
+          !blockHasTextOutsideMark(block, markName, markId))
       )
   );
 }

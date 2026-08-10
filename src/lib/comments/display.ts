@@ -66,6 +66,11 @@ export function getAiFixCommentTitle(
   if (payload.reasoning.trim()) {
     return truncateAtWord(payload.reasoning, MAX_TITLE_LEN);
   }
+  if (payload.blockEdit?.op === "deleteRow") return "Remove table row";
+  if (payload.blockEdit?.op === "insertRow") return "Add table row";
+  if (payload.blockEdit?.op === "delete") return "Remove block";
+  if (payload.blockEdit?.op === "insert") return "Insert block";
+  if (payload.blockEdit?.op === "replace") return "Replace block";
   if (payload.insertText.trim()) {
     return summarizeInsertForTitle(payload.insertText);
   }
@@ -80,6 +85,12 @@ export function getAiFixCommentPreview(comment: CommentRecord): string {
   }
 
   const payload = parseAiFixCommentContent(comment.content);
+  if (payload.blockEdit?.op === "deleteRow") return "Removes this table row.";
+  if (payload.blockEdit?.op === "delete") return "Removes this block.";
+  if (payload.blockEdit?.proposedMarkdown) {
+    return truncateAtWord(payload.blockEdit.proposedMarkdown, MAX_PREVIEW_LEN);
+  }
+
   const insert = collapseWhitespace(payload.insertText);
   const del = collapseWhitespace(payload.deleteText);
 

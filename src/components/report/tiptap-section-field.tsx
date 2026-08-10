@@ -75,6 +75,7 @@ import {
   parseAiRedraftCommentContent,
 } from "@/lib/ai/suggestion-gating";
 import { buildRedraftPreviewDoc } from "@/lib/tiptap/redraft-preview";
+import { injectBlockEditMarks } from "@/lib/suggestions/block-redraft";
 import { markdownToDoc } from "@/lib/tiptap/markdown-to-doc";
 import { buildSuggestionEdit, narrativeHasSuggestionMarks } from "@/lib/suggestions/apply-narrative-suggestion";
 import {
@@ -765,22 +766,37 @@ export function TiptapSectionField({
           });
         } else if (validation.canPreview) {
           const payload = parseAiFixCommentContent(comment.content);
-          const edit = buildSuggestionEdit({
-            anchorText: comment.anchorText,
-            deleteText: payload.deleteText,
-            insertText: payload.insertText,
-            scope: payload.scope,
-          });
-          const injected = injectSuggestionMarks(json, edit, {
-            id: activeSuggestionId,
-            authorId: AI_AUTHOR_ID,
-            status: "pending",
-            createdAt: comment.createdAt,
-            kind: "fix",
-          });
-          // Never paint a preview (or enable inline accept) unless locate succeeded.
-          if (injected.located) {
-            json = injected.doc;
+          if (payload.blockEdit) {
+            // Whole-block change: render markdown → nodes, tracked with the same
+            // mark machinery so accept/dismiss finalize/revert as a unit.
+            const injected = injectBlockEditMarks(json, payload.blockEdit, {
+              id: activeSuggestionId,
+              authorId: AI_AUTHOR_ID,
+              status: "pending",
+              createdAt: comment.createdAt,
+              kind: "redraft",
+            });
+            if (injected.status === "located") {
+              json = injected.doc;
+            }
+          } else {
+            const edit = buildSuggestionEdit({
+              anchorText: comment.anchorText,
+              deleteText: payload.deleteText,
+              insertText: payload.insertText,
+              scope: payload.scope,
+            });
+            const injected = injectSuggestionMarks(json, edit, {
+              id: activeSuggestionId,
+              authorId: AI_AUTHOR_ID,
+              status: "pending",
+              createdAt: comment.createdAt,
+              kind: "fix",
+            });
+            // Never paint a preview (or enable inline accept) unless locate succeeded.
+            if (injected.located) {
+              json = injected.doc;
+            }
           }
         }
       }
