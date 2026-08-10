@@ -166,6 +166,31 @@ describe("diffFieldToEdits", () => {
     expect(res.strategy).toBe("redraft");
   });
 
+  it("restructure with high token overlap is targeted edits, not a whole-field redraft", () => {
+    const current = markdownToDoc(
+      "During visual inspection of batch B1234 on 12/03/2026, white particles were observed. Strings of approximately 2 mm and agglomerates were noted on the stopper. [Time of detection: <to be filled>] [Procedure reference: <to be filled>]"
+    );
+    const proposed = [
+      "### Deviation Description",
+      "",
+      "During visual inspection of batch B1234 on 12/03/2026, white particles were observed.",
+      "",
+      "**Strings:**",
+      "- approximately 2 mm fibres",
+      "",
+      "**Agglomerates:**",
+      "- clustered particles on the stopper",
+    ].join("\n");
+    const res = diffFieldToEdits(current, proposed, R);
+    expect(res.strategy).toBe("edits");
+    const edits = (res as { edits: BlockEdit[] }).edits;
+    expect(edits.length).toBeGreaterThan(0);
+    expect(edits.length).toBeLessThanOrEqual(2);
+    expect(edits[0]).toMatchObject({ kind: "block", op: "replace" });
+    expect(edits[0]!.proposedMarkdown).toContain("Deviation Description");
+    expect(edits[0]!.proposedMarkdown).toContain("batch B1234");
+  });
+
   it("guarded block (inline equation) is never emitted as a lossy replace", () => {
     const doc: JSONContent = {
       type: "doc",

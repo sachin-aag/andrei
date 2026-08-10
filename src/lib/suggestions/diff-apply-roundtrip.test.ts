@@ -33,6 +33,7 @@ function applyEdit(doc: JSONContent, edit: DiffEdit, id: string): JSONContent {
     tableIndex: edit.tableIndex,
     rowIndex: edit.rowIndex,
     rowAnchor: edit.rowAnchor,
+    blockCount: edit.blockCount,
   });
   expect(status).toBe("located");
   return out;
@@ -98,6 +99,25 @@ describe("diff → apply round-trip (the reported preventiveActions case)", () =
     const proposed = "Alpha paragraph stays.\n\nThe value was 95.0 percent last quarter.";
     const { out } = roundTrip(current, proposed);
     expect(flat(out)).toBe(flat(markdownToDoc(proposed)));
+  });
+
+  it("round-trips a high-overlap restructure to the proposed structure", () => {
+    const current =
+      "During visual inspection of batch B1234 on 12/03/2026, white particles were observed. Strings of approximately 2 mm and agglomerates were noted on the stopper.";
+    const proposed = [
+      "### Deviation Description",
+      "",
+      "During visual inspection of batch B1234 on 12/03/2026, white particles were observed.",
+      "",
+      "- Strings: approximately 2 mm fibres",
+      "- Agglomerates: clustered particles on the stopper",
+    ].join("\n");
+    const { out, edits } = roundTrip(current, proposed);
+    expect(edits.some((e) => e.kind === "block" && e.op === "replace")).toBe(true);
+    expect((out.content ?? []).some((n) => n.type === "bulletList")).toBe(true);
+    expect(flat(out)).toContain("batch B1234");
+    expect(flat(out)).toContain("Deviation Description");
+    expect(flat(out)).not.toContain("were noted on the stopper");
   });
 
   it("handles a structural change (paragraph → list) via block render", () => {

@@ -1,5 +1,5 @@
 import type { JSONContent } from "@tiptap/core";
-import { markdownToDoc } from "@/lib/tiptap/markdown-to-doc";
+import { markdownToDoc, markdownToPlainText } from "@/lib/tiptap/markdown-to-doc";
 import { richJsonToPlainText } from "@/lib/tiptap/rich-text";
 import { collapseWhitespace } from "@/lib/text/normalize-for-anchor";
 import {
@@ -11,6 +11,11 @@ import {
   suggestionDeleteMarkName,
   suggestionInsertMarkName,
 } from "@/lib/tiptap/suggestion-marks";
+import {
+  WORD_DIFF_MIN_SIMILARITY,
+  buildWordDiffParagraph,
+  wordSimilarity,
+} from "@/lib/suggestions/word-diff";
 
 /**
  * Whole-block / whole-row ops for the field diff (see `diff-redraft.ts`):
@@ -39,6 +44,8 @@ export type BlockEditOp = {
   rowIndex?: number;
   /** Signature of the target/after row (typically first-cell text). */
   rowAnchor?: string;
+  /** replace: how many current top-level blocks to consume (default 1). */
+  blockCount?: number;
 };
 
 function norm(text: string): string {
@@ -237,26 +244,61 @@ export function injectBlockEditMarks(
   const idx = locateBlockIndex(cloned, op);
   if (idx < 0) return { status: "not_found", doc };
 
-  // Strike the target block (delete-mark all its text).
-  markAllText(content[idx]!, suggestionDeleteMarkName, attrs);
+  const count = Math.min(Math.max(1, op.blockCount ?? 1), content.length - idx);
 
   if (op.op === "replace") {
     const markdown = op.proposedMarkdown ?? "";
     if (norm(markdown).length === 0) return { status: "empty_edit", doc };
+    const oldText = content
+      .slice(idx, idx + count)
+      .map((n) => nodeText(n))
+      .join(" ");
+    const newPlain = norm(markdownToPlainText(markdown));
+    // High token overlap → unified word diff (unchanged words once). Low
+    // overlap → strike the old block(s) and insert the new ones after.
+    if (wordSimilarity(oldText, newPlain) >= WORD_DIFF_MIN_SIMILARITY) {
+      content.splice(idx, count, buildWordDiffParagraph(oldText, newPlain, attrs));
+      return { status: "located", doc: cloned };
+    }
+    for (let i = 0; i < count; i++) {
+      markAllText(content[idx + i]!, suggestionDeleteMarkName, attrs);
+    }
     const newBlocks = renderInsertBlocks(markdown, attrs);
-    content.splice(idx + 1, 0, ...newBlocks);
+    content.splice(idx + count, 0, ...newBlocks);
+    return { status: "located", doc: cloned };
+  }
+
+  // Strike the target block (delete-mark all its text).
+  for (let i = 0; i < count; i++) {
+    markAllText(content[idx + i]!, suggestionDeleteMarkName, attrs);
   }
 
   return { status: "located", doc: cloned };
 }
 
-/** Inject marks then accept them — final content with the block change applied. */
+/** Apply a block op. Replace splices markdown nodes directly (preview may be a
+ * word diff that must not become the applied result). Insert/delete/row still
+ * go through marks so preview ≡ apply. */
 export function applyBlockEdit(
   doc: JSONContent,
   suggestionId: string,
   op: BlockEditOp,
   attrs?: Partial<InjectAttrs>
 ): { status: LocateStatus; doc: JSONContent } {
+  if (op.op === "replace") {
+    const cloned: JSONContent = JSON.parse(JSON.stringify(doc));
+    const content = cloned.content ?? (cloned.content = []);
+    const idx = locateBlockIndex(cloned, op);
+    if (idx < 0) return { status: "not_found", doc };
+    const markdown = op.proposedMarkdown ?? "";
+    if (norm(markdown).length === 0) return { status: "empty_edit", doc };
+    const count = Math.min(Math.max(1, op.blockCount ?? 1), content.length - idx);
+    const newBlocks = markdownToDoc(markdown).content ?? [];
+    content.splice(idx, count, ...newBlocks);
+    if (content.length === 0) content.push({ type: "paragraph" });
+    return { status: "located", doc: cloned };
+  }
+
   const fullAttrs: InjectAttrs = {
     id: suggestionId,
     authorId: attrs?.authorId ?? "ai",

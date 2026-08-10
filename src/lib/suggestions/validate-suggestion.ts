@@ -114,7 +114,10 @@ export function validateSuggestionLocate(
         const table = tableIdx >= 0 ? doc.content?.[tableIdx] : undefined;
         canApply = table != null && locateRowIndex(table, op) >= 0;
       } else {
-        canApply = locateBlockIndex(doc, op) >= 0;
+        const idx = locateBlockIndex(doc, op);
+        const count = Math.max(1, op.blockCount ?? 1);
+        canApply =
+          idx >= 0 && idx + count <= (doc.content?.length ?? 0);
       }
       return {
         locateStatus: canApply ? "locatable" : "not_found",

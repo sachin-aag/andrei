@@ -8,6 +8,12 @@ import {
   type EditScope,
   type SuggestionEdit,
 } from "@/lib/suggestions/locator";
+import {
+  WORD_DIFF_MIN_SIMILARITY,
+  alignSequences,
+  wordSimilarity,
+  type AlignOp,
+} from "@/lib/suggestions/word-diff";
 
 /**
  * Structural diff of a proposed full-field markdown draft against the current
@@ -52,6 +58,8 @@ export type BlockEdit = {
   tableIndex?: number;
   rowIndex?: number;
   rowAnchor?: string;
+  /** replace: how many current top-level blocks this op consumes (default 1). */
+  blockCount?: number;
   reasoning: string;
 };
 
@@ -63,9 +71,14 @@ export type DiffResult =
   | { strategy: "redraft" };
 
 /** Below this token similarity a changed prose block is a rewrite, not a tweak. */
-const WORD_MODE_SIMILARITY = 0.4;
-/** Below this share of retained blocks the whole field is a rewrite → redraft. */
-const REDRAFT_MIN_OVERLAP = 0.2;
+const WORD_MODE_SIMILARITY = WORD_DIFF_MIN_SIMILARITY;
+/**
+ * Field-level token similarity below which a prose rewrite is one `ai_redraft`
+ * instead of a pile of delete+insert cards. Uses words, not exact block
+ * equality — a restructure (one paragraph → heading + bullets) that keeps
+ * most of the wording must NOT fall through to a whole-field redraft.
+ */
+const REDRAFT_MIN_TOKEN_OVERLAP = 0.3;
 
 type BlockKind = "prose" | "list" | "table" | "other";
 
@@ -97,30 +110,6 @@ function nodeText(node: JSONContent): string {
 function tokenize(text: string): string[] {
   const n = norm(text);
   return n.length === 0 ? [] : n.split(" ");
-}
-
-function lcsLength(a: string[], b: string[]): number {
-  const m = a.length;
-  const n = b.length;
-  if (m === 0 || n === 0) return 0;
-  const prev = new Array<number>(n + 1).fill(0);
-  const cur = new Array<number>(n + 1).fill(0);
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      cur[j] = a[i - 1] === b[j - 1] ? prev[j - 1]! + 1 : Math.max(prev[j]!, cur[j - 1]!);
-    }
-    for (let j = 0; j <= n; j++) prev[j] = cur[j]!;
-  }
-  return prev[n]!;
-}
-
-/** Token-level similarity in [0,1] between two block texts. */
-function wordSimilarity(a: string, b: string): number {
-  const ta = tokenize(a);
-  const tb = tokenize(b);
-  if (ta.length === 0 && tb.length === 0) return 1;
-  const lcs = lcsLength(ta, tb);
-  return (2 * lcs) / (ta.length + tb.length || 1);
 }
 
 // ---------------------------------------------------------------------------
@@ -218,65 +207,75 @@ function extractProposedBlocks(markdown: string): ProposedBlock[] {
 // block alignment (LCS on exact text equality, then pair gap leftovers)
 // ---------------------------------------------------------------------------
 
-type AlignOp =
-  | { type: "equal"; c: number; p: number }
-  | { type: "replace"; c: number; p: number }
-  | { type: "insert"; p: number }
-  | { type: "delete"; c: number };
-
-/** LCS on exact equality, then pair leftover gap items as replace/insert/delete. */
-function alignSequences(
-  m: number,
-  n: number,
-  eq: (i: number, j: number) => boolean
-): AlignOp[] {
-  const dp: number[][] = Array.from({ length: m + 1 }, () => new Array<number>(n + 1).fill(0));
-  for (let i = m - 1; i >= 0; i--) {
-    for (let j = n - 1; j >= 0; j--) {
-      dp[i]![j] = eq(i, j)
-        ? dp[i + 1]![j + 1]! + 1
-        : Math.max(dp[i + 1]![j]!, dp[i]![j + 1]!);
-    }
-  }
-
-  const ops: AlignOp[] = [];
-  const gapC: number[] = [];
-  const gapP: number[] = [];
-  const flushGap = () => {
-    const k = Math.min(gapC.length, gapP.length);
-    for (let t = 0; t < k; t++) ops.push({ type: "replace", c: gapC[t]!, p: gapP[t]! });
-    for (let t = k; t < gapC.length; t++) ops.push({ type: "delete", c: gapC[t]! });
-    for (let t = k; t < gapP.length; t++) ops.push({ type: "insert", p: gapP[t]! });
-    gapC.length = 0;
-    gapP.length = 0;
-  };
-
-  let i = 0;
-  let j = 0;
-  while (i < m && j < n) {
-    if (eq(i, j)) {
-      flushGap();
-      ops.push({ type: "equal", c: i, p: j });
-      i++;
-      j++;
-    } else if (dp[i + 1]![j]! >= dp[i]![j + 1]!) {
-      gapC.push(i++);
-    } else {
-      gapP.push(j++);
-    }
-  }
-  while (i < m) gapC.push(i++);
-  while (j < n) gapP.push(j++);
-  flushGap();
-  return ops;
-}
-
 function alignBlocks(current: CurrentBlock[], proposed: ProposedBlock[]): AlignOp[] {
   return alignSequences(
     current.length,
     proposed.length,
     (i, j) => current[i]!.text === proposed[j]!.text
   );
+}
+
+type SpanOp =
+  | AlignOp
+  | { type: "replaceSpan"; cStart: number; cEnd: number; pStart: number; pEnd: number };
+
+/**
+ * A 1→N (or M→1) restructure that keeps most wording — e.g. one narrative
+ * paragraph becoming a heading + bullets — must not be 1:1 paired as
+ * "replace long para with ### heading" plus N inserts. Collapse the gap
+ * into one block replace covering the whole span.
+ */
+function shouldCollapseGap(cBlocks: CurrentBlock[], pBlocks: ProposedBlock[]): boolean {
+  if (cBlocks.length === 0 || pBlocks.length === 0) return false;
+  if (cBlocks.length === 1 && pBlocks.length === 1) return false;
+  if (cBlocks.some((b) => b.guarded || b.kind === "table")) return false;
+  if (pBlocks.some((b) => b.kind === "table")) return false;
+  const concatSim = wordSimilarity(
+    cBlocks.map((b) => b.text).join(" "),
+    pBlocks.map((b) => b.text).join(" ")
+  );
+  if (concatSim < WORD_MODE_SIMILARITY) return false;
+  const firstSim = wordSimilarity(cBlocks[0]!.text, pBlocks[0]!.text);
+  return firstSim < WORD_MODE_SIMILARITY;
+}
+
+function collapseRestructureGaps(
+  ops: AlignOp[],
+  current: CurrentBlock[],
+  proposed: ProposedBlock[]
+): SpanOp[] {
+  const out: SpanOp[] = [];
+  let i = 0;
+  while (i < ops.length) {
+    if (ops[i]!.type === "equal") {
+      out.push(ops[i]!);
+      i++;
+      continue;
+    }
+    const start = i;
+    while (i < ops.length && ops[i]!.type !== "equal") i++;
+    const run = ops.slice(start, i);
+    const cIdxs = [
+      ...new Set(run.flatMap((o) => (o.type === "insert" ? [] : [o.c]))),
+    ].toSorted((a, b) => a - b);
+    const pIdxs = [
+      ...new Set(run.flatMap((o) => (o.type === "delete" ? [] : [o.p]))),
+    ].toSorted((a, b) => a - b);
+    const cBlocks = cIdxs.map((k) => current[k]!);
+    const pBlocks = pIdxs.map((k) => proposed[k]!);
+    if (shouldCollapseGap(cBlocks, pBlocks)) {
+      out.push({
+        type: "replaceSpan",
+        cStart: cIdxs[0]!,
+        cEnd: cIdxs[cIdxs.length - 1]!,
+        pStart: pIdxs[0]!,
+        pEnd: pIdxs[pIdxs.length - 1]!,
+      });
+    } else {
+      out.push(...run);
+    }
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -567,24 +566,48 @@ export function diffFieldToEdits(
     return { strategy: "edits", edits };
   }
 
-  const ops = alignBlocks(current, proposed);
-  const equalCount = ops.filter((o) => o.type === "equal").length;
-  const overlap = current.length > 0 ? equalCount / current.length : 0;
-  // Genuine full prose rewrite (shares almost nothing) → keep one whole-field
+  const aligned = alignBlocks(current, proposed);
+  const fieldSim = wordSimilarity(
+    current.map((b) => b.text).join(" "),
+    proposed.map((b) => b.text).join(" ")
+  );
+  // Genuine full prose rewrite (shares almost no wording) → one whole-field
   // redraft rather than fragmenting into delete-all + insert-all noise. Never
   // redraft when the field holds a table (cell diff is granular and valuable)
   // or guarded content (a whole-field replace would delete the equation/image
   // the guard exists to protect) — fall through to targeted edits instead.
+  // Token similarity, not exact-block equality: a restructure that keeps most
+  // of the words (paragraph → heading + bullets) is NOT a redraft.
   const anyGuarded = current.some((b) => b.guarded);
   const anyTable = current.some((b) => b.kind === "table");
-  if (overlap < REDRAFT_MIN_OVERLAP && !anyGuarded && !anyTable) {
+  if (fieldSim < REDRAFT_MIN_TOKEN_OVERLAP && !anyGuarded && !anyTable) {
     return { strategy: "redraft" };
   }
 
+  const ops = collapseRestructureGaps(aligned, current, proposed);
   const edits: DiffEdit[] = [];
   for (let oi = 0; oi < ops.length; oi++) {
     const op = ops[oi]!;
     if (op.type === "equal") continue;
+
+    if (op.type === "replaceSpan") {
+      const c0 = current[op.cStart]!;
+      if (c0.guarded) continue;
+      const markdown = proposed
+        .slice(op.pStart, op.pEnd + 1)
+        .map((p) => p.markdown)
+        .join("\n\n");
+      edits.push({
+        kind: "block",
+        op: "replace",
+        anchor: c0.text,
+        blockIndex: op.cStart,
+        blockCount: op.cEnd - op.cStart + 1,
+        proposedMarkdown: markdown,
+        reasoning,
+      });
+      continue;
+    }
 
     if (op.type === "delete") {
       const c = current[op.c]!;
@@ -595,12 +618,16 @@ export function diffFieldToEdits(
 
     if (op.type === "insert") {
       const p = proposed[op.p]!;
-      // Anchor after the nearest preceding equal current block.
+      // Anchor after the nearest preceding current block in the op stream.
       let prevC = -1;
       for (let k = oi - 1; k >= 0; k--) {
         const o = ops[k]!;
         if (o.type === "equal" || o.type === "replace" || o.type === "delete") {
           prevC = o.c;
+          break;
+        }
+        if (o.type === "replaceSpan") {
+          prevC = o.cEnd;
           break;
         }
       }

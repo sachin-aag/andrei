@@ -129,6 +129,25 @@ describe("block-edit preview in a real editor", () => {
     editor.destroy();
   });
 
+  it("high-overlap replace preview is a unified word diff, not strike-all + insert-all", () => {
+    const old =
+      "During visual inspection of batch B1234 white particles were observed on the stopper.";
+    const neu =
+      "During visual inspection of batch B1234, white particles were observed on the stopper and recorded.";
+    const { status, doc: preview } = injectBlockEditMarks(
+      markdownToDoc(old),
+      { op: "replace", anchor: old, blockIndex: 0, proposedMarkdown: neu },
+      ATTRS
+    );
+    expect(status).toBe("located");
+    const editor = makeEditor(preview);
+    const text = editor.getText();
+    expect((text.match(/batch B1234/g) ?? []).length).toBe(1);
+    expect((text.match(/visual inspection/g) ?? []).length).toBe(1);
+    expect(editor.getHTML()).toContain("suggestion-insert");
+    editor.destroy();
+  });
+
   it("insertRow preview highlights the new row", () => {
     const tableMd = "| Action | Due |\n| --- | --- |\n| PA-01 | 30/04/2026 |";
     const { status, doc: preview } = injectBlockEditMarks(
