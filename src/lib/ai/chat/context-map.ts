@@ -1,7 +1,7 @@
-import type { SectionType } from "@/db/schema";
+import type { DocumentType, SectionType } from "@/db/schema";
 import { isAiSuggestionKind } from "@/lib/ai/suggestion-gating";
 import {
-  CHAT_EDITABLE_SECTIONS,
+  chatEditableSections,
   primaryFieldForSection,
   sectionFieldPlainText,
   sectionLabel,
@@ -12,9 +12,10 @@ import {
   methodFromToolsUsed,
 } from "@/lib/analyze/method";
 import type { ReadyDocumentIndexItem } from "@/lib/attachments/retrieval";
+import { getDocumentType } from "@/lib/document-types";
 
 export type ContextMapReport = {
-  deviationNo: string;
+  documentNo: string;
   date: Date | string;
   status: string;
   toolsUsed?: {
@@ -43,6 +44,7 @@ export type BuildContextMapInput = {
   evaluations: ContextMapEvaluation[];
   comments: ContextMapComment[];
   documents?: ReadyDocumentIndexItem[];
+  documentType?: DocumentType;
 };
 
 function summarize(text: string, max = 140): string {
@@ -92,17 +94,19 @@ function analyzeMethodLine(
  */
 export function buildReportContextMap(input: BuildContextMapInput): string {
   const { report, sections, evaluations, comments } = input;
+  const documentType = input.documentType ?? "investigation_report";
+  const { documentNoun } = getDocumentType(documentType);
   const dateStr =
     typeof report.date === "string"
       ? report.date
       : report.date.toISOString().slice(0, 10);
 
   const lines: string[] = [
-    `Report: deviation ${report.deviationNo || "(unset)"} · date ${dateStr} · status ${report.status}`,
+    `Report: ${documentNoun} ${report.documentNo || "(unset)"} · date ${dateStr} · status ${report.status}`,
     "Sections (open a field with read_section before editing it):",
   ];
 
-  for (const section of CHAT_EDITABLE_SECTIONS) {
+  for (const section of chatEditableSections(documentType)) {
     const content = sections[section] ?? {};
     const primary = primaryFieldForSection(section);
     const text = sectionFieldPlainText(content, section, primary);

@@ -14,7 +14,7 @@ import {
   comments,
   chatMessages,
 } from "@/db/schema";
-import type { SectionType } from "@/db/schema";
+import type { DocumentType, SectionType } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import { mergeSection } from "@/lib/sections-merge";
 import { loadAccessibleReport } from "@/lib/ai/chat/access";
@@ -34,6 +34,7 @@ import {
   primaryFieldForSection,
   type ChatSectionScope,
 } from "@/lib/ai/chat/fields";
+import { getDocumentType } from "@/lib/document-types";
 import {
   detectSectionIntentFromText,
   detectSectionScopeMismatch,
@@ -79,8 +80,12 @@ function messageText(message: UIMessage | null): string {
 }
 
 /** Naive keyword routing for the test stub (no LLM). */
-function pickStubSection(text: string): SectionType {
-  return detectSectionIntentFromText(text) ?? "define";
+function pickStubSection(
+  text: string,
+  documentType: DocumentType
+): SectionType {
+  const fallback = getDocumentType(documentType).chat.draftOrder[0] ?? "define";
+  return detectSectionIntentFromText(text, documentType) ?? fallback;
 }
 
 export async function POST(
@@ -138,7 +143,11 @@ export async function POST(
   // streaming a reply that would never be saved to history.
   const userMsg = lastUserMessage(messages);
   const userText = messageText(userMsg);
-  const scopeMismatch = detectSectionScopeMismatch(sectionScope, userText);
+  const scopeMismatch = detectSectionScopeMismatch(
+    sectionScope,
+    userText,
+    accessEarly.report.documentType
+  );
   if (userMsg) {
     try {
       await db.insert(chatMessages).values({
@@ -185,7 +194,7 @@ export async function POST(
 
   const contextMap = buildReportContextMap({
     report: {
-      deviationNo: report.documentNo,
+      documentNo: report.documentNo,
       date: report.date,
       status: report.status,
       toolsUsed: investigationToolsUsed(report),
@@ -202,6 +211,7 @@ export async function POST(
       status: c.status,
     })),
     documents,
+    documentType: report.documentType,
   });
 
   const system = buildChatSystemPrompt({
@@ -237,7 +247,9 @@ export async function POST(
       : allTools;
 
   const stubSection =
-    sectionScope === "all" ? pickStubSection(userText) : sectionScope;
+    sectionScope === "all"
+      ? pickStubSection(userText, report.documentType)
+      : sectionScope;
   const model = isTestStubChat()
     ? await buildStubChatModel({
         mode,

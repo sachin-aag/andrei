@@ -17,8 +17,8 @@ describe("isChatMode", () => {
 });
 
 describe("buildChatSystemPrompt", () => {
-  it("bumps the prompt version when target-field guidance changes", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v13-target-field-paths");
+  it("bumps the prompt version when document-type personas change", () => {
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v14-document-type-persona");
   });
 
   it("tells the model never to pass the section key as targetField", () => {
@@ -28,6 +28,29 @@ describe("buildChatSystemPrompt", () => {
     );
   });
 
+  it("uses a design-verification persona and draft order for DV reports", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      documentType: "design_verification",
+    });
+    expect(prompt).toContain("design verification");
+    expect(prompt).toContain("design controls");
+    expect(prompt).not.toContain("DMAIC");
+    expect(prompt).toContain(
+      "Prefer drafting the highest-signal sections first (Purpose & Scope, then Traceability)"
+    );
+    expect(prompt).not.toContain("select_analyze_method");
+    expect(prompt).not.toContain("## Analyze drafting rules");
+  });
+
+  it("keeps the investigation draft order for investigation reports", () => {
+    const prompt = buildChatSystemPrompt({ ...opts, mode: "agent" });
+    expect(prompt).toContain(
+      "Prefer drafting the highest-signal sections first (Define, then Analyze)"
+    );
+    expect(prompt).toContain("select_analyze_method");
+  });
   it("includes the mention block when the engineer tagged something", () => {
     const prompt = buildChatSystemPrompt({
       ...opts,

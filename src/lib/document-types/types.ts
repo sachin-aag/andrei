@@ -46,6 +46,18 @@ export type DocumentTypePrompts = {
   promptVersion: string;
 };
 
+/** Chat drafting guidance owned by each document type. */
+export type DocumentTypeChatConfig = {
+  /** Opening persona paragraphs for the chat system prompt. */
+  persona: string;
+  /** Editable section keys in drafting-priority order (highest signal first). */
+  draftOrder: readonly SectionType[];
+  /** Section keyword patterns for scope-intent detection. */
+  sectionIntentPatterns: ReadonlyArray<
+    readonly [SectionType, readonly RegExp[]]
+  >;
+};
+
 export type DocxTemplateData = Record<string, unknown>;
 
 export type DocumentTypeDefinition = {
@@ -58,6 +70,7 @@ export type DocumentTypeDefinition = {
   sections: SectionDefinition[];
   criteriaBySection: Record<string, CriterionDefinition[]>;
   prompts: DocumentTypePrompts;
+  chat: DocumentTypeChatConfig;
   suggestTargetFieldPatterns: Record<string, readonly string[]>;
   richFieldPaths: Record<string, readonly string[]>;
   mergeSection: (key: string, raw: unknown) => unknown;

@@ -420,6 +420,109 @@ export const designVerificationDefinition: DocumentTypeDefinition = {
     },
     promptVersion: "dv-checklist-v1",
   },
+  chat: {
+    persona: `You are the drafting assistant for a design verification report tool used in regulated medical device environments. You help design quality and R&D staff document design verification activities under design controls (ISO 13485 / 21 CFR 820.30): purpose and scope, requirement-to-test traceability, test methods, results, deviations, and conclusions.
+
+Your guidance should emphasize requirement IDs with revisions, internal consistency across the traceability matrix and results, explicit pass/fail against acceptance criteria, and evidence references — without inventing test results, equipment IDs, sample sizes, or requirement text the engineer has not provided.
+
+The report is graded against fixed quality criteria (a traffic-light check). Your job is to help the engineer produce a first draft that satisfies as many criteria as possible, then refine it.
+
+You never write to the document directly. Every change is a PROPOSAL that appears as an inline tracked-change (red delete / green insert) the engineer accepts or rejects.`,
+    draftOrder: [
+      "purpose_scope",
+      "traceability",
+      "test_methods",
+      "test_results",
+      "conclusion",
+      "deviations",
+      "references",
+      "appendices",
+      "approval_signoff",
+    ],
+    sectionIntentPatterns: [
+      [
+        "purpose_scope",
+        [
+          /\bpurpose\b/i,
+          /\bscope\b/i,
+          /\bobjective\b/i,
+          /\bdesign output\b/i,
+          /\bverification objective\b/i,
+        ],
+      ],
+      [
+        "references",
+        [
+          /\breferences?\b/i,
+          /\bdesign input\b/i,
+          /\bstandard\b/i,
+          /\bprotocol\b/i,
+          /\bSOP\b/,
+        ],
+      ],
+      [
+        "traceability",
+        [
+          /\btraceabilit/i,
+          /\bmatrix\b/i,
+          /\brequirement\s*id\b/i,
+          /\brisk control\b/i,
+        ],
+      ],
+      [
+        "test_methods",
+        [
+          /\btest method\b/i,
+          /\bprotocol summary\b/i,
+          /\bacceptance criteria\b/i,
+          /\bsample size\b/i,
+          /\bequipment\b/i,
+        ],
+      ],
+      [
+        "test_results",
+        [
+          /\btest results?\b/i,
+          /\bpass[-\s]?fail\b/i,
+          /\braw data\b/i,
+          /\bstatistics\b/i,
+        ],
+      ],
+      [
+        "deviations",
+        [
+          /\bdeviations?\b/i,
+          /\bnonconformances?\b/i,
+          /\bprotocol deviation\b/i,
+        ],
+      ],
+      [
+        "conclusion",
+        [
+          /\bconclusion\b/i,
+          /\brequirements?\s+met\b/i,
+          /\boverall\s+(pass|fail|met)\b/i,
+        ],
+      ],
+      [
+        "approval_signoff",
+        [
+          /\bapproval\b/i,
+          /\bsign[-\s]?off\b/i,
+          /\bsignature\b/i,
+        ],
+      ],
+      [
+        "appendices",
+        [
+          /\bappendices\b/i,
+          /\bappendix\b/i,
+          /\bcalibration\b/i,
+          /\bsupporting evidence\b/i,
+        ],
+      ],
+    ],
+  },
   suggestTargetFieldPatterns: pickDvPatterns(SUGGEST_TARGET_FIELD_PATTERNS),
   richFieldPaths: pickDvPatterns(RICH_FIELD_PATHS),
   mergeSection: mergeDvSection,

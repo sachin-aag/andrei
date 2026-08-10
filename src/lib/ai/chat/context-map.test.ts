@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildReportContextMap } from "@/lib/ai/chat/context-map";
+import { chatEditableSections } from "@/lib/ai/chat/fields";
 
 function docWith(text: string) {
   return {
@@ -11,7 +12,7 @@ function docWith(text: string) {
 describe("buildReportContextMap", () => {
   it("summarizes each editable section with fill state and evaluation counts", () => {
     const map = buildReportContextMap({
-      report: { deviationNo: "DEV-123", date: "2026-01-01", status: "draft" },
+      report: { documentNo: "DEV-123", date: "2026-01-01", status: "draft" },
       sections: {
         define: {
           narrative: docWith(
@@ -55,7 +56,7 @@ describe("buildReportContextMap", () => {
   it("surfaces the analyze method from section content and header checkboxes", () => {
     const map = buildReportContextMap({
       report: {
-        deviationNo: "DEV-9",
+        documentNo: "DEV-9",
         date: "2026-02-01",
         status: "draft",
         toolsUsed: { sixM: false, fiveWhy: true, brainstorming: false },
@@ -76,5 +77,30 @@ describe("buildReportContextMap", () => {
     expect(map).toContain(
       "analyze method: 5-Why (from section content); header checkbox: 5-Why"
     );
+  });
+
+  it("lists design-verification sections and noun for DV reports", () => {
+    const map = buildReportContextMap({
+      documentType: "design_verification",
+      report: { documentNo: "DV-42", date: "2026-03-01", status: "draft" },
+      sections: {
+        purpose_scope: {
+          narrative: docWith(
+            "Verify that the handpiece meets torque output requirements after sterilization."
+          ),
+        },
+      },
+      evaluations: [],
+      comments: [],
+    });
+
+    expect(map).toContain("design verification DV-42");
+    expect(map).toContain("Purpose & Scope [purpose_scope]");
+    expect(map).not.toContain("Define [define]");
+    expect(map).not.toContain("Analyze [analyze]");
+    for (const section of chatEditableSections("design_verification")) {
+      if (section === "cover_page") continue;
+      expect(map).toContain(`[${section}]`);
+    }
   });
 });

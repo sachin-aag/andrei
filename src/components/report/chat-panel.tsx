@@ -897,7 +897,9 @@ export function ChatPanel() {
       setPendingImages([]);
       setMentionRange(null);
       if (trimmed) {
-        setClientScopeSuggestion(detectSectionScopeMismatch(sectionScope, trimmed));
+        setClientScopeSuggestion(
+          detectSectionScopeMismatch(sectionScope, trimmed, report.documentType)
+        );
       } else {
         setClientScopeSuggestion(null);
       }
@@ -929,6 +931,7 @@ export function ChatPanel() {
       sectionScope,
       pendingImages,
       mentions,
+      report.documentType,
     ]
   );
 

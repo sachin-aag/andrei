@@ -1,53 +1,19 @@
-import type { SectionType } from "@/db/schema";
+import type { DocumentType, SectionType } from "@/db/schema";
 import { type ChatSectionScope, sectionLabel } from "@/lib/ai/chat/fields";
-
-const SECTION_PATTERNS: [SectionType, RegExp[]][] = [
-  [
-    "define",
-    [
-      /\bdefine\b/i,
-      /\bproblem statement\b/i,
-      /\bdeviation description\b/i,
-      /\bwhat happened\b/i,
-    ],
-  ],
-  [
-    "measure",
-    [/\bmeasure\b/i, /\bmeasurement plan\b/i, /\bexperiment\b/i, /\bdata collection\b/i],
-  ],
-  [
-    "analyze",
-    [
-      /\banalyz/i,
-      /\broot cause\b/i,
-      /\b5[-\s]?why\b/i,
-      /\bfishbone\b/i,
-      /\b6m\b/i,
-      /\bimpact assessment\b/i,
-    ],
-  ],
-  [
-    "improve",
-    [/\bimprove\b/i, /\bcorrective\b/i, /\bcapa\b/i, /\bcorrective action\b/i],
-  ],
-  [
-    "control",
-    [/\bcontrol\b/i, /\bpreventive\b/i, /\bmonitoring\b/i, /\bpreventive action\b/i],
-  ],
-  [
-    "conclusion",
-    [/\bconclusion\b/i, /\binvestigation outcome\b/i, /\bclosing summary\b/i],
-  ],
-];
+import { getDocumentType } from "@/lib/document-types";
 
 /** Best-effort section intent from the user's message (null if unclear). */
-export function detectSectionIntentFromText(text: string): SectionType | null {
+export function detectSectionIntentFromText(
+  text: string,
+  documentType: DocumentType = "investigation_report"
+): SectionType | null {
   const trimmed = text.trim();
   if (!trimmed) return null;
 
+  const patterns = getDocumentType(documentType).chat.sectionIntentPatterns;
   let match: { section: SectionType; count: number } | null = null;
-  for (const [section, patterns] of SECTION_PATTERNS) {
-    const count = patterns.reduce(
+  for (const [section, sectionPatterns] of patterns) {
+    const count = sectionPatterns.reduce(
       (total, pattern) => total + Number(pattern.test(trimmed)),
       0
     );
@@ -67,11 +33,12 @@ export type SectionScopeMismatch = {
 /** When a single section is selected, detect if the user message targets another. */
 export function detectSectionScopeMismatch(
   currentScope: ChatSectionScope,
-  userText: string
+  userText: string,
+  documentType: DocumentType = "investigation_report"
 ): SectionScopeMismatch | null {
   if (currentScope === "all") return null;
 
-  const intent = detectSectionIntentFromText(userText);
+  const intent = detectSectionIntentFromText(userText, documentType);
   if (!intent || intent === currentScope) return null;
 
   return {

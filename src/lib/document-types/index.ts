@@ -112,6 +112,7 @@ export function buildEvaluationSystemPromptForType(
 export type {
   CriterionDefinition,
   DocumentTypeDefinition,
+  DocumentTypeChatConfig,
   SectionDefinition,
   EvaluationContext,
 } from "./types";

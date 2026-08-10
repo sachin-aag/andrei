@@ -1,4 +1,4 @@
-import type { DocumentType } from "@/db/schema";
+import type { DocumentType, SectionType } from "@/db/schema";
 import type { SectionScopeMismatch } from "@/lib/ai/chat/section-intent";
 import {
   type ChatSectionScope,
@@ -6,9 +6,10 @@ import {
   chatTargetFields,
   sectionLabel,
 } from "@/lib/ai/chat/fields";
+import { getDocumentType } from "@/lib/document-types";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v13-target-field-paths";
+export const CHAT_PROMPT_VERSION = "chat-v14-document-type-persona";
 
 export type ChatMode = "plan" | "agent";
 
@@ -30,7 +31,17 @@ function fieldTaxonomy(
     .join("\n");
 }
 
-function sectionFocusBlock(scope: ChatSectionScope): string {
+function draftPriorityPhrase(draftOrder: readonly SectionType[]): string {
+  const labels = draftOrder.slice(0, 2).map((section) => sectionLabel(section));
+  if (labels.length === 0) return "the highest-signal sections";
+  if (labels.length === 1) return labels[0]!;
+  return `${labels[0]}, then ${labels[1]}`;
+}
+
+function sectionFocusBlock(
+  scope: ChatSectionScope,
+  analyzeInScope: boolean
+): string {
   if (scope === "all") {
     return `## Section focus: ALL SECTIONS
 The engineer has not narrowed scope. You may plan or draft across any editable section unless they ask to focus on one.`;
@@ -41,10 +52,13 @@ The engineer has not narrowed scope. You may plan or draft across any editable s
     scope === "analyze"
       ? `\n- Exception for Analyze method selection: you MAY call read_section on define and measure (read-only) to choose 6M vs 5-Why vs Brainstorming.`
       : "";
+  const editTools = analyzeInScope
+    ? "draft_field / propose_edit / select_analyze_method"
+    : "draft_field / propose_edit";
   return `## Section focus: ${label} [${scope}]
 The engineer selected **${label}** for this conversation. Focus Plan questions and Agent edits on this section only.
 - Plan mode: ask what is needed to complete ${label}; do not plan other sections unless they change the section dropdown.
-- Agent mode: only call draft_field / propose_edit / select_analyze_method on section "${scope}". Prefer read_section on "${scope}" too.${priorReadNote}
+- Agent mode: only call ${editTools} on section "${scope}". Prefer read_section on "${scope}" too.${priorReadNote}
 - If the request clearly belongs elsewhere, call suggest_section_scope before answering substantively — do not edit other sections.`;
 }
 
@@ -53,14 +67,6 @@ function scopeMismatchBlock(mismatch: SectionScopeMismatch): string {
 The engineer's latest message appears to be about **${sectionLabel(mismatch.suggestedSection)}** [${mismatch.suggestedSection}], but the section dropdown is set to **${sectionLabel(mismatch.currentSection)}** [${mismatch.currentSection}].
 Call suggest_section_scope with suggestedSection="${mismatch.suggestedSection}" and a brief reason BEFORE answering substantively. You may add a short note in prose, but do not read or edit the out-of-scope section until they switch or confirm keeping the current focus.`;
 }
-
-const PERSONA = `You are the drafting assistant for a deviation investigation report tool used in regulated pharmaceutical and medical device environments. You help quality and operations staff document, investigate, and close deviations, non-conformances, and quality events in a structured DMAIC investigation report (Define, Measure, Analyze, Improve, Control, Conclusion).
-
-Your guidance should reflect GMP / quality-system expectations (traceability, impact assessment, root cause, corrective and preventive action) without inventing company-specific SOP numbers, site names, or product details the engineer has not provided.
-
-The report is graded against fixed quality criteria (a traffic-light check). Your job is to help the engineer produce a first draft that satisfies as many criteria as possible, then refine it.
-
-You never write to the document directly. Every change is a PROPOSAL that appears as an inline tracked-change (red delete / green insert) the engineer accepts or rejects.`;
 
 const QUESTION_RULES = `## Asking questions
 When you need facts from the engineer, call the ask_user tool. It renders a structured answer form in the chat. NEVER write questions as prose, numbered lists, or markdown in your reply.
@@ -89,7 +95,16 @@ Do this:
 
 Keep prose conversational and concise. Do not dump the whole criteria list back at the engineer. Never fabricate regulated facts.`;
 
-const AGENT_RULES = `## Mode: AGENT (draft and propose edits)
+function agentRules(opts: {
+  draftOrder: readonly SectionType[];
+  analyzeInScope: boolean;
+}): string {
+  const priority = draftPriorityPhrase(opts.draftOrder);
+  const analyzeToolLine = opts.analyzeInScope
+    ? `\n- select_analyze_method — when drafting Analyze, call this ONCE before any Analyze draft_field / propose_edit to lock in the single root-cause method (see the Analyze method-selection block when that section is in scope).`
+    : "";
+
+  return `## Mode: AGENT (draft and propose edits)
 You are in Agent mode. Use the tools to read sections and propose changes. Every proposal goes to the engineer for review — nothing is applied until they accept it.
 
 Choosing the right tool:
@@ -97,14 +112,13 @@ Choosing the right tool:
 - propose_edit — one small targeted change (a sentence or phrase) inside existing text, anchored to a verbatim quote. Never use it to write whole paragraphs into an empty field.
 - search_documents — search ready evidence attachments for report-scoped facts before citing document evidence.
 - read_document_page — read bounded transcript/visual context for one page from a retrieved attachment.
-- ask_user — structured questions when facts are missing (see "Asking questions").
-- select_analyze_method — when drafting Analyze, call this ONCE before any Analyze draft_field / propose_edit to lock in the single root-cause method (see the Analyze method-selection block when that section is in scope).
+- ask_user — structured questions when facts are missing (see "Asking questions").${analyzeToolLine}
 
 Drafting decisions (important):
 - For each section, judge how much real information you have.
   - ENOUGH (roughly most of what a section needs): draft it now with draft_field. Fill known facts; for small gaps use a bracketed placeholder like [batch number], [date of detection], [equipment ID].
   - TOO LITTLE (only a fragment): do not draft a page of placeholders. Call ask_user for the missing facts instead, or say why you are skipping the section.
-- Prefer drafting the highest-signal sections first (Define, then Analyze root cause), not every section at once.
+- Prefer drafting the highest-signal sections first (${priority}), not every section at once.
 - Use a markdown table when data is naturally tabular — test results vs specification, batch/equipment lists, timelines of events, action plans with owners and due dates. Tables only work in rich fields; draft_field will tell you if the field cannot hold one.
 
 Editing rules:
@@ -113,6 +127,7 @@ Editing rules:
 3. propose_edit refuses changes that rewrite most of a field ("too_large") — that is the signal to use draft_field.
 4. Never invent regulated facts (batch numbers, dates, results, equipment IDs) — use bracketed placeholders.
 5. After proposing, briefly summarize what you drafted, list placeholders to complete, and name any sections you deliberately skipped and why.`;
+}
 
 const ANALYZE_METHOD_HEURISTICS = `Method selection heuristics (exactly ONE of 6M / 5-Why / Brainstorming):
 - If the engineer named a method, use it.
@@ -158,23 +173,27 @@ export function buildChatSystemPrompt(opts: {
   const { contextMap, criteriaOutline, mode } = opts;
   const sectionScope = opts.sectionScope ?? "all";
   const documentType = opts.documentType ?? "investigation_report";
-  const modeRules = mode === "plan" ? PLAN_RULES : AGENT_RULES;
+  const chat = getDocumentType(documentType).chat;
+  const analyzeInScope = chatSectionsInScope(sectionScope, documentType).includes(
+    "analyze"
+  );
+  const modeRules =
+    mode === "plan"
+      ? PLAN_RULES
+      : agentRules({ draftOrder: chat.draftOrder, analyzeInScope });
   const mismatchBlock = opts.scopeMismatch
     ? `\n\n${scopeMismatchBlock(opts.scopeMismatch)}`
     : "";
   const mentions = opts.mentionBlock?.trim()
     ? `\n\n${opts.mentionBlock.trim()}`
     : "";
-  const analyzeInScope = chatSectionsInScope(sectionScope, documentType).includes(
-    "analyze"
-  );
   const analyzeBlock = analyzeInScope
     ? `\n\n${mode === "plan" ? ANALYZE_PLAN_RULES : ANALYZE_AGENT_RULES}`
     : "";
 
-  return `${PERSONA}
+  return `${chat.persona}
 
-${sectionFocusBlock(sectionScope)}${mismatchBlock}${mentions}
+${sectionFocusBlock(sectionScope, analyzeInScope)}${mismatchBlock}${mentions}
 
 ## Editable fields (section → targetField (kind))
 ${fieldTaxonomy(sectionScope, documentType)}
