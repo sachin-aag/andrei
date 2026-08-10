@@ -166,4 +166,23 @@ describe("findPlaceholders", () => {
       compacted,
     ]);
   });
+
+  it("does not treat attachment citations as placeholders", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text:
+                "as defined in [DV Requriements Convergent Dental.pdf: <to be filled>]. See also [batch-coa.pdf, p. 3] and [protocol.docx].",
+            },
+          ],
+        },
+      ],
+    };
+    expect(findPlaceholders(doc, "define", "narrative")).toEqual([]);
+  });
 });

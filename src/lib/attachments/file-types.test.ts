@@ -3,6 +3,7 @@ import {
   ATTACHMENT_ACCEPT_ATTR,
   canonicalAttachmentMime,
   DOCX_MIME_TYPE,
+  hasSupportedAttachmentExtension,
   isSupportedAttachment,
   kindFromMime,
   PDF_MIME_TYPE,
@@ -80,5 +81,17 @@ describe("isSupportedAttachment / accept attr", () => {
     expect(ATTACHMENT_ACCEPT_ATTR).toContain(".pdf");
     expect(ATTACHMENT_ACCEPT_ATTR).toContain(".docx");
     expect(ATTACHMENT_ACCEPT_ATTR).toContain(DOCX_MIME_TYPE);
+  });
+});
+
+describe("hasSupportedAttachmentExtension", () => {
+  it("matches supported extensions on bare and spaced filenames", () => {
+    expect(hasSupportedAttachmentExtension("a.pdf")).toBe(true);
+    expect(hasSupportedAttachmentExtension("protocol.docx")).toBe(true);
+    expect(
+      hasSupportedAttachmentExtension("DV Requriements Convergent Dental.pdf")
+    ).toBe(true);
+    expect(hasSupportedAttachmentExtension("notes.txt")).toBe(false);
+    expect(hasSupportedAttachmentExtension("batch number")).toBe(false);
   });
 });

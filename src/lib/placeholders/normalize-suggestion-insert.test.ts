@@ -53,4 +53,29 @@ describe("normalizeSuggestionInsertText", () => {
       )
     ).toBe("[Monitoring System or Refrigerator Unit: <to be filled>]");
   });
+
+  it("does not turn attachment citations into placeholders", () => {
+    expect(
+      normalizeSuggestionInsertText(
+        "as defined in [DV Requriements Convergent Dental.pdf]."
+      )
+    ).toBe("as defined in [DV Requriements Convergent Dental.pdf].");
+  });
+
+  it("repairs citation-shaped to-be-filled wrappers on draft insert", () => {
+    expect(
+      normalizeSuggestionInsertText(
+        "as defined in [DV Requriements Convergent Dental.pdf: <to be filled>]."
+      )
+    ).toBe("as defined in [DV Requriements Convergent Dental.pdf].");
+  });
+
+  it("compacts long comma-containing instructional brackets", () => {
+    const out = normalizeSuggestionInsertText(
+      "[Justification for why this deviation does or does not invalidate the study results, including whether the safety or effectiveness of the device is compromised]."
+    );
+    expect(out).toMatch(/^\[.+: <to be filled>\]\.$/);
+    const label = out.match(/\[(.+?): <to be filled>\]/)?.[1] ?? "";
+    expect(label.length).toBeLessThanOrEqual(MAX_PLACEHOLDER_LABEL_LENGTH);
+  });
 });

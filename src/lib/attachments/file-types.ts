@@ -35,6 +35,15 @@ function kindFromExtension(filename: string): AttachmentKind | null {
   return EXTENSION_KIND[lower.slice(dot)] ?? null;
 }
 
+/**
+ * True when `filename` ends with a supported attachment extension.
+ * Placeholder/citation guards should use this so new kinds only need
+ * {@link EXTENSION_KIND} updates — not parallel hardcoding.
+ */
+export function hasSupportedAttachmentExtension(filename: string): boolean {
+  return kindFromExtension(filename.trim()) !== null;
+}
+
 export function kindFromMime(
   mimeType: string | null | undefined
 ): AttachmentKind | null {

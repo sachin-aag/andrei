@@ -75,4 +75,37 @@ describe("normalizeBracketPlaceholdersInPlainText", () => {
       "[to be filled]"
     );
   });
+
+  it("compacts long instructional AI brackets that include commas", () => {
+    const long =
+      "[Detailed narrative of the observation, including environmental conditions, software versions, and specific inputs used at the time of failure]";
+    const out = normalizeBracketPlaceholdersInPlainText(long);
+    expect(out).toMatch(/^\[.+: <to be filled>\]$/);
+    const label = out.match(/\[(.+?): <to be filled>\]/)?.[1] ?? "";
+    expect(label.length).toBeLessThanOrEqual(MAX_PLACEHOLDER_LABEL_LENGTH);
+    expect(label.toLowerCase()).toContain("detailed");
+  });
+
+  it("leaves attachment filename citations unchanged", () => {
+    const cite = "[DV Requriements Convergent Dental.pdf]";
+    expect(normalizeBracketPlaceholdersInPlainText(`as defined in ${cite}.`)).toBe(
+      `as defined in ${cite}.`
+    );
+    expect(
+      normalizeBracketPlaceholdersInPlainText("see [batch-coa.pdf, p. 3]")
+    ).toBe("see [batch-coa.pdf, p. 3]");
+  });
+
+  it("repairs citations wrongly wrapped as placeholders", () => {
+    expect(
+      normalizeBracketPlaceholdersInPlainText(
+        "as defined in [DV Requriements Convergent Dental.pdf: <to be filled>]."
+      )
+    ).toBe("as defined in [DV Requriements Convergent Dental.pdf].");
+    expect(
+      normalizeBracketPlaceholdersInPlainText(
+        "[batch-coa.pdf, p. 3: <to be filled>]"
+      )
+    ).toBe("[batch-coa.pdf, p. 3]");
+  });
 });
