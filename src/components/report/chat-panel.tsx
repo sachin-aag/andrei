@@ -346,7 +346,13 @@ function MentionChips({
             className="flex max-w-full items-center gap-1 rounded-full border border-[var(--border)] bg-[var(--secondary)]/50 py-0.5 pl-2 pr-1 text-[11px]"
           >
             <Icon className="size-3 shrink-0 text-[var(--primary)]" aria-hidden="true" />
-            <span className="max-w-40 truncate" title={mention.label}>
+            <span
+              className={cn(
+                "max-w-40 truncate",
+                mention.type === "document" && "font-mono tracking-tight"
+              )}
+              title={mention.label}
+            >
               {mention.label}
             </span>
             <button
@@ -896,6 +902,8 @@ export function ChatPanel() {
       setInput("");
       setPendingImages([]);
       setMentionRange(null);
+      const tagsForRequest = mentions;
+      setMentions([]);
       if (trimmed) {
         setClientScopeSuggestion(
           detectSectionScopeMismatch(sectionScope, trimmed, report.documentType)
@@ -903,11 +911,9 @@ export function ChatPanel() {
       } else {
         setClientScopeSuggestion(null);
       }
-      // Tags stay in the composer after sending so follow-ups ("now summarize
-      // it") keep the same context until the engineer removes them.
       const body: Record<string, unknown> = { sessionId, mode, sectionScope };
-      if (mentions.length > 0) {
-        body.mentions = mentions.map((mention) => ({
+      if (tagsForRequest.length > 0) {
+        body.mentions = tagsForRequest.map((mention) => ({
           type: mention.type,
           id: mention.id,
         }));

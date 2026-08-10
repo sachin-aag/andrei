@@ -21,6 +21,17 @@ export function checkTraceabilityComplete(ctx: EvaluationContext) {
   if (parsed.rows.length === 0) {
     return verdict("not_met", "Traceability matrix has no data rows");
   }
+  if (
+    parsed.missingColumns.includes("Requirement ID") ||
+    parsed.missingColumns.includes("Test Method / ID")
+  ) {
+    return verdict(
+      "partially_met",
+      `Matrix is missing column(s): ${parsed.missingColumns
+        .filter((c) => c === "Requirement ID" || c === "Test Method / ID")
+        .join(", ")}`
+    );
+  }
   const incomplete = parsed.rows.filter(
     (r) => !r.requirementId || !r.testMethodId
   );
@@ -39,6 +50,12 @@ export function checkTraceabilityComplete(ctx: EvaluationContext) {
 export function checkEveryInputHasTest(ctx: EvaluationContext) {
   const parsed = parseTraceabilityMatrix(ctx.content);
   if (!parsed.ok) return verdict("not_met", parsed.reason);
+  if (parsed.missingColumns.includes("Test Method / ID")) {
+    return verdict(
+      "not_met",
+      "Matrix has no Test Method / ID column — cannot verify each design input has a test"
+    );
+  }
   if (parsed.rows.length === 0) {
     return verdict("not_met", "No design inputs listed in the matrix");
   }
@@ -62,6 +79,12 @@ export function checkEveryInputHasTest(ctx: EvaluationContext) {
 export function checkNoOrphanTests(ctx: EvaluationContext) {
   const parsed = parseTraceabilityMatrix(ctx.content);
   if (!parsed.ok) return verdict("not_met", parsed.reason);
+  if (parsed.missingColumns.includes("Requirement ID")) {
+    return verdict(
+      "not_met",
+      "Matrix has no Requirement ID column — cannot verify tests map to design inputs"
+    );
+  }
   const orphans = parsed.rows.filter(
     (r) => r.testMethodId && !r.requirementId
   );
@@ -85,6 +108,12 @@ export function checkRiskControlLinks(ctx: EvaluationContext) {
   if (parsed.rows.length === 0) {
     return verdict("not_met", "Traceability matrix is empty");
   }
+  if (parsed.missingColumns.includes("Risk Control Link")) {
+    return verdict(
+      "not_met",
+      "No Risk Control Link column found in the matrix"
+    );
+  }
   const missing = parsed.rows.filter((r) => !r.riskControlLink);
   if (missing.length === parsed.rows.length) {
     return verdict(
@@ -107,6 +136,9 @@ export function checkRiskControlLinks(ctx: EvaluationContext) {
 export function checkConsistentRequirementIds(ctx: EvaluationContext) {
   const parsed = parseTraceabilityMatrix(ctx.content);
   if (!parsed.ok) return verdict("not_met", parsed.reason);
+  if (parsed.missingColumns.includes("Requirement ID")) {
+    return verdict("not_met", "No Requirement ID column found in the matrix");
+  }
   const ids = parsed.rows.map((r) => r.requirementId).filter(Boolean);
   if (ids.length === 0) {
     return verdict("not_met", "No requirement IDs found");
@@ -129,6 +161,15 @@ export function checkResultsTraceToRequirements(ctx: EvaluationContext) {
   if (!results.ok) return verdict("not_met", results.reason);
   if (results.rows.length === 0) {
     return verdict("not_met", "No test results rows present");
+  }
+  const absentIds = results.missingColumns.filter(
+    (c) => c === "Test ID" || c === "Requirement ID"
+  );
+  if (absentIds.length > 0) {
+    return verdict(
+      "not_met",
+      `Results matrix is missing column(s): ${absentIds.join(", ")}`
+    );
   }
   const missing = results.rows.filter((r) => !r.requirementId || !r.testId);
   if (missing.length > 0) {
