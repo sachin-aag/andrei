@@ -175,6 +175,8 @@ export type ParsedBlockEdit = {
   tableIndex?: number;
   rowIndex?: number;
   rowAnchor?: string;
+  /** replace: how many current top-level blocks this op consumes (default 1). */
+  blockCount?: number;
 };
 
 /** Validate an untrusted block-edit descriptor from persisted / model JSON. */
@@ -202,6 +204,9 @@ export function parseBlockEdit(raw: unknown): ParsedBlockEdit | undefined {
     edit.rowIndex = b.rowIndex;
   }
   if (typeof b.rowAnchor === "string") edit.rowAnchor = b.rowAnchor;
+  if (typeof b.blockCount === "number" && Number.isInteger(b.blockCount) && b.blockCount >= 1) {
+    edit.blockCount = b.blockCount;
+  }
   return edit;
 }
 

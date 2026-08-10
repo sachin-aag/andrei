@@ -286,6 +286,15 @@ describe("parseBlockEdit", () => {
         rowAnchor: "PA-02",
       })
     ).toMatchObject({ op: "deleteRow", rowAnchor: "PA-02" });
+    expect(
+      parseBlockEdit({
+        op: "replace",
+        anchor: "Old para.",
+        blockIndex: 0,
+        blockCount: 2,
+        proposedMarkdown: "### New\n\nBody.",
+      })
+    ).toMatchObject({ op: "replace", blockCount: 2 });
   });
 
   it("rejects unknown ops and round-trips through ai_fix JSON", () => {

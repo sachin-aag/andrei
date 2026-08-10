@@ -726,6 +726,7 @@ export function buildChatTools(opts: {
                     tableIndex: edit.tableIndex,
                     rowIndex: edit.rowIndex,
                     rowAnchor: edit.rowAnchor,
+                    blockCount: edit.blockCount,
                   },
                 };
           await db.insert(comments).values({

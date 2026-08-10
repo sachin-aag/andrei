@@ -69,6 +69,31 @@ describe("applyBlockEdit", () => {
     expect(paras).toEqual(["Alpha para.", "Beta para.", "Gamma para."]);
   });
 
+  it("replace with blockCount > 1 consumes several current blocks", () => {
+    const doc = markdownToDoc("Alpha.\n\nBravo.\n\nCharlie.\n\nDelta.");
+    const op: BlockEditOp = {
+      op: "replace",
+      anchor: "Bravo.",
+      blockIndex: 1,
+      blockCount: 2,
+      proposedMarkdown: "### Combined\n\nBravo and Charlie rewritten.",
+    };
+    const { status, doc: out } = applyBlockEdit(doc, "s-span", op);
+    expect(status).toBe("located");
+    const t = text(out);
+    expect(t).toContain("Alpha.");
+    expect(t).toContain("Combined");
+    expect(t).toContain("Bravo and Charlie rewritten.");
+    expect(t).toContain("Delta.");
+    expect(t).not.toContain("Bravo.");
+    const combined = (out.content ?? []).find(
+      (n) =>
+        n.type === "paragraph" &&
+        (n.content ?? []).some((c) => c.text === "Combined" && c.marks?.some((m) => m.type === "bold"))
+    );
+    expect(combined).toBeTruthy();
+  });
+
   it("delete removes the target block, keeps the rest", () => {
     const doc = markdownToDoc("Stay one.\n\nRemove me.\n\nStay two.");
     const op: BlockEditOp = { op: "delete", anchor: "Remove me.", blockIndex: 1 };

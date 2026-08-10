@@ -15,7 +15,6 @@ import {
 import { applyStructuredFieldSuggestion } from "@/lib/suggestions/apply-field";
 import { applyRedraftToSection } from "@/lib/suggestions/apply-redraft";
 import {
-  acceptSuggestionMarksById,
   isApplyableStatus,
   type LocateStatus,
   probePlainEdit,
@@ -127,9 +126,7 @@ export async function acceptSuggestion(args: {
   const fixPayload = parseAiFixCommentContent(comment.content);
   if (fixPayload.blockEdit) {
     const doc = getRichFieldValue(sectionContent, path);
-    const applied = narrativeHasSuggestionMarks(doc, comment.id)
-      ? { status: "located" as const, doc: acceptSuggestionMarksById(doc, comment.id) }
-      : applyBlockEdit(doc, comment.id, fixPayload.blockEdit);
+    const applied = applyBlockEdit(doc, comment.id, fixPayload.blockEdit);
     if (applied.status !== "located") {
       return { ok: false, reason: applied.status };
     }
