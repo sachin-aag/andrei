@@ -8,6 +8,11 @@ import { getDocumentType, listDocumentTypes } from "@/lib/document-types";
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
 import { flattenForAnchor } from "@/lib/suggestions/locator";
+import {
+  countImagesInDoc,
+  flattenDocForChat,
+  type SectionInlineImage,
+} from "@/lib/ai/chat/section-images";
 
 /** Sections the drafting chat can read + edit (DMAIC + conclusion). */
 export const CHAT_EDITABLE_SECTIONS: readonly SectionType[] = [
@@ -116,6 +121,47 @@ export function sectionFieldPlainText(
     return flattenForAnchor(getRichFieldValue(sectionContent, targetField)).text;
   }
   return getPlainTextFieldValue(sectionContent, targetField);
+}
+
+/** Count inline images across all rich editable fields in a section. */
+export function countSectionInlineImages(
+  sectionContent: Record<string, unknown>,
+  section: SectionType
+): number {
+  let total = 0;
+  for (const field of chatTargetFields(section)) {
+    if (field.kind !== "rich") continue;
+    total += countImagesInDoc(getRichFieldValue(sectionContent, field.targetField));
+  }
+  return total;
+}
+
+/**
+ * Chat-oriented field read: anchor `text` plus `readingText` with `[image:N]`
+ * markers, appending vision payloads into `collected` (shared across fields).
+ */
+export function sectionFieldForChat(
+  sectionContent: Record<string, unknown>,
+  section: SectionType,
+  targetField: string,
+  collected: SectionInlineImage[]
+): { text: string; readingText: string; imageCount: number } {
+  if (!isRichTargetField(section, targetField)) {
+    const text = getPlainTextFieldValue(sectionContent, targetField);
+    return { text, readingText: text, imageCount: 0 };
+  }
+  const doc = getRichFieldValue(sectionContent, targetField);
+  const text = flattenForAnchor(doc).text;
+  const chat = flattenDocForChat(doc, {
+    targetField,
+    imageIndexStart: collected.length + 1,
+    collected,
+  });
+  return {
+    text,
+    readingText: chat.readingText,
+    imageCount: chat.imageCount,
+  };
 }
 
 /** Human label for a section (workspace labels, then any registered document type). */

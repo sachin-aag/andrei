@@ -48,8 +48,11 @@ describe("buildReportContextMap", () => {
     expect(map).toContain("Analyze [analyze] — empty");
     expect(map).toContain("analyze method: not chosen");
     expect(map).toContain("Documents (ready evidence attachments");
+    expect(map).toContain("UNTRUSTED");
+    expect(map).toContain('filename="Lab Results.pdf"');
+    expect(map).toContain("id=att_123");
     expect(map).toContain(
-      "Lab Results.pdf [att_123] — 4 pages; user context: Dissolution assay results for batch 24A."
+      'user_context="Dissolution assay results for batch 24A."'
     );
   });
 
@@ -102,5 +105,43 @@ describe("buildReportContextMap", () => {
       if (section === "cover_page") continue;
       expect(map).toContain(`[${section}]`);
     }
+  });
+
+  it("notes inline images so the model knows to call read_section for vision", () => {
+    const tinyPng =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const map = buildReportContextMap({
+      documentType: "design_verification",
+      report: { documentNo: "DV-7", date: "2026-04-01", status: "draft" },
+      sections: {
+        test_methods: {
+          narrative: {
+            type: "doc",
+            content: [
+              {
+                type: "paragraph",
+                content: [
+                  { type: "text", text: "hello" },
+                  {
+                    type: "imageInline",
+                    attrs: {
+                      src: `data:image/png;base64,${tinyPng}`,
+                      alt: "Results of an Exam",
+                    },
+                  },
+                ],
+              },
+            ],
+          },
+        },
+      },
+      evaluations: [],
+      comments: [],
+    });
+
+    expect(map).toContain("Test Methods / Protocol Summary [test_methods]");
+    expect(map).toContain("1 image");
+    expect(map).toContain("call read_section to view them as vision");
+    expect(map).toContain('narrative: "hello"');
   });
 });

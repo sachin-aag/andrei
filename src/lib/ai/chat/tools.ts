@@ -27,9 +27,39 @@ import {
   chatSectionsInScope,
   chatTargetFields,
   isChatEditableSection,
+  sectionFieldForChat,
   sectionFieldPlainText,
 } from "@/lib/ai/chat/fields";
+import {
+  dataUrlToBase64,
+  type SectionInlineImage,
+} from "@/lib/ai/chat/section-images";
 import { checkProposedEdit, proposedEditHint } from "@/lib/ai/chat/propose-edit";
+
+type ReadSectionImageRef = {
+  id: string;
+  targetField: string;
+  index: number;
+  alt: string;
+  mediaType: string;
+};
+
+type ReadSectionSuccess = {
+  section: string;
+  fields: Array<{
+    targetField: string;
+    kind: string;
+    charCount: number;
+    isEmpty: boolean;
+    text: string;
+    readingText: string;
+    imageCount: number;
+  }>;
+  images: ReadSectionImageRef[];
+  imageNote?: string;
+  /** Request-local key — vision bytes live in `sectionImageStore`, not the tool JSON. */
+  imageResultId?: string;
+};
 import {
   ANALYZE_METHODS,
   ANALYZE_METHOD_LABELS,
@@ -243,10 +273,13 @@ export function buildChatTools(opts: {
       ? ` The engineer tagged ${taggedReadOnlySections.join(", ")} with @, so you may read those too (read-only — they stay outside edit scope).`
       : "";
 
+  /** Vision bytes for this request only — keep tool JSON (UI/history) metadata-sized. */
+  const sectionImageStore = new Map<string, SectionInlineImage[]>();
+
   const tools: ToolSet = {
     read_section: tool({
       description:
-        `Read the current text of an editable section so you can quote exact anchors. Optionally pass specific field paths; otherwise all editable fields are returned.${scopeHint}` +
+        `Read the current text of an editable section so you can quote exact anchors. Inline images are returned as vision parts (see readingText [image:N] markers). Optionally pass specific field paths; otherwise all editable fields are returned.${scopeHint}` +
         (analyzeInScope && sectionScope === "analyze"
           ? " You may also read define and measure to choose the Analyze root-cause method."
           : "") +
@@ -258,7 +291,9 @@ export function buildChatTools(opts: {
           .optional()
           .describe("Optional in-section field paths, e.g. ['rootCause.narrative']."),
       }),
-      execute: async ({ section, fields }) => {
+      execute: async ({ section, fields }): Promise<
+        ReadSectionSuccess | { error: "invalid_section" | "section_not_found" }
+      > => {
         if (!isChatEditableSection(section, documentType)) {
           return { error: "invalid_section" as const };
         }
@@ -274,20 +309,101 @@ export function buildChatTools(opts: {
             ? all.filter((f) => fields.includes(f.targetField))
             : all;
 
+        const collected: SectionInlineImage[] = [];
+        const fieldResults = requested.map((f) => {
+          const chat = sectionFieldForChat(
+            loaded.content,
+            section,
+            f.targetField,
+            collected
+          );
+          const trimmed = chat.text.replace(/\s+/g, " ").trim();
+          return {
+            targetField: f.targetField,
+            kind: f.kind,
+            charCount: trimmed.length,
+            isEmpty: trimmed.length === 0 && chat.imageCount === 0,
+            /** Anchor-compatible text — quote from this for propose_edit. */
+            text: chat.text,
+            /** Same content with [image:N] markers for describing visuals. */
+            readingText: chat.readingText,
+            imageCount: chat.imageCount,
+          };
+        });
+
+        const imageRefs: ReadSectionImageRef[] = collected.map((img) => ({
+          id: img.id,
+          targetField: img.targetField,
+          index: img.index,
+          alt: img.alt,
+          mediaType: img.mediaType,
+        }));
+
+        let imageResultId: string | undefined;
+        if (collected.length > 0) {
+          imageResultId = createId();
+          sectionImageStore.set(imageResultId, collected);
+        }
+
         return {
           section,
-          fields: requested.map((f) => {
-            const text = sectionFieldPlainText(loaded.content, section, f.targetField);
-            const trimmed = text.replace(/\s+/g, " ").trim();
-            return {
-              targetField: f.targetField,
-              kind: f.kind,
-              charCount: trimmed.length,
-              isEmpty: trimmed.length === 0,
-              text,
-            };
-          }),
+          fields: fieldResults,
+          images: imageRefs,
+          ...(imageResultId ? { imageResultId } : {}),
+          ...(collected.length > 0
+            ? {
+                imageNote:
+                  "Inline images follow as vision parts labeled [image:N]. Describe what you see; never put [image:N] markers inside propose_edit anchorText (those slots are a single space in `text`).",
+              }
+            : {}),
         };
+      },
+      toModelOutput: (options) => {
+        const output = options.output;
+        if (
+          !output ||
+          typeof output !== "object" ||
+          !("fields" in output) ||
+          !Array.isArray((output as { fields?: unknown }).fields)
+        ) {
+          return {
+            type: "content" as const,
+            value: [{ type: "text" as const, text: JSON.stringify(output) }],
+          };
+        }
+
+        const result = output as ReadSectionSuccess;
+        const stored =
+          (result.imageResultId
+            ? sectionImageStore.get(result.imageResultId)
+            : undefined) ?? [];
+        const textPayload = {
+          section: result.section,
+          fields: result.fields,
+          images: result.images,
+          ...(result.imageNote ? { imageNote: result.imageNote } : {}),
+        };
+
+        const parts: Array<
+          | { type: "text"; text: string }
+          | { type: "image-data"; mediaType: string; data: string }
+        > = [{ type: "text", text: JSON.stringify(textPayload) }];
+
+        for (const img of stored) {
+          const base64 = dataUrlToBase64(img.dataUrl);
+          if (!base64) continue;
+          parts.push({
+            type: "text",
+            text: `[image:${img.index}] id=${img.id}${img.alt ? ` alt="${img.alt}"` : ""}`,
+          });
+          parts.push({
+            type: "image-data",
+            mediaType: img.mediaType,
+            data: base64,
+          });
+        }
+
+        return { type: "content" as const, value: parts };
       },
     }),
 

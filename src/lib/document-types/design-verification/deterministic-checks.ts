@@ -165,33 +165,19 @@ export function checkCoverPageIdentity(ctx: EvaluationContext) {
   const missing: string[] = [];
   if (!ctx.report.documentNo) missing.push("document ID");
   if (!meta.revision) missing.push("revision");
-  if (!meta.effectiveDate) missing.push("effective date");
-  if (missing.length === 3) {
+  if (missing.length === 2) {
     return verdict("not_met", `Missing ${missing.join(", ")}`);
   }
   if (missing.length > 0) {
     return verdict("partially_met", `Missing ${missing.join(", ")}`);
   }
-  return verdict(
-    "met",
-    "Document has unique ID, revision number, and effective date"
-  );
+  return verdict("met", "Document has unique ID and revision number");
 }
 
 export function checkCoverPageProduct(ctx: EvaluationContext) {
   const meta = designVerificationMetadata(ctx.report);
-  const missing: string[] = [];
-  if (!meta.productName) missing.push("product name");
-  if (!meta.modelNumber) missing.push("model number");
-  if (!meta.projectName) missing.push("project name");
-  if (missing.length === 3) {
-    return verdict("not_met", `Missing ${missing.join(", ")}`);
+  if (!meta.productName) {
+    return verdict("not_met", "Missing product name");
   }
-  if (missing.length > 0) {
-    return verdict("partially_met", `Missing ${missing.join(", ")}`);
-  }
-  return verdict(
-    "met",
-    "Product name, model number, and project name are identified"
-  );
+  return verdict("met", "Product name is identified");
 }

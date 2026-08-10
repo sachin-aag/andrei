@@ -95,11 +95,26 @@ async function handleSuggestionsPost(
     .from(comments)
     .where(eq(comments.reportId, reportId));
 
-  const sectionContent = mergeSectionForType(
-    report.documentType,
-    section,
-    sectionRow.content
-  );
+  const allSectionRows = await db
+    .select()
+    .from(reportSections)
+    .where(eq(reportSections.reportId, reportId));
+  const allSections: AllSectionsContent = {};
+  for (const row of allSectionRows) {
+    allSections[row.section] = mergeSectionForType(
+      report.documentType,
+      row.section,
+      row.content
+    );
+  }
+
+  // Cover page criteria hash report.metadata (same as evaluate), not empty section JSON.
+  const sectionContent =
+    section === "cover_page"
+      ? report.metadata
+      : (allSections[section] ??
+        mergeSectionForType(report.documentType, section, sectionRow.content));
+
   const gap = gapCriteriaForSection(
     section,
     evaluations.map((e) => ({
@@ -108,11 +123,18 @@ async function handleSuggestionsPost(
     })),
     commentRows.map((c) => normalizeCommentRecord(c)),
     sectionContent,
-    report.documentType
+    report.documentType,
+    allSections
   );
 
-  const hash = sectionContentHash(section, sectionContent);
-  const suggestionContentHash = hash;
+  const hash = sectionContentHash(section, sectionContent, {
+    documentType: report.documentType,
+    allSections,
+  });
+  // Suggestion staleness is section-local (validateSuggestionLocate has no allSections).
+  const suggestionContentHash = sectionContentHash(section, sectionContent, {
+    documentType: report.documentType,
+  });
   const stale = gap.some((g) => g.evaluatedContentHash && g.evaluatedContentHash !== hash);
   const blockedReason =
     gap.length === 0 ? "no_gap_criteria" : stale ? "stale_evaluation" : null;
@@ -133,19 +155,6 @@ async function handleSuggestionsPost(
         { status: 409 }
       );
     }
-
-  const allSectionRows = await db
-    .select()
-    .from(reportSections)
-    .where(eq(reportSections.reportId, reportId));
-  const allSections: AllSectionsContent = {};
-  for (const row of allSectionRows) {
-    allSections[row.section] = mergeSectionForType(
-      report.documentType,
-      row.section,
-      row.content
-    );
-  }
 
   const { suggestions: llmSuggestions, dropped: llmDropped } =
     await generateSuggestionsForSection({

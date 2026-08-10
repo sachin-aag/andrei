@@ -83,23 +83,6 @@ export function DvCoverPageEditor() {
           />
         </div>
         <div className="grid gap-1.5">
-          <Label htmlFor="dv-effective">Effective Date</Label>
-          <Input
-            id="dv-effective"
-            value={meta.effectiveDate}
-            disabled={readOnly}
-            onChange={(e) =>
-              setReport((prev) => ({
-                ...prev,
-                metadata: { ...meta, effectiveDate: e.target.value },
-              }))
-            }
-            onBlur={(e) =>
-              void patchMetadata({ effectiveDate: e.target.value.trim() })
-            }
-          />
-        </div>
-        <div className="grid gap-1.5">
           <Label htmlFor="dv-product">Product Name</Label>
           <Input
             id="dv-product"
@@ -113,91 +96,6 @@ export function DvCoverPageEditor() {
             }
             onBlur={(e) =>
               void patchMetadata({ productName: e.target.value.trim() })
-            }
-          />
-        </div>
-        <div className="grid gap-1.5">
-          <Label htmlFor="dv-model">Model Number</Label>
-          <Input
-            id="dv-model"
-            value={meta.modelNumber}
-            disabled={readOnly}
-            onChange={(e) =>
-              setReport((prev) => ({
-                ...prev,
-                metadata: { ...meta, modelNumber: e.target.value },
-              }))
-            }
-            onBlur={(e) =>
-              void patchMetadata({ modelNumber: e.target.value.trim() })
-            }
-          />
-        </div>
-        <div className="grid gap-1.5">
-          <Label htmlFor="dv-project">Project Name</Label>
-          <Input
-            id="dv-project"
-            value={meta.projectName}
-            disabled={readOnly}
-            onChange={(e) =>
-              setReport((prev) => ({
-                ...prev,
-                metadata: { ...meta, projectName: e.target.value },
-              }))
-            }
-            onBlur={(e) =>
-              void patchMetadata({ projectName: e.target.value.trim() })
-            }
-          />
-        </div>
-        <div className="grid gap-1.5">
-          <Label htmlFor="dv-author">Author</Label>
-          <Input
-            id="dv-author"
-            value={meta.authorName}
-            disabled={readOnly}
-            onChange={(e) =>
-              setReport((prev) => ({
-                ...prev,
-                metadata: { ...meta, authorName: e.target.value },
-              }))
-            }
-            onBlur={(e) =>
-              void patchMetadata({ authorName: e.target.value.trim() })
-            }
-          />
-        </div>
-        <div className="grid gap-1.5">
-          <Label htmlFor="dv-reviewer">Reviewer</Label>
-          <Input
-            id="dv-reviewer"
-            value={meta.reviewerName}
-            disabled={readOnly}
-            onChange={(e) =>
-              setReport((prev) => ({
-                ...prev,
-                metadata: { ...meta, reviewerName: e.target.value },
-              }))
-            }
-            onBlur={(e) =>
-              void patchMetadata({ reviewerName: e.target.value.trim() })
-            }
-          />
-        </div>
-        <div className="grid gap-1.5">
-          <Label htmlFor="dv-approver">Approver</Label>
-          <Input
-            id="dv-approver"
-            value={meta.approverName}
-            disabled={readOnly}
-            onChange={(e) =>
-              setReport((prev) => ({
-                ...prev,
-                metadata: { ...meta, approverName: e.target.value },
-              }))
-            }
-            onBlur={(e) =>
-              void patchMetadata({ approverName: e.target.value.trim() })
             }
           />
         </div>

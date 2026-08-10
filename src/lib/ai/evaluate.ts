@@ -27,10 +27,14 @@ import {
 } from "@/lib/eval/eval-generation-options";
 import { isTestSkipEvaluation } from "@/lib/test/ai-bypass";
 import { getStubCriterionEvaluations } from "@/lib/ai/stub-evaluations";
-import { hashContent } from "@/lib/ai/content-hash";
 import type { ReportRecord } from "@/types/report";
+import type { AllSectionsContent } from "@/lib/ai/evaluation-content-hash";
 
 export { PROMPT_VERSION } from "./section-prompts";
+export {
+  evaluationContentHash,
+  type AllSectionsContent,
+} from "@/lib/ai/evaluation-content-hash";
 
 /** Resolve criteria for a document type (defaults to investigation for back-compat). */
 function criteriaFor(
@@ -41,40 +45,6 @@ function criteriaFor(
     return getInvestigationCriteria(section);
   }
   return getRegistryCriteria(documentType, section);
-}
-
-/**
- * Hash inputs for evaluation cache: section content + every dependsOn section
- * + prompt version. Cross-section criteria must invalidate when a dependency changes.
- */
-export function evaluationContentHash({
-  section,
-  content,
-  allSections,
-  criteria,
-  promptVersion,
-}: {
-  section: string;
-  content: unknown;
-  allSections?: AllSectionsContent;
-  criteria: CriterionDefinition[];
-  promptVersion: string;
-}): string {
-  const dependencyKeys = [
-    ...new Set(criteria.flatMap((c) => c.dependsOn ?? [])),
-  ].toSorted();
-  const dependencies: Record<string, unknown> = {};
-  for (const key of dependencyKeys) {
-    dependencies[key] = allSections?.[key] ?? null;
-  }
-  return hashContent(
-    {
-      section,
-      content: cleanSectionContentForEval(section, content),
-      dependencies,
-    },
-    promptVersion
-  );
 }
 
 function runDeterministicCriteria(
@@ -273,12 +243,6 @@ export function formatSectionContentForEvaluation(
 ): string {
   return sectionContentForPrompt(section, content);
 }
-
-/**
- * Map of section type → content for all sections in a report.
- * Used to build cumulative prior-section context in the user prompt.
- */
-export type AllSectionsContent = Partial<Record<SectionType, unknown>>;
 
 /**
  * Returns the DMAIC sections that precede `section` in report order.

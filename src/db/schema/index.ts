@@ -275,13 +275,7 @@ export type InvestigationReportMetadata = {
 
 export type DesignVerificationMetadata = {
   revision: string;
-  effectiveDate: string;
   productName: string;
-  modelNumber: string;
-  projectName: string;
-  authorName: string;
-  reviewerName: string;
-  approverName: string;
 };
 
 export type ReportMetadata =

@@ -8,13 +8,12 @@ import {
 } from "@/db/schema";
 import {
   evaluateSection,
+  evaluationContentHash,
   type AllSectionsContent,
 } from "@/lib/ai/evaluate";
-import { EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
+import { EVALUATABLE_SECTIONS, getCriteria } from "@/lib/ai/criteria";
 import { normalizeAnalyzeToolResults } from "@/lib/ai/evaluate-run-helpers";
-import { hashContent } from "@/lib/ai/content-hash";
 import { mergeSection } from "@/lib/sections-merge";
-import { cleanSectionContentForEval } from "@/lib/tiptap/strip-pending-suggestions";
 import { PROMPT_VERSION } from "@/lib/ai/section-prompts";
 import {
   hasEnoughContextInFirstSection,
@@ -123,10 +122,13 @@ export async function evaluateReportCriteria(
   for (const { sectionRow, evaluations } of llmResults) {
     const existing = existingBySectionId.get(sectionRow.id) ?? [];
     const existingByKey = new Map(existing.map((e) => [e.criterionKey, e]));
-    const contentHash = hashContent(
-      cleanSectionContentForEval(sectionRow.section, mergedFor(sectionRow)),
-      PROMPT_VERSION
-    );
+    const contentHash = evaluationContentHash({
+      section: sectionRow.section,
+      content: mergedFor(sectionRow),
+      allSections,
+      criteria: getCriteria(sectionRow.section),
+      promptVersion: PROMPT_VERSION,
+    });
 
     for (const evalResult of evaluations) {
       const prior = existingByKey.get(evalResult.criterionKey);

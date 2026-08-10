@@ -68,20 +68,15 @@ function det(
 const COVER_CRITERIA: CriterionDefinition[] = [
   det(
     "cover.document_control",
-    "Document has unique ID, revision number, and effective date",
-    "Confirm unique ID, revision, and effective date are populated.",
+    "Document has unique ID and revision number",
+    "Confirm unique ID and revision are populated.",
     checkCoverPageIdentity
   ),
   det(
     "cover.product_identity",
-    "Product name, model number, and project name reference identified",
-    "Confirm product, model, and project fields are populated.",
+    "Product name identified",
+    "Confirm the product name field is populated.",
     checkCoverPageProduct
-  ),
-  llm(
-    "cover.roles_populated",
-    "Author, reviewer, and approver fields present populated with names",
-    "Are author, reviewer, and approver fields present and populated with names?"
   ),
 ];
 
@@ -562,12 +557,6 @@ You never write to the document directly. Every change is a PROPOSAL that appear
   },
   defaultMetadata: {
     revision: "",
-    effectiveDate: "",
     productName: "",
-    modelNumber: "",
-    projectName: "",
-    authorName: "",
-    reviewerName: "",
-    approverName: "",
   },
 };

@@ -37,7 +37,6 @@ import {
   hasEnoughContextInFirstSection,
   INSUFFICIENT_FIRST_SECTION_MESSAGE,
 } from "@/lib/ai/first-section-context";
-import { designVerificationMetadata } from "@/types/report";
 import { collectPlaceholders } from "@/lib/placeholders/scan-sections";
 import type { Placeholder } from "@/lib/placeholders/find";
 import type { UserRole } from "@/lib/auth/roles";
@@ -632,14 +631,9 @@ export function ReportProvider({
           return;
         }
       } else if (gate?.key === "cover_page") {
-        const meta = designVerificationMetadata(report);
-        if (
-          !report.documentNo.trim() ||
-          !meta.revision.trim() ||
-          !meta.effectiveDate.trim()
-        ) {
+        if (!report.documentNo.trim()) {
           toast.error(
-            "Fill Document Number, Revision, and Effective Date on the Cover Page before running the AI check."
+            "Fill Document Number on the Cover Page before running the AI check."
           );
           return;
         }

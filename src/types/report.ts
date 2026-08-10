@@ -64,13 +64,7 @@ export function designVerificationMetadata(report: {
   const meta = report.metadata as Partial<DesignVerificationMetadata>;
   return {
     revision: meta.revision ?? "",
-    effectiveDate: meta.effectiveDate ?? "",
     productName: meta.productName ?? "",
-    modelNumber: meta.modelNumber ?? "",
-    projectName: meta.projectName ?? "",
-    authorName: meta.authorName ?? "",
-    reviewerName: meta.reviewerName ?? "",
-    approverName: meta.approverName ?? "",
   };
 }
 

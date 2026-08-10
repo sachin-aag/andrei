@@ -23,7 +23,6 @@ import {
   hasEnoughContextInFirstSection,
   INSUFFICIENT_FIRST_SECTION_MESSAGE,
 } from "@/lib/ai/first-section-context";
-import { designVerificationMetadata } from "@/types/report";
 import {
   flushLangfuseTraces,
   isLangfuseEnabled,
@@ -95,15 +94,11 @@ async function handleEvaluatePost(
     const gate = getGateSection(documentType);
     if (gate) {
       if (documentType === "design_verification" && gate.key === "cover_page") {
-        const meta = designVerificationMetadata(report as never);
-        const hasIdentity =
-          Boolean(report.documentNo) &&
-          Boolean(meta.productName || meta.revision || meta.projectName);
-        if (!hasIdentity) {
+        if (!String(report.documentNo ?? "").trim()) {
           return NextResponse.json(
             {
               error:
-                "Add document identity on the cover page (document number and product/project details) before running the AI check.",
+                "Add a document number on the cover page before running the AI check.",
             },
             { status: 400 }
           );

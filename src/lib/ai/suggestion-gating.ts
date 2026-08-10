@@ -1,20 +1,42 @@
 import type { SectionType, CriterionStatus, DocumentType } from "@/db/schema";
 import type { CommentRecord, EvaluationRecord } from "@/types/report";
-import { hashContent } from "@/lib/ai/content-hash";
-import { PROMPT_VERSION } from "@/lib/ai/section-prompts";
-import { cleanSectionContentForEval } from "@/lib/tiptap/strip-pending-suggestions";
+import {
+  evaluationContentHash,
+  type AllSectionsContent,
+} from "@/lib/ai/evaluation-content-hash";
 import {
   effectiveStatus,
   rowsForSection,
   type CriterionRow,
 } from "@/lib/ai/criteria-view";
-import { getCriteria } from "@/lib/document-types";
+import { getCriteria, getDocumentType } from "@/lib/document-types";
 import { shouldSkipSuggestForEvaluation } from "@/lib/placeholders/evaluation-policy";
 
 const FAILING: CriterionStatus[] = ["not_met", "partially_met"];
 
-export function sectionContentHash(section: SectionType, content: unknown): string {
-  return hashContent(cleanSectionContentForEval(section, content), PROMPT_VERSION);
+export type SectionContentHashOptions = {
+  documentType?: DocumentType;
+  /** Required for criteria with dependsOn so freshness matches evaluate. */
+  allSections?: AllSectionsContent;
+};
+
+/**
+ * Content hash for evaluation freshness and suggestion staleness.
+ * Must match `evaluationContentHash` written by the evaluate route.
+ */
+export function sectionContentHash(
+  section: SectionType,
+  content: unknown,
+  opts?: SectionContentHashOptions
+): string {
+  const documentType = opts?.documentType ?? "investigation_report";
+  return evaluationContentHash({
+    section,
+    content,
+    allSections: opts?.allSections,
+    criteria: getCriteria(documentType, section),
+    promptVersion: getDocumentType(documentType).prompts.promptVersion,
+  });
 }
 
 export function isFailingStatus(status: CriterionStatus): boolean {
@@ -27,7 +49,8 @@ export function gapCriteriaForSection(
   evaluations: EvaluationRecord[],
   comments: CommentRecord[],
   sectionContent: unknown,
-  documentType: DocumentType = "investigation_report"
+  documentType: DocumentType = "investigation_report",
+  allSections?: AllSectionsContent
 ): CriterionRow[] {
   const rows = rowsForSection(section, evaluations, documentType).filter(
     (r) => !r.isPlaceholder && isFailingStatus(effectiveStatus(r))
@@ -37,7 +60,10 @@ export function gapCriteriaForSection(
       .filter((c) => c.kind === "ai_fix" && c.status === "open" && c.evaluationId)
       .map((c) => c.evaluationId as string)
   );
-  const hash = sectionContentHash(section, sectionContent);
+  const hash = sectionContentHash(section, sectionContent, {
+    documentType,
+    allSections,
+  });
   const gap = rows.filter((r) => {
     if (r.evaluatedContentHash && r.evaluatedContentHash !== hash) return false;
     if (shouldSkipSuggestForEvaluation(r.reasoning)) return false;
@@ -73,6 +99,7 @@ export function canSuggestFixes(
     isEvaluating?: boolean;
     isSuggesting?: boolean;
     documentType?: DocumentType;
+    allSections?: AllSectionsContent;
   }
 ): boolean {
   if (opts?.isEvaluating || opts?.isSuggesting) return false;
@@ -82,7 +109,8 @@ export function canSuggestFixes(
       evaluations,
       comments,
       sectionContent,
-      opts?.documentType ?? "investigation_report"
+      opts?.documentType ?? "investigation_report",
+      opts?.allSections
     ).length > 0
   );
 }

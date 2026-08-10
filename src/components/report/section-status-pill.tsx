@@ -225,7 +225,9 @@ export function SectionSuggestFixesButton({ section }: { section: SectionType })
   const { sections } = useReportSections();
   const { report } = useReportData();
   const isRunning = runningSuggestionSections.includes(section);
-  const sectionContent = sections[section];
+  // Cover page criteria hash report.metadata (same as evaluate), not empty section JSON.
+  const sectionContent =
+    section === "cover_page" ? report.metadata : sections[section];
   const enabled = canSuggestFixes(
     section,
     evaluations,
@@ -235,6 +237,7 @@ export function SectionSuggestFixesButton({ section }: { section: SectionType })
       isEvaluating: isEvaluating || runningEvalSections.includes(section),
       isSuggesting: isSuggesting || isRunning,
       documentType: report.documentType,
+      allSections: sections,
     }
   );
 
