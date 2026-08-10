@@ -17,6 +17,8 @@ export const maxDuration = 60;
  * Browsers can't render `.docx` natively, so we convert with mammoth on the
  * server. The response is locked down (strict CSP, no scripts) and is intended
  * to be embedded in a sandboxed iframe — it is a viewer, never an editor.
+ * The iframe allows popups (and popups escaping the sandbox) so hyperlinks
+ * with target=_blank open in a real new tab.
  */
 export async function GET(
   req: Request,

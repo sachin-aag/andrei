@@ -9,6 +9,27 @@ function escapeHtml(value: string): string {
 }
 
 /**
+ * Force non-fragment anchors to open in a new tab so clicks don't replace the
+ * sandboxed preview iframe. In-document `#` links stay in-frame.
+ */
+export function openAnchorsInNewTab(html: string): string {
+  return html.replace(/<a\b([^>]*)>/gi, (full, rawAttrs: string) => {
+    const hrefMatch = rawAttrs.match(
+      /\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i
+    );
+    const href = (hrefMatch?.[1] ?? hrefMatch?.[2] ?? hrefMatch?.[3] ?? "").trim();
+    if (!href || href.startsWith("#")) {
+      return full;
+    }
+
+    const attrs = rawAttrs
+      .replace(/\s+target\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "")
+      .replace(/\s+rel\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, "");
+    return `<a${attrs} target="_blank" rel="noopener noreferrer">`;
+  });
+}
+
+/**
  * Convert a `.docx` buffer into a self-contained, read-only HTML document for
  * inline preview. mammoth inlines images as `data:` URIs, so the result needs
  * no external resources. Intended to be served with a strict CSP and rendered
@@ -20,6 +41,7 @@ export async function docxBufferToPreviewHtml(
 ): Promise<string> {
   const { value: bodyHtml } = await mammoth.convertToHtml({ buffer });
   const title = escapeHtml(options.title ?? "Document preview");
+  const safeBodyHtml = openAnchorsInNewTab(bodyHtml);
 
   return `<!doctype html>
 <html lang="en">
@@ -49,7 +71,7 @@ export async function docxBufferToPreviewHtml(
 </style>
 </head>
 <body>
-${bodyHtml}
+${safeBodyHtml}
 </body>
 </html>`;
 }

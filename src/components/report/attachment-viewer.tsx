@@ -84,8 +84,15 @@ export function AttachmentViewer() {
             key={previewUrl}
             src={previewUrl}
             title={activeAttachment.filename}
-            // DOCX preview is untrusted converted HTML — sandbox it (no scripts).
-            sandbox={isDocx ? "" : undefined}
+            // DOCX: untrusted HTML — no scripts. allow-popups* so target=_blank
+            // links open a real new tab instead of replacing (or breaking) the preview.
+            // PDF: Chrome's viewer needs scripts; same popup tokens so URI links
+            // open in a new tab rather than navigating the iframe/app.
+            sandbox={
+              isDocx
+                ? "allow-popups allow-popups-to-escape-sandbox"
+                : "allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+            }
             className="h-[calc(100vh-16rem)] min-h-[720px] w-full bg-white"
           />
         ) : (
