@@ -8,7 +8,7 @@ import {
 } from "@/lib/ai/chat/fields";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v12-at-mentions";
+export const CHAT_PROMPT_VERSION = "chat-v13-target-field-paths";
 
 export type ChatMode = "plan" | "agent";
 
@@ -178,6 +178,8 @@ ${sectionFocusBlock(sectionScope)}${mismatchBlock}${mentions}
 
 ## Editable fields (section → targetField (kind))
 ${fieldTaxonomy(sectionScope, documentType)}
+
+targetField is the in-section path from the list above (usually \`narrative\` or \`table\`). NEVER pass the section key (e.g. purpose_scope, references, test_methods) as targetField.
 
 ${modeRules}${analyzeBlock}
 

@@ -1,4 +1,8 @@
 import path from "node:path";
+import {
+  RICH_FIELD_PATHS,
+  SUGGEST_TARGET_FIELD_PATTERNS,
+} from "@/lib/ai/suggest-target-fields";
 import { normalizeRichField } from "@/lib/tiptap/rich-text";
 import type { CriterionDefinition, DocumentTypeDefinition } from "./types";
 import {
@@ -19,6 +23,28 @@ import {
   type DesignVerificationSectionKey,
   type DesignVerificationSectionMap,
 } from "./design-verification/sections";
+
+/** DV-only entries from the shared field maps (IR keys are ignored here). */
+const DV_FIELD_KEYS = [
+  "purpose_scope",
+  "references",
+  "traceability",
+  "test_methods",
+  "test_results",
+  "deviations",
+  "conclusion",
+  "approval_signoff",
+  "appendices",
+  "cover_page",
+] as const;
+
+function pickDvPatterns(
+  source: Record<string, readonly string[]> | Partial<Record<string, readonly string[]>>
+): Record<string, readonly string[]> {
+  return Object.fromEntries(
+    DV_FIELD_KEYS.map((key) => [key, source[key] ?? []])
+  );
+}
 
 function llm(
   key: string,
@@ -394,29 +420,8 @@ export const designVerificationDefinition: DocumentTypeDefinition = {
     },
     promptVersion: "dv-checklist-v1",
   },
-  suggestTargetFieldPatterns: {
-    purpose_scope: ["narrative"],
-    references: ["narrative"],
-    traceability: ["table"],
-    test_methods: ["narrative"],
-    test_results: ["table"],
-    deviations: ["narrative"],
-    conclusion: ["narrative"],
-    approval_signoff: ["narrative"],
-    appendices: ["narrative"],
-    cover_page: [],
-  },
-  richFieldPaths: {
-    purpose_scope: ["narrative"],
-    references: ["narrative"],
-    traceability: ["table"],
-    test_methods: ["narrative"],
-    test_results: ["table"],
-    deviations: ["narrative"],
-    conclusion: ["narrative"],
-    approval_signoff: ["narrative"],
-    appendices: ["narrative"],
-  },
+  suggestTargetFieldPatterns: pickDvPatterns(SUGGEST_TARGET_FIELD_PATTERNS),
+  richFieldPaths: pickDvPatterns(RICH_FIELD_PATHS),
   mergeSection: mergeDvSection,
   export: {
     templatePath: path.join(

@@ -88,13 +88,16 @@ export function chatTargetFields(section: SectionType): ChatTargetField[] {
     }));
 }
 
-/** Primary narrative field per section — used for summaries + stub drafting. */
+/** Primary draftable field per section — used for summaries + stub drafting. */
 export function primaryFieldForSection(section: SectionType): string {
   switch (section) {
     case "analyze":
       return "rootCause.narrative";
     case "control":
       return "preventiveActions";
+    case "traceability":
+    case "test_results":
+      return "table";
     default:
       return "narrative";
   }

@@ -17,7 +17,7 @@ import {
   serializeAiRedraftCommentContent,
   sectionContentHash,
 } from "@/lib/ai/suggestion-gating";
-import { isAllowedTargetField } from "@/lib/ai/suggest-target-fields";
+import { resolveTargetField } from "@/lib/ai/suggest-target-fields";
 import { fieldContentHash } from "@/lib/suggestions/validate-suggestion";
 import { markdownHasTable } from "@/lib/tiptap/markdown-to-doc";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
@@ -358,7 +358,8 @@ export function buildChatTools(opts: {
         if (!isChatEditableSection(section, documentType)) {
           return { status: "invalid_section", message: `Unknown section '${section}'.` };
         }
-        if (!isAllowedTargetField(section, targetField)) {
+        const resolvedField = resolveTargetField(section, targetField);
+        if (!resolvedField) {
           return {
             status: "invalid_field",
             message: `'${targetField}' is not an editable field of ${section}.`,
@@ -371,7 +372,7 @@ export function buildChatTools(opts: {
           return { status: "section_not_found", message: "Section not found." };
         }
 
-        const fieldText = sectionFieldPlainText(loaded.content, section, targetField);
+        const fieldText = sectionFieldPlainText(loaded.content, section, resolvedField);
         const check = checkProposedEdit(fieldText, { anchorText, deleteText, insertText });
         if (check.status !== "ok") {
           return { status: check.status, hint: proposedEditHint(check) } as ProposeEditResult;
@@ -392,7 +393,7 @@ export function buildChatTools(opts: {
             contentHashAtSuggestion: sectionContentHash(section, loaded.content),
           }),
           anchorText,
-          contentPath: targetField,
+          contentPath: resolvedField,
           fromPos: null,
           toPos: null,
           status: "open",
@@ -404,7 +405,7 @@ export function buildChatTools(opts: {
           status: "proposed",
           suggestionId,
           section,
-          targetField,
+          targetField: resolvedField,
           summary: reasoning,
         };
       },
@@ -443,10 +444,11 @@ export function buildChatTools(opts: {
         if (!isChatEditableSection(section, documentType)) {
           return { status: "invalid_section", message: `Unknown section '${section}'.` };
         }
-        const field = chatTargetFields(section).find(
-          (f) => f.targetField === targetField
-        );
-        if (!field || !isAllowedTargetField(section, targetField)) {
+        const resolvedField = resolveTargetField(section, targetField);
+        const field = resolvedField
+          ? chatTargetFields(section).find((f) => f.targetField === resolvedField)
+          : undefined;
+        if (!resolvedField || !field) {
           return {
             status: "invalid_field",
             message: `'${targetField}' is not an editable field of ${section}.`,
@@ -456,7 +458,7 @@ export function buildChatTools(opts: {
         if (field.kind === "plain" && markdownHasTable(markdown)) {
           return {
             status: "table_not_supported",
-            message: `'${targetField}' is a plain-text field and cannot hold a table. Put the table in a rich narrative field instead.`,
+            message: `'${resolvedField}' is a plain-text field and cannot hold a table. Put the table in a rich narrative field instead.`,
           };
         }
 
@@ -478,11 +480,11 @@ export function buildChatTools(opts: {
             fieldHashAtSuggestion: fieldContentHash(
               section,
               loaded.content,
-              targetField
+              resolvedField
             ),
           }),
           anchorText: "",
-          contentPath: targetField,
+          contentPath: resolvedField,
           fromPos: null,
           toPos: null,
           status: "open",
@@ -494,7 +496,7 @@ export function buildChatTools(opts: {
           status: "drafted",
           suggestionId,
           section,
-          targetField,
+          targetField: resolvedField,
           summary: reasoning,
         };
       },

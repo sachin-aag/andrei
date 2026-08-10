@@ -17,8 +17,15 @@ describe("isChatMode", () => {
 });
 
 describe("buildChatSystemPrompt", () => {
-  it("bumps the prompt version for @ mention tagging", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v12-at-mentions");
+  it("bumps the prompt version when target-field guidance changes", () => {
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v13-target-field-paths");
+  });
+
+  it("tells the model never to pass the section key as targetField", () => {
+    const prompt = buildChatSystemPrompt({ ...opts, mode: "agent" });
+    expect(prompt).toContain(
+      "NEVER pass the section key (e.g. purpose_scope, references, test_methods) as targetField"
+    );
   });
 
   it("includes the mention block when the engineer tagged something", () => {
