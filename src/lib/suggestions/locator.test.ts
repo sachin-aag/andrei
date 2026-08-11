@@ -399,3 +399,131 @@ describe("locator — plain preview alignment", () => {
     void buildPlainTextSuggestionPreview;
   });
 });
+
+// ---------------------------------------------------------------------------
+// Scoped edits (table cells + list items)
+// ---------------------------------------------------------------------------
+
+function cell(text: string): JSONContent {
+  return {
+    type: "tableCell",
+    content: [{ type: "paragraph", content: text ? [{ type: "text", text }] : [] }],
+  };
+}
+
+function tableDoc(rows: string[][]): JSONContent {
+  return {
+    type: "doc",
+    content: [
+      {
+        type: "table",
+        content: rows.map((r) => ({
+          type: "tableRow",
+          content: r.map((c) => cell(c)),
+        })),
+      },
+    ],
+  };
+}
+
+function listDoc(items: string[], ordered = false): JSONContent {
+  return {
+    type: "doc",
+    content: [
+      {
+        type: ordered ? "orderedList" : "bulletList",
+        content: items.map((t) => ({
+          type: "listItem",
+          content: [{ type: "paragraph", content: [{ type: "text", text: t }] }],
+        })),
+      },
+    ],
+  };
+}
+
+describe("locator — scoped edits", () => {
+  it("resolves a cell edit within (row,col) despite a duplicate value elsewhere", () => {
+    const doc = tableDoc([
+      ["Test", "Pass"],
+      ["Retest", "Pass"],
+    ]);
+    const edit: SuggestionEdit = {
+      anchorText: "",
+      deleteText: "Pass",
+      insertText: "Fail",
+      scope: { kind: "cell", row: 1, col: 1 },
+    };
+    // Without scope this exact same delete is ambiguous.
+    expect(probeRichEdit(doc, { ...edit, scope: undefined })).toBe("ambiguous");
+    // Scoped, it resolves.
+    expect(probeRichEdit(doc, edit)).toBe("located");
+
+    const { status, doc: out } = applyAndAcceptRichEdit(doc, "s1", edit);
+    expect(status).toBe("located");
+    const flat = flattenForAnchor(out).text.replace(/\n/g, " | ");
+    expect(flat).toBe("Test | Pass | Retest | Fail");
+  });
+
+  it("sets a whole cell when no anchor/delete is given", () => {
+    const doc = tableDoc([["Old", "keep"]]);
+    const edit: SuggestionEdit = {
+      anchorText: "",
+      deleteText: "",
+      insertText: "New value",
+      scope: { kind: "cell", row: 0, col: 0 },
+    };
+    const { status, doc: out } = applyAndAcceptRichEdit(doc, "s2", edit);
+    expect(status).toBe("located");
+    expect(flattenForAnchor(out).text).toBe("New value\nkeep");
+  });
+
+  it("inserts into a blank cell", () => {
+    const doc = tableDoc([["", "b"]]);
+    const edit: SuggestionEdit = {
+      anchorText: "",
+      deleteText: "",
+      insertText: "filled",
+      scope: { kind: "cell", row: 0, col: 0 },
+    };
+    const { status, doc: out } = applyAndAcceptRichEdit(doc, "s3", edit);
+    expect(status).toBe("located");
+    expect(flattenForAnchor(out).text).toBe("filled\nb");
+  });
+
+  it("resolves a list-item edit by index despite duplicate bullets", () => {
+    const doc = listDoc(["Increase revenue", "Increase revenue"]);
+    const edit: SuggestionEdit = {
+      anchorText: "",
+      deleteText: "Increase revenue",
+      insertText: "Reduce cost",
+      scope: { kind: "listItem", index: 1 },
+    };
+    expect(probeRichEdit(doc, { ...edit, scope: undefined })).toBe("ambiguous");
+    const { status, doc: out } = applyAndAcceptRichEdit(doc, "s4", edit);
+    expect(status).toBe("located");
+    expect(flattenForAnchor(out).text).toBe("Increase revenue\nReduce cost");
+  });
+
+  it("returns bad_scope for an out-of-range coordinate", () => {
+    const doc = tableDoc([["a", "b"]]);
+    expect(
+      probeRichEdit(doc, {
+        anchorText: "",
+        deleteText: "",
+        insertText: "x",
+        scope: { kind: "cell", row: 9, col: 9 },
+      })
+    ).toBe("bad_scope");
+  });
+
+  it("rejects a delete that does not match the scoped cell (stale coordinate)", () => {
+    const doc = tableDoc([["alpha", "beta"]]);
+    const status = probeRichEdit(doc, {
+      anchorText: "",
+      deleteText: "beta",
+      insertText: "z",
+      scope: { kind: "cell", row: 0, col: 0 },
+    });
+    expect(status).toBe("not_found");
+  });
+});

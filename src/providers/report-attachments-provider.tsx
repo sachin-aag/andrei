@@ -22,8 +22,9 @@ import {
 } from "@/lib/attachments/quota-messages";
 import { uploadPdfResumable } from "@/lib/attachments/upload-client";
 import {
+  attachmentUploadMime,
   finalizeAttachmentUpload,
-  isPdfFile,
+  isSupportedAttachmentFile,
   reserveAttachmentUpload,
 } from "@/lib/attachments/upload-pdf";
 import type {
@@ -166,8 +167,8 @@ export function ReportAttachmentsProvider({
 
   const uploadOneFile = useCallback(
     async (file: File, folderId: FolderId) => {
-      if (!isPdfFile(file)) {
-        toast.error(`${file.name} is not a PDF file.`);
+      if (!isSupportedAttachmentFile(file)) {
+        toast.error(`${file.name} is not a PDF or Word (.docx) file.`);
         return;
       }
 
@@ -198,7 +199,7 @@ export function ReportAttachmentsProvider({
         folderId,
         filename: file.name,
         description: null,
-        mimeType: "application/pdf",
+        mimeType: attachmentUploadMime(file),
         sizeBytes: file.size,
         pageCount: null,
         processingStatus: "uploading",
@@ -222,6 +223,7 @@ export function ReportAttachmentsProvider({
         await uploadPdfResumable({
           uploadUrl,
           file,
+          contentType: attachmentUploadMime(file),
           onProgress: ({ uploadedBytes, totalBytes }) => {
             const percent =
               totalBytes > 0 ? Math.round((uploadedBytes / totalBytes) * 100) : 0;
@@ -298,22 +300,22 @@ export function ReportAttachmentsProvider({
       }
 
       const selected = Array.from(files);
-      const pdfFiles = selected.filter(isPdfFile);
+      const supportedFiles = selected.filter(isSupportedAttachmentFile);
       for (const file of selected) {
-        if (!isPdfFile(file)) {
-          toast.error(`${file.name} is not a PDF file.`);
+        if (!isSupportedAttachmentFile(file)) {
+          toast.error(`${file.name} is not a PDF or Word (.docx) file.`);
         }
       }
-      if (pdfFiles.length === 0) return;
+      if (supportedFiles.length === 0) return;
 
       const max = getAttachmentLimits().maxAttachmentsPerReport;
       const remaining = max - attachments.length;
-      if (pdfFiles.length > remaining) {
+      if (supportedFiles.length > remaining) {
         showQuotaWarning(
           formatAttachmentWouldExceedMessage({
             max,
             remaining: Math.max(0, remaining),
-            attempted: pdfFiles.length,
+            attempted: supportedFiles.length,
           })
         );
         return;
@@ -321,7 +323,7 @@ export function ReportAttachmentsProvider({
 
       quotaWarningShownRef.current = false;
       await Promise.all(
-        pdfFiles.map((file) => uploadOneFile(file, folderId))
+        supportedFiles.map((file) => uploadOneFile(file, folderId))
       );
     },
     [

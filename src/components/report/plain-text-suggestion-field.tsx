@@ -24,6 +24,7 @@ import {
   acceptSuggestion,
   dismissSuggestion,
   CommentPersistError,
+  SectionPersistError,
 } from "@/lib/suggestions/accept-suggestion";
 import {
   buildPlainTextSuggestionPreview,
@@ -147,6 +148,8 @@ export function PlainTextSuggestionField({
 
   const activeComment = useMemo(() => {
     if (isSuggestionPreviewHeld(section)) {
+      // Queue bridge: hold the next inline preview until the user jumps to it.
+      if (suggestionApplyTransition[section]?.bridge) return null;
       // Keep previewing the suggestion currently being applied/dismissed —
       // nulling it out here would flash the original wording before the
       // request resolves and the real result lands.
@@ -285,13 +288,16 @@ export function PlainTextSuggestionField({
               : new CommentPersistError(0, "Could not update suggestion")
           );
         }
-        throw new Error(
-          result.reason === "save_failed"
-            ? "Failed to save section"
-            : "Suggestion could not be located"
-        );
+        if (result.reason === "save_failed") {
+          throw (
+            result.error instanceof SectionPersistError
+              ? result.error
+              : new SectionPersistError(0, "Failed to save section")
+          );
+        }
+        throw new Error("Suggestion could not be located");
       }
-      const nextSection = result.nextSection as SectionContentMap[typeof section];
+      const nextSection = result.nextSection as unknown;
       const nextValue = fieldPath
         .split(".")
         .reduce<unknown>((obj, key) => {
@@ -320,9 +326,11 @@ export function PlainTextSuggestionField({
     } catch (err) {
       console.error(err);
       toast.error(
-        err instanceof CommentPersistError
-          ? "Change saved but couldn't mark suggestion as resolved. It may reappear — try dismissing it."
-          : "Could not apply suggestion"
+        err instanceof SectionPersistError
+          ? err.message
+          : err instanceof CommentPersistError
+            ? "Change saved but couldn't mark suggestion as resolved. It may reappear — try dismissing it."
+            : "Could not apply suggestion"
       );
       await refresh();
     } finally {
@@ -372,12 +380,19 @@ export function PlainTextSuggestionField({
               : new CommentPersistError(0, "Could not update suggestion")
           );
         }
+        if (result.reason === "save_failed") {
+          throw (
+            result.error instanceof SectionPersistError
+              ? result.error
+              : new SectionPersistError(0, "Failed to save section")
+          );
+        }
         throw new Error("Failed to save section");
       }
       if (result.nextSection) {
         replaceSection(
           section,
-          result.nextSection as SectionContentMap[typeof section]
+          result.nextSection as unknown
         );
       }
       setComments((prev) => prev.filter((c) => c.id !== activeComment.id));
@@ -388,7 +403,7 @@ export function PlainTextSuggestionField({
     } catch (err) {
       console.error(err);
       toast.error(
-        err instanceof CommentPersistError
+        err instanceof CommentPersistError || err instanceof SectionPersistError
           ? err.message
           : "Could not dismiss suggestion"
       );

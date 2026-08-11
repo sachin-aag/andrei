@@ -81,6 +81,7 @@ import {
   acceptSuggestion,
   dismissSuggestion,
   CommentPersistError,
+  SectionPersistError,
 } from "@/lib/suggestions/accept-suggestion";
 import { suggestionTargetsField } from "@/lib/suggestions/resolve-suggestion-field-path";
 import { validateSuggestionLocate } from "@/lib/suggestions/validate-suggestion";
@@ -585,18 +586,21 @@ export function TiptapSectionField({
               : new CommentPersistError(0, "Could not update suggestion")
           );
         }
-        throw new Error(
-          result.reason === "save_failed"
-            ? "Save failed"
-            : "Suggestion could not be located"
-        );
+        if (result.reason === "save_failed") {
+          throw (
+            result.error instanceof SectionPersistError
+              ? result.error
+              : new SectionPersistError(0, "Save failed")
+          );
+        }
+        throw new Error("Suggestion could not be located");
       }
 
       // Do not mutate editor-local JSON — external-value sync repaints from section state.
       if (result.nextSection) {
         replaceSection(
           section,
-          result.nextSection as SectionContentMap[typeof section]
+          result.nextSection as unknown
         );
       }
       setComments((prev) =>
@@ -635,7 +639,8 @@ export function TiptapSectionField({
         } catch (err) {
           console.error(err);
           toast.error(
-            err instanceof CommentPersistError
+            err instanceof CommentPersistError ||
+              err instanceof SectionPersistError
               ? err.message
               : "Could not apply suggestion"
           );
@@ -657,7 +662,8 @@ export function TiptapSectionField({
         } catch (err) {
           console.error(err);
           toast.error(
-            err instanceof CommentPersistError
+            err instanceof CommentPersistError ||
+              err instanceof SectionPersistError
               ? err.message
               : "Could not dismiss suggestion"
           );
@@ -707,6 +713,14 @@ export function TiptapSectionField({
     const before = JSON.stringify(json);
 
     if (previewHeld) {
+      // Queue bridge: don't keep the previous suggestion marks and don't inject
+      // the next one until the user jumps to it.
+      if (suggestionApplyTransition[section]?.bridge) {
+        json = stripPendingSuggestionsExcept(json, null);
+        if (JSON.stringify(json) === before) return;
+        editor.commands.setContent(json as Content, { emitUpdate: false });
+        return;
+      }
       // Keep showing the suggestion currently being applied/dismissed as-is —
       // stripping it here (before the request resolves) would flash the
       // original wording before the real result lands. Only unrelated
@@ -755,6 +769,7 @@ export function TiptapSectionField({
             anchorText: comment.anchorText,
             deleteText: payload.deleteText,
             insertText: payload.insertText,
+            scope: payload.scope,
           });
           const injected = injectSuggestionMarks(json, edit, {
             id: activeSuggestionId,

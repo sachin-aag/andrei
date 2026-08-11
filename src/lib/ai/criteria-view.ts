@@ -1,6 +1,9 @@
-import type { CriterionStatus, SectionType } from "@/db/schema";
+import type { CriterionStatus, DocumentType, SectionType } from "@/db/schema";
 import type { EvaluationRecord } from "@/types/report";
-import { EVALUATABLE_SECTIONS, getCriteria } from "@/lib/ai/criteria";
+import {
+  getCriteria,
+  getEvaluatableSections,
+} from "@/lib/document-types";
 
 export type CriterionRow = EvaluationRecord & {
   /** True when this row is just a placeholder for a criterion that has never been evaluated. */
@@ -28,9 +31,10 @@ export function effectiveStatus(row: EvaluationRecord): CriterionStatus {
 /** Derive ordered rows for a section, merging definitions with stored evaluations. */
 export function rowsForSection(
   section: SectionType,
-  evaluations: EvaluationRecord[]
+  evaluations: EvaluationRecord[],
+  documentType: DocumentType = "investigation_report"
 ): CriterionRow[] {
-  const defs = getCriteria(section);
+  const defs = getCriteria(documentType, section);
   const byKey = new Map(
     evaluations.filter((e) => e.section === section).map((e) => [e.criterionKey, e])
   );
@@ -55,13 +59,20 @@ export function rowsForSection(
 }
 
 export function rowsBySection(
-  evaluations: EvaluationRecord[]
+  evaluations: EvaluationRecord[],
+  documentType: DocumentType = "investigation_report"
 ): Map<SectionType, CriterionRow[]> {
   const map = new Map<SectionType, CriterionRow[]>();
-  for (const section of EVALUATABLE_SECTIONS) {
-    map.set(section, rowsForSection(section, evaluations));
+  for (const section of getEvaluatableSections(documentType)) {
+    map.set(section.key, rowsForSection(section.key, evaluations, documentType));
   }
   return map;
+}
+
+export function evaluatableSectionKeys(
+  documentType: DocumentType = "investigation_report"
+): SectionType[] {
+  return getEvaluatableSections(documentType).map((s) => s.key);
 }
 
 export function aggregateStatus(rows: EvaluationRecord[]): CriterionStatus {

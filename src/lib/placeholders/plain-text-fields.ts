@@ -1,5 +1,4 @@
 import type { SectionType } from "@/db/schema";
-import type { SectionContentMap } from "@/types/sections";
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
 
 /** Plain-text section fields that can contain `[Label: <to be filled>]` tokens. */
@@ -50,11 +49,13 @@ export function listPlainTextFieldsForSection(
 }
 
 export function setPlainTextFieldValue(
-  content: SectionContentMap[SectionType],
+  content: unknown,
   contentPath: string,
   nextText: string
-): SectionContentMap[SectionType] {
-  const record = structuredClone(content) as Record<string, unknown>;
+): unknown {
+  const record = structuredClone(
+    content && typeof content === "object" ? content : {}
+  ) as Record<string, unknown>;
   const parts = contentPath.split(".").filter(Boolean);
   let cursor: Record<string, unknown> = record;
   for (let i = 0; i < parts.length - 1; i++) {
@@ -66,5 +67,5 @@ export function setPlainTextFieldValue(
     cursor = cursor[key] as Record<string, unknown>;
   }
   cursor[parts[parts.length - 1]!] = nextText;
-  return record as SectionContentMap[SectionType];
+  return record;
 }

@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getCurrentUser } from "@/lib/auth/session";
-import { DUPLICATE_DEVIATION_NO_ERROR } from "@/lib/reports/deviation-no";
+import { DUPLICATE_DOCUMENT_NO_ERROR } from "@/lib/reports/document-no";
 import { GET, POST } from "@/app/api/reports/route";
 
 vi.mock("@/db", () => {
@@ -19,11 +19,11 @@ vi.mock("@/lib/auth/session", () => ({
   getCurrentUser: vi.fn(),
 }));
 
-vi.mock("@/lib/reports/deviation-no", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/reports/deviation-no")>();
+vi.mock("@/lib/reports/document-no", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/reports/document-no")>();
   return {
     ...actual,
-    isDeviationNoTaken: vi.fn(),
+    isDocumentNoTaken: vi.fn(),
   };
 });
 
@@ -38,7 +38,7 @@ vi.mock("@/lib/audit", () => ({
 }));
 
 import { db } from "@/db";
-import { isDeviationNoTaken } from "@/lib/reports/deviation-no";
+import { isDocumentNoTaken } from "@/lib/reports/document-no";
 import { EMPTY_CONTENT, REPORT_SECTION_ROW_ORDER } from "@/types/sections";
 
 const engineer = {
@@ -53,7 +53,8 @@ function mockSuccessfulCreate(reportId = "report-1") {
   const returning = vi.fn().mockResolvedValue([
     {
       id: reportId,
-      deviationNo: "DEV-001",
+      documentType: "investigation_report",
+      documentNo: "DEV-001",
       authorId: engineer.id,
       status: "draft",
     },
@@ -159,7 +160,7 @@ describe("/api/reports", () => {
       role: "engineer",
       title: "Quality Engineer",
     });
-    vi.mocked(isDeviationNoTaken).mockResolvedValueOnce(true);
+    vi.mocked(isDocumentNoTaken).mockResolvedValueOnce(true);
 
     const response = await POST(
       new Request("http://localhost/api/reports", {
@@ -170,7 +171,7 @@ describe("/api/reports", () => {
 
     expect(response.status).toBe(409);
     await expect(response.json()).resolves.toEqual({
-      error: DUPLICATE_DEVIATION_NO_ERROR,
+      error: DUPLICATE_DOCUMENT_NO_ERROR,
     });
     expect(db.insert).not.toHaveBeenCalled();
   });
@@ -183,7 +184,7 @@ describe("/api/reports", () => {
       role: "engineer",
       title: "Quality Engineer",
     });
-    vi.mocked(isDeviationNoTaken).mockResolvedValueOnce(true);
+    vi.mocked(isDocumentNoTaken).mockResolvedValueOnce(true);
 
     const response = await POST(
       new Request("http://localhost/api/reports", {
@@ -193,13 +194,17 @@ describe("/api/reports", () => {
     );
 
     expect(response.status).toBe(409);
-    expect(isDeviationNoTaken).toHaveBeenCalledWith("dev pr 24 016", "engineer-1");
+    expect(isDocumentNoTaken).toHaveBeenCalledWith(
+      "dev pr 24 016",
+      "engineer-1",
+      "investigation_report"
+    );
     expect(db.insert).not.toHaveBeenCalled();
   });
 
   it("creates a report from JSON payload", async () => {
     vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
-    vi.mocked(isDeviationNoTaken).mockResolvedValueOnce(false);
+    vi.mocked(isDocumentNoTaken).mockResolvedValueOnce(false);
     mockSuccessfulCreate();
     mockSectionRowsSelect("report-1");
 
@@ -216,7 +221,7 @@ describe("/api/reports", () => {
 
   it("creates a report with multiple assigned managers", async () => {
     vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
-    vi.mocked(isDeviationNoTaken).mockResolvedValueOnce(false);
+    vi.mocked(isDocumentNoTaken).mockResolvedValueOnce(false);
     mockManagerValidation(["manager-1", "manager-2"]);
     const { values } = mockSuccessfulCreate("report-multi-manager");
     mockSectionRowsSelect("report-multi-manager");
@@ -225,7 +230,8 @@ describe("/api/reports", () => {
       new Request("http://localhost/api/reports", {
         method: "POST",
         body: JSON.stringify({
-          deviationNo: "DEV-001",
+          documentType: "investigation_report",
+          documentNo: "DEV-001",
           assignedManagerIds: ["manager-1", "manager-2"],
         }),
       }),

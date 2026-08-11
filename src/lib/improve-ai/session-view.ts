@@ -155,7 +155,7 @@ export function buildImproveAiSessionView(params: {
     status: params.session.status,
     sourceType: params.session.sourceType,
     sourceLabel: params.session.sourceLabel,
-    deviationNo: params.report.deviationNo,
+    deviationNo: params.report.documentNo,
     reportDate: params.report.date.toISOString(),
     sections,
     totalCriterionCount,

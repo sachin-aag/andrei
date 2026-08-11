@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { buildDocumentTree } from "@/lib/attachments/build-tree";
+import { ATTACHMENT_ACCEPT_ATTR } from "@/lib/attachments/file-types";
 import { useReportAttachments } from "@/providers/report-attachments-provider";
 import { DocumentTreeNodes } from "./document-tree";
 import { DragProvider, useDocumentDrag } from "./drag-context";
@@ -134,8 +135,8 @@ function ExpandedDocumentsPanel({
                 variant="ghost"
                 size="icon"
                 className="size-7"
-                aria-label="Upload PDF"
-                title="Upload PDF"
+                aria-label="Upload PDF or Word document"
+                title="Upload PDF or Word document"
                 disabled={isUploading}
                 onClick={() => inputRef.current?.click()}
               >
@@ -148,7 +149,7 @@ function ExpandedDocumentsPanel({
               <input
                 ref={inputRef}
                 type="file"
-                accept="application/pdf,.pdf"
+                accept={ATTACHMENT_ACCEPT_ATTR}
                 multiple
                 className="hidden"
                 onChange={(event) => void handleFiles(event.target.files)}
@@ -212,7 +213,7 @@ function ExpandedDocumentsPanel({
         {isEmpty && !creatingFolder ? (
           <p className="px-2 py-6 text-center text-xs text-[var(--muted-foreground)]">
             {canMutateAttachments
-              ? "Drop PDFs here or use the upload button."
+              ? "Drop PDFs or Word docs here or use the upload button."
               : "No documents have been attached yet."}
           </p>
         ) : null}

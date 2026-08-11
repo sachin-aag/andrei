@@ -9,6 +9,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import type { AttachmentProcessingStatus } from "@/db/schema";
+import { kindFromMime } from "@/lib/attachments/file-types";
 import { useReportAttachments } from "@/providers/report-attachments-provider";
 
 export function AttachmentViewer() {
@@ -25,12 +26,19 @@ export function AttachmentViewer() {
     );
   }
 
-  const contentUrl = `/api/reports/${reportId}/attachments/${activeAttachment.id}/content?page=${activePage}`;
+  const isDocx = kindFromMime(activeAttachment.mimeType) === "docx";
+  // Browsers can't render .docx inline, so DOCX previews are server-rendered
+  // HTML shown in a sandboxed iframe; PDFs use the browser's native viewer.
+  const previewUrl = isDocx
+    ? `/api/reports/${reportId}/attachments/${activeAttachment.id}/preview`
+    : `/api/reports/${reportId}/attachments/${activeAttachment.id}/content?page=${activePage}`;
   const downloadUrl = `/api/reports/${reportId}/attachments/${activeAttachment.id}/content?download=1`;
-  const pageLabel = activeAttachment.pageCount
-    ? `Page ${activePage} of ${activeAttachment.pageCount}`
-    : `Page ${activePage}`;
-  // PDF is on permanent storage once pageCount is set (finalize); indexing can still be running.
+  const pageLabel = isDocx
+    ? "Word document"
+    : activeAttachment.pageCount
+      ? `Page ${activePage} of ${activeAttachment.pageCount}`
+      : `Page ${activePage}`;
+  // File is on permanent storage once pageCount is set (finalize); indexing can still be running.
   const canPreview = activeAttachment.pageCount != null;
   const indexing = isIndexingStatus(activeAttachment.processingStatus);
 
@@ -73,9 +81,18 @@ export function AttachmentViewer() {
       <CardContent className="p-0">
         {canPreview ? (
           <iframe
-            key={contentUrl}
-            src={contentUrl}
+            key={previewUrl}
+            src={previewUrl}
             title={activeAttachment.filename}
+            // DOCX: untrusted HTML — no scripts. allow-popups* so target=_blank
+            // links open a real new tab instead of replacing (or breaking) the preview.
+            // PDF: Chrome's viewer needs scripts; same popup tokens so URI links
+            // open in a new tab rather than navigating the iframe/app.
+            sandbox={
+              isDocx
+                ? "allow-popups allow-popups-to-escape-sandbox"
+                : "allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+            }
             className="h-[calc(100vh-16rem)] min-h-[720px] w-full bg-white"
           />
         ) : (

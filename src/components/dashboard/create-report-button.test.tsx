@@ -49,7 +49,7 @@ describe("CreateReportButton", () => {
     await user.click(screen.getByRole("button", { name: /new report/i }));
     await user.click(screen.getByRole("button", { name: /^create$/i }));
 
-    expect(toast.error).toHaveBeenCalledWith("Deviation number is required");
+    expect(toast.error).toHaveBeenCalledWith("Deviation Number is required");
   });
 
   it("closes the dialog on cancel", async () => {

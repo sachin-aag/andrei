@@ -794,3 +794,12 @@
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
 }
+
+/* Sonner defaults the dismiss X to the top-left in LTR. Override the
+   close button directly with !important — Sonner injects its stylesheet
+   at runtime and otherwise wins on cascade order. */
+[data-sonner-toast][data-styled='true'] [data-close-button] {
+  left: unset !important;
+  right: 0 !important;
+  transform: translate(35%, -35%) !important;
+}

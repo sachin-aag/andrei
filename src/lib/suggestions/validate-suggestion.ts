@@ -1,4 +1,4 @@
-import type { SectionType } from "@/db/schema";
+import type { DocumentType, SectionType } from "@/db/schema";
 import type { CommentRecord, EvaluationRecord } from "@/types/report";
 import { sortedOpenSuggestionsForSection } from "@/lib/ai/suggestion-gating";
 import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
@@ -41,6 +41,7 @@ export function suggestionEditFromComment(
     anchorText: comment.anchorText ?? "",
     deleteText: payload.deleteText,
     insertText: payload.insertText,
+    scope: payload.scope,
   };
 }
 
@@ -82,9 +83,12 @@ export function validateSuggestionLocate(
   section: SectionType,
   sectionContent: unknown,
   /** When validating from a specific plain-text editor, resolves legacy paths. */
-  fieldContentPath?: string
+  fieldContentPath?: string,
+  documentType: DocumentType = "investigation_report"
 ): SuggestionValidation {
-  const currentHash = sectionContentHash(section, sectionContent);
+  const currentHash = sectionContentHash(section, sectionContent, {
+    documentType,
+  });
 
   // Redrafts replace the whole field — always applicable. Staleness compares
   // the TARGET FIELD's hash only, so accepting other drafts never flags them.

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  aiSuggestionLockReason,
   canEditReport,
   canMutateAttachments,
+  canSaveReportSection,
   canViewReport,
 } from "./access";
 
@@ -60,6 +62,74 @@ describe("canEditReport", () => {
     expect(
       canEditReport(roles.admin, { ...baseReport, deletedAt: new Date() })
     ).toBe(false);
+  });
+});
+
+describe("canSaveReportSection", () => {
+  it.each([
+    ["draft", true],
+    ["feedback", true],
+    ["in_review", true],
+    ["submitted", false],
+    ["approved", false],
+  ] as const)("author save on %s → %s", (status, expected) => {
+    expect(
+      canSaveReportSection(roles.author, { ...baseReport, status })
+    ).toBe(expected);
+  });
+
+  it("denies non-author engineers", () => {
+    expect(canSaveReportSection(roles.otherEngineer, baseReport)).toBe(false);
+  });
+
+  it.each([
+    ["submitted", true],
+    ["in_review", true],
+    ["draft", false],
+    ["feedback", false],
+    ["approved", false],
+  ] as const)("manager save on %s → %s", (status, expected) => {
+    expect(
+      canSaveReportSection(roles.assignedManager, { ...baseReport, status })
+    ).toBe(expected);
+  });
+
+  it("denies admin and QA (section saves are engineer/manager only)", () => {
+    expect(canSaveReportSection(roles.admin, baseReport)).toBe(false);
+    expect(canSaveReportSection(roles.qa, baseReport)).toBe(false);
+  });
+
+  it("denies tombstoned reports", () => {
+    expect(
+      canSaveReportSection(roles.author, {
+        ...baseReport,
+        deletedAt: new Date(),
+      })
+    ).toBe(false);
+  });
+});
+
+describe("aiSuggestionLockReason", () => {
+  it("returns null when the author can still save", () => {
+    expect(aiSuggestionLockReason(roles.author, baseReport)).toBeNull();
+  });
+
+  it("explains submitted lock for the author", () => {
+    expect(
+      aiSuggestionLockReason(roles.author, {
+        ...baseReport,
+        status: "submitted",
+      })
+    ).toMatch(/already submitted/i);
+  });
+
+  it("explains approved lock", () => {
+    expect(
+      aiSuggestionLockReason(roles.author, {
+        ...baseReport,
+        status: "approved",
+      })
+    ).toMatch(/approved/i);
   });
 });
 

@@ -1,3 +1,7 @@
+import {
+  canonicalAttachmentMime,
+  isSupportedAttachment,
+} from "@/lib/attachments/file-types";
 import { uploadPdfResumable } from "@/lib/attachments/upload-client";
 import type { ReportAttachmentRecord } from "@/types/report";
 
@@ -10,6 +14,19 @@ export type UploadByteProgress = {
 export function isPdfFile(file: File): boolean {
   return (
     file.type === "application/pdf" && file.name.toLowerCase().endsWith(".pdf")
+  );
+}
+
+/** Accepts the supported evidence-attachment types: PDF and Word `.docx`. */
+export function isSupportedAttachmentFile(file: File): boolean {
+  return isSupportedAttachment({ filename: file.name, mimeType: file.type });
+}
+
+/** Canonical MIME to reserve/PUT with; falls back to the browser's type. */
+export function attachmentUploadMime(file: File): string {
+  return (
+    canonicalAttachmentMime({ filename: file.name, mimeType: file.type }) ??
+    file.type
   );
 }
 
@@ -30,7 +47,7 @@ export async function reserveAttachmentUpload({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         filename: file.name,
-        mimeType: file.type,
+        mimeType: attachmentUploadMime(file),
         sizeBytes: file.size,
         folderId,
       }),
@@ -96,6 +113,7 @@ export async function uploadPdfToReport({
     await uploadPdfResumable({
       uploadUrl,
       file,
+      contentType: attachmentUploadMime(file),
       onProgress: ({ uploadedBytes, totalBytes }) => {
         onProgress?.({
           uploadedBytes,

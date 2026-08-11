@@ -1,0 +1,153 @@
+import path from "node:path";
+import {
+  getInvestigationCriteriaBySection,
+  EVALUATABLE_SECTIONS,
+} from "@/lib/ai/criteria";
+import {
+  COMMON_EVALUATION_SYSTEM_PROMPT,
+  PROMPT_VERSION,
+  SECTION_SYSTEM_PROMPT_ADDITIONS,
+} from "@/lib/ai/section-prompts";
+import {
+  RICH_FIELD_PATHS,
+  SUGGEST_TARGET_FIELD_PATTERNS,
+} from "@/lib/ai/suggest-target-fields";
+import { mergeSection } from "@/lib/sections-merge";
+import {
+  EMPTY_CONTENT,
+  EDITABLE_SECTIONS,
+  REPORT_SECTION_ROW_ORDER,
+  SECTION_LABELS,
+} from "@/types/sections";
+import type { DocumentTypeDefinition, SectionDefinition } from "./types";
+
+const evaluableSet = new Set<string>(EVALUATABLE_SECTIONS);
+const editableSet = new Set<string>(EDITABLE_SECTIONS);
+
+const sections: SectionDefinition[] = REPORT_SECTION_ROW_ORDER.map(
+  (key, index) => ({
+    key,
+    label: SECTION_LABELS[key],
+    order: index,
+    editable: editableSet.has(key),
+    evaluable: evaluableSet.has(key),
+    isGateSection: key === "define",
+    emptyContent: EMPTY_CONTENT[key],
+  })
+);
+
+export const investigationReportDefinition: DocumentTypeDefinition = {
+  key: "investigation_report",
+  label: "Investigation Report",
+  documentNoun: "deviation",
+  documentNoLabel: "Deviation Number",
+  sections,
+  criteriaBySection: getInvestigationCriteriaBySection(),
+  prompts: {
+    base: COMMON_EVALUATION_SYSTEM_PROMPT,
+    perSection: Object.fromEntries(
+      Object.entries(SECTION_SYSTEM_PROMPT_ADDITIONS).filter(
+        (entry): entry is [string, string] => typeof entry[1] === "string"
+      )
+    ),
+    promptVersion: PROMPT_VERSION,
+  },
+  chat: {
+    persona: `You are the drafting assistant for a deviation investigation report tool used in regulated pharmaceutical and medical device environments. You help quality and operations staff document, investigate, and close deviations, non-conformances, and quality events in a structured DMAIC investigation report (Define, Measure, Analyze, Improve, Control, Conclusion).
+
+Your guidance should reflect GMP / quality-system expectations (traceability, impact assessment, root cause, corrective and preventive action) without inventing company-specific SOP numbers, site names, or product details the engineer has not provided.
+
+The report is graded against fixed quality criteria (a traffic-light check). Your job is to help the engineer produce a first draft that satisfies as many criteria as possible, then refine it.
+
+You never write to the document directly. Every change is a PROPOSAL that appears as an inline tracked-change (red delete / green insert) the engineer accepts or rejects.`,
+    draftOrder: [
+      "define",
+      "analyze",
+      "measure",
+      "improve",
+      "control",
+      "conclusion",
+    ],
+    sectionIntentPatterns: [
+      [
+        "define",
+        [
+          /\bdefine\b/i,
+          /\bproblem statement\b/i,
+          /\bdeviation description\b/i,
+          /\bwhat happened\b/i,
+        ],
+      ],
+      [
+        "measure",
+        [
+          /\bmeasure\b/i,
+          /\bmeasurement plan\b/i,
+          /\bexperiment\b/i,
+          /\bdata collection\b/i,
+        ],
+      ],
+      [
+        "analyze",
+        [
+          /\banalyz/i,
+          /\broot cause\b/i,
+          /\b5[-\s]?why\b/i,
+          /\bfishbone\b/i,
+          /\b6m\b/i,
+          /\bimpact assessment\b/i,
+        ],
+      ],
+      [
+        "improve",
+        [
+          /\bimprove\b/i,
+          /\bcorrective\b/i,
+          /\bcapa\b/i,
+          /\bcorrective action\b/i,
+        ],
+      ],
+      [
+        "control",
+        [
+          /\bcontrol\b/i,
+          /\bpreventive\b/i,
+          /\bmonitoring\b/i,
+          /\bpreventive action\b/i,
+        ],
+      ],
+      [
+        "conclusion",
+        [
+          /\bconclusion\b/i,
+          /\binvestigation outcome\b/i,
+          /\bclosing summary\b/i,
+        ],
+      ],
+    ],
+  },
+  suggestTargetFieldPatterns: SUGGEST_TARGET_FIELD_PATTERNS as Record<
+    string,
+    readonly string[]
+  >,
+  richFieldPaths: RICH_FIELD_PATHS as Record<string, readonly string[]>,
+  mergeSection: (key, raw) =>
+    mergeSection(key as keyof typeof EMPTY_CONTENT, raw),
+  export: {
+    templatePath: path.join(
+      process.cwd(),
+      "templates",
+      "investigation-report-template.docx"
+    ),
+    // Filled by generate-docx re-export wiring; kept lazy to avoid cycles.
+    buildTemplateData: () => {
+      throw new Error(
+        "investigation_report export.buildTemplateData is wired via generateReportDocx"
+      );
+    },
+  },
+  defaultMetadata: {
+    toolsUsed: { sixM: false, fiveWhy: false, brainstorming: false },
+    otherTools: "",
+  },
+};

@@ -1,10 +1,16 @@
 import type { SectionType } from "@/db/schema";
+import type { CriterionDefinition as RegistryCriterionDefinition } from "@/lib/document-types/types";
 
-export type CriterionDefinition = {
-  key: string;
-  label: string;
-  description: string;
-};
+/** Investigation criteria; `kind` defaults to "llm" when omitted. */
+export type CriterionDefinition = Omit<RegistryCriterionDefinition, "kind" | "dependsOn" | "check"> &
+  Partial<Pick<RegistryCriterionDefinition, "kind" | "dependsOn" | "check">>;
+
+function withLlmDefaults(criteria: CriterionDefinition[]): RegistryCriterionDefinition[] {
+  return criteria.map((c) => ({
+    ...c,
+    kind: c.kind ?? "llm",
+  }));
+}
 
 export const DEFINE_CRITERIA: CriterionDefinition[] = [
   {
@@ -332,7 +338,7 @@ export const CONCLUSION_CRITERIA: CriterionDefinition[] = [
   },
 ];
 
-export const CRITERIA_BY_SECTION: Partial<Record<SectionType, CriterionDefinition[]>> = {
+export const CRITERIA_BY_SECTION: Partial<Record<string, CriterionDefinition[]>> = {
   define: DEFINE_CRITERIA,
   measure: MEASURE_CRITERIA,
   analyze: ANALYZE_CRITERIA,
@@ -350,6 +356,12 @@ export const EVALUATABLE_SECTIONS: SectionType[] = [
   "conclusion",
 ];
 
-export function getCriteria(section: SectionType): CriterionDefinition[] {
-  return CRITERIA_BY_SECTION[section] ?? [];
+export function getCriteria(section: SectionType): RegistryCriterionDefinition[] {
+  return withLlmDefaults(CRITERIA_BY_SECTION[section] ?? []);
+}
+
+export function getInvestigationCriteriaBySection(): Record<string, RegistryCriterionDefinition[]> {
+  return Object.fromEntries(
+    Object.entries(CRITERIA_BY_SECTION).map(([k, v]) => [k, withLlmDefaults(v ?? [])])
+  );
 }

@@ -121,7 +121,7 @@ KEY RULES:
  * value should remain focused on how the model should judge criteria for that
  * section, not duplicate the per-criterion definitions in `criteria.ts`.
  */
-export const SECTION_SYSTEM_PROMPT_ADDITIONS: Partial<Record<SectionType, string>> = {
+export const SECTION_SYSTEM_PROMPT_ADDITIONS: Partial<Record<string, string>> = {
   define: DEFINE_PROMPT_ADDITION,
   measure: MEASURE_PROMPT_ADDITION,
   analyze: ANALYZE_PROMPT_ADDITION,

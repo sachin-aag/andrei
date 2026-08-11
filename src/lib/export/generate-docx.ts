@@ -15,7 +15,11 @@ import type {
   SectionContentMap,
 } from "@/types/sections";
 import { EMPTY_CONTENT } from "@/types/sections";
-import type { ReportSectionRecord } from "@/types/report";
+import {
+  investigationOtherTools,
+  investigationToolsUsed,
+  type ReportSectionRecord,
+} from "@/types/report";
 import type { reports as reportsTable } from "@/db/schema";
 import { getUser } from "@/lib/auth/user-directory";
 import { formatCalendarDate } from "@/lib/utils";
@@ -75,7 +79,7 @@ function sectionByKey<K extends keyof SectionContentMap>(
 ): SectionContentMap[K] {
   const row = rows.find((r) => r.section === key);
   if (!row) return EMPTY_CONTENT[key];
-  return mergeSection(key as K & SectionType, row.content);
+  return mergeSection(key, row.content) as SectionContentMap[K];
 }
 
 function rootCommentsFor(
@@ -226,10 +230,10 @@ function buildTemplateData(
   return {
     // Header row
     date: formatCalendarDate(report.date),
-    deviationNo: report.deviationNo,
+    deviationNo: report.documentNo,
 
     // Investigation-tool checkboxes are Word form fields in the template (see docx-form-checkbox)
-    otherToolsDisplay: na(report.otherTools),
+    otherToolsDisplay: na(investigationOtherTools(report)),
 
     // Define — compose all sub-fields into one block (raw XML for table support)
     defineNarrativeXml: withWordComments(
@@ -418,6 +422,10 @@ export async function generateReportDocx({
   comments?: ReportDocxComment[];
   electronicSignatures?: DocxAuditSignature[];
 }): Promise<Buffer> {
+  if (report.documentType === "design_verification") {
+    return generateDesignVerificationDocx({ report, sections });
+  }
+
   const templateContent = fs.readFileSync(TEMPLATE_PATH);
   const zip = new PizZip(templateContent);
 
@@ -437,7 +445,7 @@ export async function generateReportDocx({
   doc.render(data);
   applySignatureBlockToDocxZip(doc.getZip(), signatureSnapshot);
   applyElectronicSignaturesToDocxZip(doc.getZip(), electronicSignatures);
-  applyInvestigationToolCheckboxes(doc.getZip(), report.toolsUsed);
+  applyInvestigationToolCheckboxes(doc.getZip(), investigationToolsUsed(report));
   applyNumberingToDocxZip(doc.getZip(), ctx);
   applyInlineMediaToDocxZip(doc.getZip(), ctx);
   applyWordCommentsToDocxZip(doc.getZip(), ctx);
@@ -449,4 +457,70 @@ export async function generateReportDocx({
   });
 
   return buf;
+}
+
+function generateDesignVerificationDocx({
+  report,
+  sections,
+}: {
+  report: ReportRowWithManagers;
+  sections: ReportSectionRecord[];
+}): Buffer {
+  const templatePath = path.join(
+    process.cwd(),
+    "templates",
+    "design-verification-report-template.docx"
+  );
+  const templateContent = fs.readFileSync(
+    fs.existsSync(templatePath) ? templatePath : TEMPLATE_PATH
+  );
+  const zip = new PizZip(templateContent);
+  const doc = new Docxtemplater(zip, {
+    paragraphLoop: true,
+    linebreaks: true,
+    delimiters: { start: "{", end: "}" },
+    nullGetter: () => "",
+  });
+
+  const byKey = Object.fromEntries(sections.map((s) => [s.section, s.content]));
+  const plain = (key: string, field: "narrative" | "table" = "narrative") => {
+    const content = byKey[key] as Record<string, unknown> | undefined;
+    const value = content?.[field];
+    if (!value) return "";
+    return richJsonToPlainText(normalizeRichField(value));
+  };
+  const meta = report.metadata as Record<string, string>;
+
+  // Reuse investigation template placeholders where possible so the copied
+  // template still renders a usable document for the demo.
+  doc.render({
+    deviationNo: report.documentNo,
+    documentNo: report.documentNo,
+    date: formatCalendarDate(report.date),
+    defineNarrativeXml: plainTextToDocxXml(plain("purpose_scope")),
+    measureNarrativeXml: plainTextToDocxXml(plain("references")),
+    analyzeNarrativeXml: plainTextToDocxXml(
+      [plain("traceability", "table"), plain("test_methods")].filter(Boolean).join("\n\n")
+    ),
+    improveNarrativeXml: plainTextToDocxXml(plain("test_results", "table")),
+    controlNarrativeXml: plainTextToDocxXml(plain("deviations")),
+    conclusionNarrativeXml: plainTextToDocxXml(
+      [plain("conclusion"), plain("approval_signoff"), plain("appendices")]
+        .filter(Boolean)
+        .join("\n\n")
+    ),
+    authorName: "",
+    managerName: "",
+    productName: meta.productName ?? "",
+    revision: meta.revision ?? "",
+    otherTools: "",
+    toolsUsed: { sixM: false, fiveWhy: false, brainstorming: false },
+    attachments: [],
+    documentsReviewedXml: "",
+  });
+
+  return doc.getZip().generate({
+    type: "nodebuffer",
+    compression: "DEFLATE",
+  });
 }

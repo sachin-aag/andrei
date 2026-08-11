@@ -4,22 +4,21 @@ import { propagateAttributes } from "@langfuse/tracing";
 import { eq, inArray, and } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import {
-  reportSections,
-  criteriaEvaluations,
-  sectionTypeEnum,
-} from "@/db/schema";
-import type { SectionType } from "@/db/schema";
+import { reportSections, criteriaEvaluations } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
-import { evaluateSection, type AllSectionsContent } from "@/lib/ai/evaluate";
-import { EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
 import {
-  normalizeAnalyzeToolResults,
-} from "@/lib/ai/evaluate-run-helpers";
-import { hashContent } from "@/lib/ai/content-hash";
-import { mergeSection } from "@/lib/sections-merge";
-import { cleanSectionContentForEval } from "@/lib/tiptap/strip-pending-suggestions";
-import { PROMPT_VERSION } from "@/lib/ai/section-prompts";
+  evaluateSection,
+  evaluationContentHash,
+  type AllSectionsContent,
+} from "@/lib/ai/evaluate";
+import { normalizeAnalyzeToolResults } from "@/lib/ai/evaluate-run-helpers";
+import {
+  getDocumentType,
+  getEvaluatableSections,
+  getGateSection,
+  isValidSection,
+  mergeSectionForType,
+} from "@/lib/document-types";
 import {
   hasEnoughContextInFirstSection,
   INSUFFICIENT_FIRST_SECTION_MESSAGE,
@@ -40,10 +39,6 @@ const bodySchema = z.object({
   reason: z.enum(["manual", "idle", "post-action"]).optional(),
 });
 
-function isValidSection(v: string): v is SectionType {
-  return (sectionTypeEnum.enumValues as readonly string[]).includes(v);
-}
-
 export const POST = observeRouteHandler(
   "report-criteria-evaluate",
   handleEvaluatePost
@@ -60,14 +55,17 @@ async function handleEvaluatePost(
     return NextResponse.json({ error: access.error }, { status: access.status });
   }
   const { report, user } = access;
+  const documentType = report.documentType;
+  const def = getDocumentType(documentType);
+  const evaluatable = getEvaluatableSections(documentType).map((s) => s.key);
 
   const body = await req.json().catch(() => ({}));
   const parsed = bodySchema.safeParse(body);
   const requestedSections = parsed.success ? parsed.data.sections : undefined;
 
-  const evalSet = new Set<SectionType>(EVALUATABLE_SECTIONS);
-  const targetSections: SectionType[] = (requestedSections ?? EVALUATABLE_SECTIONS)
-    .filter((s): s is SectionType => isValidSection(s))
+  const evalSet = new Set(evaluatable);
+  const targetSections = (requestedSections ?? evaluatable)
+    .filter((s) => isValidSection(documentType, s))
     .filter((s) => evalSet.has(s));
 
   const runEvaluation = async (): Promise<Response> => {
@@ -87,15 +85,33 @@ async function handleEvaluatePost(
       .where(
         and(
           eq(reportSections.reportId, reportId),
-          inArray(reportSections.section, EVALUATABLE_SECTIONS)
+          inArray(reportSections.section, evaluatable)
         )
       );
-    const bySection = new Map<SectionType, (typeof allEvaluatableRows)[number]>();
+    const bySection = new Map<string, (typeof allEvaluatableRows)[number]>();
     for (const row of allEvaluatableRows) bySection.set(row.section, row);
 
-    const defineRow = bySection.get("define");
-    if (!hasEnoughContextInFirstSection(defineRow?.content)) {
-      return NextResponse.json({ error: INSUFFICIENT_FIRST_SECTION_MESSAGE }, { status: 400 });
+    const gate = getGateSection(documentType);
+    if (gate) {
+      if (documentType === "design_verification" && gate.key === "cover_page") {
+        if (!String(report.documentNo ?? "").trim()) {
+          return NextResponse.json(
+            {
+              error:
+                "Add a document number on the cover page before running the AI check.",
+            },
+            { status: 400 }
+          );
+        }
+      } else {
+        const gateRow = bySection.get(gate.key);
+        if (!hasEnoughContextInFirstSection(gateRow?.content)) {
+          return NextResponse.json(
+            { error: INSUFFICIENT_FIRST_SECTION_MESSAGE },
+            { status: 400 }
+          );
+        }
+      }
     }
 
     const existingForSections = sectionRows.length
@@ -116,29 +132,35 @@ async function handleEvaluatePost(
       existingBySectionId.set(row.sectionId, arr);
     }
 
-    // Evaluate and hash the same merged content the suggestions route sees —
-    // hashing raw content would make legacy rows (whose merge folds fields into
-    // the narrative) permanently report `stale_evaluation`.
     const allSections: AllSectionsContent = {};
     for (const row of allEvaluatableRows) {
-      allSections[row.section] = mergeSection(row.section, row.content);
+      allSections[row.section] = mergeSectionForType(
+        documentType,
+        row.section,
+        row.content
+      );
     }
+
     const mergedFor = (row: (typeof sectionRows)[number]) =>
-      allSections[row.section] ?? mergeSection(row.section, row.content);
+      allSections[row.section] ??
+      mergeSectionForType(documentType, row.section, row.content);
 
     const llmResults = await Promise.all(
       sectionRows.map(async (row) => {
-        const content = mergedFor(row);
+        const content =
+          row.section === "cover_page" ? report.metadata : mergedFor(row);
         const evaluations = await evaluateSection({
           section: row.section,
           content,
-          reportContext: { deviationNo: report.deviationNo, date: report.date },
+          reportContext: { deviationNo: report.documentNo, date: report.date },
           allSections,
+          documentType,
+          report: report as never,
         });
         return {
           sectionRow: row,
           evaluations:
-            row.section === "analyze"
+            documentType === "investigation_report" && row.section === "analyze"
               ? normalizeAnalyzeToolResults(content, evaluations)
               : evaluations,
         };
@@ -148,10 +170,17 @@ async function handleEvaluatePost(
     for (const { sectionRow, evaluations } of llmResults) {
       const existing = existingBySectionId.get(sectionRow.id) ?? [];
       const existingByKey = new Map(existing.map((e) => [e.criterionKey, e]));
-      const contentHash = hashContent(
-        cleanSectionContentForEval(sectionRow.section, mergedFor(sectionRow)),
-        PROMPT_VERSION
-      );
+      const sectionCriteria = def.criteriaBySection[sectionRow.section] ?? [];
+      const contentHash = evaluationContentHash({
+        section: sectionRow.section,
+        content:
+          sectionRow.section === "cover_page"
+            ? report.metadata
+            : mergedFor(sectionRow),
+        allSections,
+        criteria: sectionCriteria,
+        promptVersion: def.prompts.promptVersion,
+      });
 
       for (const evalResult of evaluations) {
         const prior = existingByKey.get(evalResult.criterionKey);
@@ -213,9 +242,11 @@ async function handleEvaluatePost(
         statusBySection: llmResults.map(({ sectionRow, evaluations }) => ({
           section: sectionRow.section,
           met: evaluations.filter((e) => e.status === "met").length,
-          partiallyMet: evaluations.filter((e) => e.status === "partially_met").length,
+          partiallyMet: evaluations.filter((e) => e.status === "partially_met")
+            .length,
           notMet: evaluations.filter((e) => e.status === "not_met").length,
-          notEvaluated: evaluations.filter((e) => e.status === "not_evaluated").length,
+          notEvaluated: evaluations.filter((e) => e.status === "not_evaluated")
+            .length,
         })),
       },
     });
@@ -232,7 +263,7 @@ async function handleEvaluatePost(
     input: {
       reportId,
       sections: targetSections,
-      deviationNo: report.deviationNo,
+      documentNo: report.documentNo,
       reason: parsed.success ? parsed.data.reason ?? null : null,
     },
   });
@@ -246,7 +277,7 @@ async function handleEvaluatePost(
       tags: ["criteria-evaluation"],
       metadata: {
         feature: "criteria-evaluation",
-        deviationNo: report.deviationNo,
+        documentNo: report.documentNo,
       },
     },
     runEvaluation

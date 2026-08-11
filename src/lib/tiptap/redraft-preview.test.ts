@@ -91,6 +91,32 @@ describe("buildRedraftPreviewDoc", () => {
     const accepted = acceptSuggestionMarksById(preview, ATTRS.id);
     expect((accepted.content ?? []).map((b) => b.type)).toEqual(["table"]);
   });
+
+  // Structural table change (delete a row) via whole-table redraft — the
+  // sanctioned path for add/remove row/column instead of node-level edits.
+  it("deletes a table row via redraft: accept keeps the smaller table, reject restores the original", () => {
+    const originalTable = markdownToDoc(
+      "| Test | Result |\n| --- | --- |\n| T-1 | Pass |\n| T-2 | Fail |"
+    );
+    const rowCount = (t: JSONContent) =>
+      (t.content ?? []).find((b) => b.type === "table")?.content?.length ?? 0;
+    expect(rowCount(originalTable)).toBe(3); // header + 2 data rows
+
+    // Redraft to the same table with the T-2 row removed.
+    const replacement = markdownToDoc(
+      "| Test | Result |\n| --- | --- |\n| T-1 | Pass |"
+    );
+    const preview = buildRedraftPreviewDoc(originalTable, replacement, ATTRS);
+
+    const accepted = acceptSuggestionMarksById(preview, ATTRS.id);
+    expect((accepted.content ?? []).map((b) => b.type)).toEqual(["table"]);
+    expect(rowCount(accepted)).toBe(2); // header + 1 data row
+    expect(richJsonToPlainText(accepted)).not.toContain("T-2");
+
+    const rejected = stripSuggestionMarksById(preview, ATTRS.id);
+    expect(rowCount(rejected)).toBe(3);
+    expect(richJsonToPlainText(rejected)).toContain("T-2");
+  });
 });
 
 describe("stripSuggestionMarksById — appended paragraph cleanup", () => {

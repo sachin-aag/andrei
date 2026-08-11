@@ -1,8 +1,14 @@
 import { generateText, Output, type LanguageModel } from "ai";
 import { resolveGoogleLanguageModel } from "@/lib/ai/resolve-google-language-model";
 import { z } from "zod";
-import type { SectionType, CriterionStatus } from "@/db/schema";
-import { getCriteria } from "./criteria";
+import type { SectionType, CriterionStatus, DocumentType } from "@/db/schema";
+import { getCriteria as getInvestigationCriteria } from "./criteria";
+import {
+  getCriteria as getRegistryCriteria,
+  buildEvaluationSystemPromptForType,
+  getDocumentType,
+} from "@/lib/document-types";
+import type { CriterionDefinition, EvaluationContext } from "@/lib/document-types";
 import { contextForPrompt } from "./section-context";
 import { capEvaluationStatusForPlaceholders } from "@/lib/placeholders/evaluation-policy";
 import { plainTextHasEvalPlaceholders } from "@/lib/placeholders/placeholder-eval-prompt";
@@ -21,8 +27,48 @@ import {
 } from "@/lib/eval/eval-generation-options";
 import { isTestSkipEvaluation } from "@/lib/test/ai-bypass";
 import { getStubCriterionEvaluations } from "@/lib/ai/stub-evaluations";
+import type { ReportRecord } from "@/types/report";
+import type { AllSectionsContent } from "@/lib/ai/evaluation-content-hash";
 
 export { PROMPT_VERSION } from "./section-prompts";
+export {
+  evaluationContentHash,
+  type AllSectionsContent,
+} from "@/lib/ai/evaluation-content-hash";
+
+/** Resolve criteria for a document type (defaults to investigation for back-compat). */
+function criteriaFor(
+  section: SectionType,
+  documentType: DocumentType = "investigation_report"
+): CriterionDefinition[] {
+  if (documentType === "investigation_report") {
+    return getInvestigationCriteria(section);
+  }
+  return getRegistryCriteria(documentType, section);
+}
+
+function runDeterministicCriteria(
+  criteria: CriterionDefinition[],
+  ctx: EvaluationContext
+): CriterionEvaluationResult[] {
+  return criteria.map((c) => {
+    if (!c.check) {
+      return {
+        criterionKey: c.key,
+        criterionLabel: c.label,
+        status: "not_evaluated" as const,
+        reasoning: "Deterministic criterion is missing a check function.",
+      };
+    }
+    const result = c.check(ctx);
+    return {
+      criterionKey: c.key,
+      criterionLabel: c.label,
+      status: result.status,
+      reasoning: result.reasoning,
+    };
+  });
+}
 
 /** Google Generative AI model slug passed through `@ai-sdk/google`. */
 export const CRITERIA_EVAL_GOOGLE_MODEL_ID = "gemini-3.1-flash-lite" as const;
@@ -199,12 +245,6 @@ export function formatSectionContentForEvaluation(
 }
 
 /**
- * Map of section type → content for all sections in a report.
- * Used to build cumulative prior-section context in the user prompt.
- */
-export type AllSectionsContent = Partial<Record<SectionType, unknown>>;
-
-/**
  * Returns the DMAIC sections that precede `section` in report order.
  * Define has no prior sections; Measure gets [define]; Analyze gets [define, measure]; etc.
  */
@@ -252,6 +292,8 @@ export function buildCriterionEvaluationLlmPrompts({
   content,
   reportContext,
   allSections,
+  documentType = "investigation_report",
+  criteria: criteriaOverride,
 }: {
   section: SectionType;
   content: unknown;
@@ -260,8 +302,12 @@ export function buildCriterionEvaluationLlmPrompts({
     date: Date | string;
   };
   allSections?: AllSectionsContent;
+  documentType?: DocumentType;
+  criteria?: CriterionDefinition[];
 }): CriterionEvaluationLlmPrompts | null {
-  const criteria = getCriteria(section);
+  const criteria =
+    criteriaOverride ??
+    criteriaFor(section, documentType).filter((c) => c.kind === "llm");
   if (criteria.length === 0) return null;
 
   const contentStr = sectionContentForPrompt(section, content);
@@ -270,7 +316,10 @@ export function buildCriterionEvaluationLlmPrompts({
 
   if (isEmpty) return null;
 
-  const systemPrompt = buildEvaluationSystemPrompt(section);
+  const systemPrompt =
+    documentType === "investigation_report"
+      ? buildEvaluationSystemPrompt(section)
+      : buildEvaluationSystemPromptForType(documentType, section);
 
   const priorBlock = buildPriorSectionsBlock(section, allSections);
 
@@ -279,7 +328,7 @@ export function buildCriterionEvaluationLlmPrompts({
     ? `\n\nPLACEHOLDER NOTE: SECTION CONTENT includes bracket placeholders the author will fill in later. For this evaluation, treat each [Label: <to be filled>] as if it will contain appropriate factual data matching the label — evaluate whether the right facts are represented in the right places, not whether the bracket text is already a final value. You may note in reasoning that a placeholder still needs completion in the Placeholders panel.`
     : "";
 
-  const userPrompt = `DEVIATION: ${reportContext.deviationNo} (report date: ${
+  const userPrompt = `DOCUMENT: ${reportContext.deviationNo} (report date: ${
     typeof reportContext.date === "string"
       ? reportContext.date
       : reportContext.date.toISOString()
@@ -309,6 +358,8 @@ export async function evaluateSection({
   content,
   reportContext,
   allSections,
+  documentType = "investigation_report",
+  report,
   model,
   providerHint,
   modelId,
@@ -321,6 +372,9 @@ export async function evaluateSection({
     date: Date | string;
   };
   allSections?: AllSectionsContent;
+  documentType?: DocumentType;
+  /** Required for deterministic checks that read report metadata. */
+  report?: ReportRecord;
   /** Optional override model — when omitted, uses the default Google Gemini model. */
   model?: LanguageModel;
   /** Provider hint for generation settings (e.g. seed handling). */
@@ -330,11 +384,50 @@ export async function evaluateSection({
   /** Temperature, seed, and effort overrides for bulk eval / sweeps. */
   generationOptions?: EvalGenerationOptions;
 }): Promise<CriterionEvaluationResult[]> {
-  const criteria = getCriteria(section);
+  const criteria = criteriaFor(section, documentType);
   if (criteria.length === 0) return [];
 
   if (isTestSkipEvaluation()) {
-    return getStubCriterionEvaluations(section);
+    return getStubCriterionEvaluations(section, documentType ?? "investigation_report");
+  }
+
+  const dependencyKeys = [
+    ...new Set(criteria.flatMap((c) => c.dependsOn ?? [])),
+  ];
+  const dependencies: Record<string, unknown> = {};
+  for (const key of dependencyKeys) {
+    dependencies[key] = allSections?.[key];
+  }
+
+  const evalCtx: EvaluationContext = {
+    section,
+    content,
+    dependencies,
+    report:
+      report ??
+      ({
+        id: "",
+        documentType,
+        documentNo: reportContext.deviationNo,
+        date:
+          typeof reportContext.date === "string"
+            ? reportContext.date
+            : reportContext.date.toISOString(),
+        metadata: {},
+        status: "draft",
+        authorId: "",
+        assignedManagerId: null,
+        createdAt: "",
+        updatedAt: "",
+      } satisfies ReportRecord),
+  };
+
+  const deterministic = criteria.filter((c) => c.kind === "deterministic");
+  const llmCriteria = criteria.filter((c) => c.kind === "llm");
+  const deterministicResults = runDeterministicCriteria(deterministic, evalCtx);
+
+  if (llmCriteria.length === 0) {
+    return deterministicResults;
   }
 
   const prompts = buildCriterionEvaluationLlmPrompts({
@@ -342,15 +435,18 @@ export async function evaluateSection({
     content,
     reportContext,
     allSections,
+    documentType,
+    criteria: llmCriteria,
   });
 
   if (!prompts) {
-    return criteria.map((c) => ({
+    const emptyLlm = llmCriteria.map((c) => ({
       criterionKey: c.key,
       criterionLabel: c.label,
       status: "not_evaluated" as const,
       reasoning: "Section is empty.",
     }));
+    return [...deterministicResults, ...emptyLlm];
   }
 
   const { systemPrompt, userPrompt } = prompts;
@@ -385,9 +481,12 @@ export async function evaluateSection({
         metadata: {
           feature: "criteria-evaluation",
           section,
-          criterionCount: criteria.length,
+          criterionCount: llmCriteria.length,
           model: modelId ?? CRITERIA_EVAL_GOOGLE_MODEL_ID,
-          promptVersion: PROMPT_VERSION,
+          promptVersion:
+            documentType === "investigation_report"
+              ? PROMPT_VERSION
+              : getDocumentType(documentType).prompts.promptVersion,
         },
       }),
     });
@@ -395,13 +494,9 @@ export async function evaluateSection({
     if (result.experimental_output) {
       evaluations = result.experimental_output.evaluations;
     } else {
-      // Output.object() returned null — try salvaging from raw text.
       evaluations = salvageEvaluations(section, result.text, result.finishReason);
     }
   } catch (err: unknown) {
-    // generateText + Output.object() throws on schema validation failure
-    // rather than returning experimental_output: null.  Extract the raw
-    // text from the error and salvage what we can.
     const errText =
       err && typeof err === "object" && "text" in err
         ? String((err as { text: string }).text)
@@ -413,10 +508,10 @@ export async function evaluateSection({
   const byKey = new Map(evaluations.map((e) => [e.criterionKey, e]));
   const hasUnfilledPlaceholders =
     collectPlaceholders({
-      [section]: content as SectionContentMap[typeof section],
-    }).length > 0;
+      [section]: content as SectionContentMap[keyof SectionContentMap],
+    } as Partial<SectionContentMap>).length > 0;
 
-  return criteria.map((c) => {
+  const llmResults = llmCriteria.map((c) => {
     const result = byKey.get(c.key);
     if (!result) {
       return {
@@ -438,4 +533,6 @@ export async function evaluateSection({
       reasoning: result.reasoning,
     };
   });
+
+  return [...deterministicResults, ...llmResults];
 }

@@ -8,7 +8,7 @@ import {
   useState,
   type RefObject,
 } from "react";
-import { Check, Loader2, X } from "lucide-react";
+import { ArrowDown, Check, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 import {
   useReportComments,
@@ -32,6 +32,7 @@ import {
   type ParsedAiRedraftPayload,
 } from "@/lib/ai/suggestion-gating";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
+import { splitPlainTextWithPlaceholders } from "@/lib/placeholders/plain-text-segments";
 import {
   afterPaint,
   delay,
@@ -46,7 +47,13 @@ import {
   acceptSuggestion,
   dismissSuggestion,
   CommentPersistError,
+  SectionPersistError,
 } from "@/lib/suggestions/accept-suggestion";
+import {
+  isSuggestionTargetInViewport,
+  measureSuggestionGutterParkCenterY,
+  scrollToSuggestionComment,
+} from "@/lib/suggestions/navigate-suggestion";
 import {
   countStaleOpenSuggestions,
   suggestionStaleMessage,
@@ -55,9 +62,13 @@ import {
 } from "@/lib/suggestions/validate-suggestion";
 import type { CommentRecord, EvaluationRecord } from "@/types/report";
 import type { SectionType } from "@/db/schema";
-import type { SectionContentMap } from "@/types/sections";
-type CardPhase = "steady" | "applying" | "applied" | "preparing-next";
+type CardPhase =
+  | "steady"
+  | "applying"
+  | "applied"
+  | "preparing-next";
 type QueueTransition = null | "exit" | "enter";
+type QueueAdvanceOutcome = "bridge" | "advanced";
 
 const LOCATABLE_VALIDATION: SuggestionValidation = {
   locateStatus: "locatable",
@@ -105,17 +116,17 @@ function buildFrozenCard(
   };
 }
 
-/** Text with `[placeholder]` spans highlighted. */
+/** Text with actionable `[placeholder]` spans highlighted (citations stay plain). */
 function PlaceholderHighlightedText({ text }: { text: string }) {
   return (
     <>
-      {text.split(/(\[[^\]]+\])/g).map((part, i) =>
-        part.startsWith("[") ? (
+      {splitPlainTextWithPlaceholders(text).map((part, i) =>
+        part.kind === "placeholder" ? (
           <span key={i} className="suggestion-preview-placeholder">
-            {part}
+            {part.text}
           </span>
         ) : (
-          <span key={i}>{part}</span>
+          <span key={i}>{part.text}</span>
         )
       )}
     </>
@@ -358,6 +369,52 @@ function ExitingSuggestionLayer({
   );
 }
 
+/** Parked handoff when the next suggestion is off-screen. */
+function SuggestionQueueBridgeCard({
+  remainingTotal,
+  criterionLabel,
+  onGo,
+}: {
+  remainingTotal: number;
+  criterionLabel?: string;
+  onGo: () => void;
+}) {
+  const goRef = useRef<HTMLButtonElement>(null);
+
+  useLayoutEffect(() => {
+    goRef.current?.focus();
+  }, []);
+
+  return (
+    <div className="rounded-md border border-violet-500/30 bg-[var(--card)] p-3 space-y-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[10px] font-medium text-[var(--muted-foreground)] uppercase tracking-wide">
+          Next suggestion
+        </span>
+        {criterionLabel ? (
+          <span className="text-[10px] font-medium text-[var(--muted-foreground)] truncate">
+            {criterionLabel}
+          </span>
+        ) : null}
+      </div>
+      <p className="text-xs leading-snug text-[var(--foreground)]">
+        {remainingTotal === 1
+          ? "1 suggestion remaining farther in this section."
+          : `${remainingTotal} suggestions remaining — next is farther in this section.`}
+      </p>
+      <Button
+        ref={goRef}
+        size="sm"
+        className="h-7 text-xs w-full"
+        onClick={onGo}
+      >
+        <ArrowDown className="size-3" />
+        Go to next
+      </Button>
+    </div>
+  );
+}
+
 /** Incoming card after queue advances. */
 function EnteringSuggestionLayer({
   card,
@@ -422,7 +479,9 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
   const {
     evaluations,
     beginSuggestionApplyTransition,
+    enterSuggestionQueueBridge,
     endSuggestionApplyTransition,
+    suggestionApplyTransition,
   } = useReportEvaluations();
   const { comments, setComments } = useReportComments();
   const { sections, replaceSection } = useReportSections();
@@ -468,19 +527,18 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
     return `${stale} of ${openTotal} suggestions in this section may no longer apply after recent edits.`;
   }, [section, comments, evaluations, sectionContent]);
 
-  const animateQueueTransition = useCallback(async (closingSnapshot: FrozenCard) => {
-    setFrozenCard(null);
-    setExitingCard(closingSnapshot);
-    setQueueTransition("exit");
-    setPhase("applied");
+  const bridge = suggestionApplyTransition[section]?.bridge;
+  const showBridge =
+    !!bridge && !!liveCard && liveCard.comment.id === bridge.nextCommentId;
 
-    await afterPaint();
-    await waitForAnimation(exitRef.current, SUGGESTION_CARD_EXIT_MS);
+  // Queue changed under a parked bridge (regen, external resolve) — drop the hold.
+  useLayoutEffect(() => {
+    if (!bridge) return;
+    if (showBridge) return;
+    endSuggestionApplyTransition(section);
+  }, [bridge, showBridge, section, endSuggestionApplyTransition]);
 
-    setExitingCard(null);
-    setPhase("preparing-next");
-    await delay(SUGGESTION_NEXT_PREVIEW_DELAY_MS);
-
+  const animateEnterNext = useCallback(async () => {
     setQueueTransition("enter");
     setPhase("steady");
 
@@ -489,6 +547,78 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
     await delay(SUGGESTION_INLINE_REVEAL_DELAY_MS);
     setQueueTransition(null);
   }, []);
+
+  const animateQueueTransition = useCallback(
+    async (
+      closingSnapshot: FrozenCard,
+      nextComment: CommentRecord,
+      parkCenterY: number | null
+    ): Promise<QueueAdvanceOutcome> => {
+      setFrozenCard(null);
+      setExitingCard(closingSnapshot);
+      setQueueTransition("exit");
+      setPhase("applied");
+
+      await afterPaint();
+      await waitForAnimation(exitRef.current, SUGGESTION_CARD_EXIT_MS);
+
+      setExitingCard(null);
+      await delay(SUGGESTION_NEXT_PREVIEW_DELAY_MS);
+
+      const needsBridge =
+        parkCenterY != null && !isSuggestionTargetInViewport(nextComment);
+
+      if (needsBridge) {
+        enterSuggestionQueueBridge(section, {
+          nextCommentId: nextComment.id,
+        });
+        setQueueTransition(null);
+        setPhase("steady");
+        return "bridge";
+      }
+
+      // Nearby next: release the park so the gutter can slide to the new field.
+      beginSuggestionApplyTransition(section, nextComment.id, "accept");
+      setPhase("preparing-next");
+      await animateEnterNext();
+      return "advanced";
+    },
+    [
+      section,
+      enterSuggestionQueueBridge,
+      beginSuggestionApplyTransition,
+      animateEnterNext,
+    ]
+  );
+
+  const handleGoToNext = useCallback(async () => {
+    if (!showBridge || !liveCard || pending) return;
+
+    const mode = suggestionApplyTransition[section]?.mode ?? "accept";
+    scrollToSuggestionComment(liveCard.comment);
+
+    // Clear park Y so the gutter can follow the next field; keep preview held
+    // until the enter animation finishes.
+    beginSuggestionApplyTransition(section, liveCard.comment.id, mode);
+
+    setPending(true);
+    try {
+      await afterPaint();
+      await animateEnterNext();
+    } finally {
+      endSuggestionApplyTransition(section);
+      setPending(false);
+    }
+  }, [
+    showBridge,
+    liveCard,
+    pending,
+    section,
+    suggestionApplyTransition,
+    beginSuggestionApplyTransition,
+    animateEnterNext,
+    endSuggestionApplyTransition,
+  ]);
 
   const handleAccept = useCallback(async () => {
     if (!liveCard || pending || !canResolve) return;
@@ -505,14 +635,22 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
 
     const snapshot = liveCard;
     const commentId = snapshot.comment.id;
-    const hasQueue = snapshot.queueTotal > 1;
+    const nextInQueue = openSorted[1] ?? null;
+    const hasQueue = snapshot.queueTotal > 1 && nextInQueue != null;
+    // Capture before comments/gutter re-anchor after resolve.
+    const parkCenterY = hasQueue
+      ? measureSuggestionGutterParkCenterY(section)
+      : null;
 
     setPending(true);
     setFrozenCard(snapshot);
     setPhase("applying");
 
+    let retainHold = false;
     try {
-      beginSuggestionApplyTransition(section, commentId, "accept");
+      beginSuggestionApplyTransition(section, commentId, "accept", {
+        parkCenterY: parkCenterY ?? undefined,
+      });
 
       const result = await acceptSuggestion({
         reportId: report.id,
@@ -528,13 +666,16 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
               : new CommentPersistError(0, "Could not update suggestion")
           );
         }
-        throw new Error(
-          result.reason === "save_failed"
-            ? "Failed to save section"
-            : "Suggestion could not be located"
-        );
+        if (result.reason === "save_failed") {
+          throw (
+            result.error instanceof SectionPersistError
+              ? result.error
+              : new SectionPersistError(0, "Failed to save section")
+          );
+        }
+        throw new Error("Suggestion could not be located");
       }
-      replaceSection(section, result.nextSection as SectionContentMap[typeof section]);
+      replaceSection(section, result.nextSection as unknown);
 
       setComments((prev) =>
         prev.map((c) =>
@@ -544,8 +685,13 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
       setPhase("applied");
       await delay(SUGGESTION_APPLY_SETTLE_MS);
 
-      if (hasQueue) {
-        await animateQueueTransition(snapshot);
+      if (hasQueue && nextInQueue) {
+        const outcome = await animateQueueTransition(
+          snapshot,
+          nextInQueue,
+          parkCenterY
+        );
+        retainHold = outcome === "bridge";
       } else {
         setFrozenCard(null);
         setPhase("steady");
@@ -556,9 +702,11 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
     } catch (err) {
       console.error(err);
       toast.error(
-        err instanceof CommentPersistError
-          ? "Change saved but couldn't mark suggestion as resolved. It may reappear — try dismissing it."
-          : "Could not apply suggestion"
+        err instanceof SectionPersistError
+          ? err.message
+          : err instanceof CommentPersistError
+            ? "Change saved but couldn't mark suggestion as resolved. It may reappear — try dismissing it."
+            : "Could not apply suggestion"
       );
       await refresh();
       setFrozenCard(null);
@@ -566,7 +714,9 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
       setQueueTransition(null);
       setPhase("steady");
     } finally {
-      endSuggestionApplyTransition(section);
+      if (!retainHold) {
+        endSuggestionApplyTransition(section);
+      }
       setPending(false);
     }
   }, [
@@ -575,6 +725,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
     canResolve,
     section,
     sections,
+    openSorted,
     report.id,
     replaceSection,
     animateQueueTransition,
@@ -589,14 +740,21 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
 
     const snapshot = liveCard;
     const commentId = snapshot.comment.id;
-    const hasQueue = snapshot.queueTotal > 1;
+    const nextInQueue = openSorted[1] ?? null;
+    const hasQueue = snapshot.queueTotal > 1 && nextInQueue != null;
+    const parkCenterY = hasQueue
+      ? measureSuggestionGutterParkCenterY(section)
+      : null;
 
     setPending(true);
     setFrozenCard(snapshot);
     setPhase("applying");
 
+    let retainHold = false;
     try {
-      beginSuggestionApplyTransition(section, commentId, "dismiss");
+      beginSuggestionApplyTransition(section, commentId, "dismiss", {
+        parkCenterY: parkCenterY ?? undefined,
+      });
 
       const result = await dismissSuggestion({
         reportId: report.id,
@@ -612,12 +770,19 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
               : new CommentPersistError(0, "Could not update suggestion")
           );
         }
+        if (result.reason === "save_failed") {
+          throw (
+            result.error instanceof SectionPersistError
+              ? result.error
+              : new SectionPersistError(0, "Failed to save section")
+          );
+        }
         throw new Error("Failed to save section");
       }
       if (result.nextSection) {
         replaceSection(
           section,
-          result.nextSection as SectionContentMap[typeof section]
+          result.nextSection as unknown
         );
       }
       setComments((prev) => prev.filter((c) => c.id !== commentId));
@@ -625,8 +790,13 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
       setPhase("applied");
       await delay(SUGGESTION_APPLY_SETTLE_MS);
 
-      if (hasQueue) {
-        await animateQueueTransition(snapshot);
+      if (hasQueue && nextInQueue) {
+        const outcome = await animateQueueTransition(
+          snapshot,
+          nextInQueue,
+          parkCenterY
+        );
+        retainHold = outcome === "bridge";
       } else {
         setFrozenCard(null);
         setPhase("steady");
@@ -637,7 +807,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
     } catch (err) {
       console.error(err);
       toast.error(
-        err instanceof CommentPersistError
+        err instanceof CommentPersistError || err instanceof SectionPersistError
           ? err.message
           : "Could not dismiss suggestion"
       );
@@ -647,7 +817,9 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
       setQueueTransition(null);
       setPhase("steady");
     } finally {
-      endSuggestionApplyTransition(section);
+      if (!retainHold) {
+        endSuggestionApplyTransition(section);
+      }
       setPending(false);
     }
   }, [
@@ -656,6 +828,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
     canResolve,
     section,
     sections,
+    openSorted,
     report.id,
     replaceSection,
     animateQueueTransition,
@@ -664,6 +837,18 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
     beginSuggestionApplyTransition,
     endSuggestionApplyTransition,
   ]);
+
+  if (showBridge && liveCard) {
+    return (
+      <SuggestionQueueBridgeCard
+        remainingTotal={total}
+        criterionLabel={liveCard.linkedEval?.criterionLabel}
+        onGo={() => {
+          void handleGoToNext();
+        }}
+      />
+    );
+  }
 
   if (!liveCard && !exitingCard && !frozenCard) {
     return (

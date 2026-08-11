@@ -53,6 +53,7 @@ export async function GET(
         generation: attachment.gcsGeneration,
         expiresInSeconds: 5 * 60,
         downloadFilename: download ? attachment.filename : undefined,
+        responseContentType: attachment.mimeType || undefined,
       });
       const redirectUrl = signedUrl.startsWith("/")
         ? new URL(signedUrl, req.url).toString()
@@ -94,12 +95,11 @@ export async function GET(
 
   const filename = safeFilename(attachment.filename);
   const headers = new Headers({
-    "Content-Type": "application/pdf",
+    "Content-Type": attachment.mimeType || "application/octet-stream",
     "Cache-Control": "private, max-age=60",
     "Content-Disposition": download
       ? `attachment; filename="${filename}"`
       : `inline; filename="${filename}"`,
-    // Help browsers treat this as embeddable PDF content.
     "X-Content-Type-Options": "nosniff",
   });
 

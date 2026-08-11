@@ -171,10 +171,13 @@ function buildMockReport(imported: ImportedReportContent): ReportRow {
   const iso = new Date("2026-03-04T12:00:00.000Z");
   return {
     id: "docx-round-trip-report-id",
-    deviationNo: "DEV-PK-25-002",
+    documentType: "investigation_report",
+    documentNo: "DEV-PK-25-002",
     date: iso,
-    toolsUsed: imported.toolsUsed,
-    otherTools: "",
+    metadata: {
+      toolsUsed: imported.toolsUsed,
+      otherTools: "",
+    },
     status: "draft",
     authorId: "1",
     assignedManagerId: "5",

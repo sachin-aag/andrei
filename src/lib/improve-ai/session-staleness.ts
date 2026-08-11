@@ -26,7 +26,8 @@ export function isImproveAiSessionStale(params: {
     const sectionContent = params.sectionContents[response.section as SectionType];
     const currentHash = sectionContentHash(
       response.section as SectionType,
-      sectionContent
+      sectionContent,
+      { allSections: params.sectionContents }
     );
     if (
       evaluation.evaluatedContentHash &&

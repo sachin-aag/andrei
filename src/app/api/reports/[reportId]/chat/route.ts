@@ -14,11 +14,13 @@ import {
   comments,
   chatMessages,
 } from "@/db/schema";
-import type { SectionType } from "@/db/schema";
+import type { DocumentType, SectionType } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import { mergeSection } from "@/lib/sections-merge";
 import { loadAccessibleReport } from "@/lib/ai/chat/access";
+import { canSaveReportSection } from "@/lib/reports/access";
 import { buildReportContextMap } from "@/lib/ai/chat/context-map";
+import { investigationToolsUsed } from "@/types/report";
 import {
   buildChatSystemPrompt,
   isChatMode,
@@ -33,6 +35,7 @@ import {
   primaryFieldForSection,
   type ChatSectionScope,
 } from "@/lib/ai/chat/fields";
+import { getDocumentType } from "@/lib/document-types";
 import {
   detectSectionIntentFromText,
   detectSectionScopeMismatch,
@@ -51,6 +54,13 @@ import {
 import { auditActorFromUser } from "@/lib/audit";
 import { listReadyDocumentsForReport } from "@/lib/attachments/retrieval";
 import { sanitizeChatMessagesForModel } from "@/lib/ai/chat/image-parts";
+import {
+  buildMentionBlock,
+  mentionedAttachmentIds,
+  mentionedSections,
+  parseChatMentions,
+  resolveChatMentions,
+} from "@/lib/ai/chat/mentions";
 
 export const maxDuration = 120;
 
@@ -71,8 +81,12 @@ function messageText(message: UIMessage | null): string {
 }
 
 /** Naive keyword routing for the test stub (no LLM). */
-function pickStubSection(text: string): SectionType {
-  return detectSectionIntentFromText(text) ?? "define";
+function pickStubSection(
+  text: string,
+  documentType: DocumentType
+): SectionType {
+  const fallback = getDocumentType(documentType).chat.draftOrder[0] ?? "define";
+  return detectSectionIntentFromText(text, documentType) ?? fallback;
 }
 
 export async function POST(
@@ -89,6 +103,7 @@ export async function POST(
     sessionId?: string;
     mode?: string;
     sectionScope?: string;
+    mentions?: unknown;
   };
   const messages = sanitizeChatMessagesForModel(
     Array.isArray(body.messages) ? body.messages : []
@@ -97,13 +112,21 @@ export async function POST(
     return NextResponse.json({ error: "No messages" }, { status: 400 });
   }
   const mode: ChatMode = isChatMode(body.mode) ? body.mode : "agent";
-  const sectionScope: ChatSectionScope = parseChatSectionScope(body.sectionScope);
+  const accessEarly = await loadAccessibleReport(reportId, user);
+  if (!accessEarly) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const sectionScope: ChatSectionScope = parseChatSectionScope(
+    body.sectionScope,
+    accessEarly.report.documentType
+  );
+  const requestedMentions = parseChatMentions(
+    body.mentions,
+    accessEarly.report.documentType
+  );
 
-  const access = await loadAccessibleReport(reportId, user);
-  if (!access) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const access = accessEarly;
   const { report } = access;
-  // Plan mode never edits; Agent mode only when the report is still editable.
-  const canEdit = mode === "agent" && access.canEdit;
+  // Plan mode never edits; Agent mode only when section content is still writable.
+  const canEdit = mode === "agent" && canSaveReportSection(user, report);
 
   // Resolve the session (create one if the client didn't supply a valid id).
   let sessionId = body.sessionId?.trim() || "";
@@ -121,7 +144,11 @@ export async function POST(
   // streaming a reply that would never be saved to history.
   const userMsg = lastUserMessage(messages);
   const userText = messageText(userMsg);
-  const scopeMismatch = detectSectionScopeMismatch(sectionScope, userText);
+  const scopeMismatch = detectSectionScopeMismatch(
+    sectionScope,
+    userText,
+    accessEarly.report.documentType
+  );
   if (userMsg) {
     try {
       await db.insert(chatMessages).values({
@@ -162,16 +189,16 @@ export async function POST(
     .from(comments)
     .where(eq(comments.reportId, reportId));
   const documents = await listReadyDocumentsForReport(reportId);
+  // Resolved against this report's ready documents only, so a tagged
+  // attachment id from another report cannot pull in its evidence.
+  const mentions = resolveChatMentions(requestedMentions, documents);
 
   const contextMap = buildReportContextMap({
     report: {
-      deviationNo: report.deviationNo,
+      documentNo: report.documentNo,
       date: report.date,
       status: report.status,
-      toolsUsed: report.toolsUsed as
-        | { sixM?: boolean; fiveWhy?: boolean; brainstorming?: boolean }
-        | null
-        | undefined,
+      toolsUsed: investigationToolsUsed(report),
     },
     sections: mergedSections,
     evaluations: evaluations.map((e) => ({
@@ -185,21 +212,27 @@ export async function POST(
       status: c.status,
     })),
     documents,
+    documentType: report.documentType,
   });
 
   const system = buildChatSystemPrompt({
     contextMap,
-    criteriaOutline: buildCriteriaOutline(sectionScope),
+    criteriaOutline: buildCriteriaOutline(sectionScope, report.documentType),
     mode,
     sectionScope,
+    documentType: report.documentType,
     scopeMismatch,
+    mentionBlock: buildMentionBlock(mentions),
   });
 
   const allTools = buildChatTools({
     reportId,
     canEdit,
     sectionScope,
+    documentType: report.documentType,
     actor: auditActorFromUser(user),
+    pinnedAttachmentIds: mentionedAttachmentIds(mentions),
+    mentionedSections: mentionedSections(mentions),
   });
   const tools: ToolSet =
     mode === "plan"
@@ -215,7 +248,9 @@ export async function POST(
       : allTools;
 
   const stubSection =
-    sectionScope === "all" ? pickStubSection(userText) : sectionScope;
+    sectionScope === "all"
+      ? pickStubSection(userText, report.documentType)
+      : sectionScope;
   const model = isTestStubChat()
     ? await buildStubChatModel({
         mode,
@@ -242,7 +277,15 @@ export async function POST(
     }),
     ...langfuseGenerateTextTelemetry({
       functionId: "report-chat",
-      metadata: { reportId, sessionId, mode, sectionScope, canEdit },
+      metadata: {
+        reportId,
+        sessionId,
+        mode,
+        sectionScope,
+        canEdit,
+        taggedDocuments: mentions.documents.length,
+        taggedSections: mentions.sections.length,
+      },
     }),
   });
 

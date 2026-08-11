@@ -1,6 +1,7 @@
 import type { JSONContent } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import type { SectionType } from "@/db/schema";
+import { isCitationShapedBracket } from "@/lib/placeholders/citation-bracket";
 import { clipBracketPlaceholderText } from "@/lib/text/bracket-span";
 
 export type Placeholder = {
@@ -61,6 +62,9 @@ type TextSpan = { fromRel: number; toRel: number; text: string };
 export function isActionablePlaceholderBracket(match: string): boolean {
   if (!/^\[[^\]]+\]$/.test(match)) return false;
   if (NUMERIC_ONLY_BRACKET.test(match)) return false;
+  // Document citations (`[file.pdf]`, `[name, p. N]`, including mistaken
+  // `[file.pdf: <to be filled>]`) are never Placeholders-panel tokens.
+  if (isCitationShapedBracket(match)) return false;
 
   const inner = match.slice(1, -1);
 
@@ -74,12 +78,13 @@ export function isActionablePlaceholderBracket(match: string): boolean {
   if (/not more than|not less than|\bNMT\b|\bNLT\b/i.test(inner)) return false;
 
   // Guidance-only labels without `: <to be filled>` — e.g. `[number]`,
-  // `[equipment ID]`. Cap length so long bracketed prose is not treated as a
-  // fill-in field; AI postprocess compacts labels to this same limit.
+  // `[equipment ID]`, `[Personnel Name(s)]`. Cap length so long bracketed
+  // prose is not treated as a fill-in field; AI postprocess compacts labels
+  // to this same limit. Parentheses cover plural markers like `(s)`.
   if (
     !inner.includes(":") &&
     inner.length <= MAX_PLACEHOLDER_LABEL_LENGTH &&
-    /^[\w\s./-]+$/i.test(inner.trim())
+    /^[\w\s./'()-]+$/i.test(inner.trim())
   ) {
     return true;
   }

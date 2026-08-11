@@ -9,7 +9,6 @@ import {
   reportSections,
   criteriaEvaluations,
   comments,
-  sectionTypeEnum,
 } from "@/db/schema";
 import type { SectionType } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
@@ -31,9 +30,12 @@ import {
   isApplyableStatus,
   probePlainEdit,
   probeRichEdit,
+  type LocateStatus,
   type SuggestionEdit,
 } from "@/lib/suggestions/locator";
-import { mergeSection } from "@/lib/sections-merge";
+import type { SuggestionDropReason } from "@/lib/ai/suggest";
+import { mergeSectionForType } from "@/lib/document-types";
+import { isValidSection } from "@/lib/document-types";
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 import { normalizeCommentRecord } from "@/lib/comments/normalize";
@@ -45,16 +47,27 @@ import {
 } from "@/lib/observability/langfuse";
 import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
 import { requireReportAccess } from "@/lib/reports/require-report-access";
+import { canSaveReportSection } from "@/lib/reports/access";
 
 export const maxDuration = 120;
+
+/** Map a non-applyable probe status to a drop reason (kept distinct for telemetry). */
+function dropReasonForProbe(status: LocateStatus): SuggestionDropReason {
+  switch (status) {
+    case "ambiguous":
+      return "ambiguous";
+    case "cross_cell":
+      return "cross_cell";
+    case "bad_scope":
+      return "bad_scope";
+    default:
+      return "not_found";
+  }
+}
 
 const bodySchema = z.object({
   section: z.string(),
 });
-
-function isValidSection(v: string): v is SectionType {
-  return (sectionTypeEnum.enumValues as readonly string[]).includes(v);
-}
 
 export const POST = observeRouteHandler(
   "report-suggest-edits",
@@ -73,12 +86,16 @@ async function handleSuggestionsPost(
   }
   const { report, user } = access;
 
+  if (!canSaveReportSection(user, report)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
   const body = await req.json().catch(() => ({}));
   const parsed = bodySchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }
-  if (!isValidSection(parsed.data.section)) {
+  if (!isValidSection(report.documentType, parsed.data.section)) {
     return NextResponse.json({ error: "Invalid section" }, { status: 400 });
   }
   const section = parsed.data.section;
@@ -99,7 +116,26 @@ async function handleSuggestionsPost(
     .from(comments)
     .where(eq(comments.reportId, reportId));
 
-  const sectionContent = mergeSection(section, sectionRow.content);
+  const allSectionRows = await db
+    .select()
+    .from(reportSections)
+    .where(eq(reportSections.reportId, reportId));
+  const allSections: AllSectionsContent = {};
+  for (const row of allSectionRows) {
+    allSections[row.section] = mergeSectionForType(
+      report.documentType,
+      row.section,
+      row.content
+    );
+  }
+
+  // Cover page criteria hash report.metadata (same as evaluate), not empty section JSON.
+  const sectionContent =
+    section === "cover_page"
+      ? report.metadata
+      : (allSections[section] ??
+        mergeSectionForType(report.documentType, section, sectionRow.content));
+
   const gap = gapCriteriaForSection(
     section,
     evaluations.map((e) => ({
@@ -107,11 +143,19 @@ async function handleSuggestionsPost(
       updatedAt: e.updatedAt.toISOString(),
     })),
     commentRows.map((c) => normalizeCommentRecord(c)),
-    sectionContent
+    sectionContent,
+    report.documentType,
+    allSections
   );
 
-  const hash = sectionContentHash(section, sectionContent);
-  const suggestionContentHash = hash;
+  const hash = sectionContentHash(section, sectionContent, {
+    documentType: report.documentType,
+    allSections,
+  });
+  // Suggestion staleness is section-local (validateSuggestionLocate has no allSections).
+  const suggestionContentHash = sectionContentHash(section, sectionContent, {
+    documentType: report.documentType,
+  });
   const stale = gap.some((g) => g.evaluatedContentHash && g.evaluatedContentHash !== hash);
   const blockedReason =
     gap.length === 0 ? "no_gap_criteria" : stale ? "stale_evaluation" : null;
@@ -133,20 +177,11 @@ async function handleSuggestionsPost(
       );
     }
 
-  const allSectionRows = await db
-    .select()
-    .from(reportSections)
-    .where(eq(reportSections.reportId, reportId));
-  const allSections: AllSectionsContent = {};
-  for (const row of allSectionRows) {
-    allSections[row.section] = mergeSection(row.section, row.content);
-  }
-
   const { suggestions: llmSuggestions, dropped: llmDropped } =
     await generateSuggestionsForSection({
       section,
       content: sectionContent,
-      reportContext: { deviationNo: report.deviationNo, date: report.date },
+      reportContext: { deviationNo: report.documentNo, date: report.date },
       reportId,
       allSections,
       gapCriteria: gap.map((g) => ({
@@ -181,12 +216,13 @@ async function handleSuggestionsPost(
       anchorText: s.anchorText,
       deleteText: s.deleteText,
       insertText: s.insertText,
+      scope: s.scope,
     };
     const status = probeRichEdit(fieldDoc, edit);
     if (!isApplyableStatus(status)) {
       dropped.push({
         criterionKey: s.criterionKey,
-        reason: status === "ambiguous" ? ("ambiguous" as const) : ("not_found" as const),
+        reason: dropReasonForProbe(status),
       });
       continue;
     }
@@ -198,6 +234,7 @@ async function handleSuggestionsPost(
       deleteText: s.deleteText,
       insertText,
       reasoning: s.reasoning,
+      scope: s.scope,
       contentHashAtSuggestion: suggestionContentHash,
       evidenceSources: s.evidenceSources,
     };
@@ -238,7 +275,7 @@ async function handleSuggestionsPost(
     if (!isApplyableStatus(status)) {
       dropped.push({
         criterionKey: s.criterionKey,
-        reason: status === "ambiguous" ? "ambiguous" : "not_found",
+        reason: dropReasonForProbe(status),
       });
       continue;
     }
@@ -336,7 +373,7 @@ async function handleSuggestionsPost(
     input: {
       reportId,
       section,
-      deviationNo: report.deviationNo,
+      documentNo: report.documentNo,
       gapCriterionCount: gap.length,
       gapCriteria: gap.map((g) => g.criterionKey),
     },
@@ -352,7 +389,7 @@ async function handleSuggestionsPost(
       metadata: {
         feature: "suggestion-generation",
         section,
-        deviationNo: report.deviationNo,
+        documentNo: report.documentNo,
       },
     },
     runSuggestions

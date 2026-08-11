@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { reportAttachments } from "@/db/schema";
 import { toAttachmentDto } from "@/lib/attachments/dto";
 import { startDocumentIngest } from "@/lib/attachments/start-ingest";
+import { reclaimStaleIngests } from "@/lib/attachments/stale-ingest";
 import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth/session";
 import { requireReportAccess } from "@/lib/reports/require-report-access";
@@ -24,6 +25,10 @@ export async function POST(
   if (!access.canMutateAttachments) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
+
+  // An ingest that died without writing a terminal status still reads as
+  // `processing`; retire it first so the retry is not rejected.
+  await reclaimStaleIngests(reportId);
 
   const [attachment] = await db
     .select()

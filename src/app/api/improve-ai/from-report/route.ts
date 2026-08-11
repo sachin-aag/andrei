@@ -102,7 +102,7 @@ export async function POST(req: Request) {
       reportId,
       userId: user.id,
       sourceType: "existing_report",
-      sourceLabel: report.deviationNo,
+      sourceLabel: report.documentNo,
       runEvaluation: true,
     });
 

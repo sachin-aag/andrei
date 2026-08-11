@@ -41,17 +41,42 @@ export type DismissSuggestionResult =
   | { ok: true; nextSection: Record<string, unknown> | null }
   | { ok: false; reason: "status_failed" | "save_failed"; error?: unknown };
 
+export class SectionPersistError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "SectionPersistError";
+    this.status = status;
+  }
+}
+
 async function patchSection(
   reportId: string,
   section: SectionType,
   content: Record<string, unknown>
-): Promise<boolean> {
-  const res = await fetch(`/api/reports/${reportId}/sections/${section}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ content }),
-  });
-  return res.ok;
+): Promise<void> {
+  let res: Response;
+  try {
+    res = await fetch(`/api/reports/${reportId}/sections/${section}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content }),
+    });
+  } catch {
+    throw new SectionPersistError(0, "Could not save section. Please try again.");
+  }
+  if (res.ok) return;
+  if (res.status === 403) {
+    throw new SectionPersistError(
+      403,
+      "You can't save changes to this report."
+    );
+  }
+  throw new SectionPersistError(
+    res.status,
+    `Save failed (${res.status})`
+  );
 }
 
 /**
@@ -82,8 +107,10 @@ export async function acceptSuggestion(args: {
       path,
       redraft.markdown
     );
-    if (!(await patchSection(reportId, section, nextSection))) {
-      return { ok: false, reason: "save_failed" };
+    try {
+      await patchSection(reportId, section, nextSection);
+    } catch (error) {
+      return { ok: false, reason: "save_failed", error };
     }
     try {
       await patchCommentStatus(reportId, comment.id, "resolved");
@@ -105,8 +132,10 @@ export async function acceptSuggestion(args: {
       ? acceptPendingNarrativeSuggestion(doc, comment.id)
       : applyNarrativeSuggestion(doc, comment.id, edit);
     const nextSection = setRichFieldValue(sectionContent, path, nextDoc);
-    if (!(await patchSection(reportId, section, nextSection))) {
-      return { ok: false, reason: "save_failed" };
+    try {
+      await patchSection(reportId, section, nextSection);
+    } catch (error) {
+      return { ok: false, reason: "save_failed", error };
     }
     try {
       await patchCommentStatus(reportId, comment.id, "resolved");
@@ -136,8 +165,10 @@ export async function acceptSuggestion(args: {
     return { ok: false, reason: "not_found" };
   }
 
-  if (!(await patchSection(reportId, section, nextSection))) {
-    return { ok: false, reason: "save_failed" };
+  try {
+    await patchSection(reportId, section, nextSection);
+  } catch (error) {
+    return { ok: false, reason: "save_failed", error };
   }
   try {
     await patchCommentStatus(reportId, comment.id, "resolved");
@@ -173,8 +204,10 @@ export async function dismissSuggestion(args: {
     if (narrativeHasSuggestionMarks(doc, comment.id)) {
       const nextDoc = removePendingNarrativeSuggestion(doc, comment.id);
       nextSection = setRichFieldValue(sectionContent, path, nextDoc);
-      if (!(await patchSection(reportId, section, nextSection))) {
-        return { ok: false, reason: "save_failed" };
+      try {
+        await patchSection(reportId, section, nextSection);
+      } catch (error) {
+        return { ok: false, reason: "save_failed", error };
       }
     }
   }

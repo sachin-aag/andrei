@@ -35,6 +35,7 @@ export default async function RootLayout({
           <Toaster
             position="bottom-right"
             theme="light"
+            closeButton
             toastOptions={{
               style: {
                 background: "var(--card)",

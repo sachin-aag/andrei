@@ -1,5 +1,6 @@
 import { createId } from "@paralleldrive/cuid2";
 import { and, asc, eq, gte, inArray, lte, ne, sql } from "drizzle-orm";
+import mammoth from "mammoth";
 import { db } from "@/db";
 import {
   attachmentIngestRuns,
@@ -14,11 +15,18 @@ import {
   DEFAULT_DOCUMENT_EMBEDDING_MODEL_ID,
   embedDocumentChunks,
 } from "@/lib/attachments/embed-chunks";
+import { describeDocxImages } from "@/lib/attachments/describe-docx-images";
+import {
+  assignDocxImagesToPages,
+  extractDocxEmbeddedImages,
+  formatDocxPageVisualInterpretation,
+} from "@/lib/attachments/docx-images";
 import {
   DEFAULT_DOCUMENT_EXTRACT_MODEL_ID,
   DOCUMENT_EXTRACT_PROMPT_VERSION,
   extractPdfBatch,
 } from "@/lib/attachments/extract-batch";
+import { type AttachmentKind, kindFromMime } from "@/lib/attachments/file-types";
 import {
   isCancelledIngestError,
   sanitizeIngestError,
@@ -28,15 +36,18 @@ import { getAttachmentStorage, tempBatchObjectKey } from "@/lib/storage/attachme
 
 export { sanitizeIngestError } from "@/lib/attachments/ingest-errors";
 
-const PARSER_VERSION = "v1";
+const PARSER_VERSION = "v3";
 const SUMMARY_MAX_CHARS = 12_000;
 const FAILED_ATTACHMENT_PROGRESS = 0;
+/** DOCX has no page model; split extracted text into readable pseudo-pages. */
+const DOCX_PSEUDO_PAGE_CHARS = 6_000;
 
 type IngestInit = {
   runId: string;
   attachmentId: string;
   reportId: string;
   filename: string;
+  kind: AttachmentKind;
   sourceObjectKey: string;
   sourceGeneration: string;
   extractModelId: string;
@@ -62,21 +73,11 @@ export async function runDocumentIngest(
   try {
     init = await initializeIngestRun(attachmentId, generation);
     if (!init) return;
-    await assertAttachmentCurrent(init);
-    await splitAndPersistBatches(init);
-    const batchIds = await listBatchIds(init.runId);
-
-    for (const batchId of batchIds) {
-      await assertAttachmentCurrent(init);
-      await processBatch(batchId);
-      await updateBatchProgress(init.runId, init.attachmentId);
+    if (init.kind === "docx") {
+      await runDocxIngest(init);
+    } else {
+      await runPdfIngest(init);
     }
-
-    await assertAttachmentCurrent(init);
-    await buildDocumentSummary(init.runId);
-    await chunkAndEmbedRun(init);
-    await assertAttachmentCurrent(init);
-    await markRunReady(init);
   } catch (error) {
     await markRunTerminal({
       runId: init?.runId ?? null,
@@ -170,11 +171,146 @@ async function initializeIngestRun(
     attachmentId: attachment.id,
     reportId: attachment.reportId,
     filename: attachment.filename,
+    kind: kindFromMime(attachment.mimeType) ?? "pdf",
     sourceObjectKey: attachment.permanentObjectKey,
     sourceGeneration: generation,
     extractModelId,
     embeddingModelId,
   };
+}
+
+/** PDF path: split into batches, Gemini-vision extract each, then chunk+embed. */
+async function runPdfIngest(init: IngestInit): Promise<void> {
+  await assertAttachmentCurrent(init);
+  await splitAndPersistBatches(init);
+  const batchIds = await listBatchIds(init.runId);
+
+  for (const batchId of batchIds) {
+    await assertAttachmentCurrent(init);
+    await processBatch(batchId);
+    await updateBatchProgress(init.runId, init.attachmentId);
+  }
+
+  await assertAttachmentCurrent(init);
+  await buildDocumentSummary(init.runId);
+  await chunkAndEmbedRun(init);
+  await assertAttachmentCurrent(init);
+  await markRunReady(init);
+}
+
+/**
+ * DOCX path: mammoth for body text, OOXML for embedded rasters (described via
+ * the same Vertex extract model as PDF vision), then the shared chunk→embed
+ * machinery so image descriptions are searchable like PDF visuals.
+ */
+async function runDocxIngest(init: IngestInit): Promise<void> {
+  await assertAttachmentCurrent(init);
+  const buffer = await getAttachmentStorage().readObjectBuffer(
+    init.sourceObjectKey
+  );
+  const { value: rawText } = await mammoth.extractRawText({ buffer });
+  let pages = buildDocxPseudoPages(rawText);
+
+  const { images, totalXmlChars } = extractDocxEmbeddedImages(buffer);
+  if (pages.length === 0 && images.length > 0) {
+    pages = [{ pageNumber: 1, text: "" }];
+  }
+
+  const visualByPage = new Map<number, string>();
+  if (images.length > 0) {
+    await db
+      .update(reportAttachments)
+      .set({ processingProgress: 40 })
+      .where(eq(reportAttachments.id, init.attachmentId));
+
+    const descriptions = await describeDocxImages({
+      images,
+      filename: init.filename,
+      modelId: init.extractModelId,
+    });
+    const descriptionByOrdinal = new Map(
+      descriptions.map((entry) => [entry.ordinal, entry.description] as const)
+    );
+    const imagesByPage = assignDocxImagesToPages(pages, images, totalXmlChars);
+    for (const [pageNumber, pageImages] of imagesByPage) {
+      visualByPage.set(
+        pageNumber,
+        formatDocxPageVisualInterpretation(
+          pageImages.map((image) => ({
+            ordinal: image.ordinal,
+            description: descriptionByOrdinal.get(image.ordinal) ?? "",
+          }))
+        )
+      );
+    }
+  }
+
+  await assertAttachmentCurrent(init);
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(documentPages)
+      .where(eq(documentPages.ingestRunId, init.runId));
+    if (pages.length > 0) {
+      await tx.insert(documentPages).values(
+        pages.map((page) => ({
+          ingestRunId: init.runId,
+          attachmentId: init.attachmentId,
+          reportId: init.reportId,
+          pageNumber: page.pageNumber,
+          printedPageLabel: null,
+          transcript: page.text,
+          visualInterpretation: visualByPage.get(page.pageNumber) ?? "",
+          pageContext: init.filename,
+          confidence: null,
+        }))
+      );
+    }
+  });
+
+  await db
+    .update(attachmentIngestRuns)
+    .set({
+      pageCount: pages.length,
+      batchCount: 0,
+      documentSummary: rawText.trim().slice(0, SUMMARY_MAX_CHARS),
+    })
+    .where(eq(attachmentIngestRuns.id, init.runId));
+  await db
+    .update(reportAttachments)
+    .set({ pageCount: Math.max(1, pages.length), processingProgress: 80 })
+    .where(eq(reportAttachments.id, init.attachmentId));
+
+  await assertAttachmentCurrent(init);
+  await chunkAndEmbedRun(init);
+  await assertAttachmentCurrent(init);
+  await markRunReady(init);
+}
+
+/** Split extracted DOCX text into ~page-sized windows on paragraph breaks. */
+function buildDocxPseudoPages(
+  rawText: string
+): Array<{ pageNumber: number; text: string }> {
+  const paragraphs = rawText
+    .replace(/\r\n/g, "\n")
+    .split(/\n{2,}/)
+    .map((paragraph) => paragraph.trim())
+    .filter((paragraph) => paragraph.length > 0);
+
+  const pages: Array<{ pageNumber: number; text: string }> = [];
+  let current = "";
+  for (const paragraph of paragraphs) {
+    const candidate = current ? `${current}\n\n${paragraph}` : paragraph;
+    if (candidate.length > DOCX_PSEUDO_PAGE_CHARS && current) {
+      pages.push({ pageNumber: pages.length + 1, text: current });
+      current = paragraph;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current) {
+    pages.push({ pageNumber: pages.length + 1, text: current });
+  }
+  return pages;
 }
 
 async function assertAttachmentCurrent(input: IngestInit): Promise<void> {
@@ -345,6 +481,16 @@ async function processBatch(batchId: string): Promise<BatchProcessResult> {
       previousBatchSummary: previous[0]?.batchSummary,
       previousContinuationNote: previous[0]?.continuationNote,
     });
+
+    console.info(
+      `[document-ingest] Extracted pages ${batch.pageStart}-${batch.pageEnd}`,
+      {
+        mode: extracted.mode,
+        recovery: extracted.recovery,
+        pageCount: extracted.pages.length,
+        usage: extracted.usage,
+      }
+    );
 
     await db.transaction(async (tx) => {
       await tx

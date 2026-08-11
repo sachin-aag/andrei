@@ -9,7 +9,7 @@ import {
 
 export type AdminReportSummary = {
   id: string;
-  deviationNo: string;
+  documentNo: string;
   date: Date;
   status: string;
   authorId: string;
@@ -31,7 +31,7 @@ export async function listAdminReportSummaries(options?: {
   const query = db
     .select({
       id: reports.id,
-      deviationNo: reports.deviationNo,
+      documentNo: reports.documentNo,
       date: reports.date,
       status: reports.status,
       authorId: reports.authorId,

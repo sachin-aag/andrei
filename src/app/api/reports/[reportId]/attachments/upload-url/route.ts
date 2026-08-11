@@ -3,6 +3,10 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import { reportAttachments } from "@/db/schema";
+import {
+  canonicalAttachmentMime,
+  resolveAttachmentKind,
+} from "@/lib/attachments/file-types";
 import { validateFolderPlacement } from "@/lib/attachments/folders";
 import { getAttachmentLimits } from "@/lib/attachments/limits";
 import { reserveAttachmentUpload } from "@/lib/attachments/reserve-upload";
@@ -40,20 +44,22 @@ export async function POST(
 
   const { filename, mimeType, sizeBytes } = parsed.data;
   const folderId = parsed.data.folderId ?? null;
-  if (!filename.toLowerCase().endsWith(".pdf")) {
-    return NextResponse.json({ error: "Only PDF files are allowed" }, { status: 400 });
-  }
-  if (mimeType !== "application/pdf") {
+  const kind = resolveAttachmentKind({ filename, mimeType });
+  if (!kind) {
     return NextResponse.json(
-      { error: "PDF MIME type must be application/pdf" },
+      { error: "Only PDF and Word (.docx) files are allowed" },
       { status: 400 }
     );
   }
+  // Reserve/serve with the canonical MIME so the GCS resumable session matches
+  // the browser's PUT content type even when the browser reported none.
+  const canonicalMime =
+    canonicalAttachmentMime({ filename, mimeType }) ?? mimeType;
 
   const limits = getAttachmentLimits();
   if (sizeBytes > limits.maxAttachmentBytes) {
     return NextResponse.json(
-      { error: `PDF exceeds ${limits.maxAttachmentBytes} byte limit` },
+      { error: `File exceeds ${limits.maxAttachmentBytes} byte limit` },
       { status: 400 }
     );
   }
@@ -74,7 +80,7 @@ export async function POST(
     reportId,
     folderId,
     filename,
-    mimeType,
+    mimeType: canonicalMime,
     sizeBytes,
     uploadedById: access.user.id,
   });
@@ -88,7 +94,7 @@ export async function POST(
   try {
     const uploadUrl = await getAttachmentStorage().createResumableUpload({
       objectKey: reserved.stagingObjectKey,
-      contentType: mimeType,
+      contentType: canonicalMime,
       sizeBytes,
       origin: browserOriginFromRequest(req),
     });

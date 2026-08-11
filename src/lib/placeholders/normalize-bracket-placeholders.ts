@@ -1,5 +1,7 @@
+import { isCitationShapedBracket, repairedCitationBracket } from "./citation-bracket";
 import {
   isActionablePlaceholderBracket,
+  MAX_PLACEHOLDER_LABEL_LENGTH,
   NUMERIC_ONLY_BRACKET,
 } from "./find";
 import { compactPlaceholderLabel } from "./label";
@@ -12,6 +14,7 @@ const LABEL_THEN_TO_BE_FILLED =
 function isGuidanceShapedBracket(match: string): boolean {
   if (!/^\[[^\]]+\]$/.test(match)) return false;
   if (NUMERIC_ONLY_BRACKET.test(match)) return false;
+  if (isCitationShapedBracket(match)) return false;
 
   const inner = match.slice(1, -1);
   if (/^formula$/i.test(inner.trim())) return false;
@@ -19,7 +22,19 @@ function isGuidanceShapedBracket(match: string): boolean {
   if (/to\s+be\s+filled/i.test(inner)) return false;
   if (/\be\.g\./i.test(inner)) return true;
   if (inner.includes(":")) return false;
-  return /^[\w\s./-]+$/i.test(inner.trim());
+
+  const trimmed = inner.trim();
+  // Short / noun-ish labels: `[number]`, `[equipment ID]`, `[Personnel Name(s)]`.
+  if (/^[\w\s./'()-]+$/i.test(trimmed)) return true;
+  // Long instructional scaffolding from AI drafts (often includes commas):
+  // `[Detailed narrative of the observation, including …]`.
+  if (
+    trimmed.length > MAX_PLACEHOLDER_LABEL_LENGTH &&
+    /^[\w\s.,;/'()-]+$/i.test(trimmed)
+  ) {
+    return true;
+  }
+  return false;
 }
 
 function toCanonicalPlaceholder(label: string): string {
@@ -35,13 +50,18 @@ function toCanonicalPlaceholder(label: string): string {
  * omits `<to be filled>` (for example `[number]`), and compacts long labels to
  * the shared MAX_PLACEHOLDER_LABEL_LENGTH.
  *
- * - Skips citation-style `[digits]`.
+ * - Skips citation-style `[digits]`, `[file.pdf]`, `[name, p. N]`.
+ * - Repairs mistaken `[file.pdf: <to be filled>]` back to `[file.pdf]`.
  * - Skips static bracketed prose (e.g. SOP acceptance criteria on import).
  * - Compacts labels on both guidance-only and existing `to be filled` forms.
  */
 export function normalizeBracketPlaceholdersInPlainText(text: string): string {
   return text.replace(/\[[^\]]+\]/g, (match) => {
     if (NUMERIC_ONLY_BRACKET.test(match)) return match;
+
+    const repaired = repairedCitationBracket(match);
+    if (repaired) return repaired;
+    if (isCitationShapedBracket(match)) return match;
 
     const inner = match.slice(1, -1);
 

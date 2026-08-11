@@ -108,7 +108,7 @@ describe("findPlaceholders", () => {
           content: [
             {
               type: "text",
-              text: 'Observed [description of particulate, e.g., fibers] in [number] vials; see ref [12]. Per [SOP No.: <to be filled>].',
+              text: 'Observed [description of particulate, e.g., fibers] in [number] vials; see ref [12]. Per [SOP No.: <to be filled>]. [Personnel Name(s)] were present.',
             },
           ],
         },
@@ -119,6 +119,7 @@ describe("findPlaceholders", () => {
 
     expect(found.map((p) => p.text).sort()).toEqual(
       [
+        "[Personnel Name(s)]",
         "[SOP No.: <to be filled>]",
         "[description of particulate, e.g., fibers]",
         "[number]",
@@ -165,5 +166,24 @@ describe("findPlaceholders", () => {
     expect(findPlaceholders(afterDoc, "define", "narrative").map((p) => p.text)).toEqual([
       compacted,
     ]);
+  });
+
+  it("does not treat attachment citations as placeholders", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text:
+                "as defined in [DV Requriements Convergent Dental.pdf: <to be filled>]. See also [batch-coa.pdf, p. 3], [protocol.docx], [Attachment_XIV, Attachment_VIII], and [Attachment_VIII: <to be filled>].",
+            },
+          ],
+        },
+      ],
+    };
+    expect(findPlaceholders(doc, "define", "narrative")).toEqual([]);
   });
 });

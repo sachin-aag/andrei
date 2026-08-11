@@ -365,10 +365,13 @@ describe("narrativeToDocxXml tables", () => {
     }));
     const report: typeof reports.$inferSelect = {
       id: reportId,
-      deviationNo: "DEV/TEST/REVISIONS",
+      documentType: "investigation_report",
+      documentNo: "DEV/TEST/REVISIONS",
       date: iso,
-      toolsUsed: { sixM: false, fiveWhy: false, brainstorming: false },
-      otherTools: "",
+      metadata: {
+        toolsUsed: { sixM: false, fiveWhy: false, brainstorming: false },
+        otherTools: "",
+      },
       status: "draft",
       authorId: "1",
       assignedManagerId: null,

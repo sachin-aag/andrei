@@ -70,7 +70,7 @@ export async function listImproveAiSessionsForUser(
   return rows.map(({ session, report }) => ({
     id: session.id,
     reportId: session.reportId,
-    deviationNo: report.deviationNo,
+    deviationNo: report.documentNo,
     sourceLabel: session.sourceLabel,
     sourceType: session.sourceType,
     status: session.status,
