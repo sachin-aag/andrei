@@ -106,6 +106,8 @@ export function validateSuggestionLocate(
       const op = fixPayload.blockEdit;
       let canApply = false;
       if (op.op === "insert") {
+        // An insert always has somewhere to go: it either resolves against its
+        // anchor / chain predecessor, or appends at the end of the field.
         canApply = true;
       } else if (op.op === "insertRow") {
         canApply = locateTableBlockIndex(doc, op) >= 0;

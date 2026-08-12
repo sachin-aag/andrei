@@ -262,6 +262,11 @@ function findUniqueAnchorInText(
   const trimmed = needle.trim();
   if (!trimmed) return null;
 
+  // Deliberately gated on the COLLAPSED count, not the exact count: models
+  // normalize whitespace when they quote, so if a phrase appears twice with
+  // different internal spacing the quote genuinely does not identify one of
+  // them. Reporting "ambiguous" and asking for a longer quote is safer than
+  // silently picking the occurrence whose spacing happens to match.
   if (countCollapsedOccurrences(haystack, trimmed) !== 1) return null;
 
   const exactIdx = haystack.indexOf(trimmed);
@@ -557,6 +562,30 @@ export function locateScopedEdit(
   };
 }
 
+/**
+ * A pure delete leaves the spaces that surrounded the removed span behind, so
+ * "The operator noticed the deviation." minus "noticed" reads
+ * "The operator  the deviation.". Widen the range over one adjacent space so
+ * the text closes up. Only literal spaces are absorbed — never the "\n" that
+ * separates blocks in the canonical string.
+ *
+ * Lives in `locateEdit` so probe, plain apply and rich apply all agree.
+ */
+function absorbAdjacentSpace(
+  text: string,
+  start: number,
+  end: number
+): { start: number; end: number } {
+  if (start >= end) return { start, end };
+  const prev = start > 0 ? text[start - 1] : "";
+  const next = end < text.length ? text[end] : "";
+  if (next === " " && (prev === " " || start === 0)) {
+    return { start, end: end + 1 };
+  }
+  if (prev === " " && next === "") return { start: start - 1, end };
+  return { start, end };
+}
+
 export function locateEdit(text: string, edit: SuggestionEdit): LocateResult {
   const anchorText = (edit.anchorText ?? "").trim();
   const deleteText = (edit.deleteText ?? "").trim();
@@ -595,12 +624,19 @@ export function locateEdit(text: string, edit: SuggestionEdit): LocateResult {
       const innerNeedle = deleteText || anchorText;
       const inner = findUniqueAnchorInText(scoped, innerNeedle);
       if (inner) {
+        const del = insertText
+          ? { start: anchorMatch.start + inner.start, end: anchorMatch.start + inner.end }
+          : absorbAdjacentSpace(
+              text,
+              anchorMatch.start + inner.start,
+              anchorMatch.start + inner.end
+            );
         return {
           status: "located",
-          anchorStart: anchorMatch.start,
-          anchorEnd: anchorMatch.end,
-          deleteStart: anchorMatch.start + inner.start,
-          deleteEnd: anchorMatch.start + inner.end,
+          anchorStart: Math.min(anchorMatch.start, del.start),
+          anchorEnd: Math.max(anchorMatch.end, del.end),
+          deleteStart: del.start,
+          deleteEnd: del.end,
         };
       }
     }
@@ -614,12 +650,16 @@ export function locateEdit(text: string, edit: SuggestionEdit): LocateResult {
     return { status: "not_found" };
   }
 
+  const del = insertText
+    ? { start: delMatch.start, end: delMatch.end }
+    : absorbAdjacentSpace(text, delMatch.start, delMatch.end);
+
   return {
     status: "located",
-    anchorStart: delMatch.start,
-    anchorEnd: delMatch.end,
-    deleteStart: delMatch.start,
-    deleteEnd: delMatch.end,
+    anchorStart: del.start,
+    anchorEnd: del.end,
+    deleteStart: del.start,
+    deleteEnd: del.end,
   };
 }
 
@@ -755,17 +795,20 @@ function cleanupMarks(node: JSONContent) {
   if (node.content?.length) for (const ch of node.content) cleanupMarks(ch);
 }
 
+/**
+ * `insertText` must already be normalized AND spaced by the caller — this does
+ * not trim, because trimming here would strip the leading space that
+ * `withLeadingSpaceIfNeeded` adds for a mid-sentence insert.
+ */
 function insertAfterRef(
   cloned: JSONContent,
   insertAfter: TextSlice | null,
   insertText: string,
   attrs: InjectAttrs
 ): JSONContent | null {
-  const trimmed = normalizeSuggestionInsertText(insertText);
+  const trimmed = insertText;
   if (!trimmed) return null;
 
-  // Rich inserts keep the model's spacing verbatim (prompt asks for a leading
-  // space on mid-sentence inserts). Do NOT auto-prefix a space here.
   const insertMark = {
     type: suggestionInsertMarkName,
     attrs: { ...attrs },
@@ -888,7 +931,7 @@ export function applyEditToRichDoc(
     const inserted = insertAfterRef(
       cloned,
       null,
-      edit.insertText ?? "",
+      normalizeSuggestionInsertText(edit.insertText ?? ""),
       attrs
     );
     if (!inserted) return { status: "empty_edit", doc: cloned };
@@ -917,7 +960,15 @@ export function applyEditToRichDoc(
   }
 
   const { deleteStart, deleteEnd, anchorStart, anchorEnd } = reLocated;
-  const insertText = normalizeSuggestionInsertText(edit.insertText ?? "");
+  // Same spacing rule as the plain-text path: the inserted run lands where the
+  // deleted span was, so once the delete marks are accepted the character
+  // before it is `text[deleteStart - 1]`. Without this a mid-sentence insert
+  // fuses onto the previous word ("...operations.The investigation...").
+  const insertText = withLeadingSpaceIfNeeded(
+    freshIndex.text,
+    deleteStart,
+    normalizeSuggestionInsertText(edit.insertText ?? "")
+  );
   let insertAfter: TextSlice | null = null;
 
   // Blank scoped container (e.g. an empty table cell): there is no text node to

@@ -30,7 +30,7 @@ import {
   getGateSection,
   mergeSectionForType,
 } from "@/lib/document-types";
-import { activeSuggestionForSection } from "@/lib/ai/suggestion-gating";
+import { activeSuggestionInDocumentOrder } from "@/lib/suggestions/suggestion-order";
 import { validateSuggestionLocate } from "@/lib/suggestions/validate-suggestion";
 import { normalizeCommentRecord } from "@/lib/comments/normalize";
 import {
@@ -850,15 +850,25 @@ export function ReportProvider({
         const locked = comments.find((c) => c.id === lockedId);
         if (locked) return locked;
       }
-      return activeSuggestionForSection(section, comments, evaluations);
+      return activeSuggestionInDocumentOrder(
+        section,
+        comments,
+        evaluations,
+        sections[section as keyof SectionContentMap]
+      );
     },
-    [comments, evaluations, suggestionApplyTransition]
+    [comments, evaluations, sections, suggestionApplyTransition]
   );
 
   const activeSuggestionIdForSection = useCallback(
     (section: SectionType) => {
       if (isSuggestionPreviewHeld(section)) return null;
-      const active = activeSuggestionForSection(section, comments, evaluations);
+      const active = activeSuggestionInDocumentOrder(
+        section,
+        comments,
+        evaluations,
+        sections[section as keyof SectionContentMap]
+      );
       if (!active) return null;
       const validation = validateSuggestionLocate(
         active,

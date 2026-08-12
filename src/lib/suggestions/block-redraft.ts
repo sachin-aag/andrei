@@ -46,7 +46,73 @@ export type BlockEditOp = {
   rowAnchor?: string;
   /** replace: how many current top-level blocks to consume (default 1). */
   blockCount?: number;
+  /** insert: the suggestion whose block this one follows (see `resolveInsertAfterIndex`). */
+  afterSuggestionId?: string;
 };
+
+/**
+ * The predecessor state `resolveInsertAfterIndex` needs. Deliberately a minimal
+ * shape rather than `CommentRecord` so `block-redraft.ts` stays free of report
+ * types and testable in isolation.
+ */
+export type BlockChainEntry = {
+  id: string;
+  status: "open" | "resolved" | "dismissed";
+  /** The markdown this suggestion inserts — its text once accepted. */
+  proposedMarkdown?: string;
+  /** The suggestion IT follows, so a dismissed link can be skipped over. */
+  afterSuggestionId?: string;
+};
+
+export type BlockChain = ReadonlyMap<string, BlockChainEntry>;
+
+/**
+ * Resolve the top-level index a chained insert goes after, against the doc as
+ * it is RIGHT NOW rather than as it was when the draft was written.
+ *
+ * Walks back along `afterSuggestionId`:
+ *  - predecessor accepted  → its text is in the doc; anchor to that block.
+ *  - predecessor dismissed → its text never landed; try ITS predecessor.
+ *  - predecessor still open → nothing to anchor to yet; keep walking back.
+ *
+ * Returns -1 when nothing in the chain has landed, which callers treat as
+ * "append at the end of the field" — the correct answer for the first block of
+ * a draft into an empty field, and the safe answer when the engineer has edited
+ * the text out from under the queue.
+ */
+export function resolveInsertAfterIndex(
+  doc: JSONContent,
+  op: BlockEditOp,
+  chain?: BlockChain
+): number {
+  // An insert anchored to existing text resolves against that text as usual.
+  if (op.anchor.trim().length > 0) return locateBlockIndex(doc, op);
+  if (!op.afterSuggestionId || !chain) return -1;
+
+  const seen = new Set<string>();
+  let cursor: string | undefined = op.afterSuggestionId;
+  while (cursor && !seen.has(cursor)) {
+    seen.add(cursor);
+    const entry: BlockChainEntry | undefined = chain.get(cursor);
+    if (!entry) return -1;
+    if (entry.status === "resolved" && entry.proposedMarkdown) {
+      // Match on the LAST block the predecessor rendered, via the same
+      // `nodeText` both sides use, so the comparison is apples to apples.
+      const rendered = markdownToDoc(entry.proposedMarkdown).content ?? [];
+      const last = rendered[rendered.length - 1];
+      if (last) {
+        const at = locateBlockIndex(doc, {
+          op: "insert",
+          anchor: nodeText(last),
+          blockIndex: -1,
+        });
+        if (at >= 0) return at;
+      }
+    }
+    cursor = entry.afterSuggestionId;
+  }
+  return -1;
+}
 
 function norm(text: string): string {
   return collapseWhitespace(text).trim();
@@ -63,6 +129,30 @@ function markAllText(node: JSONContent, markName: string, attrs: InjectAttrs): v
     return;
   }
   node.content?.forEach((ch) => markAllText(ch, markName, attrs));
+}
+
+/** Any inline mark or non-text inline node a flat word diff would silently drop. */
+function hasInlineFormatting(node: JSONContent): boolean {
+  if (node.type === "text") return (node.marks?.length ?? 0) > 0;
+  if (node.type && node.type !== "paragraph" && !node.content) return true;
+  return (node.content ?? []).some(hasInlineFormatting);
+}
+
+/**
+ * True only when a plain-text word-diff paragraph is byte-for-byte what
+ * accepting this replace produces: one plain paragraph in, one plain paragraph
+ * out, no formatting on either side. Anything else must preview as real nodes.
+ */
+function canPreviewAsWordDiff(
+  oldBlocks: readonly JSONContent[],
+  newBlocks: readonly JSONContent[]
+): boolean {
+  if (newBlocks.length !== 1) return false;
+  const next = newBlocks[0]!;
+  if (next.type !== "paragraph" || hasInlineFormatting(next)) return false;
+  return oldBlocks.every(
+    (b) => b.type === "paragraph" && !hasInlineFormatting(b)
+  );
 }
 
 function renderInsertBlocks(markdown: string, attrs: InjectAttrs): JSONContent[] {
@@ -222,7 +312,8 @@ function injectRowEditMarks(
 export function injectBlockEditMarks(
   doc: JSONContent,
   op: BlockEditOp,
-  attrs: InjectAttrs
+  attrs: InjectAttrs,
+  chain?: BlockChain
 ): { status: LocateStatus; doc: JSONContent } {
   const cloned: JSONContent = JSON.parse(JSON.stringify(doc));
   const content = cloned.content ?? (cloned.content = []);
@@ -231,7 +322,7 @@ export function injectBlockEditMarks(
     const markdown = op.proposedMarkdown ?? "";
     if (norm(markdown).length === 0) return { status: "empty_edit", doc };
     const newBlocks = renderInsertBlocks(markdown, attrs);
-    const at = op.anchor.trim().length > 0 ? locateBlockIndex(cloned, op) : -1;
+    const at = resolveInsertAfterIndex(cloned, op, chain);
     if (at >= 0) content.splice(at + 1, 0, ...newBlocks);
     else content.push(...newBlocks); // append (empty field / unresolved anchor)
     return { status: "located", doc: cloned };
@@ -249,22 +340,32 @@ export function injectBlockEditMarks(
   if (op.op === "replace") {
     const markdown = op.proposedMarkdown ?? "";
     if (norm(markdown).length === 0) return { status: "empty_edit", doc };
-    const oldText = content
-      .slice(idx, idx + count)
-      .map((n) => nodeText(n))
-      .join(" ");
+    const oldBlocks = content.slice(idx, idx + count);
+    const newBlocks = markdownToDoc(markdown).content ?? [];
+
+    // A unified word diff (unchanged words shown once) reads far better than
+    // striking a whole paragraph and repeating it in green — but it renders as
+    // ONE PLAIN PARAGRAPH, so it may only stand in where that is exactly what
+    // the accept produces. A list flattened to "- a - b", a table flattened to
+    // pipes, a heading demoted to a paragraph, or dropped bold are all cases
+    // where the preview would lie about the result.
+    const oldText = oldBlocks.map((n) => nodeText(n)).join(" ");
     const newPlain = norm(markdownToPlainText(markdown));
-    // High token overlap → unified word diff (unchanged words once). Low
-    // overlap → strike the old block(s) and insert the new ones after.
-    if (wordSimilarity(oldText, newPlain) >= WORD_DIFF_MIN_SIMILARITY) {
+    if (
+      canPreviewAsWordDiff(oldBlocks, newBlocks) &&
+      wordSimilarity(oldText, newPlain) >= WORD_DIFF_MIN_SIMILARITY
+    ) {
       content.splice(idx, count, buildWordDiffParagraph(oldText, newPlain, attrs));
       return { status: "located", doc: cloned };
     }
+
+    // Everything else: strike the old block(s) in place and insert the real
+    // rendered blocks after them. Bullets stay bullets, tables stay tables,
+    // and accepting the marks yields exactly the nodes shown in green.
     for (let i = 0; i < count; i++) {
       markAllText(content[idx + i]!, suggestionDeleteMarkName, attrs);
     }
-    const newBlocks = renderInsertBlocks(markdown, attrs);
-    content.splice(idx + count, 0, ...newBlocks);
+    content.splice(idx + count, 0, ...renderInsertBlocks(markdown, attrs));
     return { status: "located", doc: cloned };
   }
 
@@ -276,29 +377,20 @@ export function injectBlockEditMarks(
   return { status: "located", doc: cloned };
 }
 
-/** Apply a block op. Replace splices markdown nodes directly (preview may be a
- * word diff that must not become the applied result). Insert/delete/row still
- * go through marks so preview ≡ apply. */
+/**
+ * Apply a block op. Every op — replace included — goes through the same marks
+ * the preview shows and is then accepted, so what the engineer looked at is
+ * exactly what lands. (Replace used to splice markdown nodes directly because
+ * its preview was a lossy flat word diff; `canPreviewAsWordDiff` now confines
+ * that rendering to the case where the two are identical.)
+ */
 export function applyBlockEdit(
   doc: JSONContent,
   suggestionId: string,
   op: BlockEditOp,
-  attrs?: Partial<InjectAttrs>
+  attrs?: Partial<InjectAttrs>,
+  chain?: BlockChain
 ): { status: LocateStatus; doc: JSONContent } {
-  if (op.op === "replace") {
-    const cloned: JSONContent = JSON.parse(JSON.stringify(doc));
-    const content = cloned.content ?? (cloned.content = []);
-    const idx = locateBlockIndex(cloned, op);
-    if (idx < 0) return { status: "not_found", doc };
-    const markdown = op.proposedMarkdown ?? "";
-    if (norm(markdown).length === 0) return { status: "empty_edit", doc };
-    const count = Math.min(Math.max(1, op.blockCount ?? 1), content.length - idx);
-    const newBlocks = markdownToDoc(markdown).content ?? [];
-    content.splice(idx, count, ...newBlocks);
-    if (content.length === 0) content.push({ type: "paragraph" });
-    return { status: "located", doc: cloned };
-  }
-
   const fullAttrs: InjectAttrs = {
     id: suggestionId,
     authorId: attrs?.authorId ?? "ai",
@@ -306,10 +398,11 @@ export function applyBlockEdit(
     createdAt: attrs?.createdAt ?? new Date().toISOString(),
     kind: attrs?.kind ?? "redraft",
   };
-  const injected = injectBlockEditMarks(doc, op, fullAttrs);
+  const injected = injectBlockEditMarks(doc, op, fullAttrs, chain);
   if (injected.status !== "located") return injected;
-  return {
-    status: "located",
-    doc: acceptSuggestionMarksById(injected.doc, suggestionId),
-  };
+  const accepted = acceptSuggestionMarksById(injected.doc, suggestionId);
+  if ((accepted.content?.length ?? 0) === 0) {
+    accepted.content = [{ type: "paragraph" }];
+  }
+  return { status: "located", doc: accepted };
 }

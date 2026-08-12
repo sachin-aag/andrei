@@ -13,11 +13,25 @@ describe("locatePlainTextDeleteSpan", () => {
     const deleteText =
       "hence by considering the isolated instance preventive action not anticipated for the occurred nonconformance, however to avoid the reoccurrence,";
 
-    const span = locatePlainTextDeleteSpan(value, { anchorText: anchor, deleteText });
+    const span = locatePlainTextDeleteSpan(value, {
+      anchorText: anchor,
+      deleteText,
+      insertText: "replacement",
+    });
     expect(span).not.toBeNull();
     expect(value.slice(span!.start, span!.end)).toBe(
       "hence by considering the isolated instance preventive action not anticipated for the occurred nonconformance, however to avoid the reoccurrence,"
     );
+  });
+
+  it("a pure delete widens over the trailing space so the text closes up", () => {
+    const value = "alpha beta gamma";
+    const span = locatePlainTextDeleteSpan(value, { deleteText: "beta" });
+    expect(span).not.toBeNull();
+    expect(value.slice(span!.start, span!.end)).toBe("beta ");
+    expect(
+      value.slice(0, span!.start) + value.slice(span!.end)
+    ).toBe("alpha gamma");
   });
 
   it("uses anchor scope when delete text is ambiguous in the full field", () => {

@@ -15,6 +15,14 @@ import { collapseWhitespace } from "@/lib/text/normalize-for-anchor";
  */
 export const REDRAFT_COVERAGE_THRESHOLD = 0.5;
 
+/**
+ * Fields shorter than this are exempt from the coverage guard. In a two-sentence
+ * field, changing one sentence legitimately covers more than half the text —
+ * refusing it pushed the model to redraft the whole field, which is exactly the
+ * oversized suggestion the guard exists to prevent.
+ */
+export const COVERAGE_GUARD_MIN_FIELD_CHARS = 400;
+
 export type ProposedEditInput = {
   anchorText: string;
   deleteText: string;
@@ -71,7 +79,10 @@ export function checkProposedEdit(
   if (!edit.scope && del.length > 0) {
     const fieldLen = Math.max(1, collapseWhitespace(fieldPlainText).length);
     const coverage = del.length / fieldLen;
-    if (coverage > REDRAFT_COVERAGE_THRESHOLD) {
+    if (
+      fieldLen >= COVERAGE_GUARD_MIN_FIELD_CHARS &&
+      coverage > REDRAFT_COVERAGE_THRESHOLD
+    ) {
       return { status: "too_large", coverage };
     }
   }
@@ -93,7 +104,7 @@ export function proposedEditHint(check: ProposedEditCheck): string {
     case "bad_scope":
       return "The `scope` coordinate does not exist in this field. Re-read the field with read_section and use a valid R#/C# cell or list item index.";
     case "too_large":
-      return "This change rewrites most of the field. Make a smaller, targeted edit (block redraft is not available yet in this mode).";
+      return "This change rewrites most of the field. Make a smaller, targeted edit, or use draft_field — it splits a full draft into one card per changed block.";
     default: {
       const _exhaustive: never = check;
       return _exhaustive;

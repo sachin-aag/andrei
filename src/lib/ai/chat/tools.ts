@@ -18,7 +18,7 @@ import {
   sectionContentHash,
   type ParsedAiFixPayload,
 } from "@/lib/ai/suggestion-gating";
-import { diffFieldToEdits } from "@/lib/suggestions/diff-redraft";
+import { deriveEditLabel, diffFieldToEdits } from "@/lib/suggestions/diff-redraft";
 import {
   isRichTargetField,
   resolveTargetField,
@@ -91,6 +91,8 @@ export type ProposeEditResult =
       section: SectionType;
       targetField: string;
       summary: string;
+      /** Open proposals this one replaced (dismissed, slot inherited). */
+      supersededIds?: string[];
     }
   | { status: "not_editable"; message: string }
   | { status: "invalid_section"; message: string }
@@ -111,12 +113,15 @@ export type DraftFieldResult =
       summary: string;
       /** Number of targeted edits the draft was split into (diff-based). */
       edits?: number;
+      /** Open proposals this draft replaced (dismissed, slot inherited). */
+      supersededIds?: string[];
     }
   | {
       status: "no_changes";
       section: SectionType;
       targetField: string;
       message: string;
+      supersededIds?: string[];
     }
   | { status: "not_editable"; message: string }
   | { status: "invalid_section"; message: string }
@@ -140,6 +145,19 @@ export type SelectAnalyzeMethodResult =
     }
   | { status: "not_editable"; message: string }
   | { status: "report_not_found"; message: string };
+
+/**
+ * Ids of open proposals this call replaces. Shared by `propose_edit` and
+ * `draft_field` so either can revise rather than pile a second card behind the
+ * one the engineer is looking at.
+ */
+const SUPERSEDES_SCHEMA = z
+  .array(z.string())
+  .max(10)
+  .optional()
+  .describe(
+    "Ids of OPEN proposals in this section that this one replaces (from the context map's open-proposal list). Use when the engineer is giving feedback on a proposal they have not accepted yet: the old card is dismissed and this one takes its place in the queue."
+  );
 
 const DOCUMENT_CITATION_RULE =
   "Cite evidence in prose as [filename, p. N] when the page is known, or [filename] when it is not. Never use <to be filled> in a citation.";
@@ -215,6 +233,79 @@ function buildSearchDocumentsTool(opts: {
       };
     },
   });
+}
+
+/**
+ * Close out the open proposals a new one replaces, and hand back the queue slot
+ * of the earliest of them.
+ *
+ * Without this, feedback on a pending proposal ("make that shorter") appends a
+ * SECOND card behind the first, so the engineer keeps looking at the version
+ * they just asked to change. Dismissing the original and inheriting its
+ * position makes the revision land where the original was.
+ */
+export type SupersedableRow = {
+  id: string;
+  kind: string;
+  status: string;
+  createdAt: Date | string;
+};
+
+/**
+ * Which of the requested ids may actually be superseded, and the queue slot the
+ * replacement inherits (the earliest of them).
+ *
+ * Only OPEN AI proposals already loaded for this report+section are eligible, so
+ * a hallucinated, stale, or cross-report id can never dismiss a human's comment
+ * or an already-resolved one. Pure, so the rule is testable without a database.
+ */
+export function selectSupersedableRows(
+  rows: readonly SupersedableRow[],
+  ids: readonly string[]
+): { supersededIds: string[]; inheritedCreatedAt: Date | null } {
+  const wanted = new Set(ids.filter((id) => id.trim().length > 0));
+  if (wanted.size === 0) return { supersededIds: [], inheritedCreatedAt: null };
+
+  const targets = rows.filter(
+    (row) =>
+      wanted.has(row.id) &&
+      row.status === "open" &&
+      (row.kind === "ai_fix" || row.kind === "ai_redraft")
+  );
+  if (targets.length === 0) return { supersededIds: [], inheritedCreatedAt: null };
+
+  const earliest = targets.reduce<Date | null>((acc, row) => {
+    const at = row.createdAt instanceof Date ? row.createdAt : new Date(row.createdAt);
+    return acc === null || at < acc ? at : acc;
+  }, null);
+
+  return { supersededIds: targets.map((t) => t.id), inheritedCreatedAt: earliest };
+}
+
+async function supersedeOpenSuggestions(opts: {
+  reportId: string;
+  section: SectionType;
+  ids: readonly string[];
+}): Promise<{ supersededIds: string[]; inheritedCreatedAt: Date | null }> {
+  if (opts.ids.filter((id) => id.trim().length > 0).length === 0) {
+    return { supersededIds: [], inheritedCreatedAt: null };
+  }
+
+  const rows = await db
+    .select({
+      id: comments.id,
+      kind: comments.kind,
+      status: comments.status,
+      createdAt: comments.createdAt,
+    })
+    .from(comments)
+    .where(and(eq(comments.reportId, opts.reportId), eq(comments.section, opts.section)));
+
+  const selected = selectSupersedableRows(rows, opts.ids);
+  for (const id of selected.supersededIds) {
+    await db.update(comments).set({ status: "dismissed" }).where(eq(comments.id, id));
+  }
+  return selected;
 }
 
 async function loadMergedSection(
@@ -495,6 +586,7 @@ export function buildChatTools(opts: {
           .string()
           .max(300)
           .describe("One short sentence explaining the edit (shown to the engineer)."),
+        supersedes: SUPERSEDES_SCHEMA,
       }),
       execute: async ({
         section,
@@ -504,6 +596,7 @@ export function buildChatTools(opts: {
         insertText,
         scope,
         reasoning,
+        supersedes,
       }): Promise<ProposeEditResult> => {
         if (!canEdit) {
           return {
@@ -547,6 +640,12 @@ export function buildChatTools(opts: {
           return { status: check.status, hint: proposedEditHint(check) } as ProposeEditResult;
         }
 
+        const { supersededIds, inheritedCreatedAt } = await supersedeOpenSuggestions({
+          reportId,
+          section,
+          ids: supersedes ?? [],
+        });
+
         const suggestionId = createId();
         const normalizedInsert = normalizeSuggestionInsertText(insertText);
         await db.insert(comments).values({
@@ -559,6 +658,7 @@ export function buildChatTools(opts: {
             deleteText,
             insertText: normalizedInsert,
             reasoning,
+            label: deriveEditLabel(normalizedInsert || deleteText || anchorText),
             scope: parsedScope,
             contentHashAtSuggestion: sectionContentHash(section, loaded.content),
           }),
@@ -569,6 +669,7 @@ export function buildChatTools(opts: {
           status: "open",
           kind: "ai_fix",
           evaluationId: null,
+          ...(inheritedCreatedAt ? { createdAt: inheritedCreatedAt } : {}),
         });
 
         return {
@@ -577,6 +678,7 @@ export function buildChatTools(opts: {
           section,
           targetField: resolvedField,
           summary: reasoning,
+          ...(supersededIds.length > 0 ? { supersededIds } : {}),
         };
       },
     }),
@@ -597,12 +699,14 @@ export function buildChatTools(opts: {
           .string()
           .max(300)
           .describe("One short sentence explaining the draft (shown to the engineer)."),
+        supersedes: SUPERSEDES_SCHEMA,
       }),
       execute: async ({
         section,
         targetField,
         markdown,
         reasoning,
+        supersedes,
       }): Promise<DraftFieldResult> => {
         if (!canEdit) {
           return {
@@ -637,8 +741,16 @@ export function buildChatTools(opts: {
           return { status: "section_not_found", message: "Section not found." };
         }
 
-        // Fallback: one whole-field redraft (plain fields, or a genuine full
-        // rewrite the diff can't express as targeted edits).
+        const { supersededIds, inheritedCreatedAt } = await supersedeOpenSuggestions({
+          reportId,
+          section,
+          ids: supersedes ?? [],
+        });
+        const superseded = supersededIds.length > 0 ? { supersededIds } : {};
+
+        // Plain fields have no rich doc to diff, so they stay a whole-field
+        // redraft. Rich fields never take this path — their drafts always split
+        // into block-level edits (see `diffFieldToEdits`).
         const insertRedraft = async (): Promise<DraftFieldResult> => {
           const suggestionId = createId();
           await db.insert(comments).values({
@@ -663,6 +775,7 @@ export function buildChatTools(opts: {
             status: "open",
             kind: "ai_redraft",
             evaluationId: null,
+            ...(inheritedCreatedAt ? { createdAt: inheritedCreatedAt } : {}),
           });
           return {
             status: "drafted",
@@ -670,10 +783,10 @@ export function buildChatTools(opts: {
             section,
             targetField: resolvedField,
             summary: reasoning,
+            ...superseded,
           };
         };
 
-        // Plain fields have no rich doc to diff → whole-field redraft.
         if (!isRichTargetField(section, resolvedField)) {
           return insertRedraft();
         }
@@ -685,31 +798,36 @@ export function buildChatTools(opts: {
           loaded.content as Record<string, unknown>,
           resolvedField
         );
-        const diff = diffFieldToEdits(currentDoc, markdown, reasoning);
-        if (diff.strategy === "redraft") {
-          return insertRedraft();
-        }
-        if (diff.edits.length === 0) {
+        const diffEdits = diffFieldToEdits(currentDoc, markdown, reasoning);
+        if (diffEdits.length === 0) {
           return {
             status: "no_changes",
             section,
             targetField: resolvedField,
             message:
               "The draft matches the current content — there is nothing to change.",
+            ...superseded,
           };
         }
 
         const contentHash = sectionContentHash(section, loaded.content);
-        let firstId: string | null = null;
-        for (const edit of diff.edits) {
-          const id = createId();
-          if (!firstId) firstId = id;
+        // Ids are minted up front so a chained insert can name the block it
+        // follows; that link is what lets the insertion point be resolved when
+        // the card becomes active rather than frozen at draft time.
+        const ids = diffEdits.map(() => createId());
+        const firstId = ids[0]!;
+        const draftId = createId();
+        for (const [i, edit] of diffEdits.entries()) {
+          const id = ids[i]!;
+          const draft = { id: draftId, index: i + 1, total: diffEdits.length };
           const payload: ParsedAiFixPayload =
             edit.kind === "text"
               ? {
                   deleteText: edit.deleteText,
                   insertText: normalizeSuggestionInsertText(edit.insertText),
                   reasoning: edit.reasoning,
+                  label: edit.label,
+                  draft,
                   scope: edit.scope,
                   contentHashAtSuggestion: contentHash,
                 }
@@ -717,6 +835,8 @@ export function buildChatTools(opts: {
                   deleteText: "",
                   insertText: "",
                   reasoning: edit.reasoning,
+                  label: edit.label,
+                  draft,
                   contentHashAtSuggestion: contentHash,
                   blockEdit: {
                     op: edit.op,
@@ -727,6 +847,9 @@ export function buildChatTools(opts: {
                     rowIndex: edit.rowIndex,
                     rowAnchor: edit.rowAnchor,
                     blockCount: edit.blockCount,
+                    ...(edit.afterEditIndex !== undefined
+                      ? { afterSuggestionId: ids[edit.afterEditIndex] }
+                      : {}),
                   },
                 };
           await db.insert(comments).values({
@@ -743,16 +866,18 @@ export function buildChatTools(opts: {
             status: "open",
             kind: "ai_fix",
             evaluationId: null,
+            ...(i === 0 && inheritedCreatedAt ? { createdAt: inheritedCreatedAt } : {}),
           });
         }
 
         return {
           status: "drafted",
-          suggestionId: firstId!,
+          suggestionId: firstId,
           section,
           targetField: resolvedField,
           summary: reasoning,
-          edits: diff.edits.length,
+          edits: diffEdits.length,
+          ...superseded,
         };
       },
     }),

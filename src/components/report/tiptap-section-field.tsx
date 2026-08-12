@@ -76,6 +76,7 @@ import {
 } from "@/lib/ai/suggestion-gating";
 import { buildRedraftPreviewDoc } from "@/lib/tiptap/redraft-preview";
 import { injectBlockEditMarks } from "@/lib/suggestions/block-redraft";
+import { buildBlockChain } from "@/lib/suggestions/block-chain";
 import { markdownToDoc } from "@/lib/tiptap/markdown-to-doc";
 import { buildSuggestionEdit, narrativeHasSuggestionMarks } from "@/lib/suggestions/apply-narrative-suggestion";
 import {
@@ -570,6 +571,7 @@ export function TiptapSectionField({
               comment,
               sectionContent: currentSection,
               fieldContentPath: contentPath,
+              comments,
             })
           : await dismissSuggestion({
               reportId: report.id,
@@ -769,13 +771,21 @@ export function TiptapSectionField({
           if (payload.blockEdit) {
             // Whole-block change: render markdown → nodes, tracked with the same
             // mark machinery so accept/dismiss finalize/revert as a unit.
-            const injected = injectBlockEditMarks(json, payload.blockEdit, {
-              id: activeSuggestionId,
-              authorId: AI_AUTHOR_ID,
-              status: "pending",
-              createdAt: comment.createdAt,
-              kind: "redraft",
-            });
+            // The chain is passed so a queued insert resolves its position from
+            // where its predecessor actually landed — computed now, as the card
+            // becomes active, not when the draft was written.
+            const injected = injectBlockEditMarks(
+              json,
+              payload.blockEdit,
+              {
+                id: activeSuggestionId,
+                authorId: AI_AUTHOR_ID,
+                status: "pending",
+                createdAt: comment.createdAt,
+                kind: "redraft",
+              },
+              buildBlockChain(comments)
+            );
             if (injected.status === "located") {
               json = injected.doc;
             }

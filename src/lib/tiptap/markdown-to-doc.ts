@@ -54,24 +54,16 @@ export function markdownToDoc(markdown: string): JSONContent {
       continue;
     }
 
-    const listStart = parseListItemLine(trimmed);
-    if (listStart) {
-      const items: JSONContent[] = [];
-      const kind = listStart.kind;
+    if (parseListItemLine(trimmed)) {
+      const raw: RawListLine[] = [];
       while (i < lines.length) {
-        const next = parseListItemLine(lines[i]!.trim());
-        if (!next || next.kind !== kind) break;
-        items.push({
-          type: "listItem",
-          content: [{ type: "paragraph", content: parseInline(next.text) }],
-        });
+        const parsed = parseListItemLine(lines[i]!.trim());
+        if (!parsed) break;
+        raw.push({ indent: leadingIndent(lines[i]!), ...parsed });
         i++;
       }
-      content.push(
-        kind === "ordered"
-          ? { type: "orderedList", content: items }
-          : { type: "bulletList", attrs: { listStyle: "dash" }, content: items }
-      );
+      const built = buildList(raw, 0, raw[0]!.indent);
+      content.push(built.node);
       continue;
     }
 
@@ -102,6 +94,71 @@ export function markdownToPlainText(markdown: string): string {
     .map((line) => line.replace(/\*\*([^*]+)\*\*/g, "$1").replace(/^#{1,3}\s+/, ""))
     .join("\n")
     .trim();
+}
+
+type RawListLine = { indent: number; kind: "ordered" | "bullet"; text: string };
+
+/** Leading whitespace width, tabs counted as two columns. */
+function leadingIndent(line: string): number {
+  const match = /^[ \t]*/.exec(line)?.[0] ?? "";
+  return match.replace(/\t/g, "  ").length;
+}
+
+function listNode(kind: "ordered" | "bullet", items: JSONContent[]): JSONContent {
+  return kind === "ordered"
+    ? { type: "orderedList", content: items }
+    : { type: "bulletList", attrs: { listStyle: "dash" }, content: items };
+}
+
+/**
+ * Build one list (and its nested sublists) from a run of list lines.
+ *
+ * Indentation is compared relatively rather than in fixed steps, so 2-space and
+ * 4-space drafts both nest correctly. A deeper line becomes a sublist inside the
+ * item above it; a shallower line or a different marker kind at the same level
+ * ends this list and returns to the caller.
+ */
+function buildList(
+  lines: RawListLine[],
+  start: number,
+  indent: number
+): { node: JSONContent; next: number } {
+  const kind = lines[start]!.kind;
+  const items: JSONContent[] = [];
+  let i = start;
+
+  while (i < lines.length) {
+    const line = lines[i]!;
+    if (line.indent < indent) break;
+
+    if (line.indent > indent) {
+      // Deeper than the current level: attach as a sublist of the previous item.
+      const parent = items[items.length - 1];
+      const sub = buildList(lines, i, line.indent);
+      if (parent) {
+        parent.content = [...(parent.content ?? []), sub.node];
+      } else {
+        // Leading over-indent with nothing to nest under — treat it as this level.
+        items.push({
+          type: "listItem",
+          content: [{ type: "paragraph", content: parseInline(line.text) }],
+        });
+        i++;
+        continue;
+      }
+      i = sub.next;
+      continue;
+    }
+
+    if (line.kind !== kind) break;
+    items.push({
+      type: "listItem",
+      content: [{ type: "paragraph", content: parseInline(line.text) }],
+    });
+    i++;
+  }
+
+  return { node: listNode(kind, items), next: i };
 }
 
 function parseListItemLine(

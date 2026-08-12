@@ -43,7 +43,7 @@ describe("buildReportContextMap", () => {
     expect(map).toContain("filled");
     // one met + one partial; the not_met is bypassed so excluded
     expect(map).toContain("1 met / 1 partial / 0 not-met");
-    expect(map).toContain("1 open suggestion(s)");
+    expect(map).toContain("1 open proposal(s)");
     // analyze root cause is empty
     expect(map).toContain("Analyze [analyze] — empty");
     expect(map).toContain("analyze method: not chosen");
@@ -143,5 +143,52 @@ describe("buildReportContextMap", () => {
     expect(map).toContain("1 image");
     expect(map).toContain("call read_section to view them as vision");
     expect(map).toContain('narrative: "hello"');
+  });
+});
+
+describe("buildReportContextMap — open proposals", () => {
+  it("lists each open proposal with the id needed to supersede it", () => {
+    const map = buildReportContextMap({
+      report: { documentNo: "DEV-1", date: "2026-01-01", status: "draft" },
+      sections: { define: { narrative: { type: "doc", content: [] } } },
+      evaluations: [],
+      comments: [
+        {
+          section: "define",
+          kind: "ai_fix",
+          status: "open",
+          id: "sug-abc",
+          contentPath: "narrative",
+          content: JSON.stringify({
+            deleteText: "",
+            insertText: "",
+            reasoning: "drafted the opening",
+            label: "Problem statement",
+            blockEdit: {
+              op: "insert",
+              anchor: "",
+              blockIndex: -1,
+              proposedMarkdown: "During routine testing the batch failed.",
+            },
+          }),
+        },
+      ],
+    });
+    expect(map).toContain("open proposal id=sug-abc");
+    expect(map).toContain('label="Problem statement"');
+    expect(map).toContain("During routine testing the batch failed.");
+  });
+
+  it("does not list resolved or dismissed proposals", () => {
+    const map = buildReportContextMap({
+      report: { documentNo: "DEV-1", date: "2026-01-01", status: "draft" },
+      sections: {},
+      evaluations: [],
+      comments: [
+        { section: "define", kind: "ai_fix", status: "resolved", id: "done", content: "{}" },
+        { section: "define", kind: "ai_fix", status: "dismissed", id: "gone", content: "{}" },
+      ],
+    });
+    expect(map).not.toContain("open proposal id=");
   });
 });

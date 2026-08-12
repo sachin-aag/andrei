@@ -36,6 +36,8 @@ export type TextEdit = {
   insertText: string;
   scope?: EditScope;
   reasoning: string;
+  /** Short "what this card changes" label, e.g. "Detection and scope". */
+  label: string;
 };
 
 /**
@@ -61,24 +63,60 @@ export type BlockEdit = {
   /** replace: how many current top-level blocks this op consumes (default 1). */
   blockCount?: number;
   reasoning: string;
+  /** Short "what this card changes" label, e.g. "Detection and scope". */
+  label: string;
+  /**
+   * insert only: index into THIS diff's edit array of the block that precedes
+   * this one. The caller turns it into `afterSuggestionId` so the insertion
+   * point is resolved against the live document when the card becomes active,
+   * rather than frozen to a position that later edits invalidate.
+   */
+  afterEditIndex?: number;
 };
 
 export type DiffEdit = TextEdit | BlockEdit;
 
-export type DiffResult =
-  | { strategy: "edits"; edits: DiffEdit[] }
-  /** Diff was degenerate (near-zero overlap / undroppable) — keep one ai_redraft. */
-  | { strategy: "redraft" };
-
 /** Below this token similarity a changed prose block is a rewrite, not a tweak. */
 const WORD_MODE_SIMILARITY = WORD_DIFF_MIN_SIMILARITY;
 /**
- * Field-level token similarity below which a prose rewrite is one `ai_redraft`
- * instead of a pile of delete+insert cards. Uses words, not exact block
- * equality — a restructure (one paragraph → heading + bullets) that keeps
- * most of the wording must NOT fall through to a whole-field redraft.
+ * More targeted cards than this and a draft is as unreviewable as one giant
+ * card, so the diff collapses to a single whole-field block replace. Note this
+ * is a *block* replace, not a whole-field redraft: it still previews as real
+ * nodes and accepts through the same marks path as every other block edit.
  */
-const REDRAFT_MIN_TOKEN_OVERLAP = 0.3;
+const MAX_TARGETED_EDITS = 12;
+
+const MAX_LABEL_WORDS = 8;
+const MAX_LABEL_CHARS = 60;
+
+/**
+ * Short label for the suggestion card, so a multi-block draft reads as
+ * "Step 2 of 5 — Detection and scope" instead of repeating one `reasoning`
+ * string on every card. Derived from the block's own first line.
+ */
+export function deriveEditLabel(source: string): string {
+  const firstLine =
+    source
+      .replace(/\r\n?/g, "\n")
+      .split("\n")
+      .find((line) => line.trim().length > 0) ?? "";
+  const stripped = collapseWhitespace(firstLine)
+    .trim()
+    .replace(/^#{1,6}\s+/, "")
+    .replace(/^([-*+]|\d+[.)])\s+/, "")
+    .replace(/^\|\s*/, "")
+    .replace(/\s*\|\s*$/, "")
+    .replace(/\s*\|\s*/g, " · ")
+    .replace(/[*_`]/g, "")
+    .trim();
+  if (!stripped) return "";
+  const words = stripped.split(" ").slice(0, MAX_LABEL_WORDS).join(" ");
+  const clipped =
+    words.length > MAX_LABEL_CHARS
+      ? words.slice(0, MAX_LABEL_CHARS).trimEnd()
+      : words;
+  return clipped.length < stripped.length ? `${clipped}…` : clipped;
+}
 
 type BlockKind = "prose" | "list" | "table" | "other";
 
@@ -415,6 +453,7 @@ function wholeTableReplace(
       blockIndex,
       proposedMarkdown,
       reasoning,
+      label: deriveEditLabel(proposedMarkdown),
     },
   ];
 }
@@ -438,6 +477,9 @@ function diffMatchedRow(
       insertText: ins,
       scope: { kind: "cell", tableIndex, row: rowIndex, col },
       reasoning,
+      label: deriveEditLabel(
+        `${curRow[0] ?? ""} · ${propRow[col] || "(cleared)"}`
+      ),
     });
   }
   return edits;
@@ -512,6 +554,7 @@ function diffTable(
         rowIndex: op.c,
         rowAnchor: rowSignatureFromCells(curRows[op.c]!),
         reasoning,
+        label: `Remove row: ${deriveEditLabel(rowText(curRows[op.c]!))}`,
       });
       continue;
     }
@@ -529,10 +572,69 @@ function diffTable(
       rowAnchor: lastAfterAnchor,
       proposedMarkdown: rowToMarkdown(header, propRows[op.p]!),
       reasoning,
+      label: `Add row: ${deriveEditLabel(rowText(propRows[op.p]!))}`,
     });
     // Chain consecutive inserts: the next row goes after this proposed row
     // once the prior insert has been accepted.
     lastAfterAnchor = rowSignatureFromCells(propRows[op.p]!);
+  }
+  return edits;
+}
+
+// ---------------------------------------------------------------------------
+// list item diff
+// ---------------------------------------------------------------------------
+
+function extractListItemTexts(listNode: JSONContent): string[] {
+  return (listNode.content ?? []).map((item) => nodeText(item));
+}
+
+/**
+ * Reword one bullet without replacing the whole list. Emits a `listItem`-scoped
+ * text edit per changed item — the same scope `propose_edit` accepts, so it
+ * reuses the locator's per-item window and the ordinary inline preview.
+ *
+ * Returns null when items are added or removed: the caller then falls back to a
+ * whole-list block replace, whose structural preview already shows unchanged
+ * items plainly and the new ones highlighted.
+ */
+function diffList(
+  listNode: JSONContent,
+  listIndex: number,
+  proposedMarkdown: string,
+  reasoning: string
+): TextEdit[] | null {
+  const proposedDoc = markdownToDoc(proposedMarkdown);
+  const proposedList = (proposedDoc.content ?? []).find(
+    (n) => n.type === "bulletList" || n.type === "orderedList"
+  );
+  if (!proposedList) return null;
+  if ((listNode.type === "orderedList") !== (proposedList.type === "orderedList")) {
+    return null; // bullet ↔ numbered is a structural change
+  }
+
+  const curItems = extractListItemTexts(listNode);
+  const propItems = extractListItemTexts(proposedList);
+  if (curItems.length === 0 || curItems.length !== propItems.length) return null;
+
+  const edits: TextEdit[] = [];
+  for (let i = 0; i < curItems.length; i++) {
+    const cur = curItems[i]!;
+    const prop = propItems[i]!;
+    if (cur === prop) continue;
+    // Below the word-overlap floor the item was rewritten, not tweaked — a
+    // scoped whole-item swap is still the minimal edit for that one bullet.
+    const { del, ins } = minimalSpan(cur, prop);
+    if (!del && !ins) continue;
+    edits.push({
+      kind: "text",
+      anchorText: "",
+      deleteText: del,
+      insertText: ins,
+      scope: { kind: "listItem", listIndex, index: i },
+      reasoning,
+      label: deriveEditLabel(prop || cur),
+    });
   }
   return edits;
 }
@@ -545,45 +647,29 @@ export function diffFieldToEdits(
   currentDoc: JSONContent,
   proposedMarkdown: string,
   reasoning: string
-): DiffResult {
+): DiffEdit[] {
   const current = extractCurrentBlocks(currentDoc);
   const proposed = extractProposedBlocks(proposedMarkdown);
 
   const currentHasText = current.some((b) => b.text.length > 0);
 
-  // Empty field → the draft is all-new: one insert per proposed block, in order.
+  // Empty field → the draft is all-new: one insert per proposed block, chained
+  // so each resolves its position from the block before it rather than from a
+  // frozen index (see `afterEditIndex`).
   if (!currentHasText) {
-    const edits: DiffEdit[] = proposed.map((p, idx) => ({
+    return proposed.map((p, idx) => ({
       kind: "block" as const,
       op: "insert" as const,
       anchor: "",
-      // Each block appends after the previous one; -1 for the first (append to
-      // the empty field). Indices count already-inserted proposed blocks.
-      blockIndex: idx - 1,
+      blockIndex: -1,
+      ...(idx > 0 ? { afterEditIndex: idx - 1 } : {}),
       proposedMarkdown: p.markdown,
       reasoning,
+      label: deriveEditLabel(p.markdown),
     }));
-    return { strategy: "edits", edits };
   }
 
   const aligned = alignBlocks(current, proposed);
-  const fieldSim = wordSimilarity(
-    current.map((b) => b.text).join(" "),
-    proposed.map((b) => b.text).join(" ")
-  );
-  // Genuine full prose rewrite (shares almost no wording) → one whole-field
-  // redraft rather than fragmenting into delete-all + insert-all noise. Never
-  // redraft when the field holds a table (cell diff is granular and valuable)
-  // or guarded content (a whole-field replace would delete the equation/image
-  // the guard exists to protect) — fall through to targeted edits instead.
-  // Token similarity, not exact-block equality: a restructure that keeps most
-  // of the words (paragraph → heading + bullets) is NOT a redraft.
-  const anyGuarded = current.some((b) => b.guarded);
-  const anyTable = current.some((b) => b.kind === "table");
-  if (fieldSim < REDRAFT_MIN_TOKEN_OVERLAP && !anyGuarded && !anyTable) {
-    return { strategy: "redraft" };
-  }
-
   const ops = collapseRestructureGaps(aligned, current, proposed);
   const edits: DiffEdit[] = [];
   for (let oi = 0; oi < ops.length; oi++) {
@@ -605,6 +691,7 @@ export function diffFieldToEdits(
         blockCount: op.cEnd - op.cStart + 1,
         proposedMarkdown: markdown,
         reasoning,
+        label: deriveEditLabel(markdown),
       });
       continue;
     }
@@ -612,7 +699,14 @@ export function diffFieldToEdits(
     if (op.type === "delete") {
       const c = current[op.c]!;
       if (c.guarded) continue; // never remove protected content via a diff
-      edits.push({ kind: "block", op: "delete", anchor: c.text, blockIndex: op.c, reasoning });
+      edits.push({
+        kind: "block",
+        op: "delete",
+        anchor: c.text,
+        blockIndex: op.c,
+        reasoning,
+        label: deriveEditLabel(c.text),
+      });
       continue;
     }
 
@@ -631,13 +725,22 @@ export function diffFieldToEdits(
           break;
         }
       }
+      // A run of inserts after the same current block must chain: without this
+      // every one of them splices at `prevC + 1` and they land reversed.
+      const prevEdit = edits[edits.length - 1];
+      const chainTo =
+        prevEdit?.kind === "block" && prevEdit.op === "insert"
+          ? edits.length - 1
+          : undefined;
       edits.push({
         kind: "block",
         op: "insert",
-        anchor: prevC >= 0 ? current[prevC]!.text : "",
-        blockIndex: prevC,
+        anchor: chainTo === undefined && prevC >= 0 ? current[prevC]!.text : "",
+        blockIndex: chainTo === undefined ? prevC : -1,
+        ...(chainTo === undefined ? {} : { afterEditIndex: chainTo }),
         proposedMarkdown: p.markdown,
         reasoning,
+        label: deriveEditLabel(p.markdown),
       });
       continue;
     }
@@ -656,6 +759,20 @@ export function diffFieldToEdits(
       continue;
     }
 
+    // A reworded bullet must not replace the whole list.
+    if (c.kind === "list" && p.kind === "list") {
+      let listIndex = 0;
+      for (let i = 0; i < op.c; i++) {
+        if (current[i]?.kind === "list") listIndex++;
+      }
+      const itemEdits = diffList(c.node, listIndex, p.markdown, reasoning);
+      if (itemEdits) {
+        edits.push(...itemEdits);
+        continue;
+      }
+      // Items added/removed or list type changed → whole-list block replace.
+    }
+
     // Try a minimal anchored word-level edit first (reuses the ai_fix path).
     const bothProse = c.kind === "prose" && p.kind === "prose";
     if (bothProse && wordSimilarity(c.text, p.text) >= WORD_MODE_SIMILARITY) {
@@ -667,6 +784,7 @@ export function diffFieldToEdits(
           deleteText: wordEdit.deleteText,
           insertText: wordEdit.insertText,
           reasoning,
+          label: deriveEditLabel(p.text),
         });
         continue;
       }
@@ -680,12 +798,30 @@ export function diffFieldToEdits(
       blockIndex: op.c,
       proposedMarkdown: p.markdown,
       reasoning,
+      label: deriveEditLabel(p.markdown),
     });
   }
 
-  if (edits.length === 0) {
-    // Nothing survived (e.g. every change was guarded) — no-op, no redraft.
-    return { strategy: "edits", edits: [] };
+  // A pile of cards is as unreviewable as one giant one: past the cap, collapse
+  // to a single whole-field block replace. Never when the field holds a table
+  // (the cell diff is granular and worth keeping) or guarded content (a
+  // whole-field replace would delete the equation/image the guard protects).
+  const canCollapse = !current.some((b) => b.guarded || b.kind === "table");
+  if (edits.length > MAX_TARGETED_EDITS && canCollapse) {
+    return [
+      {
+        kind: "block",
+        op: "replace",
+        anchor: current[0]!.text,
+        blockIndex: 0,
+        blockCount: current.length,
+        proposedMarkdown,
+        reasoning,
+        label: deriveEditLabel(proposedMarkdown),
+      },
+    ];
   }
-  return { strategy: "edits", edits };
+
+  // Nothing survived (e.g. every change was guarded) → no-op.
+  return edits;
 }

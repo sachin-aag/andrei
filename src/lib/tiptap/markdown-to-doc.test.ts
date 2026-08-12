@@ -145,3 +145,56 @@ describe("markdownToPlainText", () => {
     );
   });
 });
+
+describe("markdownToDoc — nested lists", () => {
+  it("nests an indented sub-bullet inside the item above it", () => {
+    const doc = markdownToDoc("- Parent item\n  - Child item\n- Second parent");
+    expect(doc.content).toHaveLength(1);
+    const list = doc.content![0]!;
+    expect(list.type).toBe("bulletList");
+    expect(list.content).toHaveLength(2);
+    const firstItem = list.content![0]!;
+    expect(firstItem.content).toHaveLength(2);
+    expect(firstItem.content![1]!.type).toBe("bulletList");
+    expect(
+      firstItem.content![1]!.content![0]!.content![0]!.content![0]!.text
+    ).toBe("Child item");
+  });
+
+  it("handles four-space indentation the same as two", () => {
+    const two = markdownToDoc("- Parent\n  - Child");
+    const four = markdownToDoc("- Parent\n    - Child");
+    expect(JSON.stringify(four)).toBe(JSON.stringify(two));
+  });
+
+  it("nests more than one level deep", () => {
+    const doc = markdownToDoc("- A\n  - B\n    - C");
+    const a = doc.content![0]!.content![0]!;
+    const bList = a.content![1]!;
+    expect(bList.type).toBe("bulletList");
+    const b = bList.content![0]!;
+    expect(b.content![1]!.type).toBe("bulletList");
+  });
+
+  it("returns to the parent level after a sublist", () => {
+    const doc = markdownToDoc("- A\n  - A1\n- B");
+    const list = doc.content![0]!;
+    expect(list.content).toHaveLength(2);
+    expect(list.content![1]!.content![0]!.content![0]!.text).toBe("B");
+  });
+
+  it("nests a bullet sublist under a numbered parent", () => {
+    const doc = markdownToDoc("1. First\n  - detail\n2. Second");
+    const list = doc.content![0]!;
+    expect(list.type).toBe("orderedList");
+    expect(list.content).toHaveLength(2);
+    expect(list.content![0]!.content![1]!.type).toBe("bulletList");
+  });
+
+  it("keeps a flat list flat", () => {
+    const doc = markdownToDoc("- A\n- B\n- C");
+    const list = doc.content![0]!;
+    expect(list.content).toHaveLength(3);
+    expect(list.content!.every((item) => item.content!.length === 1)).toBe(true);
+  });
+});

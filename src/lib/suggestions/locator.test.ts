@@ -555,3 +555,105 @@ describe("locator — acceptSuggestionMarksById table rows", () => {
     expect(text).not.toContain("drop");
   });
 });
+
+describe("locator — spacing around inserts and deletes", () => {
+  const para = (text: string): JSONContent => ({
+    type: "doc",
+    content: [{ type: "paragraph", content: [{ type: "text", text }] }],
+  });
+
+  it("re-adds the leading space a mid-sentence rich insert needs", () => {
+    const doc = para("Initial scope was limited to Line 3.");
+    const edit: SuggestionEdit = {
+      anchorText: "Initial scope was limited to Line 3.",
+      deleteText: "",
+      insertText: " Line 4 was added later.",
+    };
+    const { status, doc: applied } = applyAndAcceptRichEdit(doc, "s1", edit);
+    expect(status).toBe("located");
+    expect(flattenForAnchor(applied).text).toBe(
+      "Initial scope was limited to Line 3. Line 4 was added later."
+    );
+  });
+
+  it("does not double the space when the insert already starts mid-word boundary", () => {
+    const doc = para("alpha beta");
+    const { doc: applied } = applyAndAcceptRichEdit(doc, "s2", {
+      anchorText: "alpha ",
+      deleteText: "",
+      insertText: "gamma",
+    });
+    expect(flattenForAnchor(applied).text).toBe("alpha gamma beta");
+  });
+
+  it("closes up the gap a pure rich delete leaves behind", () => {
+    const doc = para("The operator likely forgot the interlock, which caused the deviation.");
+    const { status, doc: applied } = applyAndAcceptRichEdit(doc, "s3", {
+      anchorText: "The operator likely forgot the interlock, which caused the deviation.",
+      deleteText: "likely forgot the interlock, which caused",
+      insertText: "",
+    });
+    expect(status).toBe("located");
+    expect(flattenForAnchor(applied).text).toBe("The operator the deviation.");
+  });
+
+  it("closes up the gap a pure plain-text delete leaves behind", () => {
+    expect(
+      applyEditToPlainText("alpha beta gamma", {
+        anchorText: "",
+        deleteText: "beta",
+        insertText: "",
+      }).text
+    ).toBe("alpha gamma");
+  });
+
+  it("absorbs the preceding space when the delete ends the field", () => {
+    expect(
+      applyEditToPlainText("alpha beta", {
+        anchorText: "",
+        deleteText: "beta",
+        insertText: "",
+      }).text
+    ).toBe("alpha");
+  });
+
+  it("leaves a replace's spacing alone — only pure deletes widen", () => {
+    expect(
+      applyEditToPlainText("alpha beta gamma", {
+        anchorText: "",
+        deleteText: "beta",
+        insertText: "delta",
+      }).text
+    ).toBe("alpha delta gamma");
+  });
+
+  it("never absorbs a block separator newline", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        { type: "paragraph", content: [{ type: "text", text: "first line" }] },
+        { type: "paragraph", content: [{ type: "text", text: "second line" }] },
+      ],
+    };
+    const { doc: applied } = applyAndAcceptRichEdit(doc, "s4", {
+      anchorText: "",
+      deleteText: "first line",
+      insertText: "",
+    });
+    expect(flattenForAnchor(applied).text).toBe("second line");
+  });
+
+  it("probe and apply agree on the widened delete span", () => {
+    const doc = para("alpha beta gamma");
+    const edit: SuggestionEdit = {
+      anchorText: "",
+      deleteText: "beta",
+      insertText: "",
+    };
+    expect(probeRichEdit(doc, edit)).toBe("located");
+    expect(isApplyableStatus(probeRichEdit(doc, edit))).toBe(true);
+    expect(flattenForAnchor(applyAndAcceptRichEdit(doc, "s5", edit).doc).text).toBe(
+      "alpha gamma"
+    );
+  });
+});

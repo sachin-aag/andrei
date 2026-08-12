@@ -1,5 +1,9 @@
 import type { DocumentType, SectionType } from "@/db/schema";
-import { isAiSuggestionKind } from "@/lib/ai/suggestion-gating";
+import {
+  isAiSuggestionKind,
+  parseAiFixCommentContent,
+  parseAiRedraftCommentContent,
+} from "@/lib/ai/suggestion-gating";
 import {
   chatEditableSections,
   countSectionInlineImages,
@@ -40,6 +44,11 @@ export type ContextMapComment = {
   section: SectionType | null;
   kind: string;
   status: string;
+  /** Set for AI suggestions so open ones can be listed, not just counted. */
+  id?: string;
+  contentPath?: string | null;
+  /** Serialized ai_fix / ai_redraft payload. */
+  content?: string;
 };
 
 export type BuildContextMapInput = {
@@ -56,6 +65,27 @@ function summarize(text: string, max = 140): string {
   const clean = text.replace(/\s+/g, " ").trim();
   if (!clean) return "(empty)";
   return clean.length <= max ? clean : `${clean.slice(0, max).trimEnd()}…`;
+}
+
+/**
+ * One line per open AI proposal: enough for the model to recognise which one
+ * the engineer is talking about, and the id it needs to pass as `supersedes`.
+ */
+function describeOpenProposal(comment: ContextMapComment): string {
+  const field = comment.contentPath || "narrative";
+  if (comment.kind === "ai_redraft") {
+    const redraft = parseAiRedraftCommentContent(comment.content ?? "");
+    return `open proposal id=${comment.id} field=${field} kind=full-draft — "${summarize(redraft.markdown, 100)}"`;
+  }
+  const payload = parseAiFixCommentContent(comment.content ?? "");
+  const label = payload.label ? ` label="${payload.label}"` : "";
+  const gist =
+    payload.blockEdit?.proposedMarkdown ??
+    payload.insertText ??
+    payload.deleteText ??
+    "";
+  const op = payload.blockEdit ? payload.blockEdit.op : "edit";
+  return `open proposal id=${comment.id} field=${field} kind=${op}${label} — "${summarize(gist, 100)}"`;
 }
 
 function evalSummary(evals: ContextMapEvaluation[]): string {
@@ -124,10 +154,10 @@ export function buildReportContextMap(input: BuildContextMapInput): string {
           ? "partial"
           : "filled";
     const sectionEvals = evaluations.filter((e) => e.section === section);
-    const openFixes = comments.filter(
+    const openProposals = comments.filter(
       (c) =>
         c.section === section && isAiSuggestionKind(c.kind) && c.status === "open"
-    ).length;
+    );
 
     lines.push(
       `- ${sectionLabel(section)} [${section}] — ${state} (${charCount} chars` +
@@ -135,10 +165,18 @@ export function buildReportContextMap(input: BuildContextMapInput): string {
           ? `, ${imageCount} image${imageCount === 1 ? "" : "s"}`
           : "") +
         `) · criteria: ${evalSummary(sectionEvals)}` +
-        (openFixes > 0 ? ` · ${openFixes} open suggestion(s)` : "")
+        (openProposals.length > 0
+          ? ` · ${openProposals.length} open proposal(s)`
+          : "")
     );
     if (state !== "empty") {
       lines.push(`    ${primary}: "${summarize(text)}"`);
+    }
+    // Listed, not just counted: the engineer's next message is often feedback
+    // on one of these, and revising it needs its id.
+    for (const proposal of openProposals) {
+      if (!proposal.id) continue;
+      lines.push(`    ${describeOpenProposal(proposal)}`);
     }
     if (imageCount > 0) {
       lines.push(

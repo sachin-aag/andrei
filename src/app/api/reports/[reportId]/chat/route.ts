@@ -89,6 +89,34 @@ function pickStubSection(
   return detectSectionIntentFromText(text, documentType) ?? fallback;
 }
 
+/**
+ * Test-only: let an E2E message steer the stub model down the multi-block
+ * `draft_field` path (or a revision of an open proposal) instead of the default
+ * single `propose_edit`, so the block queue can be driven with no AI credential.
+ * Only consulted when ALLOW_TEST_STUB_CHAT is set.
+ */
+function stubDraftPlan(text: string): {
+  draftMarkdown?: string;
+  supersedes?: string[];
+} {
+  const draft = /\[\[stub:draft\]\]/.exec(text);
+  if (!draft) return {};
+  const supersedes = [...text.matchAll(/\[\[stub:supersede=([\w-]+)\]\]/g)].map(
+    (m) => m[1]!
+  );
+  return {
+    draftMarkdown: [
+      "Block one describes what was detected during routine inspection.",
+      "",
+      "Block two describes the scope of the affected batches.",
+      "",
+      "- Quarantine the affected batch",
+      "- Notify Quality Assurance",
+    ].join("\n"),
+    ...(supersedes.length > 0 ? { supersedes } : {}),
+  };
+}
+
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ reportId: string }> }
@@ -210,6 +238,9 @@ export async function POST(
       section: c.section,
       kind: c.kind,
       status: c.status,
+      id: c.id,
+      contentPath: c.contentPath,
+      content: c.content,
     })),
     documents,
     documentType: report.documentType,
@@ -259,6 +290,7 @@ export async function POST(
         scopeMismatch,
         insertText: `Stubbed drafting insertion addressing "${userText.slice(0, 80)}". [Replace with real content once a Gemini credential is configured.]`,
         reasoning: "Demo stub proposal.",
+        ...stubDraftPlan(userText),
       })
     : resolveChatLanguageModel();
 

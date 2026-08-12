@@ -2,11 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   checkProposedEdit,
   proposedEditHint,
+  COVERAGE_GUARD_MIN_FIELD_CHARS,
   REDRAFT_COVERAGE_THRESHOLD,
 } from "@/lib/ai/chat/propose-edit";
 
 const FIELD =
   "The tablet batch failed dissolution testing at 68 percent. The batch was then quarantined pending investigation.";
+
+/** Long enough to be subject to the coverage guard (see COVERAGE_GUARD_MIN_FIELD_CHARS). */
+const LONG_FIELD = `${FIELD} ${FIELD} ${FIELD} ${FIELD}`;
 
 describe("checkProposedEdit", () => {
   it("accepts a pure end-insert (empty anchor)", () => {
@@ -42,16 +46,29 @@ describe("checkProposedEdit", () => {
     ).toEqual({ status: "ambiguous" });
   });
 
-  it("flags a delete covering more than half the field as too_large", () => {
-    const result = checkProposedEdit(FIELD, {
+  it("flags a delete covering more than half a substantial field as too_large", () => {
+    const result = checkProposedEdit(LONG_FIELD, {
       anchorText: "",
-      deleteText: FIELD,
+      deleteText: LONG_FIELD,
       insertText: "A complete rewrite of the field.",
     });
     expect(result.status).toBe("too_large");
     if (result.status === "too_large") {
       expect(result.coverage).toBeGreaterThan(REDRAFT_COVERAGE_THRESHOLD);
     }
+  });
+
+  it("exempts short fields from the coverage guard", () => {
+    // In a two-sentence field, replacing one sentence is legitimately >50% of
+    // the text. Refusing it used to push the model into redrafting the whole
+    // field, which is a bigger suggestion than the one it was refused.
+    expect(FIELD.length).toBeLessThan(COVERAGE_GUARD_MIN_FIELD_CHARS);
+    const result = checkProposedEdit(FIELD, {
+      anchorText: "",
+      deleteText: "The tablet batch failed dissolution testing at 68 percent.",
+      insertText: "The tablet batch failed dissolution testing at 68 percent against an 80 percent specification.",
+    });
+    expect(result.status).toBe("ok");
   });
 
   it("does not flag a small delete as too_large", () => {
