@@ -41,9 +41,7 @@ function applyEdit(doc: JSONContent, edit: DiffEdit, id: string): JSONContent {
 
 function roundTrip(currentMd: string, proposedMd: string): { out: JSONContent; edits: DiffEdit[] } {
   const current = markdownToDoc(currentMd);
-  const res = diffFieldToEdits(current, proposedMd, R);
-  expect(res.strategy).toBe("edits");
-  const edits = (res as { edits: DiffEdit[] }).edits;
+  const edits: DiffEdit[] = diffFieldToEdits(current, proposedMd, R);
   let doc = current;
   edits.forEach((edit, i) => {
     doc = applyEdit(doc, edit, `e${i}`);

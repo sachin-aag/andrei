@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("bumps the prompt version when section inline image guidance changes", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v19-table-row-diff");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v20-block-drafts-and-supersede");
   });
 
   it("tells the model never to pass the section key as targetField", () => {
@@ -226,5 +226,44 @@ describe("buildChatSystemPrompt", () => {
       sectionScope: "define",
     });
     expect(planDefine).not.toContain("## Analyze planning rules");
+  });
+});
+
+describe("buildChatSystemPrompt — block drafting and revision rules", () => {
+  const agentPrompt = () =>
+    buildChatSystemPrompt({
+      contextMap: "map",
+      criteriaOutline: "criteria",
+      mode: "agent",
+    });
+
+  it("tells the model to split a draft into blank-line separated blocks", () => {
+    const prompt = agentPrompt();
+    expect(prompt).toContain("SEPARATE BLOCKS split by blank lines");
+    expect(prompt).toContain("NEVER write a section as a single unbroken wall of text");
+  });
+
+  it("warns against padding the block count", () => {
+    expect(agentPrompt()).toContain("Do not pad the block count");
+  });
+
+  it("tells the model to supersede rather than stack a second proposal", () => {
+    const prompt = agentPrompt();
+    expect(prompt).toContain("REVISING AN OPEN PROPOSAL");
+    expect(prompt).toContain("supersedes:");
+    expect(prompt).toContain("do NOT add a second proposal");
+  });
+
+  it("routes a failed anchor to scope before falling back to draft_field", () => {
+    expect(agentPrompt()).toContain('retry with "scope" instead of a longer anchor');
+  });
+
+  it("keeps the edit rules out of plan mode, where the tools are disabled", () => {
+    const plan = buildChatSystemPrompt({
+      contextMap: "map",
+      criteriaOutline: "criteria",
+      mode: "plan",
+    });
+    expect(plan).not.toContain("REVISING AN OPEN PROPOSAL");
   });
 });

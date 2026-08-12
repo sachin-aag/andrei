@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { z } from "zod";
-import { buildChatTools } from "@/lib/ai/chat/tools";
+import { buildChatTools, selectSupersedableRows } from "@/lib/ai/chat/tools";
 
 vi.mock("@/db", () => ({ db: {} }));
 
@@ -98,5 +98,85 @@ describe("buildChatTools tagged sections", () => {
     expect(
       accepts(tools, "draft_field", { ...edit, section: "define" })
     ).toBe(true);
+  });
+});
+
+describe("supersedes — revising an open proposal", () => {
+  it("is accepted by both edit tools", () => {
+    const tools = buildChatTools({ reportId: "report-1", canEdit: true });
+    expect(
+      accepts(tools, "propose_edit", {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "shorter",
+        supersedes: ["sug-1"],
+      })
+    ).toBe(true);
+    expect(
+      accepts(tools, "draft_field", {
+        section: "define",
+        targetField: "narrative",
+        markdown: "New draft.",
+        reasoning: "revised",
+        supersedes: ["sug-1", "sug-2"],
+      })
+    ).toBe(true);
+  });
+
+  it("stays optional so ordinary proposals are unaffected", () => {
+    const tools = buildChatTools({ reportId: "report-1", canEdit: true });
+    expect(
+      accepts(tools, "propose_edit", {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "new point",
+      })
+    ).toBe(true);
+  });
+});
+
+describe("selectSupersedableRows", () => {
+  const open = (id: string, createdAt: string, kind = "ai_fix") => ({
+    id,
+    kind,
+    status: "open",
+    createdAt,
+  });
+
+  it("dismisses the named open proposals and inherits the earliest slot", () => {
+    const rows = [open("a", "2026-01-01T00:00:05.000Z"), open("b", "2026-01-01T00:00:02.000Z")];
+    const result = selectSupersedableRows(rows, ["a", "b"]);
+    expect(result.supersededIds).toEqual(["a", "b"]);
+    expect(result.inheritedCreatedAt?.toISOString()).toBe("2026-01-01T00:00:02.000Z");
+  });
+
+  it("supersedes a full-field redraft too", () => {
+    const rows = [open("a", "2026-01-01T00:00:00.000Z", "ai_redraft")];
+    expect(selectSupersedableRows(rows, ["a"]).supersededIds).toEqual(["a"]);
+  });
+
+  it("ignores an id that is not an open AI proposal", () => {
+    const rows = [
+      { id: "human", kind: "human", status: "open", createdAt: "2026-01-01T00:00:00.000Z" },
+      { id: "done", kind: "ai_fix", status: "resolved", createdAt: "2026-01-01T00:00:00.000Z" },
+      { id: "gone", kind: "ai_fix", status: "dismissed", createdAt: "2026-01-01T00:00:00.000Z" },
+    ];
+    expect(
+      selectSupersedableRows(rows, ["human", "done", "gone"]).supersededIds
+    ).toEqual([]);
+  });
+
+  it("ignores an id that belongs to no loaded row (hallucinated or cross-report)", () => {
+    const rows = [open("a", "2026-01-01T00:00:00.000Z")];
+    expect(selectSupersedableRows(rows, ["not-a-real-id"]).supersededIds).toEqual([]);
+  });
+
+  it("is a no-op with no ids", () => {
+    const rows = [open("a", "2026-01-01T00:00:00.000Z")];
+    expect(selectSupersedableRows(rows, [])).toEqual({
+      supersededIds: [],
+      inheritedCreatedAt: null,
+    });
+    expect(selectSupersedableRows(rows, ["  "]).supersededIds).toEqual([]);
   });
 });

@@ -21,6 +21,7 @@ import {
   probeRichEdit,
 } from "@/lib/suggestions/locator";
 import { applyBlockEdit } from "@/lib/suggestions/block-redraft";
+import { buildBlockChain } from "@/lib/suggestions/block-chain";
 import {
   CommentPersistError,
   patchCommentStatus,
@@ -92,6 +93,12 @@ export async function acceptSuggestion(args: {
   sectionContent: Record<string, unknown>;
   /** Optional field path override for plain-text editors with legacy paths. */
   fieldContentPath?: string;
+  /**
+   * The section's comments, so a chained block insert can resolve its position
+   * from where its predecessor actually landed. Without it a chained insert
+   * falls back to appending at the end of the field.
+   */
+  comments?: readonly CommentRecord[];
 }): Promise<AcceptSuggestionResult> {
   const { reportId, section, comment, sectionContent, fieldContentPath } = args;
   const path = resolveSuggestionFieldPath(
@@ -126,10 +133,19 @@ export async function acceptSuggestion(args: {
   const fixPayload = parseAiFixCommentContent(comment.content);
   if (fixPayload.blockEdit) {
     const doc = getRichFieldValue(sectionContent, path);
-    const applied = applyBlockEdit(doc, comment.id, fixPayload.blockEdit);
+    const applied = applyBlockEdit(
+      doc,
+      comment.id,
+      fixPayload.blockEdit,
+      undefined,
+      args.comments ? buildBlockChain(args.comments) : undefined
+    );
     if (applied.status !== "located") {
       return { ok: false, reason: applied.status };
     }
+    // `applyBlockEdit` accepts through the suggestion marks, so the doc has
+    // already been through `finalizeNarrativeDocAfterSuggestion` (coalesce text
+    // nodes, re-normalize bracket placeholders) — same as the anchored path.
     const nextSection = setRichFieldValue(sectionContent, path, applied.doc);
     try {
       await patchSection(reportId, section, nextSection);

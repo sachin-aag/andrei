@@ -21,7 +21,7 @@ exports[`suggestion apply — currently-correct snapshots (characterization) > p
 ]
 `;
 
-exports[`suggestion apply — currently-correct snapshots (characterization) > plain replace / pure insert / pure delete > plain-pure-delete 1`] = `"alpha  gamma"`;
+exports[`suggestion apply — currently-correct snapshots (characterization) > plain replace / pure insert / pure delete > plain-pure-delete 1`] = `"alpha gamma"`;
 
 exports[`suggestion apply — currently-correct snapshots (characterization) > plain replace / pure insert / pure delete > plain-pure-insert 1`] = `"system is working as per its intended use regarding the root cause therefore, the following"`;
 
@@ -59,7 +59,7 @@ exports[`suggestion apply — currently-correct snapshots (characterization) > r
     {
       "content": [
         {
-          "text": "The operator  the deviation.",
+          "text": "The operator the deviation.",
           "type": "text",
         },
       ],
@@ -76,7 +76,7 @@ exports[`suggestion apply — currently-correct snapshots (characterization) > r
     {
       "content": [
         {
-          "text": "Initial scope was limited to Line 3 filling operations.The investigation was later expanded to include Line 4.",
+          "text": "Initial scope was limited to Line 3 filling operations. The investigation was later expanded to include Line 4.",
           "type": "text",
         },
       ],

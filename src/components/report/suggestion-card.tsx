@@ -27,7 +27,6 @@ import {
 import {
   parseAiFixCommentContent,
   parseAiRedraftCommentContent,
-  sortedOpenSuggestionsForSection,
   type ParsedAiFixPayload,
   type ParsedAiRedraftPayload,
 } from "@/lib/ai/suggestion-gating";
@@ -49,6 +48,7 @@ import {
   CommentPersistError,
   SectionPersistError,
 } from "@/lib/suggestions/accept-suggestion";
+import { sortedOpenSuggestionsInDocumentOrder } from "@/lib/suggestions/suggestion-order";
 import {
   isSuggestionTargetInViewport,
   measureSuggestionGutterParkCenterY,
@@ -120,6 +120,24 @@ function buildFrozenCard(
   };
 }
 
+/**
+ * Card heading. A block from a multi-block draft keeps its own step number
+ * ("Step 2 of 5") — the queue position alone always reads "1 of N" because the
+ * active card is always the head of the queue, so it never appears to advance.
+ */
+function headingFor(
+  card: FrozenCard,
+  queueIndex: number,
+  queueTotal: number
+): string {
+  if (card.kind === "redraft") {
+    return `Full draft ${queueIndex} of ${queueTotal}`;
+  }
+  const draft = card.payload.draft;
+  if (draft && draft.total > 1) return `Draft step ${draft.index} of ${draft.total}`;
+  return `Suggestion ${queueIndex} of ${queueTotal}`;
+}
+
 /** Text with actionable `[placeholder]` spans highlighted (citations stay plain). */
 function PlaceholderHighlightedText({ text }: { text: string }) {
   return (
@@ -165,6 +183,7 @@ function SuggestionCardFace({
   const eff = linkedEval ? effectiveStatus(linkedEval) : "not_evaluated";
   const reasoning =
     card.kind === "redraft" ? card.redraft.reasoning : card.payload.reasoning;
+  const label = card.kind === "redraft" ? null : card.payload.label;
   const evidenceSources =
     card.kind === "fix" ? (card.payload.evidenceSources ?? []) : [];
 
@@ -193,7 +212,7 @@ function SuggestionCardFace({
         )}
       >
         <span className="text-[10px] font-medium text-[var(--muted-foreground)] uppercase tracking-wide">
-          {card.kind === "redraft" ? "Full draft" : "Suggestion"} {queueIndex} of {queueTotal}
+          {headingFor(card, queueIndex, queueTotal)}
         </span>
         {linkedEval && (
           <span
@@ -299,6 +318,11 @@ function SuggestionCardFace({
 
       {showActions ? (
         <>
+          {/* Every block of one draft shares the same `reasoning`, so the label
+              is what tells the engineer which block this card is. */}
+          {label ? (
+            <p className="text-[11px] font-medium text-[var(--foreground)]">{label}</p>
+          ) : null}
           {reasoning ? (
             <p className="text-[11px] text-[var(--muted-foreground)]">{reasoning}</p>
           ) : null}
@@ -522,8 +546,14 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
   const enterRef = useRef<HTMLDivElement>(null);
 
   const openSorted = useMemo(
-    () => sortedOpenSuggestionsForSection(section, comments, evaluations),
-    [section, comments, evaluations]
+    () =>
+      sortedOpenSuggestionsInDocumentOrder(
+        section,
+        comments,
+        evaluations,
+        sections[section]
+      ),
+    [section, comments, evaluations, sections]
   );
 
   const active = openSorted[0] ?? null;
@@ -685,6 +715,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
         section,
         comment: snapshot.comment,
         sectionContent: sections[section] as Record<string, unknown>,
+        comments,
       });
       if (!result.ok) {
         if (result.reason === "status_failed") {
@@ -749,6 +780,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
     }
   }, [
     liveCard,
+    comments,
     pending,
     canResolve,
     section,

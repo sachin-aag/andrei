@@ -177,6 +177,14 @@ export type ParsedBlockEdit = {
   rowAnchor?: string;
   /** replace: how many current top-level blocks this op consumes (default 1). */
   blockCount?: number;
+  /**
+   * insert only: the suggestion this block follows. The insertion point is
+   * resolved from the predecessor's *current* state when the card becomes
+   * active — accepted ⇒ anchor to its now-real text, dismissed ⇒ fall back to
+   * ITS predecessor — instead of trusting a `blockIndex` captured at draft
+   * time, which any intervening edit invalidates.
+   */
+  afterSuggestionId?: string;
 };
 
 /** Validate an untrusted block-edit descriptor from persisted / model JSON. */
@@ -207,13 +215,42 @@ export function parseBlockEdit(raw: unknown): ParsedBlockEdit | undefined {
   if (typeof b.blockCount === "number" && Number.isInteger(b.blockCount) && b.blockCount >= 1) {
     edit.blockCount = b.blockCount;
   }
+  if (typeof b.afterSuggestionId === "string" && b.afterSuggestionId.length > 0) {
+    edit.afterSuggestionId = b.afterSuggestionId;
+  }
   return edit;
+}
+
+/** Validate an untrusted draft-group descriptor from persisted / model JSON. */
+export function parseDraftGroup(
+  raw: unknown
+): { id: string; index: number; total: number } | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const d = raw as Record<string, unknown>;
+  if (typeof d.id !== "string" || d.id.length === 0) return undefined;
+  if (!Number.isInteger(d.index) || !Number.isInteger(d.total)) return undefined;
+  const index = d.index as number;
+  const total = d.total as number;
+  if (index < 1 || total < 1 || index > total) return undefined;
+  return { id: d.id, index, total };
 }
 
 export type ParsedAiFixPayload = {
   deleteText: string;
   insertText: string;
   reasoning: string;
+  /**
+   * Short "what this card changes" label. A multi-block draft emits one card
+   * per block, all sharing one `reasoning`, so the label is what makes the
+   * queue readable ("Step 2 of 5 — Detection and scope").
+   */
+  label?: string;
+  /**
+   * The multi-block draft this card belongs to. Lets the card read "Step 2 of 5"
+   * and keep that number as the queue drains — the open-queue position alone
+   * always reads "1 of N", since the active card is always the queue head.
+   */
+  draft?: { id: string; index: number; total: number };
   /** Structural target (table cell / list item) for scoped edits. */
   scope?: EditScope;
   /** Section content hash when this suggestion was created (staleness detection). */
@@ -246,6 +283,8 @@ export function parseAiFixCommentContent(content: string): ParsedAiFixPayload {
         deleteText: typeof parsed.deleteText === "string" ? parsed.deleteText : "",
         insertText: typeof parsed.insertText === "string" ? parsed.insertText : "",
         reasoning: typeof parsed.reasoning === "string" ? parsed.reasoning : "",
+        label: typeof parsed.label === "string" ? parsed.label : undefined,
+        draft: parseDraftGroup(parsed.draft),
         scope: parseEditScope(parsed.scope),
         blockEdit: parseBlockEdit((parsed as { blockEdit?: unknown }).blockEdit),
         contentHashAtSuggestion:

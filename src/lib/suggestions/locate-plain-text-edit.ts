@@ -40,17 +40,22 @@ export function locateUniqueSpan(
 /**
  * Locate the delete span for a suggestion edit. When anchorText is present,
  * prefer locating deleteText inside the anchor slice.
+ *
+ * Pass the edit's real `insertText`: a pure delete widens its span over one
+ * adjacent space (so the text closes up), and the preview must strike exactly
+ * what the apply removes.
  */
 export function locatePlainTextDeleteSpan(
   value: string,
-  edit: Pick<PlainTextEdit, "anchorText" | "deleteText">
+  edit: Pick<PlainTextEdit, "anchorText" | "deleteText"> &
+    Partial<Pick<PlainTextEdit, "insertText">>
 ): { start: number; end: number } | null {
   const del = edit.deleteText.trim();
   if (!del) return null;
   const loc = locateEdit(value, {
     anchorText: edit.anchorText ?? "",
     deleteText: del,
-    insertText: "",
+    insertText: edit.insertText ?? "",
   });
   if (loc.status !== "located") return null;
   return { start: loc.deleteStart, end: loc.deleteEnd };

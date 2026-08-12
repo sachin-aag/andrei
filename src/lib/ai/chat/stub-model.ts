@@ -11,6 +11,14 @@ export type StubChatPlan = {
   insertText: string;
   reasoning: string;
   scopeMismatch?: SectionScopeMismatch | null;
+  /**
+   * Agent mode: call `draft_field` with this multi-block markdown instead of a
+   * single `propose_edit`, so the block-queue path (one card per block, chained
+   * insertion points) can be driven end to end without a Gemini credential.
+   */
+  draftMarkdown?: string;
+  /** Agent mode: ids of open proposals the drafted/proposed edit replaces. */
+  supersedes?: readonly string[];
 };
 
 /**
@@ -97,12 +105,19 @@ export async function buildStubChatModel(plan: StubChatPlan): Promise<LanguageMo
     }
 
     if (step === 0) {
-      return {
-        stream: convertArrayToReadableStream([
-          { type: "stream-start", warnings: [] },
-          {
-            type: "tool-call",
-            toolCallId: `stub-${Date.now()}`,
+      const supersedes = plan.supersedes?.length ? { supersedes: plan.supersedes } : {};
+      const call = plan.draftMarkdown
+        ? {
+            toolName: "draft_field",
+            input: JSON.stringify({
+              section: plan.section,
+              targetField: plan.targetField,
+              markdown: plan.draftMarkdown,
+              reasoning: plan.reasoning,
+              ...supersedes,
+            }),
+          }
+        : {
             toolName: "propose_edit",
             input: JSON.stringify({
               section: plan.section,
@@ -111,8 +126,13 @@ export async function buildStubChatModel(plan: StubChatPlan): Promise<LanguageMo
               deleteText: "",
               insertText: plan.insertText,
               reasoning: plan.reasoning,
+              ...supersedes,
             }),
-          },
+          };
+      return {
+        stream: convertArrayToReadableStream([
+          { type: "stream-start", warnings: [] },
+          { type: "tool-call", toolCallId: `stub-${Date.now()}`, ...call },
           { type: "finish", finishReason: "tool-calls", usage },
         ]),
       };
