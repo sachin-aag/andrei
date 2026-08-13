@@ -45,14 +45,17 @@ export function ReportList({
     return <EmptyState role={userRole} />;
   }
 
+  const availableTypes = listDocumentTypes();
+
   return (
     <div className="grid gap-3">
+      {availableTypes.length > 1 ? (
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-xs text-[var(--muted-foreground)]">Type:</span>
         {(
           [
             ["all", "All"] as const,
-            ...listDocumentTypes().map(
+            ...availableTypes.map(
               (def) =>
                 [
                   def.key,
@@ -77,6 +80,7 @@ export function ReportList({
           </button>
         ))}
       </div>
+      ) : null}
       {visibleReports.length === 0 ? (
         <p className="py-8 text-center text-sm text-[var(--muted-foreground)]">
           No reports match this filter.

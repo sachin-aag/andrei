@@ -1,7 +1,8 @@
-import Image from "next/image";
 import { redirect } from "next/navigation";
 import { PasswordLoginForm } from "@/components/auth/password-login-form";
+import { BrandLockup } from "@/components/brand/brand-lockup";
 import { getCurrentUser } from "@/lib/auth/session";
+import { getCustomerPack } from "@/lib/customers/packs";
 
 export default async function LoginPage({
   searchParams,
@@ -12,6 +13,8 @@ export default async function LoginPage({
   if (user) redirect("/");
 
   const { callbackUrl } = await searchParams;
+  const { branding } = getCustomerPack();
+  const headlineLines = branding.loginHeadline.split("\n");
 
   return (
     <div className="min-h-screen flex">
@@ -25,51 +28,25 @@ export default async function LoginPage({
             backgroundPosition: "0 0, 20px 20px",
           }}
         />
-        <div className="relative flex items-center gap-3">
-          <div className="size-12 rounded-lg bg-white/10 p-1 flex items-center justify-center">
-            <Image
-              src="/logo-white.png"
-              width={36}
-              height={36}
-              alt="Andrei logo"
-              className="object-contain"
-              style={{ width: "auto", height: "auto" }}
-            />
-          </div>
-          <div>
-            <div className="font-semibold">Andrei</div>
-            <div className="text-xs text-white/80">Quality Documentation</div>
-          </div>
-        </div>
+        <BrandLockup variant="hero" size="md" showTagline name="full" />
         <div className="relative">
           <h2 className="text-4xl font-bold leading-tight mb-3">
-            Document review and drafting,
-            <br /> accelerated.
+            {headlineLines.map((line, index) => (
+              <span key={line}>
+                {line}
+                {index < headlineLines.length - 1 ? <br /> : null}
+              </span>
+            ))}
           </h2>
-          <p className="max-w-md text-white/90">
-            Draft investigation reports with AI-assisted quality checks,
-            streamlined manager review, and one-click DOCX export.
-          </p>
+          <p className="max-w-md text-white/90">{branding.loginSubhead}</p>
         </div>
-        <div className="relative text-xs text-white/70">
-          Better documents. Better outcomes.
-        </div>
+        <div className="relative text-xs text-white/70">{branding.loginFooter}</div>
       </div>
 
       <div className="flex-1 flex items-center justify-center p-8">
         <div className="w-full max-w-sm space-y-6">
-          <div className="lg:hidden flex items-center gap-3">
-            <div className="size-10 rounded-lg bg-white p-1">
-              <Image
-                src="/logo.png"
-                width={32}
-                height={32}
-                alt="Andrei logo"
-                className="object-contain"
-                style={{ width: "auto", height: "auto" }}
-              />
-            </div>
-            <div className="font-semibold">Andrei</div>
+          <div className="lg:hidden">
+            <BrandLockup />
           </div>
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">

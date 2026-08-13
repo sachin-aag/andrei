@@ -11,10 +11,13 @@ import {
   evaluationContentHash,
   type AllSectionsContent,
 } from "@/lib/ai/evaluate";
-import { EVALUATABLE_SECTIONS, getCriteria } from "@/lib/ai/criteria";
+import {
+  getCriteria,
+  getInvestigationEvaluatableSections,
+} from "@/lib/ai/criteria";
 import { normalizeAnalyzeToolResults } from "@/lib/ai/evaluate-run-helpers";
 import { mergeSection } from "@/lib/sections-merge";
-import { PROMPT_VERSION } from "@/lib/ai/section-prompts";
+import { getDocumentType } from "@/lib/document-types";
 import {
   hasEnoughContextInFirstSection,
   INSUFFICIENT_FIRST_SECTION_MESSAGE,
@@ -44,7 +47,9 @@ export async function evaluateReportCriteria(
     throw new ImproveAiEvaluationError("Report not found", 404);
   }
 
-  const targetSections: SectionType[] = [...EVALUATABLE_SECTIONS];
+  const targetSections: SectionType[] = [
+    ...getInvestigationEvaluatableSections(),
+  ];
 
   const sectionRows = await db
     .select()
@@ -62,7 +67,7 @@ export async function evaluateReportCriteria(
     .where(
       and(
         eq(reportSections.reportId, reportId),
-        inArray(reportSections.section, EVALUATABLE_SECTIONS)
+        inArray(reportSections.section, targetSections)
       )
     );
 
@@ -127,7 +132,7 @@ export async function evaluateReportCriteria(
       content: mergedFor(sectionRow),
       allSections,
       criteria: getCriteria(sectionRow.section),
-      promptVersion: PROMPT_VERSION,
+      promptVersion: getDocumentType("investigation_report").prompts.promptVersion,
     });
 
     for (const evalResult of evaluations) {

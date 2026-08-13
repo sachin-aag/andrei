@@ -38,7 +38,9 @@ export function buildInvestigationReportDefinition(
   pack: CustomerPack = getCustomerPack()
 ): DocumentTypeDefinition {
   const hidden = new Set(pack.hiddenInvestigationSections);
-  const evaluableSet = new Set<string>(getInvestigationEvaluatableSections());
+  const evaluableSet = new Set<string>(
+    getInvestigationEvaluatableSections(pack)
+  );
   const sections: SectionDefinition[] = REPORT_SECTION_ROW_ORDER.filter(
     (key) => !hidden.has(key)
   ).map((key, index) => ({
@@ -51,8 +53,12 @@ export function buildInvestigationReportDefinition(
     emptyContent: EMPTY_CONTENT[key],
   }));
 
-  const criteriaBySection = getInvestigationCriteriaBySection();
+  const criteriaBySection = getInvestigationCriteriaBySection(pack);
   const includeConclusion = !hidden.has("conclusion");
+  const perSection = {
+    ...SECTION_SYSTEM_PROMPT_ADDITIONS,
+    ...pack.evaluationSectionPromptAdditions,
+  };
 
   return {
     key: "investigation_report",
@@ -64,7 +70,7 @@ export function buildInvestigationReportDefinition(
     prompts: {
       base: pack.evaluationSystemPrompt,
       perSection: Object.fromEntries(
-        Object.entries(SECTION_SYSTEM_PROMPT_ADDITIONS).filter(
+        Object.entries(perSection).filter(
           (entry): entry is [string, string] =>
             typeof entry[1] === "string" && !hidden.has(entry[0])
         )
