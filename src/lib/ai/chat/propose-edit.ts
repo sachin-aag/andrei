@@ -96,7 +96,7 @@ export function proposedEditHint(check: ProposedEditCheck): string {
     case "ok":
       return "";
     case "not_found":
-      return "The anchorText was not found in the current field. Call read_section to get the exact current text, then quote a verbatim span.";
+      return "The anchorText was not found in the current field. If you are revising an open proposal, pass supersedes with its id (the system also merges overlapping open cards). Otherwise call read_section and quote a verbatim span from the live text.";
     case "ambiguous":
       return "The anchorText matches more than once. Include more surrounding words so it is unique, or set `scope` to the exact table cell / list item.";
     case "cross_cell":

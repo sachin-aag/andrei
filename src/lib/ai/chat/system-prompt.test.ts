@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("bumps the prompt version when section inline image guidance changes", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v20-block-drafts-and-supersede");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v21-merge-pending-drafts");
   });
 
   it("tells the model never to pass the section key as targetField", () => {
@@ -252,6 +252,7 @@ describe("buildChatSystemPrompt — block drafting and revision rules", () => {
     expect(prompt).toContain("REVISING AN OPEN PROPOSAL");
     expect(prompt).toContain("supersedes:");
     expect(prompt).toContain("do NOT add a second proposal");
+    expect(prompt).toContain("merges a new draft into overlapping open cards");
   });
 
   it("routes a failed anchor to scope before falling back to draft_field", () => {

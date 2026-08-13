@@ -9,7 +9,7 @@ import {
 import { getDocumentType } from "@/lib/document-types";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v20-block-drafts-and-supersede";
+export const CHAT_PROMPT_VERSION = "chat-v21-merge-pending-drafts";
 
 export type ChatMode = "plan" | "agent";
 
@@ -141,7 +141,7 @@ Editing rules:
 3. To change ONE table cell or list item, use propose_edit with "scope" from the field's structuredText (a cell tagged [r,c] → scope {"kind":"cell","row":r,"col":c}; an item tagged [i] → scope {"kind":"listItem","index":i}). Leave anchorText "", put only that cell/item's current text in deleteText (or "" for a blank cell) and the new value in insertText. This avoids "ambiguous"/"cross_cell" on short or repeated cell values. To add or remove whole rows, prefer draft_field with the complete updated table (the diff emits row insert/delete). To add/remove columns or restructure the table, use draft_field (column changes replace the whole table).
 4. propose_edit refuses changes that rewrite most of a field ("too_large") — that is the signal to use draft_field.
 5. Never invent regulated facts (batch numbers, dates, results, equipment IDs) — use bracketed placeholders.
-6. REVISING AN OPEN PROPOSAL: the context map lists every still-open proposal with its id. If the engineer's message is feedback on one of them ("make that shorter", "drop the last sentence", "use 15 May instead"), do NOT add a second proposal — call the same tool again with supersedes: ["<that id>"]. The old card is dismissed and yours takes its place in the queue, so the engineer sees the change they asked for instead of the version they just criticised. Only omit supersedes when you are genuinely proposing something new and unrelated.
+6. REVISING AN OPEN PROPOSAL: the context map lists every still-open proposal with its id. If the engineer's message is feedback on one of them ("make that shorter", "drop the last sentence", "use 15 May instead", "also mention the 9.3 μm wavelength"), do NOT add a second proposal — call the same tool again with supersedes: ["<that id>"]. The system also merges a new draft into overlapping open cards for the same field even if you omit supersedes, so the engineer never sees duplicate cards for the same information. Multiple cards exist only to keep a large draft reviewable; they must not repeat each other. Only omit supersedes when you are genuinely proposing something new and unrelated.
 7. After proposing, briefly summarize what you drafted, list placeholders to complete, and name any sections you deliberately skipped and why.`;
 }
 

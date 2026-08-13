@@ -133,10 +133,14 @@ function parseAskUserQuestions(input: Record<string, unknown> | undefined): AskU
   });
 }
 
-/** How many still-open proposals a chat edit call replaced (see `supersedes`). */
-function supersededCount(output: Record<string, unknown> | undefined): number {
-  const ids = output?.supersededIds;
-  return Array.isArray(ids) ? ids.length : 0;
+/** How many still-open proposals a chat edit call replaced or revised. */
+function revisedCount(output: Record<string, unknown> | undefined): number {
+  const superseded = output?.supersededIds;
+  const updated = output?.updatedIds;
+  return (
+    (Array.isArray(superseded) ? superseded.length : 0) +
+    (Array.isArray(updated) ? updated.length : 0)
+  );
 }
 
 function ToolChip({
@@ -214,7 +218,7 @@ function ToolChip({
     if (status === "proposed") {
       return (
         <ToolLine icon={<PencilLine className="size-3.5 text-emerald-500" />} tone="success">
-          {supersededCount(info.output) > 0 ? "Revised the open proposal on " : "Proposed edit to "}
+          {revisedCount(info.output) > 0 ? "Revised the open proposal on " : "Proposed edit to "}
           {section}
           {field ? ` · ${field}` : ""} — review it in the document.
         </ToolLine>
@@ -246,7 +250,7 @@ function ToolChip({
     }
     if (info.output?.status === "drafted") {
       const blocks = typeof info.output?.edits === "number" ? info.output.edits : 0;
-      const revised = supersededCount(info.output) > 0;
+      const revised = revisedCount(info.output) > 0;
       return (
         <ToolLine icon={<FileText className="size-3.5 text-emerald-500" />} tone="success">
           {revised ? "Revised the draft for " : "Drafted "}
