@@ -13,6 +13,7 @@ import {
   reportExportDocxFileName,
 } from "@/lib/export/docx-filename";
 import { generateReportDocx } from "@/lib/export/generate-docx";
+import { readPngDimensions } from "@/lib/export/raster-dimensions";
 import type { ReportSectionRecord } from "@/types/report";
 
 const IR_TEMPLATE = path.join(
@@ -93,6 +94,13 @@ describe("design-verification DOCX export", () => {
     expect(xml).not.toContain("Define:");
     expect(xml).not.toContain("Investigation tool used");
     expect(xml).not.toContain("Deviation No.");
+
+    const header = new PizZip(dv).file("word/header2.xml")?.asText() ?? "";
+    expect(header).toContain("Design Verification Report");
+    expect(header).toContain("Andrei");
+    expect(header).not.toMatch(/<w:t>Ref<\/w:t>/);
+    expect(header).not.toMatch(/<w:t>,<\/w:t>/);
+    expect(header).not.toMatch(/<w:t>\.<\/w:t>/);
   });
 
   it("renders DV headings, cover fields, and matrices instead of DMAIC", async () => {
@@ -105,6 +113,19 @@ describe("design-verification DOCX export", () => {
 
     expect(header).toContain("Design Verification Report");
     expect(header).not.toContain("Investigation Report");
+    expect(header).not.toMatch(/<w:t>Ref<\/w:t>/);
+    expect(header).not.toMatch(/<w:t>,<\/w:t>/);
+    expect(header).not.toMatch(/<w:t>\.<\/w:t>/);
+
+    const logoPng = new PizZip(buf).file("word/media/image1.png")?.asNodeBuffer();
+    expect(logoPng).toBeDefined();
+    const logoDims = readPngDimensions(logoPng!)!;
+    const wpCy = Number(header.match(/<wp:extent cx="(\d+)" cy="(\d+)"\/>/)?.[2]);
+    const picCy = Number(header.match(/<a:xfrm>\s*<a:off [^/]*\/>\s*<a:ext cx="\d+" cy="(\d+)"\/>/)?.[1]);
+    const wpCx = Number(header.match(/<wp:extent cx="(\d+)" cy="(\d+)"\/>/)?.[1]);
+    const expectedCy = Math.round((wpCx * logoDims.height) / logoDims.width);
+    expect(wpCy).toBe(expectedCy);
+    expect(picCy).toBe(expectedCy);
     expect(xml).toContain("DVR-100");
     expect(xml).toContain("Solea Cart");
     expect(xml).toContain("Purpose &amp; Scope");
