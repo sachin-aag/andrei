@@ -11,7 +11,7 @@ import {
   normalizeDocumentNo,
 } from "@/lib/reports/document-no";
 import { seedBlankReportSections } from "@/lib/reports/seed-blank-report-sections";
-import { getDocumentType, getSeedableSections } from "@/lib/document-types";
+import { getDocumentType, getSeedableSections, isDocumentTypeEnabled } from "@/lib/document-types";
 import { auditActorFromUser, recordAuditEvent, recordSectionVersion } from "@/lib/audit";
 import {
   insertReportManagers,
@@ -116,6 +116,14 @@ export async function POST(req: Request) {
     }
 
     const documentType = parse.data.documentType;
+    if (!isDocumentTypeEnabled(documentType)) {
+      return NextResponse.json(
+        {
+          error: `${getDocumentType(documentType).label} is not enabled for this workspace.`,
+        },
+        { status: 400 }
+      );
+    }
     const def = getDocumentType(documentType);
     const rawDocumentNo = parse.data.documentNo ?? parse.data.deviationNo;
     const assignedManagerIds = parse.data.assignedManagerIds

@@ -2,6 +2,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { NextConfig } from "next";
 import { withWorkflow } from "workflow/next";
+import { assertCustomerEnvAgreement } from "./src/lib/customers/resolve";
 import {
   POSTHOG_EU_API_HOST,
   POSTHOG_EU_ASSETS_HOST,
@@ -10,6 +11,8 @@ import {
 
 /** Pin Turbopack to this app when a parent directory has a stray lockfile. */
 const appRoot = path.dirname(fileURLToPath(import.meta.url));
+
+assertCustomerEnvAgreement();
 
 const nextConfig: NextConfig = {
   // PostHog API uses trailing slashes (/e/, /s/); don't 308-strip them or replay uploads break.

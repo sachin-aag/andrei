@@ -6,6 +6,8 @@ import { FileText } from "lucide-react";
 import { ReportCard, type ReportCardData } from "@/components/report/report-card";
 import { DeleteReportButton } from "@/components/dashboard/delete-report-button";
 import { EvaluateWithAiButton } from "@/components/dashboard/evaluate-with-ai-button";
+import { listDocumentTypes } from "@/lib/document-types";
+import type { DocumentType } from "@/db/schema";
 
 type DashboardReport = ReportCardData;
 
@@ -22,9 +24,7 @@ export function ReportList({
 }) {
   const router = useRouter();
   const [deletedIds, setDeletedIds] = useState<Set<string>>(() => new Set());
-  const [typeFilter, setTypeFilter] = useState<
-    "all" | "investigation_report" | "design_verification"
-  >("all");
+  const [typeFilter, setTypeFilter] = useState<"all" | DocumentType>("all");
 
   const visibleReports = useMemo(
     () =>
@@ -51,10 +51,17 @@ export function ReportList({
         <span className="text-xs text-[var(--muted-foreground)]">Type:</span>
         {(
           [
-            ["all", "All"],
-            ["investigation_report", "Investigation"],
-            ["design_verification", "Design Verification"],
-          ] as const
+            ["all", "All"] as const,
+            ...listDocumentTypes().map(
+              (def) =>
+                [
+                  def.key,
+                  def.key === "design_verification"
+                    ? "Design Verification"
+                    : "Investigation",
+                ] as const
+            ),
+          ]
         ).map(([value, label]) => (
           <button
             key={value}

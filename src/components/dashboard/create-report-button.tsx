@@ -30,6 +30,8 @@ import {
   uploadPdfToReport,
 } from "@/lib/attachments/upload-pdf";
 import { ManagerSelector } from "@/components/report/manager-selector";
+import type { DocumentType } from "@/db/schema";
+import { listDocumentTypes } from "@/lib/document-types";
 
 type CreateReportButtonProps = {
   managers: Pick<WorkspaceUser, "id" | "name" | "title">[];
@@ -39,10 +41,11 @@ type CreateReportButtonProps = {
 type PendingUpload = { file: File; percent: number };
 
 export function CreateReportButton({ managers }: CreateReportButtonProps) {
+  const availableTypes = listDocumentTypes();
   const [open, setOpen] = useState(false);
-  const [documentType, setDocumentType] = useState<
-    "investigation_report" | "design_verification"
-  >("investigation_report");
+  const [documentType, setDocumentType] = useState<DocumentType>(
+    () => availableTypes[0]?.key ?? "investigation_report"
+  );
   const [documentNo, setDocumentNo] = useState("");
   const [managerIds, setManagerIds] = useState<string[]>([]);
   const [uploads, setUploads] = useState<PendingUpload[]>([]);
@@ -53,21 +56,18 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
   const router = useRouter();
 
   const busy = pending || uploadingCount > 0;
-  const documentNoLabel =
-    documentType === "design_verification"
-      ? "Document Number"
-      : "Deviation Number";
-  const dialogTitle =
-    documentType === "design_verification"
-      ? "Create design verification report"
-      : "Create investigation report";
-  const dialogDescription =
-    documentType === "design_verification"
-      ? "Starts a new design verification report as a draft."
-      : "Starts a new deviation investigation report as a draft.";
+  const selectedType =
+    availableTypes.find((type) => type.key === documentType) ?? availableTypes[0];
+  const documentNoLabel = selectedType?.documentNoLabel ?? "Deviation Number";
+  const dialogTitle = selectedType
+    ? `Create ${selectedType.label.toLowerCase()}`
+    : "Create investigation report";
+  const dialogDescription = selectedType
+    ? `Starts a new ${selectedType.label.toLowerCase()} as a draft.`
+    : "Starts a new deviation investigation report as a draft.";
 
   const resetForm = () => {
-    setDocumentType("investigation_report");
+    setDocumentType(availableTypes[0]?.key ?? "investigation_report");
     setDocumentNo("");
     setManagerIds([]);
     setUploads([]);
@@ -250,6 +250,7 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
             <DialogDescription>{dialogDescription}</DialogDescription>
           </DialogHeader>
           <div className="grid min-w-0 gap-4 py-2">
+            {availableTypes.length > 1 ? (
             <div className="grid gap-2">
               <Label htmlFor="documentType">Document type</Label>
               <select
@@ -258,21 +259,17 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
                 value={documentType}
                 disabled={busy}
                 onChange={(e) =>
-                  setDocumentType(
-                    e.target.value as
-                      | "investigation_report"
-                      | "design_verification"
-                  )
+                  setDocumentType(e.target.value as DocumentType)
                 }
               >
-                <option value="investigation_report">
-                  Investigation Report
-                </option>
-                <option value="design_verification">
-                  Design Verification Report
-                </option>
+                {availableTypes.map((type) => (
+                  <option key={type.key} value={type.key}>
+                    {type.label}
+                  </option>
+                ))}
               </select>
             </div>
+            ) : null}
             <div className="grid gap-2">
               <Label htmlFor="documentNo">{documentNoLabel}</Label>
               <Input

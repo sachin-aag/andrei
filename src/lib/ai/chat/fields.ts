@@ -28,7 +28,6 @@ export const CHAT_EDITABLE_SECTIONS: readonly SectionType[] = [
 export function chatEditableSections(
   documentType: DocumentType = "investigation_report"
 ): readonly SectionType[] {
-  if (documentType === "investigation_report") return CHAT_EDITABLE_SECTIONS;
   return getDocumentType(documentType)
     .sections.filter((s) => s.editable && !s.virtual)
     .map((s) => s.key);

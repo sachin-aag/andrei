@@ -1,5 +1,7 @@
 import type { SectionType } from "@/db/schema";
 import type { CriterionDefinition as RegistryCriterionDefinition } from "@/lib/document-types/types";
+import { applyCriterionDescriptionOverrides } from "@/lib/customers/overrides";
+import { getCustomerPack } from "@/lib/customers/packs";
 
 /** Investigation criteria; `kind` defaults to "llm" when omitted. */
 export type CriterionDefinition = Omit<RegistryCriterionDefinition, "kind" | "dependsOn" | "check"> &
@@ -356,12 +358,25 @@ export const EVALUATABLE_SECTIONS: SectionType[] = [
   "conclusion",
 ];
 
+export function getInvestigationEvaluatableSections(): SectionType[] {
+  const hidden = new Set(getCustomerPack().hiddenInvestigationSections);
+  return EVALUATABLE_SECTIONS.filter((section) => !hidden.has(section));
+}
+
 export function getCriteria(section: SectionType): RegistryCriterionDefinition[] {
-  return withLlmDefaults(CRITERIA_BY_SECTION[section] ?? []);
+  return getInvestigationCriteriaBySection()[section] ?? [];
 }
 
 export function getInvestigationCriteriaBySection(): Record<string, RegistryCriterionDefinition[]> {
-  return Object.fromEntries(
-    Object.entries(CRITERIA_BY_SECTION).map(([k, v]) => [k, withLlmDefaults(v ?? [])])
+  const pack = getCustomerPack();
+  const hidden = new Set(pack.hiddenInvestigationSections);
+  const raw = Object.fromEntries(
+    Object.entries(CRITERIA_BY_SECTION)
+      .filter(([section]) => !hidden.has(section))
+      .map(([section, list]) => [section, withLlmDefaults(list ?? [])])
+  );
+  return applyCriterionDescriptionOverrides(
+    raw,
+    pack.criterionDescriptionOverrides
   );
 }
