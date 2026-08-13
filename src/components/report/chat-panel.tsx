@@ -72,14 +72,14 @@ import {
   type MentionCandidate,
   type MentionQuery,
 } from "@/lib/ai/chat/mention-search";
+import { chatModeAfterPermissionCheck } from "@/lib/ai/chat/mode-fallback";
+import type { ChatMode } from "@/lib/ai/chat/system-prompt";
 import { compressImageFile } from "@/lib/images/compress-image";
 
 type PendingChatImage = {
   id: string;
   part: FileUIPart;
 };
-
-type ChatMode = "plan" | "agent";
 
 const EXAMPLE_PROMPTS: Record<ChatMode, string[]> = {
   plan: [
@@ -713,12 +713,16 @@ export function ChatPanel() {
     element.setSelectionRange(caret, caret);
   }, [input]);
 
-  // Agent proposes edits — fall back to Plan when the report isn't writable.
+  // Fall back to Plan only once the user's role is known. An unknown role
+  // (directory still hydrating) must not lock the composer in Plan forever.
   useEffect(() => {
-    if (!canProposeAiEdits && mode === "agent") {
-      setMode("plan");
-    }
-  }, [canProposeAiEdits, mode]);
+    const next = chatModeAfterPermissionCheck({
+      mode,
+      role,
+      canProposeAiEdits,
+    });
+    if (next !== mode) setMode(next);
+  }, [canProposeAiEdits, mode, role]);
 
   const updateMentionQuery = useCallback((value: string, caret: number) => {
     setMentionRange(findMentionQuery(value, caret));
@@ -1213,6 +1217,7 @@ export function ChatPanel() {
               ref={textareaRef}
               value={input}
               role="combobox"
+              aria-label="Message the assistant"
               aria-expanded={mentionMenuOpen}
               aria-controls={mentionMenuOpen ? "chat-mention-menu" : undefined}
               aria-activedescendant={

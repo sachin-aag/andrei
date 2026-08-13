@@ -1,13 +1,6 @@
 "use client";
 
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useState,
-} from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { WorkspaceUser } from "@/lib/auth/workspace-user";
 import {
   hydrateUserDirectory,
@@ -35,12 +28,12 @@ export function UserDirectoryProvider({
   children: React.ReactNode;
 }) {
   const [fetchedUsers, setFetchedUsers] = useState<WorkspaceUser[] | null>(null);
-  const [version, setVersion] = useState(0);
   const users = fetchedUsers ?? initialUsers;
 
-  useLayoutEffect(() => {
-    syncUserDirectory(users);
-  }, [users]);
+  // Hydrate during render so the first child pass can look users up.
+  // useLayoutEffect is too late: children's useEffects capture role=undefined
+  // from the first paint (e.g. chat locking into Plan and never switching back).
+  syncUserDirectory(users);
 
   useEffect(() => {
     void fetch("/api/auth/users")
@@ -49,7 +42,6 @@ export function UserDirectoryProvider({
         if (!data?.users) return;
         syncUserDirectory(data.users);
         setFetchedUsers(data.users);
-        setVersion((current) => current + 1);
       });
   }, []);
 
@@ -57,11 +49,11 @@ export function UserDirectoryProvider({
     () => ({
       users,
       getUser: (id: string | null | undefined) => {
-        void version;
-        return lookupUserInDirectory(id);
+        if (!id) return undefined;
+        return users.find((user) => user.id === id) ?? lookupUserInDirectory(id);
       },
     }),
-    [users, version]
+    [users]
   );
 
   return (

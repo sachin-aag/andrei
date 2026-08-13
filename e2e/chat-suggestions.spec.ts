@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { authenticateAsEngineer, loginAsEngineer } from "./helpers/auth";
 import { createReport, deleteReport } from "./helpers/reports";
+import { openReportSidebarTab, reportSidebar } from "./helpers/workspace";
 
 /**
  * The chat → draft → suggestion-queue → accept loop, driven by the scripted stub
@@ -14,17 +15,23 @@ import { createReport, deleteReport } from "./helpers/reports";
 test.describe.configure({ mode: "serial" });
 
 async function openAssistant(page: Page): Promise<void> {
-  await page.getByRole("button", { name: /assistant/i }).first().click();
-  await expect(chatInput(page)).toBeVisible({ timeout: 30_000 });
+  await openReportSidebarTab(page, "assistant");
+  const sidebar = reportSidebar(page);
+  const agent = sidebar.getByRole("button", { name: /^agent$/i });
+  await expect(agent).toBeEnabled({ timeout: 15_000 });
+  await agent.click();
+  await expect(chatInput(page)).toBeVisible({ timeout: 15_000 });
 }
 
 function chatInput(page: Page) {
-  return page.getByPlaceholder(/ask the assistant to draft or improve/i);
+  return reportSidebar(page).getByRole("combobox", {
+    name: /message the assistant/i,
+  });
 }
 
 async function sendChat(page: Page, text: string): Promise<void> {
   await chatInput(page).fill(text);
-  await page.getByRole("button", { name: /send message/i }).click();
+  await reportSidebar(page).getByRole("button", { name: /send message/i }).click();
 }
 
 function suggestionCardHeading(page: Page) {
