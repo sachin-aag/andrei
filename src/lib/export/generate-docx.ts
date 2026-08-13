@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import path from "node:path";
 import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
 import type { JSONContent } from "@tiptap/core";
@@ -16,11 +15,14 @@ import type {
 } from "@/types/sections";
 import { EMPTY_CONTENT } from "@/types/sections";
 import {
+  designVerificationMetadata,
   investigationOtherTools,
   investigationToolsUsed,
   type ReportSectionRecord,
 } from "@/types/report";
-import type { reports as reportsTable } from "@/db/schema";
+import type { SectionType, reports as reportsTable } from "@/db/schema";
+import { getDocumentType, mergeSectionForType } from "@/lib/document-types";
+import { isDvTableSection } from "@/lib/document-types/design-verification/sections";
 import { getUser } from "@/lib/auth/user-directory";
 import { formatCalendarDate } from "@/lib/utils";
 import { collapseFiveWhyFields } from "@/lib/analyze-five-why";
@@ -55,7 +57,6 @@ import {
   applyElectronicSignaturesToDocxZip,
   type DocxAuditSignature,
 } from "@/lib/export/electronic-signatures-docx";
-import type { SectionType } from "@/db/schema";
 import {
   applyWordCommentsToDocxZip,
   attachCommentsToFirstParagraph,
@@ -67,11 +68,17 @@ import { applyGoogleDocsImageCompat } from "@/lib/export/docx-google-docs-images
 type ReportRow = typeof reportsTable.$inferSelect;
 type ReportRowWithManagers = ReportRow & { assignedManagerIds?: string[] };
 
-const TEMPLATE_PATH = path.join(
-  process.cwd(),
-  "templates",
-  "investigation-report-template.docx"
-);
+const DV_EXPORT_XML_FIELDS = [
+  ["purpose_scope", "purposeScopeXml"],
+  ["references", "referencesXml"],
+  ["traceability", "traceabilityXml"],
+  ["test_methods", "testMethodsXml"],
+  ["test_results", "testResultsXml"],
+  ["deviations", "deviationsXml"],
+  ["conclusion", "conclusionXml"],
+  ["approval_signoff", "approvalSignoffXml"],
+  ["appendices", "appendicesXml"],
+] as const;
 
 function sectionByKey<K extends keyof SectionContentMap>(
   rows: ReportSectionRecord[],
@@ -423,10 +430,16 @@ export async function generateReportDocx({
   electronicSignatures?: DocxAuditSignature[];
 }): Promise<Buffer> {
   if (report.documentType === "design_verification") {
-    return generateDesignVerificationDocx({ report, sections });
+    return generateDesignVerificationDocx({
+      report,
+      sections,
+      electronicSignatures,
+    });
   }
 
-  const templateContent = fs.readFileSync(TEMPLATE_PATH);
+  const templateContent = fs.readFileSync(
+    getDocumentType("investigation_report").export.templatePath
+  );
   const zip = new PizZip(templateContent);
 
   const doc = new Docxtemplater(zip, {
@@ -459,20 +472,17 @@ export async function generateReportDocx({
   return buf;
 }
 
-function generateDesignVerificationDocx({
+async function generateDesignVerificationDocx({
   report,
   sections,
+  electronicSignatures,
 }: {
   report: ReportRowWithManagers;
   sections: ReportSectionRecord[];
-}): Buffer {
-  const templatePath = path.join(
-    process.cwd(),
-    "templates",
-    "design-verification-report-template.docx"
-  );
+  electronicSignatures: DocxAuditSignature[];
+}): Promise<Buffer> {
   const templateContent = fs.readFileSync(
-    fs.existsSync(templatePath) ? templatePath : TEMPLATE_PATH
+    getDocumentType("design_verification").export.templatePath
   );
   const zip = new PizZip(templateContent);
   const doc = new Docxtemplater(zip, {
@@ -482,42 +492,36 @@ function generateDesignVerificationDocx({
     nullGetter: () => "",
   });
 
+  const numberingBases = loadListNumberingBasesFromZip(zip);
+  const ctx = createDocxExportContext(numberingBases);
   const byKey = Object.fromEntries(sections.map((s) => [s.section, s.content]));
-  const plain = (key: string, field: "narrative" | "table" = "narrative") => {
-    const content = byKey[key] as Record<string, unknown> | undefined;
-    const value = content?.[field];
-    if (!value) return "";
-    return richJsonToPlainText(normalizeRichField(value));
-  };
-  const meta = report.metadata as Record<string, string>;
+  const meta = designVerificationMetadata(report);
 
-  // Reuse investigation template placeholders where possible so the copied
-  // template still renders a usable document for the demo.
-  doc.render({
-    deviationNo: report.documentNo,
-    documentNo: report.documentNo,
+  const data: Record<string, string> = {
     date: formatCalendarDate(report.date),
-    defineNarrativeXml: plainTextToDocxXml(plain("purpose_scope")),
-    measureNarrativeXml: plainTextToDocxXml(plain("references")),
-    analyzeNarrativeXml: plainTextToDocxXml(
-      [plain("traceability", "table"), plain("test_methods")].filter(Boolean).join("\n\n")
-    ),
-    improveNarrativeXml: plainTextToDocxXml(plain("test_results", "table")),
-    controlNarrativeXml: plainTextToDocxXml(plain("deviations")),
-    conclusionNarrativeXml: plainTextToDocxXml(
-      [plain("conclusion"), plain("approval_signoff"), plain("appendices")]
-        .filter(Boolean)
-        .join("\n\n")
-    ),
-    authorName: "",
-    managerName: "",
-    productName: meta.productName ?? "",
-    revision: meta.revision ?? "",
-    otherTools: "",
-    toolsUsed: { sixM: false, fiveWhy: false, brainstorming: false },
-    attachments: [],
-    documentsReviewedXml: "",
-  });
+    documentNo: report.documentNo,
+    productName: meta.productName,
+    revision: meta.revision,
+  };
+
+  for (const [section, placeholder] of DV_EXPORT_XML_FIELDS) {
+    const merged = mergeSectionForType(
+      "design_verification",
+      section,
+      byKey[section]
+    ) as Record<string, unknown>;
+    const field = isDvTableSection(section) ? "table" : "narrative";
+    data[placeholder] = narrativeToDocxXmlWithContext(
+      normalizeRichField(merged[field]),
+      ctx
+    ).xml;
+  }
+
+  doc.render(data);
+  applyElectronicSignaturesToDocxZip(doc.getZip(), electronicSignatures);
+  applyNumberingToDocxZip(doc.getZip(), ctx);
+  applyInlineMediaToDocxZip(doc.getZip(), ctx);
+  await applyGoogleDocsImageCompat(doc.getZip());
 
   return doc.getZip().generate({
     type: "nodebuffer",

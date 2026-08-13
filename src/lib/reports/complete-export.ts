@@ -13,6 +13,7 @@ import {
   exportAuditEventsPdf,
 } from "@/lib/audit/export";
 import { listAuditEvents, listReportSignatures } from "@/lib/audit/queries";
+import { reportExportDocxArchiveName } from "@/lib/export/docx-filename";
 import { generateReportDocx } from "@/lib/export/generate-docx";
 import {
   listReportManagerIds,
@@ -191,7 +192,7 @@ export async function buildCompleteRecordExportZip(
       }))
     : Promise.resolve(null);
 
-  const [auditArtifacts, investigationDocx, evidenceSources] = await Promise.all([
+  const [auditArtifacts, reportDocx, evidenceSources] = await Promise.all([
     auditArtifactsPromise,
     generateReportDocx({
       report: reportWithManagers,
@@ -233,7 +234,7 @@ export async function buildCompleteRecordExportZip(
     zip.file("audit-trail.pdf", auditArtifacts.auditPdf);
   }
   zip.file("version-history.csv", versionHistoryCsv);
-  zip.file("investigation-report.docx", investigationDocx);
+  zip.file(reportExportDocxArchiveName(report.documentType), reportDocx);
 
   return {
     buffer: zip.generate({ type: "nodebuffer", compression: "DEFLATE" }),

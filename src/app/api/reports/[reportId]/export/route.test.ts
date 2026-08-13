@@ -143,4 +143,21 @@ describe("GET /api/reports/[reportId]/export", () => {
       })
     );
   });
+
+  it("names the download for a design-verification report", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
+    mockSelectOnce([{ ...report, documentType: "design_verification", documentNo: "DVR-001" }]);
+    mockOrderedSelectOnce([]);
+    mockSelectOnce([]);
+    mockSelectOnce([]);
+
+    const response = await GET(request(), {
+      params: Promise.resolve({ reportId: report.id }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Disposition")).toBe(
+      'attachment; filename="Design_Verification_Report_DVR-001.docx"'
+    );
+  });
 });
