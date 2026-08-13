@@ -150,4 +150,23 @@ describe("buildCompleteRecordExportZip", () => {
     expect(metadata).toContain("https://signed.example/source.pdf");
     expect(metadata).toContain("PDF binaries are intentionally not embedded");
   });
+
+  it("names the inner report file for a design-verification export", async () => {
+    mockSelectOnce([{ ...report, documentType: "design_verification" }]);
+    mockSelectOnce([]);
+    mockSelectOnce([]);
+    mockSelectOnce([]);
+    mockSelectOnce([]);
+
+    const result = await buildCompleteRecordExportZip(report.id, {
+      includeAuditTrail: false,
+    });
+
+    expect(result).not.toBeNull();
+    expect(zipFilenames(result!.buffer)).toEqual([
+      "metadata.xml",
+      "version-history.csv",
+      "design-verification-report.docx",
+    ]);
+  });
 });
