@@ -5,6 +5,7 @@ import {
   chatSectionsInScope,
   primaryFieldForSection,
   sectionFieldPlainText,
+  sectionLabel,
 } from "@/lib/ai/chat/fields";
 import {
   sanitizePromptMetadata,
@@ -38,10 +39,22 @@ export type BuildAutoEvidenceInput = {
   timeoutMs?: number;
 };
 
-function userQuery(text: string): string | null {
+const DRAFTING_NOISE_RE =
+  /\b(please|pls|kindly|can you|could you|would you|draft(?:ing)?|write|fill(?:ing)?(?:\s+in)?|complete|populate|generate|create|rewrite|redraft|the|this|that|a|an|for me|for us|section|narrative|field)\b/gi;
+
+/**
+ * Keep user text as a retrieval query only when it still has content after
+ * stripping drafting filler ("draft this section for me" → nothing useful).
+ */
+export function contentQueryFromUserText(text: string): string | null {
   const trimmed = text.replace(/\s+/g, " ").trim();
   if (trimmed.length < AUTO_EVIDENCE_MIN_QUERY_CHARS) return null;
-  return trimmed;
+  const content = trimmed
+    .replace(DRAFTING_NOISE_RE, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (content.length < AUTO_EVIDENCE_MIN_QUERY_CHARS) return null;
+  return content;
 }
 
 function gapQuery(input: BuildAutoEvidenceInput): string | null {
@@ -70,6 +83,7 @@ function gapQuery(input: BuildAutoEvidenceInput): string | null {
         primaryFieldForSection(section)
       );
       if (text.replace(/\s+/g, " ").trim().length > 0) continue;
+      labels.push(sectionLabel(section));
       for (const criterion of getCriteria(input.documentType, section)) {
         labels.push(criterion.label);
       }
@@ -141,7 +155,7 @@ export async function buildAutoEvidence(
 ): Promise<string> {
   if (!input.hasDocuments) return "";
 
-  const queries = [userQuery(input.userText), gapQuery(input)].filter(
+  const queries = [contentQueryFromUserText(input.userText), gapQuery(input)].filter(
     (query): query is string => Boolean(query)
   );
   if (queries.length === 0) return "";

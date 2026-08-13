@@ -72,6 +72,13 @@ Full script list: `package.json` / `CLAUDE.md`. Prefer the narrowest test.
 - New chat tools must be added to the **Plan-mode allowlist** in
   `src/app/api/reports/[reportId]/chat/route.ts` or they are silently missing
   in Plan.
+- **PRs:** every PR description needs a collapsed **What's new (plain
+  language)** fold for the CEO, a **detailed Summary** (problem → change →
+  who it affects, not a title restatement), plus a living **Test plan**
+  checklist tagged **CEO** (taste / experience) or **CTO** (technical; CTO
+  tests all) (skill: `.agents/skills/pr-human-tester-checklist`). Refresh
+  the fold, Summary, and Test plan whenever the PR is created, edited, or
+  new commits are pushed to it.
 
 ## Database
 
@@ -149,8 +156,7 @@ Release gates: `docs/pdf-evidence-deployment-checklist.md`.
   Gap tools: `search_documents`, `document_outline`, `read_document_page`.
 - Hybrid search = vector + English FTS with OR-tokenized `websearch_to_tsquery`.
   The report body is **not** chunk-indexed; use `read_section`.
-- Prompt policy is search-then-ask. Do not restore “ask the human first” for
-  batch numbers, dates, results, or equipment IDs.
+- Prompt policy is search-then-ask (including DV facts: requirement IDs, ECO/DCR). Do not restore “ask the human first” for batch numbers, dates, results, equipment IDs, or design-input facts. The document index is not citable evidence.
 - Stub chat (`buildStubChatModel`) can prove a turn streams; it cannot prove
   tool selection. Spec: `e2e/report-chat.spec.ts`.
 

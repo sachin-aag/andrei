@@ -10,8 +10,10 @@ alwaysApply: false
 
 # Chat and attachments
 
-Search attachments **before** `ask_user` or a `[placeholder]` for regulated
-facts (batch, date, result, equipment ID). Evidence preview is already in the
+Search attachments **before** `ask_user`, `draft_field`, or a `[placeholder]`
+for report facts (batch, date, result, equipment ID, requirement ID, design
+output, verification objective, ECO/DCR). The document index
+(filename/topics) is not evidence. Evidence preview is already in the
 system prompt when kickoff retrieval hits.
 
 ## Prompt / tools

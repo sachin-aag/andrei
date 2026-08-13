@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { buildAutoEvidence } from "@/lib/ai/chat/auto-evidence";
+import { buildAutoEvidence, contentQueryFromUserText } from "@/lib/ai/chat/auto-evidence";
 import type { DocumentSearchResult } from "@/lib/attachments/retrieval";
 
 const searchReportDocumentsMock = vi.fn();
@@ -89,6 +89,47 @@ describe("buildAutoEvidence", () => {
     expect(query.query).toContain("Clearly define what happened actually");
   });
 
+  it("drops drafting-only user text so kickoff search uses section criteria", async () => {
+    searchReportDocumentsMock.mockResolvedValue([]);
+    await buildAutoEvidence({
+      ...baseInput,
+      userText: "Draft the this section for me.",
+      sectionScope: "purpose_scope",
+      documentType: "design_verification",
+      documentNo: "Dv test",
+    });
+    expect(searchReportDocumentsMock).toHaveBeenCalledTimes(1);
+    const query = searchReportDocumentsMock.mock.calls[0]?.[0] as {
+      query: string;
+    };
+    expect(query.query.toLowerCase()).not.toContain("draft");
+    expect(query.query).toContain("Purpose & Scope");
+    expect(query.query).toContain("Dv test");
+    expect(query.query).toMatch(/requirement|ECO\/DCR|objective/i);
+  });
+
+  it("keeps content words from a draft request as a retrieval query", async () => {
+    searchReportDocumentsMock.mockResolvedValue([]);
+    await buildAutoEvidence({
+      ...baseInput,
+      userText: "draft the purpose & scope section",
+      evaluations: [
+        {
+          section: "define",
+          status: "not_met",
+          criterionLabel: "Clearly define what happened actually",
+        },
+      ],
+    });
+    expect(searchReportDocumentsMock).toHaveBeenCalledTimes(2);
+    const queries = searchReportDocumentsMock.mock.calls.map(
+      (call) => (call[0] as { query: string }).query
+    );
+    expect(queries.some((q) => /purpose/i.test(q) && /scope/i.test(q))).toBe(
+      true
+    );
+  });
+
   it("dedupes citation ids and caps at 8 hits", async () => {
     const first = [
       hit("c1"),
@@ -116,5 +157,24 @@ describe("buildAutoEvidence", () => {
     expect(block).toContain("snippet c1");
     expect(block).toContain("snippet c8");
     expect(block).not.toContain("snippet c9");
+  });
+});
+
+describe("contentQueryFromUserText", () => {
+  it("returns null for drafting-only commands", () => {
+    expect(contentQueryFromUserText("Draft the this section for me.")).toBeNull();
+    expect(contentQueryFromUserText("please write this section")).toBeNull();
+  });
+
+  it("keeps the content words from a named-section draft request", () => {
+    expect(contentQueryFromUserText("draft the purpose & scope section")).toBe(
+      "purpose & scope"
+    );
+  });
+
+  it("keeps a factual question intact enough to search", () => {
+    expect(
+      contentQueryFromUserText("what happened during dissolution testing")
+    ).toBe("what happened during dissolution testing");
   });
 });

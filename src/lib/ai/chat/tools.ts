@@ -166,7 +166,7 @@ function buildSearchDocumentsTool(opts: {
   if (pinnedAttachmentIds.length === 0) {
     return tool({
       description:
-        "Search ready evidence attachments for report-scoped facts. Use before citing attachment evidence. Results include citationId for follow-up reads; final prose should cite as [filename, p. N] or [filename] if the page is unknown — never [filename: <to be filled>].",
+        "Search ready evidence attachments for report-scoped facts. Call this before ask_user or draft_field when Documents are listed and no evidence preview covers the needed facts. Results include citationId for follow-up reads; final prose should cite as [filename, p. N] or [filename] if the page is unknown — never [filename: <to be filled>].",
       inputSchema: z.object({ query, limit }),
       execute: async ({ query: q, limit: n }) => {
         const results = await searchReportDocuments({ reportId, query: q, limit: n });
@@ -182,7 +182,7 @@ function buildSearchDocumentsTool(opts: {
   const tagged = pinnedAttachmentIds.length;
   return tool({
     description:
-      `Search ready evidence attachments for report-scoped facts. Defaults to the ${tagged} document(s) the engineer tagged with @ — those results come back with pinned=true, and any shortfall is backfilled from the rest of the report with pinned=false. Pass scope="all" to search every attachment instead. Final prose should cite as [filename, p. N] or [filename] if the page is unknown — never [filename: <to be filled>].`,
+      `Search ready evidence attachments for report-scoped facts. Call this before ask_user or draft_field when no evidence preview covers the needed facts. Defaults to the ${tagged} document(s) the engineer tagged with @ — those results come back with pinned=true, and any shortfall is backfilled from the rest of the report with pinned=false. Pass scope="all" to search every attachment instead. Final prose should cite as [filename, p. N] or [filename] if the page is unknown — never [filename: <to be filled>].`,
     inputSchema: z.object({
       query,
       limit,
@@ -704,7 +704,7 @@ export function buildChatTools(opts: {
 
     ask_user: tool({
       description:
-        "Ask the engineer for facts you are missing. The questions render as a structured form in the chat — NEVER write questions as chat prose or markdown lists. Batch every open question into one call, then stop and wait for the answers.",
+        "Ask the engineer for facts still missing AFTER searching ready attachments (search_documents or the evidence preview). Do not ask for facts that are likely in a listed document (requirement IDs, design outputs, verification objective, ECO/DCR, batch/date/equipment). The questions render as a structured form in the chat — NEVER write questions as chat prose or markdown lists. Batch every open question into one call, then stop and wait for the answers.",
       inputSchema: z.object({
         questions: z
           .array(

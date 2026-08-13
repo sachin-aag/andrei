@@ -155,7 +155,7 @@ describe("buildMentionBlock", () => {
     expect(block).toContain("id=att_1");
     expect(block).toContain("12 pages");
     expect(block).toContain('user_context="Certificate of analysis for the failed batch"');
-    expect(block).toContain('summary="COA for batch 24A with OOS dissolution."');
+    expect(block).toContain('topics="COA for batch 24A with OOS dissolution."');
     expect(block).toContain("UNTRUSTED");
     expect(block).toContain('scope="all"');
   });
