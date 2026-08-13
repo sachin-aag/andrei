@@ -37,8 +37,36 @@ vi.mock("@/lib/audit", () => ({
   recordSectionVersion: vi.fn().mockResolvedValue(null),
 }));
 
+vi.mock("@/lib/customers/packs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/customers/packs")>();
+  return {
+    ...actual,
+    getCustomerPack: vi.fn(() => actual.DEMO_PACK),
+  };
+});
+
+vi.mock("@/lib/reports/persist-source-docx", () => ({
+  persistReportSourceDocx: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("@/lib/reports/persist-imported-word-comments", () => ({
+  persistImportedWordComments: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock("@/lib/import/docx-upload", () => ({
+  readDocxUpload: vi.fn().mockResolvedValue(Buffer.from("docx")),
+}));
+
+vi.mock("@/lib/import/docx-to-sections", () => ({
+  docxBufferToImportedReportContent: vi.fn(),
+}));
+
 import { db } from "@/db";
 import { isDocumentNoTaken } from "@/lib/reports/document-no";
+import { DEMO_PACK, getCustomerPack, MJ_PACK } from "@/lib/customers/packs";
+import { persistReportSourceDocx } from "@/lib/reports/persist-source-docx";
+import { persistImportedWordComments } from "@/lib/reports/persist-imported-word-comments";
+import { docxBufferToImportedReportContent } from "@/lib/import/docx-to-sections";
 import { EMPTY_CONTENT, REPORT_SECTION_ROW_ORDER } from "@/types/sections";
 
 const engineer = {
@@ -90,6 +118,7 @@ function mockManagerValidation(managerIds: string[]) {
 describe("/api/reports", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(getCustomerPack).mockReturnValue(DEMO_PACK);
   });
 
   it("requires authentication for listing reports", async () => {
@@ -249,5 +278,116 @@ describe("/api/reports", () => {
     await expect(response.json()).resolves.toMatchObject({
       report: { assignedManagerIds: ["manager-1", "manager-2"] },
     });
+  });
+
+  it("rejects a Word upload when the demo pack disables import", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
+
+    const form = new FormData();
+    form.append("documentNo", "DEV-001");
+    form.append(
+      "file",
+      new File(["x"], "report.docx", {
+        type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      })
+    );
+
+    const response = await POST(
+      new Request("http://localhost/api/reports", {
+        method: "POST",
+        body: form,
+      })
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: "Word import is not enabled for this workspace.",
+    });
+    expect(db.insert).not.toHaveBeenCalled();
+  });
+
+  it("creates an investigation from a Word upload when the MJ pack is active", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
+    vi.mocked(getCustomerPack).mockReturnValue(MJ_PACK);
+    vi.mocked(isDocumentNoTaken).mockResolvedValueOnce(false);
+    vi.mocked(docxBufferToImportedReportContent).mockResolvedValueOnce({
+      sections: EMPTY_CONTENT,
+      toolsUsed: { sixM: true, fiveWhy: false, brainstorming: false },
+      header: { otherTools: "fishbone", deviationNo: "DEV-001" },
+      comments: [],
+    });
+    const { values } = mockSuccessfulCreate("report-imported");
+    mockSectionRowsSelect("report-imported");
+
+    const form = new FormData();
+    form.append("documentType", "investigation_report");
+    form.append("documentNo", "DEV-001");
+    form.append(
+      "file",
+      new File(["x"], "report.docx", {
+        type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      })
+    );
+
+    const response = await POST(
+      new Request("http://localhost/api/reports", {
+        method: "POST",
+        body: form,
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(values).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        documentNo: "DEV-001",
+        metadata: {
+          toolsUsed: { sixM: true, fiveWhy: false, brainstorming: false },
+          otherTools: "fishbone",
+        },
+      })
+    );
+    expect(persistImportedWordComments).toHaveBeenCalledWith(
+      "report-imported",
+      expect.objectContaining({ toolsUsed: expect.objectContaining({ sixM: true }) })
+    );
+    expect(persistReportSourceDocx).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reportId: "report-imported",
+        filename: "report.docx",
+        uploadedById: engineer.id,
+      })
+    );
+  });
+
+  it("rejects a Word upload for design verification", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
+    vi.mocked(getCustomerPack).mockReturnValue({
+      ...MJ_PACK,
+      enabledDocumentTypes: ["investigation_report", "design_verification"],
+    });
+
+    const form = new FormData();
+    form.append("documentType", "design_verification");
+    form.append("documentNo", "DVR-001");
+    form.append(
+      "file",
+      new File(["x"], "report.docx", {
+        type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      })
+    );
+
+    const response = await POST(
+      new Request("http://localhost/api/reports", {
+        method: "POST",
+        body: form,
+      })
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({
+      error: "Word import is only supported for investigation reports.",
+    });
+    expect(db.insert).not.toHaveBeenCalled();
   });
 });
