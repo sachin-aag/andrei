@@ -1,7 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
 import { authenticateAsEngineer, loginAsEngineer } from "./helpers/auth";
 import { createReport, deleteReport } from "./helpers/reports";
-import { openReportSidebarTab, reportSidebar } from "./helpers/workspace";
+import {
+  collapseReportSidebar,
+  openReportSidebarTab,
+  reportSidebar,
+  reviewMargin,
+} from "./helpers/workspace";
 
 /**
  * The chat → draft → suggestion-queue → accept loop, driven by the scripted stub
@@ -35,7 +40,23 @@ async function sendChat(page: Page, text: string): Promise<void> {
 }
 
 function suggestionCardHeading(page: Page) {
-  return page.getByText(/^(Draft step \d+ of \d+|Suggestion \d+ of \d+|Full draft \d+ of \d+)$/);
+  return reviewMargin(page).getByText(
+    /^(Draft step \d+ of \d+|Suggestion \d+ of \d+|Full draft \d+ of \d+)$/
+  );
+}
+
+function applySuggestion(page: Page) {
+  return reviewMargin(page).getByRole("button", { name: /^apply$/i });
+}
+
+async function waitForDraftQueue(page: Page): Promise<void> {
+  await expect(page.getByText(/changes to review in the document/i)).toBeVisible({
+    timeout: 45_000,
+  });
+  // The expanded Assistant sidebar covers the review gutter; collapse it so the
+  // draft-step cards are actually visible to Playwright (and to the user).
+  await collapseReportSidebar(page);
+  await expect(suggestionCardHeading(page).first()).toBeVisible({ timeout: 15_000 });
 }
 
 test.describe("chat drafting → suggestion queue", () => {
@@ -65,17 +86,11 @@ test.describe("chat drafting → suggestion queue", () => {
   }) => {
     await openAssistant(page);
     await sendChat(page, "Draft the define section [[stub:draft]]");
-
-    // The chat chip reports how many separate changes landed.
-    await expect(page.getByText(/changes to review in the document/i)).toBeVisible({
-      timeout: 45_000,
-    });
+    await waitForDraftQueue(page);
 
     // The card numbers the block within the draft, and keeps that number as the
     // queue drains (the queue position alone would always read "1 of N").
-    const heading = suggestionCardHeading(page).first();
-    await expect(heading).toBeVisible({ timeout: 30_000 });
-    await expect(heading).toHaveText(/Draft step 1 of [2-9]/);
+    await expect(suggestionCardHeading(page).first()).toHaveText(/Draft step 1 of [2-9]/);
   });
 
   test("accepting a block advances the queue and applies exactly what was previewed", async ({
@@ -83,17 +98,17 @@ test.describe("chat drafting → suggestion queue", () => {
   }) => {
     await openAssistant(page);
     await sendChat(page, "Draft the define section [[stub:draft]]");
-    await expect(suggestionCardHeading(page).first()).toBeVisible({ timeout: 45_000 });
+    await waitForDraftQueue(page);
 
     const firstStep = await suggestionCardHeading(page).first().textContent();
     const total = Number(/of (\d+)/.exec(firstStep ?? "")?.[1] ?? "0");
     expect(total).toBeGreaterThan(1);
 
-    // The preview text is what accepting must produce.
+    // The preview text is what applying must produce.
     const previewed = "Block one describes what was detected during routine inspection.";
     await expect(page.getByText(previewed).first()).toBeVisible({ timeout: 20_000 });
 
-    await page.getByRole("button", { name: /^accept$/i }).first().click();
+    await applySuggestion(page).click();
 
     // Applied into the document…
     await expect(page.locator(".ProseMirror").first()).toContainText(previewed, {
@@ -109,13 +124,13 @@ test.describe("chat drafting → suggestion queue", () => {
   test("a bullet block previews and applies as a real list", async ({ page }) => {
     await openAssistant(page);
     await sendChat(page, "Draft the define section [[stub:draft]]");
-    await expect(suggestionCardHeading(page).first()).toBeVisible({ timeout: 45_000 });
+    await waitForDraftQueue(page);
 
-    // Walk the queue to the list block, accepting each card.
+    // Walk the queue to the list block, applying each card.
     for (let i = 0; i < 3; i++) {
-      const accept = page.getByRole("button", { name: /^accept$/i }).first();
-      if (!(await accept.isVisible().catch(() => false))) break;
-      await accept.click();
+      const apply = applySuggestion(page);
+      if (!(await apply.isVisible().catch(() => false))) break;
+      await apply.click();
       await page.waitForTimeout(1500);
     }
 
