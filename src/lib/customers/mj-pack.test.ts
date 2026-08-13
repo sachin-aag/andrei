@@ -6,6 +6,7 @@ import {
   getInvestigationEvaluatableSections,
 } from "@/lib/ai/criteria";
 import { buildInvestigationReportDefinition } from "@/lib/document-types/investigation-report";
+import { engineerReportsSubtitle } from "@/lib/document-types";
 import { seedableSections } from "@/lib/document-types/types";
 import { MJ_CRITERION_DESCRIPTION_OVERRIDES } from "./mj/criterion-overrides";
 import { MJ_PROMPT_VERSION } from "./mj/prompts";
@@ -76,6 +77,9 @@ describe("MJ customer pack content", () => {
     expect(MJ_PACK.enabledDocumentTypes).toEqual(["investigation_report"]);
     expect(isDocumentTypeEnabled("design_verification", MJ_PACK)).toBe(false);
     expect(isDocumentTypeEnabled("investigation_report", MJ_PACK)).toBe(true);
+    expect(engineerReportsSubtitle([{ label: "Investigation Report" }])).toBe(
+      "Create and manage investigation reports."
+    );
   });
 
   it("exports through the MJ Word template, which has no conclusion tag", () => {

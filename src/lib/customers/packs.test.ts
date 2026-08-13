@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { PROMPT_VERSION } from "@/lib/ai/section-prompts";
 import { getInvestigationCriteriaBySection } from "@/lib/ai/criteria";
-import { getDocumentType, listDocumentTypes } from "@/lib/document-types";
+import { getDocumentType, listDocumentTypes, engineerReportsSubtitle } from "@/lib/document-types";
 import { applyCriterionDescriptionOverrides } from "./overrides";
 import { DEMO_PACK, getCustomerPack, isDocumentTypeEnabled } from "./packs";
 
@@ -33,6 +33,12 @@ describe("customer packs (demo)", () => {
       "design_verification",
     ]);
     expect(isDocumentTypeEnabled("design_verification")).toBe(true);
+  });
+
+  it("describes both document types on the demo dashboard", () => {
+    expect(engineerReportsSubtitle(listDocumentTypes())).toBe(
+      "Create and manage investigation and design verification reports."
+    );
   });
 
   it("keeps SOP-specific strings out of the demo eval prompt", () => {
