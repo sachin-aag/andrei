@@ -31,6 +31,7 @@ import {
 } from "@/lib/attachments/upload-pdf";
 import { ManagerSelector } from "@/components/report/manager-selector";
 import type { DocumentType } from "@/db/schema";
+import { getCustomerPack } from "@/lib/customers/packs";
 import { listDocumentTypes } from "@/lib/document-types";
 
 type CreateReportButtonProps = {
@@ -42,6 +43,7 @@ type PendingUpload = { file: File; percent: number };
 
 export function CreateReportButton({ managers }: CreateReportButtonProps) {
   const availableTypes = listDocumentTypes();
+  const wordImportEnabled = getCustomerPack().wordImportEnabled;
   const [open, setOpen] = useState(false);
   const [documentType, setDocumentType] = useState<DocumentType>(
     () => availableTypes[0]?.key ?? "investigation_report"
@@ -51,20 +53,27 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
   const [uploads, setUploads] = useState<PendingUpload[]>([]);
   const [uploadingCount, setUploadingCount] = useState(0);
   const [quotaWarning, setQuotaWarning] = useState<string | null>(null);
+  const [draftFile, setDraftFile] = useState<File | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [pending, startTransition] = useTransition();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const docxInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
 
-  const busy = pending || uploadingCount > 0;
+  const showWordImport =
+    wordImportEnabled && documentType === "investigation_report";
+  const busy = pending || uploadingCount > 0 || previewLoading;
   const selectedType =
     availableTypes.find((type) => type.key === documentType) ?? availableTypes[0];
   const documentNoLabel = selectedType?.documentNoLabel ?? "Deviation Number";
   const dialogTitle = selectedType
     ? `Create ${selectedType.label.toLowerCase()}`
     : "Create investigation report";
-  const dialogDescription = selectedType
-    ? `Starts a new ${selectedType.label.toLowerCase()} as a draft.`
-    : "Starts a new deviation investigation report as a draft.";
+  const dialogDescription = showWordImport
+    ? "Starts a new deviation investigation report as a draft. Optionally upload an existing Word document to fill Define through Control. Evidence PDFs still attach after the report exists."
+    : selectedType
+      ? `Starts a new ${selectedType.label.toLowerCase()} as a draft.`
+      : "Starts a new deviation investigation report as a draft.";
 
   const resetForm = () => {
     setDocumentType(availableTypes[0]?.key ?? "investigation_report");
@@ -72,7 +81,54 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
     setManagerIds([]);
     setUploads([]);
     setQuotaWarning(null);
+    setDraftFile(null);
+    setPreviewLoading(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
+    if (docxInputRef.current) docxInputRef.current.value = "";
+  };
+
+  const clearDraftFile = () => {
+    setDraftFile(null);
+    setPreviewLoading(false);
+    if (docxInputRef.current) docxInputRef.current.value = "";
+  };
+
+  const handleDocumentTypeChange = (next: DocumentType) => {
+    setDocumentType(next);
+    if (next !== "investigation_report") clearDraftFile();
+  };
+
+  const handleDraftFileChange = async (file: File | null) => {
+    setDraftFile(file);
+    if (!file) {
+      clearDraftFile();
+      return;
+    }
+
+    setPreviewLoading(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      const res = await fetch("/api/reports/import-preview", {
+        method: "POST",
+        body: fd,
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        toast.error(body.error ?? "Could not read that Word file");
+        return;
+      }
+      const data = (await res.json()) as {
+        deviationNo?: string | null;
+        documentNo?: string | null;
+      };
+      const extracted = data.documentNo ?? data.deviationNo;
+      if (extracted) setDocumentNo(extracted);
+    } catch {
+      toast.error("Could not read that Word file");
+    } finally {
+      setPreviewLoading(false);
+    }
   };
 
   const handleOpenChange = (next: boolean) => {
@@ -180,15 +236,31 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
       return;
     }
     startTransition(async () => {
-      const res = await fetch("/api/reports", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          documentType,
-          documentNo: documentNo.trim(),
-          assignedManagerIds: managerIds,
-        }),
-      });
+      const importedFile = draftFile;
+      const useMultipart = showWordImport && importedFile !== null;
+      const res = useMultipart
+        ? await fetch("/api/reports", {
+            method: "POST",
+            body: (() => {
+              const fd = new FormData();
+              fd.append("documentType", documentType);
+              fd.append("documentNo", documentNo.trim());
+              for (const managerId of managerIds) {
+                fd.append("assignedManagerIds", managerId);
+              }
+              fd.append("file", importedFile);
+              return fd;
+            })(),
+          })
+        : await fetch("/api/reports", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              documentType,
+              documentNo: documentNo.trim(),
+              assignedManagerIds: managerIds,
+            }),
+          });
       if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
         toast.error(body.error ?? "Failed to create report");
@@ -197,7 +269,7 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
       const data = (await res.json()) as { id: string };
       captureEvent("report_created", {
         reportId: data.id,
-        fromDocx: false,
+        fromDocx: useMultipart,
         attachmentCount: uploads.length,
       });
       toast.success("Report created");
@@ -259,7 +331,7 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
                 value={documentType}
                 disabled={busy}
                 onChange={(e) =>
-                  setDocumentType(e.target.value as DocumentType)
+                  handleDocumentTypeChange(e.target.value as DocumentType)
                 }
               >
                 {availableTypes.map((type) => (
@@ -272,18 +344,81 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
             ) : null}
             <div className="grid gap-2">
               <Label htmlFor="documentNo">{documentNoLabel}</Label>
-              <Input
-                id="documentNo"
-                placeholder={
-                  documentType === "design_verification"
-                    ? "e.g. DVR-2026-001"
-                    : "e.g. DEV/PK/26/001"
-                }
-                value={documentNo}
-                disabled={busy}
-                onChange={(e) => setDocumentNo(e.target.value)}
-              />
+              <div className="relative">
+                <Input
+                  id="documentNo"
+                  placeholder={
+                    documentType === "design_verification"
+                      ? "e.g. DVR-2026-001"
+                      : "e.g. DEV/PK/26/001"
+                  }
+                  value={documentNo}
+                  disabled={busy}
+                  className={previewLoading ? "pr-9" : undefined}
+                  onChange={(e) => setDocumentNo(e.target.value)}
+                />
+                {previewLoading ? (
+                  <Loader2
+                    className="pointer-events-none absolute right-2.5 top-1/2 size-3.5 -translate-y-1/2 animate-spin text-[var(--muted-foreground)]"
+                    aria-hidden="true"
+                  />
+                ) : null}
+              </div>
+              {previewLoading ? (
+                <p className="text-xs text-[var(--muted-foreground)]">
+                  Reading deviation number from Word file…
+                </p>
+              ) : null}
             </div>
+            {showWordImport ? (
+              <div className="grid gap-2">
+                <Label htmlFor="report-upload">Existing report (.docx, optional)</Label>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Input
+                    id="report-upload"
+                    ref={docxInputRef}
+                    type="file"
+                    accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                    className="cursor-pointer file:mr-3 file:inline-flex file:items-center file:justify-start file:rounded-md file:border-0 file:bg-[var(--secondary)] file:px-3 file:py-1 file:text-left file:text-sm"
+                    disabled={busy}
+                    onChange={(e) => {
+                      void handleDraftFileChange(e.target.files?.[0] ?? null);
+                    }}
+                  />
+                  {draftFile ? (
+                    <>
+                      <span className="flex max-w-[200px] items-center gap-1.5 truncate text-xs text-[var(--muted-foreground)]">
+                        {previewLoading ? (
+                          <Loader2
+                            className="size-3.5 shrink-0 animate-spin"
+                            aria-hidden="true"
+                          />
+                        ) : (
+                          <FileText
+                            className="size-3.5 shrink-0"
+                            aria-hidden="true"
+                          />
+                        )}
+                        {draftFile.name}
+                      </span>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 gap-1 text-[var(--muted-foreground)]"
+                        disabled={previewLoading}
+                        onClick={() => {
+                          void handleDraftFileChange(null);
+                        }}
+                      >
+                        <X className="size-3.5" />
+                        Clear
+                      </Button>
+                    </>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
             <div className="grid gap-2">
               <Label>Reviewer managers (optional)</Label>
               <ManagerSelector

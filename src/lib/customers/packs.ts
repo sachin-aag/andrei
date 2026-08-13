@@ -111,7 +111,7 @@ export const MJ_PACK: CustomerPack = {
   evaluationSystemPrompt: MJ_EVALUATION_SYSTEM_PROMPT,
   evaluationSectionPromptAdditions: MJ_SECTION_PROMPT_ADDITIONS,
   criterionDescriptionOverrides: MJ_CRITERION_DESCRIPTION_OVERRIDES,
-  wordImportEnabled: false,
+  wordImportEnabled: true,
   branding: MJ_BRANDING,
 };
 
