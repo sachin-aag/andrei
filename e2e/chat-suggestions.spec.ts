@@ -128,14 +128,14 @@ test.describe("chat drafting → suggestion queue", () => {
     await sendChat(page, "Draft the define section [[stub:draft]]");
     await waitForDraftQueue(page);
 
-    // Walk the queue to the list block, applying each card. Apply animations
-    // take a few seconds, so wait for the heading to change rather than a
-    // fixed timeout (which used to click a still-disabled Apply).
+    // Walk the queue to the list block. The outgoing card unmounts before the
+    // next Apply is in the DOM, so wait for the button rather than bailing
+    // when it is briefly missing.
     for (let i = 0; i < 3; i++) {
       const apply = applySuggestion(page);
-      if (!(await apply.isVisible().catch(() => false))) break;
-      const before = (await suggestionCardHeading(page).first().textContent()) ?? "";
+      await expect(apply).toBeVisible({ timeout: 20_000 });
       await expect(apply).toBeEnabled();
+      const before = (await suggestionCardHeading(page).first().textContent()) ?? "";
       await apply.click();
       if (i < 2) {
         await expect(suggestionCardHeading(page).first()).not.toHaveText(before, {
