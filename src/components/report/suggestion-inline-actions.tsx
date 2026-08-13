@@ -6,6 +6,7 @@ import { captureEvent } from "@/lib/analytics/events";
 export function SuggestionInlineActions({
   suggestionId,
   pending = false,
+  revising = false,
   disabled = false,
   acceptDisabled,
   dismissDisabled,
@@ -14,14 +15,21 @@ export function SuggestionInlineActions({
 }: {
   suggestionId: string;
   pending?: boolean;
+  revising?: boolean;
   disabled?: boolean;
   acceptDisabled?: boolean;
   dismissDisabled?: boolean;
   onAccept: () => void;
   onDismiss: () => void;
 }) {
-  const acceptBusy = pending || (acceptDisabled ?? disabled);
-  const dismissBusy = pending || (dismissDisabled ?? disabled);
+  const acceptBusy = pending || revising || (acceptDisabled ?? disabled);
+  const dismissBusy = pending || revising || (dismissDisabled ?? disabled);
+  const acceptTitle = revising
+    ? "Revising…"
+    : pending
+      ? "Applying suggestion"
+      : "Accept suggestion";
+  const dismissTitle = revising ? "Revising…" : "Ignore suggestion";
 
   return (
     <span
@@ -32,8 +40,8 @@ export function SuggestionInlineActions({
       <button
         type="button"
         className="suggestion-action-button suggestion-action-button-accept"
-        title={pending ? "Applying suggestion" : "Accept suggestion"}
-        aria-label={pending ? "Applying suggestion" : "Accept suggestion"}
+        title={acceptTitle}
+        aria-label={acceptTitle}
         disabled={acceptBusy}
         onMouseDown={(e) => e.preventDefault()}
         onClick={(e) => {
@@ -45,7 +53,7 @@ export function SuggestionInlineActions({
           }
         }}
       >
-        {pending ? (
+        {pending || revising ? (
           <Loader2 className="size-3.5 animate-spin" />
         ) : (
           <Check className="size-3.5" />
@@ -55,8 +63,8 @@ export function SuggestionInlineActions({
       <button
         type="button"
         className="suggestion-action-button suggestion-action-button-ignore"
-        title="Ignore suggestion"
-        aria-label="Ignore suggestion"
+        title={dismissTitle}
+        aria-label={dismissTitle}
         disabled={dismissBusy}
         onMouseDown={(e) => e.preventDefault()}
         onClick={(e) => {

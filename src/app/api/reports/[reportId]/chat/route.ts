@@ -99,14 +99,18 @@ function stubDraftPlan(text: string): {
   draftMarkdown?: string;
   supersedes?: string[];
 } {
-  const draft = /\[\[stub:draft\]\]/.exec(text);
+  const revise = /\[\[stub:draft-revise\]\]/.test(text);
+  const draft = /\[\[stub:draft\]\]/.test(text) || revise;
   if (!draft) return {};
   const supersedes = [...text.matchAll(/\[\[stub:supersede=([\w-]+)\]\]/g)].map(
     (m) => m[1]!
   );
+  const blockOne = revise
+    ? "Block one describes what was detected during routine inspection, including residual CO₂."
+    : "Block one describes what was detected during routine inspection.";
   return {
     draftMarkdown: [
-      "Block one describes what was detected during routine inspection.",
+      blockOne,
       "",
       "Block two describes the scope of the affected batches.",
       "",

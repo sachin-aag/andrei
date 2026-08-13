@@ -177,6 +177,7 @@ describe("buildReportContextMap — open proposals", () => {
     expect(map).toContain("open proposal id=sug-abc");
     expect(map).toContain('label="Problem statement"');
     expect(map).toContain("During routine testing the batch failed.");
+    expect(map).toContain("exact proposal body (quote verbatim for propose_edit)");
   });
 
   it("does not list resolved or dismissed proposals", () => {
@@ -190,5 +191,25 @@ describe("buildReportContextMap — open proposals", () => {
       ],
     });
     expect(map).not.toContain("open proposal id=");
+  });
+});
+
+describe("buildReportContextMap — Improve primary field", () => {
+  it("treats Improve as non-empty when correctiveActions has content", () => {
+    const map = buildReportContextMap({
+      report: { documentNo: "DEV-1", date: "2026-01-01", status: "draft" },
+      sections: {
+        improve: {
+          narrative: { type: "doc", content: [] },
+          correctiveActions: docWith(
+            "CA-1: Retrain the fill-line operator on the SOP and verify the outcome in the CAPA form."
+          ),
+        },
+      },
+      evaluations: [],
+      comments: [],
+    });
+    expect(map).not.toMatch(/Improve \[improve\] — empty/);
+    expect(map).toContain("correctiveActions:");
   });
 });

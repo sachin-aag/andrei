@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("bumps the prompt version when section inline image guidance changes", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v21-merge-pending-drafts");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v22-atomic-draft-set");
   });
 
   it("tells the model never to pass the section key as targetField", () => {
@@ -114,7 +114,7 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("Mode: AGENT");
     expect(prompt).toContain("draft_field");
     expect(prompt).toContain("placeholder");
-    expect(prompt).toContain("diffs it against the current field");
+    expect(prompt).toContain("diffs the joined markdown against the LIVE field");
     expect(prompt).not.toContain("Mode: PLAN");
   });
 
@@ -237,9 +237,9 @@ describe("buildChatSystemPrompt — block drafting and revision rules", () => {
       mode: "agent",
     });
 
-  it("tells the model to split a draft into blank-line separated blocks", () => {
+  it("tells the model to split a draft into authored topic blocks", () => {
     const prompt = agentPrompt();
-    expect(prompt).toContain("SEPARATE BLOCKS split by blank lines");
+    expect(prompt).toContain("one authored block per topic");
     expect(prompt).toContain("NEVER write a section as a single unbroken wall of text");
   });
 
@@ -247,12 +247,18 @@ describe("buildChatSystemPrompt — block drafting and revision rules", () => {
     expect(agentPrompt()).toContain("Do not pad the block count");
   });
 
-  it("tells the model to supersede rather than stack a second proposal", () => {
+  it("tells the model to replace the draft set rather than stack a second proposal", () => {
     const prompt = agentPrompt();
     expect(prompt).toContain("REVISING AN OPEN PROPOSAL");
-    expect(prompt).toContain("supersedes:");
+    expect(prompt).toContain("COMPLETE block set");
     expect(prompt).toContain("do NOT add a second proposal");
-    expect(prompt).toContain("merges a new draft into overlapping open cards");
+    expect(prompt).toContain("atomically replaces that field's open AI cards");
+  });
+
+  it("includes Improve/Control closing-clause guidance for investigation reports", () => {
+    const prompt = agentPrompt();
+    expect(prompt).toContain("Improve targetField is `correctiveActions`");
+    expect(prompt).toContain("Effectiveness verification");
   });
 
   it("routes a failed anchor to scope before falling back to draft_field", () => {

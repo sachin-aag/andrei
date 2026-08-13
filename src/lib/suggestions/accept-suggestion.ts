@@ -81,10 +81,35 @@ async function patchSection(
   );
 }
 
+async function claimResolvedThenSaveSection(opts: {
+  reportId: string;
+  commentId: string;
+  section: SectionType;
+  nextSection: Record<string, unknown>;
+}): Promise<AcceptSuggestionResult> {
+  try {
+    await patchCommentStatus(opts.reportId, opts.commentId, "resolved");
+  } catch (error) {
+    return { ok: false, reason: "status_failed", error };
+  }
+  try {
+    await patchSection(opts.reportId, opts.section, opts.nextSection);
+  } catch (error) {
+    try {
+      await patchCommentStatus(opts.reportId, opts.commentId, "open");
+    } catch {
+      // Best-effort reopen so the engineer can retry.
+    }
+    return { ok: false, reason: "save_failed", error };
+  }
+  return { ok: true, nextSection: opts.nextSection };
+}
+
 /**
  * Single writer for accepting an AI suggestion from any UI surface.
- * Order: locate → apply → PATCH section → flip comment status.
- * A failure before the status flip leaves the comment open.
+ * Order: locate → claim comment resolved → PATCH section.
+ * Locate failure leaves the comment open. A 409 on claim aborts with no
+ * section write. Section save failure reopens the comment.
  */
 export async function acceptSuggestion(args: {
   reportId: string;
@@ -115,17 +140,12 @@ export async function acceptSuggestion(args: {
       path,
       redraft.markdown
     );
-    try {
-      await patchSection(reportId, section, nextSection);
-    } catch (error) {
-      return { ok: false, reason: "save_failed", error };
-    }
-    try {
-      await patchCommentStatus(reportId, comment.id, "resolved");
-    } catch (error) {
-      return { ok: false, reason: "status_failed", error };
-    }
-    return { ok: true, nextSection };
+    return claimResolvedThenSaveSection({
+      reportId,
+      commentId: comment.id,
+      section,
+      nextSection,
+    });
   }
 
   // Block edits (diff-based structural / insert / delete) render markdown to
@@ -147,17 +167,12 @@ export async function acceptSuggestion(args: {
     // already been through `finalizeNarrativeDocAfterSuggestion` (coalesce text
     // nodes, re-normalize bracket placeholders) — same as the anchored path.
     const nextSection = setRichFieldValue(sectionContent, path, applied.doc);
-    try {
-      await patchSection(reportId, section, nextSection);
-    } catch (error) {
-      return { ok: false, reason: "save_failed", error };
-    }
-    try {
-      await patchCommentStatus(reportId, comment.id, "resolved");
-    } catch (error) {
-      return { ok: false, reason: "status_failed", error };
-    }
-    return { ok: true, nextSection };
+    return claimResolvedThenSaveSection({
+      reportId,
+      commentId: comment.id,
+      section,
+      nextSection,
+    });
   }
 
   const edit = suggestionEditFromComment(comment);
@@ -172,17 +187,12 @@ export async function acceptSuggestion(args: {
       ? acceptPendingNarrativeSuggestion(doc, comment.id)
       : applyNarrativeSuggestion(doc, comment.id, edit);
     const nextSection = setRichFieldValue(sectionContent, path, nextDoc);
-    try {
-      await patchSection(reportId, section, nextSection);
-    } catch (error) {
-      return { ok: false, reason: "save_failed", error };
-    }
-    try {
-      await patchCommentStatus(reportId, comment.id, "resolved");
-    } catch (error) {
-      return { ok: false, reason: "status_failed", error };
-    }
-    return { ok: true, nextSection };
+    return claimResolvedThenSaveSection({
+      reportId,
+      commentId: comment.id,
+      section,
+      nextSection,
+    });
   }
 
   const plain = getPlainTextFieldValue(sectionContent, path);
@@ -205,17 +215,12 @@ export async function acceptSuggestion(args: {
     return { ok: false, reason: "not_found" };
   }
 
-  try {
-    await patchSection(reportId, section, nextSection);
-  } catch (error) {
-    return { ok: false, reason: "save_failed", error };
-  }
-  try {
-    await patchCommentStatus(reportId, comment.id, "resolved");
-  } catch (error) {
-    return { ok: false, reason: "status_failed", error };
-  }
-  return { ok: true, nextSection };
+  return claimResolvedThenSaveSection({
+    reportId,
+    commentId: comment.id,
+    section,
+    nextSection,
+  });
 }
 
 /**

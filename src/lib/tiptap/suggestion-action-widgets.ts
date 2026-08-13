@@ -14,6 +14,7 @@ export type SuggestionActionWidgetState = {
   enabled: boolean;
   actionableEvaluationIds: Set<string>;
   pendingId: string | null;
+  locked: boolean;
   onAccept: (evaluationId: string) => void;
   onIgnore: (evaluationId: string) => void;
 };
@@ -68,7 +69,8 @@ function actionButton({
 
 function widgetEl(evaluationId: string, state: SuggestionActionWidgetState) {
   const pending = state.pendingId === evaluationId;
-  const disabled = state.pendingId !== null;
+  const revising = state.locked;
+  const disabled = state.pendingId !== null || revising;
   const wrap = document.createElement("span");
   wrap.className = "suggestion-action-widget";
   wrap.setAttribute("contenteditable", "false");
@@ -76,10 +78,14 @@ function widgetEl(evaluationId: string, state: SuggestionActionWidgetState) {
 
   wrap.appendChild(
     actionButton({
-      label: pending ? "Applying suggestion" : "Accept suggestion",
+      label: revising
+        ? "Revising…"
+        : pending
+          ? "Applying suggestion"
+          : "Accept suggestion",
       className: "suggestion-action-button suggestion-action-button-accept",
       disabled,
-      icon: pending ? SPINNER_ICON : CHECK_ICON,
+      icon: pending || revising ? SPINNER_ICON : CHECK_ICON,
       onClick: () => state.onAccept(evaluationId),
     })
   );
@@ -89,7 +95,7 @@ function widgetEl(evaluationId: string, state: SuggestionActionWidgetState) {
   wrap.appendChild(divider);
   wrap.appendChild(
     actionButton({
-      label: "Ignore suggestion",
+      label: revising ? "Revising…" : "Ignore suggestion",
       className: "suggestion-action-button suggestion-action-button-ignore",
       disabled,
       icon: X_ICON,
@@ -160,7 +166,7 @@ function buildSet(doc: PMNode, state: SuggestionActionWidgetState) {
   for (const [evaluationId, pos] of positions) {
     decos.push(
       Decoration.widget(pos, () => widgetEl(evaluationId, state), {
-        key: `suggestion-action-${evaluationId}-${state.pendingId ?? "idle"}`,
+        key: `suggestion-action-${evaluationId}-${state.pendingId ?? "idle"}-${state.locked ? "locked" : "open"}`,
         side: 1,
       })
     );

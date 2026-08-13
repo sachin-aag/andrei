@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  aiStatusWriteRequiresOpenClaim,
   canSuggestFixes,
   gapCriteriaForSection,
   parseAiFixCommentContent,
@@ -320,5 +321,14 @@ describe("parseBlockEdit", () => {
       tableIndex: 0,
       rowAnchor: "PA-01",
     });
+  });
+});
+
+describe("aiStatusWriteRequiresOpenClaim", () => {
+  it("requires an open row only when resolving or dismissing an AI card", () => {
+    expect(aiStatusWriteRequiresOpenClaim("ai_fix", "resolved")).toBe(true);
+    expect(aiStatusWriteRequiresOpenClaim("ai_redraft", "dismissed")).toBe(true);
+    expect(aiStatusWriteRequiresOpenClaim("ai_fix", "open")).toBe(false);
+    expect(aiStatusWriteRequiresOpenClaim("human", "resolved")).toBe(false);
   });
 });

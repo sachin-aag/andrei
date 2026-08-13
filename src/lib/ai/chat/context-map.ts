@@ -73,9 +73,15 @@ function summarize(text: string, max = 140): string {
  */
 function describeOpenProposal(comment: ContextMapComment): string {
   const field = comment.contentPath || "narrative";
+  const OPEN_PROPOSAL_BODY_CAP = 1200;
+  const clip = (text: string) => {
+    const clean = text.trim();
+    if (clean.length <= OPEN_PROPOSAL_BODY_CAP) return clean;
+    return `${clean.slice(0, OPEN_PROPOSAL_BODY_CAP).trimEnd()}…`;
+  };
   if (comment.kind === "ai_redraft") {
     const redraft = parseAiRedraftCommentContent(comment.content ?? "");
-    return `open proposal id=${comment.id} field=${field} kind=full-draft — "${summarize(redraft.markdown, 100)}"`;
+    return `open proposal id=${comment.id} field=${field} kind=full-draft — exact proposal body (quote verbatim for propose_edit):\n${clip(redraft.markdown)}`;
   }
   const payload = parseAiFixCommentContent(comment.content ?? "");
   const label = payload.label ? ` label="${payload.label}"` : "";
@@ -85,7 +91,7 @@ function describeOpenProposal(comment: ContextMapComment): string {
     payload.deleteText ??
     "";
   const op = payload.blockEdit ? payload.blockEdit.op : "edit";
-  return `open proposal id=${comment.id} field=${field} kind=${op}${label} — "${summarize(gist, 100)}"`;
+  return `open proposal id=${comment.id} field=${field} kind=${op}${label} — exact proposal body (quote verbatim for propose_edit):\n${clip(gist)}`;
 }
 
 function evalSummary(evals: ContextMapEvaluation[]): string {

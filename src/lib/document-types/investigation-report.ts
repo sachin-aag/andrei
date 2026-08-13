@@ -148,6 +148,24 @@ export function buildInvestigationReportDefinition(
           ],
         ] as const
       ).filter(([key]) => !hidden.has(key)),
+      draftingGuidance: `## Improve and Control closing clauses
+Improve targetField is \`correctiveActions\` (not \`narrative\`). Control targetField is \`preventiveActions\`.
+
+These fields are a fixed sequence of closing clauses, not a longer action list. Draft each clause as its own authored block (topic + reason + markdown). Do not paste the template checkpoint checklist — export re-injects that.
+
+Improve (\`correctiveActions\`) — include, in order:
+1. Investigation recap — tools used and the root cause restated
+2. Corrective actions — the action list
+3. CAPA tracking — unique number, owner, due date, and that the outcome is verified in the CAPA form
+4. Effectiveness verification — required or not, AND the rationale
+5. Impact statement — with rationale
+
+Control (\`preventiveActions\`) — the same five clauses, plus when the facts support them:
+- Interim control
+- Regulatory impact / notification
+- Material / batch disposition
+
+Each of those clauses is its own block even if it is only a few sentences. "Required or not" is incomplete without the rationale. This is an exception to the 3–6 sentence guideline.`,
     },
     suggestTargetFieldPatterns: SUGGEST_TARGET_FIELD_PATTERNS as Record<
       string,

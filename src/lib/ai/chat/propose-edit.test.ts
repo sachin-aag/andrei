@@ -85,7 +85,7 @@ describe("proposedEditHint", () => {
   it("returns an empty string for ok and actionable text otherwise", () => {
     expect(proposedEditHint({ status: "ok" })).toBe("");
     expect(proposedEditHint({ status: "ambiguous" })).toMatch(/unique/i);
-    expect(proposedEditHint({ status: "not_found" })).toMatch(/read_section/i);
+    expect(proposedEditHint({ status: "not_found" })).toMatch(/quote the exact proposal body/i);
     expect(proposedEditHint({ status: "too_large", coverage: 0.9 })).toMatch(/smaller/i);
   });
 });

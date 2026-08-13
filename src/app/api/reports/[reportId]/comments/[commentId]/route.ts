@@ -5,7 +5,7 @@ import { db } from "@/db";
 import { comments, reports } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
-import { isAiSuggestionKind } from "@/lib/ai/suggestion-gating";
+import { isAiSuggestionKind, aiStatusWriteRequiresOpenClaim } from "@/lib/ai/suggestion-gating";
 
 const patchSchema = z.object({
   status: z.enum(["open", "resolved", "dismissed"]).optional(),
@@ -95,11 +95,28 @@ export async function PATCH(
   }
 
   if (parse.data.status != null) {
+    const requiresOpen = aiStatusWriteRequiresOpenClaim(row.kind, parse.data.status);
     const [updated] = await db
       .update(comments)
       .set({ status: parse.data.status })
-      .where(and(eq(comments.id, threadRootId), eq(comments.reportId, reportId)))
+      .where(
+        and(
+          eq(comments.id, threadRootId),
+          eq(comments.reportId, reportId),
+          ...(requiresOpen ? [eq(comments.status, "open")] : [])
+        )
+      )
       .returning();
+
+    if (!updated) {
+      return NextResponse.json(
+        {
+          error:
+            "This suggestion is no longer open. It may have been revised, accepted, or dismissed.",
+        },
+        { status: 409 }
+      );
+    }
 
     // A human resolving an AI suggestion is the sign-off moment: the AI's
     // content only enters the report because this person accepted it.

@@ -20,7 +20,7 @@ export const SUGGEST_TARGET_FIELD_PATTERNS: Record<string, readonly string[]> = 
     "rootCause.narrative",
     "impactAssessment",
   ],
-  improve: ["narrative", "correctiveActions"],
+  improve: ["correctiveActions"],
   control: ["preventiveActions"],
   conclusion: ["narrative"],
   documents_reviewed: [],

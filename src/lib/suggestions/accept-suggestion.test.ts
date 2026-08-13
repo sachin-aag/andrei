@@ -58,7 +58,7 @@ describe("acceptSuggestion / dismissSuggestion (one writer)", () => {
     vi.restoreAllMocks();
   });
 
-  it("accept applies then saves then resolves — identical nextSection for any surface", async () => {
+  it("accept claims the comment before saving the section", async () => {
     const fetches: Array<{ url: string; body: unknown }> = [];
     vi.stubGlobal(
       "fetch",
@@ -91,10 +91,9 @@ describe("acceptSuggestion / dismissSuggestion (one writer)", () => {
       expect(text).not.toContain("DD/MM/YYYY");
     }
 
-    // First accept: section PATCH then comment PATCH
-    expect(fetches[0]?.url).toContain("/sections/define");
-    expect(fetches[1]?.url).toContain("/comments/c1");
-    expect(fetches[1]?.body).toEqual({ status: "resolved" });
+    expect(fetches[0]?.url).toContain("/comments/c1");
+    expect(fetches[0]?.body).toEqual({ status: "resolved" });
+    expect(fetches[1]?.url).toContain("/sections/define");
   });
 
   it("accept leaves comment open when locate fails (no status flip)", async () => {
@@ -122,9 +121,20 @@ describe("acceptSuggestion / dismissSuggestion (one writer)", () => {
   });
 
   it("accept returns save_failed with SectionPersistError on 403", async () => {
+    const fetches: string[] = [];
     vi.stubGlobal(
       "fetch",
-      vi.fn(async () => ({ ok: false, status: 403, json: async () => ({ error: "Forbidden" }) }) as Response)
+      vi.fn(async (url: string) => {
+        fetches.push(String(url));
+        if (String(url).includes("/sections/")) {
+          return {
+            ok: false,
+            status: 403,
+            json: async () => ({ error: "Forbidden" }),
+          } as Response;
+        }
+        return { ok: true, json: async () => ({}) } as Response;
+      })
     );
 
     const result = await acceptSuggestion({
@@ -142,6 +152,40 @@ describe("acceptSuggestion / dismissSuggestion (one writer)", () => {
         "You can't save changes to this report."
       );
     }
+    expect(fetches.some((u) => u.includes("/comments/c1"))).toBe(true);
+    expect(fetches.filter((u) => u.includes("/comments/c1")).length).toBe(2);
+  });
+
+  it("accept returns status_failed on 409 without patching the section", async () => {
+    const fetches: Array<{ url: string; body: unknown }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        const body = init?.body ? JSON.parse(String(init.body)) : null;
+        fetches.push({ url: String(url), body });
+        return {
+          ok: false,
+          status: 409,
+          json: async () => ({
+            error:
+              "This suggestion is no longer open. It may have been revised, accepted, or dismissed.",
+          }),
+        } as Response;
+      })
+    );
+
+    const result = await acceptSuggestion({
+      reportId,
+      section: "define",
+      comment,
+      sectionContent: structuredClone(sectionContent),
+    });
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toBe("status_failed");
+    expect(fetches).toHaveLength(1);
+    expect(fetches[0]?.url).toContain("/comments/c1");
+    expect(fetches.some((f) => f.url.includes("/sections/"))).toBe(false);
   });
 
   it("dismiss flips status without requiring locate", async () => {

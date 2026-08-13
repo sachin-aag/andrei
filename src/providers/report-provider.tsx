@@ -180,6 +180,9 @@ type ReportContextValue = {
       }
     >
   >;
+  /** Sections whose chat draft/propose is in flight — Apply is locked until refresh. */
+  aiEditLockedSections: readonly SectionType[];
+  setAiEditLockedSections: (sections: readonly SectionType[]) => void;
   /** Set after suggestions succeed — workspace opens Criteria tab for this section. */
   suggestionsFocusSection: SectionType | null;
   clearSuggestionsFocusSection: () => void;
@@ -293,6 +296,8 @@ type ReportEvaluationContextValue = Pick<
   | "enterSuggestionQueueBridge"
   | "endSuggestionApplyTransition"
   | "suggestionApplyTransition"
+  | "aiEditLockedSections"
+  | "setAiEditLockedSections"
   | "suggestionsFocusSection"
   | "clearSuggestionsFocusSection"
   | "setEvaluations"
@@ -408,6 +413,20 @@ export function ReportProvider({
   );
   const [suggestionsFocusSection, setSuggestionsFocusSection] =
     useState<SectionType | null>(null);
+  const [aiEditLockedSections, setAiEditLockedSectionsState] = useState<
+    SectionType[]
+  >([]);
+  const setAiEditLockedSections = useCallback((sections: readonly SectionType[]) => {
+    setAiEditLockedSectionsState((prev) => {
+      if (
+        prev.length === sections.length &&
+        prev.every((section, i) => section === sections[i])
+      ) {
+        return prev;
+      }
+      return [...sections];
+    });
+  }, []);
   const [isEvaluating, setIsEvaluating] = useState(false);
   const [overflowCounts, setOverflowCounts] = useState<
     Partial<Record<SectionType, number>>
@@ -1065,6 +1084,8 @@ export function ReportProvider({
       enterSuggestionQueueBridge,
       endSuggestionApplyTransition,
       suggestionApplyTransition,
+      aiEditLockedSections,
+      setAiEditLockedSections,
       suggestionsFocusSection,
       clearSuggestionsFocusSection,
       setEvaluations,
@@ -1085,6 +1106,8 @@ export function ReportProvider({
       enterSuggestionQueueBridge,
       endSuggestionApplyTransition,
       suggestionApplyTransition,
+      aiEditLockedSections,
+      setAiEditLockedSections,
       suggestionsFocusSection,
       clearSuggestionsFocusSection,
     ]

@@ -320,15 +320,17 @@ export function TiptapSectionField({
   const { registerEditor, setActiveEditor, activeEditorKey } = useReportEditors();
   const isRichField = isRichTargetField(section, contentPath);
   const thisEditorKey = editorRegistryKey(section, contentPath);
-  const { activeSuggestionIdForSection, isSuggestionPreviewHeld, suggestionApplyTransition } =
+  const { activeSuggestionIdForSection, isSuggestionPreviewHeld, suggestionApplyTransition, aiEditLockedSections } =
     useReportEvaluations();
   const { replaceSection, sections } = useReportSections();
   const { getUser } = useUserDirectory();
   const activeSuggestionId = activeSuggestionIdForSection(section);
+  const aiEditLocked = aiEditLockedSections.includes(section);
   const suggestionWidgetStateRef = useRef<SuggestionActionWidgetState>({
     enabled: true,
     actionableEvaluationIds: new Set<string>(),
     pendingId: null as string | null,
+    locked: false,
     onAccept: () => {},
     onIgnore: () => {},
   });
@@ -559,6 +561,7 @@ export function TiptapSectionField({
 
   const applySuggestionInEditor = useCallback(
     async (suggestionId: string, mode: "accept" | "dismiss") => {
+      if (aiEditLocked) return;
       const comment = comments.find((c) => c.id === suggestionId);
       if (!comment) throw new Error("Suggestion not found");
 
@@ -622,6 +625,7 @@ export function TiptapSectionField({
       sections,
       replaceSection,
       setComments,
+      aiEditLocked,
     ]
   );
 
@@ -632,6 +636,7 @@ export function TiptapSectionField({
       enabled: isRichField,
       actionableEvaluationIds: ids,
       pendingId: suggestionWidgetStateRef.current.pendingId,
+      locked: aiEditLocked,
       onAccept: async (id) => {
         suggestionWidgetStateRef.current.pendingId = id;
         editor?.view.dispatch(
@@ -682,7 +687,7 @@ export function TiptapSectionField({
     editor?.view.dispatch(
       editor.state.tr.setMeta(suggestionActionWidgetsRefreshMeta, true)
     );
-  }, [activeSuggestionId, isRichField, editor, applySuggestionInEditor, refresh]);
+  }, [activeSuggestionId, isRichField, editor, applySuggestionInEditor, refresh, aiEditLocked]);
 
   const applyExternalValueToEditor = useCallback(() => {
     const currentEditor = editor;

@@ -240,9 +240,8 @@ export type ParsedAiFixPayload = {
   insertText: string;
   reasoning: string;
   /**
-   * Short "what this card changes" label. A multi-block draft emits one card
-   * per block, all sharing one `reasoning`, so the label is what makes the
-   * queue readable ("Step 2 of 5 — Detection and scope").
+   * Short "what this card changes" label. Multi-block drafts stamp this from
+   * the authored block topic so the queue stays readable ("Detection and scope").
    */
   label?: string;
   /**
@@ -375,6 +374,18 @@ export function serializeAiRedraftCommentContent(
 /** AI suggestion kinds reviewed via the suggestion card. */
 export function isAiSuggestionKind(kind: string): kind is "ai_fix" | "ai_redraft" {
   return kind === "ai_fix" || kind === "ai_redraft";
+}
+
+/**
+ * Resolving or dismissing an AI card must claim an open row so a concurrent
+ * draft_field replace cannot lose to a stale Apply.
+ */
+export function aiStatusWriteRequiresOpenClaim(
+  kind: string,
+  nextStatus: "open" | "resolved" | "dismissed"
+): boolean {
+  if (!isAiSuggestionKind(kind)) return false;
+  return nextStatus === "resolved" || nextStatus === "dismissed";
 }
 
 /** Open AI suggestions (fixes + redrafts) for a section, red-first then criterion order. */

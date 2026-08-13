@@ -38,6 +38,10 @@ export type TextEdit = {
   reasoning: string;
   /** Short "what this card changes" label, e.g. "Detection and scope". */
   label: string;
+  /** Proposed-block indices this edit came from (into `extractProposedBlocks`). */
+  sourceBlocks?: number[];
+  /** Current top-level block this text edit sits in (for owner-collapse). */
+  currentBlockIndex?: number;
 };
 
 /**
@@ -72,6 +76,8 @@ export type BlockEdit = {
    * rather than frozen to a position that later edits invalidate.
    */
   afterEditIndex?: number;
+  /** Proposed-block indices this edit came from (into `extractProposedBlocks`). */
+  sourceBlocks?: number[];
 };
 
 export type DiffEdit = TextEdit | BlockEdit;
@@ -83,6 +89,8 @@ const WORD_MODE_SIMILARITY = WORD_DIFF_MIN_SIMILARITY;
  * card, so the diff collapses to a single whole-field block replace. Note this
  * is a *block* replace, not a whole-field redraft: it still previews as real
  * nodes and accepts through the same marks path as every other block edit.
+ * Skipped when `owners` is supplied — card count is then bounded by authored
+ * blocks, not by this cap.
  */
 const MAX_TARGETED_EDITS = 12;
 
@@ -443,7 +451,8 @@ function wholeTableReplace(
   tableNode: JSONContent,
   blockIndex: number,
   proposedMarkdown: string,
-  reasoning: string
+  reasoning: string,
+  sourceBlocks?: number[]
 ): DiffEdit[] {
   return [
     {
@@ -454,6 +463,7 @@ function wholeTableReplace(
       proposedMarkdown,
       reasoning,
       label: deriveEditLabel(proposedMarkdown),
+      ...(sourceBlocks ? { sourceBlocks } : {}),
     },
   ];
 }
@@ -463,7 +473,9 @@ function diffMatchedRow(
   propRow: string[],
   rowIndex: number,
   tableIndex: number,
-  reasoning: string
+  reasoning: string,
+  sourceBlocks: number[] | undefined,
+  currentBlockIndex: number
 ): TextEdit[] | null {
   if (curRow.length !== propRow.length) return null;
   const edits: TextEdit[] = [];
@@ -480,6 +492,8 @@ function diffMatchedRow(
       label: deriveEditLabel(
         `${curRow[0] ?? ""} · ${propRow[col] || "(cleared)"}`
       ),
+      ...(sourceBlocks ? { sourceBlocks } : {}),
+      currentBlockIndex,
     });
   }
   return edits;
@@ -490,7 +504,8 @@ function diffTable(
   blockIndex: number,
   tableIndex: number,
   proposedMarkdown: string,
-  reasoning: string
+  reasoning: string,
+  sourceBlocks?: number[]
 ): DiffEdit[] {
   const proposedDoc = markdownToDoc(proposedMarkdown);
   const proposedTable = (proposedDoc.content ?? []).find((n) => n.type === "table");
@@ -508,7 +523,13 @@ function diffTable(
     curCols !== propCols ||
     headerMostlyChanged(curRows[0]!, propRows[0]!)
   ) {
-    return wholeTableReplace(tableNode, blockIndex, proposedMarkdown, reasoning);
+    return wholeTableReplace(
+      tableNode,
+      blockIndex,
+      proposedMarkdown,
+      reasoning,
+      sourceBlocks
+    );
   }
 
   const header = curRows[0]!;
@@ -531,9 +552,23 @@ function diffTable(
     if (op.type === "replace") {
       const curRow = curRows[op.c]!;
       const propRow = propRows[op.p]!;
-      const cellEdits = diffMatchedRow(curRow, propRow, op.c, tableIndex, reasoning);
+      const cellEdits = diffMatchedRow(
+        curRow,
+        propRow,
+        op.c,
+        tableIndex,
+        reasoning,
+        sourceBlocks,
+        blockIndex
+      );
       if (!cellEdits) {
-        return wholeTableReplace(tableNode, blockIndex, proposedMarkdown, reasoning);
+        return wholeTableReplace(
+          tableNode,
+          blockIndex,
+          proposedMarkdown,
+          reasoning,
+          sourceBlocks
+        );
       }
       edits.push(...cellEdits);
       lastAfterCurrentIdx = op.c;
@@ -543,7 +578,13 @@ function diffTable(
 
     if (op.type === "delete") {
       if (op.c === 0) {
-        return wholeTableReplace(tableNode, blockIndex, proposedMarkdown, reasoning);
+        return wholeTableReplace(
+          tableNode,
+          blockIndex,
+          proposedMarkdown,
+          reasoning,
+          sourceBlocks
+        );
       }
       edits.push({
         kind: "block",
@@ -555,12 +596,19 @@ function diffTable(
         rowAnchor: rowSignatureFromCells(curRows[op.c]!),
         reasoning,
         label: `Remove row: ${deriveEditLabel(rowText(curRows[op.c]!))}`,
+        ...(sourceBlocks ? { sourceBlocks } : {}),
       });
       continue;
     }
 
     if (lastAfterCurrentIdx < 0 || lastAfterAnchor.length === 0) {
-      return wholeTableReplace(tableNode, blockIndex, proposedMarkdown, reasoning);
+      return wholeTableReplace(
+        tableNode,
+        blockIndex,
+        proposedMarkdown,
+        reasoning,
+        sourceBlocks
+      );
     }
     edits.push({
       kind: "block",
@@ -573,6 +621,7 @@ function diffTable(
       proposedMarkdown: rowToMarkdown(header, propRows[op.p]!),
       reasoning,
       label: `Add row: ${deriveEditLabel(rowText(propRows[op.p]!))}`,
+      ...(sourceBlocks ? { sourceBlocks } : {}),
     });
     // Chain consecutive inserts: the next row goes after this proposed row
     // once the prior insert has been accepted.
@@ -602,7 +651,9 @@ function diffList(
   listNode: JSONContent,
   listIndex: number,
   proposedMarkdown: string,
-  reasoning: string
+  reasoning: string,
+  sourceBlocks: number[] | undefined,
+  currentBlockIndex: number
 ): TextEdit[] | null {
   const proposedDoc = markdownToDoc(proposedMarkdown);
   const proposedList = (proposedDoc.content ?? []).find(
@@ -634,6 +685,8 @@ function diffList(
       scope: { kind: "listItem", listIndex, index: i },
       reasoning,
       label: deriveEditLabel(prop || cur),
+      ...(sourceBlocks ? { sourceBlocks } : {}),
+      currentBlockIndex,
     });
   }
   return edits;
@@ -643,13 +696,180 @@ function diffList(
 // entry point
 // ---------------------------------------------------------------------------
 
+function proposedIndexRange(start: number, end: number): number[] {
+  const out: number[] = [];
+  for (let i = start; i <= end; i++) out.push(i);
+  return out;
+}
+
+function withSource(indices: number[]): { sourceBlocks: number[] } {
+  return { sourceBlocks: indices };
+}
+
+function isTableEdit(edit: DiffEdit, current: CurrentBlock[]): boolean {
+  if (edit.kind === "text") return edit.scope?.kind === "cell";
+  if (edit.op === "insertRow" || edit.op === "deleteRow") return true;
+  if (edit.blockIndex >= 0 && current[edit.blockIndex]?.kind === "table") return true;
+  if (edit.proposedMarkdown && proposedBlockKind(edit.proposedMarkdown) === "table") {
+    return true;
+  }
+  return false;
+}
+
+function uniqueOwnerIds(edit: DiffEdit, owners: number[]): number[] {
+  const src = edit.sourceBlocks;
+  if (!src || src.length === 0) return [];
+  const seen = new Set<number>();
+  const out: number[] = [];
+  for (const i of src) {
+    const owner = owners[i];
+    if (owner === undefined || seen.has(owner)) continue;
+    seen.add(owner);
+    out.push(owner);
+  }
+  return out;
+}
+
+function currentIndicesCovered(edit: DiffEdit): number[] {
+  if (edit.kind === "text") {
+    return edit.currentBlockIndex != null && edit.currentBlockIndex >= 0
+      ? [edit.currentBlockIndex]
+      : [];
+  }
+  if (edit.op === "insert" || edit.op === "insertRow") return [];
+  if (edit.blockIndex < 0) return [];
+  const count = edit.blockCount ?? 1;
+  const out: number[] = [];
+  for (let i = 0; i < count; i++) out.push(edit.blockIndex + i);
+  return out;
+}
+
+function collapseOwnerGroup(
+  group: DiffEdit[],
+  current: CurrentBlock[],
+  proposed: ProposedBlock[],
+  owner: number,
+  owners: number[],
+  reasoning: string
+): DiffEdit {
+  const proposedIndices = owners.flatMap((o, i) => (o === owner ? [i] : []));
+  const markdown = proposedIndices
+    .map((i) => proposed[i]?.markdown ?? "")
+    .filter((md) => md.length > 0)
+    .join("\n\n");
+  const currentIndices = group.flatMap(currentIndicesCovered);
+  const source = withSource(proposedIndices);
+
+  if (currentIndices.length === 0) {
+    const first = group.find((e) => e.kind === "block" && e.op === "insert");
+    const insert = first?.kind === "block" ? first : undefined;
+    return {
+      kind: "block",
+      op: "insert",
+      anchor: insert?.anchor ?? "",
+      blockIndex: insert?.blockIndex ?? -1,
+      proposedMarkdown: markdown,
+      reasoning,
+      label: deriveEditLabel(markdown),
+      ...source,
+    };
+  }
+
+  const cStart = Math.min(...currentIndices);
+  const cEnd = Math.max(...currentIndices);
+  return {
+    kind: "block",
+    op: "replace",
+    anchor: current[cStart]?.text ?? "",
+    blockIndex: cStart,
+    blockCount: cEnd - cStart + 1,
+    proposedMarkdown: markdown,
+    reasoning,
+    label: deriveEditLabel(markdown),
+    ...source,
+  };
+}
+
+/**
+ * One card per authored prose block: if a non-table owner produced more than
+ * one edit, fold them into a single block replace (or insert, when the field
+ * had no matching current blocks). Tables keep every cell/row card.
+ */
+function collapseProseOwnerGroups(
+  edits: DiffEdit[],
+  current: CurrentBlock[],
+  proposed: ProposedBlock[],
+  owners: number[],
+  reasoning: string
+): DiffEdit[] {
+  const groups = new Map<number, DiffEdit[]>();
+  for (const edit of edits) {
+    const ids = uniqueOwnerIds(edit, owners);
+    if (ids.length !== 1) continue;
+    const list = groups.get(ids[0]!) ?? [];
+    list.push(edit);
+    groups.set(ids[0]!, list);
+  }
+
+  const collapsed: DiffEdit[] = [];
+  const emitted = new Set<number>();
+  for (const edit of edits) {
+    const ids = uniqueOwnerIds(edit, owners);
+    if (ids.length !== 1) {
+      collapsed.push(edit);
+      continue;
+    }
+    const owner = ids[0]!;
+    if (emitted.has(owner)) continue;
+    emitted.add(owner);
+    const group = groups.get(owner) ?? [edit];
+    const keepSeparate =
+      group.length <= 1 || group.some((g) => isTableEdit(g, current));
+    if (keepSeparate) {
+      collapsed.push(...group);
+      continue;
+    }
+    collapsed.push(
+      collapseOwnerGroup(group, current, proposed, owner, owners, reasoning)
+    );
+  }
+  return rechainInserts(collapsed);
+}
+
+function rechainInserts(edits: DiffEdit[]): DiffEdit[] {
+  let lastInsertIdx: number | undefined;
+  return edits.map((edit, i) => {
+    if (edit.kind !== "block" || edit.op !== "insert") {
+      lastInsertIdx = undefined;
+      return edit;
+    }
+    if (lastInsertIdx === undefined) {
+      lastInsertIdx = i;
+      if (edit.afterEditIndex === undefined) return edit;
+      const { afterEditIndex: _dropped, ...rest } = edit;
+      return rest;
+    }
+    const chained: BlockEdit = {
+      ...edit,
+      afterEditIndex: lastInsertIdx,
+      blockIndex: -1,
+      anchor: "",
+    };
+    lastInsertIdx = i;
+    return chained;
+  });
+}
+
 export function diffFieldToEdits(
   currentDoc: JSONContent,
   proposedMarkdown: string,
-  reasoning: string
+  reasoning: string,
+  owners?: number[]
 ): DiffEdit[] {
   const current = extractCurrentBlocks(currentDoc);
   const proposed = extractProposedBlocks(proposedMarkdown);
+  const validOwners =
+    owners && owners.length === proposed.length ? owners : undefined;
 
   const currentHasText = current.some((b) => b.text.length > 0);
 
@@ -657,7 +877,7 @@ export function diffFieldToEdits(
   // so each resolves its position from the block before it rather than from a
   // frozen index (see `afterEditIndex`).
   if (!currentHasText) {
-    return proposed.map((p, idx) => ({
+    const inserts: DiffEdit[] = proposed.map((p, idx) => ({
       kind: "block" as const,
       op: "insert" as const,
       anchor: "",
@@ -666,7 +886,18 @@ export function diffFieldToEdits(
       proposedMarkdown: p.markdown,
       reasoning,
       label: deriveEditLabel(p.markdown),
+      ...withSource([idx]),
     }));
+    if (validOwners) {
+      return collapseProseOwnerGroups(
+        inserts,
+        current,
+        proposed,
+        validOwners,
+        reasoning
+      );
+    }
+    return inserts;
   }
 
   const aligned = alignBlocks(current, proposed);
@@ -683,6 +914,7 @@ export function diffFieldToEdits(
         .slice(op.pStart, op.pEnd + 1)
         .map((p) => p.markdown)
         .join("\n\n");
+      const source = withSource(proposedIndexRange(op.pStart, op.pEnd));
       edits.push({
         kind: "block",
         op: "replace",
@@ -692,6 +924,7 @@ export function diffFieldToEdits(
         proposedMarkdown: markdown,
         reasoning,
         label: deriveEditLabel(markdown),
+        ...source,
       });
       continue;
     }
@@ -741,6 +974,7 @@ export function diffFieldToEdits(
         proposedMarkdown: p.markdown,
         reasoning,
         label: deriveEditLabel(p.markdown),
+        ...withSource([op.p]),
       });
       continue;
     }
@@ -749,13 +983,16 @@ export function diffFieldToEdits(
     const c = current[op.c]!;
     const p = proposed[op.p]!;
     if (c.guarded) continue; // protected block: leave it untouched
+    const source = withSource([op.p]);
 
     if (c.kind === "table" && p.kind === "table") {
       let tableIndex = 0;
       for (let i = 0; i < op.c; i++) {
         if (current[i]?.kind === "table") tableIndex++;
       }
-      edits.push(...diffTable(c.node, op.c, tableIndex, p.markdown, reasoning));
+      edits.push(
+        ...diffTable(c.node, op.c, tableIndex, p.markdown, reasoning, [op.p])
+      );
       continue;
     }
 
@@ -765,7 +1002,14 @@ export function diffFieldToEdits(
       for (let i = 0; i < op.c; i++) {
         if (current[i]?.kind === "list") listIndex++;
       }
-      const itemEdits = diffList(c.node, listIndex, p.markdown, reasoning);
+      const itemEdits = diffList(
+        c.node,
+        listIndex,
+        p.markdown,
+        reasoning,
+        [op.p],
+        op.c
+      );
       if (itemEdits) {
         edits.push(...itemEdits);
         continue;
@@ -785,6 +1029,8 @@ export function diffFieldToEdits(
           insertText: wordEdit.insertText,
           reasoning,
           label: deriveEditLabel(p.text),
+          ...source,
+          currentBlockIndex: op.c,
         });
         continue;
       }
@@ -799,15 +1045,21 @@ export function diffFieldToEdits(
       proposedMarkdown: p.markdown,
       reasoning,
       label: deriveEditLabel(p.markdown),
+      ...source,
     });
   }
+
+  const afterOwners = validOwners
+    ? collapseProseOwnerGroups(edits, current, proposed, validOwners, reasoning)
+    : edits;
 
   // A pile of cards is as unreviewable as one giant one: past the cap, collapse
   // to a single whole-field block replace. Never when the field holds a table
   // (the cell diff is granular and worth keeping) or guarded content (a
   // whole-field replace would delete the equation/image the guard protects).
+  // Authored-block owners already bound card count — don't flatten those.
   const canCollapse = !current.some((b) => b.guarded || b.kind === "table");
-  if (edits.length > MAX_TARGETED_EDITS && canCollapse) {
+  if (!validOwners && afterOwners.length > MAX_TARGETED_EDITS && canCollapse) {
     return [
       {
         kind: "block",
@@ -818,10 +1070,11 @@ export function diffFieldToEdits(
         proposedMarkdown,
         reasoning,
         label: deriveEditLabel(proposedMarkdown),
+        ...withSource(proposed.map((_, i) => i)),
       },
     ];
   }
 
   // Nothing survived (e.g. every change was guarded) → no-op.
-  return edits;
+  return afterOwners;
 }

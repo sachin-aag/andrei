@@ -153,4 +153,28 @@ test.describe("chat drafting → suggestion queue", () => {
       editor.locator("li", { hasText: "Quarantine the affected batch" })
     ).toHaveCount(1);
   });
+
+  test("revising a pending draft replaces the queue instead of stacking cards", async ({
+    page,
+  }) => {
+    await openAssistant(page);
+    await sendChat(page, "Draft the define section [[stub:draft]]");
+    await waitForDraftQueue(page);
+
+    const firstStep = await suggestionCardHeading(page).first().textContent();
+    const total = Number(/of (\d+)/.exec(firstStep ?? "")?.[1] ?? "0");
+    expect(total).toBeGreaterThan(1);
+
+    await openAssistant(page);
+    await sendChat(page, "Also mention residual CO2 [[stub:draft-revise]]");
+    await waitForDraftQueue(page);
+
+    await expect(suggestionCardHeading(page).first()).toHaveText(
+      new RegExp(`Draft step 1 of ${total}`),
+      { timeout: 20_000 }
+    );
+    await expect(
+      reviewMargin(page).getByText(/residual CO₂/)
+    ).toBeVisible({ timeout: 20_000 });
+  });
 });

@@ -163,6 +163,7 @@ function SuggestionCardFace({
   phase,
   showActions,
   pending,
+  revising,
   validation,
   queueStaleHint,
   canResolve,
@@ -173,6 +174,7 @@ function SuggestionCardFace({
   phase: CardPhase;
   showActions: boolean;
   pending: boolean;
+  revising?: boolean;
   validation: SuggestionValidation;
   queueStaleHint: string | null;
   canResolve: boolean;
@@ -318,8 +320,7 @@ function SuggestionCardFace({
 
       {showActions ? (
         <>
-          {/* Every block of one draft shares the same `reasoning`, so the label
-              is what tells the engineer which block this card is. */}
+          {/* Label is the authored block topic; reasoning is that block's reason. */}
           {label ? (
             <p className="text-[11px] font-medium text-[var(--foreground)]">{label}</p>
           ) : null}
@@ -350,20 +351,32 @@ function SuggestionCardFace({
               type="button"
               size="sm"
               className="h-7 text-xs"
-              disabled={pending || !canResolve || !validation.canApply}
-              title={!canResolve ? RESOLVE_HINT : undefined}
+              disabled={pending || revising || !canResolve || !validation.canApply}
+              title={
+                revising
+                  ? "Revising…"
+                  : !canResolve
+                    ? RESOLVE_HINT
+                    : undefined
+              }
               onClick={onAccept}
             >
-              {pending ? <Loader2 className="size-3 animate-spin" /> : <Check className="size-3" />}
-              Apply
+              {pending || revising ? (
+                <Loader2 className="size-3 animate-spin" />
+              ) : (
+                <Check className="size-3" />
+              )}
+              {revising ? "Revising…" : "Apply"}
             </Button>
             <Button
               type="button"
               size="sm"
               variant="ghost"
               className="h-7 text-xs"
-              disabled={pending || !canResolve}
-              title={!canResolve ? RESOLVE_HINT : undefined}
+              disabled={pending || revising || !canResolve}
+              title={
+                revising ? "Revising…" : !canResolve ? RESOLVE_HINT : undefined
+              }
               onClick={onDismiss}
             >
               <X className="size-3" />
@@ -473,6 +486,7 @@ function EnteringSuggestionLayer({
   enterRef,
   showActions,
   pending,
+  revising,
   validation,
   queueStaleHint,
   canResolve,
@@ -483,6 +497,7 @@ function EnteringSuggestionLayer({
   enterRef: RefObject<HTMLDivElement | null>;
   showActions: boolean;
   pending: boolean;
+  revising?: boolean;
   validation: SuggestionValidation;
   queueStaleHint: string | null;
   canResolve: boolean;
@@ -511,6 +526,7 @@ function EnteringSuggestionLayer({
         phase="steady"
         showActions={showActions}
         pending={pending}
+        revising={revising}
         validation={validation}
         queueStaleHint={queueStaleHint}
         canResolve={canResolve}
@@ -534,7 +550,9 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
     enterSuggestionQueueBridge,
     endSuggestionApplyTransition,
     suggestionApplyTransition,
+    aiEditLockedSections,
   } = useReportEvaluations();
+  const revising = aiEditLockedSections.includes(section);
   const { comments, setComments } = useReportComments();
   const { sections, replaceSection } = useReportSections();
   const [pending, setPending] = useState(false);
@@ -679,7 +697,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
   ]);
 
   const handleAccept = useCallback(async () => {
-    if (!liveCard || pending || !canResolve) return;
+    if (!liveCard || pending || revising || !canResolve) return;
 
     const locateCheck = validateSuggestionLocate(
       liveCard.comment,
@@ -761,11 +779,9 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
     } catch (err) {
       console.error(err);
       toast.error(
-        err instanceof SectionPersistError
+        err instanceof SectionPersistError || err instanceof CommentPersistError
           ? err.message
-          : err instanceof CommentPersistError
-            ? "Change saved but couldn't mark suggestion as resolved. It may reappear — try dismissing it."
-            : "Could not apply suggestion"
+          : "Could not apply suggestion"
       );
       await refresh();
       setFrozenCard(null);
@@ -782,6 +798,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
     liveCard,
     comments,
     pending,
+    revising,
     canResolve,
     section,
     sections,
@@ -796,7 +813,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
   ]);
 
   const handleDismiss = useCallback(async () => {
-    if (!liveCard || pending || !canResolve) return;
+    if (!liveCard || pending || revising || !canResolve) return;
 
     const snapshot = liveCard;
     const commentId = snapshot.comment.id;
@@ -885,6 +902,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
   }, [
     liveCard,
     pending,
+    revising,
     canResolve,
     section,
     sections,
@@ -934,6 +952,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
         enterRef={enterRef}
         showActions
         pending={pending}
+        revising={revising}
         validation={activeValidation}
         queueStaleHint={queueStaleHint}
         canResolve={canResolve}
@@ -952,6 +971,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
       phase={phase}
       showActions={phase === "steady"}
       pending={pending}
+      revising={revising}
       validation={
         displayCard.comment.id === active?.id
           ? activeValidation

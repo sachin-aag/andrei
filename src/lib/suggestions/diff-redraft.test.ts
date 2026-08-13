@@ -267,4 +267,69 @@ describe("diffFieldToEdits", () => {
     // overlap is 0 but the only block is guarded → nothing lossy emitted.
     expect(res).toHaveLength(0);
   });
+
+  it("empty-field inserts and word-level edits carry sourceBlocks", () => {
+    const inserts = diffFieldToEdits(markdownToDoc(""), "Intro.\n\nBody.", R) as BlockEdit[];
+    expect(inserts[0]!.sourceBlocks).toEqual([0]);
+    expect(inserts[1]!.sourceBlocks).toEqual([1]);
+
+    const current = markdownToDoc(
+      "Alpha stays the same here.\n\nThe result was within 90.0% to 110.0% overall."
+    );
+    const proposed =
+      "Alpha stays the same here.\n\nThe result was within 85.0% to 115.0% overall.";
+    const tweaks = diffFieldToEdits(current, proposed, R) as TextEdit[];
+    expect(tweaks).toHaveLength(1);
+    expect(tweaks[0]!.sourceBlocks).toEqual([1]);
+    expect(tweaks[0]!.currentBlockIndex).toBe(1);
+  });
+
+  it("owners collapse a prose authored block that split into two edits", () => {
+    const authored = "First sentence of the topic.\n\nSecond sentence of the same topic.";
+    const split = splitMarkdownIntoBlocks(authored);
+    expect(split).toHaveLength(2);
+    const res = diffFieldToEdits(
+      markdownToDoc(""),
+      split.join("\n\n"),
+      R,
+      split.map(() => 0)
+    ) as BlockEdit[];
+    expect(res).toHaveLength(1);
+    expect(res[0]).toMatchObject({ kind: "block", op: "insert" });
+    expect(res[0]!.proposedMarkdown).toContain("First sentence");
+    expect(res[0]!.proposedMarkdown).toContain("Second sentence");
+    expect(res[0]!.sourceBlocks).toEqual([0, 1]);
+  });
+
+  it("owners keep table cell cards separate", () => {
+    const tableMd = [
+      "| Action | Due | Owner |",
+      "| --- | --- | --- |",
+      "| PA-01 | 30/04/2026 | QA |",
+      "| PA-02 | 30/04/2026 | QA |",
+    ].join("\n");
+    const proposed = [
+      "| Action | Due | Owner |",
+      "| --- | --- | --- |",
+      "| PA-01 | 31/05/2026 | QA |",
+      "| PA-02 | 15/06/2026 | QA |",
+    ].join("\n");
+    const res = diffFieldToEdits(markdownToDoc(tableMd), proposed, R, [0]) as TextEdit[];
+    expect(res).toHaveLength(2);
+    expect(res.every((e) => e.kind === "text" && e.scope?.kind === "cell")).toBe(true);
+  });
+
+  it("owners skip the 12-card whole-field collapse", () => {
+    const current = markdownToDoc(
+      Array.from({ length: 20 }, (_, i) => `Existing paragraph number ${i}.`).join("\n\n")
+    );
+    const proposed = Array.from(
+      { length: 20 },
+      (_, i) => `Wholly unrelated replacement text ${i}.`
+    ).join("\n\n");
+    const owners = Array.from({ length: 20 }, (_, i) => i);
+    const res = diffFieldToEdits(current, proposed, R, owners);
+    expect(res.length).toBeGreaterThan(12);
+    expect(res.length).toBe(20);
+  });
 });

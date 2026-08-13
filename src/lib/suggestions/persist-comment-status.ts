@@ -10,6 +10,9 @@ export class CommentPersistError extends Error {
 
 function messageForStatus(status: number, serverMessage?: string): string {
   if (serverMessage) return serverMessage;
+  if (status === 409) {
+    return "This suggestion is no longer open. It may have been revised, accepted, or dismissed.";
+  }
   if (status === 403) {
     return "You don't have permission to update suggestions on this report.";
   }
@@ -22,7 +25,7 @@ function messageForStatus(status: number, serverMessage?: string): string {
 export async function patchCommentStatus(
   reportId: string,
   commentId: string,
-  status: "resolved" | "dismissed"
+  status: "resolved" | "dismissed" | "open"
 ): Promise<void> {
   let res: Response;
   try {

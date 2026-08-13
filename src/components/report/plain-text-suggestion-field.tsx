@@ -139,7 +139,9 @@ export function PlainTextSuggestionField({
     suggestionApplyTransition,
     beginSuggestionApplyTransition,
     endSuggestionApplyTransition,
+    aiEditLockedSections,
   } = useReportEvaluations();
+  const revising = aiEditLockedSections.includes(section);
   const { sections, replaceSection } = useReportSections();
   const { focusedPanelPlaceholderId } = useReportPlaceholders();
   const [pending, setPending] = useState(false);
@@ -253,7 +255,7 @@ export function PlainTextSuggestionField({
   }, [showInlineSuggestion, previewSegments, focusedFromPos]);
 
   const applyActive = useCallback(async () => {
-    if (!activeComment || pending || !canResolve) return;
+    if (!activeComment || pending || revising || !canResolve) return;
 
     const locateCheck = validateSuggestionLocate(
       activeComment,
@@ -333,11 +335,9 @@ export function PlainTextSuggestionField({
     } catch (err) {
       console.error(err);
       toast.error(
-        err instanceof SectionPersistError
+        err instanceof SectionPersistError || err instanceof CommentPersistError
           ? err.message
-          : err instanceof CommentPersistError
-            ? "Change saved but couldn't mark suggestion as resolved. It may reappear — try dismissing it."
-            : "Could not apply suggestion"
+          : "Could not apply suggestion"
       );
       await refresh();
     } finally {
@@ -349,6 +349,7 @@ export function PlainTextSuggestionField({
     activeComment,
     comments,
     pending,
+    revising,
     canResolve,
     section,
     contentPath,
@@ -363,7 +364,7 @@ export function PlainTextSuggestionField({
   ]);
 
   const dismissActive = useCallback(async () => {
-    if (!activeComment || pending || !canResolve) return;
+    if (!activeComment || pending || revising || !canResolve) return;
 
     setPending(true);
     try {
@@ -424,6 +425,7 @@ export function PlainTextSuggestionField({
   }, [
     activeComment,
     pending,
+    revising,
     canResolve,
     report.id,
     section,
@@ -461,6 +463,7 @@ export function PlainTextSuggestionField({
             <SuggestionInlineActions
               suggestionId={activeComment.id}
               pending={pending}
+              revising={revising}
               acceptDisabled={!canResolve || !activeValidation?.canApply}
               dismissDisabled={!canResolve}
               onAccept={() => void applyActive()}

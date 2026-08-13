@@ -9,7 +9,7 @@ import {
 import { getDocumentType } from "@/lib/document-types";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v21-merge-pending-drafts";
+export const CHAT_PROMPT_VERSION = "chat-v22-atomic-draft-set";
 
 export type ChatMode = "plan" | "agent";
 
@@ -116,14 +116,14 @@ function agentRules(opts: {
 You are in Agent mode. Use the tools to read sections and propose changes. Every proposal goes to the engineer for review — nothing is applied until they accept it.
 
 Choosing the right tool:
-- draft_field — a FULL draft or rewrite of one field, written as markdown. The system diffs it against the current field and turns it into targeted, mergeable suggestions (changed sentences, changed cells, added/removed table rows, one card per new block). Unchanged prose and unchanged cells are left alone. Use it for empty fields, substantial rewrites, and creating or restructuring a table. This is the primary drafting tool.
-- propose_edit — one small targeted change inside existing text: a sentence/phrase (anchored to a verbatim quote), OR a single table cell / list item (targeted with "scope", not an anchor). Never use it to write whole paragraphs into an empty field.
+- draft_field — a FULL draft or rewrite of one field, as an array of authored blocks (topic + reason + markdown). The system diffs the joined markdown against the LIVE field and atomically replaces that field's open AI cards. Unchanged prose and unchanged cells are left alone. Use it for empty fields, substantial rewrites, and creating or restructuring a table. This is the primary drafting tool.
+- propose_edit — one small targeted change inside existing text OR inside an unaccepted proposal body listed in the context map. Quote that body verbatim. Never use it to write whole paragraphs into an empty field.
 
 Structuring a draft (important):
-- Say in ONE short line which blocks you are about to write ("Define: problem statement, detection and scope, immediate actions, batch impact table"), then call draft_field.
-- Write the markdown as SEPARATE BLOCKS split by blank lines. Each block is one coherent unit: a short paragraph (3–6 sentences), one list, or one table. The engineer reviews and accepts them one at a time, in document order.
-- NEVER write a section as a single unbroken wall of text. A draft with no blank lines becomes one giant take-it-or-leave-it card.
-- Do not pad the block count either — a block per sentence is just as unreviewable. Split where the subject genuinely changes.
+- Say in ONE short line which blocks you are about to write ("Define: problem statement, detection and scope, immediate actions, batch impact table"), then call draft_field with one authored block per topic.
+- Each block is one coherent unit: a short paragraph (3–6 sentences), one list, or one table. Aim for roughly 15 lines per block; split when the subject changes. Improve/Control closing clauses are an exception — keep each clause as its own block even if shorter.
+- NEVER write a section as a single unbroken wall of text. A draft with no topic splits becomes one giant take-it-or-leave-it card.
+- Do not pad the block count either — a block per sentence is just as unreviewable.
 - search_documents — search ready evidence attachments for report-scoped facts before citing document evidence.
 - read_document_page — read bounded transcript/visual context for one page from a retrieved attachment.
 - ask_user — structured questions when facts are missing (see "Asking questions").${analyzeToolLine}
@@ -141,7 +141,7 @@ Editing rules:
 3. To change ONE table cell or list item, use propose_edit with "scope" from the field's structuredText (a cell tagged [r,c] → scope {"kind":"cell","row":r,"col":c}; an item tagged [i] → scope {"kind":"listItem","index":i}). Leave anchorText "", put only that cell/item's current text in deleteText (or "" for a blank cell) and the new value in insertText. This avoids "ambiguous"/"cross_cell" on short or repeated cell values. To add or remove whole rows, prefer draft_field with the complete updated table (the diff emits row insert/delete). To add/remove columns or restructure the table, use draft_field (column changes replace the whole table).
 4. propose_edit refuses changes that rewrite most of a field ("too_large") — that is the signal to use draft_field.
 5. Never invent regulated facts (batch numbers, dates, results, equipment IDs) — use bracketed placeholders.
-6. REVISING AN OPEN PROPOSAL: the context map lists every still-open proposal with its id. If the engineer's message is feedback on one of them ("make that shorter", "drop the last sentence", "use 15 May instead", "also mention the 9.3 μm wavelength"), do NOT add a second proposal — call the same tool again with supersedes: ["<that id>"]. The system also merges a new draft into overlapping open cards for the same field even if you omit supersedes, so the engineer never sees duplicate cards for the same information. Multiple cards exist only to keep a large draft reviewable; they must not repeat each other. Only omit supersedes when you are genuinely proposing something new and unrelated.
+6. REVISING AN OPEN PROPOSAL: the context map lists every still-open proposal with its id and the exact body to quote. If the engineer's message is feedback on a draft they have not accepted ("make that shorter", "drop the last sentence", "use 15 May instead", "also mention the 9.3 μm wavelength"), do NOT add a second proposal. To revise the field, call draft_field with the COMPLETE block set — the server replaces every open card on that field (omitting a block deletes it). supersedes is optional for same-field revisions. For a one-line tweak, call propose_edit quoting the listed proposal body verbatim. Only omit a revision when you are genuinely proposing something new and unrelated.
 7. After proposing, briefly summarize what you drafted, list placeholders to complete, and name any sections you deliberately skipped and why.`;
 }
 

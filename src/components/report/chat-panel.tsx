@@ -40,7 +40,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { useReportData } from "@/providers/report-provider";
+import {
+  useReportData,
+  useReportEvaluations,
+} from "@/providers/report-provider";
 import { useReportAttachments } from "@/providers/report-attachments-provider";
 import { useUserDirectory } from "@/providers/user-directory-provider";
 import {
@@ -51,6 +54,7 @@ import type { DocumentType, SectionType } from "@/db/schema";
 import {
   CHAT_SECTION_SCOPE_ALL,
   chatEditableSections,
+  isChatEditableSection,
   sectionLabel as chatSectionLabel,
   type ChatSectionScope,
 } from "@/lib/ai/chat/fields";
@@ -115,6 +119,41 @@ function readToolPart(part: UIMessagePart<never, never>): ToolPartInfo | null {
     input: p.input,
     output: p.output,
   };
+}
+
+/** Sections targeted by in-flight draft_field / propose_edit after the last user turn. */
+function aiEditSectionsAfterLastUser(
+  messages: UIMessage[],
+  documentType: DocumentType
+): SectionType[] {
+  let lastUser = -1;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    if (messages[i]?.role === "user") {
+      lastUser = i;
+      break;
+    }
+  }
+  const sections: SectionType[] = [];
+  const seen = new Set<SectionType>();
+  for (const message of messages.slice(lastUser + 1)) {
+    for (const part of message.parts ?? []) {
+      const info = readToolPart(part as UIMessagePart<never, never>);
+      if (!info) continue;
+      if (info.toolName !== "draft_field" && info.toolName !== "propose_edit") {
+        continue;
+      }
+      const section = info.input?.section;
+      if (
+        typeof section === "string" &&
+        isChatEditableSection(section, documentType) &&
+        !seen.has(section)
+      ) {
+        seen.add(section);
+        sections.push(section);
+      }
+    }
+  }
+  return sections;
 }
 
 function sectionLabel(section: unknown): string {
@@ -623,6 +662,7 @@ function ModeToggle({
 
 export function ChatPanel() {
   const { report, refresh, readOnly, currentUserId } = useReportData();
+  const { setAiEditLockedSections } = useReportEvaluations();
   const { getUser } = useUserDirectory();
   const role = getUser(currentUserId)?.role;
   const canProposeAiEdits =
@@ -658,18 +698,35 @@ export function ChatPanel() {
     id: `report-chat-${report.id}`,
     transport: new DefaultChatTransport({ api: base }),
     onFinish: () => {
-      // Pull newly-proposed ai_fix comments into report state (inline diff +
-      // gutter card), and refresh session titles/order.
-      void refresh();
-      void loadSessions();
+      // Hold Apply locked until the new cards are in report state — unlocking
+      // on tool output would let Apply hit the cards this turn just dismissed.
+      void (async () => {
+        try {
+          await refresh();
+          void loadSessions();
+        } finally {
+          setAiEditLockedSections([]);
+        }
+      })();
     },
     onError: (err) => {
+      setAiEditLockedSections([]);
       console.error("chat error", err);
       toast.error("The assistant hit an error. Please try again.");
     },
   });
 
   const busy = status === "submitted" || status === "streaming";
+
+  useEffect(() => {
+    if (!busy) return;
+    const sections = aiEditSectionsAfterLastUser(messages, report.documentType);
+    if (sections.length > 0) setAiEditLockedSections(sections);
+  }, [busy, messages, report.documentType, setAiEditLockedSections]);
+
+  useEffect(() => {
+    return () => setAiEditLockedSections([]);
+  }, [setAiEditLockedSections]);
 
   // Only ready documents are taggable — an attachment still being ingested has
   // no chunks, so scoping search to it would return nothing.

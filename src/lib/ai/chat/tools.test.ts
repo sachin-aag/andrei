@@ -86,7 +86,12 @@ describe("buildChatTools tagged sections", () => {
       mentionedSections: ["control"],
     });
 
-    const edit = { section: "control", targetField: "narrative", markdown: "x", reasoning: "y" };
+    const edit = {
+      section: "control",
+      targetField: "narrative",
+      blocks: [{ topic: "x", reason: "y", markdown: "x" }],
+      reasoning: "y",
+    };
     expect(accepts(tools, "draft_field", edit)).toBe(false);
     expect(
       accepts(tools, "propose_edit", {
@@ -116,7 +121,7 @@ describe("supersedes — revising an open proposal", () => {
       accepts(tools, "draft_field", {
         section: "define",
         targetField: "narrative",
-        markdown: "New draft.",
+        blocks: [{ topic: "Opening", reason: "revised", markdown: "New draft." }],
         reasoning: "revised",
         supersedes: ["sug-1", "sug-2"],
       })
@@ -132,6 +137,28 @@ describe("supersedes — revising an open proposal", () => {
         reasoning: "new point",
       })
     ).toBe(true);
+  });
+});
+
+describe("draft_field authored blocks", () => {
+  it("accepts topic/reason/markdown blocks and rejects a bare markdown string", () => {
+    const tools = buildChatTools({ reportId: "report-1", canEdit: true });
+    expect(
+      accepts(tools, "draft_field", {
+        section: "define",
+        targetField: "narrative",
+        blocks: [{ topic: "Detection", reason: "what happened", markdown: "Leak at station 3." }],
+        reasoning: "drafted define",
+      })
+    ).toBe(true);
+    expect(
+      accepts(tools, "draft_field", {
+        section: "define",
+        targetField: "narrative",
+        markdown: "Leak at station 3.",
+        reasoning: "drafted define",
+      })
+    ).toBe(false);
   });
 });
 

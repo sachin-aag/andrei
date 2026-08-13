@@ -42,6 +42,7 @@ describe("resolveTargetField", () => {
     expect(resolveTargetField("traceability", "traceability")).toBe("table");
     expect(resolveTargetField("test_results", "test_results")).toBe("table");
     expect(resolveTargetField("control", "control")).toBe("preventiveActions");
+    expect(resolveTargetField("improve", "improve")).toBe("correctiveActions");
     expect(resolveTargetField("define", "define")).toBe("narrative");
   });
 
@@ -53,7 +54,6 @@ describe("resolveTargetField", () => {
   });
 
   it("does not guess when a section has multiple fields", () => {
-    expect(resolveTargetField("improve", "improve")).toBeNull();
     expect(resolveTargetField("analyze", "analyze")).toBeNull();
   });
 

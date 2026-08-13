@@ -15,21 +15,23 @@ import { AI_AUTHOR_ID } from "@/lib/ai/constants";
 import {
   parseAiFixCommentContent,
   parseAiRedraftCommentContent,
+  parseEditScope,
   serializeAiFixCommentContent,
   serializeAiRedraftCommentContent,
   sectionContentHash,
-  type ParsedAiFixPayload,
 } from "@/lib/ai/suggestion-gating";
-import { deriveEditLabel, diffFieldToEdits } from "@/lib/suggestions/diff-redraft";
+import { deriveEditLabel } from "@/lib/suggestions/diff-redraft";
 import {
   isRichTargetField,
   resolveTargetField,
 } from "@/lib/ai/suggest-target-fields";
-import { parseEditScope } from "@/lib/ai/suggestion-gating";
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
-import { fieldContentHash } from "@/lib/suggestions/validate-suggestion";
 import { markdownHasTable } from "@/lib/tiptap/markdown-to-doc";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
+import {
+  joinAuthoredBlocks,
+  replaceFieldDraftSet,
+} from "@/lib/suggestions/replace-draft-set";
 import {
   type ChatSectionScope,
   chatEditableSections,
@@ -46,10 +48,8 @@ import {
 import { checkProposedEdit, proposedEditHint } from "@/lib/ai/chat/propose-edit";
 import {
   applyTargetedEditToPending,
-  planPendingDraftMerge,
-  type PendingDraftMergePlan,
   type PendingProposalInput,
-} from "@/lib/suggestions/merge-pending-draft";
+} from "@/lib/suggestions/pending-proposal-edit";
 
 type ReadSectionImageRef = {
   id: string;
@@ -125,8 +125,6 @@ export type DraftFieldResult =
       edits?: number;
       /** Open proposals this draft replaced (dismissed, slot inherited). */
       supersededIds?: string[];
-      /** Open proposals this draft revised in place (same cards, new bodies). */
-      updatedIds?: string[];
     }
   | {
       status: "no_changes";
@@ -134,7 +132,6 @@ export type DraftFieldResult =
       targetField: string;
       message: string;
       supersededIds?: string[];
-      updatedIds?: string[];
     }
   | { status: "not_editable"; message: string }
   | { status: "invalid_section"; message: string }
@@ -169,7 +166,7 @@ const SUPERSEDES_SCHEMA = z
   .max(10)
   .optional()
   .describe(
-    "Ids of OPEN proposals in this section that this one replaces (from the context map's open-proposal list). Use when the engineer is giving feedback on a proposal they have not accepted yet. The system also merges overlapping open cards for the same field automatically — still pass these ids when you know them."
+    "Ids of OPEN proposals in this section that this one replaces (from the context map's open-proposal list). Optional for same-field draft_field revisions — the server already replaces that field's entire open set. Pass these for propose_edit revisions and for cards on a different field."
   );
 
 const DOCUMENT_CITATION_RULE =
@@ -351,120 +348,6 @@ async function loadOpenFieldProposals(opts: {
       createdAt: row.createdAt,
       content: row.content,
     }));
-}
-
-async function persistMergedRichDraft(opts: {
-  reportId: string;
-  section: SectionType;
-  sectionId: string;
-  targetField: string;
-  reasoning: string;
-  contentHash: string;
-  pending: PendingProposalInput[];
-  plan: PendingDraftMergePlan;
-}): Promise<DraftFieldResult> {
-  const { plan, pending, reasoning, contentHash } = opts;
-  const unchangedOnly =
-    plan.dismissIds.length === 0 &&
-    plan.slots.every((s) => s.kind === "update" && s.unchanged) &&
-    plan.slots.length === pending.length;
-  if (unchangedOnly) {
-    return {
-      status: "no_changes",
-      section: opts.section,
-      targetField: opts.targetField,
-      message: "The draft matches the open proposals — there is nothing to change.",
-    };
-  }
-
-  const byId = new Map(pending.map((p) => [p.id, p]));
-  let draftId = createId();
-  for (const slot of plan.slots) {
-    if (slot.kind !== "update") continue;
-    const existing = parseAiFixCommentContent(byId.get(slot.id)?.content ?? "").draft?.id;
-    if (existing) {
-      draftId = existing;
-      break;
-    }
-  }
-  const total = plan.slots.length;
-  const minted = plan.slots.map((slot) => (slot.kind === "update" ? slot.id : createId()));
-  let prevId: string | undefined;
-  for (const [i, slot] of plan.slots.entries()) {
-    const id = minted[i]!;
-    const markdown = normalizeSuggestionInsertText(slot.markdown);
-    const existing = slot.kind === "update" ? byId.get(slot.id) : undefined;
-    const prevPayload = existing ? parseAiFixCommentContent(existing.content) : null;
-    const prevBlock = prevPayload?.blockEdit;
-    const payload: ParsedAiFixPayload = {
-      deleteText: "",
-      insertText: "",
-      reasoning,
-      label: deriveEditLabel(markdown),
-      draft: { id: draftId, index: i + 1, total },
-      contentHashAtSuggestion: contentHash,
-      blockEdit: {
-        op: prevBlock?.op ?? "insert",
-        anchor: prevBlock?.anchor ?? "",
-        blockIndex: prevBlock?.blockIndex ?? -1,
-        proposedMarkdown: markdown,
-        tableIndex: prevBlock?.tableIndex,
-        rowIndex: prevBlock?.rowIndex,
-        rowAnchor: prevBlock?.rowAnchor,
-        blockCount: prevBlock?.blockCount,
-        ...(prevId ? { afterSuggestionId: prevId } : {}),
-      },
-      evidenceSources: prevPayload?.evidenceSources,
-    };
-    if (slot.kind === "update") {
-      await db
-        .update(comments)
-        .set({
-          content: serializeAiFixCommentContent(payload),
-          ...(existing?.kind === "ai_redraft" ? { kind: "ai_fix" as const } : {}),
-        })
-        .where(eq(comments.id, id));
-    } else {
-      await db.insert(comments).values({
-        id,
-        reportId: opts.reportId,
-        sectionId: opts.sectionId,
-        section: opts.section,
-        authorId: AI_AUTHOR_ID,
-        content: serializeAiFixCommentContent(payload),
-        anchorText: "",
-        contentPath: opts.targetField,
-        fromPos: null,
-        toPos: null,
-        status: "open",
-        kind: "ai_fix",
-        evaluationId: null,
-      });
-    }
-    prevId = id;
-  }
-
-  if (plan.dismissIds.length > 0) {
-    await supersedeOpenSuggestions({
-      reportId: opts.reportId,
-      section: opts.section,
-      ids: plan.dismissIds,
-    });
-  }
-
-  const updatedIds = plan.slots.flatMap((s) =>
-    s.kind === "update" && !s.unchanged ? [s.id] : []
-  );
-  return {
-    status: "drafted",
-    suggestionId: minted[0]!,
-    section: opts.section,
-    targetField: opts.targetField,
-    summary: reasoning,
-    edits: plan.slots.length,
-    ...(updatedIds.length > 0 ? { updatedIds } : {}),
-    ...(plan.dismissIds.length > 0 ? { supersededIds: plan.dismissIds } : {}),
-  };
 }
 
 async function loadMergedSection(
@@ -904,26 +787,45 @@ export function buildChatTools(opts: {
 
     draft_field: tool({
       description:
-        `Draft or fully rewrite ONE field. Provide the COMPLETE replacement content as markdown: paragraphs, '- ' bullets, '1. ' numbered lists, '## ' headings, '**bold**', and GFM tables ('| a | b |' rows with a '| --- |' separator). Use bracketed placeholders like [batch number] for facts you do not know — never invent facts. The system diffs your draft against the current field and emits only the changed regions (sentences, cells, added/removed rows) as targeted suggestions — unchanged content is left alone. Use this for empty fields, large rewrites, tables, and row add/remove; use propose_edit only for small targeted changes.${scopeHint}${fixedTableHint}`,
+        `Draft or fully rewrite ONE field as an array of authored blocks. Each block has topic (card title), reason (why this block exists), and markdown (that block only). Aim for ~15 lines per block and split when the topic changes — this is guidance, not a hard cap. The server diffs the joined markdown against the LIVE field and atomically replaces that field's open AI cards. Omitting a previously drafted block deletes it. Use bracketed placeholders like [batch number] for facts you do not know. Use this for empty fields, large rewrites, tables, and row add/remove; use propose_edit only for a one-line tweak quoted from a listed proposal body or the live field.${scopeHint}${fixedTableHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
           .string()
-          .describe("In-section field path, e.g. 'narrative' or 'rootCause.narrative'."),
-        markdown: z
-          .string()
+          .describe("In-section field path, e.g. 'narrative' or 'rootCause.narrative'. Improve uses 'correctiveActions', not 'narrative'."),
+        blocks: z
+          .array(
+            z.object({
+              topic: z
+                .string()
+                .min(1)
+                .max(80)
+                .describe("Short card title, e.g. 'Detection and scope'."),
+              reason: z
+                .string()
+                .min(1)
+                .max(300)
+                .describe("Why this block is in the draft (shown on the card)."),
+              markdown: z
+                .string()
+                .min(1)
+                .describe(
+                  "This block's markdown. Separate from the next block; an internal blank line still belongs to this topic."
+                ),
+            })
+          )
           .min(1)
-          .describe("Complete replacement content for the field."),
+          .describe("Complete replacement content, one authored block per topic."),
         reasoning: z
           .string()
           .max(300)
-          .describe("One short sentence explaining the draft (shown to the engineer)."),
+          .describe("One short sentence summarizing the draft in chat (not copied onto every card)."),
         supersedes: SUPERSEDES_SCHEMA,
       }),
       execute: async ({
         section,
         targetField,
-        markdown,
+        blocks,
         reasoning,
         supersedes,
       }): Promise<DraftFieldResult> => {
@@ -948,260 +850,45 @@ export function buildChatTools(opts: {
             allowedFields: chatTargetFields(section).map((f) => f.targetField),
           };
         }
-        if (field.kind === "plain" && markdownHasTable(markdown)) {
+        const joined = joinAuthoredBlocks(blocks);
+        if (field.kind === "plain" && markdownHasTable(joined.markdown)) {
           return {
             status: "table_not_supported",
             message: `'${resolvedField}' is a plain-text field and cannot hold a table. Put the table in a rich narrative field instead.`,
           };
         }
 
-        const loaded = await loadMergedSection(reportId, section);
-        if (!loaded) {
-          return { status: "section_not_found", message: "Section not found." };
-        }
-
-        const pending = await loadOpenFieldProposals({
+        const result = await replaceFieldDraftSet({
           reportId,
           section,
           targetField: resolvedField,
+          kind: field.kind === "plain" ? "plain" : "rich",
+          blocks,
+          extraSupersedeIds: supersedes ?? [],
         });
-
-        // Plain fields have no rich doc to diff, so they stay a whole-field
-        // redraft. Rich fields never take this path — their drafts always split
-        // into block-level edits (see `diffFieldToEdits`).
-        const insertRedraft = async (
-          inheritedCreatedAt: Date | null,
-          superseded: { supersededIds?: string[] }
-        ): Promise<DraftFieldResult> => {
-          const suggestionId = createId();
-          await db.insert(comments).values({
-            id: suggestionId,
-            reportId,
-            sectionId: loaded.sectionId,
-            section,
-            authorId: AI_AUTHOR_ID,
-            content: serializeAiRedraftCommentContent({
-              markdown: normalizeSuggestionInsertText(markdown),
-              reasoning,
-              fieldHashAtSuggestion: fieldContentHash(
-                section,
-                loaded.content,
-                resolvedField
-              ),
-            }),
-            anchorText: "",
-            contentPath: resolvedField,
-            fromPos: null,
-            toPos: null,
-            status: "open",
-            kind: "ai_redraft",
-            evaluationId: null,
-            ...(inheritedCreatedAt ? { createdAt: inheritedCreatedAt } : {}),
-          });
-          return {
-            status: "drafted",
-            suggestionId,
-            section,
-            targetField: resolvedField,
-            summary: reasoning,
-            ...superseded,
-          };
-        };
-
-        if (!isRichTargetField(section, resolvedField)) {
-          const redrafts = pending.filter((p) => p.kind === "ai_redraft");
-          if (redrafts.length > 0) {
-            const keep = redrafts[0]!;
-            const prev = parseAiRedraftCommentContent(keep.content);
-            const nextMarkdown = normalizeSuggestionInsertText(markdown);
-            const unchanged = prev.markdown.trim() === nextMarkdown.trim();
-            if (!unchanged) {
-              await db
-                .update(comments)
-                .set({
-                  content: serializeAiRedraftCommentContent({
-                    markdown: nextMarkdown,
-                    reasoning,
-                    fieldHashAtSuggestion: fieldContentHash(
-                      section,
-                      loaded.content,
-                      resolvedField
-                    ),
-                  }),
-                })
-                .where(eq(comments.id, keep.id));
-            }
-            const dismiss = [
-              ...redrafts.slice(1).map((p) => p.id),
-              ...pending.filter((p) => p.kind !== "ai_redraft").map((p) => p.id),
-              ...(supersedes ?? []),
-            ].filter((id) => id !== keep.id);
-            const { supersededIds } = await supersedeOpenSuggestions({
-              reportId,
-              section,
-              ids: dismiss,
-            });
-            if (unchanged && supersededIds.length === 0) {
-              return {
-                status: "no_changes",
-                section,
-                targetField: resolvedField,
-                message:
-                  "The draft matches the open proposals — there is nothing to change.",
-              };
-            }
-            return {
-              status: "drafted",
-              suggestionId: keep.id,
-              section,
-              targetField: resolvedField,
-              summary: reasoning,
-              ...(unchanged ? {} : { updatedIds: [keep.id] }),
-              ...(supersededIds.length > 0 ? { supersededIds } : {}),
-            };
-          }
-          const { supersededIds, inheritedCreatedAt } = await supersedeOpenSuggestions({
-            reportId,
-            section,
-            ids: [...pending.map((p) => p.id), ...(supersedes ?? [])],
-          });
-          return insertRedraft(
-            inheritedCreatedAt,
-            supersededIds.length > 0 ? { supersededIds } : {}
-          );
+        if (result.status === "section_not_found") {
+          return { status: "section_not_found", message: result.message };
         }
-
-        const mergePlan = planPendingDraftMerge({
-          proposedMarkdown: markdown,
-          pending,
-        });
-        if (mergePlan) {
-          const result = await persistMergedRichDraft({
-            reportId,
-            section,
-            sectionId: loaded.sectionId,
-            targetField: resolvedField,
-            reasoning,
-            contentHash: sectionContentHash(section, loaded.content),
-            pending,
-            plan: mergePlan,
-          });
-          const updateIds = new Set(mergePlan.slots.flatMap((s) => (s.kind === "update" ? [s.id] : [])));
-          const extra = (supersedes ?? []).filter(
-            (id) => !updateIds.has(id) && !mergePlan.dismissIds.includes(id)
-          );
-          if (extra.length > 0) {
-            const extraDismissed = await supersedeOpenSuggestions({
-              reportId,
-              section,
-              ids: extra,
-            });
-            if (extraDismissed.supersededIds.length > 0 && result.status === "drafted") {
-              return {
-                ...result,
-                supersededIds: [
-                  ...(result.supersededIds ?? []),
-                  ...extraDismissed.supersededIds,
-                ],
-              };
-            }
-          }
-          return result;
-        }
-
-        const { supersededIds, inheritedCreatedAt } = await supersedeOpenSuggestions({
-          reportId,
-          section,
-          ids: [...pending.map((p) => p.id), ...(supersedes ?? [])],
-        });
-        const superseded = supersededIds.length > 0 ? { supersededIds } : {};
-
-        // Rich field: diff the proposed draft against the current content and
-        // emit only the changed regions as targeted, mergeable ai_fix edits, so
-        // unchanged narrative and unchanged cells are left untouched.
-        const currentDoc = getRichFieldValue(
-          loaded.content as Record<string, unknown>,
-          resolvedField
-        );
-        const diffEdits = diffFieldToEdits(currentDoc, markdown, reasoning);
-        if (diffEdits.length === 0) {
+        const superseded =
+          result.supersededIds.length > 0
+            ? { supersededIds: result.supersededIds }
+            : {};
+        if (result.status === "no_changes") {
           return {
             status: "no_changes",
             section,
             targetField: resolvedField,
-            message:
-              "The draft matches the current content — there is nothing to change.",
+            message: result.message,
             ...superseded,
           };
         }
-
-        const contentHash = sectionContentHash(section, loaded.content);
-        // Ids are minted up front so a chained insert can name the block it
-        // follows; that link is what lets the insertion point be resolved when
-        // the card becomes active rather than frozen at draft time.
-        const ids = diffEdits.map(() => createId());
-        const firstId = ids[0]!;
-        const draftId = createId();
-        for (const [i, edit] of diffEdits.entries()) {
-          const id = ids[i]!;
-          const draft = { id: draftId, index: i + 1, total: diffEdits.length };
-          const payload: ParsedAiFixPayload =
-            edit.kind === "text"
-              ? {
-                  deleteText: edit.deleteText,
-                  insertText: normalizeSuggestionInsertText(edit.insertText),
-                  reasoning: edit.reasoning,
-                  label: edit.label,
-                  draft,
-                  scope: edit.scope,
-                  contentHashAtSuggestion: contentHash,
-                }
-              : {
-                  deleteText: "",
-                  insertText: "",
-                  reasoning: edit.reasoning,
-                  label: edit.label,
-                  draft,
-                  contentHashAtSuggestion: contentHash,
-                  blockEdit: {
-                    op: edit.op,
-                    anchor: edit.anchor,
-                    blockIndex: edit.blockIndex,
-                    proposedMarkdown: edit.proposedMarkdown,
-                    tableIndex: edit.tableIndex,
-                    rowIndex: edit.rowIndex,
-                    rowAnchor: edit.rowAnchor,
-                    blockCount: edit.blockCount,
-                    ...(edit.afterEditIndex !== undefined
-                      ? { afterSuggestionId: ids[edit.afterEditIndex] }
-                      : {}),
-                  },
-                };
-          await db.insert(comments).values({
-            id,
-            reportId,
-            sectionId: loaded.sectionId,
-            section,
-            authorId: AI_AUTHOR_ID,
-            content: serializeAiFixCommentContent(payload),
-            anchorText: edit.kind === "text" ? edit.anchorText : "",
-            contentPath: resolvedField,
-            fromPos: null,
-            toPos: null,
-            status: "open",
-            kind: "ai_fix",
-            evaluationId: null,
-            ...(i === 0 && inheritedCreatedAt ? { createdAt: inheritedCreatedAt } : {}),
-          });
-        }
-
         return {
           status: "drafted",
-          suggestionId: firstId,
+          suggestionId: result.suggestionId,
           section,
           targetField: resolvedField,
           summary: reasoning,
-          edits: diffEdits.length,
+          edits: result.edits,
           ...superseded,
         };
       },

@@ -98,6 +98,8 @@ export function primaryFieldForSection(section: SectionType): string {
   switch (section) {
     case "analyze":
       return "rootCause.narrative";
+    case "improve":
+      return "correctiveActions";
     case "control":
       return "preventiveActions";
     case "traceability":

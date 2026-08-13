@@ -1,8 +1,10 @@
 import type { LanguageModel } from "ai";
 import type { SectionType } from "@/db/schema";
-import type { ChatMode } from "@/lib/ai/chat/system-prompt";
 import { sectionLabel } from "@/lib/ai/chat/fields";
 import type { SectionScopeMismatch } from "@/lib/ai/chat/section-intent";
+import type { ChatMode } from "@/lib/ai/chat/system-prompt";
+import { deriveEditLabel, splitMarkdownIntoBlocks } from "@/lib/suggestions/diff-redraft";
+import type { AuthoredDraftBlock } from "@/lib/suggestions/replace-draft-set";
 
 export type StubChatPlan = {
   mode: ChatMode;
@@ -17,9 +19,22 @@ export type StubChatPlan = {
    * insertion points) can be driven end to end without a Gemini credential.
    */
   draftMarkdown?: string;
+  /** Optional explicit authored blocks; wins over splitting `draftMarkdown`. */
+  draftBlocks?: readonly AuthoredDraftBlock[];
   /** Agent mode: ids of open proposals the drafted/proposed edit replaces. */
   supersedes?: readonly string[];
 };
+
+function blocksFromDraftMarkdown(
+  markdown: string,
+  reasoning: string
+): AuthoredDraftBlock[] {
+  return splitMarkdownIntoBlocks(markdown).map((md) => ({
+    topic: deriveEditLabel(md) || "Draft",
+    reason: reasoning,
+    markdown: md,
+  }));
+}
 
 /**
  * Scripted mock model (test-only) that drives the REAL chat pipeline with no
@@ -106,13 +121,18 @@ export async function buildStubChatModel(plan: StubChatPlan): Promise<LanguageMo
 
     if (step === 0) {
       const supersedes = plan.supersedes?.length ? { supersedes: plan.supersedes } : {};
-      const call = plan.draftMarkdown
+      const draftBlocks =
+        plan.draftBlocks ??
+        (plan.draftMarkdown
+          ? blocksFromDraftMarkdown(plan.draftMarkdown, plan.reasoning)
+          : null);
+      const call = draftBlocks
         ? {
             toolName: "draft_field",
             input: JSON.stringify({
               section: plan.section,
               targetField: plan.targetField,
-              markdown: plan.draftMarkdown,
+              blocks: draftBlocks,
               reasoning: plan.reasoning,
               ...supersedes,
             }),
