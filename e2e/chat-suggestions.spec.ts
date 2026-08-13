@@ -104,9 +104,11 @@ test.describe("chat drafting → suggestion queue", () => {
     const total = Number(/of (\d+)/.exec(firstStep ?? "")?.[1] ?? "0");
     expect(total).toBeGreaterThan(1);
 
-    // The preview text is what applying must produce.
+    // The gutter card shows the proposed text. (The editor also injects it as a
+    // suggestion mark, but inactive copies are `display: none`, so a page-wide
+    // getByText().first() resolves to a hidden span.)
     const previewed = "Block one describes what was detected during routine inspection.";
-    await expect(page.getByText(previewed).first()).toBeVisible({ timeout: 20_000 });
+    await expect(reviewMargin(page).getByText(previewed)).toBeVisible({ timeout: 20_000 });
 
     await applySuggestion(page).click();
 
@@ -126,12 +128,20 @@ test.describe("chat drafting → suggestion queue", () => {
     await sendChat(page, "Draft the define section [[stub:draft]]");
     await waitForDraftQueue(page);
 
-    // Walk the queue to the list block, applying each card.
+    // Walk the queue to the list block, applying each card. Apply animations
+    // take a few seconds, so wait for the heading to change rather than a
+    // fixed timeout (which used to click a still-disabled Apply).
     for (let i = 0; i < 3; i++) {
       const apply = applySuggestion(page);
       if (!(await apply.isVisible().catch(() => false))) break;
+      const before = (await suggestionCardHeading(page).first().textContent()) ?? "";
+      await expect(apply).toBeEnabled();
       await apply.click();
-      await page.waitForTimeout(1500);
+      if (i < 2) {
+        await expect(suggestionCardHeading(page).first()).not.toHaveText(before, {
+          timeout: 20_000,
+        });
+      }
     }
 
     const editor = page.locator(".ProseMirror").first();
