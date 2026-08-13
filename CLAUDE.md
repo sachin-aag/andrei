@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-M.J. Biopharm Investigation Report Tool — a Next.js 16 app replacing manual DOCX-over-email workflows for pharmaceutical deviation investigation reports (SOP/DP/QA/008). Features an in-browser DMAIC editor with auto-save, AI traffic-light evaluation (Gemini via Vercel AI Gateway), manager review workflow with comments, and DOCX export matching the original template.
+Andrei — a Next.js 16 investigation-report engine with per-customer packs. Demo (`ANDREI_CUSTOMER=demo`) is Andrei-branded with design verification and a conclusion section. MJ (`ANDREI_CUSTOMER=mj`) overlays SOP/DP/QA/008 criteria and prompts, the MJ Word template, MJ branding, Word import, and hides conclusion plus design verification. Features: in-browser DMAIC editor with auto-save, AI traffic-light evaluation (Gemini via Vercel AI Gateway), manager review with comments, attachments/chat, and DOCX export.
 
 ## Commands
 
@@ -66,6 +66,7 @@ pnpm exec playwright install --with-deps chromium firefox webkit
 - `src/db/schema/index.ts` — Drizzle schema (single file, not a directory): `workspaceUsers`, `reports`, `reportManagers` (many managers per report), `reportSections`, `criteriaEvaluations`, `comments`, `chatSessions`/`chatMessages` (AI chat), `reportSourceDocx` (original .docx as bytea), `mathExtractionCache` (LLM formula cache keyed by image SHA-256), `aiFeedbackSessions`/`aiFeedbackResponses` (Improve AI), `auditEvents`/`sectionContentVersions`/`electronicSignatures` (audit subsystem), `passwordPolicySettings`, `retentionSettings`. NextAuth tables + `authUsers` in `auth.ts`.
 - `src/lib/ai/` — AI evaluation, suggestion, and chat pipelines (see subsystems below).
 - `src/lib/audit/` — Hash-chained audit log, section version history, and e-signature workflow (see Audit subsystem).
+- `src/lib/customers/` — Customer pack resolver (`ANDREI_CUSTOMER` / `NEXT_PUBLIC_ANDREI_CUSTOMER`). Demo vs MJ overlays: criteria descriptions, eval prompts, export template, hidden sections, enabled document types, Word import, branding.
 - `src/lib/reports/` — Report domain logic: access control (`access.ts`), manager authorization, deviation-no generation, submit validation, source-docx persistence, blank-section seeding, tombstones.
 - `src/lib/admin/` — Admin-console business logic (user/retention/password-policy operations).
 - `src/lib/improve-ai/` — Improve AI business logic: session store, session view, human-judgment tracking, response syncing, staleness detection.
@@ -103,6 +104,10 @@ NextAuth v5 with Drizzle adapter. Credentials (email/password) and Resend (magic
 
 Password lifecycle is enforced beyond NextAuth: `mustChangePassword`/`passwordExpired` force a redirect to `/change-password` (via the proxy); configurable password policy in `passwordPolicySettings`; failed-login lockout with admin unlock at `POST /api/admin/users/[userId]/unlock`; self-service forgot/reset via `/forgot-password`, `/reset-password`, and `src/app/api/auth-pw/`. An optional site-wide password gate (`/unlock`, `POST /api/site-access`) is active only when `SITE_ACCESS_PASSWORD` is set.
 
+### Customer packs
+
+`src/lib/customers/` resolves `ANDREI_CUSTOMER` (default `demo`). Set **both** `ANDREI_CUSTOMER` and `NEXT_PUBLIC_ANDREI_CUSTOMER` to the same value; they must agree with `ANDREI_VERCEL_DEPLOY_SCOPE` when that is set. Packs overlay criteria descriptions, eval prompts (`promptVersion` is distinct for MJ), export template, hidden sections, enabled document types, Word import, and branding. Do not use feature flags for customer identity. Deploys: `docs/whitelabel-vercel-deploy.md`.
+
 ## Environment variables
 
 Required in `.env.local` (see `.env.example` for all options):
@@ -115,7 +120,9 @@ Required in `.env.local` (see `.env.example` for all options):
 | `AI_GATEWAY_API_KEY` | Vercel AI Gateway key (recommended). AI features fail without this or `GOOGLE_GENERATIVE_AI_API_KEY`. |
 | `GOOGLE_GENERATIVE_AI_API_KEY` | Direct Gemini key (alternative to gateway) |
 | `SITE_ACCESS_PASSWORD` | Optional. When set, enables the site-wide password gate at `/unlock`. Unset = gate disabled. |
-| `NEXT_PUBLIC_POSTHOG_KEY` | Optional. Enables PostHog analytics event capture (`src/lib/analytics/`). |
+| `ANDREI_CUSTOMER` | Customer pack: `demo` (default) or `mj`. Must agree with `NEXT_PUBLIC_ANDREI_CUSTOMER` and `ANDREI_VERCEL_DEPLOY_SCOPE`. |
+| `NEXT_PUBLIC_ANDREI_CUSTOMER` | Same value as `ANDREI_CUSTOMER` (client branding / create-dialog). Unset → demo. |
+| `ANDREI_VERCEL_DEPLOY_SCOPE` | `mj` on `andrei-v2`, `demo` on `andrei-demo`. Must agree with the pack. Unset skips every Vercel build. |
 
 **Test-only variables** (never set on Vercel production or preview):
 

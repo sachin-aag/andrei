@@ -1,124 +1,145 @@
-# Andrei whitelabel — separate Vercel + Neon deployment
+# Customer deploys — one trunk, two Vercel projects
 
-Deploy `feat/whitelabel` as a **standalone demo** (Andrei branding) without touching production MJ on `andrei-v2` / `main`.
+One product engine on **`main`**. Customer differences live in `ANDREI_CUSTOMER` packs, not in long-lived SHA pins or a second product branch.
 
-## Architecture
-
-| | Production (MJ) | Whitelabel demo |
-|--|-----------------|-----------------|
+| | MJ production | Customer demo |
+|--|---------------|---------------|
 | **Vercel project** | `andrei-v2` | `andrei-demo` |
-| **Git production branch** | `main` | `feat/whitelabel` |
+| **Git production branch** | `main` | `main` |
+| **Pack** | `ANDREI_CUSTOMER=mj` | `ANDREI_CUSTOMER=demo` (or unset) |
 | **URL** | https://andrei-v2.vercel.app | https://andrei-demo.vercel.app |
-| **Neon project** | `Andrei V2` | **`demo`** (separate project) |
-| **Neon branch** | `main` / production | `production` (default) |
-| **Data** | Real workspace | Isolated demo DB (seed script) |
+| **Neon project** | `Andrei V2` | `demo` (`bold-field-45608643`) |
+| **What users see** | MJ criteria, MJ Word template, Word import, no DV, no conclusion | Andrei branding, DV + conclusion, attachments-only create |
 
-Both Vercel projects use the same GitHub repo (`sachin-aag/andrei`) and build command (`pnpm vercel:build` → migrate + build). Schema is applied independently per deploy — no Neon-side schema merge.
+Release valve: **the same git SHA on both Production deploys.** After cutover, promote one commit to `andrei-v2` and `andrei-demo`.
 
-**Same repo, two products:** MJ (`main` → `andrei-v2`) and customer demo (`feat/whitelabel` + `cursor/*` → `andrei-demo`). Branch routing is enforced in `scripts/vercel-should-build.sh` via `ANDREI_VERCEL_DEPLOY_SCOPE` on each Vercel project (see § Deploy scope below). Features can start on either line and cherry-pick across; a fork is optional later if the codebases diverge heavily.
+`feat/whitelabel` is retired as a production branch. Leave it in `scripts/vercel-should-build.sh` as a demo-line name so a leftover push cannot create an MJ Neon preview database.
 
-**Why a separate Neon project (not a branch on prod)?** The demo is a permanent second product with its own reports and no plan to merge data. A dedicated Neon project gives hard isolation (credentials, console, quotas) and avoids preview-branch cleanup touching demo data.
+## Pack vs flags vs pins
 
-## Already done
+| Mechanism | Job | Use now? |
+|-----------|-----|----------|
+| Customer pack (`ANDREI_CUSTOMER`) | Permanent identity: template, criteria, prompts, branding, enabled types and sections | Yes |
+| Same SHA on both deploys | One binary to debug | Yes — policy |
+| Feature flags | Temporary holdback of an unfinished engine feature | No (at two pilots a flag is a second source of truth) |
+| Pin MJ on an older SHA | Demo leads for days or weeks | No, as policy |
+| Roll back one project | Last deploy is bad | Yes, incident only, then catch up |
 
-- [x] `feat/whitelabel` pushed to GitHub
-- [x] Vercel project **`andrei-demo`** created and GitHub-connected
-- [x] Neon project **`demo`** (`bold-field-45608643`) — schema pushed, migrations baselined, 5 reports seeded
-- [x] Production env vars on `andrei-demo` (demo `DATABASE_URL`, `AUTH_URL`, AI/auth keys from local `.env`)
-- [x] Initial production deploy → https://andrei-demo.vercel.app
-- [x] Vercel Authentication (SSO) disabled on `andrei-demo` for public client access
+Set **both** `ANDREI_CUSTOMER` and `NEXT_PUBLIC_ANDREI_CUSTOMER` to the same value. They must agree with `ANDREI_VERCEL_DEPLOY_SCOPE`. Client chrome (login, create dialog, list filters) reads the public var.
 
-## Fresh Neon project bootstrap
+## Deploy scope (branch routing)
 
-Historical SQL migrations assume a DB that was originally created with `drizzle-kit push` (prod path). On a **brand-new empty** Neon project, `pnpm db:migrate` alone can fail mid-chain. One-time bootstrap:
-
-```bash
-export DATABASE_URL='postgresql://…demo…?sslmode=require'
-
-# 1. Apply current schema from src/db/schema
-pnpm exec drizzle-kit push --force
-
-# 2. Mark existing migration files as applied (so vercel:build migrate is a no-op)
-node --input-type=module -e "
-import crypto from 'node:crypto';
-import fs from 'node:fs';
-import path from 'node:path';
-import pg from 'pg';
-const dir = path.join(process.cwd(), 'src/db/migrations');
-const journal = JSON.parse(fs.readFileSync(path.join(dir, 'meta/_journal.json'), 'utf8'));
-const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
-await pool.query('CREATE SCHEMA IF NOT EXISTS drizzle');
-await pool.query('CREATE TABLE IF NOT EXISTS drizzle.__drizzle_migrations (id SERIAL PRIMARY KEY, hash text NOT NULL, created_at bigint)');
-for (const entry of journal.entries) {
-  const sql = fs.readFileSync(path.join(dir, entry.tag + '.sql'), 'utf8');
-  const hash = crypto.createHash('sha256').update(sql).digest('hex');
-  await pool.query('INSERT INTO drizzle.__drizzle_migrations (hash, created_at) SELECT \$1, \$2 WHERE NOT EXISTS (SELECT 1 FROM drizzle.__drizzle_migrations WHERE hash = \$1)', [hash, entry.when]);
-}
-const extra = '0030_conclusion_section';
-const sql = fs.readFileSync(path.join(dir, extra + '.sql'), 'utf8');
-const hash = crypto.createHash('sha256').update(sql).digest('hex');
-await pool.query('INSERT INTO drizzle.__drizzle_migrations (hash, created_at) SELECT \$1, \$2 WHERE NOT EXISTS (SELECT 1 FROM drizzle.__drizzle_migrations WHERE hash = \$1)', [hash, Date.now()]);
-await pool.end();
-console.log('Baselined');
-"
-
-# 3. Seed demo users + reports
-pnpm seed-demo-reports
-```
-
-After bootstrap, `pnpm vercel:build` migrations on deploy stay safe.
-
-## Deploy scope (branch routing) — **required**
-
-Both Vercel projects watch the **same** GitHub repo. Without scope env vars, every push builds on **both** `andrei-v2` and `andrei-demo` (e.g. `cursor/report-chat-agent-9666` incorrectly deploys to MJ).
-
-Set on **each** Vercel project → **Settings → Environment Variables** → enable **Production**, **Preview**, and **Development**:
+Both Vercel projects watch the same GitHub repo. Set on **each** project → Settings → Environment Variables → Production, Preview, and Development:
 
 | Vercel project | Variable | Value |
 |----------------|----------|--------|
 | **andrei-demo** | `ANDREI_VERCEL_DEPLOY_SCOPE` | `demo` |
 | **andrei-v2** | `ANDREI_VERCEL_DEPLOY_SCOPE` | `mj` |
 
-`scripts/vercel-should-build.sh` (in `vercel.json` `ignoreCommand`) then routes:
+`scripts/vercel-should-build.sh` (`vercel.json` `ignoreCommand`):
 
-| Branch pattern | andrei-demo | andrei-v2 |
-|----------------|-------------|-----------|
-| `main` | skip | **build** (production) |
-| `feat/whitelabel` | **build** (production) | skip |
-| `cursor/*` (agent / demo feature PRs) | **build** (preview) | skip |
-| `demo/*` (optional demo feature prefix) | **build** | skip |
-| Other (MJ feature PRs → `main`) | skip | **build** (preview) |
+| Branch | andrei-demo (`scope=demo`) | andrei-v2 (`scope=mj`) |
+|--------|----------------------------|-------------------------|
+| `main` | **build** (production) | **build** (production) |
+| `cursor/*`, `demo/*` | **build** (preview) | skip — no MJ Neon preview DB |
+| `feat/whitelabel` | **build** (legacy) | skip |
+| anything else | skip | skip |
 
-**Demo PR previews** (`cursor/*` → `feat/whitelabel`) still need `DATABASE_URL` on the **Preview** environment on `andrei-demo` (same demo Neon URL as Production). `AUTH_URL` can stay Production-only; previews fall back to `VERCEL_URL`.
+**Dashboard (one-time after this lands):** [andrei-demo → Environments → Production → Branch Tracking](https://vercel.com/sachin-aags-projects/andrei-demo/settings/environments) → **`main`** (today it may still be `feat/whitelabel`).
 
-**Moving features between products:** develop on the starting line’s branch, then `git cherry-pick` onto `main` or `feat/whitelabel`. No fork required while the core engine stays shared.
+`andrei-v2` already tracks `main`.
 
-## Still required (one-time dashboard)
+Preview `DATABASE_URL` on `andrei-demo` stays the **demo** Neon pooled URL (same as Production). Do not enable per-PR Neon branching on `andrei-v2`.
 
-### Production branch — **yes, if you use git auto-deploy**
+## Environment variables
 
-`andrei-demo` currently tracks **`main`** for Production. That means:
+### Both projects
 
-| Production branch | What deploys `andrei-demo` on git push |
-|-------------------|----------------------------------------|
-| `main` (current) | Only pushes to **`main`** — **not** `feat/whitelabel` |
-| `feat/whitelabel` | Only pushes to **`feat/whitelabel`** — your fork model |
+Copy auth/AI keys as today. Never set `ALLOW_TEST_*` or `ATTACHMENT_STORAGE_BACKEND=local` on Vercel Production.
 
-**You need this step** if you want `git push origin feat/whitelabel` to deploy the demo without a manual `vercel deploy --prod`. It does **not** affect `andrei-v2` (that project still tracks `main`).
+### andrei-demo (Production + Preview)
 
-**Skip it** only if you will **always** deploy via CLI (`vercel link -p andrei-demo && vercel deploy --prod`) and never rely on GitHub hooks for the demo.
+| Variable | Value |
+|----------|--------|
+| `ANDREI_CUSTOMER` | `demo` |
+| `NEXT_PUBLIC_ANDREI_CUSTOMER` | `demo` |
+| `ANDREI_VERCEL_DEPLOY_SCOPE` | `demo` |
+| `DATABASE_URL` | Neon **demo** pooled URL |
+| `AUTH_URL` | `https://andrei-demo.vercel.app` |
 
-[andrei-demo → Settings → Environments → Production → Branch Tracking](https://vercel.com/sachin-aags-projects/andrei-demo/settings/environments) → set to **`feat/whitelabel`**.
+### andrei-v2 (Production) — MJ cutover
 
-### Framework preset
+| Variable | Value |
+|----------|--------|
+| `ANDREI_CUSTOMER` | `mj` |
+| `NEXT_PUBLIC_ANDREI_CUSTOMER` | `mj` |
+| `ANDREI_VERCEL_DEPLOY_SCOPE` | `mj` |
+| `DATABASE_URL` | Neon **Andrei V2** production |
+| `GOOGLE_VERTEX_PROJECT` | Vertex project (chat/ingest) |
+| `GCP_WIF_AUDIENCE` | WIF audience |
+| `GCP_SERVICE_ACCOUNT_EMAIL` | WIF service account |
+| `GCS_BUCKET` | Attachment bucket |
 
-In [andrei-demo → Settings → General](https://vercel.com/sachin-aags-projects/andrei-demo/settings/general), set **Framework Preset** to **Next.js**. If left as "Other", the build can succeed but routes may not be wired (404 on all paths). CLI:
+Partial Vertex config (`GOOGLE_VERTEX_PROJECT` without WIF) causes `Could not load the default credentials` on Vercel. Local-only attachment flags must never be set here or ingest 500s.
 
-```bash
-vercel api /v9/projects/andrei-demo -X PATCH -F framework=nextjs
-```
+MJ `promptVersion` is `mj-sop-dp-qa-008-v1`. Existing evaluations go stale on cutover — tell MJ they need a re-run.
 
-Then redeploy: `vercel deploy --prod --yes` (from `feat/whitelabel`).
+## MJ database cutover
+
+MJ Neon is **8 SQL files behind** the trunk: `0030_conclusion_section` through `0037_document_types`. **`0037` is destructive** (no down migration):
+
+- copies `deviation_no` → `document_no`, then `DROP COLUMN deviation_no`
+- folds `tools_used` / `other_tools` into `metadata`, then drops those columns
+- `DROP TYPE section_type` after converting five `section` columns to `text`
+- unique index `(author_id, document_type, document_no)`
+
+MJ was historically **push-managed**, so `drizzle.__drizzle_migrations` may be empty or not match the 30 files on disk.
+
+`ensurePushBaseline()` used to stamp **every** journal tag when `reports` existed and the journal was empty. That would mark 0030–0037 applied **without running SQL**. The migrator now leaves tags numbered 0030+ unstamped when `reports.document_no` is missing so `migrate()` can apply 0031–0037. `0030_conclusion_section.sql` is not in `_journal.json`; on that path it is applied as extra SQL (ADD VALUE) and recorded with a `created_at` between 0029 and 0031.
+
+Read-only preflight: `scripts/mj-cutover-preflight.sql`.
+
+### Gated sequence
+
+1. Read `drizzle.__drizzle_migrations` on MJ production; reconcile against `src/db/migrations/meta/_journal.json`. `0030_conclusion_section.sql` is on disk but not in the journal (applied via `EXTRA_MIGRATION_TAGS` on already-current DBs). MJ does not need the `conclusion` enum value; 0037 converts `section` to text and drops the enum.
+2. Preflight:
+
+   ```sql
+   SELECT author_id, deviation_no, count(*)
+   FROM reports
+   GROUP BY 1, 2
+   HAVING count(*) > 1;
+   ```
+
+   Any row fails the new unique index mid-migration. Stop. Same query lives in `scripts/mj-cutover-preflight.sql`.
+3. Create a **Neon branch** from MJ production. Run 0030–0037 there (or deploy this SHA at `ANDREI_CUSTOMER=mj` against the branch `DATABASE_URL`). Open a real MJ report, export Word, confirm nothing lost.
+4. Note the **PITR window** in the Neon console before the production run. Rollback is a Neon restore, not a down migration. Typical retain is 7 days on paid plans — confirm in the project.
+5. Only then run against MJ production. Set pack + Vertex/GCS env **before** pointing users at the new SHA, or ingest and chat evidence 500.
+
+### Local rehearsal (this environment)
+
+No MJ production `DATABASE_URL` or `NEON_API_KEY` was available here. Rehearsal used a local clone of the **origin/main** schema (`andrei_mj_rehearsal`) with two copied reports (`DEV-2026-001`, `DEV-2026-002`):
+
+- Preflight duplicates: empty
+- Existing unique `(author_id, deviation_no)` already rejects a duplicate insert
+- SQL files 0030–0037 all applied
+- `document_no` copied; `metadata.toolsUsed` preserved; DMAIC section JSON intact; `section_type` enum dropped
+
+Log: `/opt/cursor/artifacts/mj-migration-rehearsal.log` (CI/agent artifact; not in git).
+
+## Cutover order
+
+1. Merge this trunk PR to `main` **after** L1–L3 are on `feat/whitelabel` (or merge this PR, which already contains that stack).
+2. Repoint `andrei-demo` Production branch tracking to `main`.
+3. Set pack env on `andrei-demo` (`demo`) if unset.
+4. Set pack + Vertex/GCS env on `andrei-v2` (`mj`).
+5. Rehearse 0030–0037 on a Neon branch of MJ production; record PITR.
+6. Run the migration on MJ production (or let `vercel:build` migrate on the first `main` deploy **after** the baseline guard is live).
+7. Promote the **same SHA** to both projects. Verify:
+
+   - Demo: DV + conclusion, Andrei chrome, no Word-body field
+   - MJ: no DV, no conclusion tab, MJ login/shell, Word import + evidence PDFs, export opens the MJ template
+   - `cursor/*` PR deploys only `andrei-demo`
 
 ## Neon `demo` project
 
@@ -127,146 +148,27 @@ Then redeploy: `vercel deploy --prod --yes` (from `feat/whitelabel`).
 | Console | https://console.neon.tech/app/projects/bold-field-45608643 |
 | Database | `neondb` |
 | Default branch | `production` |
-| Pooled host | `…-pooler.c-3.us-east-1.aws.neon.tech` |
-| Direct host | `….c-3.us-east-1.aws.neon.tech` (for `DATABASE_URL_UNPOOLED`) |
 
-Connection strings: Neon Console → **demo** → **Connect**. Do not commit passwords to git.
+Connection strings: Neon Console → **demo** → **Connect**. Do not commit passwords.
 
-## 1. Vercel — production branch
+Connect the **demo** Neon project to **andrei-demo** only. Do not reuse the Andrei V2 integration for the demo app.
 
-[andrei-demo → Settings → Environments → Production → Branch Tracking](https://vercel.com/sachin-aags-projects/andrei-demo/settings/environments)
-
-1. Change **Production Branch** from `main` to **`feat/whitelabel`**
-2. Save
-
-Until this is set, pushes to `main` would incorrectly deploy MJ code to `andrei-demo`.
-
-## 2. Vercel — environment variables (Production)
-
-[andrei-demo → Settings → Environment Variables](https://vercel.com/sachin-aags-projects/andrei-demo/settings/environment-variables)
-
-Copy from **`andrei-v2` Production**, then override:
-
-| Variable | Value |
-|----------|--------|
-| `DATABASE_URL` | Neon **`demo`** project — pooled connection string |
-| `DATABASE_URL_UNPOOLED` | Neon **`demo`** project — direct (non-pooler) connection string |
-| `AUTH_URL` | `https://andrei-demo.vercel.app` |
-| `AUTH_SECRET` | Unique secret per deployment (`openssl rand -base64 32`) |
-
-Also set for **Production** (copy from `andrei-v2` if missing):
-
-- `AUTH_RESEND_KEY`, `AUTH_EMAIL_FROM`
-- `AI_GATEWAY_API_KEY` (or `GOOGLE_GENERATIVE_AI_API_KEY`)
-- `LANGFUSE_*` (optional)
-- `NEXT_PUBLIC_POSTHOG_KEY`, `NEXT_PUBLIC_POSTHOG_HOST` (optional; separate PostHog project recommended)
-- `SITE_ACCESS_PASSWORD` (if you use the site gate)
-- GCP / Vertex vars if AI uses Vertex on production
-
-**Do not** set `ALLOW_TEST_*` or `TEST_AUTH_EMAIL` on Production.
-
-### Neon ↔ Vercel integration
-
-Connect the **`demo`** Neon project to **`andrei-demo`** only (Vercel **Storage** → Neon). Do **not** reuse the `Andrei V2` Neon integration for the demo app.
-
-For Production, explicit `DATABASE_URL` env vars override integration defaults. **Disable** per-preview Neon branching on `andrei-demo` unless you want ephemeral PR databases — a static `DATABASE_URL` is simpler for a stable client demo.
-
-### Preview deployments (PR branches)
-
-`andrei-demo` does **not** get a per-PR Neon branch. With `ANDREI_VERCEL_DEPLOY_SCOPE=demo`, `cursor/*` PR branches **do** build on andrei-demo — add `DATABASE_URL`, `AUTH_SECRET`, and AI keys to **Preview** (same demo Neon URL / secrets as Production).
-
-**Do not** rely on Production `AUTH_URL` on Preview: NextAuth redirects to that host when set. The app overrides `AUTH_URL` to `VERCEL_URL` on Preview deploys (`src/lib/auth/apply-deployment-auth-url.ts`), but you can also leave `AUTH_URL` unchecked for Preview in Vercel.
-
-**Same data as Production is expected** — Preview uses the same demo Neon `DATABASE_URL`, so you see the same seeded reports/users. The preview URL should stay on `andrei-demo-git-…vercel.app` after login.
-
-CLI example (after `vercel link -p andrei-demo -y`):
-
-```bash
-printf '%s' 'postgresql://…pooled…' | vercel env add DATABASE_URL production
-printf '%s' 'postgresql://…direct…'  | vercel env add DATABASE_URL_UNPOOLED production
-printf '%s' 'https://andrei-demo.vercel.app' | vercel env add AUTH_URL production
-printf '%s' "$(openssl rand -base64 32)" | vercel env add AUTH_SECRET production
-```
-
-## 3. Deploy
-
-**Git (after env vars + production branch are set):**
-
-```bash
-git push origin feat/whitelabel
-```
-
-**CLI one-off:**
-
-```bash
-vercel link -p andrei-demo -y
-vercel deploy --prod --yes
-vercel link -p andrei-v2 -y   # restore local link
-```
-
-Build runs `pnpm vercel:build` (migrations + `next build`). Migrations are idempotent on an already-migrated DB.
-
-## 4. Seed / refresh demo data
-
-Against the **`demo`** Neon URL (local or CI):
+## Seed / refresh demo data
 
 ```bash
 DATABASE_URL='postgresql://…demo…?sslmode=require' pnpm seed-demo-reports
 ```
 
-Creates (idempotent on deviation numbers):
-
-| Email | Role |
-|-------|------|
-| `sachin@andreihealth.com` | engineer (primary report author) |
-| `aditya@andreihealth.com` | engineer |
-| `sachin+manager@andreihealth.com` | manager (primary assignee) |
-| `aditya+manager@andreihealth.com` | manager |
-| `sachin+admin@andreihealth.com` | admin |
-| `aditya+admin@andreihealth.com` | admin |
-
-Password for all: **`DemoPass123!`** (`mustChangePassword` on first login). Removes legacy `engineer@company.com` / `manager@company.com` if present.
-
-- 5 curated reports (e.g. `DEV-STE-26-011`, …)
-
-Re-run after schema changes or to reset demo content (delete reports in Neon SQL editor first if you need a clean slate).
-
-## 5. Verify
-
-1. https://andrei-demo.vercel.app → Andrei branding
-2. Login `sachin@andreihealth.com` → curated seeded reports
-3. Measure experiment fields + **Conclusion** section
-4. Export DOCX → Andrei header/logo
-5. **Insights** nav → mock pages
-6. Run AI Check (needs `AI_GATEWAY_API_KEY` or Gemini on Production)
-
-## 6. Custom domain (optional)
-
-[andrei-demo → Domains](https://vercel.com/sachin-aags-projects/andrei-demo/settings/domains) — e.g. `demo.andreihealth.com`, then update `AUTH_URL`.
-
-## Keeping environments in sync
-
-| Change | Action |
-|--------|--------|
-| Whitelabel features | Commit to `feat/whitelabel` → deploys `andrei-demo` |
-| MJ production | Merge to `main` → deploys `andrei-v2` only |
-| New migration SQL | Commit → each Vercel project migrates its own Neon DB on deploy |
+Password for seeded users: **`DemoPass123!`**. See previous seed table in git history if you need the email list.
 
 ## Troubleshooting
 
 | Symptom | Fix |
 |---------|-----|
-| `DATABASE_URL is not set` on build (Production) | Add demo pooled URL to **Production** on `andrei-demo` |
-| `DATABASE_URL is not set` on build (Preview / PR branch) | Add demo pooled URL to **Preview** on `andrei-demo`, or check `ANDREI_VERCEL_DEPLOY_SCOPE=demo` is set |
-| PR builds on **both** Vercel projects | Set `ANDREI_VERCEL_DEPLOY_SCOPE=demo` on andrei-demo and `mj` on andrei-v2 (all environments) |
-| Demo PR creates a Neon branch on **MJ / Andrei V2** | `andrei-v2` built the PR. Confirm `ANDREI_VERCEL_DEPLOY_SCOPE=mj` on **Preview** (and Production). Demo-line branches (`cursor/*`, `demo/*`, `feat/whitelabel`) must be **Ignored** on `andrei-v2` — that skip is what prevents an MJ Neon preview DB. |
-| Wrong login redirect | `AUTH_URL` must match deployed URL exactly |
-| **404 on all paths** | Set Framework Preset to **Next.js** on `andrei-demo`, then redeploy |
-| Empty dashboard | Run `pnpm seed-demo-reports` against **demo** Neon |
-| MJ branding on demo | Production branch still `main`; set to `feat/whitelabel` |
-| Prod data on demo | `DATABASE_URL` points at wrong Neon project — must be **`demo`**, not `Andrei V2` |
-| AI Check errors | Add `AI_GATEWAY_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` to Production. If you copied `GOOGLE_VERTEX_PROJECT` from prod, also copy **`GCP_WIF_AUDIENCE`** + **`GCP_SERVICE_ACCOUNT_EMAIL`**, or remove the Vertex vars so the gateway key is used. Partial Vertex config causes `Could not load the default credentials` on Vercel. |
-
-## Local `.vercel` link
-
-Keep `.vercel` linked to **`andrei-v2`** for day-to-day dev. Use `vercel link -p andrei-demo -y` only for demo deploys or env management.
+| PR builds on **both** Vercel projects | `ANDREI_VERCEL_DEPLOY_SCOPE` missing on Preview |
+| Demo PR creates a Neon branch on MJ | `andrei-v2` built the PR. `scope=mj` must skip everything except `main` |
+| MJ looks like Andrei | `NEXT_PUBLIC_ANDREI_CUSTOMER` unset on `andrei-v2` (client defaults to demo) |
+| MJ export missing conclusion | Expected — MJ template has no `{@conclusionNarrativeXml}`; pack hides the section |
+| Ingest/chat 500 on MJ | Vertex WIF + GCS missing; do not set local attachment flags |
+| `document_no` missing after deploy | Journal was stamped without running 0037. Restore from PITR; do not re-run `db:migrate` until the baseline guard is live |
+| AI Check stale on MJ day one | Expected `promptVersion` bump; re-run AI Check |

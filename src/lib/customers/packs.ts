@@ -88,7 +88,7 @@ const MJ_BRANDING: CustomerBranding = {
   aiAttribution: "by Andrei",
 };
 
-/** Demo pack matches current feat/whitelabel behavior. */
+/** Demo pack is the default engine overlay (Andrei branding). */
 export const DEMO_PACK: CustomerPack = {
   id: "demo",
   enabledDocumentTypes: ["investigation_report", "design_verification"],

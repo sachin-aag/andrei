@@ -16,7 +16,7 @@ export default defineConfig({
     environment: "node",
     globals: true,
     setupFiles: ["./src/test/setup.ts"],
-    include: ["src/**/*.{test,spec}.{ts,tsx}"],
+    include: ["src/**/*.{test,spec}.{ts,tsx}", "scripts/**/*.{test,spec}.ts"],
     // DOCX import/export integration tests routinely exceed 5s under full-suite load.
     testTimeout: 20_000,
     coverage: {
