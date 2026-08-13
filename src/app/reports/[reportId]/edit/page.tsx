@@ -4,8 +4,7 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { listWorkspaceUsers } from "@/lib/auth/workspace-users";
 import { getPasswordStatusForUser } from "@/lib/auth/password-status";
 import { getPasswordPolicy } from "@/lib/auth/password-policy";
-import { canViewReport } from "@/lib/reports/access";
-import { isReadOnlyRole } from "@/lib/auth/roles";
+import { canSaveReportSection, canViewReport } from "@/lib/reports/access";
 import { loadReportBundle } from "@/lib/reports/bundle";
 import { AppShell } from "@/components/layout/app-shell";
 import { ReportProvider } from "@/providers/report-provider";
@@ -26,11 +25,9 @@ export default async function EditReportPage({
   if (!bundle) notFound();
   if (!canViewReport(user, bundle.report)) notFound();
 
+  // Match section PATCH for authors. Managers save via review track-changes, not /edit.
   const canEdit =
-    !isReadOnlyRole(user.role) &&
-    user.role === "engineer" &&
-    user.id === bundle.report.authorId &&
-    bundle.report.status !== "approved";
+    user.role === "engineer" && canSaveReportSection(user, bundle.report);
 
   const [workspaceUsers, passwordStatus, policy] = await Promise.all([
     listWorkspaceUsers(),
@@ -48,6 +45,7 @@ export default async function EditReportPage({
       <ReportProvider
         bundle={bundle}
         currentUserId={user.id}
+        currentUserRole={user.role}
         readOnly={!canEdit}
         workspaceMode="edit"
         initialTrackChangesMode={false}

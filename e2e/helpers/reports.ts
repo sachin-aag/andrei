@@ -9,6 +9,7 @@ import { authSessionCookieHeader, browserCookieHeaders } from "./api";
 export type CreatedReport = {
   id: string;
   deviationNo: string;
+  documentNo: string;
 };
 
 export function uniqueDeviationNo(prefix = "E2E"): string {
@@ -31,13 +32,17 @@ export async function createReport(
   page: Page,
   opts?: {
     deviationNo?: string;
+    documentNo?: string;
     assignedManagerId?: string | null;
     assignedManagerIds?: string[];
   }
 ): Promise<CreatedReport> {
-  const deviationNo = opts?.deviationNo ?? uniqueDeviationNo();
+  const documentNo =
+    opts?.documentNo ?? opts?.deviationNo ?? uniqueDeviationNo();
   const payload = {
-    deviationNo,
+    documentNo,
+    // Temporary alias still accepted by create API
+    deviationNo: documentNo,
     assignedManagerId: opts?.assignedManagerId ?? null,
     ...(opts?.assignedManagerIds
       ? { assignedManagerIds: opts.assignedManagerIds }
@@ -58,9 +63,13 @@ export async function createReport(
   expect(res.ok(), `create report failed (${res.status()})`).toBeTruthy();
   const body = (await res.json()) as {
     id: string;
-    report: { id: string; deviationNo: string };
+    report: { id: string; documentNo: string };
   };
-  return { id: body.id, deviationNo: body.report.deviationNo };
+  return {
+    id: body.id,
+    documentNo: body.report.documentNo,
+    deviationNo: body.report.documentNo,
+  };
 }
 
 const DEFINE_EVAL_NARRATIVE = {

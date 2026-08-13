@@ -167,6 +167,21 @@ export const HUMAN_REVIEW_CRITERIA_BY_KEY: Record<string, HumanReviewCriterionCo
     description:
       "Are the identified preventive actions achievable based on the information provided?",
   },
+  "conclusion.summary": {
+    label: "Investigation summary",
+    description:
+      "Does the conclusion briefly summarize the root cause, final scope, and impact of the deviation?",
+  },
+  "conclusion.disposition": {
+    label: "Disposition and decisions",
+    description:
+      "Are final disposition decisions and rationale clearly stated?",
+  },
+  "conclusion.closure": {
+    label: "Closure completeness",
+    description:
+      "Does the conclusion address remaining actions, regulatory notifications if applicable, and overall investigation closure?",
+  },
 };
 
 export function getHumanReviewCriterion(

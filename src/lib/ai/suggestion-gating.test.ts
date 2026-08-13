@@ -2,9 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   canSuggestFixes,
   gapCriteriaForSection,
+  sectionContentHash,
   sortGapCriteria,
   sortedOpenSuggestionsForSection,
 } from "@/lib/ai/suggestion-gating";
+import { evaluationContentHash } from "@/lib/ai/evaluation-content-hash";
+import { getCriteria, getDocumentType } from "@/lib/document-types";
 import type { CommentRecord, EvaluationRecord } from "@/types/report";
 
 const baseEval = (overrides: Partial<EvaluationRecord>): EvaluationRecord => ({
@@ -165,5 +168,90 @@ describe("suggestion-gating", () => {
     ];
     const sorted = sortedOpenSuggestionsForSection("define", comments, evaluations);
     expect(sorted.map((c) => c.id)).toEqual(["c-red", "c-yellow"]);
+  });
+
+  it("matches evaluationContentHash so fresh failing criteria enable Suggest fixes", () => {
+    const content = {
+      narrative: {
+        type: "doc",
+        content: [{ type: "paragraph", content: [{ type: "text", text: "Purpose" }] }],
+      },
+    };
+    const documentType = "design_verification" as const;
+    const section = "purpose_scope" as const;
+    const allSections = { purpose_scope: content };
+    const hash = evaluationContentHash({
+      section,
+      content,
+      allSections,
+      criteria: getCriteria(documentType, section),
+      promptVersion: getDocumentType(documentType).prompts.promptVersion,
+    });
+    expect(
+      sectionContentHash(section, content, { documentType, allSections })
+    ).toBe(hash);
+
+    const evaluations = [
+      baseEval({
+        id: "dv-fail",
+        section,
+        sectionId: "sec-purpose",
+        criterionKey: "purpose.objective",
+        status: "not_met",
+        evaluatedContentHash: hash,
+      }),
+    ];
+    expect(
+      canSuggestFixes(section, evaluations, [], content, {
+        documentType,
+        allSections,
+      })
+    ).toBe(true);
+  });
+
+  it("includes dependsOn sections in the freshness hash for DV results", () => {
+    const resultsContent = {
+      results_table: {
+        type: "doc",
+        content: [{ type: "paragraph", content: [{ type: "text", text: "Pass" }] }],
+      },
+    };
+    const traceability = {
+      matrix: {
+        type: "doc",
+        content: [{ type: "paragraph", content: [{ type: "text", text: "REQ-1" }] }],
+      },
+    };
+    const allSections = {
+      test_results: resultsContent,
+      traceability,
+    };
+    const documentType = "design_verification" as const;
+    const hash = sectionContentHash("test_results", resultsContent, {
+      documentType,
+      allSections,
+    });
+    const evaluations = [
+      baseEval({
+        id: "dv-results",
+        section: "test_results",
+        sectionId: "sec-results",
+        criterionKey: "results.traceable_ids",
+        status: "not_met",
+        evaluatedContentHash: hash,
+      }),
+    ];
+    expect(
+      canSuggestFixes("test_results", evaluations, [], resultsContent, {
+        documentType,
+        allSections,
+      })
+    ).toBe(true);
+    expect(
+      canSuggestFixes("test_results", evaluations, [], resultsContent, {
+        documentType,
+        allSections: { test_results: resultsContent },
+      })
+    ).toBe(false);
   });
 });

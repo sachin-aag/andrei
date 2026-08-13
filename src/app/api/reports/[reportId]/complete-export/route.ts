@@ -35,7 +35,7 @@ export async function GET(
   });
   if (!bundle) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const safeDev = (bundle.deviationNo || "report").replace(/[^a-zA-Z0-9_\-/]/g, "_");
+  const safeDev = (bundle.documentNo || "report").replace(/[^a-zA-Z0-9_\-/]/g, "_");
   const filename = `Complete_Record_${safeDev.replace(/\//g, "-")}.zip`;
   return new NextResponse(new Uint8Array(bundle.buffer), {
     headers: {

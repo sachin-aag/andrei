@@ -20,8 +20,8 @@ export function MeasureEditor() {
       <TiptapSectionField
         section="measure"
         contentPath="narrative"
-        label="Measurement Narrative"
-        placeholder="The equipment is installed in … SOP No. … is in place for … Include regulatory notification details if applicable."
+        label="Measurement narrative"
+        placeholder="Summarize the facts, data reviewed, and analysis supporting the measure phase."
         className="grid gap-2"
         value={value.narrative}
         onChange={(doc) => update((p) => ({ ...p, narrative: doc }))}

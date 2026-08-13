@@ -1,28 +1,62 @@
 @import "tailwindcss";
 
-/* MJ Biopharm brand navy #133782 rgb(19,55,130) — light theme only */
+/* Andrei brand navy #001838 / blue #3d6fb5 — light theme only */
 :root {
   --background: #fafafa;
-  --foreground: #16162b;
+  --foreground: #0f1e33;
   --card: #ffffff;
-  --card-foreground: #16162b;
+  --card-foreground: #0f1e33;
   --popover: #ffffff;
+  --popover-foreground: #0f1e33;
+  --primary: #3d6fb5;
+  --primary-foreground: #ffffff;
+  --secondary: #f4f7fb;
+  --secondary-foreground: #001838;
+  --muted: #f4f7fb;
+  --muted-foreground: #5b6b82;
+  --accent: #001838;
+  --accent-foreground: #ffffff;
+  --destructive: #dc2626;
+  --destructive-foreground: #ffffff;
+  --border: #e2e8f2;
+  --input: #ffffff;
+  /* Lighter Andrei blue for rings / focus visibility on pale surfaces */
+  --ring: #5b8ad0;
+  --radius: 0.5rem;
+
+  --brand: #001838;
+  --brand-50: #eef4fb;
+  --brand-100: #d9e6f5;
+  --brand-200: #b3cce9;
+  --brand-300: #8db3dd;
+  --brand-400: #5b8ad0;
+  --brand-500: #3d6fb5;
+  --brand-600: #001838;
+  --brand-700: #0a2547;
+  --brand-800: #061528;
+  --brand-900: #030c18;
+
+  --success: #15803d;
+  --warning: #a16207;
+
+  --duration-exit: 150ms;
+  --duration-enter: 210ms;
+  --duration-move: 400ms;
+}
+
+/* MJ Biopharm overlay — navy #133782 / purple #403ac8 from origin/main */
+html[data-customer="mj"] {
+  --foreground: #16162b;
+  --card-foreground: #16162b;
   --popover-foreground: #16162b;
   --primary: #403ac8;
-  --primary-foreground: #ffffff;
   --secondary: #f4f4f5;
   --secondary-foreground: #1f1d4f;
   --muted: #f4f4f5;
   --muted-foreground: #5c5c72;
   --accent: #133782;
-  --accent-foreground: #ffffff;
-  --destructive: #dc2626;
-  --destructive-foreground: #ffffff;
   --border: #e5e5e5;
-  --input: #ffffff;
-  /* Lighter MJ tint for rings / focus visibility on pale surfaces */
   --ring: #3a62c4;
-  --radius: 0.5rem;
 
   --brand: #133782;
   --brand-50: #eceaff;
@@ -35,13 +69,6 @@
   --brand-700: #1f1d4f;
   --brand-800: #13122e;
   --brand-900: #090817;
-
-  --success: #15803d;
-  --warning: #a16207;
-
-  --duration-exit: 150ms;
-  --duration-enter: 210ms;
-  --duration-move: 400ms;
 }
 
 @theme inline {
@@ -457,6 +484,66 @@
   transition: opacity 0.35s ease;
 }
 
+/*
+ * While a suggestion is being applied, calm the diff down to a plain preview
+ * of the result: the deleted run fades out and the inserted run sheds its
+ * highlight, so what's left reads as ordinary text.
+ *
+ * Everything here animates opacity/color only — never `display` or `filter`.
+ * Pulling the deleted run out of the flow mid-transition would rewrap the
+ * paragraph and visibly add or drop a line, so it keeps its space until the
+ * real value lands and replaces the preview wholesale.
+ */
+[data-suggestion-preview-held] .suggestion-insert,
+[data-suggestion-preview-held] .suggestion-insert-ai,
+[data-suggestion-preview-held] .suggestion-delete,
+[data-suggestion-preview-held] .suggestion-delete-ai {
+  transition:
+    opacity 240ms ease,
+    color 240ms ease,
+    background-color 240ms ease,
+    border-bottom-color 240ms ease,
+    text-decoration-color 240ms ease;
+}
+
+/* Accepting: the deletion is on its way out, the insertion becomes the text. */
+[data-suggestion-preview-held="accept"] .suggestion-delete,
+[data-suggestion-preview-held="accept"] .suggestion-delete-ai {
+  opacity: 0;
+  background-color: transparent;
+}
+
+[data-suggestion-preview-held="accept"] .suggestion-insert,
+[data-suggestion-preview-held="accept"] .suggestion-insert-ai {
+  background-color: transparent;
+  border-bottom-color: transparent;
+}
+
+/* Dismissing: the reverse — the insertion goes, the original text stays. */
+[data-suggestion-preview-held="dismiss"] .suggestion-insert,
+[data-suggestion-preview-held="dismiss"] .suggestion-insert-ai {
+  opacity: 0;
+  background-color: transparent;
+  border-bottom-color: transparent;
+}
+
+[data-suggestion-preview-held="dismiss"] .suggestion-delete,
+[data-suggestion-preview-held="dismiss"] .suggestion-delete-ai {
+  color: inherit;
+  background-color: transparent;
+  text-decoration-color: transparent;
+}
+
+/* Sparkle brackets fade with the run they annotate (opacity keeps their box,
+   so the surrounding text does not shift). */
+[data-suggestion-preview-held] .suggestion-insert-ai::before,
+[data-suggestion-preview-held] .suggestion-insert-ai::after,
+[data-suggestion-preview-held] .suggestion-delete-ai::before,
+[data-suggestion-preview-held] .suggestion-delete-ai::after {
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+
 .suggestion-card-stack {
   position: relative;
   isolation: isolate;
@@ -733,4 +820,13 @@
   box-shadow: inset 0 0 0 1px rgb(245 158 11 / 0.85);
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
+}
+
+/* Sonner defaults the dismiss X to the top-left in LTR. Override the
+   close button directly with !important — Sonner injects its stylesheet
+   at runtime and otherwise wins on cascade order. */
+[data-sonner-toast][data-styled='true'] [data-close-button] {
+  left: unset !important;
+  right: 0 !important;
+  transform: translate(35%, -35%) !important;
 }

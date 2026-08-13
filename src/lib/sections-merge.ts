@@ -5,6 +5,7 @@ import type {
   AnalyzeSection,
   AttachmentsSection,
   ControlSection,
+  ConclusionSection,
   DefineSection,
   DocumentsReviewedSection,
   ImproveSection,
@@ -20,6 +21,7 @@ import {
   emptyDoc,
   legacyStringToDoc,
   normalizeRichField,
+  prependNodesToDoc,
   richJsonToPlainText,
 } from "@/lib/tiptap/rich-text";
 import type { SectionType } from "@/db/schema";
@@ -35,26 +37,79 @@ export function mergeDefineSection(content: unknown): DefineSection {
   };
 }
 
+/** Bold label + value in one paragraph — matches the DOCX export's label rows. */
+function labelledParagraph(label: string, text: string): JSONContent {
+  return {
+    type: "paragraph",
+    content: [
+      { type: "text", marks: [{ type: "bold" }], text: label },
+      { type: "text", text },
+    ],
+  };
+}
+
+/** Bold label paragraph followed by the rich field's own blocks (formatting kept). */
+function labelledRichBlocks(label: string, doc: JSONContent): JSONContent[] {
+  return [
+    { type: "paragraph", content: [{ type: "text", marks: [{ type: "bold" }], text: label }] },
+    ...(doc.content ?? []),
+  ];
+}
+
+/**
+ * Measure is a single narrative box. Legacy rows also stored an experiment
+ * number/title/purpose/conclusion and a regulatory notification; fold them into
+ * the narrative (same order and labels the DOCX export used) and drop the keys
+ * so nothing is orphaned in a field the editor no longer renders.
+ */
 export function mergeMeasureSection(content: unknown): MeasureSection {
   const base = EMPTY_CONTENT.measure;
   if (!content || typeof content !== "object") return base;
   const o = content as Partial<MeasureSection>;
-  const { regulatoryNotification, ...rest } = o;
   const narrative = normalizeRichField(o.narrative ?? base.narrative);
-  const notificationText =
-    typeof regulatoryNotification === "string" ? regulatoryNotification.trim() : "";
-  const mergedNarrative =
-    notificationText && !richJsonToPlainText(narrative).includes(notificationText)
-      ? appendParagraphsToDoc(
-          narrative,
-          `Regulatory Notification: ${notificationText}`
-        )
-      : narrative;
+  const narrativeText = richJsonToPlainText(narrative);
 
+  const prefix: JSONContent[] = [];
+  const pushPlain = (label: string, value: unknown) => {
+    const text = typeof value === "string" ? value.trim() : "";
+    if (!text || narrativeText.includes(text)) return;
+    prefix.push(labelledParagraph(label, text));
+  };
+  const pushRich = (label: string, value: unknown) => {
+    if (value === undefined || value === null) return;
+    const doc = normalizeRichField(value);
+    const text = richJsonToPlainText(doc).trim();
+    if (!text || narrativeText.includes(text)) return;
+    prefix.push(...labelledRichBlocks(label, doc));
+  };
+
+  pushPlain("Experiment Number: ", o.experimentNumber);
+  pushPlain("Experiment Title: ", o.experimentTitle);
+  pushRich("Purpose: ", o.purpose);
+  pushRich("Experiment Conclusion: ", o.conclusion);
+
+  let mergedNarrative = prependNodesToDoc(narrative, prefix);
+
+  const notificationText =
+    typeof o.regulatoryNotification === "string" ? o.regulatoryNotification.trim() : "";
+  if (notificationText && !narrativeText.includes(notificationText)) {
+    mergedNarrative = appendParagraphsToDoc(
+      mergedNarrative,
+      `Regulatory Notification: ${notificationText}`
+    );
+  }
+
+  return { narrative: mergedNarrative };
+}
+
+export function mergeConclusionSection(content: unknown): ConclusionSection {
+  const base = EMPTY_CONTENT.conclusion;
+  if (!content || typeof content !== "object") return base;
+  const o = content as Partial<ConclusionSection>;
   return {
     ...base,
-    ...rest,
-    narrative: mergedNarrative,
+    ...o,
+    narrative: normalizeRichField(o.narrative ?? base.narrative),
   };
 }
 
@@ -311,29 +366,42 @@ export function mergeSignatureApprovalsSection(content: unknown): SignatureAppro
   return { table, headerRowXml, dataRowXml };
 }
 
-export function mergeSection<K extends keyof SectionContentMap & SectionType>(
+export function mergeSection<K extends keyof SectionContentMap>(
   section: K,
   content: unknown
-): SectionContentMap[K] {
+): SectionContentMap[K];
+export function mergeSection(section: string, content: unknown): unknown;
+export function mergeSection(
+  section: string,
+  content: unknown
+): unknown {
   switch (section) {
     case "define":
-      return mergeDefineSection(content) as SectionContentMap[K];
+      return mergeDefineSection(content);
     case "measure":
-      return mergeMeasureSection(content) as SectionContentMap[K];
+      return mergeMeasureSection(content);
     case "analyze":
-      return mergeAnalyzeSection(content) as SectionContentMap[K];
+      return mergeAnalyzeSection(content);
     case "improve":
-      return mergeImproveSection(content) as SectionContentMap[K];
+      return mergeImproveSection(content);
     case "control":
-      return mergeControlSection(content) as SectionContentMap[K];
+      return mergeControlSection(content);
+    case "conclusion":
+      return mergeConclusionSection(content);
     case "documents_reviewed":
-      return mergeDocumentsReviewedSection(content) as SectionContentMap[K];
+      return mergeDocumentsReviewedSection(content);
     case "attachments":
-      return mergeAttachmentsSection(content) as SectionContentMap[K];
+      return mergeAttachmentsSection(content);
     case "signature_approvals":
-      return mergeSignatureApprovalsSection(content) as SectionContentMap[K];
+      return mergeSignatureApprovalsSection(content);
     default:
-      return mergeGeneric(section, content);
+      if (section in EMPTY_CONTENT) {
+        return mergeGeneric(
+          section as keyof SectionContentMap,
+          content
+        );
+      }
+      return content ?? {};
   }
 }
 

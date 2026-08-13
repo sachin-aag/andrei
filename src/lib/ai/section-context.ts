@@ -145,6 +145,18 @@ export function contextForPrompt(section: SectionType, content: unknown): string
   } else if (section === "measure") {
     pushNarrativeLine(lines, section, content);
     pushTextLine(lines, "Regulatory notification", content.regulatoryNotification);
+    pushTextLine(lines, "Experiment number", content.experimentNumber);
+    pushTextLine(lines, "Experiment title", content.experimentTitle);
+    pushTextBlock(
+      lines,
+      "Experiment purpose",
+      richJsonToPlainText(normalizeRichField(content.purpose))
+    );
+    pushTextBlock(
+      lines,
+      "Experiment conclusion",
+      richJsonToPlainText(normalizeRichField(content.conclusion))
+    );
   } else if (section === "analyze") {
     pushObjectFields(lines, "6M", content.sixM, [
       ["man", "Man"],
@@ -163,6 +175,8 @@ export function contextForPrompt(section: SectionType, content: unknown): string
       "5-Why",
       richJsonToPlainText(fiveWhyCollapsed.narrative, { tableFormat: "markdown" })
     );
+    pushTextLine(lines, "Brainstorming", content.brainstorming);
+    pushTextLine(lines, "Other tools", content.otherTools);
     pushTextBlock(
       lines,
       "Investigation outcome",
@@ -189,6 +203,16 @@ export function contextForPrompt(section: SectionType, content: unknown): string
     const raw = richJsonToPlainText(normalizeRichField(content.preventiveActions));
     const stripped = stripLeadingTemplateChecklist(section, raw);
     pushTextLine(lines, "Preventive actions", stripped);
+  } else if (section === "conclusion") {
+    pushNarrativeLine(lines, section, content);
+  } else if (section === "traceability" || section === "test_results") {
+    pushTextBlock(
+      lines,
+      "Table",
+      richJsonToPlainText(normalizeRichField(content.table), {
+        tableFormat: "markdown",
+      })
+    );
   }
 
   return lines.length ? lines.join("\n") : fallbackContextForPrompt(content);

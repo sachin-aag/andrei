@@ -51,3 +51,58 @@ export function canEditReport(
   if (user.role === "engineer") return user.id === report.authorId;
   return false;
 }
+
+/**
+ * Whether the user may PATCH section content.
+ * Engineers (author) may save in draft / feedback / in_review.
+ * Managers may save while the report is submitted or in_review (track changes).
+ * Submitted author edits are blocked — content is locked until feedback.
+ */
+export function canSaveReportSection(
+  user: { id: string; role: UserRole },
+  report: Pick<ReportAccessRecord, "authorId" | "status" | "deletedAt">
+): boolean {
+  if (isReportDeleted(report)) return false;
+
+  if (user.role === "engineer" && user.id === report.authorId) {
+    return (
+      report.status === "draft" ||
+      report.status === "feedback" ||
+      report.status === "in_review"
+    );
+  }
+
+  if (user.role === "manager") {
+    return report.status === "submitted" || report.status === "in_review";
+  }
+
+  return false;
+}
+
+/** Why AI Suggest fixes / agent proposals are blocked, or null when allowed. */
+export function aiSuggestionLockReason(
+  user: { id: string; role: UserRole },
+  report: Pick<ReportAccessRecord, "authorId" | "status" | "deletedAt">
+): string | null {
+  if (canSaveReportSection(user, report)) return null;
+  if (report.status === "submitted") {
+    return "This report is already submitted. Editing unlocks after it's returned with feedback.";
+  }
+  if (report.status === "approved") {
+    return "This report is approved and locked.";
+  }
+  return "You can't propose edits on this report right now.";
+}
+
+/**
+ * Attachment mutations are allowed only while the evidence set is still
+ * mutable: active draft/feedback reports, for users who may otherwise edit.
+ * Submitted / in-review / approved evidence is immutable.
+ */
+export function canMutateAttachments(
+  user: { id: string; role: UserRole },
+  report: ReportAccessRecord
+): boolean {
+  if (!canEditReport(user, report)) return false;
+  return report.status === "draft" || report.status === "feedback";
+}

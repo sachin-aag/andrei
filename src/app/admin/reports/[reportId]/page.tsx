@@ -37,6 +37,7 @@ export default async function AdminReportViewPage({
       <ReportProvider
         bundle={bundle}
         currentUserId={user.id}
+        currentUserRole={user.role}
         readOnly
         workspaceMode="view"
         initialTrackChangesMode={false}

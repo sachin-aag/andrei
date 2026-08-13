@@ -39,13 +39,12 @@ export default async function ImproveAiListPage() {
     getPasswordStatusForUser(user.id),
     getPasswordPolicy(),
   ]);
-  const managers = workspaceUsers.filter((entry) => entry.role === "manager");
 
   const authorReports = await withTransientRetry("improveAi.authorReports", () =>
     db
       .select({
         id: reports.id,
-        deviationNo: reports.deviationNo,
+        documentNo: reports.documentNo,
       })
       .from(reports)
       .where(eq(reports.authorId, user.id))
@@ -76,12 +75,7 @@ export default async function ImproveAiListPage() {
           userEmail={user.email}
           reports={authorReports.map((report) => ({
             id: report.id,
-            deviationNo: report.deviationNo || "Untitled deviation",
-          }))}
-          managers={managers.map((m) => ({
-            id: m.id,
-            name: m.name,
-            title: m.title,
+            deviationNo: report.documentNo || "Untitled deviation",
           }))}
         />
 
@@ -89,8 +83,8 @@ export default async function ImproveAiListPage() {
           {rows.length === 0 && (
             <p className="text-sm text-[var(--muted-foreground)]">
               No AI feedback sessions yet. Use <strong>Evaluate report</strong> to
-              pick an existing report or upload a Word file, or use{" "}
-              <strong>Improve AI</strong> on a report card from your dashboard.
+              pick an existing report, or use <strong>Improve AI</strong> on a
+              report card from your dashboard.
             </p>
           )}
 

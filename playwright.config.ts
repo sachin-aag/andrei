@@ -67,6 +67,9 @@ export default defineConfig({
       ALLOW_TEST_SKIP_EVALUATION: "true",
       ALLOW_TEST_SKIP_SUGGESTIONS: "true",
       ALLOW_TEST_STUB_MATH_EXTRACTION: "true",
+      ALLOW_TEST_STUB_DOCUMENT_INGEST: "true",
+      ATTACHMENT_STORAGE_BACKEND: "local",
+      ALLOW_LOCAL_ATTACHMENT_STORAGE: "true",
       AUTH_URL: playwrightAuthUrl,
       AUTH_TRUST_HOST: "true",
       TEST_AUTH_EMAIL:

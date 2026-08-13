@@ -11,12 +11,15 @@ import {
   useReportEvaluations,
   useReportPlaceholders,
 } from "@/providers/report-provider";
+import { useReportAttachments } from "@/providers/report-attachments-provider";
 import { ReportHeader } from "./report-header";
 import { ReportDetailsEditDialog } from "./report-details-edit-dialog";
 import { ReportWorkspaceHeader } from "./report-workspace-header";
 import { ReportEditorToolbar } from "./report-editor-toolbar";
 import { MarginGutter } from "./review-rail/margin-gutter";
 import { ReportSidebar, type SidebarTab } from "./report-sidebar";
+import { DocumentsPanel } from "./documents/documents-panel";
+import { AttachmentViewer } from "./attachment-viewer";
 import { useUserDirectory } from "@/providers/user-directory-provider";
 import type { SectionType } from "@/db/schema";
 import type { WorkspaceMode } from "@/providers/report-provider";
@@ -27,8 +30,8 @@ import {
   scrollToCommentFieldAnchor,
   scrollToGutterAnchor,
 } from "@/lib/comments/navigate";
-import { EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
-import { REPORT_WORKSPACE_SECTIONS } from "@/types/sections";
+import { evaluatableSectionKeys } from "@/lib/ai/criteria-view";
+import { getWorkspaceSections } from "@/lib/document-types";
 import { captureEvent } from "@/lib/analytics/events";
 import {
   ElectronicSignatureDialog,
@@ -46,7 +49,7 @@ function SectionEditorLoading() {
   );
 }
 
-const SECTION_EDITORS = {
+const INVESTIGATION_SECTION_EDITORS: Record<string, ComponentType> = {
   define: dynamic(
     () => import("./sections/define-editor").then((mod) => mod.DefineEditor),
     { loading: SectionEditorLoading }
@@ -65,6 +68,10 @@ const SECTION_EDITORS = {
   ),
   control: dynamic(
     () => import("./sections/control-editor").then((mod) => mod.ControlEditor),
+    { loading: SectionEditorLoading }
+  ),
+  conclusion: dynamic(
+    () => import("./sections/conclusion-editor").then((mod) => mod.ConclusionEditor),
     { loading: SectionEditorLoading }
   ),
   documents_reviewed: dynamic(
@@ -86,7 +93,79 @@ const SECTION_EDITORS = {
       ),
     { loading: SectionEditorLoading }
   ),
-} satisfies Record<(typeof REPORT_WORKSPACE_SECTIONS)[number], ComponentType>;
+};
+
+const DV_SECTION_EDITORS: Record<string, ComponentType> = {
+  cover_page: dynamic(
+    () =>
+      import("./sections/dv/cover-page-editor").then((mod) => mod.DvCoverPageEditor),
+    { loading: SectionEditorLoading }
+  ),
+  purpose_scope: dynamic(
+    () =>
+      import("./sections/dv/dv-section-editors").then(
+        (mod) => mod.DvPurposeScopeEditor
+      ),
+    { loading: SectionEditorLoading }
+  ),
+  references: dynamic(
+    () =>
+      import("./sections/dv/dv-section-editors").then(
+        (mod) => mod.DvReferencesEditor
+      ),
+    { loading: SectionEditorLoading }
+  ),
+  traceability: dynamic(
+    () =>
+      import("./sections/dv/dv-section-editors").then(
+        (mod) => mod.DvTraceabilityEditor
+      ),
+    { loading: SectionEditorLoading }
+  ),
+  test_methods: dynamic(
+    () =>
+      import("./sections/dv/dv-section-editors").then(
+        (mod) => mod.DvTestMethodsEditor
+      ),
+    { loading: SectionEditorLoading }
+  ),
+  test_results: dynamic(
+    () =>
+      import("./sections/dv/dv-section-editors").then(
+        (mod) => mod.DvTestResultsEditor
+      ),
+    { loading: SectionEditorLoading }
+  ),
+  deviations: dynamic(
+    () =>
+      import("./sections/dv/dv-section-editors").then(
+        (mod) => mod.DvDeviationsEditor
+      ),
+    { loading: SectionEditorLoading }
+  ),
+  conclusion: dynamic(
+    () =>
+      import("./sections/dv/dv-section-editors").then(
+        (mod) => mod.DvConclusionEditor
+      ),
+    { loading: SectionEditorLoading }
+  ),
+  approval_signoff: dynamic(
+    () =>
+      import("./sections/dv/dv-section-editors").then((mod) => mod.DvApprovalEditor),
+    { loading: SectionEditorLoading }
+  ),
+  appendices: dynamic(
+    () =>
+      import("./sections/dv/dv-section-editors").then(
+        (mod) => mod.DvAppendicesEditor
+      ),
+    { loading: SectionEditorLoading }
+  ),
+};
+
+/** @deprecated Prefer INVESTIGATION_SECTION_EDITORS / DV_SECTION_EDITORS */
+const SECTION_EDITORS = INVESTIGATION_SECTION_EDITORS;
 
 export function ReportWorkspace({
   mode,
@@ -101,12 +180,14 @@ export function ReportWorkspace({
     currentUserId,
     trackChangesMode,
     setTrackChangesMode,
+    flushPendingSectionSaves,
   } = useReportData();
   const { pendingPlaceholders } = useReportPlaceholders();
   const { getEditor } = useReportEditors();
   const { requestCommentFocus, comments } = useReportComments();
   const { suggestionsFocusSection, clearSuggestionsFocusSection } =
     useReportEvaluations();
+  const { activeAttachmentId } = useReportAttachments();
   const [criteriaFocusSection, setCriteriaFocusSection] = useState<
     SectionType | undefined
   >();
@@ -117,7 +198,8 @@ export function ReportWorkspace({
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
   const [detailsFormKey, setDetailsFormKey] = useState(0);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [sidebarTab, setSidebarTab] = useState<SidebarTab>("criteria");
+  const [documentsCollapsed, setDocumentsCollapsed] = useState(false);
+  const [sidebarTab, setSidebarTab] = useState<SidebarTab>("assistant");
   const [sectionMinHeights, setSectionMinHeights] = useState<
     Partial<Record<SectionType, number>>
   >({});
@@ -129,7 +211,7 @@ export function ReportWorkspace({
         const next: Partial<Record<SectionType, number>> = {};
         let changed = false;
 
-        for (const section of EVALUATABLE_SECTIONS) {
+        for (const section of evaluatableSectionKeys(report.documentType)) {
           const delta = overflows[section];
           if (delta != null && delta > 1) {
             next[section] = Math.ceil(delta);
@@ -213,6 +295,15 @@ export function ReportWorkspace({
 
     setLoading(true);
     try {
+      if (signDialog === "submission") {
+        try {
+          await flushPendingSectionSaves();
+        } catch {
+          toast.error("Could not save pending edits. Fix save errors, then submit again.");
+          return;
+        }
+      }
+
       const endpoint = endpoints[signDialog];
       const res = await fetch(`/api/reports/${report.id}/${endpoint}`, {
         method: "POST",
@@ -380,6 +471,11 @@ export function ReportWorkspace({
       <ReportEditorToolbar />
 
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
+        <DocumentsPanel
+          collapsed={documentsCollapsed}
+          onToggleCollapse={() => setDocumentsCollapsed((c) => !c)}
+        />
+
         <main
           ref={mainRef}
           className="min-h-0 min-w-0 flex-1 overflow-auto bg-[var(--background)]"
@@ -387,19 +483,28 @@ export function ReportWorkspace({
           <div className="mx-auto grid grid-cols-1 gap-8 px-6 py-8 pb-24 lg:max-w-[1180px] lg:grid-cols-[minmax(560px,720px)_360px]">
             <div className="space-y-10 min-w-0">
               <ReportHeader />
-              {REPORT_WORKSPACE_SECTIONS.map((s) => {
-                const Editor = SECTION_EDITORS[s];
-                const extra = sectionMinHeights[s];
-                return (
-                  <section
-                    key={s}
-                    id={s}
-                    style={extra ? { paddingBottom: `${extra}px` } : undefined}
-                  >
-                    <Editor />
-                  </section>
-                );
-              })}
+              {activeAttachmentId ? (
+                <AttachmentViewer />
+              ) : (
+                getWorkspaceSections(report.documentType).map((section) => {
+                  const s = section.key;
+                  const Editor =
+                    report.documentType === "design_verification"
+                      ? DV_SECTION_EDITORS[s]
+                      : INVESTIGATION_SECTION_EDITORS[s];
+                  if (!Editor) return null;
+                  const extra = sectionMinHeights[s];
+                  return (
+                    <section
+                      key={s}
+                      id={s}
+                      style={extra ? { paddingBottom: `${extra}px` } : undefined}
+                    >
+                      <Editor />
+                    </section>
+                  );
+                })
+              )}
             </div>
             <aside
               className="hidden lg:block relative"

@@ -1,6 +1,6 @@
 import type { CriterionStatus, SectionType } from "@/db/schema";
 import {
-  EVALUATABLE_SECTIONS,
+  getInvestigationEvaluatableSections,
   type CriterionDefinition,
   getCriteria,
 } from "@/lib/ai/criteria";
@@ -18,7 +18,7 @@ export type BulkEvalRow = {
 /** Ordered list of criterion keys matching product evaluation order. */
 export function allEvaluatableCriterionEntries(): CriterionDefinition[] {
   const out: CriterionDefinition[] = [];
-  for (const section of EVALUATABLE_SECTIONS) {
+  for (const section of getInvestigationEvaluatableSections()) {
     out.push(...getCriteria(section));
   }
   return out;
@@ -51,7 +51,7 @@ export function aggregateSectionOverall(
   rows: BulkEvalRow[]
 ): Map<SectionType, Record<CriterionStatus, number>> {
   const map = new Map<SectionType, Record<CriterionStatus, number>>();
-  for (const sec of EVALUATABLE_SECTIONS) {
+  for (const sec of getInvestigationEvaluatableSections()) {
     map.set(sec, emptyCriterionStatusCounts());
   }
   for (const r of rows) {

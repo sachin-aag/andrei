@@ -2,20 +2,32 @@ import { NextResponse } from "next/server";
 import { and, desc, eq, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { comments, reportManagers, reports, reportSections } from "@/db/schema";
-import { getCurrentUser } from "@/lib/auth/session";
-import type { ImportedReportContent } from "@/lib/import/docx-to-sections";
-import { readDocxUpload } from "@/lib/import/docx-upload";
-import { docxBufferToImportedReportContent } from "@/lib/import/docx-to-sections";
-import { persistReportSourceDocx } from "@/lib/reports/persist-source-docx";
 import {
-  DUPLICATE_DEVIATION_NO_ERROR,
-  isDeviationNoTaken,
+  reportManagers,
+  reports,
+  reportSections,
+  type DocumentType,
+} from "@/db/schema";
+import { getCurrentUser } from "@/lib/auth/session";
+import { getCustomerPack } from "@/lib/customers/packs";
+import {
+  docxBufferToImportedReportContent,
+  type ImportedReportContent,
+} from "@/lib/import/docx-to-sections";
+import { readDocxUpload } from "@/lib/import/docx-upload";
+import {
+  DUPLICATE_DOCUMENT_NO_ERROR,
+  isDocumentNoTaken,
   isPostgresUniqueViolation,
-  normalizeDeviationNo,
-} from "@/lib/reports/deviation-no";
-import { seedBlankReportSections } from "@/lib/reports/seed-blank-report-sections";
-import { REPORT_SECTION_ROW_ORDER } from "@/types/sections";
+  normalizeDocumentNo,
+} from "@/lib/reports/document-no";
+import {
+  investigationMetadataFromImport,
+  sectionRowsForCreate,
+} from "@/lib/reports/create-report-from-docx";
+import { persistImportedWordComments } from "@/lib/reports/persist-imported-word-comments";
+import { persistReportSourceDocx } from "@/lib/reports/persist-source-docx";
+import { getDocumentType, isDocumentTypeEnabled } from "@/lib/document-types";
 import { auditActorFromUser, recordAuditEvent, recordSectionVersion } from "@/lib/audit";
 import {
   insertReportManagers,
@@ -94,75 +106,32 @@ export async function GET() {
 }
 
 const createSchema = z.object({
-  deviationNo: z.string().min(1),
+  documentType: z
+    .enum(["investigation_report", "design_verification"])
+    .default("investigation_report"),
+  documentNo: z.string().min(1).optional(),
+  deviationNo: z.string().min(1).optional(), // alias for investigation
   assignedManagerId: z.string().nullable().optional(),
   assignedManagerIds: z.array(z.string()).optional(),
 });
 
-async function persistImportedComments(
-  reportId: string,
-  importedContent: ImportedReportContent | null
-) {
-  if (!importedContent?.comments.length) return;
-
-  const roots = importedContent.comments.filter(
-    (comment) => !comment.parentExternalCommentId
-  );
-  const replies = importedContent.comments.filter(
-    (comment) => comment.parentExternalCommentId
-  );
-  const idByExternalId = new Map<string, string>();
-
-  for (const comment of roots) {
-    const [inserted] = await db
-      .insert(comments)
-      .values({
-        reportId,
-        section: comment.section,
-        authorId: "word",
-        content: comment.content,
-        anchorText: comment.anchorText,
-        contentPath: comment.contentPath,
-        fromPos: comment.fromPos,
-        toPos: comment.toPos,
-        kind: "word_import",
-        source: "word",
-        externalAuthorName: comment.externalAuthorName,
-        externalAuthorInitials: comment.externalAuthorInitials,
-        externalCommentId: comment.externalCommentId,
-        externalCreatedAt: comment.externalCreatedAt,
-        locked: true,
-      })
-      .returning();
-    if (inserted) idByExternalId.set(comment.externalCommentId, inserted.id);
+function documentTypeFromForm(value: FormDataEntryValue | null): DocumentType {
+  if (value === "design_verification" || value === "investigation_report") {
+    return value;
   }
+  return "investigation_report";
+}
 
-  for (const comment of replies) {
-    const parentId = comment.parentExternalCommentId
-      ? idByExternalId.get(comment.parentExternalCommentId)
-      : undefined;
-    const [inserted] = await db
-      .insert(comments)
-      .values({
-        reportId,
-        parentId: parentId ?? null,
-        section: comment.section,
-        authorId: "word",
-        content: comment.content,
-        anchorText: parentId ? "" : comment.anchorText,
-        contentPath: parentId ? null : comment.contentPath,
-        fromPos: parentId ? null : comment.fromPos,
-        toPos: parentId ? null : comment.toPos,
-        kind: "word_import",
-        source: "word",
-        externalAuthorName: comment.externalAuthorName,
-        externalAuthorInitials: comment.externalAuthorInitials,
-        externalCommentId: comment.externalCommentId,
-        externalCreatedAt: comment.externalCreatedAt,
-        locked: true,
-      })
-      .returning();
-    if (inserted) idByExternalId.set(comment.externalCommentId, inserted.id);
+function wordImportDocumentTypeError(documentType: DocumentType): string | null {
+  switch (documentType) {
+    case "investigation_report":
+      return null;
+    case "design_verification":
+      return "Word import is only supported for investigation reports.";
+    default: {
+      const exhaustive: never = documentType;
+      return exhaustive;
+    }
   }
 }
 
@@ -180,23 +149,33 @@ export async function POST(req: Request) {
 
     const contentType = req.headers.get("content-type") ?? "";
 
-    let deviationNo: string;
+    let documentType: DocumentType;
+    let rawDocumentNo: string | undefined;
     let assignedManagerIds: string[];
     let importedContent: ImportedReportContent | null = null;
     let sourceUpload: { buffer: Buffer; filename: string } | null = null;
 
     if (contentType.includes("multipart/form-data")) {
       const form = await req.formData();
-      deviationNo = String(form.get("deviationNo") ?? "").trim();
+      documentType = documentTypeFromForm(form.get("documentType"));
+      rawDocumentNo = String(
+        form.get("documentNo") ?? form.get("deviationNo") ?? ""
+      ).trim();
       assignedManagerIds = managerIdsFromFormData(form);
       const file = form.get("file");
       const hasFile = file instanceof File && file.size > 0;
 
-      if (!deviationNo) {
-        return NextResponse.json({ error: "Deviation number is required" }, { status: 400 });
-      }
-
       if (hasFile && file instanceof File) {
+        if (!getCustomerPack().wordImportEnabled) {
+          return NextResponse.json(
+            { error: "Word import is not enabled for this workspace." },
+            { status: 400 }
+          );
+        }
+        const typeError = wordImportDocumentTypeError(documentType);
+        if (typeError) {
+          return NextResponse.json({ error: typeError }, { status: 400 });
+        }
         try {
           const buf = await readDocxUpload(file);
           importedContent = await docxBufferToImportedReportContent(buf);
@@ -220,22 +199,33 @@ export async function POST(req: Request) {
       if (!parse.success) {
         return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
       }
-      deviationNo = parse.data.deviationNo;
+      documentType = parse.data.documentType;
+      rawDocumentNo = parse.data.documentNo ?? parse.data.deviationNo;
       assignedManagerIds = parse.data.assignedManagerIds
         ? normalizeAssignedManagerIds(parse.data.assignedManagerIds)
         : normalizeAssignedManagerIds([parse.data.assignedManagerId ?? null]);
     }
 
-    const importedDate = importedContent?.header.date;
-    const importedOtherTools = importedContent?.header.otherTools?.trim();
-    const finalDeviationNo = normalizeDeviationNo(deviationNo);
+    if (!isDocumentTypeEnabled(documentType)) {
+      return NextResponse.json(
+        {
+          error: `${getDocumentType(documentType).label} is not enabled for this workspace.`,
+        },
+        { status: 400 }
+      );
+    }
+    const def = getDocumentType(documentType);
+    const finalDocumentNo = normalizeDocumentNo(rawDocumentNo ?? "");
 
-    if (!finalDeviationNo) {
-      return NextResponse.json({ error: "Deviation number is required" }, { status: 400 });
+    if (!finalDocumentNo) {
+      return NextResponse.json(
+        { error: `${def.documentNoLabel} is required` },
+        { status: 400 }
+      );
     }
 
-    if (await isDeviationNoTaken(finalDeviationNo, user.id)) {
-      return NextResponse.json({ error: DUPLICATE_DEVIATION_NO_ERROR }, { status: 409 });
+    if (await isDocumentNoTaken(finalDocumentNo, user.id, documentType)) {
+      return NextResponse.json({ error: DUPLICATE_DOCUMENT_NO_ERROR }, { status: 409 });
     }
 
     const validation = await validateAssignedManagerIds(assignedManagerIds);
@@ -247,21 +237,20 @@ export async function POST(req: Request) {
     }
 
     const assignedManagerId = primaryAssignedManagerId(assignedManagerIds);
-    const blankSections = seedBlankReportSections();
+    const metadata =
+      importedContent && documentType === "investigation_report"
+        ? investigationMetadataFromImport(importedContent)
+        : def.defaultMetadata;
     const [report] = await db
       .insert(reports)
       .values({
-        deviationNo: finalDeviationNo,
+        documentType,
+        documentNo: finalDocumentNo,
+        metadata,
         authorId: user.id,
         assignedManagerId,
-        ...(importedContent
-          ? {
-              toolsUsed: importedContent.toolsUsed,
-              ...(importedDate ? { date: importedDate } : {}),
-              ...(importedOtherTools !== undefined
-                ? { otherTools: importedOtherTools }
-                : {}),
-            }
+        ...(importedContent?.header.date
+          ? { date: importedContent.header.date }
           : {}),
       })
       .returning();
@@ -273,19 +262,16 @@ export async function POST(req: Request) {
     await insertReportManagers(report.id, assignedManagerIds);
 
     await db.insert(reportSections).values(
-      REPORT_SECTION_ROW_ORDER.map((section) => ({
+      sectionRowsForCreate(documentType, importedContent).map((row) => ({
         reportId: report.id,
-        section,
-        content: (
-          importedContent !== null
-            ? importedContent.sections[section]
-            : blankSections[section]
-        ) as unknown as Record<string, unknown>,
+        section: row.section,
+        content: row.content,
       }))
     );
+
     if (sourceUpload) {
       try {
-        await persistImportedComments(report.id, importedContent);
+        await persistImportedWordComments(report.id, importedContent);
         await persistReportSourceDocx({
           reportId: report.id,
           buffer: sourceUpload.buffer,
@@ -294,13 +280,12 @@ export async function POST(req: Request) {
         });
       } catch {
         await db.delete(reports).where(eq(reports.id, report.id));
+        createdReportId = null;
         return NextResponse.json(
           { error: "Could not save the uploaded file. Please try again." },
           { status: 500 }
         );
       }
-    } else {
-      await persistImportedComments(report.id, importedContent);
     }
 
     const actor = auditActorFromUser(user);
@@ -310,9 +295,10 @@ export async function POST(req: Request) {
       entityType: "report",
       entityId: report.id,
       reportId: report.id,
-      summary: `Created report ${finalDeviationNo}`,
+      summary: `Created report ${finalDocumentNo}`,
       newValue: {
-        deviationNo: finalDeviationNo,
+        documentType,
+        documentNo: finalDocumentNo,
         authorId: user.id,
         assignedManagerId,
         assignedManagerIds,
@@ -341,8 +327,8 @@ export async function POST(req: Request) {
       report: withAssignedManagerIds(report, assignedManagerIds),
     });
   } catch (e) {
-    const duplicateDeviationNo = isPostgresUniqueViolation(e);
-    if (!duplicateDeviationNo) {
+    const duplicateDocumentNo = isPostgresUniqueViolation(e);
+    if (!duplicateDocumentNo) {
       console.error("Failed to create report", {
         reportId: createdReportId,
         error: e,
@@ -358,8 +344,8 @@ export async function POST(req: Request) {
         });
       }
     }
-    if (duplicateDeviationNo) {
-      return NextResponse.json({ error: DUPLICATE_DEVIATION_NO_ERROR }, { status: 409 });
+    if (duplicateDocumentNo) {
+      return NextResponse.json({ error: DUPLICATE_DOCUMENT_NO_ERROR }, { status: 409 });
     }
     return NextResponse.json({ error: "Failed to create report" }, { status: 500 });
   }

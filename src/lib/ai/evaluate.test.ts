@@ -143,7 +143,7 @@ describe("evaluateSection", () => {
     expect(prompt).toContain(
       "Occurrence date/time and detection date/time are distinct facts"
     );
-    expect(prompt).toContain("SCADA:");
+    expect(prompt).toContain("Personnel may be identified by role");
     expect(prompt).toContain("Do not rewrite the report");
     expect(prompt).not.toMatch(/<example type="strong"/);
     expect(prompt).not.toMatch(/<example type="weak"/);
@@ -162,7 +162,7 @@ describe("evaluateSection", () => {
     const prompt = lastSystemPrompt();
     expect(prompt).toContain(COMMON_RULE_PHRASE);
     expect(prompt).toContain("SECTION ROLE - ANALYZE");
-    expect(prompt).toContain("5-Why and 6M are alternatives");
+    expect(prompt).toContain("5-Why, 6M, and Brainstorming are alternatives");
     expect(prompt).toContain("Fewer or more than five questions are acceptable");
     expect(prompt).toContain('jump directly to "human error"');
   });

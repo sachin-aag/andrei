@@ -1,9 +1,12 @@
 import { config as loadEnv } from "dotenv";
 import type { Config } from "drizzle-kit";
 
-// Drizzle-kit only: .env.local wins over .env / shell (avoids db:push to Neon when local URL is in .env.local).
-loadEnv({ path: ".env" });
-loadEnv({ path: ".env.local", override: true });
+// CI / explicit shell DATABASE_URL must win (ephemeral Postgres in GitHub Actions).
+// Locally, .env.local overrides shell so `db:push` does not hit Neon after `vercel env pull`.
+if (!process.env.CI) {
+  loadEnv({ path: ".env" });
+  loadEnv({ path: ".env.local", override: true });
+}
 
 if (!process.env.DATABASE_URL) {
   throw new Error(

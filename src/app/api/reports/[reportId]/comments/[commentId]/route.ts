@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { comments, reports } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
+import { isAiSuggestionKind } from "@/lib/ai/suggestion-gating";
 
 const patchSchema = z.object({
   status: z.enum(["open", "resolved", "dismissed"]).optional(),
@@ -100,16 +101,37 @@ export async function PATCH(
       .where(and(eq(comments.id, threadRootId), eq(comments.reportId, reportId)))
       .returning();
 
-    await recordAuditEvent({
-      actor: auditActorFromUser(user),
-      action: "comment_status_changed",
-      entityType: "comment",
-      entityId: threadRootId,
-      reportId,
-      summary: `Comment thread marked ${parse.data.status}`,
-      oldValue: { status: row.status },
-      newValue: { status: parse.data.status },
-    });
+    // A human resolving an AI suggestion is the sign-off moment: the AI's
+    // content only enters the report because this person accepted it.
+    if (isAiSuggestionKind(row.kind) && parse.data.status === "resolved") {
+      await recordAuditEvent({
+        actor: auditActorFromUser(user),
+        action: "suggestion_applied",
+        entityType: "suggestion",
+        entityId: threadRootId,
+        reportId,
+        summary: `AI ${row.kind === "ai_redraft" ? "draft" : "suggestion"} for ${row.section ?? "report"}${row.contentPath ? ` · ${row.contentPath}` : ""} reviewed and applied by ${user.name}`,
+        oldValue: { status: row.status },
+        newValue: {
+          status: "resolved",
+          kind: row.kind,
+          section: row.section,
+          contentPath: row.contentPath,
+          aiContent: row.content,
+        },
+      });
+    } else {
+      await recordAuditEvent({
+        actor: auditActorFromUser(user),
+        action: "comment_status_changed",
+        entityType: "comment",
+        entityId: threadRootId,
+        reportId,
+        summary: `Comment thread marked ${parse.data.status}`,
+        oldValue: { status: row.status },
+        newValue: { status: parse.data.status },
+      });
+    }
 
     return NextResponse.json({ comment: updated });
   }

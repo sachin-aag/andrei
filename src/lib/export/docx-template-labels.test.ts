@@ -5,7 +5,8 @@ import PizZip from "pizzip";
 import { reports } from "@/db/schema";
 import { generateReportDocx } from "@/lib/export/generate-docx";
 import { docxBufferToImportedReportContent } from "@/lib/import/docx-to-sections";
-import { seedBlankReportSections } from "@/lib/reports/seed-blank-report-sections";
+import { buildDefaultGuidancePreamble } from "@/lib/report-section-guidance";
+import { legacyStringToDoc } from "@/lib/tiptap/rich-text";
 import { EMPTY_CONTENT, REPORT_SECTION_ROW_ORDER } from "@/types/sections";
 import type { ReportSectionRecord } from "@/types/report";
 
@@ -61,15 +62,18 @@ describe("investigation-report-template.docx label formatting", () => {
     }));
     const report: typeof reports.$inferSelect = {
       id: reportId,
-      deviationNo: "DEV/TEST/01",
+      documentType: "investigation_report",
+      documentNo: "DEV/TEST/01",
       date: new Date("2026-04-08"),
       authorId: "user-1",
       assignedManagerId: null,
       reviewedById: null,
       deletedAt: null,
       deletedById: null,
-      otherTools: "",
-      toolsUsed: { sixM: true, fiveWhy: false, brainstorming: false },
+      metadata: {
+        toolsUsed: { sixM: true, fiveWhy: false, brainstorming: false },
+        otherTools: "",
+      },
       status: "draft" as const,
       createdAt: new Date("2026-01-01"),
       updatedAt: new Date("2026-01-01"),
@@ -86,14 +90,31 @@ describe("investigation-report-template.docx label formatting", () => {
 
   it("places improve and control checkpoints in the row above corrective/preventive action", async () => {
     const reportId = "test-report-improve-control-rows";
-    const seeded = seedBlankReportSections();
+    const contentWithCheckpoints = {
+      ...EMPTY_CONTENT,
+      improve: {
+        ...EMPTY_CONTENT.improve,
+        correctiveActions: legacyStringToDoc(
+          buildDefaultGuidancePreamble("improve").trimEnd()
+        ),
+      },
+      control: {
+        ...EMPTY_CONTENT.control,
+        preventiveActions: legacyStringToDoc(
+          buildDefaultGuidancePreamble("control").trimEnd()
+        ),
+      },
+    };
     const iso = new Date("2026-03-04T12:00:00.000Z");
     const report: typeof reports.$inferSelect = {
       id: reportId,
-      deviationNo: "DEV/TEST/ROWS",
+      documentType: "investigation_report",
+      documentNo: "DEV/TEST/ROWS",
       date: iso,
-      toolsUsed: { sixM: false, fiveWhy: false, brainstorming: false },
-      otherTools: "",
+      metadata: {
+        toolsUsed: { sixM: false, fiveWhy: false, brainstorming: false },
+        otherTools: "",
+      },
       status: "draft",
       authorId: "1",
       assignedManagerId: null,
@@ -107,7 +128,7 @@ describe("investigation-report-template.docx label formatting", () => {
       id: `sec-${section}-${i}`,
       reportId,
       section,
-      content: seeded[section as keyof typeof seeded],
+      content: contentWithCheckpoints[section as keyof typeof contentWithCheckpoints],
       updatedAt: iso.toISOString(),
     }));
 
@@ -154,10 +175,13 @@ describe("investigation-report-template.docx label formatting", () => {
     const iso = new Date("2026-03-04T12:00:00.000Z");
     const report: typeof reports.$inferSelect = {
       id: reportId,
-      deviationNo: "DEV-QC-25-002",
+      documentType: "investigation_report",
+      documentNo: "DEV-QC-25-002",
       date: iso,
-      toolsUsed: imported.toolsUsed,
-      otherTools: "",
+      metadata: {
+        toolsUsed: imported.toolsUsed,
+        otherTools: "",
+      },
       status: "draft",
       authorId: "1",
       assignedManagerId: "5",

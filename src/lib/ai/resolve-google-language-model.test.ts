@@ -26,8 +26,25 @@ describe("resolveGoogleLanguageModel", () => {
     expect(model.modelId).toBe("gemini-2.5-flash");
   });
 
+  it("falls back to API key on Vercel when Vertex project is set without WIF", () => {
+    process.env.VERCEL = "1";
+    process.env.GOOGLE_VERTEX_PROJECT = "my-gcp-project";
+    delete process.env.GCP_WIF_AUDIENCE;
+    delete process.env.GCP_SERVICE_ACCOUNT_EMAIL;
+    process.env.GOOGLE_GENERATIVE_AI_API_KEY = "google-direct";
+    delete process.env.AI_GATEWAY_API_KEY;
+
+    const model = resolveGoogleLanguageModel("gemini-2.5-flash") as {
+      provider: string;
+      modelId: string;
+    };
+    expect(model.provider).toBe("google.generative-ai");
+    expect(model.modelId).toBe("gemini-2.5-flash");
+  });
+
   it("uses direct Google API key when GOOGLE_GENERATIVE_AI_API_KEY is set", () => {
     delete process.env.GOOGLE_VERTEX_PROJECT;
+    delete process.env.VERCEL;
     process.env.GOOGLE_GENERATIVE_AI_API_KEY = "google-direct";
     delete process.env.AI_GATEWAY_API_KEY;
     delete process.env.VERCEL_OIDC_TOKEN;

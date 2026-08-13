@@ -6,16 +6,23 @@ import {
   MessageSquare,
   PanelRightClose,
   PanelRightOpen,
+  Sparkles,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { isAiSuggestionKind } from "@/lib/ai/suggestion-gating";
 import { useReportPlaceholders, useReportComments } from "@/providers/report-provider";
 import { captureEvent } from "@/lib/analytics/events";
 import { PlaceholdersPanelContent } from "./placeholders-panel";
 import { CriteriaPanelContent, CommentsPanelContent } from "./criteria-sheet";
+import { ChatPanel } from "./chat-panel";
 import type { SectionType } from "@/db/schema";
 import type { Placeholder } from "@/lib/placeholders/find";
 
-export type SidebarTab = "placeholders" | "criteria" | "comments";
+export type SidebarTab =
+  | "assistant"
+  | "placeholders"
+  | "criteria"
+  | "comments";
 
 type Props = {
   collapsed: boolean;
@@ -31,6 +38,7 @@ type Props = {
 };
 
 const TABS: { value: SidebarTab; label: string; icon: typeof ListChecks }[] = [
+  { value: "assistant", label: "Assistant", icon: Sparkles },
   { value: "placeholders", label: "Placeholders", icon: FileQuestion },
   { value: "criteria", label: "Criteria", icon: ListChecks },
   { value: "comments", label: "Comments", icon: MessageSquare },
@@ -51,7 +59,7 @@ export function ReportSidebar({
   const { comments } = useReportComments();
   const rootCommentCount = comments.filter((c) => !c.parentId).length;
   const openSuggestionCount = comments.filter(
-    (c) => !c.parentId && c.kind === "ai_fix" && c.status === "open"
+    (c) => !c.parentId && isAiSuggestionKind(c.kind) && c.status === "open"
   ).length;
 
   return (
@@ -96,11 +104,13 @@ export function ReportSidebar({
         </button>
       </div>
 
-      {/* Tab buttons — icons only when collapsed, full tabs when expanded */}
+      {/* Tab buttons — icons only when collapsed; wrap when expanded so none get clipped */}
       <div
         className={cn(
           "border-b border-[var(--border)] shrink-0",
-          collapsed ? "px-1 py-2 space-y-1" : "px-2 py-1.5 flex items-center gap-1",
+          collapsed
+            ? "px-1 py-2 space-y-1"
+            : "flex flex-wrap items-center gap-1 px-2 py-1.5",
         )}
       >
         {TABS.map((tab) => {
@@ -152,7 +162,7 @@ export function ReportSidebar({
                 onTabChange(tab.value);
               }}
               className={cn(
-                "relative flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md border transition-colors",
+                "relative flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors",
                 activeTab === tab.value
                   ? "bg-[var(--secondary)] text-[var(--foreground)] border-[var(--border)]"
                   : "text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--secondary)]/50 border-transparent hover:border-[var(--border)]",
@@ -170,25 +180,31 @@ export function ReportSidebar({
         })}
       </div>
 
-      {/* Scrollable content — only when expanded */}
-      {!collapsed && (
-        <div className="flex-1 overflow-y-auto p-4 min-w-0">
-          {activeTab === "placeholders" && (
-            <PlaceholdersPanelContent
-              onJumpToPlaceholder={onJumpToPlaceholder}
-            />
-          )}
-          {activeTab === "criteria" && (
-            <CriteriaPanelContent
-              onJumpToSection={onJumpToSection}
-              initialSection={initialCriteriaSection}
-            />
-          )}
-          {activeTab === "comments" && (
-            <CommentsPanelContent onJumpToComment={onJumpToComment} />
-          )}
-        </div>
-      )}
+      {/* Content — only when expanded. Assistant manages its own scroll/input
+          layout, so it gets a full-height container without the shared padding. */}
+      {!collapsed &&
+        (activeTab === "assistant" ? (
+          <div className="min-h-0 flex-1">
+            <ChatPanel />
+          </div>
+        ) : (
+          <div className="flex-1 overflow-y-auto p-4 min-w-0">
+            {activeTab === "placeholders" && (
+              <PlaceholdersPanelContent
+                onJumpToPlaceholder={onJumpToPlaceholder}
+              />
+            )}
+            {activeTab === "criteria" && (
+              <CriteriaPanelContent
+                onJumpToSection={onJumpToSection}
+                initialSection={initialCriteriaSection}
+              />
+            )}
+            {activeTab === "comments" && (
+              <CommentsPanelContent onJumpToComment={onJumpToComment} />
+            )}
+          </div>
+        ))}
     </aside>
   );
 }

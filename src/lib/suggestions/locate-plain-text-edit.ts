@@ -1,7 +1,8 @@
 import {
-  countOccurrences,
-  findAnchorInText,
-} from "@/lib/text/normalize-for-anchor";
+  applyEditToPlainText,
+  locateEdit,
+  type SuggestionEdit as LocatorEdit,
+} from "@/lib/suggestions/locator";
 
 export function withLeadingSpaceIfNeeded(
   haystack: string,
@@ -14,6 +15,12 @@ export function withLeadingSpaceIfNeeded(
   return before !== undefined && !/\s/.test(before) ? ` ${insert}` : insert;
 }
 
+export type PlainTextEdit = {
+  anchorText?: string;
+  deleteText: string;
+  insertText: string;
+};
+
 /** Locate a unique span for delete or anchor text in plain text. */
 export function locateUniqueSpan(
   value: string,
@@ -21,77 +28,47 @@ export function locateUniqueSpan(
 ): { start: number; end: number } | null {
   const trimmed = needle.trim();
   if (!trimmed) return null;
-  if (countOccurrences(value, trimmed) !== 1) return null;
-  const match = findAnchorInText(value, trimmed);
-  if (!match) return null;
-  return { start: match.start, end: match.end };
+  const loc = locateEdit(value, {
+    anchorText: trimmed,
+    deleteText: trimmed,
+    insertText: "x",
+  });
+  if (loc.status !== "located") return null;
+  return { start: loc.deleteStart, end: loc.deleteEnd };
 }
 
 /**
  * Locate the delete span for a suggestion edit. When anchorText is present,
- * prefer locating deleteText inside the anchor slice (same order as TipTap
- * inject + canLocateEditInPlainText) before falling back to the full field.
+ * prefer locating deleteText inside the anchor slice.
  */
 export function locatePlainTextDeleteSpan(
   value: string,
   edit: Pick<PlainTextEdit, "anchorText" | "deleteText">
 ): { start: number; end: number } | null {
   const del = edit.deleteText.trim();
-  const anchor = (edit.anchorText ?? "").trim();
   if (!del) return null;
-
-  if (anchor) {
-    if (countOccurrences(value, anchor) === 1) {
-      const anchorMatch = findAnchorInText(value, anchor);
-      if (anchorMatch) {
-        const scopedText = value.slice(anchorMatch.start, anchorMatch.end);
-        const inner = locateUniqueSpan(scopedText, del);
-        if (inner) {
-          return {
-            start: anchorMatch.start + inner.start,
-            end: anchorMatch.start + inner.end,
-          };
-        }
-      }
-    }
-  }
-
-  return locateUniqueSpan(value, del);
+  const loc = locateEdit(value, {
+    anchorText: edit.anchorText ?? "",
+    deleteText: del,
+    insertText: "",
+  });
+  if (loc.status !== "located") return null;
+  return { start: loc.deleteStart, end: loc.deleteEnd };
 }
-
-export type PlainTextEdit = {
-  anchorText?: string;
-  deleteText: string;
-  insertText: string;
-};
 
 /** Apply a suggestion edit to plain text; returns null when not uniquely locatable. */
 export function applyPlainTextEdit(
   value: string,
   edit: PlainTextEdit
 ): string | null {
-  const del = edit.deleteText.trim();
-  const ins = edit.insertText.trim();
-  const anchor = (edit.anchorText ?? "").trim();
-
-  if (!del && !ins) return null;
-
-  if (del) {
-    const span = locatePlainTextDeleteSpan(value, edit);
-    if (!span) return null;
-    const insert = withLeadingSpaceIfNeeded(value, span.start, ins);
-    return value.slice(0, span.start) + insert + value.slice(span.end);
+  const locatorEdit: LocatorEdit = {
+    anchorText: edit.anchorText ?? "",
+    deleteText: edit.deleteText,
+    insertText: edit.insertText,
+  };
+  const result = applyEditToPlainText(value, locatorEdit);
+  if (result.status !== "located" && result.status !== "append") {
+    return null;
   }
-
-  if (anchor) {
-    const span = locateUniqueSpan(value, anchor);
-    if (!span) return null;
-    const insertAt = span.end;
-    const insert = withLeadingSpaceIfNeeded(value, insertAt, ins);
-    return value.slice(0, insertAt) + insert + value.slice(insertAt);
-  }
-
-  if (ins) return value + (value.length > 0 && !/\s$/.test(value) ? " " : "") + ins;
-
-  return null;
+  return result.text;
 }

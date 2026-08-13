@@ -19,9 +19,12 @@ import {
 import { CommentCard } from "./comment-card";
 import { SectionCommentComposer } from "./section-comment-composer";
 import { SectionSuggestionCard } from "@/components/report/suggestion-card";
-import { EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
+import { evaluatableSectionKeys } from "@/lib/ai/criteria-view";
 import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
-import { suggestionFieldAnchorKey } from "@/lib/suggestions/resolve-suggestion-field-path";
+import {
+  effectivePlainTextContentPath,
+  suggestionFieldAnchorKey,
+} from "@/lib/suggestions/resolve-suggestion-field-path";
 import {
   suggestionDeleteMarkName,
   suggestionInsertMarkName,
@@ -198,6 +201,7 @@ type Props = {
 export function MarginGutter({ onSectionOverflow }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { report, workspaceMode, currentUserId } = useReportData();
+  const evaluatableSections = evaluatableSectionKeys(report.documentType);
   const {
     comments,
     activeCommentId,
@@ -207,8 +211,11 @@ export function MarginGutter({ onSectionOverflow }: Props) {
     hoveredCommentIds,
   } = useReportComments();
   const { getEditor, editorTick } = useReportEditors();
-  const { evaluations, gutterSuggestionCommentForSection } =
-    useReportEvaluations();
+  const {
+    evaluations,
+    gutterSuggestionCommentForSection,
+    suggestionApplyTransition,
+  } = useReportEvaluations();
   const [layoutVersion, setLayoutVersion] = useState(0);
   const [cardHeights, setCardHeights] = useState<Record<string, number>>({});
   const cardHeightsRef = useRef<Record<string, number>>({});
@@ -266,7 +273,7 @@ export function MarginGutter({ onSectionOverflow }: Props) {
 
     // 1. Section composer cards pinned at the top of each section.
     if (canComment) {
-      for (const section of EVALUATABLE_SECTIONS) {
+      for (const section of evaluatableSections) {
         const heading = document.getElementById(section);
         if (!heading) continue;
         const top = heading.getBoundingClientRect().top - containerTop;
@@ -338,11 +345,27 @@ export function MarginGutter({ onSectionOverflow }: Props) {
     }
 
     // 3. Active AI suggestion cards — vertically centered on the target textbox.
-    for (const section of EVALUATABLE_SECTIONS) {
+    //    During a queue bridge, park at the previous card's Y so "Go to next"
+    //    stays where the user just acted.
+    for (const section of evaluatableSections) {
       const active = gutterSuggestionCommentForSection(section);
       if (!active) continue;
 
-      const contentPath = active.contentPath ?? "narrative";
+      const parkCenterY = suggestionApplyTransition[section]?.parkCenterY;
+      if (parkCenterY != null) {
+        result.push({
+          id: `suggestion:${section}`,
+          type: "suggestion",
+          desiredTop: parkCenterY,
+          valignCenter: true,
+          section,
+          comment: active,
+        });
+        continue;
+      }
+
+      // Resolve legacy paths so the card centers on the box that previews it.
+      const contentPath = effectivePlainTextContentPath(section, active.contentPath);
       let centerY: number | null = null;
 
       if (isRichTargetField(section, contentPath)) {
@@ -388,6 +411,7 @@ export function MarginGutter({ onSectionOverflow }: Props) {
     comments,
     evaluations,
     gutterSuggestionCommentForSection,
+    suggestionApplyTransition,
     getEditor,
     editorTick,
     layoutVersion,
@@ -425,7 +449,7 @@ export function MarginGutter({ onSectionOverflow }: Props) {
     const containerTop = container.getBoundingClientRect().top;
 
     const overflows: Record<string, number> = {};
-    for (const section of EVALUATABLE_SECTIONS) {
+    for (const section of evaluatableSections) {
       const sectionEl = document.getElementById(section);
       if (!sectionEl) continue;
       const sectionBottom =

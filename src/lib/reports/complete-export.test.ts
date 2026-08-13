@@ -28,6 +28,12 @@ vi.mock("@/lib/reports/managers", () => ({
   })),
 }));
 
+vi.mock("@/lib/storage/attachments", () => ({
+  getAttachmentStorage: vi.fn(() => ({
+    getSignedReadUrl: vi.fn().mockResolvedValue("https://signed.example/source.pdf"),
+  })),
+}));
+
 import PizZip from "pizzip";
 import { db } from "@/db";
 import { exportAuditEventsCsv, exportAuditEventsPdf } from "@/lib/audit/export";
@@ -41,7 +47,8 @@ const report = {
   authorId: "engineer-1",
   assignedManagerId: null,
   status: "approved",
-  deviationNo: "DEV-001",
+  documentType: "investigation_report",
+  documentNo: "DEV-001",
   createdAt: new Date("2026-01-01T00:00:00.000Z"),
   updatedAt: new Date("2026-01-02T00:00:00.000Z"),
   deletedAt: null,
@@ -73,6 +80,7 @@ describe("buildCompleteRecordExportZip", () => {
     mockSelectOnce([]);
     mockSelectOnce([]);
     mockSelectOnce([]);
+    mockSelectOnce([]);
 
     const result = await buildCompleteRecordExportZip(report.id, {
       includeAuditTrail: false,
@@ -94,6 +102,7 @@ describe("buildCompleteRecordExportZip", () => {
     mockSelectOnce([]);
     mockSelectOnce([]);
     mockSelectOnce([]);
+    mockSelectOnce([]);
 
     const result = await buildCompleteRecordExportZip(report.id, {
       includeAuditTrail: true,
@@ -111,5 +120,53 @@ describe("buildCompleteRecordExportZip", () => {
       reportId: report.id,
       limit: 10_000,
     });
+  });
+
+  it("includes attachment evidence manifest and source links in metadata", async () => {
+    mockSelectOnce([report]);
+    mockSelectOnce([]);
+    mockSelectOnce([]);
+    mockSelectOnce([]);
+    mockSelectOnce([
+      {
+        id: "att-1",
+        filename: "source.pdf",
+        sizeBytes: 123,
+        sha256: "sha-1",
+        gcsGeneration: "456",
+        uploadedAt: new Date("2026-01-03T00:00:00.000Z"),
+        permanentObjectKey: "reports/report-1/attachments/att-1/source.pdf",
+      },
+    ]);
+
+    const result = await buildCompleteRecordExportZip(report.id, {
+      includeAuditTrail: false,
+    });
+    const metadata = new PizZip(result!.buffer).file("metadata.xml")!.asText();
+
+    expect(metadata).toContain("<AttachmentEvidenceManifest>");
+    expect(metadata).toContain('attachmentId="att-1"');
+    expect(metadata).toContain("<Sha256>sha-1</Sha256>");
+    expect(metadata).toContain("https://signed.example/source.pdf");
+    expect(metadata).toContain("PDF binaries are intentionally not embedded");
+  });
+
+  it("names the inner report file for a design-verification export", async () => {
+    mockSelectOnce([{ ...report, documentType: "design_verification" }]);
+    mockSelectOnce([]);
+    mockSelectOnce([]);
+    mockSelectOnce([]);
+    mockSelectOnce([]);
+
+    const result = await buildCompleteRecordExportZip(report.id, {
+      includeAuditTrail: false,
+    });
+
+    expect(result).not.toBeNull();
+    expect(zipFilenames(result!.buffer)).toEqual([
+      "metadata.xml",
+      "version-history.csv",
+      "design-verification-report.docx",
+    ]);
   });
 });

@@ -62,6 +62,37 @@ describe("useAutoSave", () => {
     expect(result.current.status).toBe("saved");
   });
 
+  it("does not save on flush when nothing changed since last persist", async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const { result } = renderHook(() =>
+      useAutoSave({ value: "initial", onSave, delayMs: 1_000 })
+    );
+
+    await act(async () => {
+      await result.current.flush();
+    });
+
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it("rejects flush when onSave fails", async () => {
+    const onSave = vi.fn().mockRejectedValue(new Error("boom"));
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { rerender, result } = renderHook(
+      ({ value }) => useAutoSave({ value, onSave, delayMs: 1_000 }),
+      { initialProps: { value: "initial" } },
+    );
+
+    rerender({ value: "latest" });
+
+    await act(async () => {
+      await expect(result.current.flush()).rejects.toThrow("boom");
+    });
+
+    expect(result.current.status).toBe("error");
+    consoleError.mockRestore();
+  });
+
   it("does not log or set error when unmount aborts an in-flight save", async () => {
     let rejectSave: ((err: DOMException) => void) | undefined;
     const onSave = vi.fn(

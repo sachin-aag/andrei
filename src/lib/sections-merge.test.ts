@@ -157,4 +157,67 @@ describe("sections merge", () => {
     expect(measureText).toContain("Regulatory Notification: Not Applicable");
     expect(measure.regulatoryNotification).toBeUndefined();
   });
+
+  it("folds legacy measure experiment fields into the narrative in DOCX order", () => {
+    const measure = mergeMeasureSection({
+      narrative: legacyStringToDoc("Reviewed temperature excursion data."),
+      experimentNumber: "EXP-2026-014",
+      experimentTitle: "Probe drift verification",
+      purpose: legacyStringToDoc("Confirm whether the probe drifts under load."),
+      conclusion: legacyStringToDoc("Drift reproduced at 40 C."),
+      regulatoryNotification: "Not Applicable",
+    });
+
+    const text = richJsonToPlainText(measure.narrative);
+    const order = [
+      "Experiment Number: EXP-2026-014",
+      "Experiment Title: Probe drift verification",
+      "Purpose:",
+      "Confirm whether the probe drifts under load.",
+      "Experiment Conclusion:",
+      "Drift reproduced at 40 C.",
+      "Reviewed temperature excursion data.",
+      "Regulatory Notification: Not Applicable",
+    ];
+    let cursor = -1;
+    for (const fragment of order) {
+      const at = text.indexOf(fragment, cursor + 1);
+      expect(at, `${fragment} out of order in: ${text}`).toBeGreaterThan(cursor);
+      cursor = at;
+    }
+
+    expect(measure.experimentNumber).toBeUndefined();
+    expect(measure.experimentTitle).toBeUndefined();
+    expect(measure.purpose).toBeUndefined();
+    expect(measure.conclusion).toBeUndefined();
+  });
+
+  it("folds legacy measure fields idempotently", () => {
+    const legacy = {
+      narrative: legacyStringToDoc("Reviewed temperature excursion data."),
+      experimentNumber: "EXP-2026-014",
+      purpose: legacyStringToDoc("Confirm whether the probe drifts under load."),
+      regulatoryNotification: "Not Applicable",
+    };
+
+    const once = mergeMeasureSection(legacy);
+    const twice = mergeMeasureSection(once);
+    expect(twice).toEqual(once);
+
+    // A stale writer can re-send the legacy keys alongside the folded narrative.
+    const reFolded = mergeMeasureSection({ ...legacy, narrative: once.narrative });
+    expect(richJsonToPlainText(reFolded.narrative)).toEqual(
+      richJsonToPlainText(once.narrative)
+    );
+  });
+
+  it("drops the leading blank paragraph when folding into an empty narrative", () => {
+    const measure = mergeMeasureSection({
+      experimentNumber: "EXP-2026-014",
+    });
+
+    expect(richJsonToPlainText(measure.narrative)).toBe(
+      "Experiment Number: EXP-2026-014"
+    );
+  });
 });

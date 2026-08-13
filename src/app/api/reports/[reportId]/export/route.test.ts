@@ -55,10 +55,13 @@ const report = {
   authorId: engineer.id,
   assignedManagerId: null,
   status: "draft",
-  deviationNo: "DEV-001",
+  documentType: "investigation_report",
+  documentNo: "DEV-001",
   date: new Date("2026-01-01T00:00:00.000Z"),
-  toolsUsed: { sixM: false, fiveWhy: false, brainstorming: false },
-  otherTools: "",
+  metadata: {
+    toolsUsed: { sixM: false, fiveWhy: false, brainstorming: false },
+    otherTools: "",
+  },
 };
 
 function request() {
@@ -138,6 +141,23 @@ describe("GET /api/reports/[reportId]/export", () => {
           assignedManagerIds: ["manager-1"],
         }),
       })
+    );
+  });
+
+  it("names the download for a design-verification report", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
+    mockSelectOnce([{ ...report, documentType: "design_verification", documentNo: "DVR-001" }]);
+    mockOrderedSelectOnce([]);
+    mockSelectOnce([]);
+    mockSelectOnce([]);
+
+    const response = await GET(request(), {
+      params: Promise.resolve({ reportId: report.id }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Disposition")).toBe(
+      'attachment; filename="Design_Verification_Report_DVR-001.docx"'
     );
   });
 });

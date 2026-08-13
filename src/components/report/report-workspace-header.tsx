@@ -66,7 +66,7 @@ export function ReportWorkspaceHeader({
   canEditDetails = false,
   onEditDetails,
 }: ReportWorkspaceHeaderProps) {
-  const title = report.deviationNo || "Untitled";
+  const title = report.documentNo || "Untitled";
   const [navigatingBack, setNavigatingBack] = useState(false);
   const isViewMode = mode === "view";
 

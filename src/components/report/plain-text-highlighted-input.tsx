@@ -26,6 +26,7 @@ import {
   useReportData,
   useReportEditors,
   useReportPlaceholders,
+  type SuggestionApplyMode,
 } from "@/providers/report-provider";
 import { useUserDirectory } from "@/providers/user-directory-provider";
 import type { SectionType } from "@/db/schema";
@@ -45,6 +46,7 @@ export function PlainTextHighlightedInput({
   onEditLayoutHeight,
   mirrorContent,
   suggestionActive,
+  suggestionPreviewHeld,
   inlineSuggestionWidget,
   suggestionWidgetAnchorRef,
   "aria-label": ariaLabel,
@@ -61,6 +63,8 @@ export function PlainTextHighlightedInput({
   /** When set, replaces default placeholder mirror (inline suggestion track-changes). */
   mirrorContent?: ReactNode;
   suggestionActive?: boolean;
+  /** Set while the shown suggestion is being resolved — fades the diff out. */
+  suggestionPreviewHeld?: SuggestionApplyMode;
   /** Accept/dismiss widget, positioned after the suggestion in the mirror layer. */
   inlineSuggestionWidget?: ReactNode;
   suggestionWidgetAnchorRef?: RefObject<HTMLSpanElement | null>;
@@ -335,6 +339,7 @@ export function PlainTextHighlightedInput({
           "rounded-md ring-1 ring-violet-400/20 border border-violet-500/35"
       )}
       style={lockedMinStyle}
+      data-suggestion-preview-held={suggestionPreviewHeld}
     >
       <div
         ref={mirrorRef}

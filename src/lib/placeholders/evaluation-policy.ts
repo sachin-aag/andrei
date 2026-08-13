@@ -32,10 +32,10 @@ export function isPlaceholderOnlyEvaluationReasoning(reasoning: string): boolean
 }
 
 export function sectionHasUnfilledPlaceholders(
-  sections: Partial<SectionContentMap>,
+  sections: Partial<SectionContentMap> | Record<string, unknown>,
   section: SectionType
 ): boolean {
-  const content = sections[section];
+  const content = (sections as Record<string, unknown>)[section];
   if (!content) return false;
   return collectPlaceholders({ [section]: content }).length > 0;
 }

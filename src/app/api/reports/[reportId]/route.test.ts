@@ -55,10 +55,13 @@ const report = {
   authorId: engineer.id,
   assignedManagerId: null,
   status: "draft",
-  deviationNo: "DEV-001",
+  documentType: "investigation_report",
+  documentNo: "DEV-001",
   date: new Date("2026-01-01T00:00:00.000Z"),
-  toolsUsed: { sixM: false, fiveWhy: false, brainstorming: false },
-  otherTools: "",
+  metadata: {
+    toolsUsed: { sixM: false, fiveWhy: false, brainstorming: false },
+    otherTools: "",
+  },
 };
 
 function mockSelectOnce(rows: unknown[]) {
@@ -77,9 +80,12 @@ function mockOrderedSelectOnce(rows: unknown[]) {
 function mockBundleSelects() {
   mockSelectOnce([report]);
   mockOrderedSelectOnce([]);
+  // loadReportSubtables: sections, evaluations, comments, attachments, folders.
   mockSelectOnce([]);
   mockSelectOnce([]);
   mockSelectOnce([]);
+  mockOrderedSelectOnce([]);
+  mockOrderedSelectOnce([]);
 }
 
 function mockManagerValidation(managerIds: string[]) {

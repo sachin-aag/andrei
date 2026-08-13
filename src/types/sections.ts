@@ -5,9 +5,17 @@ export type DefineSection = {
   narrative: JSONContent;
 };
 
+/**
+ * Single narrative box. The optional fields only exist on legacy stored rows;
+ * `mergeMeasureSection` folds them into `narrative` and drops the keys.
+ */
 export type MeasureSection = {
   narrative: JSONContent;
   regulatoryNotification?: string;
+  experimentNumber?: string;
+  experimentTitle?: string;
+  purpose?: JSONContent;
+  conclusion?: JSONContent;
 };
 
 export type FiveWhyEntry = {
@@ -51,6 +59,10 @@ export type ControlSection = {
   preventiveActions: JSONContent;
 };
 
+export type ConclusionSection = {
+  narrative: JSONContent;
+};
+
 export type DocumentsReviewedSection = {
   items: string[];
 };
@@ -72,6 +84,7 @@ export type SectionContentMap = {
   analyze: AnalyzeSection;
   improve: ImproveSection;
   control: ControlSection;
+  conclusion: ConclusionSection;
   documents_reviewed: DocumentsReviewedSection;
   attachments: AttachmentsSection;
   signature_approvals: SignatureApprovalsSection;
@@ -113,6 +126,9 @@ export const EMPTY_CONTENT: SectionContentMap = {
   control: {
     preventiveActions: emptyDoc(),
   },
+  conclusion: {
+    narrative: emptyDoc(),
+  },
   documents_reviewed: {
     items: [],
   },
@@ -124,15 +140,26 @@ export const EMPTY_CONTENT: SectionContentMap = {
   },
 };
 
-export const SECTION_LABELS: Record<keyof SectionContentMap, string> = {
+export const SECTION_LABELS: Record<string, string> = {
   define: "Define",
   measure: "Measure",
   analyze: "Analyze",
   improve: "Improve",
   control: "Control",
+  conclusion: "Conclusion",
   documents_reviewed: "Documents Reviewed",
   attachments: "Attachments",
   signature_approvals: "Approvals (QC / QA)",
+  // Design verification
+  cover_page: "Cover Page",
+  purpose_scope: "Purpose & Scope",
+  references: "References",
+  traceability: "Traceability",
+  test_methods: "Test Methods / Protocol Summary",
+  test_results: "Test Results",
+  deviations: "Deviations & Nonconformances",
+  approval_signoff: "Approval / Sign-off",
+  appendices: "Appendices",
 };
 
 export const EDITABLE_SECTIONS = [
@@ -141,6 +168,7 @@ export const EDITABLE_SECTIONS = [
   "analyze",
   "improve",
   "control",
+  "conclusion",
 ] as const satisfies readonly (keyof SectionContentMap)[];
 
 /** All `report_sections` rows created for a report (DMAIC + document metadata blocks). */

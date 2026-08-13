@@ -40,7 +40,7 @@ pnpm run db:local:push
 - **Reset**: `pnpm run db:local:reset`
 - **Stop**: `pnpm run db:local:down`
 
-Local URLs use the `pg` driver; Neon URLs use the serverless HTTP driver (`src/db/connection.ts`).
+All environments use the `pg` (node-postgres) driver so `db.transaction()` works (document ingest, folder moves). The Neon HTTP driver does not support transactions.
 
 ---
 

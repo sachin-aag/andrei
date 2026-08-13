@@ -1,3 +1,13 @@
+/**
+ * Diff decoration fade-out on accept/dismiss. The content swap waits for this
+ * so the two never overlap — the diff calms to plain text first, then the real
+ * value replaces it.
+ *
+ * Keep in sync with the `[data-suggestion-preview-held]` transitions in
+ * globals.css.
+ */
+export const SUGGESTION_DIFF_FADE_MS = 240;
+
 /** Pause after the doc updates so the user sees the applied text settle. */
 export const SUGGESTION_APPLY_SETTLE_MS = 900;
 

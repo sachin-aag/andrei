@@ -21,9 +21,24 @@ if (!process.env.DATABASE_URL) {
 
 const url = process.env.DATABASE_URL;
 if (!url) {
-  console.error(
-    "DATABASE_URL is not set. On Vercel, ensure the Neon integration is connected. Locally, use .env.local or .env."
-  );
+  const onVercel = Boolean(process.env.VERCEL);
+  const vercelEnv = process.env.VERCEL_ENV ?? "unknown";
+  const branch = process.env.VERCEL_GIT_COMMIT_REF ?? "(unknown branch)";
+
+  if (onVercel && vercelEnv === "preview") {
+    console.error(
+      "DATABASE_URL is not set for this Vercel Preview deployment.\n" +
+        `Branch: ${branch}\n` +
+        "andrei-v2: enable Neon preview branching on the Vercel ↔ Neon integration.\n" +
+        "andrei-demo: add the demo Neon pooled URL to Preview in Settings → Environment Variables\n" +
+        "(required for cursor/* PR previews when ANDREI_VERCEL_DEPLOY_SCOPE=demo).\n" +
+        "See docs/whitelabel-vercel-deploy.md § Deploy scope."
+    );
+  } else {
+    console.error(
+      "DATABASE_URL is not set. On Vercel, ensure the Neon integration is connected. Locally, use .env.local or .env."
+    );
+  }
   process.exit(1);
 }
 

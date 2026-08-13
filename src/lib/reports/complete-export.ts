@@ -1,8 +1,9 @@
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import PizZip from "pizzip";
 import { db } from "@/db";
 import {
   comments,
+  reportAttachments,
   reportSections,
   reports,
   sectionContentVersions,
@@ -12,11 +13,17 @@ import {
   exportAuditEventsPdf,
 } from "@/lib/audit/export";
 import { listAuditEvents, listReportSignatures } from "@/lib/audit/queries";
+import { reportExportDocxArchiveName } from "@/lib/export/docx-filename";
 import { generateReportDocx } from "@/lib/export/generate-docx";
 import {
   listReportManagerIds,
   withAssignedManagerIds,
 } from "@/lib/reports/managers";
+import {
+  buildAttachmentEvidenceManifestFromRows,
+  type AttachmentEvidenceManifestEntry,
+} from "@/lib/reports/compute-content-hash";
+import { getAttachmentStorage } from "@/lib/storage/attachments";
 
 function escapeXml(value: string): string {
   return value
@@ -28,14 +35,15 @@ function escapeXml(value: string): string {
 
 function reportMetadataXml(
   report: typeof reports.$inferSelect & { assignedManagerIds: string[] },
-  signatures: Awaited<ReturnType<typeof listReportSignatures>>
+  signatures: Awaited<ReturnType<typeof listReportSignatures>>,
+  evidenceSources: EvidenceSourceExportEntry[]
 ): string {
   const lines = [
     "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
     "<CompleteRecordExport>",
     "  <Report>",
     `    <Id>${escapeXml(report.id)}</Id>`,
-    `    <DeviationNo>${escapeXml(report.deviationNo)}</DeviationNo>`,
+    `    <DeviationNo>${escapeXml(report.documentNo)}</DeviationNo>`,
     `    <Status>${escapeXml(report.status)}</Status>`,
     `    <AuthorId>${escapeXml(report.authorId)}</AuthorId>`,
     `    <CreatedAt>${report.createdAt.toISOString()}</CreatedAt>`,
@@ -50,9 +58,87 @@ function reportMetadataXml(
         `    <Signature meaning="${escapeXml(sig.meaning)}" signer="${escapeXml(sig.signerName)}" signedAt="${sig.signedAt.toISOString()}" contentHash="${escapeXml(sig.contentHash ?? "")}" />`
     ),
     "  </ElectronicSignatures>",
+    "  <AttachmentEvidenceManifest>",
+    ...evidenceSources.map((source) =>
+      [
+        `    <Attachment attachmentId="${escapeXml(source.attachmentId)}">`,
+        `      <Filename>${escapeXml(source.filename)}</Filename>`,
+        `      <SizeBytes>${source.sizeBytes}</SizeBytes>`,
+        `      <Sha256>${escapeXml(source.sha256)}</Sha256>`,
+        source.gcsGeneration
+          ? `      <GcsGeneration>${escapeXml(source.gcsGeneration)}</GcsGeneration>`
+          : "",
+        `      <UploadedAt>${escapeXml(source.uploadedAt)}</UploadedAt>`,
+        source.downloadUrl
+          ? `      <SourceDownload expiresAt="${escapeXml(source.downloadExpiresAt)}">${escapeXml(source.downloadUrl)}</SourceDownload>`
+          : "",
+        `      <SourceNote>${escapeXml(source.sourceNote)}</SourceNote>`,
+        "    </Attachment>",
+      ]
+        .filter(Boolean)
+        .join("\n")
+    ),
+    "  </AttachmentEvidenceManifest>",
     "</CompleteRecordExport>",
   ];
   return lines.filter(Boolean).join("\n");
+}
+
+type AttachmentExportRow = {
+  id: string;
+  filename: string;
+  sizeBytes: number;
+  sha256: string;
+  gcsGeneration: string | null;
+  uploadedAt: Date;
+  permanentObjectKey: string;
+};
+
+type EvidenceSourceExportEntry = AttachmentEvidenceManifestEntry & {
+  downloadUrl: string | null;
+  downloadExpiresAt: string;
+  sourceNote: string;
+};
+
+const SOURCE_LINK_TTL_SECONDS = 15 * 60;
+
+async function buildEvidenceSourceExportEntries(
+  rows: AttachmentExportRow[]
+): Promise<EvidenceSourceExportEntry[]> {
+  const manifest = buildAttachmentEvidenceManifestFromRows(rows);
+  const rowsById = new Map(rows.map((row) => [row.id, row]));
+  const downloadExpiresAt = new Date(
+    Date.now() + SOURCE_LINK_TTL_SECONDS * 1000
+  ).toISOString();
+
+  return Promise.all(
+    manifest.map(async (entry) => {
+      const row = rowsById.get(entry.attachmentId);
+      if (!row?.gcsGeneration) {
+        return {
+          ...entry,
+          downloadUrl: null,
+          downloadExpiresAt,
+          sourceNote:
+            "Source PDF was not embedded in this ZIP. No signed source link is available because the attachment is not finalized.",
+        };
+      }
+
+      const downloadUrl = await getAttachmentStorage().getSignedReadUrl({
+        objectKey: row.permanentObjectKey,
+        generation: row.gcsGeneration,
+        expiresInSeconds: SOURCE_LINK_TTL_SECONDS,
+      });
+
+      return {
+        ...entry,
+        downloadUrl,
+        downloadExpiresAt,
+        sourceNote:
+          "Source PDF is available through the signed link until it expires. PDF binaries are intentionally not embedded in the ZIP; async evidence export is a follow-up for larger records.",
+      };
+    })
+  );
 }
 
 export type CompleteRecordExportOptions = {
@@ -71,15 +157,33 @@ export async function buildCompleteRecordExportZip(
   const managerIds = await listReportManagerIds(reportId);
   const reportWithManagers = withAssignedManagerIds(report, managerIds);
 
-  const [sectionRows, commentRows, signatures, versions] = await Promise.all([
-    db.select().from(reportSections).where(eq(reportSections.reportId, reportId)),
-    db.select().from(comments).where(eq(comments.reportId, reportId)),
-    listReportSignatures(reportId),
-    db
-      .select()
-      .from(sectionContentVersions)
-      .where(eq(sectionContentVersions.reportId, reportId)),
-  ]);
+  const [sectionRows, commentRows, signatures, versions, attachmentRows] =
+    await Promise.all([
+      db.select().from(reportSections).where(eq(reportSections.reportId, reportId)),
+      db.select().from(comments).where(eq(comments.reportId, reportId)),
+      listReportSignatures(reportId),
+      db
+        .select()
+        .from(sectionContentVersions)
+        .where(eq(sectionContentVersions.reportId, reportId)),
+      db
+        .select({
+          id: reportAttachments.id,
+          filename: reportAttachments.filename,
+          sizeBytes: reportAttachments.sizeBytes,
+          sha256: reportAttachments.sha256,
+          gcsGeneration: reportAttachments.gcsGeneration,
+          uploadedAt: reportAttachments.uploadedAt,
+          permanentObjectKey: reportAttachments.permanentObjectKey,
+        })
+        .from(reportAttachments)
+        .where(
+          and(
+            eq(reportAttachments.reportId, reportId),
+            isNull(reportAttachments.deletedAt)
+          )
+        ),
+    ]);
 
   const auditArtifactsPromise = includeAuditTrail
     ? listAuditEvents({ reportId, limit: 10_000 }).then(async (auditEvents) => ({
@@ -88,7 +192,7 @@ export async function buildCompleteRecordExportZip(
       }))
     : Promise.resolve(null);
 
-  const [auditArtifacts, investigationDocx] = await Promise.all([
+  const [auditArtifacts, reportDocx, evidenceSources] = await Promise.all([
     auditArtifactsPromise,
     generateReportDocx({
       report: reportWithManagers,
@@ -107,9 +211,14 @@ export async function buildCompleteRecordExportZip(
         contentHash: sig.contentHash,
       })),
     }),
+    buildEvidenceSourceExportEntries(attachmentRows),
   ]);
 
-  const metadataXml = reportMetadataXml(reportWithManagers, signatures);
+  const metadataXml = reportMetadataXml(
+    reportWithManagers,
+    signatures,
+    evidenceSources
+  );
   const versionHistoryCsv = [
     "section,version_no,is_snapshot,content_hash,created_at",
     ...versions.map(
@@ -125,10 +234,10 @@ export async function buildCompleteRecordExportZip(
     zip.file("audit-trail.pdf", auditArtifacts.auditPdf);
   }
   zip.file("version-history.csv", versionHistoryCsv);
-  zip.file("investigation-report.docx", investigationDocx);
+  zip.file(reportExportDocxArchiveName(report.documentType), reportDocx);
 
   return {
     buffer: zip.generate({ type: "nodebuffer", compression: "DEFLATE" }),
-    deviationNo: report.deviationNo,
+    documentNo: report.documentNo,
   };
 }

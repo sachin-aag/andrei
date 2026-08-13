@@ -1,7 +1,8 @@
 import type { SectionType } from "@/db/schema";
 
 /** Pattern entries use `[]` for a numeric array index slot. */
-export const SUGGEST_TARGET_FIELD_PATTERNS: Record<SectionType, readonly string[]> = {
+export const SUGGEST_TARGET_FIELD_PATTERNS: Record<string, readonly string[]> = {
+  // Investigation report
   define: ["narrative"],
   measure: ["narrative"],
   analyze: [
@@ -12,6 +13,7 @@ export const SUGGEST_TARGET_FIELD_PATTERNS: Record<SectionType, readonly string[
     "sixM.method",
     "sixM.milieu",
     "sixM.conclusion",
+    "fiveWhy.narrative",
     "brainstorming",
     "otherTools",
     "investigationOutcome",
@@ -20,9 +22,20 @@ export const SUGGEST_TARGET_FIELD_PATTERNS: Record<SectionType, readonly string[
   ],
   improve: ["narrative", "correctiveActions"],
   control: ["preventiveActions"],
+  conclusion: ["narrative"],
   documents_reviewed: [],
   attachments: [],
   signature_approvals: [],
+  // Design verification (section key ≠ field path — models often pass the section key)
+  purpose_scope: ["narrative"],
+  references: ["narrative"],
+  traceability: ["table"],
+  test_methods: ["narrative"],
+  test_results: ["table"],
+  deviations: ["narrative"],
+  approval_signoff: ["narrative"],
+  appendices: ["narrative"],
+  cover_page: [],
 };
 
 function patternToRegex(pattern: string): RegExp {
@@ -33,13 +46,38 @@ function patternToRegex(pattern: string): RegExp {
   return new RegExp(`^${reSource}$`);
 }
 
+/** Concrete editable field paths for a section (excludes `[]` index patterns). */
+export function concreteTargetFields(section: SectionType): readonly string[] {
+  return (SUGGEST_TARGET_FIELD_PATTERNS[section] ?? []).filter(
+    (p) => !p.includes("[]")
+  );
+}
+
 export function isAllowedTargetField(section: SectionType, targetField: string): boolean {
-  const patterns = SUGGEST_TARGET_FIELD_PATTERNS[section];
+  const patterns = SUGGEST_TARGET_FIELD_PATTERNS[section] ?? [];
   return patterns.some((p) => patternToRegex(p).test(targetField));
 }
 
+/**
+ * Normalize a model-supplied targetField. Models often pass the section key
+ * (e.g. purpose_scope) instead of the in-section path (e.g. narrative). When
+ * the section has exactly one editable field, remap that mistake.
+ */
+export function resolveTargetField(
+  section: SectionType,
+  targetField: string
+): string | null {
+  if (isAllowedTargetField(section, targetField)) return targetField;
+  const allowed = concreteTargetFields(section);
+  if (targetField === section && allowed.length === 1) {
+    return allowed[0] ?? null;
+  }
+  return null;
+}
+
 /** Rich TipTap fields per section (dot paths). */
-export const RICH_FIELD_PATHS: Partial<Record<SectionType, readonly string[]>> = {
+export const RICH_FIELD_PATHS: Partial<Record<string, readonly string[]>> = {
+  // Investigation report
   define: ["narrative"],
   measure: ["narrative"],
   analyze: [
@@ -50,6 +88,16 @@ export const RICH_FIELD_PATHS: Partial<Record<SectionType, readonly string[]>> =
   ],
   improve: ["narrative", "correctiveActions"],
   control: ["preventiveActions"],
+  conclusion: ["narrative"],
+  // Design verification
+  purpose_scope: ["narrative"],
+  references: ["narrative"],
+  traceability: ["table"],
+  test_methods: ["narrative"],
+  test_results: ["table"],
+  deviations: ["narrative"],
+  approval_signoff: ["narrative"],
+  appendices: ["narrative"],
 };
 
 export function isRichTargetField(section: SectionType, contentPath: string): boolean {

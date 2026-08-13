@@ -214,5 +214,23 @@
     "criterionKey": "control.preventive_achievable",
     "status": "not_met",
     "reasoning": "Stub evaluation for automated tests."
+  },
+  {
+    "section": "conclusion",
+    "criterionKey": "conclusion.summary",
+    "status": "met",
+    "reasoning": "Stub evaluation for automated tests."
+  },
+  {
+    "section": "conclusion",
+    "criterionKey": "conclusion.disposition",
+    "status": "partially_met",
+    "reasoning": "Stub evaluation for automated tests."
+  },
+  {
+    "section": "conclusion",
+    "criterionKey": "conclusion.closure",
+    "status": "not_met",
+    "reasoning": "Stub evaluation for automated tests."
   }
 ]
