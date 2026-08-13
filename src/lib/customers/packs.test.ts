@@ -11,9 +11,7 @@ describe("customer packs", () => {
   });
 
   it("keeps MJ identical to demo until the content overlay lands", () => {
-    const { id: _demoId, ...demoRest } = DEMO_PACK;
-    const { id: _mjId, ...mjRest } = MJ_PACK;
-    expect(mjRest).toEqual(demoRest);
+    expect({ ...MJ_PACK, id: "demo" }).toEqual(DEMO_PACK);
   });
 
   it("uses the shared investigation template and prompt version on demo", () => {
