@@ -44,6 +44,33 @@
   --duration-move: 400ms;
 }
 
+/* MJ Biopharm overlay — navy #133782 / purple #403ac8 from origin/main */
+html[data-customer="mj"] {
+  --foreground: #16162b;
+  --card-foreground: #16162b;
+  --popover-foreground: #16162b;
+  --primary: #403ac8;
+  --secondary: #f4f4f5;
+  --secondary-foreground: #1f1d4f;
+  --muted: #f4f4f5;
+  --muted-foreground: #5c5c72;
+  --accent: #133782;
+  --border: #e5e5e5;
+  --ring: #3a62c4;
+
+  --brand: #133782;
+  --brand-50: #eceaff;
+  --brand-100: #d6d1ff;
+  --brand-200: #a9a1f7;
+  --brand-300: #7d72ec;
+  --brand-400: #5b4fe0;
+  --brand-500: #403ac8;
+  --brand-600: #133782;
+  --brand-700: #1f1d4f;
+  --brand-800: #13122e;
+  --brand-900: #090817;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

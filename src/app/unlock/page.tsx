@@ -1,4 +1,3 @@
-import Image from "next/image";
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import {
@@ -6,6 +5,7 @@ import {
   verifySiteAccessToken,
 } from "@/lib/site-access-token";
 import { UnlockForm } from "@/components/auth/unlock-form";
+import { BrandLockup } from "@/components/brand/brand-lockup";
 
 export default async function UnlockPage({
   searchParams,
@@ -46,21 +46,7 @@ export default async function UnlockPage({
             backgroundPosition: "0 0, 20px 20px",
           }}
         />
-        <div className="relative flex items-center gap-3">
-          <div className="size-12 rounded-lg bg-white/10 p-1 flex items-center justify-center">
-            <Image
-              src="/logo-white.png"
-              width={36}
-              height={36}
-              alt="Andrei logo"
-              className="object-contain"
-            />
-          </div>
-          <div>
-            <div className="font-semibold">Andrei</div>
-            <div className="text-xs text-white/80">Quality Documentation</div>
-          </div>
-        </div>
+        <BrandLockup variant="hero" size="md" showTagline name="full" />
         <div className="relative">
           <h2 className="text-4xl font-bold leading-tight mb-3">
             Site access
@@ -76,16 +62,8 @@ export default async function UnlockPage({
 
       <div className="flex-1 flex items-center justify-center p-8">
         <div className="w-full max-w-sm space-y-6">
-          <div className="lg:hidden flex items-center gap-3">
-            <div className="size-10 rounded-lg bg-white p-1 border border-border">
-              <Image
-                src="/logo.png"
-                width={32}
-                height={32}
-                alt="Andrei logo"
-              />
-            </div>
-            <div className="font-semibold">Andrei</div>
+          <div className="lg:hidden">
+            <BrandLockup />
           </div>
           <div>
             <h1 className="text-2xl font-semibold tracking-tight">
