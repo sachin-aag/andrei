@@ -260,6 +260,13 @@
       "when": 1782976800000,
       "tag": "0037_document_types",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1783063200000,
+      "tag": "0038_document_chunks_fts_english",
+      "breakpoints": true
     }
   ]
 }

@@ -1,0 +1,45 @@
+---
+description: Attachment-first chat, retrieval, ingest, and prompt sanitization
+globs:
+  - src/lib/ai/chat/**/*.ts
+  - src/lib/attachments/**/*.ts
+  - src/app/api/reports/**/chat/**/*.ts
+  - src/app/api/reports/**/attachments/**/*.ts
+alwaysApply: false
+---
+
+# Chat and attachments
+
+Search attachments **before** `ask_user` or a `[placeholder]` for regulated
+facts (batch, date, result, equipment ID). Evidence preview is already in the
+system prompt when kickoff retrieval hits.
+
+## Prompt / tools
+
+- Untrusted metadata (`filename`, `description`, `documentSummary`,
+  `pageContext`) → `sanitizePromptMetadata` in chat/tools. Never import that
+  helper from `src/lib/attachments/`.
+- New tools: register in `buildChatTools` **and** add to the Plan allowlist in
+  `src/app/api/reports/[reportId]/chat/route.ts` (`mode === "plan"` object).
+  Missing from the allowlist = silent Plan-mode gap.
+- Bump `CHAT_PROMPT_VERSION` when `DOCUMENT_RULES` / plan-agent policy changes.
+- Kickoff retrieval (`buildAutoEvidence`) is fail-soft (timeout / no creds →
+  `""`). Do not block the turn on embeddings.
+
+## Retrieval
+
+- Hybrid: vector (`embedding <=>`) + English FTS with OR tokens
+  (`buildKeywordTsQuery`). Skip the keyword arm when tokenization is empty.
+- FTS expression must stay `to_tsvector('english', contextual_text)` to hit
+  `document_chunks_contextual_text_fts_en_idx`.
+- Tagged `@` documents rank first; backfill from the rest of the report.
+  Hard-filtering tagged IDs blinds the assistant.
+- Report body is not in `document_chunks`. Use `read_section`.
+
+## Ingest
+
+- Extract + embed is **Vertex-only** (`runDocumentIngest`). Gateway key is not
+  enough. Stub with `ALLOW_TEST_STUB_DOCUMENT_INGEST`.
+- `markAttachmentReadyForTests` must insert a page **and** a chunk or outline /
+  keyword search have nothing to find.
+- `documentSummary` / `pageContext` are model output over untrusted PDFs.

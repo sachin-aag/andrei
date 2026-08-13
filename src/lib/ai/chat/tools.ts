@@ -77,10 +77,14 @@ import {
   recordAuditEvent,
 } from "@/lib/audit";
 import {
+  readDocumentOutline,
   readDocumentPage,
   searchReportDocuments,
   toClientDocumentSearchResults,
 } from "@/lib/attachments/retrieval";
+import {
+  sanitizePromptMetadata,
+} from "@/lib/ai/chat/prompt-metadata";
 
 export type ProposeEditResult =
   | {
@@ -425,6 +429,42 @@ export function buildChatTools(opts: {
     }),
 
     search_documents: buildSearchDocumentsTool({ reportId, pinnedAttachmentIds }),
+
+    document_outline: tool({
+      description:
+        "List per-page context for one ready attachment so you can pick which pages to read. Use for long documents; not a substitute for search_documents.",
+      inputSchema: z.object({
+        attachmentId: z
+          .string()
+          .min(1)
+          .describe("Attachment ID from the document index or a search result."),
+      }),
+      execute: async ({ attachmentId }) => {
+        const outline = await readDocumentOutline({ reportId, attachmentId });
+        if (!outline) return { status: "not_found" as const };
+        const filename =
+          sanitizePromptMetadata(outline.filename, 180) || "unnamed";
+        const description = sanitizePromptMetadata(outline.description, 280);
+        const documentSummary = sanitizePromptMetadata(outline.documentSummary, 400);
+        return {
+          status: "found" as const,
+          attachmentId: outline.attachmentId,
+          filename,
+          description: description || null,
+          pageCount: outline.pageCount,
+          documentSummary: documentSummary || null,
+          pages: outline.pages.map((page) => ({
+            pageNumber: page.pageNumber,
+            printedPageLabel: page.printedPageLabel,
+            pageContext: page.pageContext
+              ? sanitizePromptMetadata(page.pageContext, 400) || null
+              : null,
+          })),
+          citationRule: DOCUMENT_CITATION_RULE,
+          trustBoundary: DOCUMENT_TRUST_BOUNDARY,
+        };
+      },
+    }),
 
     read_document_page: tool({
       description:

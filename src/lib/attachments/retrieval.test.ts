@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  buildKeywordTsQuery,
   normalizeAttachmentIdFilter,
   reciprocalRankFusion,
   searchReportDocuments,
@@ -76,6 +77,26 @@ describe("reciprocalRankFusion", () => {
     expect(results[0].keywordRank).toBe(1);
     expect(results[0].rrfScore).toBeGreaterThan(results[1].rrfScore);
   });
+
+  it("still ranks a single populated arm when the other list is empty", () => {
+    const results = reciprocalRankFusion(
+      [
+        {
+          name: "vector",
+          rows: [
+            { chunkId: "a", text: "vector only" },
+            { chunkId: "b", text: "vector second" },
+          ],
+        },
+        { name: "keyword", rows: [] },
+      ],
+      { k: 60, limit: 2 }
+    );
+
+    expect(results.map((r) => r.chunkId)).toEqual(["a", "b"]);
+    expect(results[0].vectorRank).toBe(1);
+    expect(results[0].keywordRank).toBeUndefined();
+  });
 });
 
 describe("normalizeAttachmentIdFilter", () => {
@@ -83,6 +104,22 @@ describe("normalizeAttachmentIdFilter", () => {
     expect(normalizeAttachmentIdFilter(["a", "a", " ", "", "b"])).toEqual(["a", "b"]);
     expect(normalizeAttachmentIdFilter(undefined)).toEqual([]);
     expect(normalizeAttachmentIdFilter(["  "])).toEqual([]);
+  });
+});
+
+describe("buildKeywordTsQuery", () => {
+  it("joins a multi-word natural-language query with OR", () => {
+    expect(
+      buildKeywordTsQuery("what was the sterilization cycle for autoclave AC-12")
+    ).toBe(
+      "what or was or the or sterilization or cycle or for or autoclave or AC-12"
+    );
+  });
+
+  it("skips punctuation-only input so the keyword arm is not queried", () => {
+    expect(buildKeywordTsQuery("???")).toBeNull();
+    expect(buildKeywordTsQuery("...")).toBeNull();
+    expect(buildKeywordTsQuery("")).toBeNull();
   });
 });
 
@@ -158,6 +195,19 @@ describe("searchReportDocuments with tagged attachments", () => {
 
     expect(results).toEqual([]);
     expect(embedMock).not.toHaveBeenCalled();
+  });
+
+  it("skips the keyword arm for punctuation-only queries", async () => {
+    limitMock.mockResolvedValueOnce([chunkRow("c1", "att_1")]);
+
+    const results = await searchReportDocuments({
+      reportId: "report-1",
+      query: "???",
+      limit: 5,
+    });
+
+    expect(results).toHaveLength(1);
+    expect(limitMock).toHaveBeenCalledTimes(1);
   });
 });
 

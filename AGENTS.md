@@ -1,75 +1,90 @@
 # AGENTS.md
 
-## Cursor Cloud specific instructions
+Cursor reads this file on every chat (also nested copies, if any). Keep it
+short and true. Architecture deep-dives live in `CLAUDE.md` (also always-on in
+Cursor — if it disagrees with this file or a `.mdc` rule, trust this file /
+the rule / the code, then fix `CLAUDE.md`). File-scoped invariants:
 
 This is a single Next.js 16 app (Andrei investigation-report engine with
 per-customer packs). Standard commands live in `CLAUDE.md`, `README.md`, and
 `package.json` scripts — use those for lint/test/build/run. The notes below
 cover only non-obvious, durable setup/run caveats for this environment.
 
-### Services
+| Rule | When it attaches |
+|------|------------------|
+| `.cursor/rules/document-types.mdc` | Registry, eval, suggest, report UI |
+| `.cursor/rules/chat-and-attachments.mdc` | Chat, retrieval, ingest |
+| `.cursor/rules/eval-and-suggestions.mdc` | Criteria eval + suggestions |
+| `.cursor/rules/database.mdc` | Drizzle schema + migrations |
+| `.cursor/rules/testing.mdc` | Vitest + Playwright |
+| `.cursor/rules/proxy-and-auth.mdc` | `proxy.ts`, auth, test login |
 
-- **Next.js dev server** — the product. Run `pnpm dev` (http://localhost:3000, Turbopack).
-- **PostgreSQL 16 + pgvector** — required; all report/section/eval/comment/user
-  data persists here, and PDF evidence chunks use `vector(768)`. Installed
-  natively (not Docker). It is **not** auto-started on boot, so start it before
-  running the app or DB scripts:
+## What this app is
 
-  ```bash
-  sudo pg_ctlcluster 16 main start
-  ```
+Next.js 16 App Router (Turbopack, React 19, Drizzle, TipTap, AI SDK v6).
+Pharmaceutical quality documents for M.J. Biopharm — **two** `documentType`s:
 
-  Connection is configured in `.env.local` as
-  `postgresql://andrei:andrei@127.0.0.1:5432/andrei_dev`. Because the host is `127.0.0.1`,
-  `src/db/connection.ts` uses the `pg` driver (not the Neon HTTP driver).
+| `documentType` | Noun | Sections |
+|----------------|------|----------|
+| `investigation_report` | deviation | DMAIC + conclusion + attachments/approvals |
+| `design_verification` | design verification | cover page, purpose, traceability, tests, … |
 
-  Native pgvector setup (one-time):
+Chat, eval, suggestions, and editors **must** go through
+`src/lib/document-types/`. Do not hardcode DMAIC as if it were the only type.
 
-  ```bash
-  # macOS (Homebrew)
-  brew install pgvector
-  # then in psql against andrei_dev:
-  CREATE EXTENSION IF NOT EXISTS vector;
-  ```
+Package manager is **pnpm**. Path alias `@/*` → `src/*`.
 
-  Docker Compose and CI use `pgvector/pgvector:pg16` so the extension is available
-  without a manual install in those environments.
+## Read order
 
-  PDF evidence release gates: see `docs/pdf-evidence-deployment-checklist.md`.
+1. This file (operating caveats).
+2. The matching `.cursor/rules/*.mdc` when you are in those globs.
+3. `CLAUDE.md` only when you need a subsystem map (eval, suggestions, DOCX,
+   audit, import).
+4. The code. Docs that disagree with code lose.
 
-### Database schema & users (local Postgres gotchas)
+## Commands you will actually run
 
-- Apply/refresh schema with **`pnpm db:local:push`** (runs `drizzle-kit push --force`).
-  The plain `pnpm db:push` prompts interactively and **fails in non-interactive shells**
-  ("Interactive prompts require a TTY").
-- The Neon-driver maintenance scripts (e.g. `pnpm db:ensure-workspace-users`) target the
-  Neon HTTP API and **do not work against local Postgres** (they try to fetch
-  `https://api.0.0.1/sql`). Not needed locally — `db:local:push` already creates all tables.
-- Create a login user (the `set-workspace-password` script uses the `pg` driver, so it
-  works locally). The email must be `@mjbiopharm.com`:
+```bash
+pnpm test -- src/lib/ai/chat/tools.test.ts   # single Vitest file
+pnpm typecheck
+pnpm lint
+pnpm precommit                               # lint + typecheck + Vitest (no E2E)
+pnpm exec playwright test e2e/report-chat.spec.ts --project=chromium
+pnpm db:migrate                              # SQL migrations (what Vercel runs)
+pnpm db:local:push                           # force-push to local Docker (non-TTY)
+pnpm db:generate                             # after src/db/schema changes
+```
 
-  ```bash
-  pnpm set-workspace-password -- bhargav.patel@mjbiopharm.com 'TempPass123!' --role engineer
-  ```
+Full script list: `package.json` / `CLAUDE.md`. Prefer the narrowest test.
 
-  The account is flagged `mustChangePassword`, so first login forces a one-time password
-  change before reaching the dashboard.
+## Hard rules
 
-### Turbopack dev route-registration gotcha
+- **Do not commit** unless asked. **Do not push** unless asked.
+- **Do not set `ALLOW_TEST_*` on Vercel.** Playwright injects them locally.
+- **Do not use `pnpm db:push`** in a non-TTY. Use `pnpm db:local:push`.
+- **Do not add `middleware.ts`.** Next.js 16 interception is `src/proxy.ts`.
+- **Do not import `@/lib/ai/chat/prompt-metadata` from `src/lib/attachments/`.**
+  Sanitization belongs in chat/tools. Retrieval stays DB-layer.
+- **Untrusted PDF/DOCX text** (`documentSummary`, `pageContext`, filenames,
+  descriptions) goes through `sanitizePromptMetadata` before any prompt.
+- **Bump versions** when prompts change: `PROMPT_VERSION` (eval),
+  `SUGGEST_PROMPT_VERSION`, `CHAT_PROMPT_VERSION`.
+- New chat tools must be added to the **Plan-mode allowlist** in
+  `src/app/api/reports/[reportId]/chat/route.ts` or they are silently missing
+  in Plan.
 
-In `pnpm dev`, a newly-hit API route handler can occasionally fail to register on its
-first on-demand compile and return Next's **HTML 404 page** (instead of the handler's
-JSON) for every method. Symptom seen here: editor auto-save `PATCH
-/api/reports/<id>/sections/<section>` returned `404 text/html` even though the report
-existed. Fix: restart the dev server (optionally `rm -rf .next` first); the route then
-serves normally (PATCH/POST → 200). This is a dev-server state issue, not a code bug.
+## Database
 
-### AI features
+One env var: `DATABASE_URL`. Matrix: `docs/database-environments.md`.
 
-AI evaluation/suggestions need a Gemini credential (e.g. `GOOGLE_GENERATIVE_AI_API_KEY`
-or `AI_GATEWAY_API_KEY`), which is not configured here. Core flows — login, report
-CRUD, the DMAIC editor with auto-save, manager review, and DOCX export — work without it.
-"Run AI Check" / suggestions will error until a credential is added to `.env.local`.
+The app **always** uses `pg` (`src/db/connection.ts`), including Neon TCP.
+Neon HTTP cannot `db.transaction()` (ingest + folder moves).
+
+| Target | Typical URL | Apply schema with |
+|--------|-------------|-------------------|
+| Local Docker | `postgresql://andrei:andrei@localhost:5432/andrei_dev` | `pnpm db:local:up` then `pnpm db:local:push` or `pnpm db:migrate` |
+| Neon (this machine often) | pooled `*.neon.tech` in `.env.local` | `pnpm db:migrate` |
+| CI | `postgresql://ci:ci@127.0.0.1:5432/ci` | workflow |
 
 ### Customer pack
 
@@ -84,8 +99,74 @@ NEXT_PUBLIC_ANDREI_CUSTOMER=mj
 They must agree with `ANDREI_VERCEL_DEPLOY_SCOPE` when that is set. See
 `docs/whitelabel-vercel-deploy.md`.
 
+- `pnpm db:ensure-workspace-users` is Neon HTTP — **skip on local Docker**
+  (`127.0.0.1` → `https://api.0.0.1/sql`). Create users with
+  `pnpm set-workspace-password` (`pg`).
+- pgvector required (`document_chunks.embedding vector(768)`). Docker/CI:
+  `pgvector/pgvector:pg16`.
+- Chunk keyword search: `to_tsvector('english', contextual_text)` + GIN
+  `document_chunks_contextual_text_fts_en_idx`. Index expression must match
+  the query byte-for-byte or Postgres ignores it.
+- Localhost and Postgres down → `pnpm db:local:up` (Docker). Do not assume a
+  native `pg_ctlcluster`.
+
 ### Tests
 
-- Unit tests (`pnpm test`, Vitest) mock env per-test and need no DB or external services.
-- E2E (`pnpm test:e2e`, Playwright) needs a reachable Postgres at the configured
-  `DATABASE_URL` and spins up its own dev server; it sets test-only bypass env vars.
+## Auth
+
+```bash
+pnpm set-workspace-password -- bhargav.patel@mjbiopharm.com 'TempPass123!' --role engineer
+```
+
+Roles: `engineer | manager | admin | qa`. New accounts get `mustChangePassword`.
+MJ convention is `@mjbiopharm.com`; the script does not enforce the domain.
+
+`POST /api/test/login` and `POST /api/test/seed-auth-users` need **both**
+`ALLOW_TEST_LOGIN=true` **and** `TEST_AUTH_EMAIL`. A 404 usually means the
+process serving the request is missing one of them.
+
+`src/proxy.ts` does **not** enforce the site-access gate (`SITE_ACCESS_PASSWORD`
++ `/unlock`).
+
+## AI credentials (not interchangeable)
+
+| Feature | Needs | Local stub (never Vercel) |
+|---------|--------|---------------------------|
+| AI Check / suggestions / Improve AI | `AI_GATEWAY_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` | `ALLOW_TEST_SKIP_EVALUATION`, `ALLOW_TEST_SKIP_SUGGESTIONS` |
+| Report chat | Same resolver; Vertex `global` if `GOOGLE_VERTEX_PROJECT` is set | `ALLOW_TEST_STUB_CHAT` |
+| PDF/DOCX ingest + embeddings | **Vertex only** (`GOOGLE_VERTEX_PROJECT` + WIF or ADC). Gateway key is not enough | `ALLOW_TEST_STUB_DOCUMENT_INGEST` |
+
+CRUD, editor, review, and DOCX export work without AI keys.
+
+Production attachment bytes: GCS (`GCS_BUCKET` + WIF). Local uploads:
+`ATTACHMENT_STORAGE_BACKEND=local` **and** `ALLOW_LOCAL_ATTACHMENT_STORAGE=true`.
+Release gates: `docs/pdf-evidence-deployment-checklist.md`.
+
+## Chat + attachments (always-on summary)
+
+- Ready docs (filename + sanitized `documentSummary`) are in the context map.
+- Each turn: `buildAutoEvidence` (≤1.5s, fail-soft) injects an evidence preview.
+  Gap tools: `search_documents`, `document_outline`, `read_document_page`.
+- Hybrid search = vector + English FTS with OR-tokenized `websearch_to_tsquery`.
+  The report body is **not** chunk-indexed; use `read_section`.
+- Prompt policy is search-then-ask. Do not restore “ask the human first” for
+  batch numbers, dates, results, or equipment IDs.
+- Stub chat (`buildStubChatModel`) can prove a turn streams; it cannot prove
+  tool selection. Spec: `e2e/report-chat.spec.ts`.
+
+## Turbopack 404
+
+A newly-hit API route in `pnpm dev` can return Next’s **HTML 404** on first
+compile (auto-save `PATCH` is the usual victim). Restart the dev server;
+optionally `rm -rf .next`. Not a code bug.
+
+## Tests
+
+- Vitest: `pnpm test` — mocked env, no DB.
+- Playwright: `pnpm test:e2e` — needs `DATABASE_URL`, serves
+  `http://127.0.0.1:3000` with stub flags. Catalog: `TESTING.md`.
+- Local `reuseExistingServer` is on. Whatever already owns port 3000 is reused
+  **without** Playwright’s stub env (landing-page `vercel dev` has bitten this).
+  Stop it, or set `PLAYWRIGHT_BASE_URL` to a server that already has the flags
+  and matching `AUTH_URL`.
+- Single spec: `--project=chromium`. Full suite is three browsers.

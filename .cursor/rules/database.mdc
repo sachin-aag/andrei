@@ -1,0 +1,27 @@
+---
+description: Drizzle schema, migrations, and the always-pg driver
+globs:
+  - src/db/**/*.ts
+  - src/db/migrations/**/*.sql
+  - scripts/drizzle-migrate.ts
+  - drizzle.config.ts
+alwaysApply: false
+---
+
+# Database
+
+- Runtime driver is always `pg` (`src/db/connection.ts`), including Neon TCP.
+  Do not switch routes to `@neondatabase/serverless` HTTP — no transactions
+  (`db.transaction()` is used by ingest and folder moves).
+- Schema is `src/db/schema/index.ts` (plus `auth.ts`). After edits:
+  `pnpm db:generate`, commit the SQL, rely on `pnpm db:migrate` (Vercel
+  `vercel:build` does this). Do not `drizzle-kit push` on production.
+- Local Docker force-push: `pnpm db:local:push`. Interactive `pnpm db:push`
+  fails without a TTY.
+- `pnpm db:ensure-workspace-users` is Neon HTTP. Skip it against Docker.
+- Expression indexes must match query SQL byte-for-byte (English FTS on
+  `document_chunks.contextual_text`). `CREATE INDEX CONCURRENTLY` cannot run
+  inside Drizzle’s transactional migrator.
+- Attachment tables: `reportAttachments`, `attachmentIngestRuns`,
+  `documentPages`, `documentChunks` (pgvector 768). Soft-delete via
+  `deletedAt`; retrieval joins `activeIngestRunId`.
