@@ -1,0 +1,43 @@
+---
+description: Criteria eval, suggestions, and prompt-version cache invalidation
+globs:
+  - src/lib/ai/evaluate.ts
+  - src/lib/ai/section-prompts.ts
+  - src/lib/ai/criteria.ts
+  - src/lib/ai/suggest.ts
+  - src/lib/ai/suggest-prompts.ts
+  - src/lib/ai/suggestion-gating.ts
+  - src/lib/ai/evaluation-content-hash.ts
+  - src/lib/suggestions/**/*.ts
+  - src/lib/improve-ai/**/*.ts
+  - src/app/api/reports/**/evaluate/**/*.ts
+  - src/app/api/reports/**/suggestions/**/*.ts
+alwaysApply: false
+---
+
+# Eval and suggestions
+
+Criteria and section lists come from `getDocumentType(type)`, not a hardcoded
+DMAIC array. Investigation criteria in `criteria.ts` include **conclusion**.
+DV mixes LLM criteria with deterministic `check()` functions.
+
+## Eval
+
+- Entry: `evaluateSection()` in `src/lib/ai/evaluate.ts`.
+- Cache hash: `evaluationContentHash()` — section content + `dependsOn`
+  sections + `promptVersion`. Bump `prompts.promptVersion` (investigation:
+  `PROMPT_VERSION` in `section-prompts.ts`) or stale evals will not rerun.
+- Placeholders: `capEvaluationStatusForPlaceholders()` — never `not_met`
+  solely for unfilled placeholders.
+- Improve AI (`evaluateReportCriteria`) still walks investigation
+  `EVALUATABLE_SECTIONS`. Do not assume it is type-generic.
+
+## Suggestions
+
+- Entry: `generateSuggestionsForSection()`. Gate ≡ apply via
+  `probeRichEdit` / `probePlainEdit` in `src/lib/suggestions/locator.ts`.
+- Canonical anchor text is `flattenForAnchor` — no markdown pipes.
+- Accept/dismiss always: locate → apply → PATCH section → flip comment.
+  Never resolve a suggestion without a successful apply.
+- Bump `SUGGEST_PROMPT_VERSION` when the suggestion prompt changes.
+- Whole-field rewrites are redrafts (`apply-redraft.ts`), not anchored edits.

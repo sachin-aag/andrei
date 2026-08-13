@@ -1,0 +1,43 @@
+---
+description: Document-type registry — never hardcode DMAIC as the only report shape
+globs:
+  - src/lib/document-types/**/*.ts
+  - src/lib/ai/evaluate.ts
+  - src/lib/ai/suggest.ts
+  - src/lib/ai/suggestion-gating.ts
+  - src/lib/ai/chat/fields.ts
+  - src/lib/ai/chat/system-prompt.ts
+  - src/lib/ai/chat/section-intent.ts
+  - src/types/sections.ts
+  - src/types/report.ts
+  - src/components/report/**/*.tsx
+alwaysApply: false
+---
+
+# Document types
+
+Reports are `investigation_report` or `design_verification`. The registry is
+`src/lib/document-types/`. Call `getDocumentType(type)` for sections, criteria,
+prompts, chat persona, and merge.
+
+```ts
+// ❌ BAD — assumes every report is DMAIC
+const sections = ["define", "measure", "analyze", "improve", "control"];
+
+// ✅ GOOD
+const sections = getWorkspaceSections(report.documentType);
+```
+
+- Investigation criteria still live in `src/lib/ai/criteria.ts`, but they are
+  **exposed through the registry**. DV criteria (LLM + deterministic checks)
+  live under `src/lib/document-types/design-verification/`.
+- Eval cache hash salts with `getDocumentType(type).prompts.promptVersion`
+  (`PROMPT_VERSION` for investigation, `dv-checklist-v1` for DV today).
+- Chat editable sections: `chatEditableSections(documentType)` in
+  `src/lib/ai/chat/fields.ts`. Do not reuse investigation field maps on DV.
+- Gate section is type-specific (`define` vs virtual `cover_page` in
+  `reports.metadata`). Virtual sections are not `report_sections` rows.
+- Adding a type: extend `documentTypeEnum` in schema, add a definition, wire
+  `REGISTRY`, then editors / chat / eval. DOCX export still has explicit IR/DV
+  branches in `generate-docx.ts` (registry `export.templatePath` is not the
+  runtime switch yet).

@@ -1,0 +1,31 @@
+---
+description: Vitest and Playwright conventions for this repo
+globs:
+  - src/**/*.test.ts
+  - src/**/*.test.tsx
+  - e2e/**/*.ts
+  - playwright.config.ts
+  - vitest.config.ts
+  - src/lib/test/**/*.ts
+alwaysApply: false
+---
+
+# Tests
+
+- Colocate `*.test.ts(x)` next to source. E2E lives in `e2e/`. Catalog:
+  `TESTING.md`.
+- Vitest is `environment: node`, setup `src/test/setup.ts`. Mock `@/db` when
+  importing modules that touch `DATABASE_URL` at load time. Prefer
+  `vi.mock("@/lib/attachments/retrieval")` **without** `importOriginal` if the
+  original pulls `@/db`.
+- Never set `ALLOW_TEST_*` on Vercel. Playwright `webServer.env` sets login,
+  skip-eval/suggest, stub math, stub ingest, stub chat, and local attachment
+  storage. `isTestLoginEnabled()` also needs `TEST_AUTH_EMAIL`.
+- E2E helpers: `loginAsEngineer` / `loginAsManager`, `createReport` /
+  `deleteReport`, `uniqueDeviationNo`. Clean up reports in `afterEach`.
+- Port 3000: `reuseExistingServer` is on locally. If another process owns 3000,
+  tests hit it **without** stub flags. Stop it or use `PLAYWRIGHT_BASE_URL`
+  against a server that already has those flags and matching `AUTH_URL`.
+- Stub chat cannot assert tool calls. Scope chat E2E to stream + persist
+  (`e2e/report-chat.spec.ts`).
+- Run one spec with `--project=chromium`. `pnpm precommit` does not run E2E.

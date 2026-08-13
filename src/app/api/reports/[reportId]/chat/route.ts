@@ -53,6 +53,7 @@ import {
 } from "@/lib/observability/langfuse";
 import { auditActorFromUser } from "@/lib/audit";
 import { listReadyDocumentsForReport } from "@/lib/attachments/retrieval";
+import { buildAutoEvidence } from "@/lib/ai/chat/auto-evidence";
 import { sanitizeChatMessagesForModel } from "@/lib/ai/chat/image-parts";
 import {
   buildMentionBlock,
@@ -169,10 +170,15 @@ export async function POST(
   }
 
   // Build the compact context map from current report state.
-  const sectionRows = await db
-    .select()
-    .from(reportSections)
-    .where(eq(reportSections.reportId, reportId));
+  const [sectionRows, evaluations, commentRows, documents] = await Promise.all([
+    db.select().from(reportSections).where(eq(reportSections.reportId, reportId)),
+    db
+      .select()
+      .from(criteriaEvaluations)
+      .where(eq(criteriaEvaluations.reportId, reportId)),
+    db.select().from(comments).where(eq(comments.reportId, reportId)),
+    listReadyDocumentsForReport(reportId),
+  ]);
   const mergedSections: Partial<Record<SectionType, Record<string, unknown>>> = {};
   for (const row of sectionRows) {
     mergedSections[row.section] = mergeSection(row.section, row.content) as Record<
@@ -180,15 +186,6 @@ export async function POST(
       unknown
     >;
   }
-  const evaluations = await db
-    .select()
-    .from(criteriaEvaluations)
-    .where(eq(criteriaEvaluations.reportId, reportId));
-  const commentRows = await db
-    .select()
-    .from(comments)
-    .where(eq(comments.reportId, reportId));
-  const documents = await listReadyDocumentsForReport(reportId);
   // Resolved against this report's ready documents only, so a tagged
   // attachment id from another report cannot pull in its evidence.
   const mentions = resolveChatMentions(requestedMentions, documents);
@@ -215,6 +212,24 @@ export async function POST(
     documentType: report.documentType,
   });
 
+  const autoEvidenceBlock = await buildAutoEvidence({
+    reportId,
+    userText,
+    sections: mergedSections,
+    evaluations: evaluations.map((e) => ({
+      section: e.section,
+      status: e.status,
+      bypassed: e.bypassed,
+      criterionKey: e.criterionKey,
+      criterionLabel: e.criterionLabel,
+    })),
+    sectionScope,
+    documentType: report.documentType,
+    documentNo: report.documentNo,
+    pinnedAttachmentIds: mentionedAttachmentIds(mentions),
+    hasDocuments: documents.length > 0,
+  });
+
   const system = buildChatSystemPrompt({
     contextMap,
     criteriaOutline: buildCriteriaOutline(sectionScope, report.documentType),
@@ -223,6 +238,7 @@ export async function POST(
     documentType: report.documentType,
     scopeMismatch,
     mentionBlock: buildMentionBlock(mentions),
+    autoEvidenceBlock,
   });
 
   const allTools = buildChatTools({
@@ -240,6 +256,7 @@ export async function POST(
           read_section: allTools.read_section!,
           search_documents: allTools.search_documents!,
           read_document_page: allTools.read_document_page!,
+          document_outline: allTools.document_outline!,
           ask_user: allTools.ask_user!,
           ...(allTools.suggest_section_scope
             ? { suggest_section_scope: allTools.suggest_section_scope }
