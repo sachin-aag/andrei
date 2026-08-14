@@ -2,7 +2,6 @@ import { generateText, Output, type LanguageModel } from "ai";
 import { resolveGoogleLanguageModel } from "@/lib/ai/resolve-google-language-model";
 import { z } from "zod";
 import type { SectionType, CriterionStatus, DocumentType } from "@/db/schema";
-import { getCriteria as getInvestigationCriteria } from "./criteria";
 import {
   getCriteria as getRegistryCriteria,
   buildEvaluationSystemPromptForType,
@@ -15,7 +14,6 @@ import { plainTextHasEvalPlaceholders } from "@/lib/placeholders/placeholder-eva
 import { collectPlaceholders } from "@/lib/placeholders/scan-sections";
 import type { SectionContentMap } from "@/types/sections";
 import { cleanSectionContentForEval } from "@/lib/tiptap/strip-pending-suggestions";
-import { buildEvaluationSystemPrompt, PROMPT_VERSION } from "./section-prompts";
 import { EDITABLE_SECTIONS } from "@/types/sections";
 import { langfuseGenerateTextTelemetry } from "@/lib/observability/langfuse";
 import {
@@ -41,9 +39,6 @@ function criteriaFor(
   section: SectionType,
   documentType: DocumentType = "investigation_report"
 ): CriterionDefinition[] {
-  if (documentType === "investigation_report") {
-    return getInvestigationCriteria(section);
-  }
   return getRegistryCriteria(documentType, section);
 }
 
@@ -316,10 +311,10 @@ export function buildCriterionEvaluationLlmPrompts({
 
   if (isEmpty) return null;
 
-  const systemPrompt =
-    documentType === "investigation_report"
-      ? buildEvaluationSystemPrompt(section)
-      : buildEvaluationSystemPromptForType(documentType, section);
+  const systemPrompt = buildEvaluationSystemPromptForType(
+    documentType,
+    section
+  );
 
   const priorBlock = buildPriorSectionsBlock(section, allSections);
 
@@ -483,10 +478,7 @@ export async function evaluateSection({
           section,
           criterionCount: llmCriteria.length,
           model: modelId ?? CRITERIA_EVAL_GOOGLE_MODEL_ID,
-          promptVersion:
-            documentType === "investigation_report"
-              ? PROMPT_VERSION
-              : getDocumentType(documentType).prompts.promptVersion,
+          promptVersion: getDocumentType(documentType).prompts.promptVersion,
         },
       }),
     });

@@ -1,5 +1,6 @@
 import type { DocumentType } from "@/db/schema";
-import { investigationReportDefinition } from "./investigation-report";
+import { isDocumentTypeEnabled, getCustomerPack } from "@/lib/customers/packs";
+import { buildInvestigationReportDefinition } from "./investigation-report";
 import { designVerificationDefinition } from "./design-verification";
 import type {
   CriterionDefinition,
@@ -14,27 +15,32 @@ import {
   workspaceSections,
 } from "./types";
 
-const REGISTRY: Record<DocumentType, DocumentTypeDefinition> = {
-  investigation_report: investigationReportDefinition,
-  design_verification: designVerificationDefinition,
-};
-
 export function getDocumentType(type: DocumentType): DocumentTypeDefinition {
-  const def = REGISTRY[type];
-  if (!def) {
-    throw new Error(`Unknown document type: ${type}`);
+  switch (type) {
+    case "investigation_report":
+      return buildInvestigationReportDefinition();
+    case "design_verification":
+      return designVerificationDefinition;
+    default: {
+      const exhaustive: never = type;
+      throw new Error(`Unknown document type: ${exhaustive}`);
+    }
   }
-  return def;
 }
 
 export function resolveDocumentType(
   type: DocumentType | null | undefined
 ): DocumentType {
-  return type && type in REGISTRY ? type : "investigation_report";
+  if (type === "investigation_report" || type === "design_verification") {
+    return type;
+  }
+  return "investigation_report";
 }
 
 export function listDocumentTypes(): DocumentTypeDefinition[] {
-  return Object.values(REGISTRY);
+  return getCustomerPack().enabledDocumentTypes.map((type) =>
+    getDocumentType(type)
+  );
 }
 
 export function getCriteria(
@@ -108,6 +114,8 @@ export function buildEvaluationSystemPromptForType(
   if (!addition?.trim()) return def.prompts.base;
   return `${def.prompts.base}\n\n${addition}`;
 }
+
+export { isDocumentTypeEnabled };
 
 export type {
   CriterionDefinition,
