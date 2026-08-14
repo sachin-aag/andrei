@@ -174,6 +174,3 @@ export function buildInvestigationReportDefinition(
     },
   };
 }
-
-export const investigationReportDefinition: DocumentTypeDefinition =
-  buildInvestigationReportDefinition();

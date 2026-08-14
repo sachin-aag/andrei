@@ -115,6 +115,19 @@ export function buildEvaluationSystemPromptForType(
   return `${def.prompts.base}\n\n${addition}`;
 }
 
+export function engineerReportsSubtitle(
+  types: readonly { label: string }[] = listDocumentTypes()
+): string {
+  const names = types.map((type) =>
+    type.label.replace(/ report$/i, "").toLowerCase()
+  );
+  if (names.length === 0) return "Create and manage reports.";
+  if (names.length === 1) return `Create and manage ${names[0]} reports.`;
+  const head = names.slice(0, -1).join(", ");
+  const last = names[names.length - 1];
+  return `Create and manage ${head} and ${last} reports.`;
+}
+
 export { isDocumentTypeEnabled };
 
 export type {
