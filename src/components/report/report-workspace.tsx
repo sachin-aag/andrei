@@ -205,13 +205,14 @@ export function ReportWorkspace({
   >({});
   const router = useRouter();
   const mainRef = useRef<HTMLElement>(null);
+  const documentType = report.documentType;
   const handleSectionOverflow = useCallback(
     (overflows: Record<SectionType, number>) => {
       setSectionMinHeights((prev) => {
         const next: Partial<Record<SectionType, number>> = {};
         let changed = false;
 
-        for (const section of evaluatableSectionKeys(report.documentType)) {
+        for (const section of evaluatableSectionKeys(documentType)) {
           const delta = overflows[section];
           if (delta != null && delta > 1) {
             next[section] = Math.ceil(delta);
@@ -226,7 +227,7 @@ export function ReportWorkspace({
         return changed ? next : prev;
       });
     },
-    []
+    [documentType]
   );
 
   const { getUser, users } = useUserDirectory();
