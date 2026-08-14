@@ -358,8 +358,10 @@ export const EVALUATABLE_SECTIONS: SectionType[] = [
   "conclusion",
 ];
 
-export function getInvestigationEvaluatableSections(): SectionType[] {
-  const hidden = new Set(getCustomerPack().hiddenInvestigationSections);
+export function getInvestigationEvaluatableSections(
+  pack = getCustomerPack()
+): SectionType[] {
+  const hidden = new Set(pack.hiddenInvestigationSections);
   return EVALUATABLE_SECTIONS.filter((section) => !hidden.has(section));
 }
 
@@ -367,16 +369,21 @@ export function getCriteria(section: SectionType): RegistryCriterionDefinition[]
   return getInvestigationCriteriaBySection()[section] ?? [];
 }
 
-export function getInvestigationCriteriaBySection(): Record<string, RegistryCriterionDefinition[]> {
-  const pack = getCustomerPack();
+export function getInvestigationCriteriaBySection(
+  pack = getCustomerPack()
+): Record<string, RegistryCriterionDefinition[]> {
   const hidden = new Set(pack.hiddenInvestigationSections);
   const raw = Object.fromEntries(
-    Object.entries(CRITERIA_BY_SECTION)
-      .filter(([section]) => !hidden.has(section))
-      .map(([section, list]) => [section, withLlmDefaults(list ?? [])])
+    Object.entries(CRITERIA_BY_SECTION).map(([section, list]) => [
+      section,
+      withLlmDefaults(list ?? []),
+    ])
   );
-  return applyCriterionDescriptionOverrides(
+  const overlaid = applyCriterionDescriptionOverrides(
     raw,
     pack.criterionDescriptionOverrides
+  );
+  return Object.fromEntries(
+    Object.entries(overlaid).filter(([section]) => !hidden.has(section))
   );
 }

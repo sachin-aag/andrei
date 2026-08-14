@@ -29,6 +29,7 @@ import { useUserDirectory } from "@/providers/user-directory-provider";
 import { SECTION_LABELS } from "@/types/sections";
 import { captureEvent } from "@/lib/analytics/events";
 import { getDocumentType } from "@/lib/document-types";
+import { getCustomerPack } from "@/lib/customers/packs";
 
 const STATUS_LABEL = {
   met: "All criteria met",
@@ -194,7 +195,9 @@ function StackedAndreiButton({
         <Sparkles className="size-3 mb-0.5" />
       )}
       <span>{primary}</span>
-      <span className="text-[9px] text-[var(--muted-foreground)] font-normal">by Andrei</span>
+      <span className="text-[9px] text-[var(--muted-foreground)] font-normal">
+        {getCustomerPack().branding.aiAttribution}
+      </span>
     </Button>
   );
 }
@@ -348,7 +351,9 @@ export function RunAllEvaluationButton({
         {isEvaluating ? "Checking all sections…" : "Run criteria"}
       </span>
       <span className="text-[10px] font-normal opacity-90 text-center">
-        {isEvaluating ? runningDetail : `All ${sectionCount} sections · by Andrei`}
+        {isEvaluating
+          ? runningDetail
+          : `All ${sectionCount} sections · ${getCustomerPack().branding.aiAttribution}`}
       </span>
     </Button>
   );

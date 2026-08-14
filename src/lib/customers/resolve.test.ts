@@ -43,6 +43,11 @@ describe("resolveCustomerId", () => {
     ).toThrow(/disagrees with ANDREI_VERCEL_DEPLOY_SCOPE/);
   });
 
+  it("reads NEXT_PUBLIC_ANDREI_CUSTOMER from process.env when called with no args", () => {
+    process.env.NEXT_PUBLIC_ANDREI_CUSTOMER = "mj";
+    expect(resolveCustomerId()).toBe("mj");
+  });
+
   it("throws on an unknown customer id", () => {
     expect(() => resolveCustomerId({ ANDREI_CUSTOMER: "convergent" })).toThrow(
       /Invalid customer id/

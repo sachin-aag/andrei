@@ -1,6 +1,9 @@
 import type { SectionType, CriterionStatus } from "@/db/schema";
-import { getCriteria, EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
-import { buildEvaluationSystemPrompt } from "@/lib/ai/section-prompts";
+import {
+  getCriteria,
+  getInvestigationEvaluatableSections,
+} from "@/lib/ai/criteria";
+import { buildEvaluationSystemPromptForType } from "@/lib/document-types";
 import {
   blocksToPromptText,
   buildSectionDisplayBlocks,
@@ -86,7 +89,7 @@ export function buildImproveAiSessionView(params: {
 
   const sections: ImproveAiSectionView[] = [];
 
-  for (const section of EVALUATABLE_SECTIONS) {
+  for (const section of getInvestigationEvaluatableSections()) {
     const content = params.sectionContents[section];
     const blocks = buildSectionDisplayBlocks(section, content);
     if (!sectionDisplayBlocksHaveContent(blocks)) continue;
@@ -117,7 +120,10 @@ export function buildImproveAiSessionView(params: {
       sectionIndex: sections.length + 1,
       sectionContent,
       blocks,
-      systemPrompt: buildEvaluationSystemPrompt(section),
+      systemPrompt: buildEvaluationSystemPromptForType(
+        "investigation_report",
+        section
+      ),
       previousSections: previousSectionsForView(section, params.sectionContents),
       criteria,
     });

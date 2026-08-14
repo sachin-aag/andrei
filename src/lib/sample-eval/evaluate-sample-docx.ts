@@ -10,7 +10,7 @@ import {
   type AllSectionsContent,
 } from "@/lib/ai/evaluate";
 import { normalizeAnalyzeToolResults } from "@/lib/ai/evaluate-run-helpers";
-import { EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
+import { getInvestigationEvaluatableSections } from "@/lib/ai/criteria";
 import { hasEnoughContextInFirstSection } from "@/lib/ai/first-section-context";
 import type { BulkEvalRow } from "@/lib/sample-eval/bulk-eval-aggregates";
 
@@ -110,12 +110,13 @@ export async function evaluateOneDocx(
     };
   }
 
+  const evaluatableSections = getInvestigationEvaluatableSections();
   const allSections: AllSectionsContent = {};
-  for (const sk of EVALUATABLE_SECTIONS) {
+  for (const sk of evaluatableSections) {
     allSections[sk] = imported.sections[sk as keyof typeof imported.sections];
   }
 
-  const sectionLlmQueries: ReportSectionLlmQuery[] = EVALUATABLE_SECTIONS.map(
+  const sectionLlmQueries: ReportSectionLlmQuery[] = evaluatableSections.map(
     (sectionKey) => {
       const payload =
         imported.sections[sectionKey as keyof typeof imported.sections];
@@ -138,7 +139,7 @@ export async function evaluateOneDocx(
   );
 
   const sectionResults = await Promise.all(
-    EVALUATABLE_SECTIONS.map(async (sectionKey) => {
+    evaluatableSections.map(async (sectionKey) => {
       const payload =
         imported.sections[sectionKey as keyof typeof imported.sections];
 

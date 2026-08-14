@@ -31,7 +31,6 @@ import {
   scrollToGutterAnchor,
 } from "@/lib/comments/navigate";
 import { evaluatableSectionKeys } from "@/lib/ai/criteria-view";
-import { REPORT_WORKSPACE_SECTIONS } from "@/types/sections";
 import { getWorkspaceSections } from "@/lib/document-types";
 import { captureEvent } from "@/lib/analytics/events";
 import {
@@ -50,7 +49,7 @@ function SectionEditorLoading() {
   );
 }
 
-const INVESTIGATION_SECTION_EDITORS = {
+const INVESTIGATION_SECTION_EDITORS: Record<string, ComponentType> = {
   define: dynamic(
     () => import("./sections/define-editor").then((mod) => mod.DefineEditor),
     { loading: SectionEditorLoading }
@@ -94,7 +93,7 @@ const INVESTIGATION_SECTION_EDITORS = {
       ),
     { loading: SectionEditorLoading }
   ),
-} satisfies Record<(typeof REPORT_WORKSPACE_SECTIONS)[number], ComponentType>;
+};
 
 const DV_SECTION_EDITORS: Record<string, ComponentType> = {
   cover_page: dynamic(
@@ -206,13 +205,14 @@ export function ReportWorkspace({
   >({});
   const router = useRouter();
   const mainRef = useRef<HTMLElement>(null);
+  const documentType = report.documentType;
   const handleSectionOverflow = useCallback(
     (overflows: Record<SectionType, number>) => {
       setSectionMinHeights((prev) => {
         const next: Partial<Record<SectionType, number>> = {};
         let changed = false;
 
-        for (const section of evaluatableSectionKeys(report.documentType)) {
+        for (const section of evaluatableSectionKeys(documentType)) {
           const delta = overflows[section];
           if (delta != null && delta > 1) {
             next[section] = Math.ceil(delta);
@@ -227,7 +227,7 @@ export function ReportWorkspace({
         return changed ? next : prev;
       });
     },
-    []
+    [documentType]
   );
 
   const { getUser, users } = useUserDirectory();
@@ -487,16 +487,12 @@ export function ReportWorkspace({
               {activeAttachmentId ? (
                 <AttachmentViewer />
               ) : (
-                (report.documentType === "design_verification"
-                  ? getWorkspaceSections("design_verification").map((s) => s.key)
-                  : REPORT_WORKSPACE_SECTIONS
-                ).map((s) => {
+                getWorkspaceSections(report.documentType).map((section) => {
+                  const s = section.key;
                   const Editor =
                     report.documentType === "design_verification"
                       ? DV_SECTION_EDITORS[s]
-                      : INVESTIGATION_SECTION_EDITORS[
-                          s as keyof typeof INVESTIGATION_SECTION_EDITORS
-                        ];
+                      : INVESTIGATION_SECTION_EDITORS[s];
                   if (!Editor) return null;
                   const extra = sectionMinHeights[s];
                   return (

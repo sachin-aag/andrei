@@ -3,17 +3,32 @@ import {
   COMMON_EVALUATION_SYSTEM_PROMPT,
   PROMPT_VERSION,
 } from "@/lib/ai/section-prompts";
+import { MJ_CRITERION_DESCRIPTION_OVERRIDES } from "./mj/criterion-overrides";
+import {
+  MJ_EVALUATION_SYSTEM_PROMPT,
+  MJ_PROMPT_VERSION,
+  MJ_SECTION_PROMPT_ADDITIONS,
+} from "./mj/prompts";
 import { resolveCustomerId, type CustomerId } from "./resolve";
 
 export type CustomerBranding = {
   productName: string;
+  productNameShort: string;
   documentReviewTitle: string;
+  documentReviewDescription: string;
   tagline: string;
+  shellTagline: string;
   logoSrc: string;
   logoWhiteSrc: string;
   logoAlt: string;
+  heroLogoSrc: string;
+  heroLogoOnWhite: boolean;
   auditExportTitle: string;
   passwordResetSubject: string;
+  loginHeadline: string;
+  loginSubhead: string;
+  loginFooter: string;
+  aiAttribution: string;
 };
 
 export type CustomerPack = {
@@ -23,6 +38,7 @@ export type CustomerPack = {
   investigationTemplateFile: string;
   promptVersion: string;
   evaluationSystemPrompt: string;
+  evaluationSectionPromptAdditions: Readonly<Record<string, string>>;
   criterionDescriptionOverrides: Readonly<Record<string, string>>;
   wordImportEnabled: boolean;
   branding: CustomerBranding;
@@ -30,19 +46,49 @@ export type CustomerPack = {
 
 const ANDREI_BRANDING: CustomerBranding = {
   productName: "Andrei",
+  productNameShort: "Andrei",
   documentReviewTitle: "Andrei — Document Review",
+  documentReviewDescription:
+    "AI document review and drafting for regulated quality teams",
   tagline: "Quality Documentation",
+  shellTagline: "Quality Documentation",
   logoSrc: "/logo.png",
   logoWhiteSrc: "/logo-white.png",
   logoAlt: "Andrei logo",
+  heroLogoSrc: "/logo-white.png",
+  heroLogoOnWhite: false,
   auditExportTitle: "Andrei — Audit Trail Export",
   passwordResetSubject: "Reset your password — Andrei",
+  loginHeadline: "Document review and drafting,\naccelerated.",
+  loginSubhead:
+    "Draft investigation reports with AI-assisted quality checks, streamlined manager review, and one-click DOCX export.",
+  loginFooter: "Better documents. Better outcomes.",
+  aiAttribution: "by Andrei",
 };
 
-/**
- * Demo pack matches current feat/whitelabel behavior. The MJ pack starts as a
- * copy so ANDREI_CUSTOMER=mj is a no-op until the content overlay lands.
- */
+const MJ_BRANDING: CustomerBranding = {
+  productName: "M.J. Biopharm Private Limited",
+  productNameShort: "M.J. Biopharm",
+  documentReviewTitle: "MJ Biopharm - Investigation Report",
+  documentReviewDescription:
+    "Quality engineering investigation report tool for M.J. Biopharm Private Limited",
+  tagline: "Drug Product · Hinjawadi",
+  shellTagline: "Quality Investigations",
+  logoSrc: "/logo-mj.png",
+  logoWhiteSrc: "/logo-mj.png",
+  logoAlt: "MJ Biopharm logo",
+  heroLogoSrc: "/logo-mj.png",
+  heroLogoOnWhite: true,
+  auditExportTitle: "M.J. Biopharm — Audit Trail Export",
+  passwordResetSubject: "Reset your password — M.J. Biopharm",
+  loginHeadline: "Investigation Reporting,\naccelerated.",
+  loginSubhead:
+    "Draft DMAIC deviation reports with AI-assisted quality checks, streamlined manager review, and one-click DOCX export matching SOP/DP/QA/008.",
+  loginFooter: "Ref. SOP No.: SOP/DP/QA/008",
+  aiAttribution: "by Andrei",
+};
+
+/** Demo pack matches current feat/whitelabel behavior. */
 export const DEMO_PACK: CustomerPack = {
   id: "demo",
   enabledDocumentTypes: ["investigation_report", "design_verification"],
@@ -50,14 +96,23 @@ export const DEMO_PACK: CustomerPack = {
   investigationTemplateFile: "investigation-report-template.docx",
   promptVersion: PROMPT_VERSION,
   evaluationSystemPrompt: COMMON_EVALUATION_SYSTEM_PROMPT,
+  evaluationSectionPromptAdditions: {},
   criterionDescriptionOverrides: {},
   wordImportEnabled: false,
   branding: ANDREI_BRANDING,
 };
 
 export const MJ_PACK: CustomerPack = {
-  ...DEMO_PACK,
   id: "mj",
+  enabledDocumentTypes: ["investigation_report"],
+  hiddenInvestigationSections: ["conclusion"],
+  investigationTemplateFile: "mj-investigation-report-template.docx",
+  promptVersion: MJ_PROMPT_VERSION,
+  evaluationSystemPrompt: MJ_EVALUATION_SYSTEM_PROMPT,
+  evaluationSectionPromptAdditions: MJ_SECTION_PROMPT_ADDITIONS,
+  criterionDescriptionOverrides: MJ_CRITERION_DESCRIPTION_OVERRIDES,
+  wordImportEnabled: false,
+  branding: MJ_BRANDING,
 };
 
 export function getCustomerPack(id: CustomerId = resolveCustomerId()): CustomerPack {

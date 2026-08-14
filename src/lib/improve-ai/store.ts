@@ -24,7 +24,7 @@ import {
 import { isImproveAiSessionStale } from "@/lib/improve-ai/session-staleness";
 import type { HumanSubAnswerDraft } from "@/lib/improve-ai/human-judgment";
 import { humanAnswerKey } from "@/lib/improve-ai/human-judgment";
-import { EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
+import { getInvestigationEvaluatableSections } from "@/lib/ai/criteria";
 
 export type ImproveAiSessionListItem = {
   id: string;
@@ -43,9 +43,10 @@ async function loadSectionContents(reportId: string): Promise<AllSectionsContent
     .from(reportSections)
     .where(eq(reportSections.reportId, reportId));
 
+  const evaluatable = new Set<string>(getInvestigationEvaluatableSections());
   const allSections: AllSectionsContent = {};
   for (const row of evalRows) {
-    if (EVALUATABLE_SECTIONS.includes(row.section as (typeof EVALUATABLE_SECTIONS)[number])) {
+    if (evaluatable.has(row.section)) {
       allSections[row.section] = row.content;
     }
   }

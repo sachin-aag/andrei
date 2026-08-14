@@ -349,7 +349,7 @@ function bundleToSections(
   // Backfill investigation keys if somehow missing
   if (documentType === "investigation_report") {
     for (const section of REPORT_SECTION_ROW_ORDER) {
-      if (!(section in out)) {
+      if (!(section in out) && def.sections.some((s) => s.key === section)) {
         out[section] = EMPTY_CONTENT[section];
       }
     }

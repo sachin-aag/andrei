@@ -20,6 +20,7 @@ import { cn } from "@/lib/utils";
 import { roleLabel } from "@/lib/auth/roles";
 import { DEFAULT_INACTIVITY_TIMEOUT_MINUTES } from "@/lib/auth/inactivity-timeout";
 import { InactivityLogout } from "@/components/auth/inactivity-logout";
+import { getCustomerPack } from "@/lib/customers/packs";
 
 export function AppShell({
   user,
@@ -40,6 +41,7 @@ export function AppShell({
     !!passwordStatus?.warning
   );
   const mainId = useId();
+  const { branding } = getCustomerPack();
 
   const navItems = [
     ...(user.role === "admin"
@@ -94,10 +96,10 @@ export function AppShell({
           >
             <div className="size-9 rounded-lg bg-white p-1 flex items-center justify-center shrink-0">
               <Image
-                src="/logo.png"
+                src={branding.logoSrc}
                 width={28}
                 height={28}
-                alt="Andrei"
+                alt={branding.logoAlt}
                 className="object-contain"
                 style={{ width: "auto", height: "auto" }}
               />
@@ -105,10 +107,10 @@ export function AppShell({
             {!collapsed && (
               <div className="flex flex-col min-w-0 flex-1">
                 <span className="text-xs font-semibold leading-tight truncate">
-                  Andrei
+                  {branding.productNameShort}
                 </span>
                 <span className="text-[10px] text-[var(--muted-foreground)] truncate">
-                  Quality Documentation
+                  {branding.shellTagline}
                 </span>
               </div>
             )}
