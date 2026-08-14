@@ -74,7 +74,7 @@ describe("CreateReportButton", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("does not show a Word-body field on demo", async () => {
+  it("does not show a Word-body field or attachment dropzone on demo", async () => {
     const user = userEvent.setup();
     render(<CreateReportButton managers={managers} />);
 
@@ -83,10 +83,13 @@ describe("CreateReportButton", () => {
     expect(
       screen.queryByLabelText(/existing report/i)
     ).not.toBeInTheDocument();
-    expect(screen.getByText(/documents \(optional\)/i)).toBeInTheDocument();
+    expect(screen.queryByText(/documents \(optional\)/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/drop pdfs or word docs/i)
+    ).not.toBeInTheDocument();
   });
 
-  it("shows a Word-body field when the MJ pack is active", async () => {
+  it("shows a Word-body field without an attachment dropzone when the MJ pack is active", async () => {
     vi.mocked(getCustomerPack).mockReturnValue(MJ_PACK);
     const user = userEvent.setup();
     render(<CreateReportButton managers={managers} />);
@@ -94,6 +97,9 @@ describe("CreateReportButton", () => {
     await user.click(screen.getByRole("button", { name: /new report/i }));
 
     expect(screen.getByLabelText(/existing report/i)).toBeInTheDocument();
-    expect(screen.getByText(/documents \(optional\)/i)).toBeInTheDocument();
+    expect(screen.queryByText(/documents \(optional\)/i)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/drop pdfs or word docs/i)
+    ).not.toBeInTheDocument();
   });
 });
