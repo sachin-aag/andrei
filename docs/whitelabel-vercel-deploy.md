@@ -7,7 +7,7 @@ One product engine on **`main`**. Customer differences live in `ANDREI_CUSTOMER`
 | **Vercel project** | `andrei-v2` | `andrei-demo` |
 | **Git production branch** | `main` | `main` |
 | **Pack** | `ANDREI_CUSTOMER=mj` | `ANDREI_CUSTOMER=demo` (or unset) |
-| **URL** | https://andrei-v2.vercel.app | https://andrei-demo.vercel.app |
+| **URL** | https://andrei-v2.vercel.app | https://demo.andreihealth.com |
 | **Neon project** | `Andrei V2` | `demo` (`bold-field-45608643`) |
 | **What users see** | MJ criteria, MJ Word template, Word import, no DV, no conclusion | Andrei branding, DV + conclusion, attachments-only create |
 
@@ -51,6 +51,13 @@ Both Vercel projects watch the same GitHub repo. Set on **each** project → Set
 
 Preview `DATABASE_URL` on `andrei-demo` stays the **demo** Neon pooled URL (same as Production). Do not enable per-PR Neon branching on `andrei-v2`.
 
+The Neon ↔ Vercel integration creates extra **Preview / git-branch** `DATABASE_URL` and `DATABASE_URL_UNPOOLED` rows (Neon logo, branch name truncated). Those are auto-injected for that git branch’s preview only. They are not pack env. Do not hand-edit them.
+
+- **Keep** the Sensitive `DATABASE_URL` (+ `DATABASE_URL_UNPOOLED`) scoped **Production and Preview** (or Production) with no git-branch — that is the real demo Neon.
+- **Ignore** the Neon-logo per-branch rows while preview branching is on. Deleting them in Vercel while the integration is connected just recreates them on the next deploy of that branch.
+- To stop the sprawl on **andrei-demo**: Neon/Vercel integration → disable **Create a branch for each preview deployment**, then delete leftover preview branches in the Neon **demo** project. After that, every `cursor/*` preview uses the shared demo `DATABASE_URL`.
+- If you see the same per-branch rows on **andrei-v2**, turn preview branching off there immediately. Those would be MJ Neon preview databases.
+
 ## Environment variables
 
 ### Both projects
@@ -64,8 +71,8 @@ Copy auth/AI keys as today. Never set `ALLOW_TEST_*` or `ATTACHMENT_STORAGE_BACK
 | `ANDREI_CUSTOMER` | `demo` |
 | `NEXT_PUBLIC_ANDREI_CUSTOMER` | `demo` |
 | `ANDREI_VERCEL_DEPLOY_SCOPE` | `demo` |
-| `DATABASE_URL` | Neon **demo** pooled URL |
-| `AUTH_URL` | `https://andrei-demo.vercel.app` |
+| `DATABASE_URL` | Neon **demo** pooled URL (the Production / Production+Preview row — not the per-git-branch Neon copies) |
+| `AUTH_URL` | `https://demo.andreihealth.com` (already set — do not change to `*.vercel.app`) |
 
 ### andrei-v2 (Production) — MJ cutover
 
