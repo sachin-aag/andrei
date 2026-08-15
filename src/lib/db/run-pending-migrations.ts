@@ -6,6 +6,9 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import pg from "pg";
 import { normalizeDatabaseUrl } from "@/db/connection";
+import {
+  tagsToStampOnEmptyPushJournal,
+} from "@/lib/db/push-baseline-tags";
 
 const migrationsFolder = path.join(process.cwd(), "src/db/migrations");
 const journalPath = path.join(migrationsFolder, "meta/_journal.json");
@@ -359,9 +362,17 @@ async function ensureAuditHashChainTriggers(pool: pg.Pool): Promise<void> {
  * docs/whitelabel-vercel-deploy.md). Without seeding the migration journal,
  * `migrate()` replays 0000 and fails on types/tables that already exist.
  *
- * Only when the journal is **empty** but `reports` already exists, mark every
- * known migration as applied. If the journal already has rows, new SQL files
- * must run through `migrate()` — never insert hashes for missing entries.
+ * Only when the journal is **empty** but `reports` already exists, mark
+ * migrations whose objects are already present as applied.
+ *
+ * MJ production was push-managed through 0029 (`deviation_no`, no
+ * `document_no`). Stamping 0030+ there would skip the destructive
+ * 0037 SQL. Those tags stay unstamped until `document_no` exists so
+ * `migrate()` can apply them. 0030 (not in the journal) is applied as
+ * extra SQL on that path.
+ *
+ * If the journal already has rows, new SQL files must run through
+ * `migrate()` — never insert hashes for missing entries.
  */
 async function ensurePushBaseline(pool: pg.Pool): Promise<void> {
   const journal = JSON.parse(fs.readFileSync(journalPath, "utf8")) as {
@@ -384,18 +395,50 @@ async function ensurePushBaseline(pool: pg.Pool): Promise<void> {
     return;
   }
 
-  const tagsToSeed: { tag: string; when: number }[] = [
-    ...journal.entries.map((entry) => ({ tag: entry.tag, when: entry.when })),
-    ...EXTRA_MIGRATION_TAGS.filter((tag) =>
-      fs.existsSync(path.join(migrationsFolder, `${tag}.sql`))
-    ).map((tag) => ({ tag, when: EXTRA_MIGRATION_WHEN[tag] })),
-  ];
+  const hasDocumentNoColumn = await columnExists(pool, "reports", "document_no");
+  const extraTags = EXTRA_MIGRATION_TAGS.filter((tag) =>
+    fs.existsSync(path.join(migrationsFolder, `${tag}.sql`))
+  );
+  const tagsToStamp = tagsToStampOnEmptyPushJournal({
+    journalTags: journal.entries.map((entry) => entry.tag),
+    extraTags,
+    hasDocumentNoColumn,
+  });
+  const stamped = new Set(tagsToStamp);
+  if (!hasDocumentNoColumn) {
+    console.error(
+      "reports exists without document_no — pre-0037 MJ schema; not stamping 0030+ so migrate() can apply them"
+    );
+  }
 
-  for (const { tag, when } of tagsToSeed) {
+  const whenByTag = new Map<string, number>([
+    ...journal.entries.map((entry) => [entry.tag, entry.when] as const),
+    ...extraTags.map((tag) => [tag, EXTRA_MIGRATION_WHEN[tag]] as const),
+  ]);
+
+  for (const tag of tagsToStamp) {
     const hash = migrationHash(tag);
     if (recorded.has(hash)) {
       continue;
     }
+    const when = whenByTag.get(tag);
+    if (when === undefined) continue;
+    await pool.query(
+      `INSERT INTO drizzle.__drizzle_migrations (hash, created_at) VALUES ($1, $2)`,
+      [hash, when]
+    );
+    recorded.add(hash);
+  }
+
+  // 0030 is on disk but not in _journal.json. Pre-cutover MJ still needs
+  // the ADD VALUE so 0037 can drop section_type cleanly.
+  for (const tag of extraTags) {
+    if (stamped.has(tag)) continue;
+    await applyMigrationStatements(pool, tag);
+    const hash = migrationHash(tag);
+    if (recorded.has(hash)) continue;
+    const when = EXTRA_MIGRATION_WHEN[tag];
+    if (when === undefined) continue;
     await pool.query(
       `INSERT INTO drizzle.__drizzle_migrations (hash, created_at) VALUES ($1, $2)`,
       [hash, when]
