@@ -129,16 +129,18 @@ Log: `/opt/cursor/artifacts/mj-migration-rehearsal.log` (CI/agent artifact; not 
 
 ## Cutover order
 
-1. Merge this trunk PR to `main` **after** L1–L3 are on `feat/whitelabel` (or merge this PR, which already contains that stack).
-2. Repoint `andrei-demo` Production branch tracking to `main`.
-3. Set pack env on `andrei-demo` (`demo`) if unset.
-4. Set pack + Vertex/GCS env on `andrei-v2` (`mj`).
-5. Rehearse 0030–0037 on a Neon branch of MJ production; record PITR.
-6. Run the migration on MJ production (or let `vercel:build` migrate on the first `main` deploy **after** the baseline guard is live).
-7. Promote the **same SHA** to both projects. Verify:
+L1–L3 are already on `feat/whitelabel` (#123–#125). This change is the ignore-script rewrite and MJ migrate guard.
 
-   - Demo: DV + conclusion, Andrei chrome, no Word-body field
-   - MJ: no DV, no conclusion tab, MJ login/shell, Word import + evidence PDFs, export opens the MJ template
+1. Merge the guards into `feat/whitelabel` so andrei-demo (still tracking that branch) builds `main` as a demo line before the flip.
+2. Set pack env on `andrei-demo` (`demo`) and pack + Vertex/GCS env on `andrei-v2` (`mj`) if unset.
+3. Rehearse 0030–0037 on a Neon branch of MJ production; record PITR.
+4. Merge `feat/whitelabel` (with this guard) to `main`. That deploy **is** the MJ cutover (`andrei-v2` already tracks `main`).
+5. Run the migration on MJ production if `vercel:build` did not (only after this baseline guard is live).
+6. Repoint `andrei-demo` Production branch tracking to `main`.
+7. Confirm the **same SHA** on both Production deploys. Verify:
+
+   - Demo: DV + conclusion, Andrei chrome, no Word-body field on create
+   - MJ: no DV, no conclusion tab, MJ login/shell, Word import on create, evidence PDFs from the report Documents tab, export opens the MJ template
    - `cursor/*` PR deploys only `andrei-demo`
 
 ## Neon `demo` project
