@@ -7,6 +7,7 @@ import { migrate } from "drizzle-orm/node-postgres/migrator";
 import pg from "pg";
 import { normalizeDatabaseUrl } from "@/db/connection";
 import {
+  shouldReplayUnrecordedMigrationTag,
   tagsToStampOnEmptyPushJournal,
 } from "@/lib/db/push-baseline-tags";
 import { isIgnorableSchemaReplayError } from "@/lib/db/schema-replay-errors";
@@ -371,8 +372,9 @@ async function ensureAuditHashChainTriggers(pool: pg.Pool): Promise<void> {
  * docs/whitelabel-vercel-deploy.md). Without seeding the migration journal,
  * `migrate()` replays 0000 and fails on types/tables that already exist.
  *
- * Only when the journal is **empty** but `reports` already exists, mark
- * migrations whose objects are already present as applied.
+ * When the journal is **empty** but `reports` already exists, mark
+ * migrations whose objects are already present as applied. If repair
+ * recorded 0033 first, still stamp missing 0000–0029 on pre-0037 MJ.
  *
  * MJ production was push-managed through 0029 (`deviation_no`, no
  * `document_no`). Stamping 0030+ there would skip the destructive
@@ -380,8 +382,11 @@ async function ensureAuditHashChainTriggers(pool: pg.Pool): Promise<void> {
  * `migrate()` can apply them. 0030 (not in the journal) is applied as
  * extra SQL on that path.
  *
- * If the journal already has rows, new SQL files must run through
- * `migrate()` — never insert hashes for missing entries.
+ * If the journal already has rows **and** `document_no` exists, new SQL
+ * files must run through `migrate()` — never insert hashes for missing
+ * entries. Pre-0037 MJ is the exception: repair may have recorded 0033
+ * first, so we still stamp missing 0000–0029 even when the journal is
+ * non-empty.
  */
 async function ensurePushBaseline(pool: pg.Pool): Promise<void> {
   const journal = JSON.parse(fs.readFileSync(journalPath, "utf8")) as {
@@ -400,11 +405,10 @@ async function ensurePushBaseline(pool: pg.Pool): Promise<void> {
 
   await ensureMigrationsTable(pool);
   const recorded = await recordedMigrationHashes(pool);
-  if (recorded.size > 0) {
+  const hasDocumentNoColumn = await columnExists(pool, "reports", "document_no");
+  if (recorded.size > 0 && hasDocumentNoColumn) {
     return;
   }
-
-  const hasDocumentNoColumn = await columnExists(pool, "reports", "document_no");
   const extraTags = EXTRA_MIGRATION_TAGS.filter((tag) =>
     fs.existsSync(path.join(migrationsFolder, `${tag}.sql`))
   );
@@ -473,10 +477,19 @@ async function replayUnrecordedMigrations(pool: pg.Pool): Promise<void> {
     entries: JournalEntry[];
   };
   const recorded = await recordedMigrationHashes(pool);
+  const hasDocumentNoColumn = await columnExists(pool, "reports", "document_no");
 
   for (const entry of journal.entries) {
     const hash = migrationHash(entry.tag);
     if (recorded.has(hash)) {
+      continue;
+    }
+    if (
+      !shouldReplayUnrecordedMigrationTag({
+        tag: entry.tag,
+        hasDocumentNoColumn,
+      })
+    ) {
       continue;
     }
     console.error(`schema replay: applying unrecorded ${entry.tag}`);
@@ -490,11 +503,13 @@ async function replayUnrecordedMigrations(pool: pg.Pool): Promise<void> {
 export async function runPendingMigrations(databaseUrl: string): Promise<void> {
   const pool = new pg.Pool({
     connectionString: normalizeDatabaseUrl(databaseUrl),
+    max: 1,
+    connectionTimeoutMillis: 60_000,
   });
   try {
     await ensureMigrationsTable(pool);
-    await repairMissingSchema(pool);
     await ensurePushBaseline(pool);
+    await repairMissingSchema(pool);
     await replayUnrecordedMigrations(pool);
     const db = drizzle(pool);
     await migrate(db, { migrationsFolder });

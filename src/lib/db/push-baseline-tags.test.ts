@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   isPostMjMainMigrationTag,
+  shouldReplayUnrecordedMigrationTag,
   tagsToStampOnEmptyPushJournal,
 } from "@/lib/db/push-baseline-tags";
 
@@ -49,5 +50,35 @@ describe("push-baseline tags", () => {
     expect(isPostMjMainMigrationTag("0037_document_types")).toBe(true);
     expect(isPostMjMainMigrationTag("0038_attachments")).toBe(false);
     expect(isPostMjMainMigrationTag("0029_part11_gap_closure")).toBe(false);
+  });
+
+  it("does not replay 0000–0029 on a pre-cutover MJ schema", () => {
+    expect(
+      shouldReplayUnrecordedMigrationTag({
+        tag: "0000_third_nighthawk",
+        hasDocumentNoColumn: false,
+      })
+    ).toBe(false);
+    expect(
+      shouldReplayUnrecordedMigrationTag({
+        tag: "0029_part11_gap_closure",
+        hasDocumentNoColumn: false,
+      })
+    ).toBe(false);
+    expect(
+      shouldReplayUnrecordedMigrationTag({
+        tag: "0033_report_attachments",
+        hasDocumentNoColumn: false,
+      })
+    ).toBe(true);
+  });
+
+  it("replays unrecorded tags when document_no already exists", () => {
+    expect(
+      shouldReplayUnrecordedMigrationTag({
+        tag: "0000_third_nighthawk",
+        hasDocumentNoColumn: true,
+      })
+    ).toBe(true);
   });
 });

@@ -18,6 +18,20 @@ export function isPostMjMainMigrationTag(tag: string): boolean {
   return n !== undefined && n >= 30 && n <= 37;
 }
 
+/**
+ * Pre-0037 MJ already has 0000–0029 objects. Replaying `0000_third_nighthawk`
+ * (`CREATE TABLE` without IF NOT EXISTS) is unnecessary and can ETIMEDOUT on
+ * Neon Free while the pool reconnects.
+ */
+export function shouldReplayUnrecordedMigrationTag(args: {
+  tag: string;
+  hasDocumentNoColumn: boolean;
+}): boolean {
+  if (args.hasDocumentNoColumn) return true;
+  const n = migrationTagNumber(args.tag);
+  return n !== undefined && n >= 30;
+}
+
 export function tagsToStampOnEmptyPushJournal(args: {
   journalTags: readonly string[];
   extraTags: readonly string[];

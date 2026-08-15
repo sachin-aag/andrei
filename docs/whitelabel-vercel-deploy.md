@@ -121,13 +121,13 @@ Read-only preflight: `scripts/mj-cutover-preflight.sql`.
    Any row fails the new unique index mid-migration. Stop. Same query lives in `scripts/mj-cutover-preflight.sql`.
 3. Create a **Neon branch** from MJ production. Run 0030–0037 there (or deploy this SHA at `ANDREI_CUSTOMER=mj` against the branch `DATABASE_URL`). Open a real MJ report, export Word, confirm nothing lost.
 
-   Put the branch URL on the **same command** so dotenv / dotenvx cannot substitute `.env` (that host is often production or demo):
+   Point `.env` `DATABASE_URL` at the **rehearsal** pooled URL, then:
 
    ```bash
-   DATABASE_URL='postgresql://…rehearsal-branch…?sslmode=require' pnpm db:migrate -- --prod
+   pnpm db:migrate -- --prod
    ```
 
-   Confirm the printed `PROD → …` host is the **rehearsal** branch. `--prod` only skips `.env.local`; it still uses `.env` when `DATABASE_URL` is unset. Do not `export` then run — a dotenvx preload can overwrite an exported value.
+   Confirm the printed `PROD → …` host is the rehearsal branch (`ep-shiny-flower…` or similar), not production. On Neon Free, if migrate `ETIMEDOUT` on `connect …:5432`, run `SELECT 1` in the SQL Editor on that branch and retry immediately. A log line `applying unrecorded 0000_third_nighthawk` on MJ is a migrator bug — pull a SHA that stamps 0000–0029 instead of replaying them.
 4. Note the **PITR window** in the Neon console before the production run. Rollback is a Neon restore, not a down migration. Typical retain is 7 days on paid plans — confirm in the project.
 5. Only then run against MJ production. Set pack + Vertex/GCS env **before** pointing users at the new SHA, or ingest and chat evidence 500.
 
