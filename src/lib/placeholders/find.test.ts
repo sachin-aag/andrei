@@ -1,6 +1,6 @@
 import type { JSONContent } from "@tiptap/core";
 import { describe, expect, it } from "vitest";
-import { findPlaceholders } from "@/lib/placeholders/find";
+import { findPlaceholders, MAX_PLACEHOLDER_LABEL_LENGTH } from "@/lib/placeholders/find";
 
 describe("findPlaceholders", () => {
   it("finds bracketed placeholders with and without angle brackets", () => {
@@ -108,7 +108,7 @@ describe("findPlaceholders", () => {
           content: [
             {
               type: "text",
-              text: 'Observed [description of particulate, e.g., fibers] in [number] vials; see ref [12]. Per [SOP No.: <to be filled>].',
+              text: 'Observed [description of particulate, e.g., fibers] in [number] vials; see ref [12]. Per [SOP No.: <to be filled>]. [Personnel Name(s)] were present.',
             },
           ],
         },
@@ -119,10 +119,71 @@ describe("findPlaceholders", () => {
 
     expect(found.map((p) => p.text).sort()).toEqual(
       [
+        "[Personnel Name(s)]",
         "[SOP No.: <to be filled>]",
         "[description of particulate, e.g., fibers]",
         "[number]",
       ].sort()
     );
+  });
+
+  it("treats long AI guidance labels as placeholders only after compaction", () => {
+    const long = "[Name/ID of Monitoring System or Refrigerator Unit]";
+    expect(long.slice(1, -1).length).toBeGreaterThan(MAX_PLACEHOLDER_LABEL_LENGTH);
+
+    const beforeDoc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: `The affected equipment/system is ${long}.`,
+            },
+          ],
+        },
+      ],
+    };
+    expect(findPlaceholders(beforeDoc, "define", "narrative")).toEqual([]);
+
+    const compacted =
+      "[Monitoring System or Refrigerator Unit: <to be filled>]";
+    const afterDoc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: `The affected equipment/system is ${compacted}.`,
+            },
+          ],
+        },
+      ],
+    };
+    expect(findPlaceholders(afterDoc, "define", "narrative").map((p) => p.text)).toEqual([
+      compacted,
+    ]);
+  });
+
+  it("does not treat attachment citations as placeholders", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text:
+                "as defined in [DV Requriements Convergent Dental.pdf: <to be filled>]. See also [batch-coa.pdf, p. 3], [protocol.docx], [Attachment_XIV, Attachment_VIII], and [Attachment_VIII: <to be filled>].",
+            },
+          ],
+        },
+      ],
+    };
+    expect(findPlaceholders(doc, "define", "narrative")).toEqual([]);
   });
 });

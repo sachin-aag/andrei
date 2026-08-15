@@ -6,15 +6,22 @@ import { legacyStringToDoc } from "@/lib/tiptap/rich-text";
 import { EMPTY_CONTENT, REPORT_SECTION_ROW_ORDER } from "@/types/sections";
 import type { ReportSectionRecord } from "@/types/report";
 import type { ReportDocxComment } from "@/lib/export/docx-comments";
+import {
+  serializeAiFixCommentContent,
+  serializeAiRedraftCommentContent,
+} from "@/lib/ai/suggestion-gating";
 
 describe("Word comment export", () => {
   function baseReport(reportId: string, iso: Date): typeof reports.$inferSelect {
     return {
       id: reportId,
-      deviationNo: "DEV/COMMENTS/01",
+      documentType: "investigation_report",
+      documentNo: "DEV/COMMENTS/01",
       date: iso,
-      toolsUsed: { sixM: false, fiveWhy: false, brainstorming: false },
-      otherTools: "",
+      metadata: {
+        toolsUsed: { sixM: false, fiveWhy: false, brainstorming: false },
+        otherTools: "",
+      },
       status: "draft",
       authorId: "598",
       assignedManagerId: null,
@@ -58,6 +65,26 @@ describe("Word comment export", () => {
     ).exec(commentsXml);
     expect(match).not.toBeNull();
     return match?.[1] ?? "";
+  }
+
+  function baseComment(
+    overrides: Partial<ReportDocxComment> &
+      Pick<ReportDocxComment, "id" | "content" | "kind" | "status">,
+    iso: Date
+  ): ReportDocxComment {
+    return {
+      parentId: null,
+      section: "define",
+      contentPath: "narrative",
+      authorId: "ai",
+      anchorText: "critical deviation",
+      source: "app",
+      externalAuthorName: null,
+      externalAuthorInitials: null,
+      externalCreatedAt: null,
+      createdAt: iso,
+      ...overrides,
+    };
   }
 
   it("writes app comments into native Word comment parts", async () => {
@@ -193,5 +220,123 @@ describe("Word comment export", () => {
         `<w:commentRangeStart w:id="${wholeParagraphDocxId}"\\/>[\\s\\S]*Alpha[\\s\\S]*delta\\.[\\s\\S]*<w:commentRangeEnd w:id="${wholeParagraphDocxId}"\\/>`
       )
     );
+  });
+
+  it("excludes resolved ai_fix and resolved human comments from export", async () => {
+    const reportId = "report-resolved-comments-excluded";
+    const iso = new Date("2026-01-02T03:04:05.000Z");
+    const report = baseReport(reportId, iso);
+    const sections = sectionsWithDefineNarrative(
+      reportId,
+      iso,
+      "The critical deviation was observed."
+    );
+    const comments: ReportDocxComment[] = [
+      baseComment(
+        {
+          id: "resolved-ai-fix",
+          kind: "ai_fix",
+          status: "resolved",
+          content: serializeAiFixCommentContent({
+            deleteText: "old",
+            insertText: "new",
+            reasoning: "Should not appear.",
+          }),
+        },
+        iso
+      ),
+      baseComment(
+        {
+          id: "resolved-human",
+          kind: "human",
+          status: "resolved",
+          authorId: "627",
+          content: "Resolved human note.",
+        },
+        iso
+      ),
+    ];
+
+    const buffer = await generateReportDocx({ report, sections, comments });
+    const zip = new PizZip(buffer);
+    const documentXml = zip.file("word/document.xml")?.asText() ?? "";
+    const commentsXml = zip.file("word/comments.xml")?.asText() ?? "";
+
+    expect(documentXml).not.toContain("<w:commentRangeStart");
+    expect(commentsXml).toBe("");
+    expect(commentsXml).not.toContain("<w:comment");
+    expect(commentsXml).not.toContain("Should not appear.");
+    expect(commentsXml).not.toContain("Resolved human note.");
+  });
+
+  it("exports open ai_fix as readable prose without JSON leaks", async () => {
+    const reportId = "report-open-ai-fix-prose";
+    const iso = new Date("2026-01-02T03:04:05.000Z");
+    const report = baseReport(reportId, iso);
+    const sections = sectionsWithDefineNarrative(
+      reportId,
+      iso,
+      "The critical deviation was observed."
+    );
+    const comments: ReportDocxComment[] = [
+      baseComment(
+        {
+          id: "open-ai-fix",
+          kind: "ai_fix",
+          status: "open",
+          content: serializeAiFixCommentContent({
+            deleteText: "critical deviation",
+            insertText: "minor observation",
+            reasoning: "Tone down severity.",
+          }),
+        },
+        iso
+      ),
+    ];
+
+    const buffer = await generateReportDocx({ report, sections, comments });
+    const zip = new PizZip(buffer);
+    const commentsXml = zip.file("word/comments.xml")?.asText() ?? "";
+
+    expect(commentsXml).toContain("<w:comment");
+    expect(commentsXml).toContain("Tone down severity.");
+    expect(commentsXml).toContain("Suggested change:");
+    expect(commentsXml).not.toContain("insertText");
+    expect(commentsXml).not.toContain("{");
+  });
+
+  it("exports open ai_redraft without markdown markers", async () => {
+    const reportId = "report-open-ai-redraft-prose";
+    const iso = new Date("2026-01-02T03:04:05.000Z");
+    const report = baseReport(reportId, iso);
+    const sections = sectionsWithDefineNarrative(
+      reportId,
+      iso,
+      "The critical deviation was observed."
+    );
+    const comments: ReportDocxComment[] = [
+      baseComment(
+        {
+          id: "open-ai-redraft",
+          kind: "ai_redraft",
+          status: "open",
+          content: serializeAiRedraftCommentContent({
+            markdown: "## Summary\n\n**Key** finding",
+            reasoning: "Full rewrite.",
+          }),
+        },
+        iso
+      ),
+    ];
+
+    const buffer = await generateReportDocx({ report, sections, comments });
+    const zip = new PizZip(buffer);
+    const commentsXml = zip.file("word/comments.xml")?.asText() ?? "";
+
+    expect(commentsXml).toContain("Full rewrite.");
+    expect(commentsXml).toContain("Summary");
+    expect(commentsXml).toContain("Key finding");
+    expect(commentsXml).not.toContain("**");
+    expect(commentsXml).not.toContain("##");
   });
 });

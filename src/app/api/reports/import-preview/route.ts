@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/session";
+import { getCustomerPack } from "@/lib/customers/packs";
+import { readDocxUpload } from "@/lib/import/docx-upload";
+import { docxBufferToImportedReportContent } from "@/lib/import/docx-to-sections";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -14,6 +17,12 @@ export async function POST(req: Request) {
         { status: 403 }
       );
     }
+    if (!getCustomerPack().wordImportEnabled) {
+      return NextResponse.json(
+        { error: "Word import is not enabled for this workspace." },
+        { status: 404 }
+      );
+    }
 
     const form = await req.formData();
     const file = form.get("file");
@@ -21,15 +30,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "A .docx file is required" }, { status: 400 });
     }
 
-    const { readDocxUpload } = await import("@/lib/import/docx-upload");
-    const { docxBufferToImportedReportContent } = await import(
-      "@/lib/import/docx-to-sections"
-    );
     const buf = await readDocxUpload(file);
     const imported = await docxBufferToImportedReportContent(buf);
 
+    const deviationNo = imported.header.deviationNo?.trim() ?? null;
     return NextResponse.json({
-      deviationNo: imported.header.deviationNo?.trim() ?? null,
+      deviationNo,
+      documentNo: deviationNo,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "";

@@ -47,10 +47,13 @@ describe("red color round-trip (DEV-QC-26-001 draft)", () => {
     const iso = new Date("2026-03-04T12:00:00.000Z");
     const report = {
       id: "test",
-      deviationNo: "DEV-QC-26-001",
+      documentType: "investigation_report" as const,
+      documentNo: "DEV-QC-26-001",
       date: iso,
-      toolsUsed: imported.toolsUsed,
-      otherTools: "",
+      metadata: {
+        toolsUsed: imported.toolsUsed,
+        otherTools: "",
+      },
       status: "draft" as const,
       authorId: "1",
       assignedManagerId: "5",

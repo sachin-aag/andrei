@@ -1,6 +1,8 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { NextConfig } from "next";
+import { withWorkflow } from "workflow/next";
+import { assertCustomerEnvAgreement } from "./src/lib/customers/resolve";
 import {
   POSTHOG_EU_API_HOST,
   POSTHOG_EU_ASSETS_HOST,
@@ -10,6 +12,8 @@ import {
 /** Pin Turbopack to this app when a parent directory has a stray lockfile. */
 const appRoot = path.dirname(fileURLToPath(import.meta.url));
 
+assertCustomerEnvAgreement();
+
 const nextConfig: NextConfig = {
   // PostHog API uses trailing slashes (/e/, /s/); don't 308-strip them or replay uploads break.
   skipTrailingSlashRedirect: true,
@@ -17,7 +21,7 @@ const nextConfig: NextConfig = {
   allowedDevOrigins: ["127.0.0.1"],
   // Keep native / dynamic-require deps external so NFT copies real files (not pnpm symlinks).
   // mathlive omitted: client components import mathlive/static.css, which cannot be externalized.
-  serverExternalPackages: ["@napi-rs/canvas", "wmf"],
+  serverExternalPackages: ["@google-cloud/storage", "@napi-rs/canvas", "wmf"],
   turbopack: {
     root: appRoot,
   },
@@ -49,4 +53,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default withWorkflow(nextConfig);

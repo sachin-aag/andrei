@@ -6,11 +6,9 @@ import { createId } from "@paralleldrive/cuid2";
 import { z } from "zod";
 import { db } from "@/db";
 import {
-  reports,
   reportSections,
   criteriaEvaluations,
   comments,
-  sectionTypeEnum,
 } from "@/db/schema";
 import type { SectionType } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
@@ -29,11 +27,15 @@ import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import type { AllSectionsContent } from "@/lib/ai/evaluate";
 import {
-  canLocateEditInPlainText,
+  isApplyableStatus,
+  probePlainEdit,
+  probeRichEdit,
+  type LocateStatus,
   type SuggestionEdit,
-} from "@/lib/tiptap/suggestion-inject";
-import { richJsonToPlainText } from "@/lib/tiptap/rich-text";
-import { mergeSection } from "@/lib/sections-merge";
+} from "@/lib/suggestions/locator";
+import type { SuggestionDropReason } from "@/lib/ai/suggest";
+import { mergeSectionForType } from "@/lib/document-types";
+import { isValidSection } from "@/lib/document-types";
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 import { normalizeCommentRecord } from "@/lib/comments/normalize";
@@ -43,22 +45,29 @@ import {
   observeRouteHandler,
   setRouteObservationIO,
 } from "@/lib/observability/langfuse";
-import {
-  AI_ACTOR,
-  auditActorFromUser,
-  recordAuditEvent,
-  recordSectionVersion,
-} from "@/lib/audit";
+import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
+import { requireReportAccess } from "@/lib/reports/require-report-access";
+import { canSaveReportSection } from "@/lib/reports/access";
 
 export const maxDuration = 120;
+
+/** Map a non-applyable probe status to a drop reason (kept distinct for telemetry). */
+function dropReasonForProbe(status: LocateStatus): SuggestionDropReason {
+  switch (status) {
+    case "ambiguous":
+      return "ambiguous";
+    case "cross_cell":
+      return "cross_cell";
+    case "bad_scope":
+      return "bad_scope";
+    default:
+      return "not_found";
+  }
+}
 
 const bodySchema = z.object({
   section: z.string(),
 });
-
-function isValidSection(v: string): v is SectionType {
-  return (sectionTypeEnum.enumValues as readonly string[]).includes(v);
-}
 
 export const POST = observeRouteHandler(
   "report-suggest-edits",
@@ -69,22 +78,27 @@ async function handleSuggestionsPost(
   req: Request,
   { params }: { params: Promise<{ reportId: string }> }
 ) {
-  const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const currentUser = await getCurrentUser();
   const { reportId } = await params;
+  const access = await requireReportAccess(reportId, currentUser);
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
+  }
+  const { report, user } = access;
+
+  if (!canSaveReportSection(user, report)) {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   const body = await req.json().catch(() => ({}));
   const parsed = bodySchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
   }
-  if (!isValidSection(parsed.data.section)) {
+  if (!isValidSection(report.documentType, parsed.data.section)) {
     return NextResponse.json({ error: "Invalid section" }, { status: 400 });
   }
   const section = parsed.data.section;
-
-  const [report] = await db.select().from(reports).where(eq(reports.id, reportId));
-  if (!report) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   const [sectionRow] = await db
     .select()
@@ -102,7 +116,26 @@ async function handleSuggestionsPost(
     .from(comments)
     .where(eq(comments.reportId, reportId));
 
-  const sectionContent = mergeSection(section, sectionRow.content);
+  const allSectionRows = await db
+    .select()
+    .from(reportSections)
+    .where(eq(reportSections.reportId, reportId));
+  const allSections: AllSectionsContent = {};
+  for (const row of allSectionRows) {
+    allSections[row.section] = mergeSectionForType(
+      report.documentType,
+      row.section,
+      row.content
+    );
+  }
+
+  // Cover page criteria hash report.metadata (same as evaluate), not empty section JSON.
+  const sectionContent =
+    section === "cover_page"
+      ? report.metadata
+      : (allSections[section] ??
+        mergeSectionForType(report.documentType, section, sectionRow.content));
+
   const gap = gapCriteriaForSection(
     section,
     evaluations.map((e) => ({
@@ -110,11 +143,19 @@ async function handleSuggestionsPost(
       updatedAt: e.updatedAt.toISOString(),
     })),
     commentRows.map((c) => normalizeCommentRecord(c)),
-    sectionContent
+    sectionContent,
+    report.documentType,
+    allSections
   );
 
-  const hash = sectionContentHash(section, sectionContent);
-  const suggestionContentHash = hash;
+  const hash = sectionContentHash(section, sectionContent, {
+    documentType: report.documentType,
+    allSections,
+  });
+  // Suggestion staleness is section-local (validateSuggestionLocate has no allSections).
+  const suggestionContentHash = sectionContentHash(section, sectionContent, {
+    documentType: report.documentType,
+  });
   const stale = gap.some((g) => g.evaluatedContentHash && g.evaluatedContentHash !== hash);
   const blockedReason =
     gap.length === 0 ? "no_gap_criteria" : stale ? "stale_evaluation" : null;
@@ -136,20 +177,12 @@ async function handleSuggestionsPost(
       );
     }
 
-  const allSectionRows = await db
-    .select()
-    .from(reportSections)
-    .where(eq(reportSections.reportId, reportId));
-  const allSections: AllSectionsContent = {};
-  for (const row of allSectionRows) {
-    allSections[row.section] = mergeSection(row.section, row.content);
-  }
-
   const { suggestions: llmSuggestions, dropped: llmDropped } =
     await generateSuggestionsForSection({
       section,
       content: sectionContent,
-      reportContext: { deviationNo: report.deviationNo, date: report.date },
+      reportContext: { deviationNo: report.documentNo, date: report.date },
+      reportId,
       allSections,
       gapCriteria: gap.map((g) => ({
         criterionKey: g.criterionKey,
@@ -179,17 +212,17 @@ async function handleSuggestionsPost(
 
   for (const s of richSuggestions) {
     const fieldDoc = getRichFieldValue(workingContent, s.targetField);
-    const plain = richJsonToPlainText(fieldDoc, { tableFormat: "markdown" });
     const edit: SuggestionEdit = {
       anchorText: s.anchorText,
       deleteText: s.deleteText,
       insertText: s.insertText,
+      scope: s.scope,
     };
-    const loc = canLocateEditInPlainText(plain, edit);
-    if (!loc.ok) {
+    const status = probeRichEdit(fieldDoc, edit);
+    if (!isApplyableStatus(status)) {
       dropped.push({
         criterionKey: s.criterionKey,
-        reason: loc.reason === "ambiguous" ? ("ambiguous" as const) : ("not_found" as const),
+        reason: dropReasonForProbe(status),
       });
       continue;
     }
@@ -201,7 +234,9 @@ async function handleSuggestionsPost(
       deleteText: s.deleteText,
       insertText,
       reasoning: s.reasoning,
+      scope: s.scope,
       contentHashAtSuggestion: suggestionContentHash,
+      evidenceSources: s.evidenceSources,
     };
 
     await db.insert(comments).values({
@@ -236,11 +271,11 @@ async function handleSuggestionsPost(
       deleteText: s.deleteText,
       insertText,
     };
-    const loc = canLocateEditInPlainText(fieldPlain, edit);
-    if (!loc.ok) {
+    const status = probePlainEdit(fieldPlain, edit);
+    if (!isApplyableStatus(status)) {
       dropped.push({
         criterionKey: s.criterionKey,
-        reason: loc.reason === "ambiguous" ? "ambiguous" : "not_found",
+        reason: dropReasonForProbe(status),
       });
       continue;
     }
@@ -251,6 +286,7 @@ async function handleSuggestionsPost(
       insertText,
       reasoning: s.reasoning,
       contentHashAtSuggestion: suggestionContentHash,
+      evidenceSources: s.evidenceSources,
     };
 
     await db.insert(comments).values({
@@ -277,42 +313,21 @@ async function handleSuggestionsPost(
     });
   }
 
-  if (applied.length > 0) {
-    await recordSectionVersion({
-      actor: AI_ACTOR,
-      reportId,
-      sectionId: sectionRow.id,
-      section,
-      previousContent: sectionRow.content,
-      newContent: workingContent,
-    });
-
-    await db
-      .update(reportSections)
-      .set({ content: workingContent, updatedAt: new Date() })
-      .where(eq(reportSections.id, sectionRow.id));
-
-    await recordAuditEvent({
-      actor: auditActorFromUser(user),
-      action: "suggestion_applied",
-      entityType: "suggestion",
-      entityId: sectionRow.id,
-      reportId,
-      summary: `Applied ${applied.length} AI suggestion(s) in ${section}`,
-      newValue: {
-        appliedCount: applied.length,
-        criteria: applied.map((a) => a.criterionKey),
-      },
-    });
-  } else if (dropped.length > 0) {
+  // Generation only creates open ai_fix comments — the document is untouched
+  // until a human accepts one (which records suggestion_applied).
+  if (applied.length > 0 || dropped.length > 0) {
     await recordAuditEvent({
       actor: auditActorFromUser(user),
       action: "suggestion_generated",
       entityType: "suggestion",
       entityId: sectionRow.id,
       reportId,
-      summary: `Generated suggestions for ${section} (${dropped.length} dropped)`,
-      newValue: { droppedCount: dropped.length },
+      summary: `Generated ${applied.length} AI suggestion(s) for ${section}${dropped.length > 0 ? ` (${dropped.length} dropped)` : ""}`,
+      newValue: {
+        generatedCount: applied.length,
+        droppedCount: dropped.length,
+        criteria: applied.map((a) => a.criterionKey),
+      },
     });
   }
 
@@ -358,7 +373,7 @@ async function handleSuggestionsPost(
     input: {
       reportId,
       section,
-      deviationNo: report.deviationNo,
+      documentNo: report.documentNo,
       gapCriterionCount: gap.length,
       gapCriteria: gap.map((g) => g.criterionKey),
     },
@@ -374,7 +389,7 @@ async function handleSuggestionsPost(
       metadata: {
         feature: "suggestion-generation",
         section,
-        deviationNo: report.deviationNo,
+        documentNo: report.documentNo,
       },
     },
     runSuggestions

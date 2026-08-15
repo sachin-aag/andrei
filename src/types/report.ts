@@ -1,18 +1,22 @@
 import type {
+  AttachmentProcessingStatus,
   CriterionStatus,
+  DocumentType,
   ReportStatus,
   SectionType,
   CommentStatus,
   CommentKind,
+  InvestigationReportMetadata,
+  DesignVerificationMetadata,
+  ReportMetadata,
 } from "@/db/schema";
-
 
 export type ReportRecord = {
   id: string;
-  deviationNo: string;
+  documentType: DocumentType;
+  documentNo: string;
   date: string;
-  toolsUsed: { sixM: boolean; fiveWhy: boolean; brainstorming: boolean };
-  otherTools: string;
+  metadata: ReportMetadata;
   status: ReportStatus;
   authorId: string;
   assignedManagerId: string | null;
@@ -20,6 +24,49 @@ export type ReportRecord = {
   createdAt: string;
   updatedAt: string;
 };
+
+/** Convenience accessors for investigation_report metadata. */
+export function investigationToolsUsed(report: {
+  metadata: ReportMetadata;
+}): {
+  sixM: boolean;
+  fiveWhy: boolean;
+  brainstorming: boolean;
+} {
+  const meta = report.metadata as InvestigationReportMetadata;
+  return (
+    meta.toolsUsed ?? { sixM: false, fiveWhy: false, brainstorming: false }
+  );
+}
+
+export function investigationOtherTools(report: {
+  metadata: ReportMetadata;
+}): string {
+  const meta = report.metadata as InvestigationReportMetadata;
+  return meta.otherTools ?? "";
+}
+
+export function isInvestigationReport(report: {
+  documentType: DocumentType;
+}): boolean {
+  return report.documentType === "investigation_report";
+}
+
+export function isDesignVerification(report: {
+  documentType: DocumentType;
+}): boolean {
+  return report.documentType === "design_verification";
+}
+
+export function designVerificationMetadata(report: {
+  metadata: ReportMetadata;
+}): DesignVerificationMetadata {
+  const meta = report.metadata as Partial<DesignVerificationMetadata>;
+  return {
+    revision: meta.revision ?? "",
+    productName: meta.productName ?? "",
+  };
+}
 
 export type ReportSectionRecord = {
   id: string;
@@ -67,9 +114,39 @@ export type CommentRecord = {
   createdAt: string;
 };
 
+/** Client-facing attachment DTO — never includes object keys or hashes. */
+export type ReportAttachmentRecord = {
+  id: string;
+  reportId: string;
+  /** Null = top level of the report's document tree. */
+  folderId: string | null;
+  filename: string;
+  /** Optional user note (2–3 lines) used as AI document context. */
+  description: string | null;
+  mimeType: string;
+  sizeBytes: number;
+  pageCount: number | null;
+  processingStatus: AttachmentProcessingStatus;
+  processingProgress: number;
+  processingError: string | null;
+  uploadedAt: string;
+  deletedAt: string | null;
+};
+
+/** Folder node in a report's document tree. */
+export type ReportAttachmentFolderRecord = {
+  id: string;
+  reportId: string;
+  parentId: string | null;
+  name: string;
+  createdAt: string;
+};
+
 export type ReportBundle = {
   report: ReportRecord;
   sections: ReportSectionRecord[];
   evaluations: EvaluationRecord[];
   comments: CommentRecord[];
+  attachments: ReportAttachmentRecord[];
+  attachmentFolders: ReportAttachmentFolderRecord[];
 };

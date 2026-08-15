@@ -10,7 +10,11 @@ import { Card, CardContent } from "@/components/ui/card";
 import { useAutoSave } from "@/hooks/use-auto-save";
 import { SaveStatus } from "./save-status";
 import { useReportData } from "@/providers/report-provider";
-import type { ReportRecord } from "@/types/report";
+import {
+  investigationOtherTools,
+  investigationToolsUsed,
+  type ReportRecord,
+} from "@/types/report";
 
 function ReportHeaderForm({
   report,
@@ -22,8 +26,10 @@ function ReportHeaderForm({
   readOnly: boolean;
 }) {
   const [date, setDate] = useState(report.date.slice(0, 10));
-  const [toolsUsed, setToolsUsed] = useState(report.toolsUsed);
-  const [otherTools, setOtherTools] = useState(report.otherTools);
+  const [toolsUsed, setToolsUsed] = useState(() => investigationToolsUsed(report));
+  const [otherTools, setOtherTools] = useState(() =>
+    investigationOtherTools(report)
+  );
 
   const { status, lastSavedAt } = useAutoSave({
     enabled: !readOnly,
@@ -111,6 +117,11 @@ function ReportHeaderForm({
 
 export function ReportHeader() {
   const { report, setReport, readOnly } = useReportData();
+  // Investigation-only preamble (date + tool checkboxes). DV cover/control
+  // fields live in the cover_page section editor instead.
+  if (report.documentType === "design_verification") {
+    return null;
+  }
   return (
     <ReportHeaderForm
       key={report.id}

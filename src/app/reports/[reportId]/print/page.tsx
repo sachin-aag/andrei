@@ -48,7 +48,7 @@ export default async function ReportPrintPage({
       </p>
       <dl className="mt-8 grid grid-cols-[140px_1fr] gap-y-2">
         <dt className="font-medium">Deviation #</dt>
-        <dd>{report.deviationNo}</dd>
+        <dd>{report.documentNo}</dd>
         <dt className="font-medium">Status</dt>
         <dd>{report.status}</dd>
         <dt className="font-medium">Report ID</dt>

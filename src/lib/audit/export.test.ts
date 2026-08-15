@@ -21,6 +21,7 @@ function makeAuditRow(overrides: Partial<AuditRow> = {}): AuditRow {
     newValue: { content: "benign text" },
     hash: "abc123",
     prevHash: "000000",
+    payloadVersion: 1,
     metadata: {},
     ...overrides,
   };

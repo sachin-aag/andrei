@@ -41,6 +41,7 @@ export function useAutoSave<T>({
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isSaving = useRef(false);
   const pending = useRef(false);
+  const flushWaiters = useRef<Array<() => void>>([]);
   /**
    * Serialized snapshot of the last value we either saved or scheduled. Used to
    * skip work when a parent re-render hands us a new object reference whose
@@ -56,6 +57,8 @@ export function useAutoSave<T>({
     serializeValueRef.current = serializeValue;
   }, [serializeValue]);
   const lastSerialized = useRef<string>(serializeValue(value));
+  /** Last value confirmed persisted by a successful `onSave`. */
+  const lastPersisted = useRef<string>(serializeValue(value));
   const abortRef = useRef<AbortController | null>(null);
 
   /** Keep in sync so flush() after flushSync(onChange) sees the latest doc immediately. */
@@ -68,32 +71,56 @@ export function useAutoSave<T>({
   useLayoutEffect(() => {
     flushImpl.current = async () => {
       if (!enabled) return;
+
+      if (timer.current) {
+        clearTimeout(timer.current);
+        timer.current = null;
+      }
+
       if (isSaving.current) {
         pending.current = true;
+        await new Promise<void>((resolve) => {
+          flushWaiters.current.push(resolve);
+        });
         return;
       }
+
+      const snapshot = latestValue.current;
+      const serialized = serializeValueRef.current(snapshot);
+      if (serialized === lastPersisted.current) {
+        return;
+      }
+
       isSaving.current = true;
       setStatus("saving");
       abortRef.current?.abort();
       const controller = new AbortController();
       abortRef.current = controller;
       try {
-        const snapshot = latestValue.current;
         await onSave(snapshot, { signal: controller.signal });
         if (controller.signal.aborted) return;
-        lastSerialized.current = serializeValueRef.current(snapshot);
+        lastSerialized.current = serialized;
+        lastPersisted.current = serialized;
         setStatus("saved");
         setLastSavedAt(new Date());
       } catch (err) {
         if (isBenignSaveError(err, controller.signal)) return;
         console.error("AutoSave error", err);
         setStatus("error");
+        throw err;
       } finally {
         isSaving.current = false;
         if (pending.current) {
           pending.current = false;
-          void flushImpl.current();
+          try {
+            await flushImpl.current();
+          } catch {
+            // Surface via status; waiters still release below.
+          }
         }
+        const waiters = flushWaiters.current;
+        flushWaiters.current = [];
+        for (const resolve of waiters) resolve();
       }
     };
   }, [enabled, onSave]);
@@ -105,7 +132,7 @@ export function useAutoSave<T>({
     []
   );
 
-  const flush = () => flushImpl.current();
+  const flush = useCallback(() => flushImpl.current(), []);
 
   useEffect(() => {
     if (!enabled) return;
@@ -115,7 +142,9 @@ export function useAutoSave<T>({
     if (timer.current) clearTimeout(timer.current);
     setStatus("saving");
     timer.current = setTimeout(() => {
-      flush();
+      void flush().catch(() => {
+        // Status already set to "error" inside flush.
+      });
     }, delayMs);
     return () => {
       if (timer.current) clearTimeout(timer.current);

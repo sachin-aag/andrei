@@ -1,4 +1,3 @@
-import path from "node:path";
 import { expect, test } from "@playwright/test";
 import { loginAsEngineer, loginAsManagerWithResponse } from "./helpers/auth";
 import {
@@ -8,11 +7,6 @@ import {
   openNewReportDialog,
   uniqueDeviationNo,
 } from "./helpers/reports";
-
-const fixturePath = path.join(
-  process.cwd(),
-  "e2e/fixtures/minimal-report.docx"
-);
 
 test.describe.configure({ mode: "serial" });
 
@@ -32,28 +26,9 @@ test.describe("create report", () => {
 
   test("opens create dialog from New Report button", async ({ page }) => {
     await openNewReportDialog(page);
-    await expect(page.locator("#deviationNo")).toBeVisible();
-    await expect(page.locator("#report-upload")).toBeVisible();
+    await expect(page.locator("#documentNo")).toBeVisible();
     await expect(page.getByRole("button", { name: /^create$/i })).toBeVisible();
     await expect(page.getByRole("button", { name: /^cancel$/i })).toBeVisible();
-  });
-
-  test("upload pre-fills deviation number", async ({ page }) => {
-    await newReportButton(page).click();
-    await page.locator("#report-upload").setInputFiles(fixturePath);
-    await expect(page.locator("#deviationNo")).not.toHaveValue("", {
-      timeout: 30_000,
-    });
-  });
-
-  test("clear file resets upload", async ({ page }) => {
-    await newReportButton(page).click();
-    await page.locator("#report-upload").setInputFiles(fixturePath);
-    await expect(page.getByRole("button", { name: /^clear$/i })).toBeVisible({
-      timeout: 30_000,
-    });
-    await page.getByRole("button", { name: /^clear$/i }).click();
-    await expect(page.getByRole("button", { name: /^clear$/i })).toHaveCount(0);
   });
 
   test("shows toast when deviation number is empty", async ({ page }) => {
@@ -69,17 +44,17 @@ test.describe("create report", () => {
 
     await page.goto("/");
     await newReportButton(page).click();
-    await page.locator("#deviationNo").fill(deviationNo);
+    await page.locator("#documentNo").fill(deviationNo);
     await page.getByRole("button", { name: /^create$/i }).click();
     await expect(
-      page.getByText(/already have a report with this deviation number/i)
+      page.getByText(/already have a report with this document number/i)
     ).toBeVisible();
   });
 
   test("creates blank report and navigates to editor", async ({ page }) => {
     const deviationNo = uniqueDeviationNo("NEW");
     await newReportButton(page).click();
-    await page.locator("#deviationNo").fill(deviationNo);
+    await page.locator("#documentNo").fill(deviationNo);
     await page.getByRole("button", { name: /^create$/i }).click();
     await expect(page).toHaveURL(/\/reports\/[^/]+\/edit/, { timeout: 30_000 });
     const match = page.url().match(/\/reports\/([^/]+)\/edit/);

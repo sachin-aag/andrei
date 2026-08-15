@@ -1,4 +1,5 @@
 import type { auditEvents } from "@/db/schema";
+import { getCustomerPack } from "@/lib/customers/packs";
 import { auditEventsToCsv } from "./audit-csv";
 import { verifyAuditChain } from "./verify-audit-chain";
 
@@ -21,7 +22,7 @@ export function auditEventsToPdfText(
   chainStatus: Awaited<ReturnType<typeof verifyAuditChain>>
 ): Uint8Array {
   const lines: string[] = [
-    "M.J. Biopharm — Audit Trail Export",
+    getCustomerPack().branding.auditExportTitle,
     `Generated: ${new Date().toISOString()}`,
     `Chain verification: ${chainStatus.message}`,
     "",

@@ -35,7 +35,7 @@ export async function GET(
     return new NextResponse(Buffer.from(pdf), {
       headers: {
         "Content-Type": "application/pdf",
-        "Content-Disposition": `attachment; filename="audit-trail-${report.deviationNo.replace(/[^a-zA-Z0-9_-]/g, "_")}.pdf"`,
+        "Content-Disposition": `attachment; filename="audit-trail-${report.documentNo.replace(/[^a-zA-Z0-9_-]/g, "_")}.pdf"`,
       },
     });
   }
@@ -44,7 +44,7 @@ export async function GET(
   return new NextResponse(csv, {
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": `attachment; filename="audit-trail-${report.deviationNo.replace(/[^a-zA-Z0-9_-]/g, "_")}.csv"`,
+      "Content-Disposition": `attachment; filename="audit-trail-${report.documentNo.replace(/[^a-zA-Z0-9_-]/g, "_")}.csv"`,
     },
   });
 }

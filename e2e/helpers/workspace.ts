@@ -12,6 +12,22 @@ export function reviewMargin(page: Page) {
   return page.getByRole("complementary", { name: "Review margin" });
 }
 
+export function documentsPanel(page: Page) {
+  return page.getByRole("complementary", { name: "Documents" });
+}
+
+/** Documents panel can be collapsed to an icon rail — expand before using it. */
+export async function expandDocumentsPanel(page: Page): Promise<void> {
+  const panel = documentsPanel(page);
+  const expand = panel.getByRole("button", { name: /expand documents panel/i });
+  if (await expand.isVisible()) {
+    await expand.click();
+  }
+  await expect(
+    panel.getByRole("button", { name: /collapse documents panel/i })
+  ).toBeVisible();
+}
+
 /** App shell nav starts collapsed — expand before using footer profile link. */
 export async function expandPrimaryNav(page: Page): Promise<void> {
   const nav = primaryNav(page);

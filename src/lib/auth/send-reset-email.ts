@@ -1,4 +1,5 @@
 import { authBaseUrl } from "@/lib/auth/auth-base-url";
+import { getCustomerPack } from "@/lib/customers/packs";
 
 /**
  * Sends a password-reset email via the Resend HTTP API.
@@ -20,7 +21,7 @@ export async function sendResetEmail(email: string, token: string) {
     body: JSON.stringify({
       from,
       to: email,
-      subject: "Reset your password — Andrei",
+      subject: getCustomerPack().branding.passwordResetSubject,
       html: `
         <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
           <h2>Reset your password</h2>

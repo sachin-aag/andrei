@@ -8,13 +8,16 @@ import {
 } from "@/db/schema";
 import {
   evaluateSection,
+  evaluationContentHash,
   type AllSectionsContent,
 } from "@/lib/ai/evaluate";
-import { EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
+import {
+  getCriteria,
+  getInvestigationEvaluatableSections,
+} from "@/lib/ai/criteria";
 import { normalizeAnalyzeToolResults } from "@/lib/ai/evaluate-run-helpers";
-import { hashContent } from "@/lib/ai/content-hash";
-import { cleanSectionContentForEval } from "@/lib/tiptap/strip-pending-suggestions";
-import { PROMPT_VERSION } from "@/lib/ai/section-prompts";
+import { mergeSection } from "@/lib/sections-merge";
+import { getDocumentType } from "@/lib/document-types";
 import {
   hasEnoughContextInFirstSection,
   INSUFFICIENT_FIRST_SECTION_MESSAGE,
@@ -44,7 +47,9 @@ export async function evaluateReportCriteria(
     throw new ImproveAiEvaluationError("Report not found", 404);
   }
 
-  const targetSections: SectionType[] = [...EVALUATABLE_SECTIONS];
+  const targetSections: SectionType[] = [
+    ...getInvestigationEvaluatableSections(),
+  ];
 
   const sectionRows = await db
     .select()
@@ -62,7 +67,7 @@ export async function evaluateReportCriteria(
     .where(
       and(
         eq(reportSections.reportId, reportId),
-        inArray(reportSections.section, EVALUATABLE_SECTIONS)
+        inArray(reportSections.section, targetSections)
       )
     );
 
@@ -92,24 +97,28 @@ export async function evaluateReportCriteria(
     existingBySectionId.set(row.sectionId, arr);
   }
 
+  // Merged content everywhere, matching the suggestions route's hash input.
   const allSections: AllSectionsContent = {};
   for (const row of allEvaluatableRows) {
-    allSections[row.section] = row.content;
+    allSections[row.section] = mergeSection(row.section, row.content);
   }
+  const mergedFor = (row: (typeof sectionRows)[number]) =>
+    allSections[row.section] ?? mergeSection(row.section, row.content);
 
   const llmResults = await Promise.all(
     sectionRows.map(async (row) => {
+      const content = mergedFor(row);
       const evaluations = await evaluateSection({
         section: row.section,
-        content: row.content,
-        reportContext: { deviationNo: report.deviationNo, date: report.date },
+        content,
+        reportContext: { deviationNo: report.documentNo, date: report.date },
         allSections,
       });
       return {
         sectionRow: row,
         evaluations:
           row.section === "analyze"
-            ? normalizeAnalyzeToolResults(row.content, evaluations)
+            ? normalizeAnalyzeToolResults(content, evaluations)
             : evaluations,
       };
     })
@@ -118,10 +127,13 @@ export async function evaluateReportCriteria(
   for (const { sectionRow, evaluations } of llmResults) {
     const existing = existingBySectionId.get(sectionRow.id) ?? [];
     const existingByKey = new Map(existing.map((e) => [e.criterionKey, e]));
-    const contentHash = hashContent(
-      cleanSectionContentForEval(sectionRow.section, sectionRow.content),
-      PROMPT_VERSION
-    );
+    const contentHash = evaluationContentHash({
+      section: sectionRow.section,
+      content: mergedFor(sectionRow),
+      allSections,
+      criteria: getCriteria(sectionRow.section),
+      promptVersion: getDocumentType("investigation_report").prompts.promptVersion,
+    });
 
     for (const evalResult of evaluations) {
       const prior = existingByKey.get(evalResult.criterionKey);

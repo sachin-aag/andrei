@@ -1,6 +1,6 @@
-import type { CriterionStatus, SectionType } from "@/db/schema";
+import type { CriterionStatus, DocumentType, SectionType } from "@/db/schema";
 import type { CriterionEvaluationResult } from "@/lib/ai/evaluate";
-import { CRITERIA_BY_SECTION, EVALUATABLE_SECTIONS } from "@/lib/ai/criteria";
+import { getCriteria, getEvaluatableSections } from "@/lib/document-types";
 import stubEvaluationsJson from "@/lib/improve-ai/fixtures/stub-evaluations.json";
 
 type StubEvaluationEntry = {
@@ -29,9 +29,10 @@ function defaultReasoningForKey(key: string): string {
 
 /** Returns criterion evaluation results for a section using the static fixture. */
 export function getStubCriterionEvaluations(
-  section: SectionType
+  section: SectionType,
+  documentType: DocumentType = "investigation_report"
 ): CriterionEvaluationResult[] {
-  const criteria = CRITERIA_BY_SECTION[section] ?? [];
+  const criteria = getCriteria(documentType, section);
   return criteria.map((criterion, index) => ({
     criterionKey: criterion.key,
     criterionLabel: criterion.label,
@@ -41,10 +42,13 @@ export function getStubCriterionEvaluations(
 }
 
 /** Validates fixture covers every evaluable criterion key. */
-export function assertStubEvaluationsComplete(): void {
+export function assertStubEvaluationsComplete(
+  documentType: DocumentType = "investigation_report"
+): void {
+  if (documentType !== "investigation_report") return;
   const missing: string[] = [];
-  for (const section of EVALUATABLE_SECTIONS) {
-    for (const criterion of CRITERIA_BY_SECTION[section] ?? []) {
+  for (const section of getEvaluatableSections(documentType)) {
+    for (const criterion of getCriteria(documentType, section.key)) {
       if (!stubByKey.has(criterion.key)) {
         missing.push(criterion.key);
       }
@@ -52,7 +56,7 @@ export function assertStubEvaluationsComplete(): void {
   }
   if (missing.length > 0) {
     throw new Error(
-      `stub-evaluations.json missing keys: ${missing.join(", ")}`
+      `Stub evaluations missing criterion keys: ${missing.join(", ")}`
     );
   }
 }

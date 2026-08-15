@@ -350,7 +350,79 @@ for (const [idx, newRowXml] of sorted) {
   }
 }
 
+// Insert Conclusion section rows before "Document Reviewed"
+const rowsAfter = [];
+let rowMatchAfter;
+const rowRegexAfter = /<w:tr\b[^>]*>[\s\S]*?<\/w:tr>/g;
+while ((rowMatchAfter = rowRegexAfter.exec(xml)) !== null) {
+  const texts = [];
+  const tRe = /<w:t[^>]*>([^<]*)<\/w:t>/g;
+  let tm;
+  while ((tm = tRe.exec(rowMatchAfter[0])) !== null) texts.push(tm[1]);
+  rowsAfter.push({
+    start: rowMatchAfter.index,
+    end: rowMatchAfter.index + rowMatchAfter[0].length,
+    xml: rowMatchAfter[0],
+    text: texts.join(""),
+  });
+}
+const docReviewIdx = rowsAfter.findIndex((r) => /Document Reviewed/i.test(r.text));
+if (docReviewIdx > 0) {
+  const templateRow = rowsAfter[docReviewIdx - 1]?.xml ?? rowsAfter[0].xml;
+  const conclusionLabelRow = rebuildRow(templateRow, makePara("Conclusion:", { bold: true }));
+  const conclusionContentRow = rebuildRow(
+    templateRow,
+    makeParas(["{@conclusionNarrativeXml}"])
+  );
+  const insertAt = rowsAfter[docReviewIdx].start;
+  xml =
+    xml.substring(0, insertAt) +
+    conclusionLabelRow +
+    conclusionContentRow +
+    xml.substring(insertAt);
+}
+
 xml = replaceLastSignatureTable(xml, buildBlankReviewerSignatureTable());
+
+// ─── De-MJ headers, footers, and embedded logo ───
+
+function stripMjHeaderFooterText(xml) {
+  function cleanFragment(text) {
+    let t = text;
+    if (!t.trim()) return t;
+    if (/biopharm/i.test(t)) return "Andrei";
+    if (/confidential and proprietary/i.test(t)) return "Andrei — Document Review";
+    if (/^m\.j\.\s*$/i.test(t.trim())) return "";
+    if (/^reference sop/i.test(t.trim()) || /^rence sop/i.test(t.trim())) return "";
+    if (/^sop\/$/i.test(t.trim())) return "";
+    if (/^dp\/$/i.test(t.trim())) return "";
+    if (/^qa$/i.test(t.trim())) return "";
+    if (/^\/008$/i.test(t.trim())) return "";
+    if (/sop\s*\/\s*dp\s*\/\s*qa\s*\/\s*008/i.test(t)) return "";
+    if (/sop\s*\/dp\/qa\/008\/f04/i.test(t)) return "";
+    if (/plot no\.|hinjawadi|international biotech|unit:\s*drug product/i.test(t)) return "";
+    if (/phase ii/i.test(t) || /pune\s*\d*/i.test(t)) return "";
+    return t;
+  }
+
+  return xml.replace(/<w:t([^>]*)>([^<]*)<\/w:t>/g, (match, attrs, text) => {
+    const cleaned = cleanFragment(text);
+    if (cleaned === text) return match;
+    return `<w:t${attrs}>${cleaned}</w:t>`;
+  });
+}
+
+for (const part of ["word/header1.xml", "word/header2.xml", "word/header3.xml", "word/footer1.xml", "word/footer2.xml", "word/footer3.xml"]) {
+  const partXml = zip.file(part)?.asText();
+  if (partXml) {
+    zip.file(part, stripMjHeaderFooterText(partXml));
+  }
+}
+
+const andreiLogoPath = path.join(process.cwd(), "compliance-deck/assets/andrei-logo.png");
+if (fs.existsSync(andreiLogoPath) && zip.file("word/media/image1.png")) {
+  zip.file("word/media/image1.png", fs.readFileSync(andreiLogoPath));
+}
 
 // ─── Save ───
 

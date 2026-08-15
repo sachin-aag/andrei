@@ -51,21 +51,26 @@ function stripUseLocalDpiFromXml(xml: string): string {
 }
 
 /**
- * Fix extent height to match embedded raster aspect ratio (Google Docs stretches otherwise).
+ * Fix drawing size to match embedded raster aspect ratio (Google Docs stretches otherwise).
+ * Word uses both `wp:extent` and the picture `a:xfrm`/`a:ext`; they must stay in sync.
  */
 function syncDrawingExtents(xml: string, mediaDims: Map<string, { width: number; height: number }>): string {
-  return xml.replace(
-    /<wp:extent cx="(\d+)" cy="(\d+)"\/>[\s\S]*?<a:blip r:embed="([^"]+)"/g,
-    (match, cxRaw, cyRaw, relId) => {
-      const dims = mediaDims.get(relId);
-      if (!dims) return match;
-      const cx = Number(cxRaw);
-      if (!Number.isFinite(cx) || cx <= 0) return match;
-      const cy = Math.max(1, Math.round((cx * dims.height) / dims.width));
-      if (cy === Number(cyRaw)) return match;
-      return match.replace(`cy="${cyRaw}"`, `cy="${cy}"`);
-    }
-  );
+  return xml.replace(/<wp:inline\b[\s\S]*?<\/wp:inline>/g, (inline) => {
+    const blipMatch = /<a:blip r:embed="([^"]+)"/.exec(inline);
+    const extentMatch = /<wp:extent cx="(\d+)" cy="(\d+)"\/>/.exec(inline);
+    if (!blipMatch || !extentMatch) return inline;
+    const dims = mediaDims.get(blipMatch[1]!);
+    if (!dims) return inline;
+    const cx = Number(extentMatch[1]);
+    if (!Number.isFinite(cx) || cx <= 0) return inline;
+    const cy = Math.max(1, Math.round((cx * dims.height) / dims.width));
+    return inline
+      .replace(/<wp:extent cx="\d+" cy="\d+"\/>/, `<wp:extent cx="${cx}" cy="${cy}"/>`)
+      .replace(
+        /(<a:xfrm>\s*<a:off [^/]*\/>\s*<a:ext cx=")\d+(" cy=")\d+("\/>)/,
+        `$1${cx}$2${cy}$3`
+      );
+  });
 }
 
 function collectMediaDimensions(zip: PizZip): Map<string, { width: number; height: number }> {

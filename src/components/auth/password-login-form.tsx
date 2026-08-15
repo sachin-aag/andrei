@@ -246,7 +246,7 @@ export function PasswordLoginForm({ redirectTo }: { redirectTo?: string }) {
             setEmail(e.target.value);
             clearError();
           }}
-          placeholder="you@mjbiopharm.com"
+          placeholder="you@company.com"
           autoComplete="email"
           onKeyDown={(e) => {
             if (e.key === "Enter") checkEmail();

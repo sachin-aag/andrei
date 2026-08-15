@@ -3,25 +3,20 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import {
-  ImproveAiUploadButton,
+  ImproveAiFromReportButton,
   type ImproveAiReportOption,
-} from "@/components/improve-ai/improve-ai-upload-button";
-import type { WorkspaceUser } from "@/lib/auth/workspace-user";
-
-type ManagerOption = Pick<WorkspaceUser, "id" | "name" | "title">;
+} from "@/components/improve-ai/improve-ai-from-report-button";
 
 export function ImproveAiListHeader({
   sessionCount,
   userName,
   userEmail,
   reports,
-  managers,
 }: {
   sessionCount: number;
   userName: string;
   userEmail: string;
   reports: ImproveAiReportOption[];
-  managers: ManagerOption[];
 }) {
   return (
     <header className="shrink-0 border-b border-[var(--border)] px-6 py-4">
@@ -36,13 +31,13 @@ export function ImproveAiListHeader({
           </Link>
           <h1 className="text-2xl font-semibold tracking-tight">Improve AI</h1>
           <p className="text-sm text-[var(--muted-foreground)] max-w-2xl">
-            Upload a report or send an existing report for AI criteria evaluation,
-            then give feedback to help refine future evaluations. You only see
-            sessions you submitted ({sessionCount}).
+            Send an existing report for AI criteria evaluation, then give
+            feedback to help refine future evaluations. You only see sessions you
+            submitted ({sessionCount}).
           </p>
         </div>
         <div className="flex flex-col items-end gap-2 text-sm">
-          <ImproveAiUploadButton reports={reports} managers={managers} />
+          <ImproveAiFromReportButton reports={reports} />
           <p className="text-xs text-[var(--muted-foreground)] text-right">
             Signed in as{" "}
             <span className="font-medium text-[var(--foreground)]">{userName}</span>{" "}

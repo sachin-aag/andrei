@@ -5,6 +5,7 @@ import { comments, reports, reportSections } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import { hydrateUserDirectory } from "@/lib/auth/user-directory";
 import { listWorkspaceUsers } from "@/lib/auth/workspace-users";
+import { reportExportDocxFileName } from "@/lib/export/docx-filename";
 import { generateReportDocx } from "@/lib/export/generate-docx";
 import { listReportSignatures } from "@/lib/audit";
 import { canViewReport } from "@/lib/reports/access";
@@ -66,8 +67,7 @@ export async function GET(
     })),
   });
 
-  const safeDev = (report.deviationNo || "report").replace(/[^a-zA-Z0-9_\-/]/g, "_");
-  const filename = `Investigation_Report_${safeDev.replace(/\//g, "-")}.docx`;
+  const filename = reportExportDocxFileName(report.documentType, report.documentNo);
   const body = new Uint8Array(buffer);
   return new NextResponse(body, {
     headers: {

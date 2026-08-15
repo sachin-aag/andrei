@@ -36,7 +36,9 @@ function evaluationRow(overrides: Partial<{
   reasoning: string;
   evaluatedContentHash: string;
 }> = {}) {
-  const hash = sectionContentHash("define", defineContent);
+  const hash = sectionContentHash("define", defineContent, {
+    allSections: { define: defineContent },
+  });
   return {
     id: "eval-1",
     reportId: "report-1",

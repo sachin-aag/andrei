@@ -6,6 +6,8 @@ import { FileText } from "lucide-react";
 import { ReportCard, type ReportCardData } from "@/components/report/report-card";
 import { DeleteReportButton } from "@/components/dashboard/delete-report-button";
 import { EvaluateWithAiButton } from "@/components/dashboard/evaluate-with-ai-button";
+import { listDocumentTypes } from "@/lib/document-types";
+import type { DocumentType } from "@/db/schema";
 
 type DashboardReport = ReportCardData;
 
@@ -22,10 +24,16 @@ export function ReportList({
 }) {
   const router = useRouter();
   const [deletedIds, setDeletedIds] = useState<Set<string>>(() => new Set());
+  const [typeFilter, setTypeFilter] = useState<"all" | DocumentType>("all");
 
   const visibleReports = useMemo(
-    () => reports.filter((report) => !deletedIds.has(report.id)),
-    [reports, deletedIds]
+    () =>
+      reports.filter((report) => {
+        if (deletedIds.has(report.id)) return false;
+        if (typeFilter === "all") return true;
+        return (report.documentType ?? "investigation_report") === typeFilter;
+      }),
+    [reports, deletedIds, typeFilter]
   );
 
   const handleDeleted = (reportId: string) => {
@@ -33,13 +41,52 @@ export function ReportList({
     router.refresh();
   };
 
-  if (visibleReports.length === 0) {
+  if (reports.filter((r) => !deletedIds.has(r.id)).length === 0) {
     return <EmptyState role={userRole} />;
   }
 
+  const availableTypes = listDocumentTypes();
+
   return (
     <div className="grid gap-3">
-      {visibleReports.map((report) => {
+      {availableTypes.length > 1 ? (
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs text-[var(--muted-foreground)]">Type:</span>
+        {(
+          [
+            ["all", "All"] as const,
+            ...availableTypes.map(
+              (def) =>
+                [
+                  def.key,
+                  def.key === "design_verification"
+                    ? "Design Verification"
+                    : "Investigation",
+                ] as const
+            ),
+          ]
+        ).map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            onClick={() => setTypeFilter(value)}
+            className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${
+              typeFilter === value
+                ? "border-[var(--brand-500)] bg-[var(--brand-700)] text-[var(--brand-100)]"
+                : "border-[var(--border)] text-[var(--muted-foreground)] hover:border-[var(--brand-500)]"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      ) : null}
+      {visibleReports.length === 0 ? (
+        <p className="py-8 text-center text-sm text-[var(--muted-foreground)]">
+          No reports match this filter.
+        </p>
+      ) : (
+        visibleReports.map((report) => {
         const author = usersById[report.authorId];
         const managerIds =
           report.assignedManagerIds && report.assignedManagerIds.length > 0
@@ -51,7 +98,11 @@ export function ReportList({
           .map((managerId) => usersById[managerId]?.name)
           .filter((name): name is string => Boolean(name));
         const isOwner = report.authorId === currentUserId;
-        const title = report.deviationNo || "Untitled deviation";
+        const title =
+          report.documentNo ||
+          (report.documentType === "design_verification"
+            ? "Untitled design verification"
+            : "Untitled deviation");
 
         return (
           <ReportCard
@@ -60,6 +111,7 @@ export function ReportList({
             href={`/reports/${report.id}`}
             authorName={author?.name}
             managerNames={managerNames}
+            displayTitle={title}
             titleAction={
               isOwner ? (
                 <EvaluateWithAiButton
@@ -80,7 +132,8 @@ export function ReportList({
             }
           />
         );
-      })}
+      })
+      )}
     </div>
   );
 }

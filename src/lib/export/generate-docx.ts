@@ -1,9 +1,10 @@
 import fs from "node:fs";
-import path from "node:path";
 import PizZip from "pizzip";
 import Docxtemplater from "docxtemplater";
+import type { JSONContent } from "@tiptap/core";
 import type {
   AnalyzeSection,
+  ConclusionSection,
   ControlSection,
   DefineSection,
   ImproveSection,
@@ -13,8 +14,15 @@ import type {
   SectionContentMap,
 } from "@/types/sections";
 import { EMPTY_CONTENT } from "@/types/sections";
-import type { ReportSectionRecord } from "@/types/report";
-import type { reports as reportsTable } from "@/db/schema";
+import {
+  designVerificationMetadata,
+  investigationOtherTools,
+  investigationToolsUsed,
+  type ReportSectionRecord,
+} from "@/types/report";
+import type { SectionType, reports as reportsTable } from "@/db/schema";
+import { getDocumentType, mergeSectionForType } from "@/lib/document-types";
+import { isDvTableSection } from "@/lib/document-types/design-verification/sections";
 import { getUser } from "@/lib/auth/user-directory";
 import { formatCalendarDate } from "@/lib/utils";
 import { collapseFiveWhyFields } from "@/lib/analyze-five-why";
@@ -49,10 +57,10 @@ import {
   applyElectronicSignaturesToDocxZip,
   type DocxAuditSignature,
 } from "@/lib/export/electronic-signatures-docx";
-import type { SectionType } from "@/db/schema";
 import {
   applyWordCommentsToDocxZip,
   attachCommentsToFirstParagraph,
+  shouldExportComment,
   type ReportDocxComment,
 } from "@/lib/export/docx-comments";
 import { applyGoogleDocsImageCompat } from "@/lib/export/docx-google-docs-images";
@@ -60,11 +68,17 @@ import { applyGoogleDocsImageCompat } from "@/lib/export/docx-google-docs-images
 type ReportRow = typeof reportsTable.$inferSelect;
 type ReportRowWithManagers = ReportRow & { assignedManagerIds?: string[] };
 
-const TEMPLATE_PATH = path.join(
-  process.cwd(),
-  "templates",
-  "investigation-report-template.docx"
-);
+const DV_EXPORT_XML_FIELDS = [
+  ["purpose_scope", "purposeScopeXml"],
+  ["references", "referencesXml"],
+  ["traceability", "traceabilityXml"],
+  ["test_methods", "testMethodsXml"],
+  ["test_results", "testResultsXml"],
+  ["deviations", "deviationsXml"],
+  ["conclusion", "conclusionXml"],
+  ["approval_signoff", "approvalSignoffXml"],
+  ["appendices", "appendicesXml"],
+] as const;
 
 function sectionByKey<K extends keyof SectionContentMap>(
   rows: ReportSectionRecord[],
@@ -72,7 +86,7 @@ function sectionByKey<K extends keyof SectionContentMap>(
 ): SectionContentMap[K] {
   const row = rows.find((r) => r.section === key);
   if (!row) return EMPTY_CONTENT[key];
-  return mergeSection(key as K & SectionType, row.content);
+  return mergeSection(key, row.content) as SectionContentMap[K];
 }
 
 function rootCommentsFor(
@@ -83,7 +97,7 @@ function rootCommentsFor(
   return comments.filter(
     (comment) =>
       !comment.parentId &&
-      comment.status !== "dismissed" &&
+      shouldExportComment(comment) &&
       comment.section === section &&
       (contentPath ? comment.contentPath === contentPath : !comment.contentPath)
   );
@@ -94,7 +108,7 @@ function repliesFor(
   parentId: string
 ): ReportDocxComment[] {
   return comments.filter(
-    (comment) => comment.parentId === parentId && comment.status !== "dismissed"
+    (comment) => comment.parentId === parentId && shouldExportComment(comment)
   );
 }
 
@@ -144,13 +158,39 @@ function toRoman(n: number): string {
   return result;
 }
 
+function escapeXmlText(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+function boldLabelParagraph(label: string, value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  return (
+    `<w:p><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">${escapeXmlText(label)}</w:t></w:r>` +
+    `<w:r><w:t xml:space="preserve">${escapeXmlText(trimmed)}</w:t></w:r></w:p>`
+  );
+}
+
+function richFieldParagraph(label: string, doc: JSONContent | undefined, ctx: DocxExportContext): string {
+  const plain = richJsonToPlainText(normalizeRichField(doc)).trim();
+  if (!plain) return "";
+  const bodyXml = narrativeToDocxXmlWithContext(normalizeRichField(doc), ctx).xml;
+  const labelXml = `<w:p><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">${escapeXmlText(label)}</w:t></w:r></w:p>`;
+  return labelXml + bodyXml;
+}
+
 function composeMeasureXml(m: MeasureSection, ctx: DocxExportContext): string {
+  const prefix =
+    boldLabelParagraph("Experiment Number: ", m.experimentNumber ?? "") +
+    boldLabelParagraph("Experiment Title: ", m.experimentTitle ?? "") +
+    richFieldParagraph("Purpose: ", m.purpose, ctx) +
+    richFieldParagraph("Experiment Conclusion: ", m.conclusion, ctx);
   const narrativeXml = narrativeToDocxXmlWithContext(m.narrative, ctx).xml;
   if (m.regulatoryNotification?.trim()) {
-    const regXml = `<w:p><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">Regulatory Notification: </w:t></w:r><w:r><w:t xml:space="preserve">${m.regulatoryNotification.trim().replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</w:t></w:r></w:p>`;
-    return narrativeXml + regXml;
+    const regXml = `<w:p><w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">Regulatory Notification: </w:t></w:r><w:r><w:t xml:space="preserve">${escapeXmlText(m.regulatoryNotification.trim())}</w:t></w:r></w:p>`;
+    return prefix + narrativeXml + regXml;
   }
-  return narrativeXml;
+  return prefix + narrativeXml;
 }
 
 function buildTemplateData(
@@ -164,6 +204,7 @@ function buildTemplateData(
   const a = sectionByKey(sections, "analyze") as AnalyzeSection;
   const i = sectionByKey(sections, "improve") as ImproveSection;
   const c = sectionByKey(sections, "control") as ControlSection;
+  const con = sectionByKey(sections, "conclusion") as ConclusionSection;
 
   let improveDoc = normalizeRichField(i.correctiveActions);
   const improveNarrPlain = richJsonToPlainText(i.narrative).trim();
@@ -196,10 +237,10 @@ function buildTemplateData(
   return {
     // Header row
     date: formatCalendarDate(report.date),
-    deviationNo: report.deviationNo,
+    deviationNo: report.documentNo,
 
     // Investigation-tool checkboxes are Word form fields in the template (see docx-form-checkbox)
-    otherToolsDisplay: na(report.otherTools),
+    otherToolsDisplay: na(investigationOtherTools(report)),
 
     // Define — compose all sub-fields into one block (raw XML for table support)
     defineNarrativeXml: withWordComments(
@@ -327,6 +368,19 @@ function buildTemplateData(
     lotDisposition: "Not Applicable",
     controlConclusion: "Not Applicable",
 
+    conclusionNarrativeXml: withWordComments(
+      withWordComments(
+        narrativeToDocxXmlWithContext(con.narrative, ctx).xml,
+        ctx,
+        comments,
+        "conclusion",
+        "narrative"
+      ),
+      ctx,
+      comments,
+      "conclusion"
+    ),
+
     // Documents Reviewed
     documentsReviewedXml: plainTextToDocxXml(
       dr.items.length > 0 ? dr.items.map((item, idx) => `${idx + 1}. ${item}`).join("\n") : "",
@@ -375,7 +429,17 @@ export async function generateReportDocx({
   comments?: ReportDocxComment[];
   electronicSignatures?: DocxAuditSignature[];
 }): Promise<Buffer> {
-  const templateContent = fs.readFileSync(TEMPLATE_PATH);
+  if (report.documentType === "design_verification") {
+    return generateDesignVerificationDocx({
+      report,
+      sections,
+      electronicSignatures,
+    });
+  }
+
+  const templateContent = fs.readFileSync(
+    getDocumentType("investigation_report").export.templatePath
+  );
   const zip = new PizZip(templateContent);
 
   const doc = new Docxtemplater(zip, {
@@ -394,7 +458,7 @@ export async function generateReportDocx({
   doc.render(data);
   applySignatureBlockToDocxZip(doc.getZip(), signatureSnapshot);
   applyElectronicSignaturesToDocxZip(doc.getZip(), electronicSignatures);
-  applyInvestigationToolCheckboxes(doc.getZip(), report.toolsUsed);
+  applyInvestigationToolCheckboxes(doc.getZip(), investigationToolsUsed(report));
   applyNumberingToDocxZip(doc.getZip(), ctx);
   applyInlineMediaToDocxZip(doc.getZip(), ctx);
   applyWordCommentsToDocxZip(doc.getZip(), ctx);
@@ -406,4 +470,61 @@ export async function generateReportDocx({
   });
 
   return buf;
+}
+
+async function generateDesignVerificationDocx({
+  report,
+  sections,
+  electronicSignatures,
+}: {
+  report: ReportRowWithManagers;
+  sections: ReportSectionRecord[];
+  electronicSignatures: DocxAuditSignature[];
+}): Promise<Buffer> {
+  const templateContent = fs.readFileSync(
+    getDocumentType("design_verification").export.templatePath
+  );
+  const zip = new PizZip(templateContent);
+  const doc = new Docxtemplater(zip, {
+    paragraphLoop: true,
+    linebreaks: true,
+    delimiters: { start: "{", end: "}" },
+    nullGetter: () => "",
+  });
+
+  const numberingBases = loadListNumberingBasesFromZip(zip);
+  const ctx = createDocxExportContext(numberingBases);
+  const byKey = Object.fromEntries(sections.map((s) => [s.section, s.content]));
+  const meta = designVerificationMetadata(report);
+
+  const data: Record<string, string> = {
+    date: formatCalendarDate(report.date),
+    documentNo: report.documentNo,
+    productName: meta.productName,
+    revision: meta.revision,
+  };
+
+  for (const [section, placeholder] of DV_EXPORT_XML_FIELDS) {
+    const merged = mergeSectionForType(
+      "design_verification",
+      section,
+      byKey[section]
+    ) as Record<string, unknown>;
+    const field = isDvTableSection(section) ? "table" : "narrative";
+    data[placeholder] = narrativeToDocxXmlWithContext(
+      normalizeRichField(merged[field]),
+      ctx
+    ).xml;
+  }
+
+  doc.render(data);
+  applyElectronicSignaturesToDocxZip(doc.getZip(), electronicSignatures);
+  applyNumberingToDocxZip(doc.getZip(), ctx);
+  applyInlineMediaToDocxZip(doc.getZip(), ctx);
+  await applyGoogleDocsImageCompat(doc.getZip());
+
+  return doc.getZip().generate({
+    type: "nodebuffer",
+    compression: "DEFLATE",
+  });
 }

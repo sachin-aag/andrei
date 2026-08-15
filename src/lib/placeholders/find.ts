@@ -1,6 +1,7 @@
 import type { JSONContent } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import type { SectionType } from "@/db/schema";
+import { isCitationShapedBracket } from "@/lib/placeholders/citation-bracket";
 import { clipBracketPlaceholderText } from "@/lib/text/bracket-span";
 
 export type Placeholder = {
@@ -46,6 +47,12 @@ export const BRACKET_SPAN_REGEX = /\[[^\]]+\]/g;
 /** Citation-style `[12]` — not treated as an editable placeholder. */
 export const NUMERIC_ONLY_BRACKET = /^\[\s*\d+\s*\]$/;
 
+/**
+ * Max length for a placeholder label (inner text before `: <to be filled>`).
+ * Shared by the scanner and the suggestion/document normalizer so they cannot drift.
+ */
+export const MAX_PLACEHOLDER_LABEL_LENGTH = 40;
+
 type TextSpan = { fromRel: number; toRel: number; text: string };
 
 /**
@@ -55,6 +62,9 @@ type TextSpan = { fromRel: number; toRel: number; text: string };
 export function isActionablePlaceholderBracket(match: string): boolean {
   if (!/^\[[^\]]+\]$/.test(match)) return false;
   if (NUMERIC_ONLY_BRACKET.test(match)) return false;
+  // Document citations (`[file.pdf]`, `[name, p. N]`, including mistaken
+  // `[file.pdf: <to be filled>]`) are never Placeholders-panel tokens.
+  if (isCitationShapedBracket(match)) return false;
 
   const inner = match.slice(1, -1);
 
@@ -67,11 +77,14 @@ export function isActionablePlaceholderBracket(match: string): boolean {
   // QC / SOP limit language in brackets is document copy, not a fill-in field.
   if (/not more than|not less than|\bNMT\b|\bNLT\b/i.test(inner)) return false;
 
-  // Short tokens without label:value structure: [number], [fibers]
+  // Guidance-only labels without `: <to be filled>` — e.g. `[number]`,
+  // `[equipment ID]`, `[Personnel Name(s)]`. Cap length so long bracketed
+  // prose is not treated as a fill-in field; AI postprocess compacts labels
+  // to this same limit. Parentheses cover plural markers like `(s)`.
   if (
     !inner.includes(":") &&
-    inner.length <= 32 &&
-    /^[\w\s./-]+$/i.test(inner.trim())
+    inner.length <= MAX_PLACEHOLDER_LABEL_LENGTH &&
+    /^[\w\s./'()-]+$/i.test(inner.trim())
   ) {
     return true;
   }

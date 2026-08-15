@@ -1,20 +1,77 @@
-import type { SectionType, CriterionStatus } from "@/db/schema";
+import type { SectionType, CriterionStatus, DocumentType } from "@/db/schema";
 import type { CommentRecord, EvaluationRecord } from "@/types/report";
-import { hashContent } from "@/lib/ai/content-hash";
-import { PROMPT_VERSION } from "@/lib/ai/section-prompts";
-import { cleanSectionContentForEval } from "@/lib/tiptap/strip-pending-suggestions";
+import {
+  evaluationContentHash,
+  type AllSectionsContent,
+} from "@/lib/ai/evaluation-content-hash";
 import {
   effectiveStatus,
   rowsForSection,
   type CriterionRow,
 } from "@/lib/ai/criteria-view";
-import { getCriteria } from "@/lib/ai/criteria";
+import { getCriteria, getDocumentType } from "@/lib/document-types";
 import { shouldSkipSuggestForEvaluation } from "@/lib/placeholders/evaluation-policy";
+import type { EditScope } from "@/lib/suggestions/locator";
+
+/** Validate an untrusted structural scope from persisted / model JSON. */
+export function parseEditScope(raw: unknown): EditScope | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const s = raw as Record<string, unknown>;
+  if (
+    s.kind === "cell" &&
+    typeof s.row === "number" &&
+    typeof s.col === "number" &&
+    Number.isInteger(s.row) &&
+    Number.isInteger(s.col) &&
+    s.row >= 0 &&
+    s.col >= 0
+  ) {
+    const scope: EditScope = { kind: "cell", row: s.row, col: s.col };
+    if (typeof s.tableIndex === "number" && Number.isInteger(s.tableIndex)) {
+      scope.tableIndex = s.tableIndex;
+    }
+    return scope;
+  }
+  if (
+    s.kind === "listItem" &&
+    typeof s.index === "number" &&
+    Number.isInteger(s.index) &&
+    s.index >= 0
+  ) {
+    const scope: EditScope = { kind: "listItem", index: s.index };
+    if (typeof s.listIndex === "number" && Number.isInteger(s.listIndex)) {
+      scope.listIndex = s.listIndex;
+    }
+    return scope;
+  }
+  return undefined;
+}
 
 const FAILING: CriterionStatus[] = ["not_met", "partially_met"];
 
-export function sectionContentHash(section: SectionType, content: unknown): string {
-  return hashContent(cleanSectionContentForEval(section, content), PROMPT_VERSION);
+export type SectionContentHashOptions = {
+  documentType?: DocumentType;
+  /** Required for criteria with dependsOn so freshness matches evaluate. */
+  allSections?: AllSectionsContent;
+};
+
+/**
+ * Content hash for evaluation freshness and suggestion staleness.
+ * Must match `evaluationContentHash` written by the evaluate route.
+ */
+export function sectionContentHash(
+  section: SectionType,
+  content: unknown,
+  opts?: SectionContentHashOptions
+): string {
+  const documentType = opts?.documentType ?? "investigation_report";
+  return evaluationContentHash({
+    section,
+    content,
+    allSections: opts?.allSections,
+    criteria: getCriteria(documentType, section),
+    promptVersion: getDocumentType(documentType).prompts.promptVersion,
+  });
 }
 
 export function isFailingStatus(status: CriterionStatus): boolean {
@@ -26,9 +83,11 @@ export function gapCriteriaForSection(
   section: SectionType,
   evaluations: EvaluationRecord[],
   comments: CommentRecord[],
-  sectionContent: unknown
+  sectionContent: unknown,
+  documentType: DocumentType = "investigation_report",
+  allSections?: AllSectionsContent
 ): CriterionRow[] {
-  const rows = rowsForSection(section, evaluations).filter(
+  const rows = rowsForSection(section, evaluations, documentType).filter(
     (r) => !r.isPlaceholder && isFailingStatus(effectiveStatus(r))
   );
   const openFixEvalIds = new Set(
@@ -36,27 +95,31 @@ export function gapCriteriaForSection(
       .filter((c) => c.kind === "ai_fix" && c.status === "open" && c.evaluationId)
       .map((c) => c.evaluationId as string)
   );
-  const hash = sectionContentHash(section, sectionContent);
+  const hash = sectionContentHash(section, sectionContent, {
+    documentType,
+    allSections,
+  });
   const gap = rows.filter((r) => {
     if (r.evaluatedContentHash && r.evaluatedContentHash !== hash) return false;
     if (shouldSkipSuggestForEvaluation(r.reasoning)) return false;
     return !openFixEvalIds.has(r.id);
   });
 
-  return sortGapCriteria(section, gap);
+  return sortGapCriteria(section, gap, documentType);
 }
 
 /** not_met (red) first, then partially_met (yellow), then criterion order. */
 export function sortGapCriteria(
   section: SectionType,
-  rows: CriterionRow[]
+  rows: CriterionRow[],
+  documentType: DocumentType = "investigation_report"
 ): CriterionRow[] {
   return [...rows].sort((a, b) => {
     const priA = STATUS_PRIORITY[effectiveStatus(a)];
     const priB = STATUS_PRIORITY[effectiveStatus(b)];
     if (priA !== priB) return priA - priB;
-    const orderA = criterionDisplayIndex(section, a.criterionKey);
-    const orderB = criterionDisplayIndex(section, b.criterionKey);
+    const orderA = criterionDisplayIndex(section, a.criterionKey, documentType);
+    const orderB = criterionDisplayIndex(section, b.criterionKey, documentType);
     if (orderA !== orderB) return orderA - orderB;
     return a.criterionKey.localeCompare(b.criterionKey);
   });
@@ -67,10 +130,24 @@ export function canSuggestFixes(
   evaluations: EvaluationRecord[],
   comments: CommentRecord[],
   sectionContent: unknown,
-  opts?: { isEvaluating?: boolean; isSuggesting?: boolean }
+  opts?: {
+    isEvaluating?: boolean;
+    isSuggesting?: boolean;
+    documentType?: DocumentType;
+    allSections?: AllSectionsContent;
+  }
 ): boolean {
   if (opts?.isEvaluating || opts?.isSuggesting) return false;
-  return gapCriteriaForSection(section, evaluations, comments, sectionContent).length > 0;
+  return (
+    gapCriteriaForSection(
+      section,
+      evaluations,
+      comments,
+      sectionContent,
+      opts?.documentType ?? "investigation_report",
+      opts?.allSections
+    ).length > 0
+  );
 }
 
 const STATUS_PRIORITY: Record<CriterionStatus, number> = {
@@ -80,8 +157,12 @@ const STATUS_PRIORITY: Record<CriterionStatus, number> = {
   not_evaluated: 3,
 };
 
-export function criterionDisplayIndex(section: SectionType, criterionKey: string): number {
-  const defs = getCriteria(section);
+export function criterionDisplayIndex(
+  section: SectionType,
+  criterionKey: string,
+  documentType: DocumentType = "investigation_report"
+): number {
+  const defs = getCriteria(documentType, section);
   const idx = defs.findIndex((d) => d.key === criterionKey);
   return idx === -1 ? Number.MAX_SAFE_INTEGER : idx;
 }
@@ -90,8 +171,21 @@ export type ParsedAiFixPayload = {
   deleteText: string;
   insertText: string;
   reasoning: string;
+  /** Structural target (table cell / list item) for scoped edits. */
+  scope?: EditScope;
   /** Section content hash when this suggestion was created (staleness detection). */
   contentHashAtSuggestion?: string;
+  evidenceSources?: Array<{
+    citationId: string;
+    attachmentId: string;
+    filename: string;
+    description?: string | null;
+    pageNumber: number;
+    chunkId: string;
+    sourceKind: string;
+    quote: string;
+    ingestRunId: string;
+  }>;
 };
 
 export function parseAiFixCommentContent(content: string): ParsedAiFixPayload {
@@ -102,10 +196,43 @@ export function parseAiFixCommentContent(content: string): ParsedAiFixPayload {
         deleteText: typeof parsed.deleteText === "string" ? parsed.deleteText : "",
         insertText: typeof parsed.insertText === "string" ? parsed.insertText : "",
         reasoning: typeof parsed.reasoning === "string" ? parsed.reasoning : "",
+        scope: parseEditScope(parsed.scope),
         contentHashAtSuggestion:
           typeof parsed.contentHashAtSuggestion === "string"
             ? parsed.contentHashAtSuggestion
             : undefined,
+        evidenceSources: Array.isArray(parsed.evidenceSources)
+          ? parsed.evidenceSources.flatMap((source) => {
+              if (!source || typeof source !== "object") return [];
+              const s = source as Record<string, unknown>;
+              if (
+                typeof s.citationId !== "string" ||
+                typeof s.attachmentId !== "string" ||
+                typeof s.filename !== "string" ||
+                typeof s.pageNumber !== "number" ||
+                typeof s.chunkId !== "string" ||
+                typeof s.sourceKind !== "string" ||
+                typeof s.quote !== "string" ||
+                typeof s.ingestRunId !== "string"
+              ) {
+                return [];
+              }
+              return [
+                {
+                  citationId: s.citationId,
+                  attachmentId: s.attachmentId,
+                  filename: s.filename,
+                  description:
+                    typeof s.description === "string" ? s.description : null,
+                  pageNumber: s.pageNumber,
+                  chunkId: s.chunkId,
+                  sourceKind: s.sourceKind,
+                  quote: s.quote,
+                  ingestRunId: s.ingestRunId,
+                },
+              ];
+            })
+          : undefined,
       };
     }
   } catch {
@@ -118,7 +245,49 @@ export function serializeAiFixCommentContent(payload: ParsedAiFixPayload): strin
   return JSON.stringify(payload);
 }
 
-/** Open ai_fix comments for a section, sorted red-first then criterion order. */
+export type ParsedAiRedraftPayload = {
+  /** Full replacement content for the target field, as GFM-subset markdown. */
+  markdown: string;
+  reasoning: string;
+  /**
+   * Hash of the TARGET FIELD's text when this redraft was created. Per-field
+   * (not per-section) so applying one draft never marks drafts for other
+   * fields as stale.
+   */
+  fieldHashAtSuggestion?: string;
+};
+
+export function parseAiRedraftCommentContent(content: string): ParsedAiRedraftPayload {
+  try {
+    const parsed = JSON.parse(content) as Partial<ParsedAiRedraftPayload>;
+    if (parsed && typeof parsed === "object" && typeof parsed.markdown === "string") {
+      return {
+        markdown: parsed.markdown,
+        reasoning: typeof parsed.reasoning === "string" ? parsed.reasoning : "",
+        fieldHashAtSuggestion:
+          typeof parsed.fieldHashAtSuggestion === "string"
+            ? parsed.fieldHashAtSuggestion
+            : undefined,
+      };
+    }
+  } catch {
+    // legacy/plain content: treat the whole string as markdown
+  }
+  return { markdown: content, reasoning: "" };
+}
+
+export function serializeAiRedraftCommentContent(
+  payload: ParsedAiRedraftPayload
+): string {
+  return JSON.stringify(payload);
+}
+
+/** AI suggestion kinds reviewed via the suggestion card. */
+export function isAiSuggestionKind(kind: string): kind is "ai_fix" | "ai_redraft" {
+  return kind === "ai_fix" || kind === "ai_redraft";
+}
+
+/** Open AI suggestions (fixes + redrafts) for a section, red-first then criterion order. */
 export function sortedOpenSuggestionsForSection(
   section: SectionType,
   comments: CommentRecord[],
@@ -128,7 +297,7 @@ export function sortedOpenSuggestionsForSection(
   const open = comments.filter(
     (c) =>
       !c.parentId &&
-      c.kind === "ai_fix" &&
+      isAiSuggestionKind(c.kind) &&
       c.status === "open" &&
       c.section === section
   );

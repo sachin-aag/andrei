@@ -2,23 +2,22 @@ import { NextResponse } from "next/server";
 import { and, asc, eq, ne } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { comments, reports, sectionTypeEnum } from "@/db/schema";
-import type { SectionType } from "@/db/schema";
+import { comments, reports } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
-
-function canAccessReport(user: { id: string; role: string }, report: { authorId: string; assignedManagerId: string | null }) {
-  if (user.role === "manager") return true;
-  return user.id === report.authorId;
-}
+import { requireReportAccess } from "@/lib/reports/require-report-access";
+import { isValidSection } from "@/lib/document-types";
 
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ reportId: string }> }
 ) {
-  const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const currentUser = await getCurrentUser();
   const { reportId } = await params;
+  const access = await requireReportAccess(reportId, currentUser);
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
+  }
 
   // Dismissed comments are kept in the DB for audit / undo but excluded from
   // the UI by default. Pass ?include=dismissed when you genuinely need them.
@@ -37,7 +36,6 @@ export async function GET(
   return NextResponse.json({ comments: rows });
 }
 
-const sectionValues = sectionTypeEnum.enumValues;
 const COMMENT_MAX_LENGTH = 1024;
 const REPLY_MAX_LENGTH = 512;
 
@@ -46,7 +44,7 @@ const createSchema = z.object({
   parentId: z.string().optional().nullable(),
   anchorText: z.string().optional().default(""),
   sectionId: z.string().optional(),
-  section: z.enum(sectionValues).optional(),
+  section: z.string().optional(),
   contentPath: z.string().optional().nullable(),
   fromPos: z.number().int().optional().nullable(),
   toPos: z.number().int().optional().nullable(),
@@ -56,22 +54,23 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ reportId: string }> }
 ) {
-  const user = await getCurrentUser();
-  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const currentUser = await getCurrentUser();
   const { reportId } = await params;
-
-  const [report] = await db
-    .select()
-    .from(reports)
-    .where(eq(reports.id, reportId));
-  if (!report) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  if (!canAccessReport(user, report)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  const access = await requireReportAccess(reportId, currentUser);
+  if (!access.ok) {
+    return NextResponse.json({ error: access.error }, { status: access.status });
   }
+  const { user, report } = access;
 
   const parse = createSchema.safeParse(await req.json().catch(() => ({})));
   if (!parse.success) {
     return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
+  }
+  if (
+    parse.data.section &&
+    !isValidSection(report.documentType, parse.data.section)
+  ) {
+    return NextResponse.json({ error: "Invalid section" }, { status: 400 });
   }
 
   const requestedParentId = parse.data.parentId ?? null;
@@ -123,7 +122,7 @@ export async function POST(
         : parse.data.sectionId ?? null,
       section: threadRoot
         ? threadRoot.section
-        : ((parse.data.section as SectionType | undefined) ?? null),
+        : (parse.data.section ?? null),
       authorId: user.id,
       content: parse.data.content,
       anchorText: threadRoot ? "" : parse.data.anchorText ?? "",

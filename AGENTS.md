@@ -2,16 +2,17 @@
 
 ## Cursor Cloud specific instructions
 
-This is a single Next.js 16 app (M.J. Biopharm Investigation Report Tool). Standard
-commands live in `CLAUDE.md`, `README.md`, and `package.json` scripts — use those for
-lint/test/build/run. The notes below cover only non-obvious, durable setup/run caveats
-for this environment.
+This is a single Next.js 16 app (Andrei investigation-report engine with
+per-customer packs). Standard commands live in `CLAUDE.md`, `README.md`, and
+`package.json` scripts — use those for lint/test/build/run. The notes below
+cover only non-obvious, durable setup/run caveats for this environment.
 
 ### Services
 
 - **Next.js dev server** — the product. Run `pnpm dev` (http://localhost:3000, Turbopack).
-- **PostgreSQL 16** — required; all report/section/eval/comment/user data persists here.
-  Installed natively (not Docker). It is **not** auto-started on boot, so start it before
+- **PostgreSQL 16 + pgvector** — required; all report/section/eval/comment/user
+  data persists here, and PDF evidence chunks use `vector(768)`. Installed
+  natively (not Docker). It is **not** auto-started on boot, so start it before
   running the app or DB scripts:
 
   ```bash
@@ -21,6 +22,20 @@ for this environment.
   Connection is configured in `.env.local` as
   `postgresql://andrei:andrei@127.0.0.1:5432/andrei_dev`. Because the host is `127.0.0.1`,
   `src/db/connection.ts` uses the `pg` driver (not the Neon HTTP driver).
+
+  Native pgvector setup (one-time):
+
+  ```bash
+  # macOS (Homebrew)
+  brew install pgvector
+  # then in psql against andrei_dev:
+  CREATE EXTENSION IF NOT EXISTS vector;
+  ```
+
+  Docker Compose and CI use `pgvector/pgvector:pg16` so the extension is available
+  without a manual install in those environments.
+
+  PDF evidence release gates: see `docs/pdf-evidence-deployment-checklist.md`.
 
 ### Database schema & users (local Postgres gotchas)
 
@@ -55,6 +70,19 @@ AI evaluation/suggestions need a Gemini credential (e.g. `GOOGLE_GENERATIVE_AI_A
 or `AI_GATEWAY_API_KEY`), which is not configured here. Core flows — login, report
 CRUD, the DMAIC editor with auto-save, manager review, and DOCX export — work without it.
 "Run AI Check" / suggestions will error until a credential is added to `.env.local`.
+
+### Customer pack
+
+Local default is **demo** (Andrei branding, design verification, conclusion).
+Set both to `mj` to exercise the MJ overlay:
+
+```bash
+ANDREI_CUSTOMER=mj
+NEXT_PUBLIC_ANDREI_CUSTOMER=mj
+```
+
+They must agree with `ANDREI_VERCEL_DEPLOY_SCOPE` when that is set. See
+`docs/whitelabel-vercel-deploy.md`.
 
 ### Tests
 

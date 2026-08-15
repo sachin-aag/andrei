@@ -10,6 +10,7 @@ import { getPasswordPolicy } from "@/lib/auth/password-policy";
 import { AppShell } from "@/components/layout/app-shell";
 import { CreateReportButton } from "@/components/dashboard/create-report-button";
 import { ReportList } from "@/components/dashboard/report-list";
+import { engineerReportsSubtitle } from "@/lib/document-types";
 import { withTransientRetry } from "@/lib/db/with-transient-retry";
 import {
   listReportManagerIdsByReportIds,
@@ -103,10 +104,10 @@ export default async function DashboardPage() {
             </h1>
             <p className="text-sm text-[var(--muted-foreground)] mt-1">
               {user.role === "engineer"
-                ? "Create and manage your deviation investigation reports."
+                ? engineerReportsSubtitle()
                 : user.role === "qa"
-                  ? "Read-only access to investigation reports and audit trails."
-                  : "Review submitted investigation reports from quality engineers."}
+                  ? "Read-only access to reports and audit trails."
+                  : "Review submitted reports from quality engineers."}
             </p>
           </div>
           {user.role === "engineer" && (

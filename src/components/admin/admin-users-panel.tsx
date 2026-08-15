@@ -341,7 +341,7 @@ export function AdminUsersPanel({
                   type="email"
                   value={createForm.email}
                   disabled={isCreating}
-                  placeholder="user@mjbiopharm.com"
+                  placeholder="user@company.com"
                   onChange={(event) =>
                     setCreateForm((current) => ({
                       ...current,

@@ -63,7 +63,7 @@ export function ForgotPasswordForm({ defaultEmail }: { defaultEmail?: string }) 
             setEmail(e.target.value);
             if (error) setError(null);
           }}
-          placeholder="you@mjbiopharm.com"
+          placeholder="you@company.com"
           autoComplete="email"
           onKeyDown={(e) => {
             if (e.key === "Enter") submit();

@@ -8,6 +8,7 @@ import type { AuditActorSnapshot } from "./actor";
 import { recordAuditEvent } from "./record-audit-event";
 import { checkpointAllSectionsForReport } from "./record-section-version";
 import {
+  assertAttachmentsReadyForSubmission,
   computeReportContentHash,
   computeReportVersionSeq,
 } from "@/lib/reports/compute-content-hash";
@@ -30,7 +31,31 @@ export type RecordSignatureInput = {
   meaning: SignatureMeaning;
 };
 
+export class SubmissionAttachmentsNotReadyError extends Error {
+  constructor(
+    message: string,
+    readonly attachments: Array<{
+      attachmentId: string;
+      filename: string;
+      processingStatus: string;
+    }>
+  ) {
+    super(message);
+    this.name = "SubmissionAttachmentsNotReadyError";
+  }
+}
+
 export async function recordElectronicSignature(input: RecordSignatureInput) {
+  if (input.meaning === "submission") {
+    const attachmentCheck = await assertAttachmentsReadyForSubmission(input.reportId);
+    if (!attachmentCheck.ok) {
+      throw new SubmissionAttachmentsNotReadyError(
+        attachmentCheck.message,
+        attachmentCheck.attachments
+      );
+    }
+  }
+
   await checkpointAllSectionsForReport(input.reportId);
 
   const [contentHash, signedVersionSeq] = await Promise.all([

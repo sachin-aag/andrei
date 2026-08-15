@@ -9,6 +9,12 @@ export type CompressedImage = {
   mimeType: string;
 };
 
+export type CompressImageOptions = {
+  maxWidthPx?: number;
+  maxBytes?: number;
+  jpegQuality?: number;
+};
+
 function loadImageFromFile(file: File): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
@@ -51,8 +57,15 @@ async function blobToDataUrl(blob: Blob): Promise<string> {
   });
 }
 
-/** Resize and compress an uploaded image for inline narrative storage. */
-export async function compressImageFile(file: File): Promise<CompressedImage> {
+/** Resize and compress an uploaded image for inline narrative / chat storage. */
+export async function compressImageFile(
+  file: File,
+  options: CompressImageOptions = {}
+): Promise<CompressedImage> {
+  const maxWidthPx = options.maxWidthPx ?? MAX_WIDTH_PX;
+  const maxBytes = options.maxBytes ?? MAX_BYTES;
+  const jpegQuality = options.jpegQuality ?? JPEG_QUALITY;
+
   if (file.type === "image/svg+xml") {
     throw new Error("SVG images are not supported.");
   }
@@ -61,7 +74,7 @@ export async function compressImageFile(file: File): Promise<CompressedImage> {
   }
 
   const img = await loadImageFromFile(file);
-  const scale = Math.min(1, MAX_WIDTH_PX / Math.max(img.width, 1));
+  const scale = Math.min(1, maxWidthPx / Math.max(img.width, 1));
   const width = Math.max(1, Math.round(img.width * scale));
   const height = Math.max(1, Math.round(img.height * scale));
 
@@ -73,20 +86,22 @@ export async function compressImageFile(file: File): Promise<CompressedImage> {
   ctx.drawImage(img, 0, 0, width, height);
 
   const mimeType =
-    file.type === "image/png" && file.size < MAX_BYTES / 2
+    file.type === "image/png" && file.size < maxBytes / 2
       ? "image/png"
       : "image/jpeg";
-  const quality = mimeType === "image/jpeg" ? JPEG_QUALITY : undefined;
+  const quality = mimeType === "image/jpeg" ? jpegQuality : undefined;
 
   let blob = await canvasToBlob(canvas, mimeType, quality ?? 1);
-  if (blob.size > MAX_BYTES && mimeType !== "image/jpeg") {
-    blob = await canvasToBlob(canvas, "image/jpeg", JPEG_QUALITY);
-  } else if (blob.size > MAX_BYTES) {
-    blob = await canvasToBlob(canvas, "image/jpeg", 0.7);
+  if (blob.size > maxBytes && mimeType !== "image/jpeg") {
+    blob = await canvasToBlob(canvas, "image/jpeg", jpegQuality);
+  } else if (blob.size > maxBytes) {
+    blob = await canvasToBlob(canvas, "image/jpeg", Math.min(jpegQuality, 0.7));
   }
 
-  if (blob.size > MAX_BYTES) {
-    throw new Error("Image is too large after compression (max 1 MB).");
+  if (blob.size > maxBytes) {
+    throw new Error(
+      `Image is too large after compression (max ${Math.round(maxBytes / 1024)} KB).`
+    );
   }
 
   const dataUrl = await blobToDataUrl(blob);
