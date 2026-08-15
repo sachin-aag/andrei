@@ -63,7 +63,9 @@ async function main() {
     console.error(`non-prod  →  ${host}`);
   }
 
-  console.error("Applying pending migrations…");
+  console.error(
+    `Applying pending migrations… (confirm this host is the DB you intended)`
+  );
   await runPendingMigrations(dbUrl);
   console.error("Migrations complete.");
 }

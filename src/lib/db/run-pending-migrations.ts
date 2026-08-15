@@ -9,6 +9,7 @@ import { normalizeDatabaseUrl } from "@/db/connection";
 import {
   tagsToStampOnEmptyPushJournal,
 } from "@/lib/db/push-baseline-tags";
+import { isIgnorableSchemaReplayError } from "@/lib/db/schema-replay-errors";
 
 const migrationsFolder = path.join(process.cwd(), "src/db/migrations");
 const journalPath = path.join(migrationsFolder, "meta/_journal.json");
@@ -99,7 +100,15 @@ async function applyMigrationStatements(
     .filter(Boolean);
 
   for (const statement of statements) {
-    await pool.query(statement);
+    try {
+      await pool.query(statement);
+    } catch (error) {
+      if (!isIgnorableSchemaReplayError(error)) {
+        throw error;
+      }
+      const preview = statement.replace(/\s+/g, " ").slice(0, 96);
+      console.error(`schema replay: already exists, skipping: ${preview}`);
+    }
   }
 }
 
@@ -447,6 +456,36 @@ async function ensurePushBaseline(pool: pg.Pool): Promise<void> {
   }
 }
 
+/**
+ * Apply journal tags whose hashes are not recorded yet, ignoring leftover
+ * enums/columns from drizzle-kit push. Runs only when `reports` exists so a
+ * fresh database still goes through `migrate()` from 0000.
+ *
+ * Drizzle's migrator executes CREATE TYPE as-is, so a push-polluted MJ
+ * database would fail on 0033/0037 even after the table-repair pass.
+ */
+async function replayUnrecordedMigrations(pool: pg.Pool): Promise<void> {
+  if (!(await tableExists(pool, "reports"))) {
+    return;
+  }
+
+  const journal = JSON.parse(fs.readFileSync(journalPath, "utf8")) as {
+    entries: JournalEntry[];
+  };
+  const recorded = await recordedMigrationHashes(pool);
+
+  for (const entry of journal.entries) {
+    const hash = migrationHash(entry.tag);
+    if (recorded.has(hash)) {
+      continue;
+    }
+    console.error(`schema replay: applying unrecorded ${entry.tag}`);
+    await applyMigrationStatements(pool, entry.tag);
+    await recordMigrationIfMissing(pool, entry.tag);
+    recorded.add(hash);
+  }
+}
+
 /** Applies pending Drizzle SQL migrations (with push-DB baseline when needed). */
 export async function runPendingMigrations(databaseUrl: string): Promise<void> {
   const pool = new pg.Pool({
@@ -456,6 +495,7 @@ export async function runPendingMigrations(databaseUrl: string): Promise<void> {
     await ensureMigrationsTable(pool);
     await repairMissingSchema(pool);
     await ensurePushBaseline(pool);
+    await replayUnrecordedMigrations(pool);
     const db = drizzle(pool);
     await migrate(db, { migrationsFolder });
   } finally {
