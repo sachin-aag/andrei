@@ -68,6 +68,11 @@ describe("MJ customer pack content", () => {
     ).not.toContain("conclusion");
   });
 
+  it("enables Word import for investigation reports", () => {
+    expect(MJ_PACK.wordImportEnabled).toBe(true);
+    expect(DEMO_PACK.wordImportEnabled).toBe(false);
+  });
+
   it("disables design verification", () => {
     expect(MJ_PACK.enabledDocumentTypes).toEqual(["investigation_report"]);
     expect(isDocumentTypeEnabled("design_verification", MJ_PACK)).toBe(false);

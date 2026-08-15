@@ -2,20 +2,37 @@ import { NextResponse } from "next/server";
 import { and, desc, eq, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
-import { reportManagers, reports, reportSections } from "@/db/schema";
+import {
+  reportManagers,
+  reports,
+  reportSections,
+  type DocumentType,
+} from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
+import { getCustomerPack } from "@/lib/customers/packs";
+import {
+  docxBufferToImportedReportContent,
+  type ImportedReportContent,
+} from "@/lib/import/docx-to-sections";
+import { readDocxUpload } from "@/lib/import/docx-upload";
 import {
   DUPLICATE_DOCUMENT_NO_ERROR,
   isDocumentNoTaken,
   isPostgresUniqueViolation,
   normalizeDocumentNo,
 } from "@/lib/reports/document-no";
-import { seedBlankReportSections } from "@/lib/reports/seed-blank-report-sections";
-import { getDocumentType, getSeedableSections, isDocumentTypeEnabled } from "@/lib/document-types";
+import {
+  investigationMetadataFromImport,
+  sectionRowsForCreate,
+} from "@/lib/reports/create-report-from-docx";
+import { persistImportedWordComments } from "@/lib/reports/persist-imported-word-comments";
+import { persistReportSourceDocx } from "@/lib/reports/persist-source-docx";
+import { getDocumentType, isDocumentTypeEnabled } from "@/lib/document-types";
 import { auditActorFromUser, recordAuditEvent, recordSectionVersion } from "@/lib/audit";
 import {
   insertReportManagers,
   listReportManagerIdsByReportIds,
+  managerIdsFromFormData,
   normalizeAssignedManagerIds,
   primaryAssignedManagerId,
   validateAssignedManagerIds,
@@ -98,6 +115,26 @@ const createSchema = z.object({
   assignedManagerIds: z.array(z.string()).optional(),
 });
 
+function documentTypeFromForm(value: FormDataEntryValue | null): DocumentType {
+  if (value === "design_verification" || value === "investigation_report") {
+    return value;
+  }
+  return "investigation_report";
+}
+
+function wordImportDocumentTypeError(documentType: DocumentType): string | null {
+  switch (documentType) {
+    case "investigation_report":
+      return null;
+    case "design_verification":
+      return "Word import is only supported for investigation reports.";
+    default: {
+      const exhaustive: never = documentType;
+      return exhaustive;
+    }
+  }
+}
+
 export async function POST(req: Request) {
   let createdReportId: string | null = null;
   try {
@@ -110,12 +147,65 @@ export async function POST(req: Request) {
       );
     }
 
-    const parse = createSchema.safeParse(await req.json().catch(() => ({})));
-    if (!parse.success) {
-      return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
+    const contentType = req.headers.get("content-type") ?? "";
+
+    let documentType: DocumentType;
+    let rawDocumentNo: string | undefined;
+    let assignedManagerIds: string[];
+    let importedContent: ImportedReportContent | null = null;
+    let sourceUpload: { buffer: Buffer; filename: string } | null = null;
+
+    if (contentType.includes("multipart/form-data")) {
+      const form = await req.formData();
+      documentType = documentTypeFromForm(form.get("documentType"));
+      rawDocumentNo = String(
+        form.get("documentNo") ?? form.get("deviationNo") ?? ""
+      ).trim();
+      assignedManagerIds = managerIdsFromFormData(form);
+      const file = form.get("file");
+      const hasFile = file instanceof File && file.size > 0;
+
+      if (hasFile && file instanceof File) {
+        if (!getCustomerPack().wordImportEnabled) {
+          return NextResponse.json(
+            { error: "Word import is not enabled for this workspace." },
+            { status: 400 }
+          );
+        }
+        const typeError = wordImportDocumentTypeError(documentType);
+        if (typeError) {
+          return NextResponse.json({ error: typeError }, { status: 400 });
+        }
+        try {
+          const buf = await readDocxUpload(file);
+          importedContent = await docxBufferToImportedReportContent(buf);
+          sourceUpload = { buffer: buf, filename: file.name };
+        } catch (e) {
+          const message = e instanceof Error ? e.message : "";
+          if (message.includes("too large") || message.includes("Only Word")) {
+            return NextResponse.json({ error: message }, { status: 400 });
+          }
+          return NextResponse.json(
+            {
+              error:
+                "Could not read that Word file. Save as .docx and try again, or create without a file.",
+            },
+            { status: 400 }
+          );
+        }
+      }
+    } else {
+      const parse = createSchema.safeParse(await req.json().catch(() => ({})));
+      if (!parse.success) {
+        return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
+      }
+      documentType = parse.data.documentType;
+      rawDocumentNo = parse.data.documentNo ?? parse.data.deviationNo;
+      assignedManagerIds = parse.data.assignedManagerIds
+        ? normalizeAssignedManagerIds(parse.data.assignedManagerIds)
+        : normalizeAssignedManagerIds([parse.data.assignedManagerId ?? null]);
     }
 
-    const documentType = parse.data.documentType;
     if (!isDocumentTypeEnabled(documentType)) {
       return NextResponse.json(
         {
@@ -125,11 +215,6 @@ export async function POST(req: Request) {
       );
     }
     const def = getDocumentType(documentType);
-    const rawDocumentNo = parse.data.documentNo ?? parse.data.deviationNo;
-    const assignedManagerIds = parse.data.assignedManagerIds
-      ? normalizeAssignedManagerIds(parse.data.assignedManagerIds)
-      : normalizeAssignedManagerIds([parse.data.assignedManagerId ?? null]);
-
     const finalDocumentNo = normalizeDocumentNo(rawDocumentNo ?? "");
 
     if (!finalDocumentNo) {
@@ -152,16 +237,21 @@ export async function POST(req: Request) {
     }
 
     const assignedManagerId = primaryAssignedManagerId(assignedManagerIds);
-    const blankSections = seedBlankReportSections(documentType);
-    const seedable = getSeedableSections(documentType);
+    const metadata =
+      importedContent && documentType === "investigation_report"
+        ? investigationMetadataFromImport(importedContent)
+        : def.defaultMetadata;
     const [report] = await db
       .insert(reports)
       .values({
         documentType,
         documentNo: finalDocumentNo,
-        metadata: def.defaultMetadata,
+        metadata,
         authorId: user.id,
         assignedManagerId,
+        ...(importedContent?.header.date
+          ? { date: importedContent.header.date }
+          : {}),
       })
       .returning();
 
@@ -172,12 +262,31 @@ export async function POST(req: Request) {
     await insertReportManagers(report.id, assignedManagerIds);
 
     await db.insert(reportSections).values(
-      seedable.map((section) => ({
+      sectionRowsForCreate(documentType, importedContent).map((row) => ({
         reportId: report.id,
-        section: section.key,
-        content: (blankSections[section.key] ?? {}) as Record<string, unknown>,
+        section: row.section,
+        content: row.content,
       }))
     );
+
+    if (sourceUpload) {
+      try {
+        await persistImportedWordComments(report.id, importedContent);
+        await persistReportSourceDocx({
+          reportId: report.id,
+          buffer: sourceUpload.buffer,
+          filename: sourceUpload.filename,
+          uploadedById: user.id,
+        });
+      } catch {
+        await db.delete(reports).where(eq(reports.id, report.id));
+        createdReportId = null;
+        return NextResponse.json(
+          { error: "Could not save the uploaded file. Please try again." },
+          { status: 500 }
+        );
+      }
+    }
 
     const actor = auditActorFromUser(user);
     await recordAuditEvent({
