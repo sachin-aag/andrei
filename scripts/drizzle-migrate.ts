@@ -31,7 +31,7 @@ if (!url) {
         `Branch: ${branch}\n` +
         "andrei-v2: enable Neon preview branching on the Vercel ↔ Neon integration.\n" +
         "andrei-demo: add the demo Neon pooled URL to Preview in Settings → Environment Variables\n" +
-        "(required for cursor/* PR previews when ANDREI_VERCEL_DEPLOY_SCOPE=demo).\n" +
+        "(required for cursor/* and demo/* PR previews).\n" +
         "See docs/whitelabel-vercel-deploy.md § Deploy scope."
     );
   } else {
