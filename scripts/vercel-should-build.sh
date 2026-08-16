@@ -2,8 +2,9 @@
 # Vercel ignoreCommand: exit 0 = skip build, exit 1 = proceed with build.
 #
 # One GitHub repo, two Vercel projects (andrei-v2 = MJ, andrei-demo = customer demo).
-# Trunk is `main`. Set ANDREI_VERCEL_DEPLOY_SCOPE on each project so PR previews
-# never create Neon branches on MJ production.
+# Trunk is `main`. Both projects build `main` plus PR heads (`cursor/*`, `demo/*`).
+# feat/whitelabel is demo-only until that branch is deleted.
+# Keep Neon "Create a branch for each preview deployment" OFF on andrei-v2.
 # See docs/whitelabel-vercel-deploy.md (customer deploys).
 
 set -euo pipefail
@@ -15,25 +16,21 @@ fi
 ref="${VERCEL_GIT_COMMIT_REF:-}"
 scope="${ANDREI_VERCEL_DEPLOY_SCOPE:-}"
 
-# Demo builds the trunk plus preview branches. feat/whitelabel is listed so a
-# leftover push to the old fork cannot fall through to MJ Neon.
-is_demo_line_branch() {
+# Shared production + PR-into-main heads. Vercel ignoreCommand only sees the
+# git ref, not the PR base, so these prefixes are the allow-list.
+is_shared_line_branch() {
   case "$ref" in
     main) return 0 ;;
-    feat/whitelabel) return 0 ;;
     cursor/*) return 0 ;;
     demo/*) return 0 ;;
     *) return 1 ;;
   esac
 }
 
-# MJ production builds `main` only. Catch-all branches must not create preview
-# DBs on the Andrei V2 Neon project.
-is_mj_line_branch() {
-  case "$ref" in
-    main) return 0 ;;
-    *) return 1 ;;
-  esac
+# Leftover fork: build on demo so a push cannot fall through as "unknown".
+# MJ still skips it — do not create an Andrei V2 preview from this branch.
+is_legacy_whitelabel_branch() {
+  [ "$ref" = "feat/whitelabel" ]
 }
 
 case "$scope" in
@@ -47,7 +44,7 @@ case "$scope" in
         exit 0
       fi
     fi
-    if is_demo_line_branch; then
+    if is_shared_line_branch || is_legacy_whitelabel_branch; then
       echo "andrei-demo: building demo-line branch ${ref}"
       exit 1
     fi
@@ -55,11 +52,11 @@ case "$scope" in
     exit 0
     ;;
   mj)
-    if is_mj_line_branch; then
+    if is_shared_line_branch; then
       echo "andrei-v2: building MJ-line branch ${ref}"
       exit 1
     fi
-    echo "andrei-v2: skipping branch ${ref} (not main — no MJ Neon preview DB)"
+    echo "andrei-v2: skipping branch ${ref} (not main/cursor/*/demo/*)"
     exit 0
     ;;
   "")

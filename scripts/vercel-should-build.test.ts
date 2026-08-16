@@ -36,45 +36,39 @@ describe("vercel-should-build", () => {
     ).toBe(1);
   });
 
-  it("builds cursor/* on demo and skips it on mj", () => {
-    const demo = run({
-      VERCEL_GIT_COMMIT_REF: "cursor/mj-pack-plumbing-23ff",
-      ANDREI_VERCEL_DEPLOY_SCOPE: "demo",
-    });
-    expect(demo.status).toBe(1);
+  it("builds cursor/* and demo/* on both scopes", () => {
+    for (const ref of [
+      "cursor/mj-pack-plumbing-23ff",
+      "demo/improve_edits",
+    ] as const) {
+      expect(
+        run({
+          VERCEL_GIT_COMMIT_REF: ref,
+          ANDREI_VERCEL_DEPLOY_SCOPE: "demo",
+        }).status
+      ).toBe(1);
+      const mj = run({
+        VERCEL_GIT_COMMIT_REF: ref,
+        ANDREI_VERCEL_DEPLOY_SCOPE: "mj",
+      });
+      expect(mj.status).toBe(1);
+      expect(mj.output).toMatch(/building MJ-line branch/);
+    }
+  });
+
+  it("builds feat/whitelabel on demo only until that branch is deleted", () => {
+    expect(
+      run({
+        VERCEL_GIT_COMMIT_REF: "feat/whitelabel",
+        ANDREI_VERCEL_DEPLOY_SCOPE: "demo",
+      }).status
+    ).toBe(1);
     const mj = run({
-      VERCEL_GIT_COMMIT_REF: "cursor/mj-pack-plumbing-23ff",
+      VERCEL_GIT_COMMIT_REF: "feat/whitelabel",
       ANDREI_VERCEL_DEPLOY_SCOPE: "mj",
     });
     expect(mj.status).toBe(0);
-    expect(mj.output).toMatch(/no MJ Neon preview DB/);
-  });
-
-  it("builds feat/whitelabel and demo/* on demo only", () => {
-    expect(
-      run({
-        VERCEL_GIT_COMMIT_REF: "feat/whitelabel",
-        ANDREI_VERCEL_DEPLOY_SCOPE: "demo",
-      }).status
-    ).toBe(1);
-    expect(
-      run({
-        VERCEL_GIT_COMMIT_REF: "feat/whitelabel",
-        ANDREI_VERCEL_DEPLOY_SCOPE: "mj",
-      }).status
-    ).toBe(0);
-    expect(
-      run({
-        VERCEL_GIT_COMMIT_REF: "demo/mj-pack-plumbing",
-        ANDREI_VERCEL_DEPLOY_SCOPE: "demo",
-      }).status
-    ).toBe(1);
-    expect(
-      run({
-        VERCEL_GIT_COMMIT_REF: "demo/mj-pack-plumbing",
-        ANDREI_VERCEL_DEPLOY_SCOPE: "mj",
-      }).status
-    ).toBe(0);
+    expect(mj.output).toMatch(/not main\/cursor\/\*\/demo\/\*/);
   });
 
   it("does not build random branches on mj or demo", () => {

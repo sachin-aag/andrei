@@ -13,7 +13,7 @@ One product engine on **`main`**. Customer differences live in `ANDREI_CUSTOMER`
 
 Release valve: **the same git SHA on both Production deploys.** After cutover, promote one commit to `andrei-v2` and `andrei-demo`.
 
-`feat/whitelabel` is retired as a production branch. Leave it in `scripts/vercel-should-build.sh` as a demo-line name so a leftover push cannot create an MJ Neon preview database.
+`feat/whitelabel` is retired as a production branch. Demo still builds it so a leftover push cannot fall through as unknown; MJ skips it. Delete the branch when #116 and #120 are on `main`.
 
 ## Pack vs flags vs pins
 
@@ -41,9 +41,13 @@ Both Vercel projects watch the same GitHub repo. Set on **each** project → Set
 | Branch | andrei-demo (`scope=demo`) | andrei-v2 (`scope=mj`) |
 |--------|----------------------------|-------------------------|
 | `main` | **build** (production) | **build** (production) |
-| `cursor/*`, `demo/*` | **build** (preview) | skip — no MJ Neon preview DB |
-| `feat/whitelabel` | **build** (legacy) | skip |
+| `cursor/*`, `demo/*` | **build** (preview) | **build** (preview) |
+| `feat/whitelabel` | **build** (legacy; delete when unused) | skip |
 | anything else | skip | skip |
+
+Vercel’s ignore script sees the **head ref**, not the PR base. `cursor/*` and `demo/*` are the allow-list for PRs into `main`.
+
+**andrei-v2 Neon:** keep **Create a branch for each preview deployment** off. MJ previews must not spawn Andrei V2 preview databases. If Preview `DATABASE_URL` is the Production row, those previews share MJ production data — use a dedicated Preview URL if you need isolation.
 
 **Dashboard (one-time after this lands):** [andrei-demo → Environments → Production → Branch Tracking](https://vercel.com/sachin-aags-projects/andrei-demo/settings/environments) → **`main`** (today it may still be `feat/whitelabel`).
 
@@ -156,7 +160,7 @@ L1–L3 are already on `feat/whitelabel` (#123–#125). This change is the ignor
 
    - Demo: DV + conclusion, Andrei chrome, no Word-body field on create
    - MJ: no DV, no conclusion tab, MJ login/shell, Word import on create, evidence PDFs from the report Documents tab, export opens the MJ template
-   - `cursor/*` PR deploys only `andrei-demo`
+   - `cursor/*` and `demo/*` PR deploys build **both** `andrei-demo` and `andrei-v2`
 
 ## Neon `demo` project
 
@@ -182,8 +186,8 @@ Password for seeded users: **`DemoPass123!`**. See previous seed table in git hi
 
 | Symptom | Fix |
 |---------|-----|
-| PR builds on **both** Vercel projects | `ANDREI_VERCEL_DEPLOY_SCOPE` missing on Preview |
-| Demo PR creates a Neon branch on MJ | `andrei-v2` built the PR. `scope=mj` must skip everything except `main` |
+| PR builds on **neither** Vercel project | `ANDREI_VERCEL_DEPLOY_SCOPE` missing on Preview (fail-safe skip) |
+| Demo PR creates a Neon branch on MJ | Neon preview branching is on for **andrei-v2**. Turn it off; do not hand-edit the Neon-logo `DATABASE_URL` rows |
 | MJ looks like Andrei | `NEXT_PUBLIC_ANDREI_CUSTOMER` unset on `andrei-v2` (client defaults to demo) |
 | MJ export missing conclusion | Expected — MJ template has no `{@conclusionNarrativeXml}`; pack hides the section |
 | Ingest/chat 500 on MJ | Vertex WIF + GCS missing; do not set local attachment flags |
