@@ -33,6 +33,9 @@ import {
 import { evaluatableSectionKeys } from "@/lib/ai/criteria-view";
 import { getWorkspaceSections } from "@/lib/document-types";
 import { captureEvent } from "@/lib/analytics/events";
+import { cn } from "@/lib/utils";
+import { useWorkspaceLayout } from "@/hooks/use-workspace-layout";
+import { WorkspaceResizeHandle } from "./workspace-resize-handle";
 import {
   ElectronicSignatureDialog,
   type SignatureMeaningUi,
@@ -199,6 +202,23 @@ export function ReportWorkspace({
   const [detailsFormKey, setDetailsFormKey] = useState(0);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [documentsCollapsed, setDocumentsCollapsed] = useState(false);
+  const {
+    containerRef,
+    isResizing,
+    chatWidth,
+    docsWidth,
+    chatBounds,
+    docsBounds,
+    setChatWidth,
+    setDocsWidth,
+    resetChatWidth,
+    resetDocsWidth,
+    beginResize,
+    endResize,
+  } = useWorkspaceLayout({
+    chatCollapsed: sidebarCollapsed,
+    docsCollapsed: documentsCollapsed,
+  });
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("assistant");
   const [sectionMinHeights, setSectionMinHeights] = useState<
     Partial<Record<SectionType, number>>
@@ -471,17 +491,45 @@ export function ReportWorkspace({
 
       <ReportEditorToolbar />
 
-      <div className="relative flex min-h-0 flex-1 overflow-hidden">
-        <DocumentsPanel
-          collapsed={documentsCollapsed}
-          onToggleCollapse={() => setDocumentsCollapsed((c) => !c)}
-        />
+      <div
+        ref={containerRef}
+        className={cn(
+          "relative flex min-h-0 flex-1 overflow-hidden",
+          isResizing && "select-none"
+        )}
+      >
+        <div
+          className={cn(
+            "relative z-10 h-full shrink-0",
+            !isResizing && "transition-[width] duration-200 ease-in-out"
+          )}
+          style={{ width: docsWidth }}
+        >
+          <DocumentsPanel
+            collapsed={documentsCollapsed}
+            onToggleCollapse={() => setDocumentsCollapsed((c) => !c)}
+          />
+          {documentsCollapsed ? null : (
+            <WorkspaceResizeHandle
+              label="Resize documents panel"
+              controlsId="report-documents-panel"
+              edge="end"
+              value={docsWidth}
+              min={docsBounds.min}
+              max={docsBounds.max}
+              onChange={setDocsWidth}
+              onDragStart={() => beginResize("docs")}
+              onDragEnd={endResize}
+              onReset={resetDocsWidth}
+            />
+          )}
+        </div>
 
         <main
           ref={mainRef}
-          className="min-h-0 min-w-0 flex-1 overflow-auto bg-[var(--background)]"
+          className="@container min-h-0 min-w-0 flex-1 overflow-auto bg-[var(--background)]"
         >
-          <div className="mx-auto grid grid-cols-1 gap-8 px-6 py-8 pb-24 lg:max-w-[1180px] lg:grid-cols-[minmax(560px,720px)_360px]">
+          <div className="mx-auto grid w-full min-w-0 grid-cols-1 gap-8 px-6 py-8 pb-24 max-w-[1180px] @[800px]:grid-cols-[minmax(0,1fr)_minmax(200px,360px)]">
             <div className="space-y-10 min-w-0">
               <ReportHeader />
               {activeAttachmentId ? (
@@ -508,7 +556,7 @@ export function ReportWorkspace({
               )}
             </div>
             <aside
-              className="hidden lg:block relative"
+              className="relative hidden @[800px]:block"
               aria-label="Review margin"
             >
               <MarginGutter
@@ -518,17 +566,38 @@ export function ReportWorkspace({
           </div>
         </main>
 
-        <ReportSidebar
-          collapsed={sidebarCollapsed}
-          overlaysWorkspace={!sidebarCollapsed}
-          onToggleCollapse={toggleSidebarCollapse}
-          activeTab={sidebarTab}
-          onTabChange={setSidebarTab}
-          onJumpToSection={jumpToSection}
-          onJumpToPlaceholder={handleJumpToPlaceholder}
-          onJumpToComment={jumpToComment}
-          initialCriteriaSection={criteriaFocusSection}
-        />
+        <div
+          className={cn(
+            "relative z-10 h-full shrink-0",
+            !isResizing && "transition-[width] duration-200 ease-in-out"
+          )}
+          style={{ width: chatWidth }}
+        >
+          <ReportSidebar
+            collapsed={sidebarCollapsed}
+            onToggleCollapse={toggleSidebarCollapse}
+            activeTab={sidebarTab}
+            onTabChange={setSidebarTab}
+            onJumpToSection={jumpToSection}
+            onJumpToPlaceholder={handleJumpToPlaceholder}
+            onJumpToComment={jumpToComment}
+            initialCriteriaSection={criteriaFocusSection}
+          />
+          {sidebarCollapsed ? null : (
+            <WorkspaceResizeHandle
+              label="Resize assistant panel"
+              controlsId="report-chat-sidebar"
+              edge="start"
+              value={chatWidth}
+              min={chatBounds.min}
+              max={chatBounds.max}
+              onChange={setChatWidth}
+              onDragStart={() => beginResize("chat")}
+              onDragEnd={endResize}
+              onReset={resetChatWidth}
+            />
+          )}
+        </div>
       </div>
     </div>
   );

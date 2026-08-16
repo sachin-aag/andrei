@@ -58,7 +58,7 @@ export async function openReportSidebarTab(
     .click();
 }
 
-/** Expanded report sidebar overlays the review margin and blocks gutter clicks. */
+/** Collapse the assistant so the document canvas (and review margin) have more room. */
 export async function collapseReportSidebar(page: Page): Promise<void> {
   const sidebar = reportSidebar(page);
   const collapse = sidebar.getByRole("button", { name: /collapse sidebar/i });
@@ -137,7 +137,7 @@ export async function openMarginCommentReply(
     .filter({ hasText: commentText })
     .first();
   await card.scrollIntoViewIfNeeded();
-  // Keyboard activation avoids the expanded report sidebar overlay intercepting clicks.
+  // Keyboard activation is more reliable than clicking packed gutter cards.
   await card.focus();
   await page.keyboard.press("Enter");
   await expect(margin.getByPlaceholder(/^reply/i)).toBeVisible({ timeout: 15_000 });

@@ -102,6 +102,43 @@ test.describe("report editor", () => {
     await expect(sidebar.getByRole("button", { name: /collapse sidebar/i })).toBeVisible();
   });
 
+  test("resizes the assistant and documents panels from the keyboard", async ({
+    page,
+  }) => {
+    const chatHandle = page.getByRole("separator", {
+      name: /resize assistant panel/i,
+    });
+    const docsHandle = page.getByRole("separator", {
+      name: /resize documents panel/i,
+    });
+    await expect(chatHandle).toBeVisible();
+    await expect(docsHandle).toBeVisible();
+
+    const sidebar = reportSidebar(page);
+    const documents = page.getByRole("complementary", { name: "Documents" });
+    const chatBefore = await sidebar.evaluate((el) => el.getBoundingClientRect().width);
+    const docsBefore = await documents.evaluate(
+      (el) => el.getBoundingClientRect().width
+    );
+
+    await chatHandle.focus();
+    await page.keyboard.press("ArrowLeft");
+    await expect
+      .poll(async () => sidebar.evaluate((el) => el.getBoundingClientRect().width))
+      .toBeGreaterThan(chatBefore);
+
+    await docsHandle.focus();
+    await page.keyboard.press("ArrowRight");
+    await expect
+      .poll(async () =>
+        documents.evaluate((el) => el.getBoundingClientRect().width)
+      )
+      .toBeGreaterThan(docsBefore);
+
+    await sidebar.getByRole("button", { name: /collapse sidebar/i }).click();
+    await expect(chatHandle).toHaveCount(0);
+  });
+
   test("approved report is read-only for engineer", async ({ page }) => {
     const submitRes = await page.request.post(`/api/reports/${reportId}/submit`, {
       data: signedWorkflowPayload(),
