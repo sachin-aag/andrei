@@ -13,7 +13,7 @@ One product engine on **`main`**. Customer differences live in `ANDREI_CUSTOMER`
 
 Release valve: **the same git SHA on both Production deploys.** After cutover, promote one commit to `andrei-v2` and `andrei-demo`.
 
-`feat/whitelabel` is retired as a production branch. Demo still builds it so a leftover push cannot fall through as unknown; MJ skips it. Delete the branch when #116 and #120 are on `main`.
+Both Production deploys track **`main`**. Pack env chooses MJ vs demo. There is no second product branch.
 
 ## Pack vs flags vs pins
 
@@ -27,31 +27,24 @@ Release valve: **the same git SHA on both Production deploys.** After cutover, p
 
 Set **both** `ANDREI_CUSTOMER` and `NEXT_PUBLIC_ANDREI_CUSTOMER` to the same value. They must agree with `ANDREI_VERCEL_DEPLOY_SCOPE`. Client chrome (login, create dialog, list filters) reads the public var.
 
-## Deploy scope (branch routing)
+## Deploy scope
 
-Both Vercel projects watch the same GitHub repo. Set on **each** project → Settings → Environment Variables → Production, Preview, and Development:
+Both Vercel projects watch the same GitHub repo. `scripts/vercel-should-build.sh` is the same allow-list on both:
+
+| Branch | Both projects |
+|--------|----------------|
+| `main` | **build** (production) |
+| `cursor/*`, `demo/*` | **build** (preview) |
+| anything else | skip |
+
+Set on **each** project → Settings → Environment Variables → Production, Preview, and Development (pack identity, not branch routing):
 
 | Vercel project | Variable | Value |
 |----------------|----------|--------|
 | **andrei-demo** | `ANDREI_VERCEL_DEPLOY_SCOPE` | `demo` |
 | **andrei-v2** | `ANDREI_VERCEL_DEPLOY_SCOPE` | `mj` |
 
-`scripts/vercel-should-build.sh` (`vercel.json` `ignoreCommand`):
-
-| Branch | andrei-demo (`scope=demo`) | andrei-v2 (`scope=mj`) |
-|--------|----------------------------|-------------------------|
-| `main` | **build** (production) | **build** (production) |
-| `cursor/*`, `demo/*` | **build** (preview) | **build** (preview) |
-| `feat/whitelabel` | **build** (legacy; delete when unused) | skip |
-| anything else | skip | skip |
-
-Vercel’s ignore script sees the **head ref**, not the PR base. `cursor/*` and `demo/*` are the allow-list for PRs into `main`.
-
-**andrei-v2 Neon:** keep **Create a branch for each preview deployment** off. MJ previews must not spawn Andrei V2 preview databases. If Preview `DATABASE_URL` is the Production row, those previews share MJ production data — use a dedicated Preview URL if you need isolation.
-
-**Dashboard (one-time after this lands):** [andrei-demo → Environments → Production → Branch Tracking](https://vercel.com/sachin-aags-projects/andrei-demo/settings/environments) → **`main`** (today it may still be `feat/whitelabel`).
-
-`andrei-v2` already tracks `main`.
+**andrei-v2 Neon:** keep **Create a branch for each preview deployment** off. If Preview `DATABASE_URL` is the Production row, those previews share MJ production data — use a dedicated Preview URL if you need isolation.
 
 Preview `DATABASE_URL` on `andrei-demo` stays the **demo** Neon pooled URL (same as Production). Do not enable per-PR Neon branching on `andrei-v2`.
 
@@ -186,7 +179,7 @@ Password for seeded users: **`DemoPass123!`**. See previous seed table in git hi
 
 | Symptom | Fix |
 |---------|-----|
-| PR builds on **neither** Vercel project | `ANDREI_VERCEL_DEPLOY_SCOPE` missing on Preview (fail-safe skip) |
+| PR builds on **neither** Vercel project | Head ref is not `main`, `cursor/*`, or `demo/*` |
 | Demo PR creates a Neon branch on MJ | Neon preview branching is on for **andrei-v2**. Turn it off; do not hand-edit the Neon-logo `DATABASE_URL` rows |
 | MJ looks like Andrei | `NEXT_PUBLIC_ANDREI_CUSTOMER` unset on `andrei-v2` (client defaults to demo) |
 | MJ export missing conclusion | Expected — MJ template has no `{@conclusionNarrativeXml}`; pack hides the section |
