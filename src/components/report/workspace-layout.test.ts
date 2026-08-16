@@ -6,6 +6,7 @@ import {
   COLLAPSED_RAIL_PX,
   DOCS_DEFAULT_PX,
   docsWidthBounds,
+  isReviewGutterVisible,
   mainMinWidth,
   parseStoredWorkspaceLayout,
   serializeStoredWorkspaceLayout,
@@ -47,6 +48,13 @@ describe("docsWidthBounds", () => {
   it("allows a wider attachments bar on a large display", () => {
     expect(docsWidthBounds(1920).max).toBe(480);
     expect(docsWidthBounds(1920).min).toBe(230);
+  });
+});
+
+describe("isReviewGutterVisible", () => {
+  it("shows the review margin only while the assistant is collapsed", () => {
+    expect(isReviewGutterVisible(true)).toBe(true);
+    expect(isReviewGutterVisible(false)).toBe(false);
   });
 });
 

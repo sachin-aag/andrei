@@ -173,6 +173,7 @@ Specs run against Chromium, Firefox, and WebKit unless you pass `--project=chrom
 | typing triggers auto-save status | Saving… → Saved |
 | sidebar tabs switch panels | Placeholders, Criteria (stub eval), Comments |
 | collapses and expands sidebar | Collapse / expand controls |
+| hides the review margin while the assistant is expanded | Gutter XOR expanded Assistant (1920px) |
 | resizes the assistant and documents panels from the keyboard | Drag handles; ArrowLeft/Right; handle hidden when collapsed |
 | approved report is read-only for engineer | No submit; `contenteditable=false` |
 

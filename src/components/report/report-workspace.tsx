@@ -37,6 +37,10 @@ import { cn } from "@/lib/utils";
 import { useWorkspaceLayout } from "@/hooks/use-workspace-layout";
 import { WorkspaceResizeHandle } from "./workspace-resize-handle";
 import {
+  isReviewGutterVisible,
+  WORKSPACE_PANEL_WIDTH_TRANSITION_MS,
+} from "./workspace-layout";
+import {
   ElectronicSignatureDialog,
   type SignatureMeaningUi,
 } from "./electronic-signature-dialog";
@@ -225,7 +229,11 @@ export function ReportWorkspace({
   >({});
   const router = useRouter();
   const mainRef = useRef<HTMLElement>(null);
+  const gutterScrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
   const documentType = report.documentType;
+  const showReviewGutter = isReviewGutterVisible(sidebarCollapsed);
   const handleSectionOverflow = useCallback(
     (overflows: Record<SectionType, number>) => {
       setSectionMinHeights((prev) => {
@@ -366,11 +374,25 @@ export function ReportWorkspace({
   }, []);
 
   useEffect(() => {
+    if (showReviewGutter) return;
+    setSectionMinHeights({});
+  }, [showReviewGutter]);
+
+  useEffect(() => {
+    return () => {
+      if (gutterScrollTimeoutRef.current != null) {
+        clearTimeout(gutterScrollTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     if (!suggestionsFocusSection) return;
     const frame = requestAnimationFrame(() => {
       setCriteriaFocusSection(suggestionsFocusSection);
-      setSidebarCollapsed(false);
-      setSidebarTab("placeholders");
+      // Suggestions live in the review margin. Keep the assistant collapsed
+      // so the gutter is visible — do not auto-open the right panel.
+      setSidebarCollapsed(true);
       jumpToSection(suggestionsFocusSection);
       clearSuggestionsFocusSection();
     });
@@ -390,25 +412,39 @@ export function ReportWorkspace({
       // is active (it will skip its own scroll because we pass skipAutoScroll).
       requestCommentFocus(id);
 
-      // Wait for the gutter to re-render with updated positions, then do a
-      // single smooth scroll to the gutter card.  Because the gutter card is
-      // positioned at the same vertical offset as the document field, this
-      // also brings the corresponding section text into view.
-      requestAnimationFrame(() =>
-        requestAnimationFrame(() => {
-          const gutterId = gutterAnchorIdForComment(root);
-          const scrolled = scrollToGutterAnchor(gutterId);
-          if (!scrolled) {
-            // Gutter card not found — fall back to the field anchor or section.
-            const scrolledField = scrollToCommentFieldAnchor(root);
-            if (!scrolledField && root.section) {
-              jumpToSection(root.section);
+      const scrollToCard = () => {
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            const gutterId = gutterAnchorIdForComment(root);
+            const scrolled = scrollToGutterAnchor(gutterId);
+            if (!scrolled) {
+              // Gutter card not found — fall back to the field anchor or section.
+              const scrolledField = scrollToCommentFieldAnchor(root);
+              if (!scrolledField && root.section) {
+                jumpToSection(root.section);
+              }
             }
-          }
-        })
-      );
+          })
+        );
+      };
+
+      const gutterAlreadyVisible = isReviewGutterVisible(sidebarCollapsed);
+      setSidebarCollapsed(true);
+      if (gutterScrollTimeoutRef.current != null) {
+        clearTimeout(gutterScrollTimeoutRef.current);
+        gutterScrollTimeoutRef.current = null;
+      }
+      if (gutterAlreadyVisible) {
+        scrollToCard();
+        return;
+      }
+      // Wait for the assistant to collapse and the gutter to mount/measure.
+      gutterScrollTimeoutRef.current = setTimeout(() => {
+        gutterScrollTimeoutRef.current = null;
+        scrollToCard();
+      }, WORKSPACE_PANEL_WIDTH_TRANSITION_MS + 50);
     },
-    [comments, jumpToSection, requestCommentFocus]
+    [comments, jumpToSection, requestCommentFocus, sidebarCollapsed]
   );
 
   const handleJumpToPlaceholder = (p: Placeholder) => {
@@ -529,7 +565,13 @@ export function ReportWorkspace({
           ref={mainRef}
           className="@container min-h-0 min-w-0 flex-1 overflow-auto bg-[var(--background)]"
         >
-          <div className="mx-auto grid w-full min-w-0 grid-cols-1 gap-8 px-6 py-8 pb-24 max-w-[1180px] @[800px]:grid-cols-[minmax(0,1fr)_minmax(200px,360px)]">
+          <div
+            className={cn(
+              "mx-auto grid w-full min-w-0 grid-cols-1 gap-8 px-6 py-8 pb-24 max-w-[1180px]",
+              showReviewGutter &&
+                "@[800px]:grid-cols-[minmax(0,1fr)_minmax(200px,360px)]"
+            )}
+          >
             <div className="space-y-10 min-w-0">
               <ReportHeader />
               {activeAttachmentId ? (
@@ -555,14 +597,16 @@ export function ReportWorkspace({
                 })
               )}
             </div>
-            <aside
-              className="relative hidden @[800px]:block"
-              aria-label="Review margin"
-            >
-              <MarginGutter
-                onSectionOverflow={handleSectionOverflow}
-              />
-            </aside>
+            {showReviewGutter ? (
+              <aside
+                className="relative hidden min-w-0 @[800px]:block"
+                aria-label="Review margin"
+              >
+                <MarginGutter
+                  onSectionOverflow={handleSectionOverflow}
+                />
+              </aside>
+            ) : null}
           </div>
         </main>
 

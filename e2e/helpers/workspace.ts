@@ -58,7 +58,7 @@ export async function openReportSidebarTab(
     .click();
 }
 
-/** Collapse the assistant so the document canvas (and review margin) have more room. */
+/** Collapse the assistant so the review margin (suggestions/comments) can show. */
 export async function collapseReportSidebar(page: Page): Promise<void> {
   const sidebar = reportSidebar(page);
   const collapse = sidebar.getByRole("button", { name: /collapse sidebar/i });

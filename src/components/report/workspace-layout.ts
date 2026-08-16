@@ -35,6 +35,17 @@ export const WORKSPACE_LAYOUT_STORAGE_KEY = "workspaceLayout:v1";
 export const WORKSPACE_RESIZE_STEP_PX = 16;
 export const WORKSPACE_RESIZE_LARGE_STEP_PX = 48;
 
+/** Matches `duration-200` on the documents/assistant column wrappers. */
+export const WORKSPACE_PANEL_WIDTH_TRANSITION_MS = 200;
+
+/**
+ * Inline suggestions and comments live in the review margin. Show that gutter
+ * only while the assistant is collapsed so the two surfaces never compete.
+ */
+export function isReviewGutterVisible(chatCollapsed: boolean): boolean {
+  return chatCollapsed;
+}
+
 export type PanelWidthBounds = {
   min: number;
   max: number;

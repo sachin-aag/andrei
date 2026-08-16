@@ -12,9 +12,12 @@ import {
   seedDefineForEvaluation,
 } from "./helpers/reports";
 import {
+  collapseReportSidebar,
   defineEditor,
   defineSection,
+  expandReportSidebar,
   reportSidebar,
+  reviewMargin,
 } from "./helpers/workspace";
 import {
   signedWorkflowPayload,
@@ -100,6 +103,23 @@ test.describe("report editor", () => {
     await expect(sidebar.getByRole("button", { name: /expand sidebar/i })).toBeVisible();
     await sidebar.getByRole("button", { name: /expand sidebar/i }).click();
     await expect(sidebar.getByRole("button", { name: /collapse sidebar/i })).toBeVisible();
+  });
+
+  test("hides the review margin while the assistant is expanded", async ({
+    page,
+  }) => {
+    // Wide enough that the main canvas would otherwise show both surfaces.
+    await page.setViewportSize({ width: 1920, height: 900 });
+    await expect(
+      reportSidebar(page).getByRole("button", { name: /collapse sidebar/i })
+    ).toBeVisible();
+    await expect(reviewMargin(page)).toHaveCount(0);
+
+    await collapseReportSidebar(page);
+    await expect(reviewMargin(page)).toBeVisible();
+
+    await expandReportSidebar(page);
+    await expect(reviewMargin(page)).toHaveCount(0);
   });
 
   test("resizes the assistant and documents panels from the keyboard", async ({
