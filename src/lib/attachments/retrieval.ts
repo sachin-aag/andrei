@@ -3,7 +3,12 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createVertex } from "@ai-sdk/google-vertex";
 import { and, desc, eq, inArray, isNotNull, isNull, notInArray, sql } from "drizzle-orm";
 import { db } from "@/db";
-import { documentChunks, documentPages, reportAttachments } from "@/db/schema";
+import {
+  attachmentIngestRuns,
+  documentChunks,
+  documentPages,
+  reportAttachments,
+} from "@/db/schema";
 import { createWifAuthClient, getWifConfig } from "@/lib/gcp/wif-token";
 
 type GoogleAuthOptions = NonNullable<Parameters<typeof createVertex>[0]>["googleAuthOptions"];
@@ -16,6 +21,9 @@ export const DEFAULT_SNIPPET_CHARS: number = 900;
 const DEFAULT_CANDIDATE_LIMIT = 40;
 const RRF_K = 60;
 const PAGE_TEXT_LIMIT = 12_000;
+const OUTLINE_PAGE_CAP = 300;
+const OUTLINE_CONTEXT_CHARS = 400;
+const KEYWORD_TOKEN_RE = /[A-Za-z0-9]/;
 
 export type DocumentSearchResult = {
   attachmentId: string;
@@ -47,6 +55,23 @@ export type ReadyDocumentIndexItem = {
   description: string | null;
   pageCount: number | null;
   ingestRunId: string;
+  /** LLM summary from the active ingest run; untrusted. */
+  documentSummary: string | null;
+};
+
+export type DocumentOutlinePage = {
+  pageNumber: number;
+  printedPageLabel: string | null;
+  pageContext: string | null;
+};
+
+export type DocumentOutline = {
+  attachmentId: string;
+  filename: string;
+  description: string | null;
+  pageCount: number | null;
+  documentSummary: string | null;
+  pages: DocumentOutlinePage[];
 };
 
 export type DocumentPageRead = {
@@ -158,6 +183,19 @@ export function truncateSnippet(text: string, maxChars = DEFAULT_SNIPPET_CHARS):
   const cleaned = text.replace(/\s+/g, " ").trim();
   if (cleaned.length <= maxChars) return cleaned;
   return `${cleaned.slice(0, maxChars).trimEnd()}...`;
+}
+
+/**
+ * Tokenize a retrieval query for `websearch_to_tsquery` with OR semantics.
+ * Returns null when nothing searchable remains (skip the keyword arm).
+ */
+export function buildKeywordTsQuery(trimmed: string): string | null {
+  const tokens = trimmed
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length > 0 && KEYWORD_TOKEN_RE.test(token));
+  if (tokens.length === 0) return null;
+  return tokens.join(" or ");
 }
 
 export function reciprocalRankFusion<T extends { chunkId: string }>(
@@ -337,22 +375,28 @@ async function fusedChunkSearch({
     .orderBy(sql`${documentChunks.embedding} <=> ${queryVector}::vector`)
     .limit(candidateLimit);
 
-  const keywordRank = sql<number>`ts_rank_cd(to_tsvector('simple', ${documentChunks.contextualText}), websearch_to_tsquery('simple', ${trimmed}))`;
-  const keywordRows = await db
-    .select(candidateSelect())
-    .from(documentChunks)
-    .innerJoin(
-      reportAttachments,
-      eq(documentChunks.attachmentId, reportAttachments.id)
-    )
-    .where(
-      and(
-        activeScope,
-        sql`to_tsvector('simple', ${documentChunks.contextualText}) @@ websearch_to_tsquery('simple', ${trimmed})`
-      )
-    )
-    .orderBy(desc(keywordRank))
-    .limit(candidateLimit);
+  const keywordQuery = buildKeywordTsQuery(trimmed);
+  const keywordRows = keywordQuery
+    ? await db
+        .select(candidateSelect())
+        .from(documentChunks)
+        .innerJoin(
+          reportAttachments,
+          eq(documentChunks.attachmentId, reportAttachments.id)
+        )
+        .where(
+          and(
+            activeScope,
+            sql`to_tsvector('english', ${documentChunks.contextualText}) @@ websearch_to_tsquery('english', ${keywordQuery})`
+          )
+        )
+        .orderBy(
+          desc(
+            sql<number>`ts_rank_cd(to_tsvector('english', ${documentChunks.contextualText}), websearch_to_tsquery('english', ${keywordQuery}))`
+          )
+        )
+        .limit(candidateLimit)
+    : [];
 
   return reciprocalRankFusion(
     [
@@ -436,9 +480,14 @@ export async function listReadyDocumentsForReport(
       filename: reportAttachments.filename,
       description: reportAttachments.description,
       pageCount: reportAttachments.pageCount,
-      ingestRunId: reportAttachments.activeIngestRunId,
+      ingestRunId: attachmentIngestRuns.id,
+      documentSummary: attachmentIngestRuns.documentSummary,
     })
     .from(reportAttachments)
+    .innerJoin(
+      attachmentIngestRuns,
+      eq(reportAttachments.activeIngestRunId, attachmentIngestRuns.id)
+    )
     .where(
       and(
         eq(reportAttachments.reportId, reportId),
@@ -448,19 +497,14 @@ export async function listReadyDocumentsForReport(
     )
     .orderBy(reportAttachments.uploadedAt);
 
-  return rows.flatMap((row) =>
-    row.ingestRunId
-      ? [
-          {
-            attachmentId: row.attachmentId,
-            filename: row.filename,
-            description: row.description ?? null,
-            pageCount: row.pageCount,
-            ingestRunId: row.ingestRunId,
-          },
-        ]
-      : []
-  );
+  return rows.map((row) => ({
+    attachmentId: row.attachmentId,
+    filename: row.filename,
+    description: row.description ?? null,
+    pageCount: row.pageCount,
+    ingestRunId: row.ingestRunId,
+    documentSummary: row.documentSummary ?? null,
+  }));
 }
 
 export async function verifyCitation(
@@ -542,5 +586,74 @@ export async function readDocumentPage({
     description: row.description ?? null,
     transcript: truncateSnippet(row.transcript, PAGE_TEXT_LIMIT),
     visualInterpretation: truncateSnippet(row.visualInterpretation, PAGE_TEXT_LIMIT),
+  };
+}
+
+export async function readDocumentOutline({
+  reportId,
+  attachmentId,
+}: {
+  reportId: string;
+  attachmentId: string;
+}): Promise<DocumentOutline | null> {
+  const trimmedId = attachmentId.trim();
+  if (!trimmedId) return null;
+
+  const [header] = await db
+    .select({
+      attachmentId: reportAttachments.id,
+      filename: reportAttachments.filename,
+      description: reportAttachments.description,
+      pageCount: reportAttachments.pageCount,
+      documentSummary: attachmentIngestRuns.documentSummary,
+      ingestRunId: attachmentIngestRuns.id,
+    })
+    .from(reportAttachments)
+    .innerJoin(
+      attachmentIngestRuns,
+      eq(reportAttachments.activeIngestRunId, attachmentIngestRuns.id)
+    )
+    .where(
+      and(
+        eq(reportAttachments.reportId, reportId),
+        eq(reportAttachments.id, trimmedId),
+        isNull(reportAttachments.deletedAt),
+        isNotNull(reportAttachments.activeIngestRunId)
+      )
+    )
+    .limit(1);
+
+  if (!header) return null;
+
+  const pages = await db
+    .select({
+      pageNumber: documentPages.pageNumber,
+      printedPageLabel: documentPages.printedPageLabel,
+      pageContext: documentPages.pageContext,
+    })
+    .from(documentPages)
+    .where(
+      and(
+        eq(documentPages.reportId, reportId),
+        eq(documentPages.attachmentId, trimmedId),
+        eq(documentPages.ingestRunId, header.ingestRunId)
+      )
+    )
+    .orderBy(documentPages.pageNumber)
+    .limit(OUTLINE_PAGE_CAP);
+
+  return {
+    attachmentId: header.attachmentId,
+    filename: header.filename,
+    description: header.description ?? null,
+    pageCount: header.pageCount,
+    documentSummary: header.documentSummary ?? null,
+    pages: pages.map((page) => ({
+      pageNumber: page.pageNumber,
+      printedPageLabel: page.printedPageLabel,
+      pageContext: page.pageContext
+        ? truncateSnippet(page.pageContext, OUTLINE_CONTEXT_CHARS)
+        : null,
+    })),
   };
 }

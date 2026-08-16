@@ -10,6 +10,10 @@ import {
 } from "@/components/ui/card";
 import type { AttachmentProcessingStatus } from "@/db/schema";
 import { kindFromMime } from "@/lib/attachments/file-types";
+import {
+  attachmentDownloadHref,
+  attachmentPreviewSrc,
+} from "@/lib/attachments/preview-urls";
 import { useReportAttachments } from "@/providers/report-attachments-provider";
 
 export function AttachmentViewer() {
@@ -28,11 +32,15 @@ export function AttachmentViewer() {
 
   const isDocx = kindFromMime(activeAttachment.mimeType) === "docx";
   // Browsers can't render .docx inline, so DOCX previews are server-rendered
-  // HTML shown in a sandboxed iframe; PDFs use the browser's native viewer.
-  const previewUrl = isDocx
-    ? `/api/reports/${reportId}/attachments/${activeAttachment.id}/preview`
-    : `/api/reports/${reportId}/attachments/${activeAttachment.id}/content?page=${activePage}`;
-  const downloadUrl = `/api/reports/${reportId}/attachments/${activeAttachment.id}/content?download=1`;
+  // HTML shown in a sandboxed iframe. PDFs use the native viewer over a
+  // same-origin stream — never a GCS redirect, which Comet blocks in iframes.
+  const previewUrl = attachmentPreviewSrc({
+    reportId,
+    attachmentId: activeAttachment.id,
+    mimeType: activeAttachment.mimeType,
+    page: activePage,
+  });
+  const downloadUrl = attachmentDownloadHref(reportId, activeAttachment.id);
   const pageLabel = isDocx
     ? "Word document"
     : activeAttachment.pageCount

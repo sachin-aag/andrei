@@ -1,0 +1,25 @@
+---
+description: Next.js 16 proxy, test login, and password-lifecycle redirects
+globs:
+  - src/proxy.ts
+  - src/middleware.ts
+  - src/lib/auth/**/*.ts
+  - src/app/api/auth-pw/**/*.ts
+  - src/app/api/test/**/*.ts
+  - src/app/api/site-access/**/*.ts
+alwaysApply: false
+---
+
+# Proxy and auth
+
+- Request interception is `src/proxy.ts` (Next.js 16). **Do not add
+  `middleware.ts`.** If this glob matched `src/middleware.ts`, delete that
+  file — it would fight `proxy.ts`.
+- Proxy enforces session + `mustChangePassword` / `passwordExpired` →
+  `/change-password`. It does **not** enforce `SITE_ACCESS_PASSWORD`
+  (that is `/unlock` + `POST /api/site-access`).
+- `POST /api/test/login` and `POST /api/test/seed-auth-users` require
+  **both** `ALLOW_TEST_LOGIN=true` **and** `TEST_AUTH_EMAIL`. A 404 on those
+  routes usually means the process serving the request is missing one of them.
+- Never set `ALLOW_TEST_*` on Vercel. MJ emails (`@mjbiopharm.com`) are a
+  convention; `set-workspace-password` does not enforce the domain.
