@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { Separator } from "@/components/ui/separator";
 import { useReportData, useReportEditors } from "@/providers/report-provider";
+import { isTrackChangesFieldEditable } from "@/lib/reports/section-save-policy";
 import { AdvancedFormattingToolbar } from "@/components/report/advanced-formatting-toolbar";
 import {
   FontColorToolbar,
@@ -39,7 +40,7 @@ function activeFieldLabel(activeFieldKey: string | null): string | null {
 }
 
 export function ReportEditorToolbar() {
-  const { readOnly } = useReportData();
+  const { readOnly, trackChangesMode } = useReportData();
   const { activeFieldKey, activeFieldKind, getActiveEditor } = useReportEditors();
   const editor = getActiveEditor();
   useEditorToolbarState(editor);
@@ -49,7 +50,12 @@ export function ReportEditorToolbar() {
     [activeFieldKey]
   );
 
-  if (readOnly || !activeFieldKey) return null;
+  if (
+    !isTrackChangesFieldEditable({ readOnly, trackChangesMode }) ||
+    !activeFieldKey
+  ) {
+    return null;
+  }
 
   if (activeFieldKind === "plain" || !editor) {
     return (

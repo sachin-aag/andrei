@@ -87,6 +87,7 @@ import { suggestionTargetsField } from "@/lib/suggestions/resolve-suggestion-fie
 import { validateSuggestionLocate } from "@/lib/suggestions/validate-suggestion";
 import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
 import { editorRegistryKey } from "@/providers/report-provider";
+import { isTrackChangesFieldEditable } from "@/lib/reports/section-save-policy";
 import type { SectionType } from "@/db/schema";
 import type { SectionContentMap } from "@/types/sections";
 
@@ -276,7 +277,7 @@ export type TiptapSectionFieldProps = {
   onChange: (doc: JSONContent) => void;
   /** Persist immediately after accept/reject suggestion (autosave flush). */
   onFlushSave?: () => void | Promise<void>;
-  /** When true, the field stays read-only even in engineer edit mode. */
+  /** When true, the field stays read-only even with track changes on. */
   locked?: boolean;
   /** Shrink the editor chrome for read-only blocks (e.g. signature tables). */
   compact?: boolean;
@@ -401,7 +402,11 @@ export function TiptapSectionField({
     onChangeRef.current = onChange;
   }, [onChange]);
 
-  const editable = !locked && (!readOnly || trackChangesMode);
+  const editable = isTrackChangesFieldEditable({
+    locked,
+    readOnly,
+    trackChangesMode,
+  });
   const manager = getUser(currentUserId)?.role === "manager";
   const canInlineComment =
     (report.status === "submitted" || report.status === "in_review" || report.status === "draft") &&

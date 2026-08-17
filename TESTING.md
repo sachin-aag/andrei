@@ -192,6 +192,16 @@ Specs run against Chromium, Firefox, and WebKit unless you pass `--project=chrom
 </details>
 
 <details>
+<summary><strong>manager-track-changes.spec.ts</strong> — manager review edits persist</summary>
+
+| Test | What it verifies |
+|------|------------------|
+| saves Define track-changes edits across reload | Review Define is editable; Saved; text survives reload |
+| saves Improve track-changes edits across reload | Improve is not locked in track changes; text survives reload |
+
+</details>
+
+<details>
 <summary><strong>comments.spec.ts</strong> — review rail and API limits</summary>
 
 | Test | What it verifies |
