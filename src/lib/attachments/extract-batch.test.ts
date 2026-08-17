@@ -12,11 +12,7 @@ vi.mock("ai", async (importOriginal) => {
   };
 });
 
-import {
-  DOCUMENT_EXTRACT_VERTEX_LOCATION,
-  extractPdfBatch,
-  remapExtractedPageNumbers,
-} from "./extract-batch";
+import { extractPdfBatch, remapExtractedPageNumbers } from "./extract-batch";
 
 const usage = { inputTokens: 10, outputTokens: 20 };
 
@@ -409,13 +405,5 @@ describe("remapExtractedPageNumbers", () => {
 
   it("returns empty when page numbers match neither absolute nor relative", () => {
     expect(remapExtractedPageNumbers([pagePayload(99)], 4, 6)).toEqual([]);
-  });
-});
-
-describe("DOCUMENT_EXTRACT_VERTEX_LOCATION", () => {
-  it("is pinned to global and does not read Vertex location env", () => {
-    process.env.GOOGLE_VERTEX_LOCATION = "us-central1";
-    process.env.DOCUMENT_EXTRACT_LOCATION = "europe-west1";
-    expect(DOCUMENT_EXTRACT_VERTEX_LOCATION).toBe("global");
   });
 });
