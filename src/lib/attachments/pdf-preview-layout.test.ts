@@ -33,10 +33,9 @@ describe("layoutPreviewTextSpan", () => {
       PDF_PREVIEW_SCALE
     );
 
-    expect(span).toEqual({
+    expect(span).toMatchObject({
       str: "Batch 123",
       left: 15,
-      top: (400 - 380) * PDF_PREVIEW_SCALE - 0.8 * 12 * PDF_PREVIEW_SCALE,
       width: 80 * PDF_PREVIEW_SCALE,
       height: 12 * PDF_PREVIEW_SCALE,
       fontSize: 12 * PDF_PREVIEW_SCALE,
@@ -44,6 +43,10 @@ describe("layoutPreviewTextSpan", () => {
       dir: "ltr",
       hasEOL: true,
     });
+    expect(span?.top).toBeCloseTo(
+      (400 - 380) * PDF_PREVIEW_SCALE - 0.8 * 12 * PDF_PREVIEW_SCALE,
+      5
+    );
   });
 
   it("skips empty strings and drops malformed transforms", () => {

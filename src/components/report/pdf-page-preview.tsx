@@ -31,10 +31,6 @@ type PdfPageProxy = {
   getTextContent: () => Promise<PdfTextContent>;
 };
 
-type PdfDocumentProxy = {
-  getPage: (pageNumber: number) => Promise<PdfPageProxy>;
-};
-
 /**
  * Renders one PDF page as an image plus a transparent text layer.
  *
@@ -78,7 +74,7 @@ export function PdfPagePreview({
         ensureMathSumPrecise();
         const { getDocumentProxy, renderPageAsImage } = await import("unpdf");
         // Slice so pdf.js can transfer the buffer without dropping our copy.
-        const pdf = (await getDocumentProxy(data.slice())) as PdfDocumentProxy;
+        const pdf = await getDocumentProxy(data.slice());
         const pdfPage = await pdf.getPage(page);
         const viewport = pdfPage.getViewport({ scale: PDF_PREVIEW_SCALE });
         const imageSrc = await renderPageAsImage(pdf, page, {
