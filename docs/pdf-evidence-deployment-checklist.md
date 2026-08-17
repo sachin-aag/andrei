@@ -29,12 +29,12 @@ Terraform in [`infra/gcs`](../infra/gcs/README.md) (`terraform apply` there).
 - [ ] Private GCS bucket with Uniform Bucket-Level Access (UBLA) enabled
 - [ ] Prefer an existing project bucket via `GCS_BUCKET` (prefix separation, not a new bucket)
 - [ ] Lifecycle rule deletes **only** `staging/` and `temp/` prefixes (not permanent evidence)
-- [ ] Exact CORS origins for browser resumable uploads (app production + preview URLs)
+- [ ] Exact CORS origins for browser resumable uploads (app production + preview URLs). Custom domains must be listed exactly — `https://mj.andreihealth.com` is in [`infra/gcs/cors.json`](../infra/gcs/cors.json). Apply with `gsutil cors set` or Terraform.
 - [ ] WIF trust configured (`GCP_WIF_AUDIENCE`, `GCP_SERVICE_ACCOUNT_EMAIL`) for Vercel OIDC
 - [ ] Least-privilege IAM: object create/read on attachment prefixes + `iam.serviceAccounts.signBlob` / Token Creator for signed URLs — avoid blanket `roles/storage.objectAdmin` on shared buckets
 - [ ] pgvector available on Neon (and local/CI via `pgvector/pgvector:pg16`)
 - [ ] Migrations applied through `0034_audit_canonical_v2` (`pnpm db:migrate` / Vercel build)
-- [ ] Vercel Workflow DevKit available in the deployment region; proxy excludes `/.well-known/workflow/*`
+- [ ] Vercel Workflow DevKit available in the deployment region; proxy excludes `/.well-known/workflow/*`. If Bot Protection is on, allow that path. Production `AUTH_URL` must be the public host (not a leftover `*.vercel.app`).
 - [ ] Preview: document ingest defaults to **inline** (`after()`). Set `DOCUMENT_INGEST_MODE=workflow` only when Vercel World/Queues reliably drain runs. Production defaults to `workflow`, and falls back to inline if workflow `start()` fails.
 - [ ] Inline ingest is bounded by the route's `maxDuration` (300s). A run killed by that limit never writes a terminal status, so `reclaimStaleIngests` retires it after 30 minutes and the attachment becomes reprocessable.
 

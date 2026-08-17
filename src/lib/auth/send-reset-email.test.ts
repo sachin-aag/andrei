@@ -16,6 +16,10 @@ describe("sendResetEmail", () => {
       AUTH_URL: "https://andrei-v2.vercel.app",
       AUTH_EMAIL_FROM: "noreply@andreihealth.com",
     };
+    delete process.env.VERCEL_ENV;
+    delete process.env.VERCEL_PROJECT_PRODUCTION_URL;
+    delete process.env.VERCEL_BRANCH_URL;
+    delete process.env.VERCEL_URL;
 
     const fetchMock = vi.fn().mockResolvedValue({ ok: true });
     vi.stubGlobal("fetch", fetchMock);

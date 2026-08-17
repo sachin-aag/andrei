@@ -1,3 +1,5 @@
+import { getVercelOidcToken as readVercelOidcToken } from "@vercel/oidc";
+
 /**
  * Workload Identity Federation: exchange Vercel OIDC token for a
  * cloud-platform-scoped Google access token via STS + service account impersonation.
@@ -15,17 +17,35 @@ export function getWifConfig(): WifConfig | null {
   return { audience, serviceAccountEmail };
 }
 
-/** Read the Vercel OIDC token from env or request header. */
+/**
+ * Per-invocation Vercel OIDC token for WIF.
+ *
+ * Prefer `@vercel/oidc` (request-context `x-vercel-oidc-token`, with refresh)
+ * over `process.env.VERCEL_OIDC_TOKEN`. The env var is baked at deploy time and
+ * goes stale after project-config changes such as adding a custom domain.
+ * Workflow steps often have the header and not a fresh env token.
+ */
 export async function getVercelOidcToken(): Promise<string | null> {
-  const fromEnv = process.env.VERCEL_OIDC_TOKEN?.trim();
-  if (fromEnv) return fromEnv;
+  try {
+    const token = (
+      await readVercelOidcToken({ expirationBufferMs: 60_000 })
+    ).trim();
+    if (token) return token;
+  } catch {
+    // SDK throws when request context and env are both missing (local, tests).
+  }
+
+  // next/headers is request-scoped. A static import fails in Vitest and in
+  // Workflow isolates that have no Next request store.
   try {
     const { headers } = await import("next/headers");
-    const h = await headers();
-    return h.get("x-vercel-oidc-token");
+    const headerToken = (await headers()).get("x-vercel-oidc-token")?.trim();
+    if (headerToken) return headerToken;
   } catch {
-    return null;
+    // Not in a Next.js request.
   }
+
+  return process.env.VERCEL_OIDC_TOKEN?.trim() || null;
 }
 
 let cachedToken: { token: string; expiresAt: number } | null = null;

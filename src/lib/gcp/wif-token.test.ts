@@ -1,6 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+
+const readVercelOidcToken = vi.hoisted(() => vi.fn());
+
+vi.mock("@vercel/oidc", () => ({
+  getVercelOidcToken: readVercelOidcToken,
+}));
+
 import {
   createWifAuthClient,
+  getVercelOidcToken,
   resetWifTokenCache,
   type WifConfig,
 } from "@/lib/gcp/wif-token";
@@ -10,15 +18,45 @@ const config: WifConfig = {
   serviceAccountEmail: "runtime@example.iam.gserviceaccount.com",
 };
 
+describe("getVercelOidcToken", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    readVercelOidcToken.mockReset();
+  });
+
+  it("prefers the request-context token from @vercel/oidc over bake-time env", async () => {
+    vi.stubEnv("VERCEL_OIDC_TOKEN", "stale-bake-time");
+    readVercelOidcToken.mockResolvedValueOnce("fresh-request-token");
+    await expect(getVercelOidcToken()).resolves.toBe("fresh-request-token");
+    expect(readVercelOidcToken).toHaveBeenCalledWith({
+      expirationBufferMs: 60_000,
+    });
+  });
+
+  it("falls back to VERCEL_OIDC_TOKEN when the SDK has no context", async () => {
+    vi.stubEnv("VERCEL_OIDC_TOKEN", "env-token");
+    readVercelOidcToken.mockRejectedValueOnce(new Error("no oidc context"));
+    await expect(getVercelOidcToken()).resolves.toBe("env-token");
+  });
+
+  it("ignores an empty SDK token and uses env", async () => {
+    vi.stubEnv("VERCEL_OIDC_TOKEN", "env-token");
+    readVercelOidcToken.mockResolvedValueOnce("  ");
+    await expect(getVercelOidcToken()).resolves.toBe("env-token");
+  });
+});
+
 describe("createWifAuthClient", () => {
   afterEach(() => {
     resetWifTokenCache();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+    readVercelOidcToken.mockReset();
   });
 
   it("implements request used by @google-cloud/storage resumable uploads", async () => {
     vi.stubEnv("VERCEL_OIDC_TOKEN", "oidc-token");
+    readVercelOidcToken.mockRejectedValue(new Error("no oidc context"));
 
     const fetchMock = vi
       .fn()
@@ -80,6 +118,7 @@ describe("createWifAuthClient", () => {
 
   it("implements sign via IAM signBlob for GCS signed URLs", async () => {
     vi.stubEnv("VERCEL_OIDC_TOKEN", "oidc-token");
+    readVercelOidcToken.mockRejectedValue(new Error("no oidc context"));
 
     const fetchMock = vi
       .fn()
