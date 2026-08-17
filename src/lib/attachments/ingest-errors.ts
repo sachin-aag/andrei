@@ -16,6 +16,9 @@ export function sanitizeIngestError(error: unknown): string {
   if (isGoogleAuthIngestError(error.message)) {
     return "Document ingestion could not authenticate with Google Cloud. Check Vercel OIDC and GCP WIF.";
   }
+  if (isVertexModelNotFoundError(error.message)) {
+    return "Document ingestion could not reach the Vertex extract model. Gemini 3.x requires location global, not us-central1.";
+  }
   if (error.message.includes("source changed")) {
     return "Document ingestion was cancelled because the attachment changed";
   }
@@ -30,6 +33,13 @@ export function sanitizeIngestError(error: unknown): string {
     return error.message.slice(0, 300);
   }
   return "Document ingestion failed";
+}
+
+function isVertexModelNotFoundError(message: string): boolean {
+  return (
+    message.includes("Publisher model") ||
+    message.includes("was not found or your project does not have access")
+  );
 }
 
 function isGoogleAuthIngestError(message: string): boolean {

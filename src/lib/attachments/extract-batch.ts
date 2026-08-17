@@ -112,6 +112,18 @@ type ResolvedInput = ExtractPdfBatchInput & { model: LanguageModel };
 
 const vertexProviderByLocation = new Map<string, ReturnType<typeof createVertex>>();
 
+/**
+ * Gemini 3.x extract models are only served from Vertex `global`.
+ * Do not inherit `GOOGLE_VERTEX_LOCATION` (often `us-central1` for embeddings);
+ * that 404s `gemini-3.1-flash-lite`. Override with `DOCUMENT_EXTRACT_LOCATION`.
+ */
+export function resolveDocumentExtractLocation(): string {
+  return (
+    process.env.DOCUMENT_EXTRACT_LOCATION?.trim() ||
+    DEFAULT_DOCUMENT_EXTRACT_LOCATION
+  );
+}
+
 export function resolveDocumentExtractModel(modelId: string): LanguageModel {
   const project = process.env.GOOGLE_VERTEX_PROJECT?.trim();
   if (!project) {
@@ -120,10 +132,7 @@ export function resolveDocumentExtractModel(modelId: string): LanguageModel {
     );
   }
 
-  const location =
-    process.env.DOCUMENT_EXTRACT_LOCATION?.trim() ||
-    process.env.GOOGLE_VERTEX_LOCATION?.trim() ||
-    DEFAULT_DOCUMENT_EXTRACT_LOCATION;
+  const location = resolveDocumentExtractLocation();
   const cached = vertexProviderByLocation.get(location);
   if (cached) return cached(modelId);
 
