@@ -1,6 +1,6 @@
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { NoOutputGeneratedError, type LanguageModel } from "ai";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const generateTextMock = vi.fn();
 
@@ -12,7 +12,11 @@ vi.mock("ai", async (importOriginal) => {
   };
 });
 
-import { extractPdfBatch, remapExtractedPageNumbers } from "./extract-batch";
+import {
+  extractPdfBatch,
+  remapExtractedPageNumbers,
+  resolveDocumentExtractLocation,
+} from "./extract-batch";
 
 const usage = { inputTokens: 10, outputTokens: 20 };
 
@@ -405,5 +409,24 @@ describe("remapExtractedPageNumbers", () => {
 
   it("returns empty when page numbers match neither absolute nor relative", () => {
     expect(remapExtractedPageNumbers([pagePayload(99)], 4, 6)).toEqual([]);
+  });
+});
+
+describe("resolveDocumentExtractLocation", () => {
+  const env = process.env;
+
+  afterEach(() => {
+    process.env = { ...env };
+  });
+
+  it("defaults to global", () => {
+    delete process.env.DOCUMENT_EXTRACT_LOCATION;
+    expect(resolveDocumentExtractLocation()).toBe("global");
+  });
+
+  it("honors an explicit override and never reads GOOGLE_VERTEX_LOCATION", () => {
+    process.env.DOCUMENT_EXTRACT_LOCATION = "europe-west1";
+    process.env.GOOGLE_VERTEX_LOCATION = "us-central1";
+    expect(resolveDocumentExtractLocation()).toBe("europe-west1");
   });
 });
