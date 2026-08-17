@@ -1,6 +1,6 @@
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { NoOutputGeneratedError, type LanguageModel } from "ai";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const generateTextMock = vi.fn();
 
@@ -13,9 +13,9 @@ vi.mock("ai", async (importOriginal) => {
 });
 
 import {
+  DOCUMENT_EXTRACT_VERTEX_LOCATION,
   extractPdfBatch,
   remapExtractedPageNumbers,
-  resolveDocumentExtractLocation,
 } from "./extract-batch";
 
 const usage = { inputTokens: 10, outputTokens: 20 };
@@ -412,22 +412,10 @@ describe("remapExtractedPageNumbers", () => {
   });
 });
 
-describe("resolveDocumentExtractLocation", () => {
-  const env = process.env;
-
-  afterEach(() => {
-    process.env = { ...env };
-  });
-
-  it("defaults to global even when GOOGLE_VERTEX_LOCATION is us-central1", () => {
-    delete process.env.DOCUMENT_EXTRACT_LOCATION;
+describe("DOCUMENT_EXTRACT_VERTEX_LOCATION", () => {
+  it("is pinned to global and does not read Vertex location env", () => {
     process.env.GOOGLE_VERTEX_LOCATION = "us-central1";
-    expect(resolveDocumentExtractLocation()).toBe("global");
-  });
-
-  it("honors an explicit DOCUMENT_EXTRACT_LOCATION override", () => {
     process.env.DOCUMENT_EXTRACT_LOCATION = "europe-west1";
-    process.env.GOOGLE_VERTEX_LOCATION = "us-central1";
-    expect(resolveDocumentExtractLocation()).toBe("europe-west1");
+    expect(DOCUMENT_EXTRACT_VERTEX_LOCATION).toBe("global");
   });
 });

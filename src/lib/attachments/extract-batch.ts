@@ -14,7 +14,12 @@ import {
 } from "@/lib/attachments/pdf-text-layer";
 
 export const DEFAULT_DOCUMENT_EXTRACT_MODEL_ID = "gemini-3.1-flash-lite";
-export const DEFAULT_DOCUMENT_EXTRACT_LOCATION = "global";
+/**
+ * Gemini 3.x extract models are only served from Vertex `global`.
+ * Do not inherit `GOOGLE_VERTEX_LOCATION` (often `us-central1` for embeddings);
+ * that 404s `gemini-3.1-flash-lite`. Same pin as eval and chat — no env override.
+ */
+export const DOCUMENT_EXTRACT_VERTEX_LOCATION = "global" as const;
 export const DOCUMENT_EXTRACT_PROMPT_VERSION = "doc-extract-v2";
 
 type GoogleAuthOptions = NonNullable<Parameters<typeof createVertex>[0]>["googleAuthOptions"];
@@ -112,18 +117,6 @@ type ResolvedInput = ExtractPdfBatchInput & { model: LanguageModel };
 
 const vertexProviderByLocation = new Map<string, ReturnType<typeof createVertex>>();
 
-/**
- * Gemini 3.x extract models are only served from Vertex `global`.
- * Do not inherit `GOOGLE_VERTEX_LOCATION` (often `us-central1` for embeddings);
- * that 404s `gemini-3.1-flash-lite`. Override with `DOCUMENT_EXTRACT_LOCATION`.
- */
-export function resolveDocumentExtractLocation(): string {
-  return (
-    process.env.DOCUMENT_EXTRACT_LOCATION?.trim() ||
-    DEFAULT_DOCUMENT_EXTRACT_LOCATION
-  );
-}
-
 export function resolveDocumentExtractModel(modelId: string): LanguageModel {
   const project = process.env.GOOGLE_VERTEX_PROJECT?.trim();
   if (!project) {
@@ -132,7 +125,7 @@ export function resolveDocumentExtractModel(modelId: string): LanguageModel {
     );
   }
 
-  const location = resolveDocumentExtractLocation();
+  const location = DOCUMENT_EXTRACT_VERTEX_LOCATION;
   const cached = vertexProviderByLocation.get(location);
   if (cached) return cached(modelId);
 
