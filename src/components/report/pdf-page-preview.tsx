@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { getDocument, GlobalWorkerOptions, version as pdfjsVersion } from "pdfjs-dist";
+import { loadPdfjs } from "@/lib/attachments/load-pdfjs";
 import {
   pdfjsPreviewDocumentOptions,
   pdfjsWorkerSrc,
@@ -85,6 +85,8 @@ export function PdfPagePreview({
           throw new Error("Canvas 2D is not available");
         }
 
+        const { getDocument, GlobalWorkerOptions, version: pdfjsVersion } =
+          await loadPdfjs();
         GlobalWorkerOptions.workerSrc = pdfjsWorkerSrc(pdfjsVersion);
         const loadingTask = getDocument({
           data: data.slice(),
