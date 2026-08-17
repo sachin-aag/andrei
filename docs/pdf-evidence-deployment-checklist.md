@@ -42,8 +42,8 @@ Terraform in [`infra/gcs`](../infra/gcs/README.md) (`terraform apply` there).
 
 - [ ] `GCS_BUCKET` set in Production and Preview
 - [ ] `DOCUMENT_EXTRACT_GOOGLE_MODEL_ID=gemini-3.1-flash-lite`
-- [ ] `DOCUMENT_EMBEDDING_MODEL_ID=gemini-embedding-001`
-- [ ] `DOCUMENT_EXTRACT_LOCATION=global`
+- [ ] `DOCUMENT_EXTRACT_LOCATION=global` — dedicated var, do **not** reuse `GOOGLE_VERTEX_LOCATION`. Gemini 3.x extract 404s outside `global`.
+- [ ] `DOCUMENT_EMBEDDING_MODEL_ID=gemini-embedding-001` (`GOOGLE_VERTEX_LOCATION=us-central1` is fine for embeddings — separate var from extract, on purpose)
 - [ ] Quotas set (`MAX_ATTACHMENT_BYTES`, `MAX_ATTACHMENT_PAGES`, per-report count/bytes)
 - [ ] `ATTACHMENT_STORAGE_BACKEND` is **not** `local` in production
 - [ ] `ALLOW_LOCAL_ATTACHMENT_STORAGE` unset/false in production

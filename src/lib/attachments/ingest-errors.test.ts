@@ -33,6 +33,18 @@ describe("sanitizeIngestError", () => {
     );
   });
 
+  it("surfaces Vertex model/region 404s instead of a generic ingest failed", () => {
+    expect(
+      sanitizeIngestError(
+        new Error(
+          "Publisher model `projects/andrei-493614/locations/us-central1/publishers/google/models/gemini-3.1-flash-lite` was not found or your project does not have access to it."
+        )
+      )
+    ).toBe(
+      "Document ingestion could not reach the Vertex extract model. Gemini 3.x requires location global, not us-central1."
+    );
+  });
+
   it("does not claim ingest 'could not be started'", () => {
     expect(sanitizeIngestError(new Error("boom"))).toBe(
       "Document ingestion failed"
