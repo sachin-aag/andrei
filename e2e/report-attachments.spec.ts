@@ -75,8 +75,11 @@ test.describe("report PDF documents", () => {
     await expect(page.getByRole("button", { name: /^back$/i })).toBeVisible({
       timeout: 15_000,
     });
-    // Prefer title over bare iframe — PostHog/rrweb injects another iframe.
-    await expect(page.locator(`iframe[title="${fileName}"]`)).toBeVisible();
+    // PDFs paint to a canvas (Chrome/Comet block application/pdf iframes).
+    await expect(page.getByLabel(`${fileName}, page 1`)).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.locator(`iframe[title="${fileName}"]`)).toHaveCount(0);
   });
 
   test("creates a folder and keeps it after reload", async ({ page }) => {
