@@ -6,7 +6,7 @@ import {
 } from "@/lib/attachments/preview-urls";
 
 describe("attachmentPreviewSrc", () => {
-  it("streams PDFs same-origin with a native-viewer page fragment", () => {
+  it("streams PDFs same-origin for canvas/image preview", () => {
     expect(
       attachmentPreviewSrc({
         reportId: "report-1",
@@ -14,9 +14,7 @@ describe("attachmentPreviewSrc", () => {
         mimeType: PDF_MIME_TYPE,
         page: 3,
       })
-    ).toBe(
-      "/api/reports/report-1/attachments/att-1/content?proxy=1&page=3#page=3"
-    );
+    ).toBe("/api/reports/report-1/attachments/att-1/content?proxy=1&page=3");
   });
 
   it("uses the server-rendered HTML preview for Word documents", () => {

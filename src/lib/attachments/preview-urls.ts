@@ -1,12 +1,12 @@
 import { kindFromMime } from "@/lib/attachments/file-types";
 
 /**
- * Iframe `src` for an uploaded attachment.
+ * Preview URL for an uploaded attachment.
  *
- * PDFs are streamed same-origin (`proxy=1`) so the frame never follows a
- * redirect to GCS. Comet and other browsers block `storage.googleapis.com`
- * inside iframes, and preview-deployment origins are not on the bucket CORS
- * list. `#page=` is what Chrome's native viewer uses to open a given page.
+ * PDFs are fetched same-origin (`proxy=1`) and painted as an image — never
+ * navigated as `application/pdf` in an iframe. Comet intercepts iframe PDF
+ * loads (including our own origin) and shows a block page. DOCX is still
+ * server-rendered HTML in a sandboxed iframe.
  */
 export function attachmentPreviewSrc(input: {
   reportId: string;
@@ -20,7 +20,7 @@ export function attachmentPreviewSrc(input: {
     return `${base}/preview`;
   }
   const pageNumber = Number.isInteger(page) && page > 0 ? page : 1;
-  return `${base}/content?proxy=1&page=${pageNumber}#page=${pageNumber}`;
+  return `${base}/content?proxy=1&page=${pageNumber}`;
 }
 
 /** Direct download still uses a signed URL (not the iframe proxy). */

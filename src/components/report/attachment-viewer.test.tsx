@@ -10,6 +10,12 @@ vi.mock("@/providers/report-attachments-provider", () => ({
   useReportAttachments: () => useReportAttachmentsMock(),
 }));
 
+vi.mock("@/components/report/pdf-page-preview", () => ({
+  PdfPagePreview: ({ title, page }: { title: string; page: number }) => (
+    <img alt={`${title}, page ${page}`} src="data:image/png;base64,abc" />
+  ),
+}));
+
 function baseAttachment(overrides: Record<string, unknown> = {}) {
   return {
     id: "att-1",
@@ -33,14 +39,15 @@ function mockContext(overrides: Record<string, unknown> = {}) {
 }
 
 describe("AttachmentViewer", () => {
-  it("allows downloads in the sandboxed PDF iframe so Chromium fallback-download does not get blocked", () => {
+  it("renders PDFs as an image preview, not an iframe", () => {
     mockContext();
 
     render(<AttachmentViewer />);
 
-    const iframe = screen.getByTitle("Attachment_IV_Preparation_Record.pdf");
-    expect(iframe.getAttribute("sandbox")).toContain("allow-downloads");
-    expect(iframe.getAttribute("src")).toContain("proxy=1");
+    expect(screen.queryByTitle("Attachment_IV_Preparation_Record.pdf")).not.toBeInTheDocument();
+    expect(
+      screen.getByAltText("Attachment_IV_Preparation_Record.pdf, page 1")
+    ).toBeInTheDocument();
   });
 
   it("does not grant script or download access to the sandboxed DOCX preview", () => {
@@ -60,16 +67,14 @@ describe("AttachmentViewer", () => {
     expect(sandbox).not.toContain("allow-downloads");
   });
 
-  it("does not render a preview iframe until the attachment has a page count", () => {
+  it("does not render a preview until the attachment has a page count", () => {
     mockContext({
       activeAttachment: baseAttachment({ pageCount: null, processingStatus: "processing" }),
     });
 
     render(<AttachmentViewer />);
 
-    expect(screen.queryByRole("presentation")).not.toBeInTheDocument();
-    expect(
-      screen.getByText(/Upload is still finishing/)
-    ).toBeInTheDocument();
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
+    expect(screen.getByText(/Upload is still finishing/)).toBeInTheDocument();
   });
 });
