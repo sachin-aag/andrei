@@ -4,8 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
-    "vercel:build": "tsx scripts/drizzle-migrate.ts && next build",
+    "build": "node scripts/copy-pdfjs-assets.mjs && next build",
+    "vercel:build": "node scripts/copy-pdfjs-assets.mjs && tsx scripts/drizzle-migrate.ts && next build",
+    "postinstall": "node scripts/copy-pdfjs-assets.mjs",
     "start": "next start",
     "lint": "eslint .",
     "test": "vitest run",

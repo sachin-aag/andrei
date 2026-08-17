@@ -3,7 +3,8 @@
  * standard fonts. The serverless `unpdf` bundle does not load these, so scanned
  * pages (JBIG2) and unembedded Helvetica/Times collapse to empty table shells.
  *
- * `version` must be `pdfjs-dist`'s `version` so the asset route can pin files.
+ * `version` must be `pdfjs-dist`'s `version`. `scripts/copy-pdfjs-assets.mjs`
+ * publishes those files to `public/pdfjs-assets/<version>/`.
  */
 export function pdfjsPreviewDocumentOptions(version: string): {
   wasmUrl: string;
