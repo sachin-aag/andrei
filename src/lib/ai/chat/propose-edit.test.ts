@@ -69,6 +69,8 @@ describe("proposedEditHint", () => {
     expect(proposedEditHint({ status: "ok" })).toBe("");
     expect(proposedEditHint({ status: "ambiguous" })).toMatch(/unique/i);
     expect(proposedEditHint({ status: "not_found" })).toMatch(/read_section/i);
-    expect(proposedEditHint({ status: "too_large", coverage: 0.9 })).toMatch(/smaller/i);
+    expect(proposedEditHint({ status: "too_large", coverage: 0.9 })).toMatch(
+      /draft_field/
+    );
   });
 });

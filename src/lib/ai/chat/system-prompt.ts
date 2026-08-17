@@ -9,7 +9,7 @@ import {
 import { getDocumentType } from "@/lib/document-types";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v20-search-before-draft";
+export const CHAT_PROMPT_VERSION = "chat-v21-replace-pending-draft";
 
 export type ChatMode = "plan" | "agent";
 
@@ -141,7 +141,8 @@ Editing rules:
 3. To change ONE table cell or list item, use propose_edit with "scope" from the field's structuredText (a cell tagged [r,c] → scope {"kind":"cell","row":r,"col":c}; an item tagged [i] → scope {"kind":"listItem","index":i}). Leave anchorText "", put only that cell/item's current text in deleteText (or "" for a blank cell) and the new value in insertText. This avoids "ambiguous"/"cross_cell" on short or repeated cell values. To add/remove whole rows or columns, use draft_field.
 4. propose_edit refuses changes that rewrite most of a field ("too_large") — that is the signal to use draft_field.
 5. Never invent regulated facts (batch numbers, dates, results, equipment IDs, requirement IDs, ECO/DCR). Search the attachments first; use a bracketed placeholder only after a search does not contain the fact. Do not copy document topics/summaries into the draft.
-6. After proposing, briefly summarize what you drafted, list placeholders to complete, and name any sections you deliberately skipped and why.`;
+6. Pending drafts are not in the document. read_section and propose_edit see saved text only. After draft_field, do not propose_edit that field until the engineer accepts. To correct a pending draft, call draft_field again with the complete replacement — the server replaces the open card so the engineer sees one suggestion.
+7. After proposing, briefly summarize what you drafted, list placeholders to complete, and name any sections you deliberately skipped and why.`;
 }
 
 const ANALYZE_METHOD_HEURISTICS = `Method selection heuristics (exactly ONE of 6M / 5-Why / Brainstorming):

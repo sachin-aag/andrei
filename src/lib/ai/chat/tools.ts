@@ -13,15 +13,14 @@ import { investigationToolsUsed } from "@/types/report";
 import { mergeSection } from "@/lib/sections-merge";
 import { AI_AUTHOR_ID } from "@/lib/ai/constants";
 import {
-  serializeAiFixCommentContent,
-  serializeAiRedraftCommentContent,
+  parseEditScope,
   sectionContentHash,
+  serializeAiFixCommentContent,
 } from "@/lib/ai/suggestion-gating";
 import {
   isRichTargetField,
   resolveTargetField,
 } from "@/lib/ai/suggest-target-fields";
-import { parseEditScope } from "@/lib/ai/suggestion-gating";
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { fieldContentHash } from "@/lib/suggestions/validate-suggestion";
 import { markdownHasTable } from "@/lib/tiptap/markdown-to-doc";
@@ -40,6 +39,7 @@ import {
   type SectionInlineImage,
 } from "@/lib/ai/chat/section-images";
 import { checkProposedEdit, proposedEditHint } from "@/lib/ai/chat/propose-edit";
+import { persistChatFieldDraft } from "@/lib/ai/chat/upsert-draft";
 
 type ReadSectionImageRef = {
   id: string;
@@ -111,6 +111,7 @@ export type DraftFieldResult =
       section: SectionType;
       targetField: string;
       summary: string;
+      replaced: boolean;
     }
   | { status: "not_editable"; message: string }
   | { status: "invalid_section"; message: string }
@@ -232,7 +233,8 @@ async function loadMergedSection(
  * Build the drafting-chat tool set for a report. Tools reuse the existing
  * suggestion pipeline: `propose_edit` creates an open `ai_fix` comment (no
  * evaluation link) exactly like the /suggestions route, so the report's
- * existing inline diff + accept/reject UI renders it unchanged.
+ * existing inline diff + accept/reject UI renders it unchanged. `draft_field`
+ * upserts the open chat `ai_redraft` for that field (one card).
  */
 export function buildChatTools(opts: {
   reportId: string;
@@ -613,7 +615,7 @@ export function buildChatTools(opts: {
 
     draft_field: tool({
       description:
-        `Draft or fully rewrite ONE field. Provide the COMPLETE replacement content as markdown: paragraphs, '- ' bullets, '1. ' numbered lists, '## ' headings, '**bold**', and GFM tables ('| a | b |' rows with a '| --- |' separator). Use bracketed placeholders like [batch number] for facts you do not know — never invent facts. The engineer reviews the full draft and accepts or rejects it. Use this for empty fields, large rewrites, and any content needing a table; use propose_edit only for small targeted changes.${scopeHint}${fixedTableHint}`,
+        `Draft or fully rewrite ONE field. Provide the COMPLETE replacement content as markdown: paragraphs, '- ' bullets, '1. ' numbered lists, '## ' headings, '**bold**', and GFM tables ('| a | b |' rows with a '| --- |' separator). Use bracketed placeholders like [batch number] for facts you do not know — never invent facts. The engineer reviews the full draft and accepts or rejects it. A second call on the same field replaces the pending draft (one card). Use this for empty fields, large rewrites, and any content needing a table; use propose_edit only for small targeted changes.${scopeHint}${fixedTableHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
@@ -667,37 +669,27 @@ export function buildChatTools(opts: {
           return { status: "section_not_found", message: "Section not found." };
         }
 
-        const suggestionId = createId();
-        await db.insert(comments).values({
-          id: suggestionId,
+        const drafted = await persistChatFieldDraft({
           reportId,
           sectionId: loaded.sectionId,
           section,
-          authorId: AI_AUTHOR_ID,
-          content: serializeAiRedraftCommentContent({
-            markdown: normalizeSuggestionInsertText(markdown),
-            reasoning,
-            fieldHashAtSuggestion: fieldContentHash(
-              section,
-              loaded.content,
-              resolvedField
-            ),
-          }),
-          anchorText: "",
-          contentPath: resolvedField,
-          fromPos: null,
-          toPos: null,
-          status: "open",
-          kind: "ai_redraft",
-          evaluationId: null,
+          targetField: resolvedField,
+          markdown: normalizeSuggestionInsertText(markdown),
+          reasoning,
+          fieldHashAtSuggestion: fieldContentHash(
+            section,
+            loaded.content,
+            resolvedField
+          ),
         });
 
         return {
           status: "drafted",
-          suggestionId,
+          suggestionId: drafted.suggestionId,
           section,
           targetField: resolvedField,
           summary: reasoning,
+          replaced: drafted.replaced,
         };
       },
     }),

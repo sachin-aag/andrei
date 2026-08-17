@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("bumps the prompt version when section inline image guidance changes", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v20-search-before-draft");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v21-replace-pending-draft");
   });
 
   it("tells the model never to pass the section key as targetField", () => {
@@ -115,6 +115,15 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("draft_field");
     expect(prompt).toContain("placeholder");
     expect(prompt).not.toContain("Mode: PLAN");
+  });
+
+  it("tells the model pending drafts are not in the document and a second draft_field replaces them", () => {
+    const prompt = buildChatSystemPrompt({ ...opts, mode: "agent" });
+    expect(prompt).toContain("Pending drafts are not in the document");
+    expect(prompt).toContain("do not propose_edit that field until the engineer accepts");
+    expect(prompt).toContain(
+      "call draft_field again with the complete replacement"
+    );
   });
 
   it("uses a demo-wide compliance persona, not a single customer brand", () => {

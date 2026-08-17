@@ -300,6 +300,7 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
 - `auto-evidence.ts` — kickoff hybrid retrieval (≤1.5s, fail-soft) injected after document rules
 - `context-map.ts` — serializes report state + ready docs (sanitized `summary=`)
 - `tools.ts` — `read_section`, `search_documents`, `document_outline`, `read_document_page`, `ask_user`, draft/edit tools; sanitizes untrusted metadata here (not in `src/lib/attachments/`)
+- `upsert-draft.ts` — `draft_field` replaces the open chat-authored `ai_redraft` for `(report, section, field)` (`authorId = ai`, `evaluationId` null) and dismisses sibling chat `ai_fix`s. Criteria Suggest-fixes are untouched. An advisory lock serializes parallel calls on the same field; leftover duplicate redrafts are dismissed after write, keeping the row just written. Unique partial index deferred.
 - `fields.ts` / `section-scope.ts` — type-specific editable sections (`chatEditableSections`)
 - `mentions.ts` — `@` documents/sections
 - `propose-edit.ts`, `session-title.ts`, `access.ts`
@@ -307,6 +308,8 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
 **Plan-mode allowlist** in `chat/route.ts`: `read_section`, `search_documents`, `read_document_page`, `document_outline`, `ask_user`, optional `suggest_section_scope`. New tools must be added here or they are silently missing in Plan.
 
 **Retrieval:** `searchReportDocuments` (vector + English FTS OR-tokens). Report body is not chunk-indexed. Stub chat: `ALLOW_TEST_STUB_CHAT` / `stub-model.ts` — streams a canned reply; cannot assert tool selection.
+
+**Deferred (pending-draft composition):** `read_section` / `propose_edit` read saved section JSON, not pending redraft markdown — composing `ai_redraft` + `ai_fix` against unsaved text is not implemented. Chat suggestion cards refresh on `useChat` `onFinish`, not after each tool result. Analyze one-`draft_field`-per-path can flood the suggestion rail (separate product question).
 
 ## Subsystem: Attachments (ingest + evidence)
 

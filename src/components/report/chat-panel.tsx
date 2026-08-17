@@ -238,9 +238,10 @@ function ToolChip({
       );
     }
     if (info.output?.status === "drafted") {
+      const replaced = info.output?.replaced === true;
       return (
         <ToolLine icon={<FileText className="size-3.5 text-emerald-500" />} tone="success">
-          Drafted {section}
+          {replaced ? "Updated draft of" : "Drafted"} {section}
           {field ? ` · ${field}` : ""} — review the full draft in the document.
         </ToolLine>
       );

@@ -25,6 +25,10 @@ system prompt when kickoff retrieval hits.
   `src/app/api/reports/[reportId]/chat/route.ts` (`mode === "plan"` object).
   Missing from the allowlist = silent Plan-mode gap.
 - Bump `CHAT_PROMPT_VERSION` when `DOCUMENT_RULES` / plan-agent policy changes.
+- `draft_field` upserts the open chat `ai_redraft` for that field (one card)
+  and dismisses sibling chat `ai_fix`s. Criteria Suggest-fixes
+  (`evaluationId` set) stay. `read_section` / `propose_edit` still see saved
+  text only.
 - Kickoff retrieval (`buildAutoEvidence`) is fail-soft (timeout / no creds →
   `""`). Do not block the turn on embeddings.
 

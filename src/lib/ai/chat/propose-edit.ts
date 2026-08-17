@@ -10,8 +10,8 @@ import { collapseWhitespace } from "@/lib/text/normalize-for-anchor";
 
 /**
  * Fraction of a field a single `propose_edit` may delete before it should be
- * routed to a block-level redraft instead of an inline word-diff. Tunable
- * safety valve — not a UX toggle (see Tier-2 `draft_section`).
+ * routed to `draft_field` instead of an inline word-diff. Tunable
+ * safety valve — not a UX toggle.
  */
 export const REDRAFT_COVERAGE_THRESHOLD = 0.5;
 
@@ -93,7 +93,7 @@ export function proposedEditHint(check: ProposedEditCheck): string {
     case "bad_scope":
       return "The `scope` coordinate does not exist in this field. Re-read the field with read_section and use a valid R#/C# cell or list item index.";
     case "too_large":
-      return "This change rewrites most of the field. Make a smaller, targeted edit (block redraft is not available yet in this mode).";
+      return "This change rewrites most of the field. Call draft_field with the complete replacement instead.";
     default: {
       const _exhaustive: never = check;
       return _exhaustive;

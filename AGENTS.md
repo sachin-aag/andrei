@@ -157,6 +157,7 @@ Release gates: `docs/pdf-evidence-deployment-checklist.md`.
 - Hybrid search = vector + English FTS with OR-tokenized `websearch_to_tsquery`.
   The report body is **not** chunk-indexed; use `read_section`.
 - Prompt policy is search-then-ask (including DV facts: requirement IDs, ECO/DCR). Do not restore “ask the human first” for batch numbers, dates, results, equipment IDs, or design-input facts. The document index is not citable evidence.
+- `draft_field` upserts the open chat `ai_redraft` for that field (one card). `read_section` still sees saved text only.
 - Stub chat (`buildStubChatModel`) can prove a turn streams; it cannot prove
   tool selection. Spec: `e2e/report-chat.spec.ts`.
 
