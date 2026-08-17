@@ -3,10 +3,10 @@ import { kindFromMime } from "@/lib/attachments/file-types";
 /**
  * Preview URL for an uploaded attachment.
  *
- * PDFs are fetched same-origin (`proxy=1`) and painted as an image — never
- * navigated as `application/pdf` in an iframe. Comet intercepts iframe PDF
- * loads (including our own origin) and shows a block page. DOCX is still
- * server-rendered HTML in a sandboxed iframe.
+ * PDFs are fetched same-origin (`proxy=1`) and painted as an image plus a
+ * transparent text layer — never navigated as `application/pdf` in an iframe.
+ * Chrome and Comet intercept iframe PDF loads (including our own origin) and
+ * show a block page. DOCX is still server-rendered HTML in a sandboxed iframe.
  */
 export function attachmentPreviewSrc(input: {
   reportId: string;
