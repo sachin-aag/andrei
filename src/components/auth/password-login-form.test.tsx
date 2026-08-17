@@ -41,6 +41,9 @@ describe("PasswordLoginForm", () => {
     render(<PasswordLoginForm />);
     expect(screen.getByLabelText(/work email/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /continue/i })).toBeDisabled();
+    expect(
+      screen.getByRole("button", { name: /email me a sign-in link instead/i })
+    ).toBeDisabled();
   });
 
   it("shows unknown email error", async () => {
@@ -171,5 +174,139 @@ describe("PasswordLoginForm", () => {
     expect(
       await screen.findByRole("link", { name: /forgot password/i })
     ).toHaveAttribute("href", expect.stringContaining("/forgot-password"));
+  });
+
+  it("sends a magic link from the email step without asking for a password", async () => {
+    vi.mocked(signIn).mockResolvedValueOnce({ ok: true } as never);
+
+    const user = userEvent.setup();
+    render(<PasswordLoginForm redirectTo="/reports" />);
+    await user.type(
+      screen.getByLabelText(/work email/i),
+      "e2e.password@mjbiopharm.com"
+    );
+    await user.click(
+      screen.getByRole("button", { name: /email me a sign-in link instead/i })
+    );
+
+    expect(await screen.findByText(/check your email/i)).toBeInTheDocument();
+    expect(signIn).toHaveBeenCalledWith("resend", {
+      email: "e2e.password@mjbiopharm.com",
+      redirectTo: "/reports",
+      redirect: false,
+    });
+    expect(
+      screen.getByText("e2e.password@mjbiopharm.com")
+    ).toBeInTheDocument();
+  });
+
+  it("sends a magic link from the password step", async () => {
+    vi.mocked(signIn).mockResolvedValueOnce({ ok: true } as never);
+
+    const user = userEvent.setup();
+    render(<PasswordLoginForm />);
+    await user.type(
+      screen.getByLabelText(/work email/i),
+      "e2e.password@mjbiopharm.com"
+    );
+    await user.click(screen.getByRole("button", { name: /continue/i }));
+
+    const magicLinkButton = await screen.findByRole("button", {
+      name: /^email me a sign-in link$/i,
+    });
+    await user.click(magicLinkButton);
+
+    expect(await screen.findByText(/check your email/i)).toBeInTheDocument();
+    expect(signIn).toHaveBeenCalledWith("resend", {
+      email: "e2e.password@mjbiopharm.com",
+      redirectTo: "/",
+      redirect: false,
+    });
+  });
+
+  it("still offers a magic link when the password account is locked", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      jsonResponse({ allowed: true, hasPassword: true, locked: true })
+    );
+    vi.mocked(signIn).mockResolvedValueOnce({ ok: true } as never);
+
+    const user = userEvent.setup();
+    render(<PasswordLoginForm />);
+    await user.type(
+      screen.getByLabelText(/work email/i),
+      "locked@mjbiopharm.com"
+    );
+    await user.click(screen.getByRole("button", { name: /continue/i }));
+
+    const magicLinkButton = await screen.findByRole("button", {
+      name: /^email me a sign-in link$/i,
+    });
+    await user.click(magicLinkButton);
+
+    expect(await screen.findByText(/check your email/i)).toBeInTheDocument();
+  });
+
+  it("offers a magic link for accounts without a password", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      jsonResponse({ allowed: true, hasPassword: false })
+    );
+    vi.mocked(signIn).mockResolvedValueOnce({ ok: true } as never);
+
+    const user = userEvent.setup();
+    render(<PasswordLoginForm />);
+    await user.type(
+      screen.getByLabelText(/work email/i),
+      "e2e.nopassword@mjbiopharm.com"
+    );
+    await user.click(screen.getByRole("button", { name: /continue/i }));
+
+    expect(
+      await screen.findByRole("link", { name: /set up a password/i })
+    ).toBeInTheDocument();
+    await user.click(
+      screen.getByRole("button", { name: /^email me a sign-in link$/i })
+    );
+
+    expect(await screen.findByText(/check your email/i)).toBeInTheDocument();
+  });
+
+  it("shows an error when sending a magic link fails", async () => {
+    vi.mocked(signIn).mockResolvedValueOnce({ error: "EmailSignin" } as never);
+
+    const user = userEvent.setup();
+    render(<PasswordLoginForm />);
+    await user.type(
+      screen.getByLabelText(/work email/i),
+      "e2e.password@mjbiopharm.com"
+    );
+    await user.click(
+      screen.getByRole("button", { name: /email me a sign-in link instead/i })
+    );
+
+    expect(
+      await screen.findByText(/could not send a sign-in link/i)
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/check your email/i)).not.toBeInTheDocument();
+  });
+
+  it("rejects unknown emails on the magic-link path", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      jsonResponse({ allowed: false, hasPassword: false })
+    );
+
+    const user = userEvent.setup();
+    render(<PasswordLoginForm />);
+    await user.type(
+      screen.getByLabelText(/work email/i),
+      "nobody@mjbiopharm.com"
+    );
+    await user.click(
+      screen.getByRole("button", { name: /email me a sign-in link instead/i })
+    );
+
+    expect(
+      await screen.findByText(/this email isn't registered/i)
+    ).toBeInTheDocument();
+    expect(signIn).not.toHaveBeenCalled();
   });
 });
