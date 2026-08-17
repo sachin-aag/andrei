@@ -171,9 +171,6 @@ const DV_SECTION_EDITORS: Record<string, ComponentType> = {
   ),
 };
 
-/** @deprecated Prefer INVESTIGATION_SECTION_EDITORS / DV_SECTION_EDITORS */
-const SECTION_EDITORS = INVESTIGATION_SECTION_EDITORS;
-
 export function ReportWorkspace({
   mode,
 }: {
@@ -372,11 +369,6 @@ export function ReportWorkspace({
     const el = mainRef.current?.querySelector(`#${s}`);
     if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
   }, []);
-
-  useEffect(() => {
-    if (showReviewGutter) return;
-    setSectionMinHeights({});
-  }, [showReviewGutter]);
 
   useEffect(() => {
     return () => {
@@ -584,7 +576,7 @@ export function ReportWorkspace({
                       ? DV_SECTION_EDITORS[s]
                       : INVESTIGATION_SECTION_EDITORS[s];
                   if (!Editor) return null;
-                  const extra = sectionMinHeights[s];
+                  const extra = showReviewGutter ? sectionMinHeights[s] : undefined;
                   return (
                     <section
                       key={s}
