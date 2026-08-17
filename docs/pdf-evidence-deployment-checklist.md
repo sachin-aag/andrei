@@ -41,8 +41,9 @@ Terraform in [`infra/gcs`](../infra/gcs/README.md) (`terraform apply` there).
 ## Application config
 
 - [ ] `GCS_BUCKET` set in Production and Preview
-- [ ] `DOCUMENT_EXTRACT_GOOGLE_MODEL_ID=gemini-3.1-flash-lite` (Vertex location is pinned to `global` in code, same as eval/chat — do not add a location env var)
-- [ ] `DOCUMENT_EMBEDDING_MODEL_ID=gemini-embedding-001` (`GOOGLE_VERTEX_LOCATION=us-central1` is fine for embeddings)
+- [ ] `DOCUMENT_EXTRACT_GOOGLE_MODEL_ID=gemini-3.1-flash-lite`
+- [ ] `DOCUMENT_EMBEDDING_MODEL_ID=gemini-embedding-001`
+- [ ] `DOCUMENT_EXTRACT_LOCATION=global` (required for Gemini 3.x). Extract does **not** inherit `GOOGLE_VERTEX_LOCATION`. Leaving that at `us-central1` for embeddings is fine; pointing extract at `us-central1` 404s `gemini-3.1-flash-lite`.
 - [ ] Quotas set (`MAX_ATTACHMENT_BYTES`, `MAX_ATTACHMENT_PAGES`, per-report count/bytes)
 - [ ] `ATTACHMENT_STORAGE_BACKEND` is **not** `local` in production
 - [ ] `ALLOW_LOCAL_ATTACHMENT_STORAGE` unset/false in production

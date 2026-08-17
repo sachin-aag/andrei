@@ -9,6 +9,7 @@
 #
 # Optional:
 #   DOCUMENT_EXTRACT_GOOGLE_MODEL_ID (defaults in code to gemini-3.1-flash-lite)
+#   DOCUMENT_EXTRACT_LOCATION (defaults to global)
 #
 # Fork PRs / missing secrets: job skips cleanly.
 
@@ -78,6 +79,7 @@ jobs:
         env:
           GOOGLE_VERTEX_PROJECT: ${{ secrets.GOOGLE_VERTEX_PROJECT }}
           DOCUMENT_EXTRACT_GOOGLE_MODEL_ID: ${{ vars.DOCUMENT_EXTRACT_GOOGLE_MODEL_ID }}
+          DOCUMENT_EXTRACT_LOCATION: ${{ vars.DOCUMENT_EXTRACT_LOCATION }}
         run: |
           set -euo pipefail
           EXTRA_ARGS=()
