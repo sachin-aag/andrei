@@ -51,6 +51,8 @@ export const reportStatusEnum = pgEnum("report_status", [
 export const documentTypeEnum = pgEnum("document_type", [
   "investigation_report",
   "design_verification",
+  "verification_protocol",
+  "verification_test_report",
 ]);
 
 /**
@@ -278,9 +280,20 @@ export type DesignVerificationMetadata = {
   productName: string;
 };
 
+export type VerificationTestReportMetadata = {
+  revision: string;
+  productName: string;
+  projectName: string;
+  dhfIndex: string;
+  projectLeader: string;
+  ecoDco: string;
+  sourceProtocolReportId?: string;
+};
+
 export type ReportMetadata =
   | InvestigationReportMetadata
   | DesignVerificationMetadata
+  | VerificationTestReportMetadata
   | Record<string, unknown>;
 
 export const reports = pgTable(

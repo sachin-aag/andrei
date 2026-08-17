@@ -33,6 +33,7 @@ export async function createReport(
   opts?: {
     deviationNo?: string;
     documentNo?: string;
+    documentType?: string;
     assignedManagerId?: string | null;
     assignedManagerIds?: string[];
   }
@@ -43,6 +44,7 @@ export async function createReport(
     documentNo,
     // Temporary alias still accepted by create API
     deviationNo: documentNo,
+    ...(opts?.documentType ? { documentType: opts.documentType } : {}),
     assignedManagerId: opts?.assignedManagerId ?? null,
     ...(opts?.assignedManagerIds
       ? { assignedManagerIds: opts.assignedManagerIds }

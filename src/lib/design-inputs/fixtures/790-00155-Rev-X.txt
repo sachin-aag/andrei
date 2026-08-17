@@ -1,0 +1,727 @@
+                              Solea Model 3 Software and Firmware Verification Test Plan
+
+
+
+     1. PURPOSE
+     The purpose of this document is to provide a test plan for the Solea Model 3 software versions 4.7.0 and
+     4.7.1 Solea Model 3 CAN module firmware version 3.9.0, and Solea Model 3 Service Utility software
+     versions 1.6.0.
+
+
+     2. SCOPE
+     This test plan applies to the Solea Model 3 software version 4.7.0 and 4.7.1, Solea Model 3 CAN module
+     firmware version 3.9.0, and Solea Model 3 Service Utility software version 1.6.0. Note that the Service
+     Utility software is an internal diagnostic software designed to be used by Convergent Dental employees
+     for troubleshooting purposes and is not user facing.
+
+     Note that Convergent Dental’s software version control system (VCS) has four components that uniquely
+     identify the release:
+     mm.nn.ff.bb, where:
+     ▪        mm: represents major release number (01, 02, etc.)
+     ▪        nn: represents minor release number (01, 02, etc.)
+     ▪        ff: represents fix release number (01, 02, etc.)
+     ▪        bb: represents build number (01, 02, etc.)
+     The build number is considered an internal identifier and may not be displayed to the customer. In cases
+     where the build number is omitted, the fix release number defines the release. There is only one
+     combination of major, minor, and fix number for each release.
+
+     This test plan is used as a verification activity for Solea Model 3 system configurations defined in TOP-
+     00051 and TOP-00017. A list of references specific to the scope of this test plan are shown in the table
+     below.
+
+                                                   Table 1: References
+           CD P/N      Description
+          822-00007    Solea Model 3 Software Requirements Document
+          790-00134    Solea Model 3 Software Verification Protocol
+         790-00134R    Solea Model 3 Software Verification Test Report
+          790-00139    Solea Model 3 Software Unit Test Report
+          825-00061    Solea Model 3 Software Release Candidate Functional Autoscript Test Report
+          821-00016    Solea Model 3 Firmware Test Plan
+          822-00008    Solea Model 3 Firmware Requirements Document
+          790-00135    Solea Model 3 Firmware Verification Protocol
+         790-00135R    Solea Model 3 Firmware Verification Test Report
+          822-00017    Solea V3 Service Utility Requirements Document
+          825-00013    Solea Model 3 Service Utility Verification Protocol
+         825-00013R    Solea Model 3 Service Utility Verification Test Report
+          826-00024    Solea Simulated Use Validation Test Protocol
+          822-00004    Solea Model 3 System Requirements Document
+          790-00127    Solea Model 3 TOP-00017 System Design Verification Protocol
+
+
+790-00155, Rev. X                                                                                     Page 1 of 14
+                                 Solea Model 3 Software and Firmware Verification Test Plan
+
+
+
+       790-00127R         Solea Model 3 TOP-00017 System Design Verification Test Report
+        825-00024         Solea Model 3 TOP-00051 System Design Verification Protocol
+       825-00024R         Solea Model 3 TOP-00051 System Design Verification Test Report
+
+
+
+     2.1     Model Testing
+     Solea Model 3 comes in two hardware configurations, TOP-00017 and TOP-00051. Some functionality
+     and features may not have to be executed on both platforms due to the reasons listed below in Table 3.
+     Requirements that are identified as only needing to be verified on one of the platforms must be
+     identified in the scope sections below accompanied with one of the justifications from Table 3.
+
+     The hardware differences between TOP-00017 and TOP-00051 that are significant to the software are
+     the laser and the laser controller. In most other aspects the two systems are the same from the
+     perspective of the software.
+
+     The general rule is that all requirements that are related to controlling or monitoring the laser will be
+     verified on both platforms. Also, all requirements related to calibration will also be verified on both
+     platforms.
+
+     However, software version 4.7.0, CAN firmware version 3.9.0, PCON firmware version 1.2.1 and service
+     utility version 1.6.0 (and future versions) will support the implementation of the PCON (SUB-00302) laser
+     controller for use in TOP-00017 systems as a field replacement option for the LCD-2 laser controller. As a
+     result, there will be three unique laser and laser controller configurations for the Solea Model 3,
+     applicable to software and firmware versions captured in Rev. W (and subsequent revisions) of this test
+     plan. Requirements relevant to the laser and laser controller will be identified in the scope sections
+     below via one of the justifications from Table 2.
+
+                         Table 3: Justification for testing requirements on only one hardware platform.
+      Justification ID     Description
+                          The requirement is satisfied entirely by software and has no hardware dependency.
+            J1
+                          Example: Broadcast Notification feature requirements, database and log management.
+                          The requirement is hardware dependent but the hardware and its interface to the software is
+            J2            identical on both TOP-00017 and TOP-00051.
+                          Example: Air and mist requirements.
+                          The requirement applies to only one of the platforms.
+            J3            Example: The host software controls the simmering for systems with the LCD-2 laser controller
+                          while the simmering is controlled by PCON for systems with the PCON laser controller.
+
+                             Table 4: Justification for testing laser controller related requirements.
+      Justification ID    Description
+             J4           The requirement is only relevant only to TOP-00017 with LCD-2.
+                          The requirement applies to PCON and is specific to laser firing. The requirement needs to be
+            J5
+                          tested on TOP-00017 with PCON and on TOP-00051.
+                          The requirement applies to PCON, but is not specific to laser firing. The requirement can be
+            J6
+                          tested once on either a TOP-00017 with PCON or on TOP-00051.
+            J7            The requirement applies to laser firing, and must be tested on all applicable laser controller
+
+
+790-00155, Rev. X                                                                                                 Page 2 of 14
+                                Solea Model 3 Software and Firmware Verification Test Plan
+
+
+
+                         configurations.
+             J8          The requirement needs to be tested on TOP-00017 with PCON Only.
+
+
+
+     2.2      Scope – Solea Model 3 Software Version 4.7.0
+     The following are the major changes to software version 4.7.0:
+
+         •    Updates to the Demineralization Reduction (DR) Feature to support a Full Market Release
+         •    Removal of subscription license enforcement
+         •    Addition of PCON laser controller support for TOP-00017 system configurations
+         •    Addition of Demo Mode functionality for sales systems where a subset of sensor monitoring is
+              disabled
+         •    Improved laser control and laser monitoring schema
+
+     Software version 4.7.0 is intended to be a full market release. Testing will be executed in full.
+
+     The requirements listed in the Table 5 will be executed according to the assigned justification
+     identification. Requirements that are not listed in Table 5 have the assigned justification ID J1, J2, or J3
+     and need to be executed once and it can be done on any hardware configuration.
+
+       Table 5: Scope – Solea Model 3: Software Version 4.7.0 requirements to be tested on specific system configurations
+                                                                                                              Justification
+     Requirements Document Requirement ID                                                                    ID (Table 3 &
+                                                                                                                Table 6)
+                                 SW-PL-2                                                                            J7
+                                 SW-SO-1                                                                            J7
+                                 SW-SS-4.1                                                                          J4
+                                 Installation (SW-IN)
+                                 Exception: SW-IN-1.1 shall be tested in full on one platform, tested               J1
+                                 with one field version for the other platform
+                                 SW-SS-12 shall be tested in full on one platform, tested with one field
+                                                                                                                    J6
+                                 version for the other platform
+                                 SW-BA-1                                                                            J6
+                                 SW-RE-5                                                                            J6
+         822-00007 Rev. U        SW-SST-4, SW-SST-5, SW-SST-6                                                       J7
+           Solea Model 3
+                                 SW-SST-12.6                                                                        J6
+      Software Requirements
+                                 SW-SIB-1.7                                                                         J7
+             Document
+                                 SW-SIB-2.2, SW-SIB-3                                                               J5
+                                 SW-SIB-4                                                                           J5
+                                 SW-SSB-1                                                                           J7
+                                 SW-SSB-2                                                                           J4
+                                 SW-LWB-1, SW-LWB-4                                                                 J7
+                                 SW-LWB-3                                                                           J4
+                                 SW-LCB-1                                                                           J7
+                                 SW-ES-1                                                                            J4
+                                 SW-ER-1                                                                            J7
+                                 SW-WLP-10.2                                                                        J5
+
+
+
+790-00155, Rev. X                                                                                                Page 3 of 14
+                                    Solea Model 3 Software and Firmware Verification Test Plan
+
+
+
+                                                                                                                        Justification
+     Requirements Document           Requirement ID                                                                    ID (Table 3 &
+                                                                                                                          Table 6)
+                                     SW-WLP-10.3, SW-WLP-15, SW-WLP-16, SW-WLP-17, SW-WLP-24, SW-
+                                                                                                                             J7
+                                     WLP-30, SW-WLP-35
+                                     SW-WVI-1.7                                                                              J4
+                                     SW-WVI-1.8                                                                              J5
+                                     SW-PF-2                                                                                 J7
+                                     SW-PA-1                                                                                 J7
+
+     The Solea Automation Test version 1.3.9 shall be executed on both TOP-00017 and TOP-00051. It shall be
+     executed for a minimum total of 10 hours on each model type and the average time to failure must
+     exceed 3 hours. Failures caused by hardware or caused by test environment variable(s) out of normal
+     range can be excluded from the report. The automated test result will be documented in the “Solea
+     Model 3 Software Release Candidate Functional Autoscript Test Report”, 825-00061.
+
+     As part of software version 4.7.0 testing, the system requirements for Demo mode are also going to be
+     tested via execution of either the Solea Model 3 TOP-00017 System Design Verification Protocol (Rev. I)
+     or the Solea Model 3 TOP-00051 System Design Verification Protocol (Rev. D), per the justification in
+     Table 7 below.
+
+                    Table 8: Scope – Solea Model 3 System requirements to be tested on either TOP-00017 or TOP-00051
+
+                                                                                                                       Justification
+      Requirements Document            Requirement ID
+                                                                                                                       ID (Table 3)
+         822-00004 Rev. R
+           Solea Model 3              Demo mode (M3-SYS-SW-028, M3-SYS-SW-029)                                              J2
+       System Requirements
+
+
+
+     2.3     Scope – Solea Model 3 Software Version 4.7.1
+     The following are the major changes to software version 4.7.1:
+
+         •   Installer Update to prevent file loss during software updates
+         •   Fixed issue where minimum pulse width wasn’t enforced during ramp
+         •   Addition of logging and hardening of software to aid determining root cause of intermittent issue
+             where the laser doesn’t fire when user steps on the foot pedal.
+         •   Fixed an issue with error recovery for cases where the PCON device was required to be reset
+         •   Fixed an issue to ensure that the default PCON serial port is not attempted to be utilized on a
+             system if another device (e.g. cell modem, foot pedal) is already dedicated to access that serial
+             port.
+         •   Fixed issue where the galvos are not homed correctly on systems with PCON laser controller.
+
+             Software version 4.7.1 is intended to be a full market release. Testing will be partially executed.
+
+
+
+790-00155, Rev. X                                                                                                          Page 4 of 14
+                                Solea Model 3 Software and Firmware Verification Test Plan
+
+
+
+                                                                                                           Justification
+     Requirements Document       Requirement ID                                                           ID (Table 3 &
+                                                                                                             Table 9)
+                                 SW-IN-1.1                                                                       J8
+                                 SW-IN-2                                                                         J8
+                                 SW-WLP-24.1 Pulse Widths                                                        J1
+                                 SW-WLP-5                                                                        J6
+                                 SW-SST-5.1.1                                                                    J6
+         822-00007 Rev. V
+                                 SSW-SST-6.4 White Box                                                           J6
+          Solea Model 3
+                                 SW-SIB-3                                                                        J6
+      Software Requirements
+                                 SW-PA-1                                                                         J7
+            Document
+                                 SW-SS-4                                                                         J6
+                                 SW-EH-1.2                                                                       J6
+                                 SW-SDT-1                                                                        J6
+                                 SW-LCB-1                                                                        J7
+                                 SW-LWB-4                                                                        J7
+
+
+
+     2.4     Scope – Solea Model 3 Module Firmware Version 3.7.0
+     Module firmware version 3.7.0 is intended to be a full market release. Testing will be executed in full.
+     The requirements listed in the Table 10 will be tested once on either a TOP-00017 or TOP-00051, all other
+     requirements not listed will be executed on both TOP-00017 and TOP-00051.
+
+       Table 10: Scope – Solea Model 3 Firmware Version 3.7.0 requirements to be tested on either TOP-00017 or TOP-
+                                                          00051
+                                                                                                         Justification
+      Requirements Document       Requirement ID
+                                                                                                         ID (Table 3)
+                                  Air Module Requirements (FW-P)                                              J2
+         822-00008 Rev. K
+          Solea Model 3           Cool Module Requirements (FW-C)                                             J2
+      Firmware Requirements       Mist Module Requirements (FW-M)                                             J2
+            Document
+                                  DCMB Requirements (FW-D)                                                    J2
+
+
+     2.5     Scope – Solea Model 3 Module Firmware Version 3.8.0
+     Module firmware version 3.8.0 is intended to be a full market release. A subset of tests will be run to
+     verify the new changes in this release. The requirements listed in the table below will be tested once on
+     either a TOP-00017 or TOP-00051 system configuration, all other requirements shall be executed on
+     both TOP-00017 and TOP-00051 and are listed in the Verification and Validation Plan in Section 3.
+
+       Table 11: Scope – Solea Model 3 Firmware Version 3.8.0 requirements to be tested on either TOP-00017 or TOP-
+                                                           00051
+                                                                                                         Justification
+      Requirements Document       Requirement ID
+                                                                                                         ID (Table 3)
+         822-00008 Rev. L         Radiator  Fans (FW-CF-1, FW-CF-2) (Tested on both new  and  old
+                                                                                                               J2
+           Solea Model 3          radiator fans)
+      Firmware Requirements       Air Requirements Clarification (FW-PMO-1.4, FW-PMO-1.5)                     J2
+
+
+790-00155, Rev. X                                                                                             Page 5 of 14
+                                 Solea Model 3 Software and Firmware Verification Test Plan
+
+
+
+                                                                                                         Justification
+      Requirements Document        Requirement ID
+                                                                                                         ID (Table 3)
+              Document
+
+
+
+    2.5.1 Scope – Amendment Fix Release Software Version 4.6.1 (Firmware)
+     There are no changes to module firmware version 3.8.0 in amendment fix software version 4.6.1,
+     however, to verify the new changes made surrounding the CAN communications, a subset of tests will be
+     verified on both a TOP-00017 as well as on a TOP-00051 and are detailed in the Verification and
+     Validation Plan in Section 3 of this test plan.
+
+    2.5.2 Scope – Amendment Fix Firmware Version 3.8.1
+     The change to the Solea model 3 firmware version 3.8.1 is:
+
+     •         For the Palatal Coagulation pattern, the time before issuing a “no laser pulse detected” error
+               (1040) is extended by 150ms to allow a wider tolerance for system timing variabilities.
+
+     A subset of tests will be run to verify the changes in this release. The requirements shall be executed on
+     both TOP-00017 and TOP-00051 and are listed in the Verification and Validation Plan in Section 3.
+
+     2.6       Scope – Solea Model 3 Module Firmware Version 3.9.0
+     Module firmware version 3.9.0 is intended to be a full market release. A subset of tests will be run to
+     verify the new changes in this release. The requirements listed in Table 12 below will be executed on the
+     various system configurations corresponding to the assigned justification identification.
+
+                      Table 13: Scope – Solea Model 3 Firmware Version 3.9.0 requirements to be tested
+                                                                                                          Justification
+      Requirements Document        Requirement ID                                                        ID (Table 3 &
+                                                                                                           Table 14)
+                                   LPWR Interlock (FW-LD-4.9)                                                 J2
+            822-00008 Rev. P       Demo Mode (FW-DDM-x, FW-MDM-x, FW-CDM-x, FW-LDM-x, FW-
+             Solea Model 3                                                                                    J2
+                                   PDM-x)
+         Firmware Requirements
+                                   Supplemental Test (LPWR Configuration Parameter Restore)                   J2
+               Document
+                                   Supplemental Test (Shutter PWM Frequency)                                  J2
+
+     2.7       Scope – Amendment Fix Release Software Version 4.7.1 (Firmware)
+     There are no changes to module firmware version 3.9.0 in amendment fix software version 4.7.1,
+     however, to verify the new changes made surrounding the CAN communications, a subset of tests will be
+     verified on both a TOP-00017 as well as on a TOP-00051 and are detailed in the Verification and
+     Validation Plan in Section 3 of this test plan.
+
+
+
+
+790-00155, Rev. X                                                                                            Page 6 of 14
+                                 Solea Model 3 Software and Firmware Verification Test Plan
+
+
+
+     2.8     Scope – Solea Model 3 PCON Firmware Version 1.2.1
+     PCON firmware version 1.2.1 is intended to be a full market release. A subset of tests will be run to verify
+     the new changes in this release. The requirements listed in Table 15 below will be executed on the
+     various system configurations corresponding to the assigned justification identification.
+
+                    Table 16: Scope – Solea Model 3 PCON Firmware Version 1.2.1 requirements to be tested
+                                                                                                            Justification
+      Requirements Document         Requirement ID
+                                                                                                            ID (Table 17)
+         822-00008 Rev. P
+          Solea Model 3
+                                   PCON Firmware (FW-RM-x)                                                       J5
+      Firmware Requirements
+            Document
+
+
+
+     2.9     Scope – Solea Model 3 Service Utility Version 1.3.0
+     Note that the Service Utility software is an internal diagnostic software designed to be used by
+     Convergent Dental employees for troubleshooting purposes and is not user facing. Service Utility version
+     1.3.0 is intended to be a full market release. Testing will be executed in full. The requirements listed in
+     Table 18 will be tested on either TOP-00017 or TOP-00051, all other requirements not listed will only be
+     executed on both TOP-00017 and TOP-00051.
+
+      Table 18: Scope – Solea Model 3 Service Utility Version 1.3.0 requirements to be tested on either TOP-00017 or TOP-
+                                                              00051
+                                                                                                            Justification
+     Requirements Document Requirement ID
+                                                                                                            ID (Table 3)
+                                Installation (M3-SVU-0004)                                                        J1
+                                Instructions (M3-SVU-0006)                                                        J1
+                                Touch Screen Input (M3-SVU-0007)                                                  J2
+                                Save and Read Calibration Values to/from File (M3-SVU-0040, M3-
+                                SVU-0050, M3-SVU-0051, M3-SVU-0052, M3-SVU-0060, M3-SVU-                          J1
+                                0070, M3-SVU-0080)
+                                Display (M3-SVU-0090, M3-SVU-0100, M3-SVU-0110, M3-SVU-0120,
+                                                                                                                  J1
+                                M3-SVU-0140, M3-SVU-0141)
+         822-00017 Rev. K
+                                System Screen (M3-SVU-3270, M3-SVU-3280, M3-SVU-3290, M3-SVU-
+      Solea V3 Service Utility
+                                3300, M3-SVU-3310, M3-SVU-3320, M3-SVU-3340, M3-SVU-3341,                         J2
+     Requirements Document
+                                M3-SVU-3342)
+                                System Screen (M3-SVU-3295)                                                       J3
+                                Low Level Module Functionality (M3-SVU-3350, M3-SVU-3360, M3-
+                                                                                                                  J2
+                                SVU-3370, M3-SVU-3380, M3-SVU-3390, M3-SVU-34xx)
+                                Air Screen (M3-SVU-35xx, M3-SVU-36xx, M3-SVU-37xx, M3-SVU-38xx)                   J2
+                                Mist Screen (M3-SVU-39xx, M3-SVU-40xx)                                            J2
+                                Cool Screen (M3-SVU-41xx, M3-SVU-42xx, M3-SVU-43xx)                               J2
+                                DCMB Screen (M3-SVU-44xx, M3-SVU-45xx, M3-SVU-46xx)                               J2
+
+
+
+
+790-00155, Rev. X                                                                                               Page 7 of 14
+                                  Solea Model 3 Software and Firmware Verification Test Plan
+
+
+
+    2.10 Scope – Solea Model 3 Service Utility Version 1.4.0
+     Note that the Service Utility software is an internal diagnostic software designed to be used by
+     Convergent Dental employees for troubleshooting purposes and is not user facing. Service Utility version
+     1.4.0 is intended to be a full market release. A subset of tests will be run to verify the new changes in
+     this release. The requirements listed in the table below will be tested once on either a TOP-00017 or
+     TOP-00051 system configuration, all other requirements shall be executed on both TOP-00017 and TOP-
+     00051 and are listed in the Verification and Validation Plan in Section 3.
+
+          Table 19: Scope – Solea Model 3 Service Utility Version 1.4.0 requirements to be tested on either TOP-00017 or TOP-00051
+                                                                                                                     Justification
+     Requirements Document          Requirement ID
+                                                                                                                     ID (Table 3)
+          822-00017 Rev. L
+       Solea V3 Service Utility     Calibration (M3-SVU-3259, M3-SVU-3270)                                                 J2
+      Requirements Document
+
+
+    2.11 Scope – Solea Model 3 Service Utility Version 1.5.0
+     Service Utility version 1.5.0 is intended to be a full market release. A subset of tests will be run to verify
+     the new changes in this release. The requirements listed in the table below will be tested once on either
+     a TOP-00017 or TOP-00051 system configuration, all other requirements shall be executed on both TOP-
+     00017 and TOP-00051 and are listed in the Verification and Validation Plan in Section 3.
+
+     Note that the scope for this testing was originally outlined in revision R. of this test plan, but then was
+     updated in revision U., with the only change being the removal of the LPWR Pulse Amplitude Calibration
+     supplemental test case because it was determined to be not applicable for this release version. The
+     scope outlined in revision U. of this test plan is what will be followed for the verification of Service Utility
+     1.5.0.
+
+          Table 20: Scope – Solea Model 3 Service Utility Version 1.5.0 requirements to be tested on either TOP-00017 or TOP-00051
+                                                                                                                     Justification
+     Requirements Document          Requirement ID
+                                                                                                                     ID (Table 3)
+         822-00017 Rev. M           Calibration (M3-SVU-7000, M3-SVU-7010, M3-SVU-7020)                                    J1
+       Solea V3 Service Utility
+                                    Tests Screen (M3-SVU-4900, M3-SVU-4950)                                                J1
+      Requirements Document
+
+
+
+    2.12 Scope – Solea Model 3 Service Utility Version 1.6.0
+     Service Utility version 1.6.0 is intended to be a full market release. A subset of tests will be run to verify
+     the new changes in this release. The requirements listed in Table 21 below will be executed on the
+     various system configurations corresponding to the assigned justification identification.
+
+                           Table 22: Scope – Solea Model 3 Service Utility Version 1.6.0 requirements to be tested
+                                                                                                                      Justification
+     Requirements Document          Requirement ID                                                                   ID (Table 3 &
+                                                                                                                       Table 23)
+         822-00017 Rev. O           Demineralization Reduction Calibration (M3-SVU-8xxx)                                    J1
+
+
+790-00155, Rev. X                                                                                                        Page 8 of 14
+                                  Solea Model 3 Software and Firmware Verification Test Plan
+
+
+
+                                                                                                           Justification
+     Requirements Document         Requirement ID                                                         ID (Table 3 &
+                                                                                                            Table 23)
+       Solea V3 Service Utility    LPWR Pulse Width Calibration (M3-SVU-4800)                                    J7
+      Requirements Document        Laser Screen (M3-SVU-5420, M3-SVU-5430)                                       J6
+                                   LWPR Calibration: Supplemental test: New pulse amplitude calibration
+                                                                                                               J5
+                                   workflow
+                                   Patterns: Supplemental test: PCON patterns filtered by system
+                                                                                                               J7
+                                   configuration
+
+
+
+
+790-00155, Rev. X                                                                                             Page 9 of 14
+                                     Solea Model 3 Software and Firmware Verification Test Plan
+
+
+
+          3. VERIFICATION AND VALIDATION PLAN
+              The following table shows the tests protocols and at which revision executed for each software version. Unless otherwise noted, the full
+              protocol is to be executed.
+
+                                                              Table 24: Software Verification and Validation Plan
+  Test Protocol to be                                                                                                                   Solea Software 4.7.1
+                                                       Solea Software 4.7.0
+       Executed
+      790-00139
+Solea Model 3 Software   Rev. S.                                                                            Rev. T
+ Unit and Integration    Run in full. Automated tests, no plan.                                             Run in full. Automated tests, no plan.
+      Test Report
+      825-00061                                                                                             Rev. J
+Solea Model 3 Software                                                                                      Run in full. Automated tests, no plan.
+                         Rev. I.
+  Release Candidate
+                         Run in full. Automated tests, no plan.
+ Functional Autoscript
+      Test Report
+                                                                                                            Rev R Partial Execution Run subset of tests related to:
+
+                                                                                                            Installation: SW-IN-1.1, SW-IN-2
+
+                                                                                                            Work Flow: SW-WLP-24.1 Pulse Widths, SW-WLP-5
+
+                                                                                                            State Transition: SW-SST-5.1.1, SW-SST-6.4 White Box
+                         Rev. Q.
+                         • Full execution. The requirements that need to be verified on specific system     Pattern: SW-PA-1
+      790-00134
+                            configurations on are listed in Table 5. All other requirements can be
+Solea Model 3 Software
+                            performed on either a TOP-0017 or TOP-00051 system configuration.               System Startup State Specific Behavior: SW-SIB-3
+ Verification Protocol
+                         • Additional supplemental test for Solea Protect Offset Parameter (Can be
+                            performed on either a TOP-0017 or TOP-00051 system configuration)               Error recovery: SW-EH-1.2
+
+                                                                                                            Systems Diagnostics Testing: SW-SDT-1
+
+                                                                                                            System Startup / Shutdown: SW-SS-4
+
+                                                                                                            Laser Cutting State Specific Behavior: SW-LCB-1
+
+
+     790-00155, Rev. X                                                                                              Page 10 of 14
+                                          Solea Model 3 Software and Firmware Verification Test Plan
+
+
+  Test Protocol to be                                                                                                                 Solea Software 4.7.1
+                                                       Solea Software 4.7.0
+       Executed
+                                                                                                            Arming State Specific Behavior: SW-LWB-4
+       826-00024                                                                                            Rev. F
+                           Rev. E
+ Solea Simulated Use                                                                                        Run in full
+                           Run in full.
+Validation Test Protocol
+
+
+                                                                Table 25: Firmware Verification and Validation Plan
+  Test Protocol To Be                                                   CAN Module Firmware 3.8.0 (for SW         CAN Module Firmware 3.8.0 (for SW      CAN Module Firmware 3.8.1
+                                 CAN Module Firmware 3.7.0
+       Executed                                                                         4.6.0)                                     4.6.1)                       (for SW 4.6.2)
+                                                                     Rev. L partial execution. Run subset of                                           Rev. N partial execution. Run
+                                                                     tests related to:                                                                 subset of tests related to:
+                            Rev. K full execution. The               • Laser Power Monitoring: FW-LMO-1.4, Rev. M partial execution. Run subset        • Laser power monitoring
+       790-00135
+                            requirements that only need to be            FW-LMO-1.5, FW-LMO-1.6, FW-LMO-          of tests related to:                    firmware: FW-LMO-1.4, FW-
+Solea Model 3 Firmware
+                            verified once on either a TOP-00017          1.7                                      • Power Modem Firmware: FW-             LMO-1.5, FW-LMO-1.6, FW-
+  Verification Protocol
+                            or TOP-00051 are listed in Table 10.     • Radiator Fans: FW-CF-1, FW-CF-2                DSP-3.1.4                           LMO-1.8.
+                                                                     • Air Requirements Clarification: FW-
+                                                                         PMO-1.4, FW-PMO-1.5
+
+                                                        Table 26: Firmware Verification and Validation Plan (continued)
+  Test Protocol To Be
+                                                                CAN Module Firmware 3.9.0
+       Executed
+                            Rev. P partial execution. Run subset of tests related to:
+                            • Demo Mode: FW-PDM-x, FW-CDM-x, FW-MDM-x, FW-DDM-x, FW-LDM-x,
+       790-00135            • PCON Parameters: FW-RM-x
+Solea Model 3 Firmware      • LPWR Interlock: FW-LD-4.9
+  Verification Protocol     • LPWR Configuration Parameters: Supplemental Test: Verify configuration parameter factory restore
+                               functionality
+                            • Shutter Frequency: Supplemental Test: Verify Shutter PWM control signal frequency
+
+
+
+
+     790-00155, Rev. X                                                                                             Page 11 of 14
+                                     Solea Model 3 Software and Firmware Verification Test Plan
+
+
+
+
+                                                           Table 27: Service Utility Verification and Validation Plan
+Test Protocol To   Service Utility
+                                             Service Utility Software 1.4.0                            Service Utility Software 1.5.0                  Service Utility Software 1.6.0
+  Be Executed      Software 1.3.0
+                                                                                        Rev. K partial execution. Run subset of tests related to:   Rev. M partial execution. Run subset
+                                     Rev. J partial execution. Run subset of tests      • Calibration Acceptance: M3-SVU-7000, M3-SVU-7010,         of tests related to:
+                                     related to:                                           M3-SVU-7020,                                             • LPWR Pulse Width Calibration:
+                                     • Installation: M3-SVU-0004                        • LPWR Sensor Calibration: M3-SVU-3255, M3-SVU-                 M3-SVU-4800
+                   Rev. H Full       • Demineralization Reduction: M3-SVU-8xxx             3256, M3-SVU-3257, M3-SVU-3258, M3-SVU-3259,             • Demineralization Reduction
+                   execution. The    • Handpiece and Favorites Rename: M3-SVU-             SVU-3260, SVU-3261, SVU-3262, SVU-3263, SVU-
+                                                                                                                                                        Calibration: M3-SVU-8xxx
+                   requirements          3341, M3-SVU-3342, M3-SVU-6xxx                    3264, SVU-3271, SVU-3272, SVU-3273, SVU-3274,
+  825-00013                                                                                                                                         • Laser Screen: M3-SVU-5420, M3-
+                   that only need    • Service Utility Test Script: M3-SVU-4900,           SVU-3275, SVU-3276, SVU-3277, SVU-3278, SVU-
+ Solea Model 3                                                                             3279, M3-SVU-710x, M3-SVU-3281, M3-SVU-3282,                 SVU-5430
+                   to be verified        M3-SVU-4950, (specifically the test scripts
+ Service Utility                                                                           M3-SVU-3283, M3-SVU-3284,                                • LWPR Calibration: Supplemental
+                   once on either        “functional_test.py” and
+  Verification                                                                          • Tests Screen: M3-SVU-4900, M3-SVU-4950, M3-SVU-
+                   a TOP-00017           “functional_test_PCON.py” were updated                                                                         test: New pulse amplitude
+    Protocol                                                                               4971
+                   or TOP-00051          and should be executed)                                                                                        calibration workflow
+                   are listed in     • Calibration: M3-SVU-3259, M3-SVU-3270            • Laser Screen: M3-SVU-4985, M3-SVU-4990, M3-SVU-           • Patterns: Supplemental test:
+                   Table 18.         • LPWR UI: SVU-4812                                   5000, M3-SVU-5010, M3-SVU-5020                               PCON patterns filtered by
+                                     • Laser Control and Monitoring:                    • Service Utility Test Scripts: Supplemental test: verify       system configuration
+                                         Supplemental test: verify frequency OOT           functional (Laser PW and Installation) test scripts
+                                         detection (1036)                                  execute in full
+
+
+
+
+    790-00155, Rev. X                                                                                                   Page 12 of 14
+                             Solea Model 3 Software and Firmware Verification Test Plan
+
+
+
+        4. REVISION HISTORY
+
+Revision     Revision     DCO/ECO
+                                      Description of Revision                                   Revision Author
+ Level          Date       Number
+   A        27-Aug-2018   DCO-00994   Initial release.                                           A. Johansson
+                                      Updated to support software version 4.0.1 and
+   B        18-Oct-2018   DCO-01050                                                              A. Johansson
+                                      firmware version 3.3.18
+                                      Updated to support software version 4.1.0 and
+                                      firmware version 3.4.0
+                                      Removed the firmware unit and integration test. It was
+                                      intended to assist software engineers during
+   C        09-Apr-2019   DCO-01146                                                              A. Johansson
+                                      development but in its current form it is difficult to
+                                      maintain and not used by software engineers and
+                                      therefor does not provide any value. It is not used for
+                                      formal any sort of formal verification.
+                                      Updated to support software version 4.1.1 and
+   D        01-Jul-2019   DCO-01187                                                              A. Johansson
+                                      firmware version 3.4.1
+                                      Updated to support software version 4.2.0 and
+   E        26-Nov-2019   DCO-01308                                                              A. Johansson
+                                      firmware version 3.4.2
+                                      Updated to support:
+                                       • Software version 4.3.0
+                                       • Module Firmware version 3.5.0
+                                       • PCON Firmware version 1.1.0
+   F        20-Feb-2020   DCO-01367                                                              C. Smaldone
+                                       • Service Utility version 1.1.0
+                                      All supporting both the TOP-00017 and TOP-00051
+                                      configurations (except PCON firmware which is TOP-
+                                      00051 specific).
+                                      Updated to support:
+                                       • Software patch version 4.3.1
+   G        09-Jun-2020   ECO-01882   All supporting both the TOP-00017 and TOP-00051            C. Smaldone
+                                      configurations (except PCON firmware which is TOP-
+                                      00051 specific).
+                                      Updated to support:
+                                       • Software version 4.4.0
+                                       • CAN Module Firmware version 3.6.0
+   H        02-Jul-2020   DCO-01434                                                              C. Smaldone
+                                       • Service Utility version 1.2.0
+                                      All supporting both the TOP-00017 and TOP-00051
+                                      configurations.
+                                      Updated to support:
+                                       • Software version 4.4.1
+                                       • CAN Module Firmware version 3.6.1
+   J        02-Oct-2020   DCO-01479                                                              C. Smaldone
+                                       • Service Utility version 1.2.1
+                                      All supporting both the TOP-00017 and TOP-00051
+                                      configurations.
+   K        19-Jan-2021   DCO-01524   Updated to support software version 4.4.2                  A. Johansson
+
+
+   790-00155, Rev. X                                                                             Page 13 of 14
+                             Solea Model 3 Software and Firmware Verification Test Plan
+
+
+
+Revision      Revision    DCO/ECO
+                                      Description of Revision                                    Revision Author
+ Level         Date        Number
+                                      Updated to support:
+                                       • Service Utility version 1.2.2
+                                      Supporting both the TOP-00017 and TOP-00051
+   L        22-Jan-2021   DCO-01521   configurations.                                             W. Harrington
+                                      Edited Section 2.1.2 Amendment Fix Release 4.4.2 to
+                                      correct a typo for the autoscript test software version
+                                      number.
+   M        17-Feb-2021   DCO-01536   Updated to support service utility v. 1.2.3                 A. Johansson
+   N        14-Apr-2021   DCO-01568   Updated to support Solea software version 994.4.2           C. Smaldone
+                                      Updated to support:
+                                       • Solea Software version 4.5.0
+   O        25-May-2021   DCO-01585                                                                 N. Sylvia
+                                       • Solea Module Firmware 3.7.0
+                                       • Solea Service Utility version 1.3.0
+   P        19-Oct-2021   DCO-01652   Updated to support Solea software version 4.5.1.            A. Johansson
+                                      Updated to support:
+                                       • Solea Software version 4.6.0
+   Q        31-Jan-2022   DCO-01664                                                               C. Smaldone
+                                       • Solea Module Firmware 3.8.0
+                                       • Solea Service Utility version 1.4.0
+   R        04-Apr-2022   DCO-01708   Updated to support Service Utility version 1.5.0            W. Harrington
+                                      Updated to add:
+                                       • An explanation of the software version
+                                         nomenclature.
+                                       • Clarification that the Service Utility is an internal
+   S        08-Apr-2022   DCO-01710                                                               C. Smaldone
+                                         diagnostic software designed to be used by
+                                         Convergent Dental employees for troubleshooting
+                                         purposes and is not user facing.
+                                       • Removed non-applicable references from Table 1.
+   T        23-May-2022   ECO-02094   Updated to support Solea software version 4.6.1.            C. Smaldone
+                                      Updated to capture the updated test plan for Service
+                                      Utility software version 1.5.0 with the only change
+   U        20-Jun-2022   ECO-02109   being the removal of the LPWR Pulse Amplitude               C. Smaldone
+                                      Calibration supplemental test case because it is not
+                                      applicable for this release version.
+   V        09-Sep-2022   DCO-01758   Updated to support Solea software version 4.6.2             A. Johansson
+                                      Updated to support:
+                                       • Solea Software version 4.7.0                             W. Harrington/
+   W        26-Apr-2023   DCO-01837
+                                       • Solea Module Firmware 3.9.0                              A. Johansson
+                                       • Solea Service Utility version 1.6.0
+                                      Updated to support:
+   X        13-Feb-2024   DCO-01943                                                                 R. Scaer
+                                      • Solea Software Version 4.7.1
+
+
+
+
+   790-00155, Rev. X                                                                              Page 14 of 14
+

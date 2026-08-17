@@ -164,6 +164,124 @@ const DV_SECTION_EDITORS: Record<string, ComponentType> = {
   ),
 };
 
+const PROTOCOL_SECTION_EDITORS: Record<string, ComponentType> = {
+  sources: dynamic(
+    () =>
+      import("./sections/protocol/sources-editor").then(
+        (mod) => mod.ProtocolSourcesEditor
+      ),
+    { loading: SectionEditorLoading }
+  ),
+  design_inputs: dynamic(
+    () =>
+      import("./sections/protocol/ledger-explorer").then(
+        (mod) => mod.ProtocolLedgerExplorer
+      ),
+    { loading: SectionEditorLoading }
+  ),
+  findings: dynamic(
+    () =>
+      import("./sections/protocol/findings-list").then(
+        (mod) => mod.ProtocolFindingsList
+      ),
+    { loading: SectionEditorLoading }
+  ),
+  modification_register: dynamic(
+    () =>
+      import("./sections/protocol/modification-register").then(
+        (mod) => mod.ProtocolModificationRegister
+      ),
+    { loading: SectionEditorLoading }
+  ),
+};
+
+const TEST_REPORT_SECTION_EDITORS: Record<string, ComponentType> = {
+  cover_page: dynamic(
+    () =>
+      import("./sections/test-report/cover-page-editor").then(
+        (mod) => mod.TestReportCoverPageEditor
+      ),
+    { loading: SectionEditorLoading }
+  ),
+  design_inputs: dynamic(
+    () =>
+      import("./sections/protocol/ledger-explorer").then(
+        (mod) => mod.ProtocolLedgerExplorer
+      ),
+    { loading: SectionEditorLoading }
+  ),
+  purpose: dynamic(
+    () =>
+      import("./sections/test-report/narrative-editors").then(
+        (mod) => mod.TestReportPurposeEditor
+      ),
+    { loading: SectionEditorLoading }
+  ),
+  scope: dynamic(
+    () =>
+      import("./sections/test-report/narrative-editors").then(
+        (mod) => mod.TestReportScopeEditor
+      ),
+    { loading: SectionEditorLoading }
+  ),
+  software_under_test: dynamic(
+    () =>
+      import("./sections/test-report/table-editors").then(
+        (mod) => mod.TestReportSoftwareUnderTestEditor
+      ),
+    { loading: SectionEditorLoading }
+  ),
+  testers_dates: dynamic(
+    () =>
+      import("./sections/test-report/narrative-editors").then(
+        (mod) => mod.TestReportTestersDatesEditor
+      ),
+    { loading: SectionEditorLoading }
+  ),
+  methods_of_measurement: dynamic(
+    () =>
+      import("./sections/test-report/methods-editor").then(
+        (mod) => mod.TestReportMethodsEditor
+      ),
+    { loading: SectionEditorLoading }
+  ),
+  deviations: dynamic(
+    () =>
+      import("./sections/test-report/deviations-editor").then(
+        (mod) => mod.TestReportDeviationsEditor
+      ),
+    { loading: SectionEditorLoading }
+  ),
+  results_discussion: dynamic(
+    () =>
+      import("./sections/test-report/results-discussion-editor").then(
+        (mod) => mod.TestReportResultsDiscussionEditor
+      ),
+    { loading: SectionEditorLoading }
+  ),
+  problem_failure_resolution: dynamic(
+    () =>
+      import("./sections/test-report/narrative-editors").then(
+        (mod) => mod.TestReportProblemResolutionEditor
+      ),
+    { loading: SectionEditorLoading }
+  ),
+  conclusion: dynamic(
+    () =>
+      import("./sections/test-report/narrative-editors").then(
+        (mod) => mod.TestReportConclusionEditor
+      ),
+    { loading: SectionEditorLoading }
+  ),
+  revision_history: dynamic(
+    () =>
+      import("./sections/test-report/table-editors").then(
+        (mod) => mod.TestReportRevisionHistoryEditor
+      ),
+    { loading: SectionEditorLoading }
+  ),
+};
+
 /** @deprecated Prefer INVESTIGATION_SECTION_EDITORS / DV_SECTION_EDITORS */
 const SECTION_EDITORS = INVESTIGATION_SECTION_EDITORS;
 
@@ -492,7 +610,11 @@ export function ReportWorkspace({
                   const Editor =
                     report.documentType === "design_verification"
                       ? DV_SECTION_EDITORS[s]
-                      : INVESTIGATION_SECTION_EDITORS[s];
+                      : report.documentType === "verification_protocol"
+                        ? PROTOCOL_SECTION_EDITORS[s]
+                        : report.documentType === "verification_test_report"
+                          ? TEST_REPORT_SECTION_EDITORS[s]
+                          : INVESTIGATION_SECTION_EDITORS[s];
                   if (!Editor) return null;
                   const extra = sectionMinHeights[s];
                   return (

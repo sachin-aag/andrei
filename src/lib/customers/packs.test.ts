@@ -3,7 +3,7 @@ import { PROMPT_VERSION } from "@/lib/ai/section-prompts";
 import { getInvestigationCriteriaBySection } from "@/lib/ai/criteria";
 import { getDocumentType, listDocumentTypes, engineerReportsSubtitle } from "@/lib/document-types";
 import { applyCriterionDescriptionOverrides } from "./overrides";
-import { DEMO_PACK, getCustomerPack, isDocumentTypeEnabled } from "./packs";
+import { DEMO_PACK, CONVERGENT_PACK, MJ_PACK, getCustomerPack, isDocumentTypeEnabled } from "./packs";
 
 describe("customer packs (demo)", () => {
   it("defaults to the demo pack", () => {
@@ -52,5 +52,37 @@ describe("customer packs (demo)", () => {
         "define.not_a_real_key": "should fail",
       })
     ).toThrow(/define.not_a_real_key/);
+  });
+});
+
+describe("customer packs (convergent isolation)", () => {
+  it("enables only the two Convergent document types", () => {
+    expect([...CONVERGENT_PACK.enabledDocumentTypes]).toEqual([
+      "verification_protocol",
+      "verification_test_report",
+    ]);
+  });
+
+  it("demo and MJ enable neither Convergent type", () => {
+    expect(isDocumentTypeEnabled("verification_protocol", DEMO_PACK)).toBe(
+      false
+    );
+    expect(isDocumentTypeEnabled("verification_test_report", DEMO_PACK)).toBe(
+      false
+    );
+    expect(isDocumentTypeEnabled("verification_protocol", MJ_PACK)).toBe(false);
+    expect(isDocumentTypeEnabled("verification_test_report", MJ_PACK)).toBe(
+      false
+    );
+    expect(
+      isDocumentTypeEnabled("investigation_report", CONVERGENT_PACK)
+    ).toBe(false);
+    expect(
+      isDocumentTypeEnabled("design_verification", CONVERGENT_PACK)
+    ).toBe(false);
+  });
+
+  it("keeps Word import off on convergent", () => {
+    expect(CONVERGENT_PACK.wordImportEnabled).toBe(false);
   });
 });

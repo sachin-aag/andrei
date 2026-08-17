@@ -102,6 +102,8 @@ export function primaryFieldForSection(section: SectionType): string {
       return "preventiveActions";
     case "traceability":
     case "test_results":
+    case "software_under_test":
+    case "revision_history":
       return "table";
     default:
       return "narrative";

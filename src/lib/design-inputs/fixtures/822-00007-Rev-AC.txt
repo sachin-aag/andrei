@@ -1,0 +1,2295 @@
+                                                             822-00007 Rev AC Solea Model 3 Software
+                                                                                      Requirements
+
+        Project Name:        Solea Model 3                   DHF Index #:         822-00003
+        Author/Editor:       Michael Shannon
+
+
+
+
+Requirements Document Template, 731-00003 Rev. A                                      Page 1 of 44
+                                  COMPANY PROPRIETARY AND CONFIDENTIAL
+                                                                                                    822-00007 Rev AC Solea Model 3 Software
+                                                                                                                             Requirements
+
+       TABLE OF CONTENTS
+       1     SW Subsystem Requirements ............................................................................................................... 4
+           1.1    822-00007 Solea Model 3 Software Requirements .................................................................... 4
+           1.2        General Requirements................................................................................................................. 8
+              1.2.1       Platform................................................................................................................................... 8
+              1.2.2       Display ..................................................................................................................................... 8
+              1.2.3       Sound ...................................................................................................................................... 8
+              1.2.4       Help ......................................................................................................................................... 9
+              1.2.5       Language Support ................................................................................................................... 9
+              1.2.6       Installation – Upgrade ............................................................................................................. 9
+              1.2.7       Installation - Upgrade Process ................................................................................................ 9
+              1.2.8       Software Feature Subscription.............................................................................................. 10
+              1.2.9       Time Limited Feature Subscription ....................................................................................... 11
+              1.2.10          Palatal Coagulation Feature .............................................................................................. 11
+              1.2.11          Demineralization Reduction Feature ................................................................................ 12
+              1.2.12          Perioguide Feature............................................................................................................ 12
+              1.2.13          User Experience ................................................................................................................ 12
+              1.2.14          Broadcast Notification ...................................................................................................... 13
+              1.2.15          System Startup / Shutdown .............................................................................................. 14
+           1.3        Security ...................................................................................................................................... 15
+              1.3.1       User Management................................................................................................................. 15
+              1.3.2       Authentication and Session Management ............................................................................ 15
+              1.3.3       Authorization......................................................................................................................... 15
+              1.3.4       Data Security and Integrity.................................................................................................... 16
+              1.3.5       Malware Handling ................................................................................................................. 17
+           1.4        Network Connectivity - Wi-Fi and Cellular Modem................................................................... 17
+              1.4.1       Network Connectivity – Wi-Fi and 4G ................................................................................... 17
+           1.5        System Configuration ................................................................................................................ 18
+              1.5.1       System Configuration Management ..................................................................................... 18
+              1.5.2       System Configuration Backup ............................................................................................... 18
+              1.5.3       System Configuration Restore............................................................................................... 18
+           1.6        Auditing / Troubleshooting ....................................................................................................... 19
+              1.6.1       Application Log ...................................................................................................................... 19
+              1.6.2       Log Management .................................................................................................................. 20
+              1.6.3       Error Log ................................................................................................................................ 20
+
+Requirements Document Template, 731-00003 Rev. A                                                                                                Page 2 of 44
+                                  COMPANY PROPRIETARY AND CONFIDENTIAL
+                                                                                                    822-00007 Rev AC Solea Model 3 Software
+                                                                                                                             Requirements
+
+              1.6.4        Cutting Data Log .................................................................................................................... 20
+              1.6.5        View / Upload Usage Information......................................................................................... 21
+              1.6.6        Upload of Logs to Cloud ........................................................................................................ 21
+              1.6.7        Error Classification ................................................................................................................ 21
+              1.6.8        Error Handling ....................................................................................................................... 22
+              1.6.9        Remote Access Specific Behavior .......................................................................................... 22
+              1.6.10           View System Hardware Status .......................................................................................... 22
+              1.6.11           System Diagnostic Testing ................................................................................................ 23
+           1.7         State Requirements ................................................................................................................... 23
+              1.7.1        System State Definitions ....................................................................................................... 23
+              1.7.2        State Transitions.................................................................................................................... 24
+              1.7.3        System Startup State Specific Behavior ................................................................................ 26
+              1.7.4        Standby State Specific Behavior ............................................................................................ 26
+              1.7.5        Arming State Specific Behavior ............................................................................................. 26
+              1.7.6        Laser Armed State Specific Behavior..................................................................................... 27
+              1.7.7        Laser Cutting State Specific Behavior .................................................................................... 28
+              1.7.8        Error State Specific Behavior ................................................................................................. 28
+              1.7.9        Error Recovery Specific Behavior .......................................................................................... 28
+              1.7.10           Alignment State Description (Perioguide Only) ................................................................ 28
+              1.7.11           Alignment State Specific Behavior .................................................................................... 29
+           1.8         Workflow ................................................................................................................................... 30
+              1.8.1        Initiation of Laser Cutting ...................................................................................................... 30
+              1.8.2        Palatal Coagulation ............................................................................................................... 36
+              1.8.3        Solea Protect ......................................................................................................................... 37
+              1.8.4        Aiming Beam Adjustment ..................................................................................................... 37
+              1.8.5        View Version Information ..................................................................................................... 37
+              1.8.6        Performance .......................................................................................................................... 38
+              1.8.7        Patterns ................................................................................................................................. 38
+              1.8.8        Demonstration Mode ............................................................................................................ 38
+       2     Rev Controlled Docs ............................................................................................................................ 38
+           2.1    SW Requirements - Rev History................................................................................................. 38
+
+
+
+
+Requirements Document Template, 731-00003 Rev. A                                                                                               Page 3 of 44
+                                  COMPANY PROPRIETARY AND CONFIDENTIAL
+                                                                822-00007 Rev AC Solea Model 3 Software
+                                                                                         Requirements
+
+       1   SW Subsystem Requirements
+
+       1.1 822-00007 Solea Model 3 Software Requirements
+       Introduction
+
+       This requirements document is intended to provide a comprehensive description of the
+       associated design input requirements to be addressed in the design and development process.
+
+                  1. Purpose
+             This document defines the requirements that will guide the design and development of the
+             Solea system software.
+
+             The primary purpose of the Solea software is to manage the overall operation of a cart
+             based dental laser system called the Solea system. The Solea system is intended to be
+             used for:
+
+                        •   Ablation of hard tissue for caries removal and cavity preparation.
+                        •   Incision, excision, vaporization, coagulation, and hemostasis of soft tissue
+                            in the oral cavity.
+                        • Cutting, shaving, contouring, and resection of oral osseous tissue (bone).
+                        • Aid in the reduction of mineral loss in dental enamel.
+             The level of concern for the Solea software is determined to be Moderate.
+
+             The Solea system is depicted in Figure 1 below.
+
+
+
+
+Requirements Document Template, 731-00003 Rev. A                                          Page 4 of 44
+                                  COMPANY PROPRIETARY AND CONFIDENTIAL
+                                                             822-00007 Rev AC Solea Model 3 Software
+                                                                                      Requirements
+
+
+
+
+                                                  Figure 1
+
+
+
+Requirements Document Template, 731-00003 Rev. A                                      Page 5 of 44
+                                  COMPANY PROPRIETARY AND CONFIDENTIAL
+                                                                822-00007 Rev AC Solea Model 3 Software
+                                                                                         Requirements
+
+                   2. Scope
+             This document is intended for use by Convergent Dental to document the requirements
+             for the software. It will be used by software and test engineers.
+
+                  3. References
+             The list of references that apply to this document includes but is not necessarily limited to
+             the following:
+
+                       •   775-00060 Software Requirements and Traceability
+                       •   821-00012, Solea Model 3 Quality Plan
+                       •   721-00120, Solea Model 3 Parameter Calculator
+
+
+
+                 4. Terms and Definitions
+             This section describes the terms and acronyms used in the software and documentation.
+
+
+
+          Term                     Definition
+
+          Laser Frequency          The frequency of the laser, which is directly related to the light
+          (Wavelength)             wavelength. There is a specific laser frequency that has been
+                                   proven to be effective at causing oscillation and disintegration of
+                                   dental hard and soft tissue.
+
+          Laser Pulse Duration     This is a measure of the “on time” at which the laser is lasing for
+                                   a given pulse period. The duration of laser emission is short
+                                   (microseconds) to control cutting and the potential of overheating
+                                   and causing unintended damage to the organic material being
+                                   “ablated” or causing damage to the material surrounding the
+                                   target area.
+
+          Jump Delay               Time to wait for the laser emission to decay before moving the
+                                   aiming mirrors.
+
+          Laser Energy             The laser pulse length and pulse rate are both varied in order to
+                                   customize the energy delivered to the tissue being removed.
+
+          Laser Cutting Pattern    The laser cuts (ablates) material by pulsing in a series of dots or
+                                   points within a pattern. The dots/points are arranged so the laser
+                                   fires and then moves away within the pattern for optimal cutting.
+
+          Air/Water Mist           During laser cutting, a mist of air and water can be sprayed on
+                                   the cutting area to provide cooling and remove debris.
+
+          Spot Size                A number that specifies the diameter of the laser cutting pattern
+                                   used to ablate dental material.
+
+
+
+
+Requirements Document Template, 731-00003 Rev. A                                           Page 6 of 44
+                                  COMPANY PROPRIETARY AND CONFIDENTIAL
+                                                               822-00007 Rev AC Solea Model 3 Software
+                                                                                        Requirements
+
+          Term                    Definition
+
+          Single Pulse Spot       A type of pattern consisting of a single pulse per firing point.
+          Size
+
+          Laser Cutting Speed     The laser pulses for a given pattern at a duty-cycle depending on
+                                  foot pedal position. As the foot pedal is further depressed, the
+                                  laser pulse duration (pulse width) is increased for the given
+                                  pattern. Longer pulse width results in an increased rate of cutting
+                                  for a given spot size.
+
+          Handpiece               The instrument the dentist holds to perform laser ablation. The
+                                  handpiece can be used for cutting hard tissue or soft tissue. The
+                                  system supports four types of handpieces; Contra Angle,
+                                  Straight, TD, and Solea Protect handpiece.
+
+          Aiming Beam             The Solea hardware provides an aiming mechanism that
+                                  illuminates the position of where the CO2 laser will ablate
+                                  (cut). Users can “point” the aiming beam to the desired area for
+                                  cutting and then activate the CO2 laser to cut hard and soft
+                                  tissue.
+
+          Alignment               A periodic maintenance procedure in which the user adjusts the
+                                  laser galvanometers “home” or center position so that the laser
+                                  beam is centered in the laser aperture.
+
+          Galvanometer            A device that has a mirror connected at its end that is used to
+                                  deflect laser light. The galvanometer has an electrical control
+          (or “galvo”)            interface that allows for precise movements of the attached
+                                  mirror to allow positioning of the laser in either the x or y
+                                  direction. Solea has two galvanometers for x and y direction
+                                  control.
+
+          Aperture                The opening at the end of the handpiece through which the laser
+                                  light passes.
+
+          Laser Controller        The laser controller controls the laser and the galvos to achieve
+                                  ablation according to selected laser cutting pattern and foot pedal
+                                  position.
+
+                                  The software supports two types of laser controllers; the Lanmark
+                                  Controller (LCD) and the Pattern Controller (PCON).
+
+                                  PCON differs from the LCD in a few areas that affect the
+                                  software:
+
+                                       1. LCD hosts the patterns in persistent storage on the LCD,
+                                          so a pattern file must be uploaded once and after that
+                                          the host software will invoke the pattern through a
+                                          specified command.
+                                          PCON does not store the pattern information in
+                                          persistent memory, therefore the host software is
+
+
+Requirements Document Template, 731-00003 Rev. A                                           Page 7 of 44
+                                  COMPANY PROPRIETARY AND CONFIDENTIAL
+                                                                 822-00007 Rev AC Solea Model 3 Software
+                                                                                          Requirements
+
+             Term                 Definition
+
+                                          required to send all pattern information to the PCON
+                                          when necessary.
+                                       2. The LCD requires that some tasks (e.g. homing the
+                                          galvos before and after lasing) need to be explicitly
+                                          commanded in order to support normal operation of the
+                                          laser controller. There are no such command
+                                          requirements for the PCON.
+
+             Lanmark Laser        The LCD (OTS-00664) communicates through a TCP/IP
+             Controller(LCD)      connection and the software interface provided by the
+                                  laser/Galvo control board vendor allows the software to operate
+                                  the laser. The software will translate operator commands and
+                                  operator input into specific interfaces calls to the LCD to operate
+                                  the laser.
+
+             Pattern Controller   The pattern controller (SUB-00322) is a replacement laser
+             (PCON)               controller to the LCD laser controller. Communication with PCON
+                                  is accomplished through a USB-to-Serial port interface. The
+                                  serial communication specification is in PCON API Interface
+                                  Specification (822-00023)
+
+
+       1.2     General Requirements
+               Req ID                 Requirement Description
+
+       1.2.1 Platform
+               Req ID                 Requirement Description
+               SW-PL-1                The software shall be deployable on Microsoft Windows 10, 64-bit edition.
+               SW-PL-2                The software shall support input through a foot pedal device for the
+                                      purpose of controlling the cutting speed of the laser.
+
+       1.2.2 Display
+               Req ID                 Requirement Description
+               SW-DI-1                The software shall support a display resolution of 1024 x 768 pixels.
+               SW-DI-2                The software shall support touch screen control.
+               SW-DI-3                The software shall only allow one instance of the application to run at a
+                                      time.
+
+       1.2.3 Sound
+               Req ID                 Requirement Description
+               SW-SO-1                The software shall play a sound while the foot pedal is pressed and the
+                                      software is in laser cutting state.
+               SW-SO-2                The software shall support the ability for a user to adjust the volume of the
+                                      sound played, but shall not be able to decrease the volume below a pre-
+                                      configured minimum volume.
+               SW-SO-3                If the sound is muted the software shall unmute it on startup.
+
+
+
+Requirements Document Template, 731-00003 Rev. A                                             Page 8 of 44
+                                  COMPANY PROPRIETARY AND CONFIDENTIAL
+                                                                 822-00007 Rev AC Solea Model 3 Software
+                                                                                          Requirements
+
+       1.2.4 Help
+            Req ID                    Requirement Description
+            SW-HE-1                   The software shall provide a link to a webpage where the user can
+                                      access help information.
+            SW-HE-2                   [Removed in Rev. X]
+            SW-HE-3                   [Removed in Rev. X]
+            SW-HE-4                   [Removed in Rev. X]
+            SW-HE-5                   [Removed in Rev X]
+
+       1.2.5 Language Support
+            Req ID                    Requirement Description
+            SW-LG-1                   [Removed in Rev. AA]
+            SW-LG-1.1                 [Removed in Rev. AA]
+
+       1.2.6 Installation – Upgrade
+            Req ID                    Requirement Description
+            SW-IN-1                   The software shall support upgrades via installation.
+            SW-IN-1.1
+                                      When performing an upgrade installation, the software under test shall
+                                      preserve changes made by users in the software that is being upgraded.
+            SW-IN-1.2                 The software shall support upgrades via installation while the system is in
+                                      error state.
+            SW-IN-1.3                 The software under test shall support upgrades via installation to future
+                                      software versions.
+
+       1.2.7 Installation - Upgrade Process
+            Req ID                    Requirement Description
+            SW-IN-2                   The software shall be upgradable by the user without the user having to
+                                      interact with Customer Success.
+            SW-IN-3                   The Solea software shall communicate with the Convergent Installation
+                                      Server to validate the Solea device serial number before allowing the
+                                      software to be upgraded.
+            SW-IN-4                   Upon successful connection to the Convergent Installation Server and
+                                      successful validation of the serial number, the Solea application shall guide
+                                      the user through the following steps related to installing a software update:
+            SW-IN-4.1                 If the serial number is valid, but the customer is not authorized to receive
+                                      software updates, the user shall be informed they are not eligible for
+                                      software updates
+            SW-IN-4.1.1               The user shall be informed how to contact Convergent to enable receiving
+                                      software updates
+            SW-IN-4.2                 After validating the entered serial number is eligible to receive software
+                                      updates, the Solea application shall connect to the Convergent Installation
+                                      Server to determine if a new software release is available
+            SW-IN-4.3                 If any software releases are available, the user shall be presented with
+                                      information about the most recent available software release. Note that the
+                                      available release could be newer, older, or the same release as the software
+                                      release currently installed on the Solea device.
+
+Requirements Document Template, 731-00003 Rev. A                                              Page 9 of 44
+                                  COMPANY PROPRIETARY AND CONFIDENTIAL
+                                                                 822-00007 Rev AC Solea Model 3 Software
+                                                                                          Requirements
+
+            SW-IN-4.3.1               If no releases are available on the software installation server, the user shall
+                                      be prompted and shall acknowledge that their Software Update session
+                                      shall be terminated.
+            SW-IN-4.4                 After reviewing information about the available release, the user shall have
+                                      the option to install the new software release or to terminate their
+                                      Software Update session.
+            SW-IN-4.5                 If the user selects to install the software update, they shall be provided a
+                                      status screen displaying the progress of the software installation:
+            SW-IN-4.6                 The user shall have the option to cancel the installation at any time during
+                                      the download of the software.
+            SW-IN-4.6.1               The user shall be prompted to confirm they wish to cancel before the
+                                      installation progress is cancelled
+            SW-IN-4.7                 The software shall track the successful completion of the steps of the
+                                      installation progress and, if any step is not completed successfully, the user
+                                      shall be notified, the installation shall be aborted, and the user shall be
+                                      prompted and acknowledge the termination of the Software Update
+                                      session.
+            SW-IN-4.8                 Upon successful download, validation of downloaded files, and successful
+                                      installation of software, the software shall be restarted.
+            SW-IN-4.8.1               The downloaded software shall be validated prior to installation.
+
+                                      [DESIGN CONSTRAINT]
+                                      In the case of downloaded Windows installation (.MSI) files, the installation
+                                      program for .MSI files automatically performs a file validation when
+                                      opening the file. No additional validation shall be required for .MSI files.
+            SW-IN-4.19                If the installation process is interrupted by the user, by power failure, or any
+                                      other unexpected event, the software update shall be aborted and the
+                                      previous version of Solea software shall remain installed
+            SW-IN-5                   The success, or failure status of installing a new software release shall be
+                                      reported from the Solea device to the Convergent Installation Server for
+                                      future reference by Convergent customer support personnel.
+            SW-IN-6                   After successful installation of software from the server, the versions of
+                                      software shall be reported from the Solea device to the Convergent
+                                      software installation server for reference by Convergent customer support
+                                      personnel.
+
+       1.2.8 Software Feature Subscription
+            Req ID                    Requirement Description
+            SW-FS-1                   [Removed in Rev. U]
+            SW-FS-2
+                                      [Removed in Rev. U]
+            SW-FS-3
+                                      [Removed in Rev. U]
+            SW-FS-4
+                                      [Removed in Rev. U]
+            SW-FS-5
+                                      [Removed in Rev. U]
+
+Requirements Document Template, 731-00003 Rev. A                                               Page 10 of 44
+                                  COMPANY PROPRIETARY AND CONFIDENTIAL
+                                                                822-00007 Rev AC Solea Model 3 Software
+                                                                                         Requirements
+
+            SW-FS-5.1
+                                      [Removed in Rev. U]
+            SW-FS-6
+                                      [Removed in Rev. U]
+            SW-FS-6.1
+                                      [Removed in Rev. U]
+            SW-FS-7
+                                      [Removed in Rev. U]
+            SW-FS-8
+                                      [Removed in Rev. U]
+            SW-FS-9
+                                      [Removed in Rev. U]
+            SW-FS-10
+                                      [Removed in Rev. U]
+            SW-FS-11
+                                      [Removed in Rev. U]
+            SW-FS-11.1
+                                      [Removed in Rev. U]
+
+       1.2.9 Time Limited Feature Subscription
+            Req ID                    Requirement Description
+            SW-TL-1
+                                      [Removed in Rev. U]
+            SW-TL-2
+                                      [Removed in Rev. U]
+            SW-TL-2.1
+                                      [Removed in Rev. U]
+            SW-TL-3
+                                      [Removed in Rev. U]
+            SW-TL-3.1
+                                      [Removed in Rev. U]
+            SW-TL-4
+                                      [Removed in Rev. U]
+            SW-TL-5
+                                      [Removed in Rev. U]
+            SW-TL-6
+                                      [Removed in Rev. U]
+
+       1.2.10 Palatal Coagulation Feature
+            Req ID                    Requirement Description
+            SW-SLS-1                  The Palatal Coagulation mode shall be enabled once an entitlement has
+                                      been received from the Convergent Subscription Server.
+            SW-SLS-2                  [Removed in Rev. AA]
+            SW-SLS-3                  10 minutes after the cycle count was last increased the software shall:
+            SW-SLS-3.1                Increase the usage count by one if the cycle count exceeds 20 cycles
+            SW-SLS-3.2                Reset the cycle count
+            SW-SLS-4                  [Removed in Rev. U]
+
+Requirements Document Template, 731-00003 Rev. A                                         Page 11 of 44
+                                  COMPANY PROPRIETARY AND CONFIDENTIAL
+                                                                822-00007 Rev AC Solea Model 3 Software
+                                                                                         Requirements
+
+            SW-SLS-4.1                [Removed in Rev. U]
+            SW-SLS-5                  [Removed in Rev. U]
+            SW-SLS-6                  [Removed in Rev. U]
+            SW-SLS-6.1                [Removed in Rev. U]
+            SW-SLS-7                  The software shall record usage in a usage log including
+                                      - Time stamp
+                                      - Cycle count
+                                      - New usage count
+            SW-SLS-8                  The user shall be able to view the usage log.
+            SW-SLS-9                  The usage log shall be uploaded to the Convergent Log Server.
+            SW-SLS-10                 When the usage count is increased, the software shall schedule a log upload
+                                      at next idle time.
+
+       1.2.11 Demineralization Reduction Feature
+            Req ID                    Requirement Description
+            SW-DRS-1                  The Demineralization Reduction mode shall be enabled once an
+                                      entitlement has been received from the Convergent Subscription
+                                      Server.
+            SW-DRS-2                  [Removed in Rev. AA]
+            SW-DRS-3                  10 minutes after the cycle count was last increased the software shall:
+            SW-DRS-3.1                Increase the usage count by one if the cycle count exceeds 5 cycles
+            SW-DRS-3.2                Reset the cycle count
+            SW-DRS-4                  [Removed in Rev. U]
+            SW-DRS-4.1                [Removed in Rev. U]
+            SW-DRS-5                  [Removed in Rev. U]
+            SW-DRS-6                  [Removed in Rev. U]
+            SW-DRS-6.1                [Removed in Rev. U]
+            SW-DRS-7                  The software shall record token consumption in a usage log including
+                                      - Time stamp
+                                      - Cycle count
+                                      - New usage count
+            SW-DRS-8                  The user shall be able to view the usage log.
+
+       1.2.12 Perioguide Feature
+            Req ID                    Requirement Description
+            SW-PG-1                   The Perioguide mode shall be enabled once an entitlement has been
+                                      received from the Convergent Subscription Server.
+
+       1.2.13 User Experience
+            Req ID                    Requirement Description
+            SW-UE-1                   The software shall limit user input to acceptable values.
+            SW-UE-2                   Where acceptable values are limited to discrete choices, the software shall
+                                      allow the user to select from a list of possible choices.
+            SW-UE-3                   The software shall display a busy indication if the task takes longer than 5
+                                      seconds.
+
+
+
+
+Requirements Document Template, 731-00003 Rev. A                                             Page 12 of 44
+                                  COMPANY PROPRIETARY AND CONFIDENTIAL
+                                                                   822-00007 Rev AC Solea Model 3 Software
+                                                                                            Requirements
+
+            SW-UE-4                    If the software uses a pop-up dialog, the software shall not permit the user
+                                       to access other software functions until the pop-up is dismissed and the
+                                       task is complete.
+            SW-UE-5                    If the user fails to enter data for a required field or if the user enters invalid
+                                       data for a field that is not corrected through the other UE usability
+                                       requirements, the user shall be required to enter the missing information or
+                                       correct the entered data before proceeding.
+
+       1.2.14 Broadcast Notification
+            Req ID                     Requirement Description
+            SW-BC-1                    The software shall connect and download new and update existing
+                                       messages from the Convergent Message server after the system has been
+                                       idle in Standby for 15 minutes or longer and the user is logged out.
+            SW-BC-1.1                  The software shall be able to download and store a minimum of 100
+                                       messages.
+            SW-BC-2                    The user shall be notified if there are unread messages.
+            SW-BC-2.1                  The notification shall be displayed as soon as a new message has been
+                                       downloaded.
+            SW-BC-2.2                  The number of unread messages shall be displayed to the user using the
+                                       range 1-9.
+                                       Note: 9 is being displayed for 9 or more unread messages
+            SW-BC-3                    The software shall display a list of all available messages received.
+            SW-BC-3.1                  The message list shall be accessible from the Home screen with one click.
+            SW-BC-3.2                  The user shall be able to open any available message from the message list.
+            SW-BC-3.3                  The software shall distinguish between a read and unread message.
+            SW-BC-3.4                  The message list shall display:
+                                       - The Sent Date
+                                       - Subject
+                                       - Text Header (The start of the message body)
+            SW-BC-3.5                  The message list shall be sorted by date by default to and show the newest
+                                       message at the top.
+            SW-BC-3.6                  The software shall allow the user to sort the message list by:
+                                       - Sent Date
+                                       - Subject
+            SW-BC-3.7                  The software shall display the message when a message is selected in the
+                                       message list.
+            SW-BC-4                    The display of a message shall contain the following items:
+            SW-BC-4.1                  Subject
+            SW-BC-4.1.1                The subject shall allow for a minimum of 30 characters.
+            SW-BC-4.2                  Sent date
+            SW-BC-4.3                  Text body
+            SW-BC-4.3.1                The text body shall allow for a minimum of 1000 text-based characters
+            SW-BC-4.3.2                The software shall be able to display a URL link as a QR code.
+            SW-BC-5                    A message has a date range associated with it and the software shall only
+                                       allow display of message if the current date is within the date range.
+            SW-BC-5.1                  A message shall be deleted if the current date exceeds the message date
+                                       range.
+
+Requirements Document Template, 731-00003 Rev. A                                                 Page 13 of 44
+                                  COMPANY PROPRIETARY AND CONFIDENTIAL
+                                                                 822-00007 Rev AC Solea Model 3 Software
+                                                                                          Requirements
+
+            SW-BC-6                   A message shall be marked as read once it has been displayed.
+            SW-BC-7                   The software shall notify the Convergent Message server when a message
+                                      was delivered to the Solea.
+                                      Note, this may occur next time the system goes online and not immediately.
+            SW-BC-8                   The software shall notify the Convergent Message server when a message
+                                      was read on the Solea.
+                                      Note, this may occur next time the system goes online and not immediately.
+
+       1.2.15 System Startup / Shutdown
+            Req ID                    Requirement Description
+            SW-SS-1                   The user shall have the ability to shut down the software and the system,
+                                      resulting in the software exiting and the PC and other instrument hardware
+                                      to be powered off.
+            SW-SS-2                   [Removed in rev G]
+            SW-SS-3                   If the system loses its main power source and is running on battery backup
+                                      power, the software shall shut down the system.
+            SW-SS-3.1                 The software shall notify the user that the system will shut down prior to
+                                      the shutdown.
+            SW-SS-4                   The software shall support the ability to detect when a user pushes the
+                                      system hardware Emergency Stop button.
+            SW-SS-4.1                 The software shall turn the laser simmer off when it detects that the
+                                      Emergency Stop button has been pressed.
+                                      Note: Applies to LCD only.
+            SW-SS-6                   [Removed in rev D]
+            SW-SS-7                   [Removed in rev D]
+            SW-SS-8                   The software shall disable network communication on startup.
+            SW-SS-9                   The software shall stop TeamViewer on startup.
+            SW-SS-10                  The software shall initialize communication with the following devices on
+                                      startup:
+            SW-SS-10.1                Mist Module
+            SW-SS-10.2                Airflow Module
+            SW-SS-10.3                Coolant Module
+            SW-SS-10.4                Laser Power Module
+            SW-SS-10.5                DC Power Monitor Module
+            SW-SS-11                  The software shall display a login screen after startup requiring the user to
+                                      enter a PIN.
+            SW-SS-12                  After startup the software shall update module firmware if the module
+                                      firmware version differs from the version that is included in the software.
+            SW-SS-13                  After startup the software shall verify cart integrity and authenticity.
+
+                                      Note: This verification is similar to a Power on Self Test (POST).
+
+            SW-SS-14                  Cart update executables, libraries, and script files shall be signed.
+            SW-SS-15                  Cart updates are packaged and deployed as a single signed and encrypted
+                                      bundle that includes a manifest.
+            SW-SS-16                  Cart executables and libraries shall not contain PDB (Program database
+                                      debugging) files in release distributions.
+
+Requirements Document Template, 731-00003 Rev. A                                               Page 14 of 44
+                                  COMPANY PROPRIETARY AND CONFIDENTIAL
+                                                                 822-00007 Rev AC Solea Model 3 Software
+                                                                                          Requirements
+
+       1.3   Security
+             Req ID                   Requirement Description
+
+       1.3.1 User Management
+             Req ID                   Requirement Description
+             SW-UM-1                  The software shall support the following roles:
+             SW-UM-1.1                User.
+             SW-UM-1.2                Service Technician.
+             SW-UM-1.3                Administrator
+             SW-UM-2                  The software shall require the following attributes to be defined within the
+                                      software:
+             SW-UM-2.1                User PIN [length of 4 digits, numeric].
+             SW-UM-3                  The software shall have the user roles specified by [SW-UM-1] predefined.
+             SW-UM-4                  The software shall require a unique PIN for each predefined role.
+             SW-UM-5                  The software shall allow the unique PIN to be changed for each predefined
+                                      role.
+             SW-UM-6                  There must always be at least one Administrator.
+             SW-UM-7                  The software shall provide a method to reset an Administrator PIN without
+                                      having to login.
+
+       1.3.2 Authentication and Session Management
+             Req ID                   Requirement Description
+             SW-AU-1                  The software shall prevent a User from interacting with any software other
+                                      than the Solea Graphical User Interface.
+             SW-AU-2                  The software shall automatically log out the active user after a 15 minute
+                                      period of inactivity.
+
+                                      Note: Inactivity defined in this context as no user interaction with the
+                                      software via the GUI or the foot pedal.
+             SW-AU-2.1                Unsaved settings shall not be saved when the software automatically log
+                                      out.
+             SW-AU-3                  [Removed in rev D]
+             SW-AU-4                  When calculating "activity", as referenced in [SW-AU-2], the software shall
+                                      consider any user directed operation (selecting something in the user
+                                      interface, pressing the foot pedal, keeping the foot pedal at a constant rate)
+                                      as "activity".
+             SW-AU-5                  The software shall provide the ability for a user to log out of the software.
+
+       1.3.3 Authorization
+             Req ID                   Requirement Description
+             SW-AR-1                  [Removed in rev D]
+             SW-AR-2                  The software shall disable or hide from view the list of actions that the
+                                      current active user is unauthorized to perform.
+             SW-AR-3                  The software shall support the ability of a User to perform the following list
+                                      of actions:
+             SW-AR-3.1                Log on.
+             SW-AR-3.2                Perform laser cutting.
+
+Requirements Document Template, 731-00003 Rev. A                                              Page 15 of 44
+                                  COMPANY PROPRIETARY AND CONFIDENTIAL
+                                                                 822-00007 Rev AC Solea Model 3 Software
+                                                                                          Requirements
+
+            SW-AR-3.3                 Modify laser cutting parameters.
+            SW-AR-3.4                 View system software version information.
+            SW-AR-3.5                 View help information.
+            SW-AR-3.6                 Modify the system sound volume. (See SW-SO-4.)
+            SW-AR-3.7                 Restore "user default" settings for the currently logged in user.
+            SW-AR-3.8                 Change the User PIN (password).
+            SW-AR-3.9                 [Removed in rev G]
+            SW-AR-3.10                Log out of the software
+            SW-AR-3.11                [Removed in Rev. AA]
+            SW-AR-3.12                Perform and view results of system diagnostics tests (See SW-SDT-1.)
+            SW-AR-3.13                Upload log files to the Convergent Log Server.
+            SW-AR-3.14                Enable network communication.
+            SW-AR-3.15                Adjust the Wi-Fi signal threshold used to determine when to switch
+                                      over to 4G communication.
+            SW-AR-4                   The software shall support the ability of a user assigned to the
+                                      Administrator role to perform the following list of action, in addition to
+                                      those assigned to the User role listed in SW-AR-3:
+            SW-AR-4.1                 Add and remove Users and other Administrators (not self)
+            SW-AR-4.2                 Download and install a software update from the Convergent Installation
+                                      Server.
+            SW-AR-5                   The software shall support the ability for a user assigned to the Service
+                                      Technician role to perform the following list of action, in addition to those
+                                      assigned to the Administrator role listed in SW-AR-4:
+            SW-AR-5.1                 Log on.
+            SW-AR-5.2                 [Removed in Rev AC]
+            SW-AR-5.10                [Removed in rev K]
+            SW-AR-5.11                [Removed in rev K]
+            SW-AR-5.13                Log out of the software
+            SW-AR-5.14                [Removed in rev M]
+            SW-AR-5.15                Adjust the Wi-Fi signal threshold used to determine when to switch over to
+                                      4G communication.
+            SW-AR-5.16                Update the serial number
+            SW-AR-5.17                Disable network communication (both WiFi and 4G).
+            SW-AR-5.18                Enable and disable Demonstration Mode.
+
+       1.3.4 Data Security and Integrity
+            Req ID                    Requirement Description
+            SW-DS-1                   The software shall store credentials to third party systems, such as API keys,
+                                      and API tokens in an encrypted format (not clear-text).
+            SW-DS-2                   The database containing configuration settings shall be encrypted.
+            SW-DS-3                   The database containing configuration settings shall be checked on startup
+                                      and if it is corrupt the software shall:
+            SW-DS-3.1                 Save the corrupt database under a new name.
+            SW-DS-3.2                 Attempt to restore the database using the backup.
+            SW-DS-3.3                 If restoring the backup fail the software shall:
+            SW-DS-3.3.1               Create a new database.
+
+
+Requirements Document Template, 731-00003 Rev. A                                             Page 16 of 44
+                                  COMPANY PROPRIETARY AND CONFIDENTIAL
+                                                                 822-00007 Rev AC Solea Model 3 Software
+                                                                                          Requirements
+
+             SW-DS-3.3.2              Notify the user that a database was corrupt and had to be recreated.
+             SW-DS-4                  The software shall backup the database containing user settings on startup.
+             SW-DS-2.1                The database containing laser pattern files shall be immutable and signed.
+
+       1.3.5 Malware Handling
+             Req ID                   Requirement Description
+             SW-MHR-1                 The software shall periodically retrieve definition updates for malware
+                                      scanning
+             SW-MHR-2                 The software shall periodically query and report the status of recent virus or
+                                      malware scans
+             SW-MHR-2.1               The report shall:
+             SW-MHR-2.1.1             Be bundled with regularly uploaded system log files
+             SW-MHR-2.1.2             Contain all threat detection events since the report was last run.
+             SW-MHR-2.2               When the query detects an active threat, it shall:
+             SW-MHR-2.2.1             Immediately attempt to remediate the threat via the installed system’s
+                                      Malware Handling tool
+             SW-MHR-3                 If the software detect a threat that is not remediated the software
+                                      shall:
+             SW-MHR-3.1               Log the threat.
+             SW-MHR-3.2               Log the current WiFi fallback setting.
+             SW-MHR-3.3               Disable WiFi and force 4G connectivity.
+             SW-MHR-3.4               Notify user.
+             SW-MHR-3.5               Prevent use of the laser.
+
+       1.4   Network Connectivity - Wi-Fi and Cellular Modem
+             Req ID                   Requirement Description
+             SW-NC-1.1                The software shall require a WPA2 or a greater enabled access point for Wi-
+                                      fi connectivity.
+             SW-NC-1.2                The software shall allow the user to connect to Wi-fi WPA2 or greater.
+             SW-NC-1.3                The software shall allow the user to delete Wi-Fi credentials stored in the
+                                      system.
+             SW-NC-5.5                The software shall encrypt communication to external software
+                                      components.
+
+       1.4.1 Network Connectivity – Wi-Fi and 4G
+             Req ID                   Requirement Description
+             SW-NC-1                  The software shall communicate to external software components through
+                                      Wi-Fi.
+             SW-NC-2                  The software shall communicate to external software components through
+                                      cellular communication
+             SW-NC-3                  The software shall prioritize communication through Wi-Fi over cellular
+                                      communication.
+             SW-NC-4                  The software shall allow the user to re-configure Wi-Fi network by allowing
+                                      the user to make the following selections:
+             SW-NC-4.1                Allow the user to select the default Wi-Fi network from a list of available
+                                      networks.
+
+
+
+Requirements Document Template, 731-00003 Rev. A                                              Page 17 of 44
+                                  COMPANY PROPRIETARY AND CONFIDENTIAL
+                                                                 822-00007 Rev AC Solea Model 3 Software
+                                                                                          Requirements
+
+             SW-NC-4.2                Allow the user to enter the network security key for the selected Wi-Fi
+                                      network.
+             SW-NC-5                  The software shall provide networking tests:
+             SW-NC-5.1                Internet connectivity using WiFi
+             SW-NC-5.2                Internet connectivity using cellular modem
+             SW-NC-5.3                Convergent Dental cloud gateway connectivity test
+             SW-NC-5.4                Amazon S3 connectivity
+             SW-NC-6                  Software shall disconnect from the Internet on startup.
+
+       1.5   System Configuration
+             Req ID                   Requirement Description
+
+       1.5.1 System Configuration Management
+             Req ID                   Requirement Description
+             SW-SC-1                  [Removed in rev C]
+             SW-SC-2                  [Removed in Rev. AA]
+             SW-SC-2.1                [Removed in Rev. AA]
+             SW-SC-2.2                [Removed in Rev. AA]
+             SW-SC-3                  The software shall allow the Service Technician role to select the laser
+                                      controller type (LCD, PCON or PCON T17)
+
+       1.5.2 System Configuration Backup
+             Req ID                   Requirement Description
+             SW-BA-1                  The software shall backup the following items:
+                                      - The Solea Database
+                                      - The Solea Application Configuration Files
+                                      - The Solea Subscription Information File
+                                      - The Solea CAN module firmware configurations and calibration settings
+                                      - The PCON module firmware configuration settings.
+             SW-BA-2                  The software shall initiate the backup process without the user being
+                                      notified after 7 days or more has expired since last backup and the software
+                                      has been idle in Standby for 15 minutes or longer.
+             SW-BA-2.1                The backup files shall be stored on the Solea.
+             SW-BA-2.2                The software shall upload the backup files to the Convergent Backup server.
+
+                                      (Note: Backup does not immediately trigger an upload. Upload occurs
+                                      during the next log upload)
+             SW-BA-2.3                The software shall remove local backup files that are older than 12 months
+                                      at software startup.
+             SW-BA-2.4                Ongoing backup shall be cancelled and network communication shall be
+                                      disabled when the software exits Standby state.
+             SW-BA-3                  The software shall allow the service technician to initiate the backup
+                                      process.
+             SW-BA-3.1                The service technician shall be allowed to name the backup file.
+
+       1.5.3 System Configuration Restore
+             Req ID                   Requirement Description
+
+Requirements Document Template, 731-00003 Rev. A                                             Page 18 of 44
+                                  COMPANY PROPRIETARY AND CONFIDENTIAL
+                                                                 822-00007 Rev AC Solea Model 3 Software
+                                                                                          Requirements
+
+             SW-RE-1                  The software shall allow the service technician to restore settings from
+                                      backed up files.
+             SW-RE-2                  The software shall only allow restoring settings from a backup file that was
+                                      created with the same version as the running software.
+             SW-RE-3                  The software shall download backup files from the Convergent Backup
+                                      server if they don't exist locally on the Solea.
+             SW-RE-4                  The software shall display a list of backups ordered by date and allow user
+                                      to select one backup to restore settings from.
+             SW-RE-5                  The software shall display and allow the following items to be restored:
+                                      - Galvo coordinates
+                                      - Users and favorites
+                                      - Subscription information
+                                      - Deviations
+                                      - Firmware calibration and configuration settings for each CAN module
+                                      - Firmware calibration and configuration settings for the PCON module
+                                      - Pattern settings
+             SW-RE-5.1                The software shall allow a selection of one or more setting options to
+                                      restore.
+             SW-RE-5.2                Deviation shall be selected by default to be restored
+             SW-RE-5.3                Pattern settings shall be selected by default to be restored
+             SW-RE-6                  The software shall create a backup prior to restoring settings.
+             SW-RE-7                  The software shall restore galvo coordinates from the backup to the Solea
+                                      database if selected.
+             SW-RE-8                  The software shall restore all users and associated favorites if selected.
+             SW-RE-9                  The software shall restore the subscription settings and subscription
+                                      information file if selected.
+             SW-RE-10                 The software shall download deviation definitions from the Convergent
+                                      Backup server.
+             SW-RE-10.1               A deviation definition contains one or more of the following to be restored:
+                                      - Solea Database Parameter
+                                      - Solea Application Configuration Parameter
+                                      - Firmware Configuration Parameter
+             SW-RE-10.2               If a deviation is selected to be restored the software shall extract the values
+                                      for the parameters in the deviation definition from the selected backup files
+                                      and restore it.
+             SW-RE-11                 The software shall restore all the CAN firmware configuration and
+                                      calibration for a CAN module if selected.
+             SW-RE-12                 The software shall restore all pattern settings if selected.
+                                      Note: this include the pulse width range (applicable to the Palatal
+                                      Coagulation pattern)
+             SW-RE-13                 The software shall prompt a system restart after the restoring the settings.
+
+       1.6   Auditing / Troubleshooting
+             Req ID                   Requirement Description
+
+       1.6.1 Application Log
+             Req ID                   Requirement Description
+
+Requirements Document Template, 731-00003 Rev. A                                              Page 19 of 44
+                                  COMPANY PROPRIETARY AND CONFIDENTIAL
+                                                                822-00007 Rev AC Solea Model 3 Software
+                                                                                         Requirements
+
+            SW-AL-1                   The software shall record an entry in the application log whenever any of
+                                      the following actions begin:
+            SW-AL-1.1                 Log on.
+            SW-AL-1.2                 Perform laser cutting
+            SW-AL-1.3                 [Removed in Rev D]
+            SW-AL-1.4                 Modify the system sound volume.
+            SW-AL-2                   The information recorded in the application log shall include the following
+                                      information:
+            SW-AL-2.1                 Date/time the action occurred.
+            SW-AL-2.2                 Name of the action.
+            SW-AL-2.3                 Values for parameters or settings, if appropriate, for the action type.
+            SW-AL-3                   The software shall record any error events in the application log file with
+                                      the following information:
+            SW-AL-3.1                 Date/Time the error occurred.
+            SW-AL-3.2                 [Removed in Rev. X]
+            SW-AL-3.3                 Error description.
+            SW-AL-3.4                 Error code
+            SW-AL-4                   The software shall support the ability to export the log database in
+                                      delimited-text format, and copy resulting application logs to a USB device
+                                      by exiting the Software and performing the copy using standard utilities
+                                      provided by the Windows operating system.
+
+       1.6.2 Log Management
+            Req ID                    Requirement Description
+            SW-VAL-1                  The software shall keep a log history until the log has been uploaded to the
+                                      Convergent Log Server
+            SW-VAL-2                  The total log file space shall not exceed 5 GB.
+
+       1.6.3 Error Log
+            Req ID                    Requirement Description
+            SW-EL-1                   The software shall record an entry in a separate error log row whenever an
+                                      error occurs. The following information should be recorded with each error:
+            SW-EL-1.1                 Date and time of occurrence.
+            SW-EL-1.2                 Error code
+            SW-EL-1.3                 [Removed in rev D]
+            SW-EL-1.4                 The software state at the time of error occurrence.
+            SW-EL-2                   [Removed in Rev. X]
+
+       1.6.4 Cutting Data Log
+            Req ID                    Requirement Description
+            SW-CL-1                   When in the Laser Cutting state, the software shall log the following
+                                      information every second into a separate log file:
+            SW-CL-1.1                 Handpiece selection
+            SW-CL-1.2                 Pattern selection (note, includes type and spot size for example low power
+                                      1.25mm)
+            SW-CL-1.3                 Mist value selection
+            SW-CL-1.4                 Air state (on or off) selection
+
+Requirements Document Template, 731-00003 Rev. A                                             Page 20 of 44
+                                  COMPANY PROPRIETARY AND CONFIDENTIAL
+                                                                  822-00007 Rev AC Solea Model 3 Software
+                                                                                           Requirements
+
+            SW-CL-1.5                 Max cutting speed selection
+            SW-CL-1.6                 Cutting speed
+            SW-CL-1.7                 Air sheath pressure selection
+
+       1.6.5 View / Upload Usage Information
+            Req ID                    Requirement Description
+            SW-WVU-1                  The software shall provide the ability for the Service Technician role to view
+                                      laser usage information for the system. The information displayed shall
+                                      include the following:
+            SW-WVU-1.1                The total time the laser has been activated as measured by the time spent
+                                      in the states Laser User Warning, Laser Armed, and Laser Cutting states.
+            SW-WVU-1.2                The average time of laser activation, as measured by dividing the total
+                                      activation time by the number of activations.
+            SW-WVU-1.3                The activation information shall be stored in the Windows registry such that
+                                      it is not removed/replaced during re-installation of the Solea software.
+            SW-WVU-2                  The software shall provide the ability to capture the following hand piece
+                                      usage information and upload this usage information to the Convergent
+                                      Installation Server.
+            SW-WVU-2.1                The number of times a specific hand piece type is used on the system
+            SW-WVU-2.2                The amount of time a specific hand piece type is used
+
+       1.6.6 Upload of Logs to Cloud
+            Req ID                    Requirement Description
+            SW-UL-1                   The software shall upload logs to the Convergent Log Server.
+            SW-UL-2                   The software shall compress the log files to zip file (s) using the device serial
+                                      number and date/time stamp as file name prior to uploading the
+                                      compressed file(s) to the Convergent Log Server.
+            SW-UL-3                   The software shall only upload log files to the Convergent Log Server that
+                                      have not been uploaded in the past.
+            SW-UL-4                   The software shall allow the User to initiate the log upload process.
+            SW-UL-4.1                 The software shall display the progress of the upload
+            SW-UL-4.2                 The software shall allow the upload process to be cancelled.
+            SW-UL-4.3                 The software shall display the result of the upload process.
+            SW-UL-7                   The software shall initiate the log upload process without the user being
+                                      notified after one of following conditions:
+            SW-UL-7.1                 After a non-recoverable error occur
+            SW-UL-7.2                 7 days or more has expired since last log upload and the software has been
+                                      idle in Standby for 15 minutes or longer.
+            SW-UL-8                   Ongoing log upload shall be cancelled and network communication shall be
+                                      disabled when the software exits Standby state.
+
+       1.6.7 Error Classification
+            Req ID                    Requirement Description
+            SW-EC-1                   The software shall classify the errors or issues into the following categories:
+            SW-EC-1.1                 Non-recoverable (example: faulty CAN adapter)
+            SW-EC-1.2                 Recoverable (example: air pressure error)
+            SW-EC-1.3                 Warning (example: water reservoir empty)
+
+Requirements Document Template, 731-00003 Rev. A                                               Page 21 of 44
+                                  COMPANY PROPRIETARY AND CONFIDENTIAL
+                                                                 822-00007 Rev AC Solea Model 3 Software
+                                                                                          Requirements
+
+       1.6.8 Error Handling
+            Req ID                    Requirement Description
+            SW-EH-1                   When the software detects a non-recoverable error, it shall:
+            SW-EH-1.1                 [Removed in rev H]
+            SW-EH-1.2                 Present a notification to the user that include:
+            SW-EH-1.2.1               Error code and error description
+            SW-EH-1.2.2               Instructions that complete shutdown is required (main power in the back
+                                      must be switched off)
+            SW-EH-1.2.3               Client Services contact information
+            SW-EH-1.3                 Add error to the Error log
+            SW-EH-2                   When the software detects a recoverable error in Standby state it shall
+                                      attempt to recover automatically without notifying the user.
+            SW-EH-2.1                 [Removed in rev H]
+            SW-EH-2.2                 [Removed in rev H]
+            SW-EH-2.3                 Add error to the Error log
+            SW-EH-4                   If the recoverable error is detected in a state other than Standby state or if
+                                      the automatic recovery failed, the software shall:
+            SW-EH-4.1                 Present a notification to the user that include:
+            SW-EH-4.1.1               Error code and error description
+            SW-EH-4.1.2               Specific Instructions of actions to be taken if applicable.
+            SW-EH-4.1.3               Client Services contact information
+            SW-EH-4.1.4               The option to attempt a new recovery attempt.
+            SW-EH-4.2                 Add error to the Error log
+            SW-EH-3                   When the software detects a warning level issue, it shall:
+            SW-EH-3.1                 Return the system to Standby state
+            SW-EH-3.2                 Present a notification to the user that include:
+            SW-EH-3.2.1               Description of warning
+            SW-EH-3.2.2               Specific Instructions of actions to be taken if applicable.
+
+       1.6.9 Remote Access Specific Behavior
+            Req ID                    Requirement Description
+            SW-RAS-1                  The software shall allow the user to start the TeamViewer remote access
+                                      service.
+            SW-RAS-2                  If the TeamViewer remote access service fails to start, the system will
+                                      transition to the error state.
+            SW-RAS-3                  [Removed in rev D]
+            SW-RAS-4                  [Removed in rev D]
+            SW-RAS-5                  [Removed in rev D]
+            SW-RAS-6                  After successful startup of TeamViewer and establishing an Internet
+                                      connection, the touch screen shall be disabled.
+            SW-RAS-7                  After successful startup of TeamViewer and establishing an Internet
+                                      connection, the software shall not allow the laser to be activated.
+
+       1.6.10 View System Hardware Status
+            Req ID                    Requirement Description
+            SW-HW-1                   [Removed in rev G]
+
+
+Requirements Document Template, 731-00003 Rev. A                                              Page 22 of 44
+                                  COMPANY PROPRIETARY AND CONFIDENTIAL
+                                                                 822-00007 Rev AC Solea Model 3 Software
+                                                                                          Requirements
+
+             SW-HW-2                  [Removed in rev G]
+             SW-HW-3                  [Removed in rev G]
+             SW-HW-4                  [Removed in rev G]
+             SW-HW-5                  [Removed in rev G]
+             SW-HW-6                  [Removed in rev G]
+             SW-HW-7                  [Removed in rev G]
+             SW-HW-8                  The software shall display the status of the water reservoir level on the
+                                      Home screen.
+             SW-HW-9                  The water reservoir level status shall be displayed in one of four states –
+                                      full, low, empty, or water reservoir removed.
+             SW-HW-10                 The software shall indicate to the user when the water level drop to low but
+                                      allow the laser to continue to be operated.
+             SW-HW-11                 The software shall indicate when the water level drops to empty and the
+                                      laser will be disabled and any cutting in progress stops.
+
+       1.6.11 System Diagnostic Testing
+             Req ID                   Requirement Description
+             SW-SDT-1                 The software shall provide the ability to the user to perform a foot pedal
+                                      diagnostic test in which the user is prompted to press the foot pedal to its
+                                      maximum position and view visual feedback from the software showing the
+                                      foot pedal position in percent (0-100).
+             SW-SDT-2                 The software shall provide a tool displaying the wireless network signal
+                                      strength to the user.
+
+       1.7   State Requirements
+             Req ID                   Requirement Description
+
+       1.7.1 System State Definitions
+             Req ID                   Requirement Description
+             SW-SSD-1                 The software shall support the following system state definitions:
+             SW-SSD-1.1               [Removed in rev D]
+             SW-SSD-1.2               Startup – state during which software initializes and attempts to connect to
+                                      devices and stop any services related to remote access to the Solea system.
+                                      During this state the system checks devices and reports:
+             SW-SSD-1.2.1             [Removed in rev D]
+             SW-SSD-1.2.2             [Removed in rev J]
+             SW-SSD-1.2.3             Foot pedal not connected, reported as recoverable error.
+             SW-SSD-1.2.5             [Removed in rev K]
+             SW-SSD-1.2.6             [Removed in rev G]
+             SW-SSD-1.2.7             Any failure to stop the TeamViewer system service, reported as non-
+                                      recoverable error.
+             SW-SSD-1.3               Standby – state after startup but before user has indicated they want to use
+                                      the laser. This state is also returned to after laser operation is complete or
+                                      after successful error recovery..
+             SW-SSD-1.4               Arming – state after Standby and after user has selected the Turn Laser On
+                                      button. State where the system is primed (if applicable) and presents a
+
+
+Requirements Document Template, 731-00003 Rev. A                                             Page 23 of 44
+                                  COMPANY PROPRIETARY AND CONFIDENTIAL
+                                                                 822-00007 Rev AC Solea Model 3 Software
+                                                                                          Requirements
+
+                                      visible and audible warning to the user that the laser is about to be armed
+                                      (activated).
+            SW-SSD-1.5                [Removed in Rev H]
+            SW-SSD-1.6                Laser Armed – state in which the laser is ready but not cutting (pulsing). The
+                                      Laser Armed indicator blinks while the system is in the Laser Armed state.
+                                      (Note: the User can deactivate the laser by selecting the Turn Laser Off
+                                      button while in the Laser Armed state and the system will return to the
+                                      Standby state.)
+            SW-SSD-1.7                Laser Cutting – state in which the laser is actively cutting (pulsing). The
+                                      Laser Cutting indicator blinks while the system is in the Laser Cutting state.
+            SW-SSD-1.8                [Removed in rev E]
+            SW-SSD-1.9                System Error – state when a non-recoverable error has been detected and
+                                      no further laser operation is allowed for safety purposes.
+            SW-SSD-1.10               Error Recovery – state when the system is attempting to recover from
+                                      recoverable error. If successful, the system will return to Standby state and
+                                      allow continued operation.
+            SW-SSD-1.11               Alignment - the state during which the laser is firing while connected
+                                      to the Perioguide Acquisition Module and the readings from the
+                                      Perioguide Sensor Module are interpreted to determine when the
+                                      laser is centered within the Perioguide Tip.
+
+       1.7.2 State Transitions
+            Req ID                    Requirement Description
+            SW-SST-1                  The software enters Startup state after reset/restart of system.
+            SW-SST-2                  The software shall support the following state transitions for exiting the
+                                      Startup state:
+            SW-SST-2.1                Standby, if all devices were started up successfully.
+            SW-SST-2.2                Error, if startup fails.
+            SW-SST-2.3                [Removed in rev E]
+            SW-SST-2.4                [Removed in Rev. W]
+            SW-SST-3                  The software shall support the following state transitions for exiting the
+                                      Standby state:
+            SW-SST-3.1                Arming state when the Turn Laser On button is selected.
+            SW-SST-3.2                Error, if a non-recoverable error is detected.
+            SW-SST-3.3                [Removed in rev H]
+            SW-SST-3.4                Error Recovery, if a recoverable error is detected.
+            SW-SST-3.5                Alignment state, when the user selects to start an alignment procedure.
+            SW-SST-4                  [Removed in rev H]
+            SW-SST-5                  The software shall support the following state transitions for exiting the
+                                      Laser Armed state:
+            SW-SST-5.1                Laser Cutting, when the foot pedal position is nonzero.
+            SW-SST-5.1.1              If the foot pedal position was nonzero when entering Laser Armed state the
+                                      software shall not allow transition to Laser Cutting state until the foot pedal
+                                      position has returned to zero position followed by a nonzero foot pedal
+                                      position.
+            SW-SST-5.2                Error, if a non-recoverable error is detected.
+            SW-SST-5.3                [Removed in rev E]
+
+Requirements Document Template, 731-00003 Rev. A                                              Page 24 of 44
+                                  COMPANY PROPRIETARY AND CONFIDENTIAL
+                                                                 822-00007 Rev AC Solea Model 3 Software
+                                                                                          Requirements
+
+            SW-SST-5.4                Arming, if software detects that the user has:
+            SW-SST-5.4.1              [Removed in rev G]
+            SW-SST-5.4.2              Changed the Mist value for the selected procedure from a value of zero to a
+                                      value greater than zero.
+            SW-SST-5.5                Standby when the Turn Laser Off button is selected.
+            SW-SST-5.6                Error Recovery, if a recoverable error is detected.
+            SW-SST-6                  The software shall support the following state transitions for exiting the
+                                      Laser Cutting state:
+            SW-SST-6.1                Laser Armed, when the foot pedal position is 0.
+            SW-SST-6.2                Error, if a non-recoverable error is detected.
+            SW-SST-6.3                [Removed in rev E]
+            SW-SST-6.4                Error Recovery, if a recoverable error is detected.
+            SW-SST-7                  The software shall support the following state transitions for exiting the
+                                      Arming state:
+            SW-SST-7.1                [Removed in rev H]
+            SW-SST-7.2                Laser Armed, when the arming operation is complete.
+            SW-SST-7.6                Standby, if the user cancelled the arming process.
+            SW-SST-7.3                [Removed in rev J]
+            SW-SST-7.4                Error, if a non-recoverable error is detected.
+            SW-SST-7.5                Error Recovery, if a recoverable error is detected.
+            SW-SST-8                  The software shall support the following state transitions for exiting the
+                                      Error Recovery state:
+            SW-SST-8.1                Standby, if error recovery is successful
+            SW-SST-8.2                Error, if error recovery failed
+            SW-SST-9                  [Removed in rev C]
+            SW-SST-10                 [Removed in rev G]
+            SW-SST-11                 [Removed in rev D]
+            SW-SST-12                 When entering a new state, the software shall inform the following system
+                                      modules to enter the new state.
+            SW-SST-12.1               Mist Module
+            SW-SST-12.2               Airflow Module
+            SW-SST-12.3               Coolant Module
+            SW-SST-12.4               Laser Power Module
+            SW-SST-12.5               DC Power Monitor Module
+            SW-SST-12.6               PCON, if applicable
+            SW-SST-13                 The software shall confirm that each system module specified in SW-SST-12
+                                      has entered the correct (new) state and, if not confirmed, raise a non-
+                                      recoverable error.
+            SW-SST-14                 The software shall support the following state transitions for
+                                      exiting the Alignment state:
+            SW-SST-14.1               Standby, when alignment is completed.
+            SW-SST-14.2               Standby, if the user selects to cancel the alignment procedure.
+            SW-SST-14.3               Error, if a non-recoverable error is detected.
+            SW-SST-14.4               Error Recovery, if a recoverable error is detected.
+
+
+
+
+Requirements Document Template, 731-00003 Rev. A                                            Page 25 of 44
+                                  COMPANY PROPRIETARY AND CONFIDENTIAL
+                                                                 822-00007 Rev AC Solea Model 3 Software
+                                                                                          Requirements
+
+       1.7.3 System Startup State Specific Behavior
+            Req ID                    Requirement Description
+            SW-SIB-1                  When in the Startup state, the software shall initialize the following devices:
+            SW-SIB-1.1                [Removed in rev E]
+            SW-SIB-1.2                [Removed in rev E]
+            SW-SIB-1.3                [Removed in rev E]
+            SW-SIB-1.4                [Removed in rev E]
+            SW-SIB-1.5                [Removed in rev E]
+            SW-SIB-1.6                Foot Pedal
+            SW-SIB-1.7                Laser Controller
+                                      Applies to LCD and PCON
+            SW-SIB-1.8                Enable the touch screen
+            SW-SIB-2                  When in the Startup state, the software shall begin monitoring and
+                                      continue monitoring until the software is shut down the following system
+                                      hardware devices:
+            SW-SIB-2.1                CAN Communication with the following modules:
+            SW-SIB-2.1.1              Mist Module
+            SW-SIB-2.1.2              Airflow Module
+            SW-SIB-2.1.3              Coolant Module
+            SW-SIB-2.1.4              Laser Power Module
+            SW-SIB-2.1.5              DC Power Monitor Module
+            SW-SIB-2.2                USB communication with the PCON module
+            SW-SIB-3                  When in the Startup state and if PCON is used, the software shall
+                                      verify that PCONs internal configuration matches the configuration
+                                      expected by the software.
+
+                                      Applies to PCON only.
+            SW-SIB-3.1                The software shall issue a non-recoverable error if the configuration does
+                                      not match.
+            SW-SIB-4                  When in the Startup state, the software shall at startup verify that patterns
+                                      required by the software are installed on the LCD Laser Controller.
+                                      Applies to LCD Only
+            SW-SIB-4.1                The software shall install the pattern onto the Laser Controller in the case
+                                      when the pattern is missing.
+            SW-SIB-4.2                If a pattern is missing after the software has attempted to install it to the
+                                      Laser Controller, warn user and transition to the Error state.
+
+       1.7.4 Standby State Specific Behavior
+            Req ID                    Requirement Description
+            SW-SSB-1                  When in the Standby state, the software shall prevent the user from firing
+                                      the laser.
+            SW-SSB-2                  The laser simmer shall be turned on upon entry to the Standby state.
+                                      Applies to LCD Only
+
+       1.7.5 Arming State Specific Behavior
+            Req ID                    Requirement Description
+
+
+
+Requirements Document Template, 731-00003 Rev. A                                              Page 26 of 44
+                                  COMPANY PROPRIETARY AND CONFIDENTIAL
+                                                                 822-00007 Rev AC Solea Model 3 Software
+                                                                                          Requirements
+
+            SW-LWB-1                  When in the Arming state, the software shall prevent the user from firing
+                                      the laser.
+            SW-LWB-2                  [Removed in rev G]
+            SW-LWB-3                  [Removed in Rev. X]
+            SW-LWB-4                  (LCD only) When in the Arming state, the software shall send the
+                                               galvos to the laser "home" position using the saved x, y
+                                               positions from the most recent non-Perioguide galvo
+                                               alignment operation when using a non-Perioguide handpiece
+                                               selection.
+            SW-LWB-5                  The software shall stay in the Arming state for a minimum of 5 seconds.
+            SW-LWB-5.1                The software shall prime the system for a minimum of 40 seconds if the
+                                      time since last priming exceeds 12 hours if the mist water is selected to be
+                                      on.
+            SW-LWB-5.2                The software shall prime the system for a minimum of 5 seconds if mist
+                                      water is selected to be on.
+            SW-LWB-5.3                The software shall allow the priming to be cancelled.
+            SW-LWB-6                  An audible and visible warning lasting a minimum of 5 seconds shall be
+                                      presented to the user indicating that the laser is about to be armed.
+            SW-LWB-6.1                After completion of the Arming period, the audible and visible warnings
+                                      shall stop and the software enters the Laser Armed state.
+            SW-LWB-7                  The software shall warn the user to put on their safety glasses in the Arming
+                                      state.
+            SW-LWB-8                  (PCON only) When in the Arming state, the software shall send the
+                                               saved x, y positions from the most recent non-Perioguide
+                                               galvo alignment operation as the home position to PCON
+                                               when using a non-Perioguide handpiece selection.
+
+                                      Note: PCON will home the galvos when it is entering its Laser Armed
+                                      state.
+            SW-LWB-9                  (Perioguide Only) During use of the Perioguide handpiece the
+                                      software shall use the most recent galvo x,y positions that are
+                                      saved for the Perioguide handpiece.
+
+       1.7.6 Laser Armed State Specific Behavior
+            Req ID                    Requirement Description
+            SW-LUB-1                  [Removed in rev D]
+            SW-LUB-2                  When in the Laser Armed state, if the selected pattern is low-power, and
+                                      the Mist value is 0, the user shall have the option to disable and enable the
+                                      use of Air.
+            SW-LUB-2.1                After disabling air, if the user changes the Mist value back to a value greater
+                                      than 0, the software shall warn the user that the system shall be primed
+                                      again.
+            SW-LUB-2.2                After disabling air, if the user selects a standard mode favorite, the software
+                                      shall warn the user that the system shall be primed again.
+            SW-LUB-2.3                [Removed in rev D]
+
+
+
+
+Requirements Document Template, 731-00003 Rev. A                                              Page 27 of 44
+                                  COMPANY PROPRIETARY AND CONFIDENTIAL
+                                                                 822-00007 Rev AC Solea Model 3 Software
+                                                                                          Requirements
+
+            SW-LUB-3                  When in the Laser Armed state with air enabled, if the user changes the
+                                      Mist value from 0 to a value greater than 0, the software shall require the
+                                      user to prime the system.
+            SW-LUB-3.1                The software shall warn the user that the system shall be primed again.
+            SW-LUB-3.2                [Removed in rev D]
+
+       1.7.7 Laser Cutting State Specific Behavior
+            Req ID                    Requirement Description
+            SW-LCB-1                  When exiting in the Laser Cutting state (user fully removes foot from the
+                                      foot pedal), the software shall set the laser "home" position to the saved x,
+                                      y positions from the most recent galvo alignment operation. If no galvo
+                                      alignment has been performed, the home position shall be set to 0, 0.
+
+                                      Note: The LCD is explicitly commanded to move the galvos to the home
+                                      position while the PCON is homing the galvos when commanded to go back
+                                      to the Armed state.
+            SW-LCB-1.1                During use of the Perioguide handpiece the software shall use the galvo x,y
+                                      positions that are saved for the Perioguide handpiece.
+
+       1.7.8 Error State Specific Behavior
+            Req ID                    Requirement Description
+            SW-ES-1                   When in Error state the software shall turn the laser simmer off.
+                                      Applies to LCD Only
+
+       1.7.9 Error Recovery Specific Behavior
+            Req ID                    Requirement Description
+            SW-ER-1                   When in the Error Recovery state, the software shall prevent the user from
+                                      firing the laser.
+            SW-ER-2                   When the software detects an "external air pressure low" error the
+                                      software shall give the user the option to force the software use of the
+                                      internal compressor.
+            SW-ER-2.1                 The software shall provide the user the means to re-enable the user of
+                                      external air.
+
+       1.7.10 Alignment State Description (Perioguide Only)
+       The alignment state consists of:
+            • The setup phase, where user setups the Perioguide accessories (Perioguide
+               Acquisition Module and Perioguide Sensor Module) and connects it to Solea.
+               During this phase the laser is not being fired.
+            • Alignment phase, the laser is being fired for a short period of time into the
+               Perioguide Sensor Module. The software will determine the optimal alignment
+               based on the sensor readings received from the Perioguide Sensor Module.
+                   o The alignment phase consists of home position power check and
+                       scanning phase.
+                            ▪ Home position check - The system shall check the home galvo
+                               position for sufficient power. If sufficient power is found at home
+                               position, scanning phase will be skipped.
+
+Requirements Document Template, 731-00003 Rev. A                                             Page 28 of 44
+                                  COMPANY PROPRIETARY AND CONFIDENTIAL
+                                                                822-00007 Rev AC Solea Model 3 Software
+                                                                                         Requirements
+
+                             ▪ Scanning Phase - The system adjusts galvo positions,
+                               attempting to determine peak power at a given galvo address.
+            •   Result phase, where the user is informed of the alignment result.
+       1.7.11 Alignment State Specific Behavior
+            Req ID                    Requirement Description
+            SW-AS-1                   During the setup phase, the software shall:
+            SW-AS-1.1                 Provide the user with instructions on how to properly connect the
+                                      Perioguide Sensor Module to the hand piece.
+            SW-AS-1.2                 Warn the user that the laser will fire during the alignment and instruct
+                                      that safety glasses must be worn.
+            SW-AS-1.3                 Establish communication connection with the Acquisition Module.
+            SW-AS-1.3.1               If the software identifies several Acquisition Modules, it will prompt the
+                                      user to choose which one to establish communication with.
+            SW-AS-1.4                 Display the network name of the Acquisition Module it is connected
+                                      to.
+            SW-AS-1.5                 Update the Perioguide Control Module Firmware if the module firmware
+                                      version differs from the version that is included in the software.
+            SW-AS-1.6                 Verify Perioguide Control Module Firmware authenticity.
+
+
+            SW-AS-2                   The software shall allow the alignment phase to commence if all of
+                                      the following conditions are met:
+            SW-AS-2.1                 The software has established communication with the Perioguide
+                                      Acquisition Module.
+            SW-AS-2.2                 The software confirms that the Perioguide Sensor Module is connected to
+                                      the Perioguide Acquisition Module.
+            SW-AS-2.3                 The Perioguide Acquisition Module battery level is not low.
+
+                                      Note: See Firmware Requirement FW-AF-3.
+            SW-AS-3                   The software shall prompt the user and require confirmation with a screen
+                                      tap before allowing transition into the alignment phase.
+            SW-AS-3.1                 After confirmation from the user, the software shall open the shutter.
+            SW-AS-4                   The software shall transition into the alignment phase when the foot
+                                      pedal is pressed down
+            SW-AS-4.1                  If the foot pedal is pressed or held when the pre-alignment user
+                                      confirmation is displayed or confirmed by the user, the software shall not
+                                      allow alignment to start until the foot pedal is released and pressed again.
+            SW-AS-5                   The software shall exit the alignment phase and be considered
+                                      unsuccessful if any of the following conditions occur:
+            SW-AS-5.1                 The foot pedal is released.
+            SW-AS-5.2                 The communication to the Perioguide Acquisition Module is lost.
+            SW-AS-5.3                 The Perioguide Sensor Module is disconnected from the Perioguide
+                                      Acquisition Module.
+            SW-AS-5.4                 The user cancels the alignment on the GUI.
+            SW-AS-6                   The software shall display the progress of the alignment.
+            SW-AS-7                   The software shall play a sound during the alignment.
+
+
+Requirements Document Template, 731-00003 Rev. A                                             Page 29 of 44
+                                  COMPANY PROPRIETARY AND CONFIDENTIAL
+                                                                822-00007 Rev AC Solea Model 3 Software
+                                                                                         Requirements
+
+                                      Note: Sound played during alignment will be equivalent to sound played
+                                      during laser cutting state (SW-SO-1).
+             SW-AS-8                  The alignment phase shall not exceed 60 seconds.
+             SW-AS-9                  Air and mist shall be disabled during the alignment phase.
+             SW-AS-17                 (Home position check) Each alignment will begin at the home galvo
+                                      positions and be considered successful if the sensor reading is greater than
+                                      0.5 W. If sensor reading at home galvo position is less than or equal to 0.5
+                                      W, then the alignment will proceed to the scanning phase. Upon
+                                      completion of a successful home position check, the software shall store a
+                                      Perioguide galvo x,y position equal to the home galvo position.
+             SW-AS-10                 (Scanning Phase) Upon completion of successful alignment the
+                                      software shall store a galvo x,y position that was in the upper 25% of
+                                      detected sensor output to the database specifically to be used with
+                                      the Perioguide handpiece.
+
+                                      Note: Scanning phase is contingent on Home Position Check being
+                                      unsuccessful.
+             SW-AS-11                 The software shall provide the user with an option to retry the
+                                      alignment if the alignment was unsuccessful.
+             SW-AS-12                 The shutter shall be closed upon exiting the alignment phase.
+             SW-AS-13                 Once the alignment phase is completed the software transitions to the
+                                      result phase.
+             SW-AS-13.1               During the transition the software shall close the communication to
+                                      the Perioguide Acquisition Module.
+             SW-AS-14                 The software shall display the result of the alignment to the user.
+             SW-AS-15                 Periodontal treatment shall be disabled if there are no stored galvo x, y
+                                      positions for the Perioguide handpiece.
+             SW-AS-16                 Alignment shall be considered unsuccessful if no power is detected during
+                                      alignment.
+
+       1.8   Workflow
+             Req ID                   Requirement Description
+
+       1.8.1 Initiation of Laser Cutting
+             Req ID                   Requirement Description
+             SW-WLP-1                 The Home screen shall be disabled if any of the following conditions exist:
+             SW-WLP-1.1               The foot pedal is not connected.
+             SW-WLP-1.2               The software is in Laser Cutting state.
+             SW-WLP-1.3               The software is in Arming state.
+             SW-WLP-1.4               The software is in Error state.
+             SW-WLP-1.5               A handpiece is not selected
+             SW-WLP-2                 The software shall allow the user to set the following laser cutting
+                                      parameters from the Home screen
+             SW-WLP-2.1               Mist water flow rate
+             SW-WLP-2.2               Spot size
+             SW-WLP-2.3               Maximum cutting speed
+             SW-WLP-2.4               Mist air (on/off)
+             SW-WLP-2.5               Air sheath pressure
+
+Requirements Document Template, 731-00003 Rev. A                                             Page 30 of 44
+                                  COMPANY PROPRIETARY AND CONFIDENTIAL
+                                                                 822-00007 Rev AC Solea Model 3 Software
+                                                                                          Requirements
+
+            SW-WLP-3                  The software shall associate and display the following sets of favorites per
+                                      handpiece type:
+
+                                                Sp
+                                             Po     Mi        Cy
+                                          Ha    ot
+                                      Fa     w      st        cl
+                                          nd    Siz        Sp
+                                      vo     er     (m Air    e
+                                          pi    e          ee
+                                      rit    M      L/        Li
+                                          ec    (m         d
+                                      e      od     mi        mi
+                                          e     m)
+                                             e      n)        t
+
+                                      Th
+                                      ick     St           M
+                                          Co     1.
+                                      En      an           ed 30 N/
+                                          ntr    25 9
+                                      a       da           iu % A
+                                          a
+                                      m       rd           m
+                                      el
+                                      Th
+                                      in     St            M
+                                         Co     1.
+                                      En     an            ed 20 N/
+                                         ntr    25 9
+                                      a      da            iu % A
+                                         a
+                                      m      rd            m
+                                      el
+                                      Gi
+                                      ng
+                                             St            M
+                                      iv Co     1.
+                                             an            ed 30 N/
+                                      ec ntr    25 8
+                                             da            iu % A
+                                      to a
+                                             rd            m
+                                      m
+                                      y
+                                      Cr
+                                      o
+                                      w
+                                      n      St            M
+                                         Co
+                                      Le     an 0.         ed 30 N/
+                                         ntr       8
+                                      ng     da 5          iu % A
+                                         a
+                                      th     rd            m
+                                      en
+                                      in
+                                      g
+                                      Fi
+                                      br     St            M
+                                         Co
+                                      o      an            ed 30 N/
+                                         ntr    1      8
+                                      m      da            iu % A
+                                         a
+                                      a      rd            m
+                                      Re
+
+
+Requirements Document Template, 731-00003 Rev. A                                             Page 31 of 44
+                                  COMPANY PROPRIETARY AND CONFIDENTIAL
+                                                             822-00007 Rev AC Solea Model 3 Software
+                                                                                      Requirements
+
+                                      m
+                                      ov
+                                      al
+
+                                      Im
+                                      pl
+                                      an     St          M
+                                         Co     1.
+                                      t      an          ed 30 N/
+                                         ntr    25 8
+                                      Ex     da          iu % A
+                                         a
+                                      po     rd          m
+                                      su
+                                      re
+                                      O
+                                      pe
+                                      rc     St          M
+                                         Co     1.
+                                      ul     an          ed 30 N/
+                                         ntr    25 8
+                                      ec     da          iu % A
+                                         a
+                                      to     rd          m
+                                      m
+                                      y
+                                      Ch
+                                      ild
+                                      /A
+                                      du
+                                             St          M
+                                      lt Co
+                                             an          ed 40 N/
+                                      Fr ntr    1    8
+                                             da          iu % A
+                                      en a
+                                             rd          m
+                                      ec
+                                      to
+                                      m
+                                      y
+                                      To
+                                      ot
+                                      h      St          M
+                                         Co     1.
+                                      U      an          ed 30 N/
+                                         ntr    25 8
+                                      nc     da          iu % A
+                                         a
+                                      ov     rd          m
+                                      er
+                                      y
+                                      Cr
+                                      o      St       M
+                                         Co     1.
+                                      w      an    13 ed 90 N/
+                                         ntr    25
+                                      n      da       iu % A
+                                         a
+                                      Re     rd       m
+                                      m
+
+
+Requirements Document Template, 731-00003 Rev. A                                      Page 32 of 44
+                                  COMPANY PROPRIETARY AND CONFIDENTIAL
+                                                             822-00007 Rev AC Solea Model 3 Software
+                                                                                      Requirements
+
+                                      ov
+                                      al
+                                      Ve
+                                      ne
+                                      er     St       M
+                                         Co     1.
+                                      Re     an    13 ed 80 N/
+                                         ntr    25
+                                      m      da       iu % A
+                                         a
+                                      ov     rd       m
+                                      al
+
+                                             St          M
+                                      Bi Co
+                                             an          ed 30 N/
+                                      op ntr    1    8
+                                             da          iu % A
+                                      sy a
+                                             rd          m
+                                      Ap
+                                      ht     Lo
+                                      ho Co w 1.
+                                                   Of Of 10 N/
+                                      us ntr Po 25
+                                                   f f % A
+                                      Ul a we
+                                      ce     r
+                                      r
+                                      Inf
+                                      an
+                                      t      Lo
+                                      Fr Str w 0.
+                                                   Of Of 60 N/
+                                      en aig Po 75
+                                                   f f % A
+                                      ec ht we
+                                      to     r
+                                      m
+                                      y
+                                      So
+                                             Lo
+                                      le
+                                         Sle w
+                                      a              N/ N/ 30 O
+                                         ep Po 7
+                                      Sl             A A % n
+                                             we
+                                      ee
+                                             r
+                                      p
+                                      So
+                                                           Ca
+                                      le      Lo
+                                         Pr                lib
+                                      a       w
+                                         ot          N/ N/ rat 0
+                                      Pr      Po 2
+                                         ec          A A io *
+                                      ot      we
+                                         t                 n:
+                                      ec      r
+                                                           0
+                                      t
+
+
+
+
+Requirements Document Template, 731-00003 Rev. A                                      Page 33 of 44
+                                  COMPANY PROPRIETARY AND CONFIDENTIAL
+                                                                       822-00007 Rev AC Solea Model 3 Software
+                                                                                                Requirements
+
+                                      Pe
+                                      rio
+                                      do Pe Lo
+                                      nt rio w 0.
+                                                   Lo On 50 N/
+                                      al gui Po 25
+                                                   w     % A
+                                      Th de we
+                                      er     r
+                                      ap
+                                      y
+
+
+                                      * 0 cycle limit means no limit on the number of cycles
+
+            SW-WLP-4                  The software shall allow a user to save and restore combinations of the
+                                      laser cutting settings in the form or "favorites".
+            SW-WLP-4.1                The user shall be allowed to delete a favorite
+            SW-WLP-4.2                The user shall be allowed to copy a favorite
+            SW-WLP-5                  When selecting a favorite, the software shall set and display the following
+                                      cutting parameters associated with the favorite:
+            SW-WLP-5.1                Spot size
+            SW-WLP-5.2                Mist water ratio
+            SW-WLP-5.3                Air
+            SW-WLP-5.3.1              Standard mode selections:
+                                      - Low (10 psi air sheath, 20 psi mist air)
+                                      - Medium (17 psi air sheath, 20 psi mist air)
+                                      - High (25 psi air sheath, 20 psi mist air)
+            SW-WLP-5.3.2              Non- Perioguide Low Power model selections
+                                      - Off (0 psi air sheath, 0 psi mist air)
+                                      - Low (10 psi air sheath, 20 psi mist air)
+                                      - Medium (17 psi air sheath, 20 psi mist air)
+                                      - High (25 psi air sheath, 20 psi mist air )
+            SW-WLP-5.4                Cutting speed
+            SW-WLP-5.5                Air sheath pressure
+            SW-WLP-5.3.3              Perioguide Low Power model selections
+                                      - Off (0 psi air sheath, 0 psi mist air)
+                                      - Low (7 psi air sheath, 8 psi mist air)
+            SW-WLP-25                 The spot sizes that the user shall be able to select on the Home screen
+                                      include:
+                                      - 0.25mm
+                                      - 0.50mm
+                                      - 0.75mm
+                                      - 1.00mm
+                                      - 1.25mm
+                                      - 1.50mm
+                                      - 7.00mm Hex (Sleep Only)
+                                      - 2.00mm Hex (Solea Protect Only)
+            SW-WLP-6                  Contra-angle and Straight Handpiece
+                                      The mist flow rate shall be adjustable in 1.0 ml/min increments.
+
+
+Requirements Document Template, 731-00003 Rev. A                                                         Page 34 of 44
+                                  COMPANY PROPRIETARY AND CONFIDENTIAL
+                                                                       822-00007 Rev AC Solea Model 3 Software
+                                                                                                Requirements
+
+
+                                      Perioguide Handpiece
+                                      The mist flow rate shall have a low, medium, and high setting.
+                                      Low – 3ml/min
+                                      Medium – 5 ml/min
+                                      High – 7 ml/min
+            SW-WLP-6.1                (Contra-angle and Straight Handpiece only) The allowable flow rate range
+                                      for low power mode favorites shall be 5-15 ml/min
+            SW-WLP-6.2                (Contra-angle and Straight Handpiece only) The allowable flow rate range
+                                      for standard mode favorites shall be 8-15 ml/min
+            SW-WLP-6.3                The software shall allow the user to turn off mist water for low power mode
+                                      favorites.
+            SW-WLP-7                  If the selected favorite is low power mode favorite, and the Mist value is 0,
+                                      the user shall have the option with a single operation to disable and enable
+                                      the use of Air.
+            SW-WLP-7.1                With air disabled in Laser Armed state, if the user changes the Mist value
+                                      back to a value greater than 0, the user shall be warned that Air is being re-
+                                      enabled and the software shall re-enable Air.
+            SW-WLP-7.2                With air disabled in Laser Armed state, if the user selects a standard mode
+                                      favorite, the software shall warn the user that Air is being re-enabled and
+                                      the software shall re-enable Air.
+            SW-WLP-8                  The software shall display on the Home screen the type of handpiece
+                                      connected to the system, with the handpiece being on the following
+                                      supported types:
+            SW-WLP-8.1                None (no recognized handpiece connected)
+            SW-WLP-8.2                Contra Angle handpiece
+            SW-WLP-8.3                Straight handpiece
+            SW-WLP-8.4                [Removed in rev. P]
+            SW-WLP-8.5                Sleep handpiece
+            SW-WLP-8.6                Solea Protect handpiece
+            SW-WLP-8.7                Perioguide handpiece
+            SW-WLP-9                  [Removed in rev M]
+            SW-WLP-10                 The Turn Laser On button shall be disabled if any of the following conditions
+                                      are true:
+            SW-WLP-10.1               A valid handpiece is not selected to the system.
+            SW-WLP-10.2               The laser is not ready.
+                                      Note: Applies to CX-15 lasers only
+            SW-WLP-10.3               A pattern has not been loaded to the laser controller
+                                      Note: Applies to both LCD and PCON
+            SW-WLP-11                 The software shall display a maximum of two pop-up dialogs screen upon
+                                      laser activation.
+            SW-WLP-12                 [Removed in rev H]
+            SW-WLP-13                 [Removed in rev H]
+            SW-WLP-15                 Foot pedal input shall be translated into cutting parameter in accordance to
+                                      the selected spot type.
+            SW-WLP-15.1               The software shall interpret the foot pedal on a scale from 1-255 and map
+                                      the foot pedal input value to the pulse duration.
+
+
+
+Requirements Document Template, 731-00003 Rev. A                                                       Page 35 of 44
+                                  COMPANY PROPRIETARY AND CONFIDENTIAL
+                                                                 822-00007 Rev AC Solea Model 3 Software
+                                                                                          Requirements
+
+            SW-WLP-16                 The software shall have a delay of no more than 501 milliseconds from the
+                                      time the user removes his/her foot from the foot pedal until laser cutting is
+                                      stopped.
+            SW-WLP-17                 The software shall have a delay of no more than 800 milliseconds when
+                                      initiating laser firing when the user first presses the foot pedal.
+            SW-WLP-24                 If mist is enabled, there shall be a delay of at least 400 miliseconds between
+                                      when the user presses the footpedal and the software initiates firing of the
+                                      laser.
+            SW-WLP-24.1               Prior to commanding the pulse width to the value specified by the foot
+                                      pedal, the software shall increase the pulse width command to 10% of the
+                                      pulse width range over a period of 300 to 650 ms from the beginning of the
+                                      first pulse.
+            SW-WLP-24.1.1             The ramp shall not be executed if the ramp end-point pulse duration is less
+                                      or equal to the user selected max pulse duration.
+            SW-WLP-24.1.2             The ramp shall not be executed if the Sleep handpiece is selected.
+            SW-WLP-24.1.3             The ramp shall not be executed if the Solea Protect handpiece is selected.
+            SW-WLP-18                 The user shall not be allowed to change any parameters, such as spot size
+                                      or cutting speed, either through selection of favorites or otherwise, nor will
+                                      they be able to navigate to other areas of the application while the foot
+                                      pedal is pressed and cutting is in progress.
+            SW-WLP-19                 If a user fully removes his/her foot from the foot pedal, all current
+                                      selections such as spot size and maximum cutting speed will remain in
+                                      effect.
+            SW-WLP-20                 [Removed in rev D]
+            SW-WLP-21                 [Removed in rev D]
+            SW-WLP-22                 [Removed in rev E]
+            SW-WLP-23                 When the user selects Low Power, an informational message shall be
+                                      displayed to the user describing the purpose and behavior of low power
+                                      mode.
+            SW-WLP-23.1               The user shall have the option to prevent the informational message from
+                                      being displayed again.
+
+       1.8.2 Palatal Coagulation
+            Req ID                    Requirement Description
+            SW-WLP-26                 When the user selects the Sleep handpiece the software shall display a
+                                      dialog that:
+            SW-WLP-26.1               Instructs the user to verify that Sleep handpiece cartridge has been
+                                      inserted.
+            SW-WLP-26.2               Instructs the user to perform a burn card test.
+            SW-WLP-26.3               [Removed in Rev. U]
+            SW-WLP-26.4               [Removed in Rev. U]
+            SW-WLP-26.5               [Removed in Rev. U]
+            SW-WLP-27                 If the Sleep handpiece is selected software shall not display or allow the
+                                      mist and air to be adjusted.
+            SW-WLP-28                 If the Sleep handpiece is selected the software shall allow the user to limit
+                                      number times a pattern is fired to:
+                                      - No Limitation
+
+Requirements Document Template, 731-00003 Rev. A                                              Page 36 of 44
+                                  COMPANY PROPRIETARY AND CONFIDENTIAL
+                                                                 822-00007 Rev AC Solea Model 3 Software
+                                                                                          Requirements
+
+                                      -2
+
+                                      Note: The software will stop the laser after the selected limit even if foot
+                                      pedal is pressed. To fire again the user must take the foot of the foot pedal
+                                      and press it again.
+            SW-WLP-29                 If the Sleep handpiece is selected the software shall display a counter of
+                                      how many times the pattern has been executed.
+            SW-WLP-29.1               The user shall be able to reset the counter.
+            SW-WLP-30                 When executing the Palatal Coagulation pattern, the pulse width shall be
+                                      fixed at the pulse width corresponding to the governor position.
+
+       1.8.3 Solea Protect
+            Req ID                    Requirement Description
+            SW-WLP-31                 When the user selects the Solea Protect handpiece the software shall
+                                      display a dialog that:
+            SW-WLP-31.1               Instructs the user to verify that the Solea Protect handpiece cartridge has
+                                      been inserted.
+            SW-WLP-31.2               Instructs the user to perform a burn card test.
+            SW-WLP-31.3               [Removed in Rev. U]
+            SW-WLP-31.4               [Removed in Rev. U]
+            SW-WLP-31.5               [Removed in Rev. U]
+            SW-WLP-31.6               [Removed in Rev. U]
+            SW-WLP-32                 If the Solea Protect handpiece is selected software shall not display or allow
+                                      the mist and air to be adjusted.
+            SW-WLP-33                 If the Solea Protect handpiece is selected the software shall allow the user
+                                      to limit number times a pattern is fired from no limit up to 20.
+
+                                      Note: the software will stop the laser after the selected limit even if foot
+                                      pedal is pressed. To fire again the user must take the foot of the foot pedal
+                                      and press it again.
+            SW-WLP-34                 If the Solea Protect handpiece is selected the software shall display a
+                                      counter of how many times the pattern has been executed.
+            SW-WLP-34.1               The user shall be able to reset the counter.
+            SW-WLP-35                 When executing the Solea Protect pattern, the pulse width shall be fixed at
+                                      the pulse width corresponding to the governor position.
+
+       1.8.4 Aiming Beam Adjustment
+            Req ID                    Requirement Description
+            SW-AB-1                   The software shall allow the user to adjust the aiming beam brightness.
+            SW-AB-2                   The user shall be warned to wear safety glasses prior to opening the shutter
+                                      and turning on the aiming beam.
+            SW-AB-3                   The software shall prevent the laser to be fired during the aiming beam
+                                      adjustment.
+
+       1.8.5 View Version Information
+            Req ID                    Requirement Description
+
+
+
+Requirements Document Template, 731-00003 Rev. A                                             Page 37 of 44
+                                  COMPANY PROPRIETARY AND CONFIDENTIAL
+                                                                   822-00007 Rev AC Solea Model 3 Software
+                                                                                            Requirements
+
+              SW-WVI-1                 The software shall provide the user with the ability to view hardware and
+                                       software version information for the system. The information display shall
+                                       include the following:
+              SW-WVI-1.1               Name of company producing the Solea system.
+              SW-WVI-1.2               Address of company producing the Solea system.
+              SW-WVI-1.3               Phone number of support group of company producing the Solea system.
+              SW-WVI-1.4               Software version of the Solea system.
+              SW-WVI-1.5               Firmware versions by module
+              SW-WVI-1.6               4G information (network/IMEI/SIM)
+              SW-WVI-1.7               LCD2 firmware version (LCD only)
+              SW-WVI-1.8               PCON firmware version (PCON only)
+
+       1.8.6 Performance
+              Req ID                   Requirement Description
+              SW-PF-1                  The user shall be able to login within 30 seconds after start of the
+                                       application. Note that this is form the time the application is commanded to
+                                       start and not from the time the front panel power button is pressed.
+              SW-PF-2                  The software shall exit cutting state no later than 0.5s after the foot pedal is
+                                       disconnected.
+
+       1.8.7 Patterns
+              Req ID                   Requirement Description
+              SW-PA-1                  The software shall use the patterns as specified in the Solea Model 3
+                                       Parameters Calculator (721-00120).
+
+       1.8.8 Demonstration Mode
+              Req ID                   Requirement Description
+              SW-DM-1                  The software shall display a notification when the system is in
+                                       Demonstration Mode that the system shall not be used on patients.
+              SW-DM-2                  The software shall suppress fault codes defined in a configuration file when
+                                       the system is in Demonstration Mode.
+              SW-DM-2.1                [Removed in Rev. U]
+              SW-DM-3                  The software shall communicate to the CAN modules the errors to ignore
+                                       when Demo mode is enabled.
+              SW-DM-4                  The software shall communicate to the CAN modules that no errors should
+                                       be ignored when Demo mode is disabled.
+              SW-DM-5                  [Deferred to future SW release] The software shall allow the user to use
+                                       Sleep and Solea Protect in Demo mode without firing the CO2 laser.
+
+
+       2     Rev Controlled Docs
+
+       2.1    SW Requirements - Rev History
+
+        Rev.      Revision         DCO/ECO                                                      Revision
+        Level     Date             Number          Description of Revision                      Author
+        L         06/22/2020       DCO-01426       For previous revision changes refer to rev   A. Johansson
+                                                   K of this document. Requirements updated
+
+Requirements Document Template, 731-00003 Rev. A                                                 Page 38 of 44
+                                  COMPANY PROPRIETARY AND CONFIDENTIAL
+                                                                 822-00007 Rev AC Solea Model 3 Software
+                                                                                          Requirements
+
+                                                based on findings and recommendations
+                                                during verification of software version
+                                                4.3.0 (refer to Jira PS-1338).
+                                                Reformatted the document for increased
+                                                readability (no tracking)
+                                                Corrected straight handpiece favorites:
+                                                SW-WLP-3
+                                                Display PCON and LCD firmware
+                                                version: SW-WVI-1.7/8
+                                                Clarifications: SW-EH-4, SW-SST-13,
+                                                SW-SIB-17
+                                                Adding requirements for the Sleep feature:
+                                                SLS-x, WLP-3, WLP-25, WLP-8, WLP-
+                                                24.1.2, WLP-26 - WLP-30, FS-5.1, SW-
+                                                TL-X, SW-UG-X
+                                                Updated favorites to match training: SW-
+                                                WLP-3
+        M        09/18/2020     DCO-01471       Requirements updated to reflect the            A. Johansson
+                                                removal of handpiece RFID on the
+                                                platform: SW-AR-5.14, SW-TL-4, SW-
+                                                WLP-1.5, SW-WLP-9, SW-WLP-10.1
+                                                Requirements updated based on findings
+                                                and recommendations during verification
+                                                of software version 4.3.0 (refer to Jira PS-
+                                                1457): SW-SLS-10, SW-IN-1.1, SW-IN-2,
+                                                SW-IN-3, SW-ER-2
+        N        4/28/2021      DCO-01568       Addition of Cavity Prevention                  A. Johansson
+                                                requirements: SW-FS-5.2, SW-WLP-3,
+                                                SW-WLP-25, SW-WLP-8.6, SW-WLP-
+                                                24.1.3, SW-WLP-31 - 35
+        O        5/25/2021      DCO-01585       Addition of broadcast notification             A. Johansson
+                                                requirements: SW-BC
+                                                Addition of configuration management
+                                                requirements: SW-BA, SW-RE
+                                                Added dialog limits on laser activation:
+                                                SW-WLP-11
+                                                Increased max sleep cycle count limit:
+                                                SW-SLS-4
+                                                Updated foot pedal diagnostic to show
+                                                percent instead of raw foot pedal values:
+                                                SW-SDT-1
+        P        01/18/2021     DCO-01664       Changed internal nomenclature from             A. Johansson
+                                                "Sleep" to "Palatal Coagulation": SW-          T. Olivera
+                                                SLS-1, SW-SLS-2, SW-SLS-6.1, SW-RE-
+                                                12, SW-WLP-26, SW-WLP-27, SW-
+                                                WLP-28 SW-WLP-29, SW-WLP-30
+
+                                                Corrected Palatal Coagulation max cycle
+                                                count type: SW-SLS-4
+
+                                                Changed internal nomenclature from
+                                                “Cavity Prevention” to “Demineralization
+                                                Reduction”: SW-FS-5.2
+                                                Added Demineralization Reduction
+                                                subscription requirements: SW-DRS, SW-
+
+Requirements Document Template, 731-00003 Rev. A                                                Page 39 of 44
+                                  COMPANY PROPRIETARY AND CONFIDENTIAL
+                                                                 822-00007 Rev AC Solea Model 3 Software
+                                                                                          Requirements
+
+                                                FS-5, SW-FS-11, SW-WLP-3, SW-WLP-
+                                                25, SW-WLP-8.6, SW-WLP-24.1.3 SW-
+                                                WLP-31, SW-WLP-32, SW-WLP-33,
+                                                SW-WLP-34, SW-WLP-35
+
+                                                Added WiFi/4G Signal Quality
+                                                requirements: SW-SDT-2
+                                                Updated favorites: SW-WLP-26
+
+                                                Added simmer disable when e-stop is
+                                                pressed: SW-SS-4.1.
+
+                                                Removed non-realized requirement related
+                                                information: SW-US-1, SW-WLP-8.4
+
+                                                Switched from database to file based
+                                                logging: SW-VAL
+        R        2/16/2022      DCO-01689       Clarification of revision history table. The    A.Johansson
+                                                requirements remain identical to
+                                                requirements in revision P.
+                                                Revision date for revision P is incorrect, it
+                                                should be 1/18/2022.
+                                                Added new indication for use:
+                                                Demineralization Reduction.
+        S        4/6/2022       DCO-01710       Clarification of purpose section to support     A. Johansson
+                                                De Novo submission.
+        T        03/09/2023     DCO-01827       Formatting Updates (No content                  C.
+                                                changes)                                        Woodmansee
+        U        04/26/2023     DCO-01837       Removed subscription usage and                  A. Johansson
+                                                time enforcement: SW-SLS, SW-
+                                                DRS, SW-WLP-26, SW-WLP-31
+                                                Added malware handling: SW-MHR
+                                                Added demonstration mode: SW-
+                                                AR-5.18, SW-DM
+                                                Added PCON support for TOP-
+                                                00017: SW-SIB-3, SW-BA-1, SW-RE-
+                                                5
+                                                Renamed Demineralization
+                                                Reduction to Solea Protect: SW-
+                                                WLP-3
+                                                SW-WLP-8.6
+                                                SW-WLP-24.1.3
+                                                SW-WLP-31 - SW-WLP-35
+                                                Allow user to adjust WiFi/4G
+                                                fallback threshold: SW-AR-3.15,
+                                                SW-AR-5.15
+
+
+
+
+Requirements Document Template, 731-00003 Rev. A                                                 Page 40 of 44
+                                  COMPANY PROPRIETARY AND CONFIDENTIAL
+                                                                822-00007 Rev AC Solea Model 3 Software
+                                                                                         Requirements
+
+        V        1/25/2024      DCO-01943       Updated SW-IN-1.1 to make it more            R. Scaer
+                                                generic for different software
+                                                versions.
+        W        2/27/2024      ECO-02270       Added requirements SW-IN-1.2 and             R. Scaer
+                                                SW-IN-1.3 to reflect the need for the
+                                                software under test to be updated to
+                                                a previous version in and out of error
+                                                state.
+                                                SW-SST-2.4 was removed because the
+                                                system will not trigger a Startup to
+                                                Error recovery transition.
+                                                SW-WLP-3 was updated to reflect 50%
+                                                cutting speed on Solea Protect is
+                                                displayed as 0 on the calibration
+                                                governor bar.
+        X        6/20/2024      DCO-02001       SW-HE-1 updated to reflect SW change in      M. Shannon
+                                                how users can access help information
+                                                page.
+
+                                                Several requirements that were obsoleted
+                                                in previous revisions had been erroneously
+                                                included in subsequent revisions. Those
+                                                requirements are now properly reflected as
+                                                having been removed.
+
+                                                SW-HE-2, SW-HE-3, SW-HE-4, and SW-
+                                                HE-5 have been removed due to change
+                                                associated SW-HE-1.
+
+                                                SW-DRS-3.1 usage count number of
+                                                cycles corrected was updated in SW 4.7,
+                                                but the requirement was not. This has
+                                                been corrected.
+
+                                                SW-AU-2 Note added to define inactivity.
+
+                                                The following requirements have been
+                                                removed:
+                                                SW-AL-3.2, SW-EL-2, SW-LWB-3
+
+                                                SW-LWB-4 Updated for clarity and to
+                                                exclude Perioguide handpiece selection.
+
+                                                SW-WLP-5.3.2 Updated to exclude
+                                                Perioguide application
+
+                                                SW-WLP-10.2 Updated for clarity to refer
+                                                to the CX-15 laser as opposed to PCON
+
+                                                SW-WLP-24.1 Updated for clarity
+
+                                                Requirements updated to support
+                                                Perioguide application which is in
+                                                development per DDP 821-00051.
+
+
+Requirements Document Template, 731-00003 Rev. A                                              Page 41 of 44
+                                  COMPANY PROPRIETARY AND CONFIDENTIAL
+                                                                 822-00007 Rev AC Solea Model 3 Software
+                                                                                          Requirements
+
+
+                                                The following requirements have been
+                                                added to support perioguide application
+                                                and workflow:
+                                                SW-PG-1, SW-SST-14, SW-LWB-9, SW-
+                                                LWB-8, SW-AS-1, SW-AS-2, SW-AS-3,
+                                                SW-AS-4, SW-AS-5, SW-AS-6, SW-AS-7,
+                                                SW-AS-8, SW-AS-9, SW-AS-10, SW-AS-
+                                                11, SW-AS-12, SW-AS-13, SW-AS-14,
+                                                SW-AS-15, SW-AS-16, SW-SSD-1.11,
+                                                SW-SST-3.5, SW-SST-14.1, SW-SST-
+                                                14.2, SW-SST-14.3, SW-SST-14.4, SW-
+                                                LCB-1.1, SW-AS-1.1, SW-AS-1.2, SW-AS-
+                                                1.3, SW-AS-1.4, SW-AS-2.1, SW-AS-2.2,
+                                                SW-AS-2.3, SW-AS-3.1, SW-AS-4.1, SW-
+                                                AS-5.1, SW-AS-5.2, SW-AS-5.3, SW-AS-
+                                                5.4, SW-AS-13.1, SW-WLP-8.7, SW-AS-
+                                                1.3.1, and SW-WLP-5.3.3
+        Y        30-Jul-2024    DCO-02023       SW-SST-2.4 has been removed                M. Shannon
+
+
+                                                The following requirements have
+                                                been updated to reflect the current
+                                                Solea Sleep branding:
+                                                SW-WLP-3
+                                                SW-WLP-25
+                                                SW-WLP-8.5
+                                                SW-WLP-24.1.2
+                                                SW-WLP-26
+                                                SW-WLP-26.1
+                                                SW-WLP-27
+                                                SW-WLP-28
+                                                SW-WLP-29
+
+                                                Sleep pattern limit firing updated in
+                                                SW-WLP-28.
+
+        Z        26-Sep-2024    DCO-02038       Perioguide mist settings have been         M. Shannon
+                                                updated. The following requirements were
+                                                updated:
+                                                SW-WLP-3
+                                                SW-WLP-5.3.3
+                                                SW-WLP-6
+                                                SW-WLP-6.1
+                                                SW-WLP-6.2
+
+
+        AA       2-May-2025     DCO-02116       The following language requirements        M. Shannon
+                                                have been removed, as there is only
+                                                one supported language in the SW
+                                                (English):
+                                                SW-LG-1
+                                                SW-LG-1.1
+                                                SW-AR-3.11
+                                                SW-SC-2
+                                                SW-SC-2.1
+                                                SW-SC-2.2
+
+Requirements Document Template, 731-00003 Rev. A                                            Page 42 of 44
+                                  COMPANY PROPRIETARY AND CONFIDENTIAL
+                                                               822-00007 Rev AC Solea Model 3 Software
+                                                                                        Requirements
+
+
+                                                The following requirements related to
+                                                the now defunct subscription models
+                                                have been removed:
+                                                SW-SLS-2
+                                                SW-DRS-2
+
+                                                The wording of the
+                                                following requirements have been
+                                                updated for clarity. No change to the
+                                                intent or functionality of requirement.
+                                                SW.BA.2.2
+                                                SW-BA-2.3
+                                                SW-WLP-24
+
+                                                SW-SSD-1.2.4 is now SW-NC-6. The
+                                                wording was updated and the
+                                                requirement name was updated to
+                                                reflect this as being a Network
+                                                Connection requirement.
+
+                                                The favorites table displayed to the
+                                                user has been updated in SW
+                                                4.8.2. The following requirement has
+                                                been updated to reflect these
+                                                changes:
+                                                SW-WLP-3
+
+                                                The ability for the software to release
+                                                updates to the Perioguide Control
+                                                Module Firmware has been added to
+                                                SW 4.8.2. The following requirement
+                                                was added to support this change:
+                                                SW-AS-1.5
+
+                                                Perioguide alignment workflow has
+                                                been updated in SW 4.8.2. The
+                                                following requirement was updated to
+                                                reflect this change:
+                                                SW-AS-10
+
+                                                Perioguide alignment workflow has
+                                                been updated in SW 4.8.2. The
+                                                following requirement was added to
+                                                reflect this change:
+                                                SW-AS-17
+
+
+
+Requirements Document Template, 731-00003 Rev. A                                          Page 43 of 44
+                                  COMPANY PROPRIETARY AND CONFIDENTIAL
+                                                                822-00007 Rev AC Solea Model 3 Software
+                                                                                         Requirements
+
+                                                A detailed description related to the
+                                                addition of SW-AS-17 can be found in
+                                                review record 824-00240.
+        AB       12-Sep-2025    DCO-02165       Updated table of favorites in WLP-3          M. Shannon
+                                                for SW 4.8.3.
+                                                    • Removed Decay favorite
+                                                    • Updated favorites setpoints
+                                                        for Crown lengthening, Crown
+                                                        Removal, Veneer Removal,
+                                                        Child/Adult Frenectomy, and
+                                                        Infant Frenectomy
+                                                    • Order of favorites updated to
+                                                        reflect order in GUI
+        AC       20-Jan-2026    DCO-02209       Updated SW-IN-4.8.1 for clarity.             M. Shannon
+
+                                                The following security requirements have
+                                                been added:
+                                                 SW-SS-13, SW-SS-14, SW-SS-15, SW-
+                                                SS-16, SW-NC-1.1, SW-NC-1.2, SW-NC-
+                                                1.3, SW-NC-5.5, SW-DS-2.1
+
+                                                Obsoleted SW-AR-5.2 (Bluetooth
+                                                functionality removed in SW version 4.8.4)
+
+
+
+
+Requirements Document Template, 731-00003 Rev. A                                              Page 44 of 44
+                                  COMPANY PROPRIETARY AND CONFIDENTIAL
+

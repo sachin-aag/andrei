@@ -205,7 +205,19 @@ export function contextForPrompt(section: SectionType, content: unknown): string
     pushTextLine(lines, "Preventive actions", stripped);
   } else if (section === "conclusion") {
     pushNarrativeLine(lines, section, content);
-  } else if (section === "traceability" || section === "test_results") {
+  } else if (
+    section === "purpose" ||
+    section === "scope" ||
+    section === "testers_dates" ||
+    section === "problem_failure_resolution"
+  ) {
+    pushNarrativeLine(lines, section, content);
+  } else if (
+    section === "traceability" ||
+    section === "test_results" ||
+    section === "software_under_test" ||
+    section === "revision_history"
+  ) {
     pushTextBlock(
       lines,
       "Table",
@@ -213,6 +225,24 @@ export function contextForPrompt(section: SectionType, content: unknown): string
         tableFormat: "markdown",
       })
     );
+  } else if (section === "results_discussion") {
+    pushTextBlock(
+      lines,
+      "Observations",
+      richJsonToPlainText(normalizeRichField(content.observations), {
+        tableFormat: "markdown",
+      })
+    );
+  } else if (section === "deviations" && Array.isArray(content.items)) {
+    for (const item of content.items) {
+      if (!isRecord(item)) continue;
+      pushTextLine(lines, "Deviation number", item.number);
+      pushTextLine(lines, "Requirement IDs", item.reqIds);
+      pushTextLine(lines, "Observation", item.observation);
+      pushTextLine(lines, "Rationale", item.rationale);
+      pushTextLine(lines, "Resolution", item.resolution);
+      pushTextLine(lines, "Jira", item.jira);
+    }
   }
 
   return lines.length ? lines.join("\n") : fallbackContextForPrompt(content);

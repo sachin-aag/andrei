@@ -37,6 +37,10 @@ import {
   hasEnoughContextInFirstSection,
   INSUFFICIENT_FIRST_SECTION_MESSAGE,
 } from "@/lib/ai/first-section-context";
+import {
+  PROTOCOL_SOURCES_GATE_MESSAGE,
+  hasProtocolSourcesIdentity,
+} from "@/lib/document-types/verification-protocol/sections";
 import { collectPlaceholders } from "@/lib/placeholders/scan-sections";
 import type { Placeholder } from "@/lib/placeholders/find";
 import type { UserRole } from "@/lib/auth/roles";
@@ -655,6 +659,11 @@ export function ReportProvider({
           toast.error(
             "Fill Document Number on the Cover Page before running the AI check."
           );
+          return;
+        }
+      } else if (gate?.key === "sources") {
+        if (!hasProtocolSourcesIdentity(sectionsRef.current.sources)) {
+          toast.error(PROTOCOL_SOURCES_GATE_MESSAGE);
           return;
         }
       }

@@ -229,9 +229,9 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
                 <Input
                   id="documentNo"
                   placeholder={
-                    documentType === "design_verification"
-                      ? "e.g. DVR-2026-001"
-                      : "e.g. DEV/PK/26/001"
+                    documentType === "investigation_report"
+                      ? "e.g. DEV/PK/26/001"
+                      : "e.g. 790-00134"
                   }
                   value={documentNo}
                   disabled={busy}

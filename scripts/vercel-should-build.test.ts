@@ -34,6 +34,12 @@ describe("vercel-should-build", () => {
         ANDREI_VERCEL_DEPLOY_SCOPE: "demo",
       }).status
     ).toBe(1);
+    expect(
+      run({
+        VERCEL_GIT_COMMIT_REF: "main",
+        ANDREI_VERCEL_DEPLOY_SCOPE: "convergent",
+      }).status
+    ).toBe(1);
   });
 
   it("builds cursor/* on demo and skips it on mj", () => {
@@ -77,7 +83,36 @@ describe("vercel-should-build", () => {
     ).toBe(0);
   });
 
-  it("does not build random branches on mj or demo", () => {
+  it("builds convergent/* on convergent and skips it on demo and mj", () => {
+    const convergent = run({
+      VERCEL_GIT_COMMIT_REF: "convergent/protocol-pilot",
+      ANDREI_VERCEL_DEPLOY_SCOPE: "convergent",
+    });
+    expect(convergent.status).toBe(1);
+    expect(
+      run({
+        VERCEL_GIT_COMMIT_REF: "convergent/protocol-pilot",
+        ANDREI_VERCEL_DEPLOY_SCOPE: "demo",
+      }).status
+    ).toBe(0);
+    expect(
+      run({
+        VERCEL_GIT_COMMIT_REF: "convergent/protocol-pilot",
+        ANDREI_VERCEL_DEPLOY_SCOPE: "mj",
+      }).status
+    ).toBe(0);
+  });
+
+  it("skips cursor/* on convergent so Convergent Neon is not used for demo PRs", () => {
+    expect(
+      run({
+        VERCEL_GIT_COMMIT_REF: "cursor/mj-pack-plumbing-23ff",
+        ANDREI_VERCEL_DEPLOY_SCOPE: "convergent",
+      }).status
+    ).toBe(0);
+  });
+
+  it("does not build random branches on mj, demo, or convergent", () => {
     expect(
       run({
         VERCEL_GIT_COMMIT_REF: "hotfix/something",
@@ -88,6 +123,12 @@ describe("vercel-should-build", () => {
       run({
         VERCEL_GIT_COMMIT_REF: "hotfix/something",
         ANDREI_VERCEL_DEPLOY_SCOPE: "demo",
+      }).status
+    ).toBe(0);
+    expect(
+      run({
+        VERCEL_GIT_COMMIT_REF: "hotfix/something",
+        ANDREI_VERCEL_DEPLOY_SCOPE: "convergent",
       }).status
     ).toBe(0);
   });

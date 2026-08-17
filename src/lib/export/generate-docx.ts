@@ -64,6 +64,7 @@ import {
   type ReportDocxComment,
 } from "@/lib/export/docx-comments";
 import { applyGoogleDocsImageCompat } from "@/lib/export/docx-google-docs-images";
+import { generateVerificationTestReportDocx } from "@/lib/export/verification-test-report-docx";
 
 type ReportRow = typeof reportsTable.$inferSelect;
 type ReportRowWithManagers = ReportRow & { assignedManagerIds?: string[] };
@@ -431,6 +432,16 @@ export async function generateReportDocx({
 }): Promise<Buffer> {
   if (report.documentType === "design_verification") {
     return generateDesignVerificationDocx({
+      report,
+      sections,
+      electronicSignatures,
+    });
+  }
+  if (report.documentType === "verification_protocol") {
+    throw new Error("Verification protocol export is not available.");
+  }
+  if (report.documentType === "verification_test_report") {
+    return generateVerificationTestReportDocx({
       report,
       sections,
       electronicSignatures,

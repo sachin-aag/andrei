@@ -29,6 +29,7 @@
     "db:studio": "drizzle-kit studio",
     "set-workspace-password": "tsx scripts/set-workspace-password.ts",
     "seed-demo-reports": "tsx --env-file=.env --env-file=.env.local scripts/seed-demo-reports.ts",
+    "seed-protocol-pilot": "tsx --env-file=.env --env-file=.env.local scripts/seed-protocol-pilot.ts",
     "sample-eval-report": "tsx scripts/bulk-sample-evaluation-report.ts",
     "soak:pdf-ingest": "tsx --env-file=.env --env-file=.env.local scripts/soak-document-ingest.ts",
     "model-sweep": "tsx scripts/eval/run-model-sweep.ts",

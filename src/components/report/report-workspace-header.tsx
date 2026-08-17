@@ -144,17 +144,21 @@ export function ReportWorkspaceHeader({
             </Link>
           </Button>
         ) : null}
-        <Button variant="outline" size="sm" asChild>
-          <a
-            href={`/api/reports/${report.id}/export`}
-            target="_blank"
-            rel="noreferrer"
-            onClick={() => captureEvent("report_exported", { reportId: report.id })}
-          >
-            <Download className="size-4" aria-hidden="true" />
-            Export DOCX
-          </a>
-        </Button>
+        {report.documentType === "verification_protocol" ? null : (
+          <Button variant="outline" size="sm" asChild>
+            <a
+              href={`/api/reports/${report.id}/export`}
+              target="_blank"
+              rel="noreferrer"
+              onClick={() =>
+                captureEvent("report_exported", { reportId: report.id })
+              }
+            >
+              <Download className="size-4" aria-hidden="true" />
+              Export DOCX
+            </a>
+          </Button>
+        )}
 
         {canSubmit && (
           <Button size="sm" onClick={onSubmit} disabled={submitting}>

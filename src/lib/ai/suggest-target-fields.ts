@@ -36,6 +36,14 @@ export const SUGGEST_TARGET_FIELD_PATTERNS: Record<string, readonly string[]> = 
   approval_signoff: ["narrative"],
   appendices: ["narrative"],
   cover_page: [],
+  purpose: ["narrative"],
+  scope: ["narrative"],
+  software_under_test: ["table"],
+  testers_dates: ["narrative"],
+  methods_of_measurement: ["executedProtocol", "uuts", "equipment"],
+  results_discussion: ["observations"],
+  problem_failure_resolution: ["narrative"],
+  revision_history: ["table"],
 };
 
 function patternToRegex(pattern: string): RegExp {
@@ -98,6 +106,14 @@ export const RICH_FIELD_PATHS: Partial<Record<string, readonly string[]>> = {
   deviations: ["narrative"],
   approval_signoff: ["narrative"],
   appendices: ["narrative"],
+  purpose: ["narrative"],
+  scope: ["narrative"],
+  software_under_test: ["table"],
+  testers_dates: ["narrative"],
+  methods_of_measurement: ["executedProtocol", "uuts", "equipment"],
+  results_discussion: ["observations"],
+  problem_failure_resolution: ["narrative"],
+  revision_history: ["table"],
 };
 
 export function isRichTargetField(section: SectionType, contentPath: string): boolean {

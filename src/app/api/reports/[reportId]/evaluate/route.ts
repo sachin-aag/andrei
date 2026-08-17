@@ -24,6 +24,18 @@ import {
   INSUFFICIENT_FIRST_SECTION_MESSAGE,
 } from "@/lib/ai/first-section-context";
 import {
+  PROTOCOL_SOURCES_GATE_MESSAGE,
+  asLedger,
+  hasProtocolSourcesIdentity,
+} from "@/lib/document-types/verification-protocol/sections";
+import { getCustomerPack } from "@/lib/customers/packs";
+import {
+  CONVERGENT_CHECK_POLICY,
+  CONVERGENT_PROTOCOL_CONFIG,
+} from "@/lib/customers/convergent/protocol-config";
+import { runAllChecks } from "@/lib/design-inputs/checks";
+import { withProposedFixes } from "@/lib/design-inputs/propose-fix";
+import {
   flushLangfuseTraces,
   isLangfuseEnabled,
   observeRouteHandler,
@@ -93,13 +105,24 @@ async function handleEvaluatePost(
 
     const gate = getGateSection(documentType);
     if (gate) {
-      if (documentType === "design_verification" && gate.key === "cover_page") {
+      if (gate.key === "cover_page") {
         if (!String(report.documentNo ?? "").trim()) {
           return NextResponse.json(
             {
               error:
                 "Add a document number on the cover page before running the AI check.",
             },
+            { status: 400 }
+          );
+        }
+      } else if (
+        documentType === "verification_protocol" &&
+        gate.key === "sources"
+      ) {
+        const gateRow = bySection.get(gate.key);
+        if (!hasProtocolSourcesIdentity(gateRow?.content)) {
+          return NextResponse.json(
+            { error: PROTOCOL_SOURCES_GATE_MESSAGE },
             { status: 400 }
           );
         }
@@ -139,6 +162,43 @@ async function handleEvaluatePost(
         row.section,
         row.content
       );
+    }
+
+    if (documentType === "verification_protocol") {
+      const [ledgerRow] = await db
+        .select()
+        .from(reportSections)
+        .where(
+          and(
+            eq(reportSections.reportId, reportId),
+            eq(reportSections.section, "design_inputs")
+          )
+        );
+      const ledger = asLedger(ledgerRow?.content);
+      const options =
+        getCustomerPack().id === "convergent"
+          ? {
+              policy: CONVERGENT_CHECK_POLICY,
+              config: CONVERGENT_PROTOCOL_CONFIG,
+            }
+          : {};
+      allSections.findings = {
+        items: withProposedFixes(runAllChecks(ledger, options), ledger),
+      };
+    }
+
+    if (documentType === "verification_test_report") {
+      const extraRows = await db
+        .select()
+        .from(reportSections)
+        .where(eq(reportSections.reportId, reportId));
+      for (const row of extraRows) {
+        allSections[row.section] = mergeSectionForType(
+          documentType,
+          row.section,
+          row.content
+        );
+      }
     }
 
     const mergedFor = (row: (typeof sectionRows)[number]) =>

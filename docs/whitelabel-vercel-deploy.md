@@ -1,17 +1,17 @@
-# Customer deploys — one trunk, two Vercel projects
+# Customer deploys — one trunk, three Vercel projects
 
 One product engine on **`main`**. Customer differences live in `ANDREI_CUSTOMER` packs, not in long-lived SHA pins or a second product branch.
 
-| | MJ production | Customer demo |
-|--|---------------|---------------|
-| **Vercel project** | `andrei-v2` | `andrei-demo` |
-| **Git production branch** | `main` | `main` |
-| **Pack** | `ANDREI_CUSTOMER=mj` | `ANDREI_CUSTOMER=demo` (or unset) |
-| **URL** | https://andrei-v2.vercel.app | https://demo.andreihealth.com |
-| **Neon project** | `Andrei V2` | `demo` (`bold-field-45608643`) |
-| **What users see** | MJ criteria, MJ Word template, Word import, no DV, no conclusion | Andrei branding, DV + conclusion, attachments-only create |
+| | MJ production | Customer demo | Convergent pilot |
+|--|---------------|---------------|------------------|
+| **Vercel project** | `andrei-v2` | `andrei-demo` | `andrei-convergent` |
+| **Git production branch** | `main` | `main` | `main` |
+| **Pack** | `ANDREI_CUSTOMER=mj` | `ANDREI_CUSTOMER=demo` (or unset) | `ANDREI_CUSTOMER=convergent` |
+| **URL** | https://andrei-v2.vercel.app | https://demo.andreihealth.com | Convergent Vercel URL (provision once) |
+| **Neon project** | `Andrei V2` | `demo` (`bold-field-45608643`) | `convergent` (provision once — separate DB) |
+| **What users see** | MJ criteria, MJ Word template, Word import, no DV, no conclusion | Andrei branding, generic DV + conclusion, attachments-only create | Verification Protocol + Verification Test Report only. No investigation, no generic DV. |
 
-Release valve: **the same git SHA on both Production deploys.** After cutover, promote one commit to `andrei-v2` and `andrei-demo`.
+Release valve: **the same git SHA on Production deploys.** After cutover, promote one commit to `andrei-v2`, `andrei-demo`, and `andrei-convergent`.
 
 `feat/whitelabel` is retired as a production branch. Leave it in `scripts/vercel-should-build.sh` as a demo-line name so a leftover push cannot create an MJ Neon preview database.
 
@@ -35,15 +35,17 @@ Both Vercel projects watch the same GitHub repo. Set on **each** project → Set
 |----------------|----------|--------|
 | **andrei-demo** | `ANDREI_VERCEL_DEPLOY_SCOPE` | `demo` |
 | **andrei-v2** | `ANDREI_VERCEL_DEPLOY_SCOPE` | `mj` |
+| **andrei-convergent** | `ANDREI_VERCEL_DEPLOY_SCOPE` | `convergent` |
 
 `scripts/vercel-should-build.sh` (`vercel.json` `ignoreCommand`):
 
-| Branch | andrei-demo (`scope=demo`) | andrei-v2 (`scope=mj`) |
-|--------|----------------------------|-------------------------|
-| `main` | **build** (production) | **build** (production) |
-| `cursor/*`, `demo/*` | **build** (preview) | skip — no MJ Neon preview DB |
-| `feat/whitelabel` | **build** (legacy) | skip |
-| anything else | skip | skip |
+| Branch | andrei-demo (`scope=demo`) | andrei-v2 (`scope=mj`) | andrei-convergent (`scope=convergent`) |
+|--------|----------------------------|-------------------------|----------------------------------------|
+| `main` | **build** (production) | **build** (production) | **build** (production) |
+| `cursor/*`, `demo/*` | **build** (preview) | skip — no MJ Neon preview DB | skip — no Convergent Neon preview DB |
+| `convergent/*` | skip | skip | **build** (preview) |
+| `feat/whitelabel` | **build** (legacy) | skip | skip |
+| anything else | skip | skip | skip |
 
 **Dashboard (one-time after this lands):** [andrei-demo → Environments → Production → Branch Tracking](https://vercel.com/sachin-aags-projects/andrei-demo/settings/environments) → **`main`** (today it may still be `feat/whitelabel`).
 
@@ -90,6 +92,26 @@ Copy auth/AI keys as today. Never set `ALLOW_TEST_*` or `ATTACHMENT_STORAGE_BACK
 Partial Vertex config (`GOOGLE_VERTEX_PROJECT` without WIF) causes `Could not load the default credentials` on Vercel. Local-only attachment flags must never be set here or ingest 500s.
 
 MJ `promptVersion` is `mj-sop-dp-qa-008-v1`. Existing evaluations go stale on cutover — tell MJ they need a re-run.
+
+### andrei-convergent (Production + Preview)
+
+Provision once in the dashboards (same pattern as andrei-demo):
+
+1. Neon: new project `convergent`. Separate database — Convergent ledger and reports must not share storage with demo or MJ.
+2. Vercel: new project `andrei-convergent` on the same GitHub repo, production branch `main`.
+3. Turn **off** Neon per-preview branching on this project, same as `andrei-v2`.
+
+| Variable | Value |
+|----------|--------|
+| `ANDREI_CUSTOMER` | `convergent` |
+| `NEXT_PUBLIC_ANDREI_CUSTOMER` | `convergent` |
+| `ANDREI_VERCEL_DEPLOY_SCOPE` | `convergent` |
+| `DATABASE_URL` | Neon **convergent** pooled URL |
+| `AUTH_SECRET` / AI keys | Copy as today |
+
+Never set `ALLOW_TEST_*` or `ATTACHMENT_STORAGE_BACKEND=local`. Preview `DATABASE_URL` stays the **convergent** Neon pooled URL (same as Production).
+
+Local: `ANDREI_CUSTOMER=convergent NEXT_PUBLIC_ANDREI_CUSTOMER=convergent pnpm dev` shows only Verification Protocol and Verification Test Report in the create dialog.
 
 ## MJ database cutover
 

@@ -102,6 +102,19 @@ export const DEMO_PACK: CustomerPack = {
   branding: ANDREI_BRANDING,
 };
 
+export const CONVERGENT_PACK: CustomerPack = {
+  id: "convergent",
+  enabledDocumentTypes: ["verification_protocol", "verification_test_report"],
+  hiddenInvestigationSections: [],
+  investigationTemplateFile: "investigation-report-template.docx",
+  promptVersion: PROMPT_VERSION,
+  evaluationSystemPrompt: COMMON_EVALUATION_SYSTEM_PROMPT,
+  evaluationSectionPromptAdditions: {},
+  criterionDescriptionOverrides: {},
+  wordImportEnabled: false,
+  branding: ANDREI_BRANDING,
+};
+
 export const MJ_PACK: CustomerPack = {
   id: "mj",
   enabledDocumentTypes: ["investigation_report"],
@@ -121,6 +134,8 @@ export function getCustomerPack(id: CustomerId = resolveCustomerId()): CustomerP
       return DEMO_PACK;
     case "mj":
       return MJ_PACK;
+    case "convergent":
+      return CONVERGENT_PACK;
     default: {
       const exhaustive: never = id;
       return exhaustive;

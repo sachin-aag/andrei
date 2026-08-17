@@ -48,8 +48,47 @@ describe("resolveCustomerId", () => {
     expect(resolveCustomerId()).toBe("mj");
   });
 
+  it("resolves convergent from ANDREI_CUSTOMER", () => {
+    expect(resolveCustomerId({ ANDREI_CUSTOMER: "convergent" })).toBe(
+      "convergent"
+    );
+  });
+
+  it("prefers NEXT_PUBLIC_ANDREI_CUSTOMER over ANDREI_CUSTOMER for convergent", () => {
+    expect(
+      resolveCustomerId({
+        NEXT_PUBLIC_ANDREI_CUSTOMER: "convergent",
+        ANDREI_CUSTOMER: "convergent",
+      })
+    ).toBe("convergent");
+  });
+
+  it("falls back to ANDREI_VERCEL_DEPLOY_SCOPE for convergent", () => {
+    expect(
+      resolveCustomerId({ ANDREI_VERCEL_DEPLOY_SCOPE: "convergent" })
+    ).toBe("convergent");
+  });
+
+  it("throws when convergent disagrees with NEXT_PUBLIC_ANDREI_CUSTOMER", () => {
+    expect(() =>
+      resolveCustomerId({
+        ANDREI_CUSTOMER: "convergent",
+        NEXT_PUBLIC_ANDREI_CUSTOMER: "demo",
+      })
+    ).toThrow(/disagrees with NEXT_PUBLIC_ANDREI_CUSTOMER/);
+  });
+
+  it("throws when convergent disagrees with ANDREI_VERCEL_DEPLOY_SCOPE", () => {
+    expect(() =>
+      resolveCustomerId({
+        ANDREI_CUSTOMER: "convergent",
+        ANDREI_VERCEL_DEPLOY_SCOPE: "demo",
+      })
+    ).toThrow(/disagrees with ANDREI_VERCEL_DEPLOY_SCOPE/);
+  });
+
   it("throws on an unknown customer id", () => {
-    expect(() => resolveCustomerId({ ANDREI_CUSTOMER: "convergent" })).toThrow(
+    expect(() => resolveCustomerId({ ANDREI_CUSTOMER: "acme" })).toThrow(
       /Invalid customer id/
     );
   });

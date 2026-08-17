@@ -5,12 +5,13 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { StatusBadge } from "@/components/report/status-badge";
 import { formatCalendarDate, formatDate } from "@/lib/utils";
-import type { ReportStatus } from "@/db/schema";
+import { getDocumentType } from "@/lib/document-types";
+import type { DocumentType, ReportStatus } from "@/db/schema";
 
 export type ReportCardData = {
   id: string;
   documentNo: string;
-  documentType?: "investigation_report" | "design_verification";
+  documentType?: DocumentType;
   date: Date;
   status: string;
   authorId: string;
@@ -38,16 +39,14 @@ export function ReportCard({
   titleAction?: ReactNode;
   trailingAction?: ReactNode;
 }) {
+  const typeDef = report.documentType
+    ? getDocumentType(report.documentType)
+    : undefined;
   const title =
     displayTitle ??
     (report.documentNo ||
-      (report.documentType === "design_verification"
-        ? "Untitled design verification"
-        : "Untitled deviation"));
-  const typeLabel =
-    report.documentType === "design_verification"
-      ? "Design Verification"
-      : "Investigation";
+      (typeDef ? `Untitled ${typeDef.documentNoun}` : "Untitled report"));
+  const typeLabel = typeDef?.label ?? "Investigation";
   const managerLabel = managerNames.length === 1 ? "Manager" : "Managers";
 
   return (

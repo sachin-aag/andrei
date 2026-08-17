@@ -236,6 +236,7 @@ export function SectionSuggestFixesButton({ section }: { section: SectionType })
   const { sections } = useReportSections();
   const { report, currentUserId } = useReportData();
   const { getUser } = useUserDirectory();
+  if (report.documentType === "verification_protocol") return null;
   const role = getUser(currentUserId)?.role;
   const lockReason =
     role != null

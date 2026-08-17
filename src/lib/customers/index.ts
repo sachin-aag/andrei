@@ -10,6 +10,7 @@ export {
   isDocumentTypeEnabled,
   DEMO_PACK,
   MJ_PACK,
+  CONVERGENT_PACK,
   type CustomerPack,
   type CustomerBranding,
 } from "./packs";

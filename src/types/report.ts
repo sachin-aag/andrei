@@ -8,6 +8,7 @@ import type {
   CommentKind,
   InvestigationReportMetadata,
   DesignVerificationMetadata,
+  VerificationTestReportMetadata,
   ReportMetadata,
 } from "@/db/schema";
 
@@ -58,6 +59,18 @@ export function isDesignVerification(report: {
   return report.documentType === "design_verification";
 }
 
+export function isVerificationProtocol(report: {
+  documentType: DocumentType;
+}): boolean {
+  return report.documentType === "verification_protocol";
+}
+
+export function isVerificationTestReport(report: {
+  documentType: DocumentType;
+}): boolean {
+  return report.documentType === "verification_test_report";
+}
+
 export function designVerificationMetadata(report: {
   metadata: ReportMetadata;
 }): DesignVerificationMetadata {
@@ -65,6 +78,21 @@ export function designVerificationMetadata(report: {
   return {
     revision: meta.revision ?? "",
     productName: meta.productName ?? "",
+  };
+}
+
+export function verificationTestReportMetadata(report: {
+  metadata: ReportMetadata;
+}): VerificationTestReportMetadata {
+  const meta = report.metadata as Partial<VerificationTestReportMetadata>;
+  return {
+    revision: meta.revision ?? "",
+    productName: meta.productName ?? "",
+    projectName: meta.projectName ?? "",
+    dhfIndex: meta.dhfIndex ?? "",
+    projectLeader: meta.projectLeader ?? "",
+    ecoDco: meta.ecoDco ?? "",
+    sourceProtocolReportId: meta.sourceProtocolReportId,
   };
 }
 

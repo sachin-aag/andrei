@@ -107,7 +107,12 @@ export async function GET() {
 
 const createSchema = z.object({
   documentType: z
-    .enum(["investigation_report", "design_verification"])
+    .enum([
+      "investigation_report",
+      "design_verification",
+      "verification_protocol",
+      "verification_test_report",
+    ])
     .default("investigation_report"),
   documentNo: z.string().min(1).optional(),
   deviationNo: z.string().min(1).optional(), // alias for investigation
@@ -116,7 +121,12 @@ const createSchema = z.object({
 });
 
 function documentTypeFromForm(value: FormDataEntryValue | null): DocumentType {
-  if (value === "design_verification" || value === "investigation_report") {
+  if (
+    value === "design_verification" ||
+    value === "investigation_report" ||
+    value === "verification_protocol" ||
+    value === "verification_test_report"
+  ) {
     return value;
   }
   return "investigation_report";
@@ -128,6 +138,10 @@ function wordImportDocumentTypeError(documentType: DocumentType): string | null 
       return null;
     case "design_verification":
       return "Word import is only supported for investigation reports.";
+    case "verification_protocol":
+      return "Word import is not available for verification protocols.";
+    case "verification_test_report":
+      return "Word import is not available for verification test reports.";
     default: {
       const exhaustive: never = documentType;
       return exhaustive;

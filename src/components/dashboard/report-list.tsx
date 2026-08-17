@@ -6,7 +6,7 @@ import { FileText } from "lucide-react";
 import { ReportCard, type ReportCardData } from "@/components/report/report-card";
 import { DeleteReportButton } from "@/components/dashboard/delete-report-button";
 import { EvaluateWithAiButton } from "@/components/dashboard/evaluate-with-ai-button";
-import { listDocumentTypes } from "@/lib/document-types";
+import { listDocumentTypes, getDocumentType } from "@/lib/document-types";
 import type { DocumentType } from "@/db/schema";
 
 type DashboardReport = ReportCardData;
@@ -56,13 +56,7 @@ export function ReportList({
           [
             ["all", "All"] as const,
             ...availableTypes.map(
-              (def) =>
-                [
-                  def.key,
-                  def.key === "design_verification"
-                    ? "Design Verification"
-                    : "Investigation",
-                ] as const
+              (def) => [def.key, def.label] as const
             ),
           ]
         ).map(([value, label]) => (
@@ -100,9 +94,9 @@ export function ReportList({
         const isOwner = report.authorId === currentUserId;
         const title =
           report.documentNo ||
-          (report.documentType === "design_verification"
-            ? "Untitled design verification"
-            : "Untitled deviation");
+          (report.documentType
+            ? `Untitled ${getDocumentType(report.documentType).documentNoun}`
+            : "Untitled report");
 
         return (
           <ReportCard
