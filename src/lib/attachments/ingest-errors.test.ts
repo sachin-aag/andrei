@@ -14,6 +14,25 @@ describe("sanitizeIngestError", () => {
     );
   });
 
+  it("surfaces Google auth failures instead of a generic ingest failed", () => {
+    expect(
+      sanitizeIngestError(
+        new Error("STS exchange failed: 401 {\"error\":\"unauthorized\"}")
+      )
+    ).toBe(
+      "Document ingestion could not authenticate with Google Cloud. Check Vercel OIDC and GCP WIF."
+    );
+    expect(
+      sanitizeIngestError(
+        new Error(
+          "Vercel OIDC token not available (checked VERCEL_OIDC_TOKEN env and x-vercel-oidc-token header)."
+        )
+      )
+    ).toBe(
+      "Document ingestion could not authenticate with Google Cloud. Check Vercel OIDC and GCP WIF."
+    );
+  });
+
   it("does not claim ingest 'could not be started'", () => {
     expect(sanitizeIngestError(new Error("boom"))).toBe(
       "Document ingestion failed"

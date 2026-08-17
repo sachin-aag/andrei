@@ -7,7 +7,7 @@ One product engine on **`main`**. Customer differences live in `ANDREI_CUSTOMER`
 | **Vercel project** | `andrei-v2` | `andrei-demo` |
 | **Git production branch** | `main` | `main` |
 | **Pack** | `ANDREI_CUSTOMER=mj` | `ANDREI_CUSTOMER=demo` (or unset) |
-| **URL** | https://andrei-v2.vercel.app | https://demo.andreihealth.com |
+| **URL** | https://mj.andreihealth.com | https://demo.andreihealth.com |
 | **Neon project** | `Andrei V2` | `demo` (`bold-field-45608643`) |
 | **What users see** | MJ criteria, MJ Word template, Word import, no DV, no conclusion | Andrei branding, DV + conclusion, attachments-only create |
 
@@ -83,6 +83,7 @@ Copy auth/AI keys as today. Never set `ALLOW_TEST_*` or `ATTACHMENT_STORAGE_BACK
 | `GCP_WIF_AUDIENCE` | WIF audience |
 | `GCP_SERVICE_ACCOUNT_EMAIL` | WIF service account |
 | `GCS_BUCKET` | Attachment bucket |
+| `AUTH_URL` | `https://mj.andreihealth.com` (must match the public host; do not leave `https://andrei-v2.vercel.app`) |
 
 Partial Vertex config (`GOOGLE_VERTEX_PROJECT` without WIF) causes `Could not load the default credentials` on Vercel. Local-only attachment flags must never be set here or ingest 500s.
 
@@ -184,5 +185,7 @@ Password for seeded users: **`DemoPass123!`**. See previous seed table in git hi
 | MJ looks like Andrei | `NEXT_PUBLIC_ANDREI_CUSTOMER` unset on `andrei-v2` (client defaults to demo) |
 | MJ export missing conclusion | Expected — MJ template has no `{@conclusionNarrativeXml}`; pack hides the section |
 | Ingest/chat 500 on MJ | Vertex WIF + GCS missing; do not set local attachment flags |
+| Attachments fail with "Document ingestion failed" after a custom-domain move | Set Production `AUTH_URL` to the public host (`https://mj.andreihealth.com`). Add that Origin to GCS CORS (`infra/gcs/cors.json` + `gsutil cors set`). Confirm Vercel OIDC is on. If Bot Protection is on, allow `/.well-known/workflow/*`. |
+| Auto-save / API `401 Unauthorized` on the custom domain | Same `AUTH_URL` mismatch: Auth.js was rewriting requests to the old `*.vercel.app` host so the session cookie missed. Redeploy after this SHA (production pin) and set `AUTH_URL`. |
 | `document_no` missing after deploy | Journal was stamped without running 0037. Restore from PITR; do not re-run `db:migrate` until the baseline guard is live |
 | AI Check stale on MJ day one | Expected `promptVersion` bump; re-run AI Check |

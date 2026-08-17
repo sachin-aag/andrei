@@ -1,19 +1,29 @@
-import { previewDeploymentOrigin } from "@/lib/auth/auth-base-url";
+import { authBaseUrl, previewDeploymentOrigin } from "@/lib/auth/auth-base-url";
 
 /**
  * NextAuth rewrites every auth request to `AUTH_URL` when set (see
- * `next-auth/lib/env.js` `reqWithEnvURL`). Preview deployments that inherit
- * Production `AUTH_URL` would redirect users off the preview host.
+ * `next-auth/lib/env.js` `reqWithEnvURL`). A stale Production `AUTH_URL`
+ * pointing at `*.vercel.app` after a custom-domain cutover makes the session
+ * cookie miss on the public host (proxy 401s) and sends workflow callbacks
+ * at a deployment-protected URL.
  *
- * On Vercel Preview only, pin AUTH_URL to the branch alias when available
- * (`VERCEL_BRANCH_URL`), else the deployment host (`VERCEL_URL`).
+ * Preview: pin to the branch alias (`VERCEL_BRANCH_URL`) else `VERCEL_URL`.
+ * Production: pin to `authBaseUrl()` (custom AUTH_URL or
+ * `VERCEL_PROJECT_PRODUCTION_URL`).
  */
 export function applyDeploymentAuthUrl(): void {
   const previewOrigin = previewDeploymentOrigin();
-  if (!previewOrigin) return;
+  if (previewOrigin) {
+    process.env.AUTH_URL = previewOrigin;
+    process.env.NEXTAUTH_URL = previewOrigin;
+    return;
+  }
 
-  process.env.AUTH_URL = previewOrigin;
-  process.env.NEXTAUTH_URL = previewOrigin;
+  if (process.env.VERCEL_ENV !== "production") return;
+
+  const origin = authBaseUrl();
+  process.env.AUTH_URL = origin;
+  process.env.NEXTAUTH_URL = origin;
 }
 
 applyDeploymentAuthUrl();

@@ -13,6 +13,9 @@ export function sanitizeIngestError(error: unknown): string {
   if (error.message.includes("GOOGLE_VERTEX_PROJECT")) {
     return "Document ingestion requires Vertex AI credentials";
   }
+  if (isGoogleAuthIngestError(error.message)) {
+    return "Document ingestion could not authenticate with Google Cloud. Check Vercel OIDC and GCP WIF.";
+  }
   if (error.message.includes("source changed")) {
     return "Document ingestion was cancelled because the attachment changed";
   }
@@ -27,6 +30,17 @@ export function sanitizeIngestError(error: unknown): string {
     return error.message.slice(0, 300);
   }
   return "Document ingestion failed";
+}
+
+function isGoogleAuthIngestError(message: string): boolean {
+  return (
+    message.includes("OIDC") ||
+    message.includes("STS exchange") ||
+    message.includes("impersonation") ||
+    message.includes("Could not load the default credentials") ||
+    message.includes("WIF auth request failed") ||
+    /unauthorized/i.test(message)
+  );
 }
 
 export function isCancelledIngestError(error: unknown): boolean {
