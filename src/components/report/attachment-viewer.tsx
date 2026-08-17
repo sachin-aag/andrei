@@ -95,11 +95,15 @@ export function AttachmentViewer() {
             // DOCX: untrusted HTML — no scripts. allow-popups* so target=_blank
             // links open a real new tab instead of replacing (or breaking) the preview.
             // PDF: Chrome's viewer needs scripts; same popup tokens so URI links
-            // open in a new tab rather than navigating the iframe/app.
+            // open in a new tab rather than navigating the iframe/app. allow-downloads
+            // is required too — some Chromium builds (e.g. Comet) fall back to
+            // downloading the PDF instead of rendering it inline, and a sandboxed
+            // iframe silently (or, in Comet's case, visibly) blocks that download
+            // without this token even though the response is Content-Disposition: inline.
             sandbox={
               isDocx
                 ? "allow-popups allow-popups-to-escape-sandbox"
-                : "allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
+                : "allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox allow-downloads"
             }
             className="h-[calc(100vh-16rem)] min-h-[720px] w-full bg-white"
           />
