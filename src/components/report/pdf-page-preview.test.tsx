@@ -3,14 +3,16 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PdfPagePreview } from "@/components/report/pdf-page-preview";
+import { pdfjsPreviewDocumentOptions } from "@/lib/attachments/pdfjs-browser";
 import { PDF_PREVIEW_SCALE } from "@/lib/attachments/pdf-preview-layout";
 
-const renderPageAsImage = vi.fn();
-const getDocumentProxy = vi.fn();
+const getDocument = vi.fn();
+const renderPage = vi.fn();
 
-vi.mock("unpdf", () => ({
-  renderPageAsImage: (...args: unknown[]) => renderPageAsImage(...args),
-  getDocumentProxy: (...args: unknown[]) => getDocumentProxy(...args),
+vi.mock("pdfjs-dist", () => ({
+  version: "6.1.200",
+  GlobalWorkerOptions: { workerSrc: "" },
+  getDocument: (...args: unknown[]) => getDocument(...args),
 }));
 
 function mockPdfPage(overrides: {
@@ -38,19 +40,27 @@ function mockPdfPage(overrides: {
         },
       ],
     }),
+    render: (...args: unknown[]) => renderPage(...args),
   };
 }
 
 describe("PdfPagePreview", () => {
   const originalFetch = globalThis.fetch;
+  const originalGetContext = HTMLCanvasElement.prototype.getContext;
 
   beforeEach(() => {
-    renderPageAsImage.mockReset();
-    getDocumentProxy.mockReset();
-    renderPageAsImage.mockResolvedValue("data:image/png;base64,abc");
-    getDocumentProxy.mockResolvedValue({
-      getPage: async () => mockPdfPage(),
+    getDocument.mockReset();
+    renderPage.mockReset();
+    renderPage.mockReturnValue({ promise: Promise.resolve() });
+    getDocument.mockReturnValue({
+      promise: Promise.resolve({
+        getPage: async () => mockPdfPage(),
+      }),
+      destroy: vi.fn().mockResolvedValue(undefined),
     });
+    HTMLCanvasElement.prototype.getContext = vi.fn().mockReturnValue({
+      canvas: {},
+    }) as typeof HTMLCanvasElement.prototype.getContext;
     globalThis.fetch = vi.fn().mockResolvedValue({
       ok: true,
       arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
@@ -59,9 +69,10 @@ describe("PdfPagePreview", () => {
 
   afterEach(() => {
     globalThis.fetch = originalFetch;
+    HTMLCanvasElement.prototype.getContext = originalGetContext;
   });
 
-  it("fetches the same-origin PDF, paints the page, and overlays selectable text", async () => {
+  it("fetches the PDF and paints it with official pdf.js wasm/fonts", async () => {
     render(
       <PdfPagePreview
         src="/api/reports/r1/attachments/a1/content?proxy=1&page=2#page=2"
@@ -72,17 +83,25 @@ describe("PdfPagePreview", () => {
 
     expect(screen.getByText("Loading preview…")).toBeInTheDocument();
 
-    const image = await screen.findByAltText("Evidence.pdf, page 2");
-    expect(image).toHaveAttribute("src", "data:image/png;base64,abc");
+    const canvas = await screen.findByLabelText("Evidence.pdf, page 2");
+    expect(canvas.tagName).toBe("CANVAS");
     expect(globalThis.fetch).toHaveBeenCalledWith(
       "/api/reports/r1/attachments/a1/content?proxy=1",
       expect.objectContaining({ credentials: "same-origin" })
     );
     await waitFor(() => {
-      expect(renderPageAsImage).toHaveBeenCalledWith(
-        expect.anything(),
-        2,
-        expect.objectContaining({ toDataURL: true, scale: PDF_PREVIEW_SCALE })
+      expect(getDocument).toHaveBeenCalledWith(
+        expect.objectContaining({
+          ...pdfjsPreviewDocumentOptions("6.1.200"),
+          data: expect.any(Uint8Array),
+        })
+      );
+      expect(renderPage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          viewport: expect.objectContaining({
+            width: 200 * PDF_PREVIEW_SCALE,
+          }),
+        })
       );
     });
 
@@ -101,19 +120,22 @@ describe("PdfPagePreview", () => {
     );
     await screen.findByText("Batch 123");
 
-    getDocumentProxy.mockResolvedValue({
-      getPage: async () =>
-        mockPdfPage({
-          items: [
-            {
-              str: "Page two",
-              transform: [12, 0, 0, 12, 10, 200],
-              width: 40,
-              height: 12,
-              fontName: "F1",
-            },
-          ],
-        }),
+    getDocument.mockReturnValue({
+      promise: Promise.resolve({
+        getPage: async () =>
+          mockPdfPage({
+            items: [
+              {
+                str: "Page two",
+                transform: [12, 0, 0, 12, 10, 200],
+                width: 40,
+                height: 12,
+                fontName: "F1",
+              },
+            ],
+          }),
+      }),
+      destroy: vi.fn().mockResolvedValue(undefined),
     });
 
     rerender(
@@ -128,9 +150,12 @@ describe("PdfPagePreview", () => {
     expect(globalThis.fetch).toHaveBeenCalledTimes(1);
   });
 
-  it("still paints the image when the PDF has no text layer", async () => {
-    getDocumentProxy.mockResolvedValue({
-      getPage: async () => mockPdfPage({ items: [] }),
+  it("still paints the canvas when the PDF has no text layer", async () => {
+    getDocument.mockReturnValue({
+      promise: Promise.resolve({
+        getPage: async () => mockPdfPage({ items: [] }),
+      }),
+      destroy: vi.fn().mockResolvedValue(undefined),
     });
 
     render(
@@ -141,7 +166,11 @@ describe("PdfPagePreview", () => {
       />
     );
 
-    expect(await screen.findByAltText("Scan.pdf, page 1")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(renderPage).toHaveBeenCalled();
+    });
+    expect(screen.queryByText("Loading preview…")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Scan.pdf, page 1")).toBeInTheDocument();
     expect(screen.queryByText("Batch 123")).not.toBeInTheDocument();
   });
 
@@ -162,6 +191,5 @@ describe("PdfPagePreview", () => {
     expect(
       await screen.findByText(/Could not render this page in the browser/)
     ).toBeInTheDocument();
-    expect(screen.queryByRole("img")).not.toBeInTheDocument();
   });
 });

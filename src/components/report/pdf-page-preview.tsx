@@ -1,6 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { getDocument, GlobalWorkerOptions, version as pdfjsVersion } from "pdfjs-dist";
+import {
+  pdfjsPreviewDocumentOptions,
+  pdfjsWorkerSrc,
+} from "@/lib/attachments/pdfjs-browser";
 import {
   contentUrlFromPreviewSrc,
   layoutPreviewTextSpans,
@@ -14,7 +19,6 @@ type PreviewState =
   | { status: "loading" }
   | {
       status: "ready";
-      imageSrc: string;
       pageWidth: number;
       pageHeight: number;
       spans: PdfPreviewTextSpan[];
@@ -32,11 +36,12 @@ type PdfPageProxy = {
 };
 
 /**
- * Renders one PDF page as an image plus a transparent text layer.
+ * Paints one PDF page to a canvas with official pdf.js (wasm + standard fonts)
+ * and overlays a transparent text layer for select/copy.
  *
  * Do not put `application/pdf` in an iframe/embed: Chrome and Comet intercept
- * that navigation and show a block page even when the bytes are streamed from
- * our own origin.
+ * that navigation. Do not use the serverless `unpdf` renderer here — it skips
+ * JBIG2/OpenJPEG wasm, which drops scanned page images and leaves empty tables.
  */
 export function PdfPagePreview({
   src,
@@ -49,6 +54,7 @@ export function PdfPagePreview({
 }) {
   const [state, setState] = useState<PreviewState>({ status: "loading" });
   const bytesCacheRef = useRef<{ url: string; data: Uint8Array } | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -57,9 +63,10 @@ export function PdfPagePreview({
     void (async () => {
       try {
         const url = contentUrlFromPreviewSrc(src);
-        let data = bytesCacheRef.current?.url === url
-          ? bytesCacheRef.current.data
-          : null;
+        let data =
+          bytesCacheRef.current?.url === url
+            ? bytesCacheRef.current.data
+            : null;
         if (!data) {
           const response = await fetch(url, {
             credentials: "same-origin",
@@ -71,25 +78,41 @@ export function PdfPagePreview({
           data = new Uint8Array(await response.arrayBuffer());
           bytesCacheRef.current = { url, data };
         }
-        ensureMathSumPrecise();
-        const { getDocumentProxy, renderPageAsImage } = await import("unpdf");
-        // Slice so pdf.js can transfer the buffer without dropping our copy.
-        const pdf = await getDocumentProxy(data.slice());
-        const pdfPage = await pdf.getPage(page);
-        const viewport = pdfPage.getViewport({ scale: PDF_PREVIEW_SCALE });
-        const imageSrc = await renderPageAsImage(pdf, page, {
-          scale: PDF_PREVIEW_SCALE,
-          toDataURL: true,
+
+        const canvas = canvasRef.current;
+        const context = canvas?.getContext("2d");
+        if (!canvas || !context) {
+          throw new Error("Canvas 2D is not available");
+        }
+
+        GlobalWorkerOptions.workerSrc = pdfjsWorkerSrc(pdfjsVersion);
+        const loadingTask = getDocument({
+          data: data.slice(),
+          ...pdfjsPreviewDocumentOptions(pdfjsVersion),
         });
-        const spans = await readPreviewTextSpans(pdfPage, viewport.height);
-        if (!controller.signal.aborted) {
-          setState({
-            status: "ready",
-            imageSrc,
-            pageWidth: viewport.width,
-            pageHeight: viewport.height,
-            spans,
-          });
+        const pdf = await loadingTask.promise;
+        try {
+          if (controller.signal.aborted) return;
+          const pdfPage = await pdf.getPage(page);
+          const viewport = pdfPage.getViewport({ scale: PDF_PREVIEW_SCALE });
+          canvas.width = viewport.width;
+          canvas.height = viewport.height;
+          await pdfPage.render({
+            canvas,
+            canvasContext: context,
+            viewport,
+          }).promise;
+          const spans = await readPreviewTextSpans(pdfPage, viewport.height);
+          if (!controller.signal.aborted) {
+            setState({
+              status: "ready",
+              pageWidth: viewport.width,
+              pageHeight: viewport.height,
+              spans,
+            });
+          }
+        } finally {
+          await loadingTask.destroy();
         }
       } catch {
         if (!controller.signal.aborted) {
@@ -101,61 +124,62 @@ export function PdfPagePreview({
     return () => controller.abort();
   }, [src, page]);
 
-  if (state.status === "error") {
-    return (
-      <div className="p-6 text-sm text-[var(--muted-foreground)]">
-        Could not render this page in the browser. Use Download to open the file.
-      </div>
-    );
-  }
-
-  if (state.status === "loading") {
-    return (
-      <div className="p-6 text-sm text-[var(--muted-foreground)]">
-        Loading preview…
-      </div>
-    );
-  }
+  const ready = state.status === "ready";
 
   return (
     <div className="overflow-auto bg-[var(--muted)]">
+      {state.status === "error" ? (
+        <div className="p-6 text-sm text-[var(--muted-foreground)]">
+          Could not render this page in the browser. Use Download to open the
+          file.
+        </div>
+      ) : null}
+      {state.status === "loading" ? (
+        <div className="p-6 text-sm text-[var(--muted-foreground)]">
+          Loading preview…
+        </div>
+      ) : null}
       <div
-        className="pdf-page-preview relative mx-auto max-w-full bg-white [container-type:inline-size]"
-        style={{ width: state.pageWidth }}
+        className={
+          ready
+            ? "pdf-page-preview relative mx-auto max-w-full bg-white [container-type:inline-size]"
+            : "hidden"
+        }
+        style={ready ? { width: state.pageWidth } : undefined}
       >
-        <img
-          src={state.imageSrc}
-          alt={`${title}, page ${page}`}
-          width={state.pageWidth}
-          height={state.pageHeight}
+        <canvas
+          ref={canvasRef}
+          aria-label={`${title}, page ${page}`}
           className="block h-auto w-full"
         />
-        <div
-          className="pdf-page-preview-text-layer"
-          style={{
-            width: state.pageWidth,
-            height: state.pageHeight,
-            transform: `scale(calc(100cqw / ${state.pageWidth}))`,
-          }}
-        >
-          {state.spans.map((span, index) => (
-            <span
-              key={index}
-              dir={span.dir === "ttb" ? undefined : span.dir}
-              style={{
-                left: span.left,
-                top: span.top,
-                width: span.width,
-                height: span.height,
-                fontSize: span.fontSize,
-                fontFamily: span.fontFamily || undefined,
-              }}
-            >
-              {span.str}
-              {span.hasEOL ? "\n" : ""}
-            </span>
-          ))}
-        </div>
+        {ready ? (
+          <div
+            className="pdf-page-preview-text-layer"
+            style={{
+              width: state.pageWidth,
+              height: state.pageHeight,
+              transform: `scale(calc(100cqw / ${state.pageWidth}))`,
+            }}
+          >
+            {state.spans.map((span, index) => (
+              <span
+                key={index}
+                dir={span.dir === "ttb" ? undefined : span.dir}
+                style={{
+                  left: span.left,
+                  top: span.top,
+                  width: span.width,
+                  height: span.height,
+                  fontSize: span.fontSize,
+                  fontFamily: span.fontFamily || undefined,
+                }}
+              >
+                {span.str}
+                {span.hasEOL ? "\n" : ""}
+              </span>
+            ))}
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -185,19 +209,7 @@ function isTextContentItem(item: unknown): item is PdfTextContentItem {
     return false;
   }
   const transform = (item as { transform: unknown }).transform;
-  return Array.isArray(transform) && typeof (item as { str: unknown }).str === "string";
-}
-
-type MathWithSumPrecise = Math & {
-  sumPrecise?: (values: Iterable<number>) => number;
-};
-
-function ensureMathSumPrecise(): void {
-  const target = Math as MathWithSumPrecise;
-  if (typeof target.sumPrecise === "function") return;
-  target.sumPrecise = (values) => {
-    let total = 0;
-    for (const value of values) total += value;
-    return total;
-  };
+  return (
+    Array.isArray(transform) && typeof (item as { str: unknown }).str === "string"
+  );
 }

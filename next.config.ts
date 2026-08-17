@@ -21,7 +21,12 @@ const nextConfig: NextConfig = {
   allowedDevOrigins: ["127.0.0.1"],
   // Keep native / dynamic-require deps external so NFT copies real files (not pnpm symlinks).
   // mathlive omitted: client components import mathlive/static.css, which cannot be externalized.
-  serverExternalPackages: ["@google-cloud/storage", "@napi-rs/canvas", "wmf"],
+  serverExternalPackages: [
+    "@google-cloud/storage",
+    "@napi-rs/canvas",
+    "pdfjs-dist",
+    "wmf",
+  ],
   turbopack: {
     root: appRoot,
   },
@@ -33,6 +38,12 @@ const nextConfig: NextConfig = {
   },
   outputFileTracingIncludes: {
     "/api/*": ["./templates/**/*", "./src/lib/import/fonts/**/*.ttf"],
+    "/pdfjs-assets/*": [
+      "./node_modules/pdfjs-dist/wasm/**",
+      "./node_modules/pdfjs-dist/standard_fonts/**",
+      "./node_modules/pdfjs-dist/cmaps/**",
+      "./node_modules/pdfjs-dist/build/pdf.worker.min.mjs",
+    ],
   },
   async rewrites() {
     const proxyPrefix = POSTHOG_PROXY_PATH.replace(/^\//, "");
