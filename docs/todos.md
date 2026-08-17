@@ -4,8 +4,8 @@ Scratch list for work done during MJ rollout (blocked email, manual passwords). 
 
 ## Current state (as of 2026-06-02)
 
-- **App URL:** `https://andrei-v2.vercel.app` (`AUTH_URL` on Vercel Production).
-- **Custom domain** `andreihealth.com` removed from Vercel; app served on `*.vercel.app`.
+- **App URL:** `https://mj.andreihealth.com` (`AUTH_URL` on Vercel Production).
+- **Custom domain** `mj.andreihealth.com` is the MJ production host (`andrei-v2` Vercel project).
 - **Sign-in UI:** password only — magic link buttons removed from login (`password-login-form.tsx`). Resend provider still registered in `auth.ts` (not removed from backend).
 - **Onboarding:** admins use `pnpm run set-workspace-password` with production `DATABASE_URL` in `.env.local`. Temporary creds live in `docs/mj-onboarding-temporary-passwords.md` (gitignored).
 - **First login:** `must_change_password` forces `/change-password` after admin-set temp password.

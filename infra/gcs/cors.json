@@ -1,0 +1,20 @@
+[
+  {
+    "origin": [
+      "https://mj.andreihealth.com",
+      "https://andrei-v2.vercel.app",
+      "https://demo.andreihealth.com",
+      "https://andrei-demo.vercel.app",
+      "http://localhost:3000"
+    ],
+    "method": ["GET", "HEAD", "PUT", "POST", "OPTIONS"],
+    "responseHeader": [
+      "Content-Type",
+      "Content-Length",
+      "Content-Range",
+      "x-goog-resumable",
+      "x-goog-content-length-range"
+    ],
+    "maxAgeSeconds": 3600
+  }
+]

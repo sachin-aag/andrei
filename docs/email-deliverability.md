@@ -1,6 +1,11 @@
 # Email deliverability (magic links & password reset)
 
-Andrei sends auth email through **Resend** (`AUTH_RESEND_KEY`, `AUTH_EMAIL_FROM`). Sign-in links use **`AUTH_URL`** (production: `https://andrei-v2.vercel.app`), not the custom app domain.
+Andrei sends auth email through **Resend** (`AUTH_RESEND_KEY`, `AUTH_EMAIL_FROM`). Sign-in and reset links use **`AUTH_URL`**, which must be the public app host:
+
+- MJ: `https://mj.andreihealth.com`
+- Demo: `https://demo.andreihealth.com`
+
+Do not leave Production `AUTH_URL` on `https://andrei-v2.vercel.app` after the custom-domain cutover — Auth.js rewrites every request to that origin, so sessions 401 on the public host.
 
 ## If MJ IT blocks email
 
@@ -13,7 +18,7 @@ Andrei sends auth email through **Resend** (`AUTH_RESEND_KEY`, `AUTH_EMAIL_FROM`
    pnpm run set-workspace-password -- user@mjbiopharm.com 'TemporaryPass123!' --role manager
    ```
 
-2. The user signs in at https://andrei-v2.vercel.app/login with **email + temporary password**.
+2. The user signs in at https://mj.andreihealth.com/login with **email + temporary password**.
 
 3. On first login they are prompted to **choose a new password** (cannot reuse the temporary one). Share the temp password over a secure channel (phone, in person), not email.
 
@@ -66,7 +71,7 @@ Before `p=quarantine`, confirm in Resend → **Domains** that SPF and DKIM are *
 
 | Variable | Example |
 |----------|---------|
-| `AUTH_URL` | `https://andrei-v2.vercel.app` |
+| `AUTH_URL` | `https://mj.andreihealth.com` |
 | `AUTH_EMAIL_FROM` | `noreply@mjbiopharm.com` (must match verified Resend domain) |
 | `AUTH_RESEND_KEY` | Resend API key |
 
@@ -74,7 +79,7 @@ Redeploy after changing env vars.
 
 ### 3. Ask MJ IT to allowlist
 
-- **App URL:** `https://andrei-v2.vercel.app` (and optionally `*.vercel.app`)
+- **App URL:** `https://mj.andreihealth.com` (and optionally `*.vercel.app`)
 - **Mail:** Resend sending infrastructure + your verified sender domain (share DNS / Resend domain status from the dashboard)
 
 ### 4. Resend sandbox (testing only)

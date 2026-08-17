@@ -77,10 +77,14 @@ import {
   recordAuditEvent,
 } from "@/lib/audit";
 import {
+  readDocumentOutline,
   readDocumentPage,
   searchReportDocuments,
   toClientDocumentSearchResults,
 } from "@/lib/attachments/retrieval";
+import {
+  sanitizePromptMetadata,
+} from "@/lib/ai/chat/prompt-metadata";
 
 export type ProposeEditResult =
   | {
@@ -162,7 +166,7 @@ function buildSearchDocumentsTool(opts: {
   if (pinnedAttachmentIds.length === 0) {
     return tool({
       description:
-        "Search ready evidence attachments for report-scoped facts. Use before citing attachment evidence. Results include citationId for follow-up reads; final prose should cite as [filename, p. N] or [filename] if the page is unknown — never [filename: <to be filled>].",
+        "Search ready evidence attachments for report-scoped facts. Call this before ask_user or draft_field when Documents are listed and no evidence preview covers the needed facts. Results include citationId for follow-up reads; final prose should cite as [filename, p. N] or [filename] if the page is unknown — never [filename: <to be filled>].",
       inputSchema: z.object({ query, limit }),
       execute: async ({ query: q, limit: n }) => {
         const results = await searchReportDocuments({ reportId, query: q, limit: n });
@@ -178,7 +182,7 @@ function buildSearchDocumentsTool(opts: {
   const tagged = pinnedAttachmentIds.length;
   return tool({
     description:
-      `Search ready evidence attachments for report-scoped facts. Defaults to the ${tagged} document(s) the engineer tagged with @ — those results come back with pinned=true, and any shortfall is backfilled from the rest of the report with pinned=false. Pass scope="all" to search every attachment instead. Final prose should cite as [filename, p. N] or [filename] if the page is unknown — never [filename: <to be filled>].`,
+      `Search ready evidence attachments for report-scoped facts. Call this before ask_user or draft_field when no evidence preview covers the needed facts. Defaults to the ${tagged} document(s) the engineer tagged with @ — those results come back with pinned=true, and any shortfall is backfilled from the rest of the report with pinned=false. Pass scope="all" to search every attachment instead. Final prose should cite as [filename, p. N] or [filename] if the page is unknown — never [filename: <to be filled>].`,
     inputSchema: z.object({
       query,
       limit,
@@ -426,6 +430,42 @@ export function buildChatTools(opts: {
 
     search_documents: buildSearchDocumentsTool({ reportId, pinnedAttachmentIds }),
 
+    document_outline: tool({
+      description:
+        "List per-page context for one ready attachment so you can pick which pages to read. Use for long documents; not a substitute for search_documents.",
+      inputSchema: z.object({
+        attachmentId: z
+          .string()
+          .min(1)
+          .describe("Attachment ID from the document index or a search result."),
+      }),
+      execute: async ({ attachmentId }) => {
+        const outline = await readDocumentOutline({ reportId, attachmentId });
+        if (!outline) return { status: "not_found" as const };
+        const filename =
+          sanitizePromptMetadata(outline.filename, 180) || "unnamed";
+        const description = sanitizePromptMetadata(outline.description, 280);
+        const documentSummary = sanitizePromptMetadata(outline.documentSummary, 400);
+        return {
+          status: "found" as const,
+          attachmentId: outline.attachmentId,
+          filename,
+          description: description || null,
+          pageCount: outline.pageCount,
+          documentSummary: documentSummary || null,
+          pages: outline.pages.map((page) => ({
+            pageNumber: page.pageNumber,
+            printedPageLabel: page.printedPageLabel,
+            pageContext: page.pageContext
+              ? sanitizePromptMetadata(page.pageContext, 400) || null
+              : null,
+          })),
+          citationRule: DOCUMENT_CITATION_RULE,
+          trustBoundary: DOCUMENT_TRUST_BOUNDARY,
+        };
+      },
+    }),
+
     read_document_page: tool({
       description:
         "Read bounded transcript and visual context for one page of a ready attachment. Use after search_documents when nearby page context is needed.",
@@ -664,7 +704,7 @@ export function buildChatTools(opts: {
 
     ask_user: tool({
       description:
-        "Ask the engineer for facts you are missing. The questions render as a structured form in the chat — NEVER write questions as chat prose or markdown lists. Batch every open question into one call, then stop and wait for the answers.",
+        "Ask the engineer for facts still missing AFTER searching ready attachments (search_documents or the evidence preview). Do not ask for facts that are likely in a listed document (requirement IDs, design outputs, verification objective, ECO/DCR, batch/date/equipment). The questions render as a structured form in the chat — NEVER write questions as chat prose or markdown lists. Batch every open question into one call, then stop and wait for the answers.",
       inputSchema: z.object({
         questions: z
           .array(

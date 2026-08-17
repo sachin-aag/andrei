@@ -4,6 +4,9 @@ location                      = "EU"
 runtime_service_account_email = "andrei-vercel@andrei-493614.iam.gserviceaccount.com"
 
 cors_origins = [
+  "https://mj.andreihealth.com",
+  "https://andrei-v2.vercel.app",
+  "https://demo.andreihealth.com",
   "https://andrei-demo.vercel.app",
   "http://localhost:3000",
 ]

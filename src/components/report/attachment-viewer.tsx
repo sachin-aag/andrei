@@ -8,8 +8,13 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { PdfPagePreview } from "@/components/report/pdf-page-preview";
 import type { AttachmentProcessingStatus } from "@/db/schema";
 import { kindFromMime } from "@/lib/attachments/file-types";
+import {
+  attachmentDownloadHref,
+  attachmentPreviewSrc,
+} from "@/lib/attachments/preview-urls";
 import { useReportAttachments } from "@/providers/report-attachments-provider";
 
 export function AttachmentViewer() {
@@ -27,12 +32,13 @@ export function AttachmentViewer() {
   }
 
   const isDocx = kindFromMime(activeAttachment.mimeType) === "docx";
-  // Browsers can't render .docx inline, so DOCX previews are server-rendered
-  // HTML shown in a sandboxed iframe; PDFs use the browser's native viewer.
-  const previewUrl = isDocx
-    ? `/api/reports/${reportId}/attachments/${activeAttachment.id}/preview`
-    : `/api/reports/${reportId}/attachments/${activeAttachment.id}/content?page=${activePage}`;
-  const downloadUrl = `/api/reports/${reportId}/attachments/${activeAttachment.id}/content?download=1`;
+  const previewUrl = attachmentPreviewSrc({
+    reportId,
+    attachmentId: activeAttachment.id,
+    mimeType: activeAttachment.mimeType,
+    page: activePage,
+  });
+  const downloadUrl = attachmentDownloadHref(reportId, activeAttachment.id);
   const pageLabel = isDocx
     ? "Word document"
     : activeAttachment.pageCount
@@ -80,21 +86,23 @@ export function AttachmentViewer() {
       </CardHeader>
       <CardContent className="p-0">
         {canPreview ? (
-          <iframe
-            key={previewUrl}
-            src={previewUrl}
-            title={activeAttachment.filename}
-            // DOCX: untrusted HTML — no scripts. allow-popups* so target=_blank
-            // links open a real new tab instead of replacing (or breaking) the preview.
-            // PDF: Chrome's viewer needs scripts; same popup tokens so URI links
-            // open in a new tab rather than navigating the iframe/app.
-            sandbox={
-              isDocx
-                ? "allow-popups allow-popups-to-escape-sandbox"
-                : "allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox"
-            }
-            className="h-[calc(100vh-16rem)] min-h-[720px] w-full bg-white"
-          />
+          isDocx ? (
+            <iframe
+              key={previewUrl}
+              src={previewUrl}
+              title={activeAttachment.filename}
+              // Untrusted HTML — no scripts. allow-popups* so target=_blank
+              // links open a real new tab instead of replacing the preview.
+              sandbox="allow-popups allow-popups-to-escape-sandbox"
+              className="h-[calc(100vh-16rem)] min-h-[720px] w-full bg-white"
+            />
+          ) : (
+            <PdfPagePreview
+              src={previewUrl}
+              page={activePage}
+              title={activeAttachment.filename}
+            />
+          )
         ) : (
           <div className="p-6 text-sm text-[var(--muted-foreground)]">
             {activeAttachment.processingStatus === "failed"

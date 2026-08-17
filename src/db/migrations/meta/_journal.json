@@ -264,8 +264,15 @@
     {
       "idx": 37,
       "version": "7",
+      "when": 1783063200000,
+      "tag": "0038_document_chunks_fts_english",
+      "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
       "when": 1786600000000,
-      "tag": "0038_verification_document_types",
+      "tag": "0039_verification_document_types",
       "breakpoints": true
     }
   ]

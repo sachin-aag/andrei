@@ -5,8 +5,11 @@ import { start } from "workflow/api";
 import { db } from "@/db";
 import {
   attachmentIngestRuns,
+  documentChunks,
+  documentPages,
   reportAttachments,
 } from "@/db/schema";
+import { chunkDocumentPages } from "@/lib/attachments/chunk-pages";
 import { resolveDocumentIngestMode } from "@/lib/attachments/document-ingest-mode";
 import {
   sanitizeIngestError,
@@ -177,6 +180,8 @@ async function markAttachmentReadyForTests(
   if (!attachment) return;
 
   const runId = createId();
+  const pageId = createId();
+  const pageCount = attachment.pageCount ?? 1;
   await db.insert(attachmentIngestRuns).values({
     id: runId,
     attachmentId,
@@ -188,13 +193,54 @@ async function markAttachmentReadyForTests(
     embeddingModelId: "test-stub",
     embeddingDimensions: 768,
     sourceGeneration: generation,
-    pageCount: attachment.pageCount ?? 1,
+    pageCount,
     batchCount: 0,
     completedBatchCount: 0,
     documentSummary: "Deterministic test ingest stub.",
     startedAt: new Date(),
     completedAt: new Date(),
   });
+
+  await db.insert(documentPages).values({
+    id: pageId,
+    ingestRunId: runId,
+    attachmentId,
+    reportId: attachment.reportId,
+    pageNumber: 1,
+    printedPageLabel: "1",
+    transcript:
+      "Batch B-441 failed dissolution at 68 percent versus the 80 percent specification.",
+    visualInterpretation: "",
+    pageContext: "Dissolution COA for the failed batch.",
+  });
+
+  const chunks = chunkDocumentPages({
+    filename: attachment.filename,
+    pages: [
+      {
+        id: pageId,
+        pageNumber: 1,
+        transcript:
+          "Batch B-441 failed dissolution at 68 percent versus the 80 percent specification.",
+        visualInterpretation: "",
+        pageContext: "Dissolution COA for the failed batch.",
+      },
+    ],
+  });
+  if (chunks[0]) {
+    await db.insert(documentChunks).values({
+      ingestRunId: runId,
+      attachmentId,
+      reportId: attachment.reportId,
+      pageId: chunks[0].pageId,
+      pageNumber: chunks[0].pageNumber,
+      ordinal: chunks[0].ordinal,
+      rawText: chunks[0].rawText,
+      contextualText: chunks[0].contextualText,
+      sourceKind: chunks[0].sourceKind,
+      embedding: null,
+    });
+  }
 
   await db
     .update(reportAttachments)

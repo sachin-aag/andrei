@@ -1,10 +1,12 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Architecture handbook for this repository. Cursor also loads `AGENTS.md` (operating
+caveats) and `.cursor/rules/*.mdc` (file-scoped invariants). If those disagree
+with this file, trust `AGENTS.md` / the rules / the code — then fix this file.
 
 ## Project
 
-Andrei — a Next.js 16 investigation-report engine with per-customer packs. Demo (`ANDREI_CUSTOMER=demo`) is Andrei-branded with design verification and a conclusion section. MJ (`ANDREI_CUSTOMER=mj`) overlays SOP/DP/QA/008 criteria and prompts, the MJ Word template, MJ branding, Word import, and hides conclusion plus design verification. Features: in-browser DMAIC editor with auto-save, AI traffic-light evaluation (Gemini via Vercel AI Gateway), manager review with comments, attachments/chat, and DOCX export.
+Andrei — a Next.js 16 investigation-report engine with per-customer packs. Demo (`ANDREI_CUSTOMER=demo`) is Andrei-branded with design verification and a conclusion section. MJ (`ANDREI_CUSTOMER=mj`) overlays SOP/DP/QA/008 criteria and prompts, the MJ Word template, MJ branding, Word import, and hides conclusion plus design verification. Features: in-browser DMAIC editor with auto-save, AI traffic-light evaluation (Gemini via Vercel AI Gateway or Vertex), manager review with comments, attachment evidence (PDF/DOCX ingest + chat retrieval), and DOCX export.
 
 ## Commands
 
@@ -37,7 +39,11 @@ pnpm seed-demo-reports    # seed demo reports for the demo engineer (loads .env 
 pnpm sample-eval-report   # bulk AI evaluation of sample DOCXs → HTML report (needs gateway key)
 pnpm model-sweep          # run the AI eval across multiple models (scripts/eval/)
 pnpm compare-evals        # diff two eval runs (scripts/eval/)
+pnpm soak:pdf-ingest      # local PDF extract soak (Vertex; no DB/GCS writes)
 ```
+
+`pnpm db:ensure-workspace-users` uses the Neon HTTP driver — skip it against
+local Docker. Create users with `pnpm set-workspace-password` instead.
 
 **One-time E2E setup:**
 ```bash
@@ -46,7 +52,7 @@ pnpm exec playwright install --with-deps chromium firefox webkit
 
 ## Architecture
 
-**Tech stack:** Next.js 16 (App Router, Turbopack), React 19, TypeScript strict, Tailwind CSS v4, Drizzle ORM + Neon Postgres, AI SDK v6 with Gemini, TipTap v3 rich text editor, `docx` library for DOCX generation.
+**Tech stack:** Next.js 16 (App Router, Turbopack), React 19, TypeScript strict, Tailwind CSS v4, Drizzle ORM + Postgres (Neon or local Docker; **always** the `pg` driver), AI SDK v6 with Gemini (Gateway and/or Vertex), TipTap v3, `docx` for DOCX generation. pgvector for attachment chunks.
 
 **Path alias:** `@/*` maps to `src/*`.
 
@@ -63,8 +69,11 @@ pnpm exec playwright install --with-deps chromium firefox webkit
 - `src/components/report/` — Editor UI: `report-workspace.tsx` (header + tabs + sidebar), per-section editors in `sections/`, `report-sidebar.tsx` (AI traffic-light results), `review-rail/` (manager comment margin UI).
 - `src/components/improve-ai/` — Improve AI UI: session form, upload button, section content display, stale-rerun dialog.
 - `src/components/ui/` — shadcn-style Radix UI primitives.
-- `src/db/schema/index.ts` — Drizzle schema (single file, not a directory): `workspaceUsers`, `reports`, `reportManagers` (many managers per report), `reportSections`, `criteriaEvaluations`, `comments`, `chatSessions`/`chatMessages` (AI chat), `reportSourceDocx` (original .docx as bytea), `mathExtractionCache` (LLM formula cache keyed by image SHA-256), `aiFeedbackSessions`/`aiFeedbackResponses` (Improve AI), `auditEvents`/`sectionContentVersions`/`electronicSignatures` (audit subsystem), `passwordPolicySettings`, `retentionSettings`. NextAuth tables + `authUsers` in `auth.ts`.
+- `src/db/schema/index.ts` — Drizzle schema (single file, not a directory): `workspaceUsers`, `reports` (includes `documentType`), `reportManagers`, `reportSections`, `criteriaEvaluations`, `comments`, `chatSessions`/`chatMessages`, `reportSourceDocx`, `mathExtractionCache`, `aiFeedbackSessions`/`aiFeedbackResponses`, `auditEvents`/`sectionContentVersions`/`electronicSignatures`, `passwordPolicySettings`, `retentionSettings`, plus attachment evidence (`reportAttachments`, `attachmentIngestRuns`, `documentPages`, `documentChunks` with `vector(768)`). NextAuth tables + `authUsers` in `auth.ts`.
 - `src/lib/ai/` — AI evaluation, suggestion, and chat pipelines (see subsystems below).
+- `src/lib/document-types/` — Registry for `investigation_report` and `design_verification` (sections, criteria, prompts, chat persona, merge).
+- `src/lib/attachments/` — PDF/DOCX ingest, chunk/embed, hybrid retrieval (`searchReportDocuments`, `readDocumentPage`, `readDocumentOutline`).
+- `src/lib/storage/` — Attachment blob storage (GCS vs local).
 - `src/lib/audit/` — Hash-chained audit log, section version history, and e-signature workflow (see Audit subsystem).
 - `src/lib/customers/` — Customer pack resolver (`ANDREI_CUSTOMER` / `NEXT_PUBLIC_ANDREI_CUSTOMER`). Demo vs MJ overlays: criteria descriptions, eval prompts, export template, hidden sections, enabled document types, Word import, branding.
 - `src/lib/reports/` — Report domain logic: access control (`access.ts`), manager authorization, deviation-no generation, submit validation, source-docx persistence, blank-section seeding, tombstones.
@@ -80,15 +89,16 @@ pnpm exec playwright install --with-deps chromium firefox webkit
 - `src/lib/site-access-token.ts` / `site-access-cookie.ts` — HMAC-signed site-gate token + cookie helpers.
 - `src/providers/report-provider.tsx` — Centralized client-side state via React Context.
 - `src/hooks/` — Auto-save hooks (see subsystem below).
-- `src/proxy.ts` — Next.js middleware logic (auth redirects, `mustChangePassword`/`passwordExpired` enforcement). Exported as `proxy` and re-used by the actual `middleware.ts` entry point. Note: it does **not** enforce the site-access gate (that lives on the `/unlock` page).
+- `src/proxy.ts` — Next.js 16 request interception (auth redirects, `mustChangePassword`/`passwordExpired`). There is **no** `middleware.ts`. Does **not** enforce the site-access gate (`/unlock`).
 
 ### Data flow
 
 1. TipTap editor → section content (JSONB in `report_sections`)
 2. Auto-save debounces 1.5s → `PATCH /api/reports/[id]/sections/[sectionType]`
 3. AI evaluation → `POST /api/reports/[id]/evaluate` → upserts `criteria_evaluations`
-4. Manager review → submit/comment/approve/feedback status transitions
-5. DOCX export → `GET /api/reports/[id]/export`
+4. Attachments → upload → `runDocumentIngest` (Vertex extract/embed) → `document_pages` / `document_chunks`
+5. Manager review → submit/comment/approve/feedback status transitions
+6. DOCX export → `GET /api/reports/[id]/export` (investigation vs design-verification branches in `generate-docx.ts`)
 
 ### Report statuses
 
@@ -96,7 +106,10 @@ pnpm exec playwright install --with-deps chromium firefox webkit
 
 ### Section types
 
-DMAIC (`define`, `measure`, `analyze`, `improve`, `control`) plus three non-editable structural sections: `documents_reviewed`, `attachments`, `signature_approvals`. All are values of the `sectionTypeEnum`. Content types in `src/types/sections.ts`.
+Owned by `getWorkspaceSections(documentType)` in `src/lib/document-types/`. The shared `sectionTypeEnum` includes both families.
+
+- **Investigation:** DMAIC (`define`, `measure`, `analyze`, `improve`, `control`) plus `conclusion`, plus non-editable `documents_reviewed`, `attachments`, `signature_approvals`. Content types in `src/types/sections.ts`.
+- **Design verification:** `purpose_scope`, `references`, `traceability`, `test_methods`, `test_results`, `deviations`, `conclusion`, `approval_signoff`, `appendices`, plus virtual `cover_page` (lives in `reports.metadata`, not `report_sections`). Content types in `src/lib/document-types/design-verification/sections.ts`.
 
 ### Auth
 
@@ -114,46 +127,53 @@ Required in `.env.local` (see `.env.example` for all options):
 
 | Variable | Purpose |
 |----------|---------|
-| `DATABASE_URL` | Postgres connection string. Local Docker: `postgresql://andrei:andrei@localhost:5432/andrei_dev` |
+| `DATABASE_URL` | Postgres connection string. Local Docker: `postgresql://andrei:andrei@localhost:5432/andrei_dev`. Runtime always uses the `pg` driver (`src/db/connection.ts`), including Neon TCP. |
 | `AUTH_SECRET` | NextAuth secret — generate with `openssl rand -base64 32` |
 | `AUTH_RESEND_KEY` | Resend API key for magic-link emails |
-| `AI_GATEWAY_API_KEY` | Vercel AI Gateway key (recommended). AI features fail without this or `GOOGLE_GENERATIVE_AI_API_KEY`. |
-| `GOOGLE_GENERATIVE_AI_API_KEY` | Direct Gemini key (alternative to gateway) |
+| `AI_GATEWAY_API_KEY` | Vercel AI Gateway key. AI Check / suggestions / chat can use this **or** `GOOGLE_GENERATIVE_AI_API_KEY`. |
+| `GOOGLE_GENERATIVE_AI_API_KEY` | Direct Gemini key (alternative to gateway for eval/suggest/chat) |
+| `GOOGLE_VERTEX_PROJECT` | **Required for PDF/DOCX ingest + embeddings** (Vertex-only; gateway is not a fallback). Pair with WIF (`GCP_WIF_AUDIENCE`, `GCP_SERVICE_ACCOUNT_EMAIL`) on Vercel. |
+| `GCS_BUCKET` | Production attachment bytes. Local: `ATTACHMENT_STORAGE_BACKEND=local` **and** `ALLOW_LOCAL_ATTACHMENT_STORAGE=true`. |
 | `SITE_ACCESS_PASSWORD` | Optional. When set, enables the site-wide password gate at `/unlock`. Unset = gate disabled. |
 | `ANDREI_CUSTOMER` | Customer pack: `demo` (default) or `mj`. Must agree with `NEXT_PUBLIC_ANDREI_CUSTOMER` and `ANDREI_VERCEL_DEPLOY_SCOPE`. |
 | `NEXT_PUBLIC_ANDREI_CUSTOMER` | Same value as `ANDREI_CUSTOMER` (client branding / create-dialog). Unset → demo. |
-| `ANDREI_VERCEL_DEPLOY_SCOPE` | `mj` on `andrei-v2`, `demo` on `andrei-demo`. Must agree with the pack. Unset skips every Vercel build. |
+| `ANDREI_VERCEL_DEPLOY_SCOPE` | `mj` on `andrei-v2`, `demo` on `andrei-demo`. Must agree with the pack. |
 
 **Test-only variables** (never set on Vercel production or preview):
 
 | Variable | Effect |
 |----------|--------|
-| `ALLOW_TEST_LOGIN=true` | Enables `POST /api/test/login` bypass |
+| `ALLOW_TEST_LOGIN=true` | Enables `POST /api/test/login` / seed-auth. Also requires `TEST_AUTH_EMAIL`. |
+| `TEST_AUTH_EMAIL` | Email used by the test-login bypass (Playwright defaults `test.engineer@mjbiopharm.com`) |
 | `ALLOW_TEST_SKIP_EVALUATION=true` | Stubs all `evaluateSection()` calls |
 | `ALLOW_TEST_SKIP_SUGGESTIONS=true` | Stubs AI suggestions |
 | `ALLOW_TEST_STUB_MATH_EXTRACTION=true` | Stubs WMF/EMF vision LLM calls |
+| `ALLOW_TEST_STUB_DOCUMENT_INGEST=true` | Stubs Vertex extract/embed; fixture must still insert pages + chunks |
+| `ALLOW_TEST_STUB_CHAT=true` | Deterministic `buildStubChatModel` (cannot assert tool selection) |
 
 Playwright sets these automatically in `webServer.env` — do not add them to production Vercel env.
 
 ## Local development gotchas
 
-**Postgres not auto-started:** If using a native (non-Docker) Postgres install, start it manually before running the app or DB scripts: `sudo pg_ctlcluster 16 main start`. Connection is via `127.0.0.1`, so `src/db/connection.ts` uses the `pg` driver, not the Neon HTTP driver.
+**Postgres:** Default local path is Docker (`pnpm db:local:up`). Native `pg_ctlcluster` is optional and not assumed. The app **always** uses the `pg` driver, including Neon — not because the host is `127.0.0.1`. Neon HTTP cannot run `db.transaction()`.
 
 **`pnpm db:push` is interactive:** It prompts in a TTY and fails in non-interactive shells with "Interactive prompts require a TTY". Always use `pnpm db:local:push` in scripts, CI, or when automating schema updates.
 
 **Turbopack route registration bug:** In `pnpm dev`, a newly-added API route can fail to register on its first on-demand compile and return Next's HTML 404 page for every method. Fix: restart the dev server (optionally `rm -rf .next` first). This is a dev-server state issue, not a code bug.
 
-**AI features require a key:** Core flows (login, report CRUD, editor, manager review, DOCX export) work without AI credentials. "Run AI Check" and suggestions fail until `AI_GATEWAY_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` is set in `.env.local`.
+**AI credentials are not interchangeable:** Core flows (login, report CRUD, editor, manager review, DOCX export) work without AI keys. "Run AI Check" / suggestions / chat need `AI_GATEWAY_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY`. PDF/DOCX ingest + embeddings need **Vertex** (`GOOGLE_VERTEX_PROJECT`).
 
 **Creating a workspace user locally:**
 ```bash
 pnpm set-workspace-password -- bhargav.patel@mjbiopharm.com 'TempPass123!' --role engineer
 ```
-The email must be `@mjbiopharm.com`. The account is flagged `mustChangePassword` on first login.
+MJ convention is `@mjbiopharm.com`; the script does not enforce the domain. The account is flagged `mustChangePassword` on first login.
+
+**Playwright port 3000:** Local config sets `reuseExistingServer`. Whatever already owns 3000 is reused **without** Playwright’s stub env. Stop it, or set `PLAYWRIGHT_BASE_URL` to a server that already has the flags and matching `AUTH_URL`.
 
 ## Subsystem: DOCX Import
 
-**Entry point:** `docxBufferToImportedReportContent()` in `src/lib/import/docx-to-sections.ts`
+Investigation-report import. **Entry point:** `docxBufferToImportedReportContent()` in `src/lib/import/docx-to-sections.ts`. Design-verification import/export uses the type’s `templatePath` / merge helpers in `src/lib/document-types/`.
 
 **Pipeline stages:**
 1. Mammoth converts DOCX → markdown (preserves list numbering) and → HTML (preserves table structure)
@@ -172,19 +192,19 @@ The email must be `@mjbiopharm.com`. The account is flagged `mustChangePassword`
 
 **Entry point:** `evaluateSection()` in `src/lib/ai/evaluate.ts`
 
-**Criteria:** 36 static criteria defined in `criteria.ts` — Define (6), Measure (5), Analyze (5), Improve (6), Control (13).
+**Criteria:** From `getDocumentType(type).criteriaBySection`. Investigation criteria still live in `src/lib/ai/criteria.ts` (Define / Measure / Analyze / Improve / Control / Conclusion) and are exposed through the registry. Design verification criteria (LLM + deterministic `check()` functions) live under `src/lib/document-types/design-verification/`.
 
 **Pipeline:**
 1. `cleanSectionContentForEval()` strips pending suggestion marks from content
 2. `buildCriterionEvaluationLlmPrompts()` constructs system + user prompt
-   - System prompt defines traffic-light system (met/partially_met/not_met), scope rules, prompt injection guard
-   - User prompt includes: deviation info, section content (via `contextForPrompt()`), prior sections (read-only context only), criteria list
-   - Prompt version tracked in `PROMPT_VERSION` constant — bumping invalidates cached evals
+ - System prompt defines traffic-light system (met/partially_met/not_met), scope rules, prompt injection guard
+ - User prompt includes: document info, section content (via `contextForPrompt()`), prior sections (read-only context only), criteria list
+ - Prompt version is `getDocumentType(type).prompts.promptVersion` (investigation: `PROMPT_VERSION` in `section-prompts.ts`)
 3. `generateText()` with Gemini 3.1-flash-lite, temperature 0, seed 0 (deterministic)
 4. `capEvaluationStatusForPlaceholders()` caps to partially_met if unfilled placeholders detected (never not_met solely for placeholders)
 5. Results upserted into `criteria_evaluations` table. On re-evaluation, `fixApplied` preserved; `bypassed` cleared.
 
-**Content hash:** `hashContent(cleanedContent, PROMPT_VERSION)` stored with evaluation to detect staleness.
+**Content hash:** `evaluationContentHash()` in `evaluation-content-hash.ts` — cleaned section content + `dependsOn` sections + `promptVersion`. Bumping the type’s prompt version invalidates cached evals.
 
 ## Subsystem: AI Suggestions
 
@@ -205,7 +225,7 @@ The email must be `@mjbiopharm.com`. The account is flagged `mustChangePassword`
 
 ## Subsystem: DOCX Export
 
-**Entry point:** `generateDocx()` in `src/lib/export/generate-docx.ts`
+**Entry point:** `generateReportDocx()` in `src/lib/export/generate-docx.ts`. Investigation and design-verification are separate branches (IR template vs `templates/design-verification-report-template.docx`). The numbered pipeline below is the investigation-report path. Registry `export.templatePath` exists but generate-docx still hardcodes those paths.
 
 **Pipeline:**
 1. Load template DOCX (`templates/investigation-report-template.docx`) via PizZip + Docxtemplater
@@ -248,7 +268,7 @@ The email must be `@mjbiopharm.com`. The account is flagged `mustChangePassword`
 - `POST /api/improve-ai/sessions/[id]/complete` — mark session as reviewed
 
 **Data flow:**
-1. Session created → status `evaluating` → background evaluation runs `evaluateSection()` for all DMAIC sections
+1. Session created → status `evaluating` → background evaluation runs `evaluateSection()` for investigation `EVALUATABLE_SECTIONS` (`evaluateReportCriteria` is not yet type-generic)
 2. Status transitions to `ready_for_review`; engineer reviews per-criterion AI verdicts in `/improve-ai/[sessionId]`
 3. For each criterion the user records agreement + optional comment → upserted into `aiFeedbackResponses`
 4. `POST .../complete` marks session `reviewed`
@@ -271,11 +291,36 @@ The email must be `@mjbiopharm.com`. The account is flagged `mustChangePassword`
 
 ## Subsystem: AI Chat
 
-**Purpose:** Per-report conversational assistant that can read report context and propose edits.
+**Purpose:** Per-report conversational assistant that can read report context, search attachments, and propose edits.
 
 **Entry point:** `POST /api/reports/[reportId]/chat` — `streamText()` (via `resolveChatLanguageModel()`) with tools from `buildChatTools()`, streamed back with `toUIMessageStreamResponse()`. Sessions/messages persist in `chatSessions`/`chatMessages` and are managed under `chat/sessions/[sessionId]`.
 
-**Logic in `src/lib/ai/chat/`:** `system-prompt.ts` (mode-aware prompt), `context-map.ts` (serializes report state for the model), `fields.ts`/`section-scope.ts` (which sections/fields are in scope), `propose-edit.ts` (validates a proposed edit), `session-title.ts`, `access.ts` (report access guard). `ALLOW_TEST_*` / `stub-model.ts` provide a deterministic model in tests.
+**Logic in `src/lib/ai/chat/`:**
+- `system-prompt.ts` — mode-aware prompt (`plan` vs `agent`); `CHAT_PROMPT_VERSION`; search-then-ask `DOCUMENT_RULES`
+- `auto-evidence.ts` — kickoff hybrid retrieval (≤1.5s, fail-soft) injected after document rules
+- `context-map.ts` — serializes report state + ready docs (sanitized `summary=`)
+- `tools.ts` — `read_section`, `search_documents`, `document_outline`, `read_document_page`, `ask_user`, draft/edit tools; sanitizes untrusted metadata here (not in `src/lib/attachments/`)
+- `fields.ts` / `section-scope.ts` — type-specific editable sections (`chatEditableSections`)
+- `mentions.ts` — `@` documents/sections
+- `propose-edit.ts`, `session-title.ts`, `access.ts`
+
+**Plan-mode allowlist** in `chat/route.ts`: `read_section`, `search_documents`, `read_document_page`, `document_outline`, `ask_user`, optional `suggest_section_scope`. New tools must be added here or they are silently missing in Plan.
+
+**Retrieval:** `searchReportDocuments` (vector + English FTS OR-tokens). Report body is not chunk-indexed. Stub chat: `ALLOW_TEST_STUB_CHAT` / `stub-model.ts` — streams a canned reply; cannot assert tool selection.
+
+## Subsystem: Attachments (ingest + evidence)
+
+**Purpose:** PDF/DOCX evidence for chat (and future citation), not a replacement for the report body.
+
+**Entry point:** `runDocumentIngest()` in `src/lib/attachments/run-document-ingest.ts`. Extract + embed is **Vertex-only** (`GOOGLE_VERTEX_PROJECT`). Stub: `ALLOW_TEST_STUB_DOCUMENT_INGEST`.
+
+**Pipeline:**
+1. Upload stored via `src/lib/storage/` (GCS production; local only with `ATTACHMENT_STORAGE_BACKEND=local` + `ALLOW_LOCAL_ATTACHMENT_STORAGE=true`)
+2. Vertex extract (`extract-batch.ts`, `DOCUMENT_EXTRACT_PROMPT_VERSION`) → `document_pages` (`pageContext` + transcript)
+3. Chunk (`chunk-pages.ts`) + embed (`embed-chunks.ts`, 768-d) → `document_chunks`
+4. `documentSummary` written on the ingest run; listed by `listReadyDocumentsForReport`
+
+**Chat retrieval:** `searchReportDocuments`, `readDocumentPage`, `readDocumentOutline` in `src/lib/attachments/retrieval.ts`. FTS: `to_tsvector('english', contextual_text)` + `document_chunks_contextual_text_fts_en_idx`. Release gates: `docs/pdf-evidence-deployment-checklist.md`.
 
 ## Subsystem: Redrafts
 
@@ -293,13 +338,13 @@ The email must be `@mjbiopharm.com`. The account is flagged `mustChangePassword`
 
 ## Testing
 
-- Vitest config: `vitest.config.ts`, environment `node`, setup file `src/test/setup.ts` (imports `@testing-library/jest-dom/vitest`).
-- E2E: Playwright with chromium, base URL `http://127.0.0.1:3000`, config in `playwright.config.ts`.
+- Vitest config: `vitest.config.ts`, environment `node`, setup file `src/test/setup.ts` (imports `@testing-library/jest-dom/vitest`). Mock `@/db` when a module loads `DATABASE_URL` at import time.
+- E2E: Playwright with chromium, base URL `http://127.0.0.1:3000`, config in `playwright.config.ts`. Local `reuseExistingServer` is on — see gotchas.
 - Test files live alongside source: `*.test.ts` / `*.test.tsx`.
 - Full E2E details, artifact locations, and test catalog: `TESTING.md`.
 - `pnpm precommit` runs lint + typecheck + Vitest only (no E2E). CI runs them in separate jobs.
 
-**E2E infrastructure:** `e2e/auth.setup.ts` seeds users via `POST /api/test/seed-auth-users` before browser tests. Helpers: `e2e/helpers/auth.ts` (`loginAsEngineer`, `loginAsManager`) and `e2e/helpers/reports.ts` (`createReport`, `deleteReport`). Use `uniqueDeviationNo` for isolation and `deleteReport` in `afterEach`.
+**E2E infrastructure:** `e2e/auth.setup.ts` seeds users via `POST /api/test/seed-auth-users` before browser tests. Helpers: `e2e/helpers/auth.ts` (`loginAsEngineer`, `loginAsManager`) and `e2e/helpers/reports.ts` (`createReport`, `deleteReport`). Use `uniqueDeviationNo` for isolation and `deleteReport` in `afterEach`. Chat stream+persist: `e2e/report-chat.spec.ts` (stub chat cannot assert tools).
 
 ## Style
 

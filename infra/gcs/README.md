@@ -39,7 +39,17 @@ Redeploy the preview after adding the env var.
 
 ## Preview CORS
 
-GCS CORS origins must be **exact** (no `*.vercel.app`). Production + localhost are in `terraform.tfvars.example`. When you open a preview URL, add it to `cors_origins` and re-apply, or temporarily add the Origin you see in the browser network tab.
+GCS CORS origins must be **exact** (no `*.vercel.app`). Production hosts live
+in [`cors.json`](./cors.json) and `terraform.tfvars.example` (`mj.andreihealth.com`,
+`demo.andreihealth.com`, and the `*.vercel.app` aliases). When you add a custom
+domain, add that Origin and re-apply, or set CORS immediately:
+
+```bash
+gsutil cors set cors.json gs://andrei-493614-attachments
+```
+
+When you open a preview URL, add it to `cors_origins` and re-apply, or
+temporarily add the Origin you see in the browser network tab.
 
 ## State
 
