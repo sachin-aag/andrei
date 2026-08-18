@@ -276,7 +276,10 @@ function PdfDocumentPages({
     const targetPage = Number.isInteger(initialPage) ? initialPage : 1;
     if (targetPage <= 1) return;
     const target = root.querySelector(`[data-pdf-page="${targetPage}"]`);
-    if (target instanceof HTMLElement) {
+    if (
+      target instanceof HTMLElement &&
+      typeof target.scrollIntoView === "function"
+    ) {
       target.scrollIntoView({ block: "start" });
     }
   }, [initialPage, pdf]);
