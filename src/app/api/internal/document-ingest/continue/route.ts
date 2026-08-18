@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import {
   INGEST_CONTINUE_HEADER,
-  MAX_INGEST_CONTINUATIONS,
   verifyIngestContinueToken,
 } from "@/lib/attachments/ingest-continue";
+import { MAX_INGEST_CONTINUATIONS } from "@/lib/attachments/ingest-continue-limits";
 import { scheduleInlineIngest } from "@/lib/attachments/start-ingest";
 
 export const runtime = "nodejs";

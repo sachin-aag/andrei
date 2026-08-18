@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { formatIngestPageLabel } from "./ingest-continue-limits";
 import {
-  formatIngestPageLabel,
   ingestContinueOrigin,
   mintIngestContinueToken,
   verifyIngestContinueToken,

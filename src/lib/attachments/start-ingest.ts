@@ -14,9 +14,9 @@ import { resolveDocumentIngestMode } from "@/lib/attachments/document-ingest-mod
 import {
   ingestContinueOrigin,
   INGEST_CONTINUE_HEADER,
-  MAX_INGEST_CONTINUATIONS,
   mintIngestContinueToken,
 } from "@/lib/attachments/ingest-continue";
+import { MAX_INGEST_CONTINUATIONS } from "@/lib/attachments/ingest-continue-limits";
 import {
   sanitizeIngestError,
   shouldBackfillIngestFailure,

@@ -11,7 +11,7 @@ import {
 import { PdfPagePreview } from "@/components/report/pdf-page-preview";
 import type { AttachmentProcessingStatus } from "@/db/schema";
 import { kindFromMime } from "@/lib/attachments/file-types";
-import { formatIngestPageLabel } from "@/lib/attachments/ingest-continue";
+import { formatIngestPageLabel } from "@/lib/attachments/ingest-continue-limits";
 import {
   attachmentDownloadHref,
   attachmentPreviewSrc,

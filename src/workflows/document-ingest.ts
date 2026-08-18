@@ -1,4 +1,4 @@
-import { MAX_INGEST_CONTINUATIONS } from "@/lib/attachments/ingest-continue";
+import { MAX_INGEST_CONTINUATIONS } from "@/lib/attachments/ingest-continue-limits";
 import {
   failIngestIfStillRunning,
   type IngestRunOutcome,

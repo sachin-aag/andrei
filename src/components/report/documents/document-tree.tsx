@@ -32,7 +32,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { DocumentTreeFolder } from "@/lib/attachments/build-tree";
 import { ATTACHMENT_DESCRIPTION_MAX } from "@/lib/attachments/description";
-import { formatIngestPageLabel } from "@/lib/attachments/ingest-continue";
+import { formatIngestPageLabel } from "@/lib/attachments/ingest-continue-limits";
 import { canReprocessAttachment } from "@/lib/attachments/ingest-errors";
 import { useReportAttachments } from "@/providers/report-attachments-provider";
 import type { AttachmentProcessingStatus } from "@/db/schema";

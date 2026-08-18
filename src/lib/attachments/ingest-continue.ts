@@ -1,7 +1,7 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 
+/** HMAC for the inline continue route. Do not import this module from `"use workflow"` files. */
 export const INGEST_CONTINUE_HEADER = "x-andrei-ingest-continue";
-export const MAX_INGEST_CONTINUATIONS = 24;
 const TOKEN_TTL_MS = 15 * 60 * 1000;
 
 export type IngestContinuePayload = {
@@ -90,11 +90,4 @@ export function ingestContinueOrigin(): string {
   const authUrl = process.env.AUTH_URL?.trim().replace(/\/$/, "");
   if (authUrl) return authUrl;
   return "http://127.0.0.1:3000";
-}
-
-export function formatIngestPageLabel(
-  page: number | null | undefined
-): string | null {
-  if (page == null || !Number.isInteger(page) || page < 1) return null;
-  return `Page ${page}`;
 }
