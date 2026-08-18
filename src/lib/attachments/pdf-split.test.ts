@@ -2,7 +2,9 @@ import { PDFDocument } from "pdf-lib";
 import { describe, expect, it } from "vitest";
 import {
   copyPdfPage,
+  copyPdfPageRange,
   splitPageIntoTiles,
+  splitPdfByPageCount,
   splitPdfIntoBatches,
   uprightRotatePage,
 } from "./pdf-split";
@@ -48,6 +50,25 @@ describe("copyPdfPage", () => {
     const copied = await copyPdfPage(await pdfWithPages(3), 2);
     const document = await PDFDocument.load(copied);
     expect(document.getPageCount()).toBe(1);
+  });
+});
+
+describe("copyPdfPageRange", () => {
+  it("copies more than MAX_PDF_BATCH_PAGES without going through Gemini split", async () => {
+    const copied = await copyPdfPageRange(await pdfWithPages(20), 1, 15);
+    const document = await PDFDocument.load(copied);
+    expect(document.getPageCount()).toBe(15);
+  });
+});
+
+describe("splitPdfByPageCount", () => {
+  it("chunks a 62-style length into 15-page Document AI slices", async () => {
+    const batches = await splitPdfByPageCount(await pdfWithPages(32), 15);
+    expect(batches.map((batch) => [batch.pageStart, batch.pageEnd])).toEqual([
+      [1, 15],
+      [16, 30],
+      [31, 32],
+    ]);
   });
 });
 

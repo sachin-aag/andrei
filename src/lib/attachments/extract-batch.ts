@@ -8,6 +8,12 @@ import {
 import { z } from "zod";
 import { createWifAuthClient, getWifConfig } from "@/lib/gcp/wif-token";
 import {
+  isDocumentAiConfigured,
+  ocrPdfWithDocumentAi,
+} from "@/lib/attachments/document-ai-ocr";
+import { isWeakOcrTranscript } from "@/lib/attachments/ocr-quality";
+import {
+  copyPdfPage,
   splitPageIntoTiles,
   splitPdfIntoBatches,
   uprightRotatePage,
@@ -27,7 +33,7 @@ export const DEFAULT_DOCUMENT_EXTRACT_MODEL_ID = "gemini-3.1-flash-lite";
  * `us-central1`) — the two must never be conflated again.
  */
 export const DEFAULT_DOCUMENT_EXTRACT_LOCATION = "global";
-export const DOCUMENT_EXTRACT_PROMPT_VERSION = "doc-extract-v3";
+export const DOCUMENT_EXTRACT_PROMPT_VERSION = "doc-extract-v4";
 
 type GoogleAuthOptions = NonNullable<Parameters<typeof createVertex>[0]>["googleAuthOptions"];
 type AuthClient = NonNullable<NonNullable<GoogleAuthOptions>["authClient"]>;
@@ -106,6 +112,7 @@ export type ExtractRecovery =
   | "per-page-retry"
   | "transcript-only"
   | "text-layer-only"
+  | "ocr-document-ai"
   | "page-tiles"
   | "page-gap";
 
@@ -198,7 +205,7 @@ export async function extractPdfBatch(
     return extractFromTextLayer(resolved, textLayer);
   }
   if (textPages.length === 0 || !textLayer) {
-    return extractWithVision(resolved);
+    return extractScannedPages(resolved);
   }
   return extractMixedPages(resolved, textLayer);
 }
@@ -304,7 +311,7 @@ async function extractMixedPages(
             pages: [layerPage],
             usable: true,
           })
-        : await extractWithVision(pageInput);
+        : await extractScannedPages(pageInput);
 
     if (pageResult.mode === "vision") usedVision = true;
     pages.push(...pageResult.pages);
@@ -393,6 +400,83 @@ async function requestPageInsights(
       { error: error instanceof Error ? error.message : String(error) }
     );
     return null;
+  }
+}
+
+/**
+ * Scans: Document AI OCR when a processor is configured, then Gemini vision
+ * (rotate/tiles) for weak or missing pages.
+ */
+async function extractScannedPages(
+  input: ResolvedInput
+): Promise<ExtractBatchResult> {
+  if (!isDocumentAiConfigured()) {
+    return extractWithVision(input);
+  }
+
+  try {
+    const ocr = await ocrPdfWithDocumentAi({
+      pdfBuffer: input.pdfBuffer,
+      filename: input.filename,
+    });
+    const byRelativePage = new Map(
+      ocr.pages.map((page) => [page.pageNumber, page])
+    );
+    const expectedCount = input.pageEnd - input.pageStart + 1;
+    const pages: ExtractedPage[] = [];
+    let recovery: ExtractRecovery = "ocr-document-ai";
+    let inputTokens = 0;
+    let outputTokens = 0;
+    let lastFinishReason: string | undefined;
+
+    for (let offset = 0; offset < expectedCount; offset += 1) {
+      const relativePage = offset + 1;
+      const absolutePage = input.pageStart + offset;
+      const ocrPage = byRelativePage.get(relativePage);
+      if (
+        ocrPage &&
+        !isWeakOcrTranscript(ocrPage.transcript, ocrPage.confidence)
+      ) {
+        pages.push({
+          pageNumber: absolutePage,
+          transcript: ocrPage.transcript,
+          visualInterpretation: "",
+          pageContext: "",
+          printedPageLabel: null,
+          confidence: ocrPage.confidence,
+        });
+        continue;
+      }
+
+      const pageBuffer = await copyPdfPage(input.pdfBuffer, relativePage);
+      const vision = await extractWithVision({
+        ...input,
+        pdfBuffer: pageBuffer,
+        pageStart: absolutePage,
+        pageEnd: absolutePage,
+      });
+      pages.push(...vision.pages);
+      recovery = worseRecovery(recovery, vision.recovery);
+      lastFinishReason = vision.finishReason;
+      inputTokens += vision.usage?.inputTokens ?? 0;
+      outputTokens += vision.usage?.outputTokens ?? 0;
+    }
+
+    return {
+      pages,
+      batchSummary: synthesizeBatchSummary(pages),
+      continuationNote: pages.at(-1)?.pageContext ?? "",
+      mode: "vision",
+      recovery,
+      finishReason: lastFinishReason,
+      usage: { inputTokens, outputTokens },
+    };
+  } catch (error) {
+    console.warn(
+      `[document-extract] Document AI OCR failed for pages ${input.pageStart}-${input.pageEnd}; falling back to vision`,
+      { error: error instanceof Error ? error.message : String(error) }
+    );
+    return extractWithVision(input);
   }
 }
 
@@ -874,10 +958,11 @@ const RECOVERY_RANK: Record<ExtractRecovery, number> = {
   none: 0,
   salvage: 1,
   "text-layer-only": 2,
-  "per-page-retry": 3,
-  "transcript-only": 4,
-  "page-tiles": 5,
-  "page-gap": 6,
+  "ocr-document-ai": 3,
+  "per-page-retry": 4,
+  "transcript-only": 5,
+  "page-tiles": 6,
+  "page-gap": 7,
 };
 
 function worseRecovery(

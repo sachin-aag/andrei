@@ -72,14 +72,73 @@ export async function copyPdfPage(
   sourceBuffer: Buffer,
   pageNumber: number
 ): Promise<Buffer> {
+  return copyPdfPageRange(sourceBuffer, pageNumber, 1);
+}
+
+/**
+ * Copy a 1-based inclusive page range. Used for Document AI chunks (up to 15
+ * pages). Do not route Gemini batches through this — they stay capped at
+ * `MAX_PDF_BATCH_PAGES`.
+ */
+export async function copyPdfPageRange(
+  sourceBuffer: Buffer,
+  pageStart: number,
+  pageCount: number
+): Promise<Buffer> {
   const source = await PDFDocument.load(sourceBuffer);
-  const pageCount = source.getPageCount();
-  if (pageNumber < 1 || pageNumber > pageCount) {
+  const total = source.getPageCount();
+  if (pageStart < 1 || pageCount < 1 || pageStart + pageCount - 1 > total) {
     throw new Error(
-      `Page ${pageNumber} is out of range for a ${pageCount}-page PDF`
+      `Pages ${pageStart}-${pageStart + pageCount - 1} are out of range for a ${total}-page PDF`
     );
   }
-  return copyPageRange(source, pageNumber - 1, 1);
+  return copyPageRange(source, pageStart - 1, pageCount);
+}
+
+/** Split a PDF into consecutive chunks of `pagesPerChunk` (1-based page numbers). */
+export async function splitPdfByPageCount(
+  sourceBuffer: Buffer,
+  pagesPerChunk: number
+): Promise<PdfBatch[]> {
+  const source = await PDFDocument.load(sourceBuffer);
+  const pageCount = source.getPageCount();
+  const size = Math.max(1, Math.floor(pagesPerChunk));
+  const batches: PdfBatch[] = [];
+  let nextPageIndex = 0;
+  let batchIndex = 0;
+  while (nextPageIndex < pageCount) {
+    const pagesInBatch = Math.min(size, pageCount - nextPageIndex);
+    batches.push({
+      batchIndex,
+      pageStart: nextPageIndex + 1,
+      pageEnd: nextPageIndex + pagesInBatch,
+      buffer: await copyPageRange(source, nextPageIndex, pagesInBatch),
+    });
+    nextPageIndex += pagesInBatch;
+    batchIndex += 1;
+  }
+  return batches;
+}
+
+/**
+ * Rotate every page that `uprightRotatePage` would rotate, then reassemble.
+ * Used when Document AI still reads a landscape scan sideways.
+ */
+export async function uprightRotatePdfPages(
+  sourceBuffer: Buffer
+): Promise<{ buffer: Buffer; rotated: boolean }> {
+  const source = await PDFDocument.load(sourceBuffer);
+  const dest = await PDFDocument.create();
+  let rotated = false;
+  for (let index = 0; index < source.getPageCount(); index += 1) {
+    const one = await copyPageRange(source, index, 1);
+    const upright = await uprightRotatePage(one);
+    if (upright.rotated) rotated = true;
+    const pageDoc = await PDFDocument.load(upright.buffer);
+    const [copied] = await dest.copyPages(pageDoc, [0]);
+    dest.addPage(copied);
+  }
+  return { buffer: Buffer.from(await dest.save()), rotated };
 }
 
 export type UprightRotateResult = {

@@ -3,6 +3,12 @@ import { NoOutputGeneratedError, type LanguageModel } from "ai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const generateTextMock = vi.fn();
+const { ocrPdfWithDocumentAiMock, isDocumentAiConfiguredMock } = vi.hoisted(
+  () => ({
+    ocrPdfWithDocumentAiMock: vi.fn(),
+    isDocumentAiConfiguredMock: vi.fn(() => false),
+  })
+);
 
 vi.mock("ai", async (importOriginal) => {
   const actual = await importOriginal<typeof import("ai")>();
@@ -11,6 +17,12 @@ vi.mock("ai", async (importOriginal) => {
     generateText: (...args: unknown[]) => generateTextMock(...args),
   };
 });
+
+vi.mock("./document-ai-ocr", () => ({
+  isDocumentAiConfigured: () => isDocumentAiConfiguredMock(),
+  ocrPdfWithDocumentAi: (...args: unknown[]) =>
+    ocrPdfWithDocumentAiMock(...args),
+}));
 
 import {
   extractPdfBatch,
@@ -144,6 +156,8 @@ function resultWithoutOutput(text: string, finishReason = "length") {
 describe("extractPdfBatch", () => {
   beforeEach(() => {
     generateTextMock.mockReset();
+    ocrPdfWithDocumentAiMock.mockReset();
+    isDocumentAiConfiguredMock.mockReturnValue(false);
   });
 
   it("parses structured output when finishReason is stop", async () => {
@@ -571,6 +585,65 @@ describe("extractPdfBatch with a text layer", () => {
     expect(result.pages[0]?.transcript).toContain("alpha line 0");
     expect(result.pages[1]?.transcript).toBe("scan-middle");
     expect(result.pages[2]?.transcript).toContain("gamma line 0");
+  });
+
+  it("uses Document AI transcripts for scans when the processor is configured", async () => {
+    isDocumentAiConfiguredMock.mockReturnValue(true);
+    const transcript =
+      "SW-PA-1 Pattern requirement Pass Fail measured pulse width ".repeat(8);
+    ocrPdfWithDocumentAiMock.mockResolvedValueOnce({
+      pages: [
+        { pageNumber: 1, transcript, confidence: 0.92 },
+        { pageNumber: 2, transcript, confidence: 0.88 },
+      ],
+      elapsedMs: 40,
+      chunks: [],
+    });
+
+    const result = await extractPdfBatch({
+      pdfBuffer: await pdfWithPages(2),
+      pageStart: 10,
+      pageEnd: 11,
+      filename: "scan.pdf",
+      modelId: "stub",
+      model: stubModel(),
+    });
+
+    expect(result.recovery).toBe("ocr-document-ai");
+    expect(result.pages.map((page) => page.pageNumber)).toEqual([10, 11]);
+    expect(result.pages[0]?.transcript).toBe(transcript);
+    expect(generateTextMock).not.toHaveBeenCalled();
+  });
+
+  it("sends weak OCR pages to Gemini vision", async () => {
+    isDocumentAiConfiguredMock.mockReturnValue(true);
+    const strong =
+      "SW-PA-1 Pattern requirement Pass Fail measured pulse width ".repeat(8);
+    ocrPdfWithDocumentAiMock.mockResolvedValueOnce({
+      pages: [
+        { pageNumber: 1, transcript: "hi", confidence: 0.2 },
+        { pageNumber: 2, transcript: strong, confidence: 0.9 },
+      ],
+      elapsedMs: 40,
+      chunks: [],
+    });
+    generateTextMock.mockResolvedValueOnce(
+      resultWithOutput(batchPayload([pagePayload(1, "vision-fallback")]), "stop")
+    );
+
+    const result = await extractPdfBatch({
+      pdfBuffer: await pdfWithPages(2),
+      pageStart: 1,
+      pageEnd: 2,
+      filename: "scan.pdf",
+      modelId: "stub",
+      model: stubModel(),
+    });
+
+    expect(result.pages.map((page) => page.pageNumber)).toEqual([1, 2]);
+    expect(result.pages[0]?.transcript).toBe("vision-fallback");
+    expect(result.pages[1]?.transcript).toBe(strong);
+    expect(generateTextMock).toHaveBeenCalledTimes(1);
   });
 });
 

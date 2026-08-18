@@ -70,7 +70,7 @@ Ingest **run** statuses (separate table): `pending` → `running` → `ready` | 
 
 ## PDF path
 
-Batches of ~3 pages (max 5, or smaller if the slice exceeds ~18 MB). Each batch is a temp PDF, then Vertex extract. Previous batch `batchSummary` / `continuationNote` are passed forward.
+Batches of ~3 pages (max 5, or smaller if the slice exceeds ~18 MB). Each batch is a temp PDF, then extract (text layer, Document AI OCR, or Gemini vision). Previous batch `batchSummary` / `continuationNote` are passed forward.
 
 ```mermaid
 flowchart TD
@@ -91,29 +91,32 @@ flowchart TD
 
 ### Extract modes and recovery
 
-Born-digital pages use the PDF text layer as the transcript. Scans go through Gemini vision. Mixed PDFs are handled page-by-page.
+Born-digital pages use the PDF text layer as the transcript. Scans go through Document AI Enterprise OCR when `DOCUMENT_AI_PROCESSOR_ID` is set; weak or failed OCR pages fall back to Gemini vision (rotate/tiles). Mixed PDFs are handled page-by-page.
 
 ```mermaid
 flowchart TD
   A["extractPdfBatch"] --> B{"Text layer readable<br/>for every page in batch?"}
   B -->|all pages have text| C["text-layer mode"]
-  B -->|no usable text| D["vision mode"]
+  B -->|no usable text| D["scan path"]
   B -->|some pages only| E["mixed: one page at a time"]
 
   C --> F["Parser supplies transcript"]
   F --> G["Vertex insight pass<br/>visuals, pageContext, summary"]
   G -->|insight fails| H["Keep transcript<br/>recovery: text-layer-only"]
 
-  D --> I["Vertex transcribes the page"]
-  I -->|truncated / bad JSON| J["salvage or per-page retry"]
-  J -->|still failing| K["rotate / tile the page"]
-  K -->|still failing| L["page-gap placeholder<br/>later batches still run"]
+  D --> OCR{"Document AI processor configured?"}
+  OCR -->|yes| I["Enterprise OCR"]
+  I -->|strong transcript| J["recovery: ocr-document-ai"]
+  I -->|weak / missing / API error| K["Gemini vision"]
+  OCR -->|no| K
+  K --> L["salvage, per-page, rotate/tile"]
+  L -->|still failing| M["page-gap placeholder<br/>later batches still run"]
 
   E --> C
   E --> D
 ```
 
-Extract model: `gemini-3.1-flash-lite` at Vertex location `global` (`DOCUMENT_EXTRACT_LOCATION`). Embeddings stay on `GOOGLE_VERTEX_LOCATION` (often `us-central1`). Those locations must not be conflated.
+Extract model: `gemini-3.1-flash-lite` at Vertex location `global` (`DOCUMENT_EXTRACT_LOCATION`). OCR uses a **regional** Document AI processor (`DOCUMENT_AI_LOCATION=us` or `eu` — never `global`). Embeddings stay on `GOOGLE_VERTEX_LOCATION` (often `us-central1`). Those locations must not be conflated. Prompt version: `doc-extract-v4`.
 
 ## DOCX path
 
