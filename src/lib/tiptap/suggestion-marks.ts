@@ -19,6 +19,7 @@ import {
   PluginKey,
   TextSelection,
   type EditorState,
+  type Selection,
   type Transaction,
 } from "@tiptap/pm/state";
 import { ReplaceStep } from "@tiptap/pm/transform";
@@ -42,7 +43,10 @@ export type SuggestionKind = "fix" | "grammar" | "tone" | "removal" | "redraft";
 
 export const SuggestionInsert = Mark.create({
   name: suggestionInsertMarkName,
-  inclusive: true,
+  // Typing at the end of a tracked insert must sit *outside* the span.
+  // inclusive: true wraps the next key in the same <span>, and Chrome then
+  // reports that span as the replacement range (`handleTextInput` from < to).
+  inclusive: false,
   addAttributes() {
     return {
       id: { default: null as string | null },
@@ -164,9 +168,10 @@ function isPendingInsertByAuthor(mark: PMMark, authorId: string): boolean {
 
 /**
  * Keep consecutive keystrokes in one insert run. A new `id`/`createdAt` on every
- * character prevents ProseMirror from merging inclusive insert marks, so Chrome
- * wraps each letter in its own span and reports the next key as replacing that
- * span (`handleTextInput` `from < to`).
+ * character prevents ProseMirror from merging adjacent insert marks.
+ *
+ * With `inclusive: false`, `ResolvedPos.marks()` at the caret often misses the
+ * run we just typed — also read the text node immediately before `pos`.
  */
 export function continuingInsertAttrs(
   state: EditorState,
@@ -179,13 +184,68 @@ export function continuingInsertAttrs(
   if (stored) return { ...stored.attrs };
 
   const clamped = Math.max(0, Math.min(pos, state.doc.content.size));
-  const atPos = state.doc
-    .resolve(clamped)
+  const $pos = state.doc.resolve(clamped);
+
+  const atPos = $pos
     .marks()
     .find((mark) => isPendingInsertByAuthor(mark, authorId));
   if (atPos) return { ...atPos.attrs };
 
+  const before = $pos.nodeBefore;
+  if (before?.isText) {
+    const fromBefore = before.marks.find((mark) =>
+      isPendingInsertByAuthor(mark, authorId)
+    );
+    if (fromBefore) return { ...fromBefore.attrs };
+  }
+
   return pendingMarkAttrs(authorId);
+}
+
+/** True when a replace slice actually inserted characters (not Enter / a split). */
+export function replaceSliceContainsText(slice: Slice): boolean {
+  let found = false;
+  const walk = (node: PMNode) => {
+    if (found) return;
+    if (node.isText && (node.text?.length ?? 0) > 0) {
+      found = true;
+      return;
+    }
+    node.forEach(walk);
+  };
+  slice.content.forEach(walk);
+  return found;
+}
+
+/**
+ * After Enter the caret can sit on a block gap (parent = doc). Inserting there
+ * creates extra paragraphs or joins the new line back into the previous one.
+ */
+export function textInsertPos(state: EditorState): number | null {
+  const { $from } = state.selection;
+  if ($from.parent.inlineContent) return $from.pos;
+  if ($from.nodeAfter?.isTextblock) return $from.pos + 1;
+  if ($from.nodeBefore?.isTextblock) return $from.pos - 1;
+
+  let found: number | null = null;
+  state.doc.descendants((node, pos) => {
+    if (found != null) return false;
+    if (node.isTextblock) {
+      found = pos + 1;
+      return false;
+    }
+    return true;
+  });
+  return found;
+}
+
+function selectionAfterInsert(doc: PMNode, pos: number): Selection {
+  const clamped = Math.max(0, Math.min(pos, doc.content.size));
+  const $pos = doc.resolve(clamped);
+  if ($pos.parent.inlineContent) {
+    return TextSelection.create(doc, clamped);
+  }
+  return TextSelection.near($pos);
 }
 
 function trackChangesCaretInsertTransaction(
@@ -196,7 +256,11 @@ function trackChangesCaretInsertTransaction(
   const insertMarkType = state.schema.marks[suggestionInsertMarkName];
   if (!insertMarkType || text.length === 0) return null;
 
-  const insertAt = state.selection.from;
+  const insertAt = textInsertPos(state);
+  if (insertAt == null) return null;
+  const $at = state.doc.resolve(insertAt);
+  if (!$at.parent.inlineContent) return null;
+
   const insertEnd = insertAt + text.length;
   const tr = state.tr
     .insertText(text, insertAt)
@@ -207,7 +271,7 @@ function trackChangesCaretInsertTransaction(
     )
     .setMeta("skipTrackChanges", true);
 
-  tr.setSelection(TextSelection.create(tr.doc, insertEnd));
+  tr.setSelection(selectionAfterInsert(tr.doc, insertEnd));
   return tr;
 }
 
@@ -275,7 +339,7 @@ export function trackChangesSelectionReplaceTransaction(
     )
     .setMeta("skipTrackChanges", true);
 
-  tr.setSelection(TextSelection.create(tr.doc, insertEnd));
+  tr.setSelection(selectionAfterInsert(tr.doc, insertEnd));
 
   return tr;
 }
@@ -411,16 +475,22 @@ export const TrackChangesExtension = Extension.create({
           },
           handleTextInput(view, from, to, text) {
             if (editor.storage.trackChanges?.enabled !== true) return false;
-            const tr = trackChangesTextInputTransaction(
-              view.state,
-              from,
-              to,
-              text,
-              editor.storage.trackChanges?.authorId ?? ""
-            );
-            if (!tr) return false;
-            view.dispatch(tr);
-            return true;
+            try {
+              const tr = trackChangesTextInputTransaction(
+                view.state,
+                from,
+                to,
+                text,
+                editor.storage.trackChanges?.authorId ?? ""
+              );
+              if (!tr) return false;
+              view.dispatch(tr);
+              return true;
+            } catch {
+              // A throw here leaves Chrome's DOM mutation unreconciled and the
+              // next keystrokes look like random scrolling with no characters.
+              return false;
+            }
           },
         },
         appendTransaction(transactions, oldState, newState) {
@@ -449,6 +519,10 @@ export const TrackChangesExtension = Extension.create({
             }
             const slice = step.slice;
             if (!slice || slice.size === 0) continue;
+            // Enter / splitBlock inserts a paragraph with no text. Marking that
+            // range puts the caret on a block gap so the next character joins
+            // the new line back into the previous one.
+            if (!replaceSliceContainsText(slice)) continue;
 
             const start = transaction.mapping.map(step.from, -1);
             const end = start + slice.size;

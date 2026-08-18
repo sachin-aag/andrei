@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { Fragment, Schema, Slice, type Node as PMNode } from "@tiptap/pm/model";
 import { EditorState, TextSelection } from "@tiptap/pm/state";
+import { ReplaceStep } from "@tiptap/pm/transform";
 import {
   continuingInsertAttrs,
+  replaceSliceContainsText,
   suggestionDeleteMarkName,
   suggestionInsertMarkName,
   stripSuggestionMarksFromSlice,
+  textInsertPos,
   trackChangesSelectionReplaceTransaction,
   trackChangesTextInputTransaction,
 } from "@/lib/tiptap/suggestion-marks";
@@ -27,6 +30,7 @@ const schema = new Schema({
         status: { default: "pending" },
         createdAt: { default: "" },
       },
+      inclusive: false,
       toDOM: () => ["span", 0],
     },
     [suggestionDeleteMarkName]: {
@@ -97,6 +101,58 @@ describe("continuingInsertAttrs", () => {
   });
 });
 
+function helloThenEmpty() {
+  return schema.node("doc", null, [
+    schema.node("paragraph", null, [schema.text("hello")]),
+    schema.node("paragraph", null, []),
+  ]);
+}
+
+describe("textInsertPos", () => {
+  it("keeps a caret that is already inside a paragraph", () => {
+    const doc = helloThenEmpty();
+    const state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, 8),
+    });
+    expect(textInsertPos(state)).toBe(8);
+  });
+
+  it("snaps a block-gap caret into the following paragraph", () => {
+    const doc = helloThenEmpty();
+    const gap = doc.firstChild!.nodeSize;
+    const inside = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, gap + 1),
+    });
+    const atGap = inside.apply(
+      inside.tr.setSelection(TextSelection.create(doc, gap))
+    );
+    expect(atGap.selection.$from.parent.inlineContent).toBe(false);
+    expect(textInsertPos(atGap)).toBe(gap + 1);
+  });
+});
+
+describe("replaceSliceContainsText", () => {
+  it("is false for splitBlock / Enter", () => {
+    const doc = schema.node("doc", null, [
+      schema.node("paragraph", null, [schema.text("hello")]),
+    ]);
+    const state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, 6),
+    });
+    const step = state.tr.split(6).steps[0];
+    expect(step).toBeInstanceOf(ReplaceStep);
+    expect(replaceSliceContainsText((step as ReplaceStep).slice)).toBe(false);
+  });
+
+  it("is true for an inserted character", () => {
+    const slice = new Slice(Fragment.from(schema.text("e")), 0, 0);
+    expect(replaceSliceContainsText(slice)).toBe(true);
+  });
+});
+
 describe("trackChangesTextInputTransaction", () => {
   it("does not strikethrough the previous letter when Chrome reports a span range", () => {
     const doc = schema.node("doc", null, [
@@ -118,6 +174,46 @@ describe("trackChangesTextInputTransaction", () => {
     );
     expect(rows.map((row) => row.text).join("")).toBe("he");
     expect(rows.every((row) => row.insertId === "run-1")).toBe(true);
+  });
+
+  it("does not join paragraphs when Chrome reports a range across an Enter split", () => {
+    const doc = helloThenEmpty();
+    const state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, 8),
+    });
+
+    const tr = trackChangesTextInputTransaction(state, 6, 8, "a", "user-1");
+    expect(tr).not.toBeNull();
+    const next = state.apply(tr!);
+    expect(next.doc.childCount).toBe(2);
+    expect(next.doc.textBetween(0, next.doc.content.size, "|")).toBe("hello|a");
+    expect(next.selection.$from.parent.inlineContent).toBe(true);
+  });
+
+  it("types into the new paragraph when the caret is on the block gap", () => {
+    const doc = helloThenEmpty();
+    const gap = doc.firstChild!.nodeSize;
+    const inside = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, gap + 1),
+    });
+    const atGap = inside.apply(
+      inside.tr.setSelection(TextSelection.create(doc, gap))
+    );
+
+    const tr = trackChangesTextInputTransaction(
+      atGap,
+      gap - 1,
+      gap + 1,
+      "a",
+      "user-1"
+    );
+    expect(tr).not.toBeNull();
+    const next = atGap.apply(tr!);
+    expect(next.doc.childCount).toBe(2);
+    expect(next.doc.textBetween(0, next.doc.content.size, "|")).toBe("hello|a");
+    expect(next.selection.$from.parent.inlineContent).toBe(true);
   });
 
   it("lets a true caret insert fall through to appendTransaction", () => {

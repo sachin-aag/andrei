@@ -198,6 +198,7 @@ Specs run against Chromium, Firefox, and WebKit unless you pass `--project=chrom
 |------|------------------|
 | saves Define track-changes edits across reload | Review Define is editable; typed text is insert (not strikethrough); Saved; text survives reload |
 | saves Improve track-changes edits across reload | Improve is not locked in track changes; typed text is insert (not strikethrough); text survives reload |
+| keeps a new line and types into it instead of joining | Enter then type stays on the new line; letters are insert marks, not a joined previous paragraph |
 
 </details>
 

@@ -70,7 +70,7 @@ test.describe("manager track changes persist", () => {
     await expect(editor).toBeVisible({ timeout: 30_000 });
     await expect(editor).toHaveAttribute("contenteditable", "true");
     await editor.click();
-    await editor.pressSequentially(` ${mark}`);
+    await page.keyboard.type(` ${mark}`, { delay: 25 });
     await expectTypedAsInsertNotDelete(editor, mark);
     await expect(defineSection(page).getByText(/saved/i)).toBeVisible({
       timeout: 30_000,
@@ -98,7 +98,7 @@ test.describe("manager track changes persist", () => {
     await expect(editor).toBeVisible({ timeout: 30_000 });
     await expect(editor).toHaveAttribute("contenteditable", "true");
     await editor.click();
-    await editor.pressSequentially(` ${mark}`);
+    await page.keyboard.type(` ${mark}`, { delay: 25 });
     await expectTypedAsInsertNotDelete(editor, mark);
     await expect(improveSection(page).getByText(/saved/i)).toBeVisible({
       timeout: 30_000,
@@ -109,5 +109,28 @@ test.describe("manager track changes persist", () => {
       timeout: 30_000,
     });
     await expect(improveEditor(page)).toContainText(mark, { timeout: 30_000 });
+  });
+
+  test("keeps a new line and types into it instead of joining", async ({ page }) => {
+    await authenticateAsManager(page);
+    await gotoWithNavigationRetry(page, `/reports/${reportId}/review`, {
+      waitUntil: "domcontentloaded",
+    });
+    await expect(page.getByRole("heading", { name: /^define$/i })).toBeVisible({
+      timeout: 30_000,
+    });
+
+    const mark = `mgr-enter-${Date.now()}`;
+    const editor = defineEditor(page);
+    await expect(editor).toBeVisible({ timeout: 30_000 });
+    await expect(editor).toHaveAttribute("contenteditable", "true");
+    await editor.click();
+    await page.keyboard.press("End");
+    await page.keyboard.press("Enter");
+    await page.keyboard.type(mark, { delay: 25 });
+
+    await expect.poll(async () => editor.locator("p").count()).toBeGreaterThan(1);
+    await expectTypedAsInsertNotDelete(editor, mark);
+    await expect(editor.locator("p").last()).toContainText(mark);
   });
 });
