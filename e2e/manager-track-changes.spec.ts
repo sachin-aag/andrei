@@ -125,6 +125,8 @@ test.describe("manager track changes persist", () => {
     await expect(editor).toBeVisible({ timeout: 30_000 });
     await expect(editor).toHaveAttribute("contenteditable", "true");
     await editor.click();
+    await page.keyboard.type("mgr-before-enter ", { delay: 25 });
+    await expectTypedAsInsertNotDelete(editor, "mgr-before-enter");
     await page.keyboard.press("End");
     await page.keyboard.press("Enter");
     await page.keyboard.type(mark, { delay: 25 });

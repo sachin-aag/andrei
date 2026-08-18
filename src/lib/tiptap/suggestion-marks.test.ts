@@ -131,6 +131,16 @@ describe("textInsertPos", () => {
     expect(atGap.selection.$from.parent.inlineContent).toBe(false);
     expect(textInsertPos(atGap)).toBe(gap + 1);
   });
+
+  it("prefers the later paragraph when Chrome's range crosses the Enter split", () => {
+    const doc = helloThenEmpty();
+    const state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, 6),
+    });
+    expect(textInsertPos(state, 6, 8)).toBe(8);
+    expect(textInsertPos(state, 6, 9)).toBe(8);
+  });
 });
 
 describe("replaceSliceContainsText", () => {
@@ -211,6 +221,36 @@ describe("trackChangesTextInputTransaction", () => {
     );
     expect(tr).not.toBeNull();
     const next = atGap.apply(tr!);
+    expect(next.doc.childCount).toBe(2);
+    expect(next.doc.textBetween(0, next.doc.content.size, "|")).toBe("hello|a");
+    expect(next.selection.$from.parent.inlineContent).toBe(true);
+  });
+
+  it("types into the new paragraph when the caret is still in the previous one", () => {
+    const doc = helloThenEmpty();
+    const state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, 6),
+    });
+
+    const tr = trackChangesTextInputTransaction(state, 6, 8, "a", "user-1");
+    expect(tr).not.toBeNull();
+    const next = state.apply(tr!);
+    expect(next.doc.childCount).toBe(2);
+    expect(next.doc.textBetween(0, next.doc.content.size, "|")).toBe("hello|a");
+  });
+
+  it("types into the new paragraph when Chrome selects the empty Enter split", () => {
+    const doc = helloThenEmpty();
+    const state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, 6, 9),
+    });
+    expect(state.doc.textBetween(6, 9)).toBe("");
+
+    const tr = trackChangesTextInputTransaction(state, 6, 9, "a", "user-1");
+    expect(tr).not.toBeNull();
+    const next = state.apply(tr!);
     expect(next.doc.childCount).toBe(2);
     expect(next.doc.textBetween(0, next.doc.content.size, "|")).toBe("hello|a");
     expect(next.selection.$from.parent.inlineContent).toBe(true);

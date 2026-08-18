@@ -217,26 +217,64 @@ export function replaceSliceContainsText(slice: Slice): boolean {
   return found;
 }
 
+function clampDocPos(state: EditorState, pos: number): number {
+  return Math.max(0, Math.min(pos, state.doc.content.size));
+}
+
+/** True when `from` and `to` sit in the same inline parent (one paragraph). */
+export function sameTextblock(
+  state: EditorState,
+  from: number,
+  to: number
+): boolean {
+  const $from = state.doc.resolve(clampDocPos(state, from));
+  const $to = state.doc.resolve(clampDocPos(state, to));
+  return (
+    $from.parent.inlineContent &&
+    $to.parent.inlineContent &&
+    $from.start() === $to.start()
+  );
+}
+
 /**
- * After Enter the caret can sit on a block gap (parent = doc). Inserting there
- * creates extra paragraphs or joins the new line back into the previous one.
+ * Map a possibly-gap position into inline content: inside a textblock, or
+ * just inside the neighboring paragraph when `pos` is a doc-level gap.
  */
-export function textInsertPos(state: EditorState): number | null {
-  const { $from } = state.selection;
-  if ($from.parent.inlineContent) return $from.pos;
-  if ($from.nodeAfter?.isTextblock) return $from.pos + 1;
-  if ($from.nodeBefore?.isTextblock) return $from.pos - 1;
+export function inlinePosAt(state: EditorState, pos: number): number | null {
+  const $pos = state.doc.resolve(clampDocPos(state, pos));
+  if ($pos.parent.inlineContent) return $pos.pos;
+  if ($pos.nodeAfter?.isTextblock) return $pos.pos + 1;
+  if ($pos.nodeBefore?.isTextblock) return $pos.pos - 1;
 
   let found: number | null = null;
-  state.doc.descendants((node, pos) => {
+  state.doc.descendants((node, nodePos) => {
     if (found != null) return false;
     if (node.isTextblock) {
-      found = pos + 1;
+      found = nodePos + 1;
       return false;
     }
     return true;
   });
   return found;
+}
+
+/**
+ * After Enter the caret can sit on a block gap (parent = doc), or Chrome can
+ * report a replacement range that starts in the previous paragraph. Inserting
+ * at that earlier caret joins the new line back into the previous one.
+ *
+ * When `from < to` crosses a textblock, prefer the later block (the new line).
+ */
+export function textInsertPos(
+  state: EditorState,
+  from?: number,
+  to?: number
+): number | null {
+  if (from != null && to != null && from < to && !sameTextblock(state, from, to)) {
+    return inlinePosAt(state, to) ?? inlinePosAt(state, from);
+  }
+
+  return inlinePosAt(state, state.selection.from);
 }
 
 function selectionAfterInsert(doc: PMNode, pos: number): Selection {
@@ -251,12 +289,14 @@ function selectionAfterInsert(doc: PMNode, pos: number): Selection {
 function trackChangesCaretInsertTransaction(
   state: EditorState,
   text: string,
-  authorId: string
+  authorId: string,
+  from?: number,
+  to?: number
 ): Transaction | null {
   const insertMarkType = state.schema.marks[suggestionInsertMarkName];
   if (!insertMarkType || text.length === 0) return null;
 
-  const insertAt = textInsertPos(state);
+  const insertAt = textInsertPos(state, from, to);
   if (insertAt == null) return null;
   const $at = state.doc.resolve(insertAt);
   if (!$at.parent.inlineContent) return null;
@@ -283,10 +323,13 @@ function trackChangesCaretInsertTransaction(
  *
  * Empty caret + `from < to`: Chrome often reports the previous insert-mark
  * span as the replacement range. Do **not** delete-mark that range (that is
- * what made every keystroke look like Backspace). Insert at the caret and
- * reuse the current insert-run attrs.
+ * what made every keystroke look like Backspace). Insert without deleting.
+ * If that range crosses a textblock (Enter then type), insert in the later
+ * paragraph so the new line is not joined back.
  *
- * Non-empty selection: real overtype — strikethrough the selection and insert.
+ * Non-empty selection with visible text: real overtype — strikethrough and
+ * insert. A selection that is only the Enter split (no visible text) is
+ * treated as a caret insert on the new line.
  */
 export function trackChangesTextInputTransaction(
   state: EditorState,
@@ -300,18 +343,27 @@ export function trackChangesTextInputTransaction(
   if (!state.selection.empty) {
     const replaceFrom = from < to ? from : state.selection.from;
     const replaceTo = from < to ? to : state.selection.to;
-    return trackChangesSelectionReplaceTransaction(
-      state,
-      replaceFrom,
-      replaceTo,
-      text,
-      authorId
+    const selectedText = state.doc.textBetween(
+      state.selection.from,
+      state.selection.to,
+      ""
     );
+    // Chrome often "selects" the Enter split (block gap / empty paragraph)
+    // with no visible text. That is not overtype — insert on the new line.
+    if (selectedText.length > 0) {
+      return trackChangesSelectionReplaceTransaction(
+        state,
+        replaceFrom,
+        replaceTo,
+        text,
+        authorId
+      );
+    }
   }
 
   if (from >= to) return null;
 
-  return trackChangesCaretInsertTransaction(state, text, authorId);
+  return trackChangesCaretInsertTransaction(state, text, authorId, from, to);
 }
 
 export function trackChangesSelectionReplaceTransaction(
@@ -327,7 +379,11 @@ export function trackChangesSelectionReplaceTransaction(
   const insertMarkType = state.schema.marks[suggestionInsertMarkName];
   if (!deleteMarkType || !insertMarkType) return null;
 
-  const insertAt = to;
+  const insertAt = inlinePosAt(state, to);
+  if (insertAt == null) return null;
+  const $at = state.doc.resolve(insertAt);
+  if (!$at.parent.inlineContent) return null;
+
   const insertEnd = insertAt + text.length;
   const tr = state.tr
     .addMark(from, to, deleteMarkType.create(pendingMarkAttrs(authorId)))
