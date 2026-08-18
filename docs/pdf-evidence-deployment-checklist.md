@@ -15,10 +15,11 @@ Each batch is classified before any model call, and the mode is logged as
   longer risk output truncation, because the model never transcribes them.
 - **`vision`** — at least one page has no usable text layer (scans). Document AI
   Enterprise OCR transcribes first when `DOCUMENT_AI_PROCESSOR_ID` is set
-  (`recovery: ocr-document-ai`). Weak or failed OCR pages still go to Gemini
-  vision, then rotate/tiles. A batch that still cannot produce a page records a
-  **page-gap** placeholder and the rest of the file continues. The attachment
-  becomes `ready` with a warning rather than failing the whole file.
+  (`recovery: ocr-document-ai`), in 15-page chunks with up to 3 in flight.
+  Weak or failed OCR pages still go to Gemini vision, then rotate/tiles. A batch
+  that still cannot produce a page records a **page-gap** placeholder and the
+  rest of the file continues. The attachment becomes `ready` with a warning
+  rather than failing the whole file.
 
 ## Infrastructure
 

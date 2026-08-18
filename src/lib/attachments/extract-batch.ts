@@ -14,6 +14,7 @@ import {
 import { isWeakOcrTranscript } from "@/lib/attachments/ocr-quality";
 import {
   copyPdfPage,
+  copyPdfPages,
   splitPageIntoTiles,
   splitPdfIntoBatches,
   uprightRotatePage,
@@ -279,6 +280,130 @@ async function extractFromTextLayer(
 }
 
 async function extractMixedPages(
+  input: ResolvedInput,
+  textLayer: PdfTextLayer
+): Promise<ExtractBatchResult> {
+  if (isDocumentAiConfigured()) {
+    return extractMixedPagesWithDocumentAi(input, textLayer);
+  }
+  return extractMixedPagesPerPage(input, textLayer);
+}
+
+/**
+ * OCR every scan page in this buffer in one Document AI call. Born-digital
+ * pages keep the text layer. Gemini runs only on weak OCR pages.
+ */
+async function extractMixedPagesWithDocumentAi(
+  input: ResolvedInput,
+  textLayer: PdfTextLayer
+): Promise<ExtractBatchResult> {
+  const expectedCount = input.pageEnd - input.pageStart + 1;
+  const scanRelativePages: number[] = [];
+  for (let offset = 0; offset < expectedCount; offset += 1) {
+    const absolutePage = input.pageStart + offset;
+    const layerPage = textLayer.pages.find(
+      (page) => page.pageNumber === absolutePage
+    );
+    if (!layerPage || layerPage.text.length < MIN_TEXT_LAYER_CHARS) {
+      scanRelativePages.push(offset + 1);
+    }
+  }
+
+  if (scanRelativePages.length === 0) {
+    return extractFromTextLayer(input, textLayer);
+  }
+  if (scanRelativePages.length === expectedCount) {
+    return extractScannedPages(input);
+  }
+
+  const ocrByAbsolutePage = new Map<
+    number,
+    { transcript: string; confidence: number | null }
+  >();
+  try {
+    const scanBuffer = await copyPdfPages(input.pdfBuffer, scanRelativePages);
+    const ocr = await ocrPdfWithDocumentAi({
+      pdfBuffer: scanBuffer,
+      filename: input.filename,
+    });
+    for (const ocrPage of ocr.pages) {
+      const relative = scanRelativePages[ocrPage.pageNumber - 1];
+      if (relative == null) continue;
+      ocrByAbsolutePage.set(input.pageStart + relative - 1, ocrPage);
+    }
+  } catch (error) {
+    console.warn(
+      `[document-extract] Document AI OCR failed for mixed pages ${input.pageStart}-${input.pageEnd}; extracting per page`,
+      { error: error instanceof Error ? error.message : String(error) }
+    );
+    return extractMixedPagesPerPage(input, textLayer);
+  }
+
+  const pages: ExtractedPage[] = [];
+  let recovery: ExtractRecovery = "ocr-document-ai";
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let lastFinishReason: string | undefined;
+
+  for (let offset = 0; offset < expectedCount; offset += 1) {
+    const absolutePage = input.pageStart + offset;
+    const layerPage = textLayer.pages.find(
+      (page) => page.pageNumber === absolutePage
+    );
+    if (layerPage && layerPage.text.length >= MIN_TEXT_LAYER_CHARS) {
+      pages.push({
+        pageNumber: absolutePage,
+        transcript: layerPage.text,
+        visualInterpretation: "",
+        pageContext: "",
+        printedPageLabel: null,
+        confidence: null,
+      });
+      continue;
+    }
+
+    const ocrPage = ocrByAbsolutePage.get(absolutePage);
+    if (
+      ocrPage &&
+      !isWeakOcrTranscript(ocrPage.transcript, ocrPage.confidence)
+    ) {
+      pages.push({
+        pageNumber: absolutePage,
+        transcript: ocrPage.transcript,
+        visualInterpretation: "",
+        pageContext: "",
+        printedPageLabel: null,
+        confidence: ocrPage.confidence,
+      });
+      continue;
+    }
+
+    const pageBuffer = await copyPdfPage(input.pdfBuffer, offset + 1);
+    const vision = await extractWithVision({
+      ...input,
+      pdfBuffer: pageBuffer,
+      pageStart: absolutePage,
+      pageEnd: absolutePage,
+    });
+    pages.push(...vision.pages);
+    recovery = worseRecovery(recovery, vision.recovery);
+    lastFinishReason = vision.finishReason;
+    inputTokens += vision.usage?.inputTokens ?? 0;
+    outputTokens += vision.usage?.outputTokens ?? 0;
+  }
+
+  return {
+    pages,
+    batchSummary: synthesizeBatchSummary(pages),
+    continuationNote: pages.at(-1)?.pageContext ?? "",
+    mode: "vision",
+    recovery,
+    finishReason: lastFinishReason,
+    usage: { inputTokens, outputTokens },
+  };
+}
+
+async function extractMixedPagesPerPage(
   input: ResolvedInput,
   textLayer: PdfTextLayer
 ): Promise<ExtractBatchResult> {

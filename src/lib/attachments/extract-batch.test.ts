@@ -587,6 +587,34 @@ describe("extractPdfBatch with a text layer", () => {
     expect(result.pages[2]?.transcript).toContain("gamma line 0");
   });
 
+  it("OCRs only the scan pages in a mixed batch", async () => {
+    isDocumentAiConfiguredMock.mockReturnValue(true);
+    const transcript =
+      "SW-PA-1 Pattern requirement Pass Fail measured pulse width ".repeat(8);
+    ocrPdfWithDocumentAiMock.mockResolvedValueOnce({
+      pages: [{ pageNumber: 1, transcript, confidence: 0.91 }],
+      elapsedMs: 20,
+      chunks: [],
+    });
+
+    const result = await extractPdfBatch({
+      pdfBuffer: await pdfWithMixedTextPages(),
+      pageStart: 1,
+      pageEnd: 3,
+      filename: "evidence.pdf",
+      modelId: "stub",
+      model: stubModel(),
+    });
+
+    expect(ocrPdfWithDocumentAiMock).toHaveBeenCalledTimes(1);
+    expect(result.recovery).toBe("ocr-document-ai");
+    expect(result.pages.map((page) => page.pageNumber)).toEqual([1, 2, 3]);
+    expect(result.pages[0]?.transcript).toContain("alpha line 0");
+    expect(result.pages[1]?.transcript).toBe(transcript);
+    expect(result.pages[2]?.transcript).toContain("gamma line 0");
+    expect(generateTextMock).not.toHaveBeenCalled();
+  });
+
   it("uses Document AI transcripts for scans when the processor is configured", async () => {
     isDocumentAiConfiguredMock.mockReturnValue(true);
     const transcript =

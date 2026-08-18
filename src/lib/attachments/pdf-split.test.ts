@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   copyPdfPage,
   copyPdfPageRange,
+  copyPdfPages,
   splitPageIntoTiles,
   splitPdfByPageCount,
   splitPdfIntoBatches,
@@ -42,6 +43,32 @@ describe("splitPdfIntoBatches", () => {
     expect(result.batches).toHaveLength(3);
     expect(result.batches.map((batch) => batch.pageStart)).toEqual([1, 2, 3]);
     expect(result.batches.map((batch) => batch.pageEnd)).toEqual([1, 2, 3]);
+  });
+
+  it("honors an explicit Document AI 15-page cap", async () => {
+    const result = await splitPdfIntoBatches(await pdfWithPages(32), {
+      preferredPagesPerBatch: 15,
+      maxPagesPerBatch: 15,
+    });
+
+    expect(
+      result.batches.map((batch) => ({
+        pageStart: batch.pageStart,
+        pageEnd: batch.pageEnd,
+      }))
+    ).toEqual([
+      { pageStart: 1, pageEnd: 15 },
+      { pageStart: 16, pageEnd: 30 },
+      { pageStart: 31, pageEnd: 32 },
+    ]);
+  });
+});
+
+describe("copyPdfPages", () => {
+  it("copies non-contiguous pages in the given order", async () => {
+    const copied = await copyPdfPages(await pdfWithPages(5), [2, 5]);
+    const document = await PDFDocument.load(copied);
+    expect(document.getPageCount()).toBe(2);
   });
 });
 

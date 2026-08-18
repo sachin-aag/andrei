@@ -70,14 +70,16 @@ Ingest **run** statuses (separate table): `pending` → `running` → `ready` | 
 
 ## PDF path
 
-Batches of ~3 pages (max 5, or smaller if the slice exceeds ~18 MB). Each batch is a temp PDF, then extract (text layer, Document AI OCR, or Gemini vision). Previous batch `batchSummary` / `continuationNote` are passed forward.
+Born-digital PDFs stay on ~3-page sequential batches (max 5, or smaller if the slice exceeds ~18 MB) so Gemini can add visual context with carry-forward notes.
+
+Scans and mixed PDFs with Document AI configured split into **15-page** batches (or smaller if a slice exceeds 40 MB). Ingest processes up to **3 of those batches in parallel**. Gemini vision still runs only on weak OCR pages, one page at a time. Previous batch `batchSummary` / `continuationNote` are passed forward on the sequential (born-digital) path only.
 
 ```mermaid
 flowchart TD
   A["Read permanent PDF"] --> B["splitPdfIntoBatches"]
   B --> C["Write temp batch objects<br/>document_ingest_batches pending"]
-  C --> D["For each batch"]
-  D --> E["assertAttachmentCurrent"]
+  C --> D["Pending batches"]
+  D --> E["Waves of 3 for OCR batches,<br/>else one batch at a time"]
   E --> F["extractPdfBatch"]
   F --> G["Upsert document_pages<br/>for that page range"]
   G --> H["Batch ready + progress 10→80"]
@@ -91,14 +93,14 @@ flowchart TD
 
 ### Extract modes and recovery
 
-Born-digital pages use the PDF text layer as the transcript. Scans go through Document AI Enterprise OCR when `DOCUMENT_AI_PROCESSOR_ID` is set; weak or failed OCR pages fall back to Gemini vision (rotate/tiles). Mixed PDFs are handled page-by-page.
+Born-digital pages use the PDF text layer as the transcript. Scans go through Document AI Enterprise OCR when `DOCUMENT_AI_PROCESSOR_ID` is set; weak or failed OCR pages fall back to Gemini vision (rotate/tiles). Mixed PDFs OCR the scan pages in one request and keep the text layer for born-digital pages.
 
 ```mermaid
 flowchart TD
   A["extractPdfBatch"] --> B{"Text layer readable<br/>for every page in batch?"}
   B -->|all pages have text| C["text-layer mode"]
   B -->|no usable text| D["scan path"]
-  B -->|some pages only| E["mixed: one page at a time"]
+  B -->|some pages only| E["mixed: OCR scans together"]
 
   C --> F["Parser supplies transcript"]
   F --> G["Vertex insight pass<br/>visuals, pageContext, summary"]

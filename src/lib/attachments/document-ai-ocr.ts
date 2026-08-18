@@ -7,6 +7,8 @@ import {
 
 export const DOCUMENT_AI_ONLINE_PAGE_LIMIT = 15;
 export const DOCUMENT_AI_IMAGELESS_PAGE_LIMIT = 30;
+export const DOCUMENT_AI_OCR_CONCURRENCY = 3;
+export const DOCUMENT_AI_MAX_ONLINE_BYTES = 40 * 1024 * 1024;
 
 export type DocumentAiOcrAttempt = {
   id: string;
@@ -168,7 +170,7 @@ export async function ocrPdfWithDocumentAi(input: {
   const timings: DocumentAiChunkTiming[] = [];
   const pages: DocumentAiOcrPage[] = [];
 
-  const concurrency = 3;
+  const concurrency = DOCUMENT_AI_OCR_CONCURRENCY;
   for (let index = 0; index < chunks.length; index += concurrency) {
     const slice = chunks.slice(index, index + concurrency);
     const results = await Promise.all(

@@ -11,16 +11,22 @@ import {
   type AttachmentIngestRunStatus,
 } from "@/db/schema";
 import { chunkDocumentPages } from "@/lib/attachments/chunk-pages";
-import {
-  DEFAULT_DOCUMENT_EMBEDDING_MODEL_ID,
-  embedDocumentChunks,
-} from "@/lib/attachments/embed-chunks";
 import { describeDocxImages } from "@/lib/attachments/describe-docx-images";
+import {
+  DOCUMENT_AI_MAX_ONLINE_BYTES,
+  DOCUMENT_AI_OCR_CONCURRENCY,
+  DOCUMENT_AI_ONLINE_PAGE_LIMIT,
+  isDocumentAiConfigured,
+} from "@/lib/attachments/document-ai-ocr";
 import {
   assignDocxImagesToPages,
   extractDocxEmbeddedImages,
   formatDocxPageVisualInterpretation,
 } from "@/lib/attachments/docx-images";
+import {
+  DEFAULT_DOCUMENT_EMBEDDING_MODEL_ID,
+  embedDocumentChunks,
+} from "@/lib/attachments/embed-chunks";
 import {
   DEFAULT_DOCUMENT_EXTRACT_MODEL_ID,
   DOCUMENT_EXTRACT_PROMPT_VERSION,
@@ -39,7 +45,14 @@ import {
   isRuntimeTimeoutError,
   sanitizeIngestError,
 } from "@/lib/attachments/ingest-errors";
-import { splitPdfIntoBatches } from "@/lib/attachments/pdf-split";
+import {
+  MAX_PDF_BATCH_PAGES,
+  splitPdfIntoBatches,
+} from "@/lib/attachments/pdf-split";
+import {
+  classifyPdfExtractLayout,
+  readPdfTextLayer,
+} from "@/lib/attachments/pdf-text-layer";
 import { getAttachmentStorage, tempBatchObjectKey } from "@/lib/storage/attachments";
 
 export { sanitizeIngestError } from "@/lib/attachments/ingest-errors";
@@ -226,7 +239,7 @@ async function initializeIngestRun(
   };
 }
 
-/** PDF path: split into batches, Gemini-vision extract each, then chunk+embed. */
+/** PDF path: split into batches, extract each, then chunk+embed. */
 async function runPdfIngest(init: IngestInit): Promise<void> {
   await assertAttachmentCurrent(init);
   const existingBatches = await listBatches(init.runId);
@@ -236,15 +249,19 @@ async function runPdfIngest(init: IngestInit): Promise<void> {
   const batches = await listBatches(init.runId);
   const sliceStartedAt = Date.now();
 
-  for (const batch of batches) {
-    if (batch.status === "ready") continue;
-    if (shouldYieldIngestSlice(sliceStartedAt)) {
-      throw new IngestNeedsContinuationError();
+  if (usesParallelOcrBatches(batches)) {
+    await processPdfBatchesInWaves(init, sliceStartedAt);
+  } else {
+    for (const batch of batches) {
+      if (batch.status === "ready") continue;
+      if (shouldYieldIngestSlice(sliceStartedAt)) {
+        throw new IngestNeedsContinuationError();
+      }
+      await assertAttachmentCurrent(init);
+      await heartbeatIngestRun(init.runId, init.attachmentId, batch.pageStart);
+      await processBatch(batch.id);
+      await updateBatchProgress(init.runId, init.attachmentId);
     }
-    await assertAttachmentCurrent(init);
-    await heartbeatIngestRun(init.runId, init.attachmentId, batch.pageStart);
-    await processBatch(batch.id);
-    await updateBatchProgress(init.runId, init.attachmentId);
   }
 
   await assertAttachmentCurrent(init);
@@ -401,7 +418,7 @@ async function splitAndPersistBatches(input: IngestInit): Promise<{
 }> {
   const storage = getAttachmentStorage();
   const sourceBuffer = await storage.readObjectBuffer(input.sourceObjectKey);
-  const split = await splitPdfIntoBatches(sourceBuffer);
+  const split = await splitPdfForIngest(sourceBuffer);
 
   for (const batch of split.batches) {
     const objectKey = tempBatchObjectKey(
@@ -454,17 +471,62 @@ async function splitAndPersistBatches(input: IngestInit): Promise<{
 }
 
 async function listBatches(runId: string): Promise<
-  Array<{ id: string; pageStart: number; status: string }>
+  Array<{ id: string; pageStart: number; pageEnd: number; status: string }>
 > {
   return db
     .select({
       id: documentIngestBatches.id,
       pageStart: documentIngestBatches.pageStart,
+      pageEnd: documentIngestBatches.pageEnd,
       status: documentIngestBatches.status,
     })
     .from(documentIngestBatches)
     .where(eq(documentIngestBatches.ingestRunId, runId))
     .orderBy(asc(documentIngestBatches.batchIndex));
+}
+
+async function splitPdfForIngest(sourceBuffer: Buffer) {
+  if (!isDocumentAiConfigured()) {
+    return splitPdfIntoBatches(sourceBuffer);
+  }
+  const layout = classifyPdfExtractLayout(await readPdfTextLayer(sourceBuffer));
+  if (layout === "text-layer") {
+    return splitPdfIntoBatches(sourceBuffer);
+  }
+  return splitPdfIntoBatches(sourceBuffer, {
+    preferredPagesPerBatch: DOCUMENT_AI_ONLINE_PAGE_LIMIT,
+    maxPagesPerBatch: DOCUMENT_AI_ONLINE_PAGE_LIMIT,
+    maxBatchBytes: DOCUMENT_AI_MAX_ONLINE_BYTES,
+  });
+}
+
+function usesParallelOcrBatches(
+  batches: Array<{ pageStart: number; pageEnd: number }>
+): boolean {
+  return batches.some(
+    (batch) => batch.pageEnd - batch.pageStart + 1 > MAX_PDF_BATCH_PAGES
+  );
+}
+
+async function processPdfBatchesInWaves(
+  init: IngestInit,
+  sliceStartedAt: number
+): Promise<void> {
+  for (;;) {
+    const batches = await listBatches(init.runId);
+    const pending = batches.filter((batch) => batch.status !== "ready");
+    if (pending.length === 0) return;
+    if (shouldYieldIngestSlice(sliceStartedAt)) {
+      throw new IngestNeedsContinuationError();
+    }
+    const wave = pending.slice(0, DOCUMENT_AI_OCR_CONCURRENCY);
+    const first = wave[0];
+    if (!first) return;
+    await assertAttachmentCurrent(init);
+    await heartbeatIngestRun(init.runId, init.attachmentId, first.pageStart);
+    await Promise.all(wave.map((batch) => processBatch(batch.id)));
+    await updateBatchProgress(init.runId, init.attachmentId);
+  }
 }
 
 function ingestSliceBudgetMs(): number {

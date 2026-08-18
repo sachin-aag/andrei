@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { PDFDocument, StandardFonts } from "pdf-lib";
 import { describe, expect, it } from "vitest";
-import { readPdfTextLayer } from "./pdf-text-layer";
+import { classifyPdfExtractLayout, readPdfTextLayer } from "./pdf-text-layer";
 
 const SCAN_FIXTURE_PATH = path.join(
   process.cwd(),
@@ -62,5 +62,21 @@ describe("readPdfTextLayer", () => {
 
     expect(layer.pages).toHaveLength(74);
     expect(layer.usable).toBe(false);
+  });
+});
+
+describe("classifyPdfExtractLayout", () => {
+  it("labels born-digital, scans, and mixed files", async () => {
+    const text = await readPdfTextLayer(
+      await pdfWithText([longBody("alpha"), longBody("beta")])
+    );
+    const mixed = await readPdfTextLayer(
+      await pdfWithText([longBody("alpha"), ""])
+    );
+    const scan = await readPdfTextLayer(readFileSync(SCAN_FIXTURE_PATH));
+
+    expect(classifyPdfExtractLayout(text)).toBe("text-layer");
+    expect(classifyPdfExtractLayout(mixed)).toBe("mixed");
+    expect(classifyPdfExtractLayout(scan)).toBe("scan");
   });
 });

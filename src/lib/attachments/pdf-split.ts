@@ -26,15 +26,14 @@ export async function splitPdfIntoBatches(
 ): Promise<SplitPdfResult> {
   const source = await PDFDocument.load(sourceBuffer);
   const pageCount = source.getPageCount();
+  const maxPagesPerBatch = Math.max(
+    1,
+    Math.floor(options.maxPagesPerBatch ?? MAX_PDF_BATCH_PAGES)
+  );
   const preferredPagesPerBatch = clampInteger(
     options.preferredPagesPerBatch ?? DEFAULT_PDF_BATCH_PAGES,
     1,
-    options.maxPagesPerBatch ?? MAX_PDF_BATCH_PAGES
-  );
-  const maxPagesPerBatch = clampInteger(
-    options.maxPagesPerBatch ?? MAX_PDF_BATCH_PAGES,
-    1,
-    MAX_PDF_BATCH_PAGES
+    maxPagesPerBatch
   );
   const maxBatchBytes = options.maxBatchBytes ?? DEFAULT_MAX_BATCH_BYTES;
 
@@ -65,6 +64,35 @@ export async function splitPdfIntoBatches(
   }
 
   return { pageCount, batches };
+}
+
+/**
+ * Copy 1-based page numbers in order (not necessarily contiguous).
+ * Used to OCR only scan pages inside a mixed batch.
+ */
+export async function copyPdfPages(
+  sourceBuffer: Buffer,
+  pageNumbers: number[]
+): Promise<Buffer> {
+  if (pageNumbers.length === 0) {
+    throw new Error("copyPdfPages needs at least one page");
+  }
+  const source = await PDFDocument.load(sourceBuffer);
+  const total = source.getPageCount();
+  const indices = pageNumbers.map((pageNumber) => {
+    if (!Number.isInteger(pageNumber) || pageNumber < 1 || pageNumber > total) {
+      throw new Error(
+        `Page ${pageNumber} is out of range for a ${total}-page PDF`
+      );
+    }
+    return pageNumber - 1;
+  });
+  const output = await PDFDocument.create();
+  const copiedPages = await output.copyPages(source, indices);
+  for (const page of copiedPages) {
+    output.addPage(page);
+  }
+  return Buffer.from(await output.save());
 }
 
 /** 1-based page number → a single-page PDF. */
