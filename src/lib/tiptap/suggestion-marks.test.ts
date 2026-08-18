@@ -4,11 +4,10 @@ import { EditorState, TextSelection } from "@tiptap/pm/state";
 import { ReplaceStep } from "@tiptap/pm/transform";
 import {
   continuingInsertAttrs,
-  replaceSliceContainsText,
+  sliceHasText,
   suggestionDeleteMarkName,
   suggestionInsertMarkName,
   stripSuggestionMarksFromSlice,
-  textInsertPos,
   trackChangesSelectionReplaceTransaction,
   trackChangesTextInputTransaction,
 } from "@/lib/tiptap/suggestion-marks";
@@ -108,42 +107,18 @@ function helloThenEmpty() {
   ]);
 }
 
-describe("textInsertPos", () => {
-  it("keeps a caret that is already inside a paragraph", () => {
-    const doc = helloThenEmpty();
-    const state = EditorState.create({
-      doc,
-      selection: TextSelection.create(doc, 8),
-    });
-    expect(textInsertPos(state)).toBe(8);
-  });
+function typedDoc(
+  state: EditorState,
+  from: number,
+  to: number,
+  text = "a"
+) {
+  const tr = trackChangesTextInputTransaction(state, from, to, text, "user-1");
+  expect(tr).not.toBeNull();
+  return state.apply(tr!);
+}
 
-  it("snaps a block-gap caret into the following paragraph", () => {
-    const doc = helloThenEmpty();
-    const gap = doc.firstChild!.nodeSize;
-    const inside = EditorState.create({
-      doc,
-      selection: TextSelection.create(doc, gap + 1),
-    });
-    const atGap = inside.apply(
-      inside.tr.setSelection(TextSelection.create(doc, gap))
-    );
-    expect(atGap.selection.$from.parent.inlineContent).toBe(false);
-    expect(textInsertPos(atGap)).toBe(gap + 1);
-  });
-
-  it("prefers the later paragraph when Chrome's range crosses the Enter split", () => {
-    const doc = helloThenEmpty();
-    const state = EditorState.create({
-      doc,
-      selection: TextSelection.create(doc, 6),
-    });
-    expect(textInsertPos(state, 6, 8)).toBe(8);
-    expect(textInsertPos(state, 6, 9)).toBe(8);
-  });
-});
-
-describe("replaceSliceContainsText", () => {
+describe("sliceHasText", () => {
   it("is false for splitBlock / Enter", () => {
     const doc = schema.node("doc", null, [
       schema.node("paragraph", null, [schema.text("hello")]),
@@ -154,12 +129,12 @@ describe("replaceSliceContainsText", () => {
     });
     const step = state.tr.split(6).steps[0];
     expect(step).toBeInstanceOf(ReplaceStep);
-    expect(replaceSliceContainsText((step as ReplaceStep).slice)).toBe(false);
+    expect(sliceHasText((step as ReplaceStep).slice)).toBe(false);
   });
 
   it("is true for an inserted character", () => {
     const slice = new Slice(Fragment.from(schema.text("e")), 0, 0);
-    expect(replaceSliceContainsText(slice)).toBe(true);
+    expect(sliceHasText(slice)).toBe(true);
   });
 });
 
@@ -173,9 +148,7 @@ describe("trackChangesTextInputTransaction", () => {
       selection: TextSelection.create(doc, 2),
     });
 
-    const tr = trackChangesTextInputTransaction(state, 1, 2, "e", "user-1");
-    expect(tr).not.toBeNull();
-    const next = state.apply(tr!);
+    const next = typedDoc(state, 1, 2, "e");
     expect(next.doc.textBetween(0, next.doc.content.size, " ")).toBe("he");
 
     const rows = textMarkNames(next.doc.firstChild!);
@@ -186,71 +159,39 @@ describe("trackChangesTextInputTransaction", () => {
     expect(rows.every((row) => row.insertId === "run-1")).toBe(true);
   });
 
-  it("does not join paragraphs when Chrome reports a range across an Enter split", () => {
+  it.each([
+    {
+      name: "the caret is in the new paragraph",
+      selection: (doc: ReturnType<typeof helloThenEmpty>) =>
+        TextSelection.create(doc, 8),
+      from: 6,
+      to: 8,
+    },
+    {
+      name: "the caret is still in the previous paragraph",
+      selection: (doc: ReturnType<typeof helloThenEmpty>) =>
+        TextSelection.create(doc, 6),
+      from: 6,
+      to: 8,
+    },
+    {
+      name: "the caret is on the block gap",
+      selection: (doc: ReturnType<typeof helloThenEmpty>) =>
+        TextSelection.create(doc, 7),
+      from: 6,
+      to: 8,
+    },
+    {
+      name: "Chrome selected the empty Enter split",
+      selection: (doc: ReturnType<typeof helloThenEmpty>) =>
+        TextSelection.create(doc, 6, 9),
+      from: 6,
+      to: 9,
+    },
+  ])("types into the new line when $name", ({ selection, from, to }) => {
     const doc = helloThenEmpty();
-    const state = EditorState.create({
-      doc,
-      selection: TextSelection.create(doc, 8),
-    });
-
-    const tr = trackChangesTextInputTransaction(state, 6, 8, "a", "user-1");
-    expect(tr).not.toBeNull();
-    const next = state.apply(tr!);
-    expect(next.doc.childCount).toBe(2);
-    expect(next.doc.textBetween(0, next.doc.content.size, "|")).toBe("hello|a");
-    expect(next.selection.$from.parent.inlineContent).toBe(true);
-  });
-
-  it("types into the new paragraph when the caret is on the block gap", () => {
-    const doc = helloThenEmpty();
-    const gap = doc.firstChild!.nodeSize;
-    const inside = EditorState.create({
-      doc,
-      selection: TextSelection.create(doc, gap + 1),
-    });
-    const atGap = inside.apply(
-      inside.tr.setSelection(TextSelection.create(doc, gap))
-    );
-
-    const tr = trackChangesTextInputTransaction(
-      atGap,
-      gap - 1,
-      gap + 1,
-      "a",
-      "user-1"
-    );
-    expect(tr).not.toBeNull();
-    const next = atGap.apply(tr!);
-    expect(next.doc.childCount).toBe(2);
-    expect(next.doc.textBetween(0, next.doc.content.size, "|")).toBe("hello|a");
-    expect(next.selection.$from.parent.inlineContent).toBe(true);
-  });
-
-  it("types into the new paragraph when the caret is still in the previous one", () => {
-    const doc = helloThenEmpty();
-    const state = EditorState.create({
-      doc,
-      selection: TextSelection.create(doc, 6),
-    });
-
-    const tr = trackChangesTextInputTransaction(state, 6, 8, "a", "user-1");
-    expect(tr).not.toBeNull();
-    const next = state.apply(tr!);
-    expect(next.doc.childCount).toBe(2);
-    expect(next.doc.textBetween(0, next.doc.content.size, "|")).toBe("hello|a");
-  });
-
-  it("types into the new paragraph when Chrome selects the empty Enter split", () => {
-    const doc = helloThenEmpty();
-    const state = EditorState.create({
-      doc,
-      selection: TextSelection.create(doc, 6, 9),
-    });
-    expect(state.doc.textBetween(6, 9)).toBe("");
-
-    const tr = trackChangesTextInputTransaction(state, 6, 9, "a", "user-1");
-    expect(tr).not.toBeNull();
-    const next = state.apply(tr!);
+    const state = EditorState.create({ doc, selection: selection(doc) });
+    const next = typedDoc(state, from, to);
     expect(next.doc.childCount).toBe(2);
     expect(next.doc.textBetween(0, next.doc.content.size, "|")).toBe("hello|a");
     expect(next.selection.$from.parent.inlineContent).toBe(true);
