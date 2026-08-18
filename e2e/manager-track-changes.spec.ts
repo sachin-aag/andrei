@@ -18,6 +18,20 @@ function improveSection(page: Page) {
   return page.locator("#improve");
 }
 
+async function expectTypedAsInsertNotDelete(
+  editor: ReturnType<Page["locator"]>,
+  mark: string
+) {
+  await expect
+    .poll(async () => {
+      const inserts = await editor.locator(".suggestion-insert").allTextContents();
+      return inserts.join("");
+    })
+    .toContain(mark);
+  const deletes = await editor.locator(".suggestion-delete").allTextContents();
+  expect(deletes.join("")).not.toContain(mark);
+}
+
 test.describe("manager track changes persist", () => {
   let reportId: string | null = null;
 
@@ -57,6 +71,7 @@ test.describe("manager track changes persist", () => {
     await expect(editor).toHaveAttribute("contenteditable", "true");
     await editor.click();
     await editor.pressSequentially(` ${mark}`);
+    await expectTypedAsInsertNotDelete(editor, mark);
     await expect(defineSection(page).getByText(/saved/i)).toBeVisible({
       timeout: 30_000,
     });
@@ -84,6 +99,7 @@ test.describe("manager track changes persist", () => {
     await expect(editor).toHaveAttribute("contenteditable", "true");
     await editor.click();
     await editor.pressSequentially(` ${mark}`);
+    await expectTypedAsInsertNotDelete(editor, mark);
     await expect(improveSection(page).getByText(/saved/i)).toBeVisible({
       timeout: 30_000,
     });

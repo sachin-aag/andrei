@@ -11,9 +11,16 @@ declare module "@tiptap/core" {
 import {
   Fragment,
   Slice,
+  type Mark as PMMark,
   type Node as PMNode,
 } from "@tiptap/pm/model";
-import { Plugin, PluginKey, TextSelection, type EditorState } from "@tiptap/pm/state";
+import {
+  Plugin,
+  PluginKey,
+  TextSelection,
+  type EditorState,
+  type Transaction,
+} from "@tiptap/pm/state";
 import { ReplaceStep } from "@tiptap/pm/transform";
 import { createId } from "@paralleldrive/cuid2";
 
@@ -150,6 +157,99 @@ function pendingMarkAttrs(authorId: string) {
   };
 }
 
+function isPendingInsertByAuthor(mark: PMMark, authorId: string): boolean {
+  if (mark.type.name !== suggestionInsertMarkName) return false;
+  return mark.attrs.status === "pending" && mark.attrs.authorId === authorId;
+}
+
+/**
+ * Keep consecutive keystrokes in one insert run. A new `id`/`createdAt` on every
+ * character prevents ProseMirror from merging inclusive insert marks, so Chrome
+ * wraps each letter in its own span and reports the next key as replacing that
+ * span (`handleTextInput` `from < to`).
+ */
+export function continuingInsertAttrs(
+  state: EditorState,
+  pos: number,
+  authorId: string
+) {
+  const stored = (state.storedMarks ?? []).find((mark) =>
+    isPendingInsertByAuthor(mark, authorId)
+  );
+  if (stored) return { ...stored.attrs };
+
+  const clamped = Math.max(0, Math.min(pos, state.doc.content.size));
+  const atPos = state.doc
+    .resolve(clamped)
+    .marks()
+    .find((mark) => isPendingInsertByAuthor(mark, authorId));
+  if (atPos) return { ...atPos.attrs };
+
+  return pendingMarkAttrs(authorId);
+}
+
+function trackChangesCaretInsertTransaction(
+  state: EditorState,
+  text: string,
+  authorId: string
+): Transaction | null {
+  const insertMarkType = state.schema.marks[suggestionInsertMarkName];
+  if (!insertMarkType || text.length === 0) return null;
+
+  const insertAt = state.selection.from;
+  const insertEnd = insertAt + text.length;
+  const tr = state.tr
+    .insertText(text, insertAt)
+    .addMark(
+      insertAt,
+      insertEnd,
+      insertMarkType.create(continuingInsertAttrs(state, insertAt, authorId))
+    )
+    .setMeta("skipTrackChanges", true);
+
+  tr.setSelection(TextSelection.create(tr.doc, insertEnd));
+  return tr;
+}
+
+/**
+ * `handleTextInput` replacement when Track changes is on.
+ *
+ * Empty caret + `from === to`: return null so the default insert runs;
+ * `appendTransaction` then marks the new text as insert.
+ *
+ * Empty caret + `from < to`: Chrome often reports the previous insert-mark
+ * span as the replacement range. Do **not** delete-mark that range (that is
+ * what made every keystroke look like Backspace). Insert at the caret and
+ * reuse the current insert-run attrs.
+ *
+ * Non-empty selection: real overtype — strikethrough the selection and insert.
+ */
+export function trackChangesTextInputTransaction(
+  state: EditorState,
+  from: number,
+  to: number,
+  text: string,
+  authorId: string
+): Transaction | null {
+  if (text.length === 0) return null;
+
+  if (!state.selection.empty) {
+    const replaceFrom = from < to ? from : state.selection.from;
+    const replaceTo = from < to ? to : state.selection.to;
+    return trackChangesSelectionReplaceTransaction(
+      state,
+      replaceFrom,
+      replaceTo,
+      text,
+      authorId
+    );
+  }
+
+  if (from >= to) return null;
+
+  return trackChangesCaretInsertTransaction(state, text, authorId);
+}
+
 export function trackChangesSelectionReplaceTransaction(
   state: EditorState,
   from: number,
@@ -168,7 +268,11 @@ export function trackChangesSelectionReplaceTransaction(
   const tr = state.tr
     .addMark(from, to, deleteMarkType.create(pendingMarkAttrs(authorId)))
     .insertText(text, insertAt, insertAt)
-    .addMark(insertAt, insertEnd, insertMarkType.create(pendingMarkAttrs(authorId)))
+    .addMark(
+      insertAt,
+      insertEnd,
+      insertMarkType.create(continuingInsertAttrs(state, insertAt, authorId))
+    )
     .setMeta("skipTrackChanges", true);
 
   tr.setSelection(TextSelection.create(tr.doc, insertEnd));
@@ -307,7 +411,7 @@ export const TrackChangesExtension = Extension.create({
           },
           handleTextInput(view, from, to, text) {
             if (editor.storage.trackChanges?.enabled !== true) return false;
-            const tr = trackChangesSelectionReplaceTransaction(
+            const tr = trackChangesTextInputTransaction(
               view.state,
               from,
               to,
@@ -331,7 +435,6 @@ export const TrackChangesExtension = Extension.create({
           if (transaction.getMeta("preventUpdate") === true) return null;
 
           const authorId = editor.storage.trackChanges?.authorId ?? "";
-          const attrs = () => pendingMarkAttrs(authorId);
           const fullContentReplace = (step: ReplaceStep) =>
             step.from === 0 && step.to === oldState.doc.content.size;
 
@@ -351,7 +454,13 @@ export const TrackChangesExtension = Extension.create({
             const end = start + slice.size;
             if (start >= end) continue;
 
-            tr = tr.addMark(start, end, insertMarkType.create(attrs()));
+            tr = tr.addMark(
+              start,
+              end,
+              insertMarkType.create(
+                continuingInsertAttrs(newState, start, authorId)
+              )
+            );
             changed = true;
           }
 

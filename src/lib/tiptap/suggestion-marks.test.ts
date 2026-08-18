@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { Fragment, Schema, Slice } from "@tiptap/pm/model";
+import { Fragment, Schema, Slice, type Node as PMNode } from "@tiptap/pm/model";
 import { EditorState, TextSelection } from "@tiptap/pm/state";
 import {
+  continuingInsertAttrs,
   suggestionDeleteMarkName,
   suggestionInsertMarkName,
   stripSuggestionMarksFromSlice,
   trackChangesSelectionReplaceTransaction,
+  trackChangesTextInputTransaction,
 } from "@/lib/tiptap/suggestion-marks";
 
 const schema = new Schema({
@@ -38,6 +40,136 @@ const schema = new Schema({
       toDOM: () => ["span", 0],
     },
   },
+});
+
+function insertMark(id: string, authorId = "user-1") {
+  return schema.marks[suggestionInsertMarkName]!.create({
+    id,
+    authorId,
+    status: "pending",
+    createdAt: "2026-01-01T00:00:00.000Z",
+  });
+}
+
+function textMarkNames(paragraph: PMNode) {
+  const rows: { text: string; marks: string[]; insertId?: string }[] = [];
+  paragraph.forEach((node) => {
+    if (!node.isText) return;
+    const insert = node.marks.find(
+      (mark) => mark.type.name === suggestionInsertMarkName
+    );
+    rows.push({
+      text: node.text ?? "",
+      marks: node.marks.map((mark) => mark.type.name),
+      insertId: insert ? String(insert.attrs.id) : undefined,
+    });
+  });
+  return rows;
+}
+
+describe("continuingInsertAttrs", () => {
+  it("reuses the pending insert mark at an empty caret after typed text", () => {
+    const doc = schema.node("doc", null, [
+      schema.node("paragraph", null, [schema.text("h", [insertMark("run-1")])]),
+    ]);
+    const state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, 2),
+    });
+
+    expect(continuingInsertAttrs(state, 2, "user-1").id).toBe("run-1");
+  });
+
+  it("starts a new insert run when the caret is not in pending insert text", () => {
+    const doc = schema.node("doc", null, [
+      schema.node("paragraph", null, [schema.text("hello")]),
+    ]);
+    const state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, 6),
+    });
+
+    const first = continuingInsertAttrs(state, 6, "user-1");
+    const second = continuingInsertAttrs(state, 6, "user-1");
+    expect(first.authorId).toBe("user-1");
+    expect(first.status).toBe("pending");
+    expect(first.id).not.toBe(second.id);
+  });
+});
+
+describe("trackChangesTextInputTransaction", () => {
+  it("does not strikethrough the previous letter when Chrome reports a span range", () => {
+    const doc = schema.node("doc", null, [
+      schema.node("paragraph", null, [schema.text("h", [insertMark("run-1")])]),
+    ]);
+    const state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, 2),
+    });
+
+    const tr = trackChangesTextInputTransaction(state, 1, 2, "e", "user-1");
+    expect(tr).not.toBeNull();
+    const next = state.apply(tr!);
+    expect(next.doc.textBetween(0, next.doc.content.size, " ")).toBe("he");
+
+    const rows = textMarkNames(next.doc.firstChild!);
+    expect(rows.every((row) => !row.marks.includes(suggestionDeleteMarkName))).toBe(
+      true
+    );
+    expect(rows.map((row) => row.text).join("")).toBe("he");
+    expect(rows.every((row) => row.insertId === "run-1")).toBe(true);
+  });
+
+  it("lets a true caret insert fall through to appendTransaction", () => {
+    const doc = schema.node("doc", null, [
+      schema.node("paragraph", null, [schema.text("ab")]),
+    ]);
+    const state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, 3),
+    });
+
+    expect(
+      trackChangesTextInputTransaction(state, 3, 3, "c", "user-1")
+    ).toBeNull();
+  });
+
+  it("still treats a real selection as delete-plus-insert", () => {
+    const doc = schema.node("doc", null, [
+      schema.node("paragraph", null, [schema.text("The original sentence.")]),
+    ]);
+    const from = 1 + "The ".length;
+    const to = from + "original".length;
+    const baseState = EditorState.create({ doc });
+    const state = baseState.apply(
+      baseState.tr.setSelection(TextSelection.create(doc, from, to))
+    );
+
+    const tr = trackChangesTextInputTransaction(
+      state,
+      from,
+      to,
+      "replacement",
+      "user-1"
+    );
+    expect(tr).not.toBeNull();
+    const next = state.apply(tr!);
+    const rows = textMarkNames(next.doc.firstChild!);
+    expect(
+      rows.some(
+        (row) =>
+          row.text === "original" &&
+          row.marks.includes(suggestionDeleteMarkName)
+      )
+    ).toBe(true);
+    expect(
+      rows.some(
+        (row) =>
+          row.text === "replacement" &&
+          row.marks.includes(suggestionInsertMarkName)
+      )
+    ).toBe(true);
+  });
 });
 
 describe("trackChangesSelectionReplaceTransaction", () => {

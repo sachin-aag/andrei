@@ -196,8 +196,8 @@ Specs run against Chromium, Firefox, and WebKit unless you pass `--project=chrom
 
 | Test | What it verifies |
 |------|------------------|
-| saves Define track-changes edits across reload | Review Define is editable; Saved; text survives reload |
-| saves Improve track-changes edits across reload | Improve is not locked in track changes; text survives reload |
+| saves Define track-changes edits across reload | Review Define is editable; typed text is insert (not strikethrough); Saved; text survives reload |
+| saves Improve track-changes edits across reload | Improve is not locked in track changes; typed text is insert (not strikethrough); text survives reload |
 
 </details>
 
