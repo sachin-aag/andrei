@@ -1,6 +1,7 @@
 "use client";
 
 import { memo, useEffect, useRef, useState, type RefObject } from "react";
+import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import { loadPdfjs } from "@/lib/attachments/load-pdfjs";
 import {
   pdfjsPreviewDocumentOptions,
@@ -12,14 +13,13 @@ import {
   PDF_PREVIEW_SCALE,
   type PdfPreviewTextSpan,
   type PdfTextContentItem,
-  type PdfTextContentStyle,
 } from "@/lib/attachments/pdf-preview-layout";
 
 type PreviewState =
   | { status: "loading" }
   | {
       status: "ready";
-      pdf: PdfDocumentProxy;
+      pdf: PDFDocumentProxy;
       numPages: number;
       pageWidth: number;
       pageHeight: number;
@@ -36,30 +36,7 @@ type PagePaintState =
     }
   | { status: "error" };
 
-type PdfTextContent = {
-  items: unknown[];
-  styles?: Record<string, PdfTextContentStyle | undefined>;
-};
-
-type PdfPageViewport = { width: number; height: number };
-
-type PdfPageProxy = {
-  getViewport: (params: { scale: number }) => PdfPageViewport;
-  getTextContent: () => Promise<PdfTextContent>;
-  render: (params: {
-    canvas: HTMLCanvasElement;
-    canvasContext: CanvasRenderingContext2D;
-    viewport: PdfPageViewport;
-  }) => { promise: Promise<void> };
-};
-
-type PdfDocumentProxy = {
-  numPages: number;
-  getPage: (pageNumber: number) => Promise<PdfPageProxy>;
-};
-
-type PdfLoadingTask = {
-  promise: Promise<PdfDocumentProxy>;
+type DestroyableTask = {
   destroy: () => Promise<void>;
 };
 
@@ -82,18 +59,25 @@ export function PdfPagePreview({
   title: string;
   onVisiblePageChange?: (page: number) => void;
 }) {
+  const contentUrl = contentUrlFromPreviewSrc(src);
   const [state, setState] = useState<PreviewState>({ status: "loading" });
+  const [loadedUrl, setLoadedUrl] = useState(contentUrl);
+  if (loadedUrl !== contentUrl) {
+    setLoadedUrl(contentUrl);
+    setState({ status: "loading" });
+  }
   const bytesCacheRef = useRef<{ url: string; data: Uint8Array } | null>(null);
   const onVisiblePageChangeRef = useRef(onVisiblePageChange);
-  onVisiblePageChangeRef.current = onVisiblePageChange;
-  const contentUrl = contentUrlFromPreviewSrc(src);
 
   useEffect(() => {
-    const session: { cancelled: boolean; task: PdfLoadingTask | null } = {
+    onVisiblePageChangeRef.current = onVisiblePageChange;
+  }, [onVisiblePageChange]);
+
+  useEffect(() => {
+    const session: { cancelled: boolean; task: DestroyableTask | null } = {
       cancelled: false,
       task: null,
     };
-    setState({ status: "loading" });
 
     void (async () => {
       try {
@@ -120,7 +104,7 @@ export function PdfPagePreview({
         const loadingTask = getDocument({
           data: data.slice(),
           ...pdfjsPreviewDocumentOptions(pdfjsVersion),
-        }) as PdfLoadingTask;
+        });
         session.task = loadingTask;
         const pdf = await loadingTask.promise;
         if (session.cancelled) return;
@@ -193,7 +177,7 @@ function PdfDocumentPages({
   initialPage,
   onVisiblePageChangeRef,
 }: {
-  pdf: PdfDocumentProxy;
+  pdf: PDFDocumentProxy;
   numPages: number;
   title: string;
   pageWidth: number;
@@ -319,7 +303,7 @@ const PdfPreviewPage = memo(function PdfPreviewPage({
   fallbackWidth,
   fallbackHeight,
 }: {
-  pdf: PdfDocumentProxy;
+  pdf: PDFDocumentProxy;
   pageNumber: number;
   title: string;
   shouldRender: boolean;
@@ -422,14 +406,14 @@ const PdfPreviewPage = memo(function PdfPreviewPage({
 });
 
 async function readPreviewTextSpans(
-  pdfPage: PdfPageProxy,
+  pdfPage: PDFPageProxy,
   scaledPageHeight: number
 ): Promise<PdfPreviewTextSpan[]> {
   try {
     const content = await pdfPage.getTextContent();
     const pageHeight = scaledPageHeight / PDF_PREVIEW_SCALE;
     return layoutPreviewTextSpans(
-      content.items.filter(isTextContentItem),
+      (content.items as readonly unknown[]).filter(isTextContentItem),
       content.styles ?? {},
       pageHeight,
       PDF_PREVIEW_SCALE

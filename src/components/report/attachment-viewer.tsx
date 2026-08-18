@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { ChevronLeft, Download, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,10 +22,12 @@ export function AttachmentViewer() {
   const { activeAttachment, activePage, closeDocument, reportId } =
     useReportAttachments();
   const [visiblePage, setVisiblePage] = useState(activePage);
-
-  useEffect(() => {
+  const pageSourceKey = `${activeAttachment?.id ?? ""}:${activePage}`;
+  const [seenPageSourceKey, setSeenPageSourceKey] = useState(pageSourceKey);
+  if (seenPageSourceKey !== pageSourceKey) {
+    setSeenPageSourceKey(pageSourceKey);
     setVisiblePage(activePage);
-  }, [activeAttachment?.id, activePage]);
+  }
 
   if (!activeAttachment) {
     return (
@@ -104,6 +106,7 @@ export function AttachmentViewer() {
             />
           ) : (
             <PdfPagePreview
+              key={activeAttachment.id}
               src={previewUrl}
               page={activePage}
               title={activeAttachment.filename}
