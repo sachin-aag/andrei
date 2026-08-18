@@ -187,18 +187,21 @@ describe("extractPdfBatch", () => {
     expect(result.pages[0]?.transcript).toBe("text-4");
   });
 
-  it("retries per page when a multi-page batch yields no usable output", async () => {
-    generateTextMock
-      .mockResolvedValueOnce(resultWithoutOutput("{truncated", "length"))
-      .mockResolvedValueOnce(
-        resultWithOutput(batchPayload([pagePayload(10)]), "stop")
-      )
-      .mockResolvedValueOnce(
-        resultWithOutput(batchPayload([pagePayload(11)]), "stop")
-      )
-      .mockResolvedValueOnce(
-        resultWithOutput(batchPayload([pagePayload(12)]), "stop")
-      );
+  it("tiles immediately when a multi-page batch overflows instead of retrying full pages", async () => {
+    generateTextMock.mockImplementation(async (args) => {
+      const text = userPrompt(args);
+      if (/Extract pages 10-12/.test(text)) {
+        return resultWithoutOutput("{truncated", "length");
+      }
+      const pageMatch = /half of page (\d+)/.exec(text);
+      if (pageMatch) {
+        return resultWithOutput(
+          batchPayload([pagePayload(Number(pageMatch[1]))]),
+          "stop"
+        );
+      }
+      return resultWithoutOutput("{truncated", "length");
+    });
 
     const result = await extractPdfBatch({
       pdfBuffer: await pdfWithPages(3),
@@ -209,9 +212,13 @@ describe("extractPdfBatch", () => {
       model: stubModel(),
     });
 
-    expect(result.recovery).toBe("per-page-retry");
+    expect(result.recovery).toBe("page-tiles");
     expect(result.pages.map((page) => page.pageNumber)).toEqual([10, 11, 12]);
-    expect(generateTextMock).toHaveBeenCalledTimes(4);
+    expect(
+      generateTextMock.mock.calls.some((call) =>
+        /Extract pages 10-10/.test(userPrompt(call[0]))
+      )
+    ).toBe(false);
   });
 
   it("returns gap pages instead of throwing when nothing is recoverable", async () => {
@@ -382,10 +389,10 @@ describe("extractPdfBatch", () => {
       if (/Extract pages 10-12/.test(text)) {
         return resultWithoutOutput("{truncated", "length");
       }
-      if (/Extract pages 10-10/.test(text) || /Transcribe page 10\b/.test(text)) {
+      if (text.includes("half of page 10")) {
         return resultWithOutput(batchPayload([pagePayload(10)]), "stop");
       }
-      if (/Extract pages 12-12/.test(text) || /Transcribe page 12\b/.test(text)) {
+      if (text.includes("half of page 12")) {
         return resultWithOutput(batchPayload([pagePayload(12)]), "stop");
       }
       return resultWithoutOutput("{truncated", "length");
@@ -403,8 +410,8 @@ describe("extractPdfBatch", () => {
     expect(result.pages.map((page) => page.pageNumber)).toEqual([10, 11, 12]);
     expect(result.recovery).toBe("page-gap");
     expect(isGapExtractedPage(result.pages[1]!)).toBe(true);
-    expect(result.pages[0]?.transcript).toBe("text-10");
-    expect(result.pages[2]?.transcript).toBe("text-12");
+    expect(result.pages[0]?.transcript).toContain("text-10");
+    expect(result.pages[2]?.transcript).toContain("text-12");
   });
 
   it("merges strip transcripts after rotating and tiling a missed page", async () => {
