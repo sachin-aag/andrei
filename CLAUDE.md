@@ -113,7 +113,7 @@ Owned by `getWorkspaceSections(documentType)` in `src/lib/document-types/`. The 
 
 ### Auth
 
-NextAuth v5 with Drizzle adapter. Credentials (email/password) and Resend (magic link). JWT-based sessions with `workspaceUserId` and `role`. Roles: `engineer`, `manager`, `admin`, `qa` (`src/lib/auth/roles.ts`, `userRoleEnum`). E2E/test seed accounts are created via `POST /api/test/seed-auth-users`; user helpers live in `src/lib/auth/` (`workspace-users.ts`, `user-directory.ts`).
+NextAuth v5 with Drizzle adapter. Credentials (email/password) is the primary sign-in UI; Resend magic link is a secondary option on `/login`. JWT-based sessions with `workspaceUserId` and `role`. Roles: `engineer`, `manager`, `admin`, `qa` (`src/lib/auth/roles.ts`, `userRoleEnum`). E2E/test seed accounts are created via `POST /api/test/seed-auth-users`; user helpers live in `src/lib/auth/` (`workspace-users.ts`, `user-directory.ts`).
 
 Password lifecycle is enforced beyond NextAuth: `mustChangePassword`/`passwordExpired` force a redirect to `/change-password` (via the proxy); configurable password policy in `passwordPolicySettings`; failed-login lockout with admin unlock at `POST /api/admin/users/[userId]/unlock`; self-service forgot/reset via `/forgot-password`, `/reset-password`, and `src/app/api/auth-pw/`. An optional site-wide password gate (`/unlock`, `POST /api/site-access`) is active only when `SITE_ACCESS_PASSWORD` is set.
 

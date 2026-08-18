@@ -120,6 +120,30 @@ test.describe("authentication", () => {
     await expect(page.getByRole("link", { name: /set up a password/i })).toBeVisible({
       timeout: 15_000,
     });
+    await expect(
+      page.getByRole("button", { name: /^email me a sign-in link$/i })
+    ).toBeVisible();
+  });
+
+  test("offers email sign-in link as a secondary option", async ({ page }, testInfo) => {
+    await page.goto("/login");
+    await expect(
+      page.getByText(/sign in with your work email and password/i)
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /email me a sign-in link instead/i })
+    ).toBeVisible();
+
+    const continueButton = await fillEmailAndWaitForContinue(
+      page,
+      scopedEmail("e2e.password@mjbiopharm.com", testInfo)
+    );
+    await continueButton.click();
+    await expect(page.getByLabel(/^password$/i)).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole("button", { name: /^sign in$/i })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: /^email me a sign-in link$/i })
+    ).toBeVisible();
   });
 
   test("redirects must-change-password users", async ({ page }, testInfo) => {

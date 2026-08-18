@@ -8,6 +8,8 @@ import { ArrowRight, Loader2, ChevronLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { MagicLinkSent } from "@/components/auth/magic-link-sent";
+import { sendMagicLinkEmail } from "@/components/auth/send-magic-link";
 import { captureEvent } from "@/lib/analytics/events";
 
 type EmailCheckResult =
@@ -17,12 +19,13 @@ type EmailCheckResult =
 type Step =
   | { kind: "email" }
   | { kind: "password"; email: string; locked: boolean }
-  | { kind: "no-password"; email: string };
+  | { kind: "no-password"; email: string }
+  | { kind: "magic-link-sent"; email: string };
 
 const EMAIL_CHECK_ERROR =
   "Could not check this email. Please try again or contact your admin.";
 const LOCKED_ACCOUNT_MESSAGE =
-  "This account is locked after too many failed password attempts. Please reset your password or contact your admin.";
+  "This account is locked after too many failed password attempts. Reset your password, request a sign-in link, or contact your admin.";
 
 async function readEmailCheckResult(res: Response): Promise<EmailCheckResult> {
   const data = await res.json().catch(() => null);
@@ -49,6 +52,18 @@ async function readEmailCheckResult(res: Response): Promise<EmailCheckResult> {
   };
 }
 
+async function checkRegisteredEmail(emailValue: string): Promise<EmailCheckResult> {
+  return fetch("/api/auth/check-email", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email: emailValue }),
+  })
+    .then(readEmailCheckResult)
+    .catch(
+      (): EmailCheckResult => ({ ok: false, error: EMAIL_CHECK_ERROR })
+    );
+}
+
 export function PasswordLoginForm({ redirectTo }: { redirectTo?: string }) {
   const router = useRouter();
   const [step, setStep] = useState<Step>({ kind: "email" });
@@ -71,15 +86,7 @@ export function PasswordLoginForm({ redirectTo }: { redirectTo?: string }) {
     if (!email.trim()) return;
     setError(null);
     startTransition(async () => {
-      const result = await fetch("/api/auth/check-email", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: email.trim() }),
-      })
-        .then(readEmailCheckResult)
-        .catch(
-          (): EmailCheckResult => ({ ok: false, error: EMAIL_CHECK_ERROR })
-        );
+      const result = await checkRegisteredEmail(email.trim());
       if (!result.ok) {
         setError(result.error);
         return;
@@ -101,6 +108,43 @@ export function PasswordLoginForm({ redirectTo }: { redirectTo?: string }) {
       } else {
         setStep({ kind: "no-password", email: trimmed });
       }
+    });
+  };
+
+  const sendMagicLink = (targetEmail: string) => {
+    setError(null);
+    startTransition(async () => {
+      const result = await sendMagicLinkEmail(targetEmail, redirectTo);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setStep({ kind: "magic-link-sent", email: targetEmail });
+    });
+  };
+
+  const sendMagicLinkFromEmailStep = () => {
+    if (!email.trim()) return;
+    setError(null);
+    startTransition(async () => {
+      const result = await checkRegisteredEmail(email.trim());
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      if (!result.allowed) {
+        setError(
+          "This email isn't registered. Please contact your admin to get access."
+        );
+        return;
+      }
+      const trimmed = email.trim();
+      const sent = await sendMagicLinkEmail(trimmed, redirectTo);
+      if (!sent.ok) {
+        setError(sent.error);
+        return;
+      }
+      setStep({ kind: "magic-link-sent", email: trimmed });
     });
   };
 
@@ -134,6 +178,25 @@ export function PasswordLoginForm({ redirectTo }: { redirectTo?: string }) {
     });
   };
 
+  if (step.kind === "magic-link-sent") {
+    return (
+      <MagicLinkSent email={step.email}>
+        <button
+          type="button"
+          className="text-sm text-[var(--brand-600)] hover:underline"
+          onClick={() => {
+            setStep({ kind: "email" });
+            setEmail("");
+            setPassword("");
+            setError(null);
+          }}
+        >
+          Use a different email
+        </button>
+      </MagicLinkSent>
+    );
+  }
+
   if (step.kind === "no-password") {
     return (
       <div className="space-y-4">
@@ -152,16 +215,28 @@ export function PasswordLoginForm({ redirectTo }: { redirectTo?: string }) {
         </div>
         <div className="rounded-lg border border-[var(--border)] p-4 space-y-3">
           <p className="text-sm">
-            No password is set for this account. Ask your admin for a temporary
-            password, or set one below if reset email delivery works for you.
+            No password is set for this account. Set one to sign in with a
+            password, or request a sign-in link by email.
           </p>
-          <Button type="button" className="w-full h-11" asChild>
-            <Link
-              href={`/forgot-password?email=${encodeURIComponent(step.email)}&setup=1`}
+          <div className="flex flex-col gap-2">
+            <Button type="button" className="w-full h-11" asChild>
+              <Link
+                href={`/forgot-password?email=${encodeURIComponent(step.email)}&setup=1`}
+              >
+                Set up a password
+              </Link>
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full h-11"
+              disabled={pending}
+              onClick={() => sendMagicLink(step.email)}
             >
-              Set up a password
-            </Link>
-          </Button>
+              {pending ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
+              Email me a sign-in link
+            </Button>
+          </div>
         </div>
       </div>
     );
@@ -224,12 +299,22 @@ export function PasswordLoginForm({ redirectTo }: { redirectTo?: string }) {
           )}
           Sign in
         </Button>
-        <Link
-          href={`/forgot-password?email=${encodeURIComponent(step.email)}`}
-          className="text-sm text-[var(--muted-foreground)] hover:underline"
-        >
-          Forgot password?
-        </Link>
+        <div className="flex items-center justify-between gap-3">
+          <Link
+            href={`/forgot-password?email=${encodeURIComponent(step.email)}`}
+            className="text-sm text-[var(--muted-foreground)] hover:underline"
+          >
+            Forgot password?
+          </Link>
+          <button
+            type="button"
+            className="text-sm text-[var(--brand-600)] hover:underline disabled:opacity-50"
+            disabled={pending}
+            onClick={() => sendMagicLink(step.email)}
+          >
+            Email me a sign-in link
+          </button>
+        </div>
       </div>
     );
   }
@@ -267,6 +352,14 @@ export function PasswordLoginForm({ redirectTo }: { redirectTo?: string }) {
         )}
         Continue
       </Button>
+      <button
+        type="button"
+        className="w-full text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:underline disabled:opacity-50"
+        disabled={!email.trim() || pending}
+        onClick={sendMagicLinkFromEmailStep}
+      >
+        Email me a sign-in link instead
+      </button>
     </div>
   );
 }
