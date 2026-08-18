@@ -90,6 +90,9 @@ docs/mj-onboarding-temporary-passwords.md
 # Local video analysis scratch (large media + generated reports)
 /04 Video analysis/
 
+# Local customer PDFs used for soak / manual ingest (do not commit)
+/Appendix B DV Report*.pdf
+
 # Large media artifacts (keep out of git)
 *.mp4
 *.mov

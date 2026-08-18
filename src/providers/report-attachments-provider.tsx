@@ -204,6 +204,7 @@ export function ReportAttachmentsProvider({
         pageCount: null,
         processingStatus: "uploading",
         processingProgress: 0,
+        processingPage: null,
         processingError: null,
         uploadedAt: new Date().toISOString(),
         deletedAt: null,

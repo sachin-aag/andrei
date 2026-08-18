@@ -10,7 +10,8 @@ function isPublicAuthRoute(path: string): boolean {
     path.startsWith("/api/auth/") ||
     path.startsWith("/api/auth-pw/forgot-password") ||
     path.startsWith("/api/auth-pw/reset-password") ||
-    path.startsWith("/api/test/")
+    path.startsWith("/api/test/") ||
+    path.startsWith("/api/internal/document-ingest/")
   );
 }
 

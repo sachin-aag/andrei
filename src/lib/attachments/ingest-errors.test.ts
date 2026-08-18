@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   canReprocessAttachment,
+  IngestNeedsContinuationError,
+  isRuntimeTimeoutError,
   sanitizeIngestError,
   shouldBackfillIngestFailure,
 } from "./ingest-errors";
@@ -51,6 +53,24 @@ describe("sanitizeIngestError", () => {
       "Document ingestion failed"
     );
     expect(sanitizeIngestError("nope")).toBe("Document ingestion failed");
+  });
+
+  it("sanitizes Vercel isolate timeouts", () => {
+    expect(
+      sanitizeIngestError(
+        new Error("Vercel Runtime Timeout Error: Task timed out after 300 seconds")
+      )
+    ).toBe(
+      "Document ingestion timed out while indexing. Reprocess the attachment to continue."
+    );
+    expect(
+      isRuntimeTimeoutError(
+        new Error("Vercel Runtime Timeout Error: Task timed out after 300 seconds")
+      )
+    ).toBe(true);
+    expect(isRuntimeTimeoutError(new IngestNeedsContinuationError())).toBe(
+      false
+    );
   });
 });
 

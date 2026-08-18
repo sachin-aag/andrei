@@ -32,6 +32,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { DocumentTreeFolder } from "@/lib/attachments/build-tree";
 import { ATTACHMENT_DESCRIPTION_MAX } from "@/lib/attachments/description";
+import { formatIngestPageLabel } from "@/lib/attachments/ingest-continue";
 import { canReprocessAttachment } from "@/lib/attachments/ingest-errors";
 import { useReportAttachments } from "@/providers/report-attachments-provider";
 import type { AttachmentProcessingStatus } from "@/db/schema";
@@ -362,8 +363,7 @@ function FileNode({
             <FileText
               className={cn(
                 "size-4 shrink-0",
-                attachment.processingStatus === "failed" ||
-                Boolean(attachment.processingError)
+                attachment.processingStatus === "failed"
                   ? "text-[var(--destructive)]"
                   : "text-[var(--muted-foreground)]"
               )}
@@ -428,13 +428,21 @@ function FileNode({
             />
           </div>
           <span className="text-[10px] uppercase tracking-wide text-[var(--muted-foreground)]">
-            {attachment.processingStatus}
+            {formatIngestPageLabel(attachment.processingPage) ??
+              attachment.processingStatus}
           </span>
         </div>
       ) : null}
 
       {attachment.processingError ? (
-        <p className="mt-1 pl-[18px] text-xs text-[var(--destructive)]">
+        <p
+          className={cn(
+            "mt-1 pl-[18px] text-xs",
+            attachment.processingStatus === "failed"
+              ? "text-[var(--destructive)]"
+              : "text-[var(--muted-foreground)]"
+          )}
+        >
           {attachment.processingError}
         </p>
       ) : null}

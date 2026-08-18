@@ -1,4 +1,9 @@
-import { runDocumentIngest } from "@/lib/attachments/run-document-ingest";
+import { MAX_INGEST_CONTINUATIONS } from "@/lib/attachments/ingest-continue";
+import {
+  failIngestIfStillRunning,
+  type IngestRunOutcome,
+  runDocumentIngest,
+} from "@/lib/attachments/run-document-ingest";
 
 /**
  * Durable Workflow entry (Vercel Queues). Prefer this in production when World
@@ -12,13 +17,30 @@ export async function documentIngestWorkflow(
   generation: string
 ): Promise<void> {
   "use workflow";
-  await documentIngestStep(attachmentId, generation);
+  let resume = false;
+  for (let slice = 0; slice < MAX_INGEST_CONTINUATIONS; slice += 1) {
+    const outcome = await documentIngestStep(attachmentId, generation, resume);
+    if (outcome !== "continue") return;
+    resume = true;
+  }
+  await documentIngestGiveUpStep(attachmentId);
 }
 
 async function documentIngestStep(
   attachmentId: string,
-  generation: string
-): Promise<void> {
+  generation: string,
+  resume: boolean
+): Promise<IngestRunOutcome> {
   "use step";
-  await runDocumentIngest(attachmentId, generation);
+  return runDocumentIngest(attachmentId, generation, { resume });
+}
+
+async function documentIngestGiveUpStep(attachmentId: string): Promise<void> {
+  "use step";
+  await failIngestIfStillRunning(
+    attachmentId,
+    new Error(
+      "Document ingestion could not finish within the time budget. Reprocess the attachment to try again."
+    )
+  );
 }

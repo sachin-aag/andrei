@@ -25,6 +25,9 @@ export function sanitizeIngestError(error: unknown): string {
   if (error.message.includes("deleted")) {
     return "Document ingestion was cancelled because the attachment was deleted";
   }
+  if (isRuntimeTimeoutError(error) || isIngestNeedsContinuation(error)) {
+    return "Document ingestion timed out while indexing. Reprocess the attachment to continue.";
+  }
   if (
     error.message.includes("PDF") ||
     error.message.includes("embedding") ||
@@ -33,6 +36,32 @@ export function sanitizeIngestError(error: unknown): string {
     return error.message.slice(0, 300);
   }
   return "Document ingestion failed";
+}
+
+export const INGEST_NEEDS_CONTINUATION = "INGEST_NEEDS_CONTINUATION";
+export const INGEST_BATCH_TIMEOUT_MARKER = "INGEST_BATCH_TIMEOUT";
+
+export class IngestNeedsContinuationError extends Error {
+  constructor() {
+    super(INGEST_NEEDS_CONTINUATION);
+    this.name = "IngestNeedsContinuationError";
+  }
+}
+
+export function isIngestNeedsContinuation(error: unknown): boolean {
+  return (
+    error instanceof IngestNeedsContinuationError ||
+    (error instanceof Error && error.message === INGEST_NEEDS_CONTINUATION)
+  );
+}
+
+export function isRuntimeTimeoutError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return (
+    error.name === "TimeoutError" ||
+    error.message.includes("Vercel Runtime Timeout") ||
+    error.message.includes("Task timed out after")
+  );
 }
 
 function isVertexModelNotFoundError(message: string): boolean {

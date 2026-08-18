@@ -319,13 +319,14 @@ describe("extractPdfBatch", () => {
     expect(result.recovery).toBe("per-page-retry");
   });
 
-  it("falls back to a transcript-only pass when a page overflows the schema", async () => {
+  it("falls back to a transcript-only pass when a page is empty without overflowing", async () => {
     generateTextMock
-      .mockResolvedValueOnce(resultWithoutOutput("{truncated", "length"))
-      .mockResolvedValueOnce(resultWithoutOutput("{truncated", "length"))
+      .mockResolvedValueOnce(resultWithoutOutput("", "stop"))
+      .mockResolvedValueOnce(resultWithoutOutput("", "stop"))
       .mockResolvedValueOnce(
         resultWithOutput(batchPayload([pagePayload(1)]), "stop")
       )
+      .mockResolvedValueOnce(resultWithoutOutput("", "stop"))
       .mockResolvedValueOnce(
         resultWithOutput(batchPayload([pagePayload(2)]), "stop")
       );
@@ -341,6 +342,38 @@ describe("extractPdfBatch", () => {
 
     expect(result.recovery).toBe("transcript-only");
     expect(result.pages.map((page) => page.pageNumber)).toEqual([1, 2]);
+  });
+
+  it("tiles immediately after length overflow instead of another full-page transcript", async () => {
+    const fullPageTranscriptPrompts: string[] = [];
+    generateTextMock.mockImplementation(async (args) => {
+      const text = userPrompt(args);
+      if (/Transcribe page \d+ of /.test(text)) {
+        fullPageTranscriptPrompts.push(text);
+      }
+      if (text.includes("the top half") || text.includes("the bottom half")) {
+        const pageMatch = /half of page (\d+)/.exec(text);
+        const pageNumber = pageMatch ? Number(pageMatch[1]) : 1;
+        return resultWithOutput(
+          batchPayload([pagePayload(pageNumber, `tile-${pageNumber}`)]),
+          "stop"
+        );
+      }
+      return resultWithoutOutput("{truncated", "length");
+    });
+
+    const result = await extractPdfBatch({
+      pdfBuffer: await pdfWithPages(1),
+      pageStart: 4,
+      pageEnd: 4,
+      filename: "evidence.pdf",
+      modelId: "stub",
+      model: stubModel(),
+    });
+
+    expect(fullPageTranscriptPrompts).toEqual([]);
+    expect(result.recovery).toBe("page-tiles");
+    expect(result.pages[0]?.transcript).toContain("tile-4");
   });
 
   it("keeps recovered pages and gaps a page that never extracts", async () => {
@@ -579,7 +612,7 @@ describe("gap extracted pages", () => {
     const gap = gapExtractedPage(4);
     expect(isGapExtractedPage(gap)).toBe(true);
     expect(extractionWarningForGaps([pagePayload(1), gap])).toBe(
-      "PDF extraction is incomplete: no output for page(s) 4"
+      "Could not fully index page(s) 4. Search still works for the rest."
     );
     expect(extractionWarningForGaps([pagePayload(1)])).toBeNull();
   });

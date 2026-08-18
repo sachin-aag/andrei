@@ -26,11 +26,17 @@ import {
   DOCUMENT_EXTRACT_PROMPT_VERSION,
   extractionWarningForGaps,
   extractPdfBatch,
+  gapExtractedPage,
   isGapExtractedPage,
+  type ExtractedPage,
 } from "@/lib/attachments/extract-batch";
 import { type AttachmentKind, kindFromMime } from "@/lib/attachments/file-types";
 import {
+  INGEST_BATCH_TIMEOUT_MARKER,
+  IngestNeedsContinuationError,
   isCancelledIngestError,
+  isIngestNeedsContinuation,
+  isRuntimeTimeoutError,
   sanitizeIngestError,
 } from "@/lib/attachments/ingest-errors";
 import { splitPdfIntoBatches } from "@/lib/attachments/pdf-split";
@@ -41,8 +47,16 @@ export { sanitizeIngestError } from "@/lib/attachments/ingest-errors";
 const PARSER_VERSION = "v3";
 const SUMMARY_MAX_CHARS = 12_000;
 const FAILED_ATTACHMENT_PROGRESS = 0;
+/** Yield before Vercel’s 300s isolate budget so a later slice can resume. */
+const DEFAULT_INGEST_SLICE_MS = 240_000;
 /** DOCX has no page model; split extracted text into readable pseudo-pages. */
 const DOCX_PSEUDO_PAGE_CHARS = 6_000;
+
+export type IngestRunOutcome = "done" | "continue";
+
+export type RunDocumentIngestOptions = {
+  resume?: boolean;
+};
 
 type IngestInit = {
   runId: string;
@@ -69,18 +83,28 @@ type BatchProcessResult = {
  */
 export async function runDocumentIngest(
   attachmentId: string,
-  generation: string
-): Promise<void> {
+  generation: string,
+  options: RunDocumentIngestOptions = {}
+): Promise<IngestRunOutcome> {
   let init: IngestInit | null = null;
+  let keepTempObjects = false;
   try {
-    init = await initializeIngestRun(attachmentId, generation);
-    if (!init) return;
+    init = await initializeIngestRun(attachmentId, generation, options);
+    if (!init) return "done";
     if (init.kind === "docx") {
       await runDocxIngest(init);
     } else {
       await runPdfIngest(init);
     }
+    return "done";
   } catch (error) {
+    if (isIngestNeedsContinuation(error) || isRuntimeTimeoutError(error)) {
+      keepTempObjects = true;
+      if (init) {
+        await prepareRunForContinuation(init.runId);
+      }
+      return "continue";
+    }
     await markRunTerminal({
       runId: init?.runId ?? null,
       attachmentId,
@@ -90,7 +114,7 @@ export async function runDocumentIngest(
     });
     throw error;
   } finally {
-    if (init) {
+    if (init && !keepTempObjects) {
       await cleanupTempObjects(init.runId);
     }
   }
@@ -98,7 +122,8 @@ export async function runDocumentIngest(
 
 async function initializeIngestRun(
   attachmentId: string,
-  generation: string
+  generation: string,
+  options: RunDocumentIngestOptions
 ): Promise<IngestInit | null> {
   const [attachment] = await db
     .select()
@@ -130,7 +155,11 @@ async function initializeIngestRun(
     );
 
     const [existingRun] = await tx
-      .select({ id: attachmentIngestRuns.id })
+      .select({
+        id: attachmentIngestRuns.id,
+        extractModelId: attachmentIngestRuns.extractModelId,
+        embeddingModelId: attachmentIngestRuns.embeddingModelId,
+      })
       .from(attachmentIngestRuns)
       .where(
         and(
@@ -140,7 +169,22 @@ async function initializeIngestRun(
         )
       )
       .limit(1);
-    if (existingRun) return false;
+    if (existingRun) {
+      if (!options.resume) return null;
+      await tx
+        .update(attachmentIngestRuns)
+        .set({ startedAt: new Date() })
+        .where(eq(attachmentIngestRuns.id, existingRun.id));
+      await tx
+        .update(reportAttachments)
+        .set({ processingStatus: "processing" })
+        .where(eq(reportAttachments.id, attachment.id));
+      return {
+        runId: existingRun.id,
+        extractModelId: existingRun.extractModelId,
+        embeddingModelId: existingRun.embeddingModelId,
+      };
+    }
 
     await tx.insert(attachmentIngestRuns).values({
       id: runId,
@@ -160,36 +204,46 @@ async function initializeIngestRun(
       .set({
         processingStatus: "processing",
         processingProgress: 0,
+        processingPage: null,
         processingError: null,
       })
       .where(eq(reportAttachments.id, attachment.id));
-    return true;
+    return { runId, extractModelId, embeddingModelId };
   });
 
   if (!started) return null;
 
   return {
-    runId,
+    runId: started.runId,
     attachmentId: attachment.id,
     reportId: attachment.reportId,
     filename: attachment.filename,
     kind: kindFromMime(attachment.mimeType) ?? "pdf",
     sourceObjectKey: attachment.permanentObjectKey,
     sourceGeneration: generation,
-    extractModelId,
-    embeddingModelId,
+    extractModelId: started.extractModelId,
+    embeddingModelId: started.embeddingModelId,
   };
 }
 
 /** PDF path: split into batches, Gemini-vision extract each, then chunk+embed. */
 async function runPdfIngest(init: IngestInit): Promise<void> {
   await assertAttachmentCurrent(init);
-  await splitAndPersistBatches(init);
-  const batchIds = await listBatchIds(init.runId);
+  const existingBatches = await listBatches(init.runId);
+  if (existingBatches.length === 0) {
+    await splitAndPersistBatches(init);
+  }
+  const batches = await listBatches(init.runId);
+  const sliceStartedAt = Date.now();
 
-  for (const batchId of batchIds) {
+  for (const batch of batches) {
+    if (batch.status === "ready") continue;
+    if (shouldYieldIngestSlice(sliceStartedAt)) {
+      throw new IngestNeedsContinuationError();
+    }
     await assertAttachmentCurrent(init);
-    await processBatch(batchId);
+    await heartbeatIngestRun(init.runId, init.attachmentId, batch.pageStart);
+    await processBatch(batch.id);
     await updateBatchProgress(init.runId, init.attachmentId);
   }
 
@@ -399,13 +453,68 @@ async function splitAndPersistBatches(input: IngestInit): Promise<{
   return { batchCount: split.batches.length, pageCount: split.pageCount };
 }
 
-async function listBatchIds(runId: string): Promise<string[]> {
-  const batches = await db
-    .select({ id: documentIngestBatches.id })
+async function listBatches(runId: string): Promise<
+  Array<{ id: string; pageStart: number; status: string }>
+> {
+  return db
+    .select({
+      id: documentIngestBatches.id,
+      pageStart: documentIngestBatches.pageStart,
+      status: documentIngestBatches.status,
+    })
     .from(documentIngestBatches)
     .where(eq(documentIngestBatches.ingestRunId, runId))
     .orderBy(asc(documentIngestBatches.batchIndex));
-  return batches.map((batch) => batch.id);
+}
+
+function ingestSliceBudgetMs(): number {
+  const raw = process.env.DOCUMENT_INGEST_SLICE_MS?.trim();
+  if (!raw) return DEFAULT_INGEST_SLICE_MS;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0
+    ? parsed
+    : DEFAULT_INGEST_SLICE_MS;
+}
+
+function shouldYieldIngestSlice(sliceStartedAt: number): boolean {
+  return Date.now() - sliceStartedAt >= ingestSliceBudgetMs();
+}
+
+async function heartbeatIngestRun(
+  runId: string,
+  attachmentId: string,
+  processingPage: number
+): Promise<void> {
+  await db
+    .update(attachmentIngestRuns)
+    .set({ startedAt: new Date() })
+    .where(eq(attachmentIngestRuns.id, runId));
+  await db
+    .update(reportAttachments)
+    .set({ processingPage })
+    .where(eq(reportAttachments.id, attachmentId));
+}
+
+async function prepareRunForContinuation(runId: string): Promise<void> {
+  const running = await db
+    .select()
+    .from(documentIngestBatches)
+    .where(
+      and(
+        eq(documentIngestBatches.ingestRunId, runId),
+        eq(documentIngestBatches.status, "running")
+      )
+    );
+  for (const batch of running) {
+    if (batch.error === INGEST_BATCH_TIMEOUT_MARKER) {
+      await persistGapPagesForBatch(batch);
+      continue;
+    }
+    await db
+      .update(documentIngestBatches)
+      .set({ status: "pending", error: INGEST_BATCH_TIMEOUT_MARKER })
+      .where(eq(documentIngestBatches.id, batch.id));
+  }
 }
 
 async function processBatch(batchId: string): Promise<BatchProcessResult> {
@@ -459,9 +568,10 @@ async function processBatch(batchId: string): Promise<BatchProcessResult> {
     throw cancelledError("Attachment source changed during ingestion");
   }
 
+  const timedOutOnce = batch.error === INGEST_BATCH_TIMEOUT_MARKER;
   await db
     .update(documentIngestBatches)
-    .set({ status: "running", error: null })
+    .set({ status: "running" })
     .where(eq(documentIngestBatches.id, batchId));
 
   const previous = await db
@@ -541,6 +651,17 @@ async function processBatch(batchId: string): Promise<BatchProcessResult> {
 
     return { batchId, pageCount: extracted.pages.length };
   } catch (error) {
+    if (isIngestNeedsContinuation(error) || isRuntimeTimeoutError(error)) {
+      if (timedOutOnce) {
+        await persistGapPagesForBatch(batch);
+        return { batchId, pageCount: batch.pageEnd - batch.pageStart + 1 };
+      }
+      await db
+        .update(documentIngestBatches)
+        .set({ status: "pending", error: INGEST_BATCH_TIMEOUT_MARKER })
+        .where(eq(documentIngestBatches.id, batchId));
+      throw new IngestNeedsContinuationError();
+    }
     const message = sanitizeIngestError(error);
     await db
       .update(documentIngestBatches)
@@ -548,6 +669,51 @@ async function processBatch(batchId: string): Promise<BatchProcessResult> {
       .where(eq(documentIngestBatches.id, batchId));
     throw error;
   }
+}
+
+async function persistGapPagesForBatch(
+  batch: typeof documentIngestBatches.$inferSelect
+): Promise<void> {
+  const pages: ExtractedPage[] = [];
+  for (let pageNumber = batch.pageStart; pageNumber <= batch.pageEnd; pageNumber += 1) {
+    pages.push(gapExtractedPage(pageNumber));
+  }
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(documentPages)
+      .where(
+        and(
+          eq(documentPages.ingestRunId, batch.ingestRunId),
+          gte(documentPages.pageNumber, batch.pageStart),
+          lte(documentPages.pageNumber, batch.pageEnd)
+        )
+      );
+    if (pages.length > 0) {
+      await tx.insert(documentPages).values(
+        pages.map((page) => ({
+          ingestRunId: batch.ingestRunId,
+          attachmentId: batch.attachmentId,
+          reportId: batch.reportId,
+          pageNumber: page.pageNumber,
+          printedPageLabel: page.printedPageLabel,
+          transcript: page.transcript,
+          visualInterpretation: page.visualInterpretation,
+          pageContext: page.pageContext,
+          confidence: page.confidence,
+        }))
+      );
+    }
+    await tx
+      .update(documentIngestBatches)
+      .set({
+        status: "ready",
+        error: extractionWarningForGaps(pages),
+        batchSummary: `Pages ${batch.pageStart}-${batch.pageEnd} could not be fully indexed.`,
+        continuationNote: "",
+        completedAt: new Date(),
+      })
+      .where(eq(documentIngestBatches.id, batch.id));
+  });
 }
 
 async function updateBatchProgress(
@@ -711,6 +877,7 @@ async function markRunReady(
         activeIngestRunId: input.runId,
         processingStatus: "ready",
         processingProgress: 100,
+        processingPage: null,
         processingError: warning,
       })
       .where(eq(reportAttachments.id, input.attachmentId));
@@ -756,6 +923,7 @@ async function markRunTerminal(input: {
         .set({
           processingStatus: "failed",
           processingProgress: FAILED_ATTACHMENT_PROGRESS,
+          processingPage: null,
           processingError: input.message,
         })
         .where(eq(reportAttachments.id, input.attachmentId));
@@ -786,4 +954,31 @@ async function cleanupTempObjects(runId: string): Promise<{ deletedCount: number
 
 function cancelledError(message: string): Error {
   return new Error(`INGEST_CANCELLED: ${message}`);
+}
+
+export async function failIngestIfStillRunning(
+  attachmentId: string,
+  error: unknown
+): Promise<void> {
+  const [row] = await db
+    .select({
+      processingStatus: reportAttachments.processingStatus,
+      processingError: reportAttachments.processingError,
+      gcsGeneration: reportAttachments.gcsGeneration,
+    })
+    .from(reportAttachments)
+    .where(eq(reportAttachments.id, attachmentId))
+    .limit(1);
+  if (!row || row.processingStatus === "ready") return;
+  if (row.processingStatus === "failed" && row.processingError) return;
+
+  await db
+    .update(reportAttachments)
+    .set({
+      processingStatus: "failed",
+      processingProgress: FAILED_ATTACHMENT_PROGRESS,
+      processingPage: null,
+      processingError: sanitizeIngestError(error),
+    })
+    .where(eq(reportAttachments.id, attachmentId));
 }

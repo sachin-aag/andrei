@@ -413,7 +413,12 @@ async function extractWithVision(
   if (missing.length === 0) return primary;
 
   if (input.pageStart === input.pageEnd) {
-    return withAddedUsage(await recoverAfterEmptyExtract(input), primary);
+    return withAddedUsage(
+      await recoverAfterEmptyExtract(input, {
+        finishReason: primary.finishReason,
+      }),
+      primary
+    );
   }
 
   console.warn(
@@ -538,7 +543,9 @@ async function retryPerPage(input: ResolvedInput): Promise<ExtractBatchResult> {
         continue;
       }
 
-      const fallback = await recoverAfterEmptyExtract(pageInput);
+      const fallback = await recoverAfterEmptyExtract(pageInput, {
+        finishReason: pageResult.finishReason,
+      });
       recovered.push(...fallback.pages);
       recovery = worseRecovery(recovery, fallback.recovery);
       lastFinishReason = fallback.finishReason;
@@ -581,12 +588,18 @@ type TileHint = {
   pageNumber: number;
 };
 
+function isLengthOverflow(finishReason: string | undefined): boolean {
+  return finishReason === "length";
+}
+
 async function recoverAfterEmptyExtract(
-  input: ResolvedInput
+  input: ResolvedInput,
+  prior?: { finishReason?: string }
 ): Promise<ExtractBatchResult> {
   let inputTokens = 0;
   let outputTokens = 0;
-  let lastFinishReason: string | undefined;
+  let lastFinishReason: string | undefined = prior?.finishReason;
+  const skipFullPageTranscript = isLengthOverflow(prior?.finishReason);
 
   const addUsage = (result: ExtractBatchResult) => {
     lastFinishReason = result.finishReason;
@@ -594,31 +607,33 @@ async function recoverAfterEmptyExtract(
     outputTokens += result.usage?.outputTokens ?? 0;
   };
 
-  try {
-    const transcriptOnly = await extractOnce(input, {
-      maxOutputTokens: MAX_OUTPUT_TOKENS,
-      transcriptOnly: true,
-    });
-    addUsage(transcriptOnly);
-    if (transcriptOnly.pages.length > 0) {
-      return {
-        ...transcriptOnly,
-        recovery: "transcript-only",
-        finishReason: lastFinishReason,
-        usage: { inputTokens, outputTokens },
-      };
+  if (!skipFullPageTranscript) {
+    try {
+      const transcriptOnly = await extractOnce(input, {
+        maxOutputTokens: MAX_OUTPUT_TOKENS,
+        transcriptOnly: true,
+      });
+      addUsage(transcriptOnly);
+      if (transcriptOnly.pages.length > 0) {
+        return {
+          ...transcriptOnly,
+          recovery: "transcript-only",
+          finishReason: lastFinishReason,
+          usage: { inputTokens, outputTokens },
+        };
+      }
+    } catch (error) {
+      console.warn(
+        `[document-extract] Transcript-only retry failed for page ${input.pageStart}`,
+        { error: error instanceof Error ? error.message : String(error) }
+      );
     }
-  } catch (error) {
-    console.warn(
-      `[document-extract] Transcript-only retry failed for page ${input.pageStart}`,
-      { error: error instanceof Error ? error.message : String(error) }
-    );
   }
 
   try {
     const upright = await uprightRotatePage(input.pdfBuffer);
     const tileSource = upright.rotated ? upright.buffer : input.pdfBuffer;
-    if (upright.rotated) {
+    if (upright.rotated && !skipFullPageTranscript) {
       const rotated = await extractOnce(
         { ...input, pdfBuffer: upright.buffer },
         { maxOutputTokens: MAX_OUTPUT_TOKENS, transcriptOnly: true }
@@ -787,7 +802,7 @@ export function extractionWarningForGaps(
     .map((page) => page.pageNumber)
     .toSorted((left, right) => left - right);
   if (missing.length === 0) return null;
-  return `PDF extraction is incomplete: no output for page(s) ${missing.join(", ")}`;
+  return `Could not fully index page(s) ${missing.join(", ")}. Search still works for the rest.`;
 }
 
 function emptyVisionResult(): ExtractBatchResult {

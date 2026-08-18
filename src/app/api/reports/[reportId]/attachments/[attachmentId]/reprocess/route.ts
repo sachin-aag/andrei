@@ -62,6 +62,7 @@ export async function POST(
     .set({
       processingStatus: "queued",
       processingProgress: 0,
+      processingPage: null,
       processingError: null,
     })
     .where(

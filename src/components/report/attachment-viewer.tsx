@@ -11,6 +11,7 @@ import {
 import { PdfPagePreview } from "@/components/report/pdf-page-preview";
 import type { AttachmentProcessingStatus } from "@/db/schema";
 import { kindFromMime } from "@/lib/attachments/file-types";
+import { formatIngestPageLabel } from "@/lib/attachments/ingest-continue";
 import {
   attachmentDownloadHref,
   attachmentPreviewSrc,
@@ -63,7 +64,11 @@ export function AttachmentViewer() {
             </CardTitle>
             <p className="mt-1 text-xs text-[var(--muted-foreground)]">
               {pageLabel}
-              {indexing ? " · Indexing for search…" : null}
+              {indexing
+                ? formatIngestPageLabel(activeAttachment.processingPage)
+                  ? ` · Indexing page ${activeAttachment.processingPage}…`
+                  : " · Indexing for search…"
+                : null}
               {canPreview && activeAttachment.processingStatus === "failed"
                 ? " · Indexing failed (preview still available)"
                 : null}
