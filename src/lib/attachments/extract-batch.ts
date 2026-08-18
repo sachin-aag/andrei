@@ -7,8 +7,13 @@ import {
 } from "ai";
 import { z } from "zod";
 import { createWifAuthClient, getWifConfig } from "@/lib/gcp/wif-token";
-import { splitPdfIntoBatches } from "@/lib/attachments/pdf-split";
 import {
+  splitPageIntoTiles,
+  splitPdfIntoBatches,
+  uprightRotatePage,
+} from "@/lib/attachments/pdf-split";
+import {
+  MIN_TEXT_LAYER_CHARS,
   readPdfTextLayer,
   type PdfTextLayer,
 } from "@/lib/attachments/pdf-text-layer";
@@ -22,7 +27,7 @@ export const DEFAULT_DOCUMENT_EXTRACT_MODEL_ID = "gemini-3.1-flash-lite";
  * `us-central1`) — the two must never be conflated again.
  */
 export const DEFAULT_DOCUMENT_EXTRACT_LOCATION = "global";
-export const DOCUMENT_EXTRACT_PROMPT_VERSION = "doc-extract-v2";
+export const DOCUMENT_EXTRACT_PROMPT_VERSION = "doc-extract-v3";
 
 type GoogleAuthOptions = NonNullable<Parameters<typeof createVertex>[0]>["googleAuthOptions"];
 type AuthClient = NonNullable<NonNullable<GoogleAuthOptions>["authClient"]>;
@@ -41,6 +46,8 @@ const MAX_PAGE_CONTEXT_CHARS = 400;
 const MAX_SUMMARY_CHARS = 800;
 const MAX_NOTE_ENTRIES = 5;
 const MAX_NOTE_CHARS = 200;
+/** First split is 2 strips; one more split per failing strip → at most 4 tiles. */
+const MAX_TILE_DEPTH = 2;
 
 const extractPageSchema = z.object({
   pageNumber: z.number().int().min(1),
@@ -82,7 +89,9 @@ export type ExtractRecovery =
   | "salvage"
   | "per-page-retry"
   | "transcript-only"
-  | "text-layer-only";
+  | "text-layer-only"
+  | "page-tiles"
+  | "page-gap";
 
 /**
  * `text-layer` transcribes with the PDF parser and asks the model only for
@@ -159,28 +168,36 @@ export async function extractPdfBatch(
   const model = input.model ?? resolveDocumentExtractModel(input.modelId);
   const resolved: ResolvedInput = { ...input, model };
 
-  const textLayer = await readUsableTextLayer(resolved);
-  if (textLayer) {
+  const textLayer = await tryReadTextLayer(resolved);
+  const expectedPages = resolved.pageEnd - resolved.pageStart + 1;
+  const textPages = (textLayer?.pages ?? []).filter(
+    (page) => page.text.length >= MIN_TEXT_LAYER_CHARS
+  );
+
+  if (
+    textLayer &&
+    textLayer.pages.length === expectedPages &&
+    textPages.length === expectedPages
+  ) {
     return extractFromTextLayer(resolved, textLayer);
   }
-  return extractWithVision(resolved);
+  if (textPages.length === 0 || !textLayer) {
+    return extractWithVision(resolved);
+  }
+  return extractMixedPages(resolved, textLayer);
 }
 
 /**
  * Born-digital PDFs carry their own text, so transcription does not need the
  * model at all. Scans (and unreadable files) fall back to vision.
  */
-async function readUsableTextLayer(
+async function tryReadTextLayer(
   input: ResolvedInput
 ): Promise<PdfTextLayer | null> {
-  const expectedPages = input.pageEnd - input.pageStart + 1;
   try {
-    const layer = await readPdfTextLayer(input.pdfBuffer, {
+    return await readPdfTextLayer(input.pdfBuffer, {
       pageStart: input.pageStart,
     });
-    if (!layer.usable) return null;
-    if (layer.pages.length !== expectedPages) return null;
-    return layer;
   } catch (error) {
     console.warn(
       `[document-extract] Text layer read failed for pages ${input.pageStart}-${input.pageEnd}; falling back to vision`,
@@ -235,6 +252,60 @@ async function extractFromTextLayer(
     recovery: insights ? "none" : "text-layer-only",
     finishReason: insights?.finishReason,
     usage: insights?.usage,
+  };
+}
+
+async function extractMixedPages(
+  input: ResolvedInput,
+  textLayer: PdfTextLayer
+): Promise<ExtractBatchResult> {
+  const split = await splitPdfIntoBatches(input.pdfBuffer, {
+    preferredPagesPerBatch: 1,
+    maxPagesPerBatch: 1,
+  });
+
+  const pages: ExtractedPage[] = [];
+  let recovery: ExtractRecovery = "none";
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let lastFinishReason: string | undefined;
+  let usedVision = false;
+
+  for (const pageBatch of split.batches) {
+    const absolutePage = input.pageStart + pageBatch.pageStart - 1;
+    const pageInput: ResolvedInput = {
+      ...input,
+      pdfBuffer: pageBatch.buffer,
+      pageStart: absolutePage,
+      pageEnd: absolutePage,
+    };
+    const layerPage = textLayer.pages.find(
+      (page) => page.pageNumber === absolutePage
+    );
+    const pageResult =
+      layerPage && layerPage.text.length >= MIN_TEXT_LAYER_CHARS
+        ? await extractFromTextLayer(pageInput, {
+            pages: [layerPage],
+            usable: true,
+          })
+        : await extractWithVision(pageInput);
+
+    if (pageResult.mode === "vision") usedVision = true;
+    pages.push(...pageResult.pages);
+    recovery = worseRecovery(recovery, pageResult.recovery);
+    lastFinishReason = pageResult.finishReason;
+    inputTokens += pageResult.usage?.inputTokens ?? 0;
+    outputTokens += pageResult.usage?.outputTokens ?? 0;
+  }
+
+  return {
+    pages,
+    batchSummary: synthesizeBatchSummary(pages),
+    continuationNote: pages.at(-1)?.pageContext ?? "",
+    mode: usedVision ? "vision" : "text-layer",
+    recovery,
+    finishReason: lastFinishReason,
+    usage: { inputTokens, outputTokens },
   };
 }
 
@@ -311,13 +382,29 @@ async function requestPageInsights(
 
 /**
  * Scans have no text layer, so the model transcribes. A batch that does not
- * cover every requested page is retried page by page; anything still missing
- * fails the batch rather than silently dropping evidence.
+ * cover every requested page is retried page by page; pages that still miss
+ * after rotate/tile recovery become gap placeholders so later batches run.
  */
 async function extractWithVision(
   input: ResolvedInput
 ): Promise<ExtractBatchResult> {
-  const primary = await extractOnce(input, { maxOutputTokens: MAX_OUTPUT_TOKENS });
+  let primary: ExtractBatchResult;
+  try {
+    primary = await extractOnce(input, { maxOutputTokens: MAX_OUTPUT_TOKENS });
+  } catch (error) {
+    console.warn(
+      `[document-extract] Vision extract failed for pages ${input.pageStart}-${input.pageEnd}; recovering per page`,
+      { error: error instanceof Error ? error.message : String(error) }
+    );
+    if (input.pageStart === input.pageEnd) {
+      return withAddedUsage(
+        await recoverAfterEmptyExtract(input),
+        emptyVisionResult()
+      );
+    }
+    return retryPerPage(input);
+  }
+
   const missing = missingPageNumbers(
     primary.pages,
     input.pageStart,
@@ -326,7 +413,7 @@ async function extractWithVision(
   if (missing.length === 0) return primary;
 
   if (input.pageStart === input.pageEnd) {
-    throw extractionEmptyError(input.pageStart, input.pageEnd);
+    return withAddedUsage(await recoverAfterEmptyExtract(input), primary);
   }
 
   console.warn(
@@ -345,7 +432,11 @@ async function extractWithVision(
 
 async function extractOnce(
   input: ResolvedInput,
-  options: { maxOutputTokens: number; transcriptOnly?: boolean }
+  options: {
+    maxOutputTokens: number;
+    transcriptOnly?: boolean;
+    tileHint?: TileHint;
+  }
 ): Promise<ExtractBatchResult> {
   const result = await generateText({
     model: input.model,
@@ -358,7 +449,7 @@ async function extractOnce(
           {
             type: "text",
             text: options.transcriptOnly
-              ? buildTranscriptOnlyPrompt(input)
+              ? buildTranscriptOnlyPrompt(input, options.tileHint)
               : buildUserPrompt(input),
           },
           {
@@ -420,10 +511,10 @@ async function retryPerPage(input: ResolvedInput): Promise<ExtractBatchResult> {
   });
 
   const recovered: ExtractedPage[] = [];
+  let recovery: ExtractRecovery = "per-page-retry";
   let inputTokens = 0;
   let outputTokens = 0;
   let lastFinishReason: string | undefined;
-  let usedTranscriptOnly = false;
 
   for (const pageBatch of split.batches) {
     const absolutePage = input.pageStart + pageBatch.pageStart - 1;
@@ -447,44 +538,299 @@ async function retryPerPage(input: ResolvedInput): Promise<ExtractBatchResult> {
         continue;
       }
 
-      // A page dense enough to truncate the full schema can still fit when the
-      // model only has to return the transcript.
-      const transcriptOnly = await extractOnce(pageInput, {
-        maxOutputTokens: MAX_OUTPUT_TOKENS,
-        transcriptOnly: true,
-      });
-      lastFinishReason = transcriptOnly.finishReason;
-      inputTokens += transcriptOnly.usage?.inputTokens ?? 0;
-      outputTokens += transcriptOnly.usage?.outputTokens ?? 0;
-      if (transcriptOnly.pages.length > 0) {
-        usedTranscriptOnly = true;
-        recovered.push(...transcriptOnly.pages);
-      }
+      const fallback = await recoverAfterEmptyExtract(pageInput);
+      recovered.push(...fallback.pages);
+      recovery = worseRecovery(recovery, fallback.recovery);
+      lastFinishReason = fallback.finishReason;
+      inputTokens += fallback.usage?.inputTokens ?? 0;
+      outputTokens += fallback.usage?.outputTokens ?? 0;
     } catch (error) {
       console.warn(`[document-extract] Per-page retry failed for page ${absolutePage}`, {
         error: error instanceof Error ? error.message : String(error),
       });
+      recovered.push(gapExtractedPage(absolutePage));
+      recovery = worseRecovery(recovery, "page-gap");
     }
   }
 
-  if (recovered.length === 0) {
-    throw extractionEmptyError(input.pageStart, input.pageEnd);
+  for (const missing of missingPageNumbers(
+    recovered,
+    input.pageStart,
+    input.pageEnd
+  )) {
+    recovered.push(gapExtractedPage(missing));
+    recovery = worseRecovery(recovery, "page-gap");
   }
 
-  const missing = missingPageNumbers(recovered, input.pageStart, input.pageEnd);
-  if (missing.length > 0) {
-    throw incompleteExtractionError(missing);
-  }
-
+  const pages = recovered.toSorted(
+    (left, right) => left.pageNumber - right.pageNumber
+  );
   return {
-    pages: recovered,
-    batchSummary: synthesizeBatchSummary(recovered),
-    continuationNote: recovered.at(-1)?.pageContext ?? "",
+    pages,
+    batchSummary: synthesizeBatchSummary(pages),
+    continuationNote: pages.at(-1)?.pageContext ?? "",
     mode: "vision",
-    recovery: usedTranscriptOnly ? "transcript-only" : "per-page-retry",
+    recovery,
     finishReason: lastFinishReason,
     usage: { inputTokens, outputTokens },
   };
+}
+
+type TileHint = {
+  position: "top" | "bottom";
+  pageNumber: number;
+};
+
+async function recoverAfterEmptyExtract(
+  input: ResolvedInput
+): Promise<ExtractBatchResult> {
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let lastFinishReason: string | undefined;
+
+  const addUsage = (result: ExtractBatchResult) => {
+    lastFinishReason = result.finishReason;
+    inputTokens += result.usage?.inputTokens ?? 0;
+    outputTokens += result.usage?.outputTokens ?? 0;
+  };
+
+  try {
+    const transcriptOnly = await extractOnce(input, {
+      maxOutputTokens: MAX_OUTPUT_TOKENS,
+      transcriptOnly: true,
+    });
+    addUsage(transcriptOnly);
+    if (transcriptOnly.pages.length > 0) {
+      return {
+        ...transcriptOnly,
+        recovery: "transcript-only",
+        finishReason: lastFinishReason,
+        usage: { inputTokens, outputTokens },
+      };
+    }
+  } catch (error) {
+    console.warn(
+      `[document-extract] Transcript-only retry failed for page ${input.pageStart}`,
+      { error: error instanceof Error ? error.message : String(error) }
+    );
+  }
+
+  try {
+    const upright = await uprightRotatePage(input.pdfBuffer);
+    const tileSource = upright.rotated ? upright.buffer : input.pdfBuffer;
+    if (upright.rotated) {
+      const rotated = await extractOnce(
+        { ...input, pdfBuffer: upright.buffer },
+        { maxOutputTokens: MAX_OUTPUT_TOKENS, transcriptOnly: true }
+      );
+      addUsage(rotated);
+      if (rotated.pages.length > 0) {
+        return {
+          ...rotated,
+          recovery: "transcript-only",
+          finishReason: lastFinishReason,
+          usage: { inputTokens, outputTokens },
+        };
+      }
+    }
+
+    const tiled = await extractByTiles({ ...input, pdfBuffer: tileSource }, 0);
+    inputTokens += tiled.inputTokens;
+    outputTokens += tiled.outputTokens;
+    if (tiled.finishReason) lastFinishReason = tiled.finishReason;
+    if (tiled.page) {
+      return {
+        pages: [tiled.page],
+        batchSummary: synthesizeBatchSummary([tiled.page]),
+        continuationNote: tiled.page.pageContext,
+        mode: "vision",
+        recovery: "page-tiles",
+        finishReason: lastFinishReason,
+        usage: { inputTokens, outputTokens },
+      };
+    }
+  } catch (error) {
+    console.warn(
+      `[document-extract] Rotate/tile recovery failed for page ${input.pageStart}`,
+      { error: error instanceof Error ? error.message : String(error) }
+    );
+  }
+
+  const gap = gapExtractedPage(input.pageStart);
+  return {
+    pages: [gap],
+    batchSummary: synthesizeBatchSummary([gap]),
+    continuationNote: gap.pageContext,
+    mode: "vision",
+    recovery: "page-gap",
+    finishReason: lastFinishReason,
+    usage: { inputTokens, outputTokens },
+  };
+}
+
+type TileExtract = {
+  page: ExtractedPage | null;
+  inputTokens: number;
+  outputTokens: number;
+  finishReason?: string;
+};
+
+async function extractByTiles(
+  input: ResolvedInput,
+  depth: number
+): Promise<TileExtract> {
+  if (depth >= MAX_TILE_DEPTH) {
+    return { page: null, inputTokens: 0, outputTokens: 0 };
+  }
+
+  const tiles = await splitPageIntoTiles(input.pdfBuffer, 2);
+  const parts: ExtractedPage[] = [];
+  let inputTokens = 0;
+  let outputTokens = 0;
+  let finishReason: string | undefined;
+
+  for (let index = 0; index < tiles.length; index += 1) {
+    const position = index === 0 ? "top" : "bottom";
+    const tileInput: ResolvedInput = {
+      ...input,
+      pdfBuffer: tiles[index]!,
+    };
+    try {
+      const result = await extractOnce(tileInput, {
+        maxOutputTokens: MAX_OUTPUT_TOKENS,
+        transcriptOnly: true,
+        tileHint: { position, pageNumber: input.pageStart },
+      });
+      inputTokens += result.usage?.inputTokens ?? 0;
+      outputTokens += result.usage?.outputTokens ?? 0;
+      finishReason = result.finishReason;
+      if (result.pages.length > 0) {
+        parts.push(result.pages[0]!);
+        continue;
+      }
+    } catch (error) {
+      console.warn(
+        `[document-extract] Tile extract failed for page ${input.pageStart} (${position})`,
+        { error: error instanceof Error ? error.message : String(error) }
+      );
+    }
+
+    const nested = await extractByTiles(tileInput, depth + 1);
+    inputTokens += nested.inputTokens;
+    outputTokens += nested.outputTokens;
+    if (nested.finishReason) finishReason = nested.finishReason;
+    if (nested.page) parts.push(nested.page);
+  }
+
+  if (parts.length === 0) {
+    return { page: null, inputTokens, outputTokens, finishReason };
+  }
+  return {
+    page: mergeTilePages(parts, input.pageStart),
+    inputTokens,
+    outputTokens,
+    finishReason,
+  };
+}
+
+function mergeTilePages(
+  parts: ExtractedPage[],
+  pageNumber: number
+): ExtractedPage {
+  const transcripts = parts
+    .map((page) => page.transcript.trim())
+    .filter(Boolean);
+  const visuals = parts
+    .map((page) => page.visualInterpretation.trim())
+    .filter(Boolean);
+  const confidences = parts
+    .map((page) => page.confidence)
+    .filter((value): value is number => value != null);
+  const labeled = parts.find((page) => page.printedPageLabel);
+  const context = parts.find((page) => page.pageContext.trim());
+  return {
+    pageNumber,
+    transcript: transcripts.join("\n\n"),
+    visualInterpretation: truncate(visuals.join("\n\n"), MAX_VISUAL_CHARS),
+    pageContext: truncate(context?.pageContext.trim() ?? "", MAX_PAGE_CONTEXT_CHARS),
+    printedPageLabel: labeled?.printedPageLabel ?? null,
+    confidence: confidences.length > 0 ? Math.min(...confidences) : null,
+  };
+}
+
+export function gapExtractedPage(pageNumber: number): ExtractedPage {
+  const note = `[Page ${pageNumber} could not be extracted]`;
+  return {
+    pageNumber,
+    transcript: note,
+    visualInterpretation: "",
+    pageContext: note,
+    printedPageLabel: null,
+    confidence: 0,
+  };
+}
+
+export function isGapExtractedPage(page: {
+  confidence: number | null;
+  transcript: string;
+}): boolean {
+  return (
+    page.confidence === 0 && page.transcript.includes("could not be extracted")
+  );
+}
+
+export function extractionWarningForGaps(
+  pages: Array<{ pageNumber: number; confidence: number | null; transcript: string }>
+): string | null {
+  const missing = pages
+    .filter(isGapExtractedPage)
+    .map((page) => page.pageNumber)
+    .toSorted((left, right) => left - right);
+  if (missing.length === 0) return null;
+  return `PDF extraction is incomplete: no output for page(s) ${missing.join(", ")}`;
+}
+
+function emptyVisionResult(): ExtractBatchResult {
+  return {
+    pages: [],
+    batchSummary: "",
+    continuationNote: "",
+    mode: "vision",
+    recovery: "none",
+    usage: { inputTokens: 0, outputTokens: 0 },
+  };
+}
+
+function withAddedUsage(
+  result: ExtractBatchResult,
+  prior: ExtractBatchResult
+): ExtractBatchResult {
+  return {
+    ...result,
+    usage: {
+      inputTokens:
+        (prior.usage?.inputTokens ?? 0) + (result.usage?.inputTokens ?? 0),
+      outputTokens:
+        (prior.usage?.outputTokens ?? 0) + (result.usage?.outputTokens ?? 0),
+    },
+  };
+}
+
+const RECOVERY_RANK: Record<ExtractRecovery, number> = {
+  none: 0,
+  salvage: 1,
+  "text-layer-only": 2,
+  "per-page-retry": 3,
+  "transcript-only": 4,
+  "page-tiles": 5,
+  "page-gap": 6,
+};
+
+function worseRecovery(
+  current: ExtractRecovery,
+  next: ExtractRecovery
+): ExtractRecovery {
+  return RECOVERY_RANK[next] >= RECOVERY_RANK[current] ? next : current;
 }
 
 type StructuredRead<T> = {
@@ -572,18 +918,6 @@ function missingPageNumbers(
   return missing;
 }
 
-function extractionEmptyError(pageStart: number, pageEnd: number): Error {
-  return new Error(
-    `PDF extraction produced no output for pages ${pageStart}-${pageEnd}`
-  );
-}
-
-function incompleteExtractionError(missing: number[]): Error {
-  return new Error(
-    `PDF extraction is incomplete: no output for page(s) ${missing.join(", ")}`
-  );
-}
-
 function synthesizeBatchSummary(pages: ExtractedPage[]): string {
   const parts = pages
     .map((page) => page.pageContext.trim() || `Page ${page.pageNumber}`)
@@ -641,15 +975,22 @@ Also return:
 Return one entry for every page in the range, even if a page is blank.`;
 }
 
-function buildTranscriptOnlyPrompt(input: {
-  pageStart: number;
-  pageEnd: number;
-  filename: string;
-}): string {
-  return `Transcribe page ${input.pageStart} of ${input.filename}.
+function buildTranscriptOnlyPrompt(
+  input: {
+    pageStart: number;
+    pageEnd: number;
+    filename: string;
+  },
+  tileHint?: TileHint
+): string {
+  const scope = tileHint
+    ? `This PDF is the ${tileHint.position} half of page ${tileHint.pageNumber} of ${input.filename}. Transcribe only what is visible in this crop.`
+    : `Transcribe page ${input.pageStart} of ${input.filename}.`;
+
+  return `${scope}
 
 Return exactly one page entry:
-- pageNumber: ${input.pageStart}.
+- pageNumber: ${tileHint?.pageNumber ?? input.pageStart}.
 - transcript: readable text, OCR text, labels, captions, and table text in natural reading order.
 - printedPageLabel: visible printed page label if present, otherwise null.
 - confidence: 0 to 1 extraction confidence.
@@ -745,11 +1086,8 @@ export function remapExtractedPageNumbers<Page extends { pageNumber: number }>(
   const expectedCount = pageEnd - pageStart + 1;
   if (expectedCount < 1 || pages.length === 0) return [];
 
-  const absolute = pages.filter(
-    (page) => page.pageNumber >= pageStart && page.pageNumber <= pageEnd
-  );
-  if (absolute.length > 0) {
-    return dedupeByPageNumber(absolute);
+  if (pageStart === pageEnd && pages.length === 1) {
+    return [{ ...pages[0]!, pageNumber: pageStart }];
   }
 
   const relative = pages
@@ -758,17 +1096,18 @@ export function remapExtractedPageNumbers<Page extends { pageNumber: number }>(
       ...page,
       pageNumber: pageStart + page.pageNumber - 1,
     }));
-  return dedupeByPageNumber(relative);
-}
+  const absolute = pages.filter(
+    (page) => page.pageNumber >= pageStart && page.pageNumber <= pageEnd
+  );
 
-function dedupeByPageNumber<Page extends { pageNumber: number }>(
-  pages: Page[]
-): Page[] {
   const byNumber = new Map<number, Page>();
-  for (const page of pages) {
+  for (const page of relative) {
     if (!byNumber.has(page.pageNumber)) {
       byNumber.set(page.pageNumber, page);
     }
+  }
+  for (const page of absolute) {
+    byNumber.set(page.pageNumber, page);
   }
   return [...byNumber.values()].toSorted(
     (left, right) => left.pageNumber - right.pageNumber

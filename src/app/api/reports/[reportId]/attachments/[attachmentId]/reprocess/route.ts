@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, or } from "drizzle-orm";
 import { db } from "@/db";
 import { reportAttachments } from "@/db/schema";
 import { toAttachmentDto } from "@/lib/attachments/dto";
+import { canReprocessAttachment } from "@/lib/attachments/ingest-errors";
 import { startDocumentIngest } from "@/lib/attachments/start-ingest";
 import { reclaimStaleIngests } from "@/lib/attachments/stale-ingest";
 import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
@@ -43,9 +44,9 @@ export async function POST(
   if (!attachment) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
-  if (attachment.processingStatus !== "failed") {
+  if (!canReprocessAttachment(attachment)) {
     return NextResponse.json(
-      { error: "Only failed attachments can be reprocessed" },
+      { error: "Only failed or incompletely indexed attachments can be reprocessed" },
       { status: 400 }
     );
   }
@@ -66,7 +67,13 @@ export async function POST(
     .where(
       and(
         eq(reportAttachments.id, attachmentId),
-        eq(reportAttachments.processingStatus, "failed"),
+        or(
+          eq(reportAttachments.processingStatus, "failed"),
+          and(
+            eq(reportAttachments.processingStatus, "ready"),
+            isNotNull(reportAttachments.processingError)
+          )
+        ),
         isNull(reportAttachments.deletedAt)
       )
     )

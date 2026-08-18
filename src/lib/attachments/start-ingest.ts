@@ -22,11 +22,11 @@ import { documentIngestWorkflow } from "@/workflows/document-ingest";
 export { resolveDocumentIngestMode } from "@/lib/attachments/document-ingest-mode";
 export { shouldBackfillIngestFailure } from "@/lib/attachments/ingest-errors";
 
-const ACTIVE_INGEST_STATUSES = ["pending", "running", "ready"] as const;
+const ACTIVE_INGEST_STATUSES = ["pending", "running"] as const;
 
 /**
- * Start document ingest at most once per attachment generation.
- * Concurrent finalize/reprocess callers lose the claim and no-op.
+ * Start document ingest at most once per in-flight attachment generation.
+ * A completed `ready` run does not block an explicit retry.
  *
  * Prefers Vercel Workflows when configured; if `start()` fails (common when
  * World/Queues are unhealthy), falls back to inline `after()` ingest so

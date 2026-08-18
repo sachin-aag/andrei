@@ -32,6 +32,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { DocumentTreeFolder } from "@/lib/attachments/build-tree";
 import { ATTACHMENT_DESCRIPTION_MAX } from "@/lib/attachments/description";
+import { canReprocessAttachment } from "@/lib/attachments/ingest-errors";
 import { useReportAttachments } from "@/providers/report-attachments-provider";
 import type { AttachmentProcessingStatus } from "@/db/schema";
 import type { ReportAttachmentRecord } from "@/types/report";
@@ -281,6 +282,7 @@ function FileNode({
   const progress =
     uploadProgress[attachment.id]?.percent ?? attachment.processingProgress;
   const pending = isPendingStatus(attachment.processingStatus);
+  const canRetry = canReprocessAttachment(attachment);
 
   const handleRemove = async () => {
     const confirmed = window.confirm(
@@ -360,7 +362,8 @@ function FileNode({
             <FileText
               className={cn(
                 "size-4 shrink-0",
-                attachment.processingStatus === "failed"
+                attachment.processingStatus === "failed" ||
+                Boolean(attachment.processingError)
                   ? "text-[var(--destructive)]"
                   : "text-[var(--muted-foreground)]"
               )}
@@ -388,7 +391,7 @@ function FileNode({
 
         {canMutateAttachments && !renaming ? (
           <div className="flex shrink-0 items-center opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-            {attachment.processingStatus === "failed" ? (
+            {canRetry ? (
               <Button
                 type="button"
                 variant="ghost"

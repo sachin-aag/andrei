@@ -14,6 +14,9 @@ vi.mock("ai", async (importOriginal) => {
 
 import {
   extractPdfBatch,
+  extractionWarningForGaps,
+  gapExtractedPage,
+  isGapExtractedPage,
   remapExtractedPageNumbers,
   resolveDocumentExtractLocation,
 } from "./extract-batch";
@@ -68,6 +71,26 @@ async function pdfWithTextPages(pageCount: number): Promise<Buffer> {
   return Buffer.from(await document.save());
 }
 
+async function pdfWithMixedTextPages(): Promise<Buffer> {
+  const document = await PDFDocument.create();
+  const font = await document.embedFont(StandardFonts.Helvetica);
+  const addTextPage = (marker: string) => {
+    const page = document.addPage([600, 800]);
+    for (let line = 0; line < 12; line += 1) {
+      page.drawText(`${marker} line ${line} of verification evidence`, {
+        x: 40,
+        y: 740 - line * 16,
+        size: 11,
+        font,
+      });
+    }
+  };
+  addTextPage("alpha");
+  document.addPage([600, 800]);
+  addTextPage("gamma");
+  return Buffer.from(await document.save());
+}
+
 function insightPayload(pageNumber: number) {
   return {
     pageNumber,
@@ -82,6 +105,16 @@ function insightPayload(pageNumber: number) {
 
 function stubModel(): LanguageModel {
   return { modelId: "stub" } as LanguageModel;
+}
+
+function userPrompt(args: unknown): string {
+  const call = args as {
+    messages?: Array<{
+      content?: Array<{ type: string; text?: string }>;
+    }>;
+  };
+  const parts = call.messages?.[0]?.content ?? [];
+  return parts.find((part) => part.type === "text")?.text ?? "";
 }
 
 function resultWithOutput(output: unknown, finishReason = "stop") {
@@ -181,19 +214,21 @@ describe("extractPdfBatch", () => {
     expect(generateTextMock).toHaveBeenCalledTimes(4);
   });
 
-  it("throws a page-range-specific error when nothing is recoverable", async () => {
+  it("returns gap pages instead of throwing when nothing is recoverable", async () => {
     generateTextMock.mockResolvedValue(resultWithoutOutput("", "length"));
 
-    await expect(
-      extractPdfBatch({
-        pdfBuffer: await pdfWithPages(2),
-        pageStart: 22,
-        pageEnd: 23,
-        filename: "evidence.pdf",
-        modelId: "stub",
-        model: stubModel(),
-      })
-    ).rejects.toThrow("PDF extraction produced no output for pages 22-23");
+    const result = await extractPdfBatch({
+      pdfBuffer: await pdfWithPages(2),
+      pageStart: 22,
+      pageEnd: 23,
+      filename: "evidence.pdf",
+      modelId: "stub",
+      model: stubModel(),
+    });
+
+    expect(result.recovery).toBe("page-gap");
+    expect(result.pages.map((page) => page.pageNumber)).toEqual([22, 23]);
+    expect(result.pages.every(isGapExtractedPage)).toBe(true);
   });
 
   it("remaps relative batch page numbers onto the absolute document range", async () => {
@@ -235,6 +270,25 @@ describe("extractPdfBatch", () => {
 
     expect(result.pages.map((page) => page.pageNumber)).toEqual([4, 5, 6]);
     expect(generateTextMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("accepts a printed page number on a 1-page vision request", async () => {
+    generateTextMock.mockResolvedValueOnce(
+      resultWithOutput(batchPayload([pagePayload(17, "toc-page")]), "stop")
+    );
+
+    const result = await extractPdfBatch({
+      pdfBuffer: await pdfWithPages(1),
+      pageStart: 4,
+      pageEnd: 4,
+      filename: "evidence.pdf",
+      modelId: "stub",
+      model: stubModel(),
+    });
+
+    expect(result.pages).toHaveLength(1);
+    expect(result.pages[0]?.pageNumber).toBe(4);
+    expect(result.pages[0]?.transcript).toBe("toc-page");
   });
 
   it("retries per page when a batch skips some of its pages", async () => {
@@ -289,28 +343,69 @@ describe("extractPdfBatch", () => {
     expect(result.pages.map((page) => page.pageNumber)).toEqual([1, 2]);
   });
 
-  it("fails the batch instead of dropping a page that never recovers", async () => {
-    generateTextMock
-      .mockResolvedValueOnce(resultWithoutOutput("{truncated", "length"))
-      .mockResolvedValueOnce(
-        resultWithOutput(batchPayload([pagePayload(10)]), "stop")
-      )
-      .mockResolvedValueOnce(resultWithoutOutput("{truncated", "length"))
-      .mockResolvedValueOnce(resultWithoutOutput("{truncated", "length"))
-      .mockResolvedValueOnce(
-        resultWithOutput(batchPayload([pagePayload(12)]), "stop")
-      );
+  it("keeps recovered pages and gaps a page that never extracts", async () => {
+    generateTextMock.mockImplementation(async (args) => {
+      const text = userPrompt(args);
+      if (/Extract pages 10-12/.test(text)) {
+        return resultWithoutOutput("{truncated", "length");
+      }
+      if (/Extract pages 10-10/.test(text) || /Transcribe page 10\b/.test(text)) {
+        return resultWithOutput(batchPayload([pagePayload(10)]), "stop");
+      }
+      if (/Extract pages 12-12/.test(text) || /Transcribe page 12\b/.test(text)) {
+        return resultWithOutput(batchPayload([pagePayload(12)]), "stop");
+      }
+      return resultWithoutOutput("{truncated", "length");
+    });
 
-    await expect(
-      extractPdfBatch({
-        pdfBuffer: await pdfWithPages(3),
-        pageStart: 10,
-        pageEnd: 12,
-        filename: "evidence.pdf",
-        modelId: "stub",
-        model: stubModel(),
-      })
-    ).rejects.toThrow("PDF extraction is incomplete: no output for page(s) 11");
+    const result = await extractPdfBatch({
+      pdfBuffer: await pdfWithPages(3),
+      pageStart: 10,
+      pageEnd: 12,
+      filename: "evidence.pdf",
+      modelId: "stub",
+      model: stubModel(),
+    });
+
+    expect(result.pages.map((page) => page.pageNumber)).toEqual([10, 11, 12]);
+    expect(result.recovery).toBe("page-gap");
+    expect(isGapExtractedPage(result.pages[1]!)).toBe(true);
+    expect(result.pages[0]?.transcript).toBe("text-10");
+    expect(result.pages[2]?.transcript).toBe("text-12");
+  });
+
+  it("merges strip transcripts after rotating and tiling a missed page", async () => {
+    generateTextMock.mockImplementation(async (args) => {
+      const text = userPrompt(args);
+      if (text.includes("the top half of page 4")) {
+        return resultWithOutput(
+          batchPayload([pagePayload(4, "toc-top")]),
+          "stop"
+        );
+      }
+      if (text.includes("the bottom half of page 4")) {
+        return resultWithOutput(
+          batchPayload([pagePayload(17, "toc-bottom")]),
+          "stop"
+        );
+      }
+      return resultWithoutOutput("{truncated", "length");
+    });
+
+    const result = await extractPdfBatch({
+      pdfBuffer: await pdfWithPages(1),
+      pageStart: 4,
+      pageEnd: 4,
+      filename: "evidence.pdf",
+      modelId: "stub",
+      model: stubModel(),
+    });
+
+    expect(result.recovery).toBe("page-tiles");
+    expect(result.pages).toHaveLength(1);
+    expect(result.pages[0]?.pageNumber).toBe(4);
+    expect(result.pages[0]?.transcript).toContain("toc-top");
+    expect(result.pages[0]?.transcript).toContain("toc-bottom");
   });
 });
 
@@ -390,6 +485,53 @@ describe("extractPdfBatch with a text layer", () => {
     expect(result.recovery).toBe("text-layer-only");
     expect(generateTextMock).toHaveBeenCalledTimes(1);
   });
+
+  it("uses the parser for pages with a text layer and vision for the rest", async () => {
+    generateTextMock.mockImplementation(async (args) => {
+      const text = userPrompt(args);
+      if (text.includes("Describe pages 1-1")) {
+        return resultWithOutput(
+          {
+            pages: [insightPayload(1)],
+            batchSummary: "summary",
+            continuationNote: "note",
+          },
+          "stop"
+        );
+      }
+      if (text.includes("Describe pages 3-3")) {
+        return resultWithOutput(
+          {
+            pages: [insightPayload(3)],
+            batchSummary: "summary",
+            continuationNote: "note",
+          },
+          "stop"
+        );
+      }
+      if (text.includes("Extract pages 2-2")) {
+        return resultWithOutput(
+          batchPayload([pagePayload(2, "scan-middle")]),
+          "stop"
+        );
+      }
+      return resultWithoutOutput("{truncated", "length");
+    });
+
+    const result = await extractPdfBatch({
+      pdfBuffer: await pdfWithMixedTextPages(),
+      pageStart: 1,
+      pageEnd: 3,
+      filename: "evidence.pdf",
+      modelId: "stub",
+      model: stubModel(),
+    });
+
+    expect(result.pages.map((page) => page.pageNumber)).toEqual([1, 2, 3]);
+    expect(result.pages[0]?.transcript).toContain("alpha line 0");
+    expect(result.pages[1]?.transcript).toBe("scan-middle");
+    expect(result.pages[2]?.transcript).toContain("gamma line 0");
+  });
 });
 
 describe("remapExtractedPageNumbers", () => {
@@ -402,13 +544,44 @@ describe("remapExtractedPageNumbers", () => {
     expect(pages.map((page) => page.pageNumber)).toEqual([4, 5]);
   });
 
+  it("merges absolute numbers with relative 1-based indices", () => {
+    const pages = remapExtractedPageNumbers(
+      [pagePayload(4, "abs-4"), pagePayload(2, "rel-2"), pagePayload(3, "rel-3")],
+      4,
+      6
+    );
+    expect(pages.map((page) => page.pageNumber)).toEqual([4, 5, 6]);
+    expect(pages.map((page) => page.transcript)).toEqual([
+      "abs-4",
+      "rel-2",
+      "rel-3",
+    ]);
+  });
+
   it("falls back to relative 1-based indices for sliced batches", () => {
     const pages = remapExtractedPageNumbers([pagePayload(1)], 7, 7);
     expect(pages.map((page) => page.pageNumber)).toEqual([7]);
   });
 
+  it("accepts a single returned page even when the printed number is wrong", () => {
+    const pages = remapExtractedPageNumbers([pagePayload(17, "toc")], 4, 4);
+    expect(pages.map((page) => page.pageNumber)).toEqual([4]);
+    expect(pages[0]?.transcript).toBe("toc");
+  });
+
   it("returns empty when page numbers match neither absolute nor relative", () => {
     expect(remapExtractedPageNumbers([pagePayload(99)], 4, 6)).toEqual([]);
+  });
+});
+
+describe("gap extracted pages", () => {
+  it("names the missing page and reports a warning", () => {
+    const gap = gapExtractedPage(4);
+    expect(isGapExtractedPage(gap)).toBe(true);
+    expect(extractionWarningForGaps([pagePayload(1), gap])).toBe(
+      "PDF extraction is incomplete: no output for page(s) 4"
+    );
+    expect(extractionWarningForGaps([pagePayload(1)])).toBeNull();
   });
 });
 

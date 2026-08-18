@@ -67,6 +67,11 @@ export function AttachmentViewer() {
               {canPreview && activeAttachment.processingStatus === "failed"
                 ? " · Indexing failed (preview still available)"
                 : null}
+              {canPreview &&
+              activeAttachment.processingStatus === "ready" &&
+              activeAttachment.processingError
+                ? " · Indexing incomplete (preview still available)"
+                : null}
             </p>
             {activeAttachment.description ? (
               <p className="mt-1 line-clamp-3 text-xs leading-snug text-[var(--muted-foreground)]">

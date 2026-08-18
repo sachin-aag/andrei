@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  canReprocessAttachment,
   sanitizeIngestError,
   shouldBackfillIngestFailure,
 } from "./ingest-errors";
@@ -82,5 +83,34 @@ describe("shouldBackfillIngestFailure", () => {
         processingError: null,
       })
     ).toBe(true);
+  });
+});
+
+describe("canReprocessAttachment", () => {
+  it("allows failed attachments and ready attachments with a warning", () => {
+    expect(
+      canReprocessAttachment({
+        processingStatus: "failed",
+        processingError: "PDF extraction is incomplete",
+      })
+    ).toBe(true);
+    expect(
+      canReprocessAttachment({
+        processingStatus: "ready",
+        processingError: "PDF extraction is incomplete: no output for page(s) 4",
+      })
+    ).toBe(true);
+    expect(
+      canReprocessAttachment({
+        processingStatus: "ready",
+        processingError: null,
+      })
+    ).toBe(false);
+    expect(
+      canReprocessAttachment({
+        processingStatus: "processing",
+        processingError: null,
+      })
+    ).toBe(false);
   });
 });

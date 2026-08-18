@@ -60,8 +60,9 @@ export function isCancelledIngestError(error: unknown): boolean {
 }
 
 /**
- * Whether the start-ingest safety net should write a failure row.
- * Skip when markRunTerminal (or ready) already recorded a terminal state.
+ * Whether start-ingest safety net should write a failure row.
+ * Skip when markRunTerminal (or ready, including ready-with-warning) already
+ * recorded a terminal state.
  */
 export function shouldBackfillIngestFailure(row: {
   processingStatus: string;
@@ -70,4 +71,13 @@ export function shouldBackfillIngestFailure(row: {
   if (row.processingStatus === "ready") return false;
   if (row.processingStatus === "failed" && row.processingError) return false;
   return true;
+}
+
+/** Failed ingest, or ready with a page-gap warning, can be retried. */
+export function canReprocessAttachment(row: {
+  processingStatus: string;
+  processingError: string | null;
+}): boolean {
+  if (row.processingStatus === "failed") return true;
+  return row.processingStatus === "ready" && Boolean(row.processingError);
 }

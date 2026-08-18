@@ -24,7 +24,9 @@ import {
 import {
   DEFAULT_DOCUMENT_EXTRACT_MODEL_ID,
   DOCUMENT_EXTRACT_PROMPT_VERSION,
+  extractionWarningForGaps,
   extractPdfBatch,
+  isGapExtractedPage,
 } from "@/lib/attachments/extract-batch";
 import { type AttachmentKind, kindFromMime } from "@/lib/attachments/file-types";
 import {
@@ -134,7 +136,7 @@ async function initializeIngestRun(
         and(
           eq(attachmentIngestRuns.attachmentId, attachmentId),
           eq(attachmentIngestRuns.sourceGeneration, generation),
-          inArray(attachmentIngestRuns.status, ["pending", "running", "ready"])
+          inArray(attachmentIngestRuns.status, ["pending", "running"])
         )
       )
       .limit(1);
@@ -192,10 +194,18 @@ async function runPdfIngest(init: IngestInit): Promise<void> {
   }
 
   await assertAttachmentCurrent(init);
+  const pages = await listRunPages(init.runId);
+  if (pages.length === 0 || pages.every(isGapExtractedPage)) {
+    throw new Error(
+      extractionWarningForGaps(pages) ??
+        "PDF extraction produced no output for this document"
+    );
+  }
+  const warning = extractionWarningForGaps(pages);
   await buildDocumentSummary(init.runId);
   await chunkAndEmbedRun(init);
   await assertAttachmentCurrent(init);
-  await markRunReady(init);
+  await markRunReady(init, warning);
 }
 
 /**
@@ -656,7 +666,24 @@ async function chunkAndEmbedRun(input: IngestInit): Promise<{ chunkCount: number
   return { chunkCount: chunks.length };
 }
 
-async function markRunReady(input: IngestInit): Promise<void> {
+async function listRunPages(runId: string): Promise<
+  Array<{ pageNumber: number; confidence: number | null; transcript: string }>
+> {
+  return db
+    .select({
+      pageNumber: documentPages.pageNumber,
+      confidence: documentPages.confidence,
+      transcript: documentPages.transcript,
+    })
+    .from(documentPages)
+    .where(eq(documentPages.ingestRunId, runId))
+    .orderBy(asc(documentPages.pageNumber));
+}
+
+async function markRunReady(
+  input: IngestInit,
+  warning: string | null = null
+): Promise<void> {
   await db.transaction(async (tx) => {
     await tx
       .update(attachmentIngestRuns)
@@ -684,7 +711,7 @@ async function markRunReady(input: IngestInit): Promise<void> {
         activeIngestRunId: input.runId,
         processingStatus: "ready",
         processingProgress: 100,
-        processingError: null,
+        processingError: warning,
       })
       .where(eq(reportAttachments.id, input.attachmentId));
   });
