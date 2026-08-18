@@ -640,6 +640,9 @@ describe("extractPdfBatch with a text layer", () => {
     expect(result.recovery).toBe("ocr-document-ai");
     expect(result.pages.map((page) => page.pageNumber)).toEqual([10, 11]);
     expect(result.pages[0]?.transcript).toBe(transcript);
+    expect(result.pages[0]?.pageContext).toContain("SW-PA-1");
+    expect(result.batchSummary).toContain("SW-PA-1");
+    expect(result.batchSummary).not.toMatch(/^Page 10 Page 11$/);
     expect(generateTextMock).not.toHaveBeenCalled();
   });
 

@@ -24,6 +24,7 @@ import { investigationToolsUsed } from "@/types/report";
 import {
   buildChatSystemPrompt,
   isChatMode,
+  CHAT_PROMPT_VERSION,
   type ChatMode,
 } from "@/lib/ai/chat/system-prompt";
 import { buildCriteriaOutline } from "@/lib/ai/chat/criteria-outline";
@@ -54,6 +55,16 @@ import {
 import { auditActorFromUser } from "@/lib/audit";
 import { listReadyDocumentsForReport } from "@/lib/attachments/retrieval";
 import { buildAutoEvidence } from "@/lib/ai/chat/auto-evidence";
+import {
+  classifyRetrievalPolicy,
+  recentUserMessageTexts,
+} from "@/lib/ai/chat/retrieval-policy";
+import {
+  chatStepBudget,
+  DocumentReviewSession,
+  pickPlanModeChatTools,
+  prepareDocumentReviewStep,
+} from "@/lib/ai/chat/document-review";
 import { sanitizeChatMessagesForModel } from "@/lib/ai/chat/image-parts";
 import {
   buildMentionBlock,
@@ -63,7 +74,7 @@ import {
   resolveChatMentions,
 } from "@/lib/ai/chat/mentions";
 
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 function lastUserMessage(messages: UIMessage[]): UIMessage | null {
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -189,6 +200,25 @@ export async function POST(
   // Resolved against this report's ready documents only, so a tagged
   // attachment id from another report cannot pull in its evidence.
   const mentions = resolveChatMentions(requestedMentions, documents);
+  const pinnedAttachmentIds = mentionedAttachmentIds(mentions);
+  const mentionedPageCount = documents
+    .filter((doc) => pinnedAttachmentIds.includes(doc.attachmentId))
+    .reduce((sum, doc) => sum + (doc.pageCount ?? 0), 0);
+  const totalReadyPages = documents.reduce(
+    (sum, doc) => sum + (doc.pageCount ?? 0),
+    0
+  );
+  const retrieval = classifyRetrievalPolicy({
+    userText,
+    recentUserTexts: recentUserMessageTexts(messages),
+    sectionScope,
+    documentType: report.documentType,
+    mentionedPageCount,
+    hasDocuments: documents.length > 0,
+  });
+  const documentReview = new DocumentReviewSession();
+  const reviewPageCount =
+    mentionedPageCount > 0 ? mentionedPageCount : totalReadyPages;
 
   const contextMap = buildReportContextMap({
     report: {
@@ -212,7 +242,10 @@ export async function POST(
     documentType: report.documentType,
   });
 
-  const autoEvidenceBlock = await buildAutoEvidence({
+  const autoEvidenceBlock =
+    retrieval.policy === "comprehensive"
+      ? ""
+      : await buildAutoEvidence({
     reportId,
     userText,
     sections: mergedSections,
@@ -226,7 +259,7 @@ export async function POST(
     sectionScope,
     documentType: report.documentType,
     documentNo: report.documentNo,
-    pinnedAttachmentIds: mentionedAttachmentIds(mentions),
+    pinnedAttachmentIds,
     hasDocuments: documents.length > 0,
   });
 
@@ -239,6 +272,7 @@ export async function POST(
     scopeMismatch,
     mentionBlock: buildMentionBlock(mentions),
     autoEvidenceBlock,
+    retrievalPolicy: retrieval.policy,
   });
 
   const allTools = buildChatTools({
@@ -247,21 +281,14 @@ export async function POST(
     sectionScope,
     documentType: report.documentType,
     actor: auditActorFromUser(user),
-    pinnedAttachmentIds: mentionedAttachmentIds(mentions),
+    pinnedAttachmentIds,
     mentionedSections: mentionedSections(mentions),
+    retrievalPolicy: retrieval.policy,
+    documentReview,
   });
   const tools: ToolSet =
     mode === "plan"
-      ? {
-          read_section: allTools.read_section!,
-          search_documents: allTools.search_documents!,
-          read_document_page: allTools.read_document_page!,
-          document_outline: allTools.document_outline!,
-          ask_user: allTools.ask_user!,
-          ...(allTools.suggest_section_scope
-            ? { suggest_section_scope: allTools.suggest_section_scope }
-            : {}),
-        }
+      ? (pickPlanModeChatTools(allTools) as ToolSet)
       : allTools;
 
   const stubSection =
@@ -279,14 +306,30 @@ export async function POST(
       })
     : resolveChatLanguageModel();
 
+  const stepBudget = chatStepBudget({
+    mode,
+    policy: retrieval.policy,
+    totalPages: reviewPageCount,
+  });
+
   const result = streamText({
     model,
     system,
     messages: await convertToModelMessages(messages),
     tools,
-    // Agent mode drafts whole sections field-by-field (read + draft per field),
-    // so it needs a substantially larger step budget than plan mode.
-    stopWhen: stepCountIs(mode === "plan" ? 8 : 24),
+    stopWhen: stepCountIs(stepBudget),
+    prepareStep: () => {
+      const prepared = prepareDocumentReviewStep({
+        policy: retrieval.policy,
+        phase: documentReview.phase(),
+        availableTools: Object.keys(tools),
+      });
+      if (!prepared) return undefined;
+      return {
+        activeTools: prepared.activeTools,
+        ...(prepared.toolChoice ? { toolChoice: prepared.toolChoice } : {}),
+      };
+    },
     // Thought summaries for Langfuse traces; keep thinkingLevel minimal so the
     // multi-step tool loop on flash-lite stays responsive.
     providerOptions: buildGeminiThoughtSummaryProviderOptions({
@@ -302,6 +345,9 @@ export async function POST(
         canEdit,
         taggedDocuments: mentions.documents.length,
         taggedSections: mentions.sections.length,
+        chatPromptVersion: CHAT_PROMPT_VERSION,
+        retrievalPolicy: retrieval.policy,
+        retrievalPolicyReason: retrieval.reason,
       },
     }),
   });

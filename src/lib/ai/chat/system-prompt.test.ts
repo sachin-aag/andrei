@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("bumps the prompt version when section inline image guidance changes", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v20-search-before-draft");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v21-comprehensive-review");
   });
 
   it("tells the model never to pass the section key as targetField", () => {
@@ -182,6 +182,20 @@ describe("buildChatSystemPrompt", () => {
     expect(agent).toContain("Never treat the index as ENOUGH");
     expect(agent).toContain(
       "If Documents are listed and you have not searched (and there is no evidence preview), call search_documents first"
+    );
+  });
+
+  it("requires a finished comprehensive review before drafting inventories", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      retrievalPolicy: "comprehensive",
+    });
+    expect(prompt).toContain("Retrieval mode: COMPREHENSIVE");
+    expect(prompt).toContain("start_document_review");
+    expect(prompt).toContain("finish_document_review before draft_field");
+    expect(prompt).not.toContain(
+      "MUST call search_documents (or use the evidence preview below) BEFORE ask_user or draft_field"
     );
   });
 

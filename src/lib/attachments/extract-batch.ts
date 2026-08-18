@@ -24,6 +24,10 @@ import {
   readPdfTextLayer,
   type PdfTextLayer,
 } from "@/lib/attachments/pdf-text-layer";
+import {
+  derivePageOutlineDigest,
+  isPlaceholderPageContext,
+} from "@/lib/attachments/page-outline";
 
 export const DEFAULT_DOCUMENT_EXTRACT_MODEL_ID = "gemini-3.1-flash-lite";
 /**
@@ -203,12 +207,12 @@ export async function extractPdfBatch(
     textLayer.pages.length === expectedPages &&
     textPages.length === expectedPages
   ) {
-    return extractFromTextLayer(resolved, textLayer);
+    return finalizeExtractedBatch(await extractFromTextLayer(resolved, textLayer));
   }
   if (textPages.length === 0 || !textLayer) {
-    return extractScannedPages(resolved);
+    return finalizeExtractedBatch(await extractScannedPages(resolved));
   }
-  return extractMixedPages(resolved, textLayer);
+  return finalizeExtractedBatch(await extractMixedPages(resolved, textLayer));
 }
 
 /**
@@ -1180,6 +1184,21 @@ function missingPageNumbers(
     if (!seen.has(page)) missing.push(page);
   }
   return missing;
+}
+
+function fillDerivedPageContext(page: ExtractedPage): ExtractedPage {
+  if (!isPlaceholderPageContext(page.pageContext)) return page;
+  const digest = derivePageOutlineDigest(page.transcript);
+  if (!digest) return page;
+  return { ...page, pageContext: truncate(digest, MAX_PAGE_CONTEXT_CHARS) };
+}
+
+function finalizeExtractedBatch(result: ExtractBatchResult): ExtractBatchResult {
+  const pages = result.pages.map(fillDerivedPageContext);
+  const batchSummary = isPlaceholderPageContext(result.batchSummary)
+    ? synthesizeBatchSummary(pages)
+    : result.batchSummary;
+  return { ...result, pages, batchSummary };
 }
 
 function synthesizeBatchSummary(pages: ExtractedPage[]): string {

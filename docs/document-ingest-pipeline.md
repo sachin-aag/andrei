@@ -156,12 +156,18 @@ flowchart LR
 
 ## What chat reads
 
-The report body is **not** in `document_chunks`. Ready attachments are listed in the chat context map (filename + sanitized `documentSummary`). Each turn may also run fail-soft kickoff retrieval.
+The report body is **not** in `document_chunks`. Ready attachments are listed in the chat context map (filename + sanitized `documentSummary`). Each turn classifies retrieval as **focused** (default) or **comprehensive**.
+
+**Focused** (specific facts, ordinary drafting): fail-soft kickoff retrieval (`buildAutoEvidence`, ≤1.5s, ≤8 hits) plus `search_documents` / `read_document_page`. Same latency as before.
+
+**Comprehensive** (traceability matrices, requirement/result inventories, “all/every/missing tests”, keep-going follow-ups): skip the 8-hit preview. The model must `start_document_review` → `continue_document_review` until every page is covered → `finish_document_review` before drafting. Findings are compacted and page-cited; raw OCR does not accumulate in the main chat loop. Failed pages stay in the coverage summary.
+
+`document_outline` derives a page digest from the transcript when `pageContext` is blank (existing OCR ingests included). Adjacent pages are grouped into spans. New OCR/text-layer extracts persist the same digest instead of `"Page 4 Page 5 Page 6"`.
 
 ```mermaid
 flowchart TD
-  A["Chat turn"] --> B["listReadyDocumentsForReport<br/>activeIngestRunId + status ready"]
-  A --> C["buildAutoEvidence ≤1.5s"]
+  A["Chat turn"] --> P{"Retrieval policy"}
+  P -->|focused| C["buildAutoEvidence ≤1.5s"]
   C --> D["searchReportDocuments"]
   D --> E["Vector: embedding <=>"]
   D --> F["Keyword: websearch_to_tsquery<br/>OR tokens on contextual_text"]
@@ -169,9 +175,14 @@ flowchart TD
   F --> G
   G --> H["Citations in the prompt"]
 
-  A --> I["Tools"]
+  P -->|comprehensive| R["start_document_review"]
+  R --> S["continue_document_review<br/>adaptive page batches"]
+  S --> T["finish_document_review<br/>compact cited package"]
+  T --> U["draft_field allowed"]
+
+  A --> I["Other tools"]
   I --> J["search_documents"]
-  I --> K["document_outline → pages"]
+  I --> K["document_outline → digest + spans"]
   I --> L["read_document_page"]
   J --> D
 ```

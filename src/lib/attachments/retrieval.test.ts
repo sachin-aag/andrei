@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildKeywordTsQuery,
+  buildOutlineFromStoredPages,
   normalizeAttachmentIdFilter,
   reciprocalRankFusion,
   searchReportDocuments,
@@ -208,6 +209,33 @@ describe("searchReportDocuments with tagged attachments", () => {
 
     expect(results).toHaveLength(1);
     expect(limitMock).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("buildOutlineFromStoredPages", () => {
+  it("repairs blank and page-index contexts from existing OCR transcripts", () => {
+    const outline = buildOutlineFromStoredPages([
+      {
+        pageNumber: 31,
+        printedPageLabel: "31",
+        pageContext: "",
+        transcript:
+          "CONVERGENT DENTAL\nTABLE 4 SOFTWARE REQUIREMENTS\nSW-LWB-4 Laser wavelength bandwidth Pass",
+      },
+      {
+        pageNumber: 32,
+        printedPageLabel: "32",
+        pageContext: "Page 32",
+        transcript: "TABLE 4 SOFTWARE REQUIREMENTS\nSW-LCB-1 Laser control board Pass",
+      },
+    ]);
+    expect(outline.pages[0]?.pageContext).toContain("SW-LWB-4");
+    expect(outline.pages[1]?.pageContext).toContain("SW-LCB-1");
+    expect(outline.spans[0]).toMatchObject({
+      title: "TABLE 4 SOFTWARE REQUIREMENTS",
+      pageStart: 31,
+      pageEnd: 32,
+    });
   });
 });
 

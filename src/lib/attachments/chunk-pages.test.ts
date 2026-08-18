@@ -62,4 +62,38 @@ describe("chunkDocumentPages", () => {
     expect(chunks.every((chunk) => chunk.rawText.includes("page"))).toBe(true);
     expect(chunks.every((chunk) => chunk.rawText.length <= 35)).toBe(true);
   });
+
+  it("derives a digest when pageContext is blank", () => {
+    const chunks = chunkDocumentPages({
+      filename: "appendix-b.pdf",
+      pages: [
+        {
+          id: "page_1",
+          pageNumber: 31,
+          transcript: "TABLE 4 SOFTWARE REQUIREMENTS\nSW-LWB-4 Pass Fail",
+          visualInterpretation: "",
+          pageContext: null,
+        },
+      ],
+    });
+    expect(chunks[0]?.contextualText).toContain("SW-LWB-4");
+    expect(chunks[0]?.contextualText).not.toContain("No page context provided");
+  });
+
+  it("replaces a page-index pageContext with a transcript digest", () => {
+    const chunks = chunkDocumentPages({
+      filename: "appendix-b.pdf",
+      pages: [
+        {
+          id: "page_1",
+          pageNumber: 4,
+          transcript: "TABLE 4 SOFTWARE REQUIREMENTS\nSW-SST-1 Pass",
+          visualInterpretation: "",
+          pageContext: "Page 4 Page 5 Page 6",
+        },
+      ],
+    });
+    expect(chunks[0]?.contextualText).toContain("SW-SST-1");
+    expect(chunks[0]?.contextualText).not.toContain("Page 4 Page 5 Page 6");
+  });
 });

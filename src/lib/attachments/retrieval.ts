@@ -10,6 +10,12 @@ import {
   reportAttachments,
 } from "@/db/schema";
 import { createWifAuthClient, getWifConfig } from "@/lib/gcp/wif-token";
+import {
+  buildOutlineFromStoredPages,
+  type OutlineSpan,
+} from "@/lib/attachments/page-outline";
+
+export { buildOutlineFromStoredPages };
 
 type GoogleAuthOptions = NonNullable<Parameters<typeof createVertex>[0]>["googleAuthOptions"];
 type AuthClient = NonNullable<NonNullable<GoogleAuthOptions>["authClient"]>;
@@ -72,6 +78,16 @@ export type DocumentOutline = {
   pageCount: number | null;
   documentSummary: string | null;
   pages: DocumentOutlinePage[];
+  spans: OutlineSpan[];
+};
+
+export type ReviewPageSource = {
+  attachmentId: string;
+  filename: string;
+  pageNumber: number;
+  transcript: string;
+  pageContext: string | null;
+  printedPageLabel: string | null;
 };
 
 export type DocumentPageRead = {
@@ -630,6 +646,7 @@ export async function readDocumentOutline({
       pageNumber: documentPages.pageNumber,
       printedPageLabel: documentPages.printedPageLabel,
       pageContext: documentPages.pageContext,
+      transcript: documentPages.transcript,
     })
     .from(documentPages)
     .where(
@@ -642,18 +659,66 @@ export async function readDocumentOutline({
     .orderBy(documentPages.pageNumber)
     .limit(OUTLINE_PAGE_CAP);
 
+  const outline = buildOutlineFromStoredPages(pages);
+
   return {
     attachmentId: header.attachmentId,
     filename: header.filename,
     description: header.description ?? null,
     pageCount: header.pageCount,
     documentSummary: header.documentSummary ?? null,
-    pages: pages.map((page) => ({
-      pageNumber: page.pageNumber,
-      printedPageLabel: page.printedPageLabel,
+    pages: outline.pages.map((page) => ({
+      ...page,
       pageContext: page.pageContext
         ? truncateSnippet(page.pageContext, OUTLINE_CONTEXT_CHARS)
         : null,
     })),
+    spans: outline.spans,
   };
+}
+
+export async function listDocumentPagesForReview({
+  reportId,
+  attachmentIds,
+}: {
+  reportId: string;
+  attachmentIds: readonly string[];
+}): Promise<ReviewPageSource[]> {
+  const ids = normalizeAttachmentIdFilter(attachmentIds);
+  if (ids.length === 0) return [];
+
+  const pages = await db
+    .select({
+      attachmentId: documentPages.attachmentId,
+      filename: reportAttachments.filename,
+      pageNumber: documentPages.pageNumber,
+      transcript: documentPages.transcript,
+      pageContext: documentPages.pageContext,
+      printedPageLabel: documentPages.printedPageLabel,
+    })
+    .from(documentPages)
+    .innerJoin(
+      reportAttachments,
+      eq(documentPages.attachmentId, reportAttachments.id)
+    )
+    .where(
+      and(
+        eq(documentPages.reportId, reportId),
+        inArray(documentPages.attachmentId, ids),
+        isNull(reportAttachments.deletedAt),
+        isNotNull(reportAttachments.activeIngestRunId),
+        eq(documentPages.ingestRunId, reportAttachments.activeIngestRunId)
+      )
+    )
+    .orderBy(documentPages.attachmentId, documentPages.pageNumber)
+    .limit(OUTLINE_PAGE_CAP);
+
+  return pages.map((page) => ({
+    attachmentId: page.attachmentId,
+    filename: page.filename,
+    pageNumber: page.pageNumber,
+    transcript: page.transcript ?? "",
+    pageContext: page.pageContext ?? null,
+    printedPageLabel: page.printedPageLabel,
+  }));
 }
