@@ -3,6 +3,7 @@ import type { JSONContent } from "@tiptap/core";
 import {
   collectPendingSuggestionMarkIds,
   injectSuggestionMarks,
+  richDocsMatchIgnoringAiPreview,
   stripPendingSuggestionsExcept,
 } from "./suggestion-inject";
 
@@ -90,5 +91,48 @@ describe("stripPendingSuggestionsExcept", () => {
     const stripped = stripPendingSuggestionsExcept(doc, null);
     expect(collectPendingSuggestionMarkIds(stripped)).toEqual(["human-tc-1"]);
     expect(stripped).toEqual(doc);
+  });
+});
+
+describe("richDocsMatchIgnoringAiPreview", () => {
+  it("ignores editor-local AI insert previews when comparing docs", () => {
+    const base: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "On 15/05/2025 at approximately 10:00 hrs." }],
+        },
+      ],
+    };
+    const withPreview = injectSuggestionMarks(
+      base,
+      {
+        anchorText: "On 15/05/2025",
+        deleteText: "",
+        insertText: " extra",
+      },
+      {
+        id: "suggestion-a",
+        authorId: "ai",
+        status: "pending",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        kind: "fix",
+      }
+    ).doc;
+    const persisted = stripPendingSuggestionsExcept(withPreview, null);
+
+    expect(richDocsMatchIgnoringAiPreview(withPreview, persisted)).toBe(true);
+    expect(
+      richDocsMatchIgnoringAiPreview(withPreview, {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [{ type: "text", text: "Different sentence." }],
+          },
+        ],
+      })
+    ).toBe(false);
   });
 });

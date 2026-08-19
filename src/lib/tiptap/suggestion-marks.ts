@@ -193,6 +193,14 @@ function textPos(state: EditorState, pos: number): number {
   return TextSelection.near($pos, 1).from;
 }
 
+function selectionAfterInsert(tr: Transaction, insertEnd: number): Transaction {
+  try {
+    return tr.setSelection(TextSelection.create(tr.doc, insertEnd));
+  } catch {
+    return tr.setSelection(TextSelection.near(tr.doc.resolve(insertEnd), 1));
+  }
+}
+
 function insertTrackedText(
   state: EditorState,
   insertAt: number,
@@ -211,8 +219,7 @@ function insertTrackedText(
       insertMarkType.create(continuingInsertAttrs(state, insertAt, authorId))
     )
     .setMeta("skipTrackChanges", true);
-  tr.setSelection(TextSelection.near(tr.doc.resolve(insertEnd), 1));
-  return tr;
+  return selectionAfterInsert(tr, insertEnd);
 }
 
 function sameTextblock(state: EditorState, a: number, b: number): boolean {
@@ -225,13 +232,33 @@ function sameTextblock(state: EditorState, a: number, b: number): boolean {
   );
 }
 
+function rangeHasAiInsert(state: EditorState, from: number, to: number): boolean {
+  const insertMarkType = state.schema.marks[suggestionInsertMarkName];
+  if (!insertMarkType || from >= to) return false;
+  let found = false;
+  state.doc.nodesBetween(from, to, (node) => {
+    if (found) return false;
+    if (!node.isText) return true;
+    for (const mark of node.marks) {
+      if (mark.type === insertMarkType && mark.attrs.authorId === "ai") {
+        found = true;
+        return false;
+      }
+    }
+    return true;
+  });
+  return found;
+}
+
 /**
  * Chrome may report the previous insert span (or an Enter split) as
  * `from < to`. Insert without deleting.
  *
  * Same textblock → type at the caret, so a later AI suggestion span is not
- * treated as the insert site. Cross-block (Enter) → type at `to` so the new
- * line stays a new line. `from === to` falls through to appendTransaction.
+ * treated as the insert site. Chrome may also stretch `to` into a later
+ * paragraph that holds the AI span — still type at the caret. Cross-block
+ * Enter (no AI span in the Chrome range) → type at `to` so the new line
+ * stays a new line. `from === to` falls through to appendTransaction.
  */
 export function trackChangesTextInputTransaction(
   state: EditorState,
@@ -255,9 +282,10 @@ export function trackChangesTextInputTransaction(
 
   if (from >= to) return null;
 
-  const insertAt = sameTextblock(state, from, to)
-    ? textPos(state, selTo)
-    : textPos(state, to);
+  const insertAt =
+    rangeHasAiInsert(state, from, to) || sameTextblock(state, from, to)
+      ? textPos(state, selTo)
+      : textPos(state, to);
 
   return insertTrackedText(state, insertAt, text, authorId);
 }
@@ -286,8 +314,7 @@ export function trackChangesSelectionReplaceTransaction(
       insertMarkType.create(continuingInsertAttrs(state, insertAt, authorId))
     )
     .setMeta("skipTrackChanges", true);
-  tr.setSelection(TextSelection.near(tr.doc.resolve(insertEnd), 1));
-  return tr;
+  return selectionAfterInsert(tr, insertEnd);
 }
 
 /**

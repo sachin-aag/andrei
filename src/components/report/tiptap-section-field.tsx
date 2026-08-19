@@ -66,6 +66,7 @@ import {
 } from "@/lib/tiptap/suggestion-action-widgets";
 import {
   injectSuggestionMarks,
+  richDocsMatchIgnoringAiPreview,
   stripPendingSuggestionsExcept,
 } from "@/lib/tiptap/suggestion-inject";
 import { AI_AUTHOR_ID } from "@/lib/ai/constants";
@@ -76,6 +77,7 @@ import {
 } from "@/lib/ai/suggestion-gating";
 import { buildRedraftPreviewDoc } from "@/lib/tiptap/redraft-preview";
 import { markdownToDoc } from "@/lib/tiptap/markdown-to-doc";
+import { normalizeRichField } from "@/lib/tiptap/rich-text";
 import { buildSuggestionEdit, narrativeHasSuggestionMarks } from "@/lib/suggestions/apply-narrative-suggestion";
 import {
   acceptSuggestion,
@@ -398,6 +400,7 @@ export function TiptapSectionField({
   // author explicitly accepts or ignores them. Stripping them on toggle-off
   // would silently destroy reviewer intent.
   const onChangeRef = useRef(onChange);
+  const applyExternalValueToEditorRef = useRef<() => void>(() => {});
   useLayoutEffect(() => {
     onChangeRef.current = onChange;
   }, [onChange]);
@@ -446,12 +449,15 @@ export function TiptapSectionField({
         suggestionWidgetsExtension,
         placeholderHighlightExtension,
       ],
-      content: value,
+      content: normalizeRichField(value),
       editable,
       onUpdate: ({ editor: ed }) => {
         const json = ed.getJSON() as JSONContent;
         // Do not use flushSync here: onUpdate can run during useEffect (e.g. setContent sync), and React 19 forbids flushSync inside lifecycle methods.
         onChangeRef.current(json);
+      },
+      onBlur: () => {
+        applyExternalValueToEditorRef.current();
       },
     },
     [highlightExtension, placeholder, placeholderHighlightExtension, suggestionWidgetsExtension]
@@ -689,12 +695,22 @@ export function TiptapSectionField({
   const applyExternalValueToEditor = useCallback(() => {
     const currentEditor = editor;
     if (!currentEditor || currentEditor.isDestroyed) return;
-    const cur = JSON.stringify(currentEditor.getJSON());
-    const next = JSON.stringify(value);
-    if (cur !== next) {
-      currentEditor.commands.setContent(value as Content, { emitUpdate: false });
+    const incoming = normalizeRichField(value);
+    const current = currentEditor.getJSON() as JSONContent;
+    if (richDocsMatchIgnoringAiPreview(current, incoming)) return;
+    // Keystrokes update the editor first; parent state catches up via onUpdate.
+    // Replacing the doc while focused jumps the viewport (and can land the
+    // caret in a later AI suggestion span). Suggestion accept still applies
+    // because the preview-held lock is set for that moment.
+    if (currentEditor.view.hasFocus() && !isSuggestionPreviewHeld(section)) {
+      return;
     }
-  }, [editor, value]);
+    currentEditor.commands.setContent(incoming as Content, { emitUpdate: false });
+  }, [editor, value, isSuggestionPreviewHeld, section]);
+
+  useLayoutEffect(() => {
+    applyExternalValueToEditorRef.current = applyExternalValueToEditor;
+  }, [applyExternalValueToEditor]);
 
   useEffect(() => {
     applyExternalValueToEditor();
@@ -716,6 +732,15 @@ export function TiptapSectionField({
 
     let json = editor.getJSON() as JSONContent;
     const before = JSON.stringify(json);
+
+    if (
+      editor.view.hasFocus() &&
+      !previewHeld &&
+      activeSuggestionId &&
+      narrativeHasSuggestionMarks(json, activeSuggestionId)
+    ) {
+      return;
+    }
 
     if (previewHeld) {
       // Queue bridge: don't keep the previous suggestion marks and don't inject
