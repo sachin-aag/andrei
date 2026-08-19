@@ -7,9 +7,11 @@ import { documentsPanel, expandDocumentsPanel } from "./helpers/workspace";
 
 test.describe.configure({ mode: "serial" });
 
-async function uploadPdf(page: Page): Promise<string> {
+async function uploadPdf(page: Page, pageCount = 1): Promise<string> {
   const pdf = await PDFDocument.create();
-  pdf.addPage([612, 792]);
+  for (let index = 0; index < pageCount; index += 1) {
+    pdf.addPage([612, 792]);
+  }
   const bytes = await pdf.save();
   const fileName = `evidence-${createHash("sha256").update(bytes).digest("hex").slice(0, 8)}.pdf`;
 
@@ -80,6 +82,29 @@ test.describe("report PDF documents", () => {
       timeout: 15_000,
     });
     await expect(page.locator(`iframe[title="${fileName}"]`)).toHaveCount(0);
+  });
+
+  test("renders later PDF pages in a scrollable preview", async ({ page }) => {
+    const fileName = await uploadPdf(page, 3);
+    const panel = documentsPanel(page);
+
+    await expect(
+      panel.locator('[data-document-file][data-status="ready"]')
+    ).toBeVisible({ timeout: 30_000 });
+
+    await panel.getByRole("button", { name: fileName, exact: true }).click();
+    await expect(page.getByRole("button", { name: /^back$/i })).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByLabel(`${fileName}, page 1`)).toBeVisible({
+      timeout: 15_000,
+    });
+
+    await page.locator('[data-pdf-page="3"]').scrollIntoViewIfNeeded();
+    await expect(page.getByLabel(`${fileName}, page 3`)).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByText(/Page 3 of 3/)).toBeVisible();
   });
 
   test("creates a folder and keeps it after reload", async ({ page }) => {

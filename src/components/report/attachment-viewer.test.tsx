@@ -48,6 +48,7 @@ describe("AttachmentViewer", () => {
     expect(
       screen.getByAltText("Attachment_IV_Preparation_Record.pdf, page 1")
     ).toBeInTheDocument();
+    expect(screen.getByText("Page 1 of 2")).toBeInTheDocument();
   });
 
   it("does not grant script or download access to the sandboxed DOCX preview", () => {

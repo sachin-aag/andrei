@@ -1,12 +1,12 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { signIn } from "next-auth/react";
-import { ArrowRight, Loader2, MailCheck } from "lucide-react";
+import { ArrowRight, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { EmailDeliveryHint } from "@/components/auth/email-delivery-hint";
+import { MagicLinkSent } from "@/components/auth/magic-link-sent";
+import { sendMagicLinkEmail } from "@/components/auth/send-magic-link";
 
 export function MagicLinkForm({ redirectTo }: { redirectTo?: string }) {
   const [email, setEmail] = useState("");
@@ -28,25 +28,18 @@ export function MagicLinkForm({ redirectTo }: { redirectTo?: string }) {
         setError("This email isn't registered. Please contact your admin to get access.");
         return;
       }
-      await signIn("resend", {
-        email: email.trim(),
-        redirectTo: redirectTo ?? "/",
-        redirect: false,
-      });
+      const sentResult = await sendMagicLinkEmail(email.trim(), redirectTo);
+      if (!sentResult.ok) {
+        setError(sentResult.error);
+        return;
+      }
       setSent(true);
     });
   };
 
   if (sent) {
     return (
-      <div className="text-center space-y-3 py-4">
-        <MailCheck className="size-10 mx-auto text-[var(--brand-600)]" />
-        <h3 className="font-semibold">Check your email</h3>
-        <p className="text-sm text-[var(--muted-foreground)]">
-          We sent a sign-in link to <strong>{email}</strong>. Click it to sign
-          in.
-        </p>
-        <EmailDeliveryHint email={email} />
+      <MagicLinkSent email={email}>
         <button
           type="button"
           className="text-sm text-[var(--brand-600)] hover:underline"
@@ -57,7 +50,7 @@ export function MagicLinkForm({ redirectTo }: { redirectTo?: string }) {
         >
           Use a different email
         </button>
-      </div>
+      </MagicLinkSent>
     );
   }
 
