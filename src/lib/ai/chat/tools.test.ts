@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { z } from "zod";
-import { buildChatTools } from "@/lib/ai/chat/tools";
+import { buildChatTools, collectSearchQueries, mergeExcludePages } from "@/lib/ai/chat/tools";
 import {
   DocumentReviewSession,
   extractReviewFindingsFromPages,
@@ -62,6 +62,32 @@ async function executeDocumentOutline(
   return execute({ attachmentId }, TEST_TOOL_OPTIONS);
 }
 
+describe("collectSearchQueries", () => {
+  it("dedupes and caps complementary queries", () => {
+    expect(
+      collectSearchQueries({
+        query: "equipment",
+        queries: ["UUT", "equipment", "fixtures", "serials", "software"],
+      })
+    ).toEqual(["UUT", "equipment", "fixtures", "serials"]);
+  });
+
+  it("accumulates excludePages across grep rounds", () => {
+    expect(
+      mergeExcludePages(
+        [{ attachmentId: "att_1", pageNumber: 34 }],
+        [
+          { attachmentId: "att_1", pageNumber: 34 },
+          { attachmentId: "att_1", pageNumber: 32 },
+        ]
+      )
+    ).toEqual([
+      { attachmentId: "att_1", pageNumber: 34 },
+      { attachmentId: "att_1", pageNumber: 32 },
+    ]);
+  });
+});
+
 describe("buildChatTools search_documents scoping", () => {
   it("has no scope switch when nothing is tagged", () => {
     const tools = buildChatTools({ reportId: "report-1", canEdit: true });
@@ -73,6 +99,19 @@ describe("buildChatTools search_documents scoping", () => {
       query: "cleaning",
     }) as Record<string, unknown>;
     expect(parsed.scope).toBeUndefined();
+    expect(parsed.limit).toBe(8);
+    expect(parsed.mode).toBe("hybrid");
+    expect(
+      accepts(tools, "search_documents", { queries: ["equipment", "UUT"] })
+    ).toBe(true);
+    expect(
+      accepts(tools, "search_documents", {
+        query: "UUT",
+        mode: "keyword",
+        excludePages: [{ attachmentId: "att_1", pageNumber: 34 }],
+      })
+    ).toBe(true);
+    expect(accepts(tools, "search_documents", {})).toBe(false);
   });
 
   it("defaults to the tagged documents when some are tagged", () => {

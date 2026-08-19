@@ -20,6 +20,8 @@ export const REVIEW_PAGE_TEXT_LIMIT = 12_000;
 export const REVIEW_PAGE_CAP = 300;
 export const FOCUSED_CHAT_STEP_BUDGET_PLAN = 8;
 export const FOCUSED_CHAT_STEP_BUDGET_AGENT = 24;
+export const ADAPTIVE_CHAT_STEP_BUDGET_PLAN = 16;
+export const ADAPTIVE_CHAT_STEP_BUDGET_AGENT = 40;
 export const COMPREHENSIVE_CHAT_STEP_BUDGET_CAP = 96;
 
 export type DocumentReviewPhase =
@@ -468,13 +470,31 @@ export function chatStepBudget(input: {
   policy: RetrievalPolicy;
   totalPages: number;
 }): number {
-  const focused =
-    input.mode === "plan"
-      ? FOCUSED_CHAT_STEP_BUDGET_PLAN
-      : FOCUSED_CHAT_STEP_BUDGET_AGENT;
-  if (input.policy === "focused") return focused;
-  const continueSteps = Math.ceil(Math.max(input.totalPages, 1) / 2) + 12;
-  return Math.min(COMPREHENSIVE_CHAT_STEP_BUDGET_CAP, Math.max(focused, continueSteps));
+  switch (input.policy) {
+    case "focused":
+      return input.mode === "plan"
+        ? FOCUSED_CHAT_STEP_BUDGET_PLAN
+        : FOCUSED_CHAT_STEP_BUDGET_AGENT;
+    case "adaptive":
+      return input.mode === "plan"
+        ? ADAPTIVE_CHAT_STEP_BUDGET_PLAN
+        : ADAPTIVE_CHAT_STEP_BUDGET_AGENT;
+    case "comprehensive": {
+      const focused =
+        input.mode === "plan"
+          ? FOCUSED_CHAT_STEP_BUDGET_PLAN
+          : FOCUSED_CHAT_STEP_BUDGET_AGENT;
+      const continueSteps = Math.ceil(Math.max(input.totalPages, 1) / 2) + 12;
+      return Math.min(
+        COMPREHENSIVE_CHAT_STEP_BUDGET_CAP,
+        Math.max(focused, continueSteps)
+      );
+    }
+    default: {
+      const _exhaustive: never = input.policy;
+      throw new Error(`Unhandled retrieval policy: ${String(_exhaustive)}`);
+    }
+  }
 }
 
 export type DocumentReviewToolChoice = {
@@ -487,13 +507,12 @@ export function prepareDocumentReviewStep(input: {
   phase: DocumentReviewPhase;
   availableTools: readonly string[];
 }): DocumentReviewToolChoice | undefined {
-  if (input.policy === "focused") return undefined;
-
   const allow = (names: readonly string[]): string[] =>
     names.filter((name) => input.availableTools.includes(name));
 
   switch (input.phase) {
     case "idle":
+      if (input.policy !== "comprehensive") return undefined;
       return {
         activeTools: allow([
           "start_document_review",
@@ -516,7 +535,7 @@ export function prepareDocumentReviewStep(input: {
       return undefined;
     default: {
       const _exhaustive: never = input.phase;
-      return _exhaustive;
+      throw new Error(`Unhandled document-review phase: ${String(_exhaustive)}`);
     }
   }
 }

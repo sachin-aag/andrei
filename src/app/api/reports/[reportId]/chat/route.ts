@@ -29,7 +29,10 @@ import {
 } from "@/lib/ai/chat/system-prompt";
 import { buildCriteriaOutline } from "@/lib/ai/chat/criteria-outline";
 import { buildChatTools } from "@/lib/ai/chat/tools";
-import { resolveChatLanguageModel } from "@/lib/ai/chat/model";
+import {
+  CHAT_GOOGLE_MODEL_ID,
+  resolveChatLanguageModel,
+} from "@/lib/ai/chat/model";
 import { buildStubChatModel } from "@/lib/ai/chat/stub-model";
 import {
   parseChatSectionScope,
@@ -56,6 +59,7 @@ import { auditActorFromUser } from "@/lib/audit";
 import { listReadyDocumentsForReport } from "@/lib/attachments/retrieval";
 import { buildAutoEvidence } from "@/lib/ai/chat/auto-evidence";
 import {
+  chatThinkingLevel,
   classifyRetrievalPolicy,
   recentUserMessageTexts,
 } from "@/lib/ai/chat/retrieval-policy";
@@ -243,9 +247,8 @@ export async function POST(
   });
 
   const autoEvidenceBlock =
-    retrieval.policy === "comprehensive"
-      ? ""
-      : await buildAutoEvidence({
+    retrieval.policy === "focused"
+      ? await buildAutoEvidence({
     reportId,
     userText,
     sections: mergedSections,
@@ -261,7 +264,8 @@ export async function POST(
     documentNo: report.documentNo,
     pinnedAttachmentIds,
     hasDocuments: documents.length > 0,
-  });
+  })
+    : "";
 
   const system = buildChatSystemPrompt({
     contextMap,
@@ -330,10 +334,10 @@ export async function POST(
         ...(prepared.toolChoice ? { toolChoice: prepared.toolChoice } : {}),
       };
     },
-    // Thought summaries for Langfuse traces; keep thinkingLevel minimal so the
-    // multi-step tool loop on flash-lite stays responsive.
+    // Thought summaries for Langfuse; use low thinking on adaptive/comprehensive
+    // turns so Gemini can plan complementary retrieval. Skim turns stay minimal.
     providerOptions: buildGeminiThoughtSummaryProviderOptions({
-      thinkingLevel: "minimal",
+      thinkingLevel: chatThinkingLevel(retrieval.policy),
     }),
     ...langfuseGenerateTextTelemetry({
       functionId: "report-chat",
@@ -346,6 +350,7 @@ export async function POST(
         taggedDocuments: mentions.documents.length,
         taggedSections: mentions.sections.length,
         chatPromptVersion: CHAT_PROMPT_VERSION,
+        chatModelId: CHAT_GOOGLE_MODEL_ID,
         retrievalPolicy: retrieval.policy,
         retrievalPolicyReason: retrieval.reason,
       },

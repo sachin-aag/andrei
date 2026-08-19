@@ -152,11 +152,12 @@ Release gates: `docs/pdf-evidence-deployment-checklist.md`.
 ## Chat + attachments (always-on summary)
 
 - Ready docs (filename + sanitized `documentSummary`) are in the context map.
-- Each turn: `buildAutoEvidence` (≤1.5s, fail-soft) injects an evidence preview.
-  Gap tools: `search_documents`, `document_outline`, `read_document_page`.
+- Each turn: focused skims may inject `buildAutoEvidence` (≤1.5s, fail-soft).
+  Adaptive/comprehensive skip it so the model greps. Gap tools:
+  `search_documents` (multi-round grep), `document_outline`, `read_document_page`.
 - Hybrid search = vector + English FTS with OR-tokenized `websearch_to_tsquery`.
   The report body is **not** chunk-indexed; use `read_section`.
-- Prompt policy is search-then-ask (including DV facts: requirement IDs, ECO/DCR). Do not restore “ask the human first” for batch numbers, dates, results, equipment IDs, or design-input facts. The document index is not citable evidence.
+- Prompt policy is search-then-ask (including DV facts: requirement IDs, ECO/DCR). Do not restore “ask the human first” for batch numbers, dates, results, equipment IDs, or design-input facts. The document index is not citable evidence. Default retrieval is adaptive (complementary search + outline); exhaustive page review is only for complete inventories.
 - Stub chat (`buildStubChatModel`) can prove a turn streams; it cannot prove
   tool selection. Spec: `e2e/report-chat.spec.ts`.
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  chatThinkingLevel,
   classifyRetrievalPolicy,
   recentUserMessageTexts,
 } from "./retrieval-policy";
@@ -36,14 +37,14 @@ describe("classifyRetrievalPolicy", () => {
     expect(decision.policy).toBe("comprehensive");
   });
 
-  it("keeps narrow fact lookups focused", () => {
+  it("keeps a single requirement-id lookup on the agentic path, not a page walk", () => {
     const decision = classifyRetrievalPolicy({
       userText: "What is the pass/fail result for SW-LWB-4 on page 31?",
       hasDocuments: true,
       mentionedPageCount: 62,
     });
-    expect(decision.policy).toBe("focused");
-    expect(decision.reason).toBe("specific_fact_or_draft");
+    expect(decision.policy).toBe("adaptive");
+    expect(decision.reason).toBe("agentic_default");
   });
 
   it("escalates a family-code follow-up that is not a single requirement id", () => {
@@ -75,13 +76,43 @@ describe("classifyRetrievalPolicy", () => {
     expect(decision.reason).toBe("matrix_section_inventory");
   });
 
-  it("does not widen a large tagged document on a title question", () => {
+  it("does not force a full review for a title question on a large tagged document", () => {
     const decision = classifyRetrievalPolicy({
       userText: "What is the document number on the cover?",
       mentionedPageCount: 62,
       hasDocuments: true,
     });
-    expect(decision.policy).toBe("focused");
+    expect(decision.policy).toBe("adaptive");
+    expect(decision.reason).toBe("agentic_default");
+  });
+
+  it("keeps equipment and UUT table drafts on the agentic path", () => {
+    const equipment = classifyRetrievalPolicy({
+      userText:
+        "which equipment was used for testing? lets draft the relevant section for this",
+      hasDocuments: true,
+    });
+    expect(equipment.policy).toBe("adaptive");
+    expect(equipment.reason).toBe("agentic_default");
+
+    const followUp = classifyRetrievalPolicy({
+      userText:
+        "nice. also include the solea systems into this table in the same schema",
+      recentUserTexts: [
+        "which equipment was used for testing? lets draft the relevant section for this",
+      ],
+      hasDocuments: true,
+    });
+    expect(followUp.policy).toBe("adaptive");
+    expect(followUp.reason).toBe("agentic_default");
+  });
+});
+
+describe("chatThinkingLevel", () => {
+  it("uses reasoning on adaptive and comprehensive turns", () => {
+    expect(chatThinkingLevel("focused")).toBe("minimal");
+    expect(chatThinkingLevel("adaptive")).toBe("low");
+    expect(chatThinkingLevel("comprehensive")).toBe("low");
   });
 });
 

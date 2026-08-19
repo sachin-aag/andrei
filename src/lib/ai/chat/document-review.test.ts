@@ -180,7 +180,7 @@ describe("prepareDocumentReviewStep", () => {
     "ask_user",
   ];
 
-  it("leaves focused turns unrestricted", () => {
+  it("leaves focused and adaptive turns unrestricted until a review starts", () => {
     expect(
       prepareDocumentReviewStep({
         policy: "focused",
@@ -188,6 +188,26 @@ describe("prepareDocumentReviewStep", () => {
         availableTools: available,
       })
     ).toBeUndefined();
+    expect(
+      prepareDocumentReviewStep({
+        policy: "adaptive",
+        phase: "idle",
+        availableTools: available,
+      })
+    ).toBeUndefined();
+  });
+
+  it("locks an in-progress review even on adaptive turns", () => {
+    expect(
+      prepareDocumentReviewStep({
+        policy: "adaptive",
+        phase: "in_progress",
+        availableTools: available,
+      })
+    ).toEqual({
+      activeTools: ["continue_document_review"],
+      toolChoice: { type: "tool", toolName: "continue_document_review" },
+    });
   });
 
   it("forces continue until finish, then unlocks drafting", () => {
@@ -243,6 +263,15 @@ describe("chatStepBudget", () => {
     expect(
       chatStepBudget({ mode: "agent", policy: "focused", totalPages: 62 })
     ).toBe(24);
+  });
+
+  it("gives adaptive turns room for complementary search", () => {
+    expect(
+      chatStepBudget({ mode: "plan", policy: "adaptive", totalPages: 62 })
+    ).toBe(16);
+    expect(
+      chatStepBudget({ mode: "agent", policy: "adaptive", totalPages: 62 })
+    ).toBe(40);
   });
 
   it("raises the comprehensive budget from page count", () => {

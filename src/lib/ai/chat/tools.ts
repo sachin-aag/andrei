@@ -148,6 +148,110 @@ const DOCUMENT_TRUST_BOUNDARY =
 const REVIEW_INCOMPLETE_MESSAGE =
   "Finish the document review (start_document_review → continue_document_review until coverage is complete → finish_document_review) before drafting.";
 
+export const SEARCH_DOCUMENTS_DEFAULT_LIMIT = 8;
+export const SEARCH_DOCUMENTS_MAX_LIMIT = 16;
+export const SEARCH_DOCUMENTS_MAX_QUERIES = 4;
+export const SEARCH_DOCUMENTS_RESULT_CAP = 16;
+export const SEARCH_COVERAGE_HINT =
+  "Grep loop: this list is ranked, not complete. Pass nextExcludePages as excludePages on the next call. For tables, grep complementary objects (UUT vs equipment, fixtures, serials) before drafting. Use mode=keyword for exact protocol terms. If truncated=true, grep again.";
+
+export function collectSearchQueries(input: {
+  query?: string;
+  queries?: readonly string[];
+}): string[] {
+  const raw = [...(input.queries ?? []), ...(input.query ? [input.query] : [])];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of raw) {
+    const query = item.replace(/\s+/g, " ").trim();
+    const key = query.toLowerCase();
+    if (!query || seen.has(key)) continue;
+    seen.add(key);
+    out.push(query);
+    if (out.length >= SEARCH_DOCUMENTS_MAX_QUERIES) break;
+  }
+  return out;
+}
+
+export function mergeExcludePages(
+  previous: readonly { attachmentId: string; pageNumber: number }[] | undefined,
+  hits: readonly { attachmentId: string; pageNumber: number }[]
+): Array<{ attachmentId: string; pageNumber: number }> {
+  const seen = new Set<string>();
+  const out: Array<{ attachmentId: string; pageNumber: number }> = [];
+  for (const page of [...(previous ?? []), ...hits]) {
+    const key = `${page.attachmentId}:${page.pageNumber}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ attachmentId: page.attachmentId, pageNumber: page.pageNumber });
+  }
+  return out;
+}
+
+function shouldGateDraftOnDocumentReview(input: {
+  retrievalPolicy: RetrievalPolicy;
+  documentReview: DocumentReviewSession;
+}): boolean {
+  if (input.documentReview.phase() !== "idle" && !input.documentReview.isFinished()) {
+    return true;
+  }
+  return input.retrievalPolicy === "comprehensive" && !input.documentReview.isFinished();
+}
+
+const searchQueryField = z
+  .string()
+  .min(1)
+  .max(500)
+  .optional()
+  .describe("One evidence query, e.g. 'failed dissolution result batch 123'.");
+const searchQueriesField = z
+  .array(z.string().min(1).max(500))
+  .max(SEARCH_DOCUMENTS_MAX_QUERIES)
+  .optional()
+  .describe(
+    "Complementary queries to run in parallel (equipment AND UUT AND fixtures). Prefer this for tables."
+  );
+const searchLimitField = z
+  .number()
+  .int()
+  .min(1)
+  .max(SEARCH_DOCUMENTS_MAX_LIMIT)
+  .default(SEARCH_DOCUMENTS_DEFAULT_LIMIT)
+  .describe("Maximum snippets to return per query.");
+const searchModeField = z
+  .enum(["hybrid", "keyword"])
+  .default("hybrid")
+  .describe(
+    "hybrid = semantic + keyword. keyword = lexical grep for exact terms (UUT, Solea, 13.3). Use keyword on later rounds."
+  );
+const searchExcludePagesField = z
+  .array(
+    z.object({
+      attachmentId: z.string().min(1),
+      pageNumber: z.number().int().min(1),
+    })
+  )
+  .max(80)
+  .optional()
+  .describe(
+    "Pages already seen. Pass nextExcludePages from the previous search_documents result so later greps skip them."
+  );
+
+const searchDocumentsBaseShape = {
+  query: searchQueryField,
+  queries: searchQueriesField,
+  limit: searchLimitField,
+  mode: searchModeField,
+  excludePages: searchExcludePagesField,
+};
+
+function hasSearchQuery(value: {
+  query?: string;
+  queries?: string[];
+}): boolean {
+  return collectSearchQueries(value).length > 0;
+}
+
 /**
  * `search_documents`, optionally biased toward the documents the engineer
  * tagged with @. Tagged scoping is applied server-side rather than requested
@@ -158,64 +262,99 @@ function buildSearchDocumentsTool(opts: {
   pinnedAttachmentIds: string[];
 }) {
   const { reportId, pinnedAttachmentIds } = opts;
-  const query = z
-    .string()
-    .min(1)
-    .max(500)
-    .describe("Focused evidence query, e.g. 'failed dissolution result batch 123'.");
-  const limit = z
-    .number()
-    .int()
-    .min(1)
-    .max(8)
-    .default(5)
-    .describe("Maximum number of evidence snippets to return.");
+
+  async function runSearch(input: {
+    query?: string;
+    queries?: string[];
+    limit: number;
+    mode?: "hybrid" | "keyword";
+    excludePages?: Array<{ attachmentId: string; pageNumber: number }>;
+    attachmentIds?: string[];
+  }) {
+    const queryList = collectSearchQueries(input);
+    const arms = await Promise.all(
+      queryList.map((query) =>
+        searchReportDocuments({
+          reportId,
+          query,
+          limit: input.limit,
+          attachmentIds: input.attachmentIds,
+          mode: input.mode,
+          excludePages: input.excludePages,
+        })
+      )
+    );
+    const byId = new Map<string, (typeof arms)[number][number]>();
+    for (const arm of arms) {
+      for (const hit of arm) {
+        if (byId.has(hit.citationId)) continue;
+        byId.set(hit.citationId, hit);
+        if (byId.size >= SEARCH_DOCUMENTS_RESULT_CAP) break;
+      }
+      if (byId.size >= SEARCH_DOCUMENTS_RESULT_CAP) break;
+    }
+    const merged = Array.from(byId.values());
+    const truncated =
+      merged.length >= SEARCH_DOCUMENTS_RESULT_CAP ||
+      arms.some((arm) => arm.length >= input.limit);
+    const nextExcludePages = mergeExcludePages(input.excludePages, merged);
+    return {
+      results: toClientDocumentSearchResults(merged),
+      queriesRun: queryList,
+      mode: input.mode ?? "hybrid",
+      returnedCount: merged.length,
+      truncated,
+      seenPages: merged.map((hit) => ({
+        attachmentId: hit.attachmentId,
+        pageNumber: hit.pageNumber,
+        filename: hit.filename,
+      })),
+      nextExcludePages,
+      coverageHint: SEARCH_COVERAGE_HINT,
+      citationRule: DOCUMENT_CITATION_RULE,
+      trustBoundary: DOCUMENT_TRUST_BOUNDARY,
+    };
+  }
 
   if (pinnedAttachmentIds.length === 0) {
     return tool({
       description:
-        "Search ready evidence attachments for report-scoped facts. Call this before ask_user or draft_field when Documents are listed and no evidence preview covers the needed facts. Results include citationId for follow-up reads; final prose should cite as [filename, p. N] or [filename] if the page is unknown — never [filename: <to be filled>].",
-      inputSchema: z.object({ query, limit }),
-      execute: async ({ query: q, limit: n }) => {
-        const results = await searchReportDocuments({ reportId, query: q, limit: n });
-        return {
-          results: toClientDocumentSearchResults(results),
-          citationRule: DOCUMENT_CITATION_RULE,
-          trustBoundary: DOCUMENT_TRUST_BOUNDARY,
-        };
-      },
+        "Grep ready attachments. Run multiple rounds: search, read hits, then search complementary terms with excludePages=nextExcludePages from the last result. Prefer queries[] for tables (equipment AND UUT). mode=keyword is lexical grep. truncated=true means keep grepping. Cite as [filename, p. N].",
+      inputSchema: z
+        .object(searchDocumentsBaseShape)
+        .refine(hasSearchQuery, { message: "Provide query or queries." }),
+      execute: async ({ query, queries, limit, mode, excludePages }) =>
+        runSearch({ query, queries, limit, mode, excludePages }),
     });
   }
 
   const tagged = pinnedAttachmentIds.length;
   return tool({
     description:
-      `Search ready evidence attachments for report-scoped facts. Call this before ask_user or draft_field when no evidence preview covers the needed facts. Defaults to the ${tagged} document(s) the engineer tagged with @ — those results come back with pinned=true, and any shortfall is backfilled from the rest of the report with pinned=false. Pass scope="all" to search every attachment instead. Final prose should cite as [filename, p. N] or [filename] if the page is unknown — never [filename: <to be filled>].`,
-    inputSchema: z.object({
-      query,
-      limit,
-      scope: z
-        .enum(["tagged", "all"])
-        .default("tagged")
-        .describe(
-          'Where to look: "tagged" prefers the engineer\'s @ mentions, "all" searches every attachment.'
-        ),
-    }),
-    execute: async ({ query: q, limit: n, scope }) => {
-      const results = await searchReportDocuments({
-        reportId,
-        query: q,
-        limit: n,
+      `Grep ready attachments in rounds. Prefer complementary queries for tables. Pass excludePages=nextExcludePages from the previous result. mode=keyword is lexical grep. truncated=true means keep grepping. Defaults to the ${tagged} document(s) the engineer tagged with @ (pinned=true; shortfall backfilled with pinned=false). Pass scope="all" to search every attachment. Cite as [filename, p. N].`,
+    inputSchema: z
+      .object({
+        ...searchDocumentsBaseShape,
+        scope: z
+          .enum(["tagged", "all"])
+          .default("tagged")
+          .describe(
+            'Where to look: "tagged" prefers the engineer\'s @ mentions, "all" searches every attachment.'
+          ),
+      })
+      .refine(hasSearchQuery, { message: "Provide query or queries." }),
+    execute: async ({ query, queries, limit, mode, excludePages, scope }) => ({
+      ...(await runSearch({
+        query,
+        queries,
+        limit,
+        mode,
+        excludePages,
         attachmentIds: scope === "all" ? undefined : pinnedAttachmentIds,
-      });
-      return {
-        results: toClientDocumentSearchResults(results),
-        searchedScope: scope,
-        taggedDocumentCount: tagged,
-        citationRule: DOCUMENT_CITATION_RULE,
-        trustBoundary: DOCUMENT_TRUST_BOUNDARY,
-      };
-    },
+      })),
+      searchedScope: scope,
+      taggedDocumentCount: tagged,
+    }),
   });
 }
 
@@ -259,7 +398,7 @@ export function buildChatTools(opts: {
   const { reportId, canEdit, actor } = opts;
   const documentType = opts.documentType ?? "investigation_report";
   const sectionScope = opts.sectionScope ?? "all";
-  const retrievalPolicy = opts.retrievalPolicy ?? "focused";
+  const retrievalPolicy = opts.retrievalPolicy ?? "adaptive";
   const documentReview = opts.documentReview ?? new DocumentReviewSession();
   const allowedSections = chatSectionsInScope(sectionScope, documentType);
   const pinnedAttachmentIds = Array.from(
@@ -632,7 +771,9 @@ export function buildChatTools(opts: {
               "This report is not editable in its current state, so edits cannot be proposed.",
           };
         }
-        if (retrievalPolicy === "comprehensive" && !documentReview.isFinished()) {
+        if (
+          shouldGateDraftOnDocumentReview({ retrievalPolicy, documentReview })
+        ) {
           return {
             status: "review_incomplete",
             message: REVIEW_INCOMPLETE_MESSAGE,
@@ -737,7 +878,9 @@ export function buildChatTools(opts: {
               "This report is not editable in its current state, so drafts cannot be proposed.",
           };
         }
-        if (retrievalPolicy === "comprehensive" && !documentReview.isFinished()) {
+        if (
+          shouldGateDraftOnDocumentReview({ retrievalPolicy, documentReview })
+        ) {
           return {
             status: "review_incomplete",
             message: REVIEW_INCOMPLETE_MESSAGE,

@@ -1,7 +1,7 @@
 import type { DocumentType, SectionType } from "@/db/schema";
 import type { ChatSectionScope } from "@/lib/ai/chat/fields";
 
-export const RETRIEVAL_POLICIES = ["focused", "comprehensive"] as const;
+export const RETRIEVAL_POLICIES = ["focused", "adaptive", "comprehensive"] as const;
 export type RetrievalPolicy = (typeof RETRIEVAL_POLICIES)[number];
 
 export type RetrievalPolicyDecision = {
@@ -26,8 +26,6 @@ const INVENTORY_ACTION_RE =
 
 const MATRIX_SECTIONS = new Set<string>(["traceability", "test_results"]);
 
-const LARGE_DOC_PAGE_THRESHOLD = 20;
-
 export type ClassifyRetrievalPolicyInput = {
   userText: string;
   recentUserTexts?: readonly string[];
@@ -51,9 +49,10 @@ export function recentUserMessageTexts(
 }
 
 /**
- * Default is focused (today's ≤8-hit search). Escalate only for exhaustive
- * output shapes, completeness corrections, or a large tagged document plus
- * inventory language. Explicit "quick/high-level" keeps the focused path.
+ * Classifier only picks the extremes. Default is adaptive: the model owns
+ * retrieval (complementary search, outline, neighboring pages) the way a
+ * coding agent greps a repo. Comprehensive is the page-walk for true
+ * every-row inventories. Focused is an explicit skim.
  */
 export function classifyRetrievalPolicy(
   input: ClassifyRetrievalPolicyInput
@@ -87,15 +86,23 @@ export function classifyRetrievalPolicy(
     return { policy: "comprehensive", reason: "matrix_section_inventory" };
   }
 
-  const mentionedPages = input.mentionedPageCount ?? 0;
-  if (
-    mentionedPages >= LARGE_DOC_PAGE_THRESHOLD &&
-    INVENTORY_ACTION_RE.test(combined)
-  ) {
-    return { policy: "comprehensive", reason: "large_tagged_document_inventory" };
-  }
+  return { policy: "adaptive", reason: "agentic_default" };
+}
 
-  return { policy: "focused", reason: "specific_fact_or_draft" };
+export function chatThinkingLevel(
+  policy: RetrievalPolicy
+): "minimal" | "low" {
+  switch (policy) {
+    case "focused":
+      return "minimal";
+    case "adaptive":
+    case "comprehensive":
+      return "low";
+    default: {
+      const _exhaustive: never = policy;
+      throw new Error(`Unhandled retrieval policy: ${String(_exhaustive)}`);
+    }
+  }
 }
 
 function textFromParts(parts: readonly unknown[] | undefined): string {
