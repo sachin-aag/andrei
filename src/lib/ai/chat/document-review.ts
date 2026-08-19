@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requirementIds } from "@/lib/attachments/ocr-quality";
 import { derivePageOutlineDigest } from "@/lib/attachments/page-outline";
 import { isTestStubChat } from "@/lib/test/ai-bypass";
-import { resolveChatLanguageModel } from "@/lib/ai/chat/model";
+import { resolveChatExtractLanguageModel } from "@/lib/ai/chat/model";
 import { sanitizePromptMetadata } from "@/lib/ai/chat/prompt-metadata";
 import {
   DOCUMENT_REVIEW_TOOL_NAMES,
@@ -615,7 +615,7 @@ async function extractReviewBatchWithLlm(input: {
     .join("\n\n");
 
   const result = await generateText({
-    model: resolveChatLanguageModel(),
+    model: resolveChatExtractLanguageModel(),
     output: Output.object({ schema: llmFindingSchema }),
     temperature: 0,
     providerOptions: buildGeminiThoughtSummaryProviderOptions({

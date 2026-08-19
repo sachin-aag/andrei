@@ -1,8 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { CHAT_GOOGLE_MODEL_ID } from "./model";
+import { CHAT_EXTRACT_GOOGLE_MODEL_ID, CHAT_GOOGLE_MODEL_ID } from "./model";
 
-describe("CHAT_GOOGLE_MODEL_ID", () => {
-  it("uses Gemini 3.5 Flash-Lite for agentic chat and document review", () => {
-    expect(CHAT_GOOGLE_MODEL_ID).toBe("gemini-3.5-flash-lite");
+describe("chat model ids", () => {
+  it("uses Gemini 3.7 Flash for the assistant orchestrator", () => {
+    expect(CHAT_GOOGLE_MODEL_ID).toBe("gemini-3.7-flash");
+  });
+
+  it("keeps Gemini 3.5 Flash-Lite on parallel page extracts", () => {
+    expect(CHAT_EXTRACT_GOOGLE_MODEL_ID).toBe("gemini-3.5-flash-lite");
   });
 });

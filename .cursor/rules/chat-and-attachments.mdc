@@ -42,8 +42,8 @@ system prompt when kickoff retrieval hits.
   Adaptive/focused turns do not expose `start_document_review`. Comprehensive
   `continue_document_review` drains the remaining queue in one call with a
   worker pool of `REVIEW_EXTRACT_CONCURRENCY` extracts (no thought summaries
-  on extract). Chat model is `gemini-3.5-flash-lite` with `thinkingLevel`
-  `minimal`.
+  on extract). Orchestrator is `gemini-3.7-flash`; page extracts use
+  `gemini-3.5-flash-lite`. `thinkingLevel` is `minimal`.
 - Tagged `@` documents rank first; backfill from the rest of the report.
   Hard-filtering tagged IDs blinds the assistant.
 - Report body is not in `document_chunks`. Use `read_section`.

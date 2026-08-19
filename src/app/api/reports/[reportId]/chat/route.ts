@@ -29,6 +29,7 @@ import {
 import { buildCriteriaOutline } from "@/lib/ai/chat/criteria-outline";
 import { buildChatTools } from "@/lib/ai/chat/tools";
 import {
+  CHAT_EXTRACT_GOOGLE_MODEL_ID,
   CHAT_GOOGLE_MODEL_ID,
   resolveChatLanguageModel,
 } from "@/lib/ai/chat/model";
@@ -351,6 +352,7 @@ export async function POST(
         taggedSections: mentions.sections.length,
         chatPromptVersion: CHAT_PROMPT_VERSION,
         chatModelId: CHAT_GOOGLE_MODEL_ID,
+        chatExtractModelId: CHAT_EXTRACT_GOOGLE_MODEL_ID,
         retrievalPolicy: retrieval.policy,
         retrievalPolicyReason: retrieval.reason,
       },
