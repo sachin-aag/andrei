@@ -111,6 +111,50 @@ test.describe("manager track changes persist", () => {
     await expect(improveEditor(page)).toContainText(mark, { timeout: 30_000 });
   });
 
+  test("renders leftover markdown hashes and bold in Corrective Action", async ({
+    page,
+  }) => {
+    await authenticateAsManager(page);
+    const blob = [
+      "### Corrective Actions",
+      "1. **Personnel Training:** Retrain operators on SOP-12.",
+    ].join("\n");
+    const seed = await page.request.patch(
+      `/api/reports/${reportId}/sections/improve`,
+      {
+        data: {
+          content: {
+            narrative: { type: "doc", content: [{ type: "paragraph" }] },
+            correctiveActions: {
+              type: "doc",
+              content: [
+                { type: "paragraph", content: [{ type: "text", text: blob }] },
+              ],
+            },
+          },
+        },
+        headers: await browserCookieHeaders(page),
+      }
+    );
+    expect(seed.ok(), `seed improve failed (${seed.status()})`).toBeTruthy();
+
+    await gotoWithNavigationRetry(page, `/reports/${reportId}/review`, {
+      waitUntil: "domcontentloaded",
+    });
+    await expect(page.getByRole("heading", { name: /^improve$/i })).toBeVisible({
+      timeout: 30_000,
+    });
+
+    const editor = improveEditor(page);
+    await editor.scrollIntoViewIfNeeded();
+    await expect(editor).toBeVisible({ timeout: 30_000 });
+    await expect(editor).toContainText("Corrective Actions");
+    await expect(editor).toContainText("Personnel Training:");
+    await expect(editor).not.toContainText("###");
+    await expect(editor.locator("strong")).toContainText("Corrective Actions");
+    await expect(editor.locator("strong")).toContainText("Personnel Training:");
+  });
+
   test("keeps a new line and types into it instead of joining", async ({ page }) => {
     await authenticateAsManager(page);
     await gotoWithNavigationRetry(page, `/reports/${reportId}/review`, {

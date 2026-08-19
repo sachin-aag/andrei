@@ -158,6 +158,91 @@ function parseListItemLine(
   return { kind: parsed.kind === "ordered" ? "ordered" : "bullet", text: parsed.text };
 }
 
+function paragraphHasSuggestionMarks(node: JSONContent): boolean {
+  return (node.content ?? []).some((child) =>
+    (child.marks ?? []).some(
+      (mark) =>
+        mark.type === "suggestionInsert" || mark.type === "suggestionDelete"
+    )
+  );
+}
+
+/** True when a paragraph still stores markdown source (`###`, `**bold**`, `1. `). */
+export function looksLikeLiteralMarkdown(text: string): boolean {
+  if (ATX_HEADING_RE.test(text.trim())) return true;
+  if (/\*\*[^*]+\*\*/.test(text)) return true;
+  return text.split("\n").some((line) => parseListItemLine(line.trim()) != null);
+}
+
+function isHydrateableMarkdownParagraph(node: JSONContent): boolean {
+  if (node.type !== "paragraph" || !paragraphIsPlainInline(node)) return false;
+  if (paragraphHasSuggestionMarks(node)) return false;
+  return looksLikeLiteralMarkdown(paragraphPlainText(node));
+}
+
+function isBlankPlainParagraph(node: JSONContent): boolean {
+  return (
+    node.type === "paragraph" &&
+    paragraphIsPlainInline(node) &&
+    !paragraphHasSuggestionMarks(node) &&
+    !paragraphPlainText(node).trim()
+  );
+}
+
+function hydrateBlockArray(nodes: JSONContent[]): JSONContent[] {
+  const out: JSONContent[] = [];
+  let i = 0;
+  while (i < nodes.length) {
+    const node = nodes[i]!;
+    if (isHydrateableMarkdownParagraph(node)) {
+      const texts: string[] = [];
+      while (i < nodes.length) {
+        const current = nodes[i]!;
+        if (isHydrateableMarkdownParagraph(current)) {
+          texts.push(paragraphPlainText(current));
+          i++;
+          continue;
+        }
+        if (texts.length > 0 && isBlankPlainParagraph(current)) {
+          texts.push("");
+          i++;
+          continue;
+        }
+        break;
+      }
+      while (texts.length > 0 && !texts[texts.length - 1]!.trim()) {
+        texts.pop();
+      }
+      const converted = markdownToDoc(texts.join("\n"));
+      out.push(...(converted.content ?? []));
+      continue;
+    }
+    out.push(hydrateNode(node));
+    i++;
+  }
+  return out;
+}
+
+function hydrateNode(node: JSONContent): JSONContent {
+  if (node.type !== "paragraph" && node.content?.length) {
+    return { ...node, content: hydrateBlockArray(node.content) };
+  }
+  return node;
+}
+
+/**
+ * Chat / import can persist a whole markdown blob as one (or a few) paragraphs
+ * with literal `###`, `**bold**`, and `1. ` markers. Turn those into the same
+ * TipTap nodes `markdownToDoc` emits so Improve/Control render instead of
+ * showing hashes and asterisks.
+ */
+export function hydrateLiteralMarkdownInDoc(doc: JSONContent): JSONContent {
+  if (doc.type === "doc") {
+    return { ...doc, content: hydrateBlockArray(doc.content ?? []) };
+  }
+  return hydrateNode(doc);
+}
+
 /** `**bold**` spans → bold-marked text nodes; everything else literal. */
 function parseInline(text: string): JSONContent[] {
   const nodes: JSONContent[] = [];

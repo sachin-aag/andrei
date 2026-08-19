@@ -62,6 +62,31 @@ describe("rich text helpers", () => {
     ]);
   });
 
+  it("hydrates leftover **bold** and numbered lists when normalizing a rich field", () => {
+    const doc = normalizeRichField({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "### Corrective Actions\n1. **Personnel Training:** Retrain operators.",
+            },
+          ],
+        },
+      ],
+    });
+    expect(doc.content?.[0]).toEqual({
+      type: "paragraph",
+      content: [
+        { type: "text", text: "Corrective Actions", marks: [{ type: "bold" }] },
+      ],
+    });
+    expect(doc.content?.[1]?.type).toBe("orderedList");
+    expect(richJsonToPlainText(doc)).not.toContain("**");
+  });
+
   it("preserves mammoth soft line breaks as hardBreak nodes", () => {
     expect(
       legacyStringToDoc(
