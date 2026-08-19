@@ -20,6 +20,20 @@ const PAGE_CITE_SUFFIX = /,\s*p\.\s*\d+\s*$/i;
 const ATTACHMENT_LABEL = /^Attachment[_\s-]?([IVXLCDM]+|\d+)$/i;
 
 /**
+ * `Appendix B`, `Appendix B.1`, `Appendix 2`, `Appendix IV` — not
+ * `Appendix number` / `Appendix name` (those are fill-in labels).
+ */
+const APPENDIX_LABEL =
+  /^Appendix\s+(?:[A-Z](?:\.\d+)*|[IVXLCDM]{2,}|\d+)\b/i;
+
+/**
+ * Pharma / QMS document numbers such as `790-00134R` or `790-00134R(RevU)`.
+ * Requires 3+ digits, hyphen, 4+ digits so ranges like `12-34` and dates
+ * like `2024-01-15` are not treated as cites.
+ */
+const DOCUMENT_NUMBER = /\b\d{3,}-\d{4,}[A-Z]?\b/i;
+
+/**
  * Core citation text: strip a mistaken `: <to be filled>` wrapper the AI /
  * old normalizer may have added around a document cite, plus leftover
  * `; <to be filled>` junk after multi-cite lists.
@@ -32,9 +46,13 @@ function citationCoreFromInner(inner: string): string {
   return core;
 }
 
+function citeCoreWithoutPage(core: string): string {
+  return core.replace(PAGE_CITE_SUFFIX, "").trim();
+}
+
 /** True when `core` is one or more Attachment_XIV-style exhibit labels. */
 function isAttachmentLabelCite(core: string): boolean {
-  const withoutPage = core.replace(PAGE_CITE_SUFFIX, "").trim();
+  const withoutPage = citeCoreWithoutPage(core);
   if (!withoutPage) return false;
   const parts = withoutPage
     .split(/\s*,\s*/)
@@ -42,6 +60,16 @@ function isAttachmentLabelCite(core: string): boolean {
     .filter(Boolean);
   if (parts.length === 0) return false;
   return parts.every((p) => ATTACHMENT_LABEL.test(p));
+}
+
+/** True when `core` names a specific appendix (optionally plus report title). */
+function isAppendixCite(core: string): boolean {
+  return APPENDIX_LABEL.test(citeCoreWithoutPage(core));
+}
+
+/** True when `core` contains a document number such as `790-00134R`. */
+function isDocumentNumberCite(core: string): boolean {
+  return DOCUMENT_NUMBER.test(citeCoreWithoutPage(core));
 }
 
 /**
@@ -52,6 +80,8 @@ function isAttachmentLabelCite(core: string): boolean {
  * - page cites `[name, p. N]` (any name; extension optional)
  * - bare attachment filenames using supported extensions from file-types
  * - extension-less exhibit labels (`[Attachment_XIV]`, lists, optional page)
+ * - appendix / report-number cites (`[Appendix B]`,
+ *   `[Appendix B DV Report 790-00134R(RevU)]`)
  * - mistaken `[cite: <to be filled>]` / `[cite,; <to be filled>]` wrappers
  */
 export function isCitationShapedBracket(match: string): boolean {
@@ -62,6 +92,8 @@ export function isCitationShapedBracket(match: string): boolean {
   if (!core) return false;
   if (PAGE_CITE_SUFFIX.test(core)) return true;
   if (isAttachmentLabelCite(core)) return true;
+  if (isAppendixCite(core)) return true;
+  if (isDocumentNumberCite(core)) return true;
   return hasSupportedAttachmentExtension(core);
 }
 

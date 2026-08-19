@@ -46,10 +46,32 @@ describe("isCitationShapedBracket", () => {
     ).toBe(true);
   });
 
+  it("recognizes appendix and document-number citations", () => {
+    expect(isCitationShapedBracket("[Appendix B]")).toBe(true);
+    expect(isCitationShapedBracket("[Appendix IV]")).toBe(true);
+    expect(
+      isCitationShapedBracket("[Appendix B DV Report 790-00134R(RevU)]")
+    ).toBe(true);
+    expect(isCitationShapedBracket("[790-00134R(RevU)]")).toBe(true);
+    expect(
+      isCitationShapedBracket(
+        "[Appendix B DV Report 790-00134R(RevU): <to be filled>]"
+      )
+    ).toBe(true);
+    expect(isCitationShapedBracket("[Appendix B: <to be filled>]")).toBe(true);
+  });
+
   it("rejects ordinary placeholders and guidance", () => {
     expect(isCitationShapedBracket("[batch number]")).toBe(false);
     expect(isCitationShapedBracket("[SOP No.: <to be filled>]")).toBe(false);
     expect(isCitationShapedBracket("[Attachment summary]")).toBe(false);
+    expect(isCitationShapedBracket("[Appendix number]")).toBe(false);
+    expect(
+      isCitationShapedBracket("[Appendix number: <to be filled>]")
+    ).toBe(false);
+    expect(
+      isCitationShapedBracket("[document number: <to be filled>]")
+    ).toBe(false);
     expect(
       isCitationShapedBracket(
         "[Detailed narrative of the observation, including environmental conditions]"
@@ -76,6 +98,14 @@ describe("repairedCitationBracket", () => {
         "[Attachment_IX, Attachment_XI,; <to be filled>]"
       )
     ).toBe("[Attachment_IX, Attachment_XI]");
+    expect(
+      repairedCitationBracket(
+        "[Appendix B DV Report 790-00134R(RevU): <to be filled>]"
+      )
+    ).toBe("[Appendix B DV Report 790-00134R(RevU)]");
+    expect(repairedCitationBracket("[Appendix B: <to be filled>]")).toBe(
+      "[Appendix B]"
+    );
   });
 
   it("returns null for real placeholders and bare citations", () => {
