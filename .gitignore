@@ -90,6 +90,18 @@ docs/mj-onboarding-temporary-passwords.md
 # Local video analysis scratch (large media + generated reports)
 /04 Video analysis/
 
+# Local customer PDFs / working copies (do not commit)
+/Appendix B DV Report*.pdf
+/convergent/
+/04 Pilot Design Verification/
+/790-*.pdf
+/822-*.pdf
+/775-*.pdf
+/790-00134R-RevU-Andrei-draft-report-sections.md
+
+# Ralph loop local scratch (do not commit)
+.cursor/ralph/scratchpad.md
+
 # Large media artifacts (keep out of git)
 *.mp4
 *.mov

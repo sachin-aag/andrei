@@ -29,13 +29,12 @@ Set **both** `ANDREI_CUSTOMER` and `NEXT_PUBLIC_ANDREI_CUSTOMER` to the same val
 
 ## Deploy scope
 
-Both Vercel projects watch the same GitHub repo. `scripts/vercel-should-build.sh` is the same allow-list on both:
+Both Vercel projects watch the same GitHub repo. Every git ref builds on both; pack env on each project picks MJ vs demo. There is no branch allow-list.
 
-| Branch | Both projects |
-|--------|----------------|
-| `main` | **build** (production) |
-| `cursor/*`, `demo/*` | **build** (preview) |
-| anything else | skip |
+| Git ref | Both projects |
+|---------|----------------|
+| `main` | **build** (production — each project's Production Branch setting) |
+| any other branch | **build** (preview) |
 
 Set on **each** project → Settings → Environment Variables → Production, Preview, and Development (pack identity, not branch routing):
 
@@ -52,7 +51,7 @@ The Neon ↔ Vercel integration creates extra **Preview / git-branch** `DATABASE
 
 - **Keep** the Sensitive `DATABASE_URL` (+ `DATABASE_URL_UNPOOLED`) scoped **Production and Preview** (or Production) with no git-branch — that is the real demo Neon.
 - **Ignore** the Neon-logo per-branch rows while preview branching is on. Deleting them in Vercel while the integration is connected just recreates them on the next deploy of that branch.
-- To stop the sprawl on **andrei-demo**: Neon/Vercel integration → disable **Create a branch for each preview deployment**, then delete leftover preview branches in the Neon **demo** project. After that, every `cursor/*` preview uses the shared demo `DATABASE_URL`.
+- To stop the sprawl on **andrei-demo**: Neon/Vercel integration → disable **Create a branch for each preview deployment**, then delete leftover preview branches in the Neon **demo** project. After that, every preview uses the shared demo `DATABASE_URL`.
 - If you see the same per-branch rows on **andrei-v2**, turn preview branching off there immediately. Those would be MJ Neon preview databases.
 
 ## Environment variables
@@ -154,7 +153,7 @@ L1–L3 are already on `feat/whitelabel` (#123–#125). This change is the ignor
 
    - Demo: DV + conclusion, Andrei chrome, no Word-body field on create
    - MJ: no DV, no conclusion tab, MJ login/shell, Word import on create, evidence PDFs from the report Documents tab, export opens the MJ template
-   - `cursor/*` and `demo/*` PR deploys build **both** `andrei-demo` and `andrei-v2`
+   - PR deploys build **both** `andrei-demo` and `andrei-v2`
 
 ## Neon `demo` project
 
@@ -180,7 +179,7 @@ Password for seeded users: **`DemoPass123!`**. See previous seed table in git hi
 
 | Symptom | Fix |
 |---------|-----|
-| PR builds on **neither** Vercel project | Head ref is not `main`, `cursor/*`, or `demo/*` |
+| PR builds on **neither** Vercel project | Ignored Build Step in the Vercel project, or Git integration disconnected — repo policy is to build every ref on both projects |
 | Demo PR creates a Neon branch on MJ | Neon preview branching is on for **andrei-v2**. Turn it off; do not hand-edit the Neon-logo `DATABASE_URL` rows |
 | MJ looks like Andrei | `NEXT_PUBLIC_ANDREI_CUSTOMER` unset on `andrei-v2` (client defaults to demo) |
 | MJ export missing conclusion | Expected — MJ template has no `{@conclusionNarrativeXml}`; pack hides the section |

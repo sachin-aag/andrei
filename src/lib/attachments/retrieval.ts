@@ -10,6 +10,12 @@ import {
   reportAttachments,
 } from "@/db/schema";
 import { createWifAuthClient, getWifConfig } from "@/lib/gcp/wif-token";
+import {
+  buildOutlineFromStoredPages,
+  type OutlineSpan,
+} from "@/lib/attachments/page-outline";
+
+export { buildOutlineFromStoredPages };
 
 type GoogleAuthOptions = NonNullable<Parameters<typeof createVertex>[0]>["googleAuthOptions"];
 type AuthClient = NonNullable<NonNullable<GoogleAuthOptions>["authClient"]>;
@@ -18,6 +24,8 @@ export const ATTACHMENT_EMBEDDING_MODEL_ID = "gemini-embedding-001" as const;
 export const ATTACHMENT_EMBEDDING_DIMENSIONS = 768 as const;
 export const DEFAULT_DOCUMENT_SEARCH_LIMIT = 8 as const;
 export const DEFAULT_SNIPPET_CHARS: number = 900;
+export const DOCUMENT_SEARCH_MODES = ["hybrid", "keyword"] as const;
+export type DocumentSearchMode = (typeof DOCUMENT_SEARCH_MODES)[number];
 const DEFAULT_CANDIDATE_LIMIT = 40;
 const RRF_K = 60;
 const PAGE_TEXT_LIMIT = 12_000;
@@ -72,6 +80,16 @@ export type DocumentOutline = {
   pageCount: number | null;
   documentSummary: string | null;
   pages: DocumentOutlinePage[];
+  spans: OutlineSpan[];
+};
+
+export type ReviewPageSource = {
+  attachmentId: string;
+  filename: string;
+  pageNumber: number;
+  transcript: string;
+  pageContext: string | null;
+  printedPageLabel: string | null;
 };
 
 export type DocumentPageRead = {
@@ -331,6 +349,10 @@ export function normalizeAttachmentIdFilter(
   );
 }
 
+export function searchPageKey(attachmentId: string, pageNumber: number): string {
+  return `${attachmentId}:${pageNumber}`;
+}
+
 /** One hybrid vector+keyword pass, optionally narrowed to / away from attachments. */
 async function fusedChunkSearch({
   reportId,
@@ -342,7 +364,7 @@ async function fusedChunkSearch({
 }: {
   reportId: string;
   trimmed: string;
-  queryVector: string;
+  queryVector: string | null;
   limit: number;
   includeAttachmentIds?: string[];
   excludeAttachmentIds?: string[];
@@ -364,16 +386,18 @@ async function fusedChunkSearch({
       : [])
   );
 
-  const vectorRows = await db
-    .select(candidateSelect())
-    .from(documentChunks)
-    .innerJoin(
-      reportAttachments,
-      eq(documentChunks.attachmentId, reportAttachments.id)
-    )
-    .where(and(activeScope, isNotNull(documentChunks.embedding)))
-    .orderBy(sql`${documentChunks.embedding} <=> ${queryVector}::vector`)
-    .limit(candidateLimit);
+  const vectorRows = queryVector
+    ? await db
+        .select(candidateSelect())
+        .from(documentChunks)
+        .innerJoin(
+          reportAttachments,
+          eq(documentChunks.attachmentId, reportAttachments.id)
+        )
+        .where(and(activeScope, isNotNull(documentChunks.embedding)))
+        .orderBy(sql`${documentChunks.embedding} <=> ${queryVector}::vector`)
+        .limit(candidateLimit)
+    : [];
 
   const keywordQuery = buildKeywordTsQuery(trimmed);
   const keywordRows = keywordQuery
@@ -422,53 +446,87 @@ export async function searchReportDocuments({
   limit = DEFAULT_DOCUMENT_SEARCH_LIMIT,
   snippetChars = DEFAULT_SNIPPET_CHARS,
   attachmentIds,
+  mode = "hybrid",
+  excludePages,
 }: {
   reportId: string;
   query: string;
   limit?: number;
   snippetChars?: number;
   attachmentIds?: readonly string[];
+  mode?: DocumentSearchMode;
+  excludePages?: readonly { attachmentId: string; pageNumber: number }[];
 }): Promise<DocumentSearchResult[]> {
   const trimmed = query.replace(/\s+/g, " ").trim();
   if (!trimmed) return [];
 
-  const queryEmbedding = await embedRetrievalQuery(trimmed);
-  const queryVector = vectorLiteral(queryEmbedding);
+  let queryVector: string | null;
+  switch (mode) {
+    case "keyword":
+      if (!buildKeywordTsQuery(trimmed)) return [];
+      queryVector = null;
+      break;
+    case "hybrid": {
+      const queryEmbedding = await embedRetrievalQuery(trimmed);
+      queryVector = vectorLiteral(queryEmbedding);
+      break;
+    }
+    default: {
+      const _exhaustive: never = mode;
+      throw new Error(`Unhandled document search mode: ${String(_exhaustive)}`);
+    }
+  }
   const pinnedIds = normalizeAttachmentIdFilter(attachmentIds);
+  const excludeKeys = new Set(
+    (excludePages ?? []).map((page) =>
+      searchPageKey(page.attachmentId, page.pageNumber)
+    )
+  );
+  const fusionLimit = Math.min(
+    DEFAULT_CANDIDATE_LIMIT,
+    Math.max(limit, limit + excludeKeys.size)
+  );
+
+  const take = (rows: CandidateRow[], pinned?: boolean): DocumentSearchResult[] =>
+    rows
+      .filter(
+        (row) =>
+          !excludeKeys.has(searchPageKey(row.attachmentId, row.pageNumber))
+      )
+      .slice(0, limit)
+      .map((row) => ({
+        ...toSearchResult(row, { snippetChars }),
+        ...(pinned === undefined ? {} : { pinned }),
+      }));
 
   if (pinnedIds.length === 0) {
-    const rows = await fusedChunkSearch({ reportId, trimmed, queryVector, limit });
-    return rows.map((row) => toSearchResult(row, { snippetChars }));
+    const rows = await fusedChunkSearch({
+      reportId,
+      trimmed,
+      queryVector,
+      limit: fusionLimit,
+    });
+    return take(rows);
   }
 
   const pinnedRows = await fusedChunkSearch({
     reportId,
     trimmed,
     queryVector,
-    limit,
+    limit: fusionLimit,
     includeAttachmentIds: pinnedIds,
   });
-  const results = pinnedRows.map((row) => ({
-    ...toSearchResult(row, { snippetChars }),
-    pinned: true,
-  }));
+  const results = take(pinnedRows, true);
   if (results.length >= limit) return results;
 
-  // The query embedding is reused, so backfill costs only the extra SQL.
   const backfillRows = await fusedChunkSearch({
     reportId,
     trimmed,
     queryVector,
-    limit: limit - results.length,
+    limit: fusionLimit - results.length,
     excludeAttachmentIds: pinnedIds,
   });
-  return [
-    ...results,
-    ...backfillRows.map((row) => ({
-      ...toSearchResult(row, { snippetChars }),
-      pinned: false,
-    })),
-  ];
+  return [...results, ...take(backfillRows, false)].slice(0, limit);
 }
 
 export async function listReadyDocumentsForReport(
@@ -630,6 +688,7 @@ export async function readDocumentOutline({
       pageNumber: documentPages.pageNumber,
       printedPageLabel: documentPages.printedPageLabel,
       pageContext: documentPages.pageContext,
+      transcript: documentPages.transcript,
     })
     .from(documentPages)
     .where(
@@ -642,18 +701,66 @@ export async function readDocumentOutline({
     .orderBy(documentPages.pageNumber)
     .limit(OUTLINE_PAGE_CAP);
 
+  const outline = buildOutlineFromStoredPages(pages);
+
   return {
     attachmentId: header.attachmentId,
     filename: header.filename,
     description: header.description ?? null,
     pageCount: header.pageCount,
     documentSummary: header.documentSummary ?? null,
-    pages: pages.map((page) => ({
-      pageNumber: page.pageNumber,
-      printedPageLabel: page.printedPageLabel,
+    pages: outline.pages.map((page) => ({
+      ...page,
       pageContext: page.pageContext
         ? truncateSnippet(page.pageContext, OUTLINE_CONTEXT_CHARS)
         : null,
     })),
+    spans: outline.spans,
   };
+}
+
+export async function listDocumentPagesForReview({
+  reportId,
+  attachmentIds,
+}: {
+  reportId: string;
+  attachmentIds: readonly string[];
+}): Promise<ReviewPageSource[]> {
+  const ids = normalizeAttachmentIdFilter(attachmentIds);
+  if (ids.length === 0) return [];
+
+  const pages = await db
+    .select({
+      attachmentId: documentPages.attachmentId,
+      filename: reportAttachments.filename,
+      pageNumber: documentPages.pageNumber,
+      transcript: documentPages.transcript,
+      pageContext: documentPages.pageContext,
+      printedPageLabel: documentPages.printedPageLabel,
+    })
+    .from(documentPages)
+    .innerJoin(
+      reportAttachments,
+      eq(documentPages.attachmentId, reportAttachments.id)
+    )
+    .where(
+      and(
+        eq(documentPages.reportId, reportId),
+        inArray(documentPages.attachmentId, ids),
+        isNull(reportAttachments.deletedAt),
+        isNotNull(reportAttachments.activeIngestRunId),
+        eq(documentPages.ingestRunId, reportAttachments.activeIngestRunId)
+      )
+    )
+    .orderBy(documentPages.attachmentId, documentPages.pageNumber)
+    .limit(OUTLINE_PAGE_CAP);
+
+  return pages.map((page) => ({
+    attachmentId: page.attachmentId,
+    filename: page.filename,
+    pageNumber: page.pageNumber,
+    transcript: page.transcript ?? "",
+    pageContext: page.pageContext ?? null,
+    printedPageLabel: page.printedPageLabel,
+  }));
 }

@@ -73,6 +73,11 @@ import {
   type MentionQuery,
 } from "@/lib/ai/chat/mention-search";
 import { compressImageFile } from "@/lib/images/compress-image";
+import { DocumentReviewProgress } from "@/components/report/document-review-progress";
+import {
+  isDocumentReviewToolName,
+  type DocumentReviewToolPart,
+} from "@/lib/ai/chat/document-review-ui";
 
 type PendingChatImage = {
   id: string;
@@ -117,6 +122,44 @@ function readToolPart(part: UIMessagePart<never, never>): ToolPartInfo | null {
   };
 }
 
+type AssistantPartGroup =
+  | { kind: "text"; text: string }
+  | { kind: "document-review"; parts: DocumentReviewToolPart[] }
+  | { kind: "other"; part: UIMessagePart<never, never> };
+
+function groupAssistantParts(
+  parts: UIMessage["parts"]
+): AssistantPartGroup[] {
+  const groups: AssistantPartGroup[] = [];
+  for (const part of parts) {
+    if (part.type === "text") {
+      groups.push({ kind: "text", text: (part as { text: string }).text });
+      continue;
+    }
+    const tool = readToolPart(part as UIMessagePart<never, never>);
+    if (tool && isDocumentReviewToolName(tool.toolName)) {
+      const reviewPart: DocumentReviewToolPart = {
+        toolName: tool.toolName,
+        state: tool.state,
+        input: tool.input,
+        output: tool.output,
+      };
+      const existing = groups.find(
+        (group): group is Extract<AssistantPartGroup, { kind: "document-review" }> =>
+          group.kind === "document-review"
+      );
+      if (existing) {
+        existing.parts.push(reviewPart);
+      } else {
+        groups.push({ kind: "document-review", parts: [reviewPart] });
+      }
+      continue;
+    }
+    groups.push({ kind: "other", part: part as UIMessagePart<never, never> });
+  }
+  return groups;
+}
+
 function sectionLabel(section: unknown): string {
   if (typeof section === "string") return chatSectionLabel(section as SectionType);
   return "section";
@@ -145,6 +188,8 @@ function ToolChip({
   onAnswerQuestions?: (message: string) => void;
 }) {
   const pending = info.state === "input-streaming" || info.state === "input-available";
+
+  if (isDocumentReviewToolName(info.toolName)) return null;
 
   if (info.toolName === "suggest_section_scope") {
     const suggested = info.output?.suggestedSection ?? info.input?.suggestedSection;
@@ -484,13 +529,15 @@ function MessageTurn({
         <Sparkles className="size-3 text-[var(--primary)]" />
         Assistant
       </div>
-      {message.parts.map((part, i) => {
-        if (part.type === "text") {
-          const text = (part as { text: string }).text;
-          if (!text.trim()) return null;
-          return <ChatMarkdown key={i}>{text}</ChatMarkdown>;
+      {groupAssistantParts(message.parts).map((group, i) => {
+        if (group.kind === "text") {
+          if (!group.text.trim()) return null;
+          return <ChatMarkdown key={i}>{group.text}</ChatMarkdown>;
         }
-        const tool = readToolPart(part as UIMessagePart<never, never>);
+        if (group.kind === "document-review") {
+          return <DocumentReviewProgress key={i} parts={group.parts} />;
+        }
+        const tool = readToolPart(group.part as UIMessagePart<never, never>);
         if (tool) {
           return (
             <ToolChip

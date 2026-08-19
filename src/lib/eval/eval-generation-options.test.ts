@@ -36,6 +36,28 @@ describe("eval generation options", () => {
     });
   });
 
+  it("can omit thought summaries for high-throughput extract calls", () => {
+    expect(
+      buildGeminiThoughtSummaryProviderOptions({
+        thinkingLevel: "minimal",
+        includeThoughts: false,
+      })
+    ).toEqual({
+      google: {
+        thinkingConfig: {
+          thinkingLevel: "minimal",
+          includeThoughts: false,
+        },
+      },
+      vertex: {
+        thinkingConfig: {
+          thinkingLevel: "minimal",
+          includeThoughts: false,
+        },
+      },
+    });
+  });
+
   it("adds high Gemini thought summaries for suggestion generation traces", () => {
     expect(
       buildGeminiThoughtSummaryProviderOptions({

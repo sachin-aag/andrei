@@ -15,6 +15,19 @@ const ciDatabaseUrl = "postgresql://ci:ci@127.0.0.1:5432/ci";
 /** Playwright always serves the app on 127.0.0.1:3000 — do not inherit dev AUTH_URL (e.g. :3001). */
 const playwrightAuthUrl = "http://127.0.0.1:3000";
 
+function e2eCustomerId(): "demo" | "mj" {
+  const raw = (
+    process.env.NEXT_PUBLIC_ANDREI_CUSTOMER ??
+    process.env.ANDREI_CUSTOMER ??
+    "demo"
+  )
+    .trim()
+    .toLowerCase();
+  return raw === "mj" ? "mj" : "demo";
+}
+
+const e2eCustomer = e2eCustomerId();
+
 export default defineConfig({
   testDir: "./e2e",
   fullyParallel: true,
@@ -77,6 +90,8 @@ export default defineConfig({
         process.env.TEST_AUTH_EMAIL ?? "test.engineer@mjbiopharm.com",
       AUTH_SECRET:
         process.env.AUTH_SECRET ?? "ci-test-secret-not-for-production-use",
+      ANDREI_CUSTOMER: e2eCustomer,
+      NEXT_PUBLIC_ANDREI_CUSTOMER: e2eCustomer,
     },
   },
 });

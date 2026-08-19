@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  canReprocessAttachment,
+  IngestNeedsContinuationError,
+  isRuntimeTimeoutError,
   sanitizeIngestError,
   shouldBackfillIngestFailure,
 } from "./ingest-errors";
@@ -51,6 +54,24 @@ describe("sanitizeIngestError", () => {
     );
     expect(sanitizeIngestError("nope")).toBe("Document ingestion failed");
   });
+
+  it("sanitizes Vercel isolate timeouts", () => {
+    expect(
+      sanitizeIngestError(
+        new Error("Vercel Runtime Timeout Error: Task timed out after 300 seconds")
+      )
+    ).toBe(
+      "Document ingestion timed out while indexing. Reprocess the attachment to continue."
+    );
+    expect(
+      isRuntimeTimeoutError(
+        new Error("Vercel Runtime Timeout Error: Task timed out after 300 seconds")
+      )
+    ).toBe(true);
+    expect(isRuntimeTimeoutError(new IngestNeedsContinuationError())).toBe(
+      false
+    );
+  });
 });
 
 describe("shouldBackfillIngestFailure", () => {
@@ -82,5 +103,34 @@ describe("shouldBackfillIngestFailure", () => {
         processingError: null,
       })
     ).toBe(true);
+  });
+});
+
+describe("canReprocessAttachment", () => {
+  it("allows failed attachments and ready attachments with a warning", () => {
+    expect(
+      canReprocessAttachment({
+        processingStatus: "failed",
+        processingError: "PDF extraction is incomplete",
+      })
+    ).toBe(true);
+    expect(
+      canReprocessAttachment({
+        processingStatus: "ready",
+        processingError: "PDF extraction is incomplete: no output for page(s) 4",
+      })
+    ).toBe(true);
+    expect(
+      canReprocessAttachment({
+        processingStatus: "ready",
+        processingError: null,
+      })
+    ).toBe(false);
+    expect(
+      canReprocessAttachment({
+        processingStatus: "processing",
+        processingError: null,
+      })
+    ).toBe(false);
   });
 });

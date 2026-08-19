@@ -76,6 +76,16 @@ describe("normalizeSuggestionInsertText", () => {
     expect(
       normalizeSuggestionInsertText("[Attachment_VIII: <to be filled>]")
     ).toBe("[Attachment_VIII]");
+    expect(
+      normalizeSuggestionInsertText(
+        "[Appendix B DV Report 790-00134R(RevU): <to be filled>]"
+      )
+    ).toBe("[Appendix B DV Report 790-00134R(RevU)]");
+    expect(
+      normalizeSuggestionInsertText(
+        "see [Appendix B DV Report 790-00134R(RevU)]."
+      )
+    ).toBe("see [Appendix B DV Report 790-00134R(RevU)].");
   });
 
   it("compacts long comma-containing instructional brackets", () => {

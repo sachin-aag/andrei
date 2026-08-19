@@ -62,8 +62,9 @@ type TextSpan = { fromRel: number; toRel: number; text: string };
 export function isActionablePlaceholderBracket(match: string): boolean {
   if (!/^\[[^\]]+\]$/.test(match)) return false;
   if (NUMERIC_ONLY_BRACKET.test(match)) return false;
-  // Document citations (`[file.pdf]`, `[name, p. N]`, including mistaken
-  // `[file.pdf: <to be filled>]`) are never Placeholders-panel tokens.
+  // Document citations (`[file.pdf]`, `[name, p. N]`, `[Appendix B]`,
+  // `[Appendix B DV Report 790-00134R(RevU)]`, including mistaken
+  // `[cite: <to be filled>]`) are never Placeholders-panel tokens.
   if (isCitationShapedBracket(match)) return false;
 
   const inner = match.slice(1, -1);

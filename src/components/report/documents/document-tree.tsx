@@ -32,6 +32,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { DocumentTreeFolder } from "@/lib/attachments/build-tree";
 import { ATTACHMENT_DESCRIPTION_MAX } from "@/lib/attachments/description";
+import { formatIngestPageLabel } from "@/lib/attachments/ingest-continue-limits";
+import { canReprocessAttachment } from "@/lib/attachments/ingest-errors";
 import { useReportAttachments } from "@/providers/report-attachments-provider";
 import type { AttachmentProcessingStatus } from "@/db/schema";
 import type { ReportAttachmentRecord } from "@/types/report";
@@ -281,6 +283,7 @@ function FileNode({
   const progress =
     uploadProgress[attachment.id]?.percent ?? attachment.processingProgress;
   const pending = isPendingStatus(attachment.processingStatus);
+  const canRetry = canReprocessAttachment(attachment);
 
   const handleRemove = async () => {
     const confirmed = window.confirm(
@@ -388,7 +391,7 @@ function FileNode({
 
         {canMutateAttachments && !renaming ? (
           <div className="flex shrink-0 items-center opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-            {attachment.processingStatus === "failed" ? (
+            {canRetry ? (
               <Button
                 type="button"
                 variant="ghost"
@@ -425,13 +428,21 @@ function FileNode({
             />
           </div>
           <span className="text-[10px] uppercase tracking-wide text-[var(--muted-foreground)]">
-            {attachment.processingStatus}
+            {formatIngestPageLabel(attachment.processingPage) ??
+              attachment.processingStatus}
           </span>
         </div>
       ) : null}
 
       {attachment.processingError ? (
-        <p className="mt-1 pl-[18px] text-xs text-[var(--destructive)]">
+        <p
+          className={cn(
+            "mt-1 pl-[18px] text-xs",
+            attachment.processingStatus === "failed"
+              ? "text-[var(--destructive)]"
+              : "text-[var(--muted-foreground)]"
+          )}
+        >
           {attachment.processingError}
         </p>
       ) : null}

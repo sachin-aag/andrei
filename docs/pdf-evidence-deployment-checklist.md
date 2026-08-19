@@ -13,18 +13,21 @@ Each batch is classified before any model call, and the mode is logged as
   (born-digital PDFs). The PDF parser produces the transcript, and the model is
   asked only for visual context under a small output budget. Dense tables no
   longer risk output truncation, because the model never transcribes them.
-- **`vision`** — at least one page has no usable text layer (scans). The model
-  transcribes. A batch that comes back missing pages is retried page by page,
-  then with a transcript-only prompt for pages that overflow the schema.
-
-A `vision` batch that still cannot produce every page **fails the attachment**
-rather than indexing a document with silent gaps. Reprocess after checking the
-source file; a scan that repeatedly fails usually needs re-scanning.
+- **`vision`** — at least one page has no usable text layer (scans). Document AI
+  Enterprise OCR transcribes first when `DOCUMENT_AI_PROCESSOR_ID` is set
+  (`recovery: ocr-document-ai`), in 15-page chunks with up to 3 in flight.
+  Weak or failed OCR pages still go to Gemini vision, then rotate/tiles. A batch
+  that still cannot produce a page records a **page-gap** placeholder and the
+  rest of the file continues. The attachment becomes `ready` with a warning
+  rather than failing the whole file.
 
 ## Infrastructure
 
 Bucket + CORS + staging/temp lifecycle + runtime SA IAM are managed by
 Terraform in [`infra/gcs`](../infra/gcs/README.md) (`terraform apply` there).
+
+Enterprise OCR processor + `roles/documentai.apiUser` on the Vercel WIF SA are
+managed by Terraform in [`infra/document-ai`](../infra/document-ai/README.md).
 
 - [ ] Private GCS bucket with Uniform Bucket-Level Access (UBLA) enabled
 - [ ] Prefer an existing project bucket via `GCS_BUCKET` (prefix separation, not a new bucket)
@@ -37,12 +40,16 @@ Terraform in [`infra/gcs`](../infra/gcs/README.md) (`terraform apply` there).
 - [ ] Vercel Workflow DevKit available in the deployment region; proxy excludes `/.well-known/workflow/*`. If Bot Protection is on, allow that path. Production `AUTH_URL` must be the public host (not a leftover `*.vercel.app`).
 - [ ] Preview: document ingest defaults to **inline** (`after()`). Set `DOCUMENT_INGEST_MODE=workflow` only when Vercel World/Queues reliably drain runs. Production defaults to `workflow`, and falls back to inline if workflow `start()` fails.
 - [ ] Inline ingest is bounded by the route's `maxDuration` (300s). A run killed by that limit never writes a terminal status, so `reclaimStaleIngests` retires it after 30 minutes and the attachment becomes reprocessable.
+- [ ] Document AI OCR processor applied (`cd infra/document-ai && terraform apply`)
+- [ ] Runtime SA has `roles/documentai.apiUser`
 
 ## Application config
 
 - [ ] `GCS_BUCKET` set in Production and Preview
 - [ ] `DOCUMENT_EXTRACT_GOOGLE_MODEL_ID=gemini-3.1-flash-lite`
 - [ ] `DOCUMENT_EXTRACT_LOCATION=global` — dedicated var, do **not** reuse `GOOGLE_VERTEX_LOCATION`. Gemini 3.x extract 404s outside `global`.
+- [ ] `DOCUMENT_AI_LOCATION=us` (or `eu`) — regional Document AI, **never** `global`
+- [ ] `DOCUMENT_AI_PROCESSOR_ID` set in Production and Preview (Terraform output `processor_id`)
 - [ ] `DOCUMENT_EMBEDDING_MODEL_ID=gemini-embedding-001` (`GOOGLE_VERTEX_LOCATION=us-central1` is fine for embeddings — separate var from extract, on purpose)
 - [ ] Quotas set (`MAX_ATTACHMENT_BYTES`, `MAX_ATTACHMENT_PAGES`, per-report count/bytes)
 - [ ] `ATTACHMENT_STORAGE_BACKEND` is **not** `local` in production
@@ -66,6 +73,7 @@ Use the local soak script (extract only — no DB/GCS; output discarded):
 
 ```bash
 pnpm soak:pdf-ingest
+pnpm soak:ocr-compare
 pnpm soak:pdf-ingest -- --batches 3
 pnpm soak:pdf-ingest -- --pages 10-15
 pnpm soak:pdf-ingest -- --file path/to/scan.pdf
@@ -83,8 +91,8 @@ Deterministic coverage in normal CI (`pnpm test`):
 
 - `src/lib/attachments/pdf-fixture.test.ts` — parse/split the 74-page sample
 - `src/lib/attachments/pdf-text-layer.test.ts` — text-layer detection, digital vs scanned
-- `src/lib/attachments/extract-batch.test.ts` — mode selection, salvage, per-page
-  retry, transcript-only escalation, and failure on incomplete coverage
+- `src/lib/attachments/extract-batch.test.ts` — mode selection, Document AI OCR,
+  salvage, per-page retry, transcript-only escalation, and page-gap placeholders
 - `src/lib/attachments/stale-ingest-policy.test.ts` — when a stalled ingest is reclaimed
 
 Record for a representative ~500-page scan (full app ingest, not just extract):

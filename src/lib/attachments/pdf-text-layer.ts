@@ -17,6 +17,8 @@ export type PdfTextLayer = {
   usable: boolean;
 };
 
+export type PdfExtractLayout = "text-layer" | "scan" | "mixed";
+
 export type ReadPdfTextLayerOptions = {
   /** Absolute document page number of the first page in this buffer. */
   pageStart?: number;
@@ -52,6 +54,19 @@ export async function readPdfTextLayer(
       pages.length > 0 &&
       pages.every((page) => page.text.length >= minChars),
   };
+}
+
+export function classifyPdfExtractLayout(
+  layer: PdfTextLayer,
+  minChars = MIN_TEXT_LAYER_CHARS
+): PdfExtractLayout {
+  if (layer.pages.length === 0) return "scan";
+  const usableCount = layer.pages.filter(
+    (page) => page.text.length >= minChars
+  ).length;
+  if (usableCount === 0) return "scan";
+  if (usableCount === layer.pages.length) return "text-layer";
+  return "mixed";
 }
 
 function normalizePageText(raw: string): string {

@@ -35,6 +35,7 @@ function file(
     pageCount: 1,
     processingStatus: "ready",
     processingProgress: 100,
+    processingPage: null,
     processingError: null,
     uploadedAt: "2026-01-01T00:00:00.000Z",
     deletedAt: null,

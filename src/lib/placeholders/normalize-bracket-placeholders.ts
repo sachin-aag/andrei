@@ -50,8 +50,9 @@ function toCanonicalPlaceholder(label: string): string {
  * omits `<to be filled>` (for example `[number]`), and compacts long labels to
  * the shared MAX_PLACEHOLDER_LABEL_LENGTH.
  *
- * - Skips citation-style `[digits]`, `[file.pdf]`, `[name, p. N]`.
- * - Repairs mistaken `[file.pdf: <to be filled>]` back to `[file.pdf]`.
+ * - Skips citation-style `[digits]`, `[file.pdf]`, `[name, p. N]`,
+ *   `[Appendix B]`, `[Appendix B DV Report 790-00134R(RevU)]`.
+ * - Repairs mistaken `[cite: <to be filled>]` back to `[cite]`.
  * - Skips static bracketed prose (e.g. SOP acceptance criteria on import).
  * - Compacts labels on both guidance-only and existing `to be filled` forms.
  */
