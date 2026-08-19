@@ -147,12 +147,15 @@ test.describe("manager track changes persist", () => {
 
     for (const contentPath of ["brainstorming", "otherTools"] as const) {
       const field = analyzePlainField(page, contentPath);
+      const shell = page.locator(`[data-field-shell="analyze.${contentPath}"]`);
       await field.scrollIntoViewIfNeeded();
       await expect(field).toBeEnabled({ timeout: 30_000 });
-      await field.click();
+      await field.focus();
+      await expect(page.getByRole("toolbar", { name: "Active field" })).toBeVisible();
       const mark = `mgr-${contentPath}-${Date.now()}`;
-      await page.keyboard.type(mark, { delay: 25 });
-      await expectTypedAsInsertNotDelete(field.locator("xpath=.."), mark);
+      await field.pressSequentially(mark, { delay: 20 });
+      await expect(field).toHaveValue(mark);
+      await expectTypedAsInsertNotDelete(shell, mark);
     }
   });
 });
