@@ -7,7 +7,7 @@ import {
 import { browserCookieHeaders } from "./helpers/api";
 import { gotoWithNavigationRetry } from "./helpers/navigation";
 import { createReport, deleteReport } from "./helpers/reports";
-import { defineEditor, defineSection } from "./helpers/workspace";
+import { defineEditor, defineSection, analyzePlainField } from "./helpers/workspace";
 import { signedWorkflowPayload } from "./helpers/signing";
 
 function improveEditor(page: Page) {
@@ -134,5 +134,25 @@ test.describe("manager track changes persist", () => {
     await expect.poll(async () => editor.locator("p").count()).toBeGreaterThan(1);
     await expectTypedAsInsertNotDelete(editor, mark);
     await expect(editor.locator("p").last()).toContainText(mark);
+  });
+
+  test("marks Brainstorming and Other Tools typing as inserts", async ({ page }) => {
+    await authenticateAsManager(page);
+    await gotoWithNavigationRetry(page, `/reports/${reportId}/review`, {
+      waitUntil: "domcontentloaded",
+    });
+    await expect(page.getByRole("heading", { name: /^analyze$/i })).toBeVisible({
+      timeout: 30_000,
+    });
+
+    for (const contentPath of ["brainstorming", "otherTools"] as const) {
+      const field = analyzePlainField(page, contentPath);
+      await field.scrollIntoViewIfNeeded();
+      await expect(field).toBeEnabled({ timeout: 30_000 });
+      await field.click();
+      const mark = `mgr-${contentPath}-${Date.now()}`;
+      await page.keyboard.type(mark, { delay: 25 });
+      await expectTypedAsInsertNotDelete(field.locator("xpath=.."), mark);
+    }
   });
 });
