@@ -86,7 +86,7 @@ describe("Convergent customer pack", () => {
     expect(CONVERGENT_PACK.branding.loginHeadline).toContain(
       "Design verification"
     );
-    expect(CONVERGENT_PACK.branding.loginFooter).toContain("100 5th Ave");
+    expect(CONVERGENT_PACK.branding.loginFooter).toBe("Andrei Health");
     expect(CONVERGENT_PACK.branding.aiAttribution).toBe("by Andrei");
     expect(CONVERGENT_PACK.branding.heroLogoOnWhite).toBe(true);
     expect(CONVERGENT_PACK.branding.logoSrc).toBe("/logo-convergent.png");

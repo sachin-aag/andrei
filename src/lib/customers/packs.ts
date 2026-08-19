@@ -84,7 +84,7 @@ const CONVERGENT_BRANDING: CustomerBranding = {
   loginHeadline: "Design verification,\naccelerated.",
   loginSubhead:
     "Draft Solea design verification reports with AI-assisted quality checks, streamlined manager review, and one-click DOCX export.",
-  loginFooter: "Convergent Dental, Inc. · 100 5th Ave, Suite 1010, Waltham, MA 02451",
+  loginFooter: "Andrei Health",
   aiAttribution: "by Andrei",
 };
 
