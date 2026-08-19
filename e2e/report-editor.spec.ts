@@ -159,6 +159,66 @@ test.describe("report editor", () => {
     await expect(chatHandle).toHaveCount(0);
   });
 
+  test("opens the assistant at the default width on a new report and after reload", async ({
+    page,
+  }) => {
+    const sidebar = reportSidebar(page);
+    const chatHandle = page.getByRole("separator", {
+      name: /resize assistant panel/i,
+    });
+    const defaultWidth = await sidebar.evaluate(
+      (el) => el.getBoundingClientRect().width
+    );
+
+    await chatHandle.focus();
+    await page.keyboard.press("ArrowLeft");
+    await page.keyboard.press("ArrowLeft");
+    await expect
+      .poll(async () => sidebar.evaluate((el) => el.getBoundingClientRect().width))
+      .toBeGreaterThan(defaultWidth + 8);
+
+    const other = await createReport(page);
+    try {
+      await gotoWithNavigationRetry(page, `/reports/${other.id}/edit`, {
+        waitUntil: "domcontentloaded",
+      });
+      await expect(page.getByRole("heading", { name: /^define$/i })).toBeVisible({
+        timeout: 30_000,
+      });
+      await expect
+        .poll(async () => {
+          const width = await sidebar.evaluate(
+            (el) => el.getBoundingClientRect().width
+          );
+          return Math.abs(width - defaultWidth);
+        })
+        .toBeLessThan(12);
+
+      await chatHandle.focus();
+      await page.keyboard.press("ArrowLeft");
+      await expect
+        .poll(async () =>
+          sidebar.evaluate((el) => el.getBoundingClientRect().width)
+        )
+        .toBeGreaterThan(defaultWidth + 4);
+
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await expect(page.getByRole("heading", { name: /^define$/i })).toBeVisible({
+        timeout: 30_000,
+      });
+      await expect
+        .poll(async () => {
+          const width = await reportSidebar(page).evaluate(
+            (el) => el.getBoundingClientRect().width
+          );
+          return Math.abs(width - defaultWidth);
+        })
+        .toBeLessThan(12);
+    } finally {
+      await deleteReport(page, other.id);
+    }
+  });
+
   test("approved report is read-only for engineer", async ({ page }) => {
     const submitRes = await page.request.post(`/api/reports/${reportId}/submit`, {
       data: signedWorkflowPayload(),
