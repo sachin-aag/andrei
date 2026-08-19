@@ -22,12 +22,12 @@ cover only non-obvious, durable setup/run caveats for this environment.
 ## What this app is
 
 Next.js 16 App Router (Turbopack, React 19, Drizzle, TipTap, AI SDK v6).
-Pharmaceutical quality documents for M.J. Biopharm — **two** `documentType`s:
+Pharmaceutical quality documents for M.J. Biopharm and Convergent Dental design verification — **two** `documentType`s:
 
 | `documentType` | Noun | Sections |
 |----------------|------|----------|
 | `investigation_report` | deviation | DMAIC + conclusion + attachments/approvals |
-| `design_verification` | design verification | cover page, purpose, traceability, tests, … |
+| `design_verification` | design verification | demo: cover page + 10 sections; Convergent pack: 9 Solea DV sections |
 
 Chat, eval, suggestions, and editors **must** go through
 `src/lib/document-types/`. Do not hardcode DMAIC as if it were the only type.
@@ -96,7 +96,8 @@ Neon HTTP cannot `db.transaction()` (ingest + folder moves).
 ### Customer pack
 
 Local default is **demo** (Andrei branding, design verification, conclusion).
-Set both to `mj` to exercise the MJ overlay:
+Set both to `mj` to exercise the MJ overlay, or both to `convergent` for
+Convergent Dental (DV only):
 
 ```bash
 ANDREI_CUSTOMER=mj

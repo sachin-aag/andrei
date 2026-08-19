@@ -36,6 +36,7 @@ import { normalizeCommentRecord } from "@/lib/comments/normalize";
 import {
   hasEnoughContextInFirstSection,
   INSUFFICIENT_FIRST_SECTION_MESSAGE,
+  insufficientFirstSectionMessage,
 } from "@/lib/ai/first-section-context";
 import { collectPlaceholders } from "@/lib/placeholders/scan-sections";
 import type { Placeholder } from "@/lib/placeholders/find";
@@ -655,6 +656,11 @@ export function ReportProvider({
           toast.error(
             "Fill Document Number on the Cover Page before running the AI check."
           );
+          return;
+        }
+      } else if (gate) {
+        if (!hasEnoughContextInFirstSection(sectionsRef.current[gate.key])) {
+          toast.error(insufficientFirstSectionMessage(gate.label));
           return;
         }
       }

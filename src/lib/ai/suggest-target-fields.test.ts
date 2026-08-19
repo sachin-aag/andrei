@@ -16,6 +16,10 @@ describe("design verification target fields", () => {
       "deviations",
       "approval_signoff",
       "appendices",
+      "purpose",
+      "scope",
+      "methods_of_measurement",
+      "problems_resolution",
     ] as const) {
       expect(concreteTargetFields(section)).toEqual(["narrative"]);
       expect(isAllowedTargetField(section, "narrative")).toBe(true);
@@ -27,11 +31,22 @@ describe("design verification target fields", () => {
   });
 
   it("lists table for traceability and test_results", () => {
-    for (const section of ["traceability", "test_results"] as const) {
+    for (const section of ["traceability", "test_results", "test_equipment"] as const) {
       expect(concreteTargetFields(section)).toEqual(["table"]);
       expect(isAllowedTargetField(section, "table")).toBe(true);
       expect(isRichTargetField(section, "table")).toBe(true);
     }
+    expect(concreteTargetFields("results_and_discussions")).toEqual([
+      "narrative",
+      "table",
+    ]);
+    expect(concreteTargetFields("testers_dates")).toEqual([
+      "testers",
+      "startDate",
+      "endDate",
+    ]);
+    expect(isRichTargetField("testers_dates", "testers")).toBe(true);
+    expect(isRichTargetField("testers_dates", "startDate")).toBe(false);
   });
 });
 
@@ -42,7 +57,9 @@ describe("resolveTargetField", () => {
     expect(resolveTargetField("traceability", "traceability")).toBe("table");
     expect(resolveTargetField("test_results", "test_results")).toBe("table");
     expect(resolveTargetField("control", "control")).toBe("preventiveActions");
-    expect(resolveTargetField("define", "define")).toBe("narrative");
+    expect(resolveTargetField("testers_dates", "testers")).toBe("testers");
+    expect(resolveTargetField("test_equipment", "test_equipment")).toBe("table");
+    expect(resolveTargetField("purpose", "purpose")).toBe("narrative");
   });
 
   it("keeps a correct field path unchanged", () => {
@@ -55,6 +72,10 @@ describe("resolveTargetField", () => {
   it("does not guess when a section has multiple fields", () => {
     expect(resolveTargetField("improve", "improve")).toBeNull();
     expect(resolveTargetField("analyze", "analyze")).toBeNull();
+    expect(resolveTargetField("testers_dates", "testers_dates")).toBeNull();
+    expect(
+      resolveTargetField("results_and_discussions", "results_and_discussions")
+    ).toBeNull();
   });
 
   it("rejects unknown fields", () => {

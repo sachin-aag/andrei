@@ -160,6 +160,13 @@ export const SECTION_LABELS: Record<string, string> = {
   deviations: "Deviations & Nonconformances",
   approval_signoff: "Approval / Sign-off",
   appendices: "Appendices",
+  purpose: "Purpose",
+  scope: "Scope",
+  testers_dates: "Testers & Dates",
+  methods_of_measurement: "Methods of Measurement",
+  test_equipment: "Test Equipment",
+  results_and_discussions: "Results and Discussions",
+  problems_resolution: "Problems or Failure Resolution",
 };
 
 export const EDITABLE_SECTIONS = [

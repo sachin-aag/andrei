@@ -2,12 +2,16 @@ import fs from "node:fs";
 import path from "node:path";
 import type { JSONContent } from "@tiptap/core";
 import PizZip from "pizzip";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { reports } from "@/db/schema";
 import {
   DV_SECTION_KEYS,
   EMPTY_DV_CONTENT,
 } from "@/lib/document-types/design-verification/sections";
+import {
+  CONVERGENT_DV_SECTION_KEYS,
+  EMPTY_CONVERGENT_DV_CONTENT,
+} from "@/lib/document-types/convergent/sections";
 import {
   reportExportDocxArchiveName,
   reportExportDocxFileName,
@@ -152,5 +156,97 @@ describe("design-verification DOCX export", () => {
     expect(reportExportDocxArchiveName("design_verification")).toBe(
       "design-verification-report.docx"
     );
+  });
+});
+
+const CONVERGENT_TEMPLATE = path.join(
+  process.cwd(),
+  "templates",
+  "convergent-design-verification-report-template.docx"
+);
+
+function convergentSections(): ReportSectionRecord[] {
+  const reportId = "dv-export-1";
+  return CONVERGENT_DV_SECTION_KEYS.map((section, i) => ({
+    id: `sec-${section}-${i}`,
+    reportId,
+    section,
+    content:
+      section === "purpose"
+        ? {
+            narrative: narrativeDoc(
+              "Verify Solea output REQ-101 meets the laser energy specification."
+            ),
+          }
+        : section === "testers_dates"
+          ? {
+              testers: narrativeDoc("Alex Rivera, independent test engineer."),
+              startDate: "2026-03-01",
+              endDate: "2026-03-04",
+            }
+          : EMPTY_CONVERGENT_DV_CONTENT[section],
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  }));
+}
+
+describe("convergent design-verification DOCX export", () => {
+  const previous = {
+    ANDREI_CUSTOMER: process.env.ANDREI_CUSTOMER,
+    NEXT_PUBLIC_ANDREI_CUSTOMER: process.env.NEXT_PUBLIC_ANDREI_CUSTOMER,
+    ANDREI_VERCEL_DEPLOY_SCOPE: process.env.ANDREI_VERCEL_DEPLOY_SCOPE,
+  };
+
+  beforeEach(() => {
+    process.env.ANDREI_CUSTOMER = "convergent";
+    process.env.NEXT_PUBLIC_ANDREI_CUSTOMER = "convergent";
+    delete process.env.ANDREI_VERCEL_DEPLOY_SCOPE;
+  });
+
+  afterEach(() => {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  });
+
+  it("uses a Convergent template with the 9-section placeholders", () => {
+    const xml =
+      new PizZip(fs.readFileSync(CONVERGENT_TEMPLATE)).file("word/document.xml")
+        ?.asText() ?? "";
+    expect(xml).toContain("Purpose");
+    expect(xml).toContain("{@purposeXml}");
+    expect(xml).toContain("{@equipmentXml}");
+    expect(xml).toContain("{@resultsTableXml}");
+    expect(xml).toContain("{testersStartDate}");
+    expect(xml).not.toContain("{@purposeScopeXml}");
+    expect(xml).not.toContain("Purpose &amp; Scope");
+    expect(xml).not.toContain("Define:");
+
+    const header =
+      new PizZip(fs.readFileSync(CONVERGENT_TEMPLATE)).file("word/header2.xml")
+        ?.asText() ?? "";
+    expect(header).toContain("Convergent Dental");
+    expect(header).not.toContain("Andrei");
+  });
+
+  it("renders Convergent headings and tester dates", async () => {
+    const buf = await generateReportDocx({
+      report: dvReport(),
+      sections: convergentSections(),
+    });
+    const xml = new PizZip(buf).file("word/document.xml")?.asText() ?? "";
+    const header = new PizZip(buf).file("word/header2.xml")?.asText() ?? "";
+
+    expect(header).toContain("Convergent Dental");
+    expect(header).toContain("Design Verification Report");
+    expect(xml).toContain("DVR-100");
+    expect(xml).toContain("Verify Solea output REQ-101 meets the laser energy specification.");
+    expect(xml).toContain("Alex Rivera, independent test engineer.");
+    expect(xml).toContain("2026-03-01");
+    expect(xml).toContain("Testers");
+    expect(xml).toContain("Methods of Measurement");
+    expect(xml).toContain("CD Asset Tag");
+    expect(xml).not.toContain("Purpose &amp; Scope");
+    expect(xml).not.toContain("Define:");
   });
 });

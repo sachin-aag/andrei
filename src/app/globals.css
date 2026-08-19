@@ -71,6 +71,33 @@ html[data-customer="mj"] {
   --brand-900: #090817;
 }
 
+/* Convergent Dental — official logo blues #009ddc / #0079c1 */
+html[data-customer="convergent"] {
+  --foreground: #0c2740;
+  --card-foreground: #0c2740;
+  --popover-foreground: #0c2740;
+  --primary: #009ddc;
+  --secondary: #f0f7fb;
+  --secondary-foreground: #0c2740;
+  --muted: #f0f7fb;
+  --muted-foreground: #4d6a80;
+  --accent: #0079c1;
+  --border: #d5e6f0;
+  --ring: #4db8e6;
+
+  --brand: #0079c1;
+  --brand-50: #e8f6fc;
+  --brand-100: #cfeaf8;
+  --brand-200: #9fd4f0;
+  --brand-300: #6abee6;
+  --brand-400: #3aabd9;
+  --brand-500: #009ddc;
+  --brand-600: #0079c1;
+  --brand-700: #055a91;
+  --brand-800: #043e64;
+  --brand-900: #02243b;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

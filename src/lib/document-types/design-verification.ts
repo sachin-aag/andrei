@@ -3,7 +3,9 @@ import {
   RICH_FIELD_PATHS,
   SUGGEST_TARGET_FIELD_PATTERNS,
 } from "@/lib/ai/suggest-target-fields";
+import { getCustomerPack, type CustomerPack } from "@/lib/customers/packs";
 import { normalizeRichField } from "@/lib/tiptap/rich-text";
+import { convergentDesignVerificationDefinition } from "./convergent-design-verification";
 import type { CriterionDefinition, DocumentTypeDefinition } from "./types";
 import {
   checkConsistentRequirementIds,
@@ -355,7 +357,7 @@ function mergeDvSection(key: string, raw: unknown): unknown {
   }
 }
 
-export const designVerificationDefinition: DocumentTypeDefinition = {
+export const defaultDesignVerificationDefinition: DocumentTypeDefinition = {
   key: "design_verification",
   label: "Design Verification Report",
   documentNoun: "design verification",
@@ -541,19 +543,23 @@ You never write to the document directly. Every change is a PROPOSAL that appear
         const content = byKey[key] as { table?: unknown } | undefined;
         return content?.table ?? null;
       };
+      const meta =
+        report.metadata && typeof report.metadata === "object"
+          ? (report.metadata as { productName?: string; revision?: string })
+          : {};
       return {
         documentNo: report.documentNo,
-        documentType: report.documentType,
-        metadata: report.metadata,
-        purposeScope: narrative("purpose_scope"),
-        references: narrative("references"),
-        traceability: table("traceability"),
-        testMethods: narrative("test_methods"),
-        testResults: table("test_results"),
-        deviations: narrative("deviations"),
-        conclusion: narrative("conclusion"),
-        approvalSignoff: narrative("approval_signoff"),
-        appendices: narrative("appendices"),
+        productName: meta.productName ?? "",
+        revision: meta.revision ?? "",
+        purposeScopeXml: narrative("purpose_scope"),
+        referencesXml: narrative("references"),
+        traceabilityXml: table("traceability"),
+        testMethodsXml: narrative("test_methods"),
+        testResultsXml: table("test_results"),
+        deviationsXml: narrative("deviations"),
+        conclusionXml: narrative("conclusion"),
+        approvalSignoffXml: narrative("approval_signoff"),
+        appendicesXml: narrative("appendices"),
       };
     },
   },
@@ -562,3 +568,22 @@ You never write to the document directly. Every change is a PROPOSAL that appear
     productName: "",
   },
 };
+
+export const designVerificationDefinition: DocumentTypeDefinition =
+  defaultDesignVerificationDefinition;
+
+export function buildDesignVerificationDefinition(
+  pack: CustomerPack = getCustomerPack()
+): DocumentTypeDefinition {
+  switch (pack.id) {
+    case "convergent":
+      return convergentDesignVerificationDefinition;
+    case "demo":
+    case "mj":
+      return defaultDesignVerificationDefinition;
+    default: {
+      const exhaustive: never = pack.id;
+      return exhaustive;
+    }
+  }
+}

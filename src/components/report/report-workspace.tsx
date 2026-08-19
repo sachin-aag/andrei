@@ -169,6 +169,51 @@ const DV_SECTION_EDITORS: Record<string, ComponentType> = {
       ),
     { loading: SectionEditorLoading }
   ),
+  purpose: dynamic(
+    () =>
+      import("./sections/dv/dv-section-editors").then((mod) => mod.DvPurposeEditor),
+    { loading: SectionEditorLoading }
+  ),
+  scope: dynamic(
+    () =>
+      import("./sections/dv/dv-section-editors").then((mod) => mod.DvScopeEditor),
+    { loading: SectionEditorLoading }
+  ),
+  testers_dates: dynamic(
+    () =>
+      import("./sections/dv/dv-section-editors").then(
+        (mod) => mod.DvTestersDatesEditor
+      ),
+    { loading: SectionEditorLoading }
+  ),
+  methods_of_measurement: dynamic(
+    () =>
+      import("./sections/dv/dv-section-editors").then(
+        (mod) => mod.DvMethodsOfMeasurementEditor
+      ),
+    { loading: SectionEditorLoading }
+  ),
+  test_equipment: dynamic(
+    () =>
+      import("./sections/dv/dv-section-editors").then(
+        (mod) => mod.DvTestEquipmentEditor
+      ),
+    { loading: SectionEditorLoading }
+  ),
+  results_and_discussions: dynamic(
+    () =>
+      import("./sections/dv/dv-section-editors").then(
+        (mod) => mod.DvResultsAndDiscussionsEditor
+      ),
+    { loading: SectionEditorLoading }
+  ),
+  problems_resolution: dynamic(
+    () =>
+      import("./sections/dv/dv-section-editors").then(
+        (mod) => mod.DvProblemsResolutionEditor
+      ),
+    { loading: SectionEditorLoading }
+  ),
 };
 
 export function ReportWorkspace({

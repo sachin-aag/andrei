@@ -2,7 +2,7 @@
 
 Andrei is a Next.js app for drafting, reviewing, and exporting regulated quality documents. It replaces the Word-over-email loop with an in-browser editor, AI checks against quality criteria, manager review, attachment evidence, and one-click DOCX export.
 
-The same engine ships as two customer packs: **demo** (Andrei branding, investigation reports plus design verification) and **mj** (M.J. Biopharm SOP/DP/QA/008 overlay).
+The same engine ships as three customer packs: **demo** (Andrei branding, investigation reports plus design verification), **mj** (M.J. Biopharm SOP/DP/QA/008 overlay), and **convergent** (Convergent Dental branding, design verification only).
 
 **Release notes:** use the project skill **release-notes** (`.agents/skills/release-notes/SKILL.md`) to draft paste-ready markdown for GitHub Releases. Do not paste long release notes here.
 
@@ -30,7 +30,7 @@ Insights dashboards exist under `/insights` and are currently backed by mock dat
 | `documentType` | Noun | Sections |
 |----------------|------|----------|
 | `investigation_report` | deviation | DMAIC + conclusion + attachments / approvals |
-| `design_verification` | design verification | cover page, purpose, traceability, tests, … |
+| `design_verification` | design verification | demo: cover page + 10 sections; Convergent pack: 9 Solea DV sections |
 
 Which types and sections appear is a **customer pack** decision, not a feature flag.
 
@@ -38,6 +38,7 @@ Which types and sections appear is a **customer pack** decision, not a feature f
 |------|-----|----------------|
 | `demo` (default) | `ANDREI_CUSTOMER=demo` | Andrei branding, investigation + design verification, conclusion visible |
 | `mj` | `ANDREI_CUSTOMER=mj` | MJ branding, SOP/DP/QA/008 criteria and Word template, Word import, investigation only (no conclusion, no design verification) |
+| `convergent` | `ANDREI_CUSTOMER=convergent` | Convergent Dental branding, design verification only (9-section Solea DV template) |
 
 Set **both** `ANDREI_CUSTOMER` and `NEXT_PUBLIC_ANDREI_CUSTOMER` to the same value. They must agree with `ANDREI_VERCEL_DEPLOY_SCOPE` when that is set. See [docs/whitelabel-vercel-deploy.md](docs/whitelabel-vercel-deploy.md).
 
@@ -93,11 +94,12 @@ More database options (Neon branches, Vercel preview): [docs/database-environmen
 
 ### Customer pack locally
 
-Default is **demo**. To exercise the MJ overlay, set both in `.env.local`:
+Default is **demo**. To exercise another overlay, set both in `.env.local`:
 
 ```bash
 ANDREI_CUSTOMER=mj
 NEXT_PUBLIC_ANDREI_CUSTOMER=mj
+# or: ANDREI_CUSTOMER=convergent and NEXT_PUBLIC_ANDREI_CUSTOMER=convergent
 ```
 
 ---
@@ -126,7 +128,7 @@ Copy `.env.example` and fill `.env.local`. The important ones:
 | `AI_GATEWAY_API_KEY` or `GOOGLE_GENERATIVE_AI_API_KEY` | AI Check, suggestions, chat. |
 | `GOOGLE_VERTEX_PROJECT` | **Required** for PDF/DOCX ingest + embeddings. Pair with WIF on Vercel. |
 | `GCS_BUCKET` | Production attachment bytes. |
-| `ANDREI_CUSTOMER` / `NEXT_PUBLIC_ANDREI_CUSTOMER` | Customer pack (`demo` or `mj`). |
+| `ANDREI_CUSTOMER` / `NEXT_PUBLIC_ANDREI_CUSTOMER` | Customer pack (`demo`, `mj`, or `convergent`). |
 | `SITE_ACCESS_PASSWORD` | Optional site-wide gate at `/unlock`. Unset = disabled. |
 
 **Never set `ALLOW_TEST_*` on Vercel.** Playwright injects those locally (`ALLOW_TEST_LOGIN`, skip-eval/suggest, stub ingest/chat, local attachment storage).

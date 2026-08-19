@@ -213,6 +213,40 @@ export function contextForPrompt(section: SectionType, content: unknown): string
         tableFormat: "markdown",
       })
     );
+  } else if (section === "testers_dates") {
+    pushTextBlock(lines, "Testers", tiptapText(content.testers));
+    pushTextLine(lines, "Start date", content.startDate);
+    pushTextLine(lines, "End date", content.endDate);
+  } else if (section === "test_equipment") {
+    pushTextBlock(
+      lines,
+      "Table",
+      richJsonToPlainText(normalizeRichField(content.table), {
+        tableFormat: "markdown",
+      })
+    );
+  } else if (section === "results_and_discussions") {
+    pushNarrativeLine(lines, section, content);
+    pushTextBlock(
+      lines,
+      "Table",
+      richJsonToPlainText(normalizeRichField(content.table), {
+        tableFormat: "markdown",
+      })
+    );
+  } else {
+    if ("narrative" in content) {
+      pushNarrativeLine(lines, section, content);
+    }
+    if ("table" in content && section !== "results_and_discussions") {
+      pushTextBlock(
+        lines,
+        "Table",
+        richJsonToPlainText(normalizeRichField(content.table), {
+          tableFormat: "markdown",
+        })
+      );
+    }
   }
 
   return lines.length ? lines.join("\n") : fallbackContextForPrompt(content);

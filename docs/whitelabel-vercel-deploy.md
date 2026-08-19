@@ -1,27 +1,27 @@
-# Customer deploys — one trunk, two Vercel projects
+# Customer deploys — one trunk, three Vercel projects
 
 One product engine on **`main`**. Customer differences live in `ANDREI_CUSTOMER` packs, not in long-lived SHA pins or a second product branch.
 
-| | MJ production | Customer demo |
-|--|---------------|---------------|
-| **Vercel project** | `andrei-v2` | `andrei-demo` |
-| **Git production branch** | `main` | `main` |
-| **Pack** | `ANDREI_CUSTOMER=mj` | `ANDREI_CUSTOMER=demo` (or unset) |
-| **URL** | https://mj.andreihealth.com | https://demo.andreihealth.com |
-| **Neon project** | `Andrei V2` | `demo` (`bold-field-45608643`) |
-| **What users see** | MJ criteria, MJ Word template, Word import, no DV, no conclusion | Andrei branding, DV + conclusion, attachments-only create |
+| | MJ production | Customer demo | Convergent Dental |
+|--|---------------|---------------|-------------------|
+| **Vercel project** | `andrei-v2` | `andrei-demo` | `andrei-convergent` |
+| **Git production branch** | `main` | `main` | `feat/convergent` until merge, then `main` |
+| **Pack** | `ANDREI_CUSTOMER=mj` | `ANDREI_CUSTOMER=demo` (or unset) | `ANDREI_CUSTOMER=convergent` |
+| **URL** | https://mj.andreihealth.com | https://demo.andreihealth.com | https://andrei-convergent.vercel.app until a custom domain exists |
+| **Neon project** | `Andrei V2` | `demo` (`bold-field-45608643`) | `andrei-convergent` |
+| **What users see** | MJ criteria, MJ Word template, Word import, no DV, no conclusion | Andrei branding, DV + conclusion, attachments-only create | Convergent branding, design verification only (9-section Solea DV template) |
 
-Release valve: **the same git SHA on both Production deploys.** After cutover, promote one commit to `andrei-v2` and `andrei-demo`.
+Release valve: **the same git SHA on all Production deploys** once Convergent tracks `main`. Until then, `andrei-convergent` Production tracks `feat/convergent` so the pack exists before merge (`assertCustomerEnvAgreement()` fails the build otherwise).
 
-Both Production deploys track **`main`**. Pack env chooses MJ vs demo. There is no second product branch.
+After merge, all three Production deploys track **`main`**. Pack env chooses MJ vs demo vs Convergent. There is no long-lived product branch.
 
 ## Pack vs flags vs pins
 
 | Mechanism | Job | Use now? |
 |-----------|-----|----------|
 | Customer pack (`ANDREI_CUSTOMER`) | Permanent identity: template, criteria, prompts, branding, enabled types and sections | Yes |
-| Same SHA on both deploys | One binary to debug | Yes — policy |
-| Feature flags | Temporary holdback of an unfinished engine feature | No (at two pilots a flag is a second source of truth) |
+| Same SHA on all deploys | One binary to debug | Yes — policy (after Convergent merges) |
+| Feature flags | Temporary holdback of an unfinished engine feature | No (a flag is a second source of truth) |
 | Pin MJ on an older SHA | Demo leads for days or weeks | No, as policy |
 | Roll back one project | Last deploy is bad | Yes, incident only, then catch up |
 
@@ -29,11 +29,11 @@ Set **both** `ANDREI_CUSTOMER` and `NEXT_PUBLIC_ANDREI_CUSTOMER` to the same val
 
 ## Deploy scope
 
-Both Vercel projects watch the same GitHub repo. Every git ref builds on both; pack env on each project picks MJ vs demo. There is no branch allow-list.
+All three Vercel projects watch the same GitHub repo. Every git ref builds on each; pack env on each project picks MJ vs demo vs Convergent. There is no branch allow-list.
 
-| Git ref | Both projects |
+| Git ref | All projects |
 |---------|----------------|
-| `main` | **build** (production — each project's Production Branch setting) |
+| `main` | **build** (production — each project's Production Branch setting; Convergent stays on `feat/convergent` until merge) |
 | any other branch | **build** (preview) |
 
 Set on **each** project → Settings → Environment Variables → Production, Preview, and Development (pack identity, not branch routing):
@@ -42,6 +42,7 @@ Set on **each** project → Settings → Environment Variables → Production, P
 |----------------|----------|--------|
 | **andrei-demo** | `ANDREI_VERCEL_DEPLOY_SCOPE` | `demo` |
 | **andrei-v2** | `ANDREI_VERCEL_DEPLOY_SCOPE` | `mj` |
+| **andrei-convergent** | `ANDREI_VERCEL_DEPLOY_SCOPE` | `convergent` |
 
 **andrei-v2 Neon:** keep **Create a branch for each preview deployment** off. If Preview `DATABASE_URL` is the Production row, those previews share MJ production data — use a dedicated Preview URL if you need isolation.
 
@@ -56,7 +57,7 @@ The Neon ↔ Vercel integration creates extra **Preview / git-branch** `DATABASE
 
 ## Environment variables
 
-### Both projects
+### All projects
 
 Copy auth/AI keys as today. Never set `ALLOW_TEST_*` or `ATTACHMENT_STORAGE_BACKEND=local` on Vercel Production.
 
@@ -87,6 +88,19 @@ Copy auth/AI keys as today. Never set `ALLOW_TEST_*` or `ATTACHMENT_STORAGE_BACK
 Partial Vertex config (`GOOGLE_VERTEX_PROJECT` without WIF) causes `Could not load the default credentials` on Vercel. Local-only attachment flags must never be set here or ingest 500s.
 
 MJ `promptVersion` is `mj-sop-dp-qa-008-v1`. Existing evaluations go stale on cutover — tell MJ they need a re-run.
+
+### andrei-convergent (Production + Preview)
+
+| Variable | Value |
+|----------|--------|
+| `ANDREI_CUSTOMER` | `convergent` |
+| `NEXT_PUBLIC_ANDREI_CUSTOMER` | `convergent` |
+| `ANDREI_VERCEL_DEPLOY_SCOPE` | `convergent` |
+| `DATABASE_URL` | Neon **andrei-convergent** pooled URL |
+| `AUTH_URL` | `https://andrei-convergent.vercel.app` until a custom domain exists |
+| `GOOGLE_VERTEX_PROJECT` / WIF / `GCS_BUCKET` | Copy from `andrei-demo` (never `ALLOW_TEST_*`) |
+
+Disable Neon **Create a branch for each preview deployment** on this project. Convergent `promptVersion` is `convergent-dv-v1`.
 
 ## MJ database cutover
 
