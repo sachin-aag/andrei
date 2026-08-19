@@ -109,10 +109,10 @@ describe("classifyRetrievalPolicy", () => {
 });
 
 describe("chatThinkingLevel", () => {
-  it("keeps thinking minimal so continue-steps do not stall", () => {
-    expect(chatThinkingLevel("focused")).toBe("minimal");
-    expect(chatThinkingLevel("adaptive")).toBe("minimal");
-    expect(chatThinkingLevel("comprehensive")).toBe("minimal");
+  it("uses medium thinking until we route thinking by task", () => {
+    expect(chatThinkingLevel("focused")).toBe("medium");
+    expect(chatThinkingLevel("adaptive")).toBe("medium");
+    expect(chatThinkingLevel("comprehensive")).toBe("medium");
   });
 });
 

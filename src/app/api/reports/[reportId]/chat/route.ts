@@ -335,8 +335,9 @@ export async function POST(
         ...(prepared.toolChoice ? { toolChoice: prepared.toolChoice } : {}),
       };
     },
-    // Thought summaries for Langfuse. Thinking is minimal: it runs on every
-    // tool step, and continue/finish are server-locked during a page walk.
+    // Gemini 3.x: thinkingLevel only. Do not set temperature / topP / topK /
+    // seed — Google warns that sampling overrides degrade reasoning.
+    // includeThoughts stays on for Langfuse; UI does not stream them.
     providerOptions: buildGeminiThoughtSummaryProviderOptions({
       thinkingLevel: chatThinkingLevel(retrieval.policy),
     }),

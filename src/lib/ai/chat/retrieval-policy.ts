@@ -1,5 +1,6 @@
 import type { DocumentType, SectionType } from "@/db/schema";
 import type { ChatSectionScope } from "@/lib/ai/chat/fields";
+import { CHAT_THINKING_LEVEL } from "@/lib/ai/chat/model";
 
 export const RETRIEVAL_POLICIES = ["focused", "adaptive", "comprehensive"] as const;
 export type RetrievalPolicy = (typeof RETRIEVAL_POLICIES)[number];
@@ -90,18 +91,17 @@ export function classifyRetrievalPolicy(
 }
 
 /**
- * Thinking runs on every orchestrator step. Comprehensive continue is
- * server-locked, and adaptive grep does not need a long thought on a 35k
- * prompt just to emit the next tool call.
+ * Thinking runs on every orchestrator step. Level is fixed at medium
+ * until we route it by task; 3.7 Flash does not support `minimal`.
  */
 export function chatThinkingLevel(
   policy: RetrievalPolicy
-): "minimal" | "low" {
+): typeof CHAT_THINKING_LEVEL {
   switch (policy) {
     case "focused":
     case "adaptive":
     case "comprehensive":
-      return "minimal";
+      return CHAT_THINKING_LEVEL;
     default: {
       const _exhaustive: never = policy;
       throw new Error(`Unhandled retrieval policy: ${String(_exhaustive)}`);

@@ -617,7 +617,6 @@ async function extractReviewBatchWithLlm(input: {
   const result = await generateText({
     model: resolveChatExtractLanguageModel(),
     output: Output.object({ schema: llmFindingSchema }),
-    temperature: 0,
     providerOptions: buildGeminiThoughtSummaryProviderOptions({
       thinkingLevel: "minimal",
       includeThoughts: false,
