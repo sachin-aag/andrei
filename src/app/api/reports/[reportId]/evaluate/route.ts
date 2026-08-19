@@ -21,7 +21,7 @@ import {
 } from "@/lib/document-types";
 import {
   hasEnoughContextInFirstSection,
-  INSUFFICIENT_FIRST_SECTION_MESSAGE,
+  insufficientFirstSectionMessage,
 } from "@/lib/ai/first-section-context";
 import {
   flushLangfuseTraces,
@@ -107,7 +107,7 @@ async function handleEvaluatePost(
         const gateRow = bySection.get(gate.key);
         if (!hasEnoughContextInFirstSection(gateRow?.content)) {
           return NextResponse.json(
-            { error: INSUFFICIENT_FIRST_SECTION_MESSAGE },
+            { error: insufficientFirstSectionMessage(gate.label) },
             { status: 400 }
           );
         }

@@ -2,7 +2,12 @@ import "@testing-library/jest-dom/vitest";
 
 function isKnownCustomerId(value: string | undefined): boolean {
   const normalized = value?.trim().toLowerCase();
-  return normalized === "mj" || normalized === "demo" || !normalized;
+  return (
+    normalized === "mj" ||
+    normalized === "demo" ||
+    normalized === "convergent" ||
+    !normalized
+  );
 }
 
 // Local shells may set ANDREI_CUSTOMER to a non-pack name (e.g. a project

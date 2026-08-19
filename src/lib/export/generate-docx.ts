@@ -18,11 +18,11 @@ import {
   designVerificationMetadata,
   investigationOtherTools,
   investigationToolsUsed,
+  type ReportRecord,
   type ReportSectionRecord,
 } from "@/types/report";
 import type { SectionType, reports as reportsTable } from "@/db/schema";
 import { getDocumentType, mergeSectionForType } from "@/lib/document-types";
-import { isDvTableSection } from "@/lib/document-types/design-verification/sections";
 import { getUser } from "@/lib/auth/user-directory";
 import { formatCalendarDate } from "@/lib/utils";
 import { collapseFiveWhyFields } from "@/lib/analyze-five-why";
@@ -68,17 +68,28 @@ import { applyGoogleDocsImageCompat } from "@/lib/export/docx-google-docs-images
 type ReportRow = typeof reportsTable.$inferSelect;
 type ReportRowWithManagers = ReportRow & { assignedManagerIds?: string[] };
 
-const DV_EXPORT_XML_FIELDS = [
-  ["purpose_scope", "purposeScopeXml"],
-  ["references", "referencesXml"],
-  ["traceability", "traceabilityXml"],
-  ["test_methods", "testMethodsXml"],
-  ["test_results", "testResultsXml"],
-  ["deviations", "deviationsXml"],
-  ["conclusion", "conclusionXml"],
-  ["approval_signoff", "approvalSignoffXml"],
-  ["appendices", "appendicesXml"],
-] as const;
+function isTiptapDoc(value: unknown): value is JSONContent {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    (value as JSONContent).type === "doc"
+  );
+}
+
+function stringifyDvTemplateValue(
+  value: unknown,
+  ctx: DocxExportContext
+): string {
+  if (value == null) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  if (isTiptapDoc(value)) {
+    return narrativeToDocxXmlWithContext(normalizeRichField(value), ctx).xml;
+  }
+  return "";
+}
 
 function sectionByKey<K extends keyof SectionContentMap>(
   rows: ReportSectionRecord[],
@@ -494,8 +505,18 @@ async function generateDesignVerificationDocx({
 
   const numberingBases = loadListNumberingBasesFromZip(zip);
   const ctx = createDocxExportContext(numberingBases);
-  const byKey = Object.fromEntries(sections.map((s) => [s.section, s.content]));
+  const def = getDocumentType("design_verification");
   const meta = designVerificationMetadata(report);
+  const mergedSections = sections.map((row) => ({
+    section: row.section,
+    content: mergeSectionForType("design_verification", row.section, row.content),
+  }));
+  const built = def.export.buildTemplateData({
+    report: report as unknown as ReportRecord,
+    sections: mergedSections,
+    ctx,
+    comments: [],
+  });
 
   const data: Record<string, string> = {
     date: formatCalendarDate(report.date),
@@ -503,18 +524,8 @@ async function generateDesignVerificationDocx({
     productName: meta.productName,
     revision: meta.revision,
   };
-
-  for (const [section, placeholder] of DV_EXPORT_XML_FIELDS) {
-    const merged = mergeSectionForType(
-      "design_verification",
-      section,
-      byKey[section]
-    ) as Record<string, unknown>;
-    const field = isDvTableSection(section) ? "table" : "narrative";
-    data[placeholder] = narrativeToDocxXmlWithContext(
-      normalizeRichField(merged[field]),
-      ctx
-    ).xml;
+  for (const [key, value] of Object.entries(built)) {
+    data[key] = stringifyDvTemplateValue(value, ctx);
   }
 
   doc.render(data);

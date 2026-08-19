@@ -2,6 +2,7 @@ import type { CriterionStatus, SectionType } from "@/db/schema";
 import { SUGGEST_TARGET_FIELD_PATTERNS } from "@/lib/ai/suggest-target-fields";
 import {
   dvFixedTableFormatGuidance,
+  isDvTableOnlySection,
   isDvTableSection,
 } from "@/lib/document-types/design-verification/sections";
 
@@ -29,7 +30,7 @@ function fieldHintForSection(section: SectionType): string {
   if (section === "measure") {
     return '\n- For MEASURE, targetField MUST be "narrative" — it is the section\'s only editable field.';
   }
-  if (isDvTableSection(section)) {
+  if (isDvTableOnlySection(section)) {
     return '\n- For this matrix section, targetField MUST be "table". Preserve the seeded column headers; edit cell values only.';
   }
   return "";

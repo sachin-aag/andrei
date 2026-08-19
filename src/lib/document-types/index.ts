@@ -1,7 +1,7 @@
 import type { DocumentType } from "@/db/schema";
 import { isDocumentTypeEnabled, getCustomerPack } from "@/lib/customers/packs";
 import { buildInvestigationReportDefinition } from "./investigation-report";
-import { designVerificationDefinition } from "./design-verification";
+import { buildDesignVerificationDefinition } from "./design-verification";
 import type {
   CriterionDefinition,
   DocumentTypeDefinition,
@@ -20,7 +20,7 @@ export function getDocumentType(type: DocumentType): DocumentTypeDefinition {
     case "investigation_report":
       return buildInvestigationReportDefinition();
     case "design_verification":
-      return designVerificationDefinition;
+      return buildDesignVerificationDefinition();
     default: {
       const exhaustive: never = type;
       throw new Error(`Unknown document type: ${exhaustive}`);

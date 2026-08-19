@@ -66,6 +66,28 @@ const ANDREI_BRANDING: CustomerBranding = {
   aiAttribution: "by Andrei",
 };
 
+const CONVERGENT_BRANDING: CustomerBranding = {
+  productName: "Convergent Dental",
+  productNameShort: "Convergent",
+  documentReviewTitle: "Convergent Dental — Design Verification",
+  documentReviewDescription:
+    "AI document review and drafting for Convergent Dental design verification",
+  tagline: "Solea® Design Verification",
+  shellTagline: "Design Verification",
+  logoSrc: "/logo-convergent.png",
+  logoWhiteSrc: "/logo-convergent-white.png",
+  logoAlt: "Convergent Dental logo",
+  heroLogoSrc: "/logo-convergent.png",
+  heroLogoOnWhite: true,
+  auditExportTitle: "Convergent Dental — Audit Trail Export",
+  passwordResetSubject: "Reset your password — Convergent Dental",
+  loginHeadline: "Design verification,\naccelerated.",
+  loginSubhead:
+    "Draft Solea design verification reports with AI-assisted quality checks, streamlined manager review, and one-click DOCX export.",
+  loginFooter: "Andrei Health",
+  aiAttribution: "by Andrei",
+};
+
 const MJ_BRANDING: CustomerBranding = {
   productName: "M.J. Biopharm Private Limited",
   productNameShort: "M.J. Biopharm",
@@ -102,6 +124,21 @@ export const DEMO_PACK: CustomerPack = {
   branding: ANDREI_BRANDING,
 };
 
+export const CONVERGENT_PROMPT_VERSION = "convergent-dv-v1";
+
+export const CONVERGENT_PACK: CustomerPack = {
+  id: "convergent",
+  enabledDocumentTypes: ["design_verification"],
+  hiddenInvestigationSections: [],
+  investigationTemplateFile: "investigation-report-template.docx",
+  promptVersion: CONVERGENT_PROMPT_VERSION,
+  evaluationSystemPrompt: COMMON_EVALUATION_SYSTEM_PROMPT,
+  evaluationSectionPromptAdditions: {},
+  criterionDescriptionOverrides: {},
+  wordImportEnabled: false,
+  branding: CONVERGENT_BRANDING,
+};
+
 export const MJ_PACK: CustomerPack = {
   id: "mj",
   enabledDocumentTypes: ["investigation_report"],
@@ -121,6 +158,8 @@ export function getCustomerPack(id: CustomerId = resolveCustomerId()): CustomerP
       return DEMO_PACK;
     case "mj":
       return MJ_PACK;
+    case "convergent":
+      return CONVERGENT_PACK;
     default: {
       const exhaustive: never = id;
       return exhaustive;
