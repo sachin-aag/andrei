@@ -215,10 +215,23 @@ function insertTrackedText(
   return tr;
 }
 
+function sameTextblock(state: EditorState, a: number, b: number): boolean {
+  const $a = state.doc.resolve(clampPos(state, a));
+  const $b = state.doc.resolve(clampPos(state, b));
+  return (
+    $a.parent.inlineContent &&
+    $b.parent.inlineContent &&
+    $a.start() === $b.start()
+  );
+}
+
 /**
  * Chrome may report the previous insert span (or an Enter split) as
- * `from < to`. Insert without deleting, at the later edge so a new line
- * stays a new line. `from === to` falls through to appendTransaction.
+ * `from < to`. Insert without deleting.
+ *
+ * Same textblock → type at the caret, so a later AI suggestion span is not
+ * treated as the insert site. Cross-block (Enter) → type at `to` so the new
+ * line stays a new line. `from === to` falls through to appendTransaction.
  */
 export function trackChangesTextInputTransaction(
   state: EditorState,
@@ -242,12 +255,11 @@ export function trackChangesTextInputTransaction(
 
   if (from >= to) return null;
 
-  return insertTrackedText(
-    state,
-    textPos(state, Math.max(selTo, to)),
-    text,
-    authorId
-  );
+  const insertAt = sameTextblock(state, from, to)
+    ? textPos(state, selTo)
+    : textPos(state, to);
+
+  return insertTrackedText(state, insertAt, text, authorId);
 }
 
 export function trackChangesSelectionReplaceTransaction(

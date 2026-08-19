@@ -197,6 +197,29 @@ describe("trackChangesTextInputTransaction", () => {
     expect(next.selection.$from.parent.inlineContent).toBe(true);
   });
 
+  it("inserts at the caret when Chrome's range covers a later suggestion span", () => {
+    const doc = schema.node("doc", null, [
+      schema.node("paragraph", null, [
+        schema.text("AAA"),
+        schema.text("SUGGESTION", [insertMark("ai-span", "ai")]),
+        schema.text("BBB"),
+      ]),
+    ]);
+    const caret = 4;
+    const suggestionFrom = 4;
+    const suggestionTo = 14;
+    const state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, caret),
+    });
+
+    const next = typedDoc(state, suggestionFrom, suggestionTo, "x");
+    expect(next.doc.textBetween(0, next.doc.content.size, "")).toBe(
+      "AAAxSUGGESTIONBBB"
+    );
+    expect(next.selection.from).toBe(5);
+  });
+
   it("lets a true caret insert fall through to appendTransaction", () => {
     const doc = schema.node("doc", null, [
       schema.node("paragraph", null, [schema.text("ab")]),
