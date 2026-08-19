@@ -85,6 +85,7 @@ package-lock.json
 
 # Temporary onboarding credentials (sensitive — never commit)
 docs/mj-onboarding-temporary-passwords.md
+docs/convergent-onboarding-temporary-passwords.md
 .env*
 
 # Local video analysis scratch (large media + generated reports)

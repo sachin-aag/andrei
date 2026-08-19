@@ -8,6 +8,8 @@ cors_origins = [
   "https://andrei-v2.vercel.app",
   "https://demo.andreihealth.com",
   "https://andrei-demo.vercel.app",
+  "https://andrei-convergent.vercel.app",
+  "https://convergent.andreihealth.com",
   "http://localhost:3000",
 ]
 

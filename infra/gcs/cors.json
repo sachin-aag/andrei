@@ -6,6 +6,7 @@
       "https://demo.andreihealth.com",
       "https://andrei-demo.vercel.app",
       "https://andrei-convergent.vercel.app",
+      "https://convergent.andreihealth.com",
       "http://localhost:3000"
     ],
     "method": ["GET", "HEAD", "PUT", "POST", "OPTIONS"],
