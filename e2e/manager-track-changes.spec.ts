@@ -151,8 +151,12 @@ test.describe("manager track changes persist", () => {
     await expect(editor).toContainText("Corrective Actions");
     await expect(editor).toContainText("Personnel Training:");
     await expect(editor).not.toContainText("###");
-    await expect(editor.locator("strong")).toContainText("Corrective Actions");
-    await expect(editor.locator("strong")).toContainText("Personnel Training:");
+    await expect(
+      editor.locator("strong").filter({ hasText: "Corrective Actions" })
+    ).toHaveCount(1);
+    await expect(
+      editor.locator("strong").filter({ hasText: "Personnel Training:" })
+    ).toHaveCount(1);
   });
 
   test("keeps a new line and types into it instead of joining", async ({ page }) => {
