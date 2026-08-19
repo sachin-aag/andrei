@@ -31,6 +31,7 @@ import {
 } from "@/lib/tiptap/suggestion-marks";
 import { gutterAnchorIdForComment } from "@/lib/comments/navigate";
 import {
+  packGutterAnchors,
   suggestionAnchorY,
   suggestionFieldGutterLayout,
 } from "@/lib/suggestions/navigate-suggestion";
@@ -56,7 +57,6 @@ export type GutterAnchor = {
   comment?: CommentRecord;
 };
 
-const CARD_GAP = 8;
 const HEIGHT_EPSILON = 2;
 
 function measureCardHeights(
@@ -152,6 +152,12 @@ function suggestionAnchorYInEditor(
   fromPos?: number | null
 ): number | null {
   const view = editor.view;
+  const markEl = view.dom.querySelector<HTMLElement>(
+    `[data-eval-id="${CSS.escape(markId)}"]`
+  );
+  if (markEl) {
+    return suggestionAnchorY(markEl.getBoundingClientRect().top, containerTop);
+  }
   const docSize = view.state.doc.content.size;
   const range = findSuggestionMarkRange(editor, markId);
   if (range) {
@@ -246,6 +252,8 @@ export function MarginGutter({ onSectionOverflow }: Props) {
         ? new ResizeObserver(requestLayout)
         : null;
     if (containerRef.current) observer?.observe(containerRef.current);
+    const rail = containerRef.current?.closest("[aria-label='Review margin']");
+    if (rail instanceof HTMLElement) observer?.observe(rail);
 
     return () => {
       if (frame !== null) cancelAnimationFrame(frame);
@@ -424,25 +432,13 @@ export function MarginGutter({ onSectionOverflow }: Props) {
     canComment,
   ]);
 
-  // Greedy non-overlap packing: each card's top is `max(desiredTop, prev.bottom + gap)`.
-  // Active card stays at its desired position when possible — others shift around it.
-  const packed = useMemo(() => {
-    const heights = cardHeights;
-    return anchors.reduce<{ items: Array<GutterAnchor & { top: number }>; prevBottom: number }>(
-      (acc, a) => {
-        const h = heights[a.id] ?? 80;
-        const desired = a.valignCenter
-          ? a.desiredTop - h / 2
-          : a.desiredTop;
-        const top = Math.max(desired, acc.prevBottom + CARD_GAP);
-        return {
-          items: [...acc.items, { ...a, top }],
-          prevBottom: top + h,
-        };
-      },
-      { items: [], prevBottom: -Infinity }
-    ).items;
-  }, [anchors, cardHeights]);
+  // Pack per section so a tall draft in Purpose cannot shove Deviations
+  // into empty space below its field. Section overflow padding keeps
+  // neighbouring sections from colliding.
+  const packed = useMemo(
+    () => packGutterAnchors(anchors, cardHeights),
+    [anchors, cardHeights]
+  );
 
   // Section height overflow: after packing, compute how far cards extend
   // below each section's natural bottom and report the delta so the workspace

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  packGutterAnchors,
   rectIntersectsViewport,
   SUGGESTION_FIELD_CENTER_MAX_PX,
   suggestionAnchorY,
@@ -53,5 +54,38 @@ describe("suggestionFieldGutterLayout", () => {
       desiredTop: suggestionAnchorY(400, 100),
       valignCenter: false,
     });
+  });
+});
+
+describe("packGutterAnchors", () => {
+  it("does not let an earlier section's tall card push a later section off its field", () => {
+    const packed = packGutterAnchors(
+      [
+        { id: "suggestion:purpose_scope", section: "purpose_scope", desiredTop: 100 },
+        { id: "suggestion:deviations", section: "deviations", desiredTop: 800 },
+      ],
+      {
+        "suggestion:purpose_scope": 500,
+        "suggestion:deviations": 400,
+      }
+    );
+    const deviations = packed.find((a) => a.id === "suggestion:deviations");
+    expect(deviations?.top).toBe(800);
+  });
+
+  it("still stacks overlapping cards inside the same section", () => {
+    const packed = packGutterAnchors(
+      [
+        { id: "composer:deviations", section: "deviations", desiredTop: 800 },
+        { id: "suggestion:deviations", section: "deviations", desiredTop: 820 },
+      ],
+      {
+        "composer:deviations": 80,
+        "suggestion:deviations": 400,
+      },
+      8
+    );
+    const suggestion = packed.find((a) => a.id === "suggestion:deviations");
+    expect(suggestion?.top).toBe(800 + 80 + 8);
   });
 });
