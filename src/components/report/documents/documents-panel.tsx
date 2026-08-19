@@ -34,8 +34,9 @@ export function DocumentsPanel({
   if (collapsed) {
     return (
       <aside
+        id="report-documents-panel"
         aria-label="Documents"
-        className="relative flex w-12 shrink-0 flex-col items-center border-r border-[var(--border)] bg-[var(--card)] py-2"
+        className="relative flex h-full w-full min-w-0 flex-col items-center border-r border-[var(--border)] bg-[var(--card)] py-2"
       >
         <button
           type="button"
@@ -108,8 +109,9 @@ function ExpandedDocumentsPanel({
 
   return (
     <aside
+      id="report-documents-panel"
       aria-label="Documents"
-      className="flex w-[300px] shrink-0 flex-col border-r border-[var(--border)] bg-[var(--card)]"
+      className="flex h-full w-full min-w-0 flex-col border-r border-[var(--border)] bg-[var(--card)]"
     >
       <div className="flex items-center justify-between gap-1 border-b border-[var(--border)] px-3 py-2">
         <h2 className="flex items-center gap-2 text-sm font-semibold text-[var(--foreground)]">
