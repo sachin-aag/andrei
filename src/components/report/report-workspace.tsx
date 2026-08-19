@@ -217,6 +217,7 @@ export function ReportWorkspace({
     beginResize,
     endResize,
   } = useWorkspaceLayout({
+    reportId: report.id,
     chatCollapsed: sidebarCollapsed,
     docsCollapsed: documentsCollapsed,
   });

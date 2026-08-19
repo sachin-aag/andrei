@@ -1,15 +1,21 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   allocateWorkspaceColumns,
+  bindWorkspaceLayoutToReport,
   CHAT_DEFAULT_PX,
   chatWidthBounds,
   COLLAPSED_RAIL_PX,
+  defaultWorkspaceLayout,
   DOCS_DEFAULT_PX,
   docsWidthBounds,
+  getWorkspaceLayoutSnapshot,
   isReviewGutterVisible,
   mainMinWidth,
   parseStoredWorkspaceLayout,
+  resetWorkspaceLayoutStore,
   serializeStoredWorkspaceLayout,
+  updateWorkspaceLayout,
+  WORKSPACE_LAYOUT_STORAGE_KEY,
 } from "./workspace-layout";
 
 describe("chatWidthBounds", () => {
@@ -234,6 +240,51 @@ describe("allocateWorkspaceColumns", () => {
     );
     expect(restored.chatWidth).toBe(400);
     expect(restored.docsWidth).toBe(300);
+  });
+});
+
+describe("session workspace layout", () => {
+  beforeEach(() => {
+    resetWorkspaceLayoutStore();
+    const map = new Map<string, string>();
+    vi.stubGlobal("localStorage", {
+      getItem: (key: string) => map.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        map.set(key, value);
+      },
+      removeItem: (key: string) => {
+        map.delete(key);
+      },
+    });
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    resetWorkspaceLayoutStore();
+  });
+
+  it("ignores leftover profile storage and starts at defaults", () => {
+    localStorage.setItem(
+      WORKSPACE_LAYOUT_STORAGE_KEY,
+      serializeStoredWorkspaceLayout({ chatWidth: 720, docsWidth: 480 })
+    );
+    bindWorkspaceLayoutToReport("report-a");
+    expect(getWorkspaceLayoutSnapshot()).toEqual(defaultWorkspaceLayout());
+    expect(localStorage.getItem(WORKSPACE_LAYOUT_STORAGE_KEY)).toBeNull();
+  });
+
+  it("keeps a drag on the same report", () => {
+    bindWorkspaceLayoutToReport("report-a");
+    updateWorkspaceLayout((prev) => ({ ...prev, chatWidth: 512 }));
+    bindWorkspaceLayoutToReport("report-a");
+    expect(getWorkspaceLayoutSnapshot().chatWidth).toBe(512);
+  });
+
+  it("resets to defaults when a different report is opened", () => {
+    bindWorkspaceLayoutToReport("report-a");
+    updateWorkspaceLayout((prev) => ({ ...prev, chatWidth: 512 }));
+    bindWorkspaceLayoutToReport("report-b");
+    expect(getWorkspaceLayoutSnapshot()).toEqual(defaultWorkspaceLayout());
   });
 });
 

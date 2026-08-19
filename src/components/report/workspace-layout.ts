@@ -247,33 +247,20 @@ export function serializeStoredWorkspaceLayout(
   });
 }
 
-export function readStoredWorkspaceLayout(): StoredWorkspaceLayout | null {
-  try {
-    return parseStoredWorkspaceLayout(
-      localStorage.getItem(WORKSPACE_LAYOUT_STORAGE_KEY)
-    );
-  } catch {
-    return null;
-  }
-}
-
-export function writeStoredWorkspaceLayout(
-  layout: StoredWorkspaceLayout
-): void {
-  try {
-    localStorage.setItem(
-      WORKSPACE_LAYOUT_STORAGE_KEY,
-      serializeStoredWorkspaceLayout(layout)
-    );
-  } catch {
-    // Incognito / quota / disabled storage — layout still works for the session.
-  }
-}
-
 export function defaultWorkspaceLayout(): StoredWorkspaceLayout {
   return { chatWidth: CHAT_DEFAULT_PX, docsWidth: DOCS_DEFAULT_PX };
 }
 
+/** Drop leftover profile storage from when panel widths were remembered. */
+export function clearStoredWorkspaceLayout(): void {
+  try {
+    localStorage.removeItem(WORKSPACE_LAYOUT_STORAGE_KEY);
+  } catch {
+    // Incognito / disabled storage.
+  }
+}
+
+let boundReportId: string | null = null;
 let memoryLayout: StoredWorkspaceLayout | null = null;
 const layoutListeners = new Set<() => void>();
 
@@ -281,28 +268,34 @@ function emitLayout(): void {
   layoutListeners.forEach((listener) => listener());
 }
 
-function onLayoutStorage(event: StorageEvent): void {
-  if (event.key != null && event.key !== WORKSPACE_LAYOUT_STORAGE_KEY) return;
-  memoryLayout = parseStoredWorkspaceLayout(event.newValue);
-  emitLayout();
+/**
+ * Panel widths are in-memory for the open report only. Opening another report
+ * (or a new login, which remounts) returns to the defaults — not localStorage.
+ * Safe to call during render; does not notify subscribers.
+ */
+export function bindWorkspaceLayoutToReport(reportId: string): void {
+  if (boundReportId === reportId) return;
+  boundReportId = reportId;
+  memoryLayout = defaultWorkspaceLayout();
+  clearStoredWorkspaceLayout();
+}
+
+/** Test helper — module store otherwise leaks across cases. */
+export function resetWorkspaceLayoutStore(): void {
+  boundReportId = null;
+  memoryLayout = null;
 }
 
 export function subscribeWorkspaceLayout(onStoreChange: () => void): () => void {
   layoutListeners.add(onStoreChange);
-  if (layoutListeners.size === 1) {
-    window.addEventListener("storage", onLayoutStorage);
-  }
   return () => {
     layoutListeners.delete(onStoreChange);
-    if (layoutListeners.size === 0) {
-      window.removeEventListener("storage", onLayoutStorage);
-    }
   };
 }
 
 export function getWorkspaceLayoutSnapshot(): StoredWorkspaceLayout {
   if (memoryLayout) return memoryLayout;
-  memoryLayout = readStoredWorkspaceLayout() ?? defaultWorkspaceLayout();
+  memoryLayout = defaultWorkspaceLayout();
   return memoryLayout;
 }
 
@@ -310,20 +303,15 @@ export function getWorkspaceLayoutServerSnapshot(): StoredWorkspaceLayout {
   return defaultWorkspaceLayout();
 }
 
-export function commitWorkspaceLayout(
-  layout: StoredWorkspaceLayout,
-  persist = true
-): void {
+export function commitWorkspaceLayout(layout: StoredWorkspaceLayout): void {
   memoryLayout = layout;
-  if (persist) writeStoredWorkspaceLayout(layout);
   emitLayout();
 }
 
 export function updateWorkspaceLayout(
-  updater: (prev: StoredWorkspaceLayout) => StoredWorkspaceLayout,
-  persist = true
+  updater: (prev: StoredWorkspaceLayout) => StoredWorkspaceLayout
 ): void {
-  commitWorkspaceLayout(updater(getWorkspaceLayoutSnapshot()), persist);
+  commitWorkspaceLayout(updater(getWorkspaceLayoutSnapshot()));
 }
 
 export function subscribeViewportWidth(onStoreChange: () => void): () => void {

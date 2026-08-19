@@ -3,6 +3,7 @@
 import { useCallback, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   allocateWorkspaceColumns,
+  bindWorkspaceLayoutToReport,
   CHAT_DEFAULT_PX,
   chatWidthBounds,
   COLLAPSED_RAIL_PX,
@@ -15,11 +16,11 @@ import {
   subscribeViewportWidth,
   subscribeWorkspaceLayout,
   updateWorkspaceLayout,
-  writeStoredWorkspaceLayout,
   type OverflowProtect,
 } from "@/components/report/workspace-layout";
 
 type UseWorkspaceLayoutArgs = {
+  reportId: string;
   chatCollapsed: boolean;
   docsCollapsed: boolean;
 };
@@ -33,12 +34,14 @@ function estimateContainerWidth(): number {
 }
 
 export function useWorkspaceLayout({
+  reportId,
   chatCollapsed,
   docsCollapsed,
 }: UseWorkspaceLayoutArgs) {
+  bindWorkspaceLayoutToReport(reportId);
+
   const containerRef = useRef<HTMLDivElement>(null);
   const isResizingRef = useRef(false);
-  const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const viewportWidth = useSyncExternalStore(
     subscribeViewportWidth,
@@ -55,13 +58,6 @@ export function useWorkspaceLayout({
   const [protect, setProtect] = useState<OverflowProtect>("none");
   const [isResizing, setIsResizing] = useState(false);
 
-  const persistSoon = useCallback(() => {
-    if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
-    persistTimerRef.current = setTimeout(() => {
-      writeStoredWorkspaceLayout(getWorkspaceLayoutSnapshot());
-    }, 200);
-  }, []);
-
   useLayoutEffect(() => {
     const node = containerRef.current;
     if (!node) return;
@@ -71,10 +67,7 @@ export function useWorkspaceLayout({
       setContainerWidth(node.getBoundingClientRect().width);
     });
     observer.observe(node);
-    return () => {
-      observer.disconnect();
-      if (persistTimerRef.current) clearTimeout(persistTimerRef.current);
-    };
+    return () => observer.disconnect();
   }, []);
 
   const allocated = allocateWorkspaceColumns(
@@ -92,29 +85,15 @@ export function useWorkspaceLayout({
   const chatBounds = chatWidthBounds(viewportWidth);
   const docsBounds = docsWidthBounds(viewportWidth);
 
-  const setChatWidth = useCallback(
-    (width: number) => {
-      setProtect("chat");
-      updateWorkspaceLayout(
-        (prev) => ({ ...prev, chatWidth: width }),
-        false
-      );
-      persistSoon();
-    },
-    [persistSoon]
-  );
+  const setChatWidth = useCallback((width: number) => {
+    setProtect("chat");
+    updateWorkspaceLayout((prev) => ({ ...prev, chatWidth: width }));
+  }, []);
 
-  const setDocsWidth = useCallback(
-    (width: number) => {
-      setProtect("docs");
-      updateWorkspaceLayout(
-        (prev) => ({ ...prev, docsWidth: width }),
-        false
-      );
-      persistSoon();
-    },
-    [persistSoon]
-  );
+  const setDocsWidth = useCallback((width: number) => {
+    setProtect("docs");
+    updateWorkspaceLayout((prev) => ({ ...prev, docsWidth: width }));
+  }, []);
 
   const resetChatWidth = useCallback(() => {
     setChatWidth(CHAT_DEFAULT_PX);
@@ -134,7 +113,6 @@ export function useWorkspaceLayout({
     isResizingRef.current = false;
     setIsResizing(false);
     setProtect("none");
-    writeStoredWorkspaceLayout(getWorkspaceLayoutSnapshot());
   }, []);
 
   return {
