@@ -7,6 +7,38 @@ export function suggestionGutterAnchorId(section: SectionType): string {
   return `suggestion:${section}`;
 }
 
+/**
+ * Compact textboxes stay visually centered on the card. Anything taller (a
+ * TipTap narrative, a full-field redraft) pins to the first line — centering
+ * on the mark range puts the card in the middle of a multi-screen insert,
+ * which reads as "missing" when the highlight starts on screen.
+ */
+export const SUGGESTION_FIELD_CENTER_MAX_PX = 240;
+
+/** Viewport Y → gutter-container Y (`GutterAnchor.desiredTop`). */
+export function suggestionAnchorY(
+  viewportTop: number,
+  containerTop: number
+): number {
+  return viewportTop - containerTop;
+}
+
+export function suggestionFieldGutterLayout(
+  field: { top: number; height: number },
+  containerTop: number
+): { desiredTop: number; valignCenter: boolean } {
+  if (field.height <= SUGGESTION_FIELD_CENTER_MAX_PX) {
+    return {
+      desiredTop: suggestionAnchorY(field.top + field.height / 2, containerTop),
+      valignCenter: true,
+    };
+  }
+  return {
+    desiredTop: suggestionAnchorY(field.top, containerTop),
+    valignCenter: false,
+  };
+}
+
 /** Pure geometry helper — true when any of the rect is inside the viewport band. */
 export function rectIntersectsViewport(
   rect: { top: number; bottom: number },

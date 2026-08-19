@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   rectIntersectsViewport,
+  SUGGESTION_FIELD_CENTER_MAX_PX,
+  suggestionAnchorY,
+  suggestionFieldGutterLayout,
   suggestionGutterAnchorId,
 } from "@/lib/suggestions/navigate-suggestion";
 
@@ -33,5 +36,22 @@ describe("rectIntersectsViewport", () => {
 describe("suggestionGutterAnchorId", () => {
   it("matches margin-gutter packing ids", () => {
     expect(suggestionGutterAnchorId("define")).toBe("suggestion:define");
+  });
+});
+
+describe("suggestionFieldGutterLayout", () => {
+  it("centers a compact field on the card", () => {
+    expect(
+      suggestionFieldGutterLayout({ top: 400, height: 48 }, 100)
+    ).toEqual({ desiredTop: 324, valignCenter: true });
+  });
+
+  it("pins a tall redraft field to its first line, not the midpoint", () => {
+    const field = { top: 400, height: 2400 };
+    expect(field.height).toBeGreaterThan(SUGGESTION_FIELD_CENTER_MAX_PX);
+    expect(suggestionFieldGutterLayout(field, 100)).toEqual({
+      desiredTop: suggestionAnchorY(400, 100),
+      valignCenter: false,
+    });
   });
 });

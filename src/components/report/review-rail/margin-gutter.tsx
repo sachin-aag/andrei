@@ -30,6 +30,10 @@ import {
   suggestionInsertMarkName,
 } from "@/lib/tiptap/suggestion-marks";
 import { gutterAnchorIdForComment } from "@/lib/comments/navigate";
+import {
+  suggestionAnchorY,
+  suggestionFieldGutterLayout,
+} from "@/lib/suggestions/navigate-suggestion";
 import { cn } from "@/lib/utils";
 import { useUserDirectory } from "@/providers/user-directory-provider";
 import type { Editor } from "@tiptap/react";
@@ -46,7 +50,7 @@ export type GutterAnchor = {
     | "unanchored-comment"
     | "suggestion";
   desiredTop: number;
-  /** When true, desiredTop is the vertical center of the target field (card is centered on it). */
+  /** When true, desiredTop is the vertical center of a compact field (card is centered on it). */
   valignCenter?: boolean;
   section?: SectionType;
   comment?: CommentRecord;
@@ -141,12 +145,7 @@ function findSuggestionMarkRange(
   return { from, to };
 }
 
-function elementCenterY(el: HTMLElement, containerTop: number): number {
-  const rect = el.getBoundingClientRect();
-  return rect.top + rect.height / 2 - containerTop;
-}
-
-function suggestionCenterYInEditor(
+function suggestionAnchorYInEditor(
   editor: Editor,
   markId: string,
   containerTop: number,
@@ -157,11 +156,8 @@ function suggestionCenterYInEditor(
   const range = findSuggestionMarkRange(editor, markId);
   if (range) {
     const safeFrom = Math.max(0, Math.min(range.from, docSize));
-    const safeTo = Math.max(safeFrom, Math.min(range.to, docSize));
     try {
-      const start = view.coordsAtPos(safeFrom);
-      const end = view.coordsAtPos(safeTo);
-      return (start.top + end.bottom) / 2 - containerTop;
+      return suggestionAnchorY(view.coordsAtPos(safeFrom).top, containerTop);
     } catch {
       // fall through
     }
@@ -172,8 +168,7 @@ function suggestionCenterYInEditor(
       : findSuggestionMarkPos(editor, markId);
   if (pos == null) return null;
   try {
-    const coords = view.coordsAtPos(pos);
-    return coords.top + (coords.bottom - coords.top) / 2 - containerTop;
+    return suggestionAnchorY(view.coordsAtPos(pos).top, containerTop);
   } catch {
     return null;
   }
@@ -344,9 +339,10 @@ export function MarginGutter({ onSectionOverflow }: Props) {
       }
     }
 
-    // 3. Active AI suggestion cards — vertically centered on the target textbox.
-    //    During a queue bridge, park at the previous card's Y so "Go to next"
-    //    stays where the user just acted.
+    // 3. Active AI suggestion cards — aligned to the first line of the
+    //    highlight (not the midpoint of a tall redraft). Compact plain-text
+    //    fields still center. During a queue bridge, park at the previous
+    //    card's Y so "Go to next" stays where the user just acted.
     for (const section of evaluatableSections) {
       const active = gutterSuggestionCommentForSection(section);
       if (!active) continue;
@@ -364,14 +360,15 @@ export function MarginGutter({ onSectionOverflow }: Props) {
         continue;
       }
 
-      // Resolve legacy paths so the card centers on the box that previews it.
+      // Resolve legacy paths so the card sits on the box that previews it.
       const contentPath = effectivePlainTextContentPath(section, active.contentPath);
-      let centerY: number | null = null;
+      let desiredTop: number | null = null;
+      let valignCenter = false;
 
       if (isRichTargetField(section, contentPath)) {
         const editor = getEditor(section, contentPath);
         if (editor) {
-          centerY = suggestionCenterYInEditor(
+          desiredTop = suggestionAnchorYInEditor(
             editor,
             active.id,
             containerTop,
@@ -380,27 +377,36 @@ export function MarginGutter({ onSectionOverflow }: Props) {
         }
       }
 
-      if (centerY == null) {
+      if (desiredTop == null) {
         const anchorKey = suggestionFieldAnchorKey(section, active.contentPath);
         const fieldEl = queryFieldAnchorKey(anchorKey);
-        if (fieldEl) centerY = elementCenterY(fieldEl, containerTop);
-      }
-
-      if (centerY == null) {
-        const heading = document.getElementById(section);
-        if (heading) {
-          const rect = heading.getBoundingClientRect();
-          centerY = rect.top + rect.height / 2 - containerTop;
+        if (fieldEl) {
+          const layout = suggestionFieldGutterLayout(
+            fieldEl.getBoundingClientRect(),
+            containerTop
+          );
+          desiredTop = layout.desiredTop;
+          valignCenter = layout.valignCenter;
         }
       }
 
-      if (centerY == null) continue;
+      if (desiredTop == null) {
+        const heading = document.getElementById(section);
+        if (heading) {
+          desiredTop = suggestionAnchorY(
+            heading.getBoundingClientRect().top,
+            containerTop
+          );
+        }
+      }
+
+      if (desiredTop == null) continue;
 
       result.push({
         id: `suggestion:${section}`,
         type: "suggestion",
-        desiredTop: centerY,
-        valignCenter: true,
+        desiredTop,
+        valignCenter,
         section,
         comment: active,
       });
