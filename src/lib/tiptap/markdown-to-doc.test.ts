@@ -3,6 +3,7 @@ import {
   markdownHasTable,
   markdownToDoc,
   markdownToPlainText,
+  promoteAtxHeadingsInDoc,
 } from "@/lib/tiptap/markdown-to-doc";
 import { richJsonToPlainText } from "@/lib/tiptap/rich-text";
 
@@ -143,5 +144,45 @@ describe("markdownToPlainText", () => {
     expect(markdownToPlainText("## Title\n\n**Bold** text")).toBe(
       "Title\n\nBold text"
     );
+  });
+});
+
+describe("promoteAtxHeadingsInDoc", () => {
+  it("turns a literal ### paragraph into a bold paragraph", () => {
+    const doc = promoteAtxHeadingsInDoc({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "### Corrective Actions" }],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Retrain the operator." }],
+        },
+      ],
+    });
+    expect(doc.content).toEqual([
+      {
+        type: "paragraph",
+        content: [
+          { type: "text", text: "Corrective Actions", marks: [{ type: "bold" }] },
+        ],
+      },
+      {
+        type: "paragraph",
+        content: [{ type: "text", text: "Retrain the operator." }],
+      },
+    ]);
+  });
+
+  it("leaves hashes that are not an ATX heading at the start of the paragraph", () => {
+    const paragraph = {
+      type: "paragraph",
+      content: [{ type: "text", text: "See ### notes in the annex." }],
+    };
+    expect(
+      promoteAtxHeadingsInDoc({ type: "doc", content: [paragraph] })
+    ).toEqual({ type: "doc", content: [paragraph] });
   });
 });

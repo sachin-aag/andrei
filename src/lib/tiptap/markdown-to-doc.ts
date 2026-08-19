@@ -1,6 +1,54 @@
 import type { JSONContent } from "@tiptap/core";
-import { emptyDoc } from "@/lib/tiptap/rich-text";
 import { parseListLine } from "@/lib/tiptap/list-style";
+
+const ATX_HEADING_RE = /^(#{1,3})\s+(.*)$/;
+
+/** ATX `#`–`###` line → bold paragraph (section editor has no heading node). */
+export function atxHeadingParagraph(text: string): JSONContent | null {
+  const heading = ATX_HEADING_RE.exec(text.trim());
+  if (!heading) return null;
+  const headingText = heading[2]!.replace(/\*\*([^*]+)\*\*/g, "$1");
+  if (!headingText) return null;
+  return {
+    type: "paragraph",
+    content: [{ type: "text", text: headingText, marks: [{ type: "bold" }] }],
+  };
+}
+
+function paragraphPlainText(node: JSONContent): string {
+  return (node.content ?? [])
+    .map((child) => {
+      if (child.type === "text") return child.text ?? "";
+      if (child.type === "hardBreak") return "\n";
+      return "";
+    })
+    .join("");
+}
+
+function paragraphIsPlainInline(node: JSONContent): boolean {
+  return (node.content ?? []).every(
+    (child) => child.type === "text" || child.type === "hardBreak"
+  );
+}
+
+/**
+ * Turn persisted paragraphs that still start with `#` / `##` / `###` into the
+ * same bold paragraphs `markdownToDoc` emits, so Improve/Control don't show
+ * literal hashes.
+ */
+export function promoteAtxHeadingsInDoc(doc: JSONContent): JSONContent {
+  function visit(node: JSONContent): JSONContent {
+    if (node.type === "paragraph" && paragraphIsPlainInline(node)) {
+      const promoted = atxHeadingParagraph(paragraphPlainText(node));
+      if (promoted) return promoted;
+    }
+    if (node.content?.length) {
+      return { ...node, content: node.content.map(visit) };
+    }
+    return node;
+  }
+  return visit(doc);
+}
 
 /**
  * Deterministic GFM-subset markdown → TipTap doc converter for AI redrafts.
@@ -40,16 +88,9 @@ export function markdownToDoc(markdown: string): JSONContent {
       continue;
     }
 
-    const heading = /^(#{1,3})\s+(.*)$/.exec(trimmed);
+    const heading = atxHeadingParagraph(trimmed);
     if (heading) {
-      // The section rich-text editor has no heading node (StarterKit heading:false),
-      // so render markdown headings as a fully bold paragraph. Emitting a `heading`
-      // node here would make ProseMirror reject the whole doc and render nothing.
-      const headingText = heading[2]!.replace(/\*\*([^*]+)\*\*/g, "$1");
-      content.push({
-        type: "paragraph",
-        content: [{ type: "text", text: headingText, marks: [{ type: "bold" }] }],
-      });
+      content.push(heading);
       i++;
       continue;
     }
@@ -79,7 +120,9 @@ export function markdownToDoc(markdown: string): JSONContent {
     i++;
   }
 
-  if (content.length === 0) return emptyDoc();
+  if (content.length === 0) {
+    return { type: "doc", content: [{ type: "paragraph" }] };
+  }
   return { type: "doc", content };
 }
 

@@ -3,6 +3,7 @@ import {
   suggestionDeleteMarkName,
   suggestionInsertMarkName,
 } from "@/lib/tiptap/suggestion-marks";
+import { atxHeadingParagraph, promoteAtxHeadingsInDoc } from "@/lib/tiptap/markdown-to-doc";
 import {
   listItemParagraph,
   listItemParagraphs,
@@ -115,6 +116,13 @@ export function linesToDoc(s: string): JSONContent {
       continue;
     }
 
+    const heading = atxHeadingParagraph(lineWithoutSoftBreak(line));
+    if (heading) {
+      content.push(heading);
+      i++;
+      continue;
+    }
+
     if (line.endsWith(MAMMOTH_SOFT_BREAK)) {
       const inline: JSONContent[] = [];
       while (i < lines.length) {
@@ -181,7 +189,7 @@ function coerceUnsupportedNodes(node: JSONContent): JSONContent {
 /** Normalize DB/client value to JSONContent (handles legacy strings). */
 export function normalizeRichField(v: unknown): JSONContent {
   if (v && typeof v === "object" && "type" in v && (v as JSONContent).type === "doc") {
-    return coerceUnsupportedNodes(v as JSONContent);
+    return promoteAtxHeadingsInDoc(coerceUnsupportedNodes(v as JSONContent));
   }
   if (typeof v === "string") {
     return legacyStringToDoc(v);

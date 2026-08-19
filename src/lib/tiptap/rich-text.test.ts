@@ -4,6 +4,7 @@ import {
   appendParagraphsToDoc,
   legacyStringToDoc,
   MAMMOTH_SOFT_BREAK,
+  normalizeRichField,
   richJsonToPlainText,
   stripSuggestionMarksFromDoc,
 } from "@/lib/tiptap/rich-text";
@@ -21,6 +22,44 @@ describe("rich text helpers", () => {
         { type: "paragraph", content: [{ type: "text", text: "Line two" }] },
       ],
     });
+  });
+
+  it("renders ATX heading lines as bold paragraphs", () => {
+    expect(legacyStringToDoc("### Corrective Actions\nRetrain operator.")).toEqual({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "Corrective Actions", marks: [{ type: "bold" }] },
+          ],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Retrain operator." }],
+        },
+      ],
+    });
+  });
+
+  it("promotes persisted ### hashes when normalizing a rich field", () => {
+    const doc = normalizeRichField({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "### Preventive Actions" }],
+        },
+      ],
+    });
+    expect(doc.content).toEqual([
+      {
+        type: "paragraph",
+        content: [
+          { type: "text", text: "Preventive Actions", marks: [{ type: "bold" }] },
+        ],
+      },
+    ]);
   });
 
   it("preserves mammoth soft line breaks as hardBreak nodes", () => {
