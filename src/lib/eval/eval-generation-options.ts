@@ -129,10 +129,12 @@ export function buildGeminiThoughtSummaryProviderOptions({
   providerHint,
   seed,
   thinkingLevel,
+  includeThoughts = true,
 }: {
   providerHint?: string;
   seed?: number;
   thinkingLevel: Exclude<EvalEffort, "none">;
+  includeThoughts?: boolean;
 }): Pick<GenerationProviderOptions, "google" | "vertex"> {
   const providerOptions: Pick<GenerationProviderOptions, "google" | "vertex"> = {};
   for (const namespace of geminiProviderNamespaces(providerHint)) {
@@ -140,7 +142,7 @@ export function buildGeminiThoughtSummaryProviderOptions({
       ...(seed !== undefined ? { seed } : {}),
       thinkingConfig: {
         thinkingLevel,
-        includeThoughts: true,
+        includeThoughts,
       },
     };
   }

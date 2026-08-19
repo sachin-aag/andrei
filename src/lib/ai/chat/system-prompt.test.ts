@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("bumps the prompt version when section inline image guidance changes", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v24-agentic-grep");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v25-flash-lite");
   });
 
   it("tells the model never to pass the section key as targetField", () => {
@@ -169,6 +169,8 @@ describe("buildChatSystemPrompt", () => {
     expect(plan).toContain("excludePages=nextExcludePages");
     expect(plan).toContain("requirement IDs");
     expect(plan).toContain("ECO/DCR");
+    expect(plan).toContain("Do not start a document review");
+    expect(plan).not.toContain("Escalate to start_document_review");
     expect(plan).toContain("The document index (filenames/topics) is not enough information by itself");
     expect(plan.indexOf("search_documents")).toBeLessThan(plan.indexOf("ask_user"));
 
@@ -179,7 +181,7 @@ describe("buildChatSystemPrompt", () => {
     expect(agent).toContain("INDEX, not evidence");
     expect(agent).toContain("Never treat the index as ENOUGH");
     expect(agent).toContain("grep in rounds until the question is covered");
-    expect(agent).toContain("equipment AND UUT");
+    expect(agent).toContain("Do not start a document review");
   });
 
   it("requires a finished comprehensive review before drafting inventories", () => {

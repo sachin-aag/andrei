@@ -7,9 +7,11 @@ import { resolveChatLanguageModel } from "@/lib/ai/chat/model";
 import { sanitizePromptMetadata } from "@/lib/ai/chat/prompt-metadata";
 import {
   DOCUMENT_REVIEW_TOOL_NAMES,
+  isDocumentReviewToolName,
   type DocumentReviewToolName,
 } from "@/lib/ai/chat/document-review-ui";
 import type { RetrievalPolicy } from "@/lib/ai/chat/retrieval-policy";
+import { buildGeminiThoughtSummaryProviderOptions } from "@/lib/eval/eval-generation-options";
 
 export { DOCUMENT_REVIEW_TOOL_NAMES, type DocumentReviewToolName };
 
@@ -23,6 +25,9 @@ export const FOCUSED_CHAT_STEP_BUDGET_AGENT = 24;
 export const ADAPTIVE_CHAT_STEP_BUDGET_PLAN = 16;
 export const ADAPTIVE_CHAT_STEP_BUDGET_AGENT = 40;
 export const COMPREHENSIVE_CHAT_STEP_BUDGET_CAP = 96;
+/** In-flight extract calls inside one continue_document_review. */
+export const REVIEW_EXTRACT_CONCURRENCY = 8;
+const REVIEW_DRAIN_MAX_EXTRACTS = 800;
 
 export type DocumentReviewPhase =
   | "idle"
@@ -211,38 +216,7 @@ export class DocumentReviewSession {
       return this.progressPayload("ready_to_finish", "finish_document_review");
     }
 
-    const batch = this.queue.shift();
-    if (!batch) {
-      this.phaseState = "ready_to_finish";
-      return this.progressPayload("ready_to_finish", "finish_document_review");
-    }
-
-    try {
-      const extracted = await this.extractBatch({
-        objective: this.objective,
-        pages: batch.pages,
-      });
-      this.absorbFindings(extracted);
-      this.markReviewed(batch.pages);
-    } catch {
-      if (batch.pages.length > 1) {
-        this.queue.unshift(...splitBatch(batch));
-      } else if (batch.retryCount === 0 && batch.pages.length === 1) {
-        this.queue.unshift({ ...batch, retryCount: 1 });
-      } else if (batch.pages.length === 1) {
-        const page = batch.pages[0]!;
-        const key = pageKey(page);
-        if (!this.reviewedPageKeys.has(key)) {
-          this.failedPages.push({
-            attachmentId: page.attachmentId,
-            filename: page.filename,
-            pageNumber: page.pageNumber,
-            reason: "extraction_failed",
-          });
-          this.reviewedPageKeys.add(key);
-        }
-      }
-    }
+    await this.drainQueue();
 
     if (this.queue.length === 0) {
       this.phaseState = "ready_to_finish";
@@ -250,6 +224,52 @@ export class DocumentReviewSession {
     }
     this.phaseState = "in_progress";
     return this.progressPayload("in_progress", "continue_document_review");
+  }
+
+  private async drainQueue() {
+    let started = 0;
+    const worker = async () => {
+      while (started < REVIEW_DRAIN_MAX_EXTRACTS) {
+        const batch = this.queue.shift();
+        if (!batch) return;
+        started += 1;
+        try {
+          const extracted = await this.extractBatch({
+            objective: this.objective,
+            pages: batch.pages,
+          });
+          this.absorbFindings(extracted);
+          this.markReviewed(batch.pages);
+        } catch {
+          this.retryOrFailBatch(batch);
+        }
+      }
+    };
+    await Promise.all(
+      Array.from({ length: REVIEW_EXTRACT_CONCURRENCY }, () => worker())
+    );
+  }
+
+  private retryOrFailBatch(batch: DocumentReviewBatch) {
+    if (batch.pages.length > 1) {
+      this.queue.push(...splitBatch(batch));
+      return;
+    }
+    if (batch.retryCount === 0 && batch.pages.length === 1) {
+      this.queue.push({ ...batch, retryCount: 1 });
+      return;
+    }
+    const page = batch.pages[0];
+    if (!page) return;
+    const key = pageKey(page);
+    if (this.reviewedPageKeys.has(key)) return;
+    this.failedPages.push({
+      attachmentId: page.attachmentId,
+      filename: page.filename,
+      pageNumber: page.pageNumber,
+      reason: "extraction_failed",
+    });
+    this.reviewedPageKeys.add(key);
   }
 
   finish(): {
@@ -502,6 +522,24 @@ export type DocumentReviewToolChoice = {
   toolChoice?: { type: "tool"; toolName: DocumentReviewToolName };
 };
 
+export function shouldStopChatSteps(input: {
+  stepsTaken: number;
+  mode: "plan" | "agent";
+  policy: RetrievalPolicy;
+  reviewPhase: DocumentReviewPhase;
+  totalPages: number;
+}): boolean {
+  const reviewing =
+    input.reviewPhase === "in_progress" ||
+    input.reviewPhase === "ready_to_finish";
+  const budget = chatStepBudget({
+    mode: input.mode,
+    policy: reviewing ? "comprehensive" : input.policy,
+    totalPages: input.totalPages,
+  });
+  return input.stepsTaken >= budget;
+}
+
 export function prepareDocumentReviewStep(input: {
   policy: RetrievalPolicy;
   phase: DocumentReviewPhase;
@@ -512,7 +550,13 @@ export function prepareDocumentReviewStep(input: {
 
   switch (input.phase) {
     case "idle":
-      if (input.policy !== "comprehensive") return undefined;
+      if (input.policy !== "comprehensive") {
+        return {
+          activeTools: input.availableTools.filter(
+            (name) => !isDocumentReviewToolName(name)
+          ),
+        };
+      }
       return {
         activeTools: allow([
           "start_document_review",
@@ -574,6 +618,10 @@ async function extractReviewBatchWithLlm(input: {
     model: resolveChatLanguageModel(),
     output: Output.object({ schema: llmFindingSchema }),
     temperature: 0,
+    providerOptions: buildGeminiThoughtSummaryProviderOptions({
+      thinkingLevel: "minimal",
+      includeThoughts: false,
+    }),
     prompt: [
       "Extract compact, page-cited findings from these evidence pages.",
       "Preserve repeated executions or configurations as separate findings.",

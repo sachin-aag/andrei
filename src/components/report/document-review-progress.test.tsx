@@ -6,7 +6,7 @@ import { DocumentReviewProgress } from "@/components/report/document-review-prog
 
 describe("DocumentReviewProgress", () => {
   it("renders planning, reviewing, and complete states", () => {
-    const { rerender } = render(
+    const { rerender, container } = render(
       <DocumentReviewProgress
         parts={[
           {
@@ -41,6 +41,7 @@ describe("DocumentReviewProgress", () => {
     expect(
       screen.getByLabelText("Reviewed 24/62 pages · 18 relevant findings")
     ).toBeInTheDocument();
+    expect(container.querySelector(".animate-spin")).toBeNull();
 
     rerender(
       <DocumentReviewProgress

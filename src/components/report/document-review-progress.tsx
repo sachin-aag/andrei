@@ -22,11 +22,7 @@ export function DocumentReviewProgress({
       : snapshot.phase === "error"
         ? Loader2
         : Loader2;
-  const spinning =
-    snapshot.pending ||
-    snapshot.phase === "planning" ||
-    snapshot.phase === "reviewing" ||
-    snapshot.phase === "finalizing";
+  const spinning = snapshot.pending && snapshot.phase !== "complete";
 
   return (
     <div

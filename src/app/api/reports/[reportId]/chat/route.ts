@@ -1,7 +1,6 @@
 import { NextResponse, after } from "next/server";
 import {
   streamText,
-  stepCountIs,
   convertToModelMessages,
   type ToolSet,
   type UIMessage,
@@ -64,10 +63,10 @@ import {
   recentUserMessageTexts,
 } from "@/lib/ai/chat/retrieval-policy";
 import {
-  chatStepBudget,
   DocumentReviewSession,
   pickPlanModeChatTools,
   prepareDocumentReviewStep,
+  shouldStopChatSteps,
 } from "@/lib/ai/chat/document-review";
 import { sanitizeChatMessagesForModel } from "@/lib/ai/chat/image-parts";
 import {
@@ -310,18 +309,19 @@ export async function POST(
       })
     : resolveChatLanguageModel();
 
-  const stepBudget = chatStepBudget({
-    mode,
-    policy: retrieval.policy,
-    totalPages: reviewPageCount,
-  });
-
   const result = streamText({
     model,
     system,
     messages: await convertToModelMessages(messages),
     tools,
-    stopWhen: stepCountIs(stepBudget),
+    stopWhen: ({ steps }) =>
+      shouldStopChatSteps({
+        stepsTaken: steps.length,
+        mode,
+        policy: retrieval.policy,
+        reviewPhase: documentReview.phase(),
+        totalPages: documentReview.progress().totalPages || reviewPageCount,
+      }),
     prepareStep: () => {
       const prepared = prepareDocumentReviewStep({
         policy: retrieval.policy,
@@ -334,8 +334,8 @@ export async function POST(
         ...(prepared.toolChoice ? { toolChoice: prepared.toolChoice } : {}),
       };
     },
-    // Thought summaries for Langfuse; use low thinking on adaptive/comprehensive
-    // turns so Gemini can plan complementary retrieval. Skim turns stay minimal.
+    // Thought summaries for Langfuse. Thinking is minimal: it runs on every
+    // tool step, and continue/finish are server-locked during a page walk.
     providerOptions: buildGeminiThoughtSummaryProviderOptions({
       thinkingLevel: chatThinkingLevel(retrieval.policy),
     }),

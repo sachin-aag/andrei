@@ -7,6 +7,8 @@ import {
   pickPlanModeChatTools,
   PLAN_MODE_CHAT_TOOL_NAMES,
   prepareDocumentReviewStep,
+  REVIEW_EXTRACT_CONCURRENCY,
+  shouldStopChatSteps,
   type ReviewPageSource,
 } from "./document-review";
 
@@ -91,12 +93,8 @@ describe("DocumentReviewSession", () => {
     expect(started.status).toBe("started");
     expect(started.totalPages).toBe(62);
 
-    let guard = 0;
-    while (session.phase() === "in_progress") {
-      guard += 1;
-      expect(guard).toBeLessThan(80);
-      await session.continue();
-    }
+    const continued = await session.continue();
+    expect(continued.status).toBe("ready_to_finish");
     expect(session.phase()).toBe("ready_to_finish");
     const finished = session.finish();
     expect(finished.status).toBe("complete");
@@ -168,6 +166,31 @@ describe("DocumentReviewSession", () => {
     expect(early.status).toBe("incomplete");
     expect(session.isFinished()).toBe(false);
   });
+
+  it("extracts remaining batches in parallel in one continue", async () => {
+    let inflight = 0;
+    let maxInflight = 0;
+    let calls = 0;
+    const session = new DocumentReviewSession({
+      extractBatch: async ({ pages }) => {
+        calls += 1;
+        inflight += 1;
+        maxInflight = Math.max(maxInflight, inflight);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        inflight -= 1;
+        return extractReviewFindingsFromPages(pages);
+      },
+    });
+    const manyPages = Array.from({ length: 24 }, (_, index) =>
+      page(index + 1, `${"x".repeat(7_000)} SW-SST-${index + 1} Pass`)
+    );
+    session.start({ objective: "ids", pages: manyPages });
+    const first = await session.continue();
+    expect(first.status).toBe("ready_to_finish");
+    expect(first.reviewedPages).toBe(24);
+    expect(calls).toBe(24);
+    expect(maxInflight).toBe(REVIEW_EXTRACT_CONCURRENCY);
+  });
 });
 
 describe("prepareDocumentReviewStep", () => {
@@ -180,21 +203,23 @@ describe("prepareDocumentReviewStep", () => {
     "ask_user",
   ];
 
-  it("leaves focused and adaptive turns unrestricted until a review starts", () => {
-    expect(
-      prepareDocumentReviewStep({
-        policy: "focused",
-        phase: "idle",
-        availableTools: available,
-      })
-    ).toBeUndefined();
-    expect(
-      prepareDocumentReviewStep({
-        policy: "adaptive",
-        phase: "idle",
-        availableTools: available,
-      })
-    ).toBeUndefined();
+  it("hides page-walk tools on focused and adaptive turns until a review starts", () => {
+    const focused = prepareDocumentReviewStep({
+      policy: "focused",
+      phase: "idle",
+      availableTools: available,
+    });
+    expect(focused?.activeTools).not.toContain("start_document_review");
+    expect(focused?.activeTools).toContain("search_documents");
+
+    const adaptive = prepareDocumentReviewStep({
+      policy: "adaptive",
+      phase: "idle",
+      availableTools: available,
+    });
+    expect(adaptive?.activeTools).not.toContain("start_document_review");
+    expect(adaptive?.activeTools).not.toContain("continue_document_review");
+    expect(adaptive?.activeTools).toContain("search_documents");
   });
 
   it("locks an in-progress review even on adaptive turns", () => {
@@ -282,6 +307,27 @@ describe("chatStepBudget", () => {
     });
     expect(budget).toBeGreaterThan(24);
     expect(budget).toBeLessThanOrEqual(96);
+  });
+
+  it("raises the budget once a page walk is in progress", () => {
+    expect(
+      shouldStopChatSteps({
+        stepsTaken: 16,
+        mode: "plan",
+        policy: "adaptive",
+        reviewPhase: "idle",
+        totalPages: 62,
+      })
+    ).toBe(true);
+    expect(
+      shouldStopChatSteps({
+        stepsTaken: 16,
+        mode: "plan",
+        policy: "adaptive",
+        reviewPhase: "in_progress",
+        totalPages: 62,
+      })
+    ).toBe(false);
   });
 });
 

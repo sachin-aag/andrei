@@ -34,11 +34,16 @@ system prompt when kickoff retrieval hits.
   (`buildKeywordTsQuery`). Skip the keyword arm when tokenization is empty.
 - FTS expression must stay `to_tsvector('english', contextual_text)` to hit
   `document_chunks_contextual_text_fts_en_idx`.
-- Default chat retrieval is **adaptive** (agentic grep: complementary
+- Default retrieval is adaptive (agentic grep: complementary
   `search_documents` queries, `excludePages` / `nextExcludePages` rounds,
   `mode=keyword` for lexical hits, `document_outline`). Classifier only forces
   **comprehensive** page-walk for every-row inventories, or **focused** for an
   explicit skim. Adaptive turns skip auto-evidence so the model must grep.
+  Adaptive/focused turns do not expose `start_document_review`. Comprehensive
+  `continue_document_review` drains the remaining queue in one call with a
+  worker pool of `REVIEW_EXTRACT_CONCURRENCY` extracts (no thought summaries
+  on extract). Chat model is `gemini-3.5-flash-lite` with `thinkingLevel`
+  `minimal`.
 - Tagged `@` documents rank first; backfill from the rest of the report.
   Hard-filtering tagged IDs blinds the assistant.
 - Report body is not in `document_chunks`. Use `read_section`.

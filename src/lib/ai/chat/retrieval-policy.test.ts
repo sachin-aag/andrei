@@ -109,10 +109,10 @@ describe("classifyRetrievalPolicy", () => {
 });
 
 describe("chatThinkingLevel", () => {
-  it("uses reasoning on adaptive and comprehensive turns", () => {
+  it("keeps thinking minimal so continue-steps do not stall", () => {
     expect(chatThinkingLevel("focused")).toBe("minimal");
-    expect(chatThinkingLevel("adaptive")).toBe("low");
-    expect(chatThinkingLevel("comprehensive")).toBe("low");
+    expect(chatThinkingLevel("adaptive")).toBe("minimal");
+    expect(chatThinkingLevel("comprehensive")).toBe("minimal");
   });
 });
 

@@ -89,15 +89,19 @@ export function classifyRetrievalPolicy(
   return { policy: "adaptive", reason: "agentic_default" };
 }
 
+/**
+ * Thinking runs on every orchestrator step. Comprehensive continue is
+ * server-locked, and adaptive grep does not need a long thought on a 35k
+ * prompt just to emit the next tool call.
+ */
 export function chatThinkingLevel(
   policy: RetrievalPolicy
 ): "minimal" | "low" {
   switch (policy) {
     case "focused":
-      return "minimal";
     case "adaptive":
     case "comprehensive":
-      return "low";
+      return "minimal";
     default: {
       const _exhaustive: never = policy;
       throw new Error(`Unhandled retrieval policy: ${String(_exhaustive)}`);

@@ -144,9 +144,12 @@ function groupAssistantParts(
         input: tool.input,
         output: tool.output,
       };
-      const last = groups.at(-1);
-      if (last?.kind === "document-review") {
-        last.parts.push(reviewPart);
+      const existing = groups.find(
+        (group): group is Extract<AssistantPartGroup, { kind: "document-review" }> =>
+          group.kind === "document-review"
+      );
+      if (existing) {
+        existing.parts.push(reviewPart);
       } else {
         groups.push({ kind: "document-review", parts: [reviewPart] });
       }

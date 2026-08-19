@@ -10,7 +10,7 @@ import { getDocumentType } from "@/lib/document-types";
 import type { RetrievalPolicy } from "@/lib/ai/chat/retrieval-policy";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v24-agentic-grep";
+export const CHAT_PROMPT_VERSION = "chat-v25-flash-lite";
 
 export type ChatMode = "plan" | "agent";
 
@@ -95,7 +95,7 @@ function documentRules(policy: RetrievalPolicy): string {
 - If hits look like one table or heading, call document_outline and read neighboring pages, then grep again for sibling objects.
 - If truncated=true or nextExcludePages grew, grep again with different terms. Never draft a table from a single truncated hit list.
 - For a single fact (one requirement ID, one date, one labelled page), one grep and one page read is enough.
-- Escalate to start_document_review only when the engineer needs every row/page or grep+outline cannot bound the set. If you start a review, continue until finish_document_review before drafting.`;
+- Do not start a document review. Every-row inventories use the comprehensive path.`;
       break;
     case "focused":
       retrievalMode = `## Document evidence
@@ -138,7 +138,7 @@ function planRules(policy: RetrievalPolicy): string {
       break;
     case "adaptive":
       firstStep =
-        "1. If Documents are listed, grep adaptively: complementary search_documents queries, pass excludePages=nextExcludePages on later rounds, document_outline for sibling sections, read_document_page for hits. Escalate to start_document_review only for every-row inventories. Then call ask_user only for facts the documents do not contain.";
+        "1. If Documents are listed, grep adaptively: complementary search_documents queries, pass excludePages=nextExcludePages on later rounds, document_outline for sibling sections, read_document_page for hits. Do not start a document review. Then call ask_user only for facts the documents do not contain.";
       break;
     case "focused":
       firstStep =
@@ -178,10 +178,8 @@ function agentRules(opts: {
         "- If Documents are listed, finish_document_review before ask_user or draft_field. Do not treat search_documents or the evidence preview as complete coverage.";
       break;
     case "adaptive":
-      reviewTools = `
-- start_document_review / continue_document_review / finish_document_review — optional. Use them when search+outline cannot bound an every-row inventory. If you start a review, finish it before draft_field.`;
       searchFirst =
-        "- If Documents are listed, grep in rounds until the question is covered (complementary queries, excludePages=nextExcludePages, outline, neighboring pages). Do not ask_user or draft_field from one truncated search.";
+        "- If Documents are listed, grep in rounds until the question is covered (complementary queries, excludePages=nextExcludePages, outline, neighboring pages). Do not ask_user or draft_field from one truncated search. Do not start a document review.";
       break;
     case "focused":
       searchFirst =
