@@ -7,7 +7,7 @@
  * at a time — and that wait needs to be legible.
  *
  * The tape is one band of discrete cells that changes what it measures:
- * while sending, one cell is one real upload chunk; while reading, one cell is
+ * while uploading, one cell is one real upload chunk; while reading, one cell is
  * one page. Nothing here interpolates — a cell inks in only when that chunk or
  * page has actually landed.
  *
@@ -23,8 +23,11 @@ export const LARGE_UPLOAD_THRESHOLD_BYTES = 50 * 1024 * 1024;
 /** No byte advance for this long during transfer reads as a slow connection. */
 export const UPLOAD_STALL_AFTER_MS = 12_000;
 
-/** Layout bounds. Chunk cells stay 1:1 with real chunks well past the 150 MB cap. */
-const MAX_CHUNK_CELLS = 24;
+/**
+ * Layout bounds. 32 cells keeps chunks 1:1 up to 256 MB, which covers the
+ * current per-file cap. Past that the tape scales rather than losing cells.
+ */
+const MAX_CHUNK_CELLS = 32;
 const MIN_READING_CELLS = 6;
 const MAX_READING_CELLS = 36;
 /** Cell count when the page total is not known yet. */
@@ -39,7 +42,7 @@ export function isLargeUpload(sizeBytes: number): boolean {
 }
 
 export type UploadTapePhase =
-  | "sending"
+  | "uploading"
   | "stalled"
   | "checking"
   | "queued"
@@ -110,10 +113,15 @@ function describeSending(input: UploadTapeInput): UploadTapeView {
     ? clamp(input.transfer.uploadedBytes, 0, total)
     : Math.round((clampPercent(input.processingProgress) / 100) * total);
 
+  // Scale landed chunks onto the cells. Below the layout cap the two counts are
+  // equal, so this is exactly "one cell per acknowledged chunk"; past it the
+  // tape stays proportional instead of reading full while bytes are still going.
+  const totalChunks = total > 0 ? Math.ceil(total / CHUNK_SIZE_BYTES) : 1;
+  const landedChunks = Math.floor(uploaded / CHUNK_SIZE_BYTES);
   const complete = total > 0 && uploaded >= total;
   const filledCells = complete
     ? cellCount
-    : clamp(Math.floor(uploaded / CHUNK_SIZE_BYTES), 0, cellCount);
+    : clamp(Math.floor((landedChunks / totalChunks) * cellCount), 0, cellCount);
   const percent = total > 0 ? clampPercent((uploaded / total) * 100) : 0;
 
   const idleMs =
@@ -124,13 +132,13 @@ function describeSending(input: UploadTapeInput): UploadTapeView {
 
   // Both halves stay short — the panel is ~270px wide and the figure sits on
   // the same line, so a longer phrase truncates instead of reassuring anyone.
-  const line = stalled ? "Slow connection" : `Sending ${formatFileSize(total)}`;
+  const line = stalled ? "Slow connection" : `Uploading ${formatFileSize(total)}`;
   const figure = stalled
-    ? `${formatFileSize(uploaded)} sent`
+    ? `${formatFileSize(uploaded)} uploaded`
     : sendingFigure({ uploaded, total, percent, transfer: input.transfer, idleMs });
 
   return {
-    phase: stalled ? "stalled" : "sending",
+    phase: stalled ? "stalled" : "uploading",
     line,
     figure,
     cellCount,
@@ -182,10 +190,12 @@ function sendingAriaLabel({
   stalled: boolean;
   transfer: UploadTransferState | null;
 }): string {
-  const counts = `${formatFileSize(uploaded)} of ${formatFileSize(total)} sent (${Math.round(percent)}%)`;
+  const counts = `${formatFileSize(uploaded)} of ${formatFileSize(total)} uploaded (${Math.round(percent)}%)`;
   const rate = transfer?.bytesPerSecond ?? null;
   const speed = rate !== null && rate > 0 ? ` at ${formatTransferRate(rate)}` : "";
-  return stalled ? `Still sending — ${counts}${speed}` : `Sending — ${counts}${speed}`;
+  return stalled
+    ? `Still uploading — ${counts}${speed}`
+    : `Uploading — ${counts}${speed}`;
 }
 
 /**

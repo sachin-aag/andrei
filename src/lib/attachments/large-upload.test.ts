@@ -49,8 +49,14 @@ describe("chunkCellCount", () => {
     expect(chunkCellCount(-5)).toBe(1);
   });
 
+  it("stays 1:1 with chunks across the whole allowed file range", () => {
+    // 250 MB is the current per-file cap; 256 MB is where the layout cap bites.
+    expect(chunkCellCount(224.7 * MB)).toBe(29);
+    expect(chunkCellCount(250 * MB)).toBe(32);
+  });
+
   it("caps the count so the band still fits the panel", () => {
-    expect(chunkCellCount(4000 * MB)).toBe(24);
+    expect(chunkCellCount(4000 * MB)).toBe(32);
   });
 });
 
@@ -73,7 +79,7 @@ describe("readingCellCount", () => {
   });
 });
 
-describe("describeUploadTape — sending", () => {
+describe("describeUploadTape — uploading", () => {
   it("inks a cell only once that chunk has fully landed", () => {
     const view = describeUploadTape(
       input({
@@ -84,10 +90,39 @@ describe("describeUploadTape — sending", () => {
         },
       })
     );
-    expect(view?.phase).toBe("sending");
+    expect(view?.phase).toBe("uploading");
     expect(view?.cellCount).toBe(12);
     expect(view?.filledCells).toBe(5);
     expect(view?.headCell).toBe(5);
+  });
+
+  it("tracks a 224.7 MB file one chunk at a time", () => {
+    const size = 224.7 * MB;
+    const view = describeUploadTape(
+      input({
+        sizeBytes: size,
+        transfer: { uploadedBytes: 96 * MB, bytesPerSecond: 8 * MB, lastAdvanceAt: NOW },
+      })
+    );
+    expect(view?.line).toBe("Uploading 224.7 MB");
+    expect(view?.cellCount).toBe(29);
+    expect(view?.filledCells).toBe(12);
+  });
+
+  it("never reads full while bytes are still going, even past the cell cap", () => {
+    const size = 400 * MB;
+    const view = describeUploadTape(
+      input({
+        sizeBytes: size,
+        // Exactly the layout cap's worth of chunks has landed, but the file is
+        // only two thirds sent — the tape must not look finished.
+        transfer: { uploadedBytes: 256 * MB, bytesPerSecond: 8 * MB, lastAdvanceAt: NOW },
+      })
+    );
+    expect(view?.cellCount).toBe(32);
+    expect(view?.filledCells).toBeLessThan(32);
+    expect(view?.headCell).not.toBeNull();
+    expect(view?.filledCells).toBe(20);
   });
 
   it("names the file size and counts down from the measured rate", () => {
@@ -100,7 +135,7 @@ describe("describeUploadTape — sending", () => {
         },
       })
     );
-    expect(view?.line).toBe("Sending 96.0 MB");
+    expect(view?.line).toBe("Uploading 96.0 MB");
     expect(view?.figure).toBe("6s left");
   });
 
@@ -134,7 +169,7 @@ describe("describeUploadTape — sending", () => {
         },
       })
     );
-    expect(view?.phase).toBe("sending");
+    expect(view?.phase).toBe("uploading");
     expect(view?.figure).toBe("75%");
   });
 
@@ -163,9 +198,9 @@ describe("describeUploadTape — sending", () => {
     );
     expect(view?.phase).toBe("stalled");
     expect(view?.line).toBe("Slow connection");
-    expect(view?.figure).toBe("40.0 MB sent");
+    expect(view?.figure).toBe("40.0 MB uploaded");
     // The detail the short line drops still reaches the tooltip and SR users.
-    expect(view?.ariaLabel).toContain("40.0 MB of 96.0 MB sent");
+    expect(view?.ariaLabel).toContain("40.0 MB of 96.0 MB uploaded");
   });
 
   it("keeps both halves of the line short enough for the panel", () => {
@@ -205,14 +240,14 @@ describe("describeUploadTape — sending", () => {
         },
       })
     );
-    expect(view?.phase).toBe("sending");
+    expect(view?.phase).toBe("uploading");
     expect(view?.filledCells).toBe(12);
     expect(view?.headCell).toBeNull();
   });
 
   it("falls back to the server percentage in a tab that is not uploading", () => {
     const view = describeUploadTape(input({ transfer: null, processingProgress: 50 }));
-    expect(view?.phase).toBe("sending");
+    expect(view?.phase).toBe("uploading");
     expect(view?.filledCells).toBe(6);
     expect(view?.figure).toBe("50%");
   });
@@ -224,7 +259,7 @@ describe("describeUploadTape — sending", () => {
       lastAdvanceAt: NOW - 60_000,
     };
     const view = describeUploadTape(input({ transfer, nowMs: 0 }));
-    expect(view?.phase).toBe("sending");
+    expect(view?.phase).toBe("uploading");
   });
 });
 
