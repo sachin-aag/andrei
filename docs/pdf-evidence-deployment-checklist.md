@@ -10,16 +10,17 @@ Each batch is classified before any model call, and the mode is logged as
 `[document-ingest] Extracted pages …`:
 
 - **`text-layer`** — every page in the batch has an embedded text layer
-  (born-digital PDFs). The PDF parser produces the transcript, and the model is
-  asked only for visual context under a small output budget. Dense tables no
-  longer risk output truncation, because the model never transcribes them.
+  (born-digital PDFs and searchable scans). The PDF parser produces the
+  transcript. Gemini is asked for visual context only on small (≤5 page)
+  batches; Enterprise OCR waves (15 pages) skip that pass and keep the
+  derived page digest so ingest stays on the 15×3 / 45-page schedule.
 - **`vision`** — at least one page has no usable text layer (scans). Document AI
   Enterprise OCR transcribes first when `DOCUMENT_AI_PROCESSOR_ID` is set
-  (`recovery: ocr-document-ai`), in 15-page chunks with up to 3 in flight.
-  Weak or failed OCR pages still go to Gemini vision, then rotate/tiles. A batch
-  that still cannot produce a page records a **page-gap** placeholder and the
-  rest of the file continues. The attachment becomes `ready` with a warning
-  rather than failing the whole file.
+  (`recovery: ocr-document-ai`), in 15-page chunks with up to 3 in flight
+  (45 pages). Weak or failed OCR pages still go to Gemini vision, then
+  rotate/tiles. A batch that still cannot produce a page records a **page-gap**
+  placeholder and the rest of the file continues. The attachment becomes
+  `ready` with a warning rather than failing the whole file.
 
 ## Infrastructure
 

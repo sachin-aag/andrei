@@ -540,6 +540,23 @@ describe("extractPdfBatch with a text layer", () => {
     expect(generateTextMock).toHaveBeenCalledTimes(1);
   });
 
+  it("skips the Gemini insight pass on Enterprise OCR-sized text-layer batches", async () => {
+    const result = await extractPdfBatch({
+      pdfBuffer: await pdfWithTextPages(6),
+      pageStart: 1,
+      pageEnd: 6,
+      filename: "evidence.pdf",
+      modelId: "stub",
+      model: stubModel(),
+    });
+
+    expect(result.mode).toBe("text-layer");
+    expect(result.recovery).toBe("text-layer-only");
+    expect(result.pages).toHaveLength(6);
+    expect(result.pages[0]?.transcript).toContain("slice 0 line 0");
+    expect(generateTextMock).not.toHaveBeenCalled();
+  });
+
   it("uses the parser for pages with a text layer and vision for the rest", async () => {
     generateTextMock.mockImplementation(async (args) => {
       const text = userPrompt(args);

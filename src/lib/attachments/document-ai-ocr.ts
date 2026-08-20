@@ -8,7 +8,22 @@ import {
 export const DOCUMENT_AI_ONLINE_PAGE_LIMIT = 15;
 export const DOCUMENT_AI_IMAGELESS_PAGE_LIMIT = 30;
 export const DOCUMENT_AI_OCR_CONCURRENCY = 3;
+/** 15-page slices × 3 in flight — the Enterprise OCR ingest wave. */
+export const DOCUMENT_AI_PAGES_IN_FLIGHT =
+  DOCUMENT_AI_ONLINE_PAGE_LIMIT * DOCUMENT_AI_OCR_CONCURRENCY;
 export const DOCUMENT_AI_MAX_ONLINE_BYTES = 40 * 1024 * 1024;
+
+export function documentAiIngestSplitOptions(): {
+  preferredPagesPerBatch: number;
+  maxPagesPerBatch: number;
+  maxBatchBytes: number;
+} {
+  return {
+    preferredPagesPerBatch: DOCUMENT_AI_ONLINE_PAGE_LIMIT,
+    maxPagesPerBatch: DOCUMENT_AI_ONLINE_PAGE_LIMIT,
+    maxBatchBytes: DOCUMENT_AI_MAX_ONLINE_BYTES,
+  };
+}
 
 export type DocumentAiOcrAttempt = {
   id: string;

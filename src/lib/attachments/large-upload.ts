@@ -3,8 +3,9 @@
  *
  * Small attachments land in a second or two, so the thin bar in the document
  * tree is enough for them. Anything past the threshold below is a multi-minute
- * wait — the bytes travel in 8–32 MB GCS chunks, then Vertex reads the document
- * a page at a time — and that wait needs to be legible.
+ * wait — the bytes travel in 8–32 MB GCS chunks, then ingest reads the
+ * document in page batches (15×3 / 45 pages with Enterprise OCR) — and that
+ * wait needs to be legible.
  *
  * The tape is one band of discrete cells that changes what it measures:
  * while uploading, one cell is one 8 MB grain (the adaptive-upload floor);
