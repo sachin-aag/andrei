@@ -11,6 +11,8 @@ import {
 } from "./mj/prompts";
 import { resolveCustomerId, type CustomerId } from "./resolve";
 
+export type LogoLayout = "icon" | "wordmark";
+
 export type CustomerBranding = {
   productName: string;
   productNameShort: string;
@@ -20,7 +22,11 @@ export type CustomerBranding = {
   shellTagline: string;
   logoSrc: string;
   logoWhiteSrc: string;
+  /** Icon-only mark for collapsed chrome; same as `logoSrc` for square logos. */
+  logoMarkSrc: string;
   logoAlt: string;
+  /** `wordmark` is a wide lockup (Convergent); `icon` is a square mark. */
+  logoLayout: LogoLayout;
   heroLogoSrc: string;
   heroLogoOnWhite: boolean;
   auditExportTitle: string;
@@ -54,7 +60,9 @@ const ANDREI_BRANDING: CustomerBranding = {
   shellTagline: "Quality Documentation",
   logoSrc: "/logo.png",
   logoWhiteSrc: "/logo-white.png",
+  logoMarkSrc: "/logo.png",
   logoAlt: "Andrei logo",
+  logoLayout: "icon",
   heroLogoSrc: "/logo-white.png",
   heroLogoOnWhite: false,
   auditExportTitle: "Andrei — Audit Trail Export",
@@ -76,7 +84,9 @@ const CONVERGENT_BRANDING: CustomerBranding = {
   shellTagline: "Design Verification",
   logoSrc: "/logo-convergent.png",
   logoWhiteSrc: "/logo-convergent-white.png",
+  logoMarkSrc: "/logo-convergent-mark.svg",
   logoAlt: "Convergent Dental logo",
+  logoLayout: "wordmark",
   heroLogoSrc: "/logo-convergent.png",
   heroLogoOnWhite: true,
   auditExportTitle: "Convergent Dental — Audit Trail Export",
@@ -98,7 +108,9 @@ const MJ_BRANDING: CustomerBranding = {
   shellTagline: "Quality Investigations",
   logoSrc: "/logo-mj.png",
   logoWhiteSrc: "/logo-mj.png",
+  logoMarkSrc: "/logo-mj.png",
   logoAlt: "MJ Biopharm logo",
+  logoLayout: "icon",
   heroLogoSrc: "/logo-mj.png",
   heroLogoOnWhite: true,
   auditExportTitle: "M.J. Biopharm — Audit Trail Export",

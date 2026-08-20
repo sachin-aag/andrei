@@ -109,11 +109,18 @@ describe("Convergent customer pack", () => {
     expect(CONVERGENT_PACK.branding.logoWhiteSrc).toBe(
       "/logo-convergent-white.png"
     );
+    expect(CONVERGENT_PACK.branding.logoMarkSrc).toBe(
+      "/logo-convergent-mark.svg"
+    );
+    expect(CONVERGENT_PACK.branding.logoLayout).toBe("wordmark");
     expect(
       fs.existsSync(path.join(process.cwd(), "public/logo-convergent.png"))
     ).toBe(true);
     expect(
       fs.existsSync(path.join(process.cwd(), "public/logo-convergent-white.png"))
+    ).toBe(true);
+    expect(
+      fs.existsSync(path.join(process.cwd(), "public/logo-convergent-mark.svg"))
     ).toBe(true);
   });
 });
