@@ -372,7 +372,6 @@ export const defaultDesignVerificationDefinition: DocumentTypeDefinition = {
       // Seeded as a real row so criteria_evaluations can reference sectionId.
       // The editor reads/writes reports.metadata; section content stays {}.
       virtual: false,
-      isGateSection: true,
       emptyContent: {},
     },
     ...DV_SECTION_KEYS.map((key, index) => ({

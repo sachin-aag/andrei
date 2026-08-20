@@ -17,6 +17,7 @@ import {
 import {
   CONVERGENT_EQUIPMENT_HEADERS,
   CONVERGENT_RESULTS_HEADERS,
+  CONVERGENT_RESULTS_MATRIX_FILLING_NOTES,
   dvTableHeadersForSection,
 } from "@/lib/document-types/design-verification/sections";
 
@@ -46,9 +47,8 @@ describe("Convergent customer pack", () => {
   it("uses convergent DV sections, table headers, and prompt version", () => {
     const def = buildDesignVerificationDefinition(CONVERGENT_PACK);
     expect(def.prompts.promptVersion).toBe(CONVERGENT_PROMPT_VERSION);
-    expect(def.prompts.promptVersion).toBe("convergent-dv-v1");
+    expect(def.prompts.promptVersion).toBe("convergent-dv-v2");
     expect(def.sections.map((s) => s.key)).toEqual([...CONVERGENT_DV_SECTION_KEYS]);
-    expect(def.sections.find((s) => s.isGateSection)?.key).toBe("purpose");
     expect(def.sections.find((s) => s.key === "cover_page")).toBeUndefined();
     expect(CONVERGENT_DV_SECTION_LABELS.purpose).toBe("Purpose");
     expect(dvTableHeadersForSection("test_equipment")).toEqual([
@@ -61,6 +61,20 @@ describe("Convergent customer pack", () => {
       "convergent-design-verification-report-template.docx"
     );
     expect(def.chat.draftOrder[0]).toBe("purpose");
+    expect(def.chat.persona).toContain(
+      "Satisfied By must name the configuration for which each P/F was achieved"
+    );
+    expect(def.chat.draftingGuidance).toContain(
+      CONVERGENT_RESULTS_MATRIX_FILLING_NOTES
+    );
+    expect(def.chat.draftingGuidance).toContain(
+      "configuration for which that P/F was achieved"
+    );
+    expect(
+      def.criteriaBySection.results_and_discussions?.find(
+        (c) => c.key === "results.satisfied_by"
+      )?.description
+    ).toContain("configuration for which P/F was achieved");
   });
 
   it("keeps the demo DV 10-section shape", () => {
@@ -78,7 +92,9 @@ describe("Convergent customer pack", () => {
       "approval_signoff",
       "appendices",
     ]);
-    expect(def.sections.find((s) => s.isGateSection)?.key).toBe("cover_page");
+    expect(def.chat.draftingGuidance).not.toContain(
+      CONVERGENT_RESULTS_MATRIX_FILLING_NOTES
+    );
   });
 
   it("uses Convergent Dental branding and logo files", () => {

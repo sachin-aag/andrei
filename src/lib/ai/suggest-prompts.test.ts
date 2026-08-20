@@ -6,7 +6,7 @@ import {
 
 describe("buildSuggestionSystemPrompt", () => {
   it("bumps the suggest prompt version when DV table guidance changes", () => {
-    expect(SUGGEST_PROMPT_VERSION).toBe("suggest-v13-scoped-cell-list-edits");
+    expect(SUGGEST_PROMPT_VERSION).toBe("suggest-v14-convergent-results-config");
   });
 
   it("requires fixed matrix headers for traceability suggest fixes", () => {
@@ -26,6 +26,15 @@ describe("buildSuggestionSystemPrompt", () => {
     expect(prompt).toContain("Pass/Fail");
     expect(prompt).toContain("Raw Data Ref");
     expect(prompt).not.toContain("Risk Control Link");
+    expect(prompt).not.toContain("configuration for which that P/F was achieved");
+  });
+
+  it("requires Satisfied By to include configuration for Convergent results", () => {
+    const prompt = buildSuggestionSystemPrompt("results_and_discussions");
+    expect(prompt).toContain("Fixed table formats (required)");
+    expect(prompt).toContain("Satisfied By");
+    expect(prompt).toContain("configuration for which that P/F was achieved");
+    expect(prompt).toContain("TOP-00017 PCON");
   });
 
   it("omits DV matrix guidance for narrative investigation sections", () => {

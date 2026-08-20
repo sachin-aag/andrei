@@ -15,14 +15,10 @@ import { normalizeAnalyzeToolResults } from "@/lib/ai/evaluate-run-helpers";
 import {
   getDocumentType,
   getEvaluatableSections,
-  getGateSection,
   isValidSection,
   mergeSectionForType,
 } from "@/lib/document-types";
-import {
-  hasEnoughContextInFirstSection,
-  insufficientFirstSectionMessage,
-} from "@/lib/ai/first-section-context";
+import { sectionsReadyForEvaluation } from "@/lib/ai/evaluation-readiness";
 import {
   flushLangfuseTraces,
   isLangfuseEnabled,
@@ -91,37 +87,32 @@ async function handleEvaluatePost(
     const bySection = new Map<string, (typeof allEvaluatableRows)[number]>();
     for (const row of allEvaluatableRows) bySection.set(row.section, row);
 
-    const gate = getGateSection(documentType);
-    if (gate) {
-      if (documentType === "design_verification" && gate.key === "cover_page") {
-        if (!String(report.documentNo ?? "").trim()) {
-          return NextResponse.json(
-            {
-              error:
-                "Add a document number on the cover page before running the AI check.",
-            },
-            { status: 400 }
-          );
-        }
-      } else {
-        const gateRow = bySection.get(gate.key);
-        if (!hasEnoughContextInFirstSection(gateRow?.content)) {
-          return NextResponse.json(
-            { error: insufficientFirstSectionMessage(gate.label) },
-            { status: 400 }
-          );
-        }
-      }
+    const readiness = sectionsReadyForEvaluation({
+      documentType,
+      targets: targetSections,
+      documentNo: String(report.documentNo ?? ""),
+      contentFor: (section) => {
+        if (section === "cover_page") return report.metadata;
+        const row = bySection.get(section);
+        return row
+          ? mergeSectionForType(documentType, section, row.content)
+          : undefined;
+      },
+    });
+    if (readiness.error) {
+      return NextResponse.json({ error: readiness.error }, { status: 400 });
     }
+    const readySet = new Set(readiness.ready);
+    const readySectionRows = sectionRows.filter((row) => readySet.has(row.section));
 
-    const existingForSections = sectionRows.length
+    const existingForSections = readySectionRows.length
       ? await db
           .select()
           .from(criteriaEvaluations)
           .where(
             inArray(
               criteriaEvaluations.sectionId,
-              sectionRows.map((r) => r.id)
+              readySectionRows.map((r) => r.id)
             )
           )
       : [];
@@ -141,12 +132,12 @@ async function handleEvaluatePost(
       );
     }
 
-    const mergedFor = (row: (typeof sectionRows)[number]) =>
+    const mergedFor = (row: (typeof readySectionRows)[number]) =>
       allSections[row.section] ??
       mergeSectionForType(documentType, row.section, row.content);
 
     const llmResults = await Promise.all(
-      sectionRows.map(async (row) => {
+      readySectionRows.map(async (row) => {
         const content =
           row.section === "cover_page" ? report.metadata : mergedFor(row);
         const evaluations = await evaluateSection({
@@ -224,9 +215,9 @@ async function handleEvaluatePost(
       entityType: "evaluation",
       entityId: reportId,
       reportId,
-      summary: `AI evaluation run for ${targetSections.join(", ")}`,
+      summary: `AI evaluation run for ${readiness.ready.join(", ")}`,
       newValue: {
-        sections: targetSections,
+        sections: readiness.ready,
         evaluationCount: updatedEvals.length,
       },
       metadata: {
@@ -238,7 +229,7 @@ async function handleEvaluatePost(
       output: {
         reportId,
         evaluationCount: updatedEvals.length,
-        sectionsEvaluated: targetSections,
+        sectionsEvaluated: readiness.ready,
         statusBySection: llmResults.map(({ sectionRow, evaluations }) => ({
           section: sectionRow.section,
           met: evaluations.filter((e) => e.status === "met").length,

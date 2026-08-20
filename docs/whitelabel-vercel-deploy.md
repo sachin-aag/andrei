@@ -5,22 +5,20 @@ One product engine on **`main`**. Customer differences live in `ANDREI_CUSTOMER`
 | | MJ production | Customer demo | Convergent Dental |
 |--|---------------|---------------|-------------------|
 | **Vercel project** | `andrei-v2` | `andrei-demo` | `andrei-convergent` |
-| **Git production branch** | `main` | `main` | `feat/convergent` until merge, then `main` |
+| **Git production branch** | `main` | `main` | `main` |
 | **Pack** | `ANDREI_CUSTOMER=mj` | `ANDREI_CUSTOMER=demo` (or unset) | `ANDREI_CUSTOMER=convergent` |
-| **URL** | https://mj.andreihealth.com | https://demo.andreihealth.com | https://andrei-convergent.vercel.app until a custom domain exists |
-| **Neon project** | `Andrei V2` | `demo` (`bold-field-45608643`) | `andrei-convergent` |
+| **URL** | https://mj.andreihealth.com | https://demo.andreihealth.com | https://convergent.andreihealth.com |
+| **Neon project** | `Andrei V2` | `demo` (`bold-field-45608643`) | `andrei-convergent` (`cold-thunder-36255681`) |
 | **What users see** | MJ criteria, MJ Word template, Word import, no DV, no conclusion | Andrei branding, DV + conclusion, attachments-only create | Convergent branding, design verification only (9-section Solea DV template) |
 
-Release valve: **the same git SHA on all Production deploys** once Convergent tracks `main`. Until then, `andrei-convergent` Production tracks `feat/convergent` so the pack exists before merge (`assertCustomerEnvAgreement()` fails the build otherwise).
-
-After merge, all three Production deploys track **`main`**. Pack env chooses MJ vs demo vs Convergent. There is no long-lived product branch.
+Release valve: **the same git SHA on all three Production deploys**. Pack env chooses MJ vs demo vs Convergent. There is no long-lived product branch.
 
 ## Pack vs flags vs pins
 
 | Mechanism | Job | Use now? |
 |-----------|-----|----------|
 | Customer pack (`ANDREI_CUSTOMER`) | Permanent identity: template, criteria, prompts, branding, enabled types and sections | Yes |
-| Same SHA on all deploys | One binary to debug | Yes — policy (after Convergent merges) |
+| Same SHA on all deploys | One binary to debug | Yes |
 | Feature flags | Temporary holdback of an unfinished engine feature | No (a flag is a second source of truth) |
 | Pin MJ on an older SHA | Demo leads for days or weeks | No, as policy |
 | Roll back one project | Last deploy is bad | Yes, incident only, then catch up |
@@ -33,7 +31,7 @@ All three Vercel projects watch the same GitHub repo. Every git ref builds on ea
 
 | Git ref | All projects |
 |---------|----------------|
-| `main` | **build** (production — each project's Production Branch setting; Convergent stays on `feat/convergent` until merge) |
+| `main` | **build** (production — each project's Production Branch is `main`) |
 | any other branch | **build** (preview) |
 
 Set on **each** project → Settings → Environment Variables → Production, Preview, and Development (pack identity, not branch routing):
@@ -97,10 +95,10 @@ MJ `promptVersion` is `mj-sop-dp-qa-008-v1`. Existing evaluations go stale on cu
 | `NEXT_PUBLIC_ANDREI_CUSTOMER` | `convergent` |
 | `ANDREI_VERCEL_DEPLOY_SCOPE` | `convergent` |
 | `DATABASE_URL` | Neon **andrei-convergent** pooled URL |
-| `AUTH_URL` | `https://andrei-convergent.vercel.app` until a custom domain exists |
+| `AUTH_URL` | `https://convergent.andreihealth.com` (must match the public host; do not leave `https://andrei-convergent.vercel.app`) |
 | `GOOGLE_VERTEX_PROJECT` / WIF / `GCS_BUCKET` | Copy from `andrei-demo` (never `ALLOW_TEST_*`) |
 
-Disable Neon **Create a branch for each preview deployment** on this project. Convergent `promptVersion` is `convergent-dv-v1`.
+Disable Neon **Create a branch for each preview deployment** on this project. Convergent `promptVersion` is `convergent-dv-v2`.
 
 ## MJ database cutover
 
@@ -189,6 +187,17 @@ DATABASE_URL='postgresql://…demo…?sslmode=require' pnpm seed-demo-reports
 
 Password for seeded users: **`DemoPass123!`**. See previous seed table in git history if you need the email list.
 
+### Convergent accounts
+
+Create / reset logins on the **andrei-convergent** Neon (not demo, not MJ):
+
+```bash
+DATABASE_URL='postgresql://…convergent…?sslmode=require' \
+  pnpm set-workspace-password -- sachin@andreihealth.com 'TempPass123!' --role engineer
+```
+
+Same emails as demo (`sachin@` / `aditya@` plus `+manager` / `+admin`). Temporary passwords are not committed — generate them at seed time and share out of band. First login forces a password change.
+
 ## Troubleshooting
 
 | Symptom | Fix |
@@ -198,7 +207,7 @@ Password for seeded users: **`DemoPass123!`**. See previous seed table in git hi
 | MJ looks like Andrei | `NEXT_PUBLIC_ANDREI_CUSTOMER` unset on `andrei-v2` (client defaults to demo) |
 | MJ export missing conclusion | Expected — MJ template has no `{@conclusionNarrativeXml}`; pack hides the section |
 | Ingest/chat 500 on MJ | Vertex WIF + GCS missing; do not set local attachment flags |
-| Attachments fail with "Document ingestion failed" after a custom-domain move | Set Production `AUTH_URL` to the public host (`https://mj.andreihealth.com`). Add that Origin to GCS CORS (`infra/gcs/cors.json` + `gsutil cors set`). Confirm Vercel OIDC is on. If Bot Protection is on, allow `/.well-known/workflow/*`. |
-| Auto-save / API `401 Unauthorized` on the custom domain | Same `AUTH_URL` mismatch: Auth.js was rewriting requests to the old `*.vercel.app` host so the session cookie missed. Redeploy after this SHA (production pin) and set `AUTH_URL`. |
+| Attachments fail with "Document ingestion failed" after a custom-domain move | Set Production `AUTH_URL` to the public host (`https://mj.andreihealth.com` / `https://demo.andreihealth.com` / `https://convergent.andreihealth.com`). Add that Origin to GCS CORS (`infra/gcs/cors.json` + `gsutil cors set`). Confirm Vercel OIDC is on. If Bot Protection is on, allow `/.well-known/workflow/*`. |
+| Auto-save / API `401 Unauthorized` on the custom domain | Same `AUTH_URL` mismatch: Auth.js was rewriting requests to the old `*.vercel.app` host so the session cookie missed. Redeploy after setting `AUTH_URL`. |
 | `document_no` missing after deploy | Journal was stamped without running 0037. Restore from PITR; do not re-run `db:migrate` until the baseline guard is live |
 | AI Check stale on MJ day one | Expected `promptVersion` bump; re-run AI Check |

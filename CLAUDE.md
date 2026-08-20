@@ -137,7 +137,7 @@ Required in `.env.local` (see `.env.example` for all options):
 | `SITE_ACCESS_PASSWORD` | Optional. When set, enables the site-wide password gate at `/unlock`. Unset = gate disabled. |
 | `ANDREI_CUSTOMER` | Customer pack: `demo` (default), `mj`, or `convergent`. Must agree with `NEXT_PUBLIC_ANDREI_CUSTOMER` and `ANDREI_VERCEL_DEPLOY_SCOPE`. |
 | `NEXT_PUBLIC_ANDREI_CUSTOMER` | Same value as `ANDREI_CUSTOMER` (client branding / create-dialog). Unset → demo. |
-| `ANDREI_VERCEL_DEPLOY_SCOPE` | `mj` on `andrei-v2`, `demo` on `andrei-demo`. Must agree with the pack. |
+| `ANDREI_VERCEL_DEPLOY_SCOPE` | `mj` on `andrei-v2`, `demo` on `andrei-demo`, `convergent` on `andrei-convergent`. Must agree with the pack. |
 
 **Test-only variables** (never set on Vercel production or preview):
 
