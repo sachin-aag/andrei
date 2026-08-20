@@ -30,3 +30,8 @@ export function attachmentDownloadHref(
 ): string {
   return `/api/reports/${reportId}/attachments/${attachmentId}/content?download=1`;
 }
+
+/** ZIP of every stored attachment, preserving the documents-panel folder tree. */
+export function attachmentsDownloadAllHref(reportId: string): string {
+  return `/api/reports/${reportId}/attachments/download-all`;
+}

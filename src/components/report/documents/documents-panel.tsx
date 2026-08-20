@@ -2,6 +2,7 @@
 
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
+  Download,
   FolderPlus,
   Loader2,
   PanelLeftClose,
@@ -13,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { buildDocumentTree } from "@/lib/attachments/build-tree";
 import { ATTACHMENT_ACCEPT_ATTR } from "@/lib/attachments/file-types";
+import { attachmentsDownloadAllHref } from "@/lib/attachments/preview-urls";
 import { useReportAttachments } from "@/providers/report-attachments-provider";
 import { DocumentTreeNodes } from "./document-tree";
 import { DragProvider, useDocumentDrag } from "./drag-context";
@@ -78,8 +80,13 @@ function ExpandedDocumentsPanel({
 }: {
   onToggleCollapse: () => void;
 }) {
-  const { attachments, folders, canMutateAttachments, uploadFiles } =
-    useReportAttachments();
+  const {
+    attachments,
+    folders,
+    canMutateAttachments,
+    uploadFiles,
+    reportId,
+  } = useReportAttachments();
   const { dragging, endDrag } = useDocumentDrag();
   const inputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -106,6 +113,9 @@ function ExpandedDocumentsPanel({
   );
 
   const isEmpty = tree.folders.length === 0 && tree.attachments.length === 0;
+  const hasDownloadable = attachments.some(
+    (attachment) => attachment.pageCount != null
+  );
 
   return (
     <aside
@@ -158,6 +168,29 @@ function ExpandedDocumentsPanel({
               />
             </>
           ) : null}
+          {hasDownloadable ? (
+            <Button asChild variant="ghost" size="icon" className="size-7">
+              <a
+                href={attachmentsDownloadAllHref(reportId)}
+                aria-label="Download all documents"
+                title="Download all"
+              >
+                <Download className="size-4" aria-hidden="true" />
+              </a>
+            </Button>
+          ) : (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-7"
+              disabled
+              aria-label="Download all documents"
+              title="No documents ready to download"
+            >
+              <Download className="size-4" aria-hidden="true" />
+            </Button>
+          )}
           <Button
             type="button"
             variant="ghost"

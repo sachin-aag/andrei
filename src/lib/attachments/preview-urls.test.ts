@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { DOCX_MIME_TYPE, PDF_MIME_TYPE } from "@/lib/attachments/file-types";
 import {
   attachmentDownloadHref,
+  attachmentsDownloadAllHref,
   attachmentPreviewSrc,
 } from "@/lib/attachments/preview-urls";
 
@@ -33,6 +34,14 @@ describe("attachmentDownloadHref", () => {
   it("does not proxy downloads through the iframe path", () => {
     expect(attachmentDownloadHref("report-1", "att-1")).toBe(
       "/api/reports/report-1/attachments/att-1/content?download=1"
+    );
+  });
+});
+
+describe("attachmentsDownloadAllHref", () => {
+  it("points at the report-scoped zip route", () => {
+    expect(attachmentsDownloadAllHref("report-1")).toBe(
+      "/api/reports/report-1/attachments/download-all"
     );
   });
 });

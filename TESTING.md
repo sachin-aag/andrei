@@ -230,6 +230,19 @@ Specs run against Chromium, Firefox, and WebKit unless you pass `--project=chrom
 </details>
 
 <details>
+<summary><strong>report-attachments.spec.ts</strong> — documents panel PDFs</summary>
+
+| Test | What it verifies |
+|------|------------------|
+| uploads a PDF, reaches ready, and opens the viewer | Upload → ready row → canvas preview |
+| renders later PDF pages in a scrollable preview | 3-page PDF, page 3 visible |
+| creates a folder and keeps it after reload | New folder persists |
+| download all is disabled until a document is stored | Empty panel control |
+| download all zips every stored document | Two PDFs in `Attachments_*.zip` |
+
+</details>
+
+<details>
 <summary><strong>formula-import.spec.ts</strong> — legacy equation import (optional fixture)</summary>
 
 Skipped when `docs/Draft Investigation (DEV-QC-26-001).docx` is missing.

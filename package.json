@@ -111,6 +111,7 @@
     "unpdf": "^1.8.0",
     "wmf": "^1.0.2",
     "workflow": "^4.7.0",
+    "yazl": "^3.3.1",
     "zod": "^4.3.6"
   },
   "optionalDependencies": {
@@ -127,6 +128,7 @@
     "@types/pg": "^8.15.4",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
+    "@types/yazl": "^3.3.1",
     "@vitejs/plugin-react": "^6.0.1",
     "@vitest/coverage-v8": "^4.1.5",
     "dotenv": "^17.4.2",

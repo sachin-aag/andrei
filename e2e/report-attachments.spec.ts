@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
+import { readFile } from "node:fs/promises";
 import { expect, test, type Page } from "@playwright/test";
 import { PDFDocument } from "pdf-lib";
+import PizZip from "pizzip";
 import { loginAsEngineer } from "./helpers/auth";
 import { createReport, deleteReport } from "./helpers/reports";
 import { documentsPanel, expandDocumentsPanel } from "./helpers/workspace";
@@ -125,5 +127,32 @@ test.describe("report PDF documents", () => {
     await expect(documentsPanel(page).getByText("Batch Records")).toBeVisible({
       timeout: 15_000,
     });
+  });
+
+  test("download all is disabled until a document is stored", async ({ page }) => {
+    await expect(
+      documentsPanel(page).getByRole("button", { name: /download all documents/i })
+    ).toBeDisabled();
+  });
+
+  test("download all zips every stored document", async ({ page }) => {
+    const fileA = await uploadPdf(page, 1);
+    const fileB = await uploadPdf(page, 2);
+    const panel = documentsPanel(page);
+
+    await expect(
+      panel.locator('[data-document-file][data-status="ready"]')
+    ).toHaveCount(2, { timeout: 30_000 });
+
+    const downloadPromise = page.waitForEvent("download");
+    await panel.getByRole("link", { name: /download all documents/i }).click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toMatch(/^Attachments_.+\.zip$/i);
+
+    const savedPath = await download.path();
+    expect(savedPath).toBeTruthy();
+    const zip = new PizZip(await readFile(savedPath!));
+    const names = Object.keys(zip.files).filter((name) => !name.endsWith("/"));
+    expect(names.sort()).toEqual([fileA, fileB].sort());
   });
 });
