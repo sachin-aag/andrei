@@ -154,6 +154,13 @@ function gfmHeaderExample(headers: readonly string[]): string {
   return `| ${cells} |\n| ${sep} |`;
 }
 
+/** How to fill Convergent Results and Discussions P/F rows (chat + suggest). */
+export const CONVERGENT_RESULTS_MATRIX_FILLING_NOTES = `Results and Discussions P/F table — column filling:
+- P/F: write only Pass or Fail (or P/F). That cell is the verdict, not the configuration.
+- Satisfied By MUST include both (1) the method, procedure, datasheet, or evidence that satisfied the requirement and (2) the configuration for which that P/F was achieved (UUT / software version / TOP or PCON / fixture / execution). Example: "TOP-00051 datasheets — TOP-00017 PCON (SW 4.7.1)".
+- If the same requirement was run on more than one configuration, name each configuration in Satisfied By so the verdict is attributable. Keep one row per Req ID.
+- Do not invent a configuration. If evidence does not name one, use a bracketed placeholder like [configuration].`;
+
 /**
  * Prompt block telling chat / suggest models to keep seeded matrix columns.
  * Shared by chat draftingGuidance and suggest-fix prompts.
@@ -194,12 +201,16 @@ export function dvFixedTableFormatGuidance(opts?: {
 - Prefer minimal cell-value edits (anchorText from SECTION CONTENT). Do not rewrite the matrix into a different column layout or free-form prose.
 - If filling a gap requires new rows, keep the same header set and column order.`;
 
+  const fillingNotes = sections.includes("results_and_discussions")
+    ? `\n\n${CONVERGENT_RESULTS_MATRIX_FILLING_NOTES}`
+    : "";
+
   return `## Fixed table formats (required)
 ${sections.length === 1 ? "This section" : "These sections"} use a seeded TipTap matrix with a fixed column schema. Stick to that format.
 
 ${surfaceRules}
 
-${schemas}`;
+${schemas}${fillingNotes}`;
 }
 
 function headerRow(headers: readonly string[]): JSONContent {

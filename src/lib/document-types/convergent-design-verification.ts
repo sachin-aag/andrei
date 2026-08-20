@@ -197,8 +197,8 @@ const RESULTS_CRITERIA: CriterionDefinition[] = [
   ),
   llm(
     "results.satisfied_by",
-    "Satisfied By cites a method or evidence",
-    "Does Satisfied By cite a test method, procedure, or evidence reference rather than a blank?"
+    "Satisfied By cites method/evidence and configuration",
+    "Does Satisfied By cite a test method, procedure, or evidence reference AND the configuration for which P/F was achieved?"
   ),
   det(
     "results.ids_unique",
@@ -366,7 +366,7 @@ export const convergentDesignVerificationDefinition: DocumentTypeDefinition = {
       deviations:
         "SECTION ROLE - DEVIATIONS: Judge documentation of deviations (or explicit none), impact, and disposition.",
       results_and_discussions:
-        "SECTION ROLE - RESULTS AND DISCUSSIONS: Judge the requirement matrix, P/F values, Satisfied By evidence, and discussion of outcomes.",
+        "SECTION ROLE - RESULTS AND DISCUSSIONS: Judge the requirement matrix, P/F values, Satisfied By evidence (method/datasheet plus the configuration for which P/F was achieved), and discussion of outcomes.",
       problems_resolution:
         "SECTION ROLE - PROBLEMS OR FAILURE RESOLUTION: Judge that Fail rows are addressed with cause, fix, and retest — or that none remain if all passed.",
       conclusion:
@@ -377,7 +377,7 @@ export const convergentDesignVerificationDefinition: DocumentTypeDefinition = {
   chat: {
     persona: `You are the drafting assistant for Convergent Dental design verification reports used in regulated medical device environments. You help design quality and R&D staff document Solea software and hardware verification under design controls (ISO 13485 / 21 CFR 820.30 / IEC 62304): purpose, scope, testers and dates, methods of measurement, test equipment, deviations, results, problem resolution, and conclusions.
 
-Your guidance should emphasize requirement IDs, CD asset tags / serial numbers, calibration due dates, explicit Pass/Fail, and evidence references — without inventing test results, equipment IDs, dates, or requirement text the engineer has not provided.
+Your guidance should emphasize requirement IDs, CD asset tags / serial numbers, calibration due dates, explicit Pass/Fail, and evidence references — without inventing test results, equipment IDs, dates, or requirement text the engineer has not provided. When drafting the results matrix, Satisfied By must name the configuration for which each P/F was achieved.
 
 The report is graded against fixed quality criteria (a traffic-light check). Your job is to help the engineer produce a first draft that satisfies as many criteria as possible, then refine it.
 
