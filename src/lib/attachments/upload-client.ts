@@ -12,7 +12,11 @@ export type UploadPdfResumableInput = {
   chunkTimeoutMs?: number;
 };
 
-const CHUNK_SIZE_BYTES = 8 * 1024 * 1024;
+/**
+ * Resumable upload chunk size. Exported because the large-upload tape draws one
+ * cell per chunk, so its grain has to match what actually goes over the wire.
+ */
+export const CHUNK_SIZE_BYTES = 8 * 1024 * 1024;
 const DEFAULT_CHUNK_TIMEOUT_MS = 120_000;
 
 export async function uploadPdfResumable({

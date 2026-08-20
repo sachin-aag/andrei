@@ -348,7 +348,9 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
 
 ## Style
 
-- Dark theme with MJ Biopharm navy brand color `#2D2A6E`.
+- Light theme only (`color-scheme: light`). Each pack overrides the `--brand-*` ramp
+  in `globals.css`: demo navy `#001838`, MJ navy `#133782`, Convergent blue `#0079c1`.
+  Style new UI from the tokens, never a hardcoded brand hex.
 - Tailwind CSS v4 configured in `src/app/globals.css`.
 - Toast notifications via `sonner`.
 - Observability: Langfuse tracing + OpenTelemetry (`src/instrumentation.ts`).
