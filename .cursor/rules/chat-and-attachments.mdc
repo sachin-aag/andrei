@@ -43,7 +43,7 @@ system prompt when kickoff retrieval hits.
   `continue_document_review` drains the remaining queue in one call with a
   worker pool of `REVIEW_EXTRACT_CONCURRENCY` extracts (no thought summaries
   on extract). Orchestrator is `gemini-3.7-flash` with `thinkingLevel`
-  `medium` until we route it by task (3.7 Flash rejects `minimal`); page
+  `low` until we route it by task (3.7 Flash rejects `minimal`); page
   extracts use `gemini-3.5-flash-lite` with `minimal`. Do not set
   temperature / topP / seed on Gemini 3.x chat calls.
 - Tagged `@` documents rank first; backfill from the rest of the report.

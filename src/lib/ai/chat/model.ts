@@ -16,12 +16,13 @@ export const CHAT_EXTRACT_GOOGLE_MODEL_ID = "gemini-3.5-flash-lite" as const;
 
 /**
  * Fixed thinking for the 3.7 Flash orchestrator until we route by task.
- * 3.7 Flash rejects `THINKING_LEVEL_MINIMAL` (Vertex 400). Omit
+ * 3.7 Flash supports `low` | `medium` | `high` and rejects `minimal`
+ * (Vertex 400). `low` is the lowest latency/cost setting. Omit
  * temperature / topP / seed — Gemini 3.x should keep sampling defaults.
  * Flash-Lite extracts still use `minimal` thinking.
- * @see https://ai.google.dev/gemini-api/docs
+ * @see https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash
  */
-export const CHAT_THINKING_LEVEL = "medium" as const;
+export const CHAT_THINKING_LEVEL = "low" as const;
 
 /** Gemini 3.x is only served from the Vertex `global` location. */
 const CHAT_VERTEX_LOCATION = "global" as const;

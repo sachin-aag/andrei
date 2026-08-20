@@ -10,7 +10,7 @@ describe("chat model ids", () => {
     expect(CHAT_EXTRACT_GOOGLE_MODEL_ID).toBe("gemini-3.5-flash-lite");
   });
 
-  it("uses medium thinking on 3.7 Flash until we route by task", () => {
-    expect(CHAT_THINKING_LEVEL).toBe("medium");
+  it("uses low thinking on 3.7 Flash until we route by task", () => {
+    expect(CHAT_THINKING_LEVEL).toBe("low");
   });
 });
