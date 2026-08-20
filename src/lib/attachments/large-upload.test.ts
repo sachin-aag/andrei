@@ -275,7 +275,7 @@ describe("describeUploadTape — holding and reading", () => {
 
   it("explains the queue rather than showing a bare status word", () => {
     expect(describeUploadTape(input({ status: "queued" }))?.line).toBe(
-      "Waiting to start reading"
+      "Waiting to start processing"
     );
   });
 
@@ -290,7 +290,7 @@ describe("describeUploadTape — holding and reading", () => {
       })
     );
     expect(view?.phase).toBe("reading");
-    expect(view?.line).toBe("Reading page 170 of 340");
+    expect(view?.line).toBe("Processing page 170 of 340");
     expect(view?.figure).toBe("50%");
     expect(view?.cellCount).toBe(36);
     expect(view?.filledCells).toBe(18);
@@ -307,7 +307,7 @@ describe("describeUploadTape — holding and reading", () => {
         pageCount: 300,
       })
     );
-    expect(view?.line).toBe("Reading page 270 of 300");
+    expect(view?.line).toBe("Processing page 270 of 300");
     expect(view?.figure).toBe("90%");
     expect(view?.percent).toBeCloseTo(90);
   });
@@ -330,7 +330,7 @@ describe("describeUploadTape — holding and reading", () => {
       input({ status: "processing", processingProgress: 40, processingPage: null })
     );
     expect(view?.percent).toBeCloseTo(50);
-    expect(view?.line).toBe("Reading the document");
+    expect(view?.line).toBe("Processing the document");
   });
 
   it("switches to indexing once every page has been read", () => {
@@ -348,7 +348,7 @@ describe("describeUploadTape — holding and reading", () => {
     expect(view?.figure).toBe("");
     expect(view?.filledCells).toBe(view?.cellCount);
     expect(view?.headCell).toBeNull();
-    expect(view?.ariaLabel).toContain("All 300 pages read");
+    expect(view?.ariaLabel).toContain("All 300 pages processed");
   });
 
   it("stays in indexing through chunking and embedding", () => {
@@ -363,12 +363,12 @@ describe("describeUploadTape — holding and reading", () => {
     const view = describeUploadTape(
       input({ status: "processing", processingPage: 3, pageCount: null })
     );
-    expect(view?.line).toBe("Reading page 3");
+    expect(view?.line).toBe("Processing page 3");
   });
 
   it("falls back when no page is reported", () => {
     const view = describeUploadTape(input({ status: "processing" }));
-    expect(view?.line).toBe("Reading the document");
+    expect(view?.line).toBe("Processing the document");
   });
 
   it("returns nothing for terminal states", () => {

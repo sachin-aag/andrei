@@ -110,7 +110,7 @@ export function describeUploadTape(input: UploadTapeInput): UploadTapeView | nul
     case "validating":
       return describeHeld(input, "checking", "Checking the file");
     case "queued":
-      return describeHeld(input, "queued", "Waiting to start reading");
+      return describeHeld(input, "queued", "Waiting to start processing");
     case "processing":
       return describeReading(input);
     default:
@@ -242,7 +242,7 @@ function describeReading(input: UploadTapeInput): UploadTapeView {
 
   // Every page has been read; what is left is chunking and embedding, which has
   // no page to point at. `processingPage` still holds the last page it saw, so
-  // without this the row would sit on "Reading page 300 of 300" for the last
+  // without this the row would sit on "Processing page 300 of 300" for the last
   // stretch of the run.
   if (input.processingProgress >= INDEXING_PROGRESS_START) {
     return {
@@ -255,8 +255,8 @@ function describeReading(input: UploadTapeInput): UploadTapeView {
       percent: clampPercent(input.processingProgress),
       ariaLabel:
         pageCount !== null
-          ? `All ${pageCount} pages read. Making the document searchable.`
-          : "All pages read. Making the document searchable.",
+          ? `All ${pageCount} pages processed. Making the document searchable.`
+          : "All pages processed. Making the document searchable.",
     };
   }
 
@@ -267,9 +267,9 @@ function describeReading(input: UploadTapeInput): UploadTapeView {
   const line =
     page !== null && page > 0
       ? pageCount !== null
-        ? `Reading page ${page} of ${pageCount}`
-        : `Reading page ${page}`
-      : "Reading the document";
+        ? `Processing page ${page} of ${pageCount}`
+        : `Processing page ${page}`
+      : "Processing the document";
 
   return {
     phase: "reading",
@@ -279,7 +279,7 @@ function describeReading(input: UploadTapeInput): UploadTapeView {
     filledCells,
     headCell: filledCells < cellCount ? filledCells : null,
     percent,
-    ariaLabel: `${line} — ${Math.round(percent)}% read.`,
+    ariaLabel: `${line} — ${Math.round(percent)}% processed.`,
   };
 }
 
