@@ -83,7 +83,7 @@ export function AppShell({
         aria-label="Primary navigation"
         style={{ viewTransitionName: "app-sidebar" }}
         className={cn(
-          "shrink-0 border-r border-[var(--border)] bg-[var(--card)] flex flex-col transition-[width] duration-200 ease-in-out",
+          "shrink-0 overflow-hidden border-r border-[var(--border)] bg-[var(--card)] flex flex-col transition-[width] duration-200 ease-in-out",
           !collapsed && "w-60",
           collapsed && branding.logoLayout === "wordmark" && "w-16",
           collapsed && branding.logoLayout !== "wordmark" && "w-14"
@@ -94,26 +94,25 @@ export function AppShell({
             className={cn(
               "flex items-center gap-3",
               collapsed
-                ? "h-16 px-2 justify-center"
-                : branding.logoLayout === "wordmark"
-                  ? "px-3 py-3"
-                  : "h-16 px-5"
+                ? cn(
+                    "h-16 justify-center",
+                    branding.logoLayout === "wordmark" ? "px-3" : "px-2"
+                  )
+                : "h-16 px-4"
             )}
           >
-            <BrandLogo compact={collapsed} />
-            {!collapsed && branding.logoLayout !== "wordmark" ? (
-              <div className="flex flex-col min-w-0 flex-1">
-                <span className="text-xs font-semibold leading-tight truncate">
+            {/* Circle mark only — the Convergent wordmark is too wide for this rail. */}
+            <BrandLogo compact />
+            {collapsed ? null : (
+              <div className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate text-xs font-semibold leading-tight">
                   {branding.productNameShort}
                 </span>
-                <span className="text-[10px] text-[var(--muted-foreground)] truncate">
+                <span className="truncate text-[10px] text-[var(--muted-foreground)]">
                   {branding.shellTagline}
                 </span>
               </div>
-            ) : null}
-            {!collapsed && branding.logoLayout === "wordmark" ? (
-              <span className="sr-only">{branding.productName}</span>
-            ) : null}
+            )}
           </div>
 
           <div

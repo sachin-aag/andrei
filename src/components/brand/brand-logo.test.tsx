@@ -50,13 +50,13 @@ describe("BrandLogo", () => {
     expect(img).toHaveAttribute("height", "64");
   });
 
-  it("uses the circular mark at 48px in collapsed chrome", () => {
+  it("uses the circular mark at 40px in sidebar chrome", () => {
     setCustomer("convergent");
     render(<BrandLogo compact />);
     const img = screen.getByRole("img", { name: "Convergent Dental logo" });
     expect(img).toHaveAttribute("src", "/logo-convergent-mark.svg");
-    expect(img).toHaveAttribute("width", "48");
-    expect(img).toHaveAttribute("height", "48");
+    expect(img).toHaveAttribute("width", "40");
+    expect(img).toHaveAttribute("height", "40");
   });
 
   it("keeps demo collapsed chrome at the original 28px icon size", () => {

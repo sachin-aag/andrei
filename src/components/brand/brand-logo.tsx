@@ -23,7 +23,8 @@ function logoImageProps(src: string) {
 function compactChrome(layout: LogoLayout): { box: string; img: number } {
   switch (layout) {
     case "wordmark":
-      return { box: "size-12", img: 48 };
+      // 40px leaves a visible gap inside the 64px collapsed rail (px-3).
+      return { box: "size-10", img: 40 };
     case "icon":
       return { box: "size-9 p-1", img: 28 };
     default: {
@@ -41,7 +42,7 @@ export function BrandLogo({
 }: {
   variant?: "color" | "hero";
   size?: "sm" | "md";
-  /** Collapsed sidebar: square mark, not the full wordmark. */
+  /** Sidebar chrome: square mark, not the full wordmark. */
   compact?: boolean;
   className?: string;
 }) {
