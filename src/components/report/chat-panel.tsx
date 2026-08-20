@@ -60,6 +60,11 @@ import {
   isAllowedChatImageMediaType,
 } from "@/lib/ai/chat/image-parts";
 import {
+  CHAT_ASSISTANT_ERROR_MESSAGE,
+  assistantPartsHaveVisibleContent,
+  shouldShowEmptyAssistantError,
+} from "@/lib/ai/chat/assistant-turn";
+import {
   detectSectionScopeMismatch,
   type SectionScopeMismatch,
 } from "@/lib/ai/chat/section-intent";
@@ -482,11 +487,13 @@ function MessageTurn({
   onSwitchSectionScope,
   askUserActive,
   onAnswerQuestions,
+  streaming = false,
 }: {
   message: UIMessage;
   onSwitchSectionScope?: (section: SectionType) => void;
   askUserActive?: boolean;
   onAnswerQuestions?: (message: string) => void;
+  streaming?: boolean;
 }) {
   const isUser = message.role === "user";
 
@@ -523,34 +530,42 @@ function MessageTurn({
   }
 
   // Assistant turn: full-width, no bubble (Cursor-style), tool chips inline.
+  const showEmptyError = shouldShowEmptyAssistantError({
+    parts: message.parts,
+    streaming,
+  });
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-1.5 text-[11px] font-medium text-[var(--muted-foreground)]">
         <Sparkles className="size-3 text-[var(--primary)]" />
         Assistant
       </div>
-      {groupAssistantParts(message.parts).map((group, i) => {
-        if (group.kind === "text") {
-          if (!group.text.trim()) return null;
-          return <ChatMarkdown key={i}>{group.text}</ChatMarkdown>;
-        }
-        if (group.kind === "document-review") {
-          return <DocumentReviewProgress key={i} parts={group.parts} />;
-        }
-        const tool = readToolPart(group.part as UIMessagePart<never, never>);
-        if (tool) {
-          return (
-            <ToolChip
-              key={i}
-              info={tool}
-              onSwitchSectionScope={onSwitchSectionScope}
-              askUserActive={askUserActive}
-              onAnswerQuestions={onAnswerQuestions}
-            />
-          );
-        }
-        return null;
-      })}
+      {showEmptyError ? (
+        <p className="text-sm text-red-600">{CHAT_ASSISTANT_ERROR_MESSAGE}</p>
+      ) : (
+        groupAssistantParts(message.parts).map((group, i) => {
+          if (group.kind === "text") {
+            if (!group.text.trim()) return null;
+            return <ChatMarkdown key={i}>{group.text}</ChatMarkdown>;
+          }
+          if (group.kind === "document-review") {
+            return <DocumentReviewProgress key={i} parts={group.parts} />;
+          }
+          const tool = readToolPart(group.part as UIMessagePart<never, never>);
+          if (tool) {
+            return (
+              <ToolChip
+                key={i}
+                info={tool}
+                onSwitchSectionScope={onSwitchSectionScope}
+                askUserActive={askUserActive}
+                onAnswerQuestions={onAnswerQuestions}
+              />
+            );
+          }
+          return null;
+        })
+      )}
     </div>
   );
 }
@@ -687,15 +702,24 @@ export function ChatPanel() {
   const { messages, sendMessage, setMessages, status, error } = useChat({
     id: `report-chat-${report.id}`,
     transport: new DefaultChatTransport({ api: base }),
-    onFinish: () => {
+    onFinish: ({ message, isAbort, isDisconnect, isError }) => {
       // Pull newly-proposed ai_fix comments into report state (inline diff +
       // gutter card), and refresh session titles/order.
       void refresh();
       void loadSessions();
+      // Stream protocol errors already toast via onError. Empty Gemini turns
+      // (thought-only / no parts) finish as success unless we catch them here.
+      if (isAbort || isDisconnect || isError) return;
+      if (
+        message.role === "assistant" &&
+        !assistantPartsHaveVisibleContent(message.parts)
+      ) {
+        toast.error(CHAT_ASSISTANT_ERROR_MESSAGE);
+      }
     },
     onError: (err) => {
       console.error("chat error", err);
-      toast.error("The assistant hit an error. Please try again.");
+      toast.error(CHAT_ASSISTANT_ERROR_MESSAGE);
     },
   });
 
@@ -1126,6 +1150,9 @@ export function ChatPanel() {
               onSwitchSectionScope={applySectionScope}
               askUserActive={i === messages.length - 1 && !busy && !initializing}
               onAnswerQuestions={(answerText) => void send(answerText, [])}
+              streaming={
+                busy && i === messages.length - 1 && m.role === "assistant"
+              }
             />
           ))
         )}
@@ -1135,7 +1162,9 @@ export function ChatPanel() {
             {mode === "plan" ? "Thinking through the plan…" : "Working…"}
           </div>
         )}
-        {error && <p className="text-xs text-red-500">Something went wrong. Try again.</p>}
+        {error && (
+          <p className="text-xs text-red-500">{CHAT_ASSISTANT_ERROR_MESSAGE}</p>
+        )}
       </div>
 
       {/* Composer */}

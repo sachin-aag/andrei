@@ -71,6 +71,12 @@ import {
 } from "@/lib/ai/chat/document-review";
 import { sanitizeChatMessagesForModel } from "@/lib/ai/chat/image-parts";
 import {
+  CHAT_ASSISTANT_ERROR_MESSAGE,
+  formatChatLlmError,
+  isFailedChatFinishReason,
+  partsForPersistedAssistantTurn,
+} from "@/lib/ai/chat/assistant-turn";
+import {
   buildMentionBlock,
   mentionedAttachmentIds,
   mentionedSections,
@@ -310,55 +316,77 @@ export async function POST(
       })
     : resolveChatLanguageModel();
 
-  const result = streamText({
-    model,
-    system,
-    messages: await convertToModelMessages(messages),
-    tools,
-    stopWhen: ({ steps }) =>
-      shouldStopChatSteps({
-        stepsTaken: steps.length,
-        mode,
-        policy: retrieval.policy,
-        reviewPhase: documentReview.phase(),
-        totalPages: documentReview.progress().totalPages || reviewPageCount,
-      }),
-    prepareStep: () => {
-      const prepared = prepareDocumentReviewStep({
-        policy: retrieval.policy,
-        phase: documentReview.phase(),
-        availableTools: Object.keys(tools),
-      });
-      if (!prepared) return undefined;
-      return {
-        activeTools: prepared.activeTools,
-        ...(prepared.toolChoice ? { toolChoice: prepared.toolChoice } : {}),
-      };
-    },
-    // Gemini 3.x: thinkingLevel only. Do not set temperature / topP / topK /
-    // seed — Google warns that sampling overrides degrade reasoning.
-    // includeThoughts stays on for Langfuse; UI does not stream them.
-    providerOptions: buildGeminiThoughtSummaryProviderOptions({
-      thinkingLevel: chatThinkingLevel(retrieval.policy),
-    }),
-    ...langfuseGenerateTextTelemetry({
-      functionId: "report-chat",
-      metadata: {
-        reportId,
-        sessionId,
-        mode,
-        sectionScope,
-        canEdit,
-        taggedDocuments: mentions.documents.length,
-        taggedSections: mentions.sections.length,
-        chatPromptVersion: CHAT_PROMPT_VERSION,
-        chatModelId: CHAT_GOOGLE_MODEL_ID,
-        chatExtractModelId: CHAT_EXTRACT_GOOGLE_MODEL_ID,
-        retrievalPolicy: retrieval.policy,
-        retrievalPolicyReason: retrieval.reason,
+  let result;
+  try {
+    result = streamText({
+      model,
+      system,
+      messages: await convertToModelMessages(messages),
+      tools,
+      stopWhen: ({ steps }) =>
+        shouldStopChatSteps({
+          stepsTaken: steps.length,
+          mode,
+          policy: retrieval.policy,
+          reviewPhase: documentReview.phase(),
+          totalPages: documentReview.progress().totalPages || reviewPageCount,
+        }),
+      prepareStep: () => {
+        const prepared = prepareDocumentReviewStep({
+          policy: retrieval.policy,
+          phase: documentReview.phase(),
+          availableTools: Object.keys(tools),
+        });
+        if (!prepared) return undefined;
+        return {
+          activeTools: prepared.activeTools,
+          ...(prepared.toolChoice ? { toolChoice: prepared.toolChoice } : {}),
+        };
       },
-    }),
-  });
+      // Gemini 3.x: thinkingLevel only. Do not set temperature / topP / topK /
+      // seed — Google warns that sampling overrides degrade reasoning.
+      // includeThoughts stays on for Langfuse; UI does not stream them.
+      providerOptions: buildGeminiThoughtSummaryProviderOptions({
+        thinkingLevel: chatThinkingLevel(retrieval.policy),
+      }),
+      onError: ({ error }) => {
+        console.error("chat: llm stream error", {
+          reportId,
+          sessionId,
+          mode,
+          sectionScope,
+          error: formatChatLlmError(error),
+        });
+      },
+      ...langfuseGenerateTextTelemetry({
+        functionId: "report-chat",
+        metadata: {
+          reportId,
+          sessionId,
+          mode,
+          sectionScope,
+          canEdit,
+          taggedDocuments: mentions.documents.length,
+          taggedSections: mentions.sections.length,
+          chatPromptVersion: CHAT_PROMPT_VERSION,
+          chatModelId: CHAT_GOOGLE_MODEL_ID,
+          chatExtractModelId: CHAT_EXTRACT_GOOGLE_MODEL_ID,
+          retrievalPolicy: retrieval.policy,
+          retrievalPolicyReason: retrieval.reason,
+        },
+      }),
+    });
+  } catch (err) {
+    console.error("chat: failed to start assistant stream", {
+      reportId,
+      sessionId,
+      error: formatChatLlmError(err),
+    });
+    return NextResponse.json(
+      { error: CHAT_ASSISTANT_ERROR_MESSAGE },
+      { status: 500 }
+    );
+  }
 
   after(flushLangfuseTraces);
 
@@ -367,13 +395,36 @@ export async function POST(
     // Keep Gemini thought summaries in Langfuse (ai.response.reasoning) only —
     // do not stream or persist them as chat message parts.
     sendReasoning: false,
-    onFinish: async ({ responseMessage }) => {
+    onError: (error) => {
+      console.error("chat: assistant stream error", {
+        reportId,
+        sessionId,
+        error: formatChatLlmError(error),
+      });
+      return CHAT_ASSISTANT_ERROR_MESSAGE;
+    },
+    onFinish: async ({ responseMessage, isAborted, finishReason }) => {
+      const persisted = partsForPersistedAssistantTurn({
+        parts: responseMessage.parts,
+        isAborted,
+      });
+      if (persisted.emptyFailure || isFailedChatFinishReason(finishReason)) {
+        console.error("chat: empty or failed assistant turn", {
+          reportId,
+          sessionId,
+          finishReason: finishReason ?? "unknown",
+          isAborted,
+          emptyFailure: persisted.emptyFailure,
+          partTypes: (responseMessage.parts ?? []).map((part) => part.type),
+        });
+      }
+      if (isAborted) return;
       try {
         await db.insert(chatMessages).values({
           reportId,
           sessionId,
           role: "assistant",
-          parts: responseMessage.parts ?? [],
+          parts: persisted.parts,
           authorId: null,
         });
         await touchChatSession(sessionId, null);
