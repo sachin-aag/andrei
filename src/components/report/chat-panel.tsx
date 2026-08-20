@@ -14,6 +14,7 @@ import {
   Send,
   Sparkles,
   PencilLine,
+  Table2,
   BookOpen,
   FileText,
   Loader2,
@@ -267,6 +268,37 @@ function ToolChip({
     return (
       <ToolLine icon={<PencilLine className="size-3.5 text-amber-500" />} tone="warn">
         Edit not applied: {hint}
+      </ToolLine>
+    );
+  }
+
+  if (info.toolName === "edit_table") {
+    const section = sectionLabel(info.input?.section);
+    const field = typeof info.input?.targetField === "string" ? info.input.targetField : "";
+    if (pending) {
+      return (
+        <ToolLine icon={<Table2 className="size-3.5" />}>
+          Editing table in {section}…
+        </ToolLine>
+      );
+    }
+    if (info.output?.status === "proposed") {
+      return (
+        <ToolLine icon={<Table2 className="size-3.5 text-emerald-500" />} tone="success">
+          Proposed table edit to {section}
+          {field ? ` · ${field}` : ""} — review it in the document.
+        </ToolLine>
+      );
+    }
+    const hint =
+      typeof info.output?.hint === "string"
+        ? info.output.hint
+        : typeof info.output?.message === "string"
+          ? info.output.message
+          : "Could not place this table edit.";
+    return (
+      <ToolLine icon={<Table2 className="size-3.5 text-amber-500" />} tone="warn">
+        Table edit not applied: {hint}
       </ToolLine>
     );
   }

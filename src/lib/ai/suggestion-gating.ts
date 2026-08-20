@@ -12,6 +12,10 @@ import {
 import { getCriteria, getDocumentType } from "@/lib/document-types";
 import { shouldSkipSuggestForEvaluation } from "@/lib/placeholders/evaluation-policy";
 import type { EditScope } from "@/lib/suggestions/locator";
+import {
+  parseTableOperation,
+  type TableOperation,
+} from "@/lib/suggestions/table-operation";
 
 /** Validate an untrusted structural scope from persisted / model JSON. */
 export function parseEditScope(raw: unknown): EditScope | undefined {
@@ -173,6 +177,10 @@ export type ParsedAiFixPayload = {
   reasoning: string;
   /** Structural target (table cell / list item) for scoped edits. */
   scope?: EditScope;
+  /** Structural table mutation from `edit_table` (not an anchored span). */
+  tableOperation?: TableOperation;
+  /** Present when persisted JSON had a tableOperation that failed to parse. */
+  tableOperationInvalid?: boolean;
   /** Section content hash when this suggestion was created (staleness detection). */
   contentHashAtSuggestion?: string;
   evidenceSources?: Array<{
@@ -191,12 +199,23 @@ export type ParsedAiFixPayload = {
 export function parseAiFixCommentContent(content: string): ParsedAiFixPayload {
   try {
     const parsed = JSON.parse(content) as Partial<ParsedAiFixPayload>;
-    if (parsed && typeof parsed === "object" && "insertText" in parsed) {
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      ("insertText" in parsed || "tableOperation" in parsed)
+    ) {
+      const tableOperation =
+        parsed.tableOperation !== undefined
+          ? parseTableOperation(parsed.tableOperation)
+          : undefined;
       return {
         deleteText: typeof parsed.deleteText === "string" ? parsed.deleteText : "",
         insertText: typeof parsed.insertText === "string" ? parsed.insertText : "",
         reasoning: typeof parsed.reasoning === "string" ? parsed.reasoning : "",
         scope: parseEditScope(parsed.scope),
+        tableOperation,
+        tableOperationInvalid:
+          parsed.tableOperation !== undefined && !tableOperation ? true : undefined,
         contentHashAtSuggestion:
           typeof parsed.contentHashAtSuggestion === "string"
             ? parsed.contentHashAtSuggestion

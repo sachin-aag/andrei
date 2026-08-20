@@ -71,4 +71,15 @@ describe("proposedEditHint", () => {
     expect(proposedEditHint({ status: "not_found" })).toMatch(/read_section/i);
     expect(proposedEditHint({ status: "too_large", coverage: 0.9 })).toMatch(/smaller/i);
   });
+
+  it("routes markdown-pipe table misses to edit_table", () => {
+    const hint = proposedEditHint(
+      { status: "not_found" },
+      {
+        anchorText: "| Equipment | Manufacturer |\n| --- | --- |\n| UUT-1 | Acme |",
+      }
+    );
+    expect(hint).toMatch(/edit_table/);
+    expect(hint).not.toMatch(/draft_field for that field/i);
+  });
 });
