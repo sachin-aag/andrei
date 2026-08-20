@@ -8,10 +8,10 @@ describe("getAttachmentLimits", () => {
 
   it("uses defaults when env vars are unset", () => {
     expect(getAttachmentLimits()).toEqual({
-      maxAttachmentBytes: 157_286_400,
+      maxAttachmentBytes: 262_144_000,
       maxAttachmentPages: 500,
       maxAttachmentsPerReport: 50,
-      maxAttachmentBytesPerReport: 786_432_000,
+      maxAttachmentBytesPerReport: 1_073_741_824,
     });
   });
 
@@ -33,7 +33,7 @@ describe("getAttachmentLimits", () => {
     vi.stubEnv("MAX_ATTACHMENT_BYTES", "0");
     vi.stubEnv("MAX_ATTACHMENT_PAGES", "not-a-number");
 
-    expect(getAttachmentLimits().maxAttachmentBytes).toBe(157_286_400);
+    expect(getAttachmentLimits().maxAttachmentBytes).toBe(262_144_000);
     expect(getAttachmentLimits().maxAttachmentPages).toBe(500);
   });
 });
