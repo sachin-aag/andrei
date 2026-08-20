@@ -78,6 +78,20 @@ describe("evaluateSection", () => {
     expect(generateText).not.toHaveBeenCalled();
   });
 
+  it("treats an empty narrative document as empty, not as JSON shell content", async () => {
+    const results = await evaluateSection({
+      section: "define",
+      content: { narrative: { type: "doc", content: [{ type: "paragraph" }] } },
+      reportContext: { deviationNo: "DEV-001", date: "2026-05-01" },
+    });
+
+    expect(results.length).toBeGreaterThan(0);
+    expect(results.every((result) => result.reasoning === "Section is empty.")).toBe(
+      true
+    );
+    expect(generateText).not.toHaveBeenCalled();
+  });
+
   it("maps missing model evaluations to not evaluated", async () => {
     process.env.GOOGLE_GENERATIVE_AI_API_KEY = "test-key";
     mockSingleEval();

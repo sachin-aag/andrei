@@ -49,7 +49,6 @@ export function buildInvestigationReportDefinition(
     order: index,
     editable: editableSet.has(key),
     evaluable: evaluableSet.has(key),
-    isGateSection: key === "define",
     emptyContent: EMPTY_CONTENT[key],
   }));
 

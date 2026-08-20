@@ -336,7 +336,6 @@ export const convergentDesignVerificationDefinition: DocumentTypeDefinition = {
     order: index,
     editable: true,
     evaluable: true,
-    isGateSection: key === "purpose",
     emptyContent: EMPTY_CONVERGENT_DV_CONTENT[key],
   })),
   criteriaBySection: {

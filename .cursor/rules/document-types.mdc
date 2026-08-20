@@ -36,9 +36,10 @@ const sections = getWorkspaceSections(report.documentType);
   `convergent-dv-v2` for Convergent DV).
 - Chat editable sections: `chatEditableSections(documentType)` in
   `src/lib/ai/chat/fields.ts`. Do not reuse investigation field maps on DV.
-- Gate section is type-specific (`define` for investigation, virtual
-  `cover_page` for demo DV, `purpose` for Convergent DV). Virtual sections
-  are not `report_sections` rows.
+- Criteria evaluation is per filled section. An empty Purpose / Define /
+  cover page must not block Run criteria on other sections that have
+  content. Cover page eval reads `reports.metadata` (document number),
+  not a `report_sections` body.
 - Adding a type: extend `documentTypeEnum` in schema, add a definition, wire
   `REGISTRY`, then editors / chat / eval. DOCX export uses each type's
   `export.templatePath` and `buildTemplateData` (investigation still has an

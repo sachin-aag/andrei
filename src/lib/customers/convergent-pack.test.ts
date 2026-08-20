@@ -49,7 +49,6 @@ describe("Convergent customer pack", () => {
     expect(def.prompts.promptVersion).toBe(CONVERGENT_PROMPT_VERSION);
     expect(def.prompts.promptVersion).toBe("convergent-dv-v2");
     expect(def.sections.map((s) => s.key)).toEqual([...CONVERGENT_DV_SECTION_KEYS]);
-    expect(def.sections.find((s) => s.isGateSection)?.key).toBe("purpose");
     expect(def.sections.find((s) => s.key === "cover_page")).toBeUndefined();
     expect(CONVERGENT_DV_SECTION_LABELS.purpose).toBe("Purpose");
     expect(dvTableHeadersForSection("test_equipment")).toEqual([
@@ -93,7 +92,6 @@ describe("Convergent customer pack", () => {
       "approval_signoff",
       "appendices",
     ]);
-    expect(def.sections.find((s) => s.isGateSection)?.key).toBe("cover_page");
     expect(def.chat.draftingGuidance).not.toContain(
       CONVERGENT_RESULTS_MATRIX_FILLING_NOTES
     );

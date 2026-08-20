@@ -1,6 +1,9 @@
 import { normalizeRichField, richJsonToPlainText } from "@/lib/tiptap/rich-text";
 
-/** Minimum sentences required in the gate section before AI runs. */
+/**
+ * Sample-eval import quality check (investigation Define). Live Run
+ * criteria uses per-section readiness in `evaluation-readiness.ts`.
+ */
 export const MIN_SENTENCES_FIRST_SECTION = 2;
 
 export function insufficientFirstSectionMessage(sectionLabel = "Define"): string {

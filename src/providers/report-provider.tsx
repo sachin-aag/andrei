@@ -27,17 +27,12 @@ import { mergeSection } from "@/lib/sections-merge";
 import {
   getDocumentType,
   getEvaluatableSections,
-  getGateSection,
   mergeSectionForType,
 } from "@/lib/document-types";
 import { activeSuggestionForSection } from "@/lib/ai/suggestion-gating";
 import { validateSuggestionLocate } from "@/lib/suggestions/validate-suggestion";
 import { normalizeCommentRecord } from "@/lib/comments/normalize";
-import {
-  hasEnoughContextInFirstSection,
-  INSUFFICIENT_FIRST_SECTION_MESSAGE,
-  insufficientFirstSectionMessage,
-} from "@/lib/ai/first-section-context";
+import { sectionsReadyForEvaluation } from "@/lib/ai/evaluation-readiness";
 import { collectPlaceholders } from "@/lib/placeholders/scan-sections";
 import type { Placeholder } from "@/lib/placeholders/find";
 import type { UserRole } from "@/lib/auth/roles";
@@ -645,33 +640,28 @@ export function ReportProvider({
           : [section]
         : [...evaluatable];
 
-      const gate = getGateSection(documentType);
-      if (documentType === "investigation_report") {
-        if (!hasEnoughContextInFirstSection(sectionsRef.current.define)) {
-          toast.error(INSUFFICIENT_FIRST_SECTION_MESSAGE);
-          return;
-        }
-      } else if (gate?.key === "cover_page") {
-        if (!report.documentNo.trim()) {
-          toast.error(
-            "Fill Document Number on the Cover Page before running the AI check."
-          );
-          return;
-        }
-      } else if (gate) {
-        if (!hasEnoughContextInFirstSection(sectionsRef.current[gate.key])) {
-          toast.error(insufficientFirstSectionMessage(gate.label));
-          return;
-        }
+      const readiness = sectionsReadyForEvaluation({
+        documentType,
+        targets,
+        documentNo: report.documentNo,
+        contentFor: (key) =>
+          key === "cover_page" ? report.metadata : sectionsRef.current[key],
+      });
+      if (readiness.error) {
+        toast.error(readiness.error);
+        return;
       }
 
-      setRunningEvalSections(targets);
+      setRunningEvalSections(readiness.ready);
       setIsEvaluating(true);
       try {
         const res = await fetch(`/api/reports/${bundle.report.id}/evaluate`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sections: targets, reason: "manual" }),
+          body: JSON.stringify({
+            sections: readiness.ready,
+            reason: "manual",
+          }),
         });
         if (!res.ok) {
           const errBody = await res.json().catch(() => ({}));

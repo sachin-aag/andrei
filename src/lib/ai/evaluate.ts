@@ -8,7 +8,7 @@ import {
   getDocumentType,
 } from "@/lib/document-types";
 import type { CriterionDefinition, EvaluationContext } from "@/lib/document-types";
-import { contextForPrompt } from "./section-context";
+import { contextForPrompt, hasExtractedSectionContent } from "./section-context";
 import { capEvaluationStatusForPlaceholders } from "@/lib/placeholders/evaluation-policy";
 import { plainTextHasEvalPlaceholders } from "@/lib/placeholders/placeholder-eval-prompt";
 import { collectPlaceholders } from "@/lib/placeholders/scan-sections";
@@ -305,11 +305,9 @@ export function buildCriterionEvaluationLlmPrompts({
     criteriaFor(section, documentType).filter((c) => c.kind === "llm");
   if (criteria.length === 0) return null;
 
+  if (!hasExtractedSectionContent(section, content)) return null;
+
   const contentStr = sectionContentForPrompt(section, content);
-
-  const isEmpty = !contentStr || contentStr.trim() === "" || contentStr === "{}";
-
-  if (isEmpty) return null;
 
   const systemPrompt = buildEvaluationSystemPromptForType(
     documentType,

@@ -74,12 +74,6 @@ export function getWorkspaceSections(
   return workspaceSections(getDocumentType(documentType));
 }
 
-export function getGateSection(
-  documentType: DocumentType
-): SectionDefinition | undefined {
-  return getDocumentType(documentType).sections.find((s) => s.isGateSection);
-}
-
 export function isValidSection(
   documentType: DocumentType | null | undefined,
   section: string

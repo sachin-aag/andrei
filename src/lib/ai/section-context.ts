@@ -136,9 +136,10 @@ export function fallbackContextForPrompt(content: unknown): string {
   return JSON.stringify(content, null, 2);
 }
 
-export function contextForPrompt(section: SectionType, content: unknown): string {
-  if (!isRecord(content)) return fallbackContextForPrompt(content);
-
+function collectContextLines(
+  section: SectionType,
+  content: Record<string, unknown>
+): string[] {
   const lines: string[] = [];
   if (section === "define") {
     pushNarrativeLine(lines, section, content);
@@ -248,6 +249,22 @@ export function contextForPrompt(section: SectionType, content: unknown): string
       );
     }
   }
+  return lines;
+}
 
+export function contextForPrompt(section: SectionType, content: unknown): string {
+  if (!isRecord(content)) return fallbackContextForPrompt(content);
+  const lines = collectContextLines(section, content);
   return lines.length ? lines.join("\n") : fallbackContextForPrompt(content);
+}
+
+/** True when the section has author text the evaluator can score (not empty docs / JSON shells). */
+export function hasExtractedSectionContent(
+  section: SectionType,
+  content: unknown
+): boolean {
+  if (content == null) return false;
+  if (typeof content === "string") return content.trim().length > 0;
+  if (!isRecord(content)) return false;
+  return collectContextLines(section, content).length > 0;
 }
