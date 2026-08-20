@@ -11,7 +11,7 @@ import type { AttachmentProcessingStatus } from "@/db/schema";
  * Progress for one large attachment, shown in place of the thin row bar.
  *
  * The band is a single object whose unit changes with the phase: while sending,
- * one cell is one 8 MB upload chunk; while reading, one cell is one page. The
+ * one cell is 8 MB of acknowledged bytes; while reading, one cell is one page. The
  * wipe and re-flow between the two is the moment that tells the user the file
  * arrived and the document is now being read.
  */

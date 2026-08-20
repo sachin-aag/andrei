@@ -43,7 +43,7 @@ type UploadProgress = {
   bytesPerSecond: number | null;
 };
 
-/** Rate samples kept per upload. Chunks are 8 MB, so a single delta is jumpy. */
+/** Rate samples kept per upload. Adaptive chunks are 8–32 MB, so a single delta is jumpy. */
 const RATE_SAMPLE_WINDOW = 6;
 
 type RateSample = { at: number; bytes: number };

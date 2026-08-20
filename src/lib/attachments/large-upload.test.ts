@@ -38,7 +38,7 @@ describe("isLargeUpload", () => {
 });
 
 describe("chunkCellCount", () => {
-  it("draws one cell per real 8 MB upload chunk", () => {
+  it("draws one cell per 8 MB of acknowledged bytes", () => {
     expect(chunkCellCount(96 * MB)).toBe(12);
     expect(chunkCellCount(51 * MB)).toBe(7);
     expect(chunkCellCount(150 * MB)).toBe(19);

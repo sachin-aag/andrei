@@ -3,19 +3,20 @@
  *
  * Small attachments land in a second or two, so the thin bar in the document
  * tree is enough for them. Anything past the threshold below is a multi-minute
- * wait — the bytes travel in 8 MB chunks, then Vertex reads the document a page
- * at a time — and that wait needs to be legible.
+ * wait — the bytes travel in 8–32 MB GCS chunks, then Vertex reads the document
+ * a page at a time — and that wait needs to be legible.
  *
  * The tape is one band of discrete cells that changes what it measures:
- * while uploading, one cell is one real upload chunk; while reading, one cell is
- * one page. Nothing here interpolates — a cell inks in only when that chunk or
- * page has actually landed.
+ * while uploading, one cell is one 8 MB grain (the adaptive-upload floor);
+ * while reading, one cell is one page. Nothing here interpolates — a cell inks
+ * in only when that grain or page has actually landed. A 16–32 MB PUT fills
+ * more than one cell at once.
  *
  * Pure functions only, so the phase/copy rules stay unit-testable.
  */
 
 import type { AttachmentProcessingStatus } from "@/db/schema";
-import { CHUNK_SIZE_BYTES } from "./upload-client";
+import { MIN_CHUNK_SIZE_BYTES } from "./upload-client";
 
 /** Above this size the row shows the tape instead of the thin progress bar. */
 export const LARGE_UPLOAD_THRESHOLD_BYTES = 50 * 1024 * 1024;
@@ -130,8 +131,8 @@ function describeSending(input: UploadTapeInput): UploadTapeView {
   // Scale landed chunks onto the cells. Below the layout cap the two counts are
   // equal, so this is exactly "one cell per acknowledged chunk"; past it the
   // tape stays proportional instead of reading full while bytes are still going.
-  const totalChunks = total > 0 ? Math.ceil(total / CHUNK_SIZE_BYTES) : 1;
-  const landedChunks = Math.floor(uploaded / CHUNK_SIZE_BYTES);
+  const totalChunks = total > 0 ? Math.ceil(total / MIN_CHUNK_SIZE_BYTES) : 1;
+  const landedChunks = Math.floor(uploaded / MIN_CHUNK_SIZE_BYTES);
   const complete = total > 0 && uploaded >= total;
   const filledCells = complete
     ? cellCount
@@ -298,12 +299,12 @@ function readingPercent(input: UploadTapeInput, pageCount: number | null): numbe
 }
 
 /**
- * One cell per real 8 MB upload chunk — a 96 MB file is exactly 12 cells, and
- * each one inks in when that chunk is acknowledged.
+ * One cell per 8 MB of acknowledged bytes — a 96 MB file is exactly 12 cells.
+ * Adaptive PUTs of 16–32 MB fill two or four cells when that PUT lands.
  */
 export function chunkCellCount(sizeBytes: number): number {
   if (!Number.isFinite(sizeBytes) || sizeBytes <= 0) return 1;
-  return clamp(Math.ceil(sizeBytes / CHUNK_SIZE_BYTES), 1, MAX_CHUNK_CELLS);
+  return clamp(Math.ceil(sizeBytes / MIN_CHUNK_SIZE_BYTES), 1, MAX_CHUNK_CELLS);
 }
 
 /**
