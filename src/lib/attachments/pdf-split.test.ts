@@ -1,5 +1,6 @@
 import { PDFDocument } from "pdf-lib";
 import { describe, expect, it } from "vitest";
+import { documentAiIngestSplitOptions } from "./document-ai-ocr";
 import {
   copyPdfPage,
   copyPdfPageRange,
@@ -43,6 +44,19 @@ describe("splitPdfIntoBatches", () => {
     expect(result.batches).toHaveLength(3);
     expect(result.batches.map((batch) => batch.pageStart)).toEqual([1, 2, 3]);
     expect(result.batches.map((batch) => batch.pageEnd)).toEqual([1, 2, 3]);
+  });
+
+  it("uses Enterprise OCR options for a 45-page wave", async () => {
+    const result = await splitPdfIntoBatches(
+      await pdfWithPages(45),
+      documentAiIngestSplitOptions()
+    );
+
+    expect(result.batches.map((batch) => [batch.pageStart, batch.pageEnd])).toEqual([
+      [1, 15],
+      [16, 30],
+      [31, 45],
+    ]);
   });
 
   it("honors an explicit Document AI 15-page cap", async () => {

@@ -13,9 +13,8 @@ import {
 import { chunkDocumentPages } from "@/lib/attachments/chunk-pages";
 import { describeDocxImages } from "@/lib/attachments/describe-docx-images";
 import {
-  DOCUMENT_AI_MAX_ONLINE_BYTES,
   DOCUMENT_AI_OCR_CONCURRENCY,
-  DOCUMENT_AI_ONLINE_PAGE_LIMIT,
+  documentAiIngestSplitOptions,
   isDocumentAiConfigured,
 } from "@/lib/attachments/document-ai-ocr";
 import {
@@ -49,10 +48,6 @@ import {
   MAX_PDF_BATCH_PAGES,
   splitPdfIntoBatches,
 } from "@/lib/attachments/pdf-split";
-import {
-  classifyPdfExtractLayout,
-  readPdfTextLayer,
-} from "@/lib/attachments/pdf-text-layer";
 import { getAttachmentStorage, tempBatchObjectKey } from "@/lib/storage/attachments";
 
 export { sanitizeIngestError } from "@/lib/attachments/ingest-errors";
@@ -258,7 +253,7 @@ async function runPdfIngest(init: IngestInit): Promise<void> {
         throw new IngestNeedsContinuationError();
       }
       await assertAttachmentCurrent(init);
-      await heartbeatIngestRun(init.runId, init.attachmentId, batch.pageStart);
+      await heartbeatIngestRun(init.runId, init.attachmentId, batch.pageEnd);
       await processBatch(batch.id);
       await updateBatchProgress(init.runId, init.attachmentId);
     }
@@ -486,18 +481,13 @@ async function listBatches(runId: string): Promise<
 }
 
 async function splitPdfForIngest(sourceBuffer: Buffer) {
-  if (!isDocumentAiConfigured()) {
-    return splitPdfIntoBatches(sourceBuffer);
+  // Searchable scans and born-digital files have a text layer. They used to
+  // skip this path and fall into Gemini's 3-page sequential insight loop.
+  // Enterprise OCR batching is 15 pages × 3 in flight (45 pages).
+  if (isDocumentAiConfigured()) {
+    return splitPdfIntoBatches(sourceBuffer, documentAiIngestSplitOptions());
   }
-  const layout = classifyPdfExtractLayout(await readPdfTextLayer(sourceBuffer));
-  if (layout === "text-layer") {
-    return splitPdfIntoBatches(sourceBuffer);
-  }
-  return splitPdfIntoBatches(sourceBuffer, {
-    preferredPagesPerBatch: DOCUMENT_AI_ONLINE_PAGE_LIMIT,
-    maxPagesPerBatch: DOCUMENT_AI_ONLINE_PAGE_LIMIT,
-    maxBatchBytes: DOCUMENT_AI_MAX_ONLINE_BYTES,
-  });
+  return splitPdfIntoBatches(sourceBuffer);
 }
 
 function usesParallelOcrBatches(
@@ -520,10 +510,13 @@ async function processPdfBatchesInWaves(
       throw new IngestNeedsContinuationError();
     }
     const wave = pending.slice(0, DOCUMENT_AI_OCR_CONCURRENCY);
-    const first = wave[0];
-    if (!first) return;
+    if (wave.length === 0) return;
     await assertAttachmentCurrent(init);
-    await heartbeatIngestRun(init.runId, init.attachmentId, first.pageStart);
+    await heartbeatIngestRun(
+      init.runId,
+      init.attachmentId,
+      Math.max(...wave.map((batch) => batch.pageEnd))
+    );
     await Promise.all(wave.map((batch) => processBatch(batch.id)));
     await updateBatchProgress(init.runId, init.attachmentId);
   }
