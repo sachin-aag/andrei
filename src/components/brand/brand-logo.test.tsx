@@ -42,6 +42,14 @@ describe("BrandLogo", () => {
     expect(img).toHaveAttribute("height", "40");
   });
 
+  it("renders a larger wordmark on the login hero size", () => {
+    setCustomer("convergent");
+    render(<BrandLogo size="md" />);
+    const img = screen.getByRole("img", { name: "Convergent Dental logo" });
+    expect(img).toHaveAttribute("width", "281");
+    expect(img).toHaveAttribute("height", "64");
+  });
+
   it("uses the circular mark at 48px in collapsed chrome", () => {
     setCustomer("convergent");
     render(<BrandLogo compact />);

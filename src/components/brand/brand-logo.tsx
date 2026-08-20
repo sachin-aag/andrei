@@ -9,8 +9,8 @@ const ICON_CHROME = {
 
 /** Display box for the Convergent wordmark (PNG is 1198×273). */
 const WORDMARK_CHROME = {
-  sm: { heightClass: "h-10", width: 176, height: 40 },
-  md: { heightClass: "h-12", width: 211, height: 48 },
+  sm: { width: 176, height: 40 },
+  md: { width: 281, height: 64 },
 } as const;
 
 function logoImageProps(src: string) {
@@ -109,7 +109,8 @@ export function BrandLogo({
             width={wordmark.width}
             height={wordmark.height}
             alt={branding.logoAlt}
-            className={cn(wordmark.heightClass, "w-auto object-contain")}
+            className="object-contain"
+            style={{ width: "auto", height: "auto" }}
           />
         </div>
       );
