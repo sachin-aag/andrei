@@ -5,10 +5,10 @@ export type AttachmentLimits = {
   maxAttachmentBytesPerReport: number;
 };
 
-const DEFAULT_MAX_ATTACHMENT_BYTES = 104_857_600;
+const DEFAULT_MAX_ATTACHMENT_BYTES = 157_286_400;
 const DEFAULT_MAX_ATTACHMENT_PAGES = 500;
 const DEFAULT_MAX_ATTACHMENTS_PER_REPORT = 50;
-const DEFAULT_MAX_ATTACHMENT_BYTES_PER_REPORT = 524_288_000;
+const DEFAULT_MAX_ATTACHMENT_BYTES_PER_REPORT = 786_432_000;
 
 export function getAttachmentLimits(): AttachmentLimits {
   return {
