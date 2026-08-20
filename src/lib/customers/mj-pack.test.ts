@@ -99,6 +99,8 @@ describe("MJ customer pack content", () => {
   it("keeps MJ branding distinct from Andrei", () => {
     expect(MJ_PACK.branding.productName).toContain("M.J. Biopharm");
     expect(MJ_PACK.branding.logoSrc).toBe("/logo-mj.png");
+    expect(MJ_PACK.branding.logoLayout).toBe("icon");
+    expect(DEMO_PACK.branding.logoLayout).toBe("icon");
     expect(DEMO_PACK.branding.productName).toBe("Andrei");
     expect(fs.existsSync("public/logo-mj.png")).toBe(true);
   });

@@ -14,4 +14,5 @@ export {
   CONVERGENT_PROMPT_VERSION,
   type CustomerPack,
   type CustomerBranding,
+  type LogoLayout,
 } from "./packs";
