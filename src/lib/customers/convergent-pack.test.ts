@@ -47,7 +47,7 @@ describe("Convergent customer pack", () => {
   it("uses convergent DV sections, table headers, and prompt version", () => {
     const def = buildDesignVerificationDefinition(CONVERGENT_PACK);
     expect(def.prompts.promptVersion).toBe(CONVERGENT_PROMPT_VERSION);
-    expect(def.prompts.promptVersion).toBe("convergent-dv-v2");
+    expect(def.prompts.promptVersion).toBe("convergent-dv-v3");
     expect(def.sections.map((s) => s.key)).toEqual([...CONVERGENT_DV_SECTION_KEYS]);
     expect(def.sections.find((s) => s.key === "cover_page")).toBeUndefined();
     expect(CONVERGENT_DV_SECTION_LABELS.purpose).toBe("Purpose");
@@ -75,6 +75,11 @@ describe("Convergent customer pack", () => {
         (c) => c.key === "results.satisfied_by"
       )?.description
     ).toContain("configuration for which P/F was achieved");
+    expect(
+      def.criteriaBySection.purpose?.find(
+        (criterion) => criterion.key === "purpose.objective"
+      )?.label
+    ).toBe("Verification objective is clearly stated");
   });
 
   it("keeps the demo DV 10-section shape", () => {
