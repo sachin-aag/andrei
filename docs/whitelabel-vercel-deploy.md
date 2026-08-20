@@ -98,7 +98,7 @@ MJ `promptVersion` is `mj-sop-dp-qa-008-v1`. Existing evaluations go stale on cu
 | `AUTH_URL` | `https://convergent.andreihealth.com` (must match the public host; do not leave `https://andrei-convergent.vercel.app`) |
 | `GOOGLE_VERTEX_PROJECT` / WIF / `GCS_BUCKET` | Copy from `andrei-demo` (never `ALLOW_TEST_*`) |
 
-Disable Neon **Create a branch for each preview deployment** on this project. Convergent `promptVersion` is `convergent-dv-v2`.
+Disable Neon **Create a branch for each preview deployment** on this project. Convergent `promptVersion` is `convergent-dv-v3`.
 
 ## MJ database cutover
 
