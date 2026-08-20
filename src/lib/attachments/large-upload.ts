@@ -46,7 +46,21 @@ export type UploadTapePhase =
   | "stalled"
   | "checking"
   | "queued"
-  | "reading";
+  | "reading"
+  | "indexing";
+
+/**
+ * `processingProgress` from run-document-ingest is a whole-pipeline percentage,
+ * not a page percentage: page extraction is mapped onto 10–70, pages are
+ * assembled at 80, and chunking plus embedding carry it to 100.
+ *
+ * So it must never be shown next to a page number — at page 270 of 300 the
+ * pipeline reads about 64%, and the two figures contradict each other. Reading
+ * is driven by pages; everything past extraction is its own phase.
+ */
+const EXTRACT_PROGRESS_START = 10;
+const EXTRACT_PROGRESS_END = 70;
+const INDEXING_PROGRESS_START = 80;
 
 /** Live transfer state, present only in the tab that is doing the upload. */
 export type UploadTransferState = {
@@ -225,6 +239,26 @@ function describeReading(input: UploadTapeInput): UploadTapeView {
     input.pageCount !== null && input.pageCount > 0 ? input.pageCount : null;
   const cellCount = readingCellCount(pageCount);
 
+  // Every page has been read; what is left is chunking and embedding, which has
+  // no page to point at. `processingPage` still holds the last page it saw, so
+  // without this the row would sit on "Reading page 300 of 300" for the last
+  // stretch of the run.
+  if (input.processingProgress >= INDEXING_PROGRESS_START) {
+    return {
+      phase: "indexing",
+      line: "Making it searchable",
+      figure: "",
+      cellCount,
+      filledCells: cellCount,
+      headCell: null,
+      percent: clampPercent(input.processingProgress),
+      ariaLabel:
+        pageCount !== null
+          ? `All ${pageCount} pages read. Making the document searchable.`
+          : "All pages read. Making the document searchable.",
+    };
+  }
+
   const percent = readingPercent(input, pageCount);
   const filledCells = clamp(Math.round((percent / 100) * cellCount), 0, cellCount);
 
@@ -248,14 +282,19 @@ function describeReading(input: UploadTapeInput): UploadTapeView {
   };
 }
 
+/**
+ * Pages first — it is the only figure that can sit beside "page 270 of 300"
+ * without contradicting it. The pipeline percentage is a fallback for the gap
+ * before the first page number lands, rescaled from its 10–70 extraction band.
+ */
 function readingPercent(input: UploadTapeInput, pageCount: number | null): number {
-  const reported = clampPercent(input.processingProgress);
-  if (reported > 0) return reported;
-  // Page numbers arrive before the percentage does on the first few pages.
   if (pageCount !== null && input.processingPage !== null && input.processingPage > 0) {
     return clampPercent((input.processingPage / pageCount) * 100);
   }
-  return 0;
+  const reported = clampPercent(input.processingProgress);
+  if (reported <= EXTRACT_PROGRESS_START) return 0;
+  const span = EXTRACT_PROGRESS_END - EXTRACT_PROGRESS_START;
+  return clampPercent(((reported - EXTRACT_PROGRESS_START) / span) * 100);
 }
 
 /**

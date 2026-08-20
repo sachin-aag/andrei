@@ -283,7 +283,8 @@ describe("describeUploadTape — holding and reading", () => {
     const view = describeUploadTape(
       input({
         status: "processing",
-        processingProgress: 50,
+        // The pipeline percentage for page 170 of 340: 10 + 0.5 * 60.
+        processingProgress: 40,
         processingPage: 170,
         pageCount: 340,
       })
@@ -293,6 +294,22 @@ describe("describeUploadTape — holding and reading", () => {
     expect(view?.figure).toBe("50%");
     expect(view?.cellCount).toBe(36);
     expect(view?.filledCells).toBe(18);
+  });
+
+  it("agrees with the page number instead of the pipeline percentage", () => {
+    // Page 270 of 300 is 90% of the pages, but only ~64% of the whole run.
+    // Showing 60% next to "page 270 of 300" is the contradiction being fixed.
+    const view = describeUploadTape(
+      input({
+        status: "processing",
+        processingProgress: 64,
+        processingPage: 270,
+        pageCount: 300,
+      })
+    );
+    expect(view?.line).toBe("Reading page 270 of 300");
+    expect(view?.figure).toBe("90%");
+    expect(view?.percent).toBeCloseTo(90);
   });
 
   it("derives progress from the page number before a percentage arrives", () => {
@@ -305,6 +322,41 @@ describe("describeUploadTape — holding and reading", () => {
       })
     );
     expect(view?.percent).toBeCloseTo(10);
+  });
+
+  it("rescales the extraction band before the first page number lands", () => {
+    // Halfway through the 10-70 extraction band is halfway through the pages.
+    const view = describeUploadTape(
+      input({ status: "processing", processingProgress: 40, processingPage: null })
+    );
+    expect(view?.percent).toBeCloseTo(50);
+    expect(view?.line).toBe("Reading the document");
+  });
+
+  it("switches to indexing once every page has been read", () => {
+    const view = describeUploadTape(
+      input({
+        status: "processing",
+        processingProgress: 80,
+        // Still set to the last page seen — the row must not keep counting it.
+        processingPage: 300,
+        pageCount: 300,
+      })
+    );
+    expect(view?.phase).toBe("indexing");
+    expect(view?.line).toBe("Making it searchable");
+    expect(view?.figure).toBe("");
+    expect(view?.filledCells).toBe(view?.cellCount);
+    expect(view?.headCell).toBeNull();
+    expect(view?.ariaLabel).toContain("All 300 pages read");
+  });
+
+  it("stays in indexing through chunking and embedding", () => {
+    expect(
+      describeUploadTape(
+        input({ status: "processing", processingProgress: 90, processingPage: 300, pageCount: 300 })
+      )?.phase
+    ).toBe("indexing");
   });
 
   it("drops the page total when it is not known yet", () => {

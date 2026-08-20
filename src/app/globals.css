@@ -638,9 +638,14 @@ html[data-customer="convergent"] {
   animation: upload-tape-head 2s ease-in-out infinite;
 }
 
-/* Waiting on the server: the tape holds full and breathes instead of advancing. */
+/*
+ * Waiting on the server: the tape holds full and breathes instead of advancing.
+ * `indexing` is the same idea at the other end of the run — every page has been
+ * read, and chunking and embedding have nothing per-page left to count.
+ */
 .upload-tape[data-phase="checking"] .upload-tape__cell[data-state="inked"],
-.upload-tape[data-phase="queued"] .upload-tape__cell[data-state="inked"] {
+.upload-tape[data-phase="queued"] .upload-tape__cell[data-state="inked"],
+.upload-tape[data-phase="indexing"] .upload-tape__cell[data-state="inked"] {
   animation: upload-tape-hold 2.6s ease-in-out infinite;
 }
 
