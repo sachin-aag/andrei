@@ -28,6 +28,9 @@ jobs:
       (github.event.pull_request.head.ref != 'main' &&
        github.event.pull_request.head.ref != 'master')
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
     strategy:
       fail-fast: false
       matrix:
@@ -96,9 +99,10 @@ jobs:
           # JSON array of {name}
           json="$(neonctl branches list --project-id "$PROJECT_ID" --output json)"
           mapfile -t names < <(echo "$json" | jq -r '
-            if type == "array" then .[].name
-            else (.branches // [])[].name
-            end
+            (if type == "array" then . else (.branches // []) end)
+            | .[]
+            | select(.default != true)
+            | .name
           ')
           echo "Prune candidates on $PROJECT_NAME:"
           deleted=0
