@@ -33,7 +33,7 @@ const sections = getWorkspaceSections(report.documentType);
   live under `src/lib/document-types/design-verification/`.
 - Eval cache hash salts with `getDocumentType(type).prompts.promptVersion`
   (`PROMPT_VERSION` for investigation, `dv-checklist-v1` for demo DV,
-  `convergent-dv-v3` for Convergent DV).
+  `convergent-dv-v5` for Convergent DV).
 - Chat editable sections: `chatEditableSections(documentType)` in
   `src/lib/ai/chat/fields.ts`. Do not reuse investigation field maps on DV.
 - Criteria evaluation is per filled section. An empty Purpose / Define /

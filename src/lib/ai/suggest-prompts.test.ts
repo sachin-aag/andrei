@@ -6,7 +6,7 @@ import {
 
 describe("buildSuggestionSystemPrompt", () => {
   it("bumps the suggest prompt version when DV table guidance changes", () => {
-    expect(SUGGEST_PROMPT_VERSION).toBe("suggest-v16-exact-req-ids");
+    expect(SUGGEST_PROMPT_VERSION).toBe("suggest-v17-exact-req-ids");
   });
 
   it("requires fixed matrix headers for traceability suggest fixes", () => {
@@ -37,6 +37,13 @@ describe("buildSuggestionSystemPrompt", () => {
     expect(prompt).toContain("TOP-00017 PCON");
     expect(prompt).toContain("SW-SST-5.1.1");
     expect(prompt).not.toContain("Results and Discussions field split");
+  });
+
+  it("requires testers dates to land in the testers narrative", () => {
+    const prompt = buildSuggestionSystemPrompt("testers_dates");
+    expect(prompt).toContain('targetField MUST be "testers"');
+    expect(prompt).toContain("Do not target startDate or endDate");
+    expect(prompt).toContain('targetField MUST be one of: testers');
   });
 
   it("omits DV matrix guidance for narrative investigation sections", () => {

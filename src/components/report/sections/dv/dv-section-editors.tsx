@@ -3,9 +3,7 @@
 import type { JSONContent } from "@tiptap/core";
 import { SectionShell } from "@/components/report/sections/section-shell";
 import { TiptapSectionField } from "@/components/report/tiptap-section-field";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { useGenericReportSection, useReportData } from "@/providers/report-provider";
+import { useGenericReportSection } from "@/providers/report-provider";
 import { useGenericSectionSave } from "@/hooks/use-generic-section-save";
 import { getCustomerPack } from "@/lib/customers/packs";
 import { CONVERGENT_DV_SECTION_LABELS } from "@/lib/document-types/convergent/sections";
@@ -248,25 +246,20 @@ export function DvScopeEditor() {
 
 type TestersDatesContent = {
   testers: JSONContent;
-  startDate: string;
-  endDate: string;
 };
 
 export function DvTestersDatesEditor() {
-  const { readOnly } = useReportData();
   const { update } = useGenericReportSection<TestersDatesContent>("testers_dates");
   const { status, lastSavedAt, value, flushSave } =
     useGenericSectionSave("testers_dates");
   const content = (value as TestersDatesContent | undefined) ?? {
     testers: { type: "doc", content: [{ type: "paragraph" }] },
-    startDate: "",
-    endDate: "",
   };
 
   return (
     <SectionShell
       title="Testers & Dates"
-      description="Name the testers and record start and end (or execution) dates."
+      description="Name the testers and write start and end (or execution) dates in the same narrative."
       status={status}
       lastSavedAt={lastSavedAt}
       section="testers_dates"
@@ -274,39 +267,13 @@ export function DvTestersDatesEditor() {
       <TiptapSectionField
         section="testers_dates"
         contentPath="testers"
-        label="Testers"
-        placeholder="Name testers and note role, qualification, or independence when relevant…"
+        label="Testers & dates"
+        placeholder="Name testers (role, qualification, or independence when relevant) and write the test start and end dates or execution date range…"
         className="grid gap-2"
         value={content.testers}
         onChange={(doc) => update((p) => ({ ...p, testers: doc }))}
         onFlushSave={flushSave}
       />
-      <div className="grid gap-4 sm:grid-cols-2">
-        <div className="grid gap-1.5">
-          <Label htmlFor="dv-testers-start">Start date</Label>
-          <Input
-            id="dv-testers-start"
-            type="date"
-            value={content.startDate}
-            disabled={readOnly}
-            onChange={(e) =>
-              update((p) => ({ ...p, startDate: e.target.value }))
-            }
-            onBlur={() => void flushSave()}
-          />
-        </div>
-        <div className="grid gap-1.5">
-          <Label htmlFor="dv-testers-end">End date</Label>
-          <Input
-            id="dv-testers-end"
-            type="date"
-            value={content.endDate}
-            disabled={readOnly}
-            onChange={(e) => update((p) => ({ ...p, endDate: e.target.value }))}
-            onBlur={() => void flushSave()}
-          />
-        </div>
-      </div>
     </SectionShell>
   );
 }
