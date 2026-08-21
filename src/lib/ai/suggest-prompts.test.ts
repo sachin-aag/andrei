@@ -6,7 +6,7 @@ import {
 
 describe("buildSuggestionSystemPrompt", () => {
   it("bumps the suggest prompt version when DV table guidance changes", () => {
-    expect(SUGGEST_PROMPT_VERSION).toBe("suggest-v14-convergent-results-config");
+    expect(SUGGEST_PROMPT_VERSION).toBe("suggest-v15-convergent-results-config");
   });
 
   it("requires fixed matrix headers for traceability suggest fixes", () => {

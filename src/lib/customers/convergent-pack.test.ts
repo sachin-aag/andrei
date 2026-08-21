@@ -47,7 +47,7 @@ describe("Convergent customer pack", () => {
   it("uses convergent DV sections, table headers, and prompt version", () => {
     const def = buildDesignVerificationDefinition(CONVERGENT_PACK);
     expect(def.prompts.promptVersion).toBe(CONVERGENT_PROMPT_VERSION);
-    expect(def.prompts.promptVersion).toBe("convergent-dv-v3");
+    expect(def.prompts.promptVersion).toBe("convergent-dv-v4");
     expect(def.sections.map((s) => s.key)).toEqual([...CONVERGENT_DV_SECTION_KEYS]);
     expect(def.sections.find((s) => s.key === "cover_page")).toBeUndefined();
     expect(CONVERGENT_DV_SECTION_LABELS.purpose).toBe("Purpose");

@@ -385,7 +385,26 @@ You never write to the document directly. Every change is a PROPOSAL that appear
       surface: "chat",
       sections: CONVERGENT_DV_TABLE_SECTIONS,
       labels: CONVERGENT_DV_SECTION_LABELS,
-    }),
+    }) + `
+
+## Section-Specific Drafting Instructions
+
+When drafting the **Test Equipment** section:
+- Include a one-line summary before the table starting exactly with: "The table below lists all...."
+- Follow it with the equipment table.
+
+When drafting the **Deviations** section:
+- Include a heading like "1.1. [name of report] Revision and number of Report".
+- Include a summary statement similar to: "There were [number] deviations encountered throughout the partial execution of the test protocol, [protocol number] Rev. [revision]. All approved deviation forms are attached in Appendix B of this report, following all completed datasheets for both executions."
+
+When drafting the **Results and Discussions** section, structure it exactly as follows:
+- "Testing per [report name and revision]"
+- "Data Collection Forms:"
+- "All completed data collection forms are attached in Appendix A of this report."
+- "Requirements Verified:"
+- The results matrix table (Req ID, Req Description, Satisfied By, P/F).
+- "Observations:"
+- A 1-line statement indicating if any observations were made outside the scope of protocol.`,
     draftOrder: [
       "purpose",
       "scope",
