@@ -10,7 +10,7 @@ import { getDocumentType } from "@/lib/document-types";
 import type { RetrievalPolicy } from "@/lib/ai/chat/retrieval-policy";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v25-flash-lite";
+export const CHAT_PROMPT_VERSION = "chat-v26-ask-mode";
 
 export type ChatMode = "plan" | "agent";
 
@@ -58,7 +58,7 @@ The engineer has not narrowed scope. You may plan or draft across any editable s
     : "draft_field / propose_edit";
   return `## Section focus: ${label} [${scope}]
 The engineer selected **${label}** for this conversation. Focus Plan questions and Agent edits on this section only.
-- Plan mode: ask what is needed to complete ${label}; do not plan other sections unless they change the section dropdown.
+- Ask mode: ask what is needed to complete ${label}; do not plan other sections unless they change the section dropdown.
 - Agent mode: only call ${editTools} on section "${scope}". Prefer read_section on "${scope}" too.${priorReadNote}
 - If the request clearly belongs elsewhere, call suggest_section_scope before answering substantively — do not edit other sections.`;
 }
@@ -150,7 +150,7 @@ function planRules(policy: RetrievalPolicy): string {
     }
   }
   return `## Mode: PLAN (gather information — do NOT edit the document)
-You are in Plan mode. You CANNOT edit the document in this mode; the edit tools are disabled. Your goal is to gather just enough information to draft a strong first version later.
+You are in Ask mode. You CANNOT edit the document in this mode; the edit tools are disabled. Your goal is to gather just enough information to draft a strong first version later.
 
 Do this:
 ${firstStep}
@@ -233,7 +233,7 @@ const ANALYZE_METHOD_HEURISTICS = `Method selection heuristics (exactly ONE of 6
 const ANALYZE_PLAN_RULES = `## Analyze planning rules (required when planning Analyze)
 ${ANALYZE_METHOD_HEURISTICS}
 
-In Plan mode you MUST:
+In Ask mode you MUST:
 1. Read define and measure (unless the engineer already named a method or the context map already shows one).
 2. State your recommended method and a one-sentence rationale in prose BEFORE asking more questions.
 3. Then ask_user only for facts still missing for that chosen method plus the always-required fields (investigation outcome, root cause, impact across the six areas). Do not ask 6M-grid questions if you recommended 5-Why, and vice versa.

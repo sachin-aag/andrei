@@ -20,7 +20,10 @@ import {
   Plus,
   History,
   ClipboardList,
+  MessageCircleQuestionMark,
   Wrench,
+  Zap,
+  Telescope,
   Check,
   ArrowRightLeft,
   ImagePlus,
@@ -55,6 +58,7 @@ import {
   sectionLabel as chatSectionLabel,
   type ChatSectionScope,
 } from "@/lib/ai/chat/fields";
+import { DEFAULT_CHAT_PACE, type ChatPace } from "@/lib/ai/chat/pace";
 import {
   CHAT_IMAGE_MAX_BYTES,
   CHAT_MAX_IMAGES_PER_MESSAGE,
@@ -647,56 +651,109 @@ function SectionScopeSelect({
   );
 }
 
-function ModeToggle({
-  mode,
+type ComposerOption<T extends string> = {
+  value: T;
+  label: string;
+  description: string;
+  icon: typeof Wrench;
+  disabled?: boolean;
+};
+
+/**
+ * Wire values are unchanged — `plan` is labelled "Ask" because that is what it
+ * does from the engineer's side.
+ */
+const CHAT_MODE_OPTIONS: readonly ComposerOption<ChatMode>[] = [
+  {
+    value: "plan",
+    label: "Ask",
+    description: "Answers questions about the report. Never edits the document.",
+    icon: MessageCircleQuestionMark,
+  },
+  {
+    value: "agent",
+    label: "Agent",
+    description: "Drafts and proposes edits you accept or reject.",
+    icon: Wrench,
+  },
+];
+
+/**
+ * Pace, never a model name. The description is the only explanation a user
+ * gets, so it says what changes for them — not what runs underneath.
+ */
+const CHAT_PACE_OPTIONS: readonly ComposerOption<ChatPace>[] = [
+  {
+    value: "quick",
+    label: "Quick",
+    description:
+      "Fast answers with lighter reasoning. Handles most questions, lookups, and short edits.",
+    icon: Zap,
+  },
+  {
+    value: "deep",
+    label: "Deep",
+    description:
+      "Digs through your documents and reasons further before answering. Slower.",
+    icon: Telescope,
+  },
+];
+
+/**
+ * Select for the composer control strip. Two-line items carry the explanation,
+ * so the closed trigger stays down to an icon and one word in a narrow panel.
+ */
+function ComposerSelect<T extends string>({
+  value,
+  options,
   onChange,
   disabled,
-  agentDisabled,
-  agentDisabledTitle,
+  ariaLabel,
+  className,
 }: {
-  mode: ChatMode;
-  onChange: (mode: ChatMode) => void;
+  value: T;
+  options: readonly ComposerOption<T>[];
+  onChange: (value: T) => void;
   disabled?: boolean;
-  agentDisabled?: boolean;
-  agentDisabledTitle?: string;
+  ariaLabel: string;
+  className?: string;
 }) {
-  const options: { value: ChatMode; label: string; icon: typeof ClipboardList }[] = [
-    { value: "plan", label: "Plan", icon: ClipboardList },
-    { value: "agent", label: "Agent", icon: Wrench },
-  ];
+  const active = options.find((option) => option.value === value) ?? options[0];
+  const ActiveIcon = active.icon;
   return (
-    <div className="inline-flex rounded-md border border-[var(--border)] bg-[var(--secondary)]/30 p-0.5">
-      {options.map((opt) => {
-        const Icon = opt.icon;
-        const active = mode === opt.value;
-        const optionDisabled =
-          disabled || (opt.value === "agent" && !!agentDisabled);
-        return (
-          <button
-            key={opt.value}
-            type="button"
-            disabled={optionDisabled}
-            onClick={() => onChange(opt.value)}
-            className={cn(
-              "flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium transition-colors disabled:opacity-50",
-              active
-                ? "bg-[var(--card)] text-[var(--foreground)] shadow-sm"
-                : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-            )}
-            title={
-              opt.value === "agent" && agentDisabled
-                ? agentDisabledTitle
-                : opt.value === "plan"
-                  ? "Plan: ask questions and plan the draft (no document edits)"
-                  : "Agent: draft and propose edits you accept or reject"
-            }
+    <Select
+      value={value}
+      onValueChange={(next) => onChange(next as T)}
+      disabled={disabled}
+    >
+      <SelectTrigger
+        className={cn(
+          "h-7 border-[var(--border)] bg-[var(--secondary)]/30 px-2 text-[11px] font-medium",
+          className
+        )}
+        aria-label={ariaLabel}
+        title={active.description}
+      >
+        {/* A div, not a span: the trigger line-clamps direct span children,
+            which would override the flex layout. */}
+        <div className="flex min-w-0 items-center gap-1.5">
+          <ActiveIcon className="size-3.5 shrink-0" />
+          <SelectValue />
+        </div>
+      </SelectTrigger>
+      <SelectContent className="max-w-[17rem]">
+        {options.map((option) => (
+          <SelectItem
+            key={option.value}
+            value={option.value}
+            disabled={option.disabled}
+            description={option.description}
           >
-            <Icon className="size-3.5" />
-            {opt.label}
-          </button>
-        );
-      })}
-    </div>
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
 
@@ -710,6 +767,21 @@ export function ChatPanel() {
     role != null
       ? aiSuggestionLockReason({ id: currentUserId, role }, report)
       : "You can't propose edits on this report right now.";
+  // When Agent is unavailable the item still lists, disabled, with the lock
+  // reason standing in for its description — a missing option explains nothing.
+  const modeOptions = useMemo(
+    () =>
+      CHAT_MODE_OPTIONS.map((option) =>
+        option.value === "agent" && !canProposeAiEdits
+          ? {
+              ...option,
+              disabled: true,
+              description: editLockReason ?? option.description,
+            }
+          : option
+      ),
+    [canProposeAiEdits, editLockReason]
+  );
   const { attachments } = useReportAttachments();
   const [input, setInput] = useState("");
   const [mentions, setMentions] = useState<MentionCandidate[]>([]);
@@ -718,6 +790,7 @@ export function ChatPanel() {
   const [pendingImages, setPendingImages] = useState<PendingChatImage[]>([]);
   const [attaching, setAttaching] = useState(false);
   const [mode, setMode] = useState<ChatMode>("agent");
+  const [pace, setPace] = useState<ChatPace>(DEFAULT_CHAT_PACE);
   const [sectionScope, setSectionScope] = useState<ChatSectionScope>(CHAT_SECTION_SCOPE_ALL);
   const [clientScopeSuggestion, setClientScopeSuggestion] =
     useState<SectionScopeMismatch | null>(null);
@@ -818,12 +891,15 @@ export function ChatPanel() {
     element.setSelectionRange(caret, caret);
   }, [input]);
 
-  // Agent proposes edits — fall back to Plan when the report isn't writable.
+  // Agent proposes edits — fall back to Ask when the report isn't writable.
+  // Wait for `role`: until the user directory resolves, `canProposeAiEdits` is
+  // false for everyone, and firing early would knock every session off the
+  // Agent default with no way back.
   useEffect(() => {
-    if (!canProposeAiEdits && mode === "agent") {
+    if (role != null && !canProposeAiEdits && mode === "agent") {
       setMode("plan");
     }
-  }, [canProposeAiEdits, mode]);
+  }, [role, canProposeAiEdits, mode]);
 
   const updateMentionQuery = useCallback((value: string, caret: number) => {
     setMentionRange(findMentionQuery(value, caret));
@@ -1120,7 +1196,12 @@ export function ChatPanel() {
       } else {
         setClientScopeSuggestion(null);
       }
-      const body: Record<string, unknown> = { sessionId, mode, sectionScope };
+      const body: Record<string, unknown> = {
+        sessionId,
+        mode,
+        pace,
+        sectionScope,
+      };
       if (tagsForRequest.length > 0) {
         body.mentions = tagsForRequest.map((mention) => ({
           type: mention.type,
@@ -1143,6 +1224,7 @@ export function ChatPanel() {
       createSession,
       sendMessage,
       mode,
+      pace,
       sectionScope,
       pendingImages,
       mentions,
@@ -1232,8 +1314,8 @@ export function ChatPanel() {
             <p className="text-sm text-[var(--muted-foreground)]">
               {mode === "plan"
                 ? sectionScope === CHAT_SECTION_SCOPE_ALL
-                  ? "I'll ask focused questions to plan a strong deviation investigation draft. I won't edit the document in Plan mode."
-                  : `Focused on ${scopeDescription(sectionScope)} — I'll ask what we need to complete that section. I won't edit the document in Plan mode.`
+                  ? "I'll ask focused questions to plan a strong deviation investigation draft. I won't edit the document in Ask mode."
+                  : `Focused on ${scopeDescription(sectionScope)} — I'll ask what we need to complete that section. I won't edit the document in Ask mode.`
                 : sectionScope === CHAT_SECTION_SCOPE_ALL
                   ? "Ask me to draft or improve any section of your deviation investigation. I read the report and propose targeted edits you accept or reject."
                   : `Focused on ${scopeDescription(sectionScope)} — ask me to draft or improve that section. I'll propose targeted edits you accept or reject.`}
@@ -1294,13 +1376,22 @@ export function ChatPanel() {
           />
         )}
         <div className="mb-2 flex items-center gap-1.5">
-          <div className="flex min-w-0 items-center gap-1.5">
-            <ModeToggle
-              mode={mode}
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+            <ComposerSelect
+              value={mode}
+              options={modeOptions}
               onChange={setMode}
               disabled={busy}
-              agentDisabled={!canProposeAiEdits}
-              agentDisabledTitle={editLockReason ?? undefined}
+              ariaLabel="Assistant mode"
+              className="w-[6rem]"
+            />
+            <ComposerSelect
+              value={pace}
+              options={CHAT_PACE_OPTIONS}
+              onChange={setPace}
+              disabled={busy}
+              ariaLabel="Answer depth"
+              className="w-[6rem]"
             />
             <SectionScopeSelect
               value={sectionScope}
@@ -1314,7 +1405,7 @@ export function ChatPanel() {
           <p className="mb-2 text-[11px] text-[var(--muted-foreground)]">
             {editLockReason ??
               "You can't propose edits on this report right now."}{" "}
-            Plan mode can still discuss the report.
+            Ask mode can still discuss the report.
           </p>
         ) : readOnly && mode === "agent" ? (
           <p className="mb-2 text-[11px] text-[var(--muted-foreground)]">
