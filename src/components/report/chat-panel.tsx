@@ -645,7 +645,8 @@ function SectionScopeSelect({
       >
         <SelectValue placeholder="Section" />
       </SelectTrigger>
-      <SelectContent className="text-[11px]">
+      {/* Opens upward: the control strip sits at the bottom of the panel. */}
+      <SelectContent side="top" sideOffset={6} className="text-[11px]">
         <SelectItem className="text-[11px]" value={CHAT_SECTION_SCOPE_ALL}>
           All sections
         </SelectItem>
@@ -750,7 +751,8 @@ function ComposerSelect<T extends string>({
           <SelectValue />
         </div>
       </SelectTrigger>
-      <SelectContent className="text-[11px]">
+      {/* Opens upward: the control strip sits at the bottom of the panel. */}
+      <SelectContent side="top" sideOffset={6} className="text-[11px]">
         <TooltipProvider delayDuration={150}>
           {options.map((option) => (
             <Tooltip key={option.value}>
