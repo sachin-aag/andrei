@@ -702,8 +702,9 @@ const CHAT_PACE_OPTIONS: readonly ComposerOption<ChatPace>[] = [
 ];
 
 /**
- * Select for the composer control strip. Two-line items carry the explanation,
- * so the closed trigger stays down to an icon and one word in a narrow panel.
+ * Select for the composer control strip. Explanations live on hover so the
+ * open menu stays as wide as the label — the closed trigger is an icon and
+ * one word.
  */
 function ComposerSelect<T extends string>({
   value,
@@ -743,7 +744,7 @@ function ComposerSelect<T extends string>({
           <SelectValue />
         </div>
       </SelectTrigger>
-      <SelectContent className="max-w-[17rem] text-[11px]">
+      <SelectContent className="overflow-visible text-[11px]">
         {options.map((option) => (
           <SelectItem
             key={option.value}

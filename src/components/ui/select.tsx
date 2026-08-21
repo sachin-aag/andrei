@@ -93,9 +93,8 @@ const SelectItem = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Item>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item> & {
     /**
-     * Second line explaining the option. Rendered outside `ItemText` on
-     * purpose — the trigger mirrors `ItemText` only, so the closed control
-     * keeps showing just the label.
+     * Hover explanation. Kept out of `ItemText` so the closed trigger still
+     * shows only the label, and out of flow so it does not widen the menu.
      */
     description?: React.ReactNode;
   }
@@ -103,8 +102,8 @@ const SelectItem = React.forwardRef<
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
-      "group relative flex w-full cursor-pointer select-none rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none focus:bg-[var(--accent)] focus:text-[var(--accent-foreground)] data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
-      description ? "items-start" : "items-center",
+      "group relative flex w-full cursor-pointer select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none focus:bg-[var(--accent)] focus:text-[var(--accent-foreground)] data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+      description && "data-[disabled]:pointer-events-auto data-[disabled]:opacity-100",
       className
     )}
     {...props}
@@ -112,23 +111,24 @@ const SelectItem = React.forwardRef<
     <span
       className={cn(
         "absolute left-2 flex h-3.5 w-3.5 items-center justify-center",
-        description && "top-2"
+        description && "group-data-[disabled]:opacity-50"
       )}
     >
       <SelectPrimitive.ItemIndicator>
         <Check className="h-4 w-4" />
       </SelectPrimitive.ItemIndicator>
     </span>
-    {description ? (
-      <span className="flex flex-col gap-0.5">
-        <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
-        <span className="text-[10px] leading-snug text-[var(--muted-foreground)] group-focus:text-[var(--accent-foreground)] group-focus:opacity-80">
-          {description}
-        </span>
-      </span>
-    ) : (
+    <span className={cn(description && "group-data-[disabled]:opacity-50")}>
       <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
-    )}
+    </span>
+    {description ? (
+      <span
+        role="tooltip"
+        className="pointer-events-none invisible absolute right-full top-1/2 z-[60] mr-1.5 w-max max-w-[14rem] -translate-y-1/2 rounded-md border border-[var(--border)] bg-[var(--popover)] px-2 py-1.5 text-left text-[10px] font-normal leading-snug text-[var(--muted-foreground)] opacity-0 shadow-md group-hover:visible group-hover:opacity-100"
+      >
+        {description}
+      </span>
+    ) : null}
   </SelectPrimitive.Item>
 ));
 SelectItem.displayName = SelectPrimitive.Item.displayName;
