@@ -1,6 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useChat } from "@ai-sdk/react";
 import {
   DefaultChatTransport,
@@ -709,6 +716,53 @@ const CHAT_PACE_OPTIONS: readonly ComposerOption<ChatPace>[] = [
 ];
 
 /**
+ * Radix Tooltip also opens on focus. Opening a Select focuses the current
+ * option, which would flash its description immediately. Gate on pointer
+ * hover so the text only appears when the mouse is over that row.
+ */
+function HoverOnlyTooltip({
+  content,
+  children,
+}: {
+  content: ReactNode;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const hoverIntentRef = useRef(false);
+
+  return (
+    <Tooltip
+      open={open}
+      onOpenChange={(next) => {
+        if (next) {
+          if (hoverIntentRef.current) setOpen(true);
+          return;
+        }
+        hoverIntentRef.current = false;
+        setOpen(false);
+      }}
+    >
+      <TooltipTrigger asChild>
+        <span
+          className="block"
+          onPointerEnter={() => {
+            hoverIntentRef.current = true;
+          }}
+          onPointerLeave={() => {
+            hoverIntentRef.current = false;
+          }}
+        >
+          {children}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="left" align="center" collisionPadding={8}>
+        {content}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+/**
  * Select for the composer control strip. Explanations live on hover so the
  * open menu stays as wide as the label — the closed trigger is an icon and
  * one word.
@@ -755,25 +809,18 @@ function ComposerSelect<T extends string>({
       <SelectContent side="top" sideOffset={6} className="text-[11px]">
         <TooltipProvider delayDuration={150}>
           {options.map((option) => (
-            <Tooltip key={option.value}>
-              {/* The span, not the item, is the hover target: a disabled
+            <HoverOnlyTooltip key={option.value} content={option.description}>
+              {/* The wrapper, not the item, is the hover target: a disabled
                   option has pointer events off, and its lock reason is the
                   one description a user most needs to read. */}
-              <TooltipTrigger asChild>
-                <span className="block">
-                  <SelectItem
-                    value={option.value}
-                    disabled={option.disabled}
-                    className="text-[11px]"
-                  >
-                    {option.label}
-                  </SelectItem>
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="left" align="center" collisionPadding={8}>
-                {option.description}
-              </TooltipContent>
-            </Tooltip>
+              <SelectItem
+                value={option.value}
+                disabled={option.disabled}
+                className="text-[11px]"
+              >
+                {option.label}
+              </SelectItem>
+            </HoverOnlyTooltip>
           ))}
         </TooltipProvider>
       </SelectContent>
