@@ -212,4 +212,34 @@ describe("suggestion vs eval section context isolation", () => {
     expect(prompt).toContain("[0] First point");
     expect(prompt).toContain("[1] Second point");
   });
+
+  it("serializes testers_dates as testers narrative only", () => {
+    const testers = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "Alex Rivera. Protocol execution: 19 February 2024 through 27 February 2024.",
+            },
+          ],
+        },
+      ],
+    } satisfies JSONContent;
+    const content = {
+      testers,
+      startDate: "2024-02-19",
+      endDate: "2024-02-27",
+    };
+    const evalPrompt = contextForPrompt("testers_dates", content);
+    const suggestPrompt = contextForSuggestionPrompt("testers_dates", content);
+    expect(evalPrompt).toContain("Alex Rivera");
+    expect(evalPrompt).not.toMatch(/^Start date:/m);
+    expect(evalPrompt).not.toMatch(/^End date:/m);
+    expect(suggestPrompt).toContain("Alex Rivera");
+    expect(suggestPrompt).not.toMatch(/^Start date:/m);
+    expect(suggestPrompt).not.toMatch(/^End date:/m);
+  });
 });

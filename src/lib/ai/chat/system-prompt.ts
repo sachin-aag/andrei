@@ -10,7 +10,7 @@ import { getDocumentType } from "@/lib/document-types";
 import type { RetrievalPolicy } from "@/lib/ai/chat/retrieval-policy";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v28-ask-mode";
+export const CHAT_PROMPT_VERSION = "chat-v29-testers-dates-narrative";
 
 export type ChatMode = "plan" | "agent";
 

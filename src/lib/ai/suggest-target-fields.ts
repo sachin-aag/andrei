@@ -38,7 +38,7 @@ export const SUGGEST_TARGET_FIELD_PATTERNS: Record<string, readonly string[]> = 
   cover_page: [],
   purpose: ["narrative"],
   scope: ["narrative"],
-  testers_dates: ["testers", "startDate", "endDate"],
+  testers_dates: ["testers"],
   methods_of_measurement: ["narrative"],
   test_equipment: ["table"],
   results_and_discussions: ["narrative", "table"],

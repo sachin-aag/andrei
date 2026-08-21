@@ -6,7 +6,7 @@ import {
 
 describe("buildSuggestionSystemPrompt", () => {
   it("bumps the suggest prompt version when DV table guidance changes", () => {
-    expect(SUGGEST_PROMPT_VERSION).toBe("suggest-v15-convergent-results-config");
+    expect(SUGGEST_PROMPT_VERSION).toBe("suggest-v16-testers-dates-in-narrative");
   });
 
   it("requires fixed matrix headers for traceability suggest fixes", () => {
@@ -35,6 +35,13 @@ describe("buildSuggestionSystemPrompt", () => {
     expect(prompt).toContain("Satisfied By");
     expect(prompt).toContain("configuration for which that P/F was achieved");
     expect(prompt).toContain("TOP-00017 PCON");
+  });
+
+  it("requires testers dates to land in the testers narrative", () => {
+    const prompt = buildSuggestionSystemPrompt("testers_dates");
+    expect(prompt).toContain('targetField MUST be "testers"');
+    expect(prompt).toContain("Do not target startDate or endDate");
+    expect(prompt).toContain('targetField MUST be one of: testers');
   });
 
   it("omits DV matrix guidance for narrative investigation sections", () => {

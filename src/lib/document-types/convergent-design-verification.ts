@@ -4,7 +4,11 @@ import {
   SUGGEST_TARGET_FIELD_PATTERNS,
 } from "@/lib/ai/suggest-target-fields";
 import { CONVERGENT_PROMPT_VERSION } from "@/lib/customers/packs";
-import { normalizeRichField } from "@/lib/tiptap/rich-text";
+import {
+  appendParagraphsToDoc,
+  normalizeRichField,
+  richJsonToPlainText,
+} from "@/lib/tiptap/rich-text";
 import {
   CONVERGENT_DV_TABLE_SECTIONS,
   dvFixedTableFormatGuidance,
@@ -101,7 +105,7 @@ const TESTERS_CRITERIA: CriterionDefinition[] = [
   llm(
     "testers.dates",
     "Test start and end dates, or execution dates, are included",
-    "Are test start and end dates, or a clear execution date range, present?"
+    "Are test start and end dates, or a clear execution date range, written in the Testers narrative?"
   ),
   llm(
     "testers.independence",
@@ -284,14 +288,48 @@ function mergeEquipment(raw: unknown): { table: ReturnType<typeof normalizeRichF
   return { table: normalizeRichField(o.table ?? base.table) };
 }
 
+function leftoverTestersDateLine(
+  startDate: unknown,
+  endDate: unknown
+): string {
+  const start = typeof startDate === "string" ? startDate.trim() : "";
+  const end = typeof endDate === "string" ? endDate.trim() : "";
+  if (!start && !end) return "";
+  if (start && end) return `Test dates: ${start} through ${end}.`;
+  if (start) return `Start date: ${start}.`;
+  return `End date: ${end}.`;
+}
+
+/** Fold legacy startDate/endDate fields into the testers narrative once. */
+export function foldLeftoverTestersDates(
+  testers: ReturnType<typeof normalizeRichField>,
+  startDate: unknown,
+  endDate: unknown
+): ReturnType<typeof normalizeRichField> {
+  const line = leftoverTestersDateLine(startDate, endDate);
+  if (!line) return testers;
+  const existing = richJsonToPlainText(testers);
+  const start = typeof startDate === "string" ? startDate.trim() : "";
+  const end = typeof endDate === "string" ? endDate.trim() : "";
+  if (
+    existing.includes(line) ||
+    (start && existing.includes(start) && (!end || existing.includes(end)))
+  ) {
+    return testers;
+  }
+  return appendParagraphsToDoc(testers, line);
+}
+
 function mergeTestersDates(raw: unknown) {
   const base = EMPTY_CONVERGENT_DV_CONTENT.testers_dates;
-  if (!raw || typeof raw !== "object") return { ...base };
+  if (!raw || typeof raw !== "object") return { testers: base.testers };
   const o = raw as { testers?: unknown; startDate?: unknown; endDate?: unknown };
   return {
-    testers: normalizeRichField(o.testers ?? base.testers),
-    startDate: typeof o.startDate === "string" ? o.startDate : "",
-    endDate: typeof o.endDate === "string" ? o.endDate : "",
+    testers: foldLeftoverTestersDates(
+      normalizeRichField(o.testers ?? base.testers),
+      o.startDate,
+      o.endDate
+    ),
   };
 }
 
@@ -357,7 +395,7 @@ export const convergentDesignVerificationDefinition: DocumentTypeDefinition = {
       scope:
         "SECTION ROLE - SCOPE: Judge in-scope boundaries, exclusions, and alignment with Purpose.",
       testers_dates:
-        "SECTION ROLE - TESTERS & DATES: Judge named testers, execution dates, and independence/qualification.",
+        "SECTION ROLE - TESTERS & DATES: Judge named testers, execution dates written in the testers narrative, and independence/qualification. Dates belong in that narrative — there are no separate start/end date fields.",
       methods_of_measurement:
         "SECTION ROLE - METHODS OF MEASUREMENT: Judge method descriptions, predefined acceptance criteria, environment/configuration, and data recording.",
       test_equipment:
@@ -388,6 +426,10 @@ You never write to the document directly. Every change is a PROPOSAL that appear
     }) + `
 
 ## Section-Specific Drafting Instructions
+
+When drafting the **Testers & Dates** section:
+- Write tester names AND the test start/end or execution date range in the testers narrative. There are no separate start/end date fields — put dates in the same text as the testers.
+- targetField MUST be "testers".
 
 When drafting the **Test Equipment** section:
 - Include a one-line summary before the table starting exactly with: "The table below lists all...."
@@ -487,7 +529,7 @@ When drafting the **Results and Discussions** section, structure it exactly as f
         return content?.narrative ?? null;
       };
       const testers = byKey.testers_dates as
-        | { testers?: unknown; startDate?: string; endDate?: string }
+        | { testers?: unknown }
         | undefined;
       const results = byKey.results_and_discussions as
         | { narrative?: unknown; table?: unknown }
@@ -501,8 +543,6 @@ When drafting the **Results and Discussions** section, structure it exactly as f
         documentNo: report.documentNo,
         productName: meta.productName ?? "",
         revision: meta.revision ?? "",
-        testersStartDate: testers?.startDate ?? "",
-        testersEndDate: testers?.endDate ?? "",
         purposeXml: narrative("purpose"),
         scopeXml: narrative("scope"),
         testersXml: testers?.testers ?? null,
