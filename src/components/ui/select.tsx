@@ -74,11 +74,14 @@ const SelectContent = React.forwardRef<
       {...props}
     >
       <SelectScrollUpButton />
+      {/* No fixed height for popper: pinning the viewport to the trigger
+          height makes even a two-item list scrollable, which renders the
+          scroll chevrons. */}
       <SelectPrimitive.Viewport
         className={cn(
           "p-1",
           position === "popper" &&
-            "h-[var(--radix-select-trigger-height)] w-full min-w-[var(--radix-select-trigger-width)]"
+            "w-full min-w-[var(--radix-select-trigger-width)]"
         )}
       >
         {children}
@@ -91,44 +94,22 @@ SelectContent.displayName = SelectPrimitive.Content.displayName;
 
 const SelectItem = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Item>,
-  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item> & {
-    /**
-     * Hover explanation. Kept out of `ItemText` so the closed trigger still
-     * shows only the label, and out of flow so it does not widen the menu.
-     */
-    description?: React.ReactNode;
-  }
->(({ className, children, description, ...props }, ref) => (
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item>
+>(({ className, children, ...props }, ref) => (
   <SelectPrimitive.Item
     ref={ref}
     className={cn(
-      "group relative flex w-full cursor-pointer select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none focus:bg-[var(--accent)] focus:text-[var(--accent-foreground)] data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
-      description && "data-[disabled]:pointer-events-auto data-[disabled]:opacity-100",
+      "relative flex w-full cursor-pointer select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none focus:bg-[var(--accent)] focus:text-[var(--accent-foreground)] data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
       className
     )}
     {...props}
   >
-    <span
-      className={cn(
-        "absolute left-2 flex h-3.5 w-3.5 items-center justify-center",
-        description && "group-data-[disabled]:opacity-50"
-      )}
-    >
+    <span className="absolute left-2 flex h-3.5 w-3.5 items-center justify-center">
       <SelectPrimitive.ItemIndicator>
         <Check className="h-4 w-4" />
       </SelectPrimitive.ItemIndicator>
     </span>
-    <span className={cn(description && "group-data-[disabled]:opacity-50")}>
-      <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
-    </span>
-    {description ? (
-      <span
-        role="tooltip"
-        className="pointer-events-none invisible absolute right-full top-1/2 z-[60] mr-1.5 w-max max-w-[14rem] -translate-y-1/2 rounded-md border border-[var(--border)] bg-[var(--popover)] px-2 py-1.5 text-left text-[10px] font-normal leading-snug text-[var(--muted-foreground)] opacity-0 shadow-md group-hover:visible group-hover:opacity-100"
-      >
-        {description}
-      </span>
-    ) : null}
+    <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
   </SelectPrimitive.Item>
 ));
 SelectItem.displayName = SelectPrimitive.Item.displayName;

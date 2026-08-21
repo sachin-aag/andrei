@@ -44,6 +44,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useReportData } from "@/providers/report-provider";
 import { useReportAttachments } from "@/providers/report-attachments-provider";
 import { useUserDirectory } from "@/providers/user-directory-provider";
@@ -744,18 +750,30 @@ function ComposerSelect<T extends string>({
           <SelectValue />
         </div>
       </SelectTrigger>
-      <SelectContent className="overflow-visible text-[11px]">
-        {options.map((option) => (
-          <SelectItem
-            key={option.value}
-            value={option.value}
-            disabled={option.disabled}
-            description={option.description}
-            className="text-[11px]"
-          >
-            {option.label}
-          </SelectItem>
-        ))}
+      <SelectContent className="text-[11px]">
+        <TooltipProvider delayDuration={150}>
+          {options.map((option) => (
+            <Tooltip key={option.value}>
+              {/* The span, not the item, is the hover target: a disabled
+                  option has pointer events off, and its lock reason is the
+                  one description a user most needs to read. */}
+              <TooltipTrigger asChild>
+                <span className="block">
+                  <SelectItem
+                    value={option.value}
+                    disabled={option.disabled}
+                    className="text-[11px]"
+                  >
+                    {option.label}
+                  </SelectItem>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="left" align="center" collisionPadding={8}>
+                {option.description}
+              </TooltipContent>
+            </Tooltip>
+          ))}
+        </TooltipProvider>
       </SelectContent>
     </Select>
   );
