@@ -6,7 +6,7 @@ import {
 
 describe("buildSuggestionSystemPrompt", () => {
   it("bumps the suggest prompt version when DV table guidance changes", () => {
-    expect(SUGGEST_PROMPT_VERSION).toBe("suggest-v15-convergent-results-config");
+    expect(SUGGEST_PROMPT_VERSION).toBe("suggest-v16-exact-req-ids");
   });
 
   it("requires fixed matrix headers for traceability suggest fixes", () => {
@@ -35,6 +35,7 @@ describe("buildSuggestionSystemPrompt", () => {
     expect(prompt).toContain("Satisfied By");
     expect(prompt).toContain("configuration for which that P/F was achieved");
     expect(prompt).toContain("TOP-00017 PCON");
+    expect(prompt).toContain("SW-SST-5.1.1");
     expect(prompt).not.toContain("Results and Discussions field split");
   });
 

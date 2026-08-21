@@ -71,6 +71,10 @@ describe("Convergent customer pack", () => {
     expect(def.chat.draftingGuidance).toContain(
       CONVERGENT_RESULTS_FIELD_SPLIT_NOTES
     );
+    expect(def.chat.draftingGuidance).toContain("SW-SST-5.1.1");
+    expect(def.chat.draftingGuidance).toContain(
+      "not every requirement ID mentioned in the protocol body"
+    );
     expect(def.chat.draftingGuidance).toContain(
       "configuration for which that P/F was achieved"
     );

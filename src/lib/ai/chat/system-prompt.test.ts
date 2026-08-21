@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("bumps the prompt version when section inline image guidance changes", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v29-results-field-split");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v30-results-inventory");
   });
 
   it("tells the model never to pass the section key as targetField", () => {
@@ -193,6 +193,9 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("Retrieval mode: COMPREHENSIVE");
     expect(prompt).toContain("start_document_review");
     expect(prompt).toContain("finish_document_review before draft_field");
+    expect(prompt).toContain("recommendedInventory");
+    expect(prompt).toContain("allIdentifiers");
+    expect(prompt).toContain("SW-SST-5.1.1 is not SW-SST-5");
     expect(prompt).not.toContain(
       "MUST call search_documents (or use the evidence preview below) BEFORE ask_user or draft_field"
     );

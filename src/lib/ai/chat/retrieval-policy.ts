@@ -13,7 +13,7 @@ const FOCUSED_OVERRIDE_RE =
   /\b(quick(?:ly)?|high[- ]level|brief overview|just (?:a )?summary|summary only|skim)\b/i;
 
 const COMPREHENSIVE_SHAPE_RE =
-  /\b(traceability(?:\s+matrix)?|requirements?\s*(?:and|&|\/)\s*results?|req(?:uirement)?[- ]?id|results?\s+table|inventory|complete\s+(?:list|table|review|pass)|every\s+(?:requirement|test|page|row)|all\s+(?:the\s+)?(?:requirements?|tests?|pages?|results?|answers)|comprehensive|full\s+(?:review|pass|inventory|table|matrix)|missing\s+tests?|don'?t miss|do not miss)\b/i;
+  /\b(traceability(?:\s+matrix)?|requirements?\s*(?:and|&|\/)\s*results?|results?\s+and\s+discussions|req(?:uirement)?[- ]?id|results?\s+table|inventory|complete\s+(?:list|table|review|pass|set(?:\s+of)?(?:\s+test)?\s+cases?|test\s+cases?)|every\s+(?:requirement|test|page|row)|all\s+(?:the\s+)?(?:requirements?|tests?|pages?|results?|answers)|comprehensive|full\s+(?:review|pass|inventory|table|matrix)|missing\s+tests?|don'?t miss|do not miss)\b/i;
 
 const KEEP_GOING_RE =
   /\b(keep going|continue (?:the )?(?:review|reading|extraction|going)|you missed|still missing|what about|didn'?t (?:include|cover)|more (?:tests?|requirements?)|be comprehensive)\b/i;
@@ -24,7 +24,11 @@ const TEST_FAMILY_RE = /(?<![\w-])(sst|sib|lwb|lcb|sdt)(?!-\d)/i;
 const INVENTORY_ACTION_RE =
   /\b(table|matrix|list|inventory|fill|draft|complete|every|all|missing)\b/i;
 
-const MATRIX_SECTIONS = new Set<string>(["traceability", "test_results"]);
+const MATRIX_SECTIONS = new Set<string>([
+  "traceability",
+  "test_results",
+  "results_and_discussions",
+]);
 
 export type ClassifyRetrievalPolicyInput = {
   userText: string;
@@ -65,7 +69,10 @@ export function classifyRetrievalPolicy(
     return { policy: "focused", reason: "no_documents" };
   }
 
-  if (FOCUSED_OVERRIDE_RE.test(latest)) {
+  const scope = input.sectionScope ?? "all";
+  const inventoryRequest = isInventoryRequest(combined, latest, scope);
+
+  if (FOCUSED_OVERRIDE_RE.test(latest) && !inventoryRequest) {
     return { policy: "focused", reason: "explicit_quick_overview" };
   }
 
@@ -77,7 +84,6 @@ export function classifyRetrievalPolicy(
     return { policy: "comprehensive", reason: "completeness_follow_up" };
   }
 
-  const scope = input.sectionScope ?? "all";
   if (
     typeof scope === "string" &&
     MATRIX_SECTIONS.has(scope) &&
@@ -87,6 +93,20 @@ export function classifyRetrievalPolicy(
   }
 
   return { policy: "adaptive", reason: "agentic_default" };
+}
+
+function isInventoryRequest(
+  combined: string,
+  latest: string,
+  scope: ChatSectionScope | SectionType | "all"
+): boolean {
+  if (COMPREHENSIVE_SHAPE_RE.test(combined)) return true;
+  if (KEEP_GOING_RE.test(latest) || TEST_FAMILY_RE.test(latest)) return true;
+  return (
+    typeof scope === "string" &&
+    MATRIX_SECTIONS.has(scope) &&
+    INVENTORY_ACTION_RE.test(combined)
+  );
 }
 
 function textFromParts(parts: readonly unknown[] | undefined): string {

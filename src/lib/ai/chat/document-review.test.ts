@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { REV_U_REPORT_ONLY_REQ_IDS } from "@/lib/document-types/convergent/rev-u-report-only-req-ids";
 import {
   buildReviewBatches,
   chatStepBudget,
@@ -63,6 +64,19 @@ describe("extractReviewFindingsFromPages", () => {
     expect(findings.map((finding) => finding.configuration).join(" ")).toMatch(
       /2\.0 W/
     );
+  });
+
+  it("preserves dotted requirement IDs and ignores junk tokens", () => {
+    const findings = extractReviewFindingsFromPages([
+      page(
+        4,
+        "REQUIREMENTS VERIFIED\nSW-IN-1.1 SW-SST-5.1.1 Wesley Harrington PCON SW-SST-"
+      ),
+    ]);
+    const ids = findings.flatMap((finding) => finding.identifiers);
+    expect(ids).toEqual(expect.arrayContaining(["SW-IN-1.1", "SW-SST-5.1.1"]));
+    expect(ids).not.toContain("PCON");
+    expect(ids).not.toContain("SW-SST-");
   });
 });
 
@@ -191,6 +205,40 @@ describe("DocumentReviewSession", () => {
     expect(calls).toBe(24);
     expect(maxInflight).toBe(REVIEW_EXTRACT_CONCURRENCY);
   });
+
+  it("recommends the 14-row Requirements Verified inventory, not protocol mentions", async () => {
+    const session = new DocumentReviewSession({
+      extractBatch: async ({ pages }) => extractReviewFindingsFromPages(pages),
+    });
+    const verifiedRows = REV_U_REPORT_ONLY_REQ_IDS.map(
+      (id) => `${id} Upgrade installation method A Pass`
+    ).join("\n");
+    session.start({
+      objective: "results matrix",
+      pages: [
+        page(
+          4,
+          `REQUIREMENTS VERIFIED\nReq ID Req Description Satisfied By P/F\n${verifiedRows}`
+        ),
+        page(
+          31,
+          "TABLE 4 SOFTWARE REQUIREMENTS\nSW-SS-1 SW-AR-3 SW-SST-1 listed in the protocol body"
+        ),
+      ],
+    });
+    while (session.phase() === "in_progress") {
+      await session.continue();
+    }
+    const finished = session.finish();
+    expect(finished.recommendedInventory.ids).toEqual([...REV_U_REPORT_ONLY_REQ_IDS]);
+    expect(finished.recommendedInventory.sourceKind).toBe("verified_table");
+    expect(finished.recommendedInventory.confidence).toBe("high");
+    expect(finished.allIdentifiers).toEqual(
+      expect.arrayContaining([...REV_U_REPORT_ONLY_REQ_IDS, "SW-SS-1", "SW-AR-3"])
+    );
+    expect(finished.allIdentifiers.length).toBeGreaterThan(14);
+    expect(finished.identifiers).toEqual(finished.allIdentifiers);
+  });
 });
 
 describe("prepareDocumentReviewStep", () => {
@@ -241,8 +289,11 @@ describe("prepareDocumentReviewStep", () => {
         policy: "comprehensive",
         phase: "idle",
         availableTools: available,
-      })?.activeTools
-    ).toContain("start_document_review");
+      })
+    ).toEqual({
+      activeTools: ["start_document_review"],
+      toolChoice: { type: "tool", toolName: "start_document_review" },
+    });
     expect(
       prepareDocumentReviewStep({
         policy: "comprehensive",

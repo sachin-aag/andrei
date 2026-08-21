@@ -85,6 +85,31 @@ describe("classifyRetrievalPolicy", () => {
     expect(decision.reason).toBe("agentic_default");
   });
 
+  it("escalates Convergent Results inventory requests", () => {
+    const completeSet = classifyRetrievalPolicy({
+      userText: "populate the results matrix with the complete set of test cases",
+      sectionScope: "results_and_discussions",
+      hasDocuments: true,
+    });
+    expect(completeSet.policy).toBe("comprehensive");
+
+    const scopedTable = classifyRetrievalPolicy({
+      userText: "Fill the table with the requirement rows",
+      sectionScope: "results_and_discussions",
+      hasDocuments: true,
+    });
+    expect(scopedTable.policy).toBe("comprehensive");
+    expect(scopedTable.reason).toBe("matrix_section_inventory");
+  });
+
+  it("does not let a quick-mode override win over inventory language", () => {
+    const decision = classifyRetrievalPolicy({
+      userText: "in quick mode, list every test from Appendix B",
+      hasDocuments: true,
+    });
+    expect(decision.policy).toBe("comprehensive");
+  });
+
   it("keeps equipment and UUT table drafts on the agentic path", () => {
     const equipment = classifyRetrievalPolicy({
       userText:
