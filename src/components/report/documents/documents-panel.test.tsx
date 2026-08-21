@@ -51,32 +51,57 @@ function mockContext(overrides: Record<string, unknown> = {}) {
 }
 
 describe("DocumentsPanel download all", () => {
-  it("disables Download all when no stored documents exist", () => {
+  it("keeps upload in the header and hides Download all when nothing is stored", () => {
     mockContext();
     render(
       <DocumentsPanel collapsed={false} onToggleCollapse={() => undefined} />
     );
 
+    const upload = screen.getByRole("button", {
+      name: /upload pdf or word document/i,
+    });
+    expect(upload.closest("header")).toBeTruthy();
     expect(
-      screen.getByRole("button", { name: /download all documents/i })
-    ).toBeDisabled();
+      screen.queryByRole("link", { name: /^download all$/i })
+    ).not.toBeInTheDocument();
     expect(
-      screen.queryByRole("link", { name: /download all documents/i })
+      screen.queryByRole("button", { name: /^download all$/i })
     ).not.toBeInTheDocument();
   });
 
-  it("links Download all to the zip route once a file is stored", () => {
+  it("places a labeled Download all link in the footer, not next to upload", () => {
     mockContext({ attachments: [storedAttachment()] });
     render(
       <DocumentsPanel collapsed={false} onToggleCollapse={() => undefined} />
     );
 
-    expect(
-      screen.getByRole("link", { name: /download all documents/i })
-    ).toHaveAttribute(
+    const upload = screen.getByRole("button", {
+      name: /upload pdf or word document/i,
+    });
+    const download = screen.getByRole("link", { name: /^download all$/i });
+
+    expect(upload.closest("header")).toBeTruthy();
+    expect(upload.closest("footer")).toBeNull();
+    expect(download).toHaveTextContent(/^Download all$/);
+    expect(download.closest("footer")).toBeTruthy();
+    expect(download.closest("header")).toBeNull();
+    expect(download).toHaveAttribute(
       "href",
       "/api/reports/report-1/attachments/download-all"
     );
+  });
+
+  it("hides Download all while a file is still uploading", () => {
+    mockContext({
+      attachments: [{ ...storedAttachment(), pageCount: null }],
+    });
+    render(
+      <DocumentsPanel collapsed={false} onToggleCollapse={() => undefined} />
+    );
+
+    expect(
+      screen.queryByRole("link", { name: /^download all$/i })
+    ).not.toBeInTheDocument();
   });
 
   it("still offers Download all when the viewer cannot upload", () => {
@@ -89,7 +114,7 @@ describe("DocumentsPanel download all", () => {
     );
 
     expect(
-      screen.getByRole("link", { name: /download all documents/i })
+      screen.getByRole("link", { name: /^download all$/i })
     ).toBeInTheDocument();
     expect(
       screen.queryByRole("button", { name: /upload pdf or word document/i })

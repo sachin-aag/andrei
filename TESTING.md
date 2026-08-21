@@ -237,7 +237,7 @@ Specs run against Chromium, Firefox, and WebKit unless you pass `--project=chrom
 | uploads a PDF, reaches ready, and opens the viewer | Upload → ready row → canvas preview |
 | renders later PDF pages in a scrollable preview | 3-page PDF, page 3 visible |
 | creates a folder and keeps it after reload | New folder persists |
-| download all is disabled until a document is stored | Empty panel control |
+| download all stays hidden until a document is stored | Empty panel has upload, no download |
 | download all zips every stored document | Two PDFs in `Attachments_*.zip` |
 
 </details>

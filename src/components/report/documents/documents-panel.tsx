@@ -123,7 +123,7 @@ function ExpandedDocumentsPanel({
       aria-label="Documents"
       className="flex h-full w-full min-w-0 flex-col border-r border-[var(--border)] bg-[var(--card)]"
     >
-      <div className="flex items-center justify-between gap-1 border-b border-[var(--border)] px-3 py-2">
+      <header className="flex items-center justify-between gap-1 border-b border-[var(--border)] px-3 py-2">
         <h2 className="flex items-center gap-2 text-sm font-semibold text-[var(--foreground)]">
           <Paperclip className="size-4 text-[var(--muted-foreground)]" aria-hidden="true" />
           Documents
@@ -168,29 +168,6 @@ function ExpandedDocumentsPanel({
               />
             </>
           ) : null}
-          {hasDownloadable ? (
-            <Button asChild variant="ghost" size="icon" className="size-7">
-              <a
-                href={attachmentsDownloadAllHref(reportId)}
-                aria-label="Download all documents"
-                title="Download all"
-              >
-                <Download className="size-4" aria-hidden="true" />
-              </a>
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="size-7"
-              disabled
-              aria-label="Download all documents"
-              title="No documents ready to download"
-            >
-              <Download className="size-4" aria-hidden="true" />
-            </Button>
-          )}
           <Button
             type="button"
             variant="ghost"
@@ -204,7 +181,7 @@ function ExpandedDocumentsPanel({
             <PanelLeftClose className="size-4" aria-hidden="true" />
           </Button>
         </div>
-      </div>
+      </header>
 
       <div
         className={cn(
@@ -254,11 +231,34 @@ function ExpandedDocumentsPanel({
         ) : null}
       </div>
 
-      {dragging ? (
-        <p className="border-t border-[var(--border)] px-3 py-1.5 text-[11px] text-[var(--muted-foreground)]">
-          Drop on a folder to move, or here for the top level.
-        </p>
+      {hasDownloadable || dragging ? (
+        <footer className="border-t border-[var(--border)]">
+          {dragging ? (
+            <p className="px-3 py-1.5 text-[11px] text-[var(--muted-foreground)]">
+              Drop on a folder to move, or here for the top level.
+            </p>
+          ) : null}
+          {hasDownloadable ? (
+            <DownloadAllDocumentsLink reportId={reportId} />
+          ) : null}
+        </footer>
       ) : null}
     </aside>
+  );
+}
+
+function DownloadAllDocumentsLink({ reportId }: { reportId: string }) {
+  return (
+    <Button
+      asChild
+      variant="ghost"
+      size="sm"
+      className="h-8 w-full justify-start rounded-none px-3 text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+    >
+      <a href={attachmentsDownloadAllHref(reportId)}>
+        <Download className="size-4" aria-hidden="true" />
+        Download all
+      </a>
+    </Button>
   );
 }
