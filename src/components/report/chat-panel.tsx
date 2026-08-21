@@ -639,10 +639,12 @@ function SectionScopeSelect({
       >
         <SelectValue placeholder="Section" />
       </SelectTrigger>
-      <SelectContent>
-        <SelectItem value={CHAT_SECTION_SCOPE_ALL}>All sections</SelectItem>
+      <SelectContent className="text-[11px]">
+        <SelectItem className="text-[11px]" value={CHAT_SECTION_SCOPE_ALL}>
+          All sections
+        </SelectItem>
         {sections.map((section) => (
-          <SelectItem key={section} value={section}>
+          <SelectItem className="text-[11px]" key={section} value={section}>
             {sectionLabel(section)}
           </SelectItem>
         ))}
@@ -741,13 +743,14 @@ function ComposerSelect<T extends string>({
           <SelectValue />
         </div>
       </SelectTrigger>
-      <SelectContent className="max-w-[17rem]">
+      <SelectContent className="max-w-[17rem] text-[11px]">
         {options.map((option) => (
           <SelectItem
             key={option.value}
             value={option.value}
             disabled={option.disabled}
             description={option.description}
+            className="text-[11px]"
           >
             {option.label}
           </SelectItem>

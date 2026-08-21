@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  newestGeneratedSuggestionSection,
   packGutterAnchors,
   rectIntersectsViewport,
   SUGGESTION_FIELD_CENTER_MAX_PX,
@@ -7,6 +8,7 @@ import {
   suggestionFieldGutterLayout,
   suggestionGutterAnchorId,
 } from "@/lib/suggestions/navigate-suggestion";
+import type { CommentRecord } from "@/types/report";
 
 describe("rectIntersectsViewport", () => {
   it("returns true when the rect overlaps the visible band", () => {
@@ -87,5 +89,99 @@ describe("packGutterAnchors", () => {
     );
     const suggestion = packed.find((a) => a.id === "suggestion:deviations");
     expect(suggestion?.top).toBe(800 + 80 + 8);
+  });
+});
+
+function suggestionComment(
+  overrides: Partial<CommentRecord> & Pick<CommentRecord, "id">
+): CommentRecord {
+  return {
+    reportId: "r1",
+    parentId: null,
+    sectionId: "sec",
+    section: "define",
+    authorId: "ai",
+    content: "{}",
+    anchorText: "",
+    contentPath: "narrative",
+    fromPos: 0,
+    toPos: 1,
+    status: "open",
+    kind: "ai_fix",
+    source: "app",
+    externalAuthorName: null,
+    externalAuthorInitials: null,
+    externalCommentId: null,
+    externalCreatedAt: null,
+    locked: false,
+    evaluationId: null,
+    createdAt: "2026-01-01T00:00:00Z",
+    ...overrides,
+  };
+}
+
+describe("newestGeneratedSuggestionSection", () => {
+  it("returns null when every open suggestion was already known", () => {
+    const existing = suggestionComment({ id: "c1" });
+    expect(
+      newestGeneratedSuggestionSection(new Set(["c1"]), [existing])
+    ).toBeNull();
+  });
+
+  it("returns the section of the newest newly generated card", () => {
+    const comments = [
+      suggestionComment({
+        id: "old",
+        section: "define",
+        createdAt: "2026-01-01T00:00:00Z",
+      }),
+      suggestionComment({
+        id: "new-measure",
+        section: "measure",
+        createdAt: "2026-01-02T00:00:00Z",
+      }),
+      suggestionComment({
+        id: "newer-improve",
+        section: "improve",
+        createdAt: "2026-01-03T00:00:00Z",
+      }),
+    ];
+    expect(
+      newestGeneratedSuggestionSection(new Set(["old"]), comments)
+    ).toBe("improve");
+  });
+
+  it("ignores resolved cards, replies, and human comments", () => {
+    const comments = [
+      suggestionComment({
+        id: "resolved",
+        status: "resolved",
+        createdAt: "2026-01-04T00:00:00Z",
+      }),
+      suggestionComment({
+        id: "reply",
+        parentId: "old",
+        createdAt: "2026-01-04T00:00:00Z",
+      }),
+      suggestionComment({
+        id: "human",
+        kind: "human",
+        authorId: "u1",
+        createdAt: "2026-01-04T00:00:00Z",
+      }),
+    ];
+    expect(newestGeneratedSuggestionSection(new Set(), comments)).toBeNull();
+  });
+
+  it("treats a new redraft as a generated card", () => {
+    expect(
+      newestGeneratedSuggestionSection(new Set(), [
+        suggestionComment({
+          id: "draft",
+          kind: "ai_redraft",
+          section: "purpose_scope",
+        }),
+      ])
+    ).toBe("purpose_scope");
   });
 });

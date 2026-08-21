@@ -122,7 +122,7 @@ const SelectItem = React.forwardRef<
     {description ? (
       <span className="flex flex-col gap-0.5">
         <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
-        <span className="text-[11px] leading-snug text-[var(--muted-foreground)] group-focus:text-[var(--accent-foreground)] group-focus:opacity-80">
+        <span className="text-[10px] leading-snug text-[var(--muted-foreground)] group-focus:text-[var(--accent-foreground)] group-focus:opacity-80">
           {description}
         </span>
       </span>

@@ -81,7 +81,8 @@ test.describe("report chat", () => {
     await expandReportSidebar(page);
     const sidebar = reportSidebar(page);
     await sidebar.getByRole("button", { name: /^assistant$/i }).click();
-    await sidebar.getByRole("button", { name: /^plan$/i }).click();
+    await sidebar.getByLabel("Assistant mode").click();
+    await page.getByRole("option", { name: /^ask$/i }).click();
 
     const composer = sidebar.getByPlaceholder(/describe the deviation/i);
     await expect(composer).toBeEnabled({ timeout: 15_000 });
