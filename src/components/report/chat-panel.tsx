@@ -790,8 +790,9 @@ function ComposerSelect<T extends string>({
     <Select
       value={value}
       onValueChange={(next) => {
-        if (!options.some((option) => option.value === next)) return;
-        onChange(next);
+        const selected = options.find((option) => option.value === next);
+        if (!selected) return;
+        onChange(selected.value);
       }}
       disabled={disabled}
     >
