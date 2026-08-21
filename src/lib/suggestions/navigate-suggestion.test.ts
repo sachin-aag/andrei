@@ -3,6 +3,7 @@ import {
   newestGeneratedSuggestionSection,
   packGutterAnchors,
   rectIntersectsViewport,
+  sectionOverflowPx,
   SUGGESTION_FIELD_CENTER_MAX_PX,
   suggestionAnchorY,
   suggestionFieldGutterLayout,
@@ -89,6 +90,59 @@ describe("packGutterAnchors", () => {
     );
     const suggestion = packed.find((a) => a.id === "suggestion:deviations");
     expect(suggestion?.top).toBe(800 + 80 + 8);
+  });
+});
+
+describe("sectionOverflowPx", () => {
+  it("reports the gap when a card hangs below an unpadded section", () => {
+    expect(
+      sectionOverflowPx({
+        sectionBottom: 1000,
+        appliedPaddingPx: 0,
+        maxCardBottom: 1050,
+      })
+    ).toBe(50);
+  });
+
+  it("returns zero when the cards fit inside the section", () => {
+    expect(
+      sectionOverflowPx({
+        sectionBottom: 1000,
+        appliedPaddingPx: 0,
+        maxCardBottom: 900,
+      })
+    ).toBe(0);
+  });
+
+  it("holds steady once the padding it asked for is applied", () => {
+    // Re-measuring a padded section must return the same answer. Reading the
+    // padded rect as the section's own height reported zero overflow, which
+    // dropped the padding and started the flicker.
+    const naturalBottom = 1000;
+    const maxCardBottom = 1050;
+
+    const first = sectionOverflowPx({
+      sectionBottom: naturalBottom,
+      appliedPaddingPx: 0,
+      maxCardBottom,
+    });
+    const second = sectionOverflowPx({
+      sectionBottom: naturalBottom + first,
+      appliedPaddingPx: first,
+      maxCardBottom,
+    });
+
+    expect(second).toBe(first);
+  });
+
+  it("shrinks the padding when the card shrinks", () => {
+    expect(
+      sectionOverflowPx({
+        sectionBottom: 1050,
+        appliedPaddingPx: 50,
+        maxCardBottom: 1010,
+      })
+    ).toBe(10);
   });
 });
 

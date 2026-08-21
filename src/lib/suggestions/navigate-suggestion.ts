@@ -84,6 +84,28 @@ export function packGutterAnchors<T extends PackableGutterAnchor>(
   return packed.toSorted((a, b) => a.top - b.top || a.desiredTop - b.desiredTop);
 }
 
+/**
+ * How far the gutter cards for a section hang below the section itself.
+ *
+ * The workspace closes this gap by padding the section, which grows the very
+ * rect measured here. Subtracting the padding already applied keeps the answer
+ * a fixed point: without it the next measurement reads zero overflow, the
+ * padding is dropped, the overflow reappears, and the layout oscillates every
+ * frame.
+ */
+export function sectionOverflowPx({
+  sectionBottom,
+  appliedPaddingPx,
+  maxCardBottom,
+}: {
+  sectionBottom: number;
+  appliedPaddingPx: number;
+  maxCardBottom: number;
+}): number {
+  const naturalBottom = sectionBottom - appliedPaddingPx;
+  return Math.max(0, maxCardBottom - naturalBottom);
+}
+
 /** Pure geometry helper — true when any of the rect is inside the viewport band. */
 export function rectIntersectsViewport(
   rect: { top: number; bottom: number },

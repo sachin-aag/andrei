@@ -32,6 +32,7 @@ import {
 import { gutterAnchorIdForComment } from "@/lib/comments/navigate";
 import {
   packGutterAnchors,
+  sectionOverflowPx,
   suggestionAnchorY,
   suggestionFieldGutterLayout,
 } from "@/lib/suggestions/navigate-suggestion";
@@ -442,7 +443,7 @@ export function MarginGutter({ onSectionOverflow }: Props) {
 
   // Section height overflow: after packing, compute how far cards extend
   // below each section's natural bottom and report the delta so the workspace
-  // can apply minHeight to prevent overlap with the next section.
+  // can apply padding to prevent overlap with the next section.
   const lastOverflowRef = useRef<Record<string, number>>({});
   useEffect(() => {
     if (!onSectionOverflow) return;
@@ -454,14 +455,19 @@ export function MarginGutter({ onSectionOverflow }: Props) {
     for (const section of evaluatableSections) {
       const sectionEl = document.getElementById(section);
       if (!sectionEl) continue;
-      const sectionBottom =
-        sectionEl.getBoundingClientRect().bottom - containerTop;
       const cardsInSection = packed.filter((c) => c.section === section);
       if (cardsInSection.length === 0) continue;
       const maxCardBottom = Math.max(
         ...cardsInSection.map((c) => c.top + (cardHeights[c.id] ?? 80))
       );
-      const delta = maxCardBottom - sectionBottom;
+      // The workspace writes this padding back onto the section as an inline
+      // style, so it is the one part of the rect that must not count towards
+      // the section's own height.
+      const delta = sectionOverflowPx({
+        sectionBottom: sectionEl.getBoundingClientRect().bottom - containerTop,
+        appliedPaddingPx: parseFloat(sectionEl.style.paddingBottom) || 0,
+        maxCardBottom,
+      });
       if (delta > 0) {
         overflows[section] = delta;
       }
