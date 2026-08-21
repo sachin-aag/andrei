@@ -216,8 +216,6 @@ function collectContextLines(
     );
   } else if (section === "testers_dates") {
     pushTextBlock(lines, "Testers", tiptapText(content.testers));
-    pushTextLine(lines, "Start date", content.startDate);
-    pushTextLine(lines, "End date", content.endDate);
   } else if (section === "test_equipment") {
     pushTextBlock(
       lines,

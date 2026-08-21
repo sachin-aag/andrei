@@ -48,7 +48,7 @@ describe("Convergent customer pack", () => {
   it("uses convergent DV sections, table headers, and prompt version", () => {
     const def = buildDesignVerificationDefinition(CONVERGENT_PACK);
     expect(def.prompts.promptVersion).toBe(CONVERGENT_PROMPT_VERSION);
-    expect(def.prompts.promptVersion).toBe("convergent-dv-v4");
+    expect(def.prompts.promptVersion).toBe("convergent-dv-v5");
     expect(def.sections.map((s) => s.key)).toEqual([...CONVERGENT_DV_SECTION_KEYS]);
     expect(def.sections.find((s) => s.key === "cover_page")).toBeUndefined();
     expect(CONVERGENT_DV_SECTION_LABELS.purpose).toBe("Purpose");
@@ -80,6 +80,13 @@ describe("Convergent customer pack", () => {
     expect(def.chat.draftingGuidance).toContain(
       "Do not put that table, or any Req ID / P/F rows, in Discussion"
     );
+    expect(def.chat.draftingGuidance).toContain(
+      "There are no separate start/end date fields"
+    );
+    expect(
+      def.criteriaBySection.testers_dates?.find((c) => c.key === "testers.dates")
+        ?.description
+    ).toContain("written in the Testers narrative");
     expect(
       def.criteriaBySection.results_and_discussions?.find(
         (c) => c.key === "results.satisfied_by"
