@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  chatThinkingLevel,
   classifyRetrievalPolicy,
   recentUserMessageTexts,
 } from "./retrieval-policy";
@@ -105,14 +104,6 @@ describe("classifyRetrievalPolicy", () => {
     });
     expect(followUp.policy).toBe("adaptive");
     expect(followUp.reason).toBe("agentic_default");
-  });
-});
-
-describe("chatThinkingLevel", () => {
-  it("uses medium thinking until we route thinking by task", () => {
-    expect(chatThinkingLevel("focused")).toBe("medium");
-    expect(chatThinkingLevel("adaptive")).toBe("medium");
-    expect(chatThinkingLevel("comprehensive")).toBe("medium");
   });
 });
 

@@ -30,9 +30,15 @@ import { buildCriteriaOutline } from "@/lib/ai/chat/criteria-outline";
 import { buildChatTools } from "@/lib/ai/chat/tools";
 import {
   CHAT_EXTRACT_GOOGLE_MODEL_ID,
-  CHAT_GOOGLE_MODEL_ID,
+  chatAssistantTurnMetadata,
+  chatPaceConfig,
   resolveChatLanguageModel,
 } from "@/lib/ai/chat/model";
+import {
+  DEFAULT_CHAT_PACE,
+  isChatPace,
+  type ChatPace,
+} from "@/lib/ai/chat/pace";
 import { buildStubChatModel } from "@/lib/ai/chat/stub-model";
 import {
   parseChatSectionScope,
@@ -59,7 +65,6 @@ import { auditActorFromUser } from "@/lib/audit";
 import { listReadyDocumentsForReport } from "@/lib/attachments/retrieval";
 import { buildAutoEvidence } from "@/lib/ai/chat/auto-evidence";
 import {
-  chatThinkingLevel,
   classifyRetrievalPolicy,
   recentUserMessageTexts,
 } from "@/lib/ai/chat/retrieval-policy";
@@ -126,6 +131,7 @@ export async function POST(
     messages?: UIMessage[];
     sessionId?: string;
     mode?: string;
+    pace?: string;
     sectionScope?: string;
     mentions?: unknown;
   };
@@ -136,6 +142,8 @@ export async function POST(
     return NextResponse.json({ error: "No messages" }, { status: 400 });
   }
   const mode: ChatMode = isChatMode(body.mode) ? body.mode : "agent";
+  const pace: ChatPace = isChatPace(body.pace) ? body.pace : DEFAULT_CHAT_PACE;
+  const paceConfig = chatPaceConfig(pace);
   const accessEarly = await loadAccessibleReport(reportId, user);
   if (!accessEarly) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const sectionScope: ChatSectionScope = parseChatSectionScope(
@@ -316,7 +324,7 @@ export async function POST(
         insertText: `Stubbed drafting insertion addressing "${userText.slice(0, 80)}". [Replace with real content once a Gemini credential is configured.]`,
         reasoning: "Demo stub proposal.",
       })
-    : resolveChatLanguageModel();
+    : resolveChatLanguageModel(pace);
 
   let result;
   try {
@@ -352,13 +360,14 @@ export async function POST(
       // seed — Google warns that sampling overrides degrade reasoning.
       // includeThoughts stays on for Langfuse; UI does not stream them.
       providerOptions: buildGeminiThoughtSummaryProviderOptions({
-        thinkingLevel: chatThinkingLevel(retrieval.policy),
+        thinkingLevel: paceConfig.thinkingLevel,
       }),
       onError: ({ error }) => {
         console.error("chat: llm stream error", {
           reportId,
           sessionId,
           mode,
+          pace,
           sectionScope,
           error: formatChatLlmError(error),
         });
@@ -374,7 +383,9 @@ export async function POST(
           taggedDocuments: mentions.documents.length,
           taggedSections: mentions.sections.length,
           chatPromptVersion: CHAT_PROMPT_VERSION,
-          chatModelId: CHAT_GOOGLE_MODEL_ID,
+          pace,
+          chatModelId: paceConfig.modelId,
+          chatThinkingLevel: paceConfig.thinkingLevel,
           chatExtractModelId: CHAT_EXTRACT_GOOGLE_MODEL_ID,
           retrievalPolicy: retrieval.policy,
           retrievalPolicyReason: retrieval.reason,
@@ -440,6 +451,13 @@ export async function POST(
           sessionId,
           role: "assistant",
           parts: persisted.parts,
+          // The composer only ever showed "Quick" / "Deep" — record what
+          // actually answered so the turn stays traceable.
+          metadata: chatAssistantTurnMetadata({
+            pace,
+            mode,
+            promptVersion: CHAT_PROMPT_VERSION,
+          }),
           authorId: null,
         });
         await touchChatSession(sessionId, null);
