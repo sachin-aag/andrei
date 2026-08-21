@@ -979,3 +979,16 @@ html[data-customer="convergent"] {
 .pdf-page-preview-text-layer ::selection {
   background: rgb(61 111 181 / 0.28);
 }
+
+/* Assistant chat — native MathML from `$...$` / `$$...$$` LaTeX. */
+.chat-markdown math {
+  color: inherit;
+  font-size: 1.05em;
+}
+
+.chat-markdown math[display="block"] {
+  display: block;
+  margin-block: 0.35em;
+  overflow-x: auto;
+  max-width: 100%;
+}
