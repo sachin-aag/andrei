@@ -1,3 +1,4 @@
+import { isAiSuggestionKind } from "@/lib/ai/suggestion-gating";
 import { suggestionFieldAnchorKey } from "@/lib/suggestions/resolve-suggestion-field-path";
 import type { CommentRecord } from "@/types/report";
 import type { SectionType } from "@/db/schema";
@@ -149,6 +150,89 @@ export function scrollToSuggestionComment(comment: CommentRecord): boolean {
     }
   }
   return false;
+}
+
+/** First painted suggestion mark (inline insert/delete), if the preview is up. */
+export function querySuggestionStartElement(
+  comment: CommentRecord
+): HTMLElement | null {
+  const mark = document.querySelector<HTMLElement>(
+    `[data-eval-id="${CSS.escape(comment.id)}"]`
+  );
+  if (mark) return mark;
+  return querySuggestionFieldElement(comment);
+}
+
+export function querySuggestionGutterCard(
+  section: SectionType
+): HTMLElement | null {
+  return document.querySelector<HTMLElement>(
+    `[data-gutter-anchor-id="${CSS.escape(suggestionGutterAnchorId(section))}"]`
+  );
+}
+
+/**
+ * After a card is generated, pin the viewport to the start of the suggestion
+ * and keep its gutter card on screen. Tall fields / mark spans use `start`
+ * so the first line is not scrolled off; compact fields stay centered.
+ */
+export function scrollToGeneratedSuggestion(comment: CommentRecord): boolean {
+  const start = querySuggestionStartElement(comment);
+  const field = querySuggestionFieldElement(comment);
+  const pinToStart =
+    (start != null && start !== field) ||
+    (field != null &&
+      field.getBoundingClientRect().height > SUGGESTION_FIELD_CENTER_MAX_PX);
+
+  let scrolled = false;
+  if (start) {
+    start.scrollIntoView({
+      behavior: "smooth",
+      block: pinToStart ? "start" : "center",
+    });
+    scrolled = true;
+  } else if (comment.section) {
+    const heading = document.getElementById(comment.section);
+    if (heading) {
+      heading.scrollIntoView({ behavior: "smooth", block: "start" });
+      scrolled = true;
+    }
+  }
+
+  if (comment.section) {
+    const card = querySuggestionGutterCard(comment.section);
+    if (card) {
+      card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      scrolled = true;
+    }
+  }
+  return scrolled;
+}
+
+/**
+ * Section of the newest open AI suggestion that was not in `previousIds`.
+ * Used after a report refresh so chat-proposed cards also trigger scroll.
+ */
+export function newestGeneratedSuggestionSection(
+  previousIds: ReadonlySet<string>,
+  comments: readonly CommentRecord[]
+): SectionType | null {
+  let newest: CommentRecord | null = null;
+  let newestAt = Number.NEGATIVE_INFINITY;
+  for (const comment of comments) {
+    if (comment.parentId) continue;
+    if (comment.status !== "open") continue;
+    if (!isAiSuggestionKind(comment.kind)) continue;
+    if (!comment.section) continue;
+    if (previousIds.has(comment.id)) continue;
+    const at = Date.parse(comment.createdAt);
+    const ts = Number.isFinite(at) ? at : 0;
+    if (!newest || ts >= newestAt) {
+      newest = comment;
+      newestAt = ts;
+    }
+  }
+  return newest?.section ?? null;
 }
 
 /**

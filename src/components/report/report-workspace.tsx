@@ -30,6 +30,8 @@ import {
   scrollToCommentFieldAnchor,
   scrollToGutterAnchor,
 } from "@/lib/comments/navigate";
+import { sortedOpenSuggestionsForSection } from "@/lib/ai/suggestion-gating";
+import { scrollToGeneratedSuggestion } from "@/lib/suggestions/navigate-suggestion";
 import { evaluatableSectionKeys } from "@/lib/ai/criteria-view";
 import { getWorkspaceSections } from "@/lib/document-types";
 import { captureEvent } from "@/lib/analytics/events";
@@ -234,7 +236,7 @@ export function ReportWorkspace({
   const { pendingPlaceholders } = useReportPlaceholders();
   const { getEditor } = useReportEditors();
   const { requestCommentFocus, comments } = useReportComments();
-  const { suggestionsFocusSection, clearSuggestionsFocusSection } =
+  const { suggestionsFocusSection, clearSuggestionsFocusSection, evaluations } =
     useReportEvaluations();
   const { activeAttachmentId } = useReportAttachments();
   const [criteriaFocusSection, setCriteriaFocusSection] = useState<
@@ -426,19 +428,86 @@ export function ReportWorkspace({
 
   useEffect(() => {
     if (!suggestionsFocusSection) return;
-    const frame = requestAnimationFrame(() => {
-      setCriteriaFocusSection(suggestionsFocusSection);
-      // Suggestions live in the review margin. Keep the assistant collapsed
-      // so the gutter is visible — do not auto-open the right panel.
-      setSidebarCollapsed(true);
-      jumpToSection(suggestionsFocusSection);
+    const section = suggestionsFocusSection;
+    setCriteriaFocusSection(section);
+    // Suggestions live in the review margin. Keep the assistant collapsed
+    // so the gutter is visible — do not auto-open the right panel.
+    setSidebarCollapsed(true);
+
+    let cancelled = false;
+    const timeouts: Array<ReturnType<typeof setTimeout>> = [];
+    const retryDelaysMs = [0, 50, 100, 200];
+
+    const finish = (scrolled: boolean) => {
+      if (cancelled) return;
+      if (!scrolled) jumpToSection(section);
       clearSuggestionsFocusSection();
-    });
-    return () => cancelAnimationFrame(frame);
+    };
+
+    const attempt = (index: number) => {
+      if (cancelled) return;
+      const active =
+        sortedOpenSuggestionsForSection(section, comments, evaluations)[0] ??
+        null;
+      if (active) {
+        requestCommentFocus(active.id);
+        if (scrollToGeneratedSuggestion(active)) {
+          finish(true);
+          return;
+        }
+      }
+      const next = index + 1;
+      if (next >= retryDelaysMs.length) {
+        finish(false);
+        return;
+      }
+      timeouts.push(
+        window.setTimeout(() => attempt(next), retryDelaysMs[next])
+      );
+    };
+
+    const start = () => {
+      if (cancelled) return;
+      attempt(0);
+    };
+
+    const gutterAlreadyVisible = isReviewGutterVisible(sidebarCollapsed);
+    if (gutterScrollTimeoutRef.current != null) {
+      clearTimeout(gutterScrollTimeoutRef.current);
+      gutterScrollTimeoutRef.current = null;
+    }
+    if (gutterAlreadyVisible) {
+      let innerFrame = 0;
+      const outerFrame = requestAnimationFrame(() => {
+        innerFrame = requestAnimationFrame(start);
+      });
+      return () => {
+        cancelled = true;
+        cancelAnimationFrame(outerFrame);
+        cancelAnimationFrame(innerFrame);
+        for (const id of timeouts) clearTimeout(id);
+      };
+    }
+    gutterScrollTimeoutRef.current = setTimeout(() => {
+      gutterScrollTimeoutRef.current = null;
+      start();
+    }, WORKSPACE_PANEL_WIDTH_TRANSITION_MS + 50);
+    return () => {
+      cancelled = true;
+      if (gutterScrollTimeoutRef.current != null) {
+        clearTimeout(gutterScrollTimeoutRef.current);
+        gutterScrollTimeoutRef.current = null;
+      }
+      for (const id of timeouts) clearTimeout(id);
+    };
   }, [
     suggestionsFocusSection,
     clearSuggestionsFocusSection,
     jumpToSection,
+    comments,
+    evaluations,
+    requestCommentFocus,
+    sidebarCollapsed,
   ]);
 
   const jumpToComment = useCallback(
