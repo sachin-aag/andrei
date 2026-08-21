@@ -76,6 +76,15 @@ describe("sections merge", () => {
     expect(dr.items).toEqual(["a", "b"]);
   });
 
+  it("strips leftover italic markers from documents reviewed items", () => {
+    const dr = mergeSection("documents_reviewed", {
+      items: ["*Solea Model 3 Software Requirements Document* 822-700-0013"],
+    });
+    expect(dr.items).toEqual([
+      "Solea Model 3 Software Requirements Document 822-700-0013",
+    ]);
+  });
+
   it("merges attachment label and description rows", () => {
     const att = mergeSection("attachments", {
       items: [{ label: " Attachment No. I ", description: " Photocopy " }],

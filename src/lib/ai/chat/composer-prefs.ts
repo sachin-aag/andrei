@@ -1,0 +1,86 @@
+import { isChatMode, type ChatMode } from "@/lib/ai/chat/system-prompt";
+import { DEFAULT_CHAT_PACE, isChatPace, type ChatPace } from "@/lib/ai/chat/pace";
+
+/**
+ * Composer Ask/Agent + Quick/Deep for a logged-in user on one report.
+ * Survives panel remounts (sidebar tab, collapse, refresh) so a Deep
+ * (or Ask) choice is not snapped back to the defaults after a turn.
+ */
+export const CHAT_COMPOSER_PREFS_STORAGE_PREFIX = "chatComposerPrefs:v1";
+
+export type ChatComposerPrefs = {
+  mode: ChatMode;
+  pace: ChatPace;
+};
+
+export const DEFAULT_CHAT_COMPOSER_PREFS: ChatComposerPrefs = {
+  mode: "agent",
+  pace: DEFAULT_CHAT_PACE,
+};
+
+const memory = new Map<string, ChatComposerPrefs>();
+
+export function chatComposerPrefsStorageKey(
+  userId: string,
+  reportId: string
+): string {
+  return `${CHAT_COMPOSER_PREFS_STORAGE_PREFIX}:${userId}:${reportId}`;
+}
+
+export function parseChatComposerPrefs(raw: unknown): ChatComposerPrefs | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const mode = (raw as { mode?: unknown }).mode;
+  const pace = (raw as { pace?: unknown }).pace;
+  if (!isChatMode(mode) || !isChatPace(pace)) return null;
+  return { mode, pace };
+}
+
+/** Test helper — module cache otherwise leaks across cases. */
+export function resetChatComposerPrefsStore(): void {
+  memory.clear();
+}
+
+function readFromLocalStorage(key: string): ChatComposerPrefs | null {
+  try {
+    if (typeof localStorage === "undefined") return null;
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+    return parseChatComposerPrefs(JSON.parse(raw) as unknown);
+  } catch {
+    return null;
+  }
+}
+
+function writeToLocalStorage(key: string, prefs: ChatComposerPrefs): void {
+  try {
+    if (typeof localStorage === "undefined") return;
+    localStorage.setItem(key, JSON.stringify(prefs));
+  } catch {
+    // Incognito / quota / disabled storage — memory still holds the choice.
+  }
+}
+
+export function readChatComposerPrefs(
+  userId: string,
+  reportId: string
+): ChatComposerPrefs {
+  const key = chatComposerPrefsStorageKey(userId, reportId);
+  const cached = memory.get(key);
+  if (cached) return cached;
+  const stored = readFromLocalStorage(key);
+  if (stored) {
+    memory.set(key, stored);
+    return stored;
+  }
+  return DEFAULT_CHAT_COMPOSER_PREFS;
+}
+
+export function writeChatComposerPrefs(
+  userId: string,
+  reportId: string,
+  prefs: ChatComposerPrefs
+): void {
+  const key = chatComposerPrefsStorageKey(userId, reportId);
+  memory.set(key, prefs);
+  writeToLocalStorage(key, prefs);
+}

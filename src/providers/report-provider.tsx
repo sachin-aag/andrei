@@ -27,10 +27,11 @@ import { mergeSection } from "@/lib/sections-merge";
 import {
   getDocumentType,
   getEvaluatableSections,
+  getWorkspaceSections,
   mergeSectionForType,
 } from "@/lib/document-types";
 import { activeSuggestionForSection } from "@/lib/ai/suggestion-gating";
-import { newestGeneratedSuggestionSection } from "@/lib/suggestions/navigate-suggestion";
+import { firstGeneratedSuggestionSection } from "@/lib/suggestions/navigate-suggestion";
 import { validateSuggestionLocate } from "@/lib/suggestions/validate-suggestion";
 import { normalizeCommentRecord } from "@/lib/comments/normalize";
 import { sectionsReadyForEvaluation } from "@/lib/ai/evaluation-readiness";
@@ -606,9 +607,10 @@ export function ReportProvider({
       (c) => normalizeCommentRecord(c)
     );
     setComments(nextComments);
-    const generatedSection = newestGeneratedSuggestionSection(
+    const generatedSection = firstGeneratedSuggestionSection(
       previousSuggestionIds,
-      nextComments
+      nextComments,
+      getWorkspaceSections(data.report.documentType).map((s) => s.key)
     );
     if (generatedSection) {
       setSuggestionsFocusSection(generatedSection);

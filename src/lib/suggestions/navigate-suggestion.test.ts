@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  newestGeneratedSuggestionSection,
+  firstGeneratedSuggestionSection,
   packGutterAnchors,
   rectIntersectsViewport,
   sectionOverflowPx,
@@ -174,15 +174,28 @@ function suggestionComment(
   };
 }
 
-describe("newestGeneratedSuggestionSection", () => {
+const INVESTIGATION_SECTION_ORDER = [
+  "define",
+  "measure",
+  "analyze",
+  "improve",
+  "control",
+  "conclusion",
+] as const;
+
+describe("firstGeneratedSuggestionSection", () => {
   it("returns null when every open suggestion was already known", () => {
     const existing = suggestionComment({ id: "c1" });
     expect(
-      newestGeneratedSuggestionSection(new Set(["c1"]), [existing])
+      firstGeneratedSuggestionSection(
+        new Set(["c1"]),
+        [existing],
+        INVESTIGATION_SECTION_ORDER
+      )
     ).toBeNull();
   });
 
-  it("returns the section of the newest newly generated card", () => {
+  it("picks the topmost new section, not the latest timestamp", () => {
     const comments = [
       suggestionComment({
         id: "old",
@@ -190,19 +203,42 @@ describe("newestGeneratedSuggestionSection", () => {
         createdAt: "2026-01-01T00:00:00Z",
       }),
       suggestionComment({
+        id: "new-improve",
+        section: "improve",
+        createdAt: "2026-01-03T00:00:00Z",
+      }),
+      suggestionComment({
         id: "new-measure",
         section: "measure",
         createdAt: "2026-01-02T00:00:00Z",
       }),
-      suggestionComment({
-        id: "newer-improve",
-        section: "improve",
-        createdAt: "2026-01-03T00:00:00Z",
-      }),
     ];
     expect(
-      newestGeneratedSuggestionSection(new Set(["old"]), comments)
-    ).toBe("improve");
+      firstGeneratedSuggestionSection(
+        new Set(["old"]),
+        comments,
+        INVESTIGATION_SECTION_ORDER
+      )
+    ).toBe("measure");
+  });
+
+  it("scrolls to the first of five simultaneously generated cards", () => {
+    const comments = (
+      ["define", "measure", "analyze", "improve", "control"] as const
+    ).map((section, i) =>
+      suggestionComment({
+        id: `new-${section}`,
+        section,
+        createdAt: `2026-01-01T00:00:0${i}Z`,
+      })
+    );
+    expect(
+      firstGeneratedSuggestionSection(
+        new Set(),
+        comments.toReversed(),
+        INVESTIGATION_SECTION_ORDER
+      )
+    ).toBe("define");
   });
 
   it("ignores resolved cards, replies, and human comments", () => {
@@ -224,18 +260,28 @@ describe("newestGeneratedSuggestionSection", () => {
         createdAt: "2026-01-04T00:00:00Z",
       }),
     ];
-    expect(newestGeneratedSuggestionSection(new Set(), comments)).toBeNull();
+    expect(
+      firstGeneratedSuggestionSection(
+        new Set(),
+        comments,
+        INVESTIGATION_SECTION_ORDER
+      )
+    ).toBeNull();
   });
 
   it("treats a new redraft as a generated card", () => {
     expect(
-      newestGeneratedSuggestionSection(new Set(), [
-        suggestionComment({
-          id: "draft",
-          kind: "ai_redraft",
-          section: "purpose_scope",
-        }),
-      ])
+      firstGeneratedSuggestionSection(
+        new Set(),
+        [
+          suggestionComment({
+            id: "draft",
+            kind: "ai_redraft",
+            section: "purpose_scope",
+          }),
+        ],
+        ["purpose_scope", "references"]
+      )
     ).toBe("purpose_scope");
   });
 });

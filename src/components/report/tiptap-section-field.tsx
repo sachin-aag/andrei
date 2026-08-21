@@ -76,6 +76,7 @@ import {
 } from "@/lib/ai/suggestion-gating";
 import { buildRedraftPreviewDoc } from "@/lib/tiptap/redraft-preview";
 import { markdownToDoc } from "@/lib/tiptap/markdown-to-doc";
+import { normalizeRichField } from "@/lib/tiptap/rich-text";
 import { buildSuggestionEdit, narrativeHasSuggestionMarks } from "@/lib/suggestions/apply-narrative-suggestion";
 import {
   acceptSuggestion,
@@ -441,7 +442,7 @@ export function TiptapSectionField({
         suggestionWidgetsExtension,
         placeholderHighlightExtension,
       ],
-      content: value,
+      content: normalizeRichField(value),
       editable,
       onUpdate: ({ editor: ed }) => {
         const json = ed.getJSON() as JSONContent;
@@ -684,10 +685,11 @@ export function TiptapSectionField({
   const applyExternalValueToEditor = useCallback(() => {
     const currentEditor = editor;
     if (!currentEditor || currentEditor.isDestroyed) return;
+    const nextDoc = normalizeRichField(value);
     const cur = JSON.stringify(currentEditor.getJSON());
-    const next = JSON.stringify(value);
+    const next = JSON.stringify(nextDoc);
     if (cur !== next) {
-      currentEditor.commands.setContent(value as Content, { emitUpdate: false });
+      currentEditor.commands.setContent(nextDoc as Content, { emitUpdate: false });
     }
   }, [editor, value]);
 
@@ -780,7 +782,7 @@ export function TiptapSectionField({
           });
           // Never paint a preview (or enable inline accept) unless locate succeeded.
           if (injected.located) {
-            json = injected.doc;
+            json = normalizeRichField(injected.doc);
           }
         }
       }

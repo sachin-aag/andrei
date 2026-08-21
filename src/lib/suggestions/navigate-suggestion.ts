@@ -232,29 +232,36 @@ export function scrollToGeneratedSuggestion(comment: CommentRecord): boolean {
 }
 
 /**
- * Section of the newest open AI suggestion that was not in `previousIds`.
- * Used after a report refresh so chat-proposed cards also trigger scroll.
+ * Section of the first newly generated open AI suggestion, in document
+ * order. A batch that lands on several sections at once (chat drafts, or
+ * five sections suggested together) should pin the viewport to the topmost
+ * card — not the last timestamp.
  */
-export function newestGeneratedSuggestionSection(
+export function firstGeneratedSuggestionSection(
   previousIds: ReadonlySet<string>,
-  comments: readonly CommentRecord[]
+  comments: readonly CommentRecord[],
+  sectionOrder: readonly SectionType[]
 ): SectionType | null {
-  let newest: CommentRecord | null = null;
-  let newestAt = Number.NEGATIVE_INFINITY;
+  const rankBySection = new Map(
+    sectionOrder.map((section, index) => [section, index])
+  );
+  let first: CommentRecord | null = null;
+  let firstRank = Number.POSITIVE_INFINITY;
   for (const comment of comments) {
     if (comment.parentId) continue;
     if (comment.status !== "open") continue;
     if (!isAiSuggestionKind(comment.kind)) continue;
     if (!comment.section) continue;
     if (previousIds.has(comment.id)) continue;
-    const at = Date.parse(comment.createdAt);
-    const ts = Number.isFinite(at) ? at : 0;
-    if (!newest || ts >= newestAt) {
-      newest = comment;
-      newestAt = ts;
+    const rank =
+      rankBySection.get(comment.section as SectionType) ??
+      Number.MAX_SAFE_INTEGER;
+    if (!first || rank < firstRank) {
+      first = comment;
+      firstRank = rank;
     }
   }
-  return newest?.section ?? null;
+  return first?.section ?? null;
 }
 
 /**

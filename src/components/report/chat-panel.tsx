@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -71,7 +72,13 @@ import {
   sectionLabel as chatSectionLabel,
   type ChatSectionScope,
 } from "@/lib/ai/chat/fields";
-import { DEFAULT_CHAT_PACE, type ChatPace } from "@/lib/ai/chat/pace";
+import type { ChatPace } from "@/lib/ai/chat/pace";
+import {
+  DEFAULT_CHAT_COMPOSER_PREFS,
+  readChatComposerPrefs,
+  writeChatComposerPrefs,
+} from "@/lib/ai/chat/composer-prefs";
+import type { ChatMode } from "@/lib/ai/chat/system-prompt";
 import {
   CHAT_IMAGE_MAX_BYTES,
   CHAT_MAX_IMAGES_PER_MESSAGE,
@@ -109,8 +116,6 @@ type PendingChatImage = {
   id: string;
   part: FileUIPart;
 };
-
-type ChatMode = "plan" | "agent";
 
 const EXAMPLE_PROMPTS: Record<ChatMode, string[]> = {
   plan: [
@@ -860,8 +865,14 @@ export function ChatPanel() {
   const [mentionIndex, setMentionIndex] = useState(0);
   const [pendingImages, setPendingImages] = useState<PendingChatImage[]>([]);
   const [attaching, setAttaching] = useState(false);
-  const [mode, setMode] = useState<ChatMode>("agent");
-  const [pace, setPace] = useState<ChatPace>(DEFAULT_CHAT_PACE);
+  const [mode, setModeState] = useState<ChatMode>(
+    DEFAULT_CHAT_COMPOSER_PREFS.mode
+  );
+  const [pace, setPaceState] = useState<ChatPace>(
+    DEFAULT_CHAT_COMPOSER_PREFS.pace
+  );
+  const composerPrefsRef = useRef({ mode, pace });
+  composerPrefsRef.current = { mode, pace };
   const [sectionScope, setSectionScope] = useState<ChatSectionScope>(CHAT_SECTION_SCOPE_ALL);
   const [clientScopeSuggestion, setClientScopeSuggestion] =
     useState<SectionScopeMismatch | null>(null);
@@ -951,6 +962,37 @@ export function ChatPanel() {
     Math.max(mentionMatches.length - 1, 0)
   );
 
+  const persistComposerPrefs = useCallback(
+    (next: { mode: ChatMode; pace: ChatPace }) => {
+      if (!currentUserId) return;
+      writeChatComposerPrefs(currentUserId, report.id, next);
+    },
+    [currentUserId, report.id]
+  );
+
+  const setMode = useCallback(
+    (next: ChatMode) => {
+      setModeState(next);
+      persistComposerPrefs({ mode: next, pace: composerPrefsRef.current.pace });
+    },
+    [persistComposerPrefs]
+  );
+
+  const setPace = useCallback(
+    (next: ChatPace) => {
+      setPaceState(next);
+      persistComposerPrefs({ mode: composerPrefsRef.current.mode, pace: next });
+    },
+    [persistComposerPrefs]
+  );
+
+  useLayoutEffect(() => {
+    if (!currentUserId) return;
+    const stored = readChatComposerPrefs(currentUserId, report.id);
+    setModeState(stored.mode);
+    setPaceState(stored.pace);
+  }, [currentUserId, report.id]);
+
   // Restore the caret after a mention replaces the in-progress @ token.
   useEffect(() => {
     const caret = pendingCaretRef.current;
@@ -968,7 +1010,8 @@ export function ChatPanel() {
   // Agent default with no way back.
   useEffect(() => {
     if (role != null && !canProposeAiEdits && mode === "agent") {
-      setMode("plan");
+      // Session lock only — don't persist over a stored Agent preference.
+      setModeState("plan");
     }
   }, [role, canProposeAiEdits, mode]);
 
