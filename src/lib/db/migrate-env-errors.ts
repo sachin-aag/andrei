@@ -19,9 +19,9 @@ export function missingPreviewDatabaseUrlMessage(input: {
   return (
     "DATABASE_URL is not set for this Vercel Preview deployment.\n" +
     `Branch: ${input.branch}\n` +
-    "Set a shared Preview DATABASE_URL (pooled Neon URL) on this Vercel project.\n" +
-    'Do not enable "Create a branch for each preview deployment" on andrei-v2, andrei-demo, or andrei-convergent — those inject per-git-branch passwords that go stale (28P01).\n' +
-    "See docs/whitelabel-vercel-deploy.md § Deploy scope."
+    'Enable "Create a branch for each preview deployment" on the Vercel ↔ Neon integration so Neon injects a per-git-branch DATABASE_URL.\n' +
+    "If preview branching is already on, redeploy — the first compile can race the inject.\n" +
+    "See docs/neon-vercel-setup.md."
   );
 }
 
@@ -29,18 +29,19 @@ export function postgresPasswordAuthFailedMessage(input: {
   host: string;
   vercelEnv: string;
   deployScope: string | undefined;
+  gitBranch?: string;
 }): string {
   const scope = input.deployScope?.trim() || "unset";
+  const gitBranch = input.gitBranch?.trim() || "(unknown branch)";
   return (
     "Postgres rejected DATABASE_URL (28P01 password authentication failed).\n" +
     `vercel (${input.vercelEnv})  →  ${input.host}\n` +
     `ANDREI_VERCEL_DEPLOY_SCOPE=${scope}\n` +
-    "This is a stale Neon credential, not an application compile error.\n" +
-    "On andrei-v2 / andrei-demo / andrei-convergent: turn OFF\n" +
-    '  "Create a branch for each preview deployment"\n' +
-    "on the Vercel ↔ Neon integration. Do not hand-edit Neon-logo DATABASE_URL rows.\n" +
-    "Point Preview DATABASE_URL at the shared pooled URL (dedicated preview DB for MJ — not production unless intentional).\n" +
-    "Delete leftover Neon preview/… branches if needed.\n" +
-    "See docs/whitelabel-vercel-deploy.md (Deploy scope + Troubleshooting)."
+    `Git branch: ${gitBranch}\n` +
+    "This is a stale Neon preview-branch password, not an application compile error.\n" +
+    'Keep "Create a branch for each preview deployment" ON.\n' +
+    "Do not hand-edit Neon-logo DATABASE_URL rows.\n" +
+    `Delete the Neon branch preview/${gitBranch} (and any leftover preview/… for this ref), then redeploy so Neon injects a fresh password.\n` +
+    "See docs/neon-vercel-setup.md."
   );
 }

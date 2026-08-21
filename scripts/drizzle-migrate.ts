@@ -75,6 +75,7 @@ main().catch((e) => {
         host: databaseHost(url ?? ""),
         vercelEnv: process.env.VERCEL_ENV ?? "unknown",
         deployScope: process.env.ANDREI_VERCEL_DEPLOY_SCOPE,
+        gitBranch: process.env.VERCEL_GIT_COMMIT_REF,
       })
     );
   }
