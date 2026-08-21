@@ -1,6 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   chatComposerPrefsStorageKey,
+  coerceChatMode,
+  coerceChatPace,
   DEFAULT_CHAT_COMPOSER_PREFS,
   parseChatComposerPrefs,
   readChatComposerPrefs,
@@ -22,6 +24,20 @@ describe("parseChatComposerPrefs", () => {
     expect(parseChatComposerPrefs({ mode: "agent" })).toBeNull();
     expect(parseChatComposerPrefs({ mode: "draft", pace: "quick" })).toBeNull();
     expect(parseChatComposerPrefs({ mode: "agent", pace: "thorough" })).toBeNull();
+  });
+});
+
+describe("coerceChatMode / coerceChatPace", () => {
+  it("keeps valid knobs", () => {
+    expect(coerceChatMode("plan")).toBe("plan");
+    expect(coerceChatPace("deep")).toBe("deep");
+  });
+
+  it("falls back when Radix emits an empty remount value", () => {
+    expect(coerceChatMode("")).toBe(DEFAULT_CHAT_COMPOSER_PREFS.mode);
+    expect(coerceChatMode("draft")).toBe(DEFAULT_CHAT_COMPOSER_PREFS.mode);
+    expect(coerceChatPace("")).toBe(DEFAULT_CHAT_COMPOSER_PREFS.pace);
+    expect(coerceChatPace("thorough")).toBe(DEFAULT_CHAT_COMPOSER_PREFS.pace);
   });
 });
 

@@ -18,6 +18,15 @@ export const DEFAULT_CHAT_COMPOSER_PREFS: ChatComposerPrefs = {
   pace: DEFAULT_CHAT_PACE,
 };
 
+/** Radix Select can emit "" when a controlled value remounts; never persist that. */
+export function coerceChatMode(value: unknown): ChatMode {
+  return isChatMode(value) ? value : DEFAULT_CHAT_COMPOSER_PREFS.mode;
+}
+
+export function coerceChatPace(value: unknown): ChatPace {
+  return isChatPace(value) ? value : DEFAULT_CHAT_COMPOSER_PREFS.pace;
+}
+
 const memory = new Map<string, ChatComposerPrefs>();
 
 export function chatComposerPrefsStorageKey(

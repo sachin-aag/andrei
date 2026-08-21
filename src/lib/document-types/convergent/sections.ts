@@ -26,8 +26,6 @@ export type ConvergentNarrativeSection = {
 
 export type ConvergentTestersDatesSection = {
   testers: JSONContent;
-  startDate: string;
-  endDate: string;
 };
 
 export type ConvergentTableSection = {
@@ -67,7 +65,7 @@ export const CONVERGENT_DV_SECTION_LABELS: Record<ConvergentDvSectionKey, string
 export const EMPTY_CONVERGENT_DV_CONTENT: ConvergentDvSectionMap = {
   purpose: { narrative: emptyDoc() },
   scope: { narrative: emptyDoc() },
-  testers_dates: { testers: emptyDoc(), startDate: "", endDate: "" },
+  testers_dates: { testers: emptyDoc() },
   methods_of_measurement: { narrative: emptyDoc() },
   test_equipment: { table: seededTableDoc(CONVERGENT_EQUIPMENT_HEADERS) },
   deviations: { narrative: emptyDoc() },
