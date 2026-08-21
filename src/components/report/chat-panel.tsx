@@ -506,7 +506,7 @@ function ChatBusyStatus({
         {stale
           ? "Still working — this can take a few minutes."
           : mode === "plan"
-            ? "Thinking through the plan…"
+            ? "Thinking through your question…"
             : "Working…"}
       </span>
       <button

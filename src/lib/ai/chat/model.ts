@@ -8,7 +8,7 @@ import type { EvalEffort } from "@/lib/eval/eval-generation-options";
  * Quick. Flash-Lite answers lookups and short edits without paying
  * orchestrator thinking on every step.
  */
-export const CHAT_QUICK_GOOGLE_MODEL_ID = "gemini-3.6-flash-lite" as const;
+export const CHAT_QUICK_GOOGLE_MODEL_ID = "gemini-3.5-flash-lite" as const;
 
 /**
  * Deep. Gemini 3.7 Flash is the stable Flash for agentic grep + draft loops.

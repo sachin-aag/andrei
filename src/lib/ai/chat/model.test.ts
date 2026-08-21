@@ -9,7 +9,7 @@ describe("chat pace config", () => {
 
   it("runs quick on Flash-Lite with minimal thinking", () => {
     expect(chatPaceConfig("quick")).toEqual({
-      modelId: "gemini-3.6-flash-lite",
+      modelId: "gemini-3.5-flash-lite",
       thinkingLevel: "minimal",
     });
   });
