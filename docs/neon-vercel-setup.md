@@ -1,6 +1,8 @@
 # Neon + Vercel integration setup
 
-One-time dashboard configuration for per-PR preview databases and automatic production migrations on merge.
+**Customer projects:** `andrei-v2`, `andrei-demo`, and `andrei-convergent` keep **Create a branch for each preview deployment** **off**. Use a shared Preview `DATABASE_URL`. See [whitelabel-vercel-deploy.md](./whitelabel-vercel-deploy.md). Per-PR Neon branches inject passwords that go stale (`28P01 password authentication failed`).
+
+The rest of this page is the integration mechanics if you opt in (or for a non-customer project). One-time dashboard configuration for per-PR preview databases and automatic production migrations on merge.
 
 ## Prerequisites
 
@@ -72,8 +74,9 @@ Install the [Neon GitHub integration](https://neon.com/docs/guides/branching-git
 ## Troubleshooting
 
 - **Preview branch still there after merge** — Expected without the GitHub cleanup workflow or `NEON_API_KEY` / `NEON_PROJECT_ID`. See §4. Optionally shorten Vercel **Settings → Security → Deployment retention** for pre-production.
-- **Build fails: DATABASE_URL is not set** — Neon integration not connected or preview branching disabled for that deployment.
-- **Preview uses production data** — Preview branching off; static Preview `DATABASE_URL` may point at `main`. Enable per-preview branches.
+- **Build fails: DATABASE_URL is not set** — Add a shared Preview `DATABASE_URL` (pooled). On customer projects, do **not** enable preview branching to paper over a missing URL.
+- **Build fails: 28P01 / password authentication failed** — Stale Neon preview-branch password. Turn preview branching **off** on the Vercel ↔ Neon integration; point Preview at the shared pooled URL. Do not hand-edit Neon-logo `DATABASE_URL` rows.
+- **Preview uses production data** — Expected when preview branching is off and Preview `DATABASE_URL` is the Production row. Use a dedicated Preview URL if you need isolation. Do not turn preview branching on for `andrei-v2`.
 - **Schema mismatch on preview** — Ensure migration SQL files are committed; `vercel:build` runs migrations before `next build`.
 
 See also [database-environments.md](./database-environments.md).
