@@ -461,9 +461,7 @@ export function ReportWorkspace({
         finish(false);
         return;
       }
-      timeouts.push(
-        window.setTimeout(() => attempt(next), retryDelaysMs[next])
-      );
+      timeouts.push(setTimeout(() => attempt(next), retryDelaysMs[next]));
     };
 
     const start = () => {
