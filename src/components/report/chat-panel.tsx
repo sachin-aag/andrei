@@ -24,6 +24,7 @@ import {
   Check,
   ArrowRightLeft,
   ImagePlus,
+  Square,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -61,7 +62,10 @@ import {
 } from "@/lib/ai/chat/image-parts";
 import {
   CHAT_ASSISTANT_ERROR_MESSAGE,
+  CHAT_ASSISTANT_INTERRUPTED_MESSAGE,
   assistantPartsHaveVisibleContent,
+  assistantProgressSignature,
+  chatWatchdogPhase,
   shouldShowEmptyAssistantError,
 } from "@/lib/ai/chat/assistant-turn";
 import {
@@ -482,6 +486,36 @@ function MentionMenu({
   );
 }
 
+function ChatBusyStatus({
+  mode,
+  stale,
+  onCancel,
+}: {
+  mode: ChatMode;
+  stale: boolean;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-2 text-xs text-[var(--muted-foreground)]">
+      <Loader2 className="size-3.5 animate-spin" />
+      <span>
+        {stale
+          ? "Still working — this can take a few minutes."
+          : mode === "plan"
+            ? "Thinking through the plan…"
+            : "Working…"}
+      </span>
+      <button
+        type="button"
+        onClick={onCancel}
+        className="underline decoration-[var(--border)] underline-offset-2 transition-colors hover:text-[var(--foreground)]"
+      >
+        Cancel
+      </button>
+    </div>
+  );
+}
+
 function MessageTurn({
   message,
   onSwitchSectionScope,
@@ -696,10 +730,18 @@ export function ChatPanel() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const pendingCaretRef = useRef<number | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
+  const reloadSessionRef = useRef<() => Promise<void>>(async () => {});
+  const busyStartedAtRef = useRef<number | null>(null);
+  const lastProgressAtRef = useRef<number | null>(null);
+  const lastProgressSigRef = useRef("");
+  const stoppedForWatchdogRef = useRef(false);
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const [silentMs, setSilentMs] = useState(0);
 
   const base = `/api/reports/${report.id}/chat`;
 
-  const { messages, sendMessage, setMessages, status, error } = useChat({
+  const { messages, sendMessage, setMessages, status, error, stop } = useChat({
     id: `report-chat-${report.id}`,
     transport: new DefaultChatTransport({ api: base }),
     onFinish: ({ message, isAbort, isDisconnect, isError }) => {
@@ -707,9 +749,13 @@ export function ChatPanel() {
       // gutter card), and refresh session titles/order.
       void refresh();
       void loadSessions();
+      if (isAbort || isDisconnect) {
+        void reloadSessionRef.current();
+        return;
+      }
       // Stream protocol errors already toast via onError. Empty Gemini turns
       // (thought-only / no parts) finish as success unless we catch them here.
-      if (isAbort || isDisconnect || isError) return;
+      if (isError) return;
       if (
         message.role === "assistant" &&
         !assistantPartsHaveVisibleContent(message.parts)
@@ -724,6 +770,7 @@ export function ChatPanel() {
   });
 
   const busy = status === "submitted" || status === "streaming";
+  const watchdog = chatWatchdogPhase({ busy, elapsedMs, silentMs });
 
   // Only ready documents are taggable — an attachment still being ingested has
   // no chunks, so scoping search to it would return nothing.
@@ -873,6 +920,69 @@ export function ChatPanel() {
     setMentions([]);
     setMentionRange(null);
   }, [createSession, setMessages]);
+
+  useEffect(() => {
+    sessionIdRef.current = currentSessionId;
+    reloadSessionRef.current = async () => {
+      const id = sessionIdRef.current;
+      if (id) await openSession(id);
+    };
+  }, [currentSessionId, openSession]);
+
+  const messagesRef = useRef(messages);
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  useEffect(() => {
+    if (!busy) {
+      busyStartedAtRef.current = null;
+      lastProgressAtRef.current = null;
+      lastProgressSigRef.current = "";
+      stoppedForWatchdogRef.current = false;
+      return;
+    }
+    if (busyStartedAtRef.current == null) busyStartedAtRef.current = Date.now();
+    const tick = () => {
+      const now = Date.now();
+      const started = busyStartedAtRef.current ?? now;
+      let lastAssistant: (typeof messages)[number] | undefined;
+      for (let i = messagesRef.current.length - 1; i >= 0; i--) {
+        const message = messagesRef.current[i];
+        if (message?.role === "assistant") {
+          lastAssistant = message;
+          break;
+        }
+      }
+      const signature = assistantProgressSignature(lastAssistant?.parts);
+      if (signature !== lastProgressSigRef.current) {
+        lastProgressSigRef.current = signature;
+        lastProgressAtRef.current = now;
+      }
+      const progress = lastProgressAtRef.current ?? started;
+      setElapsedMs(now - started);
+      setSilentMs(now - progress);
+      if (
+        chatWatchdogPhase({
+          busy: true,
+          elapsedMs: now - started,
+          silentMs: now - progress,
+        }) === "give_up" &&
+        !stoppedForWatchdogRef.current
+      ) {
+        stoppedForWatchdogRef.current = true;
+        stop();
+        toast.error(CHAT_ASSISTANT_INTERRUPTED_MESSAGE);
+      }
+    };
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [busy, stop]);
+
+  const stopTurn = useCallback(() => {
+    stop();
+  }, [stop]);
 
   // Initialize: load sessions, open the most recent or create the first.
   useEffect(() => {
@@ -1156,12 +1266,13 @@ export function ChatPanel() {
             />
           ))
         )}
-        {busy && (
-          <div className="flex items-center gap-2 text-xs text-[var(--muted-foreground)]">
-            <Loader2 className="size-3.5 animate-spin" />
-            {mode === "plan" ? "Thinking through the plan…" : "Working…"}
-          </div>
-        )}
+        {busy ? (
+          <ChatBusyStatus
+            mode={mode}
+            stale={watchdog === "stale" || watchdog === "give_up"}
+            onCancel={stopTurn}
+          />
+        ) : null}
         {error && (
           <p className="text-xs text-red-500">{CHAT_ASSISTANT_ERROR_MESSAGE}</p>
         )}
@@ -1346,19 +1457,30 @@ export function ChatPanel() {
               className="min-h-[40px] max-h-40 w-full resize-none rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)] disabled:opacity-50"
             />
           </div>
-          <button
-            type="submit"
-            disabled={
-              busy ||
-              initializing ||
-              attaching ||
-              (!input.trim() && pendingImages.length === 0)
-            }
-            aria-label="Send message"
-            className="flex size-9 items-center justify-center rounded-md bg-[var(--primary)] text-[var(--primary-foreground)] transition-opacity hover:opacity-90 disabled:opacity-40"
-          >
-            {busy ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-          </button>
+          {busy ? (
+            <button
+              type="button"
+              onClick={stopTurn}
+              aria-label="Stop generating"
+              title="Stop generating"
+              className="flex size-9 items-center justify-center rounded-md bg-[var(--primary)] text-[var(--primary-foreground)] transition-opacity hover:opacity-90"
+            >
+              <Square className="size-3.5 fill-current" />
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={
+                initializing ||
+                attaching ||
+                (!input.trim() && pendingImages.length === 0)
+              }
+              aria-label="Send message"
+              className="flex size-9 items-center justify-center rounded-md bg-[var(--primary)] text-[var(--primary-foreground)] transition-opacity hover:opacity-90 disabled:opacity-40"
+            >
+              <Send className="size-4" />
+            </button>
+          )}
         </div>
       </form>
     </div>

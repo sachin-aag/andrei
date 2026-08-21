@@ -72,6 +72,7 @@ import {
 import { sanitizeChatMessagesForModel } from "@/lib/ai/chat/image-parts";
 import {
   CHAT_ASSISTANT_ERROR_MESSAGE,
+  CHAT_SERVER_ABORT_MS,
   formatChatLlmError,
   isFailedChatFinishReason,
   partsForPersistedAssistantTurn,
@@ -84,6 +85,7 @@ import {
   resolveChatMentions,
 } from "@/lib/ai/chat/mentions";
 
+/** Must stay in sync with `CHAT_FUNCTION_MAX_DURATION_SEC`. */
 export const maxDuration = 300;
 
 function lastUserMessage(messages: UIMessage[]): UIMessage | null {
@@ -343,6 +345,9 @@ export async function POST(
           ...(prepared.toolChoice ? { toolChoice: prepared.toolChoice } : {}),
         };
       },
+      abortSignal: req.signal,
+      // Leave time to persist an interrupted row before Vercel kills the isolate.
+      timeout: { totalMs: CHAT_SERVER_ABORT_MS },
       // Gemini 3.x: thinkingLevel only. Do not set temperature / topP / topK /
       // seed — Google warns that sampling overrides degrade reasoning.
       // includeThoughts stays on for Langfuse; UI does not stream them.
@@ -408,7 +413,18 @@ export async function POST(
         parts: responseMessage.parts,
         isAborted,
       });
-      if (persisted.emptyFailure || isFailedChatFinishReason(finishReason)) {
+      if (persisted.interrupted) {
+        console.warn("chat: interrupted assistant turn", {
+          reportId,
+          sessionId,
+          finishReason: finishReason ?? "unknown",
+          isAborted,
+          partTypes: (responseMessage.parts ?? []).map((part) => part.type),
+        });
+      } else if (
+        persisted.emptyFailure ||
+        isFailedChatFinishReason(finishReason)
+      ) {
         console.error("chat: empty or failed assistant turn", {
           reportId,
           sessionId,
@@ -418,7 +434,6 @@ export async function POST(
           partTypes: (responseMessage.parts ?? []).map((part) => part.type),
         });
       }
-      if (isAborted) return;
       try {
         await db.insert(chatMessages).values({
           reportId,
