@@ -34,31 +34,41 @@ describe("isPostgresPasswordAuthError", () => {
 });
 
 describe("missingPreviewDatabaseUrlMessage", () => {
-  it("does not tell andrei-v2 to enable preview branching", () => {
+  it("tells preview to enable per-git-branch Neon inject", () => {
     const message = missingPreviewDatabaseUrlMessage({
       branch: "cursor/example",
     });
     expect(message).toContain("Branch: cursor/example");
-    expect(message).toMatch(/Do not enable "Create a branch for each preview deployment"/);
-    expect(message).not.toMatch(/andrei-v2: enable Neon preview branching/i);
+    expect(message).toMatch(
+      /Enable "Create a branch for each preview deployment"/
+    );
+    expect(message).not.toMatch(/shared Preview DATABASE_URL/i);
   });
 });
 
 describe("postgresPasswordAuthFailedMessage", () => {
-  it("names the host and points at the shared Preview URL", () => {
+  it("names the host and the Neon preview branch to delete", () => {
     const message = postgresPasswordAuthFailedMessage({
       host: "ep-divine-mountain-am0suhbz-pooler.c-5.us-east-1.aws.neon.tech",
       vercelEnv: "preview",
       deployScope: "mj",
+      gitBranch: "cursor/llm-assistant-error-visibility-e3fc",
     });
     expect(message).toContain("28P01");
     expect(message).toContain("ANDREI_VERCEL_DEPLOY_SCOPE=mj");
     expect(message).toContain(
       "ep-divine-mountain-am0suhbz-pooler.c-5.us-east-1.aws.neon.tech"
     );
-    expect(message).toMatch(/turn OFF/);
+    expect(message).toContain(
+      "Git branch: cursor/llm-assistant-error-visibility-e3fc"
+    );
+    expect(message).toContain(
+      "preview/cursor/llm-assistant-error-visibility-e3fc"
+    );
+    expect(message).toMatch(/Keep "Create a branch for each preview deployment" ON/);
     expect(message).toMatch(/Do not hand-edit Neon-logo/);
-    expect(message).not.toMatch(/enable Neon preview branching/i);
+    expect(message).not.toMatch(/turn OFF/i);
+    expect(message).not.toMatch(/shared pooled URL/i);
   });
 
   it("labels an unset deploy scope", () => {
