@@ -72,13 +72,16 @@ import {
   sectionLabel as chatSectionLabel,
   type ChatSectionScope,
 } from "@/lib/ai/chat/fields";
-import type { ChatPace } from "@/lib/ai/chat/pace";
+import { isChatPace, type ChatPace } from "@/lib/ai/chat/pace";
 import {
+  coerceChatMode,
+  coerceChatPace,
   DEFAULT_CHAT_COMPOSER_PREFS,
   readChatComposerPrefs,
   writeChatComposerPrefs,
 } from "@/lib/ai/chat/composer-prefs";
-import type { ChatMode } from "@/lib/ai/chat/system-prompt";
+import { examplePromptsForMode } from "@/lib/ai/chat/example-prompts";
+import { isChatMode, type ChatMode } from "@/lib/ai/chat/system-prompt";
 import {
   CHAT_IMAGE_MAX_BYTES,
   CHAT_MAX_IMAGES_PER_MESSAGE,
@@ -115,19 +118,6 @@ import {
 type PendingChatImage = {
   id: string;
   part: FileUIPart;
-};
-
-const EXAMPLE_PROMPTS: Record<ChatMode, string[]> = {
-  plan: [
-    "Help me document this deviation from scratch.",
-    "What do you need to complete the Define section?",
-    "Plan an investigation for an out-of-spec result on a medical device line.",
-  ],
-  agent: [
-    "Draft the Define section from what we discussed.",
-    "Tighten the problem statement and scope in Define.",
-    "Propose a clearer root cause and impact assessment in Analyze.",
-  ],
 };
 
 type ToolPartInfo = {
@@ -554,12 +544,13 @@ function MessageTurn({
   const isUser = message.role === "user";
 
   if (isUser) {
-    const text = message.parts
+    const parts = message.parts ?? [];
+    const text = parts
       .filter((p): p is { type: "text"; text: string } => p.type === "text")
       .map((p) => p.text)
       .join("\n")
       .trim();
-    const images = message.parts.filter(
+    const images = parts.filter(
       (p): p is FileUIPart => isFileUIPart(p) && p.mediaType.startsWith("image/")
     );
     if (!text && images.length === 0) return null;
@@ -586,8 +577,9 @@ function MessageTurn({
   }
 
   // Assistant turn: full-width, no bubble (Cursor-style), tool chips inline.
+  const parts = message.parts ?? [];
   const showEmptyError = shouldShowEmptyAssistantError({
-    parts: message.parts,
+    parts,
     streaming,
   });
   return (
@@ -599,7 +591,7 @@ function MessageTurn({
       {showEmptyError ? (
         <p className="text-sm text-red-600">{CHAT_ASSISTANT_ERROR_MESSAGE}</p>
       ) : (
-        groupAssistantParts(message.parts).map((group, i) => {
+        groupAssistantParts(parts).map((group, i) => {
           if (group.kind === "text") {
             if (!group.text.trim()) return null;
             return <ChatMarkdown key={i}>{group.text}</ChatMarkdown>;
@@ -647,7 +639,12 @@ function SectionScopeSelect({
   return (
     <Select
       value={value}
-      onValueChange={(next) => onChange(next as ChatSectionScope)}
+      onValueChange={(next) => {
+        if (next !== CHAT_SECTION_SCOPE_ALL && !sections.includes(next as SectionType)) {
+          return;
+        }
+        onChange(next as ChatSectionScope);
+      }}
       disabled={disabled}
     >
       <SelectTrigger
@@ -792,7 +789,10 @@ function ComposerSelect<T extends string>({
   return (
     <Select
       value={value}
-      onValueChange={(next) => onChange(next as T)}
+      onValueChange={(next) => {
+        if (!options.some((option) => option.value === next)) return;
+        onChange(next);
+      }}
       disabled={disabled}
     >
       <SelectTrigger
@@ -871,6 +871,7 @@ export function ChatPanel() {
   const [pace, setPaceState] = useState<ChatPace>(
     DEFAULT_CHAT_COMPOSER_PREFS.pace
   );
+  const [composerPrefsReady, setComposerPrefsReady] = useState(false);
   const composerPrefsRef = useRef({ mode, pace });
   composerPrefsRef.current = { mode, pace };
   const [sectionScope, setSectionScope] = useState<ChatSectionScope>(CHAT_SECTION_SCOPE_ALL);
@@ -972,6 +973,7 @@ export function ChatPanel() {
 
   const setMode = useCallback(
     (next: ChatMode) => {
+      if (!isChatMode(next)) return;
       setModeState(next);
       persistComposerPrefs({ mode: next, pace: composerPrefsRef.current.pace });
     },
@@ -980,6 +982,7 @@ export function ChatPanel() {
 
   const setPace = useCallback(
     (next: ChatPace) => {
+      if (!isChatPace(next)) return;
       setPaceState(next);
       persistComposerPrefs({ mode: composerPrefsRef.current.mode, pace: next });
     },
@@ -987,10 +990,14 @@ export function ChatPanel() {
   );
 
   useLayoutEffect(() => {
-    if (!currentUserId) return;
+    if (!currentUserId) {
+      setComposerPrefsReady(false);
+      return;
+    }
     const stored = readChatComposerPrefs(currentUserId, report.id);
-    setModeState(stored.mode);
-    setPaceState(stored.pace);
+    setModeState(coerceChatMode(stored.mode));
+    setPaceState(coerceChatPace(stored.pace));
+    setComposerPrefsReady(true);
   }, [currentUserId, report.id]);
 
   // Restore the caret after a mention replaces the in-progress @ token.
@@ -1057,9 +1064,10 @@ export function ChatPanel() {
     try {
       const res = await fetch(`${base}/sessions`);
       if (!res.ok) return [];
-      const data = (await res.json()) as { sessions: ChatSessionSummary[] };
-      setSessions(data.sessions);
-      return data.sessions;
+      const data = (await res.json()) as { sessions?: ChatSessionSummary[] };
+      const next = Array.isArray(data.sessions) ? data.sessions : [];
+      setSessions(next);
+      return next;
     } catch {
       return [];
     }
@@ -1435,7 +1443,7 @@ export function ChatPanel() {
                   : `Focused on ${scopeDescription(sectionScope)} — ask me to draft or improve that section. I'll propose targeted edits you accept or reject.`}
             </p>
             <div className="space-y-1.5">
-              {EXAMPLE_PROMPTS[mode].map((p) => (
+              {examplePromptsForMode(mode).map((p) => (
                 <button
                   key={p}
                   type="button"
@@ -1491,22 +1499,26 @@ export function ChatPanel() {
         )}
         <div className="mb-2 flex items-center gap-1.5">
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-            <ComposerSelect
-              value={mode}
-              options={modeOptions}
-              onChange={setMode}
-              disabled={busy}
-              ariaLabel="Assistant mode"
-              className="w-[6rem]"
-            />
-            <ComposerSelect
-              value={pace}
-              options={CHAT_PACE_OPTIONS}
-              onChange={setPace}
-              disabled={busy}
-              ariaLabel="Answer depth"
-              className="w-[6rem]"
-            />
+            {composerPrefsReady ? (
+              <>
+                <ComposerSelect
+                  value={mode}
+                  options={modeOptions}
+                  onChange={setMode}
+                  disabled={busy}
+                  ariaLabel="Assistant mode"
+                  className="w-[6rem]"
+                />
+                <ComposerSelect
+                  value={pace}
+                  options={CHAT_PACE_OPTIONS}
+                  onChange={setPace}
+                  disabled={busy}
+                  ariaLabel="Answer depth"
+                  className="w-[6rem]"
+                />
+              </>
+            ) : null}
             <SectionScopeSelect
               value={sectionScope}
               onChange={changeSectionScope}
