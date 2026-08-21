@@ -549,6 +549,14 @@ function localMetadataPath(objectKey: string): string {
   return `${localObjectPath(objectKey)}.metadata.json`;
 }
 
+/**
+ * Test-only. Specs share one on-disk root, so they must clean up per object key
+ * instead of wiping the root out from under a parallel spec.
+ */
+export function localObjectPathForTests(objectKey: string): string {
+  return localObjectPath(objectKey);
+}
+
 function localUploadSessionPath(sessionId: string): string {
   return path.join(LOCAL_UPLOAD_SESSIONS_ROOT, `${sessionId}.json`);
 }
