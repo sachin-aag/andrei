@@ -91,8 +91,9 @@ export function classifyRetrievalPolicy(
 }
 
 /**
- * Thinking runs on every orchestrator step. Level is fixed at low
- * until we route it by task; 3.7 Flash does not support `minimal`.
+ * Thinking runs on every orchestrator step. Level is fixed at low until we
+ * route it by task. 3.5 Flash-Lite allows `minimal`, but that can stop
+ * multi-step tool use early.
  */
 export function chatThinkingLevel(
   policy: RetrievalPolicy

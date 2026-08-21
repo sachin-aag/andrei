@@ -2,25 +2,24 @@ import type { LanguageModel } from "ai";
 import { resolveGoogleLanguageModel } from "@/lib/ai/resolve-google-language-model";
 
 /**
- * Orchestrator for the report drafting chat. Gemini 3.7 Flash is the
- * stable Flash for agentic grep + draft loops. Vertex Gemini 3.x is
+ * Orchestrator for the report drafting chat. Gemini 3.5 Flash-Lite is the
+ * latency/cost Flash for agentic grep + draft loops. Vertex Gemini 3.x is
  * served from `global`.
+ * @see https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite
  */
-export const CHAT_GOOGLE_MODEL_ID = "gemini-3.7-flash" as const;
+export const CHAT_GOOGLE_MODEL_ID = "gemini-3.5-flash-lite" as const;
 
 /**
- * Page-extract worker inside document review. Flash-Lite stays on the
- * 8-wide drain so a 62-page walk does not pay Flash on every batch.
+ * Page-extract worker inside document review. Same Flash-Lite family as the
+ * orchestrator, with `minimal` thinking, so a 62-page drain stays cheap.
  */
 export const CHAT_EXTRACT_GOOGLE_MODEL_ID = "gemini-3.5-flash-lite" as const;
 
 /**
- * Fixed thinking for the 3.7 Flash orchestrator until we route by task.
- * 3.7 Flash supports `low` | `medium` | `high` and rejects `minimal`
- * (Vertex 400). `low` is the lowest latency/cost setting. Omit
- * temperature / topP / seed — Gemini 3.x should keep sampling defaults.
- * Flash-Lite extracts still use `minimal` thinking.
- * @see https://ai.google.dev/gemini-api/docs/models/gemini-3.7-flash
+ * Fixed thinking for the orchestrator until we route by task. 3.5 Flash-Lite
+ * defaults to `minimal`, which Google warns can end multi-step tool use
+ * early. Keep `low` on the grep + draft loop. Omit temperature / topP / seed.
+ * @see https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite
  */
 export const CHAT_THINKING_LEVEL = "low" as const;
 

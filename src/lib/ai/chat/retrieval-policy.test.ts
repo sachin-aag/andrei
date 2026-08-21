@@ -109,7 +109,7 @@ describe("classifyRetrievalPolicy", () => {
 });
 
 describe("chatThinkingLevel", () => {
-  it("uses low thinking until we route thinking by task", () => {
+  it("keeps low thinking on 3.5 Flash-Lite until we route by task", () => {
     expect(chatThinkingLevel("focused")).toBe("low");
     expect(chatThinkingLevel("adaptive")).toBe("low");
     expect(chatThinkingLevel("comprehensive")).toBe("low");
