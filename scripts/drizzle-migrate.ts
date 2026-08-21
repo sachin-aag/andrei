@@ -5,6 +5,11 @@
  *   pnpm db:migrate -- --prod  → prod DB only (.env, .env.local ignored)
  */
 import { config } from "dotenv";
+import {
+  isPostgresPasswordAuthError,
+  missingPreviewDatabaseUrlMessage,
+  postgresPasswordAuthFailedMessage,
+} from "@/lib/db/migrate-env-errors";
 import { runPendingMigrations } from "@/lib/db/run-pending-migrations";
 
 const isProd = process.argv.includes("--prod");
@@ -26,14 +31,7 @@ if (!url) {
   const branch = process.env.VERCEL_GIT_COMMIT_REF ?? "(unknown branch)";
 
   if (onVercel && vercelEnv === "preview") {
-    console.error(
-      "DATABASE_URL is not set for this Vercel Preview deployment.\n" +
-        `Branch: ${branch}\n` +
-        "andrei-v2: enable Neon preview branching on the Vercel ↔ Neon integration.\n" +
-        "andrei-demo: add the demo Neon pooled URL to Preview in Settings → Environment Variables\n" +
-        "(required for Preview deployments).\n" +
-        "See docs/whitelabel-vercel-deploy.md § Deploy scope."
-    );
+    console.error(missingPreviewDatabaseUrlMessage({ branch }));
   } else {
     console.error(
       "DATABASE_URL is not set. On Vercel, ensure the Neon integration is connected. Locally, use .env.local or .env."
@@ -71,6 +69,15 @@ async function main() {
 }
 
 main().catch((e) => {
+  if (isPostgresPasswordAuthError(e)) {
+    console.error(
+      postgresPasswordAuthFailedMessage({
+        host: databaseHost(url ?? ""),
+        vercelEnv: process.env.VERCEL_ENV ?? "unknown",
+        deployScope: process.env.ANDREI_VERCEL_DEPLOY_SCOPE,
+      })
+    );
+  }
   console.error(e);
   process.exit(1);
 });

@@ -204,6 +204,7 @@ Same emails as demo (`sachin@` / `aditya@` plus `+manager` / `+admin`). Temporar
 |---------|-----|
 | PR builds on **neither** Vercel project | Ignored Build Step in the Vercel project, or Git integration disconnected — repo policy is to build every ref on both projects |
 | Demo PR creates a Neon branch on MJ | Neon preview branching is on for **andrei-v2**. Turn it off; do not hand-edit the Neon-logo `DATABASE_URL` rows |
+| Preview `pnpm vercel:build` fails with `28P01` / `password authentication failed for user 'neondb_owner'` | Stale Neon preview-branch `DATABASE_URL` (host looks like `ep-…-pooler…neon.tech`). Turn **Create a branch for each preview deployment** **off**. Do not hand-edit Neon-logo rows. Point Preview at the shared pooled URL (dedicated MJ preview DB — not production unless intentional). Delete leftover Neon `preview/…` branches |
 | MJ looks like Andrei | `NEXT_PUBLIC_ANDREI_CUSTOMER` unset on `andrei-v2` (client defaults to demo) |
 | MJ export missing conclusion | Expected — MJ template has no `{@conclusionNarrativeXml}`; pack hides the section |
 | Ingest/chat 500 on MJ | Vertex WIF + GCS missing; do not set local attachment flags |
