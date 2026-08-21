@@ -136,7 +136,7 @@ export const DEMO_PACK: CustomerPack = {
   branding: ANDREI_BRANDING,
 };
 
-export const CONVERGENT_PROMPT_VERSION = "convergent-dv-v4";
+export const CONVERGENT_PROMPT_VERSION = "convergent-dv-v5";
 
 export const CONVERGENT_PACK: CustomerPack = {
   id: "convergent",

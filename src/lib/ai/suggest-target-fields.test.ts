@@ -40,13 +40,12 @@ describe("design verification target fields", () => {
       "narrative",
       "table",
     ]);
-    expect(concreteTargetFields("testers_dates")).toEqual([
-      "testers",
-      "startDate",
-      "endDate",
-    ]);
+    expect(concreteTargetFields("testers_dates")).toEqual(["testers"]);
     expect(isRichTargetField("testers_dates", "testers")).toBe(true);
     expect(isRichTargetField("testers_dates", "startDate")).toBe(false);
+    expect(chatTargetFields("testers_dates").map((f) => f.targetField)).toEqual([
+      "testers",
+    ]);
   });
 });
 
@@ -58,6 +57,7 @@ describe("resolveTargetField", () => {
     expect(resolveTargetField("test_results", "test_results")).toBe("table");
     expect(resolveTargetField("control", "control")).toBe("preventiveActions");
     expect(resolveTargetField("testers_dates", "testers")).toBe("testers");
+    expect(resolveTargetField("testers_dates", "testers_dates")).toBe("testers");
     expect(resolveTargetField("test_equipment", "test_equipment")).toBe("table");
     expect(resolveTargetField("purpose", "purpose")).toBe("narrative");
   });
@@ -72,7 +72,8 @@ describe("resolveTargetField", () => {
   it("does not guess when a section has multiple fields", () => {
     expect(resolveTargetField("improve", "improve")).toBeNull();
     expect(resolveTargetField("analyze", "analyze")).toBeNull();
-    expect(resolveTargetField("testers_dates", "testers_dates")).toBeNull();
+    expect(resolveTargetField("testers_dates", "startDate")).toBeNull();
+    expect(resolveTargetField("testers_dates", "endDate")).toBeNull();
     expect(
       resolveTargetField("results_and_discussions", "results_and_discussions")
     ).toBeNull();
