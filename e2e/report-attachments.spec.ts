@@ -129,10 +129,14 @@ test.describe("report PDF documents", () => {
     });
   });
 
-  test("download all is disabled until a document is stored", async ({ page }) => {
+  test("download all stays hidden until a document is stored", async ({ page }) => {
+    const panel = documentsPanel(page);
     await expect(
-      documentsPanel(page).getByRole("button", { name: /download all documents/i })
-    ).toBeDisabled();
+      panel.getByRole("button", { name: /upload pdf or word document/i })
+    ).toBeVisible();
+    await expect(panel.getByRole("link", { name: /^download all$/i })).toHaveCount(
+      0
+    );
   });
 
   test("download all zips every stored document", async ({ page }) => {
@@ -145,7 +149,7 @@ test.describe("report PDF documents", () => {
     ).toHaveCount(2, { timeout: 30_000 });
 
     const downloadPromise = page.waitForEvent("download");
-    await panel.getByRole("link", { name: /download all documents/i }).click();
+    await panel.getByRole("link", { name: /^download all$/i }).click();
     const download = await downloadPromise;
     expect(download.suggestedFilename()).toMatch(/^Attachments_.+\.zip$/i);
 
