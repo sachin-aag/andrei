@@ -87,6 +87,19 @@ function markColumn(
   }
 }
 
+export type CellDiffKind = "equal" | "delete" | "insert";
+
+export type CellDiffRun = {
+  kind: CellDiffKind;
+  text: string;
+};
+
+/**
+ * Ignore short coincidental overlaps (" / ", "S/N") so a real replace stays
+ * one delete + one insert. Long enough to keep a serial or model number.
+ */
+const MIN_SHARED_INFIX = 6;
+
 /** Longest shared prefix and suffix so only the changed span is marked. */
 export function prefixSuffixDiff(
   before: string,
@@ -115,6 +128,97 @@ export function prefixSuffixDiff(
   };
 }
 
+function longestCommonSubstring(
+  a: string,
+  b: string
+): { aStart: number; bStart: number; length: number } {
+  let best = { aStart: 0, bStart: 0, length: 0 };
+  if (!a || !b) return best;
+
+  let prev = new Array<number>(b.length + 1).fill(0);
+  let curr = new Array<number>(b.length + 1).fill(0);
+
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      if (a[i - 1] === b[j - 1]) {
+        const len = prev[j - 1]! + 1;
+        curr[j] = len;
+        if (len > best.length) {
+          best = { aStart: i - len, bStart: j - len, length: len };
+        }
+      } else {
+        curr[j] = 0;
+      }
+    }
+    const swap = prev;
+    prev = curr;
+    curr = swap;
+    curr.fill(0);
+  }
+
+  return best;
+}
+
+function mergeAdjacentRuns(runs: CellDiffRun[]): CellDiffRun[] {
+  const out: CellDiffRun[] = [];
+  for (const run of runs) {
+    if (!run.text) continue;
+    const last = out[out.length - 1];
+    if (last && last.kind === run.kind) {
+      last.text += run.text;
+    } else {
+      out.push({ ...run });
+    }
+  }
+  return out;
+}
+
+function diffRange(before: string, after: string): CellDiffRun[] {
+  if (before === after) {
+    return before ? [{ kind: "equal", text: before }] : [];
+  }
+  if (!before) return [{ kind: "insert", text: after }];
+  if (!after) return [{ kind: "delete", text: before }];
+
+  const { prefix, deleted, inserted, suffix } = prefixSuffixDiff(before, after);
+  if (prefix || suffix) {
+    return [
+      ...(prefix ? [{ kind: "equal" as const, text: prefix }] : []),
+      ...diffRange(deleted, inserted),
+      ...(suffix ? [{ kind: "equal" as const, text: suffix }] : []),
+    ];
+  }
+
+  const shared = longestCommonSubstring(before, after);
+  if (shared.length >= MIN_SHARED_INFIX) {
+    const sharedText = before.slice(
+      shared.aStart,
+      shared.aStart + shared.length
+    );
+    return [
+      ...diffRange(before.slice(0, shared.aStart), after.slice(0, shared.bStart)),
+      { kind: "equal", text: sharedText },
+      ...diffRange(
+        before.slice(shared.aStart + shared.length),
+        after.slice(shared.bStart + shared.length)
+      ),
+    ];
+  }
+
+  return [
+    { kind: "delete", text: before },
+    { kind: "insert", text: after },
+  ];
+}
+
+/**
+ * Track-change runs for a cell: keep a shared middle (serial, model no.)
+ * unmarked instead of striking it and typing it again.
+ */
+export function cellTextDiff(before: string, after: string): CellDiffRun[] {
+  return mergeAdjacentRuns(diffRange(before, after));
+}
+
 function markedRun(
   text: string,
   markName: string | null,
@@ -137,13 +241,17 @@ function paintCellEditPreview(
   const after = normalizeTableCellText(
     normalizeSuggestionInsertText(edit.insertText)
   );
-  const { prefix, deleted, inserted, suffix } = prefixSuffixDiff(before, after);
-  const content = [
-    markedRun(prefix, null, attrs),
-    markedRun(deleted, suggestionDeleteMarkName, attrs),
-    markedRun(inserted, suggestionInsertMarkName, attrs),
-    markedRun(suffix, null, attrs),
-  ].filter((node): node is JSONContent => node !== null);
+  const content = cellTextDiff(before, after)
+    .map((run) => {
+      const markName =
+        run.kind === "delete"
+          ? suggestionDeleteMarkName
+          : run.kind === "insert"
+            ? suggestionInsertMarkName
+            : null;
+      return markedRun(run.text, markName, attrs);
+    })
+    .filter((node): node is JSONContent => node !== null);
 
   cell.content = [
     {

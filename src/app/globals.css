@@ -349,12 +349,6 @@ html[data-customer="convergent"] {
   border-bottom: 2px solid rgb(22 101 52);
 }
 
-.ProseMirror tr:has(.suggestion-delete),
-.ProseMirror td:has(.suggestion-delete),
-.ProseMirror th:has(.suggestion-delete) {
-  background-color: rgb(220 38 38 / 0.08);
-}
-
 .suggestion-delete {
   text-decoration: line-through;
   text-decoration-thickness: 2px;

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { flattenForAnchor } from "@/lib/suggestions/locator";
 import {
   buildTableOperationPreviewDoc,
+  cellTextDiff,
   prefixSuffixDiff,
 } from "@/lib/suggestions/table-preview";
 import {
@@ -186,6 +187,44 @@ describe("buildTableOperationPreviewDoc", () => {
       { text: " (TOP-00017)", insert: false, deleted: false },
     ]);
   });
+
+  it("keeps a shared serial unmarked when wrapping it with a prefix and suffix", () => {
+    const serial = "TOP-00017 / S/N: 0300650";
+    const preview = buildTableOperationPreviewDoc(
+      tableDoc(
+        ["Equipment", "Serial"],
+        [["Solea Dental Laser System", serial]]
+      ),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 1,
+            expectedText: serial,
+            insertText: `UUT 1 / ${serial} [Appendix B DV Report.pdf, p. 32]`,
+          },
+        ],
+      },
+      PREVIEW_ATTRS
+    );
+
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) return;
+    expect(cellRuns(preview.doc, 1, 0)).toEqual([
+      { text: "Solea Dental Laser System", insert: false, deleted: false },
+    ]);
+    expect(cellRuns(preview.doc, 1, 1)).toEqual([
+      { text: "UUT 1 / ", insert: true, deleted: false },
+      { text: serial, insert: false, deleted: false },
+      {
+        text: " [Appendix B DV Report.pdf, p. 32]",
+        insert: true,
+        deleted: false,
+      },
+    ]);
+  });
 });
 
 describe("prefixSuffixDiff", () => {
@@ -201,5 +240,28 @@ describe("prefixSuffixDiff", () => {
       inserted: " (UUT 1)",
       suffix: "",
     });
+  });
+});
+
+describe("cellTextDiff", () => {
+  it("keeps a shared middle unmarked when adding a prefix and suffix", () => {
+    const serial = "TOP-00017 / S/N: 0300650";
+    expect(
+      cellTextDiff(
+        serial,
+        `UUT 1 / ${serial} [Appendix B DV Report.pdf, p. 32]`
+      )
+    ).toEqual([
+      { kind: "insert", text: "UUT 1 / " },
+      { kind: "equal", text: serial },
+      { kind: "insert", text: " [Appendix B DV Report.pdf, p. 32]" },
+    ]);
+  });
+
+  it("does not split a replace on a short coincidental overlap", () => {
+    expect(cellTextDiff("AAA / BBB", "CCC / DDD")).toEqual([
+      { kind: "delete", text: "AAA / BBB" },
+      { kind: "insert", text: "CCC / DDD" },
+    ]);
   });
 });
