@@ -78,7 +78,7 @@ import {
   readChatComposerPrefs,
   writeChatComposerPrefs,
 } from "@/lib/ai/chat/composer-prefs";
-import type { ChatMode } from "@/lib/ai/chat/system-prompt";
+import { isChatMode, type ChatMode } from "@/lib/ai/chat/system-prompt";
 import {
   CHAT_IMAGE_MAX_BYTES,
   CHAT_MAX_IMAGES_PER_MESSAGE,
@@ -972,6 +972,7 @@ export function ChatPanel() {
 
   const setMode = useCallback(
     (next: ChatMode) => {
+      if (!isChatMode(next)) return;
       setModeState(next);
       persistComposerPrefs({ mode: next, pace: composerPrefsRef.current.pace });
     },
@@ -1350,7 +1351,7 @@ export function ChatPanel() {
     sessions.find((s) => s.id === currentSessionId)?.title ?? "Investigation assistant";
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col" aria-busy={initializing}>
       {/* Header: title + new chat + history */}
       <div className="relative flex items-center gap-2 border-b border-[var(--border)] px-3 py-2.5">
         <Sparkles className="size-4 shrink-0 text-[var(--primary)]" />
@@ -1435,7 +1436,7 @@ export function ChatPanel() {
                   : `Focused on ${scopeDescription(sectionScope)} — ask me to draft or improve that section. I'll propose targeted edits you accept or reject.`}
             </p>
             <div className="space-y-1.5">
-              {EXAMPLE_PROMPTS[mode].map((p) => (
+              {(EXAMPLE_PROMPTS[mode] ?? EXAMPLE_PROMPTS.agent).map((p) => (
                 <button
                   key={p}
                   type="button"

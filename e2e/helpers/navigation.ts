@@ -36,3 +36,12 @@ export async function parkPageForSessionSwap(page: Page): Promise<void> {
     2
   );
 }
+
+/** Prefer a fresh GET of the current URL — `reload()` races in-flight RSC/nav. */
+export async function reloadWithNavigationRetry(
+  page: Page,
+  options?: Parameters<Page["goto"]>[1],
+  maxAttempts = 3
+): Promise<Awaited<ReturnType<Page["goto"]>>> {
+  return gotoWithNavigationRetry(page, page.url(), options, maxAttempts);
+}
