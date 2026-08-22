@@ -8,6 +8,7 @@ import {
   defaultWorkspaceLayout,
   DOCS_DEFAULT_PX,
   docsWidthBounds,
+  getWorkspaceLayoutServerSnapshot,
   getWorkspaceLayoutSnapshot,
   isReviewGutterVisible,
   mainMinWidth,
@@ -285,6 +286,18 @@ describe("session workspace layout", () => {
     updateWorkspaceLayout((prev) => ({ ...prev, chatWidth: 512 }));
     bindWorkspaceLayoutToReport("report-b");
     expect(getWorkspaceLayoutSnapshot()).toEqual(defaultWorkspaceLayout());
+  });
+
+  it("caches getServerSnapshot so React 19 hydration does not loop", () => {
+    expect(getWorkspaceLayoutServerSnapshot()).toBe(
+      getWorkspaceLayoutServerSnapshot()
+    );
+  });
+
+  it("uses the same default reference on the client before a drag", () => {
+    expect(getWorkspaceLayoutSnapshot()).toBe(getWorkspaceLayoutServerSnapshot());
+    bindWorkspaceLayoutToReport("report-a");
+    expect(getWorkspaceLayoutSnapshot()).toBe(getWorkspaceLayoutServerSnapshot());
   });
 });
 

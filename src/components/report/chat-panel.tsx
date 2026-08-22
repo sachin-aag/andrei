@@ -78,7 +78,7 @@ import {
   readChatComposerPrefs,
   writeChatComposerPrefs,
 } from "@/lib/ai/chat/composer-prefs";
-import type { ChatMode } from "@/lib/ai/chat/system-prompt";
+import { isChatMode, type ChatMode } from "@/lib/ai/chat/system-prompt";
 import {
   CHAT_IMAGE_MAX_BYTES,
   CHAT_MAX_IMAGES_PER_MESSAGE,
@@ -972,6 +972,7 @@ export function ChatPanel() {
 
   const setMode = useCallback(
     (next: ChatMode) => {
+      if (!isChatMode(next)) return;
       setModeState(next);
       persistComposerPrefs({ mode: next, pace: composerPrefsRef.current.pace });
     },
@@ -1435,7 +1436,7 @@ export function ChatPanel() {
                   : `Focused on ${scopeDescription(sectionScope)} — ask me to draft or improve that section. I'll propose targeted edits you accept or reject.`}
             </p>
             <div className="space-y-1.5">
-              {EXAMPLE_PROMPTS[mode].map((p) => (
+              {(EXAMPLE_PROMPTS[mode] ?? EXAMPLE_PROMPTS.agent).map((p) => (
                 <button
                   key={p}
                   type="button"
