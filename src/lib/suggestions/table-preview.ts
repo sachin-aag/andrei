@@ -1,15 +1,19 @@
 import type { JSONContent } from "@tiptap/core";
-import {
-  suggestionDeleteMarkName,
-  suggestionInsertMarkName,
-} from "@/lib/tiptap/suggestion-marks";
-import type { RedraftPreviewAttrs } from "@/lib/tiptap/redraft-preview";
+import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 import {
   applyTableOperation,
+  cellPlainText,
+  normalizeTableCellText,
+  type TableCellEdit,
   type TableOperation,
   type TableOperationContext,
   type TableOperationResult,
 } from "@/lib/suggestions/table-operation";
+import type { RedraftPreviewAttrs } from "@/lib/tiptap/redraft-preview";
+import {
+  suggestionDeleteMarkName,
+  suggestionInsertMarkName,
+} from "@/lib/tiptap/suggestion-marks";
 
 function collectTables(doc: JSONContent): JSONContent[] {
   const tables: JSONContent[] = [];
@@ -83,6 +87,72 @@ function markColumn(
   }
 }
 
+/** Longest shared prefix and suffix so only the changed span is marked. */
+export function prefixSuffixDiff(
+  before: string,
+  after: string
+): { prefix: string; deleted: string; inserted: string; suffix: string } {
+  let start = 0;
+  const shared = Math.min(before.length, after.length);
+  while (start < shared && before[start] === after[start]) start += 1;
+
+  let endBefore = before.length;
+  let endAfter = after.length;
+  while (
+    endBefore > start &&
+    endAfter > start &&
+    before[endBefore - 1] === after[endAfter - 1]
+  ) {
+    endBefore -= 1;
+    endAfter -= 1;
+  }
+
+  return {
+    prefix: before.slice(0, start),
+    deleted: before.slice(start, endBefore),
+    inserted: after.slice(start, endAfter),
+    suffix: before.slice(endBefore),
+  };
+}
+
+function markedRun(
+  text: string,
+  markName: string | null,
+  attrs: RedraftPreviewAttrs
+): JSONContent | null {
+  if (!text) return null;
+  return {
+    type: "text",
+    text,
+    marks: markName ? [{ type: markName, attrs: { ...attrs } }] : undefined,
+  };
+}
+
+function paintCellEditPreview(
+  cell: JSONContent,
+  edit: TableCellEdit,
+  attrs: RedraftPreviewAttrs
+): void {
+  const before = cellPlainText(cell);
+  const after = normalizeTableCellText(
+    normalizeSuggestionInsertText(edit.insertText)
+  );
+  const { prefix, deleted, inserted, suffix } = prefixSuffixDiff(before, after);
+  const content = [
+    markedRun(prefix, null, attrs),
+    markedRun(deleted, suggestionDeleteMarkName, attrs),
+    markedRun(inserted, suggestionInsertMarkName, attrs),
+    markedRun(suffix, null, attrs),
+  ].filter((node): node is JSONContent => node !== null);
+
+  cell.content = [
+    {
+      type: "paragraph",
+      content: content.length ? content : undefined,
+    },
+  ];
+}
+
 /**
  * Apply a table operation for in-editor preview and paint the changed
  * cells with the same insert/delete marks used for prose suggestions.
@@ -121,12 +191,17 @@ export function buildTableOperationPreviewDoc(
   const rows = tableRows(table);
 
   switch (operation.kind) {
-    case "edit_cells":
+    case "edit_cells": {
+      const preview = structuredClone(doc);
+      const originalTable = collectTables(preview)[operation.tableIndex];
+      if (!originalTable) return applied;
+      const originalRows = tableRows(originalTable);
       for (const cell of operation.cells) {
-        const node = rowCells(rows[cell.row] ?? {})[cell.col];
-        if (node) markAllText(node, suggestionInsertMarkName, attrs);
+        const node = rowCells(originalRows[cell.row] ?? {})[cell.col];
+        if (node) paintCellEditPreview(node, cell, attrs);
       }
-      return applied;
+      return { ok: true, status: "ok", doc: preview };
+    }
     case "insert_rows": {
       const afterRow = operation.afterRow ?? 0;
       const inserted = operation.rows.map((_, i) => afterRow + 1 + i);

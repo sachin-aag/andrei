@@ -1,8 +1,14 @@
 import type { JSONContent } from "@tiptap/core";
 import { describe, expect, it } from "vitest";
 import { flattenForAnchor } from "@/lib/suggestions/locator";
-import { buildTableOperationPreviewDoc } from "@/lib/suggestions/table-preview";
-import { suggestionInsertMarkName } from "@/lib/tiptap/suggestion-marks";
+import {
+  buildTableOperationPreviewDoc,
+  prefixSuffixDiff,
+} from "@/lib/suggestions/table-preview";
+import {
+  suggestionDeleteMarkName,
+  suggestionInsertMarkName,
+} from "@/lib/tiptap/suggestion-marks";
 
 function textCell(
   type: "tableHeader" | "tableCell",
@@ -65,6 +71,33 @@ function cellText(doc: JSONContent, row: number, col: number): string {
   return flattenForAnchor(cells[col]!).text.replace(/\s+/g, " ").trim();
 }
 
+function cellRuns(
+  doc: JSONContent,
+  row: number,
+  col: number
+): Array<{ text: string; insert: boolean; deleted: boolean }> {
+  const table = (doc.content ?? []).find((n) => n.type === "table")!;
+  const rows = (table.content ?? []).filter((n) => n.type === "tableRow");
+  const cells = (rows[row]!.content ?? []).filter(
+    (n) => n.type === "tableCell" || n.type === "tableHeader"
+  );
+  const runs: Array<{ text: string; insert: boolean; deleted: boolean }> = [];
+  const walk = (node: JSONContent) => {
+    if (node.type === "text" && node.text) {
+      const marks = node.marks ?? [];
+      runs.push({
+        text: node.text,
+        insert: marks.some((m) => m.type === suggestionInsertMarkName),
+        deleted: marks.some((m) => m.type === suggestionDeleteMarkName),
+      });
+      return;
+    }
+    node.content?.forEach(walk);
+  };
+  walk(cells[col]!);
+  return runs;
+}
+
 describe("buildTableOperationPreviewDoc", () => {
   it("marks inserted rows with suggestion insert marks", () => {
     const preview = buildTableOperationPreviewDoc(
@@ -84,5 +117,89 @@ describe("buildTableOperationPreviewDoc", () => {
     expect(rowHasInsertMark(preview.doc, 0)).toBe(false);
     expect(rowHasInsertMark(preview.doc, 1)).toBe(true);
     expect(rowHasInsertMark(preview.doc, 2)).toBe(false);
+  });
+
+  it("marks only the added suffix on edit_cells, not the original cell text", () => {
+    const preview = buildTableOperationPreviewDoc(
+      tableDoc(
+        ["Equipment"],
+        [["Solea Dental Laser System"], ["Solea Dental Laser System"]]
+      ),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 0,
+            expectedText: "Solea Dental Laser System",
+            insertText: "Solea Dental Laser System (UUT 1)",
+          },
+          {
+            row: 2,
+            col: 0,
+            expectedText: "Solea Dental Laser System",
+            insertText: "Solea Dental Laser System (UUT 2)",
+          },
+        ],
+      },
+      PREVIEW_ATTRS
+    );
+
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) return;
+    expect(cellRuns(preview.doc, 1, 0)).toEqual([
+      { text: "Solea Dental Laser System", insert: false, deleted: false },
+      { text: " (UUT 1)", insert: true, deleted: false },
+    ]);
+    expect(cellRuns(preview.doc, 2, 0)).toEqual([
+      { text: "Solea Dental Laser System", insert: false, deleted: false },
+      { text: " (UUT 2)", insert: true, deleted: false },
+    ]);
+    expect(rowHasInsertMark(preview.doc, 0)).toBe(false);
+  });
+
+  it("strikes replaced text and greens the replacement", () => {
+    const preview = buildTableOperationPreviewDoc(
+      tableDoc(["Model"], [["Model 3 (TOP-00017)"]]),
+      {
+        kind: "edit_cells",
+        tableIndex: 0,
+        cells: [
+          {
+            row: 1,
+            col: 0,
+            expectedText: "Model 3 (TOP-00017)",
+            insertText: "Model 4 (TOP-00017)",
+          },
+        ],
+      },
+      PREVIEW_ATTRS
+    );
+
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) return;
+    expect(cellRuns(preview.doc, 1, 0)).toEqual([
+      { text: "Model ", insert: false, deleted: false },
+      { text: "3", insert: false, deleted: true },
+      { text: "4", insert: true, deleted: false },
+      { text: " (TOP-00017)", insert: false, deleted: false },
+    ]);
+  });
+});
+
+describe("prefixSuffixDiff", () => {
+  it("isolates a trailing addition", () => {
+    expect(
+      prefixSuffixDiff(
+        "Solea Dental Laser System",
+        "Solea Dental Laser System (UUT 1)"
+      )
+    ).toEqual({
+      prefix: "Solea Dental Laser System",
+      deleted: "",
+      inserted: " (UUT 1)",
+      suffix: "",
+    });
   });
 });
