@@ -174,7 +174,9 @@ test.describe("report chat", () => {
     await expect(sidebar.getByText("first concurrent chat ping")).toHaveCount(0);
 
     await sidebar.getByRole("button", { name: /^chat history$/i }).click();
-    await expect(sidebar.getByText(/still working/i)).toBeVisible({
+    // The parked first thread is still in flight. The second may also still be
+    // streaming, so do not require a single match.
+    await expect(sidebar.getByText(/still working/i).first()).toBeVisible({
       timeout: 5_000,
     });
   });
