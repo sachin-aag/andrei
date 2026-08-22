@@ -42,7 +42,7 @@ Set on **each** project → Settings → Environment Variables → Production, P
 | **andrei-v2** | `ANDREI_VERCEL_DEPLOY_SCOPE` | `mj` |
 | **andrei-convergent** | `ANDREI_VERCEL_DEPLOY_SCOPE` | `convergent` |
 
-**Neon preview branching:** keep **Create a branch for each preview deployment** **on** for `andrei-v2`, `andrei-demo`, and `andrei-convergent`. Each git ref gets `preview/<git-branch>` on that project's Neon. Production stays on the default Neon branch. Enable cleanup when the preview deployment / git branch is removed (`neon-preview-cleanup.yml` plus the integration toggle).
+**Neon preview branching:** keep **Create a branch for each preview deployment** **on** for `andrei-v2`, `andrei-demo`, and `andrei-convergent`. Each git ref gets `preview/<git-branch>` on that project's Neon. Production stays on the default Neon branch. Enable cleanup when the preview deployment / git branch is removed (`neon-preview-cleanup.yml` plus the integration toggle). The GitHub cleanup workflow must run against **all three** Neon projects — MJ-only cleanup is how `andrei-demo` previews get stuck on Building.
 
 The integration injects **Preview / git-branch** `DATABASE_URL` and `DATABASE_URL_UNPOOLED` (Neon logo, branch name truncated) for that ref only. Those are not pack env. Do not hand-edit them.
 
@@ -199,7 +199,9 @@ Same emails as demo (`sachin@` / `aditya@` plus `+manager` / `+admin`). Temporar
 
 | Symptom | Fix |
 |---------|-----|
-| PR builds on **neither** Vercel project | Ignored Build Step in the Vercel project, or Git integration disconnected — repo policy is to build every ref on both projects |
+| PR builds on **neither** Vercel project | Ignored Build Step in the Vercel project, or Git integration disconnected — repo policy is to build every ref on all three projects |
+| PR comment shows **Canceled** on MJ / Convergent while GitHub checks are green | Duplicate deploy for the same SHA (PR opened after the push, or a later project queued). The Ready deployment is the check URL, not the canceled row |
+| `andrei-demo` preview stays **Building** for tens of minutes; no GitHub Deployment record | Demo Neon (`bold-field-45608643`) cannot create `preview/<git-branch>` — usually the branch cap from leftover `preview/*` after MJ-only cleanup. Actions → Cleanup Neon preview branch → `prune`, then Redeploy |
 | Demo PR creates a Neon branch on MJ | Expected if preview branching is on for **andrei-v2**. That branch is MJ-isolated (`preview/<git-branch>`), not the demo Neon. Do not hand-edit Neon-logo `DATABASE_URL` rows |
 | Preview `pnpm vercel:build` fails with `28P01` / `password authentication failed for user 'neondb_owner'` | Stale password for a deleted preview compute (host looks like `ep-…-pooler…neon.tech`). Keep preview branching **on**. Delete Neon `preview/<git-branch>` and leftover `preview/…` for that ref, then redeploy. Do not hand-edit Neon-logo rows |
 | MJ looks like Andrei | `NEXT_PUBLIC_ANDREI_CUSTOMER` unset on `andrei-v2` (client defaults to demo) |

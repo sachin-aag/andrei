@@ -4,7 +4,7 @@ The app uses a single env var: **`DATABASE_URL`**. Different environments point 
 
 ## Automated flow (Vercel + Neon)
 
-Customer Vercel projects (`andrei-v2`, `andrei-demo`, `andrei-convergent`) keep **preview branching on**: each git ref gets its own Neon `preview/<git-branch>` database. See [neon-vercel-setup.md](./neon-vercel-setup.md). A leftover password from a deleted preview branch fails `vercel:build` with `28P01 password authentication failed` — delete that Neon branch and redeploy; do not turn branching off.
+Customer Vercel projects (`andrei-v2`, `andrei-demo`, `andrei-convergent`) keep **preview branching on**: each git ref gets its own Neon `preview/<git-branch>` database. See [neon-vercel-setup.md](./neon-vercel-setup.md). A leftover password from a deleted preview branch fails `vercel:build` with `28P01 password authentication failed` — delete that Neon branch and redeploy; do not turn branching off. If a preview never leaves **Building**, the matching Neon project is likely at the branch cap; prune stale `preview/*` on **that** project (not only MJ).
 
 When the [Neon/Vercel integration](./neon-vercel-setup.md) has **preview branching** enabled:
 

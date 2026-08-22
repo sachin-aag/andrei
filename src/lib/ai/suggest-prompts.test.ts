@@ -35,6 +35,7 @@ describe("buildSuggestionSystemPrompt", () => {
     expect(prompt).toContain("Satisfied By");
     expect(prompt).toContain("configuration for which that P/F was achieved");
     expect(prompt).toContain("TOP-00017 PCON");
+    expect(prompt).not.toContain("Results and Discussions field split");
   });
 
   it("requires testers dates to land in the testers narrative", () => {

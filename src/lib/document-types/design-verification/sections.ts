@@ -161,6 +161,13 @@ export const CONVERGENT_RESULTS_MATRIX_FILLING_NOTES = `Results and Discussions 
 - If the same requirement was run on more than one configuration, name each configuration in Satisfied By so the verdict is attributable. Keep one row per Req ID.
 - Do not invent a configuration. If evidence does not name one, use a bracketed placeholder like [configuration].`;
 
+/** Chat-only: Results and Discussions has two fields — never put the matrix in Discussion. */
+export const CONVERGENT_RESULTS_FIELD_SPLIT_NOTES = `Results and Discussions field split (required):
+- This section has TWO fields. Always make two separate draft_field calls.
+- targetField \`narrative\` (Discussion): prose only. Testing-per line, Data Collection Forms, Requirements Verified heading, and Observations. NEVER include a markdown table or Req ID / Satisfied By / P/F rows here.
+- targetField \`table\` (Results matrix): ONE GFM table only with headers Req ID | Req Description | Satisfied By | P/F. No headings, no observations, no wrapping prose.
+- WRONG: one draft_field to narrative that contains the requirements table. RIGHT: narrative gets the outline; table gets the matrix.`;
+
 /**
  * Prompt block telling chat / suggest models to keep seeded matrix columns.
  * Shared by chat draftingGuidance and suggest-fix prompts.
@@ -192,7 +199,7 @@ export function dvFixedTableFormatGuidance(opts?: {
 
   const surfaceRules =
     surface === "chat"
-      ? `- When drafting or rewriting these sections via draft_field, emit ONE GFM markdown table only (header + separator + data rows). Do not wrap the table in prose paragraphs.
+      ? `- When drafting targetField \`table\` via draft_field, emit ONE GFM markdown table only (header + separator + data rows). Do not wrap the table in prose paragraphs.
 - Use EXACTLY the headers below, in this order — never rename, reorder, add, or drop columns.
 - If the section already has a table, preserve its header row verbatim and only update or add data rows.
 - Fill known cells; use bracketed placeholders like [requirement ID] for unknowns. Leave optional cells blank rather than inventing new columns.`
@@ -202,7 +209,9 @@ export function dvFixedTableFormatGuidance(opts?: {
 - If filling a gap requires new rows, keep the same header set and column order.`;
 
   const fillingNotes = sections.includes("results_and_discussions")
-    ? `\n\n${CONVERGENT_RESULTS_MATRIX_FILLING_NOTES}`
+    ? `\n\n${CONVERGENT_RESULTS_MATRIX_FILLING_NOTES}${
+        surface === "chat" ? `\n\n${CONVERGENT_RESULTS_FIELD_SPLIT_NOTES}` : ""
+      }`
     : "";
 
   return `## Fixed table formats (required)

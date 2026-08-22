@@ -53,14 +53,18 @@ Merging or closing a PR does **not** delete the Neon preview branch right away w
 | **Vercel-managed** | When Vercel **deletes** the preview deployment (default retention can be **months**) |
 | **Neon-managed** | When the Git branch is gone and **another** preview deploy runs (not on merge alone) |
 
-This repo adds [`.github/workflows/neon-preview-cleanup.yml`](../.github/workflows/neon-preview-cleanup.yml) to delete the branch when a PR closes.
+This repo adds [`.github/workflows/neon-preview-cleanup.yml`](../.github/workflows/neon-preview-cleanup.yml) to delete the branch when a PR closes. The job runs once per Neon project (MJ, demo, Convergent). Cleaning only `NEON_PROJECT_ID` leaves the other two projects at the branch cap so `andrei-demo` / `andrei-convergent` previews sit on **Building** until Neon can create `preview/<git-branch>`.
+
+Manual unstick (does not need a closed PR): **Actions → Cleanup Neon preview branch → Run workflow → mode `prune`**. That deletes `preview/*` branches that do not match an open PR head, on all three projects.
 
 **GitHub repository settings (required for that workflow):**
 
 | Name | Type | Where to get it |
 |------|------|-----------------|
-| `NEON_API_KEY` | Actions **secret** | Neon Console → Account → **API keys** |
-| `NEON_PROJECT_ID` | Actions **variable** | Neon Console → Project → **Settings** |
+| `NEON_API_KEY` | Actions **secret** | Neon Console → Account → **API keys** (must be able to list/delete branches on all three projects) |
+| `NEON_PROJECT_ID` | Actions **variable** | MJ Neon (`Andrei V2`, currently `blue-block-88692066`) |
+
+Demo (`bold-field-45608643`) and Convergent (`cold-thunder-36255681`) project ids are in the workflow matrix (same ids as [whitelabel-vercel-deploy.md](./whitelabel-vercel-deploy.md)).
 
 Install the [Neon GitHub integration](https://neon.com/docs/guides/branching-github-actions) to create these automatically, or add them manually under **Settings → Secrets and variables → Actions**.
 
@@ -71,11 +75,12 @@ Install the [Neon GitHub integration](https://neon.com/docs/guides/branching-git
 1. Open a PR → wait for Vercel Preview → confirm deploy succeeds (migrations + build in logs).
 2. In Neon Console → **Branches**, confirm a `preview/…` branch exists for the PR.
 3. Merge to `main` → Production deploy runs migrations against `main`, then builds.
-4. Close or merge the PR → `neon-preview-cleanup` workflow deletes the preview Neon branch (if secrets are set).
+4. Close or merge the PR → `neon-preview-cleanup` workflow deletes `preview/<git-branch>` on **MJ, demo, and Convergent** (if `NEON_API_KEY` is set).
 
 ## Troubleshooting
 
-- **Preview branch still there after merge** — Expected without the GitHub cleanup workflow or `NEON_API_KEY` / `NEON_PROJECT_ID`. See §4. Optionally shorten Vercel **Settings → Security → Deployment retention** for pre-production.
+- **Preview branch still there after merge** — Expected without the GitHub cleanup workflow or `NEON_API_KEY`. MJ-only `NEON_PROJECT_ID` cleanup also leaves demo/Convergent `preview/…` in place. See §4. Optionally shorten Vercel **Settings → Security → Deployment retention** for pre-production.
+- **Preview stays Building / no GitHub Deployment** — Neon never injected `DATABASE_URL` because it could not create `preview/<git-branch>` (branch cap). Run the cleanup workflow in `prune` mode, then Redeploy. Do not turn preview branching off.
 - **Build fails: DATABASE_URL is not set** — Preview branching is off or the inject raced the first compile. Enable **Create a branch for each preview deployment**, then redeploy.
 - **Build fails: 28P01 / password authentication failed** — Stale password for a deleted preview compute. Keep preview branching **on**. Delete Neon `preview/<git-branch>` (and leftover `preview/…` for that ref), then redeploy. Do not hand-edit Neon-logo `DATABASE_URL` rows.
 - **Preview uses production data** — Preview branching is off, or a static Preview `DATABASE_URL` is the Production row. Turn preview branching **on** so Neon injects `preview/<git-branch>`.
