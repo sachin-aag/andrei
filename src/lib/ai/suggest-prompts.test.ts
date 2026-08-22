@@ -45,13 +45,6 @@ describe("buildSuggestionSystemPrompt", () => {
     expect(prompt).toContain('targetField MUST be one of: testers');
   });
 
-  it("requires testers dates to land in the testers narrative", () => {
-    const prompt = buildSuggestionSystemPrompt("testers_dates");
-    expect(prompt).toContain('targetField MUST be "testers"');
-    expect(prompt).toContain("Do not target startDate or endDate");
-    expect(prompt).toContain('targetField MUST be one of: testers');
-  });
-
   it("omits DV matrix guidance for narrative investigation sections", () => {
     const prompt = buildSuggestionSystemPrompt("define");
     expect(prompt).not.toContain("Fixed table formats (required)");
