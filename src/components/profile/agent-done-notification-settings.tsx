@@ -20,7 +20,7 @@ import {
 function permissionHint(permission: NotificationPermissionState): string {
   switch (permission) {
     case "granted":
-      return "Desktop notifications are allowed in this browser. When this tab is in the background, the notice stays silent unless you also turn on sound.";
+      return "Desktop notifications are allowed in this browser. They fire only after a reply takes at least 5 seconds. When this tab is in the background, the notice stays silent unless you also turn on sound.";
     case "denied":
       return "This browser blocked desktop notifications. We'll show an in-app notice instead while this tab is open.";
     case "default":
@@ -110,7 +110,7 @@ export function AgentDoneNotificationSettings({
               className="mt-1 block text-[var(--muted-foreground)]"
             >
               Independent of notifications. Off by default so notices stay
-              silent.
+              silent. Also waits until a reply takes at least 5 seconds.
             </span>
           </span>
         </label>

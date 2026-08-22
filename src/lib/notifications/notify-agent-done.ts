@@ -33,18 +33,32 @@ export function agentDoneNotificationCopy(opts: {
   };
 }
 
+/** Skip the notice/chime for quick replies the engineer is still watching. */
+export const AGENT_DONE_MIN_ELAPSED_MS = 5_000;
+
+export function shouldShowAgentDonePendingHint(opts: {
+  notifications: boolean;
+  elapsedMs: number;
+}): boolean {
+  return opts.notifications && opts.elapsedMs >= AGENT_DONE_MIN_ELAPSED_MS;
+}
+
 export function shouldAnnounceAgentDone(opts: {
   isAbort?: boolean;
   isDisconnect?: boolean;
   isError?: boolean;
   emptyAssistant?: boolean;
+  elapsedMs?: number;
 }): boolean {
-  return (
-    !opts.isAbort &&
-    !opts.isDisconnect &&
-    !opts.isError &&
-    !opts.emptyAssistant
-  );
+  if (
+    opts.isAbort ||
+    opts.isDisconnect ||
+    opts.isError ||
+    opts.emptyAssistant
+  ) {
+    return false;
+  }
+  return (opts.elapsedMs ?? 0) >= AGENT_DONE_MIN_ELAPSED_MS;
 }
 
 export function readNotificationPermission(): NotificationPermissionState {

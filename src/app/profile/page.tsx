@@ -80,9 +80,9 @@ export default async function ProfilePage() {
           <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-5 lg:col-span-2">
             <h2 className="text-base font-semibold">Assistant notifications</h2>
             <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-              Choose how you are told when the assistant finishes a reply.
-              Notifications and sound are independent — the default is a
-              silent notice.
+              Choose how you are told when the assistant finishes a reply that
+              took at least 5 seconds. Notifications and sound are
+              independent — the default is a silent notice.
             </p>
             <div className="mt-5">
               <AgentDoneNotificationSettings userId={user.id} />

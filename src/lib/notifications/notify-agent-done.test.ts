@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  AGENT_DONE_MIN_ELAPSED_MS,
   agentDoneNotificationCopy,
   notifyAgentDone,
   shouldAnnounceAgentDone,
+  shouldShowAgentDonePendingHint,
   type NotificationPermissionState,
 } from "./notify-agent-done";
 
@@ -50,15 +52,48 @@ describe("agentDoneNotificationCopy", () => {
 });
 
 describe("shouldAnnounceAgentDone", () => {
-  it("announces a successful finished turn", () => {
-    expect(shouldAnnounceAgentDone({})).toBe(true);
+  it("announces only when a successful turn lasted at least 5 seconds", () => {
+    expect(AGENT_DONE_MIN_ELAPSED_MS).toBe(5_000);
+    expect(shouldAnnounceAgentDone({})).toBe(false);
+    expect(
+      shouldAnnounceAgentDone({ elapsedMs: AGENT_DONE_MIN_ELAPSED_MS - 1 })
+    ).toBe(false);
+    expect(
+      shouldAnnounceAgentDone({ elapsedMs: AGENT_DONE_MIN_ELAPSED_MS })
+    ).toBe(true);
   });
 
   it("skips abort, disconnect, error, and empty assistant turns", () => {
-    expect(shouldAnnounceAgentDone({ isAbort: true })).toBe(false);
-    expect(shouldAnnounceAgentDone({ isDisconnect: true })).toBe(false);
-    expect(shouldAnnounceAgentDone({ isError: true })).toBe(false);
-    expect(shouldAnnounceAgentDone({ emptyAssistant: true })).toBe(false);
+    const long = { elapsedMs: AGENT_DONE_MIN_ELAPSED_MS + 1 };
+    expect(shouldAnnounceAgentDone({ ...long, isAbort: true })).toBe(false);
+    expect(shouldAnnounceAgentDone({ ...long, isDisconnect: true })).toBe(false);
+    expect(shouldAnnounceAgentDone({ ...long, isError: true })).toBe(false);
+    expect(shouldAnnounceAgentDone({ ...long, emptyAssistant: true })).toBe(
+      false
+    );
+  });
+});
+
+describe("shouldShowAgentDonePendingHint", () => {
+  it("appears at 5 seconds only when notifications are on", () => {
+    expect(
+      shouldShowAgentDonePendingHint({
+        notifications: true,
+        elapsedMs: AGENT_DONE_MIN_ELAPSED_MS - 1,
+      })
+    ).toBe(false);
+    expect(
+      shouldShowAgentDonePendingHint({
+        notifications: true,
+        elapsedMs: AGENT_DONE_MIN_ELAPSED_MS,
+      })
+    ).toBe(true);
+    expect(
+      shouldShowAgentDonePendingHint({
+        notifications: false,
+        elapsedMs: AGENT_DONE_MIN_ELAPSED_MS,
+      })
+    ).toBe(false);
   });
 });
 
