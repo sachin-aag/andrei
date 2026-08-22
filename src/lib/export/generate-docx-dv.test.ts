@@ -30,6 +30,7 @@ const DV_TEMPLATE = path.join(
   "templates",
   "design-verification-report-template.docx"
 );
+const hasDemoDvTemplate = fs.existsSync(DV_TEMPLATE);
 
 function narrativeDoc(text: string): JSONContent {
   return {
@@ -86,62 +87,72 @@ function dvSections(): ReportSectionRecord[] {
 }
 
 describe("design-verification DOCX export", () => {
-  it("uses a template that is not a copy of the investigation report", () => {
-    const ir = fs.readFileSync(IR_TEMPLATE);
-    const dv = fs.readFileSync(DV_TEMPLATE);
-    expect(Buffer.compare(ir, dv)).not.toBe(0);
+  it.skipIf(!hasDemoDvTemplate)(
+    "uses a template that is not a copy of the investigation report",
+    () => {
+      const ir = fs.readFileSync(IR_TEMPLATE);
+      const dv = fs.readFileSync(DV_TEMPLATE);
+      expect(Buffer.compare(ir, dv)).not.toBe(0);
 
-    const xml = new PizZip(dv).file("word/document.xml")?.asText() ?? "";
-    expect(xml).toContain("Purpose &amp; Scope");
-    expect(xml).toContain("{@purposeScopeXml}");
-    expect(xml).toContain("{@traceabilityXml}");
-    expect(xml).not.toContain("Define:");
-    expect(xml).not.toContain("Investigation tool used");
-    expect(xml).not.toContain("Deviation No.");
+      const xml = new PizZip(dv).file("word/document.xml")?.asText() ?? "";
+      expect(xml).toContain("Purpose &amp; Scope");
+      expect(xml).toContain("{@purposeScopeXml}");
+      expect(xml).toContain("{@traceabilityXml}");
+      expect(xml).not.toContain("Define:");
+      expect(xml).not.toContain("Investigation tool used");
+      expect(xml).not.toContain("Deviation No.");
 
-    const header = new PizZip(dv).file("word/header2.xml")?.asText() ?? "";
-    expect(header).toContain("Design Verification Report");
-    expect(header).toContain("Andrei");
-    expect(header).not.toMatch(/<w:t>Ref<\/w:t>/);
-    expect(header).not.toMatch(/<w:t>,<\/w:t>/);
-    expect(header).not.toMatch(/<w:t>\.<\/w:t>/);
-  });
+      const header = new PizZip(dv).file("word/header2.xml")?.asText() ?? "";
+      expect(header).toContain("Design Verification Report");
+      expect(header).toContain("Andrei");
+      expect(header).not.toMatch(/<w:t>Ref<\/w:t>/);
+      expect(header).not.toMatch(/<w:t>,<\/w:t>/);
+      expect(header).not.toMatch(/<w:t>\.<\/w:t>/);
+    }
+  );
 
-  it("renders DV headings, cover fields, and matrices instead of DMAIC", async () => {
-    const buf = await generateReportDocx({
-      report: dvReport(),
-      sections: dvSections(),
-    });
-    const xml = new PizZip(buf).file("word/document.xml")?.asText() ?? "";
-    const header = new PizZip(buf).file("word/header2.xml")?.asText() ?? "";
+  it.skipIf(!hasDemoDvTemplate)(
+    "renders DV headings, cover fields, and matrices instead of DMAIC",
+    async () => {
+      const buf = await generateReportDocx({
+        report: dvReport(),
+        sections: dvSections(),
+      });
+      const xml = new PizZip(buf).file("word/document.xml")?.asText() ?? "";
+      const header = new PizZip(buf).file("word/header2.xml")?.asText() ?? "";
 
-    expect(header).toContain("Design Verification Report");
-    expect(header).not.toContain("Investigation Report");
-    expect(header).not.toMatch(/<w:t>Ref<\/w:t>/);
-    expect(header).not.toMatch(/<w:t>,<\/w:t>/);
-    expect(header).not.toMatch(/<w:t>\.<\/w:t>/);
+      expect(header).toContain("Design Verification Report");
+      expect(header).not.toContain("Investigation Report");
+      expect(header).not.toMatch(/<w:t>Ref<\/w:t>/);
+      expect(header).not.toMatch(/<w:t>,<\/w:t>/);
+      expect(header).not.toMatch(/<w:t>\.<\/w:t>/);
 
-    const logoPng = new PizZip(buf).file("word/media/image1.png")?.asNodeBuffer();
-    expect(logoPng).toBeDefined();
-    const logoDims = readPngDimensions(logoPng!)!;
-    const wpCy = Number(header.match(/<wp:extent cx="(\d+)" cy="(\d+)"\/>/)?.[2]);
-    const picCy = Number(header.match(/<a:xfrm>\s*<a:off [^/]*\/>\s*<a:ext cx="\d+" cy="(\d+)"\/>/)?.[1]);
-    const wpCx = Number(header.match(/<wp:extent cx="(\d+)" cy="(\d+)"\/>/)?.[1]);
-    const expectedCy = Math.round((wpCx * logoDims.height) / logoDims.width);
-    expect(wpCy).toBe(expectedCy);
-    expect(picCy).toBe(expectedCy);
-    expect(xml).toContain("DVR-100");
-    expect(xml).toContain("Solea Cart");
-    expect(xml).toContain("Purpose &amp; Scope");
-    expect(xml).toContain("Traceability");
-    expect(xml).toContain("Test Results");
-    expect(xml).toContain("Requirement ID");
-    expect(xml).toContain("Verify output REQ-101 meets the laser energy specification.");
-    expect(xml).not.toContain("Define:");
-    expect(xml).not.toContain("Investigation tool used");
-    expect(xml).not.toContain("6 M Method");
-    expect(xml).not.toContain("Deviation No.");
-  });
+      const logoPng = new PizZip(buf).file("word/media/image1.png")?.asNodeBuffer();
+      expect(logoPng).toBeDefined();
+      const logoDims = readPngDimensions(logoPng!)!;
+      const wpCy = Number(header.match(/<wp:extent cx="(\d+)" cy="(\d+)"\/>/)?.[2]);
+      const picCy = Number(
+        header.match(/<a:xfrm>\s*<a:off [^/]*\/>\s*<a:ext cx="\d+" cy="(\d+)"\/>/)?.[1]
+      );
+      const wpCx = Number(header.match(/<wp:extent cx="(\d+)" cy="(\d+)"\/>/)?.[1]);
+      const expectedCy = Math.round((wpCx * logoDims.height) / logoDims.width);
+      expect(wpCy).toBe(expectedCy);
+      expect(picCy).toBe(expectedCy);
+      expect(xml).toContain("DVR-100");
+      expect(xml).toContain("Solea Cart");
+      expect(xml).toContain("Purpose &amp; Scope");
+      expect(xml).toContain("Traceability");
+      expect(xml).toContain("Test Results");
+      expect(xml).toContain("Requirement ID");
+      expect(xml).toContain(
+        "Verify output REQ-101 meets the laser energy specification."
+      );
+      expect(xml).not.toContain("Define:");
+      expect(xml).not.toContain("Investigation tool used");
+      expect(xml).not.toContain("6 M Method");
+      expect(xml).not.toContain("Deviation No.");
+    }
+  );
 
   it("names downloads and complete-record members by document type", () => {
     expect(reportExportDocxFileName("investigation_report", "DEV/01")).toBe(

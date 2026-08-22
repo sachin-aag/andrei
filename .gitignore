@@ -91,6 +91,9 @@ docs/convergent-onboarding-temporary-passwords.md
 # Local video analysis scratch (large media + generated reports)
 /04 Video analysis/
 
+# Local-only demo DV Word template (do not commit)
+/templates/design-verification-report-template.docx
+
 # Local customer PDFs / working copies (do not commit)
 /Appendix B DV Report*.pdf
 /convergent/
