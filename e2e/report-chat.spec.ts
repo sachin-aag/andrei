@@ -5,8 +5,10 @@ import { loginAsEngineer } from "./helpers/auth";
 import { reloadWithNavigationRetry } from "./helpers/navigation";
 import { createReport, deleteReport } from "./helpers/reports";
 import {
+  collapseReportSidebar,
   documentsPanel,
   expandDocumentsPanel,
+  expandReportSidebar,
   openReportAssistant,
   reportSidebar,
 } from "./helpers/workspace";
@@ -100,6 +102,12 @@ test.describe("report chat", () => {
     await expect(sidebar.getByText(/before i draft anything/i)).toBeVisible({
       timeout: 30_000,
     });
+
+    await collapseReportSidebar(page);
+    await expandReportSidebar(page);
+    await expect(
+      reportSidebar(page).getByText(/before i draft anything/i)
+    ).toBeVisible({ timeout: 5_000 });
 
     await reloadWithNavigationRetry(page, { waitUntil: "domcontentloaded" });
     await expect(page).toHaveURL(new RegExp(`/reports/${reportId}/edit`));
