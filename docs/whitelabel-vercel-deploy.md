@@ -1,27 +1,25 @@
-# Customer deploys — one trunk, two Vercel projects
+# Customer deploys — one trunk, three Vercel projects
 
 One product engine on **`main`**. Customer differences live in `ANDREI_CUSTOMER` packs, not in long-lived SHA pins or a second product branch.
 
-| | MJ production | Customer demo |
-|--|---------------|---------------|
-| **Vercel project** | `andrei-v2` | `andrei-demo` |
-| **Git production branch** | `main` | `main` |
-| **Pack** | `ANDREI_CUSTOMER=mj` | `ANDREI_CUSTOMER=demo` (or unset) |
-| **URL** | https://mj.andreihealth.com | https://demo.andreihealth.com |
-| **Neon project** | `Andrei V2` | `demo` (`bold-field-45608643`) |
-| **What users see** | MJ criteria, MJ Word template, Word import, no DV, no conclusion | Andrei branding, DV + conclusion, attachments-only create |
+| | MJ production | Customer demo | Convergent Dental |
+|--|---------------|---------------|-------------------|
+| **Vercel project** | `andrei-v2` | `andrei-demo` | `andrei-convergent` |
+| **Git production branch** | `main` | `main` | `main` |
+| **Pack** | `ANDREI_CUSTOMER=mj` | `ANDREI_CUSTOMER=demo` (or unset) | `ANDREI_CUSTOMER=convergent` |
+| **URL** | https://mj.andreihealth.com | https://demo.andreihealth.com | https://convergent.andreihealth.com |
+| **Neon project** | `Andrei V2` | `demo` (`bold-field-45608643`) | `andrei-convergent` (`cold-thunder-36255681`) |
+| **What users see** | MJ criteria, MJ Word template, Word import, no DV, no conclusion | Andrei branding, DV + conclusion, attachments-only create | Convergent branding, design verification only (9-section Solea DV template) |
 
-Release valve: **the same git SHA on both Production deploys.** After cutover, promote one commit to `andrei-v2` and `andrei-demo`.
-
-Both Production deploys track **`main`**. Pack env chooses MJ vs demo. There is no second product branch.
+Release valve: **the same git SHA on all three Production deploys**. Pack env chooses MJ vs demo vs Convergent. There is no long-lived product branch.
 
 ## Pack vs flags vs pins
 
 | Mechanism | Job | Use now? |
 |-----------|-----|----------|
 | Customer pack (`ANDREI_CUSTOMER`) | Permanent identity: template, criteria, prompts, branding, enabled types and sections | Yes |
-| Same SHA on both deploys | One binary to debug | Yes — policy |
-| Feature flags | Temporary holdback of an unfinished engine feature | No (at two pilots a flag is a second source of truth) |
+| Same SHA on all deploys | One binary to debug | Yes |
+| Feature flags | Temporary holdback of an unfinished engine feature | No (a flag is a second source of truth) |
 | Pin MJ on an older SHA | Demo leads for days or weeks | No, as policy |
 | Roll back one project | Last deploy is bad | Yes, incident only, then catch up |
 
@@ -29,13 +27,12 @@ Set **both** `ANDREI_CUSTOMER` and `NEXT_PUBLIC_ANDREI_CUSTOMER` to the same val
 
 ## Deploy scope
 
-Both Vercel projects watch the same GitHub repo. `scripts/vercel-should-build.sh` is the same allow-list on both:
+All three Vercel projects watch the same GitHub repo. Every git ref builds on each; pack env on each project picks MJ vs demo vs Convergent. There is no branch allow-list.
 
-| Branch | Both projects |
-|--------|----------------|
-| `main` | **build** (production) |
-| `cursor/*`, `demo/*` | **build** (preview) |
-| anything else | skip |
+| Git ref | All projects |
+|---------|----------------|
+| `main` | **build** (production — each project's Production Branch is `main`) |
+| any other branch | **build** (preview) |
 
 Set on **each** project → Settings → Environment Variables → Production, Preview, and Development (pack identity, not branch routing):
 
@@ -43,21 +40,19 @@ Set on **each** project → Settings → Environment Variables → Production, P
 |----------------|----------|--------|
 | **andrei-demo** | `ANDREI_VERCEL_DEPLOY_SCOPE` | `demo` |
 | **andrei-v2** | `ANDREI_VERCEL_DEPLOY_SCOPE` | `mj` |
+| **andrei-convergent** | `ANDREI_VERCEL_DEPLOY_SCOPE` | `convergent` |
 
-**andrei-v2 Neon:** keep **Create a branch for each preview deployment** off. If Preview `DATABASE_URL` is the Production row, those previews share MJ production data — use a dedicated Preview URL if you need isolation.
+**Neon preview branching:** keep **Create a branch for each preview deployment** **on** for `andrei-v2`, `andrei-demo`, and `andrei-convergent`. Each git ref gets `preview/<git-branch>` on that project's Neon. Production stays on the default Neon branch. Enable cleanup when the preview deployment / git branch is removed (`neon-preview-cleanup.yml` plus the integration toggle).
 
-Preview `DATABASE_URL` on `andrei-demo` stays the **demo** Neon pooled URL (same as Production). Do not enable per-PR Neon branching on `andrei-v2`.
+The integration injects **Preview / git-branch** `DATABASE_URL` and `DATABASE_URL_UNPOOLED` (Neon logo, branch name truncated) for that ref only. Those are not pack env. Do not hand-edit them.
 
-The Neon ↔ Vercel integration creates extra **Preview / git-branch** `DATABASE_URL` and `DATABASE_URL_UNPOOLED` rows (Neon logo, branch name truncated). Those are auto-injected for that git branch’s preview only. They are not pack env. Do not hand-edit them.
-
-- **Keep** the Sensitive `DATABASE_URL` (+ `DATABASE_URL_UNPOOLED`) scoped **Production and Preview** (or Production) with no git-branch — that is the real demo Neon.
-- **Ignore** the Neon-logo per-branch rows while preview branching is on. Deleting them in Vercel while the integration is connected just recreates them on the next deploy of that branch.
-- To stop the sprawl on **andrei-demo**: Neon/Vercel integration → disable **Create a branch for each preview deployment**, then delete leftover preview branches in the Neon **demo** project. After that, every `cursor/*` preview uses the shared demo `DATABASE_URL`.
-- If you see the same per-branch rows on **andrei-v2**, turn preview branching off there immediately. Those would be MJ Neon preview databases.
+- **Keep** the Sensitive `DATABASE_URL` (+ `DATABASE_URL_UNPOOLED`) scoped **Production** (no git-branch) — that is the real production Neon.
+- **Ignore** the Neon-logo per-branch rows. Deleting them in Vercel while the integration is connected just recreates them on the next deploy of that branch.
+- **28P01 on preview:** the injected password is leftover from a deleted compute. Delete Neon `preview/<git-branch>` and redeploy. Do not turn preview branching off.
 
 ## Environment variables
 
-### Both projects
+### All projects
 
 Copy auth/AI keys as today. Never set `ALLOW_TEST_*` or `ATTACHMENT_STORAGE_BACKEND=local` on Vercel Production.
 
@@ -68,7 +63,7 @@ Copy auth/AI keys as today. Never set `ALLOW_TEST_*` or `ATTACHMENT_STORAGE_BACK
 | `ANDREI_CUSTOMER` | `demo` |
 | `NEXT_PUBLIC_ANDREI_CUSTOMER` | `demo` |
 | `ANDREI_VERCEL_DEPLOY_SCOPE` | `demo` |
-| `DATABASE_URL` | Neon **demo** pooled URL (the Production / Production+Preview row — not the per-git-branch Neon copies) |
+| `DATABASE_URL` | Production: Neon **demo** pooled URL (no git-branch). Preview: Neon injects `preview/<git-branch>` |
 | `AUTH_URL` | `https://demo.andreihealth.com` (already set — do not change to `*.vercel.app`) |
 
 ### andrei-v2 (Production) — MJ cutover
@@ -78,7 +73,7 @@ Copy auth/AI keys as today. Never set `ALLOW_TEST_*` or `ATTACHMENT_STORAGE_BACK
 | `ANDREI_CUSTOMER` | `mj` |
 | `NEXT_PUBLIC_ANDREI_CUSTOMER` | `mj` |
 | `ANDREI_VERCEL_DEPLOY_SCOPE` | `mj` |
-| `DATABASE_URL` | Neon **Andrei V2** production |
+| `DATABASE_URL` | Production: Neon **Andrei V2** default branch. Preview: Neon injects `preview/<git-branch>` |
 | `GOOGLE_VERTEX_PROJECT` | Vertex project (chat/ingest) |
 | `GCP_WIF_AUDIENCE` | WIF audience |
 | `GCP_SERVICE_ACCOUNT_EMAIL` | WIF service account |
@@ -88,6 +83,19 @@ Copy auth/AI keys as today. Never set `ALLOW_TEST_*` or `ATTACHMENT_STORAGE_BACK
 Partial Vertex config (`GOOGLE_VERTEX_PROJECT` without WIF) causes `Could not load the default credentials` on Vercel. Local-only attachment flags must never be set here or ingest 500s.
 
 MJ `promptVersion` is `mj-sop-dp-qa-008-v1`. Existing evaluations go stale on cutover — tell MJ they need a re-run.
+
+### andrei-convergent (Production + Preview)
+
+| Variable | Value |
+|----------|--------|
+| `ANDREI_CUSTOMER` | `convergent` |
+| `NEXT_PUBLIC_ANDREI_CUSTOMER` | `convergent` |
+| `ANDREI_VERCEL_DEPLOY_SCOPE` | `convergent` |
+| `DATABASE_URL` | Neon **andrei-convergent** pooled URL |
+| `AUTH_URL` | `https://convergent.andreihealth.com` (must match the public host; do not leave `https://andrei-convergent.vercel.app`) |
+| `GOOGLE_VERTEX_PROJECT` / WIF / `GCS_BUCKET` | Copy from `andrei-demo` (never `ALLOW_TEST_*`) |
+
+Keep Neon **Create a branch for each preview deployment** on. Convergent `promptVersion` is `convergent-dv-v5`.
 
 ## MJ database cutover
 
@@ -154,7 +162,7 @@ L1–L3 are already on `feat/whitelabel` (#123–#125). This change is the ignor
 
    - Demo: DV + conclusion, Andrei chrome, no Word-body field on create
    - MJ: no DV, no conclusion tab, MJ login/shell, Word import on create, evidence PDFs from the report Documents tab, export opens the MJ template
-   - `cursor/*` and `demo/*` PR deploys build **both** `andrei-demo` and `andrei-v2`
+   - PR deploys build **both** `andrei-demo` and `andrei-v2`
 
 ## Neon `demo` project
 
@@ -176,16 +184,28 @@ DATABASE_URL='postgresql://…demo…?sslmode=require' pnpm seed-demo-reports
 
 Password for seeded users: **`DemoPass123!`**. See previous seed table in git history if you need the email list.
 
+### Convergent accounts
+
+Create / reset logins on the **andrei-convergent** Neon (not demo, not MJ):
+
+```bash
+DATABASE_URL='postgresql://…convergent…?sslmode=require' \
+  pnpm set-workspace-password -- sachin@andreihealth.com 'TempPass123!' --role engineer
+```
+
+Same emails as demo (`sachin@` / `aditya@` plus `+manager` / `+admin`). Temporary passwords are not committed — generate them at seed time and share out of band. First login forces a password change.
+
 ## Troubleshooting
 
 | Symptom | Fix |
 |---------|-----|
-| PR builds on **neither** Vercel project | Head ref is not `main`, `cursor/*`, or `demo/*` |
-| Demo PR creates a Neon branch on MJ | Neon preview branching is on for **andrei-v2**. Turn it off; do not hand-edit the Neon-logo `DATABASE_URL` rows |
+| PR builds on **neither** Vercel project | Ignored Build Step in the Vercel project, or Git integration disconnected — repo policy is to build every ref on both projects |
+| Demo PR creates a Neon branch on MJ | Expected if preview branching is on for **andrei-v2**. That branch is MJ-isolated (`preview/<git-branch>`), not the demo Neon. Do not hand-edit Neon-logo `DATABASE_URL` rows |
+| Preview `pnpm vercel:build` fails with `28P01` / `password authentication failed for user 'neondb_owner'` | Stale password for a deleted preview compute (host looks like `ep-…-pooler…neon.tech`). Keep preview branching **on**. Delete Neon `preview/<git-branch>` and leftover `preview/…` for that ref, then redeploy. Do not hand-edit Neon-logo rows |
 | MJ looks like Andrei | `NEXT_PUBLIC_ANDREI_CUSTOMER` unset on `andrei-v2` (client defaults to demo) |
 | MJ export missing conclusion | Expected — MJ template has no `{@conclusionNarrativeXml}`; pack hides the section |
 | Ingest/chat 500 on MJ | Vertex WIF + GCS missing; do not set local attachment flags |
-| Attachments fail with "Document ingestion failed" after a custom-domain move | Set Production `AUTH_URL` to the public host (`https://mj.andreihealth.com`). Add that Origin to GCS CORS (`infra/gcs/cors.json` + `gsutil cors set`). Confirm Vercel OIDC is on. If Bot Protection is on, allow `/.well-known/workflow/*`. |
-| Auto-save / API `401 Unauthorized` on the custom domain | Same `AUTH_URL` mismatch: Auth.js was rewriting requests to the old `*.vercel.app` host so the session cookie missed. Redeploy after this SHA (production pin) and set `AUTH_URL`. |
+| Attachments fail with "Document ingestion failed" after a custom-domain move | Set Production `AUTH_URL` to the public host (`https://mj.andreihealth.com` / `https://demo.andreihealth.com` / `https://convergent.andreihealth.com`). Add that Origin to GCS CORS (`infra/gcs/cors.json` + `gsutil cors set`). Confirm Vercel OIDC is on. If Bot Protection is on, allow `/.well-known/workflow/*`. |
+| Auto-save / API `401 Unauthorized` on the custom domain | Same `AUTH_URL` mismatch: Auth.js was rewriting requests to the old `*.vercel.app` host so the session cookie missed. Redeploy after setting `AUTH_URL`. |
 | `document_no` missing after deploy | Journal was stamped without running 0037. Restore from PITR; do not re-run `db:migrate` until the baseline guard is live |
 | AI Check stale on MJ day one | Expected `promptVersion` bump; re-run AI Check |

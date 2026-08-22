@@ -32,12 +32,15 @@ const sections = getWorkspaceSections(report.documentType);
   **exposed through the registry**. DV criteria (LLM + deterministic checks)
   live under `src/lib/document-types/design-verification/`.
 - Eval cache hash salts with `getDocumentType(type).prompts.promptVersion`
-  (`PROMPT_VERSION` for investigation, `dv-checklist-v1` for DV today).
+  (`PROMPT_VERSION` for investigation, `dv-checklist-v1` for demo DV,
+  `convergent-dv-v5` for Convergent DV).
 - Chat editable sections: `chatEditableSections(documentType)` in
   `src/lib/ai/chat/fields.ts`. Do not reuse investigation field maps on DV.
-- Gate section is type-specific (`define` vs virtual `cover_page` in
-  `reports.metadata`). Virtual sections are not `report_sections` rows.
+- Criteria evaluation is per filled section. An empty Purpose / Define /
+  cover page must not block Run criteria on other sections that have
+  content. Cover page eval reads `reports.metadata` (document number),
+  not a `report_sections` body.
 - Adding a type: extend `documentTypeEnum` in schema, add a definition, wire
-  `REGISTRY`, then editors / chat / eval. DOCX export still has explicit IR/DV
-  branches in `generate-docx.ts` (registry `export.templatePath` is not the
-  runtime switch yet).
+  `REGISTRY`, then editors / chat / eval. DOCX export uses each type's
+  `export.templatePath` and `buildTemplateData` (investigation still has an
+  explicit DMAIC branch in `generate-docx.ts`).

@@ -30,9 +30,18 @@ import {
   scrollToCommentFieldAnchor,
   scrollToGutterAnchor,
 } from "@/lib/comments/navigate";
+import { sortedOpenSuggestionsForSection } from "@/lib/ai/suggestion-gating";
+import { scrollToGeneratedSuggestion } from "@/lib/suggestions/navigate-suggestion";
 import { evaluatableSectionKeys } from "@/lib/ai/criteria-view";
 import { getWorkspaceSections } from "@/lib/document-types";
 import { captureEvent } from "@/lib/analytics/events";
+import { cn } from "@/lib/utils";
+import { useWorkspaceLayout } from "@/hooks/use-workspace-layout";
+import { WorkspaceResizeHandle } from "./workspace-resize-handle";
+import {
+  isReviewGutterVisible,
+  WORKSPACE_PANEL_WIDTH_TRANSITION_MS,
+} from "./workspace-layout";
 import {
   ElectronicSignatureDialog,
   type SignatureMeaningUi,
@@ -162,10 +171,52 @@ const DV_SECTION_EDITORS: Record<string, ComponentType> = {
       ),
     { loading: SectionEditorLoading }
   ),
+  purpose: dynamic(
+    () =>
+      import("./sections/dv/dv-section-editors").then((mod) => mod.DvPurposeEditor),
+    { loading: SectionEditorLoading }
+  ),
+  scope: dynamic(
+    () =>
+      import("./sections/dv/dv-section-editors").then((mod) => mod.DvScopeEditor),
+    { loading: SectionEditorLoading }
+  ),
+  testers_dates: dynamic(
+    () =>
+      import("./sections/dv/dv-section-editors").then(
+        (mod) => mod.DvTestersDatesEditor
+      ),
+    { loading: SectionEditorLoading }
+  ),
+  methods_of_measurement: dynamic(
+    () =>
+      import("./sections/dv/dv-section-editors").then(
+        (mod) => mod.DvMethodsOfMeasurementEditor
+      ),
+    { loading: SectionEditorLoading }
+  ),
+  test_equipment: dynamic(
+    () =>
+      import("./sections/dv/dv-section-editors").then(
+        (mod) => mod.DvTestEquipmentEditor
+      ),
+    { loading: SectionEditorLoading }
+  ),
+  results_and_discussions: dynamic(
+    () =>
+      import("./sections/dv/dv-section-editors").then(
+        (mod) => mod.DvResultsAndDiscussionsEditor
+      ),
+    { loading: SectionEditorLoading }
+  ),
+  problems_resolution: dynamic(
+    () =>
+      import("./sections/dv/dv-section-editors").then(
+        (mod) => mod.DvProblemsResolutionEditor
+      ),
+    { loading: SectionEditorLoading }
+  ),
 };
-
-/** @deprecated Prefer INVESTIGATION_SECTION_EDITORS / DV_SECTION_EDITORS */
-const SECTION_EDITORS = INVESTIGATION_SECTION_EDITORS;
 
 export function ReportWorkspace({
   mode,
@@ -185,7 +236,7 @@ export function ReportWorkspace({
   const { pendingPlaceholders } = useReportPlaceholders();
   const { getEditor } = useReportEditors();
   const { requestCommentFocus, comments } = useReportComments();
-  const { suggestionsFocusSection, clearSuggestionsFocusSection } =
+  const { suggestionsFocusSection, clearSuggestionsFocusSection, evaluations } =
     useReportEvaluations();
   const { activeAttachmentId } = useReportAttachments();
   const [criteriaFocusSection, setCriteriaFocusSection] = useState<
@@ -199,13 +250,35 @@ export function ReportWorkspace({
   const [detailsFormKey, setDetailsFormKey] = useState(0);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [documentsCollapsed, setDocumentsCollapsed] = useState(false);
+  const {
+    containerRef,
+    isResizing,
+    chatWidth,
+    docsWidth,
+    chatBounds,
+    docsBounds,
+    setChatWidth,
+    setDocsWidth,
+    resetChatWidth,
+    resetDocsWidth,
+    beginResize,
+    endResize,
+  } = useWorkspaceLayout({
+    reportId: report.id,
+    chatCollapsed: sidebarCollapsed,
+    docsCollapsed: documentsCollapsed,
+  });
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("assistant");
   const [sectionMinHeights, setSectionMinHeights] = useState<
     Partial<Record<SectionType, number>>
   >({});
   const router = useRouter();
   const mainRef = useRef<HTMLElement>(null);
+  const gutterScrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null
+  );
   const documentType = report.documentType;
+  const showReviewGutter = isReviewGutterVisible(sidebarCollapsed);
   const handleSectionOverflow = useCallback(
     (overflows: Record<SectionType, number>) => {
       setSectionMinHeights((prev) => {
@@ -346,19 +419,93 @@ export function ReportWorkspace({
   }, []);
 
   useEffect(() => {
+    return () => {
+      if (gutterScrollTimeoutRef.current != null) {
+        clearTimeout(gutterScrollTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     if (!suggestionsFocusSection) return;
-    const frame = requestAnimationFrame(() => {
-      setCriteriaFocusSection(suggestionsFocusSection);
-      setSidebarCollapsed(false);
-      setSidebarTab("placeholders");
-      jumpToSection(suggestionsFocusSection);
+    const section = suggestionsFocusSection;
+    setCriteriaFocusSection(section);
+    // Suggestions live in the review margin. Keep the assistant collapsed
+    // so the gutter is visible — do not auto-open the right panel.
+    setSidebarCollapsed(true);
+
+    let cancelled = false;
+    const timeouts: Array<ReturnType<typeof setTimeout>> = [];
+    const retryDelaysMs = [0, 50, 100, 200];
+
+    const finish = (scrolled: boolean) => {
+      if (cancelled) return;
+      if (!scrolled) jumpToSection(section);
       clearSuggestionsFocusSection();
-    });
-    return () => cancelAnimationFrame(frame);
+    };
+
+    const attempt = (index: number) => {
+      if (cancelled) return;
+      const active =
+        sortedOpenSuggestionsForSection(section, comments, evaluations)[0] ??
+        null;
+      if (active) {
+        requestCommentFocus(active.id);
+        if (scrollToGeneratedSuggestion(active)) {
+          finish(true);
+          return;
+        }
+      }
+      const next = index + 1;
+      if (next >= retryDelaysMs.length) {
+        finish(false);
+        return;
+      }
+      timeouts.push(setTimeout(() => attempt(next), retryDelaysMs[next]));
+    };
+
+    const start = () => {
+      if (cancelled) return;
+      attempt(0);
+    };
+
+    const gutterAlreadyVisible = isReviewGutterVisible(sidebarCollapsed);
+    if (gutterScrollTimeoutRef.current != null) {
+      clearTimeout(gutterScrollTimeoutRef.current);
+      gutterScrollTimeoutRef.current = null;
+    }
+    if (gutterAlreadyVisible) {
+      let innerFrame = 0;
+      const outerFrame = requestAnimationFrame(() => {
+        innerFrame = requestAnimationFrame(start);
+      });
+      return () => {
+        cancelled = true;
+        cancelAnimationFrame(outerFrame);
+        cancelAnimationFrame(innerFrame);
+        for (const id of timeouts) clearTimeout(id);
+      };
+    }
+    gutterScrollTimeoutRef.current = setTimeout(() => {
+      gutterScrollTimeoutRef.current = null;
+      start();
+    }, WORKSPACE_PANEL_WIDTH_TRANSITION_MS + 50);
+    return () => {
+      cancelled = true;
+      if (gutterScrollTimeoutRef.current != null) {
+        clearTimeout(gutterScrollTimeoutRef.current);
+        gutterScrollTimeoutRef.current = null;
+      }
+      for (const id of timeouts) clearTimeout(id);
+    };
   }, [
     suggestionsFocusSection,
     clearSuggestionsFocusSection,
     jumpToSection,
+    comments,
+    evaluations,
+    requestCommentFocus,
+    sidebarCollapsed,
   ]);
 
   const jumpToComment = useCallback(
@@ -370,25 +517,39 @@ export function ReportWorkspace({
       // is active (it will skip its own scroll because we pass skipAutoScroll).
       requestCommentFocus(id);
 
-      // Wait for the gutter to re-render with updated positions, then do a
-      // single smooth scroll to the gutter card.  Because the gutter card is
-      // positioned at the same vertical offset as the document field, this
-      // also brings the corresponding section text into view.
-      requestAnimationFrame(() =>
-        requestAnimationFrame(() => {
-          const gutterId = gutterAnchorIdForComment(root);
-          const scrolled = scrollToGutterAnchor(gutterId);
-          if (!scrolled) {
-            // Gutter card not found — fall back to the field anchor or section.
-            const scrolledField = scrollToCommentFieldAnchor(root);
-            if (!scrolledField && root.section) {
-              jumpToSection(root.section);
+      const scrollToCard = () => {
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            const gutterId = gutterAnchorIdForComment(root);
+            const scrolled = scrollToGutterAnchor(gutterId);
+            if (!scrolled) {
+              // Gutter card not found — fall back to the field anchor or section.
+              const scrolledField = scrollToCommentFieldAnchor(root);
+              if (!scrolledField && root.section) {
+                jumpToSection(root.section);
+              }
             }
-          }
-        })
-      );
+          })
+        );
+      };
+
+      const gutterAlreadyVisible = isReviewGutterVisible(sidebarCollapsed);
+      setSidebarCollapsed(true);
+      if (gutterScrollTimeoutRef.current != null) {
+        clearTimeout(gutterScrollTimeoutRef.current);
+        gutterScrollTimeoutRef.current = null;
+      }
+      if (gutterAlreadyVisible) {
+        scrollToCard();
+        return;
+      }
+      // Wait for the assistant to collapse and the gutter to mount/measure.
+      gutterScrollTimeoutRef.current = setTimeout(() => {
+        gutterScrollTimeoutRef.current = null;
+        scrollToCard();
+      }, WORKSPACE_PANEL_WIDTH_TRANSITION_MS + 50);
     },
-    [comments, jumpToSection, requestCommentFocus]
+    [comments, jumpToSection, requestCommentFocus, sidebarCollapsed]
   );
 
   const handleJumpToPlaceholder = (p: Placeholder) => {
@@ -471,17 +632,51 @@ export function ReportWorkspace({
 
       <ReportEditorToolbar />
 
-      <div className="relative flex min-h-0 flex-1 overflow-hidden">
-        <DocumentsPanel
-          collapsed={documentsCollapsed}
-          onToggleCollapse={() => setDocumentsCollapsed((c) => !c)}
-        />
+      <div
+        ref={containerRef}
+        className={cn(
+          "relative flex min-h-0 flex-1 overflow-hidden",
+          isResizing && "select-none"
+        )}
+      >
+        <div
+          className={cn(
+            "relative z-10 h-full shrink-0",
+            !isResizing && "transition-[width] duration-200 ease-in-out"
+          )}
+          style={{ width: docsWidth }}
+        >
+          <DocumentsPanel
+            collapsed={documentsCollapsed}
+            onToggleCollapse={() => setDocumentsCollapsed((c) => !c)}
+          />
+          {documentsCollapsed ? null : (
+            <WorkspaceResizeHandle
+              label="Resize documents panel"
+              controlsId="report-documents-panel"
+              edge="end"
+              value={docsWidth}
+              min={docsBounds.min}
+              max={docsBounds.max}
+              onChange={setDocsWidth}
+              onDragStart={() => beginResize("docs")}
+              onDragEnd={endResize}
+              onReset={resetDocsWidth}
+            />
+          )}
+        </div>
 
         <main
           ref={mainRef}
-          className="min-h-0 min-w-0 flex-1 overflow-auto bg-[var(--background)]"
+          className="@container min-h-0 min-w-0 flex-1 overflow-auto bg-[var(--background)]"
         >
-          <div className="mx-auto grid grid-cols-1 gap-8 px-6 py-8 pb-24 lg:max-w-[1180px] lg:grid-cols-[minmax(560px,720px)_360px]">
+          <div
+            className={cn(
+              "mx-auto grid w-full min-w-0 grid-cols-1 gap-8 px-6 py-8 pb-24 max-w-[1180px]",
+              showReviewGutter &&
+                "@[800px]:grid-cols-[minmax(0,1fr)_minmax(200px,360px)]"
+            )}
+          >
             <div className="space-y-10 min-w-0">
               <ReportHeader />
               <div
@@ -495,7 +690,7 @@ export function ReportWorkspace({
                       ? DV_SECTION_EDITORS[s]
                       : INVESTIGATION_SECTION_EDITORS[s];
                   if (!Editor) return null;
-                  const extra = sectionMinHeights[s];
+                  const extra = showReviewGutter ? sectionMinHeights[s] : undefined;
                   return (
                     <section
                       key={s}
@@ -509,28 +704,51 @@ export function ReportWorkspace({
               </div>
               {activeAttachmentId ? <AttachmentViewer /> : null}
             </div>
-            <aside
-              className="hidden lg:block relative"
-              aria-label="Review margin"
-            >
-              <MarginGutter
-                onSectionOverflow={handleSectionOverflow}
-              />
-            </aside>
+            {showReviewGutter ? (
+              <aside
+                className="relative hidden min-w-0 @[800px]:block"
+                aria-label="Review margin"
+              >
+                <MarginGutter
+                  onSectionOverflow={handleSectionOverflow}
+                />
+              </aside>
+            ) : null}
           </div>
         </main>
 
-        <ReportSidebar
-          collapsed={sidebarCollapsed}
-          overlaysWorkspace={!sidebarCollapsed}
-          onToggleCollapse={toggleSidebarCollapse}
-          activeTab={sidebarTab}
-          onTabChange={setSidebarTab}
-          onJumpToSection={jumpToSection}
-          onJumpToPlaceholder={handleJumpToPlaceholder}
-          onJumpToComment={jumpToComment}
-          initialCriteriaSection={criteriaFocusSection}
-        />
+        <div
+          className={cn(
+            "relative z-10 h-full shrink-0",
+            !isResizing && "transition-[width] duration-200 ease-in-out"
+          )}
+          style={{ width: chatWidth }}
+        >
+          <ReportSidebar
+            collapsed={sidebarCollapsed}
+            onToggleCollapse={toggleSidebarCollapse}
+            activeTab={sidebarTab}
+            onTabChange={setSidebarTab}
+            onJumpToSection={jumpToSection}
+            onJumpToPlaceholder={handleJumpToPlaceholder}
+            onJumpToComment={jumpToComment}
+            initialCriteriaSection={criteriaFocusSection}
+          />
+          {sidebarCollapsed ? null : (
+            <WorkspaceResizeHandle
+              label="Resize assistant panel"
+              controlsId="report-chat-sidebar"
+              edge="start"
+              value={chatWidth}
+              min={chatBounds.min}
+              max={chatBounds.max}
+              onChange={setChatWidth}
+              onDragStart={() => beginResize("chat")}
+              onDragEnd={endResize}
+              onReset={resetChatWidth}
+            />
+          )}
+        </div>
       </div>
     </div>
   );

@@ -1,10 +1,17 @@
 import { normalizeRichField, richJsonToPlainText } from "@/lib/tiptap/rich-text";
 
-/** Minimum sentences required in Define (first evaluatable section) before AI runs. */
+/**
+ * Sample-eval import quality check (investigation Define). Live Run
+ * criteria uses per-section readiness in `evaluation-readiness.ts`.
+ */
 export const MIN_SENTENCES_FIRST_SECTION = 2;
 
+export function insufficientFirstSectionMessage(sectionLabel = "Define"): string {
+  return `Add at least two sentences in the ${sectionLabel} section before running the AI check. We need enough context to review your report.`;
+}
+
 export const INSUFFICIENT_FIRST_SECTION_MESSAGE =
-  "Add at least two sentences in the Define section before running the AI check. We need enough context to review your report.";
+  insufficientFirstSectionMessage("Define");
 
 /**
  * Plain text from the Define section's narrative (TipTap JSON or legacy string).

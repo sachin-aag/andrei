@@ -1,20 +1,29 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
+import { MagicLinkSent } from "@/components/auth/magic-link-sent";
 import { PasswordLoginForm } from "@/components/auth/password-login-form";
 import { BrandLockup } from "@/components/brand/brand-lockup";
+import { loginErrorMessage } from "@/lib/auth/login-error-message";
 import { getCurrentUser } from "@/lib/auth/session";
 import { getCustomerPack } from "@/lib/customers/packs";
 
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ callbackUrl?: string }>;
+  searchParams: Promise<{
+    callbackUrl?: string;
+    verify?: string;
+    error?: string;
+  }>;
 }) {
   const user = await getCurrentUser();
   if (user) redirect("/");
 
-  const { callbackUrl } = await searchParams;
+  const { callbackUrl, verify, error } = await searchParams;
   const { branding } = getCustomerPack();
   const headlineLines = branding.loginHeadline.split("\n");
+  const errorMessage = loginErrorMessage(error);
+  const showMagicLinkSent = verify === "1" && !errorMessage;
 
   return (
     <div className="min-h-screen flex">
@@ -53,11 +62,25 @@ export default async function LoginPage({
               Sign in to your workspace
             </h1>
             <p className="text-sm text-[var(--muted-foreground)] mt-2">
-              Enter your work email and password. Contact your admin if you need
-              access or a password reset link.
+              Sign in with your work email and password. You can also request a
+              sign-in link by email.
             </p>
           </div>
-          <PasswordLoginForm redirectTo={callbackUrl ?? "/"} />
+          {errorMessage ? (
+            <p className="text-sm text-destructive">{errorMessage}</p>
+          ) : null}
+          {showMagicLinkSent ? (
+            <MagicLinkSent>
+              <Link
+                href="/login"
+                className="text-sm text-[var(--brand-600)] hover:underline"
+              >
+                Back to sign in
+              </Link>
+            </MagicLinkSent>
+          ) : (
+            <PasswordLoginForm redirectTo={callbackUrl ?? "/"} />
+          )}
         </div>
       </div>
     </div>

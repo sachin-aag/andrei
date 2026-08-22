@@ -11,6 +11,8 @@ import {
 } from "./mj/prompts";
 import { resolveCustomerId, type CustomerId } from "./resolve";
 
+export type LogoLayout = "icon" | "wordmark";
+
 export type CustomerBranding = {
   productName: string;
   productNameShort: string;
@@ -20,7 +22,11 @@ export type CustomerBranding = {
   shellTagline: string;
   logoSrc: string;
   logoWhiteSrc: string;
+  /** Icon-only mark for collapsed chrome; same as `logoSrc` for square logos. */
+  logoMarkSrc: string;
   logoAlt: string;
+  /** `wordmark` is a wide lockup (Convergent); `icon` is a square mark. */
+  logoLayout: LogoLayout;
   heroLogoSrc: string;
   heroLogoOnWhite: boolean;
   auditExportTitle: string;
@@ -54,7 +60,9 @@ const ANDREI_BRANDING: CustomerBranding = {
   shellTagline: "Quality Documentation",
   logoSrc: "/logo.png",
   logoWhiteSrc: "/logo-white.png",
+  logoMarkSrc: "/logo.png",
   logoAlt: "Andrei logo",
+  logoLayout: "icon",
   heroLogoSrc: "/logo-white.png",
   heroLogoOnWhite: false,
   auditExportTitle: "Andrei — Audit Trail Export",
@@ -63,6 +71,30 @@ const ANDREI_BRANDING: CustomerBranding = {
   loginSubhead:
     "Draft investigation reports with AI-assisted quality checks, streamlined manager review, and one-click DOCX export.",
   loginFooter: "Better documents. Better outcomes.",
+  aiAttribution: "by Andrei",
+};
+
+const CONVERGENT_BRANDING: CustomerBranding = {
+  productName: "Convergent Dental",
+  productNameShort: "Convergent",
+  documentReviewTitle: "Convergent Dental — Design Verification",
+  documentReviewDescription:
+    "AI document review and drafting for Convergent Dental design verification",
+  tagline: "Solea® Design Verification",
+  shellTagline: "Design Verification",
+  logoSrc: "/logo-convergent.png",
+  logoWhiteSrc: "/logo-convergent-white.png",
+  logoMarkSrc: "/logo-convergent-mark.svg",
+  logoAlt: "Convergent Dental logo",
+  logoLayout: "wordmark",
+  heroLogoSrc: "/logo-convergent.png",
+  heroLogoOnWhite: true,
+  auditExportTitle: "Convergent Dental — Audit Trail Export",
+  passwordResetSubject: "Reset your password — Convergent Dental",
+  loginHeadline: "Design verification,\naccelerated.",
+  loginSubhead:
+    "Draft Solea design verification reports with AI-assisted quality checks, streamlined manager review, and one-click DOCX export.",
+  loginFooter: "Andrei Health",
   aiAttribution: "by Andrei",
 };
 
@@ -76,7 +108,9 @@ const MJ_BRANDING: CustomerBranding = {
   shellTagline: "Quality Investigations",
   logoSrc: "/logo-mj.png",
   logoWhiteSrc: "/logo-mj.png",
+  logoMarkSrc: "/logo-mj.png",
   logoAlt: "MJ Biopharm logo",
+  logoLayout: "icon",
   heroLogoSrc: "/logo-mj.png",
   heroLogoOnWhite: true,
   auditExportTitle: "M.J. Biopharm — Audit Trail Export",
@@ -102,6 +136,21 @@ export const DEMO_PACK: CustomerPack = {
   branding: ANDREI_BRANDING,
 };
 
+export const CONVERGENT_PROMPT_VERSION = "convergent-dv-v5";
+
+export const CONVERGENT_PACK: CustomerPack = {
+  id: "convergent",
+  enabledDocumentTypes: ["design_verification"],
+  hiddenInvestigationSections: [],
+  investigationTemplateFile: "investigation-report-template.docx",
+  promptVersion: CONVERGENT_PROMPT_VERSION,
+  evaluationSystemPrompt: COMMON_EVALUATION_SYSTEM_PROMPT,
+  evaluationSectionPromptAdditions: {},
+  criterionDescriptionOverrides: {},
+  wordImportEnabled: false,
+  branding: CONVERGENT_BRANDING,
+};
+
 export const MJ_PACK: CustomerPack = {
   id: "mj",
   enabledDocumentTypes: ["investigation_report"],
@@ -121,6 +170,8 @@ export function getCustomerPack(id: CustomerId = resolveCustomerId()): CustomerP
       return DEMO_PACK;
     case "mj":
       return MJ_PACK;
+    case "convergent":
+      return CONVERGENT_PACK;
     default: {
       const exhaustive: never = id;
       return exhaustive;

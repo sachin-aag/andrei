@@ -49,8 +49,14 @@ describe("resolveCustomerId", () => {
   });
 
   it("throws on an unknown customer id", () => {
-    expect(() => resolveCustomerId({ ANDREI_CUSTOMER: "convergent" })).toThrow(
+    expect(() => resolveCustomerId({ ANDREI_CUSTOMER: "acme" })).toThrow(
       /Invalid customer id/
+    );
+  });
+
+  it("accepts convergent as a customer id", () => {
+    expect(resolveCustomerId({ ANDREI_CUSTOMER: "convergent" })).toBe(
+      "convergent"
     );
   });
 });

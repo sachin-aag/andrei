@@ -32,11 +32,15 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import type { DocumentTreeFolder } from "@/lib/attachments/build-tree";
 import { ATTACHMENT_DESCRIPTION_MAX } from "@/lib/attachments/description";
+import { formatIngestPageLabel } from "@/lib/attachments/ingest-continue-limits";
+import { canReprocessAttachment } from "@/lib/attachments/ingest-errors";
+import { isLargeUpload } from "@/lib/attachments/large-upload";
 import { useReportAttachments } from "@/providers/report-attachments-provider";
 import type { AttachmentProcessingStatus } from "@/db/schema";
 import type { ReportAttachmentRecord } from "@/types/report";
 import { useDocumentDrag } from "./drag-context";
 import { indentStyle } from "./indent";
+import { LargeUploadTape } from "./large-upload-tape";
 import { NewFolderRow } from "./new-folder-row";
 
 export function DocumentTreeNodes({
@@ -278,9 +282,21 @@ function FileNode({
   const [descriptionOpen, setDescriptionOpen] = useState(false);
 
   const isActive = activeAttachmentId === attachment.id;
-  const progress =
-    uploadProgress[attachment.id]?.percent ?? attachment.processingProgress;
+  const live = uploadProgress[attachment.id];
+  const progress = live?.percent ?? attachment.processingProgress;
   const pending = isPendingStatus(attachment.processingStatus);
+  const canRetry = canReprocessAttachment(attachment);
+
+  // Big files wait minutes, not seconds, so they get the tape instead of the
+  // thin bar. `live` is only set in the tab actually doing the upload.
+  const isLarge = isLargeUpload(attachment.sizeBytes);
+  const transfer = live
+    ? {
+        uploadedBytes: live.uploadedBytes,
+        bytesPerSecond: live.bytesPerSecond,
+        lastAdvanceAt: live.lastAdvanceAt,
+      }
+    : null;
 
   const handleRemove = async () => {
     const confirmed = window.confirm(
@@ -388,7 +404,7 @@ function FileNode({
 
         {canMutateAttachments && !renaming ? (
           <div className="flex shrink-0 items-center opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
-            {attachment.processingStatus === "failed" ? (
+            {canRetry ? (
               <Button
                 type="button"
                 variant="ghost"
@@ -416,7 +432,18 @@ function FileNode({
         ) : null}
       </div>
 
-      {pending ? (
+      {pending && isLarge ? (
+        <LargeUploadTape
+          status={attachment.processingStatus}
+          sizeBytes={attachment.sizeBytes}
+          transfer={transfer}
+          processingProgress={attachment.processingProgress}
+          processingPage={attachment.processingPage}
+          pageCount={attachment.pageCount}
+        />
+      ) : null}
+
+      {pending && !isLarge ? (
         <div className="mt-1 flex items-center gap-2 pl-[18px]">
           <div className="h-1 flex-1 overflow-hidden rounded-full bg-[var(--secondary)]">
             <div
@@ -425,13 +452,21 @@ function FileNode({
             />
           </div>
           <span className="text-[10px] uppercase tracking-wide text-[var(--muted-foreground)]">
-            {attachment.processingStatus}
+            {formatIngestPageLabel(attachment.processingPage) ??
+              attachment.processingStatus}
           </span>
         </div>
       ) : null}
 
       {attachment.processingError ? (
-        <p className="mt-1 pl-[18px] text-xs text-[var(--destructive)]">
+        <p
+          className={cn(
+            "mt-1 pl-[18px] text-xs",
+            attachment.processingStatus === "failed"
+              ? "text-[var(--destructive)]"
+              : "text-[var(--muted-foreground)]"
+          )}
+        >
           {attachment.processingError}
         </p>
       ) : null}

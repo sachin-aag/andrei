@@ -14,12 +14,12 @@ import {
   PanelLeftOpen,
 } from "lucide-react";
 import Link from "next/link";
-import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { roleLabel } from "@/lib/auth/roles";
 import { DEFAULT_INACTIVITY_TIMEOUT_MINUTES } from "@/lib/auth/inactivity-timeout";
 import { InactivityLogout } from "@/components/auth/inactivity-logout";
+import { BrandLogo } from "@/components/brand/brand-logo";
 import { getCustomerPack } from "@/lib/customers/packs";
 
 export function AppShell({
@@ -83,33 +83,32 @@ export function AppShell({
         aria-label="Primary navigation"
         style={{ viewTransitionName: "app-sidebar" }}
         className={cn(
-          "shrink-0 border-r border-[var(--border)] bg-[var(--card)] flex flex-col transition-[width] duration-200 ease-in-out",
-          collapsed ? "w-14" : "w-60"
+          "shrink-0 overflow-hidden border-r border-[var(--border)] bg-[var(--card)] flex flex-col transition-[width] duration-200 ease-in-out",
+          !collapsed && "w-60",
+          collapsed && branding.logoLayout === "wordmark" && "w-16",
+          collapsed && branding.logoLayout !== "wordmark" && "w-14"
         )}
       >
         <div className="border-b border-[var(--border)]">
           <div
             className={cn(
-              "h-16 flex items-center gap-3",
-              collapsed ? "px-2 justify-center" : "px-5"
+              "flex items-center gap-3",
+              collapsed
+                ? cn(
+                    "h-16 justify-center",
+                    branding.logoLayout === "wordmark" ? "px-3" : "px-2"
+                  )
+                : "h-16 px-4"
             )}
           >
-            <div className="size-9 rounded-lg bg-white p-1 flex items-center justify-center shrink-0">
-              <Image
-                src={branding.logoSrc}
-                width={28}
-                height={28}
-                alt={branding.logoAlt}
-                className="object-contain"
-                style={{ width: "auto", height: "auto" }}
-              />
-            </div>
-            {!collapsed && (
-              <div className="flex flex-col min-w-0 flex-1">
-                <span className="text-xs font-semibold leading-tight truncate">
+            {/* Circle mark only — the Convergent wordmark is too wide for this rail. */}
+            <BrandLogo compact />
+            {collapsed ? null : (
+              <div className="flex min-w-0 flex-1 flex-col">
+                <span className="truncate text-xs font-semibold leading-tight">
                   {branding.productNameShort}
                 </span>
-                <span className="text-[10px] text-[var(--muted-foreground)] truncate">
+                <span className="truncate text-[10px] text-[var(--muted-foreground)]">
                   {branding.shellTagline}
                 </span>
               </div>

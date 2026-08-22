@@ -102,6 +102,11 @@ export function primaryFieldForSection(section: SectionType): string {
       return "preventiveActions";
     case "traceability":
     case "test_results":
+    case "test_equipment":
+      return "table";
+    case "testers_dates":
+      return "testers";
+    case "results_and_discussions":
       return "table";
     default:
       return "narrative";
@@ -179,11 +184,9 @@ export function sectionFieldForChat(
 
 /** Human label for a section (workspace labels, then any registered document type). */
 export function sectionLabel(section: SectionType): string {
-  const fromInvestigation = SECTION_LABELS[section];
-  if (fromInvestigation) return fromInvestigation;
   for (const def of listDocumentTypes()) {
     const match = def.sections.find((s) => s.key === section);
     if (match) return match.label;
   }
-  return section;
+  return SECTION_LABELS[section] ?? section;
 }

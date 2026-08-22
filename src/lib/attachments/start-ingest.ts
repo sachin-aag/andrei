@@ -12,6 +12,12 @@ import {
 import { chunkDocumentPages } from "@/lib/attachments/chunk-pages";
 import { resolveDocumentIngestMode } from "@/lib/attachments/document-ingest-mode";
 import {
+  ingestContinueOrigin,
+  INGEST_CONTINUE_HEADER,
+  mintIngestContinueToken,
+} from "@/lib/attachments/ingest-continue";
+import { MAX_INGEST_CONTINUATIONS } from "@/lib/attachments/ingest-continue-limits";
+import {
   sanitizeIngestError,
   shouldBackfillIngestFailure,
 } from "@/lib/attachments/ingest-errors";
@@ -22,11 +28,11 @@ import { documentIngestWorkflow } from "@/workflows/document-ingest";
 export { resolveDocumentIngestMode } from "@/lib/attachments/document-ingest-mode";
 export { shouldBackfillIngestFailure } from "@/lib/attachments/ingest-errors";
 
-const ACTIVE_INGEST_STATUSES = ["pending", "running", "ready"] as const;
+const ACTIVE_INGEST_STATUSES = ["pending", "running"] as const;
 
 /**
- * Start document ingest at most once per attachment generation.
- * Concurrent finalize/reprocess callers lose the claim and no-op.
+ * Start document ingest at most once per in-flight attachment generation.
+ * A completed `ready` run does not block an explicit retry.
  *
  * Prefers Vercel Workflows when configured; if `start()` fails (common when
  * World/Queues are unhealthy), falls back to inline `after()` ingest so
@@ -112,6 +118,7 @@ export async function claimDocumentIngestStart(
       .set({
         processingStatus: "processing",
         processingProgress: 0,
+        processingPage: null,
         processingError: null,
       })
       .where(
@@ -126,18 +133,63 @@ export async function claimDocumentIngestStart(
   });
 }
 
-function scheduleInlineIngest(attachmentId: string, generation: string): void {
+export function scheduleInlineIngest(
+  attachmentId: string,
+  generation: string,
+  slice = 0
+): void {
   after(() =>
-    runDocumentIngest(attachmentId, generation).catch(async (error) => {
-      console.error("[document-ingest] inline run failed", {
-        attachmentId,
-        error,
-      });
-      // runDocumentIngest already marks failed via markRunTerminal — do not
-      // overwrite that message with a generic "could not be started".
-      await ensureFailedIfStillInFlight(attachmentId, error);
-    })
+    runDocumentIngest(attachmentId, generation, { resume: slice > 0 })
+      .then(async (outcome) => {
+        if (outcome !== "continue") return;
+        if (slice + 1 > MAX_INGEST_CONTINUATIONS) {
+          await ensureFailedIfStillInFlight(
+            attachmentId,
+            new Error(
+              "Document ingestion could not finish within the time budget. Reprocess the attachment to try again."
+            )
+          );
+          return;
+        }
+        await requestIngestContinuation({
+          attachmentId,
+          generation,
+          slice: slice + 1,
+        });
+      })
+      .catch(async (error) => {
+        console.error("[document-ingest] inline run failed", {
+          attachmentId,
+          error,
+        });
+        // runDocumentIngest already marks failed via markRunTerminal — do not
+        // overwrite that message with a generic "could not be started".
+        await ensureFailedIfStillInFlight(attachmentId, error);
+      })
   );
+}
+
+export async function requestIngestContinuation(input: {
+  attachmentId: string;
+  generation: string;
+  slice: number;
+}): Promise<void> {
+  const origin = ingestContinueOrigin();
+  const token = mintIngestContinueToken(input);
+  const response = await fetch(`${origin}/api/internal/document-ingest/continue`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      [INGEST_CONTINUE_HEADER]: token,
+    },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(
+      `Could not continue document ingest (${response.status})${detail ? `: ${detail}` : ""}`
+    );
+  }
 }
 
 /**
@@ -164,6 +216,7 @@ export async function ensureFailedIfStillInFlight(
     .set({
       processingStatus: "failed",
       processingProgress: 0,
+      processingPage: null,
       processingError: sanitizeIngestError(error),
     })
     .where(eq(reportAttachments.id, attachmentId));
@@ -247,6 +300,7 @@ async function markAttachmentReadyForTests(
     .set({
       processingStatus: "ready",
       processingProgress: 100,
+      processingPage: null,
       processingError: null,
       activeIngestRunId: runId,
       gcsGeneration: generation,

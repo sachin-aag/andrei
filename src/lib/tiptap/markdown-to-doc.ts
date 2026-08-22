@@ -3,11 +3,25 @@ import { parseListLine } from "@/lib/tiptap/list-style";
 
 const ATX_HEADING_RE = /^(#{1,3})\s+(.*)$/;
 
+/**
+ * CommonMark-ish emphasis: no space after the opener or before the closer.
+ * `* item` bullets are handled at line level; `2 * 3` stays literal.
+ */
+const INLINE_MARKDOWN_SPLIT_RE =
+  /(\*\*[^*]+\*\*|(?<!\*)\*(?!\s)[^*]+?(?<!\s)\*(?!\*)|(?<!_)_(?!\s)[^_]+?(?<!\s)_(?!_))/g;
+
+export function stripInlineMarkdown(text: string): string {
+  return text
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/(?<!\*)\*(?!\s)([^*]+?)(?<!\s)\*(?!\*)/g, "$1")
+    .replace(/(?<!_)_(?!\s)([^_]+?)(?<!\s)_(?!_)/g, "$1");
+}
+
 /** ATX `#`–`###` line → bold paragraph (section editor has no heading node). */
 export function atxHeadingParagraph(text: string): JSONContent | null {
   const heading = ATX_HEADING_RE.exec(text.trim());
   if (!heading) return null;
-  const headingText = heading[2]!.replace(/\*\*([^*]+)\*\*/g, "$1");
+  const headingText = stripInlineMarkdown(heading[2]!);
   if (!headingText) return null;
   return {
     type: "paragraph",
@@ -59,7 +73,7 @@ export function promoteAtxHeadingsInDoc(doc: JSONContent): JSONContent {
  *   schema has no heading node; emitting one makes ProseMirror drop the doc)
  * - bullet (`- `, `* `) and ordered (`1. `) lists
  * - GFM tables (first row = header)
- * - `**bold**` inline emphasis
+ * - `**bold**`, `*italic*`, and `_italic_` inline emphasis
  *
  * Anything else is kept as literal text. No HTML, no fuzziness.
  */
@@ -142,7 +156,7 @@ export function markdownToPlainText(markdown: string): string {
   return markdown
     .replace(/\r\n/g, "\n")
     .split("\n")
-    .map((line) => line.replace(/\*\*([^*]+)\*\*/g, "$1").replace(/^#{1,3}\s+/, ""))
+    .map((line) => stripInlineMarkdown(line).replace(/^#{1,3}\s+/, ""))
     .join("\n")
     .trim();
 }
@@ -243,20 +257,67 @@ export function hydrateLiteralMarkdownInDoc(doc: JSONContent): JSONContent {
   return hydrateNode(doc);
 }
 
-/** `**bold**` spans → bold-marked text nodes; everything else literal. */
-function parseInline(text: string): JSONContent[] {
+function withExtraMarks(
+  marks: JSONContent["marks"] | undefined,
+  extraMarks: JSONContent["marks"] | undefined
+): JSONContent["marks"] | undefined {
+  if (!extraMarks?.length) return marks;
+  if (!marks?.length) return extraMarks;
+  return [...extraMarks, ...marks];
+}
+
+/**
+ * `**bold**` / `*italic*` / `_italic_` → marked text nodes; everything else
+ * literal. `extraMarks` (e.g. a pending suggestion mark) is applied to every
+ * node so a rich insert can be both highlighted and italicized.
+ */
+export function inlineMarkdownToTextNodes(
+  text: string,
+  extraMarks?: JSONContent["marks"]
+): JSONContent[] {
   const nodes: JSONContent[] = [];
-  const parts = text.split(/(\*\*[^*]+\*\*)/g);
+  const parts = text.split(INLINE_MARKDOWN_SPLIT_RE);
   for (const part of parts) {
     if (!part) continue;
     const bold = /^\*\*([^*]+)\*\*$/.exec(part);
     if (bold) {
-      nodes.push({ type: "text", text: bold[1]!, marks: [{ type: "bold" }] });
-    } else {
-      nodes.push({ type: "text", text: part });
+      nodes.push({
+        type: "text",
+        text: bold[1]!,
+        marks: withExtraMarks([{ type: "bold" }], extraMarks),
+      });
+      continue;
     }
+    const italicStar = /^\*(?!\s)([^*]+?)(?<!\s)\*$/.exec(part);
+    if (italicStar) {
+      nodes.push({
+        type: "text",
+        text: italicStar[1]!,
+        marks: withExtraMarks([{ type: "italic" }], extraMarks),
+      });
+      continue;
+    }
+    const italicUnderscore = /^_(?!\s)([^_]+?)(?<!\s)_$/.exec(part);
+    if (italicUnderscore) {
+      nodes.push({
+        type: "text",
+        text: italicUnderscore[1]!,
+        marks: withExtraMarks([{ type: "italic" }], extraMarks),
+      });
+      continue;
+    }
+    nodes.push({
+      type: "text",
+      text: part,
+      marks: extraMarks?.length ? extraMarks : undefined,
+    });
   }
   return nodes;
+}
+
+/** `**bold**` / `*italic*` / `_italic_` → marked text nodes; everything else literal. */
+function parseInline(text: string): JSONContent[] {
+  return inlineMarkdownToTextNodes(text);
 }
 
 function isTableRow(trimmed: string): boolean {

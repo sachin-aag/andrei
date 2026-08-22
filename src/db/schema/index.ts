@@ -525,6 +525,8 @@ export const reportAttachments = pgTable(
       .notNull()
       .default("uploading"),
     processingProgress: integer("processing_progress").notNull().default(0),
+    /** 1-based page currently being extracted; null when idle. */
+    processingPage: integer("processing_page"),
     processingError: text("processing_error"),
     /** Active completed ingest run; FK added in migration to avoid circular create. */
     activeIngestRunId: text("active_ingest_run_id"),
@@ -807,6 +809,13 @@ export const chatMessages = pgTable(
     role: chatMessageRoleEnum("role").notNull(),
     /** AI SDK v6 UIMessage.parts (text + tool parts). */
     parts: jsonb("parts").notNull().default([]),
+    /**
+     * Which config produced an assistant turn — `ChatAssistantTurnMetadata`
+     * (pace, model id, thinking level, prompt version). The composer shows the
+     * user "Quick"/"Deep" and never a model name, so this is the only record
+     * of what actually answered. Empty for user turns and legacy rows.
+     */
+    metadata: jsonb("metadata").notNull().default({}),
     /** workspace_users.id for user turns; null for assistant turns. */
     authorId: text("author_id"),
     createdAt: timestamp("created_at", { withTimezone: true })

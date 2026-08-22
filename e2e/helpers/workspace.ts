@@ -49,16 +49,37 @@ export async function expandReportSidebar(page: Page): Promise<void> {
 
 export async function openReportSidebarTab(
   page: Page,
-  tab: "placeholders" | "criteria" | "comments"
+  tab: "assistant" | "placeholders" | "criteria" | "comments"
 ): Promise<void> {
   await expandReportSidebar(page);
   const label = tab.charAt(0).toUpperCase() + tab.slice(1);
-  await reportSidebar(page)
-    .getByRole("button", { name: new RegExp(`^${label}$`, "i") })
-    .click();
+  const button = reportSidebar(page).getByRole("button", {
+    name: new RegExp(`^${label}$`, "i"),
+  });
+  await expect(button).toBeVisible({ timeout: 15_000 });
+  if ((await button.getAttribute("aria-pressed")) !== "true") {
+    await button.click();
+  }
+  await expect(button).toHaveAttribute("aria-pressed", "true");
 }
 
-/** Expanded report sidebar overlays the review margin and blocks gutter clicks. */
+/**
+ * Expand the report sidebar and wait until Assistant has finished loading
+ * sessions. The tab is already selected on a fresh editor load — clicking it
+ * during hydration remounts the button (CI flake on reload).
+ */
+export async function openReportAssistant(page: Page): Promise<void> {
+  await openReportSidebarTab(page, "assistant");
+  const sidebar = reportSidebar(page);
+  await expect(sidebar.getByLabel("Assistant mode")).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(
+    sidebar.getByPlaceholder(/describe the deviation|ask the assistant/i)
+  ).toBeEnabled({ timeout: 15_000 });
+}
+
+/** Collapse the assistant so the review margin (suggestions/comments) can show. */
 export async function collapseReportSidebar(page: Page): Promise<void> {
   const sidebar = reportSidebar(page);
   const collapse = sidebar.getByRole("button", { name: /collapse sidebar/i });
@@ -145,7 +166,7 @@ export async function openMarginCommentReply(
     .filter({ hasText: commentText })
     .first();
   await card.scrollIntoViewIfNeeded();
-  // Keyboard activation avoids the expanded report sidebar overlay intercepting clicks.
+  // Keyboard activation is more reliable than clicking packed gutter cards.
   await card.focus();
   await page.keyboard.press("Enter");
   await expect(margin.getByPlaceholder(/^reply/i)).toBeVisible({ timeout: 15_000 });

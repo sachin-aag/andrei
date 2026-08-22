@@ -1,5 +1,32 @@
+"use client";
+
+import { memo, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import { ChatMath } from "@/components/report/chat-math";
+import {
+  CHAT_MATH_HAST_HANDLERS,
+  chatMathDisplayFromClassName,
+  isChatMathClassName,
+  reactNodeToPlainText,
+  rewriteChatMathHtmlConflicts,
+} from "@/components/report/chat-markdown-math";
+
+function ChatMathFromMarkdown({
+  className,
+  children,
+}: {
+  className?: string;
+  children?: ReactNode;
+}) {
+  return (
+    <ChatMath
+      latex={reactNodeToPlainText(children)}
+      display={chatMathDisplayFromClassName(className)}
+    />
+  );
+}
 
 /** Tailwind-styled renderers so assistant markdown matches the chat theme. */
 const COMPONENTS: Components = {
@@ -49,15 +76,36 @@ const COMPONENTS: Components = {
       {children}
     </blockquote>
   ),
+  span: ({ className, children }) =>
+    isChatMathClassName(className) ? (
+      <ChatMathFromMarkdown className={className}>{children}</ChatMathFromMarkdown>
+    ) : (
+      <span className={className}>{children}</span>
+    ),
+  div: ({ className, children }) =>
+    isChatMathClassName(className) ? (
+      <ChatMathFromMarkdown className={className}>{children}</ChatMathFromMarkdown>
+    ) : (
+      <div className={className}>{children}</div>
+    ),
 };
 
-/** Renders assistant chat text as GitHub-flavored markdown. */
-export function ChatMarkdown({ children }: { children: string }) {
+/** Renders assistant chat text as GitHub-flavored markdown with LaTeX math. */
+export const ChatMarkdown = memo(function ChatMarkdown({
+  children,
+}: {
+  children: string;
+}) {
+  const markdown = rewriteChatMathHtmlConflicts(children);
   return (
-    <div className="space-y-2 text-sm leading-relaxed text-[var(--foreground)]">
-      <ReactMarkdown remarkPlugins={[remarkGfm]} components={COMPONENTS}>
-        {children}
+    <div className="chat-markdown space-y-2 text-sm leading-relaxed text-[var(--foreground)]">
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm, remarkMath]}
+        remarkRehypeOptions={{ handlers: CHAT_MATH_HAST_HANDLERS }}
+        components={COMPONENTS}
+      >
+        {markdown}
       </ReactMarkdown>
     </div>
   );
-}
+});

@@ -1,8 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { z } from "zod";
-import { buildChatTools } from "@/lib/ai/chat/tools";
+import { buildChatTools, collectSearchQueries, mergeExcludePages } from "@/lib/ai/chat/tools";
+import {
+  DocumentReviewSession,
+  extractReviewFindingsFromPages,
+} from "@/lib/ai/chat/document-review";
 
-const readDocumentOutlineMock = vi.fn();
+const {
+  readDocumentOutlineMock,
+  listReadyDocumentsForReportMock,
+  listDocumentPagesForReviewMock,
+} = vi.hoisted(() => ({
+  readDocumentOutlineMock: vi.fn(),
+  listReadyDocumentsForReportMock: vi.fn(),
+  listDocumentPagesForReviewMock: vi.fn(),
+}));
 
 vi.mock("@/db", () => ({ db: {} }));
 
@@ -12,6 +24,10 @@ vi.mock("@/lib/attachments/retrieval", async (importOriginal) => {
     ...actual,
     readDocumentOutline: (...args: unknown[]) =>
       readDocumentOutlineMock(...(args as [])),
+    listReadyDocumentsForReport: (...args: unknown[]) =>
+      listReadyDocumentsForReportMock(...(args as [])),
+    listDocumentPagesForReview: (...args: unknown[]) =>
+      listDocumentPagesForReviewMock(...(args as [])),
   };
 });
 
@@ -46,6 +62,32 @@ async function executeDocumentOutline(
   return execute({ attachmentId }, TEST_TOOL_OPTIONS);
 }
 
+describe("collectSearchQueries", () => {
+  it("dedupes and caps complementary queries", () => {
+    expect(
+      collectSearchQueries({
+        query: "equipment",
+        queries: ["UUT", "equipment", "fixtures", "serials", "software"],
+      })
+    ).toEqual(["UUT", "equipment", "fixtures", "serials"]);
+  });
+
+  it("accumulates excludePages across grep rounds", () => {
+    expect(
+      mergeExcludePages(
+        [{ attachmentId: "att_1", pageNumber: 34 }],
+        [
+          { attachmentId: "att_1", pageNumber: 34 },
+          { attachmentId: "att_1", pageNumber: 32 },
+        ]
+      )
+    ).toEqual([
+      { attachmentId: "att_1", pageNumber: 34 },
+      { attachmentId: "att_1", pageNumber: 32 },
+    ]);
+  });
+});
+
 describe("buildChatTools search_documents scoping", () => {
   it("has no scope switch when nothing is tagged", () => {
     const tools = buildChatTools({ reportId: "report-1", canEdit: true });
@@ -57,6 +99,19 @@ describe("buildChatTools search_documents scoping", () => {
       query: "cleaning",
     }) as Record<string, unknown>;
     expect(parsed.scope).toBeUndefined();
+    expect(parsed.limit).toBe(8);
+    expect(parsed.mode).toBe("hybrid");
+    expect(
+      accepts(tools, "search_documents", { queries: ["equipment", "UUT"] })
+    ).toBe(true);
+    expect(
+      accepts(tools, "search_documents", {
+        query: "UUT",
+        mode: "keyword",
+        excludePages: [{ attachmentId: "att_1", pageNumber: 34 }],
+      })
+    ).toBe(true);
+    expect(accepts(tools, "search_documents", {})).toBe(false);
   });
 
   it("defaults to the tagged documents when some are tagged", () => {
@@ -124,6 +179,7 @@ describe("buildChatTools document_outline", () => {
     expect(result.status).toBe("found");
     expect(result.pages[0]?.pageContext).not.toMatch(/^# /);
     expect(result.pages[0]?.pageContext?.toLowerCase()).not.toMatch(/^system:/);
+    expect((result as { spans?: unknown[] }).spans).toEqual([]);
   });
 });
 
@@ -171,5 +227,161 @@ describe("buildChatTools tagged sections", () => {
     expect(
       accepts(tools, "draft_field", { ...edit, section: "define" })
     ).toBe(true);
+  });
+});
+
+describe("buildChatTools document review", () => {
+  beforeEach(() => {
+    listReadyDocumentsForReportMock.mockReset();
+    listDocumentPagesForReviewMock.mockReset();
+  });
+
+  it("registers review tools", () => {
+    const tools = buildChatTools({ reportId: "report-1", canEdit: true });
+    expect(tools.start_document_review).toBeDefined();
+    expect(tools.continue_document_review).toBeDefined();
+    expect(tools.finish_document_review).toBeDefined();
+    expect(
+      accepts(tools, "start_document_review", { objective: "inventory" })
+    ).toBe(true);
+    expect(accepts(tools, "continue_document_review", {})).toBe(true);
+  });
+
+  it("scopes the review to tagged documents", async () => {
+    listReadyDocumentsForReportMock.mockResolvedValueOnce([
+      {
+        attachmentId: "att_b",
+        filename: "Appendix-B.pdf",
+        description: null,
+        pageCount: 2,
+        ingestRunId: "run",
+        documentSummary: null,
+      },
+      {
+        attachmentId: "att_other",
+        filename: "other.pdf",
+        description: null,
+        pageCount: 9,
+        ingestRunId: "run",
+        documentSummary: null,
+      },
+    ]);
+    listDocumentPagesForReviewMock.mockResolvedValueOnce([
+      {
+        attachmentId: "att_b",
+        filename: "Appendix-B.pdf",
+        pageNumber: 1,
+        transcript: "SW-SST-1 Pass",
+        pageContext: null,
+        printedPageLabel: "1",
+      },
+    ]);
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      pinnedAttachmentIds: ["att_b"],
+    });
+    const result = await tools.start_document_review!.execute!(
+      { objective: "every requirement" },
+      TEST_TOOL_OPTIONS
+    );
+    expect(listDocumentPagesForReviewMock).toHaveBeenCalledWith({
+      reportId: "report-1",
+      attachmentIds: ["att_b"],
+    });
+    expect(result).toMatchObject({ status: "started", totalPages: 1 });
+  });
+
+  it("blocks drafting until finish_document_review", async () => {
+    const session = new DocumentReviewSession({
+      extractBatch: async ({ pages }) => extractReviewFindingsFromPages(pages),
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      retrievalPolicy: "comprehensive",
+      documentReview: session,
+      documentType: "design_verification",
+      sectionScope: "traceability",
+    });
+    const blocked = await tools.draft_field!.execute!(
+      {
+        section: "traceability",
+        targetField: "table",
+        markdown: "| a | b |",
+        reasoning: "too soon",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(blocked).toMatchObject({ status: "review_incomplete" });
+  });
+
+  it("covers every family in a 62-page synthetic appendix before drafting", async () => {
+    const pages = Array.from({ length: 62 }, (_, index) => {
+      const pageNumber = index + 1;
+      const families = [
+        "SW-SST-1 Soft tissue Pass",
+        "SW-SIB-2 Interlock Pass",
+        "SW-LWB-4 Wavelength Fail",
+        "SW-LCB-1 Control Pass",
+        "SW-SDT-3 Timer Pass",
+      ];
+      return {
+        attachmentId: "att_b",
+        filename: "Appendix-B.pdf",
+        pageNumber,
+        transcript: families[(pageNumber - 1) % families.length]!,
+        pageContext: null,
+        printedPageLabel: String(pageNumber),
+      };
+    });
+    listReadyDocumentsForReportMock.mockResolvedValue([
+      {
+        attachmentId: "att_b",
+        filename: "Appendix-B.pdf",
+        description: null,
+        pageCount: 62,
+        ingestRunId: "run",
+        documentSummary: null,
+      },
+    ]);
+    listDocumentPagesForReviewMock.mockResolvedValue(pages);
+    const session = new DocumentReviewSession({
+      extractBatch: async ({ pages: batch }) =>
+        extractReviewFindingsFromPages(batch),
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      retrievalPolicy: "comprehensive",
+      documentReview: session,
+      pinnedAttachmentIds: ["att_b"],
+    });
+
+    await tools.start_document_review!.execute!(
+      { objective: "requirements and results" },
+      TEST_TOOL_OPTIONS
+    );
+    let guard = 0;
+    while (session.phase() === "in_progress") {
+      guard += 1;
+      expect(guard).toBeLessThan(80);
+      await tools.continue_document_review!.execute!({}, TEST_TOOL_OPTIONS);
+    }
+    const finished = (await tools.finish_document_review!.execute!(
+      {},
+      TEST_TOOL_OPTIONS
+    )) as { identifiers: string[]; reviewedPages: number };
+    expect(finished.reviewedPages).toBe(62);
+    expect(finished.identifiers).toEqual(
+      expect.arrayContaining([
+        "SW-SST-1",
+        "SW-SIB-2",
+        "SW-LWB-4",
+        "SW-LCB-1",
+        "SW-SDT-3",
+      ])
+    );
+    expect(session.isFinished()).toBe(true);
   });
 });

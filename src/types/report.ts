@@ -128,6 +128,8 @@ export type ReportAttachmentRecord = {
   pageCount: number | null;
   processingStatus: AttachmentProcessingStatus;
   processingProgress: number;
+  /** 1-based page currently being extracted; null when idle. */
+  processingPage: number | null;
   processingError: string | null;
   uploadedAt: string;
   deletedAt: string | null;

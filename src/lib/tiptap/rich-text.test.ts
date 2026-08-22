@@ -14,6 +14,60 @@ import {
 } from "@/lib/tiptap/suggestion-marks";
 
 describe("rich text helpers", () => {
+  it("turns leftover phrase-level *italic* wrappers into italic marks", () => {
+    const doc = normalizeRichField({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "*Solea Model 3 Software Requirements Document* 822-700-0013",
+            },
+          ],
+        },
+      ],
+    });
+    expect(doc.content![0]!.content).toEqual([
+      {
+        type: "text",
+        text: "Solea Model 3 Software Requirements Document",
+        marks: [{ type: "italic" }],
+      },
+      { type: "text", text: " 822-700-0013" },
+    ]);
+  });
+
+  it("leaves compact asterisk sequences literal when normalizing", () => {
+    const doc = normalizeRichField({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Limit is 2*3*4 CFU." }],
+        },
+      ],
+    });
+    expect(doc.content![0]!.content).toEqual([
+      { type: "text", text: "Limit is 2*3*4 CFU." },
+    ]);
+  });
+
+  it("turns leftover *italic* in a legacy string into italic marks", () => {
+    const doc = normalizeRichField(
+      "*Solea Model 3 Software Requirements Document* 822-700-0013"
+    );
+    expect(doc.content![0]!.content).toEqual([
+      {
+        type: "text",
+        text: "Solea Model 3 Software Requirements Document",
+        marks: [{ type: "italic" }],
+      },
+      { type: "text", text: " 822-700-0013" },
+    ]);
+  });
+
   it("converts legacy plain text into paragraph nodes", () => {
     expect(legacyStringToDoc("Line one\nLine two")).toEqual({
       type: "doc",

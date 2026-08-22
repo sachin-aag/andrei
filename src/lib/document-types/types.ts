@@ -35,8 +35,6 @@ export type SectionDefinition = {
    * not seeded into report_sections and have no comments / version rows.
    */
   virtual?: boolean;
-  /** Gate section that must have enough context before evaluation may run. */
-  isGateSection?: boolean;
   emptyContent: unknown;
 };
 

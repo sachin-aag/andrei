@@ -1,7 +1,6 @@
 import { NextResponse, after } from "next/server";
 import {
   streamText,
-  stepCountIs,
   convertToModelMessages,
   type ToolSet,
   type UIMessage,
@@ -24,11 +23,22 @@ import { investigationToolsUsed } from "@/types/report";
 import {
   buildChatSystemPrompt,
   isChatMode,
+  CHAT_PROMPT_VERSION,
   type ChatMode,
 } from "@/lib/ai/chat/system-prompt";
 import { buildCriteriaOutline } from "@/lib/ai/chat/criteria-outline";
 import { buildChatTools } from "@/lib/ai/chat/tools";
-import { resolveChatLanguageModel } from "@/lib/ai/chat/model";
+import {
+  CHAT_EXTRACT_GOOGLE_MODEL_ID,
+  chatAssistantTurnMetadata,
+  chatPaceConfig,
+  resolveChatLanguageModel,
+} from "@/lib/ai/chat/model";
+import {
+  DEFAULT_CHAT_PACE,
+  isChatPace,
+  type ChatPace,
+} from "@/lib/ai/chat/pace";
 import { buildStubChatModel } from "@/lib/ai/chat/stub-model";
 import {
   parseChatSectionScope,
@@ -54,7 +64,24 @@ import {
 import { auditActorFromUser } from "@/lib/audit";
 import { listReadyDocumentsForReport } from "@/lib/attachments/retrieval";
 import { buildAutoEvidence } from "@/lib/ai/chat/auto-evidence";
+import {
+  classifyRetrievalPolicy,
+  recentUserMessageTexts,
+} from "@/lib/ai/chat/retrieval-policy";
+import {
+  DocumentReviewSession,
+  pickPlanModeChatTools,
+  prepareDocumentReviewStep,
+  shouldStopChatSteps,
+} from "@/lib/ai/chat/document-review";
 import { sanitizeChatMessagesForModel } from "@/lib/ai/chat/image-parts";
+import {
+  CHAT_ASSISTANT_ERROR_MESSAGE,
+  CHAT_SERVER_ABORT_MS,
+  formatChatLlmError,
+  isFailedChatFinishReason,
+  partsForPersistedAssistantTurn,
+} from "@/lib/ai/chat/assistant-turn";
 import {
   buildMentionBlock,
   mentionedAttachmentIds,
@@ -63,7 +90,8 @@ import {
   resolveChatMentions,
 } from "@/lib/ai/chat/mentions";
 
-export const maxDuration = 120;
+/** Must stay in sync with `CHAT_FUNCTION_MAX_DURATION_SEC`. */
+export const maxDuration = 300;
 
 function lastUserMessage(messages: UIMessage[]): UIMessage | null {
   for (let i = messages.length - 1; i >= 0; i--) {
@@ -103,6 +131,7 @@ export async function POST(
     messages?: UIMessage[];
     sessionId?: string;
     mode?: string;
+    pace?: string;
     sectionScope?: string;
     mentions?: unknown;
   };
@@ -113,6 +142,8 @@ export async function POST(
     return NextResponse.json({ error: "No messages" }, { status: 400 });
   }
   const mode: ChatMode = isChatMode(body.mode) ? body.mode : "agent";
+  const pace: ChatPace = isChatPace(body.pace) ? body.pace : DEFAULT_CHAT_PACE;
+  const paceConfig = chatPaceConfig(pace);
   const accessEarly = await loadAccessibleReport(reportId, user);
   if (!accessEarly) return NextResponse.json({ error: "Not found" }, { status: 404 });
   const sectionScope: ChatSectionScope = parseChatSectionScope(
@@ -189,6 +220,25 @@ export async function POST(
   // Resolved against this report's ready documents only, so a tagged
   // attachment id from another report cannot pull in its evidence.
   const mentions = resolveChatMentions(requestedMentions, documents);
+  const pinnedAttachmentIds = mentionedAttachmentIds(mentions);
+  const mentionedPageCount = documents
+    .filter((doc) => pinnedAttachmentIds.includes(doc.attachmentId))
+    .reduce((sum, doc) => sum + (doc.pageCount ?? 0), 0);
+  const totalReadyPages = documents.reduce(
+    (sum, doc) => sum + (doc.pageCount ?? 0),
+    0
+  );
+  const retrieval = classifyRetrievalPolicy({
+    userText,
+    recentUserTexts: recentUserMessageTexts(messages),
+    sectionScope,
+    documentType: report.documentType,
+    mentionedPageCount,
+    hasDocuments: documents.length > 0,
+  });
+  const documentReview = new DocumentReviewSession();
+  const reviewPageCount =
+    mentionedPageCount > 0 ? mentionedPageCount : totalReadyPages;
 
   const contextMap = buildReportContextMap({
     report: {
@@ -212,7 +262,9 @@ export async function POST(
     documentType: report.documentType,
   });
 
-  const autoEvidenceBlock = await buildAutoEvidence({
+  const autoEvidenceBlock =
+    retrieval.policy === "focused"
+      ? await buildAutoEvidence({
     reportId,
     userText,
     sections: mergedSections,
@@ -226,9 +278,10 @@ export async function POST(
     sectionScope,
     documentType: report.documentType,
     documentNo: report.documentNo,
-    pinnedAttachmentIds: mentionedAttachmentIds(mentions),
+    pinnedAttachmentIds,
     hasDocuments: documents.length > 0,
-  });
+  })
+    : "";
 
   const system = buildChatSystemPrompt({
     contextMap,
@@ -239,6 +292,7 @@ export async function POST(
     scopeMismatch,
     mentionBlock: buildMentionBlock(mentions),
     autoEvidenceBlock,
+    retrievalPolicy: retrieval.policy,
   });
 
   const allTools = buildChatTools({
@@ -247,21 +301,14 @@ export async function POST(
     sectionScope,
     documentType: report.documentType,
     actor: auditActorFromUser(user),
-    pinnedAttachmentIds: mentionedAttachmentIds(mentions),
+    pinnedAttachmentIds,
     mentionedSections: mentionedSections(mentions),
+    retrievalPolicy: retrieval.policy,
+    documentReview,
   });
   const tools: ToolSet =
     mode === "plan"
-      ? {
-          read_section: allTools.read_section!,
-          search_documents: allTools.search_documents!,
-          read_document_page: allTools.read_document_page!,
-          document_outline: allTools.document_outline!,
-          ask_user: allTools.ask_user!,
-          ...(allTools.suggest_section_scope
-            ? { suggest_section_scope: allTools.suggest_section_scope }
-            : {}),
-        }
+      ? (pickPlanModeChatTools(allTools) as ToolSet)
       : allTools;
 
   const stubSection =
@@ -277,34 +324,85 @@ export async function POST(
         insertText: `Stubbed drafting insertion addressing "${userText.slice(0, 80)}". [Replace with real content once a Gemini credential is configured.]`,
         reasoning: "Demo stub proposal.",
       })
-    : resolveChatLanguageModel();
+    : resolveChatLanguageModel(pace);
 
-  const result = streamText({
-    model,
-    system,
-    messages: await convertToModelMessages(messages),
-    tools,
-    // Agent mode drafts whole sections field-by-field (read + draft per field),
-    // so it needs a substantially larger step budget than plan mode.
-    stopWhen: stepCountIs(mode === "plan" ? 8 : 24),
-    // Thought summaries for Langfuse traces; keep thinkingLevel minimal so the
-    // multi-step tool loop on flash-lite stays responsive.
-    providerOptions: buildGeminiThoughtSummaryProviderOptions({
-      thinkingLevel: "minimal",
-    }),
-    ...langfuseGenerateTextTelemetry({
-      functionId: "report-chat",
-      metadata: {
-        reportId,
-        sessionId,
-        mode,
-        sectionScope,
-        canEdit,
-        taggedDocuments: mentions.documents.length,
-        taggedSections: mentions.sections.length,
+  let result;
+  try {
+    result = streamText({
+      model,
+      system,
+      messages: await convertToModelMessages(messages),
+      tools,
+      stopWhen: ({ steps }) =>
+        shouldStopChatSteps({
+          stepsTaken: steps.length,
+          mode,
+          policy: retrieval.policy,
+          reviewPhase: documentReview.phase(),
+          totalPages: documentReview.progress().totalPages || reviewPageCount,
+        }),
+      prepareStep: () => {
+        const prepared = prepareDocumentReviewStep({
+          policy: retrieval.policy,
+          phase: documentReview.phase(),
+          availableTools: Object.keys(tools),
+        });
+        if (!prepared) return undefined;
+        return {
+          activeTools: prepared.activeTools,
+          ...(prepared.toolChoice ? { toolChoice: prepared.toolChoice } : {}),
+        };
       },
-    }),
-  });
+      abortSignal: req.signal,
+      // Leave time to persist an interrupted row before Vercel kills the isolate.
+      timeout: { totalMs: CHAT_SERVER_ABORT_MS },
+      // Gemini 3.x: thinkingLevel only. Do not set temperature / topP / topK /
+      // seed — Google warns that sampling overrides degrade reasoning.
+      // includeThoughts stays on for Langfuse; UI does not stream them.
+      providerOptions: buildGeminiThoughtSummaryProviderOptions({
+        thinkingLevel: paceConfig.thinkingLevel,
+      }),
+      onError: ({ error }) => {
+        console.error("chat: llm stream error", {
+          reportId,
+          sessionId,
+          mode,
+          pace,
+          sectionScope,
+          error: formatChatLlmError(error),
+        });
+      },
+      ...langfuseGenerateTextTelemetry({
+        functionId: "report-chat",
+        metadata: {
+          reportId,
+          sessionId,
+          mode,
+          sectionScope,
+          canEdit,
+          taggedDocuments: mentions.documents.length,
+          taggedSections: mentions.sections.length,
+          chatPromptVersion: CHAT_PROMPT_VERSION,
+          pace,
+          chatModelId: paceConfig.modelId,
+          chatThinkingLevel: paceConfig.thinkingLevel,
+          chatExtractModelId: CHAT_EXTRACT_GOOGLE_MODEL_ID,
+          retrievalPolicy: retrieval.policy,
+          retrievalPolicyReason: retrieval.reason,
+        },
+      }),
+    });
+  } catch (err) {
+    console.error("chat: failed to start assistant stream", {
+      reportId,
+      sessionId,
+      error: formatChatLlmError(err),
+    });
+    return NextResponse.json(
+      { error: CHAT_ASSISTANT_ERROR_MESSAGE },
+      { status: 500 }
+    );
+  }
 
   after(flushLangfuseTraces);
 
@@ -313,13 +411,53 @@ export async function POST(
     // Keep Gemini thought summaries in Langfuse (ai.response.reasoning) only —
     // do not stream or persist them as chat message parts.
     sendReasoning: false,
-    onFinish: async ({ responseMessage }) => {
+    onError: (error) => {
+      console.error("chat: assistant stream error", {
+        reportId,
+        sessionId,
+        error: formatChatLlmError(error),
+      });
+      return CHAT_ASSISTANT_ERROR_MESSAGE;
+    },
+    onFinish: async ({ responseMessage, isAborted, finishReason }) => {
+      const persisted = partsForPersistedAssistantTurn({
+        parts: responseMessage.parts,
+        isAborted,
+      });
+      if (persisted.interrupted) {
+        console.warn("chat: interrupted assistant turn", {
+          reportId,
+          sessionId,
+          finishReason: finishReason ?? "unknown",
+          isAborted,
+          partTypes: (responseMessage.parts ?? []).map((part) => part.type),
+        });
+      } else if (
+        persisted.emptyFailure ||
+        isFailedChatFinishReason(finishReason)
+      ) {
+        console.error("chat: empty or failed assistant turn", {
+          reportId,
+          sessionId,
+          finishReason: finishReason ?? "unknown",
+          isAborted,
+          emptyFailure: persisted.emptyFailure,
+          partTypes: (responseMessage.parts ?? []).map((part) => part.type),
+        });
+      }
       try {
         await db.insert(chatMessages).values({
           reportId,
           sessionId,
           role: "assistant",
-          parts: responseMessage.parts ?? [],
+          parts: persisted.parts,
+          // The composer only ever showed "Quick" / "Deep" — record what
+          // actually answered so the turn stays traceable.
+          metadata: chatAssistantTurnMetadata({
+            pace,
+            mode,
+            promptVersion: CHAT_PROMPT_VERSION,
+          }),
           authorId: null,
         });
         await touchChatSession(sessionId, null);

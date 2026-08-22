@@ -1,4 +1,8 @@
 import type { DocumentChunkSourceKind } from "@/db/schema";
+import {
+  derivePageOutlineDigest,
+  usefulPageContext,
+} from "@/lib/attachments/page-outline";
 
 export const DEFAULT_CHUNK_MAX_CHARS = 3_200;
 export const DEFAULT_CHUNK_OVERLAP_CHARS = 240;
@@ -74,7 +78,10 @@ function contextualizeChunk(input: {
   page: ChunkablePage;
   rawText: string;
 }): string {
-  const pageContext = input.page.pageContext?.trim() || "No page context provided";
+  const pageContext =
+    usefulPageContext(input.page.pageContext) ||
+    derivePageOutlineDigest(input.page.transcript) ||
+    "No page context provided";
   return `Document: ${input.filename} | Page ${input.page.pageNumber} | ${pageContext}\n\n${input.rawText}`;
 }
 

@@ -30,6 +30,12 @@ import {
   suggestionInsertMarkName,
 } from "@/lib/tiptap/suggestion-marks";
 import { gutterAnchorIdForComment } from "@/lib/comments/navigate";
+import {
+  packGutterAnchors,
+  sectionOverflowPx,
+  suggestionAnchorY,
+  suggestionFieldGutterLayout,
+} from "@/lib/suggestions/navigate-suggestion";
 import { cn } from "@/lib/utils";
 import { useUserDirectory } from "@/providers/user-directory-provider";
 import type { Editor } from "@tiptap/react";
@@ -46,13 +52,12 @@ export type GutterAnchor = {
     | "unanchored-comment"
     | "suggestion";
   desiredTop: number;
-  /** When true, desiredTop is the vertical center of the target field (card is centered on it). */
+  /** When true, desiredTop is the vertical center of a compact field (card is centered on it). */
   valignCenter?: boolean;
   section?: SectionType;
   comment?: CommentRecord;
 };
 
-const CARD_GAP = 8;
 const HEIGHT_EPSILON = 2;
 
 function measureCardHeights(
@@ -141,27 +146,25 @@ function findSuggestionMarkRange(
   return { from, to };
 }
 
-function elementCenterY(el: HTMLElement, containerTop: number): number {
-  const rect = el.getBoundingClientRect();
-  return rect.top + rect.height / 2 - containerTop;
-}
-
-function suggestionCenterYInEditor(
+function suggestionAnchorYInEditor(
   editor: Editor,
   markId: string,
   containerTop: number,
   fromPos?: number | null
 ): number | null {
   const view = editor.view;
+  const markEl = view.dom.querySelector<HTMLElement>(
+    `[data-eval-id="${CSS.escape(markId)}"]`
+  );
+  if (markEl) {
+    return suggestionAnchorY(markEl.getBoundingClientRect().top, containerTop);
+  }
   const docSize = view.state.doc.content.size;
   const range = findSuggestionMarkRange(editor, markId);
   if (range) {
     const safeFrom = Math.max(0, Math.min(range.from, docSize));
-    const safeTo = Math.max(safeFrom, Math.min(range.to, docSize));
     try {
-      const start = view.coordsAtPos(safeFrom);
-      const end = view.coordsAtPos(safeTo);
-      return (start.top + end.bottom) / 2 - containerTop;
+      return suggestionAnchorY(view.coordsAtPos(safeFrom).top, containerTop);
     } catch {
       // fall through
     }
@@ -172,8 +175,7 @@ function suggestionCenterYInEditor(
       : findSuggestionMarkPos(editor, markId);
   if (pos == null) return null;
   try {
-    const coords = view.coordsAtPos(pos);
-    return coords.top + (coords.bottom - coords.top) / 2 - containerTop;
+    return suggestionAnchorY(view.coordsAtPos(pos).top, containerTop);
   } catch {
     return null;
   }
@@ -251,6 +253,8 @@ export function MarginGutter({ onSectionOverflow }: Props) {
         ? new ResizeObserver(requestLayout)
         : null;
     if (containerRef.current) observer?.observe(containerRef.current);
+    const rail = containerRef.current?.closest("[aria-label='Review margin']");
+    if (rail instanceof HTMLElement) observer?.observe(rail);
 
     return () => {
       if (frame !== null) cancelAnimationFrame(frame);
@@ -344,9 +348,10 @@ export function MarginGutter({ onSectionOverflow }: Props) {
       }
     }
 
-    // 3. Active AI suggestion cards — vertically centered on the target textbox.
-    //    During a queue bridge, park at the previous card's Y so "Go to next"
-    //    stays where the user just acted.
+    // 3. Active AI suggestion cards — aligned to the first line of the
+    //    highlight (not the midpoint of a tall redraft). Compact plain-text
+    //    fields still center. During a queue bridge, park at the previous
+    //    card's Y so "Go to next" stays where the user just acted.
     for (const section of evaluatableSections) {
       const active = gutterSuggestionCommentForSection(section);
       if (!active) continue;
@@ -364,14 +369,15 @@ export function MarginGutter({ onSectionOverflow }: Props) {
         continue;
       }
 
-      // Resolve legacy paths so the card centers on the box that previews it.
+      // Resolve legacy paths so the card sits on the box that previews it.
       const contentPath = effectivePlainTextContentPath(section, active.contentPath);
-      let centerY: number | null = null;
+      let desiredTop: number | null = null;
+      let valignCenter = false;
 
       if (isRichTargetField(section, contentPath)) {
         const editor = getEditor(section, contentPath);
         if (editor) {
-          centerY = suggestionCenterYInEditor(
+          desiredTop = suggestionAnchorYInEditor(
             editor,
             active.id,
             containerTop,
@@ -380,27 +386,36 @@ export function MarginGutter({ onSectionOverflow }: Props) {
         }
       }
 
-      if (centerY == null) {
+      if (desiredTop == null) {
         const anchorKey = suggestionFieldAnchorKey(section, active.contentPath);
         const fieldEl = queryFieldAnchorKey(anchorKey);
-        if (fieldEl) centerY = elementCenterY(fieldEl, containerTop);
-      }
-
-      if (centerY == null) {
-        const heading = document.getElementById(section);
-        if (heading) {
-          const rect = heading.getBoundingClientRect();
-          centerY = rect.top + rect.height / 2 - containerTop;
+        if (fieldEl) {
+          const layout = suggestionFieldGutterLayout(
+            fieldEl.getBoundingClientRect(),
+            containerTop
+          );
+          desiredTop = layout.desiredTop;
+          valignCenter = layout.valignCenter;
         }
       }
 
-      if (centerY == null) continue;
+      if (desiredTop == null) {
+        const heading = document.getElementById(section);
+        if (heading) {
+          desiredTop = suggestionAnchorY(
+            heading.getBoundingClientRect().top,
+            containerTop
+          );
+        }
+      }
+
+      if (desiredTop == null) continue;
 
       result.push({
         id: `suggestion:${section}`,
         type: "suggestion",
-        desiredTop: centerY,
-        valignCenter: true,
+        desiredTop,
+        valignCenter,
         section,
         comment: active,
       });
@@ -418,29 +433,17 @@ export function MarginGutter({ onSectionOverflow }: Props) {
     canComment,
   ]);
 
-  // Greedy non-overlap packing: each card's top is `max(desiredTop, prev.bottom + gap)`.
-  // Active card stays at its desired position when possible — others shift around it.
-  const packed = useMemo(() => {
-    const heights = cardHeights;
-    return anchors.reduce<{ items: Array<GutterAnchor & { top: number }>; prevBottom: number }>(
-      (acc, a) => {
-        const h = heights[a.id] ?? 80;
-        const desired = a.valignCenter
-          ? a.desiredTop - h / 2
-          : a.desiredTop;
-        const top = Math.max(desired, acc.prevBottom + CARD_GAP);
-        return {
-          items: [...acc.items, { ...a, top }],
-          prevBottom: top + h,
-        };
-      },
-      { items: [], prevBottom: -Infinity }
-    ).items;
-  }, [anchors, cardHeights]);
+  // Pack per section so a tall draft in Purpose cannot shove Deviations
+  // into empty space below its field. Section overflow padding keeps
+  // neighbouring sections from colliding.
+  const packed = useMemo(
+    () => packGutterAnchors(anchors, cardHeights),
+    [anchors, cardHeights]
+  );
 
   // Section height overflow: after packing, compute how far cards extend
   // below each section's natural bottom and report the delta so the workspace
-  // can apply minHeight to prevent overlap with the next section.
+  // can apply padding to prevent overlap with the next section.
   const lastOverflowRef = useRef<Record<string, number>>({});
   useEffect(() => {
     if (!onSectionOverflow) return;
@@ -452,14 +455,19 @@ export function MarginGutter({ onSectionOverflow }: Props) {
     for (const section of evaluatableSections) {
       const sectionEl = document.getElementById(section);
       if (!sectionEl) continue;
-      const sectionBottom =
-        sectionEl.getBoundingClientRect().bottom - containerTop;
       const cardsInSection = packed.filter((c) => c.section === section);
       if (cardsInSection.length === 0) continue;
       const maxCardBottom = Math.max(
         ...cardsInSection.map((c) => c.top + (cardHeights[c.id] ?? 80))
       );
-      const delta = maxCardBottom - sectionBottom;
+      // The workspace writes this padding back onto the section as an inline
+      // style, so it is the one part of the rect that must not count towards
+      // the section's own height.
+      const delta = sectionOverflowPx({
+        sectionBottom: sectionEl.getBoundingClientRect().bottom - containerTop,
+        appliedPaddingPx: parseFloat(sectionEl.style.paddingBottom) || 0,
+        maxCardBottom,
+      });
       if (delta > 0) {
         overflows[section] = delta;
       }

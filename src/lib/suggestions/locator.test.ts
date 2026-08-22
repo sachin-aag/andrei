@@ -504,6 +504,55 @@ describe("locator — scoped edits", () => {
     expect(flattenForAnchor(out).text).toBe("Increase revenue\nReduce cost");
   });
 
+  it("renders *italic* insertText as italic marks, not literal stars", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "See " }],
+        },
+      ],
+    };
+    const { status, doc: out } = applyEditToRichDoc(
+      doc,
+      {
+        anchorText: "See",
+        deleteText: "",
+        insertText:
+          "*Solea Model 3 Software Requirements Document* 822-700-0013",
+      },
+      ATTRS
+    );
+    expect(status).toBe("located");
+    const nodes = out.content![0]!.content ?? [];
+    const italic = nodes.find((n) =>
+      n.marks?.some((m) => m.type === "italic")
+    );
+    expect(italic?.text).toBe("Solea Model 3 Software Requirements Document");
+    expect(italic?.marks?.map((m) => m.type)).toEqual([
+      "suggestionInsert",
+      "italic",
+    ]);
+    expect(flattenForAnchor(out).text).toContain(
+      "Solea Model 3 Software Requirements Document 822-700-0013"
+    );
+    expect(flattenForAnchor(out).text).not.toContain("*");
+  });
+
+  it("strips *italic* markers when applying to plain text", () => {
+    const { status, text } = applyEditToPlainText("See the reference.", {
+      anchorText: "See the reference.",
+      deleteText: "",
+      insertText:
+        "*Solea Model 3 Software Requirements Document* 822-700-0013",
+    });
+    expect(status).toBe("located");
+    expect(text).toBe(
+      "See the reference. Solea Model 3 Software Requirements Document 822-700-0013"
+    );
+  });
+
   it("returns bad_scope for an out-of-range coordinate", () => {
     const doc = tableDoc([["a", "b"]]);
     expect(

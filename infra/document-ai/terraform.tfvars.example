@@ -1,0 +1,4 @@
+project_id                    = "andrei-493614"
+location                      = "us"
+display_name                  = "andrei-enterprise-ocr"
+runtime_service_account_email = "andrei-vercel@andrei-493614.iam.gserviceaccount.com"

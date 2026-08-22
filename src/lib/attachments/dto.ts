@@ -20,6 +20,7 @@ export function toAttachmentDto(row: AttachmentRow): ReportAttachmentRecord {
     pageCount: row.pageCount,
     processingStatus: row.processingStatus,
     processingProgress: row.processingProgress,
+    processingPage: row.processingPage ?? null,
     processingError: row.processingError,
     uploadedAt:
       row.uploadedAt instanceof Date

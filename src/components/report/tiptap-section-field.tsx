@@ -810,7 +810,7 @@ export function TiptapSectionField({
           });
           // Never paint a preview (or enable inline accept) unless locate succeeded.
           if (injected.located) {
-            json = injected.doc;
+            json = normalizeRichField(injected.doc);
           }
         }
       }

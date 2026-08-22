@@ -1,6 +1,10 @@
 import type { JSONContent } from "@tiptap/core";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 import {
+  inlineMarkdownToTextNodes,
+  stripInlineMarkdown,
+} from "@/lib/tiptap/markdown-to-doc";
+import {
   collapseWhitespace,
   normalizeUnicodeForAnchor,
 } from "@/lib/text/normalize-for-anchor";
@@ -640,7 +644,9 @@ export function applyEditToPlainText(
 ): { status: LocateStatus; text: string } {
   const located = locateEdit(text, edit);
   if (located.status === "append") {
-    const ins = normalizeSuggestionInsertText(edit.insertText ?? "");
+    const ins = stripInlineMarkdown(
+      normalizeSuggestionInsertText(edit.insertText ?? "")
+    );
     if (!ins) return { status: "empty_edit", text };
     const next =
       text + (text.length > 0 && !/\s$/.test(text) ? " " : "") + ins;
@@ -650,7 +656,9 @@ export function applyEditToPlainText(
     return { status: located.status, text };
   }
 
-  const ins = normalizeSuggestionInsertText(edit.insertText ?? "");
+  const ins = stripInlineMarkdown(
+    normalizeSuggestionInsertText(edit.insertText ?? "")
+  );
   const insert = withLeadingSpaceIfNeeded(text, located.deleteStart, ins);
   const next =
     text.slice(0, located.deleteStart) +
@@ -770,24 +778,22 @@ function insertAfterRef(
     type: suggestionInsertMarkName,
     attrs: { ...attrs },
   };
-  const insertedNode: JSONContent = {
-    type: "text",
-    text: trimmed,
-    marks: [insertMark],
-  };
+  const insertedNodes = inlineMarkdownToTextNodes(trimmed, [insertMark]);
+  if (insertedNodes.length === 0) return null;
+  const insertedNode = insertedNodes[insertedNodes.length - 1]!;
 
   if (insertAfter && insertAfter.indexInParent >= 0) {
     insertAfter.parentArr.splice(
       insertAfter.indexInParent + 1,
       0,
-      insertedNode
+      ...insertedNodes
     );
   } else if (insertAfter && insertAfter.indexInParent < 0) {
-    insertAfter.parentArr.splice(0, 0, insertedNode);
+    insertAfter.parentArr.splice(0, 0, ...insertedNodes);
   } else {
     const para: JSONContent = {
       type: "paragraph",
-      content: [insertedNode],
+      content: insertedNodes,
     };
     if (cloned.type !== "doc") return insertedNode;
     cloned.content = [...(cloned.content ?? []), para];
@@ -806,17 +812,16 @@ function insertIntoEmptyContainer(
 ): boolean {
   const trimmed = normalizeSuggestionInsertText(insertText);
   if (!trimmed) return false;
-  const textNode: JSONContent = {
-    type: "text",
-    text: trimmed,
-    marks: [{ type: suggestionInsertMarkName, attrs: { ...attrs } }],
-  };
+  const textNodes = inlineMarkdownToTextNodes(trimmed, [
+    { type: suggestionInsertMarkName, attrs: { ...attrs } },
+  ]);
+  if (textNodes.length === 0) return false;
   if (!node.content || node.content.length === 0) {
-    node.content = [{ type: "paragraph", content: [textNode] }];
+    node.content = [{ type: "paragraph", content: textNodes }];
     return true;
   }
   const para = node.content.find((c) => c.type === "paragraph") ?? node.content[0]!;
-  para.content = [...(para.content ?? []), textNode];
+  para.content = [...(para.content ?? []), ...textNodes];
   return true;
 }
 

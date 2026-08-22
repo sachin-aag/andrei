@@ -37,7 +37,9 @@ export async function reclaimStaleIngests(
       id: reportAttachments.id,
       processingStatus: reportAttachments.processingStatus,
       uploadedAt: reportAttachments.uploadedAt,
-      lastRunAt: max(attachmentIngestRuns.createdAt),
+      lastRunAt: max(
+        sql`coalesce(${attachmentIngestRuns.startedAt}, ${attachmentIngestRuns.createdAt})`
+      ),
     })
     .from(reportAttachments)
     .leftJoin(
@@ -64,7 +66,7 @@ export async function reclaimStaleIngests(
       isStaleIngest(
         {
           processingStatus: row.processingStatus,
-          lastActivityAt: row.lastRunAt ?? row.uploadedAt,
+          lastActivityAt: toDate(row.lastRunAt) ?? row.uploadedAt,
         },
         now
       )
@@ -93,6 +95,7 @@ export async function reclaimStaleIngests(
       .set({
         processingStatus: "failed",
         processingProgress: FAILED_ATTACHMENT_PROGRESS,
+        processingPage: null,
         processingError: STALE_INGEST_MESSAGE,
       })
       .where(
@@ -108,4 +111,11 @@ export async function reclaimStaleIngests(
     attachmentIds: staleIds,
   });
   return staleIds.length;
+}
+
+function toDate(value: Date | string | null | undefined): Date | null {
+  if (value == null) return null;
+  if (value instanceof Date) return value;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }

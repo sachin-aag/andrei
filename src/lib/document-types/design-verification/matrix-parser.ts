@@ -44,7 +44,7 @@ function findTable(doc: JSONContent | null | undefined): JSONContent | null {
   return null;
 }
 
-function extractRawRows(
+export function extractRawRows(
   doc: JSONContent | null | undefined
 ): { headers: string[]; dataRows: string[][] } | { error: string } {
   const table = findTable(doc);
@@ -65,7 +65,7 @@ function extractRawRows(
   return { headers, dataRows };
 }
 
-function cellAt(
+export function cellAt(
   row: readonly string[],
   index: number | undefined
 ): string {

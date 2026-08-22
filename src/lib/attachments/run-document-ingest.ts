@@ -11,27 +11,43 @@ import {
   type AttachmentIngestRunStatus,
 } from "@/db/schema";
 import { chunkDocumentPages } from "@/lib/attachments/chunk-pages";
-import {
-  DEFAULT_DOCUMENT_EMBEDDING_MODEL_ID,
-  embedDocumentChunks,
-} from "@/lib/attachments/embed-chunks";
 import { describeDocxImages } from "@/lib/attachments/describe-docx-images";
+import {
+  DOCUMENT_AI_OCR_CONCURRENCY,
+  documentAiIngestSplitOptions,
+  isDocumentAiConfigured,
+} from "@/lib/attachments/document-ai-ocr";
 import {
   assignDocxImagesToPages,
   extractDocxEmbeddedImages,
   formatDocxPageVisualInterpretation,
 } from "@/lib/attachments/docx-images";
 import {
+  DEFAULT_DOCUMENT_EMBEDDING_MODEL_ID,
+  embedDocumentChunks,
+} from "@/lib/attachments/embed-chunks";
+import {
   DEFAULT_DOCUMENT_EXTRACT_MODEL_ID,
   DOCUMENT_EXTRACT_PROMPT_VERSION,
+  extractionWarningForGaps,
   extractPdfBatch,
+  gapExtractedPage,
+  isGapExtractedPage,
+  type ExtractedPage,
 } from "@/lib/attachments/extract-batch";
 import { type AttachmentKind, kindFromMime } from "@/lib/attachments/file-types";
 import {
+  INGEST_BATCH_TIMEOUT_MARKER,
+  IngestNeedsContinuationError,
   isCancelledIngestError,
+  isIngestNeedsContinuation,
+  isRuntimeTimeoutError,
   sanitizeIngestError,
 } from "@/lib/attachments/ingest-errors";
-import { splitPdfIntoBatches } from "@/lib/attachments/pdf-split";
+import {
+  MAX_PDF_BATCH_PAGES,
+  splitPdfIntoBatches,
+} from "@/lib/attachments/pdf-split";
 import { getAttachmentStorage, tempBatchObjectKey } from "@/lib/storage/attachments";
 
 export { sanitizeIngestError } from "@/lib/attachments/ingest-errors";
@@ -39,8 +55,16 @@ export { sanitizeIngestError } from "@/lib/attachments/ingest-errors";
 const PARSER_VERSION = "v3";
 const SUMMARY_MAX_CHARS = 12_000;
 const FAILED_ATTACHMENT_PROGRESS = 0;
+/** Yield before Vercel’s 300s isolate budget so a later slice can resume. */
+const DEFAULT_INGEST_SLICE_MS = 240_000;
 /** DOCX has no page model; split extracted text into readable pseudo-pages. */
 const DOCX_PSEUDO_PAGE_CHARS = 6_000;
+
+export type IngestRunOutcome = "done" | "continue";
+
+export type RunDocumentIngestOptions = {
+  resume?: boolean;
+};
 
 type IngestInit = {
   runId: string;
@@ -67,18 +91,28 @@ type BatchProcessResult = {
  */
 export async function runDocumentIngest(
   attachmentId: string,
-  generation: string
-): Promise<void> {
+  generation: string,
+  options: RunDocumentIngestOptions = {}
+): Promise<IngestRunOutcome> {
   let init: IngestInit | null = null;
+  let keepTempObjects = false;
   try {
-    init = await initializeIngestRun(attachmentId, generation);
-    if (!init) return;
+    init = await initializeIngestRun(attachmentId, generation, options);
+    if (!init) return "done";
     if (init.kind === "docx") {
       await runDocxIngest(init);
     } else {
       await runPdfIngest(init);
     }
+    return "done";
   } catch (error) {
+    if (isIngestNeedsContinuation(error) || isRuntimeTimeoutError(error)) {
+      keepTempObjects = true;
+      if (init) {
+        await prepareRunForContinuation(init.runId);
+      }
+      return "continue";
+    }
     await markRunTerminal({
       runId: init?.runId ?? null,
       attachmentId,
@@ -88,7 +122,7 @@ export async function runDocumentIngest(
     });
     throw error;
   } finally {
-    if (init) {
+    if (init && !keepTempObjects) {
       await cleanupTempObjects(init.runId);
     }
   }
@@ -96,7 +130,8 @@ export async function runDocumentIngest(
 
 async function initializeIngestRun(
   attachmentId: string,
-  generation: string
+  generation: string,
+  options: RunDocumentIngestOptions
 ): Promise<IngestInit | null> {
   const [attachment] = await db
     .select()
@@ -128,17 +163,36 @@ async function initializeIngestRun(
     );
 
     const [existingRun] = await tx
-      .select({ id: attachmentIngestRuns.id })
+      .select({
+        id: attachmentIngestRuns.id,
+        extractModelId: attachmentIngestRuns.extractModelId,
+        embeddingModelId: attachmentIngestRuns.embeddingModelId,
+      })
       .from(attachmentIngestRuns)
       .where(
         and(
           eq(attachmentIngestRuns.attachmentId, attachmentId),
           eq(attachmentIngestRuns.sourceGeneration, generation),
-          inArray(attachmentIngestRuns.status, ["pending", "running", "ready"])
+          inArray(attachmentIngestRuns.status, ["pending", "running"])
         )
       )
       .limit(1);
-    if (existingRun) return false;
+    if (existingRun) {
+      if (!options.resume) return null;
+      await tx
+        .update(attachmentIngestRuns)
+        .set({ startedAt: new Date() })
+        .where(eq(attachmentIngestRuns.id, existingRun.id));
+      await tx
+        .update(reportAttachments)
+        .set({ processingStatus: "processing" })
+        .where(eq(reportAttachments.id, attachment.id));
+      return {
+        runId: existingRun.id,
+        extractModelId: existingRun.extractModelId,
+        embeddingModelId: existingRun.embeddingModelId,
+      };
+    }
 
     await tx.insert(attachmentIngestRuns).values({
       id: runId,
@@ -158,44 +212,66 @@ async function initializeIngestRun(
       .set({
         processingStatus: "processing",
         processingProgress: 0,
+        processingPage: null,
         processingError: null,
       })
       .where(eq(reportAttachments.id, attachment.id));
-    return true;
+    return { runId, extractModelId, embeddingModelId };
   });
 
   if (!started) return null;
 
   return {
-    runId,
+    runId: started.runId,
     attachmentId: attachment.id,
     reportId: attachment.reportId,
     filename: attachment.filename,
     kind: kindFromMime(attachment.mimeType) ?? "pdf",
     sourceObjectKey: attachment.permanentObjectKey,
     sourceGeneration: generation,
-    extractModelId,
-    embeddingModelId,
+    extractModelId: started.extractModelId,
+    embeddingModelId: started.embeddingModelId,
   };
 }
 
-/** PDF path: split into batches, Gemini-vision extract each, then chunk+embed. */
+/** PDF path: split into batches, extract each, then chunk+embed. */
 async function runPdfIngest(init: IngestInit): Promise<void> {
   await assertAttachmentCurrent(init);
-  await splitAndPersistBatches(init);
-  const batchIds = await listBatchIds(init.runId);
+  const existingBatches = await listBatches(init.runId);
+  if (existingBatches.length === 0) {
+    await splitAndPersistBatches(init);
+  }
+  const batches = await listBatches(init.runId);
+  const sliceStartedAt = Date.now();
 
-  for (const batchId of batchIds) {
-    await assertAttachmentCurrent(init);
-    await processBatch(batchId);
-    await updateBatchProgress(init.runId, init.attachmentId);
+  if (usesParallelOcrBatches(batches)) {
+    await processPdfBatchesInWaves(init, sliceStartedAt);
+  } else {
+    for (const batch of batches) {
+      if (batch.status === "ready") continue;
+      if (shouldYieldIngestSlice(sliceStartedAt)) {
+        throw new IngestNeedsContinuationError();
+      }
+      await assertAttachmentCurrent(init);
+      await heartbeatIngestRun(init.runId, init.attachmentId, batch.pageEnd);
+      await processBatch(batch.id);
+      await updateBatchProgress(init.runId, init.attachmentId);
+    }
   }
 
   await assertAttachmentCurrent(init);
+  const pages = await listRunPages(init.runId);
+  if (pages.length === 0 || pages.every(isGapExtractedPage)) {
+    throw new Error(
+      extractionWarningForGaps(pages) ??
+        "PDF extraction produced no output for this document"
+    );
+  }
+  const warning = extractionWarningForGaps(pages);
   await buildDocumentSummary(init.runId);
   await chunkAndEmbedRun(init);
   await assertAttachmentCurrent(init);
-  await markRunReady(init);
+  await markRunReady(init, warning);
 }
 
 /**
@@ -337,7 +413,7 @@ async function splitAndPersistBatches(input: IngestInit): Promise<{
 }> {
   const storage = getAttachmentStorage();
   const sourceBuffer = await storage.readObjectBuffer(input.sourceObjectKey);
-  const split = await splitPdfIntoBatches(sourceBuffer);
+  const split = await splitPdfForIngest(sourceBuffer);
 
   for (const batch of split.batches) {
     const objectKey = tempBatchObjectKey(
@@ -389,13 +465,111 @@ async function splitAndPersistBatches(input: IngestInit): Promise<{
   return { batchCount: split.batches.length, pageCount: split.pageCount };
 }
 
-async function listBatchIds(runId: string): Promise<string[]> {
-  const batches = await db
-    .select({ id: documentIngestBatches.id })
+async function listBatches(runId: string): Promise<
+  Array<{ id: string; pageStart: number; pageEnd: number; status: string }>
+> {
+  return db
+    .select({
+      id: documentIngestBatches.id,
+      pageStart: documentIngestBatches.pageStart,
+      pageEnd: documentIngestBatches.pageEnd,
+      status: documentIngestBatches.status,
+    })
     .from(documentIngestBatches)
     .where(eq(documentIngestBatches.ingestRunId, runId))
     .orderBy(asc(documentIngestBatches.batchIndex));
-  return batches.map((batch) => batch.id);
+}
+
+async function splitPdfForIngest(sourceBuffer: Buffer) {
+  // Searchable scans and born-digital files have a text layer. They used to
+  // skip this path and fall into Gemini's 3-page sequential insight loop.
+  // Enterprise OCR batching is 15 pages × 3 in flight (45 pages).
+  if (isDocumentAiConfigured()) {
+    return splitPdfIntoBatches(sourceBuffer, documentAiIngestSplitOptions());
+  }
+  return splitPdfIntoBatches(sourceBuffer);
+}
+
+function usesParallelOcrBatches(
+  batches: Array<{ pageStart: number; pageEnd: number }>
+): boolean {
+  return batches.some(
+    (batch) => batch.pageEnd - batch.pageStart + 1 > MAX_PDF_BATCH_PAGES
+  );
+}
+
+async function processPdfBatchesInWaves(
+  init: IngestInit,
+  sliceStartedAt: number
+): Promise<void> {
+  for (;;) {
+    const batches = await listBatches(init.runId);
+    const pending = batches.filter((batch) => batch.status !== "ready");
+    if (pending.length === 0) return;
+    if (shouldYieldIngestSlice(sliceStartedAt)) {
+      throw new IngestNeedsContinuationError();
+    }
+    const wave = pending.slice(0, DOCUMENT_AI_OCR_CONCURRENCY);
+    if (wave.length === 0) return;
+    await assertAttachmentCurrent(init);
+    await heartbeatIngestRun(
+      init.runId,
+      init.attachmentId,
+      Math.max(...wave.map((batch) => batch.pageEnd))
+    );
+    await Promise.all(wave.map((batch) => processBatch(batch.id)));
+    await updateBatchProgress(init.runId, init.attachmentId);
+  }
+}
+
+function ingestSliceBudgetMs(): number {
+  const raw = process.env.DOCUMENT_INGEST_SLICE_MS?.trim();
+  if (!raw) return DEFAULT_INGEST_SLICE_MS;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0
+    ? parsed
+    : DEFAULT_INGEST_SLICE_MS;
+}
+
+function shouldYieldIngestSlice(sliceStartedAt: number): boolean {
+  return Date.now() - sliceStartedAt >= ingestSliceBudgetMs();
+}
+
+async function heartbeatIngestRun(
+  runId: string,
+  attachmentId: string,
+  processingPage: number
+): Promise<void> {
+  await db
+    .update(attachmentIngestRuns)
+    .set({ startedAt: new Date() })
+    .where(eq(attachmentIngestRuns.id, runId));
+  await db
+    .update(reportAttachments)
+    .set({ processingPage })
+    .where(eq(reportAttachments.id, attachmentId));
+}
+
+async function prepareRunForContinuation(runId: string): Promise<void> {
+  const running = await db
+    .select()
+    .from(documentIngestBatches)
+    .where(
+      and(
+        eq(documentIngestBatches.ingestRunId, runId),
+        eq(documentIngestBatches.status, "running")
+      )
+    );
+  for (const batch of running) {
+    if (batch.error === INGEST_BATCH_TIMEOUT_MARKER) {
+      await persistGapPagesForBatch(batch);
+      continue;
+    }
+    await db
+      .update(documentIngestBatches)
+      .set({ status: "pending", error: INGEST_BATCH_TIMEOUT_MARKER })
+      .where(eq(documentIngestBatches.id, batch.id));
+  }
 }
 
 async function processBatch(batchId: string): Promise<BatchProcessResult> {
@@ -449,9 +623,10 @@ async function processBatch(batchId: string): Promise<BatchProcessResult> {
     throw cancelledError("Attachment source changed during ingestion");
   }
 
+  const timedOutOnce = batch.error === INGEST_BATCH_TIMEOUT_MARKER;
   await db
     .update(documentIngestBatches)
-    .set({ status: "running", error: null })
+    .set({ status: "running" })
     .where(eq(documentIngestBatches.id, batchId));
 
   const previous = await db
@@ -531,6 +706,17 @@ async function processBatch(batchId: string): Promise<BatchProcessResult> {
 
     return { batchId, pageCount: extracted.pages.length };
   } catch (error) {
+    if (isIngestNeedsContinuation(error) || isRuntimeTimeoutError(error)) {
+      if (timedOutOnce) {
+        await persistGapPagesForBatch(batch);
+        return { batchId, pageCount: batch.pageEnd - batch.pageStart + 1 };
+      }
+      await db
+        .update(documentIngestBatches)
+        .set({ status: "pending", error: INGEST_BATCH_TIMEOUT_MARKER })
+        .where(eq(documentIngestBatches.id, batchId));
+      throw new IngestNeedsContinuationError();
+    }
     const message = sanitizeIngestError(error);
     await db
       .update(documentIngestBatches)
@@ -538,6 +724,51 @@ async function processBatch(batchId: string): Promise<BatchProcessResult> {
       .where(eq(documentIngestBatches.id, batchId));
     throw error;
   }
+}
+
+async function persistGapPagesForBatch(
+  batch: typeof documentIngestBatches.$inferSelect
+): Promise<void> {
+  const pages: ExtractedPage[] = [];
+  for (let pageNumber = batch.pageStart; pageNumber <= batch.pageEnd; pageNumber += 1) {
+    pages.push(gapExtractedPage(pageNumber));
+  }
+  await db.transaction(async (tx) => {
+    await tx
+      .delete(documentPages)
+      .where(
+        and(
+          eq(documentPages.ingestRunId, batch.ingestRunId),
+          gte(documentPages.pageNumber, batch.pageStart),
+          lte(documentPages.pageNumber, batch.pageEnd)
+        )
+      );
+    if (pages.length > 0) {
+      await tx.insert(documentPages).values(
+        pages.map((page) => ({
+          ingestRunId: batch.ingestRunId,
+          attachmentId: batch.attachmentId,
+          reportId: batch.reportId,
+          pageNumber: page.pageNumber,
+          printedPageLabel: page.printedPageLabel,
+          transcript: page.transcript,
+          visualInterpretation: page.visualInterpretation,
+          pageContext: page.pageContext,
+          confidence: page.confidence,
+        }))
+      );
+    }
+    await tx
+      .update(documentIngestBatches)
+      .set({
+        status: "ready",
+        error: extractionWarningForGaps(pages),
+        batchSummary: `Pages ${batch.pageStart}-${batch.pageEnd} could not be fully indexed.`,
+        continuationNote: "",
+        completedAt: new Date(),
+      })
+      .where(eq(documentIngestBatches.id, batch.id));
+  });
 }
 
 async function updateBatchProgress(
@@ -656,7 +887,24 @@ async function chunkAndEmbedRun(input: IngestInit): Promise<{ chunkCount: number
   return { chunkCount: chunks.length };
 }
 
-async function markRunReady(input: IngestInit): Promise<void> {
+async function listRunPages(runId: string): Promise<
+  Array<{ pageNumber: number; confidence: number | null; transcript: string }>
+> {
+  return db
+    .select({
+      pageNumber: documentPages.pageNumber,
+      confidence: documentPages.confidence,
+      transcript: documentPages.transcript,
+    })
+    .from(documentPages)
+    .where(eq(documentPages.ingestRunId, runId))
+    .orderBy(asc(documentPages.pageNumber));
+}
+
+async function markRunReady(
+  input: IngestInit,
+  warning: string | null = null
+): Promise<void> {
   await db.transaction(async (tx) => {
     await tx
       .update(attachmentIngestRuns)
@@ -684,7 +932,8 @@ async function markRunReady(input: IngestInit): Promise<void> {
         activeIngestRunId: input.runId,
         processingStatus: "ready",
         processingProgress: 100,
-        processingError: null,
+        processingPage: null,
+        processingError: warning,
       })
       .where(eq(reportAttachments.id, input.attachmentId));
   });
@@ -729,6 +978,7 @@ async function markRunTerminal(input: {
         .set({
           processingStatus: "failed",
           processingProgress: FAILED_ATTACHMENT_PROGRESS,
+          processingPage: null,
           processingError: input.message,
         })
         .where(eq(reportAttachments.id, input.attachmentId));
@@ -759,4 +1009,31 @@ async function cleanupTempObjects(runId: string): Promise<{ deletedCount: number
 
 function cancelledError(message: string): Error {
   return new Error(`INGEST_CANCELLED: ${message}`);
+}
+
+export async function failIngestIfStillRunning(
+  attachmentId: string,
+  error: unknown
+): Promise<void> {
+  const [row] = await db
+    .select({
+      processingStatus: reportAttachments.processingStatus,
+      processingError: reportAttachments.processingError,
+      gcsGeneration: reportAttachments.gcsGeneration,
+    })
+    .from(reportAttachments)
+    .where(eq(reportAttachments.id, attachmentId))
+    .limit(1);
+  if (!row || row.processingStatus === "ready") return;
+  if (row.processingStatus === "failed" && row.processingError) return;
+
+  await db
+    .update(reportAttachments)
+    .set({
+      processingStatus: "failed",
+      processingProgress: FAILED_ATTACHMENT_PROGRESS,
+      processingPage: null,
+      processingError: sanitizeIngestError(error),
+    })
+    .where(eq(reportAttachments.id, attachmentId));
 }

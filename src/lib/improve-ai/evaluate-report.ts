@@ -18,10 +18,6 @@ import {
 import { normalizeAnalyzeToolResults } from "@/lib/ai/evaluate-run-helpers";
 import { mergeSection } from "@/lib/sections-merge";
 import { getDocumentType } from "@/lib/document-types";
-import {
-  hasEnoughContextInFirstSection,
-  INSUFFICIENT_FIRST_SECTION_MESSAGE,
-} from "@/lib/ai/first-section-context";
 
 export class ImproveAiEvaluationError extends Error {
   constructor(
@@ -70,14 +66,6 @@ export async function evaluateReportCriteria(
         inArray(reportSections.section, targetSections)
       )
     );
-
-  const bySection = new Map<SectionType, (typeof allEvaluatableRows)[number]>();
-  for (const row of allEvaluatableRows) bySection.set(row.section, row);
-
-  const defineRow = bySection.get("define");
-  if (!hasEnoughContextInFirstSection(defineRow?.content)) {
-    throw new ImproveAiEvaluationError(INSUFFICIENT_FIRST_SECTION_MESSAGE, 400);
-  }
 
   const existingForSections = sectionRows.length
     ? await db

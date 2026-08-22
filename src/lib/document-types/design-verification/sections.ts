@@ -88,27 +88,63 @@ export const DV_TEST_RESULTS_HEADERS = [
   "Raw Data Ref",
 ] as const;
 
-/** Sections whose TipTap field is a fixed-header matrix (`content.table`). */
+export const CONVERGENT_EQUIPMENT_HEADERS = [
+  "Equipment",
+  "Manufacturer",
+  "Model/Part No.",
+  "CD Asset Tag / Serial No.",
+  "Calibration Due",
+] as const;
+
+export const CONVERGENT_RESULTS_HEADERS = [
+  "Req ID",
+  "Req Description",
+  "Satisfied By",
+  "P/F",
+] as const;
+
+/** Demo DV sections whose TipTap field is a fixed-header matrix (`content.table`). */
 export const DV_TABLE_SECTIONS = ["traceability", "test_results"] as const;
+
+export const CONVERGENT_DV_TABLE_SECTIONS = [
+  "test_equipment",
+  "results_and_discussions",
+] as const;
 
 export type DvTableSectionKey = (typeof DV_TABLE_SECTIONS)[number];
 
-export function isDvTableSection(section: string): section is DvTableSectionKey {
-  return (DV_TABLE_SECTIONS as readonly string[]).includes(section);
+export type ConvergentDvTableSectionKey =
+  (typeof CONVERGENT_DV_TABLE_SECTIONS)[number];
+
+/** True when the section stores a seeded matrix on `content.table`. */
+export function isDvTableSection(section: string): boolean {
+  return (
+    (DV_TABLE_SECTIONS as readonly string[]).includes(section) ||
+    (CONVERGENT_DV_TABLE_SECTIONS as readonly string[]).includes(section)
+  );
 }
 
-export function dvTableHeadersForSection(
-  section: DvTableSectionKey
-): readonly string[] {
+/** True when `table` is the only editable rich field (suggest/chat hints). */
+export function isDvTableOnlySection(section: string): boolean {
+  return (
+    section === "traceability" ||
+    section === "test_results" ||
+    section === "test_equipment"
+  );
+}
+
+export function dvTableHeadersForSection(section: string): readonly string[] {
   switch (section) {
     case "traceability":
       return DV_TRACEABILITY_HEADERS;
     case "test_results":
       return DV_TEST_RESULTS_HEADERS;
-    default: {
-      const _exhaustive: never = section;
-      return _exhaustive;
-    }
+    case "test_equipment":
+      return CONVERGENT_EQUIPMENT_HEADERS;
+    case "results_and_discussions":
+      return CONVERGENT_RESULTS_HEADERS;
+    default:
+      return [];
   }
 }
 
@@ -118,24 +154,37 @@ function gfmHeaderExample(headers: readonly string[]): string {
   return `| ${cells} |\n| ${sep} |`;
 }
 
+/** How to fill Convergent Results and Discussions P/F rows (chat + suggest). */
+export const CONVERGENT_RESULTS_MATRIX_FILLING_NOTES = `Results and Discussions P/F table — column filling:
+- P/F: write only Pass or Fail (or P/F). That cell is the verdict, not the configuration.
+- Satisfied By MUST include both (1) the method, procedure, datasheet, or evidence that satisfied the requirement and (2) the configuration for which that P/F was achieved (UUT / software version / TOP or PCON / fixture / execution). Example: "TOP-00051 datasheets — TOP-00017 PCON (SW 4.7.1)".
+- If the same requirement was run on more than one configuration, name each configuration in Satisfied By so the verdict is attributable. Keep one row per Req ID.
+- Do not invent a configuration. If evidence does not name one, use a bracketed placeholder like [configuration].`;
+
 /**
  * Prompt block telling chat / suggest models to keep seeded matrix columns.
  * Shared by chat draftingGuidance and suggest-fix prompts.
  */
 export function dvFixedTableFormatGuidance(opts?: {
   /** When set, only describe that section's schema. */
-  section?: DvTableSectionKey;
+  section?: string;
+  /** Override the section list (Convergent vs demo DV). */
+  sections?: readonly string[];
+  labels?: Readonly<Record<string, string>>;
   /** "chat" mentions draft_field; "suggest" mentions cell-level edits. */
   surface?: "chat" | "suggest";
 }): string {
   const surface = opts?.surface ?? "chat";
-  const sections: DvTableSectionKey[] = opts?.section
+  const sections: string[] = opts?.section
     ? [opts.section]
-    : [...DV_TABLE_SECTIONS];
+    : opts?.sections
+      ? [...opts.sections]
+      : [...DV_TABLE_SECTIONS];
+  const labels: Readonly<Record<string, string>> = opts?.labels ?? DV_SECTION_LABELS;
 
   const schemas = sections
     .map((key) => {
-      const label = DV_SECTION_LABELS[key];
+      const label = labels[key] ?? key;
       const headers = dvTableHeadersForSection(key);
       return `${label} [${key}] — targetField \`table\`:\n${gfmHeaderExample(headers)}`;
     })
@@ -152,12 +201,16 @@ export function dvFixedTableFormatGuidance(opts?: {
 - Prefer minimal cell-value edits (anchorText from SECTION CONTENT). Do not rewrite the matrix into a different column layout or free-form prose.
 - If filling a gap requires new rows, keep the same header set and column order.`;
 
+  const fillingNotes = sections.includes("results_and_discussions")
+    ? `\n\n${CONVERGENT_RESULTS_MATRIX_FILLING_NOTES}`
+    : "";
+
   return `## Fixed table formats (required)
 ${sections.length === 1 ? "This section" : "These sections"} use a seeded TipTap matrix with a fixed column schema. Stick to that format.
 
 ${surfaceRules}
 
-${schemas}`;
+${schemas}${fillingNotes}`;
 }
 
 function headerRow(headers: readonly string[]): JSONContent {

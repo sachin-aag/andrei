@@ -140,7 +140,8 @@ Specs run against Chromium, Firefox, and WebKit unless you pass `--project=chrom
 | shows password step for known email with password | `e2e.password@mjbiopharm.com` flow |
 | shows error for wrong password | Invalid password message |
 | logs in via test-login bypass | `loginAsEngineer()` happy path |
-| shows setup password link for no-password account | `e2e.nopassword@mjbiopharm.com` |
+| shows setup password link for no-password account | `e2e.nopassword@mjbiopharm.com` plus secondary email-link button |
+| offers email sign-in link as a secondary option | Password remains primary; magic-link control is visible |
 | redirects must-change-password users | JWT flag → `/change-password` |
 | forgot password page renders | `/forgot-password` form |
 | logs out to login page | App shell log out |
@@ -173,7 +174,19 @@ Specs run against Chromium, Firefox, and WebKit unless you pass `--project=chrom
 | typing triggers auto-save status | Saving… → Saved |
 | sidebar tabs switch panels | Placeholders, Criteria (stub eval), Comments |
 | collapses and expands sidebar | Collapse / expand controls |
+| hides the review margin while the assistant is expanded | Gutter XOR expanded Assistant (1920px) |
+| resizes the assistant and documents panels from the keyboard | Drag handles; ArrowLeft/Right; handle hidden when collapsed |
+| opens the assistant at the default width on a new report and after reload | Width is not kept across reports or reloads |
 | approved report is read-only for engineer | No submit; `contenteditable=false` |
+
+</details>
+
+<details>
+<summary><strong>report-chat.spec.ts</strong> — stub chat stream + persist</summary>
+
+| Test | What it verifies |
+|------|------------------|
+| streams a chat reply when a ready attachment is on the report | Upload stub-ingest PDF, Ask-mode turn, collapse/expand keeps the thread, reload still shows it |
 
 </details>
 
@@ -313,12 +326,14 @@ File: `src/app/api/reports/route.test.ts`
 
 **PasswordLoginForm** (`password-login-form.test.tsx`)
 
-- Email step; continue disabled when empty
-- Unknown email error
+- Email step; continue and magic-link disabled when empty
+- Unknown email error (Continue and magic-link paths)
 - Password step advance
 - Invalid password error
-- No-password → setup link
+- No-password → setup link plus secondary email-link
 - Forgot password link
+- Magic link from email step, password step, and locked account
+- Magic-link send failure copy
 
 **CreateReportButton** (`create-report-button.test.tsx`)
 

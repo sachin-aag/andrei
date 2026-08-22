@@ -22,12 +22,12 @@ cover only non-obvious, durable setup/run caveats for this environment.
 ## What this app is
 
 Next.js 16 App Router (Turbopack, React 19, Drizzle, TipTap, AI SDK v6).
-Pharmaceutical quality documents for M.J. Biopharm — **two** `documentType`s:
+Pharmaceutical quality documents for M.J. Biopharm and Convergent Dental design verification — **two** `documentType`s:
 
 | `documentType` | Noun | Sections |
 |----------------|------|----------|
 | `investigation_report` | deviation | DMAIC + conclusion + attachments/approvals |
-| `design_verification` | design verification | cover page, purpose, traceability, tests, … |
+| `design_verification` | design verification | demo: cover page + 10 sections; Convergent pack: 9 Solea DV sections |
 
 Chat, eval, suggestions, and editors **must** go through
 `src/lib/document-types/`. Do not hardcode DMAIC as if it were the only type.
@@ -96,7 +96,8 @@ Neon HTTP cannot `db.transaction()` (ingest + folder moves).
 ### Customer pack
 
 Local default is **demo** (Andrei branding, design verification, conclusion).
-Set both to `mj` to exercise the MJ overlay:
+Set both to `mj` to exercise the MJ overlay, or both to `convergent` for
+Convergent Dental (DV only):
 
 ```bash
 ANDREI_CUSTOMER=mj
@@ -152,11 +153,12 @@ Release gates: `docs/pdf-evidence-deployment-checklist.md`.
 ## Chat + attachments (always-on summary)
 
 - Ready docs (filename + sanitized `documentSummary`) are in the context map.
-- Each turn: `buildAutoEvidence` (≤1.5s, fail-soft) injects an evidence preview.
-  Gap tools: `search_documents`, `document_outline`, `read_document_page`.
+- Each turn: focused skims may inject `buildAutoEvidence` (≤1.5s, fail-soft).
+  Adaptive/comprehensive skip it so the model greps. Gap tools:
+  `search_documents` (multi-round grep), `document_outline`, `read_document_page`.
 - Hybrid search = vector + English FTS with OR-tokenized `websearch_to_tsquery`.
   The report body is **not** chunk-indexed; use `read_section`.
-- Prompt policy is search-then-ask (including DV facts: requirement IDs, ECO/DCR). Do not restore “ask the human first” for batch numbers, dates, results, equipment IDs, or design-input facts. The document index is not citable evidence.
+- Prompt policy is search-then-ask (including DV facts: requirement IDs, ECO/DCR). Do not restore “ask the human first” for batch numbers, dates, results, equipment IDs, or design-input facts. The document index is not citable evidence. Default retrieval is adaptive (complementary search + outline); exhaustive page review is only for complete inventories and drains remaining pages in one continue with parallel extracts. Chat orchestrator is Gemini 3.7 Flash with thinking `medium` until we route it by task (the model rejects `minimal`); page extracts use 3.5 Flash-Lite with `minimal`.
 - Stub chat (`buildStubChatModel`) can prove a turn streams; it cannot prove
   tool selection. Spec: `e2e/report-chat.spec.ts`.
 

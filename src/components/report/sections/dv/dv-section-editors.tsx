@@ -5,7 +5,20 @@ import { SectionShell } from "@/components/report/sections/section-shell";
 import { TiptapSectionField } from "@/components/report/tiptap-section-field";
 import { useGenericReportSection } from "@/providers/report-provider";
 import { useGenericSectionSave } from "@/hooks/use-generic-section-save";
+import { getCustomerPack } from "@/lib/customers/packs";
+import { CONVERGENT_DV_SECTION_LABELS } from "@/lib/document-types/convergent/sections";
 import { DV_SECTION_LABELS } from "@/lib/document-types/design-verification/sections";
+
+function editorTitle(section: string, override?: string): string {
+  if (override) return override;
+  return (
+    DV_SECTION_LABELS[section as keyof typeof DV_SECTION_LABELS] ??
+    CONVERGENT_DV_SECTION_LABELS[
+      section as keyof typeof CONVERGENT_DV_SECTION_LABELS
+    ] ??
+    section
+  );
+}
 
 type NarrativeContent = { narrative: JSONContent };
 
@@ -14,11 +27,13 @@ function DvNarrativeEditor({
   description,
   fieldLabel,
   placeholder,
+  title,
 }: {
   section: string;
   description: string;
   fieldLabel: string;
   placeholder: string;
+  title?: string;
 }) {
   const { update } = useGenericReportSection<NarrativeContent>(section);
   const { status, lastSavedAt, value, flushSave } =
@@ -29,7 +44,7 @@ function DvNarrativeEditor({
 
   return (
     <SectionShell
-      title={DV_SECTION_LABELS[section as keyof typeof DV_SECTION_LABELS] ?? section}
+      title={editorTitle(section, title)}
       description={description}
       status={status}
       lastSavedAt={lastSavedAt}
@@ -55,10 +70,12 @@ function DvTableEditor({
   section,
   description,
   fieldLabel,
+  title,
 }: {
   section: string;
   description: string;
   fieldLabel: string;
+  title?: string;
 }) {
   const { update } = useGenericReportSection<TableContent>(section);
   const { status, lastSavedAt, value, flushSave } =
@@ -69,7 +86,7 @@ function DvTableEditor({
 
   return (
     <SectionShell
-      title={DV_SECTION_LABELS[section as keyof typeof DV_SECTION_LABELS] ?? section}
+      title={editorTitle(section, title)}
       description={description}
       status={status}
       lastSavedAt={lastSavedAt}
@@ -143,23 +160,42 @@ export function DvTestResultsEditor() {
 }
 
 export function DvDeviationsEditor() {
+  const convergent = getCustomerPack().id === "convergent";
   return (
     <DvNarrativeEditor
       section="deviations"
-      description="Document protocol deviations, impact, disposition, and CAPA linkage."
-      fieldLabel="Deviations & Nonconformances"
-      placeholder="Document any deviations from the approved protocol, impact assessments, dispositions for nonconforming results, and CAPA linkages…"
+      title={convergent ? "Deviations" : undefined}
+      description={
+        convergent
+          ? "Document deviations (or explicit none), impact, and disposition."
+          : "Document protocol deviations, impact, disposition, and CAPA linkage."
+      }
+      fieldLabel="Deviations"
+      placeholder={
+        convergent
+          ? "Document any deviations from the protocol, or state that there were none. Include impact and disposition…"
+          : "Document any deviations from the approved protocol, impact assessments, dispositions for nonconforming results, and CAPA linkages…"
+      }
     />
   );
 }
 
 export function DvConclusionEditor() {
+  const convergent = getCustomerPack().id === "convergent";
   return (
     <DvNarrativeEditor
       section="conclusion"
-      description="Overall and per-requirement met/not-met statements, open items, consistency with results."
+      description={
+        convergent
+          ? "Overall outputs-meet-inputs or pass/fail statement, consistency with results, and open items."
+          : "Overall and per-requirement met/not-met statements, open items, consistency with results."
+      }
       fieldLabel="Conclusion"
-      placeholder="State whether design outputs meet design inputs overall and per requirement. List open items with owners…"
+      placeholder={
+        convergent
+          ? "State whether design outputs meet design inputs. Note residual risk or follow-ups with owners, or explicit none…"
+          : "State whether design outputs meet design inputs overall and per requirement. List open items with owners…"
+      }
     />
   );
 }
@@ -182,6 +218,140 @@ export function DvAppendicesEditor() {
       description="Raw data, protocols, calibration certificates, and supporting evidence references."
       fieldLabel="Appendices"
       placeholder="Reference raw data locations, attached protocols, calibration certificates, and supporting evidence…"
+    />
+  );
+}
+
+export function DvPurposeEditor() {
+  return (
+    <DvNarrativeEditor
+      section="purpose"
+      description="State the verification objective, design outputs under test, and change references."
+      fieldLabel="Purpose"
+      placeholder="Describe the objective of the verification activity, the specific design outputs or software items under test, and any ECO/DCR or revision reference…"
+    />
+  );
+}
+
+export function DvScopeEditor() {
+  return (
+    <DvNarrativeEditor
+      section="scope"
+      description="Bound in-scope functions or units and state exclusions (or explicit none)."
+      fieldLabel="Scope"
+      placeholder="Bound the functions, units, or features in scope. State exclusions, or that nothing is excluded…"
+    />
+  );
+}
+
+type TestersDatesContent = {
+  testers: JSONContent;
+};
+
+export function DvTestersDatesEditor() {
+  const { update } = useGenericReportSection<TestersDatesContent>("testers_dates");
+  const { status, lastSavedAt, value, flushSave } =
+    useGenericSectionSave("testers_dates");
+  const content = (value as TestersDatesContent | undefined) ?? {
+    testers: { type: "doc", content: [{ type: "paragraph" }] },
+  };
+
+  return (
+    <SectionShell
+      title="Testers & Dates"
+      description="Name the testers and write start and end (or execution) dates in the same narrative."
+      status={status}
+      lastSavedAt={lastSavedAt}
+      section="testers_dates"
+    >
+      <TiptapSectionField
+        section="testers_dates"
+        contentPath="testers"
+        label="Testers & dates"
+        placeholder="Name testers (role, qualification, or independence when relevant) and write the test start and end dates or execution date range…"
+        className="grid gap-2"
+        value={content.testers}
+        onChange={(doc) => update((p) => ({ ...p, testers: doc }))}
+        onFlushSave={flushSave}
+      />
+    </SectionShell>
+  );
+}
+
+export function DvMethodsOfMeasurementEditor() {
+  return (
+    <DvNarrativeEditor
+      section="methods_of_measurement"
+      description="Describe each method, predefined acceptance criteria, environment, and how data are recorded."
+      fieldLabel="Methods of Measurement"
+      placeholder="Describe each measurement or test method, acceptance criteria, environment/configuration/software version, and how results are captured…"
+    />
+  );
+}
+
+export function DvTestEquipmentEditor() {
+  return (
+    <DvTableEditor
+      section="test_equipment"
+      description="Keep the seeded columns. Add one row per instrument, including CD asset tag / serial and calibration due date."
+      fieldLabel="Test Equipment"
+    />
+  );
+}
+
+type ResultsContent = { narrative: JSONContent; table: JSONContent };
+
+export function DvResultsAndDiscussionsEditor() {
+  const { update } = useGenericReportSection<ResultsContent>(
+    "results_and_discussions"
+  );
+  const { status, lastSavedAt, value, flushSave } = useGenericSectionSave(
+    "results_and_discussions"
+  );
+  const content = (value as ResultsContent | undefined) ?? {
+    narrative: { type: "doc", content: [{ type: "paragraph" }] },
+    table: { type: "doc", content: [{ type: "paragraph" }] },
+  };
+
+  return (
+    <SectionShell
+      title="Results and Discussions"
+      description="Requirement matrix with P/F, plus narrative discussion of outcomes."
+      status={status}
+      lastSavedAt={lastSavedAt}
+      section="results_and_discussions"
+    >
+      <TiptapSectionField
+        section="results_and_discussions"
+        contentPath="narrative"
+        label="Discussion"
+        placeholder="Discuss outcomes, especially any failures, and how they relate to the requirements…"
+        className="grid gap-2"
+        value={content.narrative}
+        onChange={(doc) => update((p) => ({ ...p, narrative: doc }))}
+        onFlushSave={flushSave}
+      />
+      <TiptapSectionField
+        section="results_and_discussions"
+        contentPath="table"
+        label="Results matrix"
+        placeholder="Use the table toolbar to add rows. Keep the header columns unchanged."
+        className="grid gap-2"
+        value={content.table}
+        onChange={(doc) => update((p) => ({ ...p, table: doc }))}
+        onFlushSave={flushSave}
+      />
+    </SectionShell>
+  );
+}
+
+export function DvProblemsResolutionEditor() {
+  return (
+    <DvNarrativeEditor
+      section="problems_resolution"
+      description="Address every Fail with cause, corrective action, and retest — or state that none remain."
+      fieldLabel="Problems or Failure Resolution"
+      placeholder="For each failure: cause, corrective action, and retest/verification. If all results passed, state that there were no open failures…"
     />
   );
 }

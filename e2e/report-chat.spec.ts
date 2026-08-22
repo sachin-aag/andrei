@@ -2,11 +2,14 @@ import { createHash } from "node:crypto";
 import { expect, test, type Page } from "@playwright/test";
 import { PDFDocument } from "pdf-lib";
 import { loginAsEngineer } from "./helpers/auth";
+import { reloadWithNavigationRetry } from "./helpers/navigation";
 import { createReport, deleteReport } from "./helpers/reports";
 import {
+  collapseReportSidebar,
   documentsPanel,
   expandDocumentsPanel,
   expandReportSidebar,
+  openReportAssistant,
   reportSidebar,
 } from "./helpers/workspace";
 
@@ -72,16 +75,18 @@ test.describe("report chat", () => {
   test("streams a chat reply when a ready attachment is on the report", async ({
     page,
   }) => {
+    test.setTimeout(120_000);
+
     await expandDocumentsPanel(page);
     await uploadPdf(page);
     await expect(
       documentsPanel(page).locator('[data-document-file][data-status="ready"]')
     ).toBeVisible({ timeout: 30_000 });
 
-    await expandReportSidebar(page);
+    await openReportAssistant(page);
     const sidebar = reportSidebar(page);
-    await sidebar.getByRole("button", { name: /^assistant$/i }).click();
-    await sidebar.getByRole("button", { name: /^plan$/i }).click();
+    await sidebar.getByLabel("Assistant mode").click();
+    await page.getByRole("option", { name: /^ask$/i }).click();
 
     const composer = sidebar.getByPlaceholder(/describe the deviation/i);
     await expect(composer).toBeEnabled({ timeout: 15_000 });
@@ -98,12 +103,18 @@ test.describe("report chat", () => {
       timeout: 30_000,
     });
 
-    await page.reload();
+    await collapseReportSidebar(page);
+    await expandReportSidebar(page);
+    await expect(
+      reportSidebar(page).getByText(/before i draft anything/i)
+    ).toBeVisible({ timeout: 5_000 });
+
+    await reloadWithNavigationRetry(page, { waitUntil: "domcontentloaded" });
+    await expect(page).toHaveURL(new RegExp(`/reports/${reportId}/edit`));
     await expect(page.getByRole("heading", { name: /^define$/i })).toBeVisible({
       timeout: 30_000,
     });
-    await expandReportSidebar(page);
-    await reportSidebar(page).getByRole("button", { name: /^assistant$/i }).click();
+    await openReportAssistant(page);
     await expect(
       reportSidebar(page).getByText(/before i draft anything/i)
     ).toBeVisible({ timeout: 30_000 });

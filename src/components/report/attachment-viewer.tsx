@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { ChevronLeft, Download, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -11,6 +12,7 @@ import {
 import { PdfPagePreview } from "@/components/report/pdf-page-preview";
 import type { AttachmentProcessingStatus } from "@/db/schema";
 import { kindFromMime } from "@/lib/attachments/file-types";
+import { formatIngestPageLabel } from "@/lib/attachments/ingest-continue-limits";
 import {
   attachmentDownloadHref,
   attachmentPreviewSrc,
@@ -20,6 +22,13 @@ import { useReportAttachments } from "@/providers/report-attachments-provider";
 export function AttachmentViewer() {
   const { activeAttachment, activePage, closeDocument, reportId } =
     useReportAttachments();
+  const [visiblePage, setVisiblePage] = useState(activePage);
+  const pageSourceKey = `${activeAttachment?.id ?? ""}:${activePage}`;
+  const [seenPageSourceKey, setSeenPageSourceKey] = useState(pageSourceKey);
+  if (seenPageSourceKey !== pageSourceKey) {
+    setSeenPageSourceKey(pageSourceKey);
+    setVisiblePage(activePage);
+  }
 
   if (!activeAttachment) {
     return (
@@ -42,15 +51,15 @@ export function AttachmentViewer() {
   const pageLabel = isDocx
     ? "Word document"
     : activeAttachment.pageCount
-      ? `Page ${activePage} of ${activeAttachment.pageCount}`
-      : `Page ${activePage}`;
+      ? `Page ${visiblePage} of ${activeAttachment.pageCount}`
+      : `Page ${visiblePage}`;
   // File is on permanent storage once pageCount is set (finalize); indexing can still be running.
   const canPreview = activeAttachment.pageCount != null;
   const indexing = isIndexingStatus(activeAttachment.processingStatus);
 
   return (
-    <Card className="min-h-[calc(100vh-12rem)] overflow-hidden">
-      <CardHeader className="border-b border-[var(--border)] p-4">
+    <Card className="flex h-[calc(100vh-12rem)] min-h-[760px] flex-col overflow-hidden">
+      <CardHeader className="shrink-0 border-b border-[var(--border)] p-4">
         <div className="flex items-center gap-3">
           <Button type="button" variant="ghost" size="sm" onClick={closeDocument}>
             <ChevronLeft className="size-4" aria-hidden="true" />
@@ -63,9 +72,18 @@ export function AttachmentViewer() {
             </CardTitle>
             <p className="mt-1 text-xs text-[var(--muted-foreground)]">
               {pageLabel}
-              {indexing ? " · Indexing for search…" : null}
+              {indexing
+                ? formatIngestPageLabel(activeAttachment.processingPage)
+                  ? ` · Indexing page ${activeAttachment.processingPage}…`
+                  : " · Indexing for search…"
+                : null}
               {canPreview && activeAttachment.processingStatus === "failed"
                 ? " · Indexing failed (preview still available)"
+                : null}
+              {canPreview &&
+              activeAttachment.processingStatus === "ready" &&
+              activeAttachment.processingError
+                ? " · Indexing incomplete (preview still available)"
                 : null}
             </p>
             {activeAttachment.description ? (
@@ -84,7 +102,7 @@ export function AttachmentViewer() {
           ) : null}
         </div>
       </CardHeader>
-      <CardContent className="p-0">
+      <CardContent className="min-h-0 flex-1 p-0">
         {canPreview ? (
           isDocx ? (
             <iframe
@@ -94,13 +112,15 @@ export function AttachmentViewer() {
               // Untrusted HTML — no scripts. allow-popups* so target=_blank
               // links open a real new tab instead of replacing the preview.
               sandbox="allow-popups allow-popups-to-escape-sandbox"
-              className="h-[calc(100vh-16rem)] min-h-[720px] w-full bg-white"
+              className="h-full min-h-[720px] w-full bg-white"
             />
           ) : (
             <PdfPagePreview
+              key={activeAttachment.id}
               src={previewUrl}
               page={activePage}
               title={activeAttachment.filename}
+              onVisiblePageChange={setVisiblePage}
             />
           )
         ) : (

@@ -4,6 +4,7 @@ Andrei sends auth email through **Resend** (`AUTH_RESEND_KEY`, `AUTH_EMAIL_FROM`
 
 - MJ: `https://mj.andreihealth.com`
 - Demo: `https://demo.andreihealth.com`
+- Convergent: `https://convergent.andreihealth.com`
 
 Do not leave Production `AUTH_URL` on `https://andrei-v2.vercel.app` after the custom-domain cutover — Auth.js rewrites every request to that origin, so sessions 401 on the public host.
 

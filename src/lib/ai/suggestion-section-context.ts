@@ -220,6 +220,20 @@ export function contextForSuggestionPrompt(
     pushCanonicalNarrative(lines, section, content);
   } else if (section === "traceability" || section === "test_results") {
     pushCanonicalBlock(lines, "Table", canonicalRichText(content.table));
+  } else if (section === "testers_dates") {
+    pushCanonicalBlock(lines, "Testers", canonicalRichText(content.testers));
+  } else if (section === "test_equipment") {
+    pushCanonicalBlock(lines, "Table", canonicalRichText(content.table));
+  } else if (section === "results_and_discussions") {
+    pushCanonicalNarrative(lines, section, content);
+    pushCanonicalBlock(lines, "Table", canonicalRichText(content.table));
+  } else {
+    if ("narrative" in content) {
+      pushCanonicalNarrative(lines, section, content);
+    }
+    if ("table" in content) {
+      pushCanonicalBlock(lines, "Table", canonicalRichText(content.table));
+    }
   }
 
   return lines.length ? lines.join("\n") : fallbackContextForPrompt(content);

@@ -12,9 +12,12 @@ import {
   seedDefineForEvaluation,
 } from "./helpers/reports";
 import {
+  collapseReportSidebar,
   defineEditor,
   defineSection,
+  expandReportSidebar,
   reportSidebar,
+  reviewMargin,
 } from "./helpers/workspace";
 import {
   signedWorkflowPayload,
@@ -100,6 +103,120 @@ test.describe("report editor", () => {
     await expect(sidebar.getByRole("button", { name: /expand sidebar/i })).toBeVisible();
     await sidebar.getByRole("button", { name: /expand sidebar/i }).click();
     await expect(sidebar.getByRole("button", { name: /collapse sidebar/i })).toBeVisible();
+  });
+
+  test("hides the review margin while the assistant is expanded", async ({
+    page,
+  }) => {
+    // Wide enough that the main canvas would otherwise show both surfaces.
+    await page.setViewportSize({ width: 1920, height: 900 });
+    await expect(
+      reportSidebar(page).getByRole("button", { name: /collapse sidebar/i })
+    ).toBeVisible();
+    await expect(reviewMargin(page)).toHaveCount(0);
+
+    await collapseReportSidebar(page);
+    await expect(reviewMargin(page)).toBeVisible();
+
+    await expandReportSidebar(page);
+    await expect(reviewMargin(page)).toHaveCount(0);
+  });
+
+  test("resizes the assistant and documents panels from the keyboard", async ({
+    page,
+  }) => {
+    const chatHandle = page.getByRole("separator", {
+      name: /resize assistant panel/i,
+    });
+    const docsHandle = page.getByRole("separator", {
+      name: /resize documents panel/i,
+    });
+    await expect(chatHandle).toBeVisible();
+    await expect(docsHandle).toBeVisible();
+
+    const sidebar = reportSidebar(page);
+    const documents = page.getByRole("complementary", { name: "Documents" });
+    const chatBefore = await sidebar.evaluate((el) => el.getBoundingClientRect().width);
+    const docsBefore = await documents.evaluate(
+      (el) => el.getBoundingClientRect().width
+    );
+
+    await chatHandle.focus();
+    await page.keyboard.press("ArrowLeft");
+    await expect
+      .poll(async () => sidebar.evaluate((el) => el.getBoundingClientRect().width))
+      .toBeGreaterThan(chatBefore);
+
+    await docsHandle.focus();
+    await page.keyboard.press("ArrowRight");
+    await expect
+      .poll(async () =>
+        documents.evaluate((el) => el.getBoundingClientRect().width)
+      )
+      .toBeGreaterThan(docsBefore);
+
+    await sidebar.getByRole("button", { name: /collapse sidebar/i }).click();
+    await expect(chatHandle).toHaveCount(0);
+  });
+
+  test("opens the assistant at the default width on a new report and after reload", async ({
+    page,
+  }) => {
+    const sidebar = reportSidebar(page);
+    const chatHandle = page.getByRole("separator", {
+      name: /resize assistant panel/i,
+    });
+    const defaultWidth = await sidebar.evaluate(
+      (el) => el.getBoundingClientRect().width
+    );
+
+    await chatHandle.focus();
+    await page.keyboard.press("ArrowLeft");
+    await page.keyboard.press("ArrowLeft");
+    await expect
+      .poll(async () => sidebar.evaluate((el) => el.getBoundingClientRect().width))
+      .toBeGreaterThan(defaultWidth + 8);
+
+    const other = await createReport(page);
+    try {
+      await gotoWithNavigationRetry(page, `/reports/${other.id}/edit`, {
+        waitUntil: "domcontentloaded",
+      });
+      await expect(page.getByRole("heading", { name: /^define$/i })).toBeVisible({
+        timeout: 30_000,
+      });
+      await expect
+        .poll(async () => {
+          const width = await sidebar.evaluate(
+            (el) => el.getBoundingClientRect().width
+          );
+          return Math.abs(width - defaultWidth);
+        })
+        .toBeLessThan(12);
+
+      await chatHandle.focus();
+      await page.keyboard.press("ArrowLeft");
+      await expect
+        .poll(async () =>
+          sidebar.evaluate((el) => el.getBoundingClientRect().width)
+        )
+        .toBeGreaterThan(defaultWidth + 4);
+
+      await page.reload({ waitUntil: "domcontentloaded" });
+      await expect(page.getByRole("heading", { name: /^define$/i })).toBeVisible({
+        timeout: 30_000,
+      });
+      await expect
+        .poll(async () => {
+          const width = await reportSidebar(page).evaluate(
+            (el) => el.getBoundingClientRect().width
+          );
+          return Math.abs(width - defaultWidth);
+        })
+        .toBeLessThan(12);
+    } finally {
+      await deleteReport(page, other.id);
+    }
   });
 
   test("approved report is read-only for engineer", async ({ page }) => {

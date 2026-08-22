@@ -27,16 +27,14 @@ import { mergeSection } from "@/lib/sections-merge";
 import {
   getDocumentType,
   getEvaluatableSections,
-  getGateSection,
+  getWorkspaceSections,
   mergeSectionForType,
 } from "@/lib/document-types";
 import { activeSuggestionForSection } from "@/lib/ai/suggestion-gating";
+import { firstGeneratedSuggestionSection } from "@/lib/suggestions/navigate-suggestion";
 import { validateSuggestionLocate } from "@/lib/suggestions/validate-suggestion";
 import { normalizeCommentRecord } from "@/lib/comments/normalize";
-import {
-  hasEnoughContextInFirstSection,
-  INSUFFICIENT_FIRST_SECTION_MESSAGE,
-} from "@/lib/ai/first-section-context";
+import { sectionsReadyForEvaluation } from "@/lib/ai/evaluation-readiness";
 import { collectPlaceholders } from "@/lib/placeholders/scan-sections";
 import type { Placeholder } from "@/lib/placeholders/find";
 import type { UserRole } from "@/lib/auth/roles";
@@ -408,6 +406,10 @@ export function ReportProvider({
       normalizeCommentRecord(c as unknown as Record<string, unknown>)
     )
   );
+  const commentsRef = useRef(comments);
+  useEffect(() => {
+    commentsRef.current = comments;
+  }, [comments]);
   const [suggestionsFocusSection, setSuggestionsFocusSection] =
     useState<SectionType | null>(null);
   const [isEvaluating, setIsEvaluating] = useState(false);
@@ -574,6 +576,11 @@ export function ReportProvider({
   }, []);
 
   const refresh = useCallback(async () => {
+    const previousSuggestionIds = new Set(
+      commentsRef.current
+        .filter((comment) => comment.status === "open")
+        .map((comment) => comment.id)
+    );
     // Force any pending debounced edit to persist before reloading — otherwise
     // an edit made in the last ~1.5s could still be un-saved when the fetch
     // below overwrites local section state.
@@ -598,11 +605,18 @@ export function ReportProvider({
             : new Date(e.updatedAt as string).toISOString(),
       }))
     );
-    setComments(
-      (data.comments as Record<string, unknown>[]).map((c) =>
-        normalizeCommentRecord(c)
-      )
+    const nextComments = (data.comments as Record<string, unknown>[]).map(
+      (c) => normalizeCommentRecord(c)
     );
+    setComments(nextComments);
+    const generatedSection = firstGeneratedSuggestionSection(
+      previousSuggestionIds,
+      nextComments,
+      getWorkspaceSections(data.report.documentType).map((s) => s.key)
+    );
+    if (generatedSection) {
+      setSuggestionsFocusSection(generatedSection);
+    }
   }, [bundle.report.id, flushPendingSectionSaves]);
 
   const getSectionId = useCallback(
@@ -646,28 +660,28 @@ export function ReportProvider({
           : [section]
         : [...evaluatable];
 
-      const gate = getGateSection(documentType);
-      if (documentType === "investigation_report") {
-        if (!hasEnoughContextInFirstSection(sectionsRef.current.define)) {
-          toast.error(INSUFFICIENT_FIRST_SECTION_MESSAGE);
-          return;
-        }
-      } else if (gate?.key === "cover_page") {
-        if (!report.documentNo.trim()) {
-          toast.error(
-            "Fill Document Number on the Cover Page before running the AI check."
-          );
-          return;
-        }
+      const readiness = sectionsReadyForEvaluation({
+        documentType,
+        targets,
+        documentNo: report.documentNo,
+        contentFor: (key) =>
+          key === "cover_page" ? report.metadata : sectionsRef.current[key],
+      });
+      if (readiness.error) {
+        toast.error(readiness.error);
+        return;
       }
 
-      setRunningEvalSections(targets);
+      setRunningEvalSections(readiness.ready);
       setIsEvaluating(true);
       try {
         const res = await fetch(`/api/reports/${bundle.report.id}/evaluate`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ sections: targets, reason: "manual" }),
+          body: JSON.stringify({
+            sections: readiness.ready,
+            reason: "manual",
+          }),
         });
         if (!res.ok) {
           const errBody = await res.json().catch(() => ({}));

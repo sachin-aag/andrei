@@ -2,10 +2,11 @@ import type { CriterionStatus, SectionType } from "@/db/schema";
 import { SUGGEST_TARGET_FIELD_PATTERNS } from "@/lib/ai/suggest-target-fields";
 import {
   dvFixedTableFormatGuidance,
+  isDvTableOnlySection,
   isDvTableSection,
 } from "@/lib/document-types/design-verification/sections";
 
-export const SUGGEST_PROMPT_VERSION = "suggest-v13-scoped-cell-list-edits" as const;
+export const SUGGEST_PROMPT_VERSION = "suggest-v16-testers-dates-in-narrative" as const;
 
 /** Google model for suggestion generation (stronger reasoning + verbatim anchors). */
 export const SUGGEST_GOOGLE_MODEL_ID = "gemini-3.1-pro-preview" as const;
@@ -29,8 +30,11 @@ function fieldHintForSection(section: SectionType): string {
   if (section === "measure") {
     return '\n- For MEASURE, targetField MUST be "narrative" — it is the section\'s only editable field.';
   }
-  if (isDvTableSection(section)) {
+  if (isDvTableOnlySection(section)) {
     return '\n- For this matrix section, targetField MUST be "table". Preserve the seeded column headers; edit cell values only.';
+  }
+  if (section === "testers_dates") {
+    return '\n- For TESTERS & DATES, targetField MUST be "testers". Write start and end (or execution) dates in that narrative. Do not target startDate or endDate — those fields are gone.';
   }
   return "";
 }

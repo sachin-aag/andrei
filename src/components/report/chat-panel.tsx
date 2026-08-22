@@ -1,6 +1,15 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useChat } from "@ai-sdk/react";
 import {
   DefaultChatTransport,
@@ -20,10 +29,14 @@ import {
   Plus,
   History,
   ClipboardList,
+  MessageCircleQuestionMark,
   Wrench,
+  Zap,
+  Telescope,
   Check,
   ArrowRightLeft,
   ImagePlus,
+  Square,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -40,6 +53,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useReportData } from "@/providers/report-provider";
 import { useReportAttachments } from "@/providers/report-attachments-provider";
 import { useUserDirectory } from "@/providers/user-directory-provider";
@@ -54,11 +73,29 @@ import {
   sectionLabel as chatSectionLabel,
   type ChatSectionScope,
 } from "@/lib/ai/chat/fields";
+import { isChatPace, type ChatPace } from "@/lib/ai/chat/pace";
+import {
+  coerceChatMode,
+  coerceChatPace,
+  DEFAULT_CHAT_COMPOSER_PREFS,
+  readChatComposerPrefs,
+  writeChatComposerPrefs,
+} from "@/lib/ai/chat/composer-prefs";
+import { examplePromptsForMode } from "@/lib/ai/chat/example-prompts";
+import { isChatMode, type ChatMode } from "@/lib/ai/chat/system-prompt";
 import {
   CHAT_IMAGE_MAX_BYTES,
   CHAT_MAX_IMAGES_PER_MESSAGE,
   isAllowedChatImageMediaType,
 } from "@/lib/ai/chat/image-parts";
+import {
+  CHAT_ASSISTANT_ERROR_MESSAGE,
+  CHAT_ASSISTANT_INTERRUPTED_MESSAGE,
+  assistantPartsHaveVisibleContent,
+  assistantProgressSignature,
+  chatWatchdogPhase,
+  shouldShowEmptyAssistantError,
+} from "@/lib/ai/chat/assistant-turn";
 import {
   detectSectionScopeMismatch,
   type SectionScopeMismatch,
@@ -73,25 +110,21 @@ import {
   type MentionQuery,
 } from "@/lib/ai/chat/mention-search";
 import { compressImageFile } from "@/lib/images/compress-image";
+import { DocumentReviewProgress } from "@/components/report/document-review-progress";
+import {
+  isDocumentReviewToolName,
+  type DocumentReviewToolPart,
+} from "@/lib/ai/chat/document-review-ui";
+import {
+  CHAT_VISIBLE_TAIL,
+  nextVisibleCount,
+  shouldLoadOlderMessages,
+  visibleMessageStartIndex,
+} from "@/components/report/chat-visible-messages";
 
 type PendingChatImage = {
   id: string;
   part: FileUIPart;
-};
-
-type ChatMode = "plan" | "agent";
-
-const EXAMPLE_PROMPTS: Record<ChatMode, string[]> = {
-  plan: [
-    "Help me document this deviation from scratch.",
-    "What do you need to complete the Define section?",
-    "Plan an investigation for an out-of-spec result on a medical device line.",
-  ],
-  agent: [
-    "Draft the Define section from what we discussed.",
-    "Tighten the problem statement and scope in Define.",
-    "Propose a clearer root cause and impact assessment in Analyze.",
-  ],
 };
 
 type ToolPartInfo = {
@@ -115,6 +148,44 @@ function readToolPart(part: UIMessagePart<never, never>): ToolPartInfo | null {
     input: p.input,
     output: p.output,
   };
+}
+
+type AssistantPartGroup =
+  | { kind: "text"; text: string }
+  | { kind: "document-review"; parts: DocumentReviewToolPart[] }
+  | { kind: "other"; part: UIMessagePart<never, never> };
+
+function groupAssistantParts(
+  parts: UIMessage["parts"]
+): AssistantPartGroup[] {
+  const groups: AssistantPartGroup[] = [];
+  for (const part of parts) {
+    if (part.type === "text") {
+      groups.push({ kind: "text", text: (part as { text: string }).text });
+      continue;
+    }
+    const tool = readToolPart(part as UIMessagePart<never, never>);
+    if (tool && isDocumentReviewToolName(tool.toolName)) {
+      const reviewPart: DocumentReviewToolPart = {
+        toolName: tool.toolName,
+        state: tool.state,
+        input: tool.input,
+        output: tool.output,
+      };
+      const existing = groups.find(
+        (group): group is Extract<AssistantPartGroup, { kind: "document-review" }> =>
+          group.kind === "document-review"
+      );
+      if (existing) {
+        existing.parts.push(reviewPart);
+      } else {
+        groups.push({ kind: "document-review", parts: [reviewPart] });
+      }
+      continue;
+    }
+    groups.push({ kind: "other", part: part as UIMessagePart<never, never> });
+  }
+  return groups;
 }
 
 function sectionLabel(section: unknown): string {
@@ -145,6 +216,8 @@ function ToolChip({
   onAnswerQuestions?: (message: string) => void;
 }) {
   const pending = info.state === "input-streaming" || info.state === "input-available";
+
+  if (isDocumentReviewToolName(info.toolName)) return null;
 
   if (info.toolName === "suggest_section_scope") {
     const suggested = info.output?.suggestedSection ?? info.input?.suggestedSection;
@@ -432,26 +505,59 @@ function MentionMenu({
   );
 }
 
-function MessageTurn({
+function ChatBusyStatus({
+  mode,
+  stale,
+  onCancel,
+}: {
+  mode: ChatMode;
+  stale: boolean;
+  onCancel: () => void;
+}) {
+  return (
+    <div className="flex items-center gap-2 text-xs text-[var(--muted-foreground)]">
+      <Loader2 className="size-3.5 animate-spin" />
+      <span>
+        {stale
+          ? "Still working — this can take a few minutes."
+          : mode === "plan"
+            ? "Thinking through your question…"
+            : "Working…"}
+      </span>
+      <button
+        type="button"
+        onClick={onCancel}
+        className="underline decoration-[var(--border)] underline-offset-2 transition-colors hover:text-[var(--foreground)]"
+      >
+        Cancel
+      </button>
+    </div>
+  );
+}
+
+const MessageTurn = memo(function MessageTurn({
   message,
   onSwitchSectionScope,
   askUserActive,
   onAnswerQuestions,
+  streaming = false,
 }: {
   message: UIMessage;
   onSwitchSectionScope?: (section: SectionType) => void;
   askUserActive?: boolean;
   onAnswerQuestions?: (message: string) => void;
+  streaming?: boolean;
 }) {
   const isUser = message.role === "user";
 
   if (isUser) {
-    const text = message.parts
+    const parts = message.parts ?? [];
+    const text = parts
       .filter((p): p is { type: "text"; text: string } => p.type === "text")
       .map((p) => p.text)
       .join("\n")
       .trim();
-    const images = message.parts.filter(
+    const images = parts.filter(
       (p): p is FileUIPart => isFileUIPart(p) && p.mediaType.startsWith("image/")
     );
     if (!text && images.length === 0) return null;
@@ -478,35 +584,46 @@ function MessageTurn({
   }
 
   // Assistant turn: full-width, no bubble (Cursor-style), tool chips inline.
+  const parts = message.parts ?? [];
+  const showEmptyError = shouldShowEmptyAssistantError({
+    parts,
+    streaming,
+  });
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-1.5 text-[11px] font-medium text-[var(--muted-foreground)]">
         <Sparkles className="size-3 text-[var(--primary)]" />
         Assistant
       </div>
-      {message.parts.map((part, i) => {
-        if (part.type === "text") {
-          const text = (part as { text: string }).text;
-          if (!text.trim()) return null;
-          return <ChatMarkdown key={i}>{text}</ChatMarkdown>;
-        }
-        const tool = readToolPart(part as UIMessagePart<never, never>);
-        if (tool) {
-          return (
-            <ToolChip
-              key={i}
-              info={tool}
-              onSwitchSectionScope={onSwitchSectionScope}
-              askUserActive={askUserActive}
-              onAnswerQuestions={onAnswerQuestions}
-            />
-          );
-        }
-        return null;
-      })}
+      {showEmptyError ? (
+        <p className="text-sm text-red-600">{CHAT_ASSISTANT_ERROR_MESSAGE}</p>
+      ) : (
+        groupAssistantParts(parts).map((group, i) => {
+          if (group.kind === "text") {
+            if (!group.text.trim()) return null;
+            return <ChatMarkdown key={i}>{group.text}</ChatMarkdown>;
+          }
+          if (group.kind === "document-review") {
+            return <DocumentReviewProgress key={i} parts={group.parts} />;
+          }
+          const tool = readToolPart(group.part as UIMessagePart<never, never>);
+          if (tool) {
+            return (
+              <ToolChip
+                key={i}
+                info={tool}
+                onSwitchSectionScope={onSwitchSectionScope}
+                askUserActive={askUserActive}
+                onAnswerQuestions={onAnswerQuestions}
+              />
+            );
+          }
+          return null;
+        })
+      )}
     </div>
   );
-}
+});
 
 function scopeDescription(scope: ChatSectionScope): string {
   return scope === CHAT_SECTION_SCOPE_ALL
@@ -529,7 +646,12 @@ function SectionScopeSelect({
   return (
     <Select
       value={value}
-      onValueChange={(next) => onChange(next as ChatSectionScope)}
+      onValueChange={(next) => {
+        if (next !== CHAT_SECTION_SCOPE_ALL && !sections.includes(next as SectionType)) {
+          return;
+        }
+        onChange(next as ChatSectionScope);
+      }}
       disabled={disabled}
     >
       <SelectTrigger
@@ -539,10 +661,13 @@ function SectionScopeSelect({
       >
         <SelectValue placeholder="Section" />
       </SelectTrigger>
-      <SelectContent>
-        <SelectItem value={CHAT_SECTION_SCOPE_ALL}>All sections</SelectItem>
+      {/* Opens upward: the control strip sits at the bottom of the panel. */}
+      <SelectContent side="top" sideOffset={6} className="text-[11px]">
+        <SelectItem className="text-[11px]" value={CHAT_SECTION_SCOPE_ALL}>
+          All sections
+        </SelectItem>
         {sections.map((section) => (
-          <SelectItem key={section} value={section}>
+          <SelectItem className="text-[11px]" key={section} value={section}>
             {sectionLabel(section)}
           </SelectItem>
         ))}
@@ -551,56 +676,168 @@ function SectionScopeSelect({
   );
 }
 
-function ModeToggle({
-  mode,
+type ComposerOption<T extends string> = {
+  value: T;
+  label: string;
+  description: string;
+  icon: typeof Wrench;
+  disabled?: boolean;
+};
+
+/**
+ * Wire values are unchanged — `plan` is labelled "Ask" because that is what it
+ * does from the engineer's side.
+ */
+const CHAT_MODE_OPTIONS: readonly ComposerOption<ChatMode>[] = [
+  {
+    value: "plan",
+    label: "Ask",
+    description: "Answers questions about the report. Never edits the document.",
+    icon: MessageCircleQuestionMark,
+  },
+  {
+    value: "agent",
+    label: "Agent",
+    description: "Drafts and proposes edits you accept or reject.",
+    icon: Wrench,
+  },
+];
+
+/**
+ * Pace, never a model name. The description is the only explanation a user
+ * gets, so it says what changes for them — not what runs underneath.
+ */
+const CHAT_PACE_OPTIONS: readonly ComposerOption<ChatPace>[] = [
+  {
+    value: "quick",
+    label: "Quick",
+    description:
+      "Fast answers with lighter reasoning. Handles most questions, lookups, and short edits.",
+    icon: Zap,
+  },
+  {
+    value: "deep",
+    label: "Deep",
+    description:
+      "Digs through your documents and reasons further before answering. Slower.",
+    icon: Telescope,
+  },
+];
+
+/**
+ * Radix Tooltip also opens on focus. Opening a Select focuses the current
+ * option, which would flash its description immediately. Gate on pointer
+ * hover so the text only appears when the mouse is over that row.
+ */
+function HoverOnlyTooltip({
+  content,
+  children,
+}: {
+  content: ReactNode;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  const hoverIntentRef = useRef(false);
+
+  return (
+    <Tooltip
+      open={open}
+      onOpenChange={(next) => {
+        if (next) {
+          if (hoverIntentRef.current) setOpen(true);
+          return;
+        }
+        hoverIntentRef.current = false;
+        setOpen(false);
+      }}
+    >
+      <TooltipTrigger asChild>
+        <span
+          className="block"
+          onPointerEnter={() => {
+            hoverIntentRef.current = true;
+          }}
+          onPointerLeave={() => {
+            hoverIntentRef.current = false;
+          }}
+        >
+          {children}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="left" align="center" collisionPadding={8}>
+        {content}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+/**
+ * Select for the composer control strip. Explanations live on hover so the
+ * open menu stays as wide as the label — the closed trigger is an icon and
+ * one word.
+ */
+function ComposerSelect<T extends string>({
+  value,
+  options,
   onChange,
   disabled,
-  agentDisabled,
-  agentDisabledTitle,
+  ariaLabel,
+  className,
 }: {
-  mode: ChatMode;
-  onChange: (mode: ChatMode) => void;
+  value: T;
+  options: readonly ComposerOption<T>[];
+  onChange: (value: T) => void;
   disabled?: boolean;
-  agentDisabled?: boolean;
-  agentDisabledTitle?: string;
+  ariaLabel: string;
+  className?: string;
 }) {
-  const options: { value: ChatMode; label: string; icon: typeof ClipboardList }[] = [
-    { value: "plan", label: "Plan", icon: ClipboardList },
-    { value: "agent", label: "Agent", icon: Wrench },
-  ];
+  const active = options.find((option) => option.value === value) ?? options[0];
+  const ActiveIcon = active.icon;
   return (
-    <div className="inline-flex rounded-md border border-[var(--border)] bg-[var(--secondary)]/30 p-0.5">
-      {options.map((opt) => {
-        const Icon = opt.icon;
-        const active = mode === opt.value;
-        const optionDisabled =
-          disabled || (opt.value === "agent" && !!agentDisabled);
-        return (
-          <button
-            key={opt.value}
-            type="button"
-            disabled={optionDisabled}
-            onClick={() => onChange(opt.value)}
-            className={cn(
-              "flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium transition-colors disabled:opacity-50",
-              active
-                ? "bg-[var(--card)] text-[var(--foreground)] shadow-sm"
-                : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-            )}
-            title={
-              opt.value === "agent" && agentDisabled
-                ? agentDisabledTitle
-                : opt.value === "plan"
-                  ? "Plan: ask questions and plan the draft (no document edits)"
-                  : "Agent: draft and propose edits you accept or reject"
-            }
-          >
-            <Icon className="size-3.5" />
-            {opt.label}
-          </button>
-        );
-      })}
-    </div>
+    <Select
+      value={value}
+      onValueChange={(next) => {
+        const selected = options.find((option) => option.value === next);
+        if (!selected) return;
+        onChange(selected.value);
+      }}
+      disabled={disabled}
+    >
+      <SelectTrigger
+        className={cn(
+          "h-7 border-[var(--border)] bg-[var(--secondary)]/30 px-2 text-[11px] font-medium",
+          className
+        )}
+        aria-label={ariaLabel}
+        title={active.description}
+      >
+        {/* A div, not a span: the trigger line-clamps direct span children,
+            which would override the flex layout. */}
+        <div className="flex min-w-0 items-center gap-1.5">
+          <ActiveIcon className="size-3.5 shrink-0" />
+          <SelectValue />
+        </div>
+      </SelectTrigger>
+      {/* Opens upward: the control strip sits at the bottom of the panel. */}
+      <SelectContent side="top" sideOffset={6} className="text-[11px]">
+        <TooltipProvider delayDuration={150}>
+          {options.map((option) => (
+            <HoverOnlyTooltip key={option.value} content={option.description}>
+              {/* The wrapper, not the item, is the hover target: a disabled
+                  option has pointer events off, and its lock reason is the
+                  one description a user most needs to read. */}
+              <SelectItem
+                value={option.value}
+                disabled={option.disabled}
+                className="text-[11px]"
+              >
+                {option.label}
+              </SelectItem>
+            </HoverOnlyTooltip>
+          ))}
+        </TooltipProvider>
+      </SelectContent>
+    </Select>
   );
 }
 
@@ -614,6 +851,21 @@ export function ChatPanel() {
     role != null
       ? aiSuggestionLockReason({ id: currentUserId, role }, report)
       : "You can't propose edits on this report right now.";
+  // When Agent is unavailable the item still lists, disabled, with the lock
+  // reason standing in for its description — a missing option explains nothing.
+  const modeOptions = useMemo(
+    () =>
+      CHAT_MODE_OPTIONS.map((option) =>
+        option.value === "agent" && !canProposeAiEdits
+          ? {
+              ...option,
+              disabled: true,
+              description: editLockReason ?? option.description,
+            }
+          : option
+      ),
+    [canProposeAiEdits, editLockReason]
+  );
   const { attachments } = useReportAttachments();
   const [input, setInput] = useState("");
   const [mentions, setMentions] = useState<MentionCandidate[]>([]);
@@ -621,7 +873,15 @@ export function ChatPanel() {
   const [mentionIndex, setMentionIndex] = useState(0);
   const [pendingImages, setPendingImages] = useState<PendingChatImage[]>([]);
   const [attaching, setAttaching] = useState(false);
-  const [mode, setMode] = useState<ChatMode>("agent");
+  const [mode, setModeState] = useState<ChatMode>(
+    DEFAULT_CHAT_COMPOSER_PREFS.mode
+  );
+  const [pace, setPaceState] = useState<ChatPace>(
+    DEFAULT_CHAT_COMPOSER_PREFS.pace
+  );
+  const [composerPrefsReady, setComposerPrefsReady] = useState(false);
+  const composerPrefsRef = useRef({ mode, pace });
+  composerPrefsRef.current = { mode, pace };
   const [sectionScope, setSectionScope] = useState<ChatSectionScope>(CHAT_SECTION_SCOPE_ALL);
   const [clientScopeSuggestion, setClientScopeSuggestion] =
     useState<SectionScopeMismatch | null>(null);
@@ -629,30 +889,63 @@ export function ChatPanel() {
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [initializing, setInitializing] = useState(true);
+  const sessionWindowKey = `${report.id}:${currentSessionId ?? ""}`;
+  const [windowedSessionKey, setWindowedSessionKey] = useState(sessionWindowKey);
+  const [visibleCount, setVisibleCount] = useState(CHAT_VISIBLE_TAIL);
+  if (windowedSessionKey !== sessionWindowKey) {
+    setWindowedSessionKey(sessionWindowKey);
+    setVisibleCount(CHAT_VISIBLE_TAIL);
+  }
   const scrollRef = useRef<HTMLDivElement>(null);
   const historyRef = useRef<HTMLDivElement>(null);
+  const loadingOlderRef = useRef(false);
+  const olderScrollRestoreRef = useRef<{ height: number; top: number } | null>(
+    null
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const pendingCaretRef = useRef<number | null>(null);
+  const sessionIdRef = useRef<string | null>(null);
+  const reloadSessionRef = useRef<() => Promise<void>>(async () => {});
+  const busyStartedAtRef = useRef<number | null>(null);
+  const lastProgressAtRef = useRef<number | null>(null);
+  const lastProgressSigRef = useRef("");
+  const stoppedForWatchdogRef = useRef(false);
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const [silentMs, setSilentMs] = useState(0);
 
   const base = `/api/reports/${report.id}/chat`;
 
-  const { messages, sendMessage, setMessages, status, error } = useChat({
+  const { messages, sendMessage, setMessages, status, error, stop } = useChat({
     id: `report-chat-${report.id}`,
     transport: new DefaultChatTransport({ api: base }),
-    onFinish: () => {
+    onFinish: ({ message, isAbort, isDisconnect, isError }) => {
       // Pull newly-proposed ai_fix comments into report state (inline diff +
       // gutter card), and refresh session titles/order.
       void refresh();
       void loadSessions();
+      if (isAbort || isDisconnect) {
+        void reloadSessionRef.current();
+        return;
+      }
+      // Stream protocol errors already toast via onError. Empty Gemini turns
+      // (thought-only / no parts) finish as success unless we catch them here.
+      if (isError) return;
+      if (
+        message.role === "assistant" &&
+        !assistantPartsHaveVisibleContent(message.parts)
+      ) {
+        toast.error(CHAT_ASSISTANT_ERROR_MESSAGE);
+      }
     },
     onError: (err) => {
       console.error("chat error", err);
-      toast.error("The assistant hit an error. Please try again.");
+      toast.error(CHAT_ASSISTANT_ERROR_MESSAGE);
     },
   });
 
   const busy = status === "submitted" || status === "streaming";
+  const watchdog = chatWatchdogPhase({ busy, elapsedMs, silentMs });
 
   // Only ready documents are taggable — an attachment still being ingested has
   // no chunks, so scoping search to it would return nothing.
@@ -689,6 +982,43 @@ export function ChatPanel() {
     Math.max(mentionMatches.length - 1, 0)
   );
 
+  const persistComposerPrefs = useCallback(
+    (next: { mode: ChatMode; pace: ChatPace }) => {
+      if (!currentUserId) return;
+      writeChatComposerPrefs(currentUserId, report.id, next);
+    },
+    [currentUserId, report.id]
+  );
+
+  const setMode = useCallback(
+    (next: ChatMode) => {
+      if (!isChatMode(next)) return;
+      setModeState(next);
+      persistComposerPrefs({ mode: next, pace: composerPrefsRef.current.pace });
+    },
+    [persistComposerPrefs]
+  );
+
+  const setPace = useCallback(
+    (next: ChatPace) => {
+      if (!isChatPace(next)) return;
+      setPaceState(next);
+      persistComposerPrefs({ mode: composerPrefsRef.current.mode, pace: next });
+    },
+    [persistComposerPrefs]
+  );
+
+  useLayoutEffect(() => {
+    if (!currentUserId) {
+      setComposerPrefsReady(false);
+      return;
+    }
+    const stored = readChatComposerPrefs(currentUserId, report.id);
+    setModeState(coerceChatMode(stored.mode));
+    setPaceState(coerceChatPace(stored.pace));
+    setComposerPrefsReady(true);
+  }, [currentUserId, report.id]);
+
   // Restore the caret after a mention replaces the in-progress @ token.
   useEffect(() => {
     const caret = pendingCaretRef.current;
@@ -700,12 +1030,16 @@ export function ChatPanel() {
     element.setSelectionRange(caret, caret);
   }, [input]);
 
-  // Agent proposes edits — fall back to Plan when the report isn't writable.
+  // Agent proposes edits — fall back to Ask when the report isn't writable.
+  // Wait for `role`: until the user directory resolves, `canProposeAiEdits` is
+  // false for everyone, and firing early would knock every session off the
+  // Agent default with no way back.
   useEffect(() => {
-    if (!canProposeAiEdits && mode === "agent") {
-      setMode("plan");
+    if (role != null && !canProposeAiEdits && mode === "agent") {
+      // Session lock only — don't persist over a stored Agent preference.
+      setModeState("plan");
     }
-  }, [canProposeAiEdits, mode]);
+  }, [role, canProposeAiEdits, mode]);
 
   const updateMentionQuery = useCallback((value: string, caret: number) => {
     setMentionRange(findMentionQuery(value, caret));
@@ -749,9 +1083,10 @@ export function ChatPanel() {
     try {
       const res = await fetch(`${base}/sessions`);
       if (!res.ok) return [];
-      const data = (await res.json()) as { sessions: ChatSessionSummary[] };
-      setSessions(data.sessions);
-      return data.sessions;
+      const data = (await res.json()) as { sessions?: ChatSessionSummary[] };
+      const next = Array.isArray(data.sessions) ? data.sessions : [];
+      setSessions(next);
+      return next;
     } catch {
       return [];
     }
@@ -802,6 +1137,110 @@ export function ChatPanel() {
     setMentions([]);
     setMentionRange(null);
   }, [createSession, setMessages]);
+
+  useEffect(() => {
+    sessionIdRef.current = currentSessionId;
+    reloadSessionRef.current = async () => {
+      const id = sessionIdRef.current;
+      if (id) await openSession(id);
+    };
+  }, [currentSessionId, openSession]);
+
+  const messagesRef = useRef(messages);
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  const visibleStartIndex = visibleMessageStartIndex(
+    messages.length,
+    visibleCount
+  );
+  const visibleMessages = messages.slice(visibleStartIndex);
+  const hiddenCount = visibleStartIndex;
+
+  const loadOlderMessages = useCallback(() => {
+    if (loadingOlderRef.current) return;
+    if (visibleCount >= messages.length) return;
+    const el = scrollRef.current;
+    if (el) {
+      olderScrollRestoreRef.current = {
+        height: el.scrollHeight,
+        top: el.scrollTop,
+      };
+    }
+    loadingOlderRef.current = true;
+    setVisibleCount((current) => nextVisibleCount(current, messages.length));
+  }, [messages.length, visibleCount]);
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    const restore = olderScrollRestoreRef.current;
+    if (el && restore != null) {
+      olderScrollRestoreRef.current = null;
+      el.scrollTop = el.scrollHeight - restore.height + restore.top;
+    }
+    loadingOlderRef.current = false;
+  }, [visibleCount]);
+
+  const onMessagesScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    if (
+      shouldLoadOlderMessages(el.scrollTop, visibleCount, messages.length)
+    ) {
+      loadOlderMessages();
+    }
+  }, [loadOlderMessages, messages.length, visibleCount]);
+
+  useEffect(() => {
+    if (!busy) {
+      busyStartedAtRef.current = null;
+      lastProgressAtRef.current = null;
+      lastProgressSigRef.current = "";
+      stoppedForWatchdogRef.current = false;
+      return;
+    }
+    if (busyStartedAtRef.current == null) busyStartedAtRef.current = Date.now();
+    const tick = () => {
+      const now = Date.now();
+      const started = busyStartedAtRef.current ?? now;
+      let lastAssistant: (typeof messages)[number] | undefined;
+      for (let i = messagesRef.current.length - 1; i >= 0; i--) {
+        const message = messagesRef.current[i];
+        if (message?.role === "assistant") {
+          lastAssistant = message;
+          break;
+        }
+      }
+      const signature = assistantProgressSignature(lastAssistant?.parts);
+      if (signature !== lastProgressSigRef.current) {
+        lastProgressSigRef.current = signature;
+        lastProgressAtRef.current = now;
+      }
+      const progress = lastProgressAtRef.current ?? started;
+      setElapsedMs(now - started);
+      setSilentMs(now - progress);
+      if (
+        chatWatchdogPhase({
+          busy: true,
+          elapsedMs: now - started,
+          silentMs: now - progress,
+        }) === "give_up" &&
+        !stoppedForWatchdogRef.current
+      ) {
+        stoppedForWatchdogRef.current = true;
+        stop();
+        toast.error(CHAT_ASSISTANT_INTERRUPTED_MESSAGE);
+      }
+    };
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [busy, stop]);
+
+  const stopTurn = useCallback(() => {
+    stop();
+  }, [stop]);
 
   // Initialize: load sessions, open the most recent or create the first.
   useEffect(() => {
@@ -939,7 +1378,12 @@ export function ChatPanel() {
       } else {
         setClientScopeSuggestion(null);
       }
-      const body: Record<string, unknown> = { sessionId, mode, sectionScope };
+      const body: Record<string, unknown> = {
+        sessionId,
+        mode,
+        pace,
+        sectionScope,
+      };
       if (tagsForRequest.length > 0) {
         body.mentions = tagsForRequest.map((mention) => ({
           type: mention.type,
@@ -962,6 +1406,7 @@ export function ChatPanel() {
       createSession,
       sendMessage,
       mode,
+      pace,
       sectionScope,
       pendingImages,
       mentions,
@@ -973,7 +1418,7 @@ export function ChatPanel() {
     sessions.find((s) => s.id === currentSessionId)?.title ?? "Investigation assistant";
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col" aria-busy={initializing}>
       {/* Header: title + new chat + history */}
       <div className="relative flex items-center gap-2 border-b border-[var(--border)] px-3 py-2.5">
         <Sparkles className="size-4 shrink-0 text-[var(--primary)]" />
@@ -1045,20 +1490,35 @@ export function ChatPanel() {
       </div>
 
       {/* Messages */}
-      <div ref={scrollRef} className="flex-1 space-y-5 overflow-y-auto p-4">
+      <div
+        ref={scrollRef}
+        className="flex-1 space-y-5 overflow-y-auto p-4"
+        onScroll={onMessagesScroll}
+      >
+        {hiddenCount > 0 ? (
+          <div className="flex justify-center">
+            <button
+              type="button"
+              onClick={loadOlderMessages}
+              className="rounded-md px-2 py-1 text-[11px] text-[var(--muted-foreground)] transition-colors hover:bg-[var(--secondary)] hover:text-[var(--foreground)]"
+            >
+              Show earlier messages
+            </button>
+          </div>
+        ) : null}
         {messages.length === 0 ? (
           <div className="space-y-3">
             <p className="text-sm text-[var(--muted-foreground)]">
               {mode === "plan"
                 ? sectionScope === CHAT_SECTION_SCOPE_ALL
-                  ? "I'll ask focused questions to plan a strong deviation investigation draft. I won't edit the document in Plan mode."
-                  : `Focused on ${scopeDescription(sectionScope)} — I'll ask what we need to complete that section. I won't edit the document in Plan mode.`
+                  ? "I'll ask focused questions to plan a strong deviation investigation draft. I won't edit the document in Ask mode."
+                  : `Focused on ${scopeDescription(sectionScope)} — I'll ask what we need to complete that section. I won't edit the document in Ask mode.`
                 : sectionScope === CHAT_SECTION_SCOPE_ALL
                   ? "Ask me to draft or improve any section of your deviation investigation. I read the report and propose targeted edits you accept or reject."
                   : `Focused on ${scopeDescription(sectionScope)} — ask me to draft or improve that section. I'll propose targeted edits you accept or reject.`}
             </p>
             <div className="space-y-1.5">
-              {EXAMPLE_PROMPTS[mode].map((p) => (
+              {examplePromptsForMode(mode).map((p) => (
                 <button
                   key={p}
                   type="button"
@@ -1072,23 +1532,35 @@ export function ChatPanel() {
             </div>
           </div>
         ) : (
-          messages.map((m, i) => (
+          visibleMessages.map((m, i) => (
             <MessageTurn
               key={m.id}
               message={m}
               onSwitchSectionScope={applySectionScope}
-              askUserActive={i === messages.length - 1 && !busy && !initializing}
+              askUserActive={
+                visibleStartIndex + i === messages.length - 1 &&
+                !busy &&
+                !initializing
+              }
               onAnswerQuestions={(answerText) => void send(answerText, [])}
+              streaming={
+                busy &&
+                visibleStartIndex + i === messages.length - 1 &&
+                m.role === "assistant"
+              }
             />
           ))
         )}
-        {busy && (
-          <div className="flex items-center gap-2 text-xs text-[var(--muted-foreground)]">
-            <Loader2 className="size-3.5 animate-spin" />
-            {mode === "plan" ? "Thinking through the plan…" : "Working…"}
-          </div>
+        {busy ? (
+          <ChatBusyStatus
+            mode={mode}
+            stale={watchdog === "stale" || watchdog === "give_up"}
+            onCancel={stopTurn}
+          />
+        ) : null}
+        {error && (
+          <p className="text-xs text-red-500">{CHAT_ASSISTANT_ERROR_MESSAGE}</p>
         )}
-        {error && <p className="text-xs text-red-500">Something went wrong. Try again.</p>}
       </div>
 
       {/* Composer */}
@@ -1107,14 +1579,27 @@ export function ChatPanel() {
           />
         )}
         <div className="mb-2 flex items-center gap-1.5">
-          <div className="flex min-w-0 items-center gap-1.5">
-            <ModeToggle
-              mode={mode}
-              onChange={setMode}
-              disabled={busy}
-              agentDisabled={!canProposeAiEdits}
-              agentDisabledTitle={editLockReason ?? undefined}
-            />
+          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
+            {composerPrefsReady ? (
+              <>
+                <ComposerSelect
+                  value={mode}
+                  options={modeOptions}
+                  onChange={setMode}
+                  disabled={busy}
+                  ariaLabel="Assistant mode"
+                  className="w-[6rem]"
+                />
+                <ComposerSelect
+                  value={pace}
+                  options={CHAT_PACE_OPTIONS}
+                  onChange={setPace}
+                  disabled={busy}
+                  ariaLabel="Answer depth"
+                  className="w-[6rem]"
+                />
+              </>
+            ) : null}
             <SectionScopeSelect
               value={sectionScope}
               onChange={changeSectionScope}
@@ -1127,7 +1612,7 @@ export function ChatPanel() {
           <p className="mb-2 text-[11px] text-[var(--muted-foreground)]">
             {editLockReason ??
               "You can't propose edits on this report right now."}{" "}
-            Plan mode can still discuss the report.
+            Ask mode can still discuss the report.
           </p>
         ) : readOnly && mode === "agent" ? (
           <p className="mb-2 text-[11px] text-[var(--muted-foreground)]">
@@ -1270,19 +1755,30 @@ export function ChatPanel() {
               className="min-h-[40px] max-h-40 w-full resize-none rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)] disabled:opacity-50"
             />
           </div>
-          <button
-            type="submit"
-            disabled={
-              busy ||
-              initializing ||
-              attaching ||
-              (!input.trim() && pendingImages.length === 0)
-            }
-            aria-label="Send message"
-            className="flex size-9 items-center justify-center rounded-md bg-[var(--primary)] text-[var(--primary-foreground)] transition-opacity hover:opacity-90 disabled:opacity-40"
-          >
-            {busy ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
-          </button>
+          {busy ? (
+            <button
+              type="button"
+              onClick={stopTurn}
+              aria-label="Stop generating"
+              title="Stop generating"
+              className="flex size-9 items-center justify-center rounded-md bg-[var(--primary)] text-[var(--primary-foreground)] transition-opacity hover:opacity-90"
+            >
+              <Square className="size-3.5 fill-current" />
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={
+                initializing ||
+                attaching ||
+                (!input.trim() && pendingImages.length === 0)
+              }
+              aria-label="Send message"
+              className="flex size-9 items-center justify-center rounded-md bg-[var(--primary)] text-[var(--primary-foreground)] transition-opacity hover:opacity-90 disabled:opacity-40"
+            >
+              <Send className="size-4" />
+            </button>
+          )}
         </div>
       </form>
     </div>

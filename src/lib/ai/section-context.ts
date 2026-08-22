@@ -136,9 +136,10 @@ export function fallbackContextForPrompt(content: unknown): string {
   return JSON.stringify(content, null, 2);
 }
 
-export function contextForPrompt(section: SectionType, content: unknown): string {
-  if (!isRecord(content)) return fallbackContextForPrompt(content);
-
+function collectContextLines(
+  section: SectionType,
+  content: Record<string, unknown>
+): string[] {
   const lines: string[] = [];
   if (section === "define") {
     pushNarrativeLine(lines, section, content);
@@ -213,7 +214,55 @@ export function contextForPrompt(section: SectionType, content: unknown): string
         tableFormat: "markdown",
       })
     );
+  } else if (section === "testers_dates") {
+    pushTextBlock(lines, "Testers", tiptapText(content.testers));
+  } else if (section === "test_equipment") {
+    pushTextBlock(
+      lines,
+      "Table",
+      richJsonToPlainText(normalizeRichField(content.table), {
+        tableFormat: "markdown",
+      })
+    );
+  } else if (section === "results_and_discussions") {
+    pushNarrativeLine(lines, section, content);
+    pushTextBlock(
+      lines,
+      "Table",
+      richJsonToPlainText(normalizeRichField(content.table), {
+        tableFormat: "markdown",
+      })
+    );
+  } else {
+    if ("narrative" in content) {
+      pushNarrativeLine(lines, section, content);
+    }
+    if ("table" in content && section !== "results_and_discussions") {
+      pushTextBlock(
+        lines,
+        "Table",
+        richJsonToPlainText(normalizeRichField(content.table), {
+          tableFormat: "markdown",
+        })
+      );
+    }
   }
+  return lines;
+}
 
+export function contextForPrompt(section: SectionType, content: unknown): string {
+  if (!isRecord(content)) return fallbackContextForPrompt(content);
+  const lines = collectContextLines(section, content);
   return lines.length ? lines.join("\n") : fallbackContextForPrompt(content);
+}
+
+/** True when the section has author text the evaluator can score (not empty docs / JSON shells). */
+export function hasExtractedSectionContent(
+  section: SectionType,
+  content: unknown
+): boolean {
+  if (content == null) return false;
+  if (typeof content === "string") return content.trim().length > 0;
+  if (!isRecord(content)) return false;
+  return collectContextLines(section, content).length > 0;
 }

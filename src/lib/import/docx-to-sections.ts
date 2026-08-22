@@ -18,6 +18,7 @@ import type {
 } from "@/types/sections";
 import { EMPTY_CONTENT, SECTION_LABELS } from "@/types/sections";
 import { emptyDoc, legacyStringToDoc, MAMMOTH_SOFT_BREAK } from "@/lib/tiptap/rich-text";
+import { stripInlineMarkdown } from "@/lib/tiptap/markdown-to-doc";
 import { parseHtmlTablesWithPositions, findDataTablePositions } from "@/lib/import/html-table-parser";
 import {
   extractTableAlignmentSpecsFromDocxBuffer,
@@ -208,7 +209,14 @@ export function mammothMarkdownToImportPlain(markdown: string): string {
   const normalized = lines.map((line) => {
     const softBreak = /  +$/.test(line);
     const withoutBold = line.replace(/__([\s\S]*?)__/g, "$1").trimEnd();
-    const withImagePlaceholders = withoutBold.replace(MAMMOTH_MARKDOWN_IMAGE_RE, "[image]");
+    // Mammoth emits `*italic*`. Strip before unescaping `\*` so a literal
+    // asterisk in Word stays an asterisk. Do not consume `* item` bullets
+    // (`*` + space is a list marker, not emphasis).
+    const withoutItalic = withoutBold.replace(
+      /(?<!\*)\*(?!\s)([^*]+?)(?<!\s)\*(?!\*)/g,
+      "$1"
+    );
+    const withImagePlaceholders = withoutItalic.replace(MAMMOTH_MARKDOWN_IMAGE_RE, "[image]");
     const unescaped = unescapeMammothMarkdownEscapes(withImagePlaceholders);
     const stripped = stripWordBookmarkAnchors(unescaped);
     return softBreak ? `${stripped}${MAMMOTH_SOFT_BREAK}` : stripped;
@@ -955,11 +963,11 @@ function parseDocumentsReviewedBody(body: string): string[] {
   for (const line of lines) {
     const numbered = line.match(/^\d+\.\s*(.+)$/);
     if (numbered) {
-      items.push(numbered[1]!.trim());
+      items.push(stripInlineMarkdown(numbered[1]!.trim()));
       continue;
     }
     if (/^documents?\s+reviewed\b/i.test(line)) continue;
-    items.push(line);
+    items.push(stripInlineMarkdown(line));
   }
   return items;
 }
