@@ -121,6 +121,15 @@ import {
   shouldLoadOlderMessages,
   visibleMessageStartIndex,
 } from "@/components/report/chat-visible-messages";
+import { getDocumentType } from "@/lib/document-types";
+import { readAgentDonePrefs } from "@/lib/notifications/agent-done-prefs";
+import {
+  agentDoneNotificationCopy,
+  notifyAgentDone,
+  requestAgentDoneNotificationPermission,
+  shouldAnnounceAgentDone,
+  unlockAgentDoneAudio,
+} from "@/lib/notifications/notify-agent-done";
 
 type PendingChatImage = {
   id: string;
@@ -911,6 +920,11 @@ export function ChatPanel() {
   const lastProgressAtRef = useRef<number | null>(null);
   const lastProgressSigRef = useRef("");
   const stoppedForWatchdogRef = useRef(false);
+  const notifyContextRef = useRef({
+    currentUserId,
+    documentNo: report.documentNo,
+    documentType: report.documentType,
+  });
   const [elapsedMs, setElapsedMs] = useState(0);
   const [silentMs, setSilentMs] = useState(0);
 
@@ -931,11 +945,31 @@ export function ChatPanel() {
       // Stream protocol errors already toast via onError. Empty Gemini turns
       // (thought-only / no parts) finish as success unless we catch them here.
       if (isError) return;
-      if (
+      const emptyAssistant =
         message.role === "assistant" &&
-        !assistantPartsHaveVisibleContent(message.parts)
-      ) {
+        !assistantPartsHaveVisibleContent(message.parts);
+      if (emptyAssistant) {
         toast.error(CHAT_ASSISTANT_ERROR_MESSAGE);
+        return;
+      }
+      if (
+        shouldAnnounceAgentDone({
+          isAbort,
+          isDisconnect,
+          isError,
+          emptyAssistant,
+        })
+      ) {
+        const { currentUserId: userId, documentNo, documentType } =
+          notifyContextRef.current;
+        const { documentNoun } = getDocumentType(documentType);
+        notifyAgentDone(
+          readAgentDonePrefs(userId),
+          agentDoneNotificationCopy({
+            documentNoun,
+            documentNo,
+          })
+        );
       }
     },
     onError: (err) => {
@@ -1007,6 +1041,14 @@ export function ChatPanel() {
     },
     [persistComposerPrefs]
   );
+
+  useEffect(() => {
+    notifyContextRef.current = {
+      currentUserId,
+      documentNo: report.documentNo,
+      documentType: report.documentType,
+    };
+  }, [currentUserId, report.documentNo, report.documentType]);
 
   useLayoutEffect(() => {
     if (!currentUserId) {
@@ -1357,6 +1399,13 @@ export function ChatPanel() {
       const trimmed = text.trim();
       const files = attached.map((image) => image.part);
       if ((!trimmed && files.length === 0) || busy || initializing || attaching) return;
+      const agentDonePrefs = readAgentDonePrefs(currentUserId);
+      if (agentDonePrefs.sound) {
+        unlockAgentDoneAudio();
+      }
+      if (agentDonePrefs.notifications) {
+        void requestAgentDoneNotificationPermission();
+      }
       let sessionId = currentSessionId;
       if (!sessionId) {
         sessionId = await createSession();
@@ -1411,6 +1460,7 @@ export function ChatPanel() {
       pendingImages,
       mentions,
       report.documentType,
+      currentUserId,
     ]
   );
 
