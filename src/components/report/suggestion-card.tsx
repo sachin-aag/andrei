@@ -399,7 +399,7 @@ function ExitingSuggestionLayer({
 }
 
 /** Parked handoff when the next suggestion is off-screen. */
-function SuggestionQueueBridgeCard({
+export function SuggestionQueueBridgeCard({
   remainingTotal,
   criterionLabel,
   pending,
