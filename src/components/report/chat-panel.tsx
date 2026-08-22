@@ -98,6 +98,7 @@ import {
   rememberBackgroundSession,
   rememberMountedSession,
   runningChatSessionIds,
+  waitForValue,
   type MountedChatSession,
 } from "@/lib/ai/chat/session-runtime";
 import {
@@ -906,7 +907,8 @@ export function ChatPanel() {
   const runtimeBySessionRef = useRef(new Map<string, ChatSessionRuntime>());
 
   const base = `/api/reports/${report.id}/chat`;
-  const { messages, sendMessage, status, error, stop } = runtime;
+  const { messages, status, error, stop } = runtime;
+  const hostReady = runtime !== IDLE_CHAT_RUNTIME;
   const busy = isChatTurnBusy(status);
   const { elapsedMs, silentMs } = useChatWatchdog({
     messages,
@@ -1296,6 +1298,14 @@ export function ChatPanel() {
         mountSession(sessionId, false);
         setCurrentSessionId(sessionId);
       }
+      const sessionRuntime = await waitForValue(() =>
+        runtimeBySessionRef.current.get(sessionId)
+      );
+      if (!sessionRuntime) {
+        toast.error("Could not start a chat session.");
+        return;
+      }
+      if (isChatTurnBusy(sessionRuntime.status)) return;
       setInput("");
       setPendingImages([]);
       setMentionRange(null);
@@ -1321,11 +1331,11 @@ export function ChatPanel() {
         }));
       }
       if (trimmed && files.length > 0) {
-        void sendMessage({ text: trimmed, files }, { body });
+        void sessionRuntime.sendMessage({ text: trimmed, files }, { body });
       } else if (files.length > 0) {
-        void sendMessage({ files }, { body });
+        void sessionRuntime.sendMessage({ files }, { body });
       } else {
-        void sendMessage({ text: trimmed }, { body });
+        void sessionRuntime.sendMessage({ text: trimmed }, { body });
       }
     },
     [
@@ -1335,7 +1345,6 @@ export function ChatPanel() {
       currentSessionId,
       createSession,
       mountSession,
-      sendMessage,
       mode,
       pace,
       sectionScope,
@@ -1462,7 +1471,7 @@ export function ChatPanel() {
                 <button
                   key={p}
                   type="button"
-                  disabled={busy || initializing}
+                  disabled={busy || initializing || !hostReady}
                   onClick={() => void send(p, [])}
                   className="w-full rounded-md border border-[var(--border)] bg-[var(--secondary)]/30 px-3 py-2 text-left text-xs text-[var(--foreground)] transition-colors hover:bg-[var(--secondary)] disabled:opacity-50"
                 >
@@ -1595,7 +1604,7 @@ export function ChatPanel() {
           />
           <button
             type="button"
-            disabled={busy || initializing || attaching}
+            disabled={busy || initializing || attaching || !hostReady}
             aria-label="Attach image"
             title="Attach image"
             onClick={() => fileInputRef.current?.click()}
@@ -1705,6 +1714,7 @@ export function ChatPanel() {
               disabled={
                 initializing ||
                 attaching ||
+                !hostReady ||
                 (!input.trim() && pendingImages.length === 0)
               }
               aria-label="Send message"

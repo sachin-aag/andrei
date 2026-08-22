@@ -56,3 +56,18 @@ export function runningChatSessionIds(
   return ids;
 }
 
+/** Poll until `read()` returns a value — used when a session host has not published yet. */
+export async function waitForValue<T>(
+  read: () => T | undefined | null,
+  options?: { attempts?: number; delayMs?: number }
+): Promise<T | null> {
+  const attempts = options?.attempts ?? 40;
+  const delayMs = options?.delayMs ?? 25;
+  for (let i = 0; i < attempts; i++) {
+    const value = read();
+    if (value != null) return value;
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+  }
+  return read() ?? null;
+}
+

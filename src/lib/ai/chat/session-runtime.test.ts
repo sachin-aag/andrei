@@ -7,6 +7,7 @@ import {
   rememberMountedSession,
   reportChatInstanceId,
   runningChatSessionIds,
+  waitForValue,
 } from "./session-runtime";
 
 describe("session-runtime", () => {
@@ -53,5 +54,23 @@ describe("session-runtime", () => {
     expect(runningChatSessionIds(["bg"], "cur", true).has("cur")).toBe(true);
     expect(runningChatSessionIds(["bg"], "cur", true).has("bg")).toBe(true);
     expect(runningChatSessionIds([], null, true).size).toBe(0);
+  });
+
+  it("resolves as soon as the reader returns a value", async () => {
+    let n = 0;
+    const value = await waitForValue(
+      () => {
+        n += 1;
+        return n >= 3 ? "ready" : null;
+      },
+      { attempts: 5, delayMs: 1 }
+    );
+    expect(value).toBe("ready");
+    expect(n).toBe(3);
+  });
+
+  it("returns null after the last attempt", async () => {
+    const value = await waitForValue(() => null, { attempts: 2, delayMs: 1 });
+    expect(value).toBeNull();
   });
 });

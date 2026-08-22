@@ -187,6 +187,7 @@ Specs run against Chromium, Firefox, and WebKit unless you pass `--project=chrom
 | Test | What it verifies |
 |------|------------------|
 | streams a chat reply when a ready attachment is on the report | Upload stub-ingest PDF, Ask-mode turn, reload still shows the thread |
+| starting a new chat while a turn is in flight leaves the composer usable | Delay the first `/chat` POST, click +, type and send in the empty thread |
 
 </details>
 
