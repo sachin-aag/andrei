@@ -82,7 +82,7 @@ export type WorkspaceMode = "edit" | "review" | "view";
  */
 export type SuggestionApplyMode = "accept" | "dismiss";
 
-/** Queue handoff: wait for the user to jump to the next off-screen suggestion. */
+/** Queue handoff: wait for the user to jump to — or dismiss — the next off-screen suggestion. */
 export type SuggestionQueueBridge = {
   nextCommentId: string;
 };
@@ -157,7 +157,7 @@ type ReportContextValue = {
   ) => void;
   /**
    * After apply/dismiss exit: keep preview held and park the gutter card while
-   * the user decides to jump to the next off-screen suggestion.
+   * the user jumps to the next off-screen suggestion or dismisses the handoff.
    */
   enterSuggestionQueueBridge: (
     section: SectionType,
