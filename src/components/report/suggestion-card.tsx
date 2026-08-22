@@ -61,6 +61,10 @@ import {
   validateSuggestionLocate,
   type SuggestionValidation,
 } from "@/lib/suggestions/validate-suggestion";
+import {
+  summarizeTableOperation,
+  tableOperationDetailLines,
+} from "@/lib/suggestions/table-operation";
 import type { CommentRecord, EvaluationRecord } from "@/types/report";
 import type { SectionType } from "@/db/schema";
 type CardPhase =
@@ -217,7 +221,12 @@ function SuggestionCardFace({
         )}
       >
         <span className="text-[10px] font-medium text-[var(--muted-foreground)] uppercase tracking-wide">
-          {card.kind === "redraft" ? "Full draft" : "Suggestion"} {queueIndex} of {queueTotal}
+          {card.kind === "redraft"
+            ? "Full draft"
+            : card.kind === "fix" && card.payload.tableOperation
+              ? "Table edit"
+              : "Suggestion"}{" "}
+          {queueIndex} of {queueTotal}
         </span>
         {linkedEval && (
           <span
@@ -257,7 +266,27 @@ function SuggestionCardFace({
         <p className="text-[10px] text-[var(--muted-foreground)]">{RESOLVE_HINT}</p>
       ) : null}
 
-      {card.kind === "fix" && (card.payload.deleteText || card.payload.insertText) ? (
+      {card.kind === "fix" && card.payload.tableOperation ? (
+        <div
+          className={cn(
+            "text-xs leading-relaxed space-y-1 transition-opacity duration-300",
+            phase !== "steady" && "opacity-70"
+          )}
+        >
+          <p className="suggestion-preview-insert font-medium">
+            {summarizeTableOperation(card.payload.tableOperation)}
+          </p>
+          {tableOperationDetailLines(card.payload.tableOperation).map((line) => (
+            <p key={line} className="text-[11px] text-[var(--muted-foreground)]">
+              {line}
+            </p>
+          ))}
+        </div>
+      ) : null}
+
+      {card.kind === "fix" &&
+      !card.payload.tableOperation &&
+      (card.payload.deleteText || card.payload.insertText) ? (
         <div
           className={cn(
             "text-xs leading-relaxed space-y-1 transition-opacity duration-300",

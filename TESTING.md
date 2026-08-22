@@ -186,7 +186,7 @@ Specs run against Chromium, Firefox, and WebKit unless you pass `--project=chrom
 
 | Test | What it verifies |
 |------|------------------|
-| streams a chat reply when a ready attachment is on the report | Upload stub-ingest PDF, Ask-mode turn, reload still shows the thread |
+| streams a chat reply when a ready attachment is on the report | Upload stub-ingest PDF, Ask-mode turn, collapse/expand keeps the thread, reload still shows it |
 
 </details>
 

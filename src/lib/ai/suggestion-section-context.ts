@@ -52,13 +52,13 @@ function blockLine(node: JSONContent): string {
 
 /**
  * Render a table as an explicit coordinate grid so the model can target a cell
- * by scope {kind:"cell",row,col}. Every cell is tagged with its 0-based [r,c];
+ * by tableIndex + [row,col]. Every cell is tagged with its 0-based [r,c];
  * the visible cell text is exactly the locator's per-cell match string.
  */
-function renderTableGrid(table: JSONContent): string {
+function renderTableGrid(table: JSONContent, tableIndex: number): string {
   const rows = (table.content ?? []).filter((r) => r.type === "tableRow");
   const lines: string[] = [
-    'Table — each cell is tagged [row,col] (0-based). Edit one cell with scope {kind:"cell",row,col}; put only that cell\'s text in deleteText/insertText. Do not quote the [row,col] tags.',
+    `Table tableIndex=${tableIndex} — each cell is tagged [row,col] (0-based). Row 0 is the header and cannot be deleted; row 1 is the first data row. Use edit_table with this tableIndex. Do not quote the [row,col] tags.`,
   ];
   rows.forEach((row, r) => {
     const cells = (row.content ?? []).filter(
@@ -92,11 +92,13 @@ function renderListItems(list: JSONContent): string {
  */
 export function renderStructuredFieldView(doc: JSONContent): string {
   const out: string[] = [];
+  let tableIndex = 0;
 
   function walk(nodes: JSONContent[]) {
     for (const node of nodes) {
       if (node.type === "table") {
-        out.push(renderTableGrid(node));
+        out.push(renderTableGrid(node, tableIndex));
+        tableIndex += 1;
       } else if (node.type === "bulletList" || node.type === "orderedList") {
         out.push(renderListItems(node));
       } else if (node.type === "blockquote" && node.content?.length) {

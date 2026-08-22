@@ -395,6 +395,7 @@ describe("pickPlanModeChatTools", () => {
       ask_user: { kind: "ask" },
       draft_field: { kind: "draft" },
       propose_edit: { kind: "edit" },
+      edit_table: { kind: "table" },
     };
     const planTools = pickPlanModeChatTools(allTools);
     expect(PLAN_MODE_CHAT_TOOL_NAMES).toEqual(
@@ -413,5 +414,6 @@ describe("pickPlanModeChatTools", () => {
     });
     expect(planTools).not.toHaveProperty("draft_field");
     expect(planTools).not.toHaveProperty("propose_edit");
+    expect(planTools).not.toHaveProperty("edit_table");
   });
 });

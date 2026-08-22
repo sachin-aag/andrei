@@ -201,9 +201,9 @@ export function dvFixedTableFormatGuidance(opts?: {
 
   const surfaceRules =
     surface === "chat"
-      ? `- When drafting targetField \`table\` via draft_field, emit ONE GFM markdown table only (header + separator + data rows). Do not wrap the table in prose paragraphs.
+      ? `- When creating a new table or the engineer explicitly asks for a full replacement via draft_field, emit ONE GFM markdown table only (header + separator + data rows). Do not wrap the table in prose paragraphs.
 - Use EXACTLY the headers below, in this order — never rename, reorder, add, or drop columns.
-- If the section already has a table, preserve its header row verbatim and only update or add data rows.
+- If the section already has a table, use edit_table to change cells or add/delete rows. Do not use draft_field for an incremental change — that would overwrite filled cells.
 - Fill known cells; use bracketed placeholders like [requirement ID] for unknowns. Leave optional cells blank rather than inventing new columns.`
       : `- targetField MUST be "table".
 - Preserve the existing column headers exactly — never rename, reorder, add, or drop columns.

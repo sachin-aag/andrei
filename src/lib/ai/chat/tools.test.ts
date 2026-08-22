@@ -226,8 +226,93 @@ describe("buildChatTools tagged sections", () => {
       })
     ).toBe(false);
     expect(
+      accepts(tools, "edit_table", {
+        section: "control",
+        targetField: "narrative",
+        reasoning: "y",
+        operation: {
+          kind: "edit_cells",
+          cells: [{ row: 0, col: 0, expectedText: "a", insertText: "b" }],
+        },
+      })
+    ).toBe(false);
+    expect(
       accepts(tools, "draft_field", { ...edit, section: "define" })
     ).toBe(true);
+  });
+});
+
+describe("buildChatTools edit_table", () => {
+  it("accepts each table operation kind and defaults tableIndex to 0", () => {
+    const tools = buildChatTools({ reportId: "report-1", canEdit: true });
+    expect(tools.edit_table).toBeDefined();
+    const parsed = inputSchemaOf(tools, "edit_table").parse({
+      section: "define",
+      targetField: "narrative",
+      reasoning: "Fill manufacturer",
+      operation: {
+        kind: "insert_column",
+        afterCol: 2,
+        header: "Description",
+        values: ["Dental laser"],
+        expectedHeaders: ["Equipment", "Manufacturer", "Software"],
+      },
+    }) as { operation: { tableIndex: number; kind: string } };
+    expect(parsed.operation.kind).toBe("insert_column");
+    expect(parsed.operation.tableIndex).toBe(0);
+    expect(
+      accepts(tools, "edit_table", {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "cells",
+        operation: {
+          kind: "edit_cells",
+          cells: [{ row: 1, col: 1, expectedText: "", insertText: "Acme" }],
+        },
+      })
+    ).toBe(true);
+    expect(
+      accepts(tools, "edit_table", {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "rows",
+        operation: {
+          kind: "insert_rows",
+          rows: [["a", "b"]],
+        },
+      })
+    ).toBe(true);
+    expect(
+      accepts(tools, "edit_table", {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "delete rows",
+        operation: {
+          kind: "delete_rows",
+          rows: [{ row: 1 }],
+        },
+      })
+    ).toBe(true);
+    expect(
+      accepts(tools, "edit_table", {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "delete col",
+        operation: {
+          kind: "delete_column",
+          col: 1,
+          expectedHeaderText: "Manufacturer",
+        },
+      })
+    ).toBe(true);
+    expect(
+      accepts(tools, "edit_table", {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "bad",
+        operation: { kind: "rewrite_table" },
+      })
+    ).toBe(false);
   });
 });
 

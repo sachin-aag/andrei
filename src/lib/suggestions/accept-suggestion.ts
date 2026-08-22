@@ -27,6 +27,7 @@ import {
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
 import { getRichFieldValue, setRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { resolveSuggestionFieldPath } from "@/lib/suggestions/resolve-suggestion-field-path";
+import { applyTableOperation } from "@/lib/suggestions/table-operation";
 import { suggestionEditFromComment } from "@/lib/suggestions/validate-suggestion";
 
 export type AcceptSuggestionResult =
@@ -120,6 +121,36 @@ export async function acceptSuggestion(args: {
     return { ok: true, nextSection };
   }
 
+  const payload = parseAiFixCommentContent(comment.content);
+  if (payload.tableOperationInvalid) {
+    return { ok: false, reason: "not_found" };
+  }
+  if (payload.tableOperation) {
+    if (!isRichTargetField(section, path)) {
+      return { ok: false, reason: "not_found" };
+    }
+    const doc = getRichFieldValue(sectionContent, path);
+    const result = applyTableOperation(doc, payload.tableOperation, {
+      section,
+      targetField: path,
+    });
+    if (!result.ok) {
+      return { ok: false, reason: "not_found" };
+    }
+    const nextSection = setRichFieldValue(sectionContent, path, result.doc);
+    try {
+      await patchSection(reportId, section, nextSection);
+    } catch (error) {
+      return { ok: false, reason: "save_failed", error };
+    }
+    try {
+      await patchCommentStatus(reportId, comment.id, "resolved");
+    } catch (error) {
+      return { ok: false, reason: "status_failed", error };
+    }
+    return { ok: true, nextSection };
+  }
+
   const edit = suggestionEditFromComment(comment);
 
   if (isRichTargetField(section, path)) {
@@ -151,7 +182,6 @@ export async function acceptSuggestion(args: {
     return { ok: false, reason: status };
   }
 
-  const payload = parseAiFixCommentContent(comment.content);
   let nextSection: Record<string, unknown>;
   try {
     nextSection = applyStructuredFieldSuggestion(
