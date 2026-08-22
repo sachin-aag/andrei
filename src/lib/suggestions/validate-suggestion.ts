@@ -169,7 +169,7 @@ export function validateSuggestionLocate(
     }
     return {
       locateStatus: "locatable",
-      documentChanged: result.status === "stale" || hashChanged,
+      documentChanged: hashChanged,
       canApply: true,
       canPreview: true,
     };

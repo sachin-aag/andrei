@@ -124,6 +124,13 @@ export type ProposeEditResult =
   | { status: "too_large"; hint: string }
   | { status: "review_incomplete"; message: string };
 
+type ProposedSecondInput = {
+  anchorText?: string;
+  deleteText?: string;
+  insertText?: string;
+  scope?: unknown;
+};
+
 export type EditTableResult =
   | {
       status: "proposed";
@@ -943,7 +950,7 @@ export function buildChatTools(opts: {
         const parsedScope = parseEditScope(scope);
         const rawSecond =
           citationsAtEndOfSection && "second" in rest && rest.second
-            ? rest.second
+            ? (rest.second as ProposedSecondInput)
             : undefined;
         const fieldText = sectionFieldPlainText(loaded.content, section, resolvedField);
         const isRich = isRichTargetField(section, resolvedField);

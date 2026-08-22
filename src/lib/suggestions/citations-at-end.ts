@@ -214,8 +214,9 @@ export function prepareEditForCitationMode<T extends SplitSuggestionEdit>(
 ): T {
   if (!opts.citationsAtEndOfSection) {
     if (!edit.second) return edit;
-    const { second: _drop, ...rest } = edit;
-    return rest as T;
+    const rest = { ...edit };
+    delete rest.second;
+    return rest;
   }
   return { ...edit, ...splitEditForCitationsAtEnd(edit, opts) };
 }
