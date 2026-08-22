@@ -84,19 +84,28 @@ export function getAiFixCommentPreview(comment: CommentRecord): string {
   }
 
   const payload = parseAiFixCommentContent(comment.content);
+  const citation = payload.second?.insertText
+    ? collapseWhitespace(payload.second.insertText)
+    : "";
   if (payload.tableOperation) {
-    return truncateAtWord(
+    const table = truncateAtWord(
       summarizeTableOperation(payload.tableOperation),
-      MAX_PREVIEW_LEN
+      citation ? MAX_PREVIEW_LEN - 24 : MAX_PREVIEW_LEN
     );
+    return citation ? `${table} · ${truncateAtWord(citation, 48)}` : table;
   }
   const insert = collapseWhitespace(payload.insertText);
   const del = collapseWhitespace(payload.deleteText);
 
   if (del && insert) {
-    return `${truncateAtWord(del, 56)} → ${truncateAtWord(insert, MAX_PREVIEW_LEN - 60)}`;
+    const body = `${truncateAtWord(del, 56)} → ${truncateAtWord(insert, MAX_PREVIEW_LEN - 60)}`;
+    return citation ? `${body} · ${truncateAtWord(citation, 40)}` : body;
   }
-  if (insert) return truncateAtWord(insert, MAX_PREVIEW_LEN);
+  if (insert) {
+    const body = truncateAtWord(insert, citation ? MAX_PREVIEW_LEN - 24 : MAX_PREVIEW_LEN);
+    return citation ? `${body} · ${truncateAtWord(citation, 48)}` : body;
+  }
+  if (citation) return truncateAtWord(citation, MAX_PREVIEW_LEN);
   if (payload.reasoning.trim()) {
     return truncateAtWord(payload.reasoning, MAX_PREVIEW_LEN);
   }

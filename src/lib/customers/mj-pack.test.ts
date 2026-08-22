@@ -73,6 +73,10 @@ describe("MJ customer pack content", () => {
     expect(DEMO_PACK.wordImportEnabled).toBe(false);
   });
 
+  it("keeps citations inline on MJ", () => {
+    expect(MJ_PACK.citationsAtEndOfSection).toBe(false);
+  });
+
   it("disables design verification", () => {
     expect(MJ_PACK.enabledDocumentTypes).toEqual(["investigation_report"]);
     expect(isDocumentTypeEnabled("design_verification", MJ_PACK)).toBe(false);

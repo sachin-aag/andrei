@@ -1,4 +1,5 @@
 import {
+  isApplyableStatus,
   locateEdit,
   type SuggestionEdit,
 } from "@/lib/suggestions/locator";
@@ -17,7 +18,8 @@ export function buildPlainTextSuggestionPreview(
   value: string,
   deleteText: string,
   insertText: string,
-  anchorText?: string
+  anchorText?: string,
+  second?: SuggestionEdit["second"]
 ): PlainTextPreviewSegment[] | null {
   const edit: SuggestionEdit = {
     anchorText: anchorText ?? "",
@@ -25,37 +27,61 @@ export function buildPlainTextSuggestionPreview(
     insertText,
   };
   const loc = locateEdit(value, edit);
+  let segments: PlainTextPreviewSegment[] | null = null;
 
   if (loc.status === "append") {
     const ins = insertText.trim();
-    if (!ins) return null;
-    const insert = withLeadingSpaceIfNeeded(value, value.length, ins);
-    return [
-      { kind: "context", text: value },
-      { kind: "insert", text: insert },
-    ];
+    if (ins) {
+      const insert = withLeadingSpaceIfNeeded(value, value.length, ins);
+      segments = [
+        { kind: "context", text: value },
+        { kind: "insert", text: insert },
+      ];
+    } else if (!second) {
+      return null;
+    } else {
+      segments = [{ kind: "context", text: value }];
+    }
+  } else if (loc.status !== "located") {
+    return null;
+  } else {
+    const ins = insertText.trim();
+    const insert = withLeadingSpaceIfNeeded(value, loc.deleteStart, ins);
+
+    if (loc.deleteStart < loc.deleteEnd) {
+      segments = [
+        { kind: "context", text: value.slice(0, loc.deleteStart) },
+        { kind: "delete", text: value.slice(loc.deleteStart, loc.deleteEnd) },
+        { kind: "insert", text: insert },
+        { kind: "context", text: value.slice(loc.deleteEnd) },
+      ];
+    } else {
+      segments = [
+        { kind: "context", text: value.slice(0, loc.deleteStart) },
+        { kind: "insert", text: insert },
+        { kind: "context", text: value.slice(loc.deleteStart) },
+      ];
+    }
   }
 
-  if (loc.status !== "located") return null;
-
-  const ins = insertText.trim();
-  const insert = withLeadingSpaceIfNeeded(value, loc.deleteStart, ins);
-
-  if (loc.deleteStart < loc.deleteEnd) {
-    return [
-      { kind: "context", text: value.slice(0, loc.deleteStart) },
-      { kind: "delete", text: value.slice(loc.deleteStart, loc.deleteEnd) },
-      { kind: "insert", text: insert },
-      { kind: "context", text: value.slice(loc.deleteEnd) },
-    ];
+  if (!second || !(second.deleteText.trim() || second.insertText.trim())) {
+    return segments;
   }
 
-  // Pure insert after anchor
-  return [
-    { kind: "context", text: value.slice(0, loc.deleteStart) },
-    { kind: "insert", text: insert },
-    { kind: "context", text: value.slice(loc.deleteStart) },
-  ];
+  const secondLoc = locateEdit(value, {
+    anchorText: second.anchorText ?? "",
+    deleteText: second.deleteText,
+    insertText: second.insertText,
+    scope: second.scope,
+  });
+  if (!isApplyableStatus(secondLoc.status)) return null;
+  const cite = second.insertText.trim();
+  if (!cite) return segments;
+  const citeInsert =
+    value && !value.endsWith("\n") && secondLoc.status === "append"
+      ? `\n${cite}`
+      : cite;
+  return [...segments, { kind: "insert", text: citeInsert }];
 }
 
 export type SplitPlainTextPreview = {
@@ -76,11 +102,9 @@ export function splitPlainTextPreviewSegments(
   }
 
   let lastSuggestionIdx = firstSuggestionIdx;
-  for (let i = segments.length - 1; i >= 0; i--) {
-    if (segments[i]!.kind === "delete" || segments[i]!.kind === "insert") {
-      lastSuggestionIdx = i;
-      break;
-    }
+  for (let i = firstSuggestionIdx + 1; i < segments.length; i++) {
+    if (segments[i]!.kind === "context") break;
+    lastSuggestionIdx = i;
   }
 
   return {

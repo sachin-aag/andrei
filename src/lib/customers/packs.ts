@@ -47,6 +47,12 @@ export type CustomerPack = {
   evaluationSectionPromptAdditions: Readonly<Record<string, string>>;
   criterionDescriptionOverrides: Readonly<Record<string, string>>;
   wordImportEnabled: boolean;
+  /**
+   * When true, document citations belong at the end of each section field
+   * (not inline). New edits that add a citation are split: body change +
+   * end-of-field citation. Off for demo/MJ.
+   */
+  citationsAtEndOfSection: boolean;
   branding: CustomerBranding;
 };
 
@@ -133,6 +139,7 @@ export const DEMO_PACK: CustomerPack = {
   evaluationSectionPromptAdditions: {},
   criterionDescriptionOverrides: {},
   wordImportEnabled: false,
+  citationsAtEndOfSection: false,
   branding: ANDREI_BRANDING,
 };
 
@@ -148,6 +155,7 @@ export const CONVERGENT_PACK: CustomerPack = {
   evaluationSectionPromptAdditions: {},
   criterionDescriptionOverrides: {},
   wordImportEnabled: false,
+  citationsAtEndOfSection: true,
   branding: CONVERGENT_BRANDING,
 };
 
@@ -161,6 +169,7 @@ export const MJ_PACK: CustomerPack = {
   evaluationSectionPromptAdditions: MJ_SECTION_PROMPT_ADDITIONS,
   criterionDescriptionOverrides: MJ_CRITERION_DESCRIPTION_OVERRIDES,
   wordImportEnabled: true,
+  citationsAtEndOfSection: false,
   branding: MJ_BRANDING,
 };
 

@@ -576,3 +576,76 @@ describe("locator — scoped edits", () => {
     expect(status).toBe("not_found");
   });
 });
+
+describe("locator — split edits", () => {
+  it("applies a body insert and appends the citation on plain text", () => {
+    const text = "Output power met the acceptance limit.";
+    const edit: SuggestionEdit = {
+      anchorText: "Output power met the acceptance limit.",
+      deleteText: "",
+      insertText: " The measured value was 9.8 W.",
+      second: {
+        anchorText: "",
+        deleteText: "",
+        insertText: "[protocol.pdf, p. 3]",
+      },
+    };
+    expect(probePlainEdit(text, edit)).toBe("located");
+    const result = applyEditToPlainText(text, edit);
+    expect(isApplyableStatus(result.status)).toBe(true);
+    expect(result.text).toBe(
+      "Output power met the acceptance limit. The measured value was 9.8 W.\n[protocol.pdf, p. 3]"
+    );
+  });
+
+  it("probes both parts independently on the original field", () => {
+    expect(
+      probePlainEdit("hello world", {
+        anchorText: "hello",
+        deleteText: "",
+        insertText: " there",
+        second: {
+          anchorText: "missing",
+          deleteText: "missing",
+          insertText: "x",
+        },
+      })
+    ).toBe("not_found");
+  });
+
+  it("appends a citation-only insert on a new line", () => {
+    const result = applyEditToPlainText("The requirement is met.", {
+      anchorText: "",
+      deleteText: "",
+      insertText: "[protocol.pdf, p. 2]",
+    });
+    expect(result.status).toBe("append");
+    expect(result.text).toBe("The requirement is met.\n[protocol.pdf, p. 2]");
+  });
+
+  it("applies a scoped cell edit and appends the citation after the table", () => {
+    const doc = tableDoc([
+      ["Req", "Pass"],
+    ]);
+    const edit: SuggestionEdit = {
+      anchorText: "",
+      deleteText: "Pass",
+      insertText: "Pass — 9.8 W",
+      scope: { kind: "cell", row: 0, col: 1 },
+      second: {
+        anchorText: "",
+        deleteText: "",
+        insertText: "[protocol.pdf, p. 1]",
+      },
+    };
+    expect(probeRichEdit(doc, edit)).toBe("located");
+    const result = applyEditToRichDoc(doc, edit, ATTRS);
+    expect(isApplyableStatus(result.status)).toBe(true);
+    const flat = flattenForAnchor(result.doc).text;
+    expect(flat).toContain("Pass — 9.8 W");
+    expect(flat).toContain("[protocol.pdf, p. 1]");
+    expect(flat.indexOf("Pass — 9.8 W")).toBeLessThan(
+      flat.indexOf("[protocol.pdf, p. 1]")
+    );
+  });
+});

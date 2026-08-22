@@ -1,7 +1,11 @@
 import { normalizeBracketPlaceholdersInPlainText } from "@/lib/placeholders/normalize-bracket-placeholders";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 import { stripInlineMarkdown } from "@/lib/tiptap/markdown-to-doc";
-import { applyPlainTextEdit } from "./locate-plain-text-edit";
+import {
+  applyEditToPlainText,
+  isApplyableStatus,
+  type SuggestionEdit,
+} from "./locator";
 
 function plainInsertText(insertText: string): string {
   return stripInlineMarkdown(normalizeSuggestionInsertText(insertText));
@@ -13,7 +17,8 @@ export function applyStructuredFieldSuggestion(
   targetField: string,
   insertText: string,
   deleteText: string,
-  anchorText?: string | null
+  anchorText?: string | null,
+  second?: SuggestionEdit["second"]
 ): Record<string, unknown> {
   const next = structuredClone(content);
   const parts = targetField.split(".");
@@ -29,20 +34,30 @@ export function applyStructuredFieldSuggestion(
   const leaf = parts[parts.length - 1]!;
   const current = cursor[leaf];
   if (typeof current !== "string") {
-    cursor[leaf] = plainInsertText(insertText);
+    const primary = plainInsertText(insertText);
+    const cite = second?.insertText ? plainInsertText(second.insertText) : "";
+    cursor[leaf] = cite ? `${primary}${primary ? "\n" : ""}${cite}` : primary;
     return next;
   }
 
-  const applied = applyPlainTextEdit(current, {
+  const applied = applyEditToPlainText(current, {
     anchorText: anchorText?.trim() ?? "",
     deleteText,
     insertText: plainInsertText(insertText),
+    second: second
+      ? {
+          anchorText: second.anchorText,
+          deleteText: second.deleteText,
+          insertText: plainInsertText(second.insertText),
+          scope: second.scope,
+        }
+      : undefined,
   });
 
-  if (applied === null) {
+  if (!isApplyableStatus(applied.status)) {
     throw new Error("Suggestion could not be located in field text");
   }
 
-  cursor[leaf] = normalizeBracketPlaceholdersInPlainText(applied);
+  cursor[leaf] = normalizeBracketPlaceholdersInPlainText(applied.text);
   return next;
 }

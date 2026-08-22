@@ -67,6 +67,25 @@ describe("validateSuggestionLocate", () => {
     expect(v.canApply).toBe(true);
   });
 
+  it("returns locatable for a split body edit plus end citation", () => {
+    const comment = aiFixComment({
+      anchorText: "hello",
+      content: serializeAiFixCommentContent({
+        deleteText: "",
+        insertText: " there",
+        reasoning: "",
+        second: {
+          anchorText: "",
+          deleteText: "",
+          insertText: "[protocol.pdf, p. 3]",
+        },
+      }),
+    });
+    const v = validateSuggestionLocate(comment, "define", sectionContent);
+    expect(v.locateStatus).toBe("locatable");
+    expect(v.canApply).toBe(true);
+  });
+
   it("returns not_found after delete target is removed", () => {
     const comment = aiFixComment({
       anchorText: "missing",
