@@ -1359,7 +1359,7 @@ export function ChatPanel() {
     sessions.find((s) => s.id === currentSessionId)?.title ?? "Investigation assistant";
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col" aria-busy={initializing}>
       {/* Header: title + new chat + history */}
       <div className="relative flex items-center gap-2 border-b border-[var(--border)] px-3 py-2.5">
         <Sparkles className="size-4 shrink-0 text-[var(--primary)]" />

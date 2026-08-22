@@ -116,6 +116,8 @@ export function ReportSidebar({
                 ? rootCommentCount
                 : null;
 
+          const selected = activeTab === tab.value;
+
           if (collapsed) {
             return (
               <button
@@ -128,12 +130,13 @@ export function ReportSidebar({
                 }}
                 className={cn(
                   "relative flex items-center justify-center size-9 rounded-md border transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)] mx-auto",
-                  activeTab === tab.value
+                  selected
                     ? "bg-[var(--secondary)] text-[var(--foreground)] border-[var(--border)]"
                     : "text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--secondary)]/50 border-transparent hover:border-[var(--border)]",
                 )}
                 title={tab.label}
                 aria-label={tab.label}
+                aria-pressed={selected}
               >
                 <Icon className="size-4" aria-hidden="true" />
                 {badge != null && (
@@ -155,18 +158,28 @@ export function ReportSidebar({
               }}
               className={cn(
                 "relative flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors",
-                activeTab === tab.value
+                selected
                   ? "bg-[var(--secondary)] text-[var(--foreground)] border-[var(--border)]"
                   : "text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--secondary)]/50 border-transparent hover:border-[var(--border)]",
               )}
+              aria-label={tab.label}
+              aria-pressed={selected}
             >
               <Icon className="size-3.5" aria-hidden="true" />
               {tab.label}
-              {badge != null && (
-                <span className="ml-0.5 flex size-4 items-center justify-center rounded-full bg-amber-500 text-[9px] font-bold text-white">
-                  {badge}
+              {tab.value !== "assistant" ? (
+                // Keep a badge slot on count tabs so a late placeholder /
+                // suggestion / comment count does not reflow flex-wrap.
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "ml-0.5 flex size-4 items-center justify-center rounded-full bg-amber-500 text-[9px] font-bold text-white",
+                    badge == null && "invisible"
+                  )}
+                >
+                  {badge ?? 0}
                 </span>
-              )}
+              ) : null}
             </button>
           );
         })}
