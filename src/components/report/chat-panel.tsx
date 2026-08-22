@@ -125,6 +125,7 @@ import { getDocumentType } from "@/lib/document-types";
 import { readAgentDonePrefs } from "@/lib/notifications/agent-done-prefs";
 import {
   agentDoneNotificationCopy,
+  elapsedSince,
   notifyAgentDone,
   requestAgentDoneNotificationPermission,
   shouldAnnounceAgentDone,
@@ -969,8 +970,7 @@ export function ChatPanel() {
       }
       const startedAt = agentRunStartedAtRef.current;
       agentRunStartedAtRef.current = null;
-      const elapsedMs =
-        startedAt == null ? 0 : Date.now() - startedAt;
+      const elapsedMs = elapsedSince(startedAt);
       if (
         shouldAnnounceAgentDone({
           isAbort,

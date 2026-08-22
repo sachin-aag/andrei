@@ -61,6 +61,11 @@ export function shouldAnnounceAgentDone(opts: {
   return (opts.elapsedMs ?? 0) >= AGENT_DONE_MIN_ELAPSED_MS;
 }
 
+/** Clock read lives here so chat-panel render stays pure. */
+export function elapsedSince(startedAt: number | null, now = Date.now()): number {
+  return startedAt == null ? 0 : now - startedAt;
+}
+
 export function readNotificationPermission(): NotificationPermissionState {
   if (typeof Notification === "undefined") return "unsupported";
   return Notification.permission;

@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   DEFAULT_AGENT_DONE_PREFS,
   readAgentDonePrefs,
+  subscribeAgentDonePrefs,
   writeAgentDonePrefs,
   type AgentDonePrefs,
 } from "@/lib/notifications/agent-done-prefs";
@@ -34,22 +35,28 @@ function permissionHint(permission: NotificationPermissionState): string {
   }
 }
 
+const subscribePermission = () => () => {};
+
 export function AgentDoneNotificationSettings({
   userId,
 }: {
   userId: string;
 }) {
-  const [prefs, setPrefs] = useState<AgentDonePrefs>(DEFAULT_AGENT_DONE_PREFS);
-  const [permission, setPermission] =
-    useState<NotificationPermissionState>("default");
-
-  useEffect(() => {
-    setPrefs(readAgentDonePrefs(userId));
-    setPermission(readNotificationPermission());
-  }, [userId]);
+  const prefs = useSyncExternalStore(
+    subscribeAgentDonePrefs,
+    () => readAgentDonePrefs(userId),
+    () => DEFAULT_AGENT_DONE_PREFS
+  );
+  const browserPermission = useSyncExternalStore(
+    subscribePermission,
+    readNotificationPermission,
+    (): NotificationPermissionState => "default"
+  );
+  const [permissionAfterRequest, setPermissionAfterRequest] =
+    useState<NotificationPermissionState | null>(null);
+  const permission = permissionAfterRequest ?? browserPermission;
 
   const persist = (next: AgentDonePrefs) => {
-    setPrefs(next);
     writeAgentDonePrefs(userId, next);
   };
 
@@ -57,7 +64,7 @@ export function AgentDoneNotificationSettings({
     persist({ ...prefs, notifications: enabled });
     if (!enabled) return;
     const nextPermission = await requestAgentDoneNotificationPermission();
-    setPermission(nextPermission);
+    setPermissionAfterRequest(nextPermission);
   };
 
   const setSound = (enabled: boolean) => {

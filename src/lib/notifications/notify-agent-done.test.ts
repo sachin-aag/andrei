@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   AGENT_DONE_MIN_ELAPSED_MS,
   agentDoneNotificationCopy,
+  elapsedSince,
   notifyAgentDone,
   shouldAnnounceAgentDone,
   shouldShowAgentDonePendingHint,
@@ -71,6 +72,16 @@ describe("shouldAnnounceAgentDone", () => {
     expect(shouldAnnounceAgentDone({ ...long, emptyAssistant: true })).toBe(
       false
     );
+  });
+});
+
+describe("elapsedSince", () => {
+  it("returns 0 when the run never started", () => {
+    expect(elapsedSince(null, 12_000)).toBe(0);
+  });
+
+  it("subtracts the start time from now", () => {
+    expect(elapsedSince(1_000, 6_000)).toBe(5_000);
   });
 });
 

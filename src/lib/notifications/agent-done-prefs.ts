@@ -16,6 +16,18 @@ export const DEFAULT_AGENT_DONE_PREFS: AgentDonePrefs = {
 };
 
 const memory = new Map<string, AgentDonePrefs>();
+const listeners = new Set<() => void>();
+
+function emitAgentDonePrefsChange(): void {
+  for (const listener of listeners) listener();
+}
+
+export function subscribeAgentDonePrefs(onStoreChange: () => void): () => void {
+  listeners.add(onStoreChange);
+  return () => {
+    listeners.delete(onStoreChange);
+  };
+}
 
 export function agentDonePrefsStorageKey(userId: string): string {
   return `${AGENT_DONE_PREFS_STORAGE_PREFIX}:${userId}`;
@@ -34,6 +46,7 @@ export function parseAgentDonePrefs(raw: unknown): AgentDonePrefs | null {
 /** Test helper — module cache otherwise leaks across cases. */
 export function resetAgentDonePrefsStore(): void {
   memory.clear();
+  emitAgentDonePrefsChange();
 }
 
 function readFromLocalStorage(key: string): AgentDonePrefs | null {
@@ -75,4 +88,5 @@ export function writeAgentDonePrefs(
   const key = agentDonePrefsStorageKey(userId);
   memory.set(key, prefs);
   writeToLocalStorage(key, prefs);
+  emitAgentDonePrefsChange();
 }
