@@ -6,6 +6,7 @@ import {
   assertLocalUploadRangeWithinTotal,
   isLocalAttachmentStorageEnabled,
   LocalAttachmentStorage,
+  localObjectPathForTests,
   permanentObjectKey,
   resetAttachmentStorageForTests,
   signLocalReadUrlParams,
@@ -15,7 +16,22 @@ import {
 } from "./attachments";
 import { resetWifTokenCache } from "@/lib/gcp/wif-token";
 
-const localRoot = path.join(process.cwd(), ".data", "attachments");
+const ownedObjectKeys = [
+  stagingObjectKey("local_att"),
+  stagingObjectKey("signed_att"),
+  permanentObjectKey("local_report", "local_att"),
+];
+
+async function removeOwnedObjects(): Promise<void> {
+  await Promise.all(
+    ownedObjectKeys.map((objectKey) =>
+      rm(path.dirname(localObjectPathForTests(objectKey)), {
+        recursive: true,
+        force: true,
+      })
+    )
+  );
+}
 
 describe("attachment storage key builders", () => {
   it("builds object keys without client filenames", () => {
@@ -132,7 +148,7 @@ describe("GcsAttachmentStorage", () => {
 describe("LocalAttachmentStorage", () => {
   afterEach(async () => {
     vi.unstubAllEnvs();
-    await rm(localRoot, { recursive: true, force: true });
+    await removeOwnedObjects();
   });
 
   it("writes, reads, copies, and deletes objects", async () => {

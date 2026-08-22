@@ -37,7 +37,26 @@ type UploadProgress = {
   uploadedBytes: number;
   totalBytes: number;
   percent: number;
+  /** Epoch ms of the most recent byte advance; drives the slow-connection notice. */
+  lastAdvanceAt: number;
+  /** Smoothed rate over recent chunks; null until two samples have landed. */
+  bytesPerSecond: number | null;
 };
+
+/** Rate samples kept per upload. Adaptive chunks are 8–32 MB, so a single delta is jumpy. */
+const RATE_SAMPLE_WINDOW = 6;
+
+type RateSample = { at: number; bytes: number };
+
+function rateFromSamples(samples: readonly RateSample[]): number | null {
+  if (samples.length < 2) return null;
+  const first = samples[0];
+  const last = samples[samples.length - 1];
+  const elapsedMs = last.at - first.at;
+  const deltaBytes = last.bytes - first.bytes;
+  if (elapsedMs <= 0 || deltaBytes <= 0) return null;
+  return (deltaBytes / elapsedMs) * 1000;
+}
 
 type ActiveAttachment = {
   id: string;
@@ -107,6 +126,7 @@ export function ReportAttachmentsProvider({
     useState<ActiveAttachment | null>(null);
   const [quotaWarning, setQuotaWarning] = useState<string | null>(null);
   const quotaWarningShownRef = useRef(false);
+  const rateSamplesRef = useRef(new Map<string, RateSample[]>());
 
   const showQuotaWarning = useCallback((message: string) => {
     // Parallel uploads can all hit the same quota; keep a single modal.
@@ -210,6 +230,9 @@ export function ReportAttachmentsProvider({
         deletedAt: null,
       });
 
+      rateSamplesRef.current.set(attachmentId, [
+        { at: Date.now(), bytes: 0 },
+      ]);
       setUploadProgress((prev) => ({
         ...prev,
         [attachmentId]: {
@@ -217,6 +240,8 @@ export function ReportAttachmentsProvider({
           uploadedBytes: 0,
           totalBytes: file.size,
           percent: 0,
+          lastAdvanceAt: Date.now(),
+          bytesPerSecond: null,
         },
       }));
 
@@ -228,6 +253,13 @@ export function ReportAttachmentsProvider({
           onProgress: ({ uploadedBytes, totalBytes }) => {
             const percent =
               totalBytes > 0 ? Math.round((uploadedBytes / totalBytes) * 100) : 0;
+            const at = Date.now();
+            const samples = [
+              ...(rateSamplesRef.current.get(attachmentId) ?? []),
+              { at, bytes: uploadedBytes },
+            ].slice(-RATE_SAMPLE_WINDOW);
+            rateSamplesRef.current.set(attachmentId, samples);
+
             setUploadProgress((prev) => ({
               ...prev,
               [attachmentId]: {
@@ -235,6 +267,8 @@ export function ReportAttachmentsProvider({
                 uploadedBytes,
                 totalBytes,
                 percent,
+                lastAdvanceAt: at,
+                bytesPerSecond: rateFromSamples(samples),
               },
             }));
             setAttachments((prev) =>
@@ -283,6 +317,7 @@ export function ReportAttachmentsProvider({
           toast.error(message);
         }
       } finally {
+        rateSamplesRef.current.delete(attachmentId);
         setUploadProgress((prev) => {
           const next = { ...prev };
           delete next[attachmentId];
@@ -352,6 +387,7 @@ export function ReportAttachmentsProvider({
         return;
       }
       setAttachments((prev) => prev.filter((item) => item.id !== id));
+      rateSamplesRef.current.delete(id);
       setUploadProgress((prev) => {
         const next = { ...prev };
         delete next[id];

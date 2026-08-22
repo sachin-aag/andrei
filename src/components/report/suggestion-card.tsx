@@ -33,6 +33,7 @@ import {
 } from "@/lib/ai/suggestion-gating";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 import { splitPlainTextWithPlaceholders } from "@/lib/placeholders/plain-text-segments";
+import { inlineMarkdownToTextNodes } from "@/lib/tiptap/markdown-to-doc";
 import {
   afterPaint,
   delay,
@@ -120,6 +121,34 @@ function buildFrozenCard(
   };
 }
 
+function InlineMarkdownSpan({ text }: { text: string }) {
+  return (
+    <>
+      {inlineMarkdownToTextNodes(text).map((node, i) => {
+        const marks = node.marks ?? [];
+        const italic = marks.some((m) => m.type === "italic");
+        const bold = marks.some((m) => m.type === "bold");
+        return (
+          <span
+            key={i}
+            className={
+              italic && bold
+                ? "italic font-semibold"
+                : italic
+                  ? "italic"
+                  : bold
+                    ? "font-semibold"
+                    : undefined
+            }
+          >
+            {node.text}
+          </span>
+        );
+      })}
+    </>
+  );
+}
+
 /** Text with actionable `[placeholder]` spans highlighted (citations stay plain). */
 function PlaceholderHighlightedText({ text }: { text: string }) {
   return (
@@ -130,7 +159,7 @@ function PlaceholderHighlightedText({ text }: { text: string }) {
             {part.text}
           </span>
         ) : (
-          <span key={i}>{part.text}</span>
+          <InlineMarkdownSpan key={i} text={part.text} />
         )
       )}
     </>

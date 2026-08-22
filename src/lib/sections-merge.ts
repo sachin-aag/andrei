@@ -15,6 +15,7 @@ import type {
 } from "@/types/sections";
 import { EMPTY_CONTENT } from "@/types/sections";
 import { stringFieldFromStoredValue } from "@/lib/section-content-normalize";
+import { stripInlineMarkdown } from "@/lib/tiptap/markdown-to-doc";
 import type { JSONContent } from "@tiptap/core";
 import {
   appendParagraphsToDoc,
@@ -146,7 +147,7 @@ function coerceStringList(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value
     .map((v) => (typeof v === "string" ? v : ""))
-    .map((s) => s.trim())
+    .map((s) => stripInlineMarkdown(s).trim())
     .filter(Boolean);
 }
 

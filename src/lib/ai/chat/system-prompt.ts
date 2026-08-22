@@ -10,7 +10,7 @@ import { getDocumentType } from "@/lib/document-types";
 import type { RetrievalPolicy } from "@/lib/ai/chat/retrieval-policy";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v26-edit-table";
+export const CHAT_PROMPT_VERSION = "chat-v30-edit-table";
 
 export type ChatMode = "plan" | "agent";
 
@@ -57,8 +57,8 @@ The engineer has not narrowed scope. You may plan or draft across any editable s
     ? "draft_field / edit_table / propose_edit / select_analyze_method"
     : "draft_field / edit_table / propose_edit";
   return `## Section focus: ${label} [${scope}]
-The engineer selected **${label}** for this conversation. Focus Plan questions and Agent edits on this section only.
-- Plan mode: ask what is needed to complete ${label}; do not plan other sections unless they change the section dropdown.
+The engineer selected **${label}** for this conversation. Focus Ask questions and Agent edits on this section only.
+- Ask mode: ask what is needed to complete ${label}; do not plan other sections unless they change the section dropdown.
 - Agent mode: only call ${editTools} on section "${scope}". Prefer read_section on "${scope}" too.${priorReadNote}
 - If the request clearly belongs elsewhere, call suggest_section_scope before answering substantively — do not edit other sections.`;
 }
@@ -149,12 +149,12 @@ function planRules(policy: RetrievalPolicy): string {
       throw new Error(`Unhandled retrieval policy: ${String(_exhaustive)}`);
     }
   }
-  return `## Mode: PLAN (gather information — do NOT edit the document)
-You are in Plan mode. You CANNOT edit the document in this mode; the edit tools are disabled. Your goal is to gather just enough information to draft a strong first version later.
+  return `## Mode: ASK (gather information — do NOT edit the document)
+You are in Ask mode. You CANNOT edit the document in this mode; the edit tools are disabled. Your goal is to gather just enough information to draft a strong first version later.
 
 Do this:
 ${firstStep}
-2. Once you have enough retrieved evidence to draft, briefly propose a short PLAN: which sections you can draft now (enough info → will fill, with placeholders for small gaps), and which you'll skip for now (too little info → not worth a page of placeholders). Then invite the engineer to switch to Agent mode to generate the draft. The document index (filenames/topics) is not enough information by itself.
+2. Once you have enough retrieved evidence to draft, briefly propose a short outline: which sections you can draft now (enough info → will fill, with placeholders for small gaps), and which you'll skip for now (too little info → not worth a page of placeholders). Then invite the engineer to switch to Agent mode to generate the draft. The document index (filenames/topics) is not enough information by itself.
 
 Keep prose conversational and concise. Do not dump the whole criteria list back at the engineer. Never fabricate regulated facts.`;
 }
@@ -236,11 +236,11 @@ const ANALYZE_METHOD_HEURISTICS = `Method selection heuristics (exactly ONE of 6
 const ANALYZE_PLAN_RULES = `## Analyze planning rules (required when planning Analyze)
 ${ANALYZE_METHOD_HEURISTICS}
 
-In Plan mode you MUST:
+In Ask mode you MUST:
 1. Read define and measure (unless the engineer already named a method or the context map already shows one).
 2. State your recommended method and a one-sentence rationale in prose BEFORE asking more questions.
 3. Then ask_user only for facts still missing for that chosen method plus the always-required fields (investigation outcome, root cause, impact across the six areas). Do not ask 6M-grid questions if you recommended 5-Why, and vice versa.
-4. In your closing PLAN, name the chosen method explicitly (e.g. "Analyze: draft 5-Why only; leave 6M and Brainstorming blank; fill outcome / root cause / six-area impact").`;
+4. In your closing outline, name the chosen method explicitly (e.g. "Analyze: draft 5-Why only; leave 6M and Brainstorming blank; fill outcome / root cause / six-area impact").`;
 
 const ANALYZE_AGENT_RULES = `## Analyze drafting rules (required when drafting Analyze)
 ${ANALYZE_METHOD_HEURISTICS}

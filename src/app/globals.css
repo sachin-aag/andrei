@@ -602,6 +602,104 @@ html[data-customer="convergent"] {
   }
 }
 
+/*
+ * Large-upload tape. One band of discrete cells whose unit changes with the
+ * phase: an 8 MB upload chunk while sending, a page while reading. Ink is the
+ * customer brand, so demo / MJ / Convergent each read in their own colour.
+ *
+ * Specificity ladder, deliberately: the base `[data-state]` rules own the
+ * default look, and the `[data-phase] [data-state]` rules below outrank them to
+ * swap the animation per phase. Do not add `!important` here — it would break
+ * that ordering.
+ */
+.upload-tape {
+  --upload-tape-ink: var(--brand-500);
+  --upload-tape-blank: color-mix(in srgb, var(--muted-foreground) 16%, transparent);
+}
+
+.upload-tape__cell {
+  flex: 1 1 0;
+  min-width: 0;
+  border-radius: 1px;
+  background-color: var(--upload-tape-blank);
+  transition:
+    background-color 260ms ease,
+    opacity 260ms ease;
+}
+
+/* A chunk landed, or a page was read — cells only ink on real progress. */
+.upload-tape__cell[data-state="inked"] {
+  background-color: var(--upload-tape-ink);
+  animation: upload-tape-ink-in 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* The cell currently being filled. */
+.upload-tape__cell[data-state="head"] {
+  animation: upload-tape-head 2s ease-in-out infinite;
+}
+
+/*
+ * Waiting on the server: the tape holds full and breathes instead of advancing.
+ * `indexing` is the same idea at the other end of the run — every page has been
+ * read, and chunking and embedding have nothing per-page left to count.
+ */
+.upload-tape[data-phase="checking"] .upload-tape__cell[data-state="inked"],
+.upload-tape[data-phase="queued"] .upload-tape__cell[data-state="inked"],
+.upload-tape[data-phase="indexing"] .upload-tape__cell[data-state="inked"] {
+  animation: upload-tape-hold 2.6s ease-in-out infinite;
+}
+
+/* Nothing has arrived for a while — same signal, slower pulse. */
+.upload-tape[data-phase="stalled"] .upload-tape__cell[data-state="head"] {
+  animation: upload-tape-head 3.6s ease-in-out infinite;
+}
+
+@keyframes upload-tape-ink-in {
+  from {
+    opacity: 0.35;
+    transform: scaleY(0.4);
+  }
+  to {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+}
+
+@keyframes upload-tape-head {
+  0%,
+  100% {
+    background-color: var(--upload-tape-blank);
+  }
+  50% {
+    background-color: color-mix(in srgb, var(--upload-tape-ink) 55%, transparent);
+  }
+}
+
+@keyframes upload-tape-hold {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
+/*
+ * Reduced motion keeps every state change — cells still ink, the tape still
+ * re-flows — and drops only the looping pulses and the ink-in easing.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .upload-tape__cell,
+  .upload-tape[data-phase] .upload-tape__cell {
+    animation: none !important;
+    transition-duration: 0.01ms !important;
+  }
+  .upload-tape__cell[data-state="head"] {
+    background-color: color-mix(in srgb, var(--upload-tape-ink) 40%, transparent);
+  }
+}
+
 /* fix (default — criterion-driven AI suggestions) — uses base colors above. */
 
 /*
@@ -880,4 +978,17 @@ html[data-customer="convergent"] {
 
 .pdf-page-preview-text-layer ::selection {
   background: rgb(61 111 181 / 0.28);
+}
+
+/* Assistant chat — native MathML from `$...$` / `$$...$$` LaTeX. */
+.chat-markdown math {
+  color: inherit;
+  font-size: 1.05em;
+}
+
+.chat-markdown math[display="block"] {
+  display: block;
+  margin-block: 0.35em;
+  overflow-x: auto;
+  max-width: 100%;
 }

@@ -809,6 +809,13 @@ export const chatMessages = pgTable(
     role: chatMessageRoleEnum("role").notNull(),
     /** AI SDK v6 UIMessage.parts (text + tool parts). */
     parts: jsonb("parts").notNull().default([]),
+    /**
+     * Which config produced an assistant turn — `ChatAssistantTurnMetadata`
+     * (pace, model id, thinking level, prompt version). The composer shows the
+     * user "Quick"/"Deep" and never a model name, so this is the only record
+     * of what actually answered. Empty for user turns and legacy rows.
+     */
+    metadata: jsonb("metadata").notNull().default({}),
     /** workspace_users.id for user turns; null for assistant turns. */
     authorId: text("author_id"),
     createdAt: timestamp("created_at", { withTimezone: true })

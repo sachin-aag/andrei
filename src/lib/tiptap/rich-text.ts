@@ -154,6 +154,43 @@ export function legacyStringToDoc(s: string): JSONContent {
 }
 
 /**
+ * Leftover `*phrase with spaces*` from drafts that predate italic parsing.
+ * Requires a space so `2*3*4` and unmatched `*Note` stay literal.
+ */
+const PHRASE_ITALIC_RE = /(?<!\*)\*(?!\s)([^*]*\s[^*]*?)(?<!\s)\*(?!\*)/g;
+
+function textNodeWithMarks(
+  text: string,
+  marks: JSONContent["marks"]
+): JSONContent {
+  return marks?.length ? { type: "text", text, marks } : { type: "text", text };
+}
+
+function expandPhraseItalicText(
+  text: string,
+  existingMarks: JSONContent["marks"]
+): JSONContent[] | null {
+  const nodes: JSONContent[] = [];
+  let last = 0;
+  PHRASE_ITALIC_RE.lastIndex = 0;
+  for (const match of text.matchAll(PHRASE_ITALIC_RE)) {
+    const start = match.index ?? 0;
+    if (start > last) {
+      nodes.push(textNodeWithMarks(text.slice(last, start), existingMarks));
+    }
+    nodes.push(
+      textNodeWithMarks(match[1]!, [...(existingMarks ?? []), { type: "italic" }])
+    );
+    last = start + match[0].length;
+  }
+  if (last === 0) return null;
+  if (last < text.length) {
+    nodes.push(textNodeWithMarks(text.slice(last), existingMarks));
+  }
+  return nodes;
+}
+
+/**
  * Coerce nodes the section editor schema can't render into supported ones.
  * The editor registers no heading node (StarterKit `heading: false`), so a
  * stray `heading` (e.g. persisted by an older redraft) would make ProseMirror
@@ -173,7 +210,18 @@ function coerceUnsupportedNodes(node: JSONContent): JSONContent {
     };
   }
   if (node.content?.length) {
-    return { ...node, content: node.content.map(coerceUnsupportedNodes) };
+    const content: JSONContent[] = [];
+    for (const child of node.content) {
+      if (child.type === "text" && child.text) {
+        const expanded = expandPhraseItalicText(child.text, child.marks);
+        if (expanded) {
+          content.push(...expanded);
+          continue;
+        }
+      }
+      content.push(coerceUnsupportedNodes(child));
+    }
+    return { ...node, content };
   }
   return node;
 }
@@ -184,7 +232,7 @@ export function normalizeRichField(v: unknown): JSONContent {
     return coerceUnsupportedNodes(v as JSONContent);
   }
   if (typeof v === "string") {
-    return legacyStringToDoc(v);
+    return coerceUnsupportedNodes(legacyStringToDoc(v));
   }
   return emptyDoc();
 }

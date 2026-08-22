@@ -180,9 +180,9 @@ function convergentSections(): ReportSectionRecord[] {
           }
         : section === "testers_dates"
           ? {
-              testers: narrativeDoc("Alex Rivera, independent test engineer."),
-              startDate: "2026-03-01",
-              endDate: "2026-03-04",
+              testers: narrativeDoc(
+                "Alex Rivera, independent test engineer. Test dates: 2026-03-01 through 2026-03-04."
+              ),
             }
           : EMPTY_CONVERGENT_DV_CONTENT[section],
     updatedAt: "2026-01-01T00:00:00.000Z",
@@ -217,7 +217,8 @@ describe("convergent design-verification DOCX export", () => {
     expect(xml).toContain("{@purposeXml}");
     expect(xml).toContain("{@equipmentXml}");
     expect(xml).toContain("{@resultsTableXml}");
-    expect(xml).toContain("{testersStartDate}");
+    expect(xml).not.toContain("{testersStartDate}");
+    expect(xml).not.toContain("{testersEndDate}");
     expect(xml).not.toContain("{@purposeScopeXml}");
     expect(xml).not.toContain("Purpose &amp; Scope");
     expect(xml).not.toContain("Define:");

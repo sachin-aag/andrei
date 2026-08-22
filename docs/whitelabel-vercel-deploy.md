@@ -42,16 +42,13 @@ Set on **each** project → Settings → Environment Variables → Production, P
 | **andrei-v2** | `ANDREI_VERCEL_DEPLOY_SCOPE` | `mj` |
 | **andrei-convergent** | `ANDREI_VERCEL_DEPLOY_SCOPE` | `convergent` |
 
-**andrei-v2 Neon:** keep **Create a branch for each preview deployment** off. If Preview `DATABASE_URL` is the Production row, those previews share MJ production data — use a dedicated Preview URL if you need isolation.
+**Neon preview branching:** keep **Create a branch for each preview deployment** **on** for `andrei-v2`, `andrei-demo`, and `andrei-convergent`. Each git ref gets `preview/<git-branch>` on that project's Neon. Production stays on the default Neon branch. Enable cleanup when the preview deployment / git branch is removed (`neon-preview-cleanup.yml` plus the integration toggle).
 
-Preview `DATABASE_URL` on `andrei-demo` stays the **demo** Neon pooled URL (same as Production). Do not enable per-PR Neon branching on `andrei-v2`.
+The integration injects **Preview / git-branch** `DATABASE_URL` and `DATABASE_URL_UNPOOLED` (Neon logo, branch name truncated) for that ref only. Those are not pack env. Do not hand-edit them.
 
-The Neon ↔ Vercel integration creates extra **Preview / git-branch** `DATABASE_URL` and `DATABASE_URL_UNPOOLED` rows (Neon logo, branch name truncated). Those are auto-injected for that git branch’s preview only. They are not pack env. Do not hand-edit them.
-
-- **Keep** the Sensitive `DATABASE_URL` (+ `DATABASE_URL_UNPOOLED`) scoped **Production and Preview** (or Production) with no git-branch — that is the real demo Neon.
-- **Ignore** the Neon-logo per-branch rows while preview branching is on. Deleting them in Vercel while the integration is connected just recreates them on the next deploy of that branch.
-- To stop the sprawl on **andrei-demo**: Neon/Vercel integration → disable **Create a branch for each preview deployment**, then delete leftover preview branches in the Neon **demo** project. After that, every preview uses the shared demo `DATABASE_URL`.
-- If you see the same per-branch rows on **andrei-v2**, turn preview branching off there immediately. Those would be MJ Neon preview databases.
+- **Keep** the Sensitive `DATABASE_URL` (+ `DATABASE_URL_UNPOOLED`) scoped **Production** (no git-branch) — that is the real production Neon.
+- **Ignore** the Neon-logo per-branch rows. Deleting them in Vercel while the integration is connected just recreates them on the next deploy of that branch.
+- **28P01 on preview:** the injected password is leftover from a deleted compute. Delete Neon `preview/<git-branch>` and redeploy. Do not turn preview branching off.
 
 ## Environment variables
 
@@ -66,7 +63,7 @@ Copy auth/AI keys as today. Never set `ALLOW_TEST_*` or `ATTACHMENT_STORAGE_BACK
 | `ANDREI_CUSTOMER` | `demo` |
 | `NEXT_PUBLIC_ANDREI_CUSTOMER` | `demo` |
 | `ANDREI_VERCEL_DEPLOY_SCOPE` | `demo` |
-| `DATABASE_URL` | Neon **demo** pooled URL (the Production / Production+Preview row — not the per-git-branch Neon copies) |
+| `DATABASE_URL` | Production: Neon **demo** pooled URL (no git-branch). Preview: Neon injects `preview/<git-branch>` |
 | `AUTH_URL` | `https://demo.andreihealth.com` (already set — do not change to `*.vercel.app`) |
 
 ### andrei-v2 (Production) — MJ cutover
@@ -76,7 +73,7 @@ Copy auth/AI keys as today. Never set `ALLOW_TEST_*` or `ATTACHMENT_STORAGE_BACK
 | `ANDREI_CUSTOMER` | `mj` |
 | `NEXT_PUBLIC_ANDREI_CUSTOMER` | `mj` |
 | `ANDREI_VERCEL_DEPLOY_SCOPE` | `mj` |
-| `DATABASE_URL` | Neon **Andrei V2** production |
+| `DATABASE_URL` | Production: Neon **Andrei V2** default branch. Preview: Neon injects `preview/<git-branch>` |
 | `GOOGLE_VERTEX_PROJECT` | Vertex project (chat/ingest) |
 | `GCP_WIF_AUDIENCE` | WIF audience |
 | `GCP_SERVICE_ACCOUNT_EMAIL` | WIF service account |
@@ -98,7 +95,7 @@ MJ `promptVersion` is `mj-sop-dp-qa-008-v1`. Existing evaluations go stale on cu
 | `AUTH_URL` | `https://convergent.andreihealth.com` (must match the public host; do not leave `https://andrei-convergent.vercel.app`) |
 | `GOOGLE_VERTEX_PROJECT` / WIF / `GCS_BUCKET` | Copy from `andrei-demo` (never `ALLOW_TEST_*`) |
 
-Disable Neon **Create a branch for each preview deployment** on this project. Convergent `promptVersion` is `convergent-dv-v2`.
+Keep Neon **Create a branch for each preview deployment** on. Convergent `promptVersion` is `convergent-dv-v5`.
 
 ## MJ database cutover
 
@@ -203,7 +200,8 @@ Same emails as demo (`sachin@` / `aditya@` plus `+manager` / `+admin`). Temporar
 | Symptom | Fix |
 |---------|-----|
 | PR builds on **neither** Vercel project | Ignored Build Step in the Vercel project, or Git integration disconnected — repo policy is to build every ref on both projects |
-| Demo PR creates a Neon branch on MJ | Neon preview branching is on for **andrei-v2**. Turn it off; do not hand-edit the Neon-logo `DATABASE_URL` rows |
+| Demo PR creates a Neon branch on MJ | Expected if preview branching is on for **andrei-v2**. That branch is MJ-isolated (`preview/<git-branch>`), not the demo Neon. Do not hand-edit Neon-logo `DATABASE_URL` rows |
+| Preview `pnpm vercel:build` fails with `28P01` / `password authentication failed for user 'neondb_owner'` | Stale password for a deleted preview compute (host looks like `ep-…-pooler…neon.tech`). Keep preview branching **on**. Delete Neon `preview/<git-branch>` and leftover `preview/…` for that ref, then redeploy. Do not hand-edit Neon-logo rows |
 | MJ looks like Andrei | `NEXT_PUBLIC_ANDREI_CUSTOMER` unset on `andrei-v2` (client defaults to demo) |
 | MJ export missing conclusion | Expected — MJ template has no `{@conclusionNarrativeXml}`; pack hides the section |
 | Ingest/chat 500 on MJ | Vertex WIF + GCS missing; do not set local attachment flags |

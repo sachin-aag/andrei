@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("bumps the prompt version when section inline image guidance changes", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v26-edit-table");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v30-edit-table");
   });
 
   it("tells the model never to pass the section key as targetField", () => {
@@ -103,7 +103,7 @@ describe("buildChatSystemPrompt", () => {
 
   it("plan mode forbids editing and asks questions via ask_user", () => {
     const prompt = buildChatSystemPrompt({ ...opts, mode: "plan" });
-    expect(prompt).toContain("Mode: PLAN");
+    expect(prompt).toContain("Mode: ASK");
     expect(prompt).toContain("edit tools are disabled");
     expect(prompt).toContain("ask_user");
     expect(prompt).not.toContain("Mode: AGENT");
@@ -114,7 +114,7 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("Mode: AGENT");
     expect(prompt).toContain("draft_field");
     expect(prompt).toContain("placeholder");
-    expect(prompt).not.toContain("Mode: PLAN");
+    expect(prompt).not.toContain("Mode: ASK");
   });
 
   it("routes existing table changes to edit_table instead of draft_field", () => {

@@ -172,31 +172,40 @@ export function ReportSidebar({
         })}
       </div>
 
-      {/* Content — only when expanded. Assistant manages its own scroll/input
-          layout, so it gets a full-height container without the shared padding. */}
-      {!collapsed &&
-        (activeTab === "assistant" ? (
-          <div className="min-h-0 flex-1">
+      {/* Content — only when expanded. ChatPanel stays mounted across tab
+          changes so composer prefs and the open thread are not reset.
+          Assistant manages its own scroll/input, so it gets a full-height
+          container without the shared padding. */}
+      {!collapsed && (
+        <>
+          <div
+            className={cn(
+              "min-h-0 flex-1",
+              activeTab !== "assistant" && "hidden"
+            )}
+          >
             <ChatPanel />
           </div>
-        ) : (
-          <div className="flex-1 overflow-y-auto p-4 min-w-0">
-            {activeTab === "placeholders" && (
-              <PlaceholdersPanelContent
-                onJumpToPlaceholder={onJumpToPlaceholder}
-              />
-            )}
-            {activeTab === "criteria" && (
-              <CriteriaPanelContent
-                onJumpToSection={onJumpToSection}
-                initialSection={initialCriteriaSection}
-              />
-            )}
-            {activeTab === "comments" && (
-              <CommentsPanelContent onJumpToComment={onJumpToComment} />
-            )}
-          </div>
-        ))}
+          {activeTab !== "assistant" ? (
+            <div className="flex-1 overflow-y-auto p-4 min-w-0">
+              {activeTab === "placeholders" && (
+                <PlaceholdersPanelContent
+                  onJumpToPlaceholder={onJumpToPlaceholder}
+                />
+              )}
+              {activeTab === "criteria" && (
+                <CriteriaPanelContent
+                  onJumpToSection={onJumpToSection}
+                  initialSection={initialCriteriaSection}
+                />
+              )}
+              {activeTab === "comments" && (
+                <CommentsPanelContent onJumpToComment={onJumpToComment} />
+              )}
+            </div>
+          ) : null}
+        </>
+      )}
     </aside>
   );
 }

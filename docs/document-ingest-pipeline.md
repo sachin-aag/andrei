@@ -70,9 +70,9 @@ Ingest **run** statuses (separate table): `pending` → `running` → `ready` | 
 
 ## PDF path
 
-Born-digital PDFs stay on ~3-page sequential batches (max 5, or smaller if the slice exceeds ~18 MB) so Gemini can add visual context with carry-forward notes.
+When Document AI is configured, every PDF — scans, mixed files, searchable scans, and born-digital — splits into **15-page** batches (or smaller if a slice exceeds 40 MB). Ingest processes up to **3 of those batches in parallel** (**45 pages** in flight). The parser still supplies the transcript when a text layer is present; Gemini vision still runs only on weak OCR pages, one page at a time. A text layer no longer sends the file down Gemini's 3-page sequential insight loop.
 
-Scans and mixed PDFs with Document AI configured split into **15-page** batches (or smaller if a slice exceeds 40 MB). Ingest processes up to **3 of those batches in parallel**. Gemini vision still runs only on weak OCR pages, one page at a time. Previous batch `batchSummary` / `continuationNote` are passed forward on the sequential (born-digital) path only.
+Without Document AI, PDFs stay on ~3-page sequential batches (max 5, or smaller if the slice exceeds ~18 MB) so Gemini can add visual context with carry-forward notes. Previous batch `batchSummary` / `continuationNote` are passed forward on that sequential path only.
 
 ```mermaid
 flowchart TD

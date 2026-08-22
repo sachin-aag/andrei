@@ -1,6 +1,10 @@
 # Neon + Vercel integration setup
 
-One-time dashboard configuration for per-PR preview databases and automatic production migrations on merge.
+**Customer projects:** `andrei-v2`, `andrei-demo`, and `andrei-convergent` keep **Create a branch for each preview deployment** **on**. Each git ref gets an isolated Neon `preview/<git-branch>` database. Production stays on the project's default Neon branch. See [whitelabel-vercel-deploy.md](./whitelabel-vercel-deploy.md).
+
+A leftover password from a deleted preview compute fails `vercel:build` with `28P01`. Delete that Neon `preview/…` branch and redeploy so Neon injects a fresh URL. Do not turn preview branching off, and do not hand-edit Neon-logo `DATABASE_URL` rows.
+
+One-time dashboard configuration for per-git-branch preview databases and automatic production migrations on merge.
 
 ## Prerequisites
 
@@ -72,8 +76,9 @@ Install the [Neon GitHub integration](https://neon.com/docs/guides/branching-git
 ## Troubleshooting
 
 - **Preview branch still there after merge** — Expected without the GitHub cleanup workflow or `NEON_API_KEY` / `NEON_PROJECT_ID`. See §4. Optionally shorten Vercel **Settings → Security → Deployment retention** for pre-production.
-- **Build fails: DATABASE_URL is not set** — Neon integration not connected or preview branching disabled for that deployment.
-- **Preview uses production data** — Preview branching off; static Preview `DATABASE_URL` may point at `main`. Enable per-preview branches.
+- **Build fails: DATABASE_URL is not set** — Preview branching is off or the inject raced the first compile. Enable **Create a branch for each preview deployment**, then redeploy.
+- **Build fails: 28P01 / password authentication failed** — Stale password for a deleted preview compute. Keep preview branching **on**. Delete Neon `preview/<git-branch>` (and leftover `preview/…` for that ref), then redeploy. Do not hand-edit Neon-logo `DATABASE_URL` rows.
+- **Preview uses production data** — Preview branching is off, or a static Preview `DATABASE_URL` is the Production row. Turn preview branching **on** so Neon injects `preview/<git-branch>`.
 - **Schema mismatch on preview** — Ensure migration SQL files are committed; `vercel:build` runs migrations before `next build`.
 
 See also [database-environments.md](./database-environments.md).

@@ -15,6 +15,7 @@ import { isWeakOcrTranscript } from "@/lib/attachments/ocr-quality";
 import {
   copyPdfPage,
   copyPdfPages,
+  MAX_PDF_BATCH_PAGES,
   splitPageIntoTiles,
   splitPdfIntoBatches,
   uprightRotatePage,
@@ -123,7 +124,8 @@ export type ExtractRecovery =
 
 /**
  * `text-layer` transcribes with the PDF parser and asks the model only for
- * visual context. `vision` asks the model to transcribe, for scans.
+ * visual context on small batches. `vision` asks the model to transcribe,
+ * for scans.
  */
 export type ExtractMode = "text-layer" | "vision";
 
@@ -239,12 +241,18 @@ async function tryReadTextLayer(
  * Transcript comes from the parser; the model only describes what the text
  * layer cannot carry. A failed insight pass degrades to text-only rather than
  * losing the page, because the transcript is the evidence that matters.
+ *
+ * Enterprise OCR ingest waves are 15 pages. Sending those to Gemini for
+ * visuals would reintroduce the old 3-page insight bottleneck, so large
+ * batches skip the model and keep the derived page digest.
  */
 async function extractFromTextLayer(
   input: ResolvedInput,
   textLayer: PdfTextLayer
 ): Promise<ExtractBatchResult> {
-  const insights = await requestPageInsights(input);
+  const batchPages = input.pageEnd - input.pageStart + 1;
+  const insights =
+    batchPages > MAX_PDF_BATCH_PAGES ? null : await requestPageInsights(input);
   const byPageNumber = new Map(
     (insights?.pages ?? []).map((page) => [page.pageNumber, page])
   );

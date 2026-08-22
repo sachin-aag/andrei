@@ -40,7 +40,9 @@ export function rowsForSection(
   );
   return defs.map((d) => {
     const hit = byKey.get(d.key);
-    if (hit) return { ...hit, isPlaceholder: false };
+    if (hit) {
+      return { ...hit, criterionLabel: d.label, isPlaceholder: false };
+    }
     return {
       id: `placeholder-${section}-${d.key}`,
       reportId: "",

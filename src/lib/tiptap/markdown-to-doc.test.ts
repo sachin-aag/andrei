@@ -61,6 +61,29 @@ describe("markdownToDoc", () => {
     ]);
   });
 
+  it("parses italic title spans at the start of a line", () => {
+    const doc = markdownToDoc(
+      "*Solea Model 3 Software Requirements Document* 822-700-0013"
+    );
+    expect(doc.content![0]!.content).toEqual([
+      {
+        type: "text",
+        text: "Solea Model 3 Software Requirements Document",
+        marks: [{ type: "italic" }],
+      },
+      { type: "text", text: " 822-700-0013" },
+    ]);
+  });
+
+  it("parses underscore italic and leaves spaced asterisks literal", () => {
+    const doc = markdownToDoc("See _Annex B_ or 2 * 3 * 4.");
+    expect(doc.content![0]!.content).toEqual([
+      { type: "text", text: "See " },
+      { type: "text", text: "Annex B", marks: [{ type: "italic" }] },
+      { type: "text", text: " or 2 * 3 * 4." },
+    ]);
+  });
+
   it("converts a GFM table with header row", () => {
     const doc = markdownToDoc(
       ["| Parameter | Result |", "| --- | --- |", "| pH | 6.8 |", "| Temp | 22 C |"].join(
@@ -139,9 +162,9 @@ describe("markdownHasTable", () => {
 });
 
 describe("markdownToPlainText", () => {
-  it("strips bold markers and heading hashes", () => {
-    expect(markdownToPlainText("## Title\n\n**Bold** text")).toBe(
-      "Title\n\nBold text"
+  it("strips bold markers, italic markers, and heading hashes", () => {
+    expect(markdownToPlainText("## Title\n\n**Bold** and *italic* text")).toBe(
+      "Title\n\nBold and italic text"
     );
   });
 });

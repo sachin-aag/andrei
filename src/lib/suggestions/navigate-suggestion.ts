@@ -1,3 +1,4 @@
+import { isAiSuggestionKind } from "@/lib/ai/suggestion-gating";
 import { suggestionFieldAnchorKey } from "@/lib/suggestions/resolve-suggestion-field-path";
 import type { CommentRecord } from "@/types/report";
 import type { SectionType } from "@/db/schema";
@@ -83,6 +84,28 @@ export function packGutterAnchors<T extends PackableGutterAnchor>(
   return packed.toSorted((a, b) => a.top - b.top || a.desiredTop - b.desiredTop);
 }
 
+/**
+ * How far the gutter cards for a section hang below the section itself.
+ *
+ * The workspace closes this gap by padding the section, which grows the very
+ * rect measured here. Subtracting the padding already applied keeps the answer
+ * a fixed point: without it the next measurement reads zero overflow, the
+ * padding is dropped, the overflow reappears, and the layout oscillates every
+ * frame.
+ */
+export function sectionOverflowPx({
+  sectionBottom,
+  appliedPaddingPx,
+  maxCardBottom,
+}: {
+  sectionBottom: number;
+  appliedPaddingPx: number;
+  maxCardBottom: number;
+}): number {
+  const naturalBottom = sectionBottom - appliedPaddingPx;
+  return Math.max(0, maxCardBottom - naturalBottom);
+}
+
 /** Pure geometry helper — true when any of the rect is inside the viewport band. */
 export function rectIntersectsViewport(
   rect: { top: number; bottom: number },
@@ -149,6 +172,96 @@ export function scrollToSuggestionComment(comment: CommentRecord): boolean {
     }
   }
   return false;
+}
+
+/** First painted suggestion mark (inline insert/delete), if the preview is up. */
+export function querySuggestionStartElement(
+  comment: CommentRecord
+): HTMLElement | null {
+  const mark = document.querySelector<HTMLElement>(
+    `[data-eval-id="${CSS.escape(comment.id)}"]`
+  );
+  if (mark) return mark;
+  return querySuggestionFieldElement(comment);
+}
+
+export function querySuggestionGutterCard(
+  section: SectionType
+): HTMLElement | null {
+  return document.querySelector<HTMLElement>(
+    `[data-gutter-anchor-id="${CSS.escape(suggestionGutterAnchorId(section))}"]`
+  );
+}
+
+/**
+ * After a card is generated, pin the viewport to the start of the suggestion
+ * and keep its gutter card on screen. Tall fields / mark spans use `start`
+ * so the first line is not scrolled off; compact fields stay centered.
+ */
+export function scrollToGeneratedSuggestion(comment: CommentRecord): boolean {
+  const start = querySuggestionStartElement(comment);
+  const field = querySuggestionFieldElement(comment);
+  const pinToStart =
+    (start != null && start !== field) ||
+    (field != null &&
+      field.getBoundingClientRect().height > SUGGESTION_FIELD_CENTER_MAX_PX);
+
+  let scrolled = false;
+  if (start) {
+    start.scrollIntoView({
+      behavior: "smooth",
+      block: pinToStart ? "start" : "center",
+    });
+    scrolled = true;
+  } else if (comment.section) {
+    const heading = document.getElementById(comment.section);
+    if (heading) {
+      heading.scrollIntoView({ behavior: "smooth", block: "start" });
+      scrolled = true;
+    }
+  }
+
+  if (comment.section) {
+    const card = querySuggestionGutterCard(comment.section);
+    if (card) {
+      card.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      scrolled = true;
+    }
+  }
+  return scrolled;
+}
+
+/**
+ * Section of the first newly generated open AI suggestion, in document
+ * order. A batch that lands on several sections at once (chat drafts, or
+ * five sections suggested together) should pin the viewport to the topmost
+ * card — not the last timestamp.
+ */
+export function firstGeneratedSuggestionSection(
+  previousIds: ReadonlySet<string>,
+  comments: readonly CommentRecord[],
+  sectionOrder: readonly SectionType[]
+): SectionType | null {
+  const rankBySection = new Map(
+    sectionOrder.map((section, index) => [section, index])
+  );
+  let first: CommentRecord | null = null;
+  let firstRank = Number.POSITIVE_INFINITY;
+  for (const comment of comments) {
+    if (comment.parentId) continue;
+    if (comment.status !== "open") continue;
+    if (!isAiSuggestionKind(comment.kind)) continue;
+    if (!comment.section) continue;
+    if (previousIds.has(comment.id)) continue;
+    const rank =
+      rankBySection.get(comment.section as SectionType) ??
+      Number.MAX_SAFE_INTEGER;
+    if (!first || rank < firstRank) {
+      first = comment;
+      firstRank = rank;
+    }
+  }
+  return first?.section ?? null;
 }
 
 /**

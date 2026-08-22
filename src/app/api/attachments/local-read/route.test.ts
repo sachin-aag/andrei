@@ -4,18 +4,23 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { GET } from "@/app/api/attachments/local-read/route";
 import {
   LocalAttachmentStorage,
+  localObjectPathForTests,
   resetAttachmentStorageForTests,
   signLocalReadUrlParams,
   stagingObjectKey,
 } from "@/lib/storage/attachments";
 
-const localRoot = path.join(process.cwd(), ".data", "attachments");
+// Scoped to this spec's own key: the on-disk root is shared with
+// src/lib/storage/attachments.test.ts, which runs in a parallel worker.
+const ownedObjectDir = path.dirname(
+  localObjectPathForTests(stagingObjectKey("route_att"))
+);
 
 describe("GET /api/attachments/local-read", () => {
   afterEach(async () => {
     vi.unstubAllEnvs();
     resetAttachmentStorageForTests();
-    await rm(localRoot, { recursive: true, force: true });
+    await rm(ownedObjectDir, { recursive: true, force: true });
   });
 
   async function seedObject() {

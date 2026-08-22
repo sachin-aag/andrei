@@ -1,6 +1,11 @@
 import { normalizeBracketPlaceholdersInPlainText } from "@/lib/placeholders/normalize-bracket-placeholders";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
+import { stripInlineMarkdown } from "@/lib/tiptap/markdown-to-doc";
 import { applyPlainTextEdit } from "./locate-plain-text-edit";
+
+function plainInsertText(insertText: string): string {
+  return stripInlineMarkdown(normalizeSuggestionInsertText(insertText));
+}
 
 /** Apply structured-field suggestion via dot-path (e.g. correctiveActions). */
 export function applyStructuredFieldSuggestion(
@@ -24,14 +29,14 @@ export function applyStructuredFieldSuggestion(
   const leaf = parts[parts.length - 1]!;
   const current = cursor[leaf];
   if (typeof current !== "string") {
-    cursor[leaf] = normalizeSuggestionInsertText(insertText);
+    cursor[leaf] = plainInsertText(insertText);
     return next;
   }
 
   const applied = applyPlainTextEdit(current, {
     anchorText: anchorText?.trim() ?? "",
     deleteText,
-    insertText: normalizeSuggestionInsertText(insertText),
+    insertText: plainInsertText(insertText),
   });
 
   if (applied === null) {

@@ -224,8 +224,6 @@ export function contextForSuggestionPrompt(
     pushCanonicalBlock(lines, "Table", canonicalRichText(content.table));
   } else if (section === "testers_dates") {
     pushCanonicalBlock(lines, "Testers", canonicalRichText(content.testers));
-    pushTextLine(lines, "Start date", content.startDate);
-    pushTextLine(lines, "End date", content.endDate);
   } else if (section === "test_equipment") {
     pushCanonicalBlock(lines, "Table", canonicalRichText(content.table));
   } else if (section === "results_and_discussions") {

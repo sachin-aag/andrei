@@ -8,7 +8,7 @@ import { getAttachmentStorage } from "@/lib/storage/attachments";
 
 export const runtime = "nodejs";
 /** Same-origin preview stream can be multi-minute for large PDFs. */
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 export async function GET(
   req: Request,

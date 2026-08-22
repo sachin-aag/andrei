@@ -4,7 +4,11 @@ import {
   SUGGEST_TARGET_FIELD_PATTERNS,
 } from "@/lib/ai/suggest-target-fields";
 import { CONVERGENT_PROMPT_VERSION } from "@/lib/customers/packs";
-import { normalizeRichField } from "@/lib/tiptap/rich-text";
+import {
+  appendParagraphsToDoc,
+  normalizeRichField,
+  richJsonToPlainText,
+} from "@/lib/tiptap/rich-text";
 import {
   CONVERGENT_DV_TABLE_SECTIONS,
   dvFixedTableFormatGuidance,
@@ -58,17 +62,17 @@ function det(
 const PURPOSE_CRITERIA: CriterionDefinition[] = [
   llm(
     "purpose.objective",
-    "Verification objective clearly stated",
+    "Verification objective is clearly stated",
     "Is the objective of the verification activity clearly stated?"
   ),
   llm(
     "purpose.design_outputs",
-    "Design outputs or software items under test identified",
+    "Design outputs or software items under test are identified",
     "Are the specific design outputs, software items, or functions under verification identified?"
   ),
   llm(
     "purpose.change_reference",
-    "Document, revision, or change reference cited",
+    "A document ID, revision, or change reference is cited",
     "Is a document ID/revision or design-change reference (ECO/DCR) cited?"
   ),
 ];
@@ -76,17 +80,17 @@ const PURPOSE_CRITERIA: CriterionDefinition[] = [
 const SCOPE_CRITERIA: CriterionDefinition[] = [
   llm(
     "scope.boundaries",
-    "In-scope items, functions, or software units are bounded",
+    "In-scope items, functions, or software units are clearly bounded",
     "Are in-scope functions, units, or features clearly bounded?"
   ),
   llm(
     "scope.exclusions",
-    "Exclusions stated or explicitly none",
+    "Exclusions are stated, or the section explicitly says there are none",
     "Are out-of-scope items stated, or is it explicit that nothing is excluded?"
   ),
   llm(
     "scope.aligns_with_purpose",
-    "Scope aligns with Purpose",
+    "The scope aligns with the stated purpose",
     "Does Scope match the verification objective in Purpose?",
     ["purpose"]
   ),
@@ -95,17 +99,17 @@ const SCOPE_CRITERIA: CriterionDefinition[] = [
 const TESTERS_CRITERIA: CriterionDefinition[] = [
   llm(
     "testers.personnel",
-    "Testers identified by name",
+    "Testers are identified by name",
     "Are testers named, with role or qualification when relevant?"
   ),
   llm(
     "testers.dates",
-    "Test start and end (or execution) dates present",
-    "Are test start and end dates, or a clear execution date range, present?"
+    "Test start and end dates, or execution dates, are included",
+    "Are test start and end dates, or a clear execution date range, written in the Testers narrative?"
   ),
   llm(
     "testers.independence",
-    "Tester independence or qualification addressed",
+    "Tester independence or qualifications are addressed",
     "Is independence or qualification of testers addressed, or marked N/A?"
   ),
 ];
@@ -113,22 +117,22 @@ const TESTERS_CRITERIA: CriterionDefinition[] = [
 const METHODS_CRITERIA: CriterionDefinition[] = [
   llm(
     "methods.description",
-    "Each measurement or test method described",
+    "Each measurement or test method is described",
     "Is each method of measurement or test method clearly described?"
   ),
   llm(
     "methods.acceptance_criteria",
-    "Acceptance criteria predefined",
+    "Acceptance criteria are defined before results are reported",
     "Are acceptance criteria defined before results are reported?"
   ),
   llm(
     "methods.environment",
-    "Test environment, configuration, or software version documented",
+    "The test environment, configuration, and software version are documented",
     "Are the test environment, configuration, and software version documented?"
   ),
   llm(
     "methods.recording",
-    "How data are captured and recorded",
+    "The process for capturing and recording data is clear",
     "Is it clear how measurements are taken and how data are recorded?"
   ),
 ];
@@ -136,29 +140,29 @@ const METHODS_CRITERIA: CriterionDefinition[] = [
 const EQUIPMENT_CRITERIA: CriterionDefinition[] = [
   det(
     "equipment.table_present",
-    "Equipment table present with required columns",
+    "The equipment table includes all required columns",
     "Table has the seeded columns and at least one data row.",
     checkEquipmentTablePresent
   ),
   llm(
     "equipment.identity",
-    "Equipment, manufacturer, and model/part number on each row",
+    "Each row identifies the equipment, manufacturer, and model or part number",
     "Does each row identify the equipment, manufacturer, and model or part number?"
   ),
   llm(
     "equipment.asset_id",
-    "CD asset tag or serial number on each row",
+    "Each row includes a CD asset tag or serial number",
     "Does each row include a CD asset tag or serial number?"
   ),
   det(
     "equipment.calibration",
-    "Calibration due date present and not expired",
+    "Each row includes a current calibration due date",
     "Each row has a calibration due date; past-due dates are flagged.",
     checkEquipmentCalibrationDates
   ),
   llm(
     "equipment.covers_methods",
-    "Equipment list covers the methods of measurement",
+    "The equipment list covers the described measurement methods",
     "Does the equipment list cover the methods described in Methods of Measurement?",
     ["methods_of_measurement"]
   ),
@@ -167,17 +171,17 @@ const EQUIPMENT_CRITERIA: CriterionDefinition[] = [
 const DEVIATIONS_CRITERIA: CriterionDefinition[] = [
   llm(
     "deviations.stated",
-    "Deviations documented or explicitly none",
+    "Deviations are documented, or the section explicitly states there are none",
     "Are protocol or procedure deviations documented, or is it explicit that there were none?"
   ),
   llm(
     "deviations.impact",
-    "Impact or justification for each deviation",
+    "Each deviation includes an impact assessment or justification",
     "Is impact assessment or justification provided for each deviation?"
   ),
   llm(
     "deviations.disposition",
-    "Disposition for any nonconformance",
+    "Each nonconformance has a documented disposition",
     "Do nonconforming results have a documented disposition?"
   ),
 ];
@@ -185,19 +189,19 @@ const DEVIATIONS_CRITERIA: CriterionDefinition[] = [
 const RESULTS_CRITERIA: CriterionDefinition[] = [
   det(
     "results.matrix_complete",
-    "Results table present with Req ID and P/F filled",
+    "The results table includes requirement IDs and Pass/Fail values",
     "Four-column table present; Req ID and P/F filled on data rows.",
     checkResultsMatrixComplete
   ),
   det(
     "results.pass_fail_values",
-    "P/F values are Pass or Fail",
+    "Each Pass/Fail value is recorded as Pass or Fail",
     "Each P/F cell is Pass or Fail (or P/F).",
     checkResultsPassFailValues
   ),
   llm(
     "results.satisfied_by",
-    "Satisfied By cites method/evidence and configuration",
+    "Each Satisfied By entry cites the method or evidence and the applicable configuration",
     "Does Satisfied By cite a test method, procedure, or evidence reference AND the configuration for which P/F was achieved?"
   ),
   det(
@@ -208,7 +212,7 @@ const RESULTS_CRITERIA: CriterionDefinition[] = [
   ),
   llm(
     "results.discussion",
-    "Discussion of outcomes, especially failures",
+    "The discussion explains the outcomes, especially any failures",
     "Does the discussion narrative explain outcomes and call out any failures?"
   ),
 ];
@@ -216,18 +220,18 @@ const RESULTS_CRITERIA: CriterionDefinition[] = [
 const PROBLEMS_CRITERIA: CriterionDefinition[] = [
   llm(
     "problems.failures_addressed",
-    "Every Fail row has a resolution",
+    "Every failed result has a documented resolution",
     "Is each failed result from Results and Discussions addressed here?",
     ["results_and_discussions"]
   ),
   llm(
     "problems.cause_and_fix",
-    "Cause, corrective action, and retest or verification",
+    "Each problem includes its cause, corrective action, and retest or verification",
     "For each problem, are cause, corrective action, and retest/verification of the fix stated?"
   ),
   llm(
     "problems.none_if_all_pass",
-    "If all results Pass, section states none",
+    "If all results pass, the section states there are no problems or open failures",
     "If every result passed, does this section state that there were no problems or open failures?",
     ["results_and_discussions"]
   ),
@@ -236,18 +240,18 @@ const PROBLEMS_CRITERIA: CriterionDefinition[] = [
 const CONCLUSION_CRITERIA: CriterionDefinition[] = [
   llm(
     "conclusion.overall",
-    "Overall verification outcome stated",
+    "The overall verification outcome is stated",
     "Is there an overall statement that design outputs meet design inputs, or an overall pass/fail?"
   ),
   llm(
     "conclusion.consistent_with_results",
-    "Conclusion is consistent with the P/F column",
+    "The conclusion is consistent with the Pass/Fail results",
     "Is the conclusion consistent with pass/fail results?",
     ["results_and_discussions"]
   ),
   llm(
     "conclusion.open_items",
-    "Open items or residual risk with owners, or explicit none",
+    "Each open item or residual risk has an owner, or the section states that none remain",
     "Are residual risks or follow-ups listed with owners, or is it explicit that none remain?"
   ),
 ];
@@ -284,14 +288,48 @@ function mergeEquipment(raw: unknown): { table: ReturnType<typeof normalizeRichF
   return { table: normalizeRichField(o.table ?? base.table) };
 }
 
+function leftoverTestersDateLine(
+  startDate: unknown,
+  endDate: unknown
+): string {
+  const start = typeof startDate === "string" ? startDate.trim() : "";
+  const end = typeof endDate === "string" ? endDate.trim() : "";
+  if (!start && !end) return "";
+  if (start && end) return `Test dates: ${start} through ${end}.`;
+  if (start) return `Start date: ${start}.`;
+  return `End date: ${end}.`;
+}
+
+/** Fold legacy startDate/endDate fields into the testers narrative once. */
+export function foldLeftoverTestersDates(
+  testers: ReturnType<typeof normalizeRichField>,
+  startDate: unknown,
+  endDate: unknown
+): ReturnType<typeof normalizeRichField> {
+  const line = leftoverTestersDateLine(startDate, endDate);
+  if (!line) return testers;
+  const existing = richJsonToPlainText(testers);
+  const start = typeof startDate === "string" ? startDate.trim() : "";
+  const end = typeof endDate === "string" ? endDate.trim() : "";
+  if (
+    existing.includes(line) ||
+    (start && existing.includes(start) && (!end || existing.includes(end)))
+  ) {
+    return testers;
+  }
+  return appendParagraphsToDoc(testers, line);
+}
+
 function mergeTestersDates(raw: unknown) {
   const base = EMPTY_CONVERGENT_DV_CONTENT.testers_dates;
-  if (!raw || typeof raw !== "object") return { ...base };
+  if (!raw || typeof raw !== "object") return { testers: base.testers };
   const o = raw as { testers?: unknown; startDate?: unknown; endDate?: unknown };
   return {
-    testers: normalizeRichField(o.testers ?? base.testers),
-    startDate: typeof o.startDate === "string" ? o.startDate : "",
-    endDate: typeof o.endDate === "string" ? o.endDate : "",
+    testers: foldLeftoverTestersDates(
+      normalizeRichField(o.testers ?? base.testers),
+      o.startDate,
+      o.endDate
+    ),
   };
 }
 
@@ -357,7 +395,7 @@ export const convergentDesignVerificationDefinition: DocumentTypeDefinition = {
       scope:
         "SECTION ROLE - SCOPE: Judge in-scope boundaries, exclusions, and alignment with Purpose.",
       testers_dates:
-        "SECTION ROLE - TESTERS & DATES: Judge named testers, execution dates, and independence/qualification.",
+        "SECTION ROLE - TESTERS & DATES: Judge named testers, execution dates written in the testers narrative, and independence/qualification. Dates belong in that narrative — there are no separate start/end date fields.",
       methods_of_measurement:
         "SECTION ROLE - METHODS OF MEASUREMENT: Judge method descriptions, predefined acceptance criteria, environment/configuration, and data recording.",
       test_equipment:
@@ -385,7 +423,30 @@ You never write to the document directly. Every change is a PROPOSAL that appear
       surface: "chat",
       sections: CONVERGENT_DV_TABLE_SECTIONS,
       labels: CONVERGENT_DV_SECTION_LABELS,
-    }),
+    }) + `
+
+## Section-Specific Drafting Instructions
+
+When drafting the **Testers & Dates** section:
+- Write tester names AND the test start/end or execution date range in the testers narrative. There are no separate start/end date fields — put dates in the same text as the testers.
+- targetField MUST be "testers".
+
+When drafting the **Test Equipment** section:
+- Include a one-line summary before the table starting exactly with: "The table below lists all...."
+- Follow it with the equipment table.
+
+When drafting the **Deviations** section:
+- Include a heading like "1.1. [name of report] Revision and number of Report".
+- Include a summary statement similar to: "There were [number] deviations encountered throughout the partial execution of the test protocol, [protocol number] Rev. [revision]. All approved deviation forms are attached in Appendix B of this report, following all completed datasheets for both executions."
+
+When drafting the **Results and Discussions** section, structure it exactly as follows:
+- "Testing per [report name and revision]"
+- "Data Collection Forms:"
+- "All completed data collection forms are attached in Appendix A of this report."
+- "Requirements Verified:"
+- The results matrix table (Req ID, Req Description, Satisfied By, P/F).
+- "Observations:"
+- A 1-line statement indicating if any observations were made outside the scope of protocol.`,
     draftOrder: [
       "purpose",
       "scope",
@@ -468,7 +529,7 @@ You never write to the document directly. Every change is a PROPOSAL that appear
         return content?.narrative ?? null;
       };
       const testers = byKey.testers_dates as
-        | { testers?: unknown; startDate?: string; endDate?: string }
+        | { testers?: unknown }
         | undefined;
       const results = byKey.results_and_discussions as
         | { narrative?: unknown; table?: unknown }
@@ -482,8 +543,6 @@ You never write to the document directly. Every change is a PROPOSAL that appear
         documentNo: report.documentNo,
         productName: meta.productName ?? "",
         revision: meta.revision ?? "",
-        testersStartDate: testers?.startDate ?? "",
-        testersEndDate: testers?.endDate ?? "",
         purposeXml: narrative("purpose"),
         scopeXml: narrative("scope"),
         testersXml: testers?.testers ?? null,

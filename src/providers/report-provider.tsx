@@ -27,9 +27,11 @@ import { mergeSection } from "@/lib/sections-merge";
 import {
   getDocumentType,
   getEvaluatableSections,
+  getWorkspaceSections,
   mergeSectionForType,
 } from "@/lib/document-types";
 import { activeSuggestionForSection } from "@/lib/ai/suggestion-gating";
+import { firstGeneratedSuggestionSection } from "@/lib/suggestions/navigate-suggestion";
 import { validateSuggestionLocate } from "@/lib/suggestions/validate-suggestion";
 import { normalizeCommentRecord } from "@/lib/comments/normalize";
 import { sectionsReadyForEvaluation } from "@/lib/ai/evaluation-readiness";
@@ -402,6 +404,10 @@ export function ReportProvider({
       normalizeCommentRecord(c as unknown as Record<string, unknown>)
     )
   );
+  const commentsRef = useRef(comments);
+  useEffect(() => {
+    commentsRef.current = comments;
+  }, [comments]);
   const [suggestionsFocusSection, setSuggestionsFocusSection] =
     useState<SectionType | null>(null);
   const [isEvaluating, setIsEvaluating] = useState(false);
@@ -568,6 +574,11 @@ export function ReportProvider({
   }, []);
 
   const refresh = useCallback(async () => {
+    const previousSuggestionIds = new Set(
+      commentsRef.current
+        .filter((comment) => comment.status === "open")
+        .map((comment) => comment.id)
+    );
     // Force any pending debounced edit to persist before reloading — otherwise
     // an edit made in the last ~1.5s could still be un-saved when the fetch
     // below overwrites local section state.
@@ -592,11 +603,18 @@ export function ReportProvider({
             : new Date(e.updatedAt as string).toISOString(),
       }))
     );
-    setComments(
-      (data.comments as Record<string, unknown>[]).map((c) =>
-        normalizeCommentRecord(c)
-      )
+    const nextComments = (data.comments as Record<string, unknown>[]).map(
+      (c) => normalizeCommentRecord(c)
     );
+    setComments(nextComments);
+    const generatedSection = firstGeneratedSuggestionSection(
+      previousSuggestionIds,
+      nextComments,
+      getWorkspaceSections(data.report.documentType).map((s) => s.key)
+    );
+    if (generatedSection) {
+      setSuggestionsFocusSection(generatedSection);
+    }
   }, [bundle.report.id, flushPendingSectionSaves]);
 
   const getSectionId = useCallback(

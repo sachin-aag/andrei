@@ -80,6 +80,18 @@ describe("docx import", () => {
     );
   });
 
+  it("strips mammoth italic wrappers without turning escaped asterisks into emphasis", () => {
+    expect(
+      mammothMarkdownToImportPlain(
+        "*Solea Model 3 Software Requirements Document* 822-700-0013"
+      )
+    ).toBe("Solea Model 3 Software Requirements Document 822-700-0013");
+    expect(mammothMarkdownToImportPlain("Use 5\\*10 CFU")).toBe("Use 5*10 CFU");
+    expect(mammothMarkdownToImportPlain("* keep this as a bullet-looking line")).toBe(
+      "* keep this as a bullet-looking line"
+    );
+  });
+
   it("imports draft DEV-QC-26-001 with full improve and control checkpoint lists", async () => {
     if (!fs.existsSync(legacyEquationFixturePath)) return;
 
