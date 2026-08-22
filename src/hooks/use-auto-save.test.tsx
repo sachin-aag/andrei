@@ -121,4 +121,90 @@ describe("useAutoSave", () => {
     expect(consoleError).not.toHaveBeenCalled();
     consoleError.mockRestore();
   });
+
+  it("posts the dirty value on unmount when beaconUrl is set", () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(null, { status: 204 }));
+    const { rerender, unmount } = renderHook(
+      ({ value }) =>
+        useAutoSave({
+          value,
+          onSave,
+          delayMs: 5_000,
+          beaconUrl: "/api/reports/r1/sections/define",
+          serialize: (v) => JSON.stringify({ content: v }),
+        }),
+      { initialProps: { value: "initial" } }
+    );
+
+    rerender({ value: "dirty-on-leave" });
+    unmount();
+
+    expect(onSave).not.toHaveBeenCalled();
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "/api/reports/r1/sections/define",
+      expect.objectContaining({
+        method: "POST",
+        keepalive: true,
+        body: JSON.stringify({ content: "dirty-on-leave" }),
+      })
+    );
+    fetchSpy.mockRestore();
+  });
+
+  it("does not post on unmount when the value never changed", () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(null, { status: 204 }));
+    const { unmount } = renderHook(() =>
+      useAutoSave({
+        value: "initial",
+        onSave,
+        delayMs: 5_000,
+        beaconUrl: "/api/reports/r1/sections/define",
+        serialize: (v) => JSON.stringify({ content: v }),
+      })
+    );
+
+    unmount();
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    fetchSpy.mockRestore();
+  });
+
+  it("posts the dirty value on pagehide", () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(null, { status: 204 }));
+    const { rerender } = renderHook(
+      ({ value }) =>
+        useAutoSave({
+          value,
+          onSave,
+          delayMs: 5_000,
+          beaconUrl: "/api/reports/r1/sections/define",
+          serialize: (v) => JSON.stringify({ content: v }),
+        }),
+      { initialProps: { value: "initial" } }
+    );
+
+    rerender({ value: "dirty-pagehide" });
+    act(() => {
+      window.dispatchEvent(new Event("pagehide"));
+    });
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "/api/reports/r1/sections/define",
+      expect.objectContaining({
+        method: "POST",
+        keepalive: true,
+        body: JSON.stringify({ content: "dirty-pagehide" }),
+      })
+    );
+    fetchSpy.mockRestore();
+  });
 });

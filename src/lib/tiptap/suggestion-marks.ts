@@ -11,9 +11,16 @@ declare module "@tiptap/core" {
 import {
   Fragment,
   Slice,
+  type Mark as PMMark,
   type Node as PMNode,
 } from "@tiptap/pm/model";
-import { Plugin, PluginKey, TextSelection, type EditorState } from "@tiptap/pm/state";
+import {
+  Plugin,
+  PluginKey,
+  TextSelection,
+  type EditorState,
+  type Transaction,
+} from "@tiptap/pm/state";
 import { ReplaceStep } from "@tiptap/pm/transform";
 import { createId } from "@paralleldrive/cuid2";
 
@@ -35,7 +42,8 @@ export type SuggestionKind = "fix" | "grammar" | "tone" | "removal" | "redraft";
 
 export const SuggestionInsert = Mark.create({
   name: suggestionInsertMarkName,
-  inclusive: true,
+  // Keep the next keystroke outside the insert <span>.
+  inclusive: false,
   addAttributes() {
     return {
       id: { default: null as string | null },
@@ -150,6 +158,138 @@ function pendingMarkAttrs(authorId: string) {
   };
 }
 
+function isPendingInsertByAuthor(mark: PMMark, authorId: string): boolean {
+  if (mark.type.name !== suggestionInsertMarkName) return false;
+  return mark.attrs.status === "pending" && mark.attrs.authorId === authorId;
+}
+
+function clampPos(state: EditorState, pos: number): number {
+  return Math.max(0, Math.min(pos, state.doc.content.size));
+}
+
+/** Reuse the current insert-run id so adjacent typed characters merge. */
+export function continuingInsertAttrs(
+  state: EditorState,
+  pos: number,
+  authorId: string
+) {
+  const $pos = state.doc.resolve(clampPos(state, pos));
+  const marks = [
+    ...(state.storedMarks ?? []),
+    ...$pos.marks(),
+    ...($pos.nodeBefore?.isText ? $pos.nodeBefore.marks : []),
+  ];
+  const found = marks.find((mark) => isPendingInsertByAuthor(mark, authorId));
+  return found ? { ...found.attrs } : pendingMarkAttrs(authorId);
+}
+
+export function sliceHasText(slice: Slice): boolean {
+  return slice.content.textBetween(0, slice.content.size, "").length > 0;
+}
+
+function textPos(state: EditorState, pos: number): number {
+  const $pos = state.doc.resolve(clampPos(state, pos));
+  if ($pos.parent.inlineContent) return $pos.pos;
+  return TextSelection.near($pos, 1).from;
+}
+
+function selectionAfterInsert(tr: Transaction, insertEnd: number): Transaction {
+  try {
+    return tr.setSelection(TextSelection.create(tr.doc, insertEnd));
+  } catch {
+    return tr.setSelection(TextSelection.near(tr.doc.resolve(insertEnd), 1));
+  }
+}
+
+function insertTrackedText(
+  state: EditorState,
+  insertAt: number,
+  text: string,
+  authorId: string
+): Transaction | null {
+  const insertMarkType = state.schema.marks[suggestionInsertMarkName];
+  if (!insertMarkType || text.length === 0) return null;
+
+  const insertEnd = insertAt + text.length;
+  const tr = state.tr
+    .insertText(text, insertAt)
+    .addMark(
+      insertAt,
+      insertEnd,
+      insertMarkType.create(continuingInsertAttrs(state, insertAt, authorId))
+    )
+    .setMeta("skipTrackChanges", true);
+  return selectionAfterInsert(tr, insertEnd);
+}
+
+function sameTextblock(state: EditorState, a: number, b: number): boolean {
+  const $a = state.doc.resolve(clampPos(state, a));
+  const $b = state.doc.resolve(clampPos(state, b));
+  return (
+    $a.parent.inlineContent &&
+    $b.parent.inlineContent &&
+    $a.start() === $b.start()
+  );
+}
+
+function rangeHasAiInsert(state: EditorState, from: number, to: number): boolean {
+  const insertMarkType = state.schema.marks[suggestionInsertMarkName];
+  if (!insertMarkType || from >= to) return false;
+  let found = false;
+  state.doc.nodesBetween(from, to, (node) => {
+    if (found) return false;
+    if (!node.isText) return true;
+    for (const mark of node.marks) {
+      if (mark.type === insertMarkType && mark.attrs.authorId === "ai") {
+        found = true;
+        return false;
+      }
+    }
+    return true;
+  });
+  return found;
+}
+
+/**
+ * Chrome may report the previous insert span (or an Enter split) as
+ * `from < to`. Insert without deleting.
+ *
+ * Same textblock → type at the caret, so a later AI suggestion span is not
+ * treated as the insert site. Chrome may also stretch `to` into a later
+ * paragraph that holds the AI span — still type at the caret. Cross-block
+ * Enter (no AI span in the Chrome range) → type at `to` so the new line
+ * stays a new line. `from === to` falls through to appendTransaction.
+ */
+export function trackChangesTextInputTransaction(
+  state: EditorState,
+  from: number,
+  to: number,
+  text: string,
+  authorId: string
+): Transaction | null {
+  if (text.length === 0) return null;
+
+  const { from: selFrom, to: selTo } = state.selection;
+  if (state.doc.textBetween(selFrom, selTo, "").length > 0) {
+    return trackChangesSelectionReplaceTransaction(
+      state,
+      selFrom,
+      selTo,
+      text,
+      authorId
+    );
+  }
+
+  if (from >= to) return null;
+
+  const insertAt =
+    rangeHasAiInsert(state, from, to) || sameTextblock(state, from, to)
+      ? textPos(state, selTo)
+      : textPos(state, to);
+
+  return insertTrackedText(state, insertAt, text, authorId);
+}
+
 export function trackChangesSelectionReplaceTransaction(
   state: EditorState,
   from: number,
@@ -163,17 +303,18 @@ export function trackChangesSelectionReplaceTransaction(
   const insertMarkType = state.schema.marks[suggestionInsertMarkName];
   if (!deleteMarkType || !insertMarkType) return null;
 
-  const insertAt = to;
+  const insertAt = textPos(state, to);
   const insertEnd = insertAt + text.length;
   const tr = state.tr
     .addMark(from, to, deleteMarkType.create(pendingMarkAttrs(authorId)))
     .insertText(text, insertAt, insertAt)
-    .addMark(insertAt, insertEnd, insertMarkType.create(pendingMarkAttrs(authorId)))
+    .addMark(
+      insertAt,
+      insertEnd,
+      insertMarkType.create(continuingInsertAttrs(state, insertAt, authorId))
+    )
     .setMeta("skipTrackChanges", true);
-
-  tr.setSelection(TextSelection.create(tr.doc, insertEnd));
-
-  return tr;
+  return selectionAfterInsert(tr, insertEnd);
 }
 
 /**
@@ -307,7 +448,7 @@ export const TrackChangesExtension = Extension.create({
           },
           handleTextInput(view, from, to, text) {
             if (editor.storage.trackChanges?.enabled !== true) return false;
-            const tr = trackChangesSelectionReplaceTransaction(
+            const tr = trackChangesTextInputTransaction(
               view.state,
               from,
               to,
@@ -331,7 +472,6 @@ export const TrackChangesExtension = Extension.create({
           if (transaction.getMeta("preventUpdate") === true) return null;
 
           const authorId = editor.storage.trackChanges?.authorId ?? "";
-          const attrs = () => pendingMarkAttrs(authorId);
           const fullContentReplace = (step: ReplaceStep) =>
             step.from === 0 && step.to === oldState.doc.content.size;
 
@@ -345,13 +485,19 @@ export const TrackChangesExtension = Extension.create({
               continue;
             }
             const slice = step.slice;
-            if (!slice || slice.size === 0) continue;
+            if (!slice || slice.size === 0 || !sliceHasText(slice)) continue;
 
             const start = transaction.mapping.map(step.from, -1);
             const end = start + slice.size;
             if (start >= end) continue;
 
-            tr = tr.addMark(start, end, insertMarkType.create(attrs()));
+            tr = tr.addMark(
+              start,
+              end,
+              insertMarkType.create(
+                continuingInsertAttrs(newState, start, authorId)
+              )
+            );
             changed = true;
           }
 

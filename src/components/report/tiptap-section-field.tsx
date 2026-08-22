@@ -66,6 +66,7 @@ import {
 } from "@/lib/tiptap/suggestion-action-widgets";
 import {
   injectSuggestionMarks,
+  richDocsMatchIgnoringAiPreview,
   stripPendingSuggestionsExcept,
 } from "@/lib/tiptap/suggestion-inject";
 import { AI_AUTHOR_ID } from "@/lib/ai/constants";
@@ -88,6 +89,7 @@ import { suggestionTargetsField } from "@/lib/suggestions/resolve-suggestion-fie
 import { validateSuggestionLocate } from "@/lib/suggestions/validate-suggestion";
 import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
 import { editorRegistryKey } from "@/providers/report-provider";
+import { isTrackChangesFieldEditable } from "@/lib/reports/section-save-policy";
 import type { SectionType } from "@/db/schema";
 import type { SectionContentMap } from "@/types/sections";
 
@@ -277,7 +279,7 @@ export type TiptapSectionFieldProps = {
   onChange: (doc: JSONContent) => void;
   /** Persist immediately after accept/reject suggestion (autosave flush). */
   onFlushSave?: () => void | Promise<void>;
-  /** When true, the field stays read-only even in engineer edit mode. */
+  /** When true, the field stays read-only even with track changes on. */
   locked?: boolean;
   /** Shrink the editor chrome for read-only blocks (e.g. signature tables). */
   compact?: boolean;
@@ -398,11 +400,16 @@ export function TiptapSectionField({
   // author explicitly accepts or ignores them. Stripping them on toggle-off
   // would silently destroy reviewer intent.
   const onChangeRef = useRef(onChange);
+  const applyExternalValueToEditorRef = useRef<() => void>(() => {});
   useLayoutEffect(() => {
     onChangeRef.current = onChange;
   }, [onChange]);
 
-  const editable = !locked && (!readOnly || trackChangesMode);
+  const editable = isTrackChangesFieldEditable({
+    locked,
+    readOnly,
+    trackChangesMode,
+  });
   const manager = getUser(currentUserId)?.role === "manager";
   const canInlineComment =
     (report.status === "submitted" || report.status === "in_review" || report.status === "draft") &&
@@ -448,6 +455,9 @@ export function TiptapSectionField({
         const json = ed.getJSON() as JSONContent;
         // Do not use flushSync here: onUpdate can run during useEffect (e.g. setContent sync), and React 19 forbids flushSync inside lifecycle methods.
         onChangeRef.current(json);
+      },
+      onBlur: () => {
+        applyExternalValueToEditorRef.current();
       },
     },
     [highlightExtension, placeholder, placeholderHighlightExtension, suggestionWidgetsExtension]
@@ -685,13 +695,22 @@ export function TiptapSectionField({
   const applyExternalValueToEditor = useCallback(() => {
     const currentEditor = editor;
     if (!currentEditor || currentEditor.isDestroyed) return;
-    const nextDoc = normalizeRichField(value);
-    const cur = JSON.stringify(currentEditor.getJSON());
-    const next = JSON.stringify(nextDoc);
-    if (cur !== next) {
-      currentEditor.commands.setContent(nextDoc as Content, { emitUpdate: false });
+    const incoming = normalizeRichField(value);
+    const current = currentEditor.getJSON() as JSONContent;
+    if (richDocsMatchIgnoringAiPreview(current, incoming)) return;
+    // Keystrokes update the editor first; parent state catches up via onUpdate.
+    // Replacing the doc while focused jumps the viewport (and can land the
+    // caret in a later AI suggestion span). Suggestion accept still applies
+    // because the preview-held lock is set for that moment.
+    if (currentEditor.view.hasFocus() && !isSuggestionPreviewHeld(section)) {
+      return;
     }
-  }, [editor, value]);
+    currentEditor.commands.setContent(incoming as Content, { emitUpdate: false });
+  }, [editor, value, isSuggestionPreviewHeld, section]);
+
+  useLayoutEffect(() => {
+    applyExternalValueToEditorRef.current = applyExternalValueToEditor;
+  }, [applyExternalValueToEditor]);
 
   useEffect(() => {
     applyExternalValueToEditor();
@@ -713,6 +732,15 @@ export function TiptapSectionField({
 
     let json = editor.getJSON() as JSONContent;
     const before = JSON.stringify(json);
+
+    if (
+      editor.view.hasFocus() &&
+      !previewHeld &&
+      activeSuggestionId &&
+      narrativeHasSuggestionMarks(json, activeSuggestionId)
+    ) {
+      return;
+    }
 
     if (previewHeld) {
       // Queue bridge: don't keep the previous suggestion marks and don't inject

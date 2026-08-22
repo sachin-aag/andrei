@@ -97,6 +97,14 @@ export function defineEditor(page: Page) {
   return defineSection(page).locator(".ProseMirror").first();
 }
 
+export function analyzeSection(page: Page) {
+  return page.locator("#analyze");
+}
+
+export function analyzePlainField(page: Page, contentPath: string) {
+  return page.locator(`[data-field-anchor="analyze.${contentPath}"]`);
+}
+
 /** Opens the review-margin “Add note on …” composer for a section. */
 export async function openReviewMarginNote(
   page: Page,

@@ -369,13 +369,13 @@ export function ReportWorkspace({
 
     setLoading(true);
     try {
-      if (signDialog === "submission") {
-        try {
-          await flushPendingSectionSaves();
-        } catch {
-          toast.error("Could not save pending edits. Fix save errors, then submit again.");
-          return;
-        }
+      try {
+        await flushPendingSectionSaves();
+      } catch {
+        toast.error(
+          "Could not save pending edits. Fix save errors, then try again."
+        );
+        return;
       }
 
       const endpoint = endpoints[signDialog];
@@ -679,10 +679,11 @@ export function ReportWorkspace({
           >
             <div className="space-y-10 min-w-0">
               <ReportHeader />
-              {activeAttachmentId ? (
-                <AttachmentViewer />
-              ) : (
-                getWorkspaceSections(report.documentType).map((section) => {
+              <div
+                hidden={!!activeAttachmentId}
+                className="space-y-10 min-w-0"
+              >
+                {getWorkspaceSections(report.documentType).map((section) => {
                   const s = section.key;
                   const Editor =
                     report.documentType === "design_verification"
@@ -699,8 +700,9 @@ export function ReportWorkspace({
                       <Editor />
                     </section>
                   );
-                })
-              )}
+                })}
+              </div>
+              {activeAttachmentId ? <AttachmentViewer /> : null}
             </div>
             {showReviewGutter ? (
               <aside

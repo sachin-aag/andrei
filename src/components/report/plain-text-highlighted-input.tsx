@@ -303,7 +303,7 @@ export function PlainTextHighlightedInput({
 
   if (!useMirrorOverlay) {
     return (
-      <div ref={shellRef} className="relative">
+      <div ref={shellRef} className="relative" data-field-shell={fieldAnchor}>
         <Textarea
           ref={textareaRef}
           {...textareaProps}
@@ -339,6 +339,7 @@ export function PlainTextHighlightedInput({
           "rounded-md ring-1 ring-violet-400/20 border border-violet-500/35"
       )}
       style={lockedMinStyle}
+      data-field-shell={fieldAnchor}
       data-suggestion-preview-held={suggestionPreviewHeld}
     >
       <div

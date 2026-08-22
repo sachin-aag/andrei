@@ -132,6 +132,17 @@ export function collectPendingSuggestionMarkIds(
   return [...ids];
 }
 
+/** True when two rich docs match aside from editor-local AI suggestion previews. */
+export function richDocsMatchIgnoringAiPreview(
+  a: JSONContent,
+  b: JSONContent
+): boolean {
+  return (
+    JSON.stringify(stripPendingSuggestionsExcept(a, null)) ===
+    JSON.stringify(stripPendingSuggestionsExcept(b, null))
+  );
+}
+
 export function stripPendingSuggestionsExcept(
   doc: JSONContent,
   keepMarkId: string | null

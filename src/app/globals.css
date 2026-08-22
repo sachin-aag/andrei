@@ -884,6 +884,8 @@ html[data-customer="convergent"] {
   box-shadow: inset 0 0 0 1px rgb(245 158 11 / 0.7);
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
+  display: inline-block;
+  white-space: nowrap;
 }
 
 /* Panel fill input focused — same placeholder in the narrative editor. */
@@ -934,6 +936,8 @@ html[data-customer="convergent"] {
   font-weight: 500;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
+  display: inline-block;
+  white-space: nowrap;
 }
 
 .suggestion-insert .placeholder-todo-mirror,

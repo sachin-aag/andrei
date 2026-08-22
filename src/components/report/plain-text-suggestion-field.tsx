@@ -31,6 +31,7 @@ import {
   splitPlainTextPreviewSegments,
   type PlainTextPreviewSegment,
 } from "@/lib/suggestions/plain-text-preview";
+import { trackChangesOverlaySegments } from "@/lib/suggestions/plain-text-track-changes";
 import {
   resolveSuggestionFieldPath,
   suggestionTargetsField,
@@ -48,13 +49,13 @@ import {
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 import { fromPosFromPlaceholderId } from "@/lib/placeholders/find";
 import type { SectionType } from "@/db/schema";
-import type { SectionContentMap } from "@/types/sections";
 
 function renderPreviewSegment(
   seg: PlainTextPreviewSegment,
   key: number,
   baseOffset: number,
-  focusedFromPos: number | null
+  focusedFromPos: number | null,
+  insertClassName = "suggestion-insert suggestion-insert-ai"
 ) {
   if (seg.kind === "delete") {
     return (
@@ -74,7 +75,7 @@ function renderPreviewSegment(
         text={seg.text}
         baseOffset={baseOffset}
         focusedFromPos={focusedFromPos}
-        wrapClassName="suggestion-insert suggestion-insert-ai"
+        wrapClassName={insertClassName}
       />
     );
   }
@@ -96,11 +97,18 @@ function renderPreviewSegments(
   segments: PlainTextPreviewSegment[],
   keyOffset: number,
   baseOffset: number,
-  focusedFromPos: number | null
+  focusedFromPos: number | null,
+  insertClassName?: string
 ) {
   let offset = baseOffset;
   return segments.map((seg, i) => {
-    const node = renderPreviewSegment(seg, keyOffset + i, offset, focusedFromPos);
+    const node = renderPreviewSegment(
+      seg,
+      keyOffset + i,
+      offset,
+      focusedFromPos,
+      insertClassName
+    );
     offset += seg.text.length;
     return node;
   });
@@ -125,7 +133,7 @@ export function PlainTextSuggestionField({
   className?: string;
   placeholder?: string;
 }) {
-  const { report, readOnly, currentUserId, refresh } = useReportData();
+  const { report, readOnly, currentUserId, refresh, trackChangesMode } = useReportData();
   const { getUser } = useUserDirectory();
   const canResolve =
     !readOnly &&
@@ -145,6 +153,22 @@ export function PlainTextSuggestionField({
   const [pending, setPending] = useState(false);
   const [applySettling, setApplySettling] = useState(false);
   const suggestionWidgetAnchorRef = useRef<HTMLSpanElement>(null);
+  const [tcBaseline, setTcBaseline] = useState<string | null>(null);
+  const [tcBaselineMode, setTcBaselineMode] = useState(trackChangesMode);
+  if (tcBaselineMode !== trackChangesMode) {
+    setTcBaselineMode(trackChangesMode);
+    setTcBaseline(null);
+  }
+
+  const handleUserChange = useCallback(
+    (next: string) => {
+      if (trackChangesMode) {
+        setTcBaseline((prev) => (prev === null ? value : prev));
+      }
+      onChange(next);
+    },
+    [onChange, trackChangesMode, value]
+  );
 
   const activeComment = useMemo(() => {
     if (isSuggestionPreviewHeld(section)) {
@@ -221,30 +245,67 @@ export function PlainTextSuggestionField({
     );
   }, [focusedPanelPlaceholderId, section, contentPath]);
 
+  const trackChangeSegments = useMemo(() => {
+    if (showInlineSuggestion || !trackChangesMode || tcBaseline === null) {
+      return null;
+    }
+    return trackChangesOverlaySegments(tcBaseline, value);
+  }, [showInlineSuggestion, trackChangesMode, tcBaseline, value]);
+
   const mirrorContent = useMemo(() => {
-    if (!showInlineSuggestion || !previewSegments) return undefined;
-    const { before, suggestion, after } =
-      splitPlainTextPreviewSegments(previewSegments);
-    const beforeLen = previewSegmentsTextLength(before);
-    const suggestionLen = previewSegmentsTextLength(suggestion);
-    return (
-      <>
-        {renderPreviewSegments(before, 0, 0, focusedFromPos)}
-        {renderPreviewSegments(suggestion, before.length, beforeLen, focusedFromPos)}
-        <span
-          ref={suggestionWidgetAnchorRef}
-          className="inline-block w-0 align-baseline"
-          aria-hidden
-        />
-        {renderPreviewSegments(
-          after,
-          before.length + suggestion.length,
-          beforeLen + suggestionLen,
-          focusedFromPos
-        )}
-      </>
-    );
-  }, [showInlineSuggestion, previewSegments, focusedFromPos]);
+    if (showInlineSuggestion && previewSegments) {
+      const { before, suggestion, after } =
+        splitPlainTextPreviewSegments(previewSegments);
+      const beforeLen = previewSegmentsTextLength(before);
+      const suggestionLen = previewSegmentsTextLength(suggestion);
+      return (
+        <>
+          {renderPreviewSegments(before, 0, 0, focusedFromPos)}
+          {renderPreviewSegments(
+            suggestion,
+            before.length,
+            beforeLen,
+            focusedFromPos
+          )}
+          <span
+            ref={suggestionWidgetAnchorRef}
+            className="inline-block w-0 align-baseline"
+            aria-hidden
+          />
+          {renderPreviewSegments(
+            after,
+            before.length + suggestion.length,
+            beforeLen + suggestionLen,
+            focusedFromPos
+          )}
+        </>
+      );
+    }
+    if (trackChangesMode) {
+      const segments =
+        trackChangeSegments ??
+        (value ? [{ kind: "context" as const, text: value }] : []);
+      return (
+        <>
+          {renderPreviewSegments(
+            segments,
+            0,
+            0,
+            focusedFromPos,
+            "suggestion-insert"
+          )}
+        </>
+      );
+    }
+    return undefined;
+  }, [
+    showInlineSuggestion,
+    previewSegments,
+    trackChangesMode,
+    trackChangeSegments,
+    value,
+    focusedFromPos,
+  ]);
 
   const applyActive = useCallback(async () => {
     if (!activeComment || pending || !canResolve) return;
@@ -308,6 +369,7 @@ export function PlainTextSuggestionField({
         }, result.nextSection);
       if (typeof nextValue === "string") {
         onChange(nextValue);
+        if (trackChangesMode) setTcBaseline(nextValue);
       }
       replaceSection(section, nextSection);
       setComments((prev) =>
@@ -352,6 +414,7 @@ export function PlainTextSuggestionField({
     refresh,
     beginSuggestionApplyTransition,
     endSuggestionApplyTransition,
+    trackChangesMode,
   ]);
 
   const dismissActive = useCallback(async () => {
@@ -436,7 +499,7 @@ export function PlainTextSuggestionField({
       <PlainTextHighlightedInput
         fieldAnchor={fieldAnchor}
         value={value}
-        onChange={onChange}
+        onChange={handleUserChange}
         suggestionPreviewHeld={
           isSuggestionPreviewHeld(section)
             ? suggestionApplyTransition[section]?.mode
