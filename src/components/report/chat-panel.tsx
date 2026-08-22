@@ -122,6 +122,17 @@ import {
   shouldLoadOlderMessages,
   visibleMessageStartIndex,
 } from "@/components/report/chat-visible-messages";
+import { getDocumentType } from "@/lib/document-types";
+import { readAgentDonePrefs } from "@/lib/notifications/agent-done-prefs";
+import {
+  agentDoneNotificationCopy,
+  elapsedSince,
+  notifyAgentDone,
+  requestAgentDoneNotificationPermission,
+  shouldAnnounceAgentDone,
+  shouldShowAgentDonePendingHint,
+  unlockAgentDoneAudio,
+} from "@/lib/notifications/notify-agent-done";
 
 type PendingChatImage = {
   id: string;
@@ -549,29 +560,38 @@ function MentionMenu({
 function ChatBusyStatus({
   mode,
   stale,
+  willNotify,
   onCancel,
 }: {
   mode: ChatMode;
   stale: boolean;
+  willNotify: boolean;
   onCancel: () => void;
 }) {
   return (
-    <div className="flex items-center gap-2 text-xs text-[var(--muted-foreground)]">
-      <Loader2 className="size-3.5 animate-spin" />
-      <span>
-        {stale
-          ? "Still working — this can take a few minutes."
-          : mode === "plan"
-            ? "Thinking through your question…"
-            : "Working…"}
-      </span>
-      <button
-        type="button"
-        onClick={onCancel}
-        className="underline decoration-[var(--border)] underline-offset-2 transition-colors hover:text-[var(--foreground)]"
-      >
-        Cancel
-      </button>
+    <div className="space-y-1">
+      <div className="flex items-center gap-2 text-xs text-[var(--muted-foreground)]">
+        <Loader2 className="size-3.5 animate-spin" />
+        <span>
+          {stale
+            ? "Still working — this can take a few minutes."
+            : mode === "plan"
+              ? "Thinking through your question…"
+              : "Working…"}
+        </span>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="underline decoration-[var(--border)] underline-offset-2 transition-colors hover:text-[var(--foreground)]"
+        >
+          Cancel
+        </button>
+      </div>
+      {willNotify ? (
+        <p className="pl-[22px] text-xs text-[var(--muted-foreground)]">
+          We&apos;ll notify you when this is complete.
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -952,6 +972,12 @@ export function ChatPanel() {
   const lastProgressAtRef = useRef<number | null>(null);
   const lastProgressSigRef = useRef("");
   const stoppedForWatchdogRef = useRef(false);
+  const agentRunStartedAtRef = useRef<number | null>(null);
+  const notifyContextRef = useRef({
+    currentUserId,
+    documentNo: report.documentNo,
+    documentType: report.documentType,
+  });
   const [elapsedMs, setElapsedMs] = useState(0);
   const [silentMs, setSilentMs] = useState(0);
 
@@ -966,17 +992,45 @@ export function ChatPanel() {
       void refresh();
       void loadSessions();
       if (isAbort || isDisconnect) {
+        agentRunStartedAtRef.current = null;
         void reloadSessionRef.current();
         return;
       }
       // Stream protocol errors already toast via onError. Empty Gemini turns
       // (thought-only / no parts) finish as success unless we catch them here.
-      if (isError) return;
-      if (
+      if (isError) {
+        agentRunStartedAtRef.current = null;
+        return;
+      }
+      const emptyAssistant =
         message.role === "assistant" &&
-        !assistantPartsHaveVisibleContent(message.parts)
-      ) {
+        !assistantPartsHaveVisibleContent(message.parts);
+      if (emptyAssistant) {
         toast.error(CHAT_ASSISTANT_ERROR_MESSAGE);
+        return;
+      }
+      const startedAt = agentRunStartedAtRef.current;
+      agentRunStartedAtRef.current = null;
+      const elapsedMs = elapsedSince(startedAt);
+      if (
+        shouldAnnounceAgentDone({
+          isAbort,
+          isDisconnect,
+          isError,
+          emptyAssistant,
+          elapsedMs,
+        })
+      ) {
+        const { currentUserId: userId, documentNo, documentType } =
+          notifyContextRef.current;
+        const { documentNoun } = getDocumentType(documentType);
+        notifyAgentDone(
+          readAgentDonePrefs(userId),
+          agentDoneNotificationCopy({
+            documentNoun,
+            documentNo,
+          })
+        );
       }
     },
     onError: (err) => {
@@ -1048,6 +1102,14 @@ export function ChatPanel() {
     },
     [persistComposerPrefs]
   );
+
+  useEffect(() => {
+    notifyContextRef.current = {
+      currentUserId,
+      documentNo: report.documentNo,
+      documentType: report.documentType,
+    };
+  }, [currentUserId, report.documentNo, report.documentType]);
 
   useLayoutEffect(() => {
     if (!currentUserId) {
@@ -1398,6 +1460,13 @@ export function ChatPanel() {
       const trimmed = text.trim();
       const files = attached.map((image) => image.part);
       if ((!trimmed && files.length === 0) || busy || initializing || attaching) return;
+      const agentDonePrefs = readAgentDonePrefs(currentUserId);
+      if (agentDonePrefs.sound) {
+        unlockAgentDoneAudio();
+      }
+      if (agentDonePrefs.notifications) {
+        void requestAgentDoneNotificationPermission();
+      }
       let sessionId = currentSessionId;
       if (!sessionId) {
         sessionId = await createSession();
@@ -1431,6 +1500,7 @@ export function ChatPanel() {
           id: mention.id,
         }));
       }
+      agentRunStartedAtRef.current = Date.now();
       if (trimmed && files.length > 0) {
         void sendMessage({ text: trimmed, files }, { body });
       } else if (files.length > 0) {
@@ -1452,6 +1522,7 @@ export function ChatPanel() {
       pendingImages,
       mentions,
       report.documentType,
+      currentUserId,
     ]
   );
 
@@ -1596,6 +1667,10 @@ export function ChatPanel() {
           <ChatBusyStatus
             mode={mode}
             stale={watchdog === "stale" || watchdog === "give_up"}
+            willNotify={shouldShowAgentDonePendingHint({
+              notifications: readAgentDonePrefs(currentUserId).notifications,
+              elapsedMs,
+            })}
             onCancel={stopTurn}
           />
         ) : null}
