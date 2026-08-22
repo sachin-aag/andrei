@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { useEffect } from "react";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ReportSidebar } from "@/components/report/report-sidebar";
@@ -9,8 +10,15 @@ vi.mock("@/providers/report-provider", () => ({
   useReportComments: () => ({ comments: [] }),
 }));
 
+let chatPanelMounts = 0;
+
 vi.mock("@/components/report/chat-panel", () => ({
-  ChatPanel: () => <div data-testid="chat-panel">chat</div>,
+  ChatPanel: function MockChatPanel() {
+    useEffect(() => {
+      chatPanelMounts += 1;
+    }, []);
+    return <div data-testid="chat-panel">chat</div>;
+  },
 }));
 
 vi.mock("@/components/report/placeholders-panel", () => ({
@@ -40,6 +48,7 @@ function renderSidebar(collapsed: boolean, activeTab: "assistant" | "criteria") 
 
 describe("ReportSidebar chat keep-alive", () => {
   it("keeps ChatPanel mounted when the sidebar is collapsed", () => {
+    chatPanelMounts = 0;
     const { rerender } = renderSidebar(false, "assistant");
     expect(screen.getByTestId("chat-panel")).toBeInTheDocument();
 
@@ -57,9 +66,11 @@ describe("ReportSidebar chat keep-alive", () => {
 
     expect(screen.getByTestId("chat-panel")).toBeInTheDocument();
     expect(screen.getByTestId("chat-panel").parentElement).toHaveClass("hidden");
+    expect(chatPanelMounts).toBe(1);
   });
 
   it("keeps ChatPanel mounted when switching away from Assistant", () => {
+    chatPanelMounts = 0;
     const { rerender } = renderSidebar(false, "assistant");
     expect(screen.getByTestId("chat-panel")).toBeInTheDocument();
     expect(screen.getByTestId("chat-panel").parentElement).not.toHaveClass(
@@ -80,5 +91,6 @@ describe("ReportSidebar chat keep-alive", () => {
 
     expect(screen.getByTestId("chat-panel")).toBeInTheDocument();
     expect(screen.getByTestId("chat-panel").parentElement).toHaveClass("hidden");
+    expect(chatPanelMounts).toBe(1);
   });
 });

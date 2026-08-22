@@ -889,7 +889,13 @@ export function ChatPanel() {
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [initializing, setInitializing] = useState(true);
+  const sessionWindowKey = `${report.id}:${currentSessionId ?? ""}`;
+  const [windowedSessionKey, setWindowedSessionKey] = useState(sessionWindowKey);
   const [visibleCount, setVisibleCount] = useState(CHAT_VISIBLE_TAIL);
+  if (windowedSessionKey !== sessionWindowKey) {
+    setWindowedSessionKey(sessionWindowKey);
+    setVisibleCount(CHAT_VISIBLE_TAIL);
+  }
   const scrollRef = useRef<HTMLDivElement>(null);
   const historyRef = useRef<HTMLDivElement>(null);
   const loadingOlderRef = useRef(false);
@@ -1144,11 +1150,6 @@ export function ChatPanel() {
   useEffect(() => {
     messagesRef.current = messages;
   }, [messages]);
-
-  const sessionWindowKey = `${report.id}:${currentSessionId ?? ""}`;
-  useEffect(() => {
-    setVisibleCount(CHAT_VISIBLE_TAIL);
-  }, [sessionWindowKey]);
 
   const visibleStartIndex = visibleMessageStartIndex(
     messages.length,
