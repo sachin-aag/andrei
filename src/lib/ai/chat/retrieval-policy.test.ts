@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { getDocumentType } from "@/lib/document-types";
 import {
   classifyRetrievalPolicy,
   recentUserMessageTexts,
@@ -41,9 +42,10 @@ describe("classifyRetrievalPolicy", () => {
       userText: "What is the pass/fail result for SW-LWB-4 on page 31?",
       hasDocuments: true,
       mentionedPageCount: 62,
+      documentType: "design_verification",
     });
     expect(decision.policy).toBe("adaptive");
-    expect(decision.reason).toBe("agentic_default");
+    expect(decision.reason).toBe("bounded_locator");
   });
 
   it("escalates a family-code follow-up that is not a single requirement id", () => {
@@ -60,6 +62,7 @@ describe("classifyRetrievalPolicy", () => {
       userText: "Give me a quick high-level summary of Appendix B",
       hasDocuments: true,
       mentionedPageCount: 62,
+      documentType: "design_verification",
     });
     expect(decision.policy).toBe("focused");
     expect(decision.reason).toBe("explicit_quick_overview");
@@ -80,9 +83,35 @@ describe("classifyRetrievalPolicy", () => {
       userText: "What is the document number on the cover?",
       mentionedPageCount: 62,
       hasDocuments: true,
+      documentType: "design_verification",
     });
     expect(decision.policy).toBe("adaptive");
     expect(decision.reason).toBe("agentic_default");
+  });
+
+  it("escalates Convergent Results inventory requests", () => {
+    const completeSet = classifyRetrievalPolicy({
+      userText: "populate the results matrix with the complete set of test cases",
+      sectionScope: "results_and_discussions",
+      hasDocuments: true,
+    });
+    expect(completeSet.policy).toBe("comprehensive");
+
+    const scopedTable = classifyRetrievalPolicy({
+      userText: "Fill the table with the requirement rows",
+      sectionScope: "results_and_discussions",
+      hasDocuments: true,
+    });
+    expect(scopedTable.policy).toBe("comprehensive");
+    expect(scopedTable.reason).toBe("matrix_section_inventory");
+  });
+
+  it("does not let a quick-mode override win over inventory language", () => {
+    const decision = classifyRetrievalPolicy({
+      userText: "in quick mode, list every test from Appendix B",
+      hasDocuments: true,
+    });
+    expect(decision.policy).toBe("comprehensive");
   });
 
   it("keeps equipment and UUT table drafts on the agentic path", () => {
@@ -104,6 +133,136 @@ describe("classifyRetrievalPolicy", () => {
     });
     expect(followUp.policy).toBe("adaptive");
     expect(followUp.reason).toBe("agentic_default");
+  });
+
+  it("escalates an unscoped draft-report on a distributed DV catalog", () => {
+    const decision = classifyRetrievalPolicy({
+      userText: "draft report",
+      sectionScope: "all",
+      documentType: "design_verification",
+      hasDocuments: true,
+      totalReadyPages: 62,
+    });
+    expect(decision.policy).toBe("comprehensive");
+    expect(decision.reason).toBe("open_set_distributed");
+  });
+
+  it("keeps an unscoped draft-report adaptive on a short DV attachment", () => {
+    const decision = classifyRetrievalPolicy({
+      userText: "draft report",
+      sectionScope: "all",
+      documentType: "design_verification",
+      hasDocuments: true,
+      totalReadyPages: 3,
+    });
+    expect(decision.policy).toBe("adaptive");
+    expect(decision.reason).toBe("agentic_default");
+  });
+
+  it("keeps an equipment draft adaptive even when the catalog is large", () => {
+    const decision = classifyRetrievalPolicy({
+      userText:
+        "which equipment was used for testing? lets draft the relevant section for this",
+      sectionScope: "all",
+      documentType: "design_verification",
+      hasDocuments: true,
+      totalReadyPages: 62,
+    });
+    expect(decision.policy).toBe("adaptive");
+    expect(decision.reason).toBe("agentic_default");
+  });
+
+  it("keeps a named requirement on a labelled page adaptive on a large DV catalog", () => {
+    const decision = classifyRetrievalPolicy({
+      userText: "SW-LWB-4 on page 31",
+      sectionScope: "all",
+      documentType: "design_verification",
+      hasDocuments: true,
+      totalReadyPages: 62,
+    });
+    expect(decision.policy).toBe("adaptive");
+    expect(decision.reason).toBe("bounded_locator");
+  });
+
+  it("escalates a scoped inventory section without fill/complete verbs", () => {
+    const decision = classifyRetrievalPolicy({
+      userText: "write this up",
+      sectionScope: "traceability",
+      documentType: "design_verification",
+      hasDocuments: true,
+    });
+    expect(decision.policy).toBe("comprehensive");
+    expect(decision.reason).toBe("matrix_section_inventory");
+  });
+
+  it("escalates a scoped Results section without fill verbs", () => {
+    const decision = classifyRetrievalPolicy({
+      userText: "do this section",
+      sectionScope: "results_and_discussions",
+      hasDocuments: true,
+    });
+    expect(decision.policy).toBe("comprehensive");
+    expect(decision.reason).toBe("matrix_section_inventory");
+  });
+
+  it("keeps investigation draft-report adaptive even with a large attachment", () => {
+    const decision = classifyRetrievalPolicy({
+      userText: "draft report",
+      sectionScope: "all",
+      documentType: "investigation_report",
+      hasDocuments: true,
+      totalReadyPages: 62,
+    });
+    expect(decision.policy).toBe("adaptive");
+    expect(decision.reason).toBe("agentic_default");
+  });
+
+  it("keeps a scoped single-id results question adaptive", () => {
+    const decision = classifyRetrievalPolicy({
+      userText: "what is P/F for SW-LWB-4",
+      sectionScope: "traceability",
+      documentType: "design_verification",
+      hasDocuments: true,
+      totalReadyPages: 62,
+    });
+    expect(decision.policy).toBe("adaptive");
+    expect(decision.reason).toBe("bounded_locator");
+  });
+
+  it("keeps a quick summary on an inventory section focused", () => {
+    const decision = classifyRetrievalPolicy({
+      userText: "quick summary of this section",
+      sectionScope: "traceability",
+      documentType: "design_verification",
+      hasDocuments: true,
+      totalReadyPages: 62,
+    });
+    expect(decision.policy).toBe("focused");
+    expect(decision.reason).toBe("explicit_quick_overview");
+  });
+
+  it("treats many outline siblings as distributed evidence", () => {
+    const decision = classifyRetrievalPolicy({
+      userText: "draft report",
+      sectionScope: "all",
+      documentType: "design_verification",
+      hasDocuments: true,
+      totalReadyPages: 3,
+      outlineSiblingCount: 6,
+    });
+    expect(decision.policy).toBe("comprehensive");
+    expect(decision.reason).toBe("open_set_distributed");
+  });
+});
+
+describe("document-type inventory registry", () => {
+  it("registers demo DV matrices and leaves investigation empty", () => {
+    expect(getDocumentType("design_verification").chat.inventorySections).toEqual(
+      ["traceability", "test_results"]
+    );
+    expect(
+      getDocumentType("investigation_report").chat.inventorySections ?? []
+    ).toEqual([]);
   });
 });
 

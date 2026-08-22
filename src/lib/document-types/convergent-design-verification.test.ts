@@ -17,6 +17,27 @@ function testersDoc(text: string) {
   };
 }
 
+describe("convergent chat inventory registry", () => {
+  it("marks Results and Discussions as the only inventory section", () => {
+    expect(convergentDesignVerificationDefinition.chat.inventorySections).toEqual(
+      ["results_and_discussions"]
+    );
+  });
+
+  it("treats equipment / UUT wording as test-equipment intent", () => {
+    const patterns = new Map(
+      convergentDesignVerificationDefinition.chat.sectionIntentPatterns
+    );
+    const equipment = patterns.get("test_equipment") ?? [];
+    expect(equipment.some((pattern) => pattern.test("which equipment was used"))).toBe(
+      true
+    );
+    expect(equipment.some((pattern) => pattern.test("the UUTs on the bench"))).toBe(
+      true
+    );
+  });
+});
+
 describe("foldLeftoverTestersDates", () => {
   it("appends a date range when testers prose has no dates", () => {
     const folded = foldLeftoverTestersDates(

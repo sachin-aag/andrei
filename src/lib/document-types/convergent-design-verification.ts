@@ -439,14 +439,17 @@ When drafting the **Deviations** section:
 - Include a heading like "1.1. [name of report] Revision and number of Report".
 - Include a summary statement similar to: "There were [number] deviations encountered throughout the partial execution of the test protocol, [protocol number] Rev. [revision]. All approved deviation forms are attached in Appendix B of this report, following all completed datasheets for both executions."
 
-When drafting the **Results and Discussions** section, structure it exactly as follows:
+When drafting the **Results and Discussions** section, make TWO draft_field calls — never one combined draft:
+
+targetField \`narrative\` (Discussion) — prose only, no markdown table:
 - "Testing per [report name and revision]"
 - "Data Collection Forms:"
 - "All completed data collection forms are attached in Appendix A of this report."
 - "Requirements Verified:"
-- The results matrix table (Req ID, Req Description, Satisfied By, P/F).
 - "Observations:"
-- A 1-line statement indicating if any observations were made outside the scope of protocol.`,
+- A 1-line statement indicating if any observations were made outside the scope of protocol.
+
+targetField \`table\` (Results matrix) — ONE GFM table only (Req ID | Req Description | Satisfied By | P/F). Do not put that table, or any Req ID / P/F rows, in Discussion.`,
     draftOrder: [
       "purpose",
       "scope",
@@ -458,6 +461,7 @@ When drafting the **Results and Discussions** section, structure it exactly as f
       "testers_dates",
       "conclusion",
     ],
+    inventorySections: ["results_and_discussions"],
     sectionIntentPatterns: [
       ["purpose", [/\bpurpose\b/i, /\bobjective\b/i, /\bverification objective\b/i]],
       ["scope", [/\bscope\b/i, /\bin-scope\b/i, /\bexclusions?\b/i]],
@@ -477,6 +481,8 @@ When drafting the **Results and Discussions** section, structure it exactly as f
         "test_equipment",
         [
           /\btest equipment\b/i,
+          /\bequipment\b/i,
+          /\buuts?\b/i,
           /\basset tag\b/i,
           /\bcalibration\b/i,
           /\bserial no\b/i,

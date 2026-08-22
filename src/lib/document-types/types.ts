@@ -55,6 +55,13 @@ export type DocumentTypeChatConfig = {
     readonly [SectionType, readonly RegExp[]]
   >;
   /**
+   * Open-set work products: missing a member is a failure (traceability /
+   * results matrices). Omit or leave empty when the type has none — including
+   * one-locus tables such as test equipment. Chat retrieval uses this list
+   * instead of matching verbs like "draft" or "complete".
+   */
+  inventorySections?: readonly SectionType[];
+  /**
    * Optional document-type drafting rules appended to the chat system prompt
    * (e.g. fixed table column schemas for matrix sections).
    */

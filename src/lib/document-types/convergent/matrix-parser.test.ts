@@ -146,6 +146,21 @@ describe("Convergent results matrix", () => {
     expect(parsed.rows[0]?.passFail).toBe("Pass");
   });
 
+  it("keeps dotted requirement IDs verbatim", () => {
+    const parsed = parseResultsMatrix({
+      table: tableDoc(CONVERGENT_RESULTS_HEADERS, [
+        ["SW-SST-5.1.1", "Soft tissue", "TOP-00051 datasheets", "Pass"],
+        ["SW-IN-1.1", "Upgrade", "TOP-00051 datasheets", "Pass"],
+      ]),
+    });
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(parsed.rows.map((row) => row.requirementId)).toEqual([
+      "SW-SST-5.1.1",
+      "SW-IN-1.1",
+    ]);
+  });
+
   it("requires Req ID and P/F on each row", () => {
     const incomplete = checkResultsMatrixComplete(
       ctx(
