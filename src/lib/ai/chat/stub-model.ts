@@ -52,6 +52,10 @@ export async function buildStubChatModel(plan: StubChatPlan): Promise<LanguageMo
     : "";
 
   const doStream = async () => {
+    const stubDelayMs = Number.parseInt(process.env.CHAT_STUB_DELAY_MS ?? "", 10);
+    if (Number.isFinite(stubDelayMs) && stubDelayMs > 0) {
+      await new Promise((resolve) => setTimeout(resolve, stubDelayMs));
+    }
     const step = call++;
 
     if (mismatch && step === 0) {
