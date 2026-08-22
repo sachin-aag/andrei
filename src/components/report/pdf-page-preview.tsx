@@ -1,12 +1,27 @@
 "use client";
 
-import { memo, useEffect, useRef, useState, type RefObject } from "react";
-import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type RefObject,
+} from "react";
+import type {
+  PDFDataRangeTransport,
+  PDFDocumentProxy,
+  PDFPageProxy,
+} from "pdfjs-dist";
 import { loadPdfjs } from "@/lib/attachments/load-pdfjs";
 import {
   pdfjsPreviewLoadingOptions,
   pdfjsWorkerSrc,
 } from "@/lib/attachments/pdfjs-browser";
+import {
+  createPdfPreviewRangeTransport,
+  resolvePdfPreviewByteLength,
+} from "@/lib/attachments/pdfjs-preview-transport";
 import {
   contentUrlFromPreviewSrc,
   layoutPreviewTextSpans,
@@ -47,9 +62,10 @@ type DestroyableTask = {
  * Paints PDF pages to a scrollable stack of canvases with official pdf.js
  * (wasm + standard fonts) and a transparent text layer for select/copy.
  *
- * Large files load through HTTP Range so page 1 can paint before the rest of
- * the file arrives. Visible pages paint first; neighbors prefetch as you
- * scroll. The canvas is shown as soon as it paints — the text layer follows.
+ * Large files load through a known-length pdf.js range transport so the
+ * viewer never starts a full-file GET. The requested page paints first;
+ * neighbors prefetch only after that canvas is on screen. The canvas is
+ * shown as soon as it paints — the text layer follows.
  *
  * Do not put `application/pdf` in an iframe/embed: Chrome and Comet intercept
  * that navigation. Do not use the serverless `unpdf` renderer here — it skips
@@ -59,11 +75,13 @@ export function PdfPagePreview({
   src,
   page,
   title,
+  sizeBytes,
   onVisiblePageChange,
 }: {
   src: string;
   page: number;
   title: string;
+  sizeBytes?: number;
   onVisiblePageChange?: (page: number) => void;
 }) {
   const contentUrl = contentUrlFromPreviewSrc(src);
@@ -84,17 +102,28 @@ export function PdfPagePreview({
       cancelled: false,
       task: null,
     };
+    const abort = new AbortController();
 
     void (async () => {
       try {
-        const { getDocument, GlobalWorkerOptions, version: pdfjsVersion } =
-          await loadPdfjs();
+        const [pdfjs, length] = await Promise.all([
+          loadPdfjs(),
+          resolvePdfPreviewByteLength(contentUrl, sizeBytes, abort.signal),
+        ]);
         if (session.cancelled) return;
+        const {
+          getDocument,
+          PDFDataRangeTransport,
+          GlobalWorkerOptions,
+          version: pdfjsVersion,
+        } = pdfjs;
         GlobalWorkerOptions.workerSrc = pdfjsWorkerSrc(pdfjsVersion);
-        // Library load is prewarmed from the Documents list. getDocument({ url })
-        // starts the Range fetches — do not arrayBuffer() the file here.
         const loadingTask = getDocument({
-          url: contentUrl,
+          range: createPdfPreviewRangeTransport(PDFDataRangeTransport, {
+            url: contentUrl,
+            length,
+            signal: abort.signal,
+          }) as PDFDataRangeTransport,
           ...pdfjsPreviewLoadingOptions(pdfjsVersion),
         });
         session.task = loadingTask;
@@ -119,9 +148,10 @@ export function PdfPagePreview({
 
     return () => {
       session.cancelled = true;
+      abort.abort();
       void session.task?.destroy();
     };
-  }, [contentUrl]);
+  }, [contentUrl, sizeBytes]);
 
   if (state.status === "error") {
     return (
@@ -175,6 +205,10 @@ function PdfDocumentPages({
   onVisiblePageChangeRef: RefObject<((page: number) => void) | undefined>;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [prefetchNeighbors, setPrefetchNeighbors] = useState(false);
+  const enableNeighborPrefetch = useCallback(() => {
+    setPrefetchNeighbors(true);
+  }, []);
   const [paintedPages, setPaintedPages] = useState<ReadonlySet<number>>(() =>
     initialPaintedPageSet(initialPage)
   );
@@ -211,19 +245,21 @@ function PdfDocumentPages({
       return;
     }
 
-    const prefetch = new IntersectionObserver(
-      (entries) => {
-        const visible = entries.flatMap((entry) => {
-          if (!entry.isIntersecting) return [];
-          const pageNumber = Number(
-            (entry.target as HTMLElement).dataset.pdfPage
-          );
-          return Number.isInteger(pageNumber) ? [pageNumber] : [];
-        });
-        if (visible.length > 0) markPainted(visible);
-      },
-      { root, rootMargin: "800px 0px" }
-    );
+    const prefetch = prefetchNeighbors
+      ? new IntersectionObserver(
+          (entries) => {
+            const visible = entries.flatMap((entry) => {
+              if (!entry.isIntersecting) return [];
+              const pageNumber = Number(
+                (entry.target as HTMLElement).dataset.pdfPage
+              );
+              return Number.isInteger(pageNumber) ? [pageNumber] : [];
+            });
+            if (visible.length > 0) markPainted(visible);
+          },
+          { root, rootMargin: "800px 0px" }
+        )
+      : null;
 
     const currentPage = new IntersectionObserver(
       (entries) => {
@@ -244,14 +280,14 @@ function PdfDocumentPages({
     );
 
     for (const node of root.querySelectorAll("[data-pdf-page]")) {
-      prefetch.observe(node);
+      prefetch?.observe(node);
       currentPage.observe(node);
     }
     return () => {
-      prefetch.disconnect();
+      prefetch?.disconnect();
       currentPage.disconnect();
     };
-  }, [numPages, onVisiblePageChangeRef]);
+  }, [numPages, onVisiblePageChangeRef, prefetchNeighbors]);
 
   useEffect(() => {
     const root = scrollRef.current;
@@ -284,6 +320,11 @@ function PdfDocumentPages({
               pageNumber={pageNumber}
               title={title}
               shouldRender={paintedPages.has(pageNumber)}
+              onRequestedPageSettled={
+                pageNumber === initialPaintedPageNumber(initialPage)
+                  ? enableNeighborPrefetch
+                  : undefined
+              }
               fallbackWidth={pageWidth}
               fallbackHeight={pageHeight}
             />
@@ -299,6 +340,7 @@ const PdfPreviewPage = memo(function PdfPreviewPage({
   pageNumber,
   title,
   shouldRender,
+  onRequestedPageSettled,
   fallbackWidth,
   fallbackHeight,
 }: {
@@ -306,6 +348,7 @@ const PdfPreviewPage = memo(function PdfPreviewPage({
   pageNumber: number;
   title: string;
   shouldRender: boolean;
+  onRequestedPageSettled?: () => void;
   fallbackWidth: number;
   fallbackHeight: number;
 }) {
@@ -339,6 +382,7 @@ const PdfPreviewPage = memo(function PdfPreviewPage({
           pageWidth: viewport.width,
           pageHeight: viewport.height,
         });
+        onRequestedPageSettled?.();
         const spans = await readPreviewTextSpans(pdfPage, viewport.height);
         if (!controller.signal.aborted) {
           setState({
@@ -351,12 +395,13 @@ const PdfPreviewPage = memo(function PdfPreviewPage({
       } catch {
         if (!controller.signal.aborted) {
           setState({ status: "error" });
+          onRequestedPageSettled?.();
         }
       }
     })();
 
     return () => controller.abort();
-  }, [pdf, pageNumber, shouldRender]);
+  }, [pdf, pageNumber, shouldRender, onRequestedPageSettled]);
 
   const canvasVisible = isCanvasVisible(state);
   const width = canvasVisible ? state.pageWidth : fallbackWidth;

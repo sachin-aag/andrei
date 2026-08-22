@@ -10,10 +10,23 @@ const getDocument = vi.fn();
 const renderPage = vi.fn();
 const getPage = vi.fn();
 
+class MockPDFDataRangeTransport {
+  length: number;
+  initialData: Uint8Array | null;
+  constructor(length: number, initialData: Uint8Array | null) {
+    this.length = length;
+    this.initialData = initialData;
+  }
+  onDataRange(): void {}
+  requestDataRange(): void {}
+  abort(): void {}
+}
+
 vi.mock("pdfjs-dist", () => ({
   version: "6.1.200",
   GlobalWorkerOptions: { workerSrc: "" },
   getDocument: (...args: unknown[]) => getDocument(...args),
+  PDFDataRangeTransport: MockPDFDataRangeTransport,
 }));
 
 function mockPdfPage(
@@ -127,6 +140,10 @@ describe("PdfPagePreview", () => {
     HTMLCanvasElement.prototype.getContext = vi.fn().mockReturnValue({
       canvas: {},
     }) as typeof HTMLCanvasElement.prototype.getContext;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new Error("preview tests must pass sizeBytes"))
+    );
     installImmediateIntersectionObserver();
   });
 
@@ -141,6 +158,7 @@ describe("PdfPagePreview", () => {
         src="/api/reports/r1/attachments/a1/content?proxy=1&page=2#page=2"
         page={2}
         title="Evidence.pdf"
+        sizeBytes={250_000}
       />
     );
 
@@ -154,11 +172,16 @@ describe("PdfPagePreview", () => {
       expect(getDocument).toHaveBeenCalledTimes(1);
       expect(getDocument).toHaveBeenCalledWith(
         expect.objectContaining({
-          url: "/api/reports/r1/attachments/a1/content?proxy=1",
+          range: expect.any(MockPDFDataRangeTransport),
           ...pdfjsPreviewLoadingOptions("6.1.200"),
         })
       );
+      expect(getDocument.mock.calls[0]?.[0]).not.toHaveProperty("url");
       expect(getDocument.mock.calls[0]?.[0]).not.toHaveProperty("data");
+      expect(
+        (getDocument.mock.calls[0]?.[0] as { range: MockPDFDataRangeTransport })
+          .range.length
+      ).toBe(250_000);
       expect(renderPage).toHaveBeenCalledTimes(2);
       expect(renderPage).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -185,6 +208,7 @@ describe("PdfPagePreview", () => {
         src="/api/reports/r1/attachments/a1/content?proxy=1&page=1"
         page={1}
         title="Evidence.pdf"
+        sizeBytes={250_000}
       />
     );
     await screen.findByText("Batch page 2");
@@ -194,6 +218,7 @@ describe("PdfPagePreview", () => {
         src="/api/reports/r1/attachments/a1/content?proxy=1&page=2"
         page={2}
         title="Evidence.pdf"
+        sizeBytes={250_000}
       />
     );
 
@@ -220,6 +245,7 @@ describe("PdfPagePreview", () => {
         src="/api/reports/r1/attachments/a1/content?proxy=1&page=1"
         page={1}
         title="Scan.pdf"
+        sizeBytes={250_000}
       />
     );
 
@@ -239,6 +265,7 @@ describe("PdfPagePreview", () => {
         src="/api/reports/r1/attachments/a1/content?proxy=1&page=2"
         page={2}
         title="Evidence.pdf"
+        sizeBytes={250_000}
       />
     );
 
@@ -267,6 +294,7 @@ describe("PdfPagePreview", () => {
         src="/api/reports/r1/attachments/a1/content?proxy=1&page=1"
         page={1}
         title="Scan.pdf"
+        sizeBytes={250_000}
       />
     );
 
@@ -285,6 +313,7 @@ describe("PdfPagePreview", () => {
         src="/api/reports/r1/attachments/a1/content?proxy=1&page=1"
         page={1}
         title="Evidence.pdf"
+        sizeBytes={250_000}
         onVisiblePageChange={onVisiblePageChange}
       />
     );
@@ -295,6 +324,39 @@ describe("PdfPagePreview", () => {
     });
     const lastPage = onVisiblePageChange.mock.calls.at(-1)?.[0];
     expect(lastPage === 1 || lastPage === 2).toBe(true);
+  });
+
+  it("does not prefetch neighbors until the requested page has painted", async () => {
+    let releaseRequestedPage = () => {};
+    const requestedPageReady = new Promise<void>((resolve) => {
+      releaseRequestedPage = resolve;
+    });
+    getPage.mockImplementation(async (pageNumber: number) => {
+      if (pageNumber === 2) await requestedPageReady;
+      return mockPdfPage(pageNumber);
+    });
+
+    render(
+      <PdfPagePreview
+        src="/api/reports/r1/attachments/a1/content?proxy=1&page=2"
+        page={2}
+        title="Evidence.pdf"
+        sizeBytes={250_000}
+      />
+    );
+
+    await waitFor(() => {
+      expect(getPage).toHaveBeenCalledWith(2);
+    });
+    expect(getPage).not.toHaveBeenCalledWith(1);
+    expect(renderPage).not.toHaveBeenCalled();
+
+    releaseRequestedPage();
+
+    await waitFor(() => {
+      expect(getPage).toHaveBeenCalledWith(1);
+      expect(renderPage).toHaveBeenCalledTimes(2);
+    });
   });
 
   it("shows a download hint when pdf.js cannot open the file", async () => {
@@ -308,6 +370,7 @@ describe("PdfPagePreview", () => {
         src="/api/reports/r1/attachments/a1/content?proxy=1&page=1"
         page={1}
         title="Evidence.pdf"
+        sizeBytes={250_000}
       />
     );
 

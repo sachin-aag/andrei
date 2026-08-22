@@ -1,6 +1,7 @@
 /**
  * Single-range `Range` parsing for PDF preview. pdf.js sends regular ranges
- * (`bytes=0-65535`) and suffix ranges (`bytes=-65536`) for the xref table.
+ * (`bytes=0-{chunkSize-1}`) and suffix ranges (`bytes=-{chunkSize}`) for the
+ * xref table.
  */
 
 export type ObjectByteRange = {

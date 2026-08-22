@@ -15,6 +15,9 @@ export const runtime = "nodejs";
 /** Same-origin preview stream can be multi-minute for large PDFs. */
 export const maxDuration = 300;
 
+/** Cap buffered Range bodies so a `bytes=0-` request cannot pull a 200 MB PDF. */
+const MAX_BUFFERED_RANGE_BYTES = 8 * 1024 * 1024;
+
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ reportId: string; attachmentId: string }> }
@@ -105,6 +108,9 @@ export async function GET(
     parsedRange.kind === "partial"
       ? { start: parsedRange.start, end: parsedRange.end }
       : undefined;
+  if (byteRange && rangeContentLength(byteRange) > MAX_BUFFERED_RANGE_BYTES) {
+    return NextResponse.json({ error: "Range too large" }, { status: 400 });
+  }
 
   let stream: ReadableStream<Uint8Array>;
   try {
@@ -143,8 +149,26 @@ export async function GET(
     headers.set("Content-Range", contentRangeHeader(byteRange, sizeBytes));
   }
 
+  // Buffer Range bodies. Streamed NextResponse often drops Content-Length,
+  // which makes pdf.js's url-loader treat the file as non-ranged.
+  if (byteRange) {
+    try {
+      const body = await bufferWebStream(stream);
+      return new NextResponse(Buffer.from(body), { status: 206, headers });
+    } catch (error) {
+      console.error("[attachment-content] buffer range failed", {
+        attachmentId,
+        error,
+      });
+      return NextResponse.json(
+        { error: "Could not load attachment content" },
+        { status: 502 }
+      );
+    }
+  }
+
   return new NextResponse(stream, {
-    status: byteRange ? 206 : 200,
+    status: 200,
     headers,
   });
 }
@@ -171,4 +195,10 @@ function normalizedPage(raw: string | null): number | null {
 
 function safeFilename(filename: string): string {
   return filename.replace(/["\r\n]/g, "_") || "document.pdf";
+}
+
+async function bufferWebStream(
+  stream: ReadableStream<Uint8Array>
+): Promise<Uint8Array> {
+  return new Uint8Array(await new Response(stream).arrayBuffer());
 }

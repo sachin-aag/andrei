@@ -19,7 +19,7 @@ describe("pdfjsPreviewLoadingOptions", () => {
       disableAutoFetch: true,
       rangeChunkSize: PDFJS_RANGE_CHUNK_SIZE,
     });
-    expect(PDFJS_RANGE_CHUNK_SIZE).toBe(65_536);
+    expect(PDFJS_RANGE_CHUNK_SIZE).toBe(1_048_576);
   });
 });
 

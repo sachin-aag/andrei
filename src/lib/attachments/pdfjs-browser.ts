@@ -10,8 +10,11 @@
 /** Must match `pdfjs-dist` and `public/pdfjs-assets/<version>/`. */
 export const PDFJS_ASSETS_VERSION = "6.1.200";
 
-/** pdf.js default. Files larger than 2× this use HTTP Range instead of a full GET. */
-export const PDFJS_RANGE_CHUNK_SIZE = 65_536;
+/**
+ * Bytes per pdf.js Range request. 64 KB made every page pay many auth+GCS
+ * round trips; 1 MiB covers a typical first page + xref in two requests.
+ */
+export const PDFJS_RANGE_CHUNK_SIZE = 1_048_576;
 
 /** Version-stamped static assets never change; cache them for a year. */
 export const PDFJS_ASSET_CACHE_CONTROL =
@@ -37,8 +40,9 @@ export function pdfjsPreviewDocumentOptions(version: string): {
 }
 
 /**
- * Range-only load. `disableStream` is required for `disableAutoFetch` — otherwise
- * pdf.js keeps downloading the rest of the file after page 1 is on screen.
+ * Range-only load. Pair with `createPdfPreviewRangeTransport` — do not pass
+ * `url` to `getDocument` or pdf.js starts a full GET. `disableStream` is
+ * required for `disableAutoFetch`.
  */
 export function pdfjsPreviewLoadingOptions(version: string): ReturnType<
   typeof pdfjsPreviewDocumentOptions

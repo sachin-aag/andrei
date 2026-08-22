@@ -124,6 +124,22 @@ describe("GET /api/reports/[reportId]/attachments/[attachmentId]/content", () =>
     expect(getSignedReadUrl).not.toHaveBeenCalled();
   });
 
+  it("rejects a Range larger than the buffered preview cap", async () => {
+    mockSelectOnce([{ ...attachment, sizeBytes: 20_000_000 }]);
+
+    const response = await GET(
+      new Request(
+        "http://localhost/api/reports/report-1/attachments/att-1/content?proxy=1",
+        { headers: { Range: "bytes=0-9000000" } }
+      ),
+      params()
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "Range too large" });
+    expect(openObjectReadStream).not.toHaveBeenCalled();
+  });
+
   it("serves a 206 byte range so pdf.js can paint page 1 without the full file", async () => {
     mockSelectOnce([{ ...attachment, sizeBytes: 1000 }]);
 
