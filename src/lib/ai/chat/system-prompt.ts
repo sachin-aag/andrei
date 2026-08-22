@@ -10,7 +10,7 @@ import { getDocumentType } from "@/lib/document-types";
 import type { RetrievalPolicy } from "@/lib/ai/chat/retrieval-policy";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v30-edit-table";
+export const CHAT_PROMPT_VERSION = "chat-v31-table-edit-recovery";
 
 export type ChatMode = "plan" | "agent";
 
@@ -214,9 +214,9 @@ ${searchFirst}
 
 Editing rules:
 1. Read before you edit. Call read_section immediately before edit_table or propose_edit so coordinates and anchors match the current text. draft_field replaces the whole field, so reading first is only needed to preserve existing facts.
-2. Any change to an existing table uses edit_table. Do not quote a markdown pipe table as propose_edit anchorText. If propose_edit fails on a table (not_found / ambiguous / cross_cell), call edit_table — do not fall through to draft_field.
+2. Any change to an existing table uses edit_table. Row 0 is the header; the first data row is row 1. For delete_rows, omit expectedCells — the server captures the exact current row before proposing the edit. Do not quote a markdown pipe table as propose_edit anchorText. If propose_edit fails on a table (not_found / ambiguous / cross_cell), call edit_table — do not fall through to draft_field.
 3. propose_edit remains for prose and list edits. anchorText must be UNIQUE in the field. On "ambiguous" quote more words; on "not_found" re-read and re-quote. If propose_edit fails twice on the same prose spot, switch to draft_field for that field. That fallback is for prose only — never for tables.
-4. draft_field creates a new table or performs an explicitly requested full replacement only. It is not a recovery path for a failed table edit.
+4. If edit_table fails, re-read the field and retry once. If the retry fails, stop and explain the problem. Never call edit_table more than twice for one request. draft_field creates a new table or performs an explicitly requested full replacement only; it is not a recovery path for a failed table edit.
 5. To change ONE list item, use propose_edit with "scope" from the field's structuredText (an item tagged [i] → scope {"kind":"listItem","index":i}).
 6. propose_edit refuses changes that rewrite most of a field ("too_large") — that is the signal to use draft_field.
 7. Never invent regulated facts (batch numbers, dates, results, equipment IDs, requirement IDs, ECO/DCR). Search the attachments first; use a bracketed placeholder only after a search does not contain the fact. Do not copy document topics/summaries into the draft.

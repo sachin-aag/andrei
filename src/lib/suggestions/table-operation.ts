@@ -186,6 +186,62 @@ function templateAttrs(cells: JSONContent[], index: number): JSONContent["attrs"
 }
 
 /**
+ * Fill optional concurrency snapshots from the current table before a proposal
+ * is persisted. This keeps model input concise while preserving stale-edit
+ * protection when the engineer accepts the proposal later.
+ */
+export function captureTableOperationSnapshots(
+  doc: JSONContent,
+  operation: TableOperation
+): TableOperation {
+  const captured = structuredClone(operation);
+  const table = collectTables(doc)[captured.tableIndex];
+  if (!table) return captured;
+
+  const rows = tableRows(table);
+  const headers = headersOf(table);
+
+  switch (captured.kind) {
+    case "edit_cells":
+      return captured;
+    case "insert_rows": {
+      if (captured.expectedRowAtAfter === undefined) {
+        const anchor = rows[captured.afterRow];
+        if (anchor) captured.expectedRowAtAfter = rowSnapshot(anchor);
+      }
+      return captured;
+    }
+    case "delete_rows":
+      captured.rows = captured.rows.map((target) => {
+        if (target.expectedCells.length > 0) return target;
+        const row = rows[target.row];
+        return row ? { ...target, expectedCells: rowSnapshot(row) } : target;
+      });
+      return captured;
+    case "insert_column":
+      if (captured.expectedHeaders === undefined) {
+        captured.expectedHeaders = headers;
+      }
+      if (
+        captured.afterCol >= 0 &&
+        captured.expectedHeaderAtAfterCol === undefined
+      ) {
+        captured.expectedHeaderAtAfterCol = headers[captured.afterCol];
+      }
+      return captured;
+    case "delete_column":
+      if (captured.expectedHeaders === undefined) {
+        captured.expectedHeaders = headers;
+      }
+      return captured;
+    default: {
+      const _exhaustive: never = captured;
+      return _exhaustive;
+    }
+  }
+}
+
+/**
  * Apply a structural table operation to a rich field doc.
  * Untouched cells keep their nodes, marks, and attributes.
  */

@@ -58,7 +58,7 @@ function blockLine(node: JSONContent): string {
 function renderTableGrid(table: JSONContent, tableIndex: number): string {
   const rows = (table.content ?? []).filter((r) => r.type === "tableRow");
   const lines: string[] = [
-    `Table tableIndex=${tableIndex} — each cell is tagged [row,col] (0-based). Use edit_table with this tableIndex. Do not quote the [row,col] tags.`,
+    `Table tableIndex=${tableIndex} — each cell is tagged [row,col] (0-based). Row 0 is the header and cannot be deleted; row 1 is the first data row. Use edit_table with this tableIndex. Do not quote the [row,col] tags.`,
   ];
   rows.forEach((row, r) => {
     const cells = (row.content ?? []).filter(

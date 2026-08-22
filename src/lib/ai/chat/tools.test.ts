@@ -289,7 +289,7 @@ describe("buildChatTools edit_table", () => {
         reasoning: "delete rows",
         operation: {
           kind: "delete_rows",
-          rows: [{ row: 1, expectedCells: ["a", "b"] }],
+          rows: [{ row: 1 }],
         },
       })
     ).toBe(true);

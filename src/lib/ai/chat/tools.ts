@@ -42,6 +42,7 @@ import {
 import { checkProposedEdit, proposedEditHint } from "@/lib/ai/chat/propose-edit";
 import {
   applyTableOperation,
+  captureTableOperationSnapshots,
   parseTableOperation,
   summarizeTableOperation,
   tableOperationHint,
@@ -204,7 +205,12 @@ const tableOperationSchema = z.discriminatedUnion("kind", [
       .array(
         z.object({
           row: z.number().int().min(0),
-          expectedCells: z.array(z.string()),
+          expectedCells: z
+            .array(z.string())
+            .default([])
+            .describe(
+              "Optional exact row snapshot. Omit it and the server will capture the current cells before creating the proposal."
+            ),
         })
       )
       .min(1),
@@ -933,7 +939,7 @@ export function buildChatTools(opts: {
 
     edit_table: tool({
       description:
-        `Change an existing table without rewriting the field. Operations: edit_cells (including clear), insert_rows (append = afterRow of the last row), delete_rows, insert_column (optional per-row values), delete_column. Call read_section first and copy tableIndex plus [row,col] / header text from structuredText. Clearing a cell is edit_cells with empty insertText. Do not use propose_edit or draft_field for incremental table changes.${scopeHint}${fixedTableHint}`,
+        `Change an existing table without rewriting the field. Operations: edit_cells (including clear), insert_rows (append = afterRow of the last row), delete_rows, insert_column (optional per-row values), delete_column. Call read_section first and copy tableIndex plus [row,col] / header text from structuredText. Row 0 is the header and cannot be deleted; the first data row is row 1. For delete_rows, provide the row coordinate and omit expectedCells so the server captures the current row safely. Clearing a cell is edit_cells with empty insertText. Do not use propose_edit or draft_field for incremental table changes.${scopeHint}${fixedTableHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
@@ -999,7 +1005,8 @@ export function buildChatTools(opts: {
           loaded.content as Record<string, unknown>,
           resolvedField
         );
-        const applied = applyTableOperation(fieldDoc, parsedOp, {
+        const capturedOp = captureTableOperationSnapshots(fieldDoc, parsedOp);
+        const applied = applyTableOperation(fieldDoc, capturedOp, {
           section,
           targetField: resolvedField,
         });
@@ -1018,10 +1025,10 @@ export function buildChatTools(opts: {
             deleteText: "",
             insertText: "",
             reasoning,
-            tableOperation: parsedOp,
+            tableOperation: capturedOp,
             contentHashAtSuggestion: sectionContentHash(section, loaded.content),
           }),
-          anchorText: summarizeTableOperation(parsedOp),
+          anchorText: summarizeTableOperation(capturedOp),
           contentPath: resolvedField,
           fromPos: null,
           toPos: null,

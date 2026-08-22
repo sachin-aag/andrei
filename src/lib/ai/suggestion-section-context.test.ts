@@ -138,6 +138,9 @@ describe("suggestion vs eval section context isolation", () => {
     // Coordinate-tagged grid, not markdown pipes.
     expect(suggestPrompt).not.toContain("|");
     expect(suggestPrompt).toContain("tableIndex=0");
+    expect(suggestPrompt).toContain(
+      "Row 0 is the header and cannot be deleted; row 1 is the first data row"
+    );
     expect(suggestPrompt).toContain("[0,0] Requirement ID");
     expect(suggestPrompt).toContain("[1,0] DI-1");
     expect(suggestPrompt).not.toContain('"type": "table"');

@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("bumps the prompt version when section inline image guidance changes", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v30-edit-table");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v31-table-edit-recovery");
   });
 
   it("tells the model never to pass the section key as targetField", () => {
@@ -123,6 +123,8 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("Any change to an existing table uses edit_table");
     expect(prompt).toContain("do not fall through to draft_field");
     expect(prompt).toContain("That fallback is for prose only — never for tables");
+    expect(prompt).toContain("Row 0 is the header; the first data row is row 1");
+    expect(prompt).toContain("Never call edit_table more than twice");
     expect(prompt).toContain("draft_field / edit_table / propose_edit");
   });
 

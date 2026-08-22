@@ -4,6 +4,7 @@ import { seededTableDoc } from "@/lib/document-types/design-verification/section
 import { flattenForAnchor } from "@/lib/suggestions/locator";
 import {
   applyTableOperation,
+  captureTableOperationSnapshots,
   parseTableOperation,
   summarizeTableOperation,
   type TableOperation,
@@ -151,6 +152,18 @@ describe("applyTableOperation", () => {
     expect(cellText(result.doc, 2, 1)).toBe("");
   });
 
+  it("matches the structured-grid empty-cell label when editing an empty cell", () => {
+    const result = applyTableOperation(tableDoc(["H1", "H2"], [["a", ""]]), {
+      kind: "edit_cells",
+      tableIndex: 0,
+      cells: [{ row: 1, col: 1, expectedText: "(empty)", insertText: "Filled" }],
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(cellText(result.doc, 1, 1)).toBe("Filled");
+  });
+
   it("inserts and appends rows", () => {
     const doc = tableDoc(["H1", "H2"], [["a", "b"]]);
     const inserted = applyTableOperation(doc, {
@@ -196,13 +209,47 @@ describe("applyTableOperation", () => {
     expect(cellText(result.doc, 1, 0)).toBe("b");
   });
 
+  it("captures omitted row snapshots before persisting a delete proposal", () => {
+    const doc = tableDoc(["H1", "H2"], [["first", "row"], ["second", "row"]]);
+    const captured = captureTableOperationSnapshots(doc, {
+      kind: "delete_rows",
+      tableIndex: 0,
+      rows: [{ row: 1, expectedCells: [] }],
+    });
+
+    expect(captured).toEqual({
+      kind: "delete_rows",
+      tableIndex: 0,
+      rows: [{ row: 1, expectedCells: ["first", "row"] }],
+    });
+    expect(applyTableOperation(doc, captured).ok).toBe(true);
+  });
+
+  it("captures an insertion anchor snapshot when the model omits it", () => {
+    const doc = tableDoc(["H1", "H2"], [["first", "row"]]);
+    const captured = captureTableOperationSnapshots(doc, {
+      kind: "insert_rows",
+      tableIndex: 0,
+      afterRow: 1,
+      rows: [["second", "row"]],
+    });
+
+    expect(captured).toMatchObject({
+      expectedRowAtAfter: ["first", "row"],
+    });
+  });
+
   it("refuses to delete the header row", () => {
     const result = applyTableOperation(tableDoc(["H"], [["a"]]), {
       kind: "delete_rows",
       tableIndex: 0,
       rows: [{ row: 0, expectedCells: ["H"] }],
     });
-    expect(result).toMatchObject({ ok: false, status: "invalid" });
+    expect(result).toEqual({
+      ok: false,
+      status: "invalid",
+      hint: "Cannot delete the header row.",
+    });
   });
 
   it("inserts a column at the start and deletes a column", () => {

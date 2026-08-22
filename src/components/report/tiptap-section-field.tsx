@@ -86,10 +86,10 @@ import {
 } from "@/lib/suggestions/accept-suggestion";
 import { suggestionTargetsField } from "@/lib/suggestions/resolve-suggestion-field-path";
 import { validateSuggestionLocate } from "@/lib/suggestions/validate-suggestion";
+import { applyTableOperation } from "@/lib/suggestions/table-operation";
 import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
 import { editorRegistryKey } from "@/providers/report-provider";
 import type { SectionType } from "@/db/schema";
-import type { SectionContentMap } from "@/types/sections";
 
 function TableEditToolbar({
   editor,
@@ -331,6 +331,7 @@ export function TiptapSectionField({
     onAccept: () => {},
     onIgnore: () => {},
   });
+  const tablePreviewSuggestionIdRef = useRef<string | null>(null);
 
   const rangesRef = useRef<CommentHighlightRange[]>([]);
   const handlersRef = useRef<CommentHighlightHandlers>({
@@ -712,6 +713,7 @@ export function TiptapSectionField({
     if (!editor || !isRichField) return;
 
     let json = editor.getJSON() as JSONContent;
+    const canonicalJson = normalizeRichField(value) as JSONContent;
     const before = JSON.stringify(json);
 
     if (previewHeld) {
@@ -732,6 +734,17 @@ export function TiptapSectionField({
       if (JSON.stringify(json) === before) return;
       editor.commands.setContent(json as Content, { emitUpdate: false });
       return;
+    }
+
+    if (
+      tablePreviewSuggestionIdRef.current &&
+      tablePreviewSuggestionIdRef.current !== activeSuggestionId
+    ) {
+      // Structural table previews do not use reversible suggestion marks.
+      // Restore the provider-owned value before showing the next suggestion
+      // (or after dismissing this one).
+      json = canonicalJson;
+      tablePreviewSuggestionIdRef.current = null;
     }
 
     json = stripPendingSuggestionsExcept(json, activeSuggestionId);
@@ -767,7 +780,16 @@ export function TiptapSectionField({
           });
         } else if (validation.canPreview) {
           const payload = parseAiFixCommentContent(comment.content);
-          if (!payload.tableOperation && !payload.tableOperationInvalid) {
+          if (payload.tableOperation) {
+            const preview = applyTableOperation(canonicalJson, payload.tableOperation, {
+              section,
+              targetField: contentPath,
+            });
+            if (preview.ok) {
+              json = preview.doc;
+              tablePreviewSuggestionIdRef.current = activeSuggestionId;
+            }
+          } else if (!payload.tableOperationInvalid) {
             const edit = buildSuggestionEdit({
               anchorText: comment.anchorText,
               deleteText: payload.deleteText,
@@ -806,6 +828,7 @@ export function TiptapSectionField({
     section,
     sectionContent,
     suggestionApplyTransition,
+    value,
   ]);
 
   // Debounced decoration refresh — coalesces hover-driven updates to one per frame.
