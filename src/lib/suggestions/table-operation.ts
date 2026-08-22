@@ -14,7 +14,8 @@ export type TableOperation =
   | {
       kind: "insert_rows";
       tableIndex: number;
-      afterRow: number;
+      /** Omit to append after the last existing row. */
+      afterRow?: number;
       rows: string[][];
       expectedRowAtAfter?: string[];
     }
@@ -205,6 +206,9 @@ export function captureTableOperationSnapshots(
     case "edit_cells":
       return captured;
     case "insert_rows": {
+      if (captured.afterRow === undefined) {
+        captured.afterRow = Math.max(0, rows.length - 1);
+      }
       if (captured.expectedRowAtAfter === undefined) {
         const anchor = rows[captured.afterRow];
         if (anchor) captured.expectedRowAtAfter = rowSnapshot(anchor);
@@ -365,13 +369,14 @@ function applyInsertRows(
     return fail("invalid", "insert_rows requires at least one row.");
   }
   const rows = tableRows(table);
-  if (operation.afterRow < 0 || operation.afterRow >= rows.length) {
+  const afterRow = operation.afterRow ?? Math.max(0, rows.length - 1);
+  if (afterRow < 0 || afterRow >= rows.length) {
     return fail(
       "bad_scope",
-      `afterRow ${operation.afterRow} does not exist. Re-read with read_section.`
+      `afterRow ${afterRow} does not exist. Re-read with read_section.`
     );
   }
-  const anchor = rows[operation.afterRow]!;
+  const anchor = rows[afterRow]!;
   if (!cellsMatch(rowSnapshot(anchor), operation.expectedRowAtAfter)) {
     return fail(
       "stale",
@@ -400,7 +405,7 @@ function applyInsertRows(
   const rowPositions = content
     .map((node, index) => (node.type === "tableRow" ? index : -1))
     .filter((index) => index >= 0);
-  const insertAtContent = (rowPositions[operation.afterRow] ?? 0) + 1;
+  const insertAtContent = (rowPositions[afterRow] ?? 0) + 1;
   content.splice(insertAtContent, 0, ...newRows);
   table.content = content;
   return { ok: true, status: "ok", doc };
@@ -610,9 +615,14 @@ export function parseTableOperation(raw: unknown): TableOperation | undefined {
       return { kind: "edit_cells", tableIndex, cells };
     }
     case "insert_rows": {
-      const afterRow = asInt(raw.afterRow);
+      const afterRow =
+        raw.afterRow === undefined || raw.afterRow === null
+          ? undefined
+          : asInt(raw.afterRow);
       const rows = asStringMatrix(raw.rows);
-      if (afterRow === null || afterRow < 0 || !rows) return undefined;
+      if (afterRow === null || (afterRow !== undefined && afterRow < 0) || !rows) {
+        return undefined;
+      }
       const expectedRowAtAfter = raw.expectedRowAtAfter
         ? asStringArray(raw.expectedRowAtAfter)
         : undefined;
@@ -719,8 +729,8 @@ export function summarizeTableOperation(operation: TableOperation): string {
     case "insert_rows": {
       const n = operation.rows.length;
       return n === 1
-        ? `Insert 1 row after row ${operation.afterRow}`
-        : `Insert ${n} rows after row ${operation.afterRow}`;
+        ? `Insert 1 row after row ${operation.afterRow ?? "last"}`
+        : `Insert ${n} rows after row ${operation.afterRow ?? "last"}`;
     }
     case "delete_rows": {
       const n = operation.rows.length;

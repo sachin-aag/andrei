@@ -239,6 +239,21 @@ describe("applyTableOperation", () => {
     });
   });
 
+  it("defaults omitted afterRow to the last existing row", () => {
+    const doc = tableDoc(["H1", "H2"], [["first", "row"]]);
+    const captured = captureTableOperationSnapshots(doc, {
+      kind: "insert_rows",
+      tableIndex: 0,
+      rows: [["second", "row"]],
+    });
+
+    expect(captured).toMatchObject({
+      afterRow: 1,
+      expectedRowAtAfter: ["first", "row"],
+    });
+    expect(applyTableOperation(doc, captured).ok).toBe(true);
+  });
+
   it("refuses to delete the header row", () => {
     const result = applyTableOperation(tableDoc(["H"], [["a"]]), {
       kind: "delete_rows",

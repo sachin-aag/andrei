@@ -86,7 +86,7 @@ import {
 } from "@/lib/suggestions/accept-suggestion";
 import { suggestionTargetsField } from "@/lib/suggestions/resolve-suggestion-field-path";
 import { validateSuggestionLocate } from "@/lib/suggestions/validate-suggestion";
-import { applyTableOperation } from "@/lib/suggestions/table-operation";
+import { buildTableOperationPreviewDoc } from "@/lib/suggestions/table-preview";
 import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
 import { editorRegistryKey } from "@/providers/report-provider";
 import type { SectionType } from "@/db/schema";
@@ -781,10 +781,21 @@ export function TiptapSectionField({
         } else if (validation.canPreview) {
           const payload = parseAiFixCommentContent(comment.content);
           if (payload.tableOperation) {
-            const preview = applyTableOperation(canonicalJson, payload.tableOperation, {
-              section,
-              targetField: contentPath,
-            });
+            const preview = buildTableOperationPreviewDoc(
+              canonicalJson,
+              payload.tableOperation,
+              {
+                id: activeSuggestionId,
+                authorId: AI_AUTHOR_ID,
+                status: "pending",
+                createdAt: comment.createdAt,
+                kind: "fix",
+              },
+              {
+                section,
+                targetField: contentPath,
+              }
+            );
             if (preview.ok) {
               json = preview.doc;
               tablePreviewSuggestionIdRef.current = activeSuggestionId;

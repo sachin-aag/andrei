@@ -277,7 +277,6 @@ describe("buildChatTools edit_table", () => {
         reasoning: "rows",
         operation: {
           kind: "insert_rows",
-          afterRow: 1,
           rows: [["a", "b"]],
         },
       })
