@@ -204,7 +204,8 @@ export function PlainTextSuggestionField({
       value,
       payload.deleteText,
       normalizeSuggestionInsertText(payload.insertText),
-      activeComment.anchorText
+      activeComment.anchorText,
+      payload.second
     );
   }, [activeComment, activeValidation, value]);
 

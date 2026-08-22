@@ -20,6 +20,7 @@ export type ProposedEditInput = {
   deleteText: string;
   insertText: string;
   scope?: EditScope;
+  second?: Omit<SuggestionEdit, "second">;
 };
 
 export type ProposedEditCheck =
@@ -52,6 +53,7 @@ export function checkProposedEdit(
     deleteText: edit.deleteText,
     insertText: edit.insertText,
     scope: edit.scope,
+    second: edit.second,
   };
 
   const status = fieldDoc

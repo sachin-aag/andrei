@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   canSuggestFixes,
   gapCriteriaForSection,
+  parseAiFixCommentContent,
   sectionContentHash,
+  serializeAiFixCommentContent,
   sortGapCriteria,
   sortedOpenSuggestionsForSection,
 } from "@/lib/ai/suggestion-gating";
@@ -253,5 +255,35 @@ describe("suggestion-gating", () => {
         allSections: { test_results: resultsContent },
       })
     ).toBe(false);
+  });
+});
+
+describe("parseAiFixCommentContent second", () => {
+  it("round-trips a split citation part", () => {
+    const json = serializeAiFixCommentContent({
+      deleteText: "",
+      insertText: " at 9.8 W",
+      reasoning: "Adds the measured value",
+      second: {
+        anchorText: "",
+        deleteText: "",
+        insertText: "[protocol.pdf, p. 3]",
+      },
+    });
+    expect(parseAiFixCommentContent(json).second).toEqual({
+      anchorText: "",
+      deleteText: "",
+      insertText: "[protocol.pdf, p. 3]",
+    });
+  });
+
+  it("drops an empty second part", () => {
+    const json = serializeAiFixCommentContent({
+      deleteText: "",
+      insertText: " at 9.8 W",
+      reasoning: "",
+      second: { anchorText: "", deleteText: "", insertText: "   " },
+    });
+    expect(parseAiFixCommentContent(json).second).toBeUndefined();
   });
 });

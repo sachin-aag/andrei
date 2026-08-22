@@ -43,6 +43,7 @@ export function suggestionEditFromComment(
     deleteText: payload.deleteText,
     insertText: payload.insertText,
     scope: payload.scope,
+    second: payload.second,
   };
 }
 
@@ -142,13 +143,35 @@ export function validateSuggestionLocate(
       section,
       targetField: path,
     });
-    const locatable = result.ok;
-    const documentChanged = result.status === "stale" || hashChanged;
+    if (!result.ok) {
+      return {
+        locateStatus: "not_found",
+        documentChanged: result.status === "stale" || hashChanged,
+        canApply: false,
+        canPreview: false,
+      };
+    }
+    if (payload.second) {
+      const secondStatus = probeRichEdit(doc, {
+        anchorText: payload.second.anchorText,
+        deleteText: payload.second.deleteText,
+        insertText: payload.second.insertText,
+        scope: payload.second.scope,
+      });
+      if (!isApplyableStatus(secondStatus)) {
+        return {
+          locateStatus: mapProbeStatus(secondStatus),
+          documentChanged: hashChanged,
+          canApply: false,
+          canPreview: false,
+        };
+      }
+    }
     return {
-      locateStatus: locatable ? "locatable" : "not_found",
-      documentChanged,
-      canApply: locatable,
-      canPreview: locatable,
+      locateStatus: "locatable",
+      documentChanged: result.status === "stale" || hashChanged,
+      canApply: true,
+      canPreview: true,
     };
   }
 

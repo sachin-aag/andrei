@@ -300,3 +300,38 @@ describe("acceptSuggestion table operations", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+describe("acceptSuggestion split citation", () => {
+  it("applies the body change and appends the citation", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => ({}) }) as Response)
+    );
+
+    const result = await acceptSuggestion({
+      reportId,
+      section: "define",
+      comment: {
+        ...comment,
+        content: JSON.stringify({
+          deleteText: "",
+          insertText: " The measured value was 9.8 W.",
+          reasoning: "Adds the reading and parks the cite",
+          second: {
+            anchorText: "",
+            deleteText: "",
+            insertText: "[protocol.pdf, p. 3]",
+          },
+        }),
+        anchorText: "while performing routine operation.",
+      },
+      sectionContent: structuredClone(sectionContent),
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const text = JSON.stringify(result.nextSection);
+    expect(text).toContain("The measured value was 9.8 W.");
+    expect(text).toContain("[protocol.pdf, p. 3]");
+  });
+});
