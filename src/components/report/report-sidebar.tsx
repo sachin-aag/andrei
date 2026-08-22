@@ -116,6 +116,8 @@ export function ReportSidebar({
                 ? rootCommentCount
                 : null;
 
+          const selected = activeTab === tab.value;
+
           if (collapsed) {
             return (
               <button
@@ -128,12 +130,13 @@ export function ReportSidebar({
                 }}
                 className={cn(
                   "relative flex items-center justify-center size-9 rounded-md border transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)] mx-auto",
-                  activeTab === tab.value
+                  selected
                     ? "bg-[var(--secondary)] text-[var(--foreground)] border-[var(--border)]"
                     : "text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--secondary)]/50 border-transparent hover:border-[var(--border)]",
                 )}
                 title={tab.label}
                 aria-label={tab.label}
+                aria-pressed={selected}
               >
                 <Icon className="size-4" aria-hidden="true" />
                 {badge != null && (
@@ -155,57 +158,65 @@ export function ReportSidebar({
               }}
               className={cn(
                 "relative flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors",
-                activeTab === tab.value
+                selected
                   ? "bg-[var(--secondary)] text-[var(--foreground)] border-[var(--border)]"
                   : "text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--secondary)]/50 border-transparent hover:border-[var(--border)]",
               )}
+              aria-label={tab.label}
+              aria-pressed={selected}
             >
               <Icon className="size-3.5" aria-hidden="true" />
               {tab.label}
-              {badge != null && (
-                <span className="ml-0.5 flex size-4 items-center justify-center rounded-full bg-amber-500 text-[9px] font-bold text-white">
-                  {badge}
+              {tab.value !== "assistant" ? (
+                // Keep a badge slot on count tabs so a late placeholder /
+                // suggestion / comment count does not reflow flex-wrap.
+                <span
+                  aria-hidden="true"
+                  className={cn(
+                    "ml-0.5 flex size-4 items-center justify-center rounded-full bg-amber-500 text-[9px] font-bold text-white",
+                    badge == null && "invisible"
+                  )}
+                >
+                  {badge ?? 0}
                 </span>
-              )}
+              ) : null}
             </button>
           );
         })}
       </div>
 
-      {/* Content — only when expanded. ChatPanel stays mounted across tab
-          changes so composer prefs and the open thread are not reset.
-          Assistant manages its own scroll/input, so it gets a full-height
-          container without the shared padding. */}
-      {!collapsed && (
-        <>
-          <div
-            className={cn(
-              "min-h-0 flex-1",
-              activeTab !== "assistant" && "hidden"
-            )}
-          >
-            <ChatPanel />
-          </div>
-          {activeTab !== "assistant" ? (
-            <div className="flex-1 overflow-y-auto p-4 min-w-0">
-              {activeTab === "placeholders" && (
-                <PlaceholdersPanelContent
-                  onJumpToPlaceholder={onJumpToPlaceholder}
-                />
-              )}
-              {activeTab === "criteria" && (
-                <CriteriaPanelContent
-                  onJumpToSection={onJumpToSection}
-                  initialSection={initialCriteriaSection}
-                />
-              )}
-              {activeTab === "comments" && (
-                <CommentsPanelContent onJumpToComment={onJumpToComment} />
-              )}
-            </div>
-          ) : null}
-        </>
-      )}
+      {/* ChatPanel stays mounted across collapse and tab changes so the
+          thread, composer prefs, and rendered markdown are not reset.
+          Hide with CSS instead of unmounting — remount refetches and
+          re-parses the whole conversation. Assistant manages its own
+          scroll/input, so it gets a full-height container without the
+          shared padding. */}
+      <div
+        className={cn(
+          "min-h-0 flex-1",
+          (collapsed || activeTab !== "assistant") && "hidden"
+        )}
+      >
+        <ChatPanel />
+      </div>
+      {!collapsed && activeTab !== "assistant" ? (
+        <div className="flex-1 overflow-y-auto p-4 min-w-0">
+          {activeTab === "placeholders" && (
+            <PlaceholdersPanelContent
+              onJumpToPlaceholder={onJumpToPlaceholder}
+            />
+          )}
+          {activeTab === "criteria" && (
+            <CriteriaPanelContent
+              onJumpToSection={onJumpToSection}
+              initialSection={initialCriteriaSection}
+            />
+          )}
+          {activeTab === "comments" && (
+            <CommentsPanelContent onJumpToComment={onJumpToComment} />
+          )}
+        </div>
+      ) : null}
     </aside>
   );
 }

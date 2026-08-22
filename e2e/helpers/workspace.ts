@@ -49,13 +49,34 @@ export async function expandReportSidebar(page: Page): Promise<void> {
 
 export async function openReportSidebarTab(
   page: Page,
-  tab: "placeholders" | "criteria" | "comments"
+  tab: "assistant" | "placeholders" | "criteria" | "comments"
 ): Promise<void> {
   await expandReportSidebar(page);
   const label = tab.charAt(0).toUpperCase() + tab.slice(1);
-  await reportSidebar(page)
-    .getByRole("button", { name: new RegExp(`^${label}$`, "i") })
-    .click();
+  const button = reportSidebar(page).getByRole("button", {
+    name: new RegExp(`^${label}$`, "i"),
+  });
+  await expect(button).toBeVisible({ timeout: 15_000 });
+  if ((await button.getAttribute("aria-pressed")) !== "true") {
+    await button.click();
+  }
+  await expect(button).toHaveAttribute("aria-pressed", "true");
+}
+
+/**
+ * Expand the report sidebar and wait until Assistant has finished loading
+ * sessions. The tab is already selected on a fresh editor load — clicking it
+ * during hydration remounts the button (CI flake on reload).
+ */
+export async function openReportAssistant(page: Page): Promise<void> {
+  await openReportSidebarTab(page, "assistant");
+  const sidebar = reportSidebar(page);
+  await expect(sidebar.getByLabel("Assistant mode")).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(
+    sidebar.getByPlaceholder(/describe the deviation|ask the assistant/i)
+  ).toBeEnabled({ timeout: 15_000 });
 }
 
 /** Collapse the assistant so the review margin (suggestions/comments) can show. */
