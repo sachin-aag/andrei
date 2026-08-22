@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("bumps the prompt version when section inline image guidance changes", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v32-table-complete-rows");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v33-table-one-edit-cells");
   });
 
   it("tells the model never to pass the section key as targetField", () => {
@@ -125,7 +125,10 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("That fallback is for prose only — never for tables");
     expect(prompt).toContain("Row 0 is the header; the first data row is row 1");
     expect(prompt).toContain("never a single representative row");
-    expect(prompt).toContain("Never call edit_table more than twice");
+    expect(prompt).toContain(
+      "put every affected cell in one edit_cells call (source and destination together)"
+    );
+    expect(prompt).toContain("failed-retry cap");
     expect(prompt).toContain("draft_field / edit_table / propose_edit");
   });
 
