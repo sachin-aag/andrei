@@ -182,6 +182,15 @@ Specs run against Chromium, Firefox, and WebKit unless you pass `--project=chrom
 </details>
 
 <details>
+<summary><strong>report-chat.spec.ts</strong> — stub chat stream + persist</summary>
+
+| Test | What it verifies |
+|------|------------------|
+| streams a chat reply when a ready attachment is on the report | Upload stub-ingest PDF, Ask-mode turn, reload still shows the thread |
+
+</details>
+
+<details>
 <summary><strong>report-workflow.spec.ts</strong> — engineer ↔ manager lifecycle (serial)</summary>
 
 | Test | What it verifies |
