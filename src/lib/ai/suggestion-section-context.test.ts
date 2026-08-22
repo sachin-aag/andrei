@@ -137,6 +137,10 @@ describe("suggestion vs eval section context isolation", () => {
     expect(suggestPrompt).toContain("DI-1");
     // Coordinate-tagged grid, not markdown pipes.
     expect(suggestPrompt).not.toContain("|");
+    expect(suggestPrompt).toContain("tableIndex=0");
+    expect(suggestPrompt).toContain(
+      "Row 0 is the header and cannot be deleted; row 1 is the first data row"
+    );
     expect(suggestPrompt).toContain("[0,0] Requirement ID");
     expect(suggestPrompt).toContain("[1,0] DI-1");
     expect(suggestPrompt).not.toContain('"type": "table"');
@@ -211,6 +215,33 @@ describe("suggestion vs eval section context isolation", () => {
     const prompt = contextForSuggestionPrompt("define", content);
     expect(prompt).toContain("[0] First point");
     expect(prompt).toContain("[1] Second point");
+  });
+
+  it("labels multiple tables with tableIndex", () => {
+    const table = (a: string, b: string): JSONContent => ({
+      type: "table",
+      content: [
+        {
+          type: "tableRow",
+          content: [
+            {
+              type: "tableHeader",
+              content: [{ type: "paragraph", content: [{ type: "text", text: a }] }],
+            },
+            {
+              type: "tableHeader",
+              content: [{ type: "paragraph", content: [{ type: "text", text: b }] }],
+            },
+          ],
+        },
+      ],
+    });
+    const prompt = contextForSuggestionPrompt("define", {
+      narrative: { type: "doc", content: [table("One", "Two"), table("Three", "Four")] },
+    });
+    expect(prompt).toContain("tableIndex=0");
+    expect(prompt).toContain("tableIndex=1");
+    expect(prompt).toContain("[0,0] Three");
   });
 
   it("serializes testers_dates as testers narrative only", () => {
