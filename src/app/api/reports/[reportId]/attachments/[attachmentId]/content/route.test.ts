@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/db", () => ({
   db: {
@@ -38,12 +38,14 @@ const attachment = {
   filename: "requirements.pdf",
   mimeType: "application/pdf",
   pageCount: 11,
+  sizeBytes: 250_000,
   gcsGeneration: "1",
   permanentObjectKey: "reports/report-1/attachments/att-1/source.pdf",
 };
 
 const getSignedReadUrl = vi.fn();
 const openObjectReadStream = vi.fn();
+const getObjectMetadata = vi.fn();
 
 function mockSelectOnce(rows: unknown[]) {
   const where = vi.fn().mockResolvedValueOnce(rows);
@@ -79,7 +81,14 @@ describe("GET /api/reports/[reportId]/attachments/[attachmentId]/content", () =>
     vi.mocked(getAttachmentStorage).mockReturnValue({
       getSignedReadUrl,
       openObjectReadStream,
+      getObjectMetadata,
     } as never);
+    getObjectMetadata.mockResolvedValue({
+      sizeBytes: 80_000,
+      contentType: "application/pdf",
+      generation: "1",
+      crc32c: "",
+    });
     getSignedReadUrl.mockResolvedValue(
       "https://storage.googleapis.com/bucket/file.pdf?X-Goog-Signature=abc"
     );
@@ -101,9 +110,93 @@ describe("GET /api/reports/[reportId]/attachments/[attachmentId]/content", () =>
     expect(response.headers.get("Content-Disposition")).toBe(
       'inline; filename="requirements.pdf"'
     );
+    expect(response.headers.get("Accept-Ranges")).toBe("bytes");
+    expect(response.headers.get("Content-Length")).toBe(
+      String(attachment.sizeBytes)
+    );
+    expect(response.headers.get("Content-Encoding")).toBe("identity");
+    expect(response.headers.get("ETag")).toBe(`"${attachment.gcsGeneration}"`);
     expect(await response.text()).toBe("%PDF-test");
-    expect(openObjectReadStream).toHaveBeenCalledWith(attachment.permanentObjectKey);
+    expect(openObjectReadStream).toHaveBeenCalledWith(
+      attachment.permanentObjectKey,
+      undefined
+    );
     expect(getSignedReadUrl).not.toHaveBeenCalled();
+  });
+
+  it("rejects a Range larger than the buffered preview cap", async () => {
+    mockSelectOnce([{ ...attachment, sizeBytes: 20_000_000 }]);
+
+    const response = await GET(
+      new Request(
+        "http://localhost/api/reports/report-1/attachments/att-1/content?proxy=1",
+        { headers: { Range: "bytes=0-9000000" } }
+      ),
+      params()
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "Range too large" });
+    expect(openObjectReadStream).not.toHaveBeenCalled();
+  });
+
+  it("serves a 206 byte range so pdf.js can paint page 1 without the full file", async () => {
+    mockSelectOnce([{ ...attachment, sizeBytes: 1000 }]);
+
+    const response = await GET(
+      new Request(
+        "http://localhost/api/reports/report-1/attachments/att-1/content?proxy=1",
+        { headers: { Range: "bytes=0-99" } }
+      ),
+      params()
+    );
+
+    expect(response.status).toBe(206);
+    expect(response.headers.get("Content-Range")).toBe("bytes 0-99/1000");
+    expect(response.headers.get("Content-Length")).toBe("100");
+    expect(response.headers.get("Accept-Ranges")).toBe("bytes");
+    expect(openObjectReadStream).toHaveBeenCalledWith(
+      attachment.permanentObjectKey,
+      { start: 0, end: 99 }
+    );
+  });
+
+  it("returns 416 when the requested range is past the end of the file", async () => {
+    mockSelectOnce([{ ...attachment, sizeBytes: 1000 }]);
+
+    const response = await GET(
+      new Request(
+        "http://localhost/api/reports/report-1/attachments/att-1/content?proxy=1",
+        { headers: { Range: "bytes=1000-1001" } }
+      ),
+      params()
+    );
+
+    expect(response.status).toBe(416);
+    expect(response.headers.get("Content-Range")).toBe("bytes */1000");
+    expect(openObjectReadStream).not.toHaveBeenCalled();
+  });
+
+  it("fills Content-Length from object metadata when the row has no size", async () => {
+    mockSelectOnce([{ ...attachment, sizeBytes: 0 }]);
+
+    const response = await GET(
+      new Request(
+        "http://localhost/api/reports/report-1/attachments/att-1/content?proxy=1"
+      ),
+      params()
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Accept-Ranges")).toBe("bytes");
+    expect(response.headers.get("Content-Length")).toBe("80000");
+    expect(getObjectMetadata).toHaveBeenCalledWith(
+      attachment.permanentObjectKey
+    );
+    expect(openObjectReadStream).toHaveBeenCalledWith(
+      attachment.permanentObjectKey,
+      undefined
+    );
   });
 
   it("does not redirect even when the iframe omits proxy=1", async () => {
@@ -142,5 +235,66 @@ describe("GET /api/reports/[reportId]/attachments/[attachmentId]/content", () =>
       })
     );
     expect(openObjectReadStream).not.toHaveBeenCalled();
+  });
+
+  it("answers a matching If-None-Match with 304 before reading storage", async () => {
+    mockSelectOnce([attachment]);
+
+    const response = await GET(
+      new Request(
+        "http://localhost/api/reports/report-1/attachments/att-1/content?proxy=1",
+        { headers: { "If-None-Match": `"${attachment.gcsGeneration}"` } }
+      ),
+      params()
+    );
+
+    expect(response.status).toBe(304);
+    expect(response.headers.get("ETag")).toBe(`"${attachment.gcsGeneration}"`);
+    expect(openObjectReadStream).not.toHaveBeenCalled();
+    expect(getSignedReadUrl).not.toHaveBeenCalled();
+  });
+
+  it("still streams when If-None-Match is for a superseded generation", async () => {
+    mockSelectOnce([attachment]);
+
+    const response = await GET(
+      new Request(
+        "http://localhost/api/reports/report-1/attachments/att-1/content?proxy=1",
+        { headers: { "If-None-Match": '"0"' } }
+      ),
+      params()
+    );
+
+    expect(response.status).toBe(200);
+    expect(openObjectReadStream).toHaveBeenCalled();
+  });
+
+  describe("with ATTACHMENT_PREVIEW_DIRECT_STORAGE=true", () => {
+    beforeEach(() => {
+      vi.stubEnv("ATTACHMENT_PREVIEW_DIRECT_STORAGE", "true");
+    });
+
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it("redirects preview to signed storage without a download disposition", async () => {
+      mockSelectOnce([attachment]);
+
+      const response = await GET(
+        new Request(
+          "http://localhost/api/reports/report-1/attachments/att-1/content?proxy=1"
+        ),
+        params()
+      );
+
+      expect(response.status).toBe(307);
+      expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+      // A downloadFilename would make pdf.js's fetch save the file instead.
+      expect(getSignedReadUrl).toHaveBeenCalledWith(
+        expect.not.objectContaining({ downloadFilename: expect.anything() })
+      );
+      expect(openObjectReadStream).not.toHaveBeenCalled();
+    });
   });
 });

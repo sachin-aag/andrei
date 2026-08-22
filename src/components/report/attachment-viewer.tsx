@@ -120,6 +120,7 @@ export function AttachmentViewer() {
               src={previewUrl}
               page={activePage}
               title={activeAttachment.filename}
+              sizeBytes={activeAttachment.sizeBytes}
               onVisiblePageChange={setVisiblePage}
             />
           )

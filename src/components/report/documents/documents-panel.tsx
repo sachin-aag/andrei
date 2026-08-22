@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   FolderPlus,
   Loader2,
@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { buildDocumentTree } from "@/lib/attachments/build-tree";
 import { ATTACHMENT_ACCEPT_ATTR } from "@/lib/attachments/file-types";
+import { warmupPdfjsPreview } from "@/lib/attachments/load-pdfjs";
 import { useReportAttachments } from "@/providers/report-attachments-provider";
 import { DocumentTreeNodes } from "./document-tree";
 import { DragProvider, useDocumentDrag } from "./drag-context";
@@ -30,6 +31,10 @@ export function DocumentsPanel({
   onToggleCollapse: () => void;
 }) {
   const { attachments } = useReportAttachments();
+
+  useEffect(() => {
+    warmupPdfjsPreview({ whenIdle: true });
+  }, []);
 
   if (collapsed) {
     return (

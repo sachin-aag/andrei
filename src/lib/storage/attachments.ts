@@ -40,8 +40,14 @@ export interface AttachmentStorage {
   createResumableUpload(input: CreateResumableUploadInput): Promise<string>;
   getObjectMetadata(objectKey: string): Promise<ObjectMetadata>;
   readObjectBuffer(objectKey: string): Promise<Buffer>;
-  /** Stream object bytes (preferred for large PDF preview/download on Vercel). */
-  openObjectReadStream(objectKey: string): Promise<ReadableStream<Uint8Array>>;
+  /**
+   * Stream object bytes (preferred for large PDF preview/download on Vercel).
+   * `byteRange.end` is inclusive, matching HTTP Range and GCS/Node read streams.
+   */
+  openObjectReadStream(
+    objectKey: string,
+    byteRange?: { start: number; end: number }
+  ): Promise<ReadableStream<Uint8Array>>;
   writeObjectBuffer(
     objectKey: string,
     buffer: Buffer,
@@ -222,9 +228,14 @@ export class GcsAttachmentStorage implements AttachmentStorage {
   }
 
   async openObjectReadStream(
-    objectKey: string
+    objectKey: string,
+    byteRange?: { start: number; end: number }
   ): Promise<ReadableStream<Uint8Array>> {
-    const nodeStream = this.file(objectKey).createReadStream();
+    const nodeStream = this.file(objectKey).createReadStream(
+      byteRange
+        ? { start: byteRange.start, end: byteRange.end }
+        : undefined
+    );
     return Readable.toWeb(nodeStream) as ReadableStream<Uint8Array>;
   }
 
@@ -330,9 +341,15 @@ export class LocalAttachmentStorage implements AttachmentStorage {
   }
 
   async openObjectReadStream(
-    objectKey: string
+    objectKey: string,
+    byteRange?: { start: number; end: number }
   ): Promise<ReadableStream<Uint8Array>> {
-    const nodeStream = createReadStream(localObjectPath(objectKey));
+    const nodeStream = createReadStream(
+      localObjectPath(objectKey),
+      byteRange
+        ? { start: byteRange.start, end: byteRange.end }
+        : undefined
+    );
     return Readable.toWeb(nodeStream) as ReadableStream<Uint8Array>;
   }
 

@@ -3,8 +3,8 @@ import { kindFromMime } from "@/lib/attachments/file-types";
 /**
  * Preview URL for an uploaded attachment.
  *
- * PDFs are fetched same-origin (`proxy=1`) and painted with official pdf.js
- * (canvas + text layer) — never navigated as `application/pdf` in an iframe.
+ * PDFs are Range-fetched same-origin (`proxy=1`) and painted with official
+ * pdf.js (canvas + text layer) — never navigated as `application/pdf` in an iframe.
  * Chrome and Comet intercept iframe PDF loads (including our own origin) and
  * show a block page. DOCX is still server-rendered HTML in a sandboxed iframe.
  */

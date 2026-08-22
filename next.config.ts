@@ -8,6 +8,7 @@ import {
   POSTHOG_EU_ASSETS_HOST,
   POSTHOG_PROXY_PATH,
 } from "./src/lib/analytics/posthog-config";
+import { pdfjsAssetCacheHeaders } from "./src/lib/attachments/pdfjs-browser";
 
 /** Pin Turbopack to this app when a parent directory has a stray lockfile. */
 const appRoot = path.dirname(fileURLToPath(import.meta.url));
@@ -33,6 +34,9 @@ const nextConfig: NextConfig = {
   },
   outputFileTracingIncludes: {
     "/api/*": ["./templates/**/*", "./src/lib/import/fonts/**/*.ttf"],
+  },
+  async headers() {
+    return pdfjsAssetCacheHeaders();
   },
   async rewrites() {
     const proxyPrefix = POSTHOG_PROXY_PATH.replace(/^\//, "");
