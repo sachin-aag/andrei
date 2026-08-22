@@ -142,7 +142,6 @@ export function ChatSessionHost({
   }, [onSettled, sessionId, status]);
 
   useEffect(() => {
-    if (!active) return;
     onRuntime(sessionId, {
       messages: messages as UIMessage[],
       sendMessage: sendMessage as ChatSessionSend,
@@ -150,7 +149,7 @@ export function ChatSessionHost({
       error,
       stop,
     });
-  }, [active, error, messages, onRuntime, sendMessage, sessionId, status, stop]);
+  }, [error, messages, onRuntime, sendMessage, sessionId, status, stop]);
 
   return null;
 }

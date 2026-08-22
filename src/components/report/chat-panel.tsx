@@ -109,6 +109,12 @@ import {
 } from "@/lib/ai/chat/section-intent";
 import type { ChatSessionSummary } from "@/lib/ai/chat/sessions";
 import {
+  buildChatSessionTabItems,
+  chatSessionTabSnapshot,
+  sessionTabSnapshotsEqual,
+  type SessionTabSnapshot,
+} from "@/lib/ai/chat/session-tab";
+import {
   applyMentionToInput,
   filterMentionCandidates,
   findMentionQuery,
@@ -122,6 +128,7 @@ import {
   IDLE_CHAT_RUNTIME,
   type ChatSessionRuntime,
 } from "@/components/report/chat-session-host";
+import { ChatSessionTabs } from "@/components/report/chat-session-tabs";
 import { DocumentReviewProgress } from "@/components/report/document-review-progress";
 import {
   isDocumentReviewToolName,
@@ -943,6 +950,9 @@ export function ChatPanel() {
     []
   );
   const [backgroundSessionIds, setBackgroundSessionIds] = useState<string[]>([]);
+  const [tabSnapshots, setTabSnapshots] = useState<
+    Record<string, SessionTabSnapshot>
+  >({});
   const [runtime, setRuntime] = useState<ChatSessionRuntime>(IDLE_CHAT_RUNTIME);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [initializing, setInitializing] = useState(true);
@@ -1201,6 +1211,11 @@ export function ChatPanel() {
   const onSessionRuntime = useCallback(
     (sessionId: string, next: ChatSessionRuntime) => {
       runtimeBySessionRef.current.set(sessionId, next);
+      const snapshot = chatSessionTabSnapshot(next.status, next.messages);
+      setTabSnapshots((prev) => {
+        if (sessionTabSnapshotsEqual(prev[sessionId], snapshot)) return prev;
+        return { ...prev, [sessionId]: snapshot };
+      });
       if (sessionId !== currentSessionIdRef.current) return;
       setRuntime(next);
     },
@@ -1262,6 +1277,7 @@ export function ChatPanel() {
     runtimeBySessionRef.current = new Map();
     setMountedSessions([]);
     setBackgroundSessionIds([]);
+    setTabSnapshots({});
     setRuntime(IDLE_CHAT_RUNTIME);
     void (async () => {
       const existing = await loadSessions();
@@ -1456,6 +1472,16 @@ export function ChatPanel() {
 
   const currentTitle =
     sessions.find((s) => s.id === currentSessionId)?.title ?? "Investigation assistant";
+  const sessionTabs = useMemo(
+    () =>
+      buildChatSessionTabItems({
+        mountedIds: mountedSessions.map((session) => session.id),
+        sessions,
+        snapshots: tabSnapshots,
+        runningIds: runningSessionIds,
+      }),
+    [mountedSessions, runningSessionIds, sessions, tabSnapshots]
+  );
 
   return (
     <div className="flex h-full flex-col" aria-busy={initializing}>
@@ -1472,12 +1498,20 @@ export function ChatPanel() {
           onRuntime={onSessionRuntime}
         />
       ))}
-      {/* Header: title + new chat + history */}
-      <div className="relative flex items-center gap-2 border-b border-[var(--border)] px-3 py-2.5">
+      {/* Header: session tabs + new chat + history */}
+      <div className="relative flex items-center gap-2 border-b border-[var(--border)] px-3 py-2">
         <Sparkles className="size-4 shrink-0 text-[var(--primary)]" />
-        <span className="min-w-0 flex-1 truncate text-sm font-medium" title={currentTitle}>
-          {currentTitle}
-        </span>
+        {sessionTabs.length > 0 ? (
+          <ChatSessionTabs
+            items={sessionTabs}
+            currentId={currentSessionId}
+            onSelect={openSession}
+          />
+        ) : (
+          <span className="min-w-0 flex-1 truncate text-sm font-medium" title={currentTitle}>
+            {currentTitle}
+          </span>
+        )}
         <button
           type="button"
           onClick={newChat}

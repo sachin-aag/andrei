@@ -160,6 +160,13 @@ test.describe("report chat", () => {
 
     await sidebar.getByRole("button", { name: /^new chat$/i }).click();
 
+    const tabs = sidebar.getByRole("tablist", { name: /open chats/i });
+    await expect(tabs).toBeVisible();
+    await expect(tabs.getByRole("tab")).toHaveCount(2);
+    await expect(
+      tabs.getByRole("tab", { name: /still working/i })
+    ).toBeVisible();
+
     await expect(sidebar.getByText("first concurrent chat ping")).toHaveCount(0);
     await expect(
       sidebar.getByRole("button", { name: /^stop generating$/i })
