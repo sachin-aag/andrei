@@ -80,6 +80,26 @@ describe("getAiFixCommentTitle", () => {
     expect(title).not.toContain("{");
     expect(title.toLowerCase()).toContain("audit");
   });
+
+  it("summarizes a table operation when reasoning is empty", () => {
+    const c = aiComment(
+      JSON.stringify({
+        insertText: "",
+        deleteText: "",
+        reasoning: "",
+        tableOperation: {
+          kind: "insert_column",
+          tableIndex: 0,
+          afterCol: 1,
+          header: "Description",
+          values: ["a", "b"],
+        },
+      }),
+      null
+    );
+    expect(getAiFixCommentTitle(c, [])).toContain("Description");
+    expect(getAiFixCommentPreview(c)).toContain("Description");
+  });
 });
 
 describe("getAiFixCommentPreview", () => {

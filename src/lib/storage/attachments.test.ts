@@ -177,6 +177,24 @@ describe("LocalAttachmentStorage", () => {
     await expect(storage.readObjectBuffer(sourceKey)).rejects.toThrow();
   });
 
+  it("streams an inclusive byte range", async () => {
+    const storage = new LocalAttachmentStorage();
+    const objectKey = stagingObjectKey("local_att");
+    await storage.writeObjectBuffer(
+      objectKey,
+      Buffer.from("0123456789"),
+      "application/pdf"
+    );
+
+    const ranged = await storage.openObjectReadStream(objectKey, {
+      start: 2,
+      end: 5,
+    });
+    expect(Buffer.from(await new Response(ranged).arrayBuffer()).toString()).toBe(
+      "2345"
+    );
+  });
+
   it("HMAC-binds local read URL expiry so expiresAt cannot be extended alone", async () => {
     vi.stubEnv("AUTH_SECRET", "local-read-test-secret");
     const storage = new LocalAttachmentStorage();

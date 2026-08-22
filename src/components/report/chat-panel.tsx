@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  memo,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -20,6 +21,7 @@ import {
   Send,
   Sparkles,
   PencilLine,
+  Table2,
   BookOpen,
   FileText,
   Loader2,
@@ -125,6 +127,12 @@ import {
   isDocumentReviewToolName,
   type DocumentReviewToolPart,
 } from "@/lib/ai/chat/document-review-ui";
+import {
+  CHAT_VISIBLE_TAIL,
+  nextVisibleCount,
+  shouldLoadOlderMessages,
+  visibleMessageStartIndex,
+} from "@/components/report/chat-visible-messages";
 
 type PendingChatImage = {
   id: string;
@@ -136,6 +144,7 @@ type ToolPartInfo = {
   state: string;
   input: Record<string, unknown> | undefined;
   output: Record<string, unknown> | undefined;
+  errorText: string | undefined;
 };
 
 function readToolPart(part: UIMessagePart<never, never>): ToolPartInfo | null {
@@ -145,12 +154,14 @@ function readToolPart(part: UIMessagePart<never, never>): ToolPartInfo | null {
     state?: string;
     input?: Record<string, unknown>;
     output?: Record<string, unknown>;
+    errorText?: string;
   };
   return {
     toolName: p.type.slice("tool-".length),
     state: p.state ?? "",
     input: p.input,
     output: p.output,
+    errorText: p.errorText,
   };
 }
 
@@ -295,10 +306,45 @@ function ToolChip({
         ? info.output.hint
         : typeof info.output?.message === "string"
           ? info.output.message
-          : "Could not place this edit.";
+          : info.errorText
+            ? info.errorText
+            : "Could not place this edit.";
     return (
       <ToolLine icon={<PencilLine className="size-3.5 text-amber-500" />} tone="warn">
         Edit not applied: {hint}
+      </ToolLine>
+    );
+  }
+
+  if (info.toolName === "edit_table") {
+    const section = sectionLabel(info.input?.section);
+    const field = typeof info.input?.targetField === "string" ? info.input.targetField : "";
+    if (pending) {
+      return (
+        <ToolLine icon={<Table2 className="size-3.5" />}>
+          Editing table in {section}…
+        </ToolLine>
+      );
+    }
+    if (info.output?.status === "proposed") {
+      return (
+        <ToolLine icon={<Table2 className="size-3.5 text-emerald-500" />} tone="success">
+          Proposed table edit to {section}
+          {field ? ` · ${field}` : ""} — review it in the document.
+        </ToolLine>
+      );
+    }
+    const hint =
+      typeof info.output?.hint === "string"
+        ? info.output.hint
+        : typeof info.output?.message === "string"
+          ? info.output.message
+          : info.errorText
+            ? info.errorText
+            : "Could not place this table edit.";
+    return (
+      <ToolLine icon={<Table2 className="size-3.5 text-amber-500" />} tone="warn">
+        Table edit not applied: {hint}
       </ToolLine>
     );
   }
@@ -325,7 +371,9 @@ function ToolChip({
     const message =
       typeof info.output?.message === "string"
         ? info.output.message
-        : "Could not create this draft.";
+        : info.errorText
+          ? info.errorText
+          : "Could not create this draft.";
     return (
       <ToolLine icon={<FileText className="size-3.5 text-amber-500" />} tone="warn">
         Draft not created: {message}
@@ -539,7 +587,7 @@ function ChatBusyStatus({
   );
 }
 
-function MessageTurn({
+const MessageTurn = memo(function MessageTurn({
   message,
   onSwitchSectionScope,
   askUserActive,
@@ -627,7 +675,7 @@ function MessageTurn({
       )}
     </div>
   );
-}
+});
 
 function scopeDescription(scope: ChatSectionScope): string {
   return scope === CHAT_SECTION_SCOPE_ALL
@@ -898,8 +946,19 @@ export function ChatPanel() {
   const [runtime, setRuntime] = useState<ChatSessionRuntime>(IDLE_CHAT_RUNTIME);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [initializing, setInitializing] = useState(true);
+  const sessionWindowKey = `${report.id}:${currentSessionId ?? ""}`;
+  const [windowedSessionKey, setWindowedSessionKey] = useState(sessionWindowKey);
+  const [visibleCount, setVisibleCount] = useState(CHAT_VISIBLE_TAIL);
+  if (windowedSessionKey !== sessionWindowKey) {
+    setWindowedSessionKey(sessionWindowKey);
+    setVisibleCount(CHAT_VISIBLE_TAIL);
+  }
   const scrollRef = useRef<HTMLDivElement>(null);
   const historyRef = useRef<HTMLDivElement>(null);
+  const loadingOlderRef = useRef(false);
+  const olderScrollRestoreRef = useRef<{ height: number; top: number } | null>(
+    null
+  );
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const pendingCaretRef = useRef<number | null>(null);
@@ -1147,6 +1206,47 @@ export function ChatPanel() {
     },
     []
   );
+
+  const visibleStartIndex = visibleMessageStartIndex(
+    messages.length,
+    visibleCount
+  );
+  const visibleMessages = messages.slice(visibleStartIndex);
+  const hiddenCount = visibleStartIndex;
+
+  const loadOlderMessages = useCallback(() => {
+    if (loadingOlderRef.current) return;
+    if (visibleCount >= messages.length) return;
+    const el = scrollRef.current;
+    if (el) {
+      olderScrollRestoreRef.current = {
+        height: el.scrollHeight,
+        top: el.scrollTop,
+      };
+    }
+    loadingOlderRef.current = true;
+    setVisibleCount((current) => nextVisibleCount(current, messages.length));
+  }, [messages.length, visibleCount]);
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    const restore = olderScrollRestoreRef.current;
+    if (el && restore != null) {
+      olderScrollRestoreRef.current = null;
+      el.scrollTop = el.scrollHeight - restore.height + restore.top;
+    }
+    loadingOlderRef.current = false;
+  }, [visibleCount]);
+
+  const onMessagesScroll = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    if (
+      shouldLoadOlderMessages(el.scrollTop, visibleCount, messages.length)
+    ) {
+      loadOlderMessages();
+    }
+  }, [loadOlderMessages, messages.length, visibleCount]);
 
   const stopTurn = useCallback(() => {
     stop();
@@ -1454,7 +1554,22 @@ export function ChatPanel() {
       </div>
 
       {/* Messages */}
-      <div ref={scrollRef} className="flex-1 space-y-5 overflow-y-auto p-4">
+      <div
+        ref={scrollRef}
+        className="flex-1 space-y-5 overflow-y-auto p-4"
+        onScroll={onMessagesScroll}
+      >
+        {hiddenCount > 0 ? (
+          <div className="flex justify-center">
+            <button
+              type="button"
+              onClick={loadOlderMessages}
+              className="rounded-md px-2 py-1 text-[11px] text-[var(--muted-foreground)] transition-colors hover:bg-[var(--secondary)] hover:text-[var(--foreground)]"
+            >
+              Show earlier messages
+            </button>
+          </div>
+        ) : null}
         {messages.length === 0 ? (
           <div className="space-y-3">
             <p className="text-sm text-[var(--muted-foreground)]">
@@ -1481,15 +1596,21 @@ export function ChatPanel() {
             </div>
           </div>
         ) : (
-          messages.map((m, i) => (
+          visibleMessages.map((m, i) => (
             <MessageTurn
               key={m.id}
               message={m}
               onSwitchSectionScope={applySectionScope}
-              askUserActive={i === messages.length - 1 && !busy && !initializing}
+              askUserActive={
+                visibleStartIndex + i === messages.length - 1 &&
+                !busy &&
+                !initializing
+              }
               onAnswerQuestions={(answerText) => void send(answerText, [])}
               streaming={
-                busy && i === messages.length - 1 && m.role === "assistant"
+                busy &&
+                visibleStartIndex + i === messages.length - 1 &&
+                m.role === "assistant"
               }
             />
           ))

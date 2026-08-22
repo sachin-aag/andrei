@@ -4,6 +4,7 @@ import {
   isAiSuggestionKind,
 } from "@/lib/ai/suggestion-gating";
 import { getUser } from "@/lib/auth/user-directory";
+import { summarizeTableOperation } from "@/lib/suggestions/table-operation";
 import type { CommentRecord, EvaluationRecord } from "@/types/report";
 
 const MAX_TITLE_LEN = 72;
@@ -66,6 +67,9 @@ export function getAiFixCommentTitle(
   if (payload.reasoning.trim()) {
     return truncateAtWord(payload.reasoning, MAX_TITLE_LEN);
   }
+  if (payload.tableOperation) {
+    return truncateAtWord(summarizeTableOperation(payload.tableOperation), MAX_TITLE_LEN);
+  }
   if (payload.insertText.trim()) {
     return summarizeInsertForTitle(payload.insertText);
   }
@@ -80,6 +84,12 @@ export function getAiFixCommentPreview(comment: CommentRecord): string {
   }
 
   const payload = parseAiFixCommentContent(comment.content);
+  if (payload.tableOperation) {
+    return truncateAtWord(
+      summarizeTableOperation(payload.tableOperation),
+      MAX_PREVIEW_LEN
+    );
+  }
   const insert = collapseWhitespace(payload.insertText);
   const del = collapseWhitespace(payload.deleteText);
 

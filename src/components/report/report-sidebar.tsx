@@ -185,40 +185,38 @@ export function ReportSidebar({
         })}
       </div>
 
-      {/* Content — only when expanded. ChatPanel stays mounted across tab
-          changes so composer prefs and the open thread are not reset.
-          Assistant manages its own scroll/input, so it gets a full-height
-          container without the shared padding. */}
-      {!collapsed && (
-        <>
-          <div
-            className={cn(
-              "min-h-0 flex-1",
-              activeTab !== "assistant" && "hidden"
-            )}
-          >
-            <ChatPanel />
-          </div>
-          {activeTab !== "assistant" ? (
-            <div className="flex-1 overflow-y-auto p-4 min-w-0">
-              {activeTab === "placeholders" && (
-                <PlaceholdersPanelContent
-                  onJumpToPlaceholder={onJumpToPlaceholder}
-                />
-              )}
-              {activeTab === "criteria" && (
-                <CriteriaPanelContent
-                  onJumpToSection={onJumpToSection}
-                  initialSection={initialCriteriaSection}
-                />
-              )}
-              {activeTab === "comments" && (
-                <CommentsPanelContent onJumpToComment={onJumpToComment} />
-              )}
-            </div>
-          ) : null}
-        </>
-      )}
+      {/* ChatPanel stays mounted across collapse and tab changes so the
+          thread, composer prefs, and rendered markdown are not reset.
+          Hide with CSS instead of unmounting — remount refetches and
+          re-parses the whole conversation. Assistant manages its own
+          scroll/input, so it gets a full-height container without the
+          shared padding. */}
+      <div
+        className={cn(
+          "min-h-0 flex-1",
+          (collapsed || activeTab !== "assistant") && "hidden"
+        )}
+      >
+        <ChatPanel />
+      </div>
+      {!collapsed && activeTab !== "assistant" ? (
+        <div className="flex-1 overflow-y-auto p-4 min-w-0">
+          {activeTab === "placeholders" && (
+            <PlaceholdersPanelContent
+              onJumpToPlaceholder={onJumpToPlaceholder}
+            />
+          )}
+          {activeTab === "criteria" && (
+            <CriteriaPanelContent
+              onJumpToSection={onJumpToSection}
+              initialSection={initialCriteriaSection}
+            />
+          )}
+          {activeTab === "comments" && (
+            <CommentsPanelContent onJumpToComment={onJumpToComment} />
+          )}
+        </div>
+      ) : null}
     </aside>
   );
 }

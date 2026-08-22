@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("bumps the prompt version when section inline image guidance changes", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v29-testers-dates-narrative");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v33-table-one-edit-cells");
   });
 
   it("tells the model never to pass the section key as targetField", () => {
@@ -115,6 +115,21 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("draft_field");
     expect(prompt).toContain("placeholder");
     expect(prompt).not.toContain("Mode: ASK");
+  });
+
+  it("routes existing table changes to edit_table instead of draft_field", () => {
+    const prompt = buildChatSystemPrompt({ ...opts, mode: "agent" });
+    expect(prompt).toContain("edit_table");
+    expect(prompt).toContain("Any change to an existing table uses edit_table");
+    expect(prompt).toContain("do not fall through to draft_field");
+    expect(prompt).toContain("That fallback is for prose only — never for tables");
+    expect(prompt).toContain("Row 0 is the header; the first data row is row 1");
+    expect(prompt).toContain("never a single representative row");
+    expect(prompt).toContain(
+      "put every affected cell in one edit_cells call (source and destination together)"
+    );
+    expect(prompt).toContain("failed-retry cap");
+    expect(prompt).toContain("draft_field / edit_table / propose_edit");
   });
 
   it("uses a demo-wide compliance persona, not a single customer brand", () => {

@@ -1,6 +1,6 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { memo, type ReactNode } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -91,7 +91,11 @@ const COMPONENTS: Components = {
 };
 
 /** Renders assistant chat text as GitHub-flavored markdown with LaTeX math. */
-export function ChatMarkdown({ children }: { children: string }) {
+export const ChatMarkdown = memo(function ChatMarkdown({
+  children,
+}: {
+  children: string;
+}) {
   const markdown = rewriteChatMathHtmlConflicts(children);
   return (
     <div className="chat-markdown space-y-2 text-sm leading-relaxed text-[var(--foreground)]">
@@ -104,4 +108,4 @@ export function ChatMarkdown({ children }: { children: string }) {
       </ReactMarkdown>
     </div>
   );
-}
+});

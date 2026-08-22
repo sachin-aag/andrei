@@ -7,7 +7,7 @@ import {
 } from "@/lib/attachments/pdf-preview-layout";
 
 describe("contentUrlFromPreviewSrc", () => {
-  it("strips the fragment and page hint so one fetch covers every page", () => {
+  it("strips the fragment and page hint so one URL covers every page", () => {
     expect(
       contentUrlFromPreviewSrc(
         "/api/reports/r1/attachments/a1/content?proxy=1&page=2#page=2"

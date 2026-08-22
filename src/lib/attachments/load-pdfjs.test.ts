@@ -4,6 +4,7 @@ describe("loadPdfjs", () => {
   it("can be imported in Node without evaluating pdfjs-dist", async () => {
     await expect(import("./load-pdfjs")).resolves.toMatchObject({
       loadPdfjs: expect.any(Function),
+      warmupPdfjsPreview: expect.any(Function),
     });
   });
 });
