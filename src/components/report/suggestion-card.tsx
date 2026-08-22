@@ -402,11 +402,15 @@ function ExitingSuggestionLayer({
 function SuggestionQueueBridgeCard({
   remainingTotal,
   criterionLabel,
+  pending,
   onGo,
+  onDismiss,
 }: {
   remainingTotal: number;
   criterionLabel?: string;
+  pending: boolean;
   onGo: () => void;
+  onDismiss: () => void;
 }) {
   const goRef = useRef<HTMLButtonElement>(null);
 
@@ -415,7 +419,7 @@ function SuggestionQueueBridgeCard({
   }, []);
 
   return (
-    <div className="rounded-md border border-violet-500/30 bg-[var(--card)] p-3 space-y-2">
+    <div className="sticky top-3 z-20 rounded-md border border-violet-500/30 bg-[var(--card)] p-3 space-y-2 shadow-md">
       <div className="flex items-center justify-between gap-2">
         <span className="text-[10px] font-medium text-[var(--muted-foreground)] uppercase tracking-wide">
           Next suggestion
@@ -431,15 +435,30 @@ function SuggestionQueueBridgeCard({
           ? "1 suggestion remaining farther in this section."
           : `${remainingTotal} suggestions remaining — next is farther in this section.`}
       </p>
-      <Button
-        ref={goRef}
-        size="sm"
-        className="h-7 text-xs w-full"
-        onClick={onGo}
-      >
-        <ArrowDown className="size-3" />
-        Go to next
-      </Button>
+      <div className="flex flex-wrap gap-2 pt-1">
+        <Button
+          ref={goRef}
+          type="button"
+          size="sm"
+          className="h-7 text-xs"
+          disabled={pending}
+          onClick={onGo}
+        >
+          <ArrowDown className="size-3" />
+          Go to next
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="h-7 text-xs"
+          disabled={pending}
+          onClick={onDismiss}
+        >
+          <X className="size-3" />
+          Dismiss
+        </Button>
+      </div>
     </div>
   );
 }
@@ -619,6 +638,11 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
       animateEnterNext,
     ]
   );
+
+  const handleDismissBridge = useCallback(() => {
+    if (!showBridge || pending) return;
+    endSuggestionApplyTransition(section);
+  }, [showBridge, pending, section, endSuggestionApplyTransition]);
 
   const handleGoToNext = useCallback(async () => {
     if (!showBridge || !liveCard || pending) return;
@@ -872,9 +896,11 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
       <SuggestionQueueBridgeCard
         remainingTotal={total}
         criterionLabel={liveCard.linkedEval?.criterionLabel}
+        pending={pending}
         onGo={() => {
           void handleGoToNext();
         }}
+        onDismiss={handleDismissBridge}
       />
     );
   }
