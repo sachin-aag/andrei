@@ -247,8 +247,18 @@ export function serializeStoredWorkspaceLayout(
   });
 }
 
+/**
+ * Stable default for `useSyncExternalStore`. React 19 re-reads
+ * `getServerSnapshot` during hydration and loops if each call returns a
+ * new object (`The result of getServerSnapshot should be cached`).
+ */
+const DEFAULT_WORKSPACE_LAYOUT: StoredWorkspaceLayout = Object.freeze({
+  chatWidth: CHAT_DEFAULT_PX,
+  docsWidth: DOCS_DEFAULT_PX,
+});
+
 export function defaultWorkspaceLayout(): StoredWorkspaceLayout {
-  return { chatWidth: CHAT_DEFAULT_PX, docsWidth: DOCS_DEFAULT_PX };
+  return { ...DEFAULT_WORKSPACE_LAYOUT };
 }
 
 /** Drop leftover profile storage from when panel widths were remembered. */
@@ -276,7 +286,7 @@ function emitLayout(): void {
 export function bindWorkspaceLayoutToReport(reportId: string): void {
   if (boundReportId === reportId) return;
   boundReportId = reportId;
-  memoryLayout = defaultWorkspaceLayout();
+  memoryLayout = DEFAULT_WORKSPACE_LAYOUT;
   clearStoredWorkspaceLayout();
 }
 
@@ -295,12 +305,12 @@ export function subscribeWorkspaceLayout(onStoreChange: () => void): () => void 
 
 export function getWorkspaceLayoutSnapshot(): StoredWorkspaceLayout {
   if (memoryLayout) return memoryLayout;
-  memoryLayout = defaultWorkspaceLayout();
+  memoryLayout = DEFAULT_WORKSPACE_LAYOUT;
   return memoryLayout;
 }
 
 export function getWorkspaceLayoutServerSnapshot(): StoredWorkspaceLayout {
-  return defaultWorkspaceLayout();
+  return DEFAULT_WORKSPACE_LAYOUT;
 }
 
 export function commitWorkspaceLayout(layout: StoredWorkspaceLayout): void {
