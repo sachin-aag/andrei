@@ -366,8 +366,8 @@ function FileNode({
         ) : (
           <button
             type="button"
-            onMouseEnter={warmupPdfjsPreview}
-            onFocus={warmupPdfjsPreview}
+            onMouseEnter={() => warmupPdfjsPreview()}
+            onFocus={() => warmupPdfjsPreview()}
             onClick={() => openDocument(attachment.id)}
             title={
               attachment.description

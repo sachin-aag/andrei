@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 import {
   PDFJS_ASSET_CACHE_CONTROL,
   PDFJS_ASSETS_VERSION,
-  PDFJS_RANGE_CHUNK_SIZE,
   pdfjsAssetCacheHeaders,
   pdfjsPreviewDocumentOptions,
   pdfjsPreviewLoadingOptions,
@@ -10,16 +9,28 @@ import {
 } from "@/lib/attachments/pdfjs-browser";
 
 describe("pdfjsPreviewLoadingOptions", () => {
-  it("asks pdf.js for range fetches only, not a full-file download", () => {
+  /**
+   * Ranges regressed open time: our PDFs make pdf.js throw XRefParseException
+   * and recover by fetching every chunk anyway, so N authenticated round trips
+   * replaced one GET. Keep this pinned to one streamed request.
+   */
+  it("asks pdf.js for one streamed GET, not range fetches", () => {
     expect(pdfjsPreviewLoadingOptions(PDFJS_ASSETS_VERSION)).toEqual({
       ...pdfjsPreviewDocumentOptions(PDFJS_ASSETS_VERSION),
-      withCredentials: true,
-      disableRange: false,
-      disableStream: true,
-      disableAutoFetch: true,
-      rangeChunkSize: PDFJS_RANGE_CHUNK_SIZE,
+      withCredentials: false,
+      disableRange: true,
+      disableStream: false,
+      disableAutoFetch: false,
     });
-    expect(PDFJS_RANGE_CHUNK_SIZE).toBe(1_048_576);
+  });
+
+  it("leaves credentials off so same-origin cookies still flow", () => {
+    // pdf.js maps withCredentials=false to credentials:"same-origin", which
+    // keeps the session cookie on the proxy request while allowing a redirect
+    // to signed object storage (which cannot echo Allow-Credentials).
+    expect(pdfjsPreviewLoadingOptions(PDFJS_ASSETS_VERSION).withCredentials).toBe(
+      false
+    );
   });
 });
 

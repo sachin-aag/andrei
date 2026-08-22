@@ -10,23 +10,10 @@ const getDocument = vi.fn();
 const renderPage = vi.fn();
 const getPage = vi.fn();
 
-class MockPDFDataRangeTransport {
-  length: number;
-  initialData: Uint8Array | null;
-  constructor(length: number, initialData: Uint8Array | null) {
-    this.length = length;
-    this.initialData = initialData;
-  }
-  onDataRange(): void {}
-  requestDataRange(): void {}
-  abort(): void {}
-}
-
 vi.mock("pdfjs-dist", () => ({
   version: "6.1.200",
   GlobalWorkerOptions: { workerSrc: "" },
   getDocument: (...args: unknown[]) => getDocument(...args),
-  PDFDataRangeTransport: MockPDFDataRangeTransport,
 }));
 
 function mockPdfPage(
@@ -140,9 +127,11 @@ describe("PdfPagePreview", () => {
     HTMLCanvasElement.prototype.getContext = vi.fn().mockReturnValue({
       canvas: {},
     }) as typeof HTMLCanvasElement.prototype.getContext;
+    // pdf.js owns the transfer. A direct fetch here means the component went
+    // back to buffering the file on the main thread before parsing.
     vi.stubGlobal(
       "fetch",
-      vi.fn().mockRejectedValue(new Error("preview tests must pass sizeBytes"))
+      vi.fn().mockRejectedValue(new Error("preview must not fetch bytes itself"))
     );
     installImmediateIntersectionObserver();
   });
@@ -170,18 +159,14 @@ describe("PdfPagePreview", () => {
     expect(pageTwo.tagName).toBe("CANVAS");
     await waitFor(() => {
       expect(getDocument).toHaveBeenCalledTimes(1);
-      expect(getDocument).toHaveBeenCalledWith(
-        expect.objectContaining({
-          range: expect.any(MockPDFDataRangeTransport),
-          ...pdfjsPreviewLoadingOptions("6.1.200"),
-        })
-      );
-      expect(getDocument.mock.calls[0]?.[0]).not.toHaveProperty("url");
+      // One streamed GET of the page-less content URL. Range loading made
+      // pdf.js fall back to fetching every chunk — see pdfjs-browser.ts.
+      expect(getDocument).toHaveBeenCalledWith({
+        url: "/api/reports/r1/attachments/a1/content?proxy=1",
+        ...pdfjsPreviewLoadingOptions("6.1.200"),
+      });
+      expect(getDocument.mock.calls[0]?.[0]).not.toHaveProperty("range");
       expect(getDocument.mock.calls[0]?.[0]).not.toHaveProperty("data");
-      expect(
-        (getDocument.mock.calls[0]?.[0] as { range: MockPDFDataRangeTransport })
-          .range.length
-      ).toBe(250_000);
       expect(renderPage).toHaveBeenCalledTimes(2);
       expect(renderPage).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -357,6 +342,118 @@ describe("PdfPagePreview", () => {
       expect(getPage).toHaveBeenCalledWith(1);
       expect(renderPage).toHaveBeenCalledTimes(2);
     });
+  });
+
+  it("reports transfer progress while a large file downloads", async () => {
+    let resolveDocument: (pdf: unknown) => void = () => {};
+    const task: { promise: Promise<unknown>; onProgress?: unknown; destroy: unknown } = {
+      promise: new Promise((resolve) => {
+        resolveDocument = resolve;
+      }),
+      destroy: vi.fn().mockResolvedValue(undefined),
+    };
+    getDocument.mockReturnValue(task);
+
+    render(
+      <PdfPagePreview
+        src="/api/reports/r1/attachments/a1/content?proxy=1&page=1"
+        page={1}
+        title="Huge.pdf"
+        sizeBytes={130_000_000}
+      />
+    );
+
+    await waitFor(() => {
+      expect(task.onProgress).toBeTypeOf("function");
+    });
+    (task.onProgress as (p: { loaded: number; total: number }) => void)({
+      loaded: 65_000_000,
+      total: 130_000_000,
+    });
+
+    expect(
+      await screen.findByText("Loading preview… 50% of 130.0 MB")
+    ).toBeInTheDocument();
+
+    resolveDocument({ numPages: 1, getPage });
+    await screen.findByLabelText("Huge.pdf, page 1");
+  });
+
+  it("releases the canvas of pages that scroll out of the window", async () => {
+    const observers: {
+      callback: IntersectionObserverCallback;
+      targets: Element[];
+      rootMargin: string;
+    }[] = [];
+    class TrackingIntersectionObserver {
+      readonly entry: {
+        callback: IntersectionObserverCallback;
+        targets: Element[];
+        rootMargin: string;
+      };
+      constructor(
+        callback: IntersectionObserverCallback,
+        options?: IntersectionObserverInit
+      ) {
+        this.entry = {
+          callback,
+          targets: [],
+          rootMargin: options?.rootMargin ?? "0px",
+        };
+        observers.push(this.entry);
+      }
+      observe(target: Element) {
+        this.entry.targets.push(target);
+        this.entry.callback(
+          [{ isIntersecting: true, intersectionRatio: 1, target }] as never,
+          this as unknown as IntersectionObserver
+        );
+      }
+      unobserve() {}
+      disconnect() {}
+      takeRecords(): IntersectionObserverEntry[] {
+        return [];
+      }
+      readonly root = null;
+      readonly rootMargin = "0px";
+      readonly thresholds = [0];
+    }
+    vi.stubGlobal("IntersectionObserver", TrackingIntersectionObserver);
+
+    render(
+      <PdfPagePreview
+        src="/api/reports/r1/attachments/a1/content?proxy=1&page=1"
+        page={1}
+        title="Evidence.pdf"
+        sizeBytes={250_000}
+      />
+    );
+
+    const pageTwo = await screen.findByLabelText("Evidence.pdf, page 2");
+    await waitFor(() => expect(pageTwo).not.toHaveClass("hidden"));
+    expect((pageTwo as HTMLCanvasElement).width).toBeGreaterThan(0);
+
+    // Scroll page 2 far out of view. Only the prefetch observer (the one with
+    // the lookahead margin) drives the render window.
+    const prefetchObserver = observers.find(
+      (entry) => entry.rootMargin === "800px 0px"
+    );
+    const target = prefetchObserver?.targets.find(
+      (node) => (node as HTMLElement).dataset.pdfPage === "2"
+    );
+    prefetchObserver?.callback(
+      [{ isIntersecting: false, intersectionRatio: 0, target }] as never,
+      null as unknown as IntersectionObserver
+    );
+
+    await waitFor(() => {
+      expect((pageTwo as HTMLCanvasElement).width).toBe(0);
+      expect(pageTwo).toHaveClass("hidden");
+    });
+    // The requested page always keeps its canvas.
+    expect(screen.getByLabelText("Evidence.pdf, page 1")).not.toHaveClass(
+      "hidden"
+    );
   });
 
   it("shows a download hint when pdf.js cannot open the file", async () => {

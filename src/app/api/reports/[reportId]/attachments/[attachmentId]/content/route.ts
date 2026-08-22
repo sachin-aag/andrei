@@ -18,6 +18,31 @@ export const maxDuration = 300;
 /** Cap buffered Range bodies so a `bytes=0-` request cannot pull a 200 MB PDF. */
 const MAX_BUFFERED_RANGE_BYTES = 8 * 1024 * 1024;
 
+/**
+ * Attachment bytes are immutable per `gcsGeneration`, so the only thing
+ * limiting the window is how long a revoked share should stay readable.
+ */
+const PREVIEW_CACHE_CONTROL = "private, max-age=3600, must-revalidate";
+
+/**
+ * Serve preview bytes straight from object storage instead of proxying them
+ * through this function. Requires bucket CORS allowing GET from the app
+ * origins — see docs/pdf-evidence-deployment-checklist.md.
+ */
+function directPreviewStorageEnabled(): boolean {
+  return process.env.ATTACHMENT_PREVIEW_DIRECT_STORAGE === "true";
+}
+
+/** RFC 9110 If-None-Match: `*`, or a comma list where a weak match counts. */
+function requestMatchesEtag(header: string | null, etag: string): boolean {
+  if (!header) return false;
+  const candidates = header.split(",").map((value) => value.trim());
+  if (candidates.includes("*")) return true;
+  const normalize = (value: string) =>
+    value.startsWith("W/") ? value.slice(2) : value;
+  return candidates.some((value) => normalize(value) === normalize(etag));
+}
+
 export async function GET(
   req: Request,
   { params }: { params: Promise<{ reportId: string; attachmentId: string }> }
@@ -53,22 +78,43 @@ export async function GET(
     return NextResponse.json({ error: "Page out of range" }, { status: 400 });
   }
 
-  // Downloads can 302 to a signed GCS URL. Inline preview must stay same-origin
-  // so pdf.js can Range-request pages. Redirects to storage.googleapis.com are
-  // blocked by Comet (and preview hosts are not on the bucket CORS list).
-  if (download) {
+  // pdf.js opens a document with one streamed GET, so re-opening the same
+  // attachment is a conditional request. Answer it before touching storage.
+  const etag = `"${attachment.gcsGeneration}"`;
+  if (!download && requestMatchesEtag(req.headers.get("If-None-Match"), etag)) {
+    return new NextResponse(null, {
+      status: 304,
+      headers: {
+        ETag: etag,
+        "Cache-Control": PREVIEW_CACHE_CONTROL,
+        "Accept-Ranges": "bytes",
+      },
+    });
+  }
+
+  // Downloads always 302 to a signed URL. Inline preview can too, when the
+  // bucket is CORS-enabled (see ATTACHMENT_PREVIEW_DIRECT_STORAGE) — that
+  // takes the whole file off the function's egress path. It is opt-in because
+  // an un-configured bucket fails the preflight-free GET with a CORS error,
+  // and because Comet blocks storage.googleapis.com for iframe navigations
+  // (harmless here: pdf.js fetches, it does not navigate).
+  if (download || directPreviewStorageEnabled()) {
     try {
       const signedUrl = await getAttachmentStorage().getSignedReadUrl({
         objectKey: attachment.permanentObjectKey,
         generation: attachment.gcsGeneration,
         expiresInSeconds: 5 * 60,
-        downloadFilename: attachment.filename,
+        // Preview must stay inline; only the download button forces a save.
+        ...(download ? { downloadFilename: attachment.filename } : {}),
         responseContentType: attachment.mimeType || undefined,
       });
       const redirectUrl = signedUrl.startsWith("/")
         ? new URL(signedUrl, req.url).toString()
         : signedUrl;
-      return NextResponse.redirect(redirectUrl);
+      const redirect = NextResponse.redirect(redirectUrl);
+      // The signature expires; never let a cache pin this hop.
+      redirect.headers.set("Cache-Control", "private, no-store");
+      return redirect;
     } catch (error) {
       console.error("[attachment-content] signed url failed", {
         attachmentId,
@@ -132,14 +178,12 @@ export async function GET(
   const filename = safeFilename(attachment.filename);
   const headers = new Headers({
     "Content-Type": attachment.mimeType || "application/octet-stream",
-    "Cache-Control": "private, max-age=3600",
+    "Cache-Control": PREVIEW_CACHE_CONTROL,
     "Content-Disposition": `inline; filename="${filename}"`,
     "Content-Encoding": "identity",
     "X-Content-Type-Options": "nosniff",
+    ETag: etag,
   });
-  if (attachment.gcsGeneration) {
-    headers.set("ETag", `"${attachment.gcsGeneration}"`);
-  }
   headers.set("Accept-Ranges", "bytes");
   headers.set(
     "Content-Length",

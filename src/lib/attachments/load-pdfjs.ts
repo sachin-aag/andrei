@@ -15,10 +15,18 @@ export async function loadPdfjs() {
 }
 
 /**
- * Start the 1.7 MB pdf.js import and modulepreload the worker as soon as the
- * Documents list is on screen (or a row is hovered) so open is not sequential.
+ * Fetch the 1.7 MB pdf.js bundle + worker ahead of the first open so that
+ * click -> paint is not a sequential import.
+ *
+ * `whenIdle` defers the download past the report's own first paint — the
+ * Documents list mounts on every report, but most visits never open a PDF.
+ * Hovering a row calls this without the delay, which is early enough.
  */
-export function warmupPdfjsPreview(): void {
+export function warmupPdfjsPreview({ whenIdle = false } = {}): void {
+  if (whenIdle) {
+    scheduleIdle(() => warmupPdfjsPreview());
+    return;
+  }
   preloadPdfjsWorkerModule();
   void loadPdfjs()
     .then(({ GlobalWorkerOptions, version }) => {
@@ -27,6 +35,17 @@ export function warmupPdfjsPreview(): void {
     .catch(() => {
       // Preview still loads pdf.js on demand if this warmup fails.
     });
+}
+
+function scheduleIdle(run: () => void): void {
+  if (typeof window === "undefined") return;
+  const idle = (
+    window as Window & {
+      requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => void;
+    }
+  ).requestIdleCallback;
+  if (idle) idle(run, { timeout: 3000 });
+  else window.setTimeout(run, 1500);
 }
 
 function preloadPdfjsWorkerModule(): void {

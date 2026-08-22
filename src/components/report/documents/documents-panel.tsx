@@ -33,7 +33,7 @@ export function DocumentsPanel({
   const { attachments } = useReportAttachments();
 
   useEffect(() => {
-    warmupPdfjsPreview();
+    warmupPdfjsPreview({ whenIdle: true });
   }, []);
 
   if (collapsed) {

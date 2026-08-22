@@ -10,12 +10,6 @@
 /** Must match `pdfjs-dist` and `public/pdfjs-assets/<version>/`. */
 export const PDFJS_ASSETS_VERSION = "6.1.200";
 
-/**
- * Bytes per pdf.js Range request. 64 KB made every page pay many auth+GCS
- * round trips; 1 MiB covers a typical first page + xref in two requests.
- */
-export const PDFJS_RANGE_CHUNK_SIZE = 1_048_576;
-
 /** Version-stamped static assets never change; cache them for a year. */
 export const PDFJS_ASSET_CACHE_CONTROL =
   "public, max-age=31536000, immutable";
@@ -40,26 +34,37 @@ export function pdfjsPreviewDocumentOptions(version: string): {
 }
 
 /**
- * Range-only load. Pair with `createPdfPreviewRangeTransport` — do not pass
- * `url` to `getDocument` or pdf.js starts a full GET. `disableStream` is
- * required for `disableAutoFetch`.
+ * Single streamed GET. `disableRange` is deliberate, not an oversight.
+ *
+ * Range loading only pays off for PDFs whose xref pdf.js can parse from the
+ * tail chunk alone. Our uploads (Word/scanner exports, merged appendices) fail
+ * that: `loadDocument()` throws `XRefParseException`, and pdf.js recovers by
+ * calling `requestLoadedStream()` — which fetches *every* remaining chunk
+ * before retrying. Measured against real report attachments:
+ *
+ *   4.9 MB / 62 pages    ->  6 requests, 200% of the file transferred
+ *   130 MB / 1003 pages  -> 120 requests, 195% of the file transferred
+ *
+ * Every one of those is an authenticated round trip through the content route
+ * (session + two DB queries + a GCS read), so ranges were strictly slower than
+ * one GET. With `disableRange` it is 1 request and 100%, and the worker parses
+ * as bytes arrive. Re-measure before turning ranges back on.
  */
 export function pdfjsPreviewLoadingOptions(version: string): ReturnType<
   typeof pdfjsPreviewDocumentOptions
 > & {
-  withCredentials: true;
-  disableRange: false;
-  disableStream: true;
-  disableAutoFetch: true;
-  rangeChunkSize: number;
+  /** Cookies still flow: pdf.js maps `false` to `credentials: "same-origin"`. */
+  withCredentials: false;
+  disableRange: true;
+  disableStream: false;
+  disableAutoFetch: false;
 } {
   return {
     ...pdfjsPreviewDocumentOptions(version),
-    withCredentials: true,
-    disableRange: false,
-    disableStream: true,
-    disableAutoFetch: true,
-    rangeChunkSize: PDFJS_RANGE_CHUNK_SIZE,
+    withCredentials: false,
+    disableRange: true,
+    disableStream: false,
+    disableAutoFetch: false,
   };
 }
 

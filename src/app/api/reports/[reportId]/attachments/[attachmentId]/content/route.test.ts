@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/db", () => ({
   db: {
@@ -235,5 +235,66 @@ describe("GET /api/reports/[reportId]/attachments/[attachmentId]/content", () =>
       })
     );
     expect(openObjectReadStream).not.toHaveBeenCalled();
+  });
+
+  it("answers a matching If-None-Match with 304 before reading storage", async () => {
+    mockSelectOnce([attachment]);
+
+    const response = await GET(
+      new Request(
+        "http://localhost/api/reports/report-1/attachments/att-1/content?proxy=1",
+        { headers: { "If-None-Match": `"${attachment.gcsGeneration}"` } }
+      ),
+      params()
+    );
+
+    expect(response.status).toBe(304);
+    expect(response.headers.get("ETag")).toBe(`"${attachment.gcsGeneration}"`);
+    expect(openObjectReadStream).not.toHaveBeenCalled();
+    expect(getSignedReadUrl).not.toHaveBeenCalled();
+  });
+
+  it("still streams when If-None-Match is for a superseded generation", async () => {
+    mockSelectOnce([attachment]);
+
+    const response = await GET(
+      new Request(
+        "http://localhost/api/reports/report-1/attachments/att-1/content?proxy=1",
+        { headers: { "If-None-Match": '"0"' } }
+      ),
+      params()
+    );
+
+    expect(response.status).toBe(200);
+    expect(openObjectReadStream).toHaveBeenCalled();
+  });
+
+  describe("with ATTACHMENT_PREVIEW_DIRECT_STORAGE=true", () => {
+    beforeEach(() => {
+      vi.stubEnv("ATTACHMENT_PREVIEW_DIRECT_STORAGE", "true");
+    });
+
+    afterEach(() => {
+      vi.unstubAllEnvs();
+    });
+
+    it("redirects preview to signed storage without a download disposition", async () => {
+      mockSelectOnce([attachment]);
+
+      const response = await GET(
+        new Request(
+          "http://localhost/api/reports/report-1/attachments/att-1/content?proxy=1"
+        ),
+        params()
+      );
+
+      expect(response.status).toBe(307);
+      expect(response.headers.get("Cache-Control")).toBe("private, no-store");
+      // A downloadFilename would make pdf.js's fetch save the file instead.
+      expect(getSignedReadUrl).toHaveBeenCalledWith(
+        expect.not.objectContaining({ downloadFilename: expect.anything() })
+      );
+      expect(openObjectReadStream).not.toHaveBeenCalled();
+    });
   });
 });

@@ -34,6 +34,7 @@ managed by Terraform in [`infra/document-ai`](../infra/document-ai/README.md).
 - [ ] Prefer an existing project bucket via `GCS_BUCKET` (prefix separation, not a new bucket)
 - [ ] Lifecycle rule deletes **only** `staging/` and `temp/` prefixes (not permanent evidence)
 - [ ] Exact CORS origins for browser resumable uploads (app production + preview URLs). Custom domains must be listed exactly — `https://mj.andreihealth.com` is in [`infra/gcs/cors.json`](../infra/gcs/cors.json). Apply with `gsutil cors set` or Terraform.
+- [ ] Optional `ATTACHMENT_PREVIEW_DIRECT_STORAGE=true` — serves PDF preview bytes straight from GCS instead of proxying them through the content route. Requires the origin to be in `infra/gcs/cors.json` with `GET`/`HEAD` and `Content-Length` + `ETag` exposed (it already is). Leave unset until that CORS config is applied to the bucket in that environment, or preview fails with a CORS error and falls back to nothing. Biggest win on 100 MB+ attachments, where the function is otherwise in the path for every byte.
 - [ ] WIF trust configured (`GCP_WIF_AUDIENCE`, `GCP_SERVICE_ACCOUNT_EMAIL`) for Vercel OIDC
 - [ ] Least-privilege IAM: object create/read on attachment prefixes + `iam.serviceAccounts.signBlob` / Token Creator for signed URLs — avoid blanket `roles/storage.objectAdmin` on shared buckets
 - [ ] pgvector available on Neon (and local/CI via `pgvector/pgvector:pg16`)
