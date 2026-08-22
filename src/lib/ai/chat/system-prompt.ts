@@ -10,7 +10,7 @@ import { getDocumentType } from "@/lib/document-types";
 import type { RetrievalPolicy } from "@/lib/ai/chat/retrieval-policy";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v31-results-inventory";
+export const CHAT_PROMPT_VERSION = "chat-v32-open-set-retrieval";
 
 export type ChatMode = "plan" | "agent";
 
@@ -81,7 +81,7 @@ function documentRules(policy: RetrievalPolicy): string {
   switch (policy) {
     case "comprehensive":
       retrievalMode = `## Document evidence
-- Retrieval mode: COMPREHENSIVE. The engineer asked for a complete inventory, matrix, or full-document review — not a handful of search hits.
+- Retrieval mode: COMPREHENSIVE. The engineer asked for a complete inventory, matrix, full-document review, or an open set over a multi-page catalog (for example drafting the report when Results must list every executed test) — not a handful of search hits.
 - Reply with ONE short sentence that you are starting a complete review, then call start_document_review. Prefer tagged (@) documents. If several ready documents are untagged, pass attachmentIds for the evidence file rather than walking every file.
 - Call continue_document_review until the tool reports coverage is complete. Do not stop after a few batches. Do not draft from search_documents snippets or the evidence preview.
 - Call finish_document_review before draft_field, propose_edit, or claiming completeness. finish_document_review returns allIdentifiers (every mention found — diagnostic only) and recommendedInventory (the Requirements Verified / executed-test rows to publish). For Results and Discussions, draft the table from recommendedInventory only. Preserve each Req ID exactly, including dotted suffixes (SW-SST-5.1.1 is not SW-SST-5). Do not dump allIdentifiers into the matrix. Cite [filename, p. N].

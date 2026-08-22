@@ -437,6 +437,7 @@ You never write to the document directly. Every change is a PROPOSAL that appear
       "appendices",
       "approval_signoff",
     ],
+    inventorySections: ["traceability", "test_results"],
     sectionIntentPatterns: [
       [
         "purpose_scope",

@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("bumps the prompt version when section inline image guidance changes", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v31-results-inventory");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v32-open-set-retrieval");
   });
 
   it("tells the model never to pass the section key as targetField", () => {
@@ -191,6 +191,7 @@ describe("buildChatSystemPrompt", () => {
       retrievalPolicy: "comprehensive",
     });
     expect(prompt).toContain("Retrieval mode: COMPREHENSIVE");
+    expect(prompt).toContain("open set over a multi-page catalog");
     expect(prompt).toContain("start_document_review");
     expect(prompt).toContain("finish_document_review before draft_field");
     expect(prompt).toContain("recommendedInventory");

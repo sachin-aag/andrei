@@ -461,6 +461,7 @@ targetField \`table\` (Results matrix) — ONE GFM table only (Req ID | Req Desc
       "testers_dates",
       "conclusion",
     ],
+    inventorySections: ["results_and_discussions"],
     sectionIntentPatterns: [
       ["purpose", [/\bpurpose\b/i, /\bobjective\b/i, /\bverification objective\b/i]],
       ["scope", [/\bscope\b/i, /\bin-scope\b/i, /\bexclusions?\b/i]],
@@ -480,6 +481,8 @@ targetField \`table\` (Results matrix) — ONE GFM table only (Req ID | Req Desc
         "test_equipment",
         [
           /\btest equipment\b/i,
+          /\bequipment\b/i,
+          /\buuts?\b/i,
           /\basset tag\b/i,
           /\bcalibration\b/i,
           /\bserial no\b/i,
