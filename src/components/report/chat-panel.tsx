@@ -9,9 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useChat } from "@ai-sdk/react";
 import {
-  DefaultChatTransport,
   isFileUIPart,
   type FileUIPart,
   type UIMessage,
@@ -58,6 +56,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useChatWatchdog } from "@/hooks/use-chat-watchdog";
 import { useReportData } from "@/providers/report-provider";
 import { useReportAttachments } from "@/providers/report-attachments-provider";
 import { useUserDirectory } from "@/providers/user-directory-provider";
@@ -90,11 +89,17 @@ import {
 import {
   CHAT_ASSISTANT_ERROR_MESSAGE,
   CHAT_ASSISTANT_INTERRUPTED_MESSAGE,
-  assistantPartsHaveVisibleContent,
-  assistantProgressSignature,
   chatWatchdogPhase,
   shouldShowEmptyAssistantError,
 } from "@/lib/ai/chat/assistant-turn";
+import {
+  dropBackgroundSession,
+  isChatTurnBusy,
+  rememberBackgroundSession,
+  rememberMountedSession,
+  runningChatSessionIds,
+  type MountedChatSession,
+} from "@/lib/ai/chat/session-runtime";
 import {
   detectSectionScopeMismatch,
   type SectionScopeMismatch,
@@ -109,6 +114,11 @@ import {
   type MentionQuery,
 } from "@/lib/ai/chat/mention-search";
 import { compressImageFile } from "@/lib/images/compress-image";
+import {
+  ChatSessionHost,
+  IDLE_CHAT_RUNTIME,
+  type ChatSessionRuntime,
+} from "@/components/report/chat-session-host";
 import { DocumentReviewProgress } from "@/components/report/document-review-progress";
 import {
   isDocumentReviewToolName,
@@ -880,6 +890,11 @@ export function ChatPanel() {
     useState<SectionScopeMismatch | null>(null);
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [mountedSessions, setMountedSessions] = useState<MountedChatSession[]>(
+    []
+  );
+  const [backgroundSessionIds, setBackgroundSessionIds] = useState<string[]>([]);
+  const [runtime, setRuntime] = useState<ChatSessionRuntime>(IDLE_CHAT_RUNTIME);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [initializing, setInitializing] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -887,47 +902,24 @@ export function ChatPanel() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const pendingCaretRef = useRef<number | null>(null);
-  const sessionIdRef = useRef<string | null>(null);
-  const reloadSessionRef = useRef<() => Promise<void>>(async () => {});
-  const busyStartedAtRef = useRef<number | null>(null);
-  const lastProgressAtRef = useRef<number | null>(null);
-  const lastProgressSigRef = useRef("");
-  const stoppedForWatchdogRef = useRef(false);
-  const [elapsedMs, setElapsedMs] = useState(0);
-  const [silentMs, setSilentMs] = useState(0);
+  const currentSessionIdRef = useRef<string | null>(null);
+  const runtimeBySessionRef = useRef(new Map<string, ChatSessionRuntime>());
 
   const base = `/api/reports/${report.id}/chat`;
-
-  const { messages, sendMessage, setMessages, status, error, stop } = useChat({
-    id: `report-chat-${report.id}`,
-    transport: new DefaultChatTransport({ api: base }),
-    onFinish: ({ message, isAbort, isDisconnect, isError }) => {
-      // Pull newly-proposed ai_fix comments into report state (inline diff +
-      // gutter card), and refresh session titles/order.
-      void refresh();
-      void loadSessions();
-      if (isAbort || isDisconnect) {
-        void reloadSessionRef.current();
-        return;
-      }
-      // Stream protocol errors already toast via onError. Empty Gemini turns
-      // (thought-only / no parts) finish as success unless we catch them here.
-      if (isError) return;
-      if (
-        message.role === "assistant" &&
-        !assistantPartsHaveVisibleContent(message.parts)
-      ) {
-        toast.error(CHAT_ASSISTANT_ERROR_MESSAGE);
-      }
-    },
-    onError: (err) => {
-      console.error("chat error", err);
-      toast.error(CHAT_ASSISTANT_ERROR_MESSAGE);
-    },
+  const { messages, sendMessage, status, error, stop } = runtime;
+  const busy = isChatTurnBusy(status);
+  const { elapsedMs, silentMs } = useChatWatchdog({
+    messages,
+    status,
+    stop,
+    onGiveUp: () => toast.error(CHAT_ASSISTANT_INTERRUPTED_MESSAGE),
   });
-
-  const busy = status === "submitted" || status === "streaming";
   const watchdog = chatWatchdogPhase({ busy, elapsedMs, silentMs });
+  const runningSessionIds = runningChatSessionIds(
+    backgroundSessionIds,
+    currentSessionId,
+    busy
+  );
 
   // Only ready documents are taggable — an attachment still being ingested has
   // no chunks, so scoping search to it would return nothing.
@@ -1074,23 +1066,37 @@ export function ChatPanel() {
     }
   }, [base]);
 
+  const onFinishTurn = useCallback(() => {
+    // Pull newly-proposed ai_fix comments into report state (inline diff +
+    // gutter card), and refresh session titles/order.
+    void refresh();
+    void loadSessions();
+  }, [loadSessions, refresh]);
+
+  const mountSession = useCallback((sessionId: string, hydrateOnMount: boolean) => {
+    setMountedSessions((prev) =>
+      rememberMountedSession(prev, sessionId, hydrateOnMount)
+    );
+  }, []);
+
   const openSession = useCallback(
-    async (sessionId: string) => {
+    (sessionId: string) => {
+      if (
+        sessionId !== currentSessionId &&
+        currentSessionId &&
+        (status === "submitted" || status === "streaming")
+      ) {
+        setBackgroundSessionIds((prev) =>
+          rememberBackgroundSession(prev, currentSessionId)
+        );
+      }
+      currentSessionIdRef.current = sessionId;
+      mountSession(sessionId, true);
+      setRuntime(runtimeBySessionRef.current.get(sessionId) ?? IDLE_CHAT_RUNTIME);
       setCurrentSessionId(sessionId);
       setHistoryOpen(false);
-      try {
-        const res = await fetch(`${base}/sessions/${sessionId}`);
-        if (!res.ok) {
-          setMessages([]);
-          return;
-        }
-        const data = (await res.json()) as { messages: UIMessage[] };
-        setMessages(data.messages ?? []);
-      } catch {
-        setMessages([]);
-      }
     },
-    [base, setMessages]
+    [currentSessionId, mountSession, status]
   );
 
   const createSession = useCallback(async (): Promise<string | null> => {
@@ -1112,80 +1118,49 @@ export function ChatPanel() {
       toast.error("Could not start a new chat.");
       return;
     }
+    if (currentSessionId && (status === "submitted" || status === "streaming")) {
+      setBackgroundSessionIds((prev) =>
+        rememberBackgroundSession(prev, currentSessionId)
+      );
+    }
+    currentSessionIdRef.current = id;
+    mountSession(id, false);
+    setRuntime(IDLE_CHAT_RUNTIME);
     setCurrentSessionId(id);
-    setMessages([]);
     setInput("");
     setPendingImages([]);
     setMentions([]);
     setMentionRange(null);
-  }, [createSession, setMessages]);
+  }, [createSession, currentSessionId, mountSession, status]);
 
-  useEffect(() => {
-    sessionIdRef.current = currentSessionId;
-    reloadSessionRef.current = async () => {
-      const id = sessionIdRef.current;
-      if (id) await openSession(id);
-    };
-  }, [currentSessionId, openSession]);
+  const onSessionSettled = useCallback((sessionId: string) => {
+    setBackgroundSessionIds((prev) => dropBackgroundSession(prev, sessionId));
+  }, []);
 
-  const messagesRef = useRef(messages);
-  useEffect(() => {
-    messagesRef.current = messages;
-  }, [messages]);
-
-  useEffect(() => {
-    if (!busy) {
-      busyStartedAtRef.current = null;
-      lastProgressAtRef.current = null;
-      lastProgressSigRef.current = "";
-      stoppedForWatchdogRef.current = false;
-      return;
-    }
-    if (busyStartedAtRef.current == null) busyStartedAtRef.current = Date.now();
-    const tick = () => {
-      const now = Date.now();
-      const started = busyStartedAtRef.current ?? now;
-      let lastAssistant: (typeof messages)[number] | undefined;
-      for (let i = messagesRef.current.length - 1; i >= 0; i--) {
-        const message = messagesRef.current[i];
-        if (message?.role === "assistant") {
-          lastAssistant = message;
-          break;
-        }
-      }
-      const signature = assistantProgressSignature(lastAssistant?.parts);
-      if (signature !== lastProgressSigRef.current) {
-        lastProgressSigRef.current = signature;
-        lastProgressAtRef.current = now;
-      }
-      const progress = lastProgressAtRef.current ?? started;
-      setElapsedMs(now - started);
-      setSilentMs(now - progress);
-      if (
-        chatWatchdogPhase({
-          busy: true,
-          elapsedMs: now - started,
-          silentMs: now - progress,
-        }) === "give_up" &&
-        !stoppedForWatchdogRef.current
-      ) {
-        stoppedForWatchdogRef.current = true;
-        stop();
-        toast.error(CHAT_ASSISTANT_INTERRUPTED_MESSAGE);
-      }
-    };
-    tick();
-    const id = window.setInterval(tick, 1000);
-    return () => window.clearInterval(id);
-  }, [busy, stop]);
+  const onSessionRuntime = useCallback(
+    (sessionId: string, next: ChatSessionRuntime) => {
+      runtimeBySessionRef.current.set(sessionId, next);
+      if (sessionId !== currentSessionIdRef.current) return;
+      setRuntime(next);
+    },
+    []
+  );
 
   const stopTurn = useCallback(() => {
     stop();
   }, [stop]);
 
+  useEffect(() => {
+    currentSessionIdRef.current = currentSessionId;
+  }, [currentSessionId]);
+
   // Initialize: load sessions, open the most recent or create the first.
   useEffect(() => {
     let cancelled = false;
+    runtimeBySessionRef.current = new Map();
+    setMountedSessions([]);
+    setBackgroundSessionIds([]);
+    setRuntime(IDLE_CHAT_RUNTIME);
     void (async () => {
       const existing = await loadSessions();
       if (cancelled) return;
@@ -1193,7 +1168,11 @@ export function ChatPanel() {
         await openSession(existing[0]!.id);
       } else {
         const id = await createSession();
-        if (!cancelled && id) setCurrentSessionId(id);
+        if (!cancelled && id) {
+          currentSessionIdRef.current = id;
+          mountSession(id, false);
+          setCurrentSessionId(id);
+        }
       }
       if (!cancelled) setInitializing(false);
     })();
@@ -1297,7 +1276,15 @@ export function ChatPanel() {
       const attached = images ?? pendingImages;
       const trimmed = text.trim();
       const files = attached.map((image) => image.part);
-      if ((!trimmed && files.length === 0) || busy || initializing || attaching) return;
+      if (
+        (!trimmed && files.length === 0) ||
+        status === "submitted" ||
+        status === "streaming" ||
+        initializing ||
+        attaching
+      ) {
+        return;
+      }
       let sessionId = currentSessionId;
       if (!sessionId) {
         sessionId = await createSession();
@@ -1305,6 +1292,8 @@ export function ChatPanel() {
           toast.error("Could not start a chat session.");
           return;
         }
+        currentSessionIdRef.current = sessionId;
+        mountSession(sessionId, false);
         setCurrentSessionId(sessionId);
       }
       setInput("");
@@ -1341,10 +1330,11 @@ export function ChatPanel() {
     },
     [
       attaching,
-      busy,
+      status,
       initializing,
       currentSessionId,
       createSession,
+      mountSession,
       sendMessage,
       mode,
       pace,
@@ -1360,6 +1350,19 @@ export function ChatPanel() {
 
   return (
     <div className="flex h-full flex-col" aria-busy={initializing}>
+      {mountedSessions.map((session) => (
+        <ChatSessionHost
+          key={session.id}
+          reportId={report.id}
+          sessionId={session.id}
+          api={base}
+          hydrateOnMount={session.hydrateOnMount}
+          active={session.id === currentSessionId}
+          onFinishTurn={onFinishTurn}
+          onSettled={onSessionSettled}
+          onRuntime={onSessionRuntime}
+        />
+      ))}
       {/* Header: title + new chat + history */}
       <div className="relative flex items-center gap-2 border-b border-[var(--border)] px-3 py-2.5">
         <Sparkles className="size-4 shrink-0 text-[var(--primary)]" />
@@ -1414,11 +1417,22 @@ export function ChatPanel() {
                       )}
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-xs font-medium text-[var(--foreground)]">
-                        {s.title}
+                      <span className="flex items-center gap-1.5">
+                        <span className="block min-w-0 truncate text-xs font-medium text-[var(--foreground)]">
+                          {s.title}
+                        </span>
+                        {runningSessionIds.has(s.id) ? (
+                          <Loader2
+                            className="size-3 shrink-0 animate-spin text-[var(--primary)]"
+                            aria-label="Chat still running"
+                          />
+                        ) : null}
                       </span>
                       <span className="block text-[10px] text-[var(--muted-foreground)]">
-                        {s.messageCount} message{s.messageCount === 1 ? "" : "s"} ·{" "}
+                        {runningSessionIds.has(s.id)
+                          ? "Still working"
+                          : `${s.messageCount} message${s.messageCount === 1 ? "" : "s"}`}
+                        {" · "}
                         {formatDistanceToNow(new Date(s.updatedAt), { addSuffix: true })}
                       </span>
                     </span>
