@@ -4,12 +4,14 @@ import { memo, useEffect, useRef, useState, type RefObject } from "react";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
 import { loadPdfjs } from "@/lib/attachments/load-pdfjs";
 import {
-  pdfjsPreviewDocumentOptions,
+  pdfjsPreviewLoadingOptions,
   pdfjsWorkerSrc,
 } from "@/lib/attachments/pdfjs-browser";
 import {
   contentUrlFromPreviewSrc,
   layoutPreviewTextSpans,
+  PDF_FALLBACK_PAGE_HEIGHT,
+  PDF_FALLBACK_PAGE_WIDTH,
   PDF_PREVIEW_SCALE,
   type PdfPreviewTextSpan,
   type PdfTextContentItem,
@@ -28,6 +30,7 @@ type PreviewState =
 
 type PagePaintState =
   | { status: "pending" }
+  | { status: "painted"; pageWidth: number; pageHeight: number }
   | {
       status: "ready";
       pageWidth: number;
@@ -41,8 +44,12 @@ type DestroyableTask = {
 };
 
 /**
- * Paints every PDF page to a scrollable stack of canvases with official
- * pdf.js (wasm + standard fonts) and a transparent text layer for select/copy.
+ * Paints PDF pages to a scrollable stack of canvases with official pdf.js
+ * (wasm + standard fonts) and a transparent text layer for select/copy.
+ *
+ * Large files load through HTTP Range so page 1 can paint before the rest of
+ * the file arrives. Visible pages paint first; neighbors prefetch as you
+ * scroll. The canvas is shown as soon as it paints — the text layer follows.
  *
  * Do not put `application/pdf` in an iframe/embed: Chrome and Comet intercept
  * that navigation. Do not use the serverless `unpdf` renderer here — it skips
@@ -66,7 +73,6 @@ export function PdfPagePreview({
     setLoadedUrl(contentUrl);
     setState({ status: "loading" });
   }
-  const bytesCacheRef = useRef<{ url: string; data: Uint8Array } | null>(null);
   const onVisiblePageChangeRef = useRef(onVisiblePageChange);
 
   useEffect(() => {
@@ -81,29 +87,15 @@ export function PdfPagePreview({
 
     void (async () => {
       try {
-        let data =
-          bytesCacheRef.current?.url === contentUrl
-            ? bytesCacheRef.current.data
-            : null;
-        if (!data) {
-          const response = await fetch(contentUrl, {
-            credentials: "same-origin",
-          });
-          if (!response.ok) {
-            throw new Error(`Preview fetch failed (${response.status})`);
-          }
-          data = new Uint8Array(await response.arrayBuffer());
-          bytesCacheRef.current = { url: contentUrl, data };
-        }
-        if (session.cancelled) return;
-
         const { getDocument, GlobalWorkerOptions, version: pdfjsVersion } =
           await loadPdfjs();
         if (session.cancelled) return;
         GlobalWorkerOptions.workerSrc = pdfjsWorkerSrc(pdfjsVersion);
+        // Library load is prewarmed from the Documents list. getDocument({ url })
+        // starts the Range fetches — do not arrayBuffer() the file here.
         const loadingTask = getDocument({
-          data: data.slice(),
-          ...pdfjsPreviewDocumentOptions(pdfjsVersion),
+          url: contentUrl,
+          ...pdfjsPreviewLoadingOptions(pdfjsVersion),
         });
         session.task = loadingTask;
         const pdf = await loadingTask.promise;
@@ -111,15 +103,12 @@ export function PdfPagePreview({
         if (pdf.numPages < 1) {
           throw new Error("PDF has no pages");
         }
-        const firstPage = await pdf.getPage(1);
-        const viewport = firstPage.getViewport({ scale: PDF_PREVIEW_SCALE });
-        if (session.cancelled) return;
         setState({
           status: "ready",
           pdf,
           numPages: pdf.numPages,
-          pageWidth: viewport.width,
-          pageHeight: viewport.height,
+          pageWidth: PDF_FALLBACK_PAGE_WIDTH,
+          pageHeight: PDF_FALLBACK_PAGE_HEIGHT,
         });
       } catch {
         if (!session.cancelled) {
@@ -186,9 +175,19 @@ function PdfDocumentPages({
   onVisiblePageChangeRef: RefObject<((page: number) => void) | undefined>;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const [paintedPages, setPaintedPages] = useState<ReadonlySet<number>>(
-    () => new Set()
+  const [paintedPages, setPaintedPages] = useState<ReadonlySet<number>>(() =>
+    initialPaintedPageSet(initialPage)
   );
+  const [seenInitialPage, setSeenInitialPage] = useState(initialPage);
+  if (seenInitialPage !== initialPage) {
+    setSeenInitialPage(initialPage);
+    const target = initialPaintedPageNumber(initialPage);
+    if (!paintedPages.has(target)) {
+      const next = new Set(paintedPages);
+      next.add(target);
+      setPaintedPages(next);
+    }
+  }
 
   useEffect(() => {
     const root = scrollRef.current;
@@ -334,6 +333,12 @@ const PdfPreviewPage = memo(function PdfPreviewPage({
           canvasContext: context,
           viewport,
         }).promise;
+        if (controller.signal.aborted) return;
+        setState({
+          status: "painted",
+          pageWidth: viewport.width,
+          pageHeight: viewport.height,
+        });
         const spans = await readPreviewTextSpans(pdfPage, viewport.height);
         if (!controller.signal.aborted) {
           setState({
@@ -353,9 +358,9 @@ const PdfPreviewPage = memo(function PdfPreviewPage({
     return () => controller.abort();
   }, [pdf, pageNumber, shouldRender]);
 
-  const ready = state.status === "ready";
-  const width = ready ? state.pageWidth : fallbackWidth;
-  const height = ready ? state.pageHeight : fallbackHeight;
+  const canvasVisible = isCanvasVisible(state);
+  const width = canvasVisible ? state.pageWidth : fallbackWidth;
+  const height = canvasVisible ? state.pageHeight : fallbackHeight;
 
   return (
     <div
@@ -371,9 +376,9 @@ const PdfPreviewPage = memo(function PdfPreviewPage({
       <canvas
         ref={canvasRef}
         aria-label={`${title}, page ${pageNumber}`}
-        className={ready ? "block h-auto w-full" : "hidden"}
+        className={canvasVisible ? "block h-auto w-full" : "hidden"}
       />
-      {ready ? (
+      {state.status === "ready" ? (
         <div
           className="pdf-page-preview-text-layer"
           style={{
@@ -404,6 +409,31 @@ const PdfPreviewPage = memo(function PdfPreviewPage({
     </div>
   );
 });
+
+function initialPaintedPageNumber(page: number): number {
+  return Number.isInteger(page) && page > 0 ? page : 1;
+}
+
+function initialPaintedPageSet(page: number): ReadonlySet<number> {
+  return new Set([initialPaintedPageNumber(page)]);
+}
+
+function isCanvasVisible(
+  state: PagePaintState
+): state is Extract<PagePaintState, { status: "painted" | "ready" }> {
+  switch (state.status) {
+    case "painted":
+    case "ready":
+      return true;
+    case "pending":
+    case "error":
+      return false;
+    default: {
+      const _exhaustive: never = state;
+      return _exhaustive;
+    }
+  }
+}
 
 async function readPreviewTextSpans(
   pdfPage: PDFPageProxy,

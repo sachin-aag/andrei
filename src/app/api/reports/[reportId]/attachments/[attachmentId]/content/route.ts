@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 import { and, eq, isNull } from "drizzle-orm";
 import { db } from "@/db";
 import { reportAttachments } from "@/db/schema";
+import {
+  contentRangeHeader,
+  parseByteRangeHeader,
+  rangeContentLength,
+} from "@/lib/attachments/http-byte-range";
 import { getCurrentUser } from "@/lib/auth/session";
 import { requireReportAccess } from "@/lib/reports/require-report-access";
 import { getAttachmentStorage } from "@/lib/storage/attachments";
@@ -45,8 +50,8 @@ export async function GET(
     return NextResponse.json({ error: "Page out of range" }, { status: 400 });
   }
 
-  // Downloads can 302 to a signed GCS URL. Inline preview must stream through
-  // this origin — iframes that follow a redirect to storage.googleapis.com are
+  // Downloads can 302 to a signed GCS URL. Inline preview must stay same-origin
+  // so pdf.js can Range-request pages. Redirects to storage.googleapis.com are
   // blocked by Comet (and preview hosts are not on the bucket CORS list).
   if (download) {
     try {
@@ -73,10 +78,39 @@ export async function GET(
     }
   }
 
+  const sizeBytes = await resolvedObjectSizeBytes(
+    attachment.permanentObjectKey,
+    attachment.sizeBytes
+  );
+  const parsedRange = parseByteRangeHeader(req.headers.get("Range"), sizeBytes);
+  switch (parsedRange.kind) {
+    case "full":
+    case "partial":
+      break;
+    case "unsatisfiable":
+      return new NextResponse(null, {
+        status: 416,
+        headers: {
+          "Accept-Ranges": "bytes",
+          "Content-Range": `bytes */${sizeBytes}`,
+        },
+      });
+    default: {
+      const _exhaustive: never = parsedRange;
+      return _exhaustive;
+    }
+  }
+
+  const byteRange =
+    parsedRange.kind === "partial"
+      ? { start: parsedRange.start, end: parsedRange.end }
+      : undefined;
+
   let stream: ReadableStream<Uint8Array>;
   try {
     stream = await getAttachmentStorage().openObjectReadStream(
-      attachment.permanentObjectKey
+      attachment.permanentObjectKey,
+      byteRange
     );
   } catch (error) {
     console.error("[attachment-content] open stream failed", {
@@ -92,12 +126,40 @@ export async function GET(
   const filename = safeFilename(attachment.filename);
   const headers = new Headers({
     "Content-Type": attachment.mimeType || "application/octet-stream",
-    "Cache-Control": "private, max-age=60",
+    "Cache-Control": "private, max-age=3600",
     "Content-Disposition": `inline; filename="${filename}"`,
+    "Content-Encoding": "identity",
     "X-Content-Type-Options": "nosniff",
   });
+  if (attachment.gcsGeneration) {
+    headers.set("ETag", `"${attachment.gcsGeneration}"`);
+  }
+  headers.set("Accept-Ranges", "bytes");
+  headers.set(
+    "Content-Length",
+    String(byteRange ? rangeContentLength(byteRange) : sizeBytes)
+  );
+  if (byteRange) {
+    headers.set("Content-Range", contentRangeHeader(byteRange, sizeBytes));
+  }
 
-  return new NextResponse(stream, { status: 200, headers });
+  return new NextResponse(stream, {
+    status: byteRange ? 206 : 200,
+    headers,
+  });
+}
+
+async function resolvedObjectSizeBytes(
+  objectKey: string,
+  storedSizeBytes: number
+): Promise<number> {
+  if (storedSizeBytes > 0) return storedSizeBytes;
+  try {
+    const metadata = await getAttachmentStorage().getObjectMetadata(objectKey);
+    return metadata.sizeBytes;
+  } catch {
+    return 0;
+  }
 }
 
 function normalizedPage(raw: string | null): number | null {

@@ -3,7 +3,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PdfPagePreview } from "@/components/report/pdf-page-preview";
-import { pdfjsPreviewDocumentOptions } from "@/lib/attachments/pdfjs-browser";
+import { pdfjsPreviewLoadingOptions } from "@/lib/attachments/pdfjs-browser";
 import { PDF_PREVIEW_SCALE } from "@/lib/attachments/pdf-preview-layout";
 
 const getDocument = vi.fn();
@@ -23,6 +23,7 @@ function mockPdfPage(
     height?: number;
     items?: unknown[];
     styles?: Record<string, { fontFamily?: string; ascent?: number }>;
+    getTextContent?: () => Promise<unknown>;
   } = {}
 ) {
   return {
@@ -30,20 +31,22 @@ function mockPdfPage(
       width: (overrides.width ?? 200) * scale,
       height: (overrides.height ?? 400) * scale,
     }),
-    getTextContent: async () => ({
-      styles: overrides.styles ?? { F1: { fontFamily: "Times", ascent: 0.8 } },
-      items: overrides.items ?? [
-        {
-          str: `Batch page ${pageNumber}`,
-          transform: [12, 0, 0, 12, 10, 380],
-          width: 80,
-          height: 12,
-          fontName: "F1",
-          dir: "ltr",
-          hasEOL: false,
-        },
-      ],
-    }),
+    getTextContent:
+      overrides.getTextContent ??
+      (async () => ({
+        styles: overrides.styles ?? { F1: { fontFamily: "Times", ascent: 0.8 } },
+        items: overrides.items ?? [
+          {
+            str: `Batch page ${pageNumber}`,
+            transform: [12, 0, 0, 12, 10, 380],
+            width: 80,
+            height: 12,
+            fontName: "F1",
+            dir: "ltr",
+            hasEOL: false,
+          },
+        ],
+      })),
     render: (...args: unknown[]) => renderPage(...args),
   };
 }
@@ -87,8 +90,23 @@ function installImmediateIntersectionObserver() {
   vi.stubGlobal("IntersectionObserver", ImmediateIntersectionObserver);
 }
 
+function installNoopIntersectionObserver() {
+  class NoopIntersectionObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+    takeRecords(): IntersectionObserverEntry[] {
+      return [];
+    }
+    readonly root = null;
+    readonly rootMargin = "0px";
+    readonly thresholds = [0];
+  }
+
+  vi.stubGlobal("IntersectionObserver", NoopIntersectionObserver);
+}
+
 describe("PdfPagePreview", () => {
-  const originalFetch = globalThis.fetch;
   const originalGetContext = HTMLCanvasElement.prototype.getContext;
 
   beforeEach(() => {
@@ -109,20 +127,15 @@ describe("PdfPagePreview", () => {
     HTMLCanvasElement.prototype.getContext = vi.fn().mockReturnValue({
       canvas: {},
     }) as typeof HTMLCanvasElement.prototype.getContext;
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
-    }) as typeof fetch;
     installImmediateIntersectionObserver();
   });
 
   afterEach(() => {
-    globalThis.fetch = originalFetch;
     HTMLCanvasElement.prototype.getContext = originalGetContext;
     vi.unstubAllGlobals();
   });
 
-  it("fetches the PDF once and paints every page with official pdf.js wasm/fonts", async () => {
+  it("loads the PDF from the content URL and paints every page with official pdf.js", async () => {
     render(
       <PdfPagePreview
         src="/api/reports/r1/attachments/a1/content?proxy=1&page=2#page=2"
@@ -137,18 +150,15 @@ describe("PdfPagePreview", () => {
     const pageTwo = await screen.findByLabelText("Evidence.pdf, page 2");
     expect(pageOne.tagName).toBe("CANVAS");
     expect(pageTwo.tagName).toBe("CANVAS");
-    expect(globalThis.fetch).toHaveBeenCalledWith(
-      "/api/reports/r1/attachments/a1/content?proxy=1",
-      expect.objectContaining({ credentials: "same-origin" })
-    );
     await waitFor(() => {
       expect(getDocument).toHaveBeenCalledTimes(1);
       expect(getDocument).toHaveBeenCalledWith(
         expect.objectContaining({
-          ...pdfjsPreviewDocumentOptions("6.1.200"),
-          data: expect.any(Uint8Array),
+          url: "/api/reports/r1/attachments/a1/content?proxy=1",
+          ...pdfjsPreviewLoadingOptions("6.1.200"),
         })
       );
+      expect(getDocument.mock.calls[0]?.[0]).not.toHaveProperty("data");
       expect(renderPage).toHaveBeenCalledTimes(2);
       expect(renderPage).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -169,7 +179,7 @@ describe("PdfPagePreview", () => {
     );
   });
 
-  it("does not refetch or reload the document when the requested page changes", async () => {
+  it("does not reload the document when the requested page changes", async () => {
     const { rerender } = render(
       <PdfPagePreview
         src="/api/reports/r1/attachments/a1/content?proxy=1&page=1"
@@ -188,8 +198,56 @@ describe("PdfPagePreview", () => {
     );
 
     expect(await screen.findByText("Batch page 2")).toBeInTheDocument();
-    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
     expect(getDocument).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the canvas before the text layer is ready", async () => {
+    getPage.mockImplementation(async (pageNumber: number) =>
+      mockPdfPage(pageNumber, {
+        getTextContent: () => new Promise(() => {}),
+      })
+    );
+    getDocument.mockReturnValue({
+      promise: Promise.resolve({
+        numPages: 1,
+        getPage,
+      }),
+      destroy: vi.fn().mockResolvedValue(undefined),
+    });
+
+    render(
+      <PdfPagePreview
+        src="/api/reports/r1/attachments/a1/content?proxy=1&page=1"
+        page={1}
+        title="Scan.pdf"
+      />
+    );
+
+    const canvas = await screen.findByLabelText("Scan.pdf, page 1");
+    await waitFor(() => {
+      expect(renderPage).toHaveBeenCalled();
+      expect(canvas).not.toHaveClass("hidden");
+    });
+    expect(screen.queryByText("Batch page 1")).not.toBeInTheDocument();
+  });
+
+  it("paints the requested page without waiting for IntersectionObserver", async () => {
+    installNoopIntersectionObserver();
+
+    render(
+      <PdfPagePreview
+        src="/api/reports/r1/attachments/a1/content?proxy=1&page=2"
+        page={2}
+        title="Evidence.pdf"
+      />
+    );
+
+    const pageTwo = await screen.findByLabelText("Evidence.pdf, page 2");
+    await waitFor(() => {
+      expect(pageTwo).not.toHaveClass("hidden");
+    });
+    expect(screen.getByLabelText("Evidence.pdf, page 1")).toHaveClass("hidden");
+    expect(renderPage).toHaveBeenCalledTimes(1);
   });
 
   it("still paints the canvas when the PDF has no text layer", async () => {
@@ -216,7 +274,7 @@ describe("PdfPagePreview", () => {
       expect(renderPage).toHaveBeenCalled();
     });
     expect(screen.queryByText("Loading preview…")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Scan.pdf, page 1")).toBeInTheDocument();
+    expect(screen.getByLabelText("Scan.pdf, page 1")).not.toHaveClass("hidden");
     expect(screen.queryByText("Batch page 1")).not.toBeInTheDocument();
   });
 
@@ -239,11 +297,11 @@ describe("PdfPagePreview", () => {
     expect(lastPage === 1 || lastPage === 2).toBe(true);
   });
 
-  it("shows a download hint when the fetch fails", async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 502,
-    }) as typeof fetch;
+  it("shows a download hint when pdf.js cannot open the file", async () => {
+    getDocument.mockReturnValue({
+      promise: Promise.reject(new Error("Preview fetch failed (502)")),
+      destroy: vi.fn().mockResolvedValue(undefined),
+    });
 
     render(
       <PdfPagePreview

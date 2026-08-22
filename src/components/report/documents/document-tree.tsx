@@ -35,6 +35,7 @@ import { ATTACHMENT_DESCRIPTION_MAX } from "@/lib/attachments/description";
 import { formatIngestPageLabel } from "@/lib/attachments/ingest-continue-limits";
 import { canReprocessAttachment } from "@/lib/attachments/ingest-errors";
 import { isLargeUpload } from "@/lib/attachments/large-upload";
+import { warmupPdfjsPreview } from "@/lib/attachments/load-pdfjs";
 import { useReportAttachments } from "@/providers/report-attachments-provider";
 import type { AttachmentProcessingStatus } from "@/db/schema";
 import type { ReportAttachmentRecord } from "@/types/report";
@@ -365,6 +366,8 @@ function FileNode({
         ) : (
           <button
             type="button"
+            onMouseEnter={warmupPdfjsPreview}
+            onFocus={warmupPdfjsPreview}
             onClick={() => openDocument(attachment.id)}
             title={
               attachment.description
