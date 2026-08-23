@@ -3,6 +3,7 @@ import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   CHAT_TURN_STALE_MS,
+  backgroundTurnFromSessionView,
   isAssistantTurnStale,
   isChatAssistantTurnActive,
 } from "./background-turn-status";
@@ -23,6 +24,35 @@ describe("isChatAssistantTurnActive", () => {
     expect(isChatAssistantTurnActive("idle")).toBe(false);
     expect(isChatAssistantTurnActive("running")).toBe(true);
     expect(isChatAssistantTurnActive("cancel_requested")).toBe(true);
+  });
+});
+
+describe("backgroundTurnFromSessionView", () => {
+  it("is idle when the server turn is finished", () => {
+    expect(
+      backgroundTurnFromSessionView({
+        assistantTurnStatus: "idle",
+        assistantTurnStartedAt: "2026-01-01T00:00:00.000Z",
+      })
+    ).toEqual({ backgroundTurn: false, startedAt: null });
+  });
+
+  it("keeps the composer busy and the original start time while the server is generating", () => {
+    expect(
+      backgroundTurnFromSessionView({
+        assistantTurnStatus: "running",
+        assistantTurnStartedAt: "2026-01-01T00:00:00.000Z",
+      })
+    ).toEqual({
+      backgroundTurn: true,
+      startedAt: Date.parse("2026-01-01T00:00:00.000Z"),
+    });
+    expect(
+      backgroundTurnFromSessionView({
+        assistantTurnStatus: "cancel_requested",
+        assistantTurnStartedAt: null,
+      })
+    ).toEqual({ backgroundTurn: true, startedAt: null });
   });
 });
 

@@ -23,6 +23,22 @@ export function isChatAssistantTurnActive(
   return status === "running" || status === "cancel_requested";
 }
 
+/** Client hydrate/poll: keep the composer busy while the server is still on the turn. */
+export function backgroundTurnFromSessionView(view: {
+  assistantTurnStatus: ChatAssistantTurnStatus;
+  assistantTurnStartedAt: string | null;
+}): { backgroundTurn: boolean; startedAt: number | null } {
+  if (!isChatAssistantTurnActive(view.assistantTurnStatus)) {
+    return { backgroundTurn: false, startedAt: null };
+  }
+  return {
+    backgroundTurn: true,
+    startedAt: view.assistantTurnStartedAt
+      ? new Date(view.assistantTurnStartedAt).getTime()
+      : null,
+  };
+}
+
 export function isAssistantTurnStale(
   startedAt: Date | null,
   now = Date.now()

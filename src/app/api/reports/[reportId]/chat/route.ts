@@ -351,6 +351,7 @@ export async function POST(
       if (requested) turnAbort.abort();
     });
   }, 1_000);
+  const stopCancelPoll = () => clearInterval(cancelPoll);
 
   let result;
   try {
@@ -434,7 +435,7 @@ export async function POST(
       }),
     });
   } catch (err) {
-    clearInterval(cancelPoll);
+    stopCancelPoll();
     await clearAssistantTurn(sessionId);
     console.error("chat: failed to start assistant stream", {
       reportId,
@@ -448,8 +449,12 @@ export async function POST(
   }
 
   after(async () => {
-    await result.consumeStream();
-    await flushLangfuseTraces();
+    try {
+      await result.consumeStream();
+      await flushLangfuseTraces();
+    } finally {
+      stopCancelPoll();
+    }
   });
 
   return result.toUIMessageStreamResponse({
@@ -457,8 +462,12 @@ export async function POST(
     // Keep Gemini thought summaries in Langfuse (ai.response.reasoning) only —
     // do not stream or persist them as chat message parts.
     sendReasoning: false,
+    // Drain the teed SSE now. Wrapping this in Next `after()` waits until the
+    // HTTP response finishes — and the tee only finishes if this copy is
+    // already being read. That deadlock wedged `next start` after a client
+    // dropped mid-turn (Playwright teardown, tab close, or + in another chat).
     consumeSseStream: ({ stream }) => {
-      after(() => drainSseStream(stream));
+      void drainSseStream(stream);
     },
     onError: (error) => {
       console.error("chat: assistant stream error", {
@@ -469,7 +478,7 @@ export async function POST(
       return CHAT_ASSISTANT_ERROR_MESSAGE;
     },
     onFinish: async ({ responseMessage, isAborted, finishReason }) => {
-      clearInterval(cancelPoll);
+      stopCancelPoll();
       const persisted = partsForPersistedAssistantTurn({
         parts: responseMessage.parts,
         isAborted,

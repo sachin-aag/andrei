@@ -10,9 +10,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { useChat } from "@ai-sdk/react";
 import {
-  DefaultChatTransport,
   isFileUIPart,
   type FileUIPart,
   type UIMessage,
@@ -91,23 +89,28 @@ import {
 } from "@/lib/ai/chat/image-parts";
 import {
   CHAT_ASSISTANT_ERROR_MESSAGE,
-  assistantPartsHaveVisibleContent,
-  assistantProgressSignature,
   chatWatchdogPhase,
   shouldShowEmptyAssistantError,
 } from "@/lib/ai/chat/assistant-turn";
 import {
+  dropBackgroundSession,
+  rememberBackgroundSession,
+  rememberMountedSession,
+  runningChatSessionIds,
+  waitForValue,
+  type MountedChatSession,
+} from "@/lib/ai/chat/session-runtime";
+import {
   detectSectionScopeMismatch,
   type SectionScopeMismatch,
 } from "@/lib/ai/chat/section-intent";
-import type {
-  ChatSessionSummary,
-  ChatSessionView,
-} from "@/lib/ai/chat/sessions";
+import type { ChatSessionSummary } from "@/lib/ai/chat/sessions";
 import {
-  CHAT_TURN_POLL_MS,
-  isChatAssistantTurnActive,
-} from "@/lib/ai/chat/background-turn-status";
+  buildChatSessionTabItems,
+  chatSessionTabSnapshot,
+  sessionTabSnapshotsEqual,
+  type SessionTabSnapshot,
+} from "@/lib/ai/chat/session-tab";
 import {
   applyMentionToInput,
   filterMentionCandidates,
@@ -117,6 +120,12 @@ import {
   type MentionQuery,
 } from "@/lib/ai/chat/mention-search";
 import { compressImageFile } from "@/lib/images/compress-image";
+import {
+  ChatSessionHost,
+  IDLE_CHAT_RUNTIME,
+  type ChatSessionRuntime,
+} from "@/components/report/chat-session-host";
+import { ChatSessionTabs } from "@/components/report/chat-session-tabs";
 import { DocumentReviewProgress } from "@/components/report/document-review-progress";
 import {
   isDocumentReviewToolName,
@@ -654,7 +663,10 @@ const MessageTurn = memo(function MessageTurn({
     if (!text && images.length === 0) return null;
     return (
       <div className="flex justify-end">
-        <div className="max-w-[92%] space-y-2 rounded-2xl rounded-br-md bg-[var(--primary)] px-3 py-2 text-sm text-[var(--primary-foreground)]">
+        <div
+          className="max-w-[92%] space-y-2 rounded-2xl rounded-br-md bg-[var(--primary)] px-3 py-2 text-sm text-[var(--primary-foreground)]"
+          aria-label="Your message"
+        >
           {images.length > 0 ? (
             <div className="flex flex-wrap gap-1.5">
               {images.map((image, i) => (
@@ -978,6 +990,14 @@ export function ChatPanel() {
     useState<SectionScopeMismatch | null>(null);
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
+  const [mountedSessions, setMountedSessions] = useState<MountedChatSession[]>(
+    []
+  );
+  const [backgroundSessionIds, setBackgroundSessionIds] = useState<string[]>([]);
+  const [tabSnapshots, setTabSnapshots] = useState<
+    Record<string, SessionTabSnapshot>
+  >({});
+  const [runtime, setRuntime] = useState<ChatSessionRuntime>(IDLE_CHAT_RUNTIME);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [initializing, setInitializing] = useState(true);
   const sessionWindowKey = `${report.id}:${currentSessionId ?? ""}`;
@@ -996,76 +1016,32 @@ export function ChatPanel() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const pendingCaretRef = useRef<number | null>(null);
-  const sessionIdRef = useRef<string | null>(null);
-  const reloadSessionRef = useRef<() => Promise<void>>(async () => {});
-  const busyStartedAtRef = useRef<number | null>(null);
-  const lastProgressAtRef = useRef<number | null>(null);
-  const lastProgressSigRef = useRef("");
-  const stoppedForWatchdogRef = useRef(false);
-  const agentRunStartedAtRef = useRef<number | null>(null);
-  const notifyContextRef = useRef({
-    currentUserId,
-    documentNo: report.documentNo,
-    documentType: report.documentType,
-  });
-  const [elapsedMs, setElapsedMs] = useState(0);
-  const [silentMs, setSilentMs] = useState(0);
-  const [backgroundTurn, setBackgroundTurn] = useState(false);
+  const currentSessionIdRef = useRef<string | null>(null);
+  const runtimeBySessionRef = useRef(new Map<string, ChatSessionRuntime>());
 
   const base = `/api/reports/${report.id}/chat`;
-
-  const { messages, sendMessage, setMessages, status, error, stop } = useChat({
-    id: `report-chat-${report.id}`,
-    transport: new DefaultChatTransport({ api: base }),
-    onFinish: ({ message, isAbort, isDisconnect, isError }) => {
-      // Pull newly-proposed ai_fix comments into report state (inline diff +
-      // gutter card), and refresh session titles/order.
-      void refresh();
-      void loadSessions();
-      if (isAbort) {
-        agentRunStartedAtRef.current = null;
-        setBackgroundTurn(false);
-        void reloadSessionRef.current();
-        return;
-      }
-      if (isDisconnect) {
-        // Tab close / navigation dropped the SSE. The server keeps going —
-        // poll until the assistant row is persisted.
-        setBackgroundTurn(true);
-        return;
-      }
-      // Stream protocol errors already toast via onError. Empty Gemini turns
-      // (thought-only / no parts) finish as success unless we catch them here.
-      if (isError) {
-        agentRunStartedAtRef.current = null;
-        setBackgroundTurn(false);
-        return;
-      }
-      const emptyAssistant =
-        message.role === "assistant" &&
-        !assistantPartsHaveVisibleContent(message.parts);
-      if (emptyAssistant) {
-        toast.error(CHAT_ASSISTANT_ERROR_MESSAGE);
-        return;
-      }
-      const startedAt = agentRunStartedAtRef.current;
-      agentRunStartedAtRef.current = null;
-      setBackgroundTurn(false);
-      announceCompletedAssistantTurn(startedAt, notifyContextRef.current);
-    },
-    onError: (err) => {
-      console.error("chat error", err);
-      toast.error(CHAT_ASSISTANT_ERROR_MESSAGE);
-    },
-  });
-
-  const streamBusy = status === "submitted" || status === "streaming";
-  const busy = streamBusy || backgroundTurn;
+  const {
+    messages,
+    status,
+    error,
+    stopTurn,
+    streamBusy,
+    backgroundTurn,
+    busy,
+    elapsedMs,
+    silentMs,
+  } = runtime;
+  const hostReady = runtime !== IDLE_CHAT_RUNTIME;
   const watchdog = chatWatchdogPhase({
     busy: streamBusy,
     elapsedMs,
     silentMs,
   });
+  const runningSessionIds = runningChatSessionIds(
+    backgroundSessionIds,
+    currentSessionId,
+    busy
+  );
 
   // Only ready documents are taggable — an attachment still being ingested has
   // no chunks, so scoping search to it would return nothing.
@@ -1127,14 +1103,6 @@ export function ChatPanel() {
     },
     [persistComposerPrefs]
   );
-
-  useEffect(() => {
-    notifyContextRef.current = {
-      currentUserId,
-      documentNo: report.documentNo,
-      documentType: report.documentType,
-    };
-  }, [currentUserId, report.documentNo, report.documentType]);
 
   useLayoutEffect(() => {
     if (!currentUserId) {
@@ -1220,42 +1188,44 @@ export function ChatPanel() {
     }
   }, [base]);
 
-  const applySessionView = useCallback(
-    (view: ChatSessionView) => {
-      setMessages(view.messages ?? []);
-      if (isChatAssistantTurnActive(view.assistantTurnStatus)) {
-        if (view.assistantTurnStartedAt) {
-          agentRunStartedAtRef.current = new Date(
-            view.assistantTurnStartedAt
-          ).getTime();
-        }
-        setBackgroundTurn(true);
-        return;
-      }
-      setBackgroundTurn(false);
+  const onFinishTurn = useCallback(() => {
+    // Pull newly-proposed ai_fix comments into report state (inline diff +
+    // gutter card), and refresh session titles/order.
+    void refresh();
+    void loadSessions();
+  }, [loadSessions, refresh]);
+
+  const onTurnCompleted = useCallback(
+    (startedAt: number | null) => {
+      announceCompletedAssistantTurn(startedAt, {
+        currentUserId,
+        documentNo: report.documentNo,
+        documentType: report.documentType,
+      });
     },
-    [setMessages]
+    [currentUserId, report.documentNo, report.documentType]
   );
 
+  const mountSession = useCallback((sessionId: string, hydrateOnMount: boolean) => {
+    setMountedSessions((prev) =>
+      rememberMountedSession(prev, sessionId, hydrateOnMount)
+    );
+  }, []);
+
   const openSession = useCallback(
-    async (sessionId: string) => {
+    (sessionId: string) => {
+      if (sessionId !== currentSessionId && currentSessionId && busy) {
+        setBackgroundSessionIds((prev) =>
+          rememberBackgroundSession(prev, currentSessionId)
+        );
+      }
+      currentSessionIdRef.current = sessionId;
+      mountSession(sessionId, true);
+      setRuntime(runtimeBySessionRef.current.get(sessionId) ?? IDLE_CHAT_RUNTIME);
       setCurrentSessionId(sessionId);
       setHistoryOpen(false);
-      try {
-        const res = await fetch(`${base}/sessions/${sessionId}`);
-        if (!res.ok) {
-          setMessages([]);
-          setBackgroundTurn(false);
-          return;
-        }
-        const data = (await res.json()) as ChatSessionView;
-        applySessionView(data);
-      } catch {
-        setMessages([]);
-        setBackgroundTurn(false);
-      }
     },
-    [applySessionView, base, setMessages]
+    [busy, currentSessionId, mountSession]
   );
 
   const createSession = useCallback(async (): Promise<string | null> => {
@@ -1277,65 +1247,42 @@ export function ChatPanel() {
       toast.error("Could not start a new chat.");
       return;
     }
+    if (currentSessionId && busy) {
+      setBackgroundSessionIds((prev) =>
+        rememberBackgroundSession(prev, currentSessionId)
+      );
+    }
+    currentSessionIdRef.current = id;
+    mountSession(id, false);
+    setRuntime(IDLE_CHAT_RUNTIME);
     setCurrentSessionId(id);
-    setMessages([]);
     setInput("");
     setPendingImages([]);
     setMentions([]);
     setMentionRange(null);
-  }, [createSession, setMessages]);
+  }, [busy, createSession, currentSessionId, mountSession]);
 
-  useEffect(() => {
-    sessionIdRef.current = currentSessionId;
-    reloadSessionRef.current = async () => {
-      const id = sessionIdRef.current;
-      if (id) await openSession(id);
-    };
-  }, [currentSessionId, openSession]);
+  const onSessionSettled = useCallback((sessionId: string) => {
+    setBackgroundSessionIds((prev) => dropBackgroundSession(prev, sessionId));
+  }, []);
 
-  useEffect(() => {
-    if (!backgroundTurn || !currentSessionId || streamBusy) return;
-    let cancelled = false;
-    const poll = async () => {
-      try {
-        const res = await fetch(`${base}/sessions/${currentSessionId}`);
-        if (!res.ok || cancelled) return;
-        const view = (await res.json()) as ChatSessionView;
-        if (cancelled) return;
-        if (isChatAssistantTurnActive(view.assistantTurnStatus)) return;
-        setMessages(view.messages ?? []);
-        setBackgroundTurn(false);
-        const startedAt = agentRunStartedAtRef.current;
-        agentRunStartedAtRef.current = null;
-        announceCompletedAssistantTurn(startedAt, notifyContextRef.current);
-        void refresh();
-        void loadSessions();
-      } catch {
-        // Keep polling until the turn row is readable.
-      }
-    };
-    void poll();
-    const id = window.setInterval(() => {
-      void poll();
-    }, CHAT_TURN_POLL_MS);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
-  }, [
-    backgroundTurn,
-    base,
-    currentSessionId,
-    loadSessions,
-    refresh,
-    setMessages,
-    streamBusy,
-  ]);
-
-  const messagesRef = useRef(messages);
-  useEffect(() => {
-    messagesRef.current = messages;
-  }, [messages]);
+  const onSessionRuntime = useCallback(
+    (sessionId: string, next: ChatSessionRuntime) => {
+      runtimeBySessionRef.current.set(sessionId, next);
+      const snapshot = chatSessionTabSnapshot(
+        next.status,
+        next.messages,
+        next.backgroundTurn
+      );
+      setTabSnapshots((prev) => {
+        if (sessionTabSnapshotsEqual(prev[sessionId], snapshot)) return prev;
+        return { ...prev, [sessionId]: snapshot };
+      });
+      if (sessionId !== currentSessionIdRef.current) return;
+      setRuntime(next);
+    },
+    []
+  );
 
   const visibleStartIndex = visibleMessageStartIndex(
     messages.length,
@@ -1379,65 +1326,17 @@ export function ChatPanel() {
   }, [loadOlderMessages, messages.length, visibleCount]);
 
   useEffect(() => {
-    if (!busy) {
-      busyStartedAtRef.current = null;
-      lastProgressAtRef.current = null;
-      lastProgressSigRef.current = "";
-      stoppedForWatchdogRef.current = false;
-      return;
-    }
-    if (busyStartedAtRef.current == null) busyStartedAtRef.current = Date.now();
-    const tick = () => {
-      const now = Date.now();
-      const started = busyStartedAtRef.current ?? now;
-      let lastAssistant: (typeof messages)[number] | undefined;
-      for (let i = messagesRef.current.length - 1; i >= 0; i--) {
-        const message = messagesRef.current[i];
-        if (message?.role === "assistant") {
-          lastAssistant = message;
-          break;
-        }
-      }
-      const signature = assistantProgressSignature(lastAssistant?.parts);
-      if (signature !== lastProgressSigRef.current) {
-        lastProgressSigRef.current = signature;
-        lastProgressAtRef.current = now;
-      }
-      const progress = lastProgressAtRef.current ?? started;
-      setElapsedMs(now - started);
-      setSilentMs(now - progress);
-      if (
-        chatWatchdogPhase({
-          busy: true,
-          elapsedMs: now - started,
-          silentMs: now - progress,
-        }) === "give_up" &&
-        !stoppedForWatchdogRef.current
-      ) {
-        // Drop a hung SSE without cancelling the server turn.
-        stoppedForWatchdogRef.current = true;
-        stop();
-        setBackgroundTurn(true);
-      }
-    };
-    tick();
-    const id = window.setInterval(tick, 1000);
-    return () => window.clearInterval(id);
-  }, [busy, stop]);
-
-  const stopTurn = useCallback(() => {
-    const sessionId = sessionIdRef.current;
-    if (sessionId) {
-      void fetch(`${base}/sessions/${sessionId}/cancel`, { method: "POST" });
-    }
-    agentRunStartedAtRef.current = null;
-    setBackgroundTurn(false);
-    stop();
-  }, [base, stop]);
+    currentSessionIdRef.current = currentSessionId;
+  }, [currentSessionId]);
 
   // Initialize: load sessions, open the most recent or create the first.
   useEffect(() => {
     let cancelled = false;
+    runtimeBySessionRef.current = new Map();
+    setMountedSessions([]);
+    setBackgroundSessionIds([]);
+    setTabSnapshots({});
+    setRuntime(IDLE_CHAT_RUNTIME);
     void (async () => {
       const existing = await loadSessions();
       if (cancelled) return;
@@ -1445,7 +1344,11 @@ export function ChatPanel() {
         await openSession(existing[0]!.id);
       } else {
         const id = await createSession();
-        if (!cancelled && id) setCurrentSessionId(id);
+        if (!cancelled && id) {
+          currentSessionIdRef.current = id;
+          mountSession(id, false);
+          setCurrentSessionId(id);
+        }
       }
       if (!cancelled) setInitializing(false);
     })();
@@ -1549,7 +1452,9 @@ export function ChatPanel() {
       const attached = images ?? pendingImages;
       const trimmed = text.trim();
       const files = attached.map((image) => image.part);
-      if ((!trimmed && files.length === 0) || busy || initializing || attaching) return;
+      if ((!trimmed && files.length === 0) || busy || initializing || attaching) {
+        return;
+      }
       const agentDonePrefs = readAgentDonePrefs(currentUserId);
       if (agentDonePrefs.sound) {
         unlockAgentDoneAudio();
@@ -1564,8 +1469,18 @@ export function ChatPanel() {
           toast.error("Could not start a chat session.");
           return;
         }
+        currentSessionIdRef.current = sessionId;
+        mountSession(sessionId, false);
         setCurrentSessionId(sessionId);
       }
+      const sessionRuntime = await waitForValue(() =>
+        runtimeBySessionRef.current.get(sessionId)
+      );
+      if (!sessionRuntime) {
+        toast.error("Could not start a chat session.");
+        return;
+      }
+      if (sessionRuntime.busy) return;
       setInput("");
       setPendingImages([]);
       setMentionRange(null);
@@ -1590,13 +1505,12 @@ export function ChatPanel() {
           id: mention.id,
         }));
       }
-      agentRunStartedAtRef.current = Date.now();
       if (trimmed && files.length > 0) {
-        void sendMessage({ text: trimmed, files }, { body });
+        void sessionRuntime.sendMessage({ text: trimmed, files }, { body });
       } else if (files.length > 0) {
-        void sendMessage({ files }, { body });
+        void sessionRuntime.sendMessage({ files }, { body });
       } else {
-        void sendMessage({ text: trimmed }, { body });
+        void sessionRuntime.sendMessage({ text: trimmed }, { body });
       }
     },
     [
@@ -1605,7 +1519,7 @@ export function ChatPanel() {
       initializing,
       currentSessionId,
       createSession,
-      sendMessage,
+      mountSession,
       mode,
       pace,
       sectionScope,
@@ -1618,15 +1532,46 @@ export function ChatPanel() {
 
   const currentTitle =
     sessions.find((s) => s.id === currentSessionId)?.title ?? "Investigation assistant";
+  const sessionTabs = useMemo(
+    () =>
+      buildChatSessionTabItems({
+        mountedIds: mountedSessions.map((session) => session.id),
+        sessions,
+        snapshots: tabSnapshots,
+        runningIds: runningSessionIds,
+      }),
+    [mountedSessions, runningSessionIds, sessions, tabSnapshots]
+  );
 
   return (
     <div className="flex h-full flex-col" aria-busy={initializing}>
-      {/* Header: title + new chat + history */}
-      <div className="relative flex items-center gap-2 border-b border-[var(--border)] px-3 py-2.5">
+      {mountedSessions.map((session) => (
+        <ChatSessionHost
+          key={session.id}
+          reportId={report.id}
+          sessionId={session.id}
+          api={base}
+          hydrateOnMount={session.hydrateOnMount}
+          onFinishTurn={onFinishTurn}
+          onTurnCompleted={onTurnCompleted}
+          onSettled={onSessionSettled}
+          onRuntime={onSessionRuntime}
+        />
+      ))}
+      {/* Header: session tabs + new chat + history */}
+      <div className="relative flex items-center gap-2 border-b border-[var(--border)] px-3 py-2">
         <Sparkles className="size-4 shrink-0 text-[var(--primary)]" />
-        <span className="min-w-0 flex-1 truncate text-sm font-medium" title={currentTitle}>
-          {currentTitle}
-        </span>
+        {sessionTabs.length > 0 ? (
+          <ChatSessionTabs
+            items={sessionTabs}
+            currentId={currentSessionId}
+            onSelect={openSession}
+          />
+        ) : (
+          <span className="min-w-0 flex-1 truncate text-sm font-medium" title={currentTitle}>
+            {currentTitle}
+          </span>
+        )}
         <button
           type="button"
           onClick={newChat}
@@ -1675,11 +1620,22 @@ export function ChatPanel() {
                       )}
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate text-xs font-medium text-[var(--foreground)]">
-                        {s.title}
+                      <span className="flex items-center gap-1.5">
+                        <span className="block min-w-0 truncate text-xs font-medium text-[var(--foreground)]">
+                          {s.title}
+                        </span>
+                        {runningSessionIds.has(s.id) ? (
+                          <Loader2
+                            className="size-3 shrink-0 animate-spin text-[var(--primary)]"
+                            aria-label="Chat still running"
+                          />
+                        ) : null}
                       </span>
                       <span className="block text-[10px] text-[var(--muted-foreground)]">
-                        {s.messageCount} message{s.messageCount === 1 ? "" : "s"} ·{" "}
+                        {runningSessionIds.has(s.id)
+                          ? "Still working"
+                          : `${s.messageCount} message${s.messageCount === 1 ? "" : "s"}`}
+                        {" · "}
                         {formatDistanceToNow(new Date(s.updatedAt), { addSuffix: true })}
                       </span>
                     </span>
@@ -1724,7 +1680,7 @@ export function ChatPanel() {
                 <button
                   key={p}
                   type="button"
-                  disabled={busy || initializing}
+                  disabled={busy || initializing || !hostReady}
                   onClick={() => void send(p, [])}
                   className="w-full rounded-md border border-[var(--border)] bg-[var(--secondary)]/30 px-3 py-2 text-left text-xs text-[var(--foreground)] transition-colors hover:bg-[var(--secondary)] disabled:opacity-50"
                 >
@@ -1868,7 +1824,7 @@ export function ChatPanel() {
           />
           <button
             type="button"
-            disabled={busy || initializing || attaching}
+            disabled={busy || initializing || attaching || !hostReady}
             aria-label="Attach image"
             title="Attach image"
             onClick={() => fileInputRef.current?.click()}
@@ -1978,6 +1934,7 @@ export function ChatPanel() {
               disabled={
                 initializing ||
                 attaching ||
+                !hostReady ||
                 (!input.trim() && pendingImages.length === 0)
               }
               aria-label="Send message"
