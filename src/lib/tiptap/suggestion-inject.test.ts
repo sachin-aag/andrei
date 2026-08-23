@@ -4,6 +4,7 @@ import {
   collectPendingSuggestionMarkIds,
   injectSuggestionMarks,
   richDocsMatchIgnoringAiPreview,
+  shouldSkipSuggestionDocSync,
   stripPendingSuggestionsExcept,
 } from "./suggestion-inject";
 
@@ -132,6 +133,52 @@ describe("richDocsMatchIgnoringAiPreview", () => {
             content: [{ type: "text", text: "Different sentence." }],
           },
         ],
+      })
+    ).toBe(false);
+  });
+});
+
+describe("shouldSkipSuggestionDocSync", () => {
+  it("does not rewrite the focused editor after local typing", () => {
+    expect(
+      shouldSkipSuggestionDocSync({
+        hasFocus: true,
+        previewHeld: false,
+        needsInject: false,
+        hasLocalEdits: true,
+      })
+    ).toBe(true);
+  });
+
+  it("still injects a missing preview when the focused field is unchanged", () => {
+    expect(
+      shouldSkipSuggestionDocSync({
+        hasFocus: true,
+        previewHeld: false,
+        needsInject: true,
+        hasLocalEdits: false,
+      })
+    ).toBe(false);
+  });
+
+  it("does not inject over local edits even when the preview is missing", () => {
+    expect(
+      shouldSkipSuggestionDocSync({
+        hasFocus: true,
+        previewHeld: false,
+        needsInject: true,
+        hasLocalEdits: true,
+      })
+    ).toBe(true);
+  });
+
+  it("allows accept/dismiss preview-held rewrites while focused", () => {
+    expect(
+      shouldSkipSuggestionDocSync({
+        hasFocus: true,
+        previewHeld: true,
+        needsInject: false,
+        hasLocalEdits: true,
       })
     ).toBe(false);
   });

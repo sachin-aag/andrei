@@ -143,6 +143,27 @@ export function richDocsMatchIgnoringAiPreview(
   );
 }
 
+/**
+ * Skip rewriting the live editor doc (inject / strip / setContent) while the
+ * reviewer is typing. Replacing the doc on each keystroke drops the caret and
+ * the new letters — which is what "cannot type next to an unaccepted AI
+ * suggestion" feels like.
+ *
+ * Still allow the first inject when the field is focused but unchanged, so the
+ * preview can appear after comments load.
+ */
+export function shouldSkipSuggestionDocSync(opts: {
+  hasFocus: boolean;
+  previewHeld: boolean;
+  needsInject: boolean;
+  hasLocalEdits: boolean;
+}): boolean {
+  if (opts.previewHeld) return false;
+  if (!opts.hasFocus) return false;
+  if (opts.needsInject && !opts.hasLocalEdits) return false;
+  return true;
+}
+
 export function stripPendingSuggestionsExcept(
   doc: JSONContent,
   keepMarkId: string | null

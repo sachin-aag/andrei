@@ -67,6 +67,7 @@ import {
 import {
   injectSuggestionMarks,
   richDocsMatchIgnoringAiPreview,
+  shouldSkipSuggestionDocSync,
   stripPendingSuggestionsExcept,
 } from "@/lib/tiptap/suggestion-inject";
 import { AI_AUTHOR_ID } from "@/lib/ai/constants";
@@ -401,7 +402,6 @@ export function TiptapSectionField({
   // author explicitly accepts or ignores them. Stripping them on toggle-off
   // would silently destroy reviewer intent.
   const onChangeRef = useRef(onChange);
-  const applyExternalValueToEditorRef = useRef<() => void>(() => {});
   useLayoutEffect(() => {
     onChangeRef.current = onChange;
   }, [onChange]);
@@ -456,9 +456,6 @@ export function TiptapSectionField({
         const json = ed.getJSON() as JSONContent;
         // Do not use flushSync here: onUpdate can run during useEffect (e.g. setContent sync), and React 19 forbids flushSync inside lifecycle methods.
         onChangeRef.current(json);
-      },
-      onBlur: () => {
-        applyExternalValueToEditorRef.current();
       },
     },
     [highlightExtension, placeholder, placeholderHighlightExtension, suggestionWidgetsExtension]
@@ -567,6 +564,10 @@ export function TiptapSectionField({
     editor.setEditable(editable);
   }, [editor, editable]);
 
+  const applySuggestionInEditorRef = useRef<
+    (suggestionId: string, mode: "accept" | "dismiss") => Promise<void>
+  >(async () => {});
+
   const applySuggestionInEditor = useCallback(
     async (suggestionId: string, mode: "accept" | "dismiss") => {
       const comment = comments.find((c) => c.id === suggestionId);
@@ -634,6 +635,10 @@ export function TiptapSectionField({
     ]
   );
 
+  useLayoutEffect(() => {
+    applySuggestionInEditorRef.current = applySuggestionInEditor;
+  }, [applySuggestionInEditor]);
+
   useEffect(() => {
     const ids = new Set<string>();
     if (activeSuggestionId) ids.add(activeSuggestionId);
@@ -647,7 +652,7 @@ export function TiptapSectionField({
           editor.state.tr.setMeta(suggestionActionWidgetsRefreshMeta, true)
         );
         try {
-          await applySuggestionInEditor(id, "accept");
+          await applySuggestionInEditorRef.current(id, "accept");
         } catch (err) {
           console.error(err);
           toast.error(
@@ -670,7 +675,7 @@ export function TiptapSectionField({
           editor.state.tr.setMeta(suggestionActionWidgetsRefreshMeta, true)
         );
         try {
-          await applySuggestionInEditor(id, "dismiss");
+          await applySuggestionInEditorRef.current(id, "dismiss");
         } catch (err) {
           console.error(err);
           toast.error(
@@ -691,7 +696,10 @@ export function TiptapSectionField({
     editor?.view.dispatch(
       editor.state.tr.setMeta(suggestionActionWidgetsRefreshMeta, true)
     );
-  }, [activeSuggestionId, isRichField, editor, applySuggestionInEditor, refresh]);
+    // Do not depend on applySuggestionInEditor — it changes on every section
+    // keystroke (sections in its closure) and a widget refresh here remounts
+    // the contenteditable=false accept/ignore island, which steals the caret.
+  }, [activeSuggestionId, isRichField, editor, refresh]);
 
   const applyExternalValueToEditor = useCallback(() => {
     const currentEditor = editor;
@@ -708,10 +716,6 @@ export function TiptapSectionField({
     }
     currentEditor.commands.setContent(incoming as Content, { emitUpdate: false });
   }, [editor, value, isSuggestionPreviewHeld, section]);
-
-  useLayoutEffect(() => {
-    applyExternalValueToEditorRef.current = applyExternalValueToEditor;
-  }, [applyExternalValueToEditor]);
 
   useEffect(() => {
     applyExternalValueToEditor();
@@ -736,10 +740,15 @@ export function TiptapSectionField({
     const before = JSON.stringify(json);
 
     if (
-      editor.view.hasFocus() &&
-      !previewHeld &&
-      activeSuggestionId &&
-      narrativeHasSuggestionMarks(json, activeSuggestionId)
+      shouldSkipSuggestionDocSync({
+        hasFocus: editor.view.hasFocus(),
+        previewHeld,
+        needsInject: Boolean(
+          activeSuggestionId &&
+            !narrativeHasSuggestionMarks(json, activeSuggestionId)
+        ),
+        hasLocalEdits: !richDocsMatchIgnoringAiPreview(json, canonicalJson),
+      })
     ) {
       return;
     }

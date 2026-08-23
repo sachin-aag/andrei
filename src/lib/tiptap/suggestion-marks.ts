@@ -201,6 +201,33 @@ function selectionAfterInsert(tr: Transaction, insertEnd: number): Transaction {
   }
 }
 
+function isAiSuggestionMark(mark: PMMark): boolean {
+  return (
+    isSuggestionMarkName(mark.type.name) && mark.attrs.authorId === "ai"
+  );
+}
+
+/** Drop inherited AI marks so new typing is not part of the pending suggestion. */
+export function removeAiSuggestionMarks(
+  tr: Transaction,
+  from: number,
+  to: number
+): Transaction {
+  if (from >= to) return tr;
+  let next = tr;
+  tr.doc.nodesBetween(from, to, (node, pos) => {
+    if (!node.isText) return true;
+    for (const mark of node.marks) {
+      if (!isAiSuggestionMark(mark)) continue;
+      const markFrom = Math.max(pos, from);
+      const markTo = Math.min(pos + node.nodeSize, to);
+      if (markFrom < markTo) next = next.removeMark(markFrom, markTo, mark);
+    }
+    return true;
+  });
+  return next;
+}
+
 function insertTrackedText(
   state: EditorState,
   insertAt: number,
@@ -211,15 +238,13 @@ function insertTrackedText(
   if (!insertMarkType || text.length === 0) return null;
 
   const insertEnd = insertAt + text.length;
-  const tr = state.tr
-    .insertText(text, insertAt)
-    .addMark(
-      insertAt,
-      insertEnd,
-      insertMarkType.create(continuingInsertAttrs(state, insertAt, authorId))
-    )
-    .setMeta("skipTrackChanges", true);
-  return selectionAfterInsert(tr, insertEnd);
+  let tr = state.tr.insertText(text, insertAt);
+  tr = removeAiSuggestionMarks(tr, insertAt, insertEnd).addMark(
+    insertAt,
+    insertEnd,
+    insertMarkType.create(continuingInsertAttrs(state, insertAt, authorId))
+  );
+  return selectionAfterInsert(tr.setMeta("skipTrackChanges", true), insertEnd);
 }
 
 function sameTextblock(state: EditorState, a: number, b: number): boolean {
@@ -232,15 +257,14 @@ function sameTextblock(state: EditorState, a: number, b: number): boolean {
   );
 }
 
-function rangeHasAiInsert(state: EditorState, from: number, to: number): boolean {
-  const insertMarkType = state.schema.marks[suggestionInsertMarkName];
-  if (!insertMarkType || from >= to) return false;
+function rangeHasAiSuggestion(state: EditorState, from: number, to: number): boolean {
+  if (from >= to) return false;
   let found = false;
   state.doc.nodesBetween(from, to, (node) => {
     if (found) return false;
     if (!node.isText) return true;
     for (const mark of node.marks) {
-      if (mark.type === insertMarkType && mark.attrs.authorId === "ai") {
+      if (isAiSuggestionMark(mark)) {
         found = true;
         return false;
       }
@@ -258,7 +282,11 @@ function rangeHasAiInsert(state: EditorState, from: number, to: number): boolean
  * treated as the insert site. Chrome may also stretch `to` into a later
  * paragraph that holds the AI span — still type at the caret. Cross-block
  * Enter (no AI span in the Chrome range) → type at `to` so the new line
- * stays a new line. `from === to` falls through to appendTransaction.
+ * stays a new line.
+ *
+ * Collapsed caret (`from === to`) is also intercepted so the new letters do
+ * not inherit an enclosing AI suggestion mark (dismiss/re-inject would then
+ * delete the reviewer's typing).
  */
 export function trackChangesTextInputTransaction(
   state: EditorState,
@@ -280,10 +308,10 @@ export function trackChangesTextInputTransaction(
     );
   }
 
-  if (from >= to) return null;
-
   const insertAt =
-    rangeHasAiInsert(state, from, to) || sameTextblock(state, from, to)
+    from >= to ||
+    rangeHasAiSuggestion(state, from, to) ||
+    sameTextblock(state, from, to)
       ? textPos(state, selTo)
       : textPos(state, to);
 
@@ -305,9 +333,10 @@ export function trackChangesSelectionReplaceTransaction(
 
   const insertAt = textPos(state, to);
   const insertEnd = insertAt + text.length;
-  const tr = state.tr
+  let tr = state.tr
     .addMark(from, to, deleteMarkType.create(pendingMarkAttrs(authorId)))
-    .insertText(text, insertAt, insertAt)
+    .insertText(text, insertAt, insertAt);
+  tr = removeAiSuggestionMarks(tr, insertAt, insertEnd)
     .addMark(
       insertAt,
       insertEnd,
@@ -491,7 +520,7 @@ export const TrackChangesExtension = Extension.create({
             const end = start + slice.size;
             if (start >= end) continue;
 
-            tr = tr.addMark(
+            tr = removeAiSuggestionMarks(tr, start, end).addMark(
               start,
               end,
               insertMarkType.create(

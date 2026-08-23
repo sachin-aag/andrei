@@ -229,7 +229,10 @@ export function createCommentHighlightExtension(
                 const evalId = aiMark.getAttribute("data-eval-id");
                 if (evalId) {
                   getHandlers().onAiSuggestionMarkActivate?.(evalId);
-                  return true;
+                  // Keep ProseMirror's default caret placement. Returning true
+                  // here used to swallow the click, so reviewers could not type
+                  // in a field whose unaccepted AI suggestion covered the text.
+                  return false;
                 }
               }
               getHandlers().onCommentDeactivate();
