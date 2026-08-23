@@ -5,6 +5,7 @@ import { loginAsEngineer } from "./helpers/auth";
 import { reloadWithNavigationRetry } from "./helpers/navigation";
 import { createReport, deleteReport } from "./helpers/reports";
 import {
+  chatUserMessage,
   collapseReportSidebar,
   documentsPanel,
   expandDocumentsPanel,
@@ -93,7 +94,7 @@ test.describe("report chat", () => {
     await composer.fill("help me start this report");
     await sidebar.getByRole("button", { name: /^send message$/i }).click();
 
-    await expect(sidebar.getByText("help me start this report")).toBeVisible({
+    await expect(chatUserMessage(page, "help me start this report")).toBeVisible({
       timeout: 15_000,
     });
     await expect(sidebar.getByText(/^assistant$/i)).toBeVisible({
@@ -151,7 +152,7 @@ test.describe("report chat", () => {
     await composer.fill("first concurrent chat ping");
     await sidebar.getByRole("button", { name: /^send message$/i }).click();
 
-    await expect(sidebar.getByText("first concurrent chat ping")).toBeVisible({
+    await expect(chatUserMessage(page, "first concurrent chat ping")).toBeVisible({
       timeout: 15_000,
     });
     await expect(
@@ -167,7 +168,9 @@ test.describe("report chat", () => {
       tabs.getByRole("tab", { name: /still working/i })
     ).toBeVisible();
 
-    await expect(sidebar.getByText("first concurrent chat ping")).toHaveCount(0);
+    await expect(chatUserMessage(page, "first concurrent chat ping")).toHaveCount(
+      0
+    );
     await expect(
       sidebar.getByRole("button", { name: /^stop generating$/i })
     ).toHaveCount(0);
@@ -183,10 +186,14 @@ test.describe("report chat", () => {
     ).toBeEnabled({ timeout: 15_000 });
     await sidebar.getByRole("button", { name: /^send message$/i }).click();
 
-    await expect(sidebar.getByText("second concurrent chat ping")).toBeVisible({
+    await expect(
+      chatUserMessage(page, "second concurrent chat ping")
+    ).toBeVisible({
       timeout: 15_000,
     });
-    await expect(sidebar.getByText("first concurrent chat ping")).toHaveCount(0);
+    await expect(chatUserMessage(page, "first concurrent chat ping")).toHaveCount(
+      0
+    );
 
     await sidebar.getByRole("button", { name: /^chat history$/i }).click();
     // The parked first thread is still in flight. The second may also still be

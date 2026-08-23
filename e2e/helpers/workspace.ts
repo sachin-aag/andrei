@@ -8,6 +8,16 @@ export function reportSidebar(page: Page) {
   return page.getByRole("complementary", { name: "Report sidebar" });
 }
 
+/** User bubble — not the open-chat tab, which repeats the same title. */
+export function chatUserMessage(
+  page: Page,
+  text: string | RegExp
+) {
+  return reportSidebar(page)
+    .getByLabel("Your message")
+    .filter({ hasText: text });
+}
+
 export function reviewMargin(page: Page) {
   return page.getByRole("complementary", { name: "Review margin" });
 }
