@@ -3,6 +3,7 @@ import {
   AGENT_DONE_MIN_ELAPSED_MS,
   agentDoneNotificationCopy,
   elapsedSince,
+  isAgentDonePageUnfocused,
   notifyAgentDone,
   shouldAnnounceAgentDone,
   shouldShowAgentDonePendingHint,
@@ -16,7 +17,7 @@ const copy = {
 
 function deps() {
   return {
-    nowHidden: vi.fn(() => false),
+    pageUnfocused: vi.fn(() => false),
     notificationPermission: vi.fn(
       (): NotificationPermissionState => "granted"
     ),
@@ -117,9 +118,9 @@ describe("notifyAgentDone", () => {
     expect(spies.playSound).not.toHaveBeenCalled();
   });
 
-  it("uses a system notification when the tab is hidden and permission is granted", () => {
+  it("uses a system notification when this page is unfocused and permission is granted", () => {
     const spies = deps();
-    spies.nowHidden.mockReturnValue(true);
+    spies.pageUnfocused.mockReturnValue(true);
     notifyAgentDone({ notifications: true, sound: false }, copy, spies);
     expect(spies.notifySystem).toHaveBeenCalledWith(copy.title, copy.body);
     expect(spies.notifyInApp).not.toHaveBeenCalled();
@@ -128,7 +129,7 @@ describe("notifyAgentDone", () => {
 
   it("plays sound without a notice when only sound is on", () => {
     const spies = deps();
-    spies.nowHidden.mockReturnValue(true);
+    spies.pageUnfocused.mockReturnValue(true);
     notifyAgentDone({ notifications: false, sound: true }, copy, spies);
     expect(spies.playSound).toHaveBeenCalledOnce();
     expect(spies.notifySystem).not.toHaveBeenCalled();
@@ -152,10 +153,46 @@ describe("notifyAgentDone", () => {
 
   it("falls back to in-app when desktop permission is missing", () => {
     const spies = deps();
-    spies.nowHidden.mockReturnValue(true);
+    spies.pageUnfocused.mockReturnValue(true);
     spies.notificationPermission.mockReturnValue("denied");
     notifyAgentDone({ notifications: true, sound: false }, copy, spies);
     expect(spies.notifyInApp).toHaveBeenCalledWith(copy.title, copy.body);
     expect(spies.notifySystem).not.toHaveBeenCalled();
+  });
+});
+
+describe("isAgentDonePageUnfocused", () => {
+  it("is false when this page is visible and focused", () => {
+    expect(
+      isAgentDonePageUnfocused({
+        hidden: false,
+        visibilityState: "visible",
+        hasFocus: () => true,
+      })
+    ).toBe(false);
+  });
+
+  it("is true for another tab (page hidden)", () => {
+    expect(
+      isAgentDonePageUnfocused({
+        hidden: true,
+        visibilityState: "hidden",
+        hasFocus: () => false,
+      })
+    ).toBe(true);
+  });
+
+  it("is true for another window that left this page visible", () => {
+    expect(
+      isAgentDonePageUnfocused({
+        hidden: false,
+        visibilityState: "visible",
+        hasFocus: () => false,
+      })
+    ).toBe(true);
+  });
+
+  it("is false when there is no page (server)", () => {
+    expect(isAgentDonePageUnfocused(null)).toBe(false);
   });
 });

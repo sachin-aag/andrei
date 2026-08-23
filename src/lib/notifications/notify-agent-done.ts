@@ -11,12 +11,34 @@ export type NotificationPermissionState =
   | "unsupported";
 
 export type AgentDoneNotifierDeps = {
-  nowHidden: () => boolean;
+  pageUnfocused: () => boolean;
   notificationPermission: () => NotificationPermissionState;
   notifySystem: (title: string, body: string) => void;
   notifyInApp: (title: string, body: string) => void;
   playSound: () => void;
 };
+
+type PageFocusSnapshot = {
+  hidden: boolean;
+  visibilityState?: DocumentVisibilityState;
+  hasFocus?: () => boolean;
+};
+
+/**
+ * True when this page is still loaded but the engineer is looking
+ * somewhere else — another tab, another browser window, or another app.
+ * `document.hidden` alone misses an unfocused window that is still visible.
+ */
+export function isAgentDonePageUnfocused(
+  page: PageFocusSnapshot | null | undefined =
+    typeof document === "undefined" ? null : document
+): boolean {
+  if (!page) return false;
+  if (page.hidden) return true;
+  if (page.visibilityState && page.visibilityState !== "visible") return true;
+  if (typeof page.hasFocus === "function" && !page.hasFocus()) return true;
+  return false;
+}
 
 let audioContext: AudioContext | null = null;
 
@@ -148,6 +170,7 @@ export function showSystemAgentDoneNotification(
     const notification = new Notification(title, {
       body,
       silent: true,
+      tag: "andrei-assistant-done",
     });
     notification.onclick = () => {
       window.focus();
@@ -163,8 +186,7 @@ export function showInAppAgentDoneNotice(title: string, body: string): void {
 }
 
 const defaultDeps: AgentDoneNotifierDeps = {
-  nowHidden: () =>
-    typeof document !== "undefined" ? document.hidden : false,
+  pageUnfocused: () => isAgentDonePageUnfocused(),
   notificationPermission: readNotificationPermission,
   notifySystem: showSystemAgentDoneNotification,
   notifyInApp: showInAppAgentDoneNotice,
@@ -173,8 +195,8 @@ const defaultDeps: AgentDoneNotifierDeps = {
 
 /**
  * Fire the two independent channels. Sound plays even when notifications
- * are off; a silent system banner is used only when the tab is hidden and
- * permission is granted.
+ * are off. A silent desktop banner is used when this page is still open
+ * but unfocused (another tab or window) and the browser allowed it.
  */
 export function notifyAgentDone(
   prefs: AgentDonePrefs,
@@ -188,7 +210,7 @@ export function notifyAgentDone(
   if (!prefs.notifications) return;
   if (
     resolved.notificationPermission() === "granted" &&
-    resolved.nowHidden()
+    resolved.pageUnfocused()
   ) {
     resolved.notifySystem(copy.title, copy.body);
     return;

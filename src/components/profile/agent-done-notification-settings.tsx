@@ -21,11 +21,11 @@ import {
 function permissionHint(permission: NotificationPermissionState): string {
   switch (permission) {
     case "granted":
-      return "Desktop notifications are allowed in this browser. They fire only after a reply takes at least 5 seconds. Closing this tab does not stop the assistant — reopen the report to see the reply. When this tab is in the background, the notice stays silent unless you also turn on sound.";
+      return "If you switch to another window or tab, the browser can show a silent desktop notice after a reply takes at least 5 seconds. Closing this tab does not stop the assistant — reopen the report to see the reply. Turn on sound if you also want a chime.";
     case "denied":
-      return "This browser blocked desktop notifications. We'll show an in-app notice instead while this tab is open.";
+      return "This browser blocked desktop notifications. We'll show an in-app notice instead, which you will only see if this page is still in view.";
     case "default":
-      return "Your browser will ask for permission the first time you turn this on, or when a reply finishes.";
+      return "Your browser will ask for permission the first time you turn this on, or when you send a chat. Allow it so a notice can appear while you are in another window or tab.";
     case "unsupported":
       return "This browser does not support desktop notifications. We'll show an in-app notice instead.";
     default: {

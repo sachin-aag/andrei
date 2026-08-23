@@ -81,7 +81,8 @@ export default async function ProfilePage() {
             <h2 className="text-base font-semibold">Assistant notifications</h2>
             <p className="mt-1 text-sm text-[var(--muted-foreground)]">
               Choose how you are told when the assistant finishes a reply that
-              took at least 5 seconds. Closing the tab does not stop the
+              took at least 5 seconds, including when you have switched to
+              another window or tab. Closing the tab does not stop the
               assistant. Notifications and sound are independent — the default
               is a silent notice.
             </p>
