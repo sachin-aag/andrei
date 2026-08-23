@@ -5,6 +5,7 @@ import { comments, reports, reportSections } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import { hydrateUserDirectory } from "@/lib/auth/user-directory";
 import { listWorkspaceUsers } from "@/lib/auth/workspace-users";
+import { getCustomerPack } from "@/lib/customers/packs";
 import { reportExportDocxFileName } from "@/lib/export/docx-filename";
 import { generateReportDocx } from "@/lib/export/generate-docx";
 import { listReportSignatures } from "@/lib/audit";
@@ -16,8 +17,13 @@ import {
 
 export const runtime = "nodejs";
 
+function requestedOmitCitations(req: Request): boolean {
+  const value = new URL(req.url).searchParams.get("omitCitations");
+  return value === "1" || value === "true";
+}
+
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ reportId: string }> }
 ) {
   const user = await getCurrentUser();
@@ -48,6 +54,8 @@ export async function GET(
   hydrateUserDirectory(await listWorkspaceUsers());
 
   const signatures = await listReportSignatures(reportId);
+  const omitCitations =
+    requestedOmitCitations(req) && getCustomerPack().citationsAtEndOfSection;
 
   const buffer = await generateReportDocx({
     report: reportWithManagers,
@@ -65,9 +73,14 @@ export async function GET(
       signedAt: s.signedAt,
       contentHash: s.contentHash,
     })),
+    omitCitations,
   });
 
-  const filename = reportExportDocxFileName(report.documentType, report.documentNo);
+  const filename = reportExportDocxFileName(
+    report.documentType,
+    report.documentNo,
+    { omitCitations }
+  );
   const body = new Uint8Array(buffer);
   return new NextResponse(body, {
     headers: {

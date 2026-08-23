@@ -221,7 +221,7 @@ Specs run against Chromium, Firefox, and WebKit unless you pass `--project=chrom
 
 | Test | What it verifies |
 |------|------------------|
-| export triggers docx download | Export DOCX link → `.docx` filename |
+| export triggers docx download | Export DOCX link → `.docx` filename (Convergent also has Export without citations in the split menu) |
 | export returns 404 for missing report | Bad report id |
 
 </details>

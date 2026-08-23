@@ -50,7 +50,8 @@ export type CustomerPack = {
   /**
    * When true, document citations belong at the end of each section field
    * (not inline). New edits that add a citation are split: body change +
-   * end-of-field citation. Off for demo/MJ.
+   * end-of-field citation. Off for demo/MJ. Also enables the Export
+   * without citations DOCX option (trailing citation blocks are dropped).
    */
   citationsAtEndOfSection: boolean;
   branding: CustomerBranding;

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { JSONContent } from "@tiptap/core";
 import {
   citationAppendPart,
   documentCitationRule,
@@ -10,6 +11,9 @@ import {
   splitEditForCitationsAtEnd,
   stripCitationsFromTableOperation,
   stripCitationsFromText,
+  stripTrailingCitationBlockFromDoc,
+  stripTrailingCitationBlockFromText,
+  stripTrailingCitationsFromContent,
 } from "./citations-at-end";
 
 describe("stripCitationsFromText", () => {
@@ -331,5 +335,101 @@ describe("extractCitationBrackets", () => {
     expect(
       extractCitationBrackets("[a.pdf, p. 1] and again [a.pdf, p. 1]")
     ).toEqual(["[a.pdf, p. 1]"]);
+  });
+});
+
+describe("stripTrailingCitationBlockFromText", () => {
+  it("drops a trailing Citations: list and keeps the body", () => {
+    expect(
+      stripTrailingCitationBlockFromText(
+        "Verify REQ-101.\n\nCitations:\n[protocol.pdf, p. 3]\n[results.xlsx, p. 1]"
+      )
+    ).toBe("Verify REQ-101.");
+  });
+
+  it("leaves body-only text unchanged", () => {
+    expect(stripTrailingCitationBlockFromText("Verify REQ-101.")).toBe(
+      "Verify REQ-101."
+    );
+  });
+});
+
+describe("stripTrailingCitationBlockFromDoc", () => {
+  function paragraph(text?: string): JSONContent {
+    return text
+      ? { type: "paragraph", content: [{ type: "text", text }] }
+      : { type: "paragraph" };
+  }
+
+  it("drops the spacer, heading, and citation lines after a table", () => {
+    const table: JSONContent = {
+      type: "table",
+      content: [
+        {
+          type: "tableRow",
+          content: [
+            {
+              type: "tableCell",
+              content: [paragraph("REQ-101")],
+            },
+          ],
+        },
+      ],
+    };
+    const stripped = stripTrailingCitationBlockFromDoc({
+      type: "doc",
+      content: [
+        table,
+        paragraph(),
+        paragraph("Citations:"),
+        paragraph("[protocol.pdf, p. 3]"),
+      ],
+    });
+    expect(stripped.content).toEqual([table]);
+  });
+
+  it("does not strip inline body text that is not a trailing block", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [paragraph("The output met spec [protocol.pdf, p. 3].")],
+    };
+    expect(stripTrailingCitationBlockFromDoc(doc)).toEqual(doc);
+  });
+});
+
+describe("stripTrailingCitationsFromContent", () => {
+  it("strips each TipTap field in a section object", () => {
+    const result = stripTrailingCitationsFromContent({
+      narrative: {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [{ type: "text", text: "Verify REQ-101." }],
+          },
+          { type: "paragraph" },
+          {
+            type: "paragraph",
+            content: [{ type: "text", text: "Citations:" }],
+          },
+          {
+            type: "paragraph",
+            content: [{ type: "text", text: "[protocol.pdf, p. 3]" }],
+          },
+        ],
+      },
+      table: { type: "doc", content: [{ type: "paragraph" }] },
+    }) as { narrative: JSONContent; table: JSONContent };
+
+    expect(result.narrative.content).toEqual([
+      {
+        type: "paragraph",
+        content: [{ type: "text", text: "Verify REQ-101." }],
+      },
+    ]);
+    expect(result.table).toEqual({
+      type: "doc",
+      content: [{ type: "paragraph" }],
+    });
   });
 });

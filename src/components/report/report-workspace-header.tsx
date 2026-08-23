@@ -5,7 +5,6 @@ import Link from "next/link";
 import {
   CheckCircle2,
   ChevronLeft,
-  Download,
   History,
   Loader2,
   MessageSquare,
@@ -19,9 +18,9 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import type { WorkspaceMode } from "@/providers/report-provider";
 import type { ReportRecord } from "@/types/report";
+import { ReportExportButton } from "./report-export-button";
 import { RunAllEvaluationButton } from "./section-status-pill";
 import { StatusBadge } from "./status-badge";
-import { captureEvent } from "@/lib/analytics/events";
 
 type ReportWorkspaceHeaderProps = {
   report: ReportRecord;
@@ -144,17 +143,7 @@ export function ReportWorkspaceHeader({
             </Link>
           </Button>
         ) : null}
-        <Button variant="outline" size="sm" asChild>
-          <a
-            href={`/api/reports/${report.id}/export`}
-            target="_blank"
-            rel="noreferrer"
-            onClick={() => captureEvent("report_exported", { reportId: report.id })}
-          >
-            <Download className="size-4" aria-hidden="true" />
-            Export DOCX
-          </a>
-        </Button>
+        <ReportExportButton reportId={report.id} />
 
         {canSubmit && (
           <Button size="sm" onClick={onSubmit} disabled={submitting}>

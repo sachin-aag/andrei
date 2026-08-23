@@ -64,6 +64,7 @@ import {
   type ReportDocxComment,
 } from "@/lib/export/docx-comments";
 import { applyGoogleDocsImageCompat } from "@/lib/export/docx-google-docs-images";
+import { stripTrailingCitationsFromContent } from "@/lib/suggestions/citations-at-end";
 
 type ReportRow = typeof reportsTable.$inferSelect;
 type ReportRowWithManagers = ReportRow & { assignedManagerIds?: string[] };
@@ -429,21 +430,35 @@ function signatureSnapshotFromSection(
   return null;
 }
 
+function sectionsForDocxExport(
+  sections: ReportSectionRecord[],
+  omitCitations: boolean
+): ReportSectionRecord[] {
+  if (!omitCitations) return sections;
+  return sections.map((row) => ({
+    ...row,
+    content: stripTrailingCitationsFromContent(row.content),
+  }));
+}
+
 export async function generateReportDocx({
   report,
   sections,
   comments = [],
   electronicSignatures = [],
+  omitCitations = false,
 }: {
   report: ReportRowWithManagers;
   sections: ReportSectionRecord[];
   comments?: ReportDocxComment[];
   electronicSignatures?: DocxAuditSignature[];
+  omitCitations?: boolean;
 }): Promise<Buffer> {
+  const exportSections = sectionsForDocxExport(sections, omitCitations);
   if (report.documentType === "design_verification") {
     return generateDesignVerificationDocx({
       report,
-      sections,
+      sections: exportSections,
       electronicSignatures,
     });
   }
@@ -461,7 +476,7 @@ export async function generateReportDocx({
 
   const numberingBases = loadListNumberingBasesFromZip(zip);
   const ctx = createDocxExportContext(numberingBases);
-  const data = buildTemplateData(report, sections, ctx, comments);
+  const data = buildTemplateData(report, exportSections, ctx, comments);
   const signatureSnapshot = signatureSnapshotFromSection(
     data._signatureApprovals as SignatureApprovalsSection
   );

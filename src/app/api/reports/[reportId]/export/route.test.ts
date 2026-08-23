@@ -26,11 +26,20 @@ vi.mock("@/lib/export/generate-docx", () => ({
   generateReportDocx: vi.fn(),
 }));
 
+vi.mock("@/lib/customers/packs", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/customers/packs")>();
+  return {
+    ...actual,
+    getCustomerPack: vi.fn(() => actual.DEMO_PACK),
+  };
+});
+
 import { db } from "@/db";
 import { getCurrentUser } from "@/lib/auth/session";
 import { hydrateUserDirectory } from "@/lib/auth/user-directory";
 import { listWorkspaceUsers } from "@/lib/auth/workspace-users";
 import { listReportSignatures } from "@/lib/audit";
+import { CONVERGENT_PACK, DEMO_PACK, getCustomerPack } from "@/lib/customers/packs";
 import { generateReportDocx } from "@/lib/export/generate-docx";
 import { GET } from "./route";
 
@@ -64,8 +73,8 @@ const report = {
   },
 };
 
-function request() {
-  return new Request("http://localhost/api/reports/report-1/export");
+function request(url = "http://localhost/api/reports/report-1/export") {
+  return new Request(url);
 }
 
 function mockSelectOnce(rows: unknown[]) {
@@ -84,6 +93,7 @@ function mockOrderedSelectOnce(rows: unknown[]) {
 describe("GET /api/reports/[reportId]/export", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(getCustomerPack).mockReturnValue(DEMO_PACK);
     vi.mocked(listWorkspaceUsers).mockResolvedValue([]);
     vi.mocked(listReportSignatures).mockResolvedValue([]);
     vi.mocked(generateReportDocx).mockResolvedValue(Buffer.from("docx"));
@@ -140,7 +150,53 @@ describe("GET /api/reports/[reportId]/export", () => {
           id: report.id,
           assignedManagerIds: ["manager-1"],
         }),
+        omitCitations: false,
       })
+    );
+  });
+
+  it("ignores omitCitations on packs that keep citations inline", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
+    mockSelectOnce([report]);
+    mockOrderedSelectOnce([]);
+    mockSelectOnce([]);
+    mockSelectOnce([]);
+
+    const response = await GET(
+      request("http://localhost/api/reports/report-1/export?omitCitations=1"),
+      { params: Promise.resolve({ reportId: report.id }) }
+    );
+
+    expect(response.status).toBe(200);
+    expect(generateReportDocx).toHaveBeenCalledWith(
+      expect.objectContaining({ omitCitations: false })
+    );
+    expect(response.headers.get("Content-Disposition")).toBe(
+      'attachment; filename="Investigation_Report_DEV-001.docx"'
+    );
+  });
+
+  it("omits citations for Convergent when requested", async () => {
+    vi.mocked(getCustomerPack).mockReturnValue(CONVERGENT_PACK);
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
+    mockSelectOnce([
+      { ...report, documentType: "design_verification", documentNo: "DVR-001" },
+    ]);
+    mockOrderedSelectOnce([]);
+    mockSelectOnce([]);
+    mockSelectOnce([]);
+
+    const response = await GET(
+      request("http://localhost/api/reports/report-1/export?omitCitations=1"),
+      { params: Promise.resolve({ reportId: report.id }) }
+    );
+
+    expect(response.status).toBe(200);
+    expect(generateReportDocx).toHaveBeenCalledWith(
+      expect.objectContaining({ omitCitations: true })
+    );
+    expect(response.headers.get("Content-Disposition")).toBe(
+      'attachment; filename="Design_Verification_Report_DVR-001_without_citations.docx"'
     );
   });
 
