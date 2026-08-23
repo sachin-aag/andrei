@@ -76,6 +76,7 @@ import {
   parseAiFixCommentContent,
   parseAiRedraftCommentContent,
 } from "@/lib/ai/suggestion-gating";
+import { buildInactiveSuggestionCss } from "@/lib/tiptap/inactive-suggestion-css";
 import { buildRedraftPreviewDoc } from "@/lib/tiptap/redraft-preview";
 import { markdownToDoc } from "@/lib/tiptap/markdown-to-doc";
 import { normalizeRichField } from "@/lib/tiptap/rich-text";
@@ -981,27 +982,9 @@ export function TiptapSectionField({
   const tableHAlign = (activeTableCellAttrs?.align as string | undefined) ?? null;
   const tableVAlign = (activeTableCellAttrs?.verticalAlign as string | undefined) ?? null;
 
-  const inactiveSuggestionCss =
-    activeSuggestionId && isRichField
-      ? `
-[data-active-suggestion-id="${activeSuggestionId}"] [data-eval-id]:not([data-eval-id="${activeSuggestionId}"]).suggestion-insert,
-[data-active-suggestion-id="${activeSuggestionId}"] [data-eval-id]:not([data-eval-id="${activeSuggestionId}"]).suggestion-insert-ai,
-[data-active-suggestion-id="${activeSuggestionId}"] [data-eval-id]:not([data-eval-id="${activeSuggestionId}"]).suggestion-insert-ai::before,
-[data-active-suggestion-id="${activeSuggestionId}"] [data-eval-id]:not([data-eval-id="${activeSuggestionId}"]).suggestion-insert-ai::after {
-  display: none !important;
-  content: none !important;
-}
-[data-active-suggestion-id="${activeSuggestionId}"] [data-eval-id]:not([data-eval-id="${activeSuggestionId}"]).suggestion-delete,
-[data-active-suggestion-id="${activeSuggestionId}"] [data-eval-id]:not([data-eval-id="${activeSuggestionId}"]).suggestion-delete-ai {
-  text-decoration: none !important;
-  background-color: transparent !important;
-  color: inherit !important;
-}
-[data-active-suggestion-id="${activeSuggestionId}"] .suggestion-action-widget:not([data-eval-id="${activeSuggestionId}"]) {
-  display: none !important;
-}
-`
-      : "";
+  const inactiveSuggestionCss = isRichField
+    ? buildInactiveSuggestionCss(activeSuggestionId)
+    : "";
 
   return (
     <div className={className}>

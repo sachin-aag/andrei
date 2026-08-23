@@ -28,6 +28,12 @@ async function expectTypedAsInsertNotDelete(
       return inserts.join("");
     })
     .toContain(mark);
+  // Text content alone is not enough: an over-broad "other suggestion" rule
+  // once hid the reviewer's own insert with display:none, so the edit saved
+  // but never appeared. Assert it is actually on screen.
+  await expect(
+    editor.locator(".suggestion-insert").filter({ hasText: mark }).first()
+  ).toBeVisible();
   const deletes = await editor.locator(".suggestion-delete").allTextContents();
   expect(deletes.join("")).not.toContain(mark);
 }
@@ -263,12 +269,17 @@ test.describe("manager track changes persist", () => {
     await expect(
       editor.locator(`[data-suggestion-author="ai"]`).filter({ hasText: mark })
     ).toHaveCount(0);
+    // The AI proposal stays visible next to it, still unaccepted.
+    await expect(
+      editor.locator('[data-suggestion-author="ai"]').first()
+    ).toBeVisible();
     await expect(defineSection(page).getByText(/saved/i)).toBeVisible({
       timeout: 30_000,
     });
 
     await page.reload({ waitUntil: "domcontentloaded" });
     await expect(defineEditor(page)).toContainText(mark, { timeout: 30_000 });
+    await expectTypedAsInsertNotDelete(defineEditor(page), mark);
   });
 
   test("types in a plain Analyze field while an AI suggestion is unaccepted", async ({
