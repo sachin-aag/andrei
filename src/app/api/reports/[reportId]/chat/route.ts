@@ -235,6 +235,7 @@ export async function POST(
     sectionScope,
     documentType: report.documentType,
     mentionedPageCount,
+    totalReadyPages,
     hasDocuments: documents.length > 0,
   });
   const documentReview = new DocumentReviewSession();

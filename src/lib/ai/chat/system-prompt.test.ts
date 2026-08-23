@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("bumps the prompt version when section inline image guidance changes", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v35-citations-heading");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v36-results-inventory-citations");
   });
 
   it("puts citations at the end of the section when the pack mode is on", () => {
@@ -233,8 +233,12 @@ describe("buildChatSystemPrompt", () => {
       retrievalPolicy: "comprehensive",
     });
     expect(prompt).toContain("Retrieval mode: COMPREHENSIVE");
+    expect(prompt).toContain("open set over a multi-page catalog");
     expect(prompt).toContain("start_document_review");
     expect(prompt).toContain("finish_document_review before draft_field");
+    expect(prompt).toContain("recommendedInventory");
+    expect(prompt).toContain("allIdentifiers");
+    expect(prompt).toContain("SW-SST-5.1.1 is not SW-SST-5");
     expect(prompt).not.toContain(
       "MUST call search_documents (or use the evidence preview below) BEFORE ask_user or draft_field"
     );

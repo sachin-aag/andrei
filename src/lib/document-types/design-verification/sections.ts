@@ -159,7 +159,16 @@ export const CONVERGENT_RESULTS_MATRIX_FILLING_NOTES = `Results and Discussions 
 - P/F: write only Pass or Fail (or P/F). That cell is the verdict, not the configuration.
 - Satisfied By MUST include both (1) the method, procedure, datasheet, or evidence that satisfied the requirement and (2) the configuration for which that P/F was achieved (UUT / software version / TOP or PCON / fixture / execution). Example: "TOP-00051 datasheets — TOP-00017 PCON (SW 4.7.1)".
 - If the same requirement was run on more than one configuration, name each configuration in Satisfied By so the verdict is attributable. Keep one row per Req ID.
+- Req ID must match the evidence exactly, including dotted suffixes (\`SW-SST-5.1.1\` is not \`SW-SST-5\`). Do not collapse a child ID into its parent family.
+- When the source has a Requirements Verified table (or a partial-execution datasheet/TOC list), publish those rows — not every requirement ID mentioned in the protocol body.
 - Do not invent a configuration. If evidence does not name one, use a bracketed placeholder like [configuration].`;
+
+/** Chat-only: Results and Discussions has two fields — never put the matrix in Discussion. */
+export const CONVERGENT_RESULTS_FIELD_SPLIT_NOTES = `Results and Discussions field split (required):
+- This section has TWO fields. Always make two separate draft_field calls.
+- targetField \`narrative\` (Discussion): prose only. Testing-per line, Data Collection Forms, Requirements Verified heading, and Observations. NEVER include a markdown table or Req ID / Satisfied By / P/F rows here.
+- targetField \`table\` (Results matrix): ONE GFM table only with headers Req ID | Req Description | Satisfied By | P/F. No headings, no observations, no wrapping prose.
+- WRONG: one draft_field to narrative that contains the requirements table. RIGHT: narrative gets the outline; table gets the matrix.`;
 
 /**
  * Prompt block telling chat / suggest models to keep seeded matrix columns.
@@ -202,7 +211,9 @@ export function dvFixedTableFormatGuidance(opts?: {
 - If filling a gap requires new rows, keep the same header set and column order.`;
 
   const fillingNotes = sections.includes("results_and_discussions")
-    ? `\n\n${CONVERGENT_RESULTS_MATRIX_FILLING_NOTES}`
+    ? `\n\n${CONVERGENT_RESULTS_MATRIX_FILLING_NOTES}${
+        surface === "chat" ? `\n\n${CONVERGENT_RESULTS_FIELD_SPLIT_NOTES}` : ""
+      }`
     : "";
 
   return `## Fixed table formats (required)

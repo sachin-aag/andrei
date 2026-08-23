@@ -1,6 +1,14 @@
 import { generateText, Output } from "ai";
 import { z } from "zod";
-import { requirementIds } from "@/lib/attachments/ocr-quality";
+import {
+  normalizeRequirementIds,
+  requirementIds,
+} from "@/lib/attachments/ocr-quality";
+import {
+  emptyRecommendedInventory,
+  selectRecommendedInventory,
+  type RecommendedResultsInventory,
+} from "@/lib/ai/chat/results-inventory";
 import { derivePageOutlineDigest } from "@/lib/attachments/page-outline";
 import { isTestStubChat } from "@/lib/test/ai-bypass";
 import { resolveChatExtractLanguageModel } from "@/lib/ai/chat/model";
@@ -110,6 +118,7 @@ export class DocumentReviewSession {
   private totalPages = 0;
   private extractBatch: ExtractReviewBatchFn;
   private findingSeq = 0;
+  private lastRecommended: RecommendedResultsInventory | null = null;
 
   constructor(options?: { extractBatch?: ExtractReviewBatchFn }) {
     this.extractBatch = options?.extractBatch ?? extractReviewBatch;
@@ -121,6 +130,10 @@ export class DocumentReviewSession {
 
   isFinished(): boolean {
     return this.phaseState === "complete";
+  }
+
+  recommendedInventory(): RecommendedResultsInventory | null {
+    return this.lastRecommended;
   }
 
   progress(): DocumentReviewProgressSnapshot {
@@ -179,6 +192,7 @@ export class DocumentReviewSession {
     this.reviewedPageKeys = new Set();
     this.totalPages = pages.length;
     this.findingSeq = 0;
+    this.lastRecommended = null;
     this.phaseState = this.queue.length === 0 ? "ready_to_finish" : "in_progress";
 
     return {
@@ -279,11 +293,15 @@ export class DocumentReviewSession {
     coverageComplete: boolean;
     findings: DocumentReviewFinding[];
     identifiers: string[];
+    allIdentifiers: string[];
+    recommendedInventory: RecommendedResultsInventory;
     conflicts: string[];
     failedPages: DocumentReviewFailedPage[];
     coverageSummary: string;
   } {
     if (this.phaseState === "idle" || this.queue.length > 0) {
+      this.lastRecommended = null;
+      const empty = emptyRecommendedInventory();
       return {
         status: "incomplete",
         reviewedPages: this.reviewedPageKeys.size,
@@ -291,6 +309,8 @@ export class DocumentReviewSession {
         coverageComplete: false,
         findings: [],
         identifiers: [],
+        allIdentifiers: [],
+        recommendedInventory: empty,
         conflicts: this.failedPages.map(
           (page) => `${page.filename} p.${page.pageNumber}: ${page.reason}`
         ),
@@ -301,7 +321,13 @@ export class DocumentReviewSession {
 
     this.phaseState = "complete";
     const identifiers = uniqueIdentifiers(this.findings);
+    const recommendedInventory = selectRecommendedInventory(this.findings);
+    this.lastRecommended = recommendedInventory;
     const coverageComplete = this.failedPages.length === 0;
+    const inventoryNote =
+      recommendedInventory.ids.length > 0
+        ? ` recommendedInventory ${recommendedInventory.ids.length} (${recommendedInventory.sourceKind}).`
+        : " No authoritative executed-test inventory was isolated; do not treat allIdentifiers as matrix rows.";
     return {
       status: "complete",
       reviewedPages: this.reviewedPageKeys.size,
@@ -309,13 +335,15 @@ export class DocumentReviewSession {
       coverageComplete,
       findings: compactFindings(this.findings),
       identifiers,
+      allIdentifiers: identifiers,
+      recommendedInventory,
       conflicts: this.failedPages.map(
         (page) => `${page.filename} p.${page.pageNumber}: ${page.reason}`
       ),
       failedPages: [...this.failedPages],
       coverageSummary: coverageComplete
-        ? `Reviewed ${this.reviewedPageKeys.size}/${this.totalPages} pages; ${this.findings.length} findings; ${identifiers.length} identifiers.`
-        : `Reviewed ${this.reviewedPageKeys.size}/${this.totalPages} pages with ${this.failedPages.length} failed page(s); do not claim completeness.`,
+        ? `Reviewed ${this.reviewedPageKeys.size}/${this.totalPages} pages; ${this.findings.length} findings; ${identifiers.length} identifiers.${inventoryNote}`
+        : `Reviewed ${this.reviewedPageKeys.size}/${this.totalPages} pages with ${this.failedPages.length} failed page(s); do not claim completeness.${inventoryNote}`,
     };
   }
 
@@ -558,12 +586,8 @@ export function prepareDocumentReviewStep(input: {
         };
       }
       return {
-        activeTools: allow([
-          "start_document_review",
-          "document_outline",
-          "ask_user",
-          "suggest_section_scope",
-        ]),
+        activeTools: allow(["start_document_review"]),
+        toolChoice: { type: "tool", toolName: "start_document_review" },
       };
     case "in_progress":
       return {
@@ -644,7 +668,7 @@ async function extractReviewBatchWithLlm(input: {
         attachmentId: page.attachmentId,
         filename: page.filename,
         pageNumber: page.pageNumber,
-        identifiers: finding.identifiers.filter(Boolean),
+        identifiers: normalizeRequirementIds(finding.identifiers),
         heading: finding.heading,
         summary: finding.summary,
         configuration: finding.configuration,
@@ -685,9 +709,9 @@ function compactFindings(
     result: finding.result
       ? sanitizePromptMetadata(finding.result, 80) || null
       : null,
-    identifiers: finding.identifiers.map((id) =>
-      sanitizePromptMetadata(id, 40)
-    ).filter(Boolean),
+    identifiers: normalizeRequirementIds(
+      finding.identifiers.map((id) => sanitizePromptMetadata(id, 40))
+    ),
   }));
 }
 
@@ -698,7 +722,7 @@ function normalizeFinding(
   return {
     ...finding,
     id: finding.id && finding.id !== "llm" ? finding.id : nextId(),
-    identifiers: [...new Set(finding.identifiers.map((id) => id.trim()).filter(Boolean))],
+    identifiers: normalizeRequirementIds(finding.identifiers),
     summary: finding.summary.replace(/\s+/g, " ").trim(),
     heading: finding.heading?.replace(/\s+/g, " ").trim() || null,
     configuration: finding.configuration?.replace(/\s+/g, " ").trim() || null,
@@ -726,11 +750,9 @@ function uniqueDocuments(pages: readonly ReviewPageSource[]): number {
 }
 
 function uniqueIdentifiers(findings: readonly DocumentReviewFinding[]): string[] {
-  const ids = new Set<string>();
-  for (const finding of findings) {
-    for (const id of finding.identifiers) ids.add(id);
-  }
-  return [...ids];
+  return normalizeRequirementIds(
+    findings.flatMap((finding) => finding.identifiers)
+  );
 }
 
 function excerptFrom(text: string): string {

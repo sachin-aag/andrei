@@ -28,6 +28,15 @@ describe("derivePageOutlineDigest", () => {
     expect(digest.toLowerCase()).not.toContain("convergent dental");
   });
 
+  it("keeps dotted requirement IDs in the digest", () => {
+    const digest = derivePageOutlineDigest(
+      "REQUIREMENTS VERIFIED\nSW-IN-1.1 SW-SST-5.1.1 SW-EH-1.2 Pass"
+    );
+    expect(digest).toContain("SW-IN-1.1");
+    expect(digest).toContain("SW-SST-5.1.1");
+    expect(digest).toContain("SW-EH-1.2");
+  });
+
   it("returns empty for boilerplate-only pages", () => {
     expect(derivePageOutlineDigest("Page 4\nCONFIDENTIAL\n12")).toBe("");
   });

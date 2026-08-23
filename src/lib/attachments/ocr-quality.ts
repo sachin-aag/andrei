@@ -10,7 +10,15 @@ export const GEMINI_APPENDIX_B_BASELINE_MS = 743_211;
 export const OCR_QUALITY_PAGES = [1, 4, 31, 37, 59] as const;
 export const REQUIREMENT_ID_RECALL_PAGE = 31;
 
-const REQUIREMENT_ID_RE = /\b[A-Z]{2,}-[A-Z0-9-]+\b/g;
+/**
+ * Solea-style IDs including dotted children (`SW-SST-5.1.1`). Requires a
+ * numeric terminal segment so `PASS-FAIL` / `REV-U` / bare `SW-SST-` drop out.
+ */
+const REQUIREMENT_ID_RE =
+  /\b[A-Z]{2,}(?:-[A-Z0-9]+)*-\d+(?:\.\d+)*\b/g;
+
+const REQUIREMENT_ID_DENY_PREFIX =
+  /^(IEC|ISO|CFR|ASTM|ANSI|UL|EN|TABLE|FIG|PAGE|REV)-/i;
 
 export function charRatio(ocrText: string, geminiText: string): number | null {
   if (geminiText.length === 0) return ocrText.length === 0 ? 1 : null;
@@ -47,11 +55,31 @@ export function sidewaysLikely(text: string): boolean {
   return false;
 }
 
+export function isRequirementId(value: string): boolean {
+  const trimmed = value.trim();
+  if (!trimmed) return false;
+  const ids = requirementIds(trimmed);
+  return ids.length === 1 && ids[0] === trimmed;
+}
+
+export function normalizeRequirementIds(
+  values: readonly string[]
+): string[] {
+  const seen = new Set<string>();
+  for (const value of values) {
+    for (const id of requirementIds(value)) {
+      seen.add(id);
+    }
+  }
+  return [...seen];
+}
+
 export function requirementIds(text: string): string[] {
   const seen = new Set<string>();
   for (const match of text.matchAll(REQUIREMENT_ID_RE)) {
     const id = match[0];
-    if (id) seen.add(id);
+    if (!id || REQUIREMENT_ID_DENY_PREFIX.test(id)) continue;
+    seen.add(id);
   }
   return [...seen];
 }
