@@ -1,3 +1,4 @@
+import type { JSONContent } from "@tiptap/core";
 import { isCitationShapedBracket } from "@/lib/placeholders/citation-bracket";
 import type { EditScope } from "@/lib/suggestions/locator";
 import type { TableOperation } from "@/lib/suggestions/table-operation";
@@ -132,7 +133,26 @@ export function isCitationHeadingParagraph(block: {
   type?: string;
   content?: Array<{ type?: string; text?: string }>;
 }): boolean {
-  return block.type === "paragraph" && isCitationListHeading(paragraphPlainText(block));
+  return (
+    (block.type === "paragraph" || block.type === "heading") &&
+    isCitationListHeading(paragraphPlainText(block))
+  );
+}
+
+function nodePlainText(node: JSONContent): string {
+  if (node.type === "text") return node.text ?? "";
+  return (node.content ?? []).map((child) => nodePlainText(child)).join("");
+}
+
+function isCitationOnlyBlock(block: JSONContent): boolean {
+  if (block.type === "table") return false;
+  if (block.type === "paragraph" || block.type === "heading") {
+    return isCitationOnlyText(paragraphPlainText(block));
+  }
+  if (block.type === "bulletList" || block.type === "orderedList") {
+    return isCitationOnlyText(nodePlainText(block));
+  }
+  return false;
 }
 
 export function isEmptyParagraphBlock(block: {
@@ -158,6 +178,79 @@ export function keepEmptyParagraphBeforeCitationHeading(
     following !== undefined &&
     isCitationHeadingParagraph(following)
   );
+}
+
+/** Drop a trailing Citations:/References: block from plain text. */
+export function stripTrailingCitationBlockFromText(text: string): string {
+  return splitTrailingCitationBlock(text).body;
+}
+
+/**
+ * Drop a trailing citation list from a TipTap doc (heading + cite lines +
+ * the spacer before it). Leaves the body and any tables intact.
+ */
+export function stripTrailingCitationBlockFromDoc(doc: JSONContent): JSONContent {
+  if (doc.type !== "doc" || !Array.isArray(doc.content) || doc.content.length === 0) {
+    return doc;
+  }
+  const blocks = doc.content;
+  let end = blocks.length;
+  while (end > 0 && isEmptyParagraphBlock(blocks[end - 1]!)) {
+    end -= 1;
+  }
+  let citeStart = end;
+  while (citeStart > 0 && isCitationOnlyBlock(blocks[citeStart - 1]!)) {
+    citeStart -= 1;
+  }
+  let headingStart = citeStart;
+  if (citeStart > 0 && isCitationHeadingParagraph(blocks[citeStart - 1]!)) {
+    headingStart = citeStart - 1;
+  }
+  if (headingStart === end) return doc;
+
+  let cut = headingStart;
+  while (cut > 0 && isEmptyParagraphBlock(blocks[cut - 1]!)) {
+    cut -= 1;
+  }
+  const next = blocks.slice(0, cut);
+  return {
+    ...doc,
+    content: next.length > 0 ? next : [{ type: "paragraph" }],
+  };
+}
+
+function isTiptapDoc(value: unknown): value is JSONContent {
+  return Boolean(
+    value &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      (value as JSONContent).type === "doc"
+  );
+}
+
+/**
+ * Walk section JSON and strip trailing citation blocks from each TipTap doc
+ * or plain-text field. Does not walk into a doc's children (table cells stay).
+ */
+export function stripTrailingCitationsFromContent(content: unknown): unknown {
+  if (typeof content === "string") {
+    return stripTrailingCitationBlockFromText(content);
+  }
+  if (isTiptapDoc(content)) {
+    return stripTrailingCitationBlockFromDoc(content);
+  }
+  if (Array.isArray(content)) {
+    return content.map((item) => stripTrailingCitationsFromContent(item));
+  }
+  if (content && typeof content === "object") {
+    return Object.fromEntries(
+      Object.entries(content as Record<string, unknown>).map(([key, value]) => [
+        key,
+        stripTrailingCitationsFromContent(value),
+      ])
+    );
+  }
+  return content;
 }
 
 function splitTrailingCitationBlock(text: string): {

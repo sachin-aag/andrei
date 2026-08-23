@@ -161,6 +161,11 @@ describe("design-verification DOCX export", () => {
     expect(reportExportDocxFileName("design_verification", "DVR/01")).toBe(
       "Design_Verification_Report_DVR-01.docx"
     );
+    expect(
+      reportExportDocxFileName("design_verification", "DVR/01", {
+        omitCitations: true,
+      })
+    ).toBe("Design_Verification_Report_DVR-01_without_citations.docx");
     expect(reportExportDocxArchiveName("investigation_report")).toBe(
       "investigation-report.docx"
     );
@@ -176,6 +181,27 @@ const CONVERGENT_TEMPLATE = path.join(
   "convergent-design-verification-report-template.docx"
 );
 
+function narrativeDocWithCitations(body: string, citations: string[]): JSONContent {
+  return {
+    type: "doc",
+    content: [
+      {
+        type: "paragraph",
+        content: [{ type: "text", text: body }],
+      },
+      { type: "paragraph" },
+      {
+        type: "paragraph",
+        content: [{ type: "text", text: "Citations:" }],
+      },
+      ...citations.map((citation) => ({
+        type: "paragraph" as const,
+        content: [{ type: "text" as const, text: citation }],
+      })),
+    ],
+  };
+}
+
 function convergentSections(): ReportSectionRecord[] {
   const reportId = "dv-export-1";
   return CONVERGENT_DV_SECTION_KEYS.map((section, i) => ({
@@ -185,8 +211,9 @@ function convergentSections(): ReportSectionRecord[] {
     content:
       section === "purpose"
         ? {
-            narrative: narrativeDoc(
-              "Verify Solea output REQ-101 meets the laser energy specification."
+            narrative: narrativeDocWithCitations(
+              "Verify Solea output REQ-101 meets the laser energy specification.",
+              ["[protocol.pdf, p. 3]"]
             ),
           }
         : section === "testers_dates"
@@ -258,7 +285,24 @@ describe("convergent design-verification DOCX export", () => {
     expect(xml).toContain("Testers");
     expect(xml).toContain("Methods of Measurement");
     expect(xml).toContain("CD Asset Tag");
+    expect(xml).toContain("Citations:");
+    expect(xml).toContain("[protocol.pdf, p. 3]");
     expect(xml).not.toContain("Purpose &amp; Scope");
     expect(xml).not.toContain("Define:");
+  });
+
+  it("omits the trailing Citations block when requested", async () => {
+    const buf = await generateReportDocx({
+      report: dvReport(),
+      sections: convergentSections(),
+      omitCitations: true,
+    });
+    const xml = new PizZip(buf).file("word/document.xml")?.asText() ?? "";
+
+    expect(xml).toContain(
+      "Verify Solea output REQ-101 meets the laser energy specification."
+    );
+    expect(xml).not.toContain("Citations:");
+    expect(xml).not.toContain("[protocol.pdf, p. 3]");
   });
 });

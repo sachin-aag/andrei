@@ -2,16 +2,18 @@ import type { DocumentType } from "@/db/schema";
 
 export function reportExportDocxFileName(
   documentType: DocumentType,
-  documentNo: string
+  documentNo: string,
+  options?: { omitCitations?: boolean }
 ): string {
   const safe = (documentNo || "report")
     .replace(/[^a-zA-Z0-9_\-/]/g, "_")
     .replace(/\//g, "-");
+  const suffix = options?.omitCitations ? "_without_citations" : "";
   switch (documentType) {
     case "design_verification":
-      return `Design_Verification_Report_${safe}.docx`;
+      return `Design_Verification_Report_${safe}${suffix}.docx`;
     case "investigation_report":
-      return `Investigation_Report_${safe}.docx`;
+      return `Investigation_Report_${safe}${suffix}.docx`;
     default: {
       const _exhaustive: never = documentType;
       return _exhaustive;
