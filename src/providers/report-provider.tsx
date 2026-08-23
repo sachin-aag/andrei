@@ -82,7 +82,7 @@ export type WorkspaceMode = "edit" | "review" | "view";
  */
 export type SuggestionApplyMode = "accept" | "dismiss";
 
-/** Queue handoff: wait for the user to jump to — or dismiss — the next off-screen suggestion. */
+/** Queue handoff: wait for the user to jump to — or dismiss — the next off-screen suggestion (any section). */
 export type SuggestionQueueBridge = {
   nextCommentId: string;
 };

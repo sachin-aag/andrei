@@ -382,7 +382,7 @@ export function MarginGutter({ onSectionOverflow }: Props) {
     //    highlight (not the midpoint of a tall redraft). Compact plain-text
     //    fields still center. During a queue bridge, park at the previous
     //    card's Y; scroll clamping (below) keeps "Go to next" in the
-    //    scrollport until the user jumps or dismisses.
+    //    scrollport until the user jumps (this section or another) or dismisses.
     for (const section of evaluatableSections) {
       const active = gutterSuggestionCommentForSection(section);
       if (!active) continue;

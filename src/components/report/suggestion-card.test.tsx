@@ -3,7 +3,10 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
-import { SuggestionQueueBridgeCard } from "@/components/report/suggestion-card";
+import {
+  SuggestionQueueBridgeCard,
+  suggestionQueueBridgeCopy,
+} from "@/components/report/suggestion-card";
 
 describe("SuggestionQueueBridgeCard", () => {
   it("offers Go to next and Dismiss", () => {
@@ -52,6 +55,22 @@ describe("SuggestionQueueBridgeCard", () => {
     expect(onGo).toHaveBeenCalledTimes(1);
   });
 
+  it("names the other section when the next card is not in this one", () => {
+    render(
+      <SuggestionQueueBridgeCard
+        remainingTotal={2}
+        nextSectionLabel="Measure"
+        pending={false}
+        onGo={() => {}}
+        onDismiss={() => {}}
+      />
+    );
+
+    expect(
+      screen.getByText("2 suggestions remaining — next is in Measure.")
+    ).toBeInTheDocument();
+  });
+
   it("disables both actions while the jump is in flight", () => {
     render(
       <SuggestionQueueBridgeCard
@@ -64,5 +83,19 @@ describe("SuggestionQueueBridgeCard", () => {
 
     expect(screen.getByRole("button", { name: /go to next/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: /dismiss/i })).toBeDisabled();
+  });
+});
+
+describe("suggestionQueueBridgeCopy", () => {
+  it("describes a same-section remainder", () => {
+    expect(suggestionQueueBridgeCopy(1, null)).toBe(
+      "1 suggestion remaining farther in this section."
+    );
+  });
+
+  it("describes a remainder in another section", () => {
+    expect(suggestionQueueBridgeCopy(1, "Measure")).toBe(
+      "1 suggestion remaining in Measure."
+    );
   });
 });

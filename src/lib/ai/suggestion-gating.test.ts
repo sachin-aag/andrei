@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   canSuggestFixes,
   gapCriteriaForSection,
+  nextOpenSuggestionAfterResolve,
   sectionContentHash,
   sortGapCriteria,
   sortedOpenSuggestionsForSection,
@@ -151,6 +152,100 @@ describe("suggestion-gating", () => {
     const content = { narrative: { type: "doc", content: [] } };
     const gap = gapCriteriaForSection("define", evaluations, [], content);
     expect(gap.map((g) => g.criterionKey)).toEqual(["define.datetime"]);
+  });
+
+  it("prefers the rest of the same-section queue over a later section", () => {
+    const evaluations = [
+      baseEval({ id: "e-define-2", criterionKey: "define.location" }),
+      baseEval({
+        id: "e-measure",
+        section: "measure",
+        criterionKey: "measure.data",
+      }),
+    ];
+    const comments = [
+      baseComment({ id: "c-define-1", evaluationId: "e-define-2" }),
+      baseComment({
+        id: "c-define-2",
+        evaluationId: "e-define-2",
+        createdAt: "2026-01-02T00:00:00Z",
+      }),
+      baseComment({
+        id: "c-measure",
+        section: "measure",
+        evaluationId: "e-measure",
+      }),
+    ];
+    expect(
+      nextOpenSuggestionAfterResolve("c-define-1", "define", comments, evaluations, [
+        "define",
+        "measure",
+        "analyze",
+      ])?.id
+    ).toBe("c-define-2");
+  });
+
+  it("hands off to the next section when this section's queue is empty", () => {
+    const evaluations = [
+      baseEval({
+        id: "e-measure",
+        section: "measure",
+        criterionKey: "measure.data",
+      }),
+    ];
+    const comments = [
+      baseComment({ id: "c-define" }),
+      baseComment({
+        id: "c-measure",
+        section: "measure",
+        evaluationId: "e-measure",
+      }),
+    ];
+    expect(
+      nextOpenSuggestionAfterResolve("c-define", "define", comments, evaluations, [
+        "define",
+        "measure",
+        "analyze",
+      ])?.id
+    ).toBe("c-measure");
+  });
+
+  it("wraps to an earlier section when nothing is left later in the document", () => {
+    const evaluations = [
+      baseEval({ id: "e-define" }),
+      baseEval({
+        id: "e-measure",
+        section: "measure",
+        criterionKey: "measure.data",
+      }),
+    ];
+    const comments = [
+      baseComment({ id: "c-define", evaluationId: "e-define" }),
+      baseComment({
+        id: "c-measure",
+        section: "measure",
+        evaluationId: "e-measure",
+      }),
+    ];
+    expect(
+      nextOpenSuggestionAfterResolve("c-measure", "measure", comments, evaluations, [
+        "define",
+        "measure",
+        "analyze",
+      ])?.id
+    ).toBe("c-define");
+  });
+
+  it("returns null when the resolved card was the last open suggestion", () => {
+    expect(
+      nextOpenSuggestionAfterResolve(
+        "c-only",
+        "define",
+        [baseComment({ id: "c-only" })],
+        [baseEval({})],
+        ["define", "measure"]
+      )
+    ).toBeNull();
   });
 
   it("sorts open suggestions red before yellow", () => {
