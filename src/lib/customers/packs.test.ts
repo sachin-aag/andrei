@@ -27,6 +27,10 @@ describe("customer packs (demo)", () => {
     expect(DEMO_PACK.wordImportEnabled).toBe(false);
   });
 
+  it("keeps citations inline on demo", () => {
+    expect(DEMO_PACK.citationsAtEndOfSection).toBe(false);
+  });
+
   it("lists both document types on demo", () => {
     expect(listDocumentTypes().map((d) => d.key)).toEqual([
       "investigation_report",

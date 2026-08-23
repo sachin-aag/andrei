@@ -18,7 +18,34 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("bumps the prompt version when section inline image guidance changes", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v34-results-inventory-table-edits");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v36-results-inventory-citations");
+  });
+
+  it("puts citations at the end of the section when the pack mode is on", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      citationsAtEndOfSection: true,
+    });
+    expect(prompt).toContain("END of the section field");
+    expect(prompt).toContain("second");
+    expect(prompt).toContain("Citations:");
+    expect(prompt).toContain("Citations go at the end of the field");
+    expect(prompt).not.toContain(
+      "When you rely on retrieved evidence in prose, cite it as"
+    );
+  });
+
+  it("keeps inline citations when the pack mode is off", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      citationsAtEndOfSection: false,
+    });
+    expect(prompt).toContain(
+      "When you rely on retrieved evidence in prose, cite it as"
+    );
+    expect(prompt).not.toContain("END of the section field");
   });
 
   it("tells the model never to pass the section key as targetField", () => {

@@ -95,4 +95,27 @@ describe("splitPlainTextPreviewSegments", () => {
     ]);
     expect(split.after).toEqual([{ kind: "context", text: " rest" }]);
   });
+
+  it("keeps the widget on the body edit when a citation is appended", () => {
+    const segments = buildPlainTextSuggestionPreview(
+      "abc OLD rest",
+      "OLD",
+      "NEW",
+      undefined,
+      { anchorText: "", deleteText: "", insertText: "[protocol.pdf, p. 3]" }
+    )!;
+    expect(segments.at(-1)).toEqual({
+      kind: "insert",
+      text: "\n\nCitations:\n[protocol.pdf, p. 3]",
+    });
+    const split = splitPlainTextPreviewSegments(segments);
+    expect(split.suggestion).toEqual([
+      { kind: "delete", text: "OLD" },
+      { kind: "insert", text: "NEW" },
+    ]);
+    expect(split.after).toEqual([
+      { kind: "context", text: " rest" },
+      { kind: "insert", text: "\n\nCitations:\n[protocol.pdf, p. 3]" },
+    ]);
+  });
 });

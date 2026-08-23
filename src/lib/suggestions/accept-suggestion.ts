@@ -137,7 +137,20 @@ export async function acceptSuggestion(args: {
     if (!result.ok) {
       return { ok: false, reason: "not_found" };
     }
-    const nextSection = setRichFieldValue(sectionContent, path, result.doc);
+    let nextDoc = result.doc;
+    if (payload.second) {
+      try {
+        nextDoc = applyNarrativeSuggestion(nextDoc, comment.id, {
+          anchorText: payload.second.anchorText,
+          deleteText: payload.second.deleteText,
+          insertText: payload.second.insertText,
+          scope: payload.second.scope,
+        });
+      } catch {
+        return { ok: false, reason: "not_found" };
+      }
+    }
+    const nextSection = setRichFieldValue(sectionContent, path, nextDoc);
     try {
       await patchSection(reportId, section, nextSection);
     } catch (error) {
@@ -189,7 +202,8 @@ export async function acceptSuggestion(args: {
       path,
       payload.insertText,
       payload.deleteText,
-      comment.anchorText
+      comment.anchorText,
+      payload.second
     );
   } catch {
     return { ok: false, reason: "not_found" };

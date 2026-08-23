@@ -29,6 +29,8 @@ import {
 } from "@/lib/attachments/retrieval";
 import type { EditScope } from "@/lib/suggestions/locator";
 import { parseEditScope } from "@/lib/ai/suggestion-gating";
+import { getCustomerPack } from "@/lib/customers/packs";
+import { prepareEditForCitationMode } from "@/lib/suggestions/citations-at-end";
 
 export type SuggestionDropReason =
   | "schema_invalid"
@@ -49,6 +51,12 @@ export type RawSuggestion = {
   insertText: string;
   reasoning: string;
   scope?: EditScope;
+  second?: {
+    anchorText: string;
+    deleteText: string;
+    insertText: string;
+    scope?: EditScope;
+  };
 };
 
 export type SuggestionEvidenceSource = {
@@ -88,6 +96,23 @@ const suggestionSchema = z.object({
           index: z.number().int().optional(),
           tableIndex: z.number().int().optional(),
           listIndex: z.number().int().optional(),
+        })
+        .nullish(),
+      second: z
+        .object({
+          anchorText: z.string(),
+          deleteText: z.string(),
+          insertText: z.string(),
+          scope: z
+            .object({
+              kind: z.enum(["cell", "listItem"]),
+              row: z.number().int().optional(),
+              col: z.number().int().optional(),
+              index: z.number().int().optional(),
+              tableIndex: z.number().int().optional(),
+              listIndex: z.number().int().optional(),
+            })
+            .nullish(),
         })
         .nullish(),
     })
@@ -224,6 +249,46 @@ async function retrieveEvidenceForCriteria({
   return evidenceByCriterion;
 }
 
+function finalizeRawSuggestion(
+  s: RawSuggestion,
+  opts: { citationsAtEndOfSection: boolean; existingFieldText: string }
+): RawSuggestion {
+  const prepared = prepareEditForCitationMode(
+    {
+      anchorText: s.anchorText,
+      deleteText: s.deleteText,
+      insertText: normalizeSuggestionInsertText(s.insertText),
+      scope: s.scope,
+      second: s.second
+        ? {
+            anchorText: s.second.anchorText,
+            deleteText: s.second.deleteText,
+            insertText: normalizeSuggestionInsertText(s.second.insertText),
+            scope: parseEditScope(s.second.scope),
+          }
+        : undefined,
+    },
+    opts
+  );
+  return {
+    ...s,
+    anchorText: prepared.anchorText,
+    deleteText: prepared.deleteText,
+    insertText: prepared.insertText,
+    scope: prepared.scope,
+    second: prepared.second,
+  };
+}
+
+function suggestionHasContent(s: RawSuggestion): boolean {
+  return Boolean(
+    s.deleteText.trim() ||
+      s.insertText.trim() ||
+      s.second?.deleteText.trim() ||
+      s.second?.insertText.trim()
+  );
+}
+
 export async function generateSuggestionsForSection({
   section,
   content,
@@ -231,6 +296,7 @@ export async function generateSuggestionsForSection({
   reportId,
   allSections,
   gapCriteria,
+  citationsAtEndOfSection = getCustomerPack().citationsAtEndOfSection,
 }: {
   section: SectionType;
   content: unknown;
@@ -244,10 +310,12 @@ export async function generateSuggestionsForSection({
     evaluationId: string;
     status: CriterionStatus;
   }>;
+  citationsAtEndOfSection?: boolean;
 }): Promise<{ suggestions: GeneratedSuggestion[]; dropped: Array<{ criterionKey: string; reason: SuggestionDropReason }> }> {
   if (gapCriteria.length === 0) {
     return { suggestions: [], dropped: [] };
   }
+  const existingFieldText = sectionContentForPrompt(section, content);
 
   if (isTestSkipSuggestions()) {
     const allowedKeys = new Set(gapCriteria.map((g) => g.criterionKey));
@@ -264,15 +332,18 @@ export async function generateSuggestionsForSection({
         dropped.push({ criterionKey: s.criterionKey, reason: "bad_target_field" });
         continue;
       }
-      if (!s.deleteText.trim() && !s.insertText.trim()) {
+      const prepared = finalizeRawSuggestion(s, {
+        citationsAtEndOfSection,
+        existingFieldText,
+      });
+      if (!suggestionHasContent(prepared)) {
         dropped.push({ criterionKey: s.criterionKey, reason: "empty_edit" });
         continue;
       }
       const evaluationId = evalIdByKey.get(s.criterionKey);
       if (!evaluationId) continue;
       suggestions.push({
-        ...s,
-        insertText: normalizeSuggestionInsertText(s.insertText),
+        ...prepared,
         evaluationId,
       });
     }
@@ -284,8 +355,10 @@ export async function generateSuggestionsForSection({
     return { suggestions, dropped };
   }
 
-  const contentStr = sectionContentForPrompt(section, content);
-  const systemPrompt = buildSuggestionSystemPrompt(section);
+  const contentStr = existingFieldText;
+  const systemPrompt = buildSuggestionSystemPrompt(section, {
+    citationsAtEndOfSection,
+  });
   const priorBlock = buildPriorSectionsBlock(section, allSections);
   const evidenceByCriterion = await retrieveEvidenceForCriteria({
     reportId,
@@ -307,6 +380,7 @@ export async function generateSuggestionsForSection({
         reasoning: g.reasoning,
         status: g.status,
       })),
+      citationsAtEndOfSection,
     });
 
     const result = await generateText({
@@ -345,6 +419,14 @@ export async function generateSuggestionsForSection({
     return rawList.map((s) => ({
       ...s,
       scope: parseEditScope((s as { scope?: unknown }).scope),
+      second: s.second
+        ? {
+            anchorText: s.second.anchorText,
+            deleteText: s.second.deleteText,
+            insertText: s.second.insertText,
+            scope: parseEditScope(s.second.scope),
+          }
+        : undefined,
     }));
   };
 
@@ -387,11 +469,15 @@ export async function generateSuggestionsForSection({
       dropped.push({ criterionKey: s.criterionKey, reason: "bad_target_field" });
       continue;
     }
-    if (!s.deleteText.trim() && !s.insertText.trim()) {
+    const prepared = finalizeRawSuggestion(s, {
+      citationsAtEndOfSection,
+      existingFieldText,
+    });
+    if (!suggestionHasContent(prepared)) {
       dropped.push({ criterionKey: s.criterionKey, reason: "empty_edit" });
       continue;
     }
-    if (suggestionEditsPlaceholder(s)) {
+    if (suggestionEditsPlaceholder(prepared)) {
       dropped.push({ criterionKey: s.criterionKey, reason: "placeholder_edit" });
       continue;
     }
@@ -403,8 +489,7 @@ export async function generateSuggestionsForSection({
     }
 
     suggestions.push({
-      ...s,
-      insertText: normalizeSuggestionInsertText(s.insertText),
+      ...prepared,
       evaluationId,
       evidenceSources: evidenceByCriterion.get(s.criterionKey) ?? [],
     });
