@@ -192,11 +192,20 @@ test.describe("manager track changes persist", () => {
     await expect(page.getByRole("heading", { name: /^analyze$/i })).toBeVisible({
       timeout: 30_000,
     });
+    // Section editors load in parallel. Control is below Analyze; once it is
+    // mounted, height changes above Brainstorming have settled.
+    await expect(page.getByRole("heading", { name: /^control$/i })).toBeVisible({
+      timeout: 30_000,
+    });
 
     for (const contentPath of ["brainstorming", "otherTools"] as const) {
       const field = analyzePlainField(page, contentPath);
       const shell = page.locator(`[data-field-shell="analyze.${contentPath}"]`);
-      await field.scrollIntoViewIfNeeded();
+      await expect(async () => {
+        await expect(shell).toBeVisible();
+        await shell.scrollIntoViewIfNeeded();
+        await expect(field).toBeAttached();
+      }).toPass({ timeout: 30_000 });
       await expect(field).toBeEnabled({ timeout: 30_000 });
       await field.focus();
       await expect(page.getByRole("toolbar", { name: "Active field" })).toBeVisible();

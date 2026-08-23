@@ -301,72 +301,64 @@ export function PlainTextHighlightedInput({
     "aria-label": ariaLabel,
   };
 
-  if (!useMirrorOverlay) {
-    return (
-      <div ref={shellRef} className="relative" data-field-shell={fieldAnchor}>
-        <Textarea
-          ref={textareaRef}
-          {...textareaProps}
-          className={cn(
-            "text-sm leading-relaxed resize-none overflow-hidden",
-            className
-          )}
-          style={lockedMinStyle}
-        />
-        {showCommentPopover ? (
-          <InlineSelectionCommentPopover
-            anchorRect={selectionRect}
-            composing={commentComposing}
-            draft={commentDraft}
-            posting={posting}
-            onDraftChange={setCommentDraft}
-            onStartCompose={() => setCommentComposing(true)}
-            onCancel={clearCommentUi}
-            onPost={() => void postInlineComment()}
-          />
-        ) : null}
-      </div>
-    );
-  }
-
+  // One tree for both modes: inserting the mirror as a preceding sibling used
+  // to remount the textarea (Playwright: "Element is not attached to the DOM").
   return (
     <div
       ref={shellRef}
       className={cn(
-        "relative grid",
-        className,
-        suggestionActive &&
+        "relative",
+        useMirrorOverlay && "grid",
+        useMirrorOverlay && className,
+        useMirrorOverlay &&
+          suggestionActive &&
           "rounded-md ring-1 ring-violet-400/20 border border-violet-500/35"
       )}
-      style={lockedMinStyle}
+      style={useMirrorOverlay ? lockedMinStyle : undefined}
       data-field-shell={fieldAnchor}
-      data-suggestion-preview-held={suggestionPreviewHeld}
+      data-suggestion-preview-held={
+        useMirrorOverlay ? suggestionPreviewHeld : undefined
+      }
     >
-      <div
-        ref={mirrorRef}
-        aria-hidden
-        className={cn(
-          "pointer-events-none col-start-1 row-start-1 rounded-md border border-transparent bg-[var(--input)] shadow-sm",
-          fieldTypography
-        )}
-      >
-        {mirrorContent ?? (
-          <PlainTextPlaceholderSpans
-            text={value}
-            focusedFromPos={focusedFromPos}
-          />
-        )}
-      </div>
+      {useMirrorOverlay ? (
+        <div
+          ref={mirrorRef}
+          aria-hidden
+          className={cn(
+            "pointer-events-none col-start-1 row-start-1 rounded-md border border-transparent bg-[var(--input)] shadow-sm",
+            fieldTypography
+          )}
+        >
+          {mirrorContent ?? (
+            <PlainTextPlaceholderSpans
+              text={value}
+              focusedFromPos={focusedFromPos}
+            />
+          )}
+        </div>
+      ) : null}
       <Textarea
+        key="plain-text-input"
         ref={textareaRef}
         {...textareaProps}
-        className={cn(
-          "col-start-1 row-start-1 resize-none overflow-hidden bg-transparent text-transparent caret-[var(--foreground)] selection:bg-primary/20 selection:text-transparent",
-          fieldTypography
-        )}
-        style={{ WebkitTextFillColor: "transparent" } as React.CSSProperties}
+        className={
+          useMirrorOverlay
+            ? cn(
+                "col-start-1 row-start-1 resize-none overflow-hidden bg-transparent text-transparent caret-[var(--foreground)] selection:bg-primary/20 selection:text-transparent",
+                fieldTypography
+              )
+            : cn(
+                "text-sm leading-relaxed resize-none overflow-hidden",
+                className
+              )
+        }
+        style={
+          useMirrorOverlay
+            ? ({ WebkitTextFillColor: "transparent" } as React.CSSProperties)
+            : lockedMinStyle
+        }
       />
-      {inlineSuggestionWidget && suggestionWidgetPos ? (
+      {useMirrorOverlay && inlineSuggestionWidget && suggestionWidgetPos ? (
         <div
           className="pointer-events-auto absolute z-10"
           style={{

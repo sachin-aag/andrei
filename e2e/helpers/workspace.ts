@@ -102,7 +102,9 @@ export function analyzeSection(page: Page) {
 }
 
 export function analyzePlainField(page: Page, contentPath: string) {
-  return page.locator(`[data-field-anchor="analyze.${contentPath}"]`);
+  return analyzeSection(page).locator(
+    `[data-field-anchor="analyze.${contentPath}"]`
+  );
 }
 
 /** Opens the review-margin “Add note on …” composer for a section. */
