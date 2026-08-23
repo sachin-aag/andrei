@@ -594,7 +594,7 @@ describe("locator — split edits", () => {
     const result = applyEditToPlainText(text, edit);
     expect(isApplyableStatus(result.status)).toBe(true);
     expect(result.text).toBe(
-      "Output power met the acceptance limit. The measured value was 9.8 W.\n[protocol.pdf, p. 3]"
+      "Output power met the acceptance limit. The measured value was 9.8 W.\n\nCitations:\n[protocol.pdf, p. 3]"
     );
   });
 
@@ -620,7 +620,9 @@ describe("locator — split edits", () => {
       insertText: "[protocol.pdf, p. 2]",
     });
     expect(result.status).toBe("append");
-    expect(result.text).toBe("The requirement is met.\n[protocol.pdf, p. 2]");
+    expect(result.text).toBe(
+      "The requirement is met.\n\nCitations:\n[protocol.pdf, p. 2]"
+    );
   });
 
   it("applies a scoped cell edit and appends the citation after the table", () => {
@@ -643,8 +645,10 @@ describe("locator — split edits", () => {
     expect(isApplyableStatus(result.status)).toBe(true);
     const flat = flattenForAnchor(result.doc).text;
     expect(flat).toContain("Pass — 9.8 W");
+    expect(flat).toContain("Citations:");
     expect(flat).toContain("[protocol.pdf, p. 1]");
-    expect(flat.indexOf("Pass — 9.8 W")).toBeLessThan(
+    expect(flat.indexOf("Pass — 9.8 W")).toBeLessThan(flat.indexOf("Citations:"));
+    expect(flat.indexOf("Citations:")).toBeLessThan(
       flat.indexOf("[protocol.pdf, p. 1]")
     );
   });

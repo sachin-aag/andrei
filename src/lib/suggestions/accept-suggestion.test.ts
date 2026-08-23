@@ -332,6 +332,7 @@ describe("acceptSuggestion split citation", () => {
     if (!result.ok) return;
     const text = JSON.stringify(result.nextSection);
     expect(text).toContain("The measured value was 9.8 W.");
+    expect(text).toContain("Citations:");
     expect(text).toContain("[protocol.pdf, p. 3]");
   });
 });

@@ -56,6 +56,7 @@ describe("moveCitationsToEndOfText", () => {
         "| --- | --- |",
         "| R-1 | Pass |",
         "",
+        "Citations:",
         "[protocol.pdf, p. 2]",
         "[datasheet.pdf, p. 4]",
       ].join("\n")
@@ -66,10 +67,22 @@ describe("moveCitationsToEndOfText", () => {
     const markdown = [
       "Outcome is Pass [protocol.pdf, p. 2].",
       "",
+      "Citations:",
       "[protocol.pdf, p. 2]",
     ].join("\n");
     expect(moveCitationsToEndOfText(markdown)).toBe(
-      ["Outcome is Pass.", "", "[protocol.pdf, p. 2]"].join("\n")
+      ["Outcome is Pass.", "", "Citations:", "[protocol.pdf, p. 2]"].join("\n")
+    );
+  });
+
+  it("rewrites a bare trailing cite list under a Citations heading", () => {
+    const markdown = [
+      "Outcome is Pass [protocol.pdf, p. 2].",
+      "",
+      "[protocol.pdf, p. 2]",
+    ].join("\n");
+    expect(moveCitationsToEndOfText(markdown)).toBe(
+      ["Outcome is Pass.", "", "Citations:", "[protocol.pdf, p. 2]"].join("\n")
     );
   });
 });
@@ -89,7 +102,7 @@ describe("splitEditForCitationsAtEnd", () => {
       second: {
         anchorText: "",
         deleteText: "",
-        insertText: "[protocol.pdf, p. 3]",
+        insertText: "Citations:\n[protocol.pdf, p. 3]",
       },
     });
   });
@@ -106,7 +119,7 @@ describe("splitEditForCitationsAtEnd", () => {
     expect(split.second).toEqual({
       anchorText: "",
       deleteText: "",
-      insertText: "[protocol.pdf, p. 1]",
+      insertText: "Citations:\n[protocol.pdf, p. 1]",
     });
   });
 
@@ -120,7 +133,60 @@ describe("splitEditForCitationsAtEnd", () => {
     ).toEqual({
       anchorText: "",
       deleteText: "",
-      insertText: "[protocol.pdf, p. 2]",
+      insertText: "Citations:\n[protocol.pdf, p. 2]",
+    });
+  });
+
+  it("does not repeat the Citations heading when the field already has one", () => {
+    expect(
+      splitEditForCitationsAtEnd(
+        {
+          anchorText: "the requirement is met",
+          deleteText: "",
+          insertText: " for configuration B [datasheet.pdf, p. 4]",
+        },
+        {
+          existingFieldText: [
+            "Existing note",
+            "",
+            "Citations:",
+            "[protocol.pdf, p. 2]",
+          ].join("\n"),
+        }
+      )
+    ).toEqual({
+      anchorText: "the requirement is met",
+      deleteText: "",
+      insertText: " for configuration B",
+      second: {
+        anchorText: "",
+        deleteText: "",
+        insertText: "[datasheet.pdf, p. 4]",
+      },
+    });
+  });
+
+  it("strips a leftover Citations heading from second.insertText", () => {
+    expect(
+      splitEditForCitationsAtEnd({
+        anchorText: "output power was acceptable",
+        deleteText: "",
+        insertText: " at 9.8 W",
+        second: {
+          anchorText: "",
+          deleteText: "",
+          insertText: "Citations:\n[protocol.pdf, p. 3]",
+        },
+      })
+    ).toEqual({
+      anchorText: "output power was acceptable",
+      deleteText: "",
+      insertText: " at 9.8 W",
+      second: {
+        anchorText: "",
+        deleteText: "",
+        insertText: "Citations:\n[protocol.pdf, p. 3]",
+      },
     });
   });
 
@@ -181,7 +247,7 @@ describe("prepareEditForCitationMode", () => {
       second: {
         anchorText: "",
         deleteText: "",
-        insertText: "[protocol.pdf, p. 3]",
+        insertText: "Citations:\n[protocol.pdf, p. 3]",
       },
     });
   });
@@ -192,6 +258,7 @@ describe("documentCitationRule", () => {
     expect(documentCitationRule(false)).toContain("in prose");
     expect(documentCitationRule(false)).not.toContain("end of the section");
     expect(documentCitationRule(true)).toContain("end of the section field");
+    expect(documentCitationRule(true)).toContain("Citations:");
     expect(documentCitationRule(true)).toContain("split edit");
   });
 });
@@ -215,6 +282,16 @@ describe("stripCitationsFromTableOperation", () => {
     if (operation.kind !== "edit_cells") return;
     expect(operation.cells[0]?.insertText).toBe("Pass");
     expect(citationAppendPart(citations, "Existing prose")).toEqual({
+      anchorText: "",
+      deleteText: "",
+      insertText: "Citations:\n[protocol.pdf, p. 3]",
+    });
+    expect(
+      citationAppendPart(
+        citations,
+        ["Existing prose", "", "Citations:", "[other.pdf, p. 1]"].join("\n")
+      )
+    ).toEqual({
       anchorText: "",
       deleteText: "",
       insertText: "[protocol.pdf, p. 3]",

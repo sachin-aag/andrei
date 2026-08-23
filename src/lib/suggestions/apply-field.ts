@@ -1,5 +1,10 @@
 import { normalizeBracketPlaceholdersInPlainText } from "@/lib/placeholders/normalize-bracket-placeholders";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
+import {
+  isCitationAppendInsert,
+  joinBodyAndCitationInsert,
+  normalizeCitationAppendInsert,
+} from "@/lib/suggestions/citations-at-end";
 import { stripInlineMarkdown } from "@/lib/tiptap/markdown-to-doc";
 import {
   applyEditToPlainText,
@@ -35,8 +40,12 @@ export function applyStructuredFieldSuggestion(
   const current = cursor[leaf];
   if (typeof current !== "string") {
     const primary = plainInsertText(insertText);
-    const cite = second?.insertText ? plainInsertText(second.insertText) : "";
-    cursor[leaf] = cite ? `${primary}${primary ? "\n" : ""}${cite}` : primary;
+    const citeRaw = second?.insertText ? plainInsertText(second.insertText) : "";
+    const cite =
+      citeRaw && isCitationAppendInsert(citeRaw)
+        ? normalizeCitationAppendInsert(primary, citeRaw)
+        : citeRaw;
+    cursor[leaf] = cite ? joinBodyAndCitationInsert(primary, cite) : primary;
     return next;
   }
 

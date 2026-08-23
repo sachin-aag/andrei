@@ -15,9 +15,16 @@ export type SplitSuggestionEdit = SuggestionEditPart & {
 
 const BRACKET_RE = /\[[^\]]+\]/g;
 
+/** Heading written once above the parked citation list. */
+export const CITATIONS_HEADING = "Citations:";
+
+export function isCitationsHeading(line: string): boolean {
+  return /^#{0,6}\s*citations\s*:?\s*$/i.test(line.trim());
+}
+
 export function documentCitationRule(citationsAtEndOfSection: boolean): string {
   if (citationsAtEndOfSection) {
-    return "Cite evidence as [filename, p. N] when the page is known, or [filename] when it is not. Place those citations at the end of the section field, not inline beside the claim. For a body change plus a new citation, use one split edit (primary + second). Never use <to be filled> in a citation.";
+    return 'Cite evidence as [filename, p. N] when the page is known, or [filename] when it is not. Place those citations at the end of the section field under a "Citations:" heading (blank line, then the heading, then one citation per line), not inline beside the claim. For a body change plus a new citation, use one split edit (primary + second). Never use <to be filled> in a citation.';
   }
   return "Cite evidence in prose as [filename, p. N] when the page is known, or [filename] when it is not. Never use <to be filled> in a citation.";
 }
@@ -101,12 +108,17 @@ function isCitationOnlyLine(line: string): boolean {
 }
 
 function isReferencesHeading(line: string): boolean {
-  return /^#{0,6}\s*references\s*$/i.test(line.trim());
+  return /^#{0,6}\s*references\s*:?\s*$/i.test(line.trim());
+}
+
+function isCitationBlockHeading(line: string): boolean {
+  return isCitationsHeading(line) || isReferencesHeading(line);
 }
 
 function splitTrailingCitationBlock(text: string): {
   body: string;
   trailingCitations: string[];
+  heading: string;
 } {
   const lines = text.split("\n");
   const citations: string[] = [];
@@ -116,14 +128,96 @@ function splitTrailingCitationBlock(text: string): {
     citations.unshift(...extractCitationBrackets(lines[i]!));
     i--;
   }
-  if (i >= 0 && isReferencesHeading(lines[i]!)) {
+  let heading = "";
+  if (i >= 0 && isCitationBlockHeading(lines[i]!)) {
+    heading = lines[i]!.trim();
     i--;
   }
   while (i >= 0 && lines[i]!.trim() === "") i--;
   return {
     body: lines.slice(0, i + 1).join("\n"),
     trailingCitations: uniquePreserveOrder(citations),
+    heading,
   };
+}
+
+/** True when the field already ends with a Citations/References block. */
+export function trailingIsCitationBlock(text: string): boolean {
+  const { trailingCitations, heading } = splitTrailingCitationBlock(text);
+  return trailingCitations.length > 0 || heading.length > 0;
+}
+
+/**
+ * Insert text for newly parked citations. Adds a `Citations:` heading the
+ * first time; later cites append as extra lines under the existing block.
+ */
+export function citationInsertText(
+  citations: readonly string[],
+  existingFieldText = ""
+): string {
+  const unique = uniquePreserveOrder(citations);
+  if (unique.length === 0) return "";
+  if (trailingIsCitationBlock(existingFieldText)) {
+    return unique.join("\n");
+  }
+  return `${CITATIONS_HEADING}\n${unique.join("\n")}`;
+}
+
+/** Insert that is only a heading plus citation brackets (or just brackets). */
+export function isCitationAppendInsert(text: string): boolean {
+  const lines = text
+    .split(/\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  if (lines.length === 0) return false;
+  const start = isCitationBlockHeading(lines[0]!) ? 1 : 0;
+  const rest = lines.slice(start);
+  if (rest.length === 0) return start === 1;
+  return rest.every((line) => isCitationOnlyLine(line));
+}
+
+/** Upgrade a bare cite list to include `Citations:` when the field has none. */
+export function normalizeCitationAppendInsert(
+  existing: string,
+  insert: string
+): string {
+  if (!isCitationAppendInsert(insert)) return insert;
+  const lines = insert
+    .split(/\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0);
+  const cites = lines.filter((line) => !isCitationBlockHeading(line));
+  if (cites.length === 0) return insert;
+  return citationInsertText(cites, existing);
+}
+
+/** Blank line before a new `Citations:` heading; single newline for extra cites. */
+export function plainCitationAppendSeparator(
+  existing: string,
+  insertText: string
+): string {
+  if (!existing) return "";
+  if (!isCitationAppendInsert(insertText)) {
+    return /\s$/.test(existing) ? "" : " ";
+  }
+  const firstLine =
+    insertText
+      .split(/\n/)
+      .find((line) => line.trim())
+      ?.trim() ?? "";
+  if (isCitationBlockHeading(firstLine) && !trailingIsCitationBlock(existing)) {
+    return /\n$/.test(existing) ? "\n" : "\n\n";
+  }
+  return /\n$/.test(existing) ? "" : "\n";
+}
+
+export function joinBodyAndCitationInsert(
+  body: string,
+  citationInsert: string
+): string {
+  if (!citationInsert) return body;
+  if (!body) return citationInsert;
+  return `${body}${plainCitationAppendSeparator(body, citationInsert)}${citationInsert}`;
 }
 
 /**
@@ -136,15 +230,19 @@ export function moveCitationsToEndOfText(text: string): string {
   const all = uniquePreserveOrder([...trailingCitations, ...citations]);
   if (all.length === 0) return text;
   const bodyOut = prose.replace(/\n{3,}/g, "\n\n").replace(/[ \t]+\n/g, "\n").trimEnd();
-  return `${bodyOut}${bodyOut ? "\n\n" : ""}${all.join("\n")}`;
+  const block = `${CITATIONS_HEADING}\n${all.join("\n")}`;
+  return bodyOut ? `${bodyOut}\n\n${block}` : block;
 }
 
 function hasPartContent(part: Pick<SuggestionEditPart, "deleteText" | "insertText">): boolean {
   return Boolean(part.deleteText.trim() || part.insertText.trim());
 }
 
-function citationInsertText(citations: readonly string[]): string {
-  return citations.join("\n");
+function leftoverCitationLines(prose: string): string[] {
+  return prose
+    .split(/\n/)
+    .map((line) => line.trim())
+    .filter((line) => line.length > 0 && !isCitationBlockHeading(line));
 }
 
 function citationsAlreadyInField(
@@ -168,16 +266,14 @@ export function splitEditForCitationsAtEnd(
     ? stripCitationsFromText(edit.second.insertText)
     : { prose: "", citations: [] };
 
-  const leftoverSecondProse = fromSecond.prose.trim();
+  const leftoverSecondProse = leftoverCitationLines(fromSecond.prose);
   const endLines = uniquePreserveOrder([
     ...fromPrimary.citations,
     ...fromSecond.citations,
-    ...(leftoverSecondProse ? [leftoverSecondProse] : []),
+    ...leftoverSecondProse,
   ]);
-  const newCitations = citationsAlreadyInField(
-    endLines,
-    opts?.existingFieldText ?? ""
-  );
+  const existingFieldText = opts?.existingFieldText ?? "";
+  const newCitations = citationsAlreadyInField(endLines, existingFieldText);
 
   const primary: SuggestionEditPart = {
     anchorText: edit.anchorText,
@@ -193,7 +289,7 @@ export function splitEditForCitationsAtEnd(
   const citationPart: SuggestionEditPart = {
     anchorText: edit.second?.anchorText ?? "",
     deleteText: edit.second?.deleteText ?? "",
-    insertText: citationInsertText(newCitations),
+    insertText: citationInsertText(newCitations, existingFieldText),
     scope: edit.second?.scope,
   };
 
@@ -284,6 +380,6 @@ export function citationAppendPart(
   return {
     anchorText: "",
     deleteText: "",
-    insertText: citationInsertText(fresh),
+    insertText: citationInsertText(fresh, existingFieldText),
   };
 }

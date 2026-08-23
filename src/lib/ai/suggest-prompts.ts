@@ -6,7 +6,7 @@ import {
   isDvTableSection,
 } from "@/lib/document-types/design-verification/sections";
 
-export const SUGGEST_PROMPT_VERSION = "suggest-v17-citations-at-end-split" as const;
+export const SUGGEST_PROMPT_VERSION = "suggest-v18-citations-heading" as const;
 
 /** Google model for suggestion generation (stronger reasoning + verbatim anchors). */
 export const SUGGEST_GOOGLE_MODEL_ID = "gemini-3.1-pro-preview" as const;
@@ -88,10 +88,10 @@ OPERATIONS (implicit from deleteText/insertText):
 
 CITATIONS AT END OF SECTION (required):
 - Do NOT put [filename, p. N] or [filename] inline next to the claim.
-- Put every new document citation at the END of the target field (after tables and existing prose).
+- Put every new document citation at the END of the target field under a "Citations:" heading: blank line after the last prose/table, then "Citations:", then one [filename, p. N] or [filename] per line.
 - When a fix both changes prose (or a table cell) AND adds a citation, return a SPLIT edit:
   - Primary: the body change only (no citation brackets) at the claim / cell.
-  - "second": { "anchorText": "", "deleteText": "", "insertText": "[filename, p. N]" } — empty anchor appends a new paragraph at the end of the field.
+  - "second": { "anchorText": "", "deleteText": "", "insertText": "Citations:\\n[filename, p. N]" } — empty anchor appends the heading and citation at the end of the field. If the field already ends with a Citations: block, insert only the new [filename, p. N] line.
 - If the citation already appears in SECTION CONTENT, do not add it again.
 - Never write a citation as a placeholder.`
       : ""
@@ -188,7 +188,7 @@ Split edit (body change + citation at end of section):
   "anchorText": "Output power met the acceptance limit.",
   "deleteText": "",
   "insertText": " The measured value was 9.8 W.",
-  "second": { "anchorText": "", "deleteText": "", "insertText": "[protocol.pdf, p. 3]" },
+  "second": { "anchorText": "", "deleteText": "", "insertText": "Citations:\\n[protocol.pdf, p. 3]" },
   "reasoning": "Adds the measured value in the claim and parks the citation at the end of the section."
 }
 `

@@ -7,7 +7,7 @@ import {
 
 describe("buildSuggestionSystemPrompt", () => {
   it("bumps the suggest prompt version when DV table guidance changes", () => {
-    expect(SUGGEST_PROMPT_VERSION).toBe("suggest-v17-citations-at-end-split");
+    expect(SUGGEST_PROMPT_VERSION).toBe("suggest-v18-citations-heading");
   });
 
   it("adds split-citation rules only when citations-at-end is on", () => {
@@ -32,6 +32,7 @@ describe("buildSuggestionSystemPrompt", () => {
       citationsAtEndOfSection: true,
     });
     expect(user).toContain('"second"');
+    expect(user).toContain("Citations:");
     expect(user).toContain("[protocol.pdf, p. 3]");
     expect(
       buildSuggestionUserPrompt({

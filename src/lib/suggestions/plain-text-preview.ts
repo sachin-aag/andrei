@@ -1,4 +1,9 @@
 import {
+  isCitationAppendInsert,
+  normalizeCitationAppendInsert,
+  plainCitationAppendSeparator,
+} from "@/lib/suggestions/citations-at-end";
+import {
   isApplyableStatus,
   locateEdit,
   type SuggestionEdit,
@@ -75,11 +80,14 @@ export function buildPlainTextSuggestionPreview(
     scope: second.scope,
   });
   if (!isApplyableStatus(secondLoc.status)) return null;
-  const cite = second.insertText.trim();
-  if (!cite) return segments;
+  const citeRaw = second.insertText.trim();
+  if (!citeRaw) return segments;
+  const cite = isCitationAppendInsert(citeRaw)
+    ? normalizeCitationAppendInsert(value, citeRaw)
+    : citeRaw;
   const citeInsert =
-    value && !value.endsWith("\n") && secondLoc.status === "append"
-      ? `\n${cite}`
+    secondLoc.status === "append"
+      ? `${plainCitationAppendSeparator(value, cite)}${cite}`
       : cite;
   return [...segments, { kind: "insert", text: citeInsert }];
 }

@@ -1,4 +1,9 @@
 import type { JSONContent } from "@tiptap/core";
+import {
+  isCitationAppendInsert,
+  normalizeCitationAppendInsert,
+  plainCitationAppendSeparator,
+} from "@/lib/suggestions/citations-at-end";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 import {
   inlineMarkdownToTextNodes,
@@ -673,21 +678,10 @@ function withLeadingSpaceIfNeeded(
 
 function plainAppendSeparator(text: string, insert: string): string {
   if (!text) return "";
-  if (isCitationOnlyInsert(insert)) {
-    return /\n$/.test(text) ? "" : "\n";
+  if (isCitationAppendInsert(insert)) {
+    return plainCitationAppendSeparator(text, insert);
   }
   return /\s$/.test(text) ? "" : " ";
-}
-
-function isCitationOnlyInsert(insert: string): boolean {
-  const trimmed = insert.trim();
-  if (!trimmed) return false;
-  return trimmed
-    .split(/\n+/)
-    .every((line) => {
-      const t = line.trim();
-      return t.length > 0 && /^\[[^\]]+\]$/.test(t);
-    });
 }
 
 function applySingleEditToPlainText(
@@ -696,10 +690,13 @@ function applySingleEditToPlainText(
 ): { status: LocateStatus; text: string } {
   const located = locateEdit(text, edit);
   if (located.status === "append") {
-    const ins = stripInlineMarkdown(
+    let ins = stripInlineMarkdown(
       normalizeSuggestionInsertText(edit.insertText ?? "")
     );
     if (!ins) return { status: "empty_edit", text };
+    if (isCitationAppendInsert(ins)) {
+      ins = normalizeCitationAppendInsert(text, ins);
+    }
     const next = text + plainAppendSeparator(text, ins) + ins;
     return { status: "append", text: next };
   }
@@ -967,7 +964,11 @@ function applySingleEditToRichDoc(
 
   if (located.status === "append") {
     const cloned: JSONContent = JSON.parse(JSON.stringify(doc));
-    const paragraphs = normalizeSuggestionInsertText(edit.insertText ?? "")
+    let raw = normalizeSuggestionInsertText(edit.insertText ?? "");
+    if (isCitationAppendInsert(raw)) {
+      raw = normalizeCitationAppendInsert(index.text, raw);
+    }
+    const paragraphs = raw
       .split(/\n+/)
       .map((line) => line.trim())
       .filter(Boolean);

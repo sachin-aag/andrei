@@ -837,7 +837,7 @@ export function buildChatTools(opts: {
       description:
         `Propose ONE targeted, reviewable edit to a single field. The edit appears as an inline tracked-change the engineer accepts or rejects. Read the field first so the anchor is exact.${
           citationsAtEndOfSection
-            ? " Document citations belong at the end of the field: put the body change in the primary fields and the citation in `second` (empty anchor). Inline citation brackets are moved to the end automatically."
+            ? " Document citations belong at the end of the field under a Citations: heading: put the body change in the primary fields and the citation in `second` (empty anchor, insertText like 'Citations:\\n[filename, p. N]'). Inline citation brackets are moved to the end automatically."
             : ""
         }${scopeHint}`,
       inputSchema: z.object({
@@ -886,7 +886,9 @@ export function buildChatTools(opts: {
                   insertText: z
                     .string()
                     .default("")
-                    .describe("Citation(s) to append, e.g. '[protocol.pdf, p. 3]'."),
+                    .describe(
+                      "Citation(s) to append under a Citations: heading, e.g. 'Citations:\\n[protocol.pdf, p. 3]'."
+                    ),
                   scope: z
                     .object({
                       kind: z.enum(["cell", "listItem"]),
