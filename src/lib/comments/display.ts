@@ -4,6 +4,7 @@ import {
   isAiSuggestionKind,
 } from "@/lib/ai/suggestion-gating";
 import { getUser } from "@/lib/auth/user-directory";
+import { summarizeTableOperation } from "@/lib/suggestions/table-operation";
 import type { CommentRecord, EvaluationRecord } from "@/types/report";
 
 const MAX_TITLE_LEN = 72;
@@ -66,6 +67,9 @@ export function getAiFixCommentTitle(
   if (payload.reasoning.trim()) {
     return truncateAtWord(payload.reasoning, MAX_TITLE_LEN);
   }
+  if (payload.tableOperation) {
+    return truncateAtWord(summarizeTableOperation(payload.tableOperation), MAX_TITLE_LEN);
+  }
   if (payload.insertText.trim()) {
     return summarizeInsertForTitle(payload.insertText);
   }
@@ -80,13 +84,28 @@ export function getAiFixCommentPreview(comment: CommentRecord): string {
   }
 
   const payload = parseAiFixCommentContent(comment.content);
+  const citation = payload.second?.insertText
+    ? collapseWhitespace(payload.second.insertText)
+    : "";
+  if (payload.tableOperation) {
+    const table = truncateAtWord(
+      summarizeTableOperation(payload.tableOperation),
+      citation ? MAX_PREVIEW_LEN - 24 : MAX_PREVIEW_LEN
+    );
+    return citation ? `${table} · ${truncateAtWord(citation, 48)}` : table;
+  }
   const insert = collapseWhitespace(payload.insertText);
   const del = collapseWhitespace(payload.deleteText);
 
   if (del && insert) {
-    return `${truncateAtWord(del, 56)} → ${truncateAtWord(insert, MAX_PREVIEW_LEN - 60)}`;
+    const body = `${truncateAtWord(del, 56)} → ${truncateAtWord(insert, MAX_PREVIEW_LEN - 60)}`;
+    return citation ? `${body} · ${truncateAtWord(citation, 40)}` : body;
   }
-  if (insert) return truncateAtWord(insert, MAX_PREVIEW_LEN);
+  if (insert) {
+    const body = truncateAtWord(insert, citation ? MAX_PREVIEW_LEN - 24 : MAX_PREVIEW_LEN);
+    return citation ? `${body} · ${truncateAtWord(citation, 48)}` : body;
+  }
+  if (citation) return truncateAtWord(citation, MAX_PREVIEW_LEN);
   if (payload.reasoning.trim()) {
     return truncateAtWord(payload.reasoning, MAX_PREVIEW_LEN);
   }

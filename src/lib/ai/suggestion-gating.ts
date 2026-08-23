@@ -12,6 +12,10 @@ import {
 import { getCriteria, getDocumentType } from "@/lib/document-types";
 import { shouldSkipSuggestForEvaluation } from "@/lib/placeholders/evaluation-policy";
 import type { EditScope } from "@/lib/suggestions/locator";
+import {
+  parseTableOperation,
+  type TableOperation,
+} from "@/lib/suggestions/table-operation";
 
 /** Validate an untrusted structural scope from persisted / model JSON. */
 export function parseEditScope(raw: unknown): EditScope | undefined {
@@ -173,6 +177,17 @@ export type ParsedAiFixPayload = {
   reasoning: string;
   /** Structural target (table cell / list item) for scoped edits. */
   scope?: EditScope;
+  /** Structural table mutation from `edit_table` (not an anchored span). */
+  tableOperation?: TableOperation;
+  /** Present when persisted JSON had a tableOperation that failed to parse. */
+  tableOperationInvalid?: boolean;
+  /** Second apply site in the same field (citation at end of section). */
+  second?: {
+    anchorText: string;
+    deleteText: string;
+    insertText: string;
+    scope?: EditScope;
+  };
   /** Section content hash when this suggestion was created (staleness detection). */
   contentHashAtSuggestion?: string;
   evidenceSources?: Array<{
@@ -191,12 +206,24 @@ export type ParsedAiFixPayload = {
 export function parseAiFixCommentContent(content: string): ParsedAiFixPayload {
   try {
     const parsed = JSON.parse(content) as Partial<ParsedAiFixPayload>;
-    if (parsed && typeof parsed === "object" && "insertText" in parsed) {
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      ("insertText" in parsed || "tableOperation" in parsed)
+    ) {
+      const tableOperation =
+        parsed.tableOperation !== undefined
+          ? parseTableOperation(parsed.tableOperation)
+          : undefined;
       return {
         deleteText: typeof parsed.deleteText === "string" ? parsed.deleteText : "",
         insertText: typeof parsed.insertText === "string" ? parsed.insertText : "",
         reasoning: typeof parsed.reasoning === "string" ? parsed.reasoning : "",
         scope: parseEditScope(parsed.scope),
+        tableOperation,
+        tableOperationInvalid:
+          parsed.tableOperation !== undefined && !tableOperation ? true : undefined,
+        second: parseSecondEdit(parsed.second),
         contentHashAtSuggestion:
           typeof parsed.contentHashAtSuggestion === "string"
             ? parsed.contentHashAtSuggestion
@@ -239,6 +266,21 @@ export function parseAiFixCommentContent(content: string): ParsedAiFixPayload {
     // plain insert text
   }
   return { deleteText: "", insertText: content, reasoning: "" };
+}
+
+function parseSecondEdit(raw: unknown): ParsedAiFixPayload["second"] {
+  if (!raw || typeof raw !== "object") return undefined;
+  const s = raw as Record<string, unknown>;
+  const insertText = typeof s.insertText === "string" ? s.insertText : "";
+  const deleteText = typeof s.deleteText === "string" ? s.deleteText : "";
+  if (!deleteText.trim() && !insertText.trim()) return undefined;
+  const scope = parseEditScope(s.scope);
+  return {
+    anchorText: typeof s.anchorText === "string" ? s.anchorText : "",
+    deleteText,
+    insertText,
+    ...(scope ? { scope } : {}),
+  };
 }
 
 export function serializeAiFixCommentContent(payload: ParsedAiFixPayload): string {

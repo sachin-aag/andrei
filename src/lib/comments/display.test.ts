@@ -80,6 +80,26 @@ describe("getAiFixCommentTitle", () => {
     expect(title).not.toContain("{");
     expect(title.toLowerCase()).toContain("audit");
   });
+
+  it("summarizes a table operation when reasoning is empty", () => {
+    const c = aiComment(
+      JSON.stringify({
+        insertText: "",
+        deleteText: "",
+        reasoning: "",
+        tableOperation: {
+          kind: "insert_column",
+          tableIndex: 0,
+          afterCol: 1,
+          header: "Description",
+          values: ["a", "b"],
+        },
+      }),
+      null
+    );
+    expect(getAiFixCommentTitle(c, [])).toContain("Description");
+    expect(getAiFixCommentPreview(c)).toContain("Description");
+  });
 });
 
 describe("getAiFixCommentPreview", () => {
@@ -94,6 +114,24 @@ describe("getAiFixCommentPreview", () => {
     const preview = getAiFixCommentPreview(c);
     expect(preview).not.toContain("deleteText");
     expect(preview).toContain("occurrence date");
+  });
+
+  it("includes the end-of-section citation in the preview", () => {
+    const c = aiComment(
+      JSON.stringify({
+        insertText: "The measured value was 9.8 W.",
+        deleteText: "",
+        reasoning: "",
+        second: {
+          anchorText: "",
+          deleteText: "",
+          insertText: "[protocol.pdf, p. 3]",
+        },
+      })
+    );
+    const preview = getAiFixCommentPreview(c);
+    expect(preview).toContain("9.8 W");
+    expect(preview).toContain("[protocol.pdf, p. 3]");
   });
 });
 
