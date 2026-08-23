@@ -8,6 +8,7 @@ import {
 import {
   serializeAiFixCommentContent,
   serializeAiRedraftCommentContent,
+  parseAiFixCommentContent,
 } from "@/lib/ai/suggestion-gating";
 import { sectionContentHash } from "@/lib/ai/suggestion-gating";
 
@@ -59,6 +60,25 @@ describe("validateSuggestionLocate", () => {
         deleteText: "",
         insertText: " there",
         reasoning: "",
+      }),
+    });
+    const v = validateSuggestionLocate(comment, "define", sectionContent);
+    expect(v.locateStatus).toBe("locatable");
+    expect(v.canApply).toBe(true);
+  });
+
+  it("returns locatable for a split body edit plus end citation", () => {
+    const comment = aiFixComment({
+      anchorText: "hello",
+      content: serializeAiFixCommentContent({
+        deleteText: "",
+        insertText: " there",
+        reasoning: "",
+        second: {
+          anchorText: "",
+          deleteText: "",
+          insertText: "[protocol.pdf, p. 3]",
+        },
       }),
     });
     const v = validateSuggestionLocate(comment, "define", sectionContent);
@@ -326,5 +346,128 @@ describe("countStaleOpenSuggestions", () => {
     );
     expect(counts.total).toBe(2);
     expect(counts.stale).toBe(1);
+  });
+});
+
+function equipmentTable(manufacturer: string) {
+  return {
+    type: "doc",
+    content: [
+      {
+        type: "table",
+        content: [
+          {
+            type: "tableRow",
+            content: [
+              {
+                type: "tableHeader",
+                content: [
+                  { type: "paragraph", content: [{ type: "text", text: "Equipment" }] },
+                ],
+              },
+              {
+                type: "tableHeader",
+                content: [
+                  {
+                    type: "paragraph",
+                    content: [{ type: "text", text: "Manufacturer" }],
+                  },
+                ],
+              },
+            ],
+          },
+          {
+            type: "tableRow",
+            content: [
+              {
+                type: "tableCell",
+                content: [
+                  { type: "paragraph", content: [{ type: "text", text: "UUT-1" }] },
+                ],
+              },
+              {
+                type: "tableCell",
+                content: [
+                  {
+                    type: "paragraph",
+                    content: [{ type: "text", text: manufacturer }],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+}
+
+describe("validateSuggestionLocate table operations", () => {
+  const insertDescription = serializeAiFixCommentContent({
+    deleteText: "",
+    insertText: "",
+    reasoning: "Add Description",
+    tableOperation: {
+      kind: "insert_column",
+      tableIndex: 0,
+      afterCol: 1,
+      header: "Description",
+      values: ["Dental laser"],
+      expectedHeaderAtAfterCol: "Manufacturer",
+      expectedHeaders: ["Equipment", "Manufacturer"],
+    },
+  });
+
+  it("round-trips a tableOperation through the ai_fix payload", () => {
+    const payload = parseAiFixCommentContent(insertDescription);
+    expect(payload.tableOperation?.kind).toBe("insert_column");
+    expect(payload.tableOperationInvalid).toBeUndefined();
+    expect(parseAiFixCommentContent(serializeAiFixCommentContent(payload)).tableOperation).toEqual(
+      payload.tableOperation
+    );
+  });
+
+  it("stays applicable when an unrelated cell was filled", () => {
+    const comment = aiFixComment({
+      section: "define",
+      contentPath: "narrative",
+      anchorText: "",
+      content: insertDescription,
+    });
+    const v = validateSuggestionLocate(comment, "define", {
+      narrative: equipmentTable("Acme Corp"),
+    });
+    expect(v.locateStatus).toBe("locatable");
+    expect(v.canApply).toBe(true);
+  });
+
+  it("marks the operation stale when the expected header changed", () => {
+    const comment = aiFixComment({
+      section: "define",
+      contentPath: "narrative",
+      anchorText: "",
+      content: insertDescription,
+    });
+    const staleOp = serializeAiFixCommentContent({
+      deleteText: "",
+      insertText: "",
+      reasoning: "Add Description",
+      tableOperation: {
+        kind: "insert_column",
+        tableIndex: 0,
+        afterCol: 1,
+        header: "Description",
+        values: ["Dental laser"],
+        expectedHeaderAtAfterCol: "Maker",
+        expectedHeaders: ["Equipment", "Maker"],
+      },
+    });
+    const stale = validateSuggestionLocate(
+      { ...comment, content: staleOp },
+      "define",
+      { narrative: equipmentTable("Acme Corp") }
+    );
+    expect(stale.canApply).toBe(false);
+    expect(stale.documentChanged).toBe(true);
   });
 });

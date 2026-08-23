@@ -11,8 +11,20 @@ vi.mock("@/providers/report-attachments-provider", () => ({
 }));
 
 vi.mock("@/components/report/pdf-page-preview", () => ({
-  PdfPagePreview: ({ title, page }: { title: string; page: number }) => (
-    <img alt={`${title}, page ${page}`} src="data:image/png;base64,abc" />
+  PdfPagePreview: ({
+    title,
+    page,
+    sizeBytes,
+  }: {
+    title: string;
+    page: number;
+    sizeBytes?: number;
+  }) => (
+    <img
+      alt={`${title}, page ${page}`}
+      src="data:image/png;base64,abc"
+      data-size-bytes={sizeBytes}
+    />
   ),
 }));
 
@@ -22,6 +34,7 @@ function baseAttachment(overrides: Record<string, unknown> = {}) {
     filename: "Attachment_IV_Preparation_Record.pdf",
     mimeType: "application/pdf",
     pageCount: 2,
+    sizeBytes: 250_000,
     processingStatus: "ready",
     description: null,
     ...overrides,
@@ -47,7 +60,7 @@ describe("AttachmentViewer", () => {
     expect(screen.queryByTitle("Attachment_IV_Preparation_Record.pdf")).not.toBeInTheDocument();
     expect(
       screen.getByAltText("Attachment_IV_Preparation_Record.pdf, page 1")
-    ).toBeInTheDocument();
+    ).toHaveAttribute("data-size-bytes", "250000");
     expect(screen.getByText("Page 1 of 2")).toBeInTheDocument();
   });
 

@@ -82,6 +82,7 @@ import {
   isFailedChatFinishReason,
   partsForPersistedAssistantTurn,
 } from "@/lib/ai/chat/assistant-turn";
+import { tableEditLoopDirective } from "@/lib/ai/chat/table-edit-loop";
 import {
   buildMentionBlock,
   mentionedAttachmentIds,
@@ -341,7 +342,20 @@ export async function POST(
           reviewPhase: documentReview.phase(),
           totalPages: documentReview.progress().totalPages || reviewPageCount,
         }),
-      prepareStep: () => {
+      prepareStep: ({ steps }) => {
+        const tableEditDirective = tableEditLoopDirective(steps);
+        if (tableEditDirective === "finish") {
+          // Force a plain-language explanation after the second failed table
+          // edit instead of allowing a costly retry loop.
+          return { activeTools: [] };
+        }
+        if (tableEditDirective === "reread" && tools.read_section) {
+          return {
+            activeTools: ["read_section"],
+            toolChoice: { type: "tool", toolName: "read_section" },
+          };
+        }
+
         const prepared = prepareDocumentReviewStep({
           policy: retrieval.policy,
           phase: documentReview.phase(),

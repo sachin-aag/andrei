@@ -8,6 +8,10 @@
 
 export const PDF_PREVIEW_SCALE = 1.5;
 
+/** US Letter at 72pt — placeholder size until the first painted page reports its viewport. */
+export const PDF_FALLBACK_PAGE_WIDTH = 612 * PDF_PREVIEW_SCALE;
+export const PDF_FALLBACK_PAGE_HEIGHT = 792 * PDF_PREVIEW_SCALE;
+
 /** Default typographic ascent when the font style does not report one. */
 const DEFAULT_ASCENT = 0.8;
 
@@ -43,8 +47,8 @@ export function contentUrlFromPreviewSrc(src: string): string {
   const withoutHash = hash === -1 ? src : src.slice(0, hash);
   try {
     const url = new URL(withoutHash, "http://pdf-preview.local");
-    // `page` is only a viewer hint — the content route always streams the
-    // full file, so keep one cache key across page changes.
+    // `page` is only a viewer hint. pdf.js Range-requests this URL, so keep
+    // one cache key across page changes.
     url.searchParams.delete("page");
     return `${url.pathname}${url.search}`;
   } catch {

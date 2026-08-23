@@ -3,7 +3,7 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PdfPagePreview } from "@/components/report/pdf-page-preview";
-import { pdfjsPreviewDocumentOptions } from "@/lib/attachments/pdfjs-browser";
+import { pdfjsPreviewLoadingOptions } from "@/lib/attachments/pdfjs-browser";
 import { PDF_PREVIEW_SCALE } from "@/lib/attachments/pdf-preview-layout";
 
 const getDocument = vi.fn();
@@ -23,6 +23,7 @@ function mockPdfPage(
     height?: number;
     items?: unknown[];
     styles?: Record<string, { fontFamily?: string; ascent?: number }>;
+    getTextContent?: () => Promise<unknown>;
   } = {}
 ) {
   return {
@@ -30,20 +31,22 @@ function mockPdfPage(
       width: (overrides.width ?? 200) * scale,
       height: (overrides.height ?? 400) * scale,
     }),
-    getTextContent: async () => ({
-      styles: overrides.styles ?? { F1: { fontFamily: "Times", ascent: 0.8 } },
-      items: overrides.items ?? [
-        {
-          str: `Batch page ${pageNumber}`,
-          transform: [12, 0, 0, 12, 10, 380],
-          width: 80,
-          height: 12,
-          fontName: "F1",
-          dir: "ltr",
-          hasEOL: false,
-        },
-      ],
-    }),
+    getTextContent:
+      overrides.getTextContent ??
+      (async () => ({
+        styles: overrides.styles ?? { F1: { fontFamily: "Times", ascent: 0.8 } },
+        items: overrides.items ?? [
+          {
+            str: `Batch page ${pageNumber}`,
+            transform: [12, 0, 0, 12, 10, 380],
+            width: 80,
+            height: 12,
+            fontName: "F1",
+            dir: "ltr",
+            hasEOL: false,
+          },
+        ],
+      })),
     render: (...args: unknown[]) => renderPage(...args),
   };
 }
@@ -87,8 +90,23 @@ function installImmediateIntersectionObserver() {
   vi.stubGlobal("IntersectionObserver", ImmediateIntersectionObserver);
 }
 
+function installNoopIntersectionObserver() {
+  class NoopIntersectionObserver {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+    takeRecords(): IntersectionObserverEntry[] {
+      return [];
+    }
+    readonly root = null;
+    readonly rootMargin = "0px";
+    readonly thresholds = [0];
+  }
+
+  vi.stubGlobal("IntersectionObserver", NoopIntersectionObserver);
+}
+
 describe("PdfPagePreview", () => {
-  const originalFetch = globalThis.fetch;
   const originalGetContext = HTMLCanvasElement.prototype.getContext;
 
   beforeEach(() => {
@@ -109,25 +127,27 @@ describe("PdfPagePreview", () => {
     HTMLCanvasElement.prototype.getContext = vi.fn().mockReturnValue({
       canvas: {},
     }) as typeof HTMLCanvasElement.prototype.getContext;
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
-    }) as typeof fetch;
+    // pdf.js owns the transfer. A direct fetch here means the component went
+    // back to buffering the file on the main thread before parsing.
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockRejectedValue(new Error("preview must not fetch bytes itself"))
+    );
     installImmediateIntersectionObserver();
   });
 
   afterEach(() => {
-    globalThis.fetch = originalFetch;
     HTMLCanvasElement.prototype.getContext = originalGetContext;
     vi.unstubAllGlobals();
   });
 
-  it("fetches the PDF once and paints every page with official pdf.js wasm/fonts", async () => {
+  it("loads the PDF from the content URL and paints every page with official pdf.js", async () => {
     render(
       <PdfPagePreview
         src="/api/reports/r1/attachments/a1/content?proxy=1&page=2#page=2"
         page={2}
         title="Evidence.pdf"
+        sizeBytes={250_000}
       />
     );
 
@@ -137,18 +157,16 @@ describe("PdfPagePreview", () => {
     const pageTwo = await screen.findByLabelText("Evidence.pdf, page 2");
     expect(pageOne.tagName).toBe("CANVAS");
     expect(pageTwo.tagName).toBe("CANVAS");
-    expect(globalThis.fetch).toHaveBeenCalledWith(
-      "/api/reports/r1/attachments/a1/content?proxy=1",
-      expect.objectContaining({ credentials: "same-origin" })
-    );
     await waitFor(() => {
       expect(getDocument).toHaveBeenCalledTimes(1);
-      expect(getDocument).toHaveBeenCalledWith(
-        expect.objectContaining({
-          ...pdfjsPreviewDocumentOptions("6.1.200"),
-          data: expect.any(Uint8Array),
-        })
-      );
+      // One streamed GET of the page-less content URL. Range loading made
+      // pdf.js fall back to fetching every chunk — see pdfjs-browser.ts.
+      expect(getDocument).toHaveBeenCalledWith({
+        url: "/api/reports/r1/attachments/a1/content?proxy=1",
+        ...pdfjsPreviewLoadingOptions("6.1.200"),
+      });
+      expect(getDocument.mock.calls[0]?.[0]).not.toHaveProperty("range");
+      expect(getDocument.mock.calls[0]?.[0]).not.toHaveProperty("data");
       expect(renderPage).toHaveBeenCalledTimes(2);
       expect(renderPage).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -169,12 +187,13 @@ describe("PdfPagePreview", () => {
     );
   });
 
-  it("does not refetch or reload the document when the requested page changes", async () => {
+  it("does not reload the document when the requested page changes", async () => {
     const { rerender } = render(
       <PdfPagePreview
         src="/api/reports/r1/attachments/a1/content?proxy=1&page=1"
         page={1}
         title="Evidence.pdf"
+        sizeBytes={250_000}
       />
     );
     await screen.findByText("Batch page 2");
@@ -184,12 +203,63 @@ describe("PdfPagePreview", () => {
         src="/api/reports/r1/attachments/a1/content?proxy=1&page=2"
         page={2}
         title="Evidence.pdf"
+        sizeBytes={250_000}
       />
     );
 
     expect(await screen.findByText("Batch page 2")).toBeInTheDocument();
-    expect(globalThis.fetch).toHaveBeenCalledTimes(1);
     expect(getDocument).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows the canvas before the text layer is ready", async () => {
+    getPage.mockImplementation(async (pageNumber: number) =>
+      mockPdfPage(pageNumber, {
+        getTextContent: () => new Promise(() => {}),
+      })
+    );
+    getDocument.mockReturnValue({
+      promise: Promise.resolve({
+        numPages: 1,
+        getPage,
+      }),
+      destroy: vi.fn().mockResolvedValue(undefined),
+    });
+
+    render(
+      <PdfPagePreview
+        src="/api/reports/r1/attachments/a1/content?proxy=1&page=1"
+        page={1}
+        title="Scan.pdf"
+        sizeBytes={250_000}
+      />
+    );
+
+    const canvas = await screen.findByLabelText("Scan.pdf, page 1");
+    await waitFor(() => {
+      expect(renderPage).toHaveBeenCalled();
+      expect(canvas).not.toHaveClass("hidden");
+    });
+    expect(screen.queryByText("Batch page 1")).not.toBeInTheDocument();
+  });
+
+  it("paints the requested page without waiting for IntersectionObserver", async () => {
+    installNoopIntersectionObserver();
+
+    render(
+      <PdfPagePreview
+        src="/api/reports/r1/attachments/a1/content?proxy=1&page=2"
+        page={2}
+        title="Evidence.pdf"
+        sizeBytes={250_000}
+      />
+    );
+
+    const pageTwo = await screen.findByLabelText("Evidence.pdf, page 2");
+    await waitFor(() => {
+      expect(pageTwo).not.toHaveClass("hidden");
+    });
+    expect(screen.getByLabelText("Evidence.pdf, page 1")).toHaveClass("hidden");
+    expect(renderPage).toHaveBeenCalledTimes(1);
   });
 
   it("still paints the canvas when the PDF has no text layer", async () => {
@@ -209,6 +279,7 @@ describe("PdfPagePreview", () => {
         src="/api/reports/r1/attachments/a1/content?proxy=1&page=1"
         page={1}
         title="Scan.pdf"
+        sizeBytes={250_000}
       />
     );
 
@@ -216,7 +287,7 @@ describe("PdfPagePreview", () => {
       expect(renderPage).toHaveBeenCalled();
     });
     expect(screen.queryByText("Loading preview…")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Scan.pdf, page 1")).toBeInTheDocument();
+    expect(screen.getByLabelText("Scan.pdf, page 1")).not.toHaveClass("hidden");
     expect(screen.queryByText("Batch page 1")).not.toBeInTheDocument();
   });
 
@@ -227,6 +298,7 @@ describe("PdfPagePreview", () => {
         src="/api/reports/r1/attachments/a1/content?proxy=1&page=1"
         page={1}
         title="Evidence.pdf"
+        sizeBytes={250_000}
         onVisiblePageChange={onVisiblePageChange}
       />
     );
@@ -239,17 +311,163 @@ describe("PdfPagePreview", () => {
     expect(lastPage === 1 || lastPage === 2).toBe(true);
   });
 
-  it("shows a download hint when the fetch fails", async () => {
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: false,
-      status: 502,
-    }) as typeof fetch;
+  it("does not prefetch neighbors until the requested page has painted", async () => {
+    let releaseRequestedPage = () => {};
+    const requestedPageReady = new Promise<void>((resolve) => {
+      releaseRequestedPage = resolve;
+    });
+    getPage.mockImplementation(async (pageNumber: number) => {
+      if (pageNumber === 2) await requestedPageReady;
+      return mockPdfPage(pageNumber);
+    });
+
+    render(
+      <PdfPagePreview
+        src="/api/reports/r1/attachments/a1/content?proxy=1&page=2"
+        page={2}
+        title="Evidence.pdf"
+        sizeBytes={250_000}
+      />
+    );
+
+    await waitFor(() => {
+      expect(getPage).toHaveBeenCalledWith(2);
+    });
+    expect(getPage).not.toHaveBeenCalledWith(1);
+    expect(renderPage).not.toHaveBeenCalled();
+
+    releaseRequestedPage();
+
+    await waitFor(() => {
+      expect(getPage).toHaveBeenCalledWith(1);
+      expect(renderPage).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it("reports transfer progress while a large file downloads", async () => {
+    let resolveDocument: (pdf: unknown) => void = () => {};
+    const task: { promise: Promise<unknown>; onProgress?: unknown; destroy: unknown } = {
+      promise: new Promise((resolve) => {
+        resolveDocument = resolve;
+      }),
+      destroy: vi.fn().mockResolvedValue(undefined),
+    };
+    getDocument.mockReturnValue(task);
+
+    render(
+      <PdfPagePreview
+        src="/api/reports/r1/attachments/a1/content?proxy=1&page=1"
+        page={1}
+        title="Huge.pdf"
+        sizeBytes={130_000_000}
+      />
+    );
+
+    await waitFor(() => {
+      expect(task.onProgress).toBeTypeOf("function");
+    });
+    (task.onProgress as (p: { loaded: number; total: number }) => void)({
+      loaded: 65_000_000,
+      total: 130_000_000,
+    });
+
+    expect(
+      await screen.findByText("Loading preview… 50% of 130.0 MB")
+    ).toBeInTheDocument();
+
+    resolveDocument({ numPages: 1, getPage });
+    await screen.findByLabelText("Huge.pdf, page 1");
+  });
+
+  it("releases the canvas of pages that scroll out of the window", async () => {
+    const observers: {
+      callback: IntersectionObserverCallback;
+      targets: Element[];
+      rootMargin: string;
+    }[] = [];
+    class TrackingIntersectionObserver {
+      readonly entry: {
+        callback: IntersectionObserverCallback;
+        targets: Element[];
+        rootMargin: string;
+      };
+      constructor(
+        callback: IntersectionObserverCallback,
+        options?: IntersectionObserverInit
+      ) {
+        this.entry = {
+          callback,
+          targets: [],
+          rootMargin: options?.rootMargin ?? "0px",
+        };
+        observers.push(this.entry);
+      }
+      observe(target: Element) {
+        this.entry.targets.push(target);
+        this.entry.callback(
+          [{ isIntersecting: true, intersectionRatio: 1, target }] as never,
+          this as unknown as IntersectionObserver
+        );
+      }
+      unobserve() {}
+      disconnect() {}
+      takeRecords(): IntersectionObserverEntry[] {
+        return [];
+      }
+      readonly root = null;
+      readonly rootMargin = "0px";
+      readonly thresholds = [0];
+    }
+    vi.stubGlobal("IntersectionObserver", TrackingIntersectionObserver);
 
     render(
       <PdfPagePreview
         src="/api/reports/r1/attachments/a1/content?proxy=1&page=1"
         page={1}
         title="Evidence.pdf"
+        sizeBytes={250_000}
+      />
+    );
+
+    const pageTwo = await screen.findByLabelText("Evidence.pdf, page 2");
+    await waitFor(() => expect(pageTwo).not.toHaveClass("hidden"));
+    expect((pageTwo as HTMLCanvasElement).width).toBeGreaterThan(0);
+
+    // Scroll page 2 far out of view. Only the prefetch observer (the one with
+    // the lookahead margin) drives the render window.
+    const prefetchObserver = observers.find(
+      (entry) => entry.rootMargin === "800px 0px"
+    );
+    const target = prefetchObserver?.targets.find(
+      (node) => (node as HTMLElement).dataset.pdfPage === "2"
+    );
+    prefetchObserver?.callback(
+      [{ isIntersecting: false, intersectionRatio: 0, target }] as never,
+      null as unknown as IntersectionObserver
+    );
+
+    await waitFor(() => {
+      expect((pageTwo as HTMLCanvasElement).width).toBe(0);
+      expect(pageTwo).toHaveClass("hidden");
+    });
+    // The requested page always keeps its canvas.
+    expect(screen.getByLabelText("Evidence.pdf, page 1")).not.toHaveClass(
+      "hidden"
+    );
+  });
+
+  it("shows a download hint when pdf.js cannot open the file", async () => {
+    getDocument.mockReturnValue({
+      promise: Promise.reject(new Error("Preview fetch failed (502)")),
+      destroy: vi.fn().mockResolvedValue(undefined),
+    });
+
+    render(
+      <PdfPagePreview
+        src="/api/reports/r1/attachments/a1/content?proxy=1&page=1"
+        page={1}
+        title="Evidence.pdf"
+        sizeBytes={250_000}
       />
     );
 

@@ -1,4 +1,8 @@
 import type { JSONContent } from "@tiptap/core";
+import {
+  isCitationListHeading,
+  isEmptyParagraphBlock,
+} from "@/lib/suggestions/citations-at-end";
 import { parseListLine } from "@/lib/tiptap/list-style";
 
 const ATX_HEADING_RE = /^(#{1,3})\s+(.*)$/;
@@ -130,6 +134,12 @@ export function markdownToDoc(markdown: string): JSONContent {
       continue;
     }
 
+    if (isCitationListHeading(trimmed)) {
+      const last = content[content.length - 1];
+      if (last && !isEmptyParagraphBlock(last)) {
+        content.push({ type: "paragraph" });
+      }
+    }
     content.push({ type: "paragraph", content: parseInline(trimmed) });
     i++;
   }

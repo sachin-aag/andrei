@@ -31,10 +31,13 @@ import {
 } from "@/lib/tiptap/suggestion-marks";
 import { gutterAnchorIdForComment } from "@/lib/comments/navigate";
 import {
+  GUTTER_CARD_HEIGHT_FALLBACK_PX,
   packGutterAnchors,
   sectionOverflowPx,
+  stickyGutterCardTop,
   suggestionAnchorY,
   suggestionFieldGutterLayout,
+  suggestionGutterAnchorId,
 } from "@/lib/suggestions/navigate-suggestion";
 import { cn } from "@/lib/utils";
 import { useUserDirectory } from "@/providers/user-directory-provider";
@@ -93,6 +96,30 @@ function connectorLinesEqual(
     if (a[i].id !== b[i].id || Math.abs(a[i].y - b[i].y) > 1) {
       return false;
     }
+  }
+  return true;
+}
+
+function findVerticalScrollParent(el: HTMLElement): HTMLElement {
+  let node: HTMLElement | null = el.parentElement;
+  while (node) {
+    const { overflowY } = getComputedStyle(node);
+    if (overflowY === "auto" || overflowY === "scroll") return node;
+    node = node.parentElement;
+  }
+  return document.scrollingElement instanceof HTMLElement
+    ? document.scrollingElement
+    : document.documentElement;
+}
+
+function stickyTopsEqual(
+  a: Record<string, number>,
+  b: Record<string, number>
+): boolean {
+  const keys = Object.keys(a);
+  if (keys.length !== Object.keys(b).length) return false;
+  for (const key of keys) {
+    if (!(key in b) || Math.abs(a[key]! - b[key]!) > 0.5) return false;
   }
   return true;
 }
@@ -225,6 +252,9 @@ export function MarginGutter({ onSectionOverflow }: Props) {
   const [connectorLines, setConnectorLines] = useState<{ id: string; y: number }[]>([]);
   const connectorLinesRef = useRef<{ id: string; y: number }[]>([]);
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const [bridgeStickyTops, setBridgeStickyTops] = useState<Record<string, number>>(
+    {}
+  );
 
   const { getUser } = useUserDirectory();
   const isManager = getUser(currentUserId)?.role === "manager";
@@ -351,7 +381,8 @@ export function MarginGutter({ onSectionOverflow }: Props) {
     // 3. Active AI suggestion cards — aligned to the first line of the
     //    highlight (not the midpoint of a tall redraft). Compact plain-text
     //    fields still center. During a queue bridge, park at the previous
-    //    card's Y so "Go to next" stays where the user just acted.
+    //    card's Y; scroll clamping (below) keeps "Go to next" in the
+    //    scrollport until the user jumps (this section or another) or dismisses.
     for (const section of evaluatableSections) {
       const active = gutterSuggestionCommentForSection(section);
       if (!active) continue;
@@ -432,6 +463,58 @@ export function MarginGutter({ onSectionOverflow }: Props) {
     layoutVersion,
     canComment,
   ]);
+
+  // Keep a parked queue-bridge card inside the scrollport. Other gutter
+  // anchors stay document-relative — only this handoff follows the user.
+  useEffect(() => {
+    const bridged = (Object.keys(suggestionApplyTransition) as SectionType[]).filter(
+      (section) =>
+        suggestionApplyTransition[section]?.bridge &&
+        suggestionApplyTransition[section]?.parkCenterY != null
+    );
+    if (bridged.length === 0) {
+      setBridgeStickyTops((prev) => (Object.keys(prev).length === 0 ? prev : {}));
+      return;
+    }
+
+    const container = containerRef.current;
+    if (!container) return;
+    const scrollParent = findVerticalScrollParent(container);
+
+    let frame: number | null = null;
+    const update = () => {
+      if (frame !== null) return;
+      frame = requestAnimationFrame(() => {
+        frame = null;
+        const containerTop = container.getBoundingClientRect().top;
+        const port = scrollParent.getBoundingClientRect();
+        const next: Record<string, number> = {};
+        for (const section of bridged) {
+          const parkCenterY = suggestionApplyTransition[section]?.parkCenterY;
+          if (parkCenterY == null) continue;
+          const id = suggestionGutterAnchorId(section);
+          next[id] = stickyGutterCardTop({
+            parkCenterY,
+            cardHeight:
+              cardHeightsRef.current[id] ?? GUTTER_CARD_HEIGHT_FALLBACK_PX,
+            containerTop,
+            viewportTop: port.top,
+            viewportBottom: port.bottom,
+          });
+        }
+        setBridgeStickyTops((prev) => (stickyTopsEqual(prev, next) ? prev : next));
+      });
+    };
+
+    update();
+    scrollParent.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+    return () => {
+      if (frame !== null) cancelAnimationFrame(frame);
+      scrollParent.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
+    };
+  }, [suggestionApplyTransition]);
 
   // Pack per section so a tall draft in Purpose cannot shove Deviations
   // into empty space below its field. Section overflow padding keeps
@@ -662,6 +745,10 @@ export function MarginGutter({ onSectionOverflow }: Props) {
       {packed.map((a) => {
         let node: ReactNode = null;
         const isActive = activeAnchorId === a.id || activeAnchorId === a.comment?.id;
+        const isBridgeCard =
+          a.type === "suggestion" &&
+          a.section != null &&
+          suggestionApplyTransition[a.section]?.bridge != null;
 
         if (a.type === "composer" && a.section) {
           node = <SectionCommentComposer section={a.section} />;
@@ -693,8 +780,10 @@ export function MarginGutter({ onSectionOverflow }: Props) {
             ref={(el) => {
               cardRefs.current[a.id] = el;
             }}
-            className="absolute left-0 right-0 px-1"
-            style={{ top: `${Math.max(0, a.top)}px` }}
+            className={cn("absolute left-0 right-0 px-1", isBridgeCard && "z-20")}
+            style={{
+              top: `${Math.max(0, bridgeStickyTops[a.id] ?? a.top)}px`,
+            }}
           >
             {node}
           </div>
