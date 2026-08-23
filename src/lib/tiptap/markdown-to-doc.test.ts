@@ -142,6 +142,29 @@ describe("markdownToDoc", () => {
     expect(text).toContain("| pH | 6.8 |");
   });
 
+  it("inserts a blank paragraph above a Citations heading", () => {
+    const withBlankLine = markdownToDoc(
+      "This document outlines the purpose.\n\nCitations:\n[protocol.pdf, p. 1]"
+    );
+    const flush = markdownToDoc(
+      "This document outlines the purpose.\nCitations:\n[protocol.pdf, p. 1]"
+    );
+    const expected = [
+      {
+        type: "paragraph",
+        content: [{ type: "text", text: "This document outlines the purpose." }],
+      },
+      { type: "paragraph" },
+      { type: "paragraph", content: [{ type: "text", text: "Citations:" }] },
+      {
+        type: "paragraph",
+        content: [{ type: "text", text: "[protocol.pdf, p. 1]" }],
+      },
+    ];
+    expect(withBlankLine.content).toEqual(expected);
+    expect(flush.content).toEqual(expected);
+  });
+
   it("keeps unsupported markdown as literal text", () => {
     const doc = markdownToDoc("Some `code` and [link](http://x)");
     expect(doc.content![0]!.content).toEqual([

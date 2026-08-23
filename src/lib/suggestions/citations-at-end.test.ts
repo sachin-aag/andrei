@@ -4,6 +4,7 @@ import {
   documentCitationRule,
   extractCitationBrackets,
   isCitationOnlyText,
+  keepEmptyParagraphBeforeCitationHeading,
   moveCitationsToEndOfText,
   prepareEditForCitationMode,
   splitEditForCitationsAtEnd,
@@ -299,6 +300,29 @@ describe("stripCitationsFromTableOperation", () => {
     expect(
       citationAppendPart(citations, "Already cited [protocol.pdf, p. 3]")
     ).toBeUndefined();
+  });
+});
+
+describe("keepEmptyParagraphBeforeCitationHeading", () => {
+  it("keeps only an empty spacer immediately before Citations:", () => {
+    expect(
+      keepEmptyParagraphBeforeCitationHeading(
+        { type: "paragraph" },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Citations:" }],
+        }
+      )
+    ).toBe(true);
+    expect(
+      keepEmptyParagraphBeforeCitationHeading(
+        { type: "paragraph" },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Body copy." }],
+        }
+      )
+    ).toBe(false);
   });
 });
 

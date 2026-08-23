@@ -651,5 +651,30 @@ describe("locator — split edits", () => {
     expect(flat.indexOf("Citations:")).toBeLessThan(
       flat.indexOf("[protocol.pdf, p. 1]")
     );
+    const types = (result.doc.content ?? []).map((block) => ({
+      type: block.type,
+      text: (block.content ?? [])
+        .map((node) => (node.type === "text" ? node.text ?? "" : ""))
+        .join(""),
+    }));
+    const headingIdx = types.findIndex((block) => block.text === "Citations:");
+    expect(headingIdx).toBeGreaterThan(0);
+    expect(types[headingIdx - 1]).toEqual({ type: "paragraph", text: "" });
+
+    const accepted = applyAndAcceptRichEdit(doc, ATTRS.id, edit, ATTRS);
+    const acceptedTypes = (accepted.doc.content ?? []).map((block) => ({
+      type: block.type,
+      text: (block.content ?? [])
+        .map((node) => (node.type === "text" ? node.text ?? "" : ""))
+        .join(""),
+    }));
+    const acceptedHeadingIdx = acceptedTypes.findIndex(
+      (block) => block.text === "Citations:"
+    );
+    expect(acceptedHeadingIdx).toBeGreaterThan(0);
+    expect(acceptedTypes[acceptedHeadingIdx - 1]).toEqual({
+      type: "paragraph",
+      text: "",
+    });
   });
 });

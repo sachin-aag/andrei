@@ -115,6 +115,51 @@ function isCitationBlockHeading(line: string): boolean {
   return isCitationsHeading(line) || isReferencesHeading(line);
 }
 
+export function isCitationListHeading(line: string): boolean {
+  return isCitationBlockHeading(line);
+}
+
+function paragraphPlainText(block: {
+  type?: string;
+  content?: Array<{ type?: string; text?: string }>;
+}): string {
+  return (block.content ?? [])
+    .map((node) => (node.type === "text" ? node.text ?? "" : ""))
+    .join("");
+}
+
+export function isCitationHeadingParagraph(block: {
+  type?: string;
+  content?: Array<{ type?: string; text?: string }>;
+}): boolean {
+  return block.type === "paragraph" && isCitationListHeading(paragraphPlainText(block));
+}
+
+export function isEmptyParagraphBlock(block: {
+  type?: string;
+  content?: Array<{ type?: string; text?: string }>;
+}): boolean {
+  if (block.type !== "paragraph") return false;
+  const hasNonText = (block.content ?? []).some(
+    (node) => node.type !== "text" && node.type !== "hardBreak"
+  );
+  return !hasNonText && paragraphPlainText(block).length === 0;
+}
+
+/** Keep a spacer paragraph so Citations: is not flush against the body. */
+export function keepEmptyParagraphBeforeCitationHeading(
+  block: { type?: string; content?: Array<{ type?: string; text?: string }> },
+  following:
+    | { type?: string; content?: Array<{ type?: string; text?: string }> }
+    | undefined
+): boolean {
+  return (
+    isEmptyParagraphBlock(block) &&
+    following !== undefined &&
+    isCitationHeadingParagraph(following)
+  );
+}
+
 function splitTrailingCitationBlock(text: string): {
   body: string;
   trailingCitations: string[];

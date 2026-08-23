@@ -1,6 +1,9 @@
 import type { JSONContent } from "@tiptap/core";
 import {
   isCitationAppendInsert,
+  isCitationListHeading,
+  isEmptyParagraphBlock,
+  keepEmptyParagraphBeforeCitationHeading,
   normalizeCitationAppendInsert,
   plainCitationAppendSeparator,
 } from "@/lib/suggestions/citations-at-end";
@@ -973,6 +976,15 @@ function applySingleEditToRichDoc(
       .map((line) => line.trim())
       .filter(Boolean);
     if (paragraphs.length === 0) return { status: "empty_edit", doc: cloned };
+    const lastBlock = cloned.content?.[cloned.content.length - 1];
+    if (
+      paragraphs[0] &&
+      isCitationListHeading(paragraphs[0]) &&
+      lastBlock &&
+      !isEmptyParagraphBlock(lastBlock)
+    ) {
+      cloned.content = [...(cloned.content ?? []), { type: "paragraph" }];
+    }
     let inserted: JSONContent | null = null;
     for (const paragraph of paragraphs) {
       inserted = insertAfterRef(cloned, null, paragraph, attrs);
@@ -1181,7 +1193,10 @@ function dropBlocksFullyMarked(
 
 function dropEmptyBlocks(doc: JSONContent): void {
   if (!doc.content?.length) return;
-  doc.content = doc.content.filter((block) => {
+  doc.content = doc.content.filter((block, index) => {
+    if (keepEmptyParagraphBeforeCitationHeading(block, doc.content?.[index + 1])) {
+      return true;
+    }
     if (block.type === "paragraph" || block.type === "heading") {
       const text = (block.content ?? [])
         .map((c) => (c.type === "text" ? c.text ?? "" : ""))
