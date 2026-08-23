@@ -127,7 +127,7 @@ test.describe("report chat", () => {
     test.setTimeout(90_000);
 
     let chatTurnPosts = 0;
-    let releaseFirstPost: (() => void) | null = null;
+    let releaseFirstPost = () => {};
     const firstPostReleased = new Promise<void>((resolve) => {
       releaseFirstPost = resolve;
     });
@@ -221,7 +221,7 @@ test.describe("report chat", () => {
         timeout: 5_000,
       });
     } finally {
-      releaseFirstPost?.();
+      releaseFirstPost();
       await firstPostSettled;
       await page.unrouteAll({ behavior: "ignoreErrors" });
     }
