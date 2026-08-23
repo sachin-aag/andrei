@@ -2,7 +2,7 @@ import { and, asc, desc, eq } from "drizzle-orm";
 import type { UIMessage } from "ai";
 import { db } from "@/db";
 import { chatMessages, chatSessions } from "@/db/schema";
-import type { ChatAssistantTurnStatus } from "@/lib/ai/chat/background-turn";
+import type { ChatAssistantTurnStatus } from "@/lib/ai/chat/background-turn-status";
 import { deriveSessionTitle, UNTITLED_SESSION } from "@/lib/ai/chat/session-title";
 
 export { deriveSessionTitle };

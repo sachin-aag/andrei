@@ -106,7 +106,7 @@ import type {
 import {
   CHAT_TURN_POLL_MS,
   isChatAssistantTurnActive,
-} from "@/lib/ai/chat/background-turn";
+} from "@/lib/ai/chat/background-turn-status";
 import {
   applyMentionToInput,
   filterMentionCandidates,

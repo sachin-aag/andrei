@@ -15,7 +15,7 @@ import {
   CHAT_FUNCTION_MAX_DURATION_SEC,
   CHAT_SERVER_ABORT_MS,
 } from "./assistant-turn";
-import { CHAT_TURN_STALE_MS } from "./background-turn";
+import { CHAT_TURN_STALE_MS } from "./background-turn-status";
 
 describe("assistantPartsHaveVisibleContent", () => {
   it("is false for missing, empty, or whitespace-only text", () => {
