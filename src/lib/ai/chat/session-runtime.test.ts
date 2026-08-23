@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   canReplaceChatMessages,
   dropBackgroundSession,
+  forgetMountedSession,
   isChatSessionBusy,
   isChatTurnBusy,
+  nextMountedSessionId,
   rememberBackgroundSession,
   rememberMountedSession,
   reportChatInstanceId,
@@ -55,6 +57,26 @@ describe("session-runtime", () => {
       { id: "ses-1", hydrateOnMount: true },
       { id: "ses-2", hydrateOnMount: false },
     ]);
+  });
+
+  it("forgets a mounted session without touching the others", () => {
+    const mounted = rememberMountedSession(
+      rememberMountedSession([], "ses-1", true),
+      "ses-2",
+      false
+    );
+    expect(forgetMountedSession(mounted, "ses-1")).toEqual([
+      { id: "ses-2", hydrateOnMount: false },
+    ]);
+    expect(forgetMountedSession(mounted, "missing")).toEqual(mounted);
+  });
+
+  it("picks the next open tab after a close", () => {
+    expect(nextMountedSessionId(["a", "b", "c"], "b")).toBe("c");
+    expect(nextMountedSessionId(["a", "b", "c"], "c")).toBe("b");
+    expect(nextMountedSessionId(["a", "b", "c"], "a")).toBe("b");
+    expect(nextMountedSessionId(["a"], "a")).toBeNull();
+    expect(nextMountedSessionId([], "a")).toBeNull();
   });
 
   it("includes the current session in running ids only while it is busy", () => {

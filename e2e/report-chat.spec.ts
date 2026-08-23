@@ -226,4 +226,44 @@ test.describe("report chat", () => {
       await page.unrouteAll({ behavior: "ignoreErrors" });
     }
   });
+
+  test("closing a chat tab leaves it in history so it can be reopened", async ({
+    page,
+  }) => {
+    test.setTimeout(90_000);
+
+    await openReportAssistant(page);
+    const sidebar = reportSidebar(page);
+    await sidebar.getByLabel("Assistant mode").click();
+    await page.getByRole("option", { name: /^ask$/i }).click();
+
+    const composer = sidebar.getByPlaceholder(/describe the deviation/i);
+    await expect(composer).toBeEnabled({ timeout: 15_000 });
+    await composer.fill("first chat for close test");
+    await sidebar.getByRole("button", { name: /^send message$/i }).click();
+    await expect(chatUserMessage(page, "first chat for close test")).toBeVisible({
+      timeout: 15_000,
+    });
+
+    await sidebar.getByRole("button", { name: /^new chat$/i }).click();
+    const tabs = sidebar.getByRole("tablist", { name: /open chats/i });
+    await expect(tabs).toBeVisible();
+    await expect(tabs.getByRole("tab")).toHaveCount(2);
+
+    await tabs.getByRole("button", { name: /close first chat for close test/i }).click();
+    await expect(tabs.getByRole("tab")).toHaveCount(1);
+    await expect(chatUserMessage(page, "first chat for close test")).toHaveCount(0);
+
+    await sidebar.getByRole("button", { name: /^chat history$/i }).click();
+    await sidebar
+      .getByRole("button", { name: /first chat for close test/i })
+      .click();
+    await expect(chatUserMessage(page, "first chat for close test")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(tabs.getByRole("tab")).toHaveCount(2);
+    await expect(
+      tabs.getByRole("button", { name: /close first chat for close test/i })
+    ).toBeVisible();
+  });
 });

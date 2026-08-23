@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { Check, CircleHelp, Loader2 } from "lucide-react";
+import { Check, CircleHelp, Loader2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   chatSessionTabStatusLabel,
@@ -43,12 +43,14 @@ export function ChatSessionTabs({
   items,
   currentId,
   onSelect,
+  onClose,
 }: {
   items: readonly ChatSessionTabItem[];
   currentId: string | null;
   onSelect: (sessionId: string) => void;
+  onClose: (sessionId: string) => void;
 }) {
-  const selectedRef = useRef<HTMLButtonElement>(null);
+  const selectedRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const selected = selectedRef.current;
@@ -65,7 +67,7 @@ export function ChatSessionTabs({
     <div
       role="tablist"
       aria-label="Open chats"
-      className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto overscroll-x-contain [scrollbar-width:thin]"
+      className="flex min-w-0 flex-1 items-stretch overflow-x-auto overscroll-x-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden [&::-webkit-scrollbar]:h-0"
       onKeyDown={(event) => {
         if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
         if (items.length < 2) return;
@@ -84,26 +86,49 @@ export function ChatSessionTabs({
         const selected = item.id === currentId;
         const statusLabel = chatSessionTabStatusLabel(item.status);
         return (
-          <button
+          <div
             key={item.id}
             ref={selected ? selectedRef : undefined}
-            type="button"
             role="tab"
             aria-selected={selected}
             tabIndex={selected ? 0 : -1}
             title={item.title}
             aria-label={`${item.title}. ${statusLabel}`}
             onClick={() => onSelect(item.id)}
+            onKeyDown={(event) => {
+              if (event.target !== event.currentTarget) return;
+              if (event.key !== "Enter" && event.key !== " ") return;
+              event.preventDefault();
+              onSelect(item.id);
+            }}
             className={cn(
-              "flex h-6 max-w-[10.5rem] shrink-0 items-center gap-1 rounded-md border px-1.5 text-[11px] transition-colors",
+              "relative flex h-7 max-w-[12rem] shrink-0 cursor-pointer items-center gap-1 border-r border-[var(--border)] px-2 text-[11px] transition-colors",
               selected
-                ? "border-[var(--border)] bg-[var(--secondary)] font-medium text-[var(--foreground)]"
-                : "border-transparent text-[var(--muted-foreground)] hover:bg-[var(--secondary)]/70 hover:text-[var(--foreground)]"
+                ? "bg-[var(--secondary)] font-medium text-[var(--foreground)]"
+                : "text-[var(--muted-foreground)] hover:bg-[var(--secondary)]/70 hover:text-[var(--foreground)]"
             )}
           >
             <TabStatusIcon status={item.status} />
-            <span className="min-w-0 truncate">{item.title}</span>
-          </button>
+            <span className="min-w-0 flex-1 truncate">{item.title}</span>
+            <button
+              type="button"
+              aria-label={`Close ${item.title}`}
+              title="Close chat"
+              onClick={(event) => {
+                event.stopPropagation();
+                onClose(item.id);
+              }}
+              className="flex size-4 shrink-0 items-center justify-center rounded-sm text-[var(--muted-foreground)] transition-colors hover:bg-[var(--border)] hover:text-[var(--foreground)]"
+            >
+              <X className="size-3" aria-hidden />
+            </button>
+            {selected ? (
+              <span
+                aria-hidden
+                className="absolute inset-x-0 bottom-0 h-0.5 bg-[var(--primary)]"
+              />
+            ) : null}
+          </div>
         );
       })}
     </div>

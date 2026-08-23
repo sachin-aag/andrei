@@ -21,6 +21,29 @@ export function rememberMountedSession(
   return [...current, { id: sessionId, hydrateOnMount }];
 }
 
+/** Drop a tab from the open strip. The session stays in history. */
+export function forgetMountedSession(
+  current: readonly MountedChatSession[],
+  sessionId: string
+): MountedChatSession[] {
+  return current.filter((session) => session.id !== sessionId);
+}
+
+/**
+ * After closing `closingId`, prefer the tab that slid into its place (the
+ * neighbor to the right, or the left tab when closing the last one).
+ */
+export function nextMountedSessionId(
+  mountedIds: readonly string[],
+  closingId: string
+): string | null {
+  const remaining = mountedIds.filter((id) => id !== closingId);
+  if (remaining.length === 0) return null;
+  const index = mountedIds.indexOf(closingId);
+  if (index < 0) return remaining[0] ?? null;
+  return remaining[Math.min(index, remaining.length - 1)] ?? null;
+}
+
 export function isChatTurnBusy(status: ChatStatus): boolean {
   return status === "submitted" || status === "streaming";
 }
