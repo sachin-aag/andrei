@@ -127,6 +127,12 @@ test.describe("report chat", () => {
     test.setTimeout(90_000);
 
     let chatTurnPosts = 0;
+    let releaseFirstPost: (() => void) | null = null;
+    const firstPostReleased = new Promise<void>((resolve) => {
+      releaseFirstPost = resolve;
+    });
+    let firstPostSettled = Promise.resolve();
+
     await page.route(
       (url) => /\/api\/reports\/[^/]+\/chat$/.test(new URL(url).pathname),
       async (route) => {
@@ -136,70 +142,88 @@ test.describe("report chat", () => {
         }
         chatTurnPosts += 1;
         if (chatTurnPosts === 1) {
-          await new Promise((resolve) => setTimeout(resolve, 8_000));
+          // Hold the first turn in the browser. Do not `continue()` it after
+          // an 8s timer — Playwright teardown then forwards a half-open POST
+          // that leaves `next start` stuck on `req.json()` and starves later
+          // browsers (WebKit homepage timeouts).
+          firstPostSettled = (async () => {
+            await firstPostReleased;
+            try {
+              await route.abort("failed");
+            } catch {
+              // Page already closed.
+            }
+          })();
+          return;
         }
         await route.continue();
       }
     );
 
-    await openReportAssistant(page);
-    const sidebar = reportSidebar(page);
-    await sidebar.getByLabel("Assistant mode").click();
-    await page.getByRole("option", { name: /^ask$/i }).click();
+    try {
+      await openReportAssistant(page);
+      const sidebar = reportSidebar(page);
+      await sidebar.getByLabel("Assistant mode").click();
+      await page.getByRole("option", { name: /^ask$/i }).click();
 
-    const composer = sidebar.getByPlaceholder(/describe the deviation/i);
-    await expect(composer).toBeEnabled({ timeout: 15_000 });
-    await composer.fill("first concurrent chat ping");
-    await sidebar.getByRole("button", { name: /^send message$/i }).click();
+      const composer = sidebar.getByPlaceholder(/describe the deviation/i);
+      await expect(composer).toBeEnabled({ timeout: 15_000 });
+      await composer.fill("first concurrent chat ping");
+      await sidebar.getByRole("button", { name: /^send message$/i }).click();
 
-    await expect(chatUserMessage(page, "first concurrent chat ping")).toBeVisible({
-      timeout: 15_000,
-    });
-    await expect(
-      sidebar.getByRole("button", { name: /^stop generating$/i })
-    ).toBeVisible();
+      await expect(chatUserMessage(page, "first concurrent chat ping")).toBeVisible({
+        timeout: 15_000,
+      });
+      await expect(
+        sidebar.getByRole("button", { name: /^stop generating$/i })
+      ).toBeVisible();
 
-    await sidebar.getByRole("button", { name: /^new chat$/i }).click();
+      await sidebar.getByRole("button", { name: /^new chat$/i }).click();
 
-    const tabs = sidebar.getByRole("tablist", { name: /open chats/i });
-    await expect(tabs).toBeVisible();
-    await expect(tabs.getByRole("tab")).toHaveCount(2);
-    await expect(
-      tabs.getByRole("tab", { name: /still working/i })
-    ).toBeVisible();
+      const tabs = sidebar.getByRole("tablist", { name: /open chats/i });
+      await expect(tabs).toBeVisible();
+      await expect(tabs.getByRole("tab")).toHaveCount(2);
+      await expect(
+        tabs.getByRole("tab", { name: /still working/i })
+      ).toBeVisible();
 
-    await expect(chatUserMessage(page, "first concurrent chat ping")).toHaveCount(
-      0
-    );
-    await expect(
-      sidebar.getByRole("button", { name: /^stop generating$/i })
-    ).toHaveCount(0);
-    await expect(
-      sidebar.getByRole("button", { name: /^send message$/i })
-    ).toBeVisible();
-    const newComposer = sidebar.getByPlaceholder(/describe the deviation/i);
-    await expect(newComposer).toBeEnabled({ timeout: 15_000 });
+      await expect(chatUserMessage(page, "first concurrent chat ping")).toHaveCount(
+        0
+      );
+      await expect(
+        sidebar.getByRole("button", { name: /^stop generating$/i })
+      ).toHaveCount(0);
+      await expect(
+        sidebar.getByRole("button", { name: /^send message$/i })
+      ).toBeVisible();
+      const newComposer = sidebar.getByPlaceholder(/describe the deviation/i);
+      await expect(newComposer).toBeEnabled({ timeout: 15_000 });
 
-    await newComposer.fill("second concurrent chat ping");
-    await expect(
-      sidebar.getByRole("button", { name: /^send message$/i })
-    ).toBeEnabled({ timeout: 15_000 });
-    await sidebar.getByRole("button", { name: /^send message$/i }).click();
+      await newComposer.fill("second concurrent chat ping");
+      await expect(
+        sidebar.getByRole("button", { name: /^send message$/i })
+      ).toBeEnabled({ timeout: 15_000 });
+      await sidebar.getByRole("button", { name: /^send message$/i }).click();
 
-    await expect(
-      chatUserMessage(page, "second concurrent chat ping")
-    ).toBeVisible({
-      timeout: 15_000,
-    });
-    await expect(chatUserMessage(page, "first concurrent chat ping")).toHaveCount(
-      0
-    );
+      await expect(
+        chatUserMessage(page, "second concurrent chat ping")
+      ).toBeVisible({
+        timeout: 15_000,
+      });
+      await expect(chatUserMessage(page, "first concurrent chat ping")).toHaveCount(
+        0
+      );
 
-    await sidebar.getByRole("button", { name: /^chat history$/i }).click();
-    // The parked first thread is still in flight. The second may also still be
-    // streaming, so do not require a single match.
-    await expect(sidebar.getByText(/still working/i).first()).toBeVisible({
-      timeout: 5_000,
-    });
+      await sidebar.getByRole("button", { name: /^chat history$/i }).click();
+      // The parked first thread is still in flight. The second may also still be
+      // streaming, so do not require a single match.
+      await expect(sidebar.getByText(/still working/i).first()).toBeVisible({
+        timeout: 5_000,
+      });
+    } finally {
+      releaseFirstPost?.();
+      await firstPostSettled;
+      await page.unrouteAll({ behavior: "ignoreErrors" });
+    }
   });
 });
