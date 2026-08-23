@@ -184,6 +184,160 @@ test.describe("manager track changes persist", () => {
     await expect(editor.locator("p").last()).toContainText(mark);
   });
 
+  test("types in Define while an AI suggestion is still unaccepted", async ({
+    page,
+  }) => {
+    const anchor = "a deviation was observed during testing";
+    const seedNarrative = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: `On 01/01/2026 at 10:00 hrs, ${anchor}. The result exceeded acceptance limits.`,
+            },
+          ],
+        },
+      ],
+    };
+    await authenticateAsManager(page);
+    // Managers may save while the report is submitted / in review — that is the
+    // same rule the editor relies on, so seed the body with this session.
+    const seedSection = await page.request.patch(
+      `/api/reports/${reportId}/sections/define`,
+      {
+        data: { content: { narrative: seedNarrative } },
+        headers: await browserCookieHeaders(page),
+      }
+    );
+    expect(
+      seedSection.ok(),
+      `seed define failed (${seedSection.status()})`
+    ).toBeTruthy();
+
+    const seedSuggestion = await page.request.post(
+      "/api/test/seed-ai-suggestion",
+      {
+        data: {
+          reportId,
+          section: "define",
+          contentPath: "narrative",
+          anchorText: anchor,
+          insertText: " on filling line FL-02",
+          criterionKey: "define_equipment",
+          criterionLabel: "Equipment is identified",
+        },
+        headers: await browserCookieHeaders(page),
+      }
+    );
+    expect(
+      seedSuggestion.ok(),
+      `seed ai suggestion failed (${seedSuggestion.status()})`
+    ).toBeTruthy();
+
+    await gotoWithNavigationRetry(page, `/reports/${reportId}/review`, {
+      waitUntil: "domcontentloaded",
+    });
+    await expect(page.getByRole("heading", { name: /^define$/i })).toBeVisible({
+      timeout: 30_000,
+    });
+
+    const editor = defineEditor(page);
+    await expect(editor).toBeVisible({ timeout: 30_000 });
+    await expect(editor).toHaveAttribute("contenteditable", "true");
+    // Inline AI preview is on screen and still unaccepted.
+    await expect(
+      editor.locator('[data-suggestion-author="ai"]').first()
+    ).toBeVisible({ timeout: 30_000 });
+
+    const mark = `mgr-with-suggestion-${Date.now()}`;
+    await editor.click();
+    await page.keyboard.press("End");
+    await page.keyboard.type(` ${mark}`, { delay: 25 });
+
+    await expect(editor).toContainText(mark, { timeout: 15_000 });
+    await expectTypedAsInsertNotDelete(editor, mark);
+    // The typed run must be the manager's, never part of the AI suggestion.
+    await expect(
+      editor.locator(`[data-suggestion-author="ai"]`).filter({ hasText: mark })
+    ).toHaveCount(0);
+    await expect(defineSection(page).getByText(/saved/i)).toBeVisible({
+      timeout: 30_000,
+    });
+
+    await page.reload({ waitUntil: "domcontentloaded" });
+    await expect(defineEditor(page)).toContainText(mark, { timeout: 30_000 });
+  });
+
+  test("types in a plain Analyze field while an AI suggestion is unaccepted", async ({
+    page,
+  }) => {
+    const anchor = "the alarm sounded before the line halted";
+    await authenticateAsManager(page);
+    const seedSection = await page.request.patch(
+      `/api/reports/${reportId}/sections/analyze`,
+      {
+        data: {
+          content: {
+            brainstorming: `Operators reported ${anchor} at 10:05 hrs.`,
+          },
+        },
+        headers: await browserCookieHeaders(page),
+      }
+    );
+    expect(
+      seedSection.ok(),
+      `seed analyze failed (${seedSection.status()})`
+    ).toBeTruthy();
+
+    const seedSuggestion = await page.request.post(
+      "/api/test/seed-ai-suggestion",
+      {
+        data: {
+          reportId,
+          section: "analyze",
+          contentPath: "brainstorming",
+          anchorText: anchor,
+          insertText: " on filling line FL-02",
+          criterionKey: "analyze_brainstorming",
+          criterionLabel: "Brainstorming is captured",
+        },
+        headers: await browserCookieHeaders(page),
+      }
+    );
+    expect(
+      seedSuggestion.ok(),
+      `seed ai suggestion failed (${seedSuggestion.status()})`
+    ).toBeTruthy();
+
+    await gotoWithNavigationRetry(page, `/reports/${reportId}/review`, {
+      waitUntil: "domcontentloaded",
+    });
+    await expect(page.getByRole("heading", { name: /^analyze$/i })).toBeVisible({
+      timeout: 30_000,
+    });
+
+    const field = analyzePlainField(page, "brainstorming");
+    const shell = page.locator('[data-field-shell="analyze.brainstorming"]');
+    await expect(async () => {
+      await expect(shell).toBeVisible();
+      await shell.scrollIntoViewIfNeeded();
+      await expect(field).toBeAttached();
+    }).toPass({ timeout: 30_000 });
+    await expect(field).toBeEnabled({ timeout: 30_000 });
+    // Inline AI preview is on screen and still unaccepted.
+    await expect(shell.locator(".suggestion-insert").first()).toBeVisible({
+      timeout: 30_000,
+    });
+
+    const mark = `mgr-plain-suggestion-${Date.now()}`;
+    await field.focus();
+    await field.pressSequentially(mark, { delay: 20 });
+    await expect(field).toHaveValue(new RegExp(mark), { timeout: 15_000 });
+  });
+
   test("marks Brainstorming and Other Tools typing as inserts", async ({ page }) => {
     await authenticateAsManager(page);
     await gotoWithNavigationRetry(page, `/reports/${reportId}/review`, {

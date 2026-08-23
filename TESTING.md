@@ -212,7 +212,12 @@ Specs run against Chromium, Firefox, and WebKit unless you pass `--project=chrom
 | saves Define track-changes edits across reload | Review Define is editable; typed text is insert (not strikethrough); Saved; text survives reload |
 | saves Improve track-changes edits across reload | Improve is not locked in track changes; typed text is insert (not strikethrough); text survives reload |
 | keeps a new line and types into it instead of joining | Enter then type stays on the new line; letters are insert marks, not a joined previous paragraph |
+| types in Define while an AI suggestion is still unaccepted | Rich field accepts typing with an open `ai_fix` preview on screen; the typed run is a human insert, never part of the AI span; survives reload |
+| types in a plain Analyze field while an AI suggestion is unaccepted | Plain textarea accepts typing with an open `ai_fix` preview on screen |
 | marks Brainstorming and Other Tools typing as inserts | Analyze plain fields show green inserts; waits for Control to finish loading so the textarea stays attached |
+
+Both AI-suggestion cases seed an open suggestion through `POST /api/test/seed-ai-suggestion`
+(test-only, gated like `/api/test/login`) so no AI credential is needed.
 
 </details>
 
