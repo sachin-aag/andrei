@@ -367,3 +367,46 @@ export function activeSuggestionForSection(
   const sorted = sortedOpenSuggestionsForSection(section, comments, evaluations);
   return sorted[0] ?? null;
 }
+
+export function countOpenAiSuggestions(comments: readonly CommentRecord[]): number {
+  return comments.filter(
+    (c) => !c.parentId && isAiSuggestionKind(c.kind) && c.status === "open"
+  ).length;
+}
+
+/**
+ * Next card to offer after resolving `resolvedId` in `section`.
+ * Same-section queue first (severity order), then later evaluatable
+ * sections, then earlier ones. Each other section contributes its
+ * active (first) open suggestion.
+ */
+export function nextOpenSuggestionAfterResolve(
+  resolvedId: string,
+  section: SectionType,
+  comments: CommentRecord[],
+  evaluations: EvaluationRecord[],
+  sectionOrder: readonly SectionType[]
+): CommentRecord | null {
+  const remainingHere = sortedOpenSuggestionsForSection(
+    section,
+    comments,
+    evaluations
+  ).filter((c) => c.id !== resolvedId);
+  if (remainingHere[0]) return remainingHere[0];
+
+  const rank = sectionOrder.indexOf(section);
+  const ordered =
+    rank === -1
+      ? sectionOrder
+      : [...sectionOrder.slice(rank + 1), ...sectionOrder.slice(0, rank)];
+
+  for (const nextSection of ordered) {
+    const active = activeSuggestionForSection(
+      nextSection,
+      comments,
+      evaluations
+    );
+    if (active && active.id !== resolvedId) return active;
+  }
+  return null;
+}

@@ -23,14 +23,18 @@ import {
   STATUS_COLOR,
   STATUS_TEXT_COLOR,
   effectiveStatus,
+  evaluatableSectionKeys,
 } from "@/lib/ai/criteria-view";
 import {
+  countOpenAiSuggestions,
+  nextOpenSuggestionAfterResolve,
   parseAiFixCommentContent,
   parseAiRedraftCommentContent,
   sortedOpenSuggestionsForSection,
   type ParsedAiFixPayload,
   type ParsedAiRedraftPayload,
 } from "@/lib/ai/suggestion-gating";
+import { resolveSection } from "@/lib/document-types";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 import { splitPlainTextWithPlaceholders } from "@/lib/placeholders/plain-text-segments";
 import { inlineMarkdownToTextNodes } from "@/lib/tiptap/markdown-to-doc";
@@ -445,15 +449,35 @@ function ExitingSuggestionLayer({
   );
 }
 
+export function suggestionQueueBridgeCopy(
+  remainingTotal: number,
+  nextSectionLabel: string | null
+): string {
+  if (nextSectionLabel) {
+    return remainingTotal === 1
+      ? `1 suggestion remaining in ${nextSectionLabel}.`
+      : `${remainingTotal} suggestions remaining — next is in ${nextSectionLabel}.`;
+  }
+  return remainingTotal === 1
+    ? "1 suggestion remaining farther in this section."
+    : `${remainingTotal} suggestions remaining — next is farther in this section.`;
+}
+
 /** Parked handoff when the next suggestion is off-screen. */
-function SuggestionQueueBridgeCard({
+export function SuggestionQueueBridgeCard({
   remainingTotal,
+  nextSectionLabel = null,
   criterionLabel,
+  pending,
   onGo,
+  onDismiss,
 }: {
   remainingTotal: number;
+  nextSectionLabel?: string | null;
   criterionLabel?: string;
+  pending: boolean;
   onGo: () => void;
+  onDismiss: () => void;
 }) {
   const goRef = useRef<HTMLButtonElement>(null);
 
@@ -462,7 +486,7 @@ function SuggestionQueueBridgeCard({
   }, []);
 
   return (
-    <div className="rounded-md border border-violet-500/30 bg-[var(--card)] p-3 space-y-2">
+    <div className="sticky top-3 z-20 rounded-md border border-violet-500/30 bg-[var(--card)] p-3 space-y-2 shadow-md">
       <div className="flex items-center justify-between gap-2">
         <span className="text-[10px] font-medium text-[var(--muted-foreground)] uppercase tracking-wide">
           Next suggestion
@@ -474,19 +498,32 @@ function SuggestionQueueBridgeCard({
         ) : null}
       </div>
       <p className="text-xs leading-snug text-[var(--foreground)]">
-        {remainingTotal === 1
-          ? "1 suggestion remaining farther in this section."
-          : `${remainingTotal} suggestions remaining — next is farther in this section.`}
+        {suggestionQueueBridgeCopy(remainingTotal, nextSectionLabel)}
       </p>
-      <Button
-        ref={goRef}
-        size="sm"
-        className="h-7 text-xs w-full"
-        onClick={onGo}
-      >
-        <ArrowDown className="size-3" />
-        Go to next
-      </Button>
+      <div className="flex flex-wrap gap-2 pt-1">
+        <Button
+          ref={goRef}
+          type="button"
+          size="sm"
+          className="h-7 text-xs"
+          disabled={pending}
+          onClick={onGo}
+        >
+          <ArrowDown className="size-3" />
+          Go to next
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="h-7 text-xs"
+          disabled={pending}
+          onClick={onDismiss}
+        >
+          <X className="size-3" />
+          Dismiss
+        </Button>
+      </div>
     </div>
   );
 }
@@ -569,6 +606,11 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
   const exitRef = useRef<HTMLDivElement>(null);
   const enterRef = useRef<HTMLDivElement>(null);
 
+  const sectionOrder = useMemo(
+    () => evaluatableSectionKeys(report.documentType),
+    [report.documentType]
+  );
+
   const openSorted = useMemo(
     () => sortedOpenSuggestionsForSection(section, comments, evaluations),
     [section, comments, evaluations]
@@ -604,8 +646,14 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
   }, [section, comments, evaluations, sectionContent]);
 
   const bridge = suggestionApplyTransition[section]?.bridge;
-  const showBridge =
-    !!bridge && !!liveCard && liveCard.comment.id === bridge.nextCommentId;
+  const bridgeNext = useMemo(() => {
+    if (!bridge) return null;
+    const next = comments.find(
+      (c) => c.id === bridge.nextCommentId && c.status === "open" && !c.parentId
+    );
+    return next ?? null;
+  }, [bridge, comments]);
+  const showBridge = bridgeNext != null;
 
   // Queue changed under a parked bridge (regen, external resolve) — drop the hold.
   useLayoutEffect(() => {
@@ -627,8 +675,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
   const animateQueueTransition = useCallback(
     async (
       closingSnapshot: FrozenCard,
-      nextComment: CommentRecord,
-      parkCenterY: number | null
+      nextComment: CommentRecord
     ): Promise<QueueAdvanceOutcome> => {
       setFrozenCard(null);
       setExitingCard(closingSnapshot);
@@ -641,8 +688,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
       setExitingCard(null);
       await delay(SUGGESTION_NEXT_PREVIEW_DELAY_MS);
 
-      const needsBridge =
-        parkCenterY != null && !isSuggestionTargetInViewport(nextComment);
+      const needsBridge = !isSuggestionTargetInViewport(nextComment);
 
       if (needsBridge) {
         enterSuggestionQueueBridge(section, {
@@ -653,7 +699,14 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
         return "bridge";
       }
 
-      // Nearby next: release the park so the gutter can slide to the new field.
+      if (nextComment.section !== section) {
+        // The next card already lives on another section's gutter.
+        setQueueTransition(null);
+        setPhase("steady");
+        return "advanced";
+      }
+
+      // Nearby next in this section: release the park so the gutter can slide.
       beginSuggestionApplyTransition(section, nextComment.id, "accept");
       setPhase("preparing-next");
       await animateEnterNext();
@@ -667,15 +720,25 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
     ]
   );
 
+  const handleDismissBridge = useCallback(() => {
+    if (!showBridge || pending) return;
+    endSuggestionApplyTransition(section);
+  }, [showBridge, pending, section, endSuggestionApplyTransition]);
+
   const handleGoToNext = useCallback(async () => {
-    if (!showBridge || !liveCard || pending) return;
+    if (!showBridge || !bridgeNext || pending) return;
+
+    scrollToSuggestionComment(bridgeNext);
+
+    if (bridgeNext.section !== section) {
+      endSuggestionApplyTransition(section);
+      return;
+    }
 
     const mode = suggestionApplyTransition[section]?.mode ?? "accept";
-    scrollToSuggestionComment(liveCard.comment);
-
     // Clear park Y so the gutter can follow the next field; keep preview held
     // until the enter animation finishes.
-    beginSuggestionApplyTransition(section, liveCard.comment.id, mode);
+    beginSuggestionApplyTransition(section, bridgeNext.id, mode);
 
     setPending(true);
     try {
@@ -687,7 +750,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
     }
   }, [
     showBridge,
-    liveCard,
+    bridgeNext,
     pending,
     section,
     suggestionApplyTransition,
@@ -711,10 +774,15 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
 
     const snapshot = liveCard;
     const commentId = snapshot.comment.id;
-    const nextInQueue = openSorted[1] ?? null;
-    const hasQueue = snapshot.queueTotal > 1 && nextInQueue != null;
+    const nextTarget = nextOpenSuggestionAfterResolve(
+      commentId,
+      section,
+      comments,
+      evaluations,
+      sectionOrder
+    );
     // Capture before comments/gutter re-anchor after resolve.
-    const parkCenterY = hasQueue
+    const parkCenterY = nextTarget
       ? measureSuggestionGutterParkCenterY(section)
       : null;
 
@@ -761,12 +829,8 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
       setPhase("applied");
       await delay(SUGGESTION_APPLY_SETTLE_MS);
 
-      if (hasQueue && nextInQueue) {
-        const outcome = await animateQueueTransition(
-          snapshot,
-          nextInQueue,
-          parkCenterY
-        );
+      if (nextTarget) {
+        const outcome = await animateQueueTransition(snapshot, nextTarget);
         retainHold = outcome === "bridge";
       } else {
         setFrozenCard(null);
@@ -801,7 +865,9 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
     canResolve,
     section,
     sections,
-    openSorted,
+    comments,
+    evaluations,
+    sectionOrder,
     report.id,
     replaceSection,
     animateQueueTransition,
@@ -816,9 +882,14 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
 
     const snapshot = liveCard;
     const commentId = snapshot.comment.id;
-    const nextInQueue = openSorted[1] ?? null;
-    const hasQueue = snapshot.queueTotal > 1 && nextInQueue != null;
-    const parkCenterY = hasQueue
+    const nextTarget = nextOpenSuggestionAfterResolve(
+      commentId,
+      section,
+      comments,
+      evaluations,
+      sectionOrder
+    );
+    const parkCenterY = nextTarget
       ? measureSuggestionGutterParkCenterY(section)
       : null;
 
@@ -866,12 +937,8 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
       setPhase("applied");
       await delay(SUGGESTION_APPLY_SETTLE_MS);
 
-      if (hasQueue && nextInQueue) {
-        const outcome = await animateQueueTransition(
-          snapshot,
-          nextInQueue,
-          parkCenterY
-        );
+      if (nextTarget) {
+        const outcome = await animateQueueTransition(snapshot, nextTarget);
         retainHold = outcome === "bridge";
       } else {
         setFrozenCard(null);
@@ -904,7 +971,9 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
     canResolve,
     section,
     sections,
-    openSorted,
+    comments,
+    evaluations,
+    sectionOrder,
     report.id,
     replaceSection,
     animateQueueTransition,
@@ -914,14 +983,27 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
     endSuggestionApplyTransition,
   ]);
 
-  if (showBridge && liveCard) {
+  if (showBridge && bridgeNext) {
+    const nextSection =
+      typeof bridgeNext.section === "string" ? bridgeNext.section : null;
+    const nextSectionLabel =
+      nextSection && nextSection !== section
+        ? (resolveSection(report.documentType, nextSection)?.label ?? null)
+        : null;
+    const remainingTotal = countOpenAiSuggestions(comments);
+    const nextEval = bridgeNext.evaluationId
+      ? evaluations.find((e) => e.id === bridgeNext.evaluationId)
+      : undefined;
     return (
       <SuggestionQueueBridgeCard
-        remainingTotal={total}
-        criterionLabel={liveCard.linkedEval?.criterionLabel}
+        remainingTotal={remainingTotal}
+        nextSectionLabel={nextSectionLabel}
+        criterionLabel={nextEval?.criterionLabel}
+        pending={pending}
         onGo={() => {
           void handleGoToNext();
         }}
+        onDismiss={handleDismissBridge}
       />
     );
   }
