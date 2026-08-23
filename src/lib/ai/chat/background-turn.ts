@@ -17,6 +17,9 @@ export {
 
 /**
  * Drain a teed SSE copy so client disconnect does not cancel generation.
+ * Call this immediately from `consumeSseStream`. Do not schedule it with
+ * Next `after()` — that waits for the HTTP response to finish, and the tee
+ * only finishes if this copy is already being read.
  */
 export async function drainSseStream(
   stream: ReadableStream<string>
