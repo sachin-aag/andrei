@@ -67,7 +67,7 @@ export function ChatSessionTabs({
     <div
       role="tablist"
       aria-label="Open chats"
-      className="flex min-w-0 flex-1 items-stretch overflow-x-auto overscroll-x-contain [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden [&::-webkit-scrollbar]:h-0"
+      className="chat-session-tabs flex min-w-0 flex-1 items-stretch overflow-x-auto overflow-y-hidden overscroll-x-contain"
       onKeyDown={(event) => {
         if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
         if (items.length < 2) return;
@@ -102,7 +102,7 @@ export function ChatSessionTabs({
               onSelect(item.id);
             }}
             className={cn(
-              "relative flex h-7 max-w-[12rem] shrink-0 cursor-pointer items-center gap-1 border-r border-[var(--border)] px-2 text-[11px] transition-colors",
+              "relative flex h-7 max-w-[13rem] shrink-0 cursor-pointer items-center gap-1 border-r border-[var(--border)] py-0 pl-2 pr-1 text-[11px] transition-colors",
               selected
                 ? "bg-[var(--secondary)] font-medium text-[var(--foreground)]"
                 : "text-[var(--muted-foreground)] hover:bg-[var(--secondary)]/70 hover:text-[var(--foreground)]"
@@ -118,9 +118,9 @@ export function ChatSessionTabs({
                 event.stopPropagation();
                 onClose(item.id);
               }}
-              className="flex size-4 shrink-0 items-center justify-center rounded-sm text-[var(--muted-foreground)] transition-colors hover:bg-[var(--border)] hover:text-[var(--foreground)]"
+              className="flex size-5 shrink-0 items-center justify-center rounded-sm text-[var(--foreground)]/70 transition-colors hover:bg-[var(--border)] hover:text-[var(--foreground)]"
             >
-              <X className="size-3" aria-hidden />
+              <X className="size-3.5" strokeWidth={2.25} aria-hidden />
             </button>
             {selected ? (
               <span

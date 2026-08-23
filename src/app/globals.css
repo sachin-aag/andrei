@@ -175,6 +175,21 @@ html[data-customer="convergent"] {
   }
 }
 
+/* Open-chat tabs: keep overflow for many titles, but never show the 10px
+   global horizontal thumb that sits on top of the titles. */
+.chat-session-tabs {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.chat-session-tabs::-webkit-scrollbar,
+.chat-session-tabs::-webkit-scrollbar-thumb,
+.chat-session-tabs::-webkit-scrollbar-track {
+  display: none;
+  width: 0;
+  height: 0;
+  background: transparent;
+}
+
 @keyframes fade {
   from { filter: blur(3px); opacity: 0; }
   to { filter: blur(0); opacity: 1; }

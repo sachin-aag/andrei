@@ -22,7 +22,7 @@ describe("ChatSessionTabs", () => {
 
     const tabs = screen.getByRole("tablist", { name: "Open chats" });
     expect(tabs).toBeInTheDocument();
-    expect(tabs).toHaveClass("[scrollbar-width:none]");
+    expect(tabs).toHaveClass("chat-session-tabs");
     expect(screen.getByRole("tab", { name: "Draft Define. Still working" })).toHaveAttribute(
       "aria-selected",
       "false"
