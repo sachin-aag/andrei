@@ -17,6 +17,7 @@ import {
 import {
   CONVERGENT_EQUIPMENT_HEADERS,
   CONVERGENT_RESULTS_HEADERS,
+  CONVERGENT_RESULTS_FIELD_SPLIT_NOTES,
   CONVERGENT_RESULTS_MATRIX_FILLING_NOTES,
   dvTableHeadersForSection,
 } from "@/lib/document-types/design-verification/sections";
@@ -31,6 +32,9 @@ describe("Convergent customer pack", () => {
       false
     );
     expect(CONVERGENT_PACK.wordImportEnabled).toBe(false);
+    expect(CONVERGENT_PACK.citationsAtEndOfSection).toBe(true);
+    expect(DEMO_PACK.citationsAtEndOfSection).toBe(false);
+    expect(MJ_PACK.citationsAtEndOfSection).toBe(false);
     expect(engineerReportsSubtitle([{ label: "Design Verification Report" }])).toBe(
       "Create and manage design verification reports."
     );
@@ -68,7 +72,20 @@ describe("Convergent customer pack", () => {
       CONVERGENT_RESULTS_MATRIX_FILLING_NOTES
     );
     expect(def.chat.draftingGuidance).toContain(
+      CONVERGENT_RESULTS_FIELD_SPLIT_NOTES
+    );
+    expect(def.chat.draftingGuidance).toContain("SW-SST-5.1.1");
+    expect(def.chat.draftingGuidance).toContain(
+      "not every requirement ID mentioned in the protocol body"
+    );
+    expect(def.chat.draftingGuidance).toContain(
       "configuration for which that P/F was achieved"
+    );
+    expect(def.chat.draftingGuidance).toContain(
+      "NEVER include a markdown table or Req ID / Satisfied By / P/F rows here"
+    );
+    expect(def.chat.draftingGuidance).toContain(
+      "Do not put that table, or any Req ID / P/F rows, in Discussion"
     );
     expect(def.chat.draftingGuidance).toContain(
       "There are no separate start/end date fields"
@@ -106,6 +123,9 @@ describe("Convergent customer pack", () => {
     ]);
     expect(def.chat.draftingGuidance).not.toContain(
       CONVERGENT_RESULTS_MATRIX_FILLING_NOTES
+    );
+    expect(def.chat.draftingGuidance).not.toContain(
+      CONVERGENT_RESULTS_FIELD_SPLIT_NOTES
     );
   });
 

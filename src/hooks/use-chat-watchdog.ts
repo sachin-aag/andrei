@@ -19,14 +19,18 @@ export function useChatWatchdog({
   stop,
   onGiveUp,
   enabled = true,
+  holdBusy = false,
 }: {
   messages: readonly WatchdogMessage[];
   status: ChatStatus;
   stop: () => void;
   onGiveUp?: () => void;
   enabled?: boolean;
+  /** Keep the elapsed clock running after the SSE is dropped (server still working). */
+  holdBusy?: boolean;
 }): { elapsedMs: number; silentMs: number } {
-  const busy = enabled && isChatTurnBusy(status);
+  const streamBusy = enabled && isChatTurnBusy(status);
+  const busy = streamBusy || holdBusy;
   const [elapsedMs, setElapsedMs] = useState(0);
   const [silentMs, setSilentMs] = useState(0);
   const busyStartedAtRef = useRef<number | null>(null);
@@ -36,6 +40,7 @@ export function useChatWatchdog({
   const messagesRef = useRef(messages);
   const stopRef = useRef(stop);
   const onGiveUpRef = useRef(onGiveUp);
+  const streamBusyRef = useRef(streamBusy);
 
   useEffect(() => {
     messagesRef.current = messages;
@@ -44,7 +49,8 @@ export function useChatWatchdog({
   useEffect(() => {
     stopRef.current = stop;
     onGiveUpRef.current = onGiveUp;
-  }, [onGiveUp, stop]);
+    streamBusyRef.current = streamBusy;
+  }, [onGiveUp, stop, streamBusy]);
 
   useEffect(() => {
     if (!busy) {
@@ -75,6 +81,7 @@ export function useChatWatchdog({
       setElapsedMs(now - started);
       setSilentMs(now - progress);
       if (
+        streamBusyRef.current &&
         chatWatchdogPhase({
           busy: true,
           elapsedMs: now - started,
@@ -82,6 +89,7 @@ export function useChatWatchdog({
         }) === "give_up" &&
         !stoppedForWatchdogRef.current
       ) {
+        // Drop a hung SSE without cancelling the server turn.
         stoppedForWatchdogRef.current = true;
         stopRef.current();
         onGiveUpRef.current?.();

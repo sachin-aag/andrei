@@ -4,7 +4,7 @@ import type { UIMessage } from "ai";
 export const CHAT_ASSISTANT_ERROR_MESSAGE =
   "The assistant hit an error. Please try again.";
 
-/** User-facing copy when the stream is aborted, disconnected, or hits the deadline. */
+/** User-facing copy when the stream is cancelled or hits the deadline. */
 export const CHAT_ASSISTANT_INTERRUPTED_MESSAGE =
   "The assistant stopped before finishing. Please try again.";
 
@@ -125,8 +125,8 @@ function appendInterruptedNotice(parts: UIMessage["parts"]): UIMessage["parts"] 
 
 /**
  * Persist a user-visible assistant row when the stream finishes empty, or
- * when it is aborted (refresh / cancel / deadline) so history is not an
- * orphaned user turn.
+ * when it is aborted (explicit Cancel / deadline) so history is not an
+ * orphaned user turn. Tab close no longer aborts the server turn.
  */
 export function partsForPersistedAssistantTurn(options: {
   parts: UIMessage["parts"] | undefined;

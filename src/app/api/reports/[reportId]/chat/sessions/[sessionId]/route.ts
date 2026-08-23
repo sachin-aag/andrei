@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth/session";
 import { loadAccessibleReport } from "@/lib/ai/chat/access";
-import { findChatSession, loadSessionMessages } from "@/lib/ai/chat/sessions";
+import { loadSessionView } from "@/lib/ai/chat/sessions";
 
 export async function GET(
   _req: Request,
@@ -14,9 +14,8 @@ export async function GET(
   const access = await loadAccessibleReport(reportId, user);
   if (!access) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const session = await findChatSession(reportId, sessionId);
-  if (!session) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const view = await loadSessionView(reportId, sessionId);
+  if (!view) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const messages = await loadSessionMessages(sessionId);
-  return NextResponse.json({ messages });
+  return NextResponse.json(view);
 }

@@ -718,7 +718,7 @@ export function TiptapSectionField({
 
     if (previewHeld) {
       // Queue bridge: don't keep the previous suggestion marks and don't inject
-      // the next one until the user jumps to it.
+      // the next one until the user jumps to it or dismisses the handoff.
       if (suggestionApplyTransition[section]?.bridge) {
         json = stripPendingSuggestionsExcept(json, null);
         if (JSON.stringify(json) === before) return;
@@ -799,6 +799,27 @@ export function TiptapSectionField({
             if (preview.ok) {
               json = preview.doc;
               tablePreviewSuggestionIdRef.current = activeSuggestionId;
+              if (payload.second) {
+                const citeInjected = injectSuggestionMarks(
+                  json,
+                  {
+                    anchorText: payload.second.anchorText,
+                    deleteText: payload.second.deleteText,
+                    insertText: payload.second.insertText,
+                    scope: payload.second.scope,
+                  },
+                  {
+                    id: activeSuggestionId,
+                    authorId: AI_AUTHOR_ID,
+                    status: "pending",
+                    createdAt: comment.createdAt,
+                    kind: "fix",
+                  }
+                );
+                if (citeInjected.located) {
+                  json = normalizeRichField(citeInjected.doc);
+                }
+              }
             }
           } else if (!payload.tableOperationInvalid) {
             const edit = buildSuggestionEdit({
@@ -806,6 +827,7 @@ export function TiptapSectionField({
               deleteText: payload.deleteText,
               insertText: payload.insertText,
               scope: payload.scope,
+              second: payload.second,
             });
             const injected = injectSuggestionMarks(json, edit, {
               id: activeSuggestionId,

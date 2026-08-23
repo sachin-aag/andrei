@@ -58,7 +58,6 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { useChatWatchdog } from "@/hooks/use-chat-watchdog";
 import { useReportData } from "@/providers/report-provider";
 import { useReportAttachments } from "@/providers/report-attachments-provider";
 import { useUserDirectory } from "@/providers/user-directory-provider";
@@ -90,13 +89,11 @@ import {
 } from "@/lib/ai/chat/image-parts";
 import {
   CHAT_ASSISTANT_ERROR_MESSAGE,
-  CHAT_ASSISTANT_INTERRUPTED_MESSAGE,
   chatWatchdogPhase,
   shouldShowEmptyAssistantError,
 } from "@/lib/ai/chat/assistant-turn";
 import {
   dropBackgroundSession,
-  isChatTurnBusy,
   rememberBackgroundSession,
   rememberMountedSession,
   runningChatSessionIds,
@@ -140,11 +137,42 @@ import {
   shouldLoadOlderMessages,
   visibleMessageStartIndex,
 } from "@/components/report/chat-visible-messages";
+import { getDocumentType } from "@/lib/document-types";
+import { readAgentDonePrefs } from "@/lib/notifications/agent-done-prefs";
+import {
+  agentDoneNotificationCopy,
+  elapsedSince,
+  notifyAgentDone,
+  requestAgentDoneNotificationPermission,
+  shouldAnnounceAgentDone,
+  shouldShowAgentDonePendingHint,
+  unlockAgentDoneAudio,
+} from "@/lib/notifications/notify-agent-done";
 
 type PendingChatImage = {
   id: string;
   part: FileUIPart;
 };
+
+function announceCompletedAssistantTurn(
+  startedAt: number | null,
+  ctx: {
+    currentUserId: string;
+    documentNo: string;
+    documentType: DocumentType;
+  }
+): void {
+  const elapsedMs = elapsedSince(startedAt);
+  if (!shouldAnnounceAgentDone({ elapsedMs })) return;
+  const { documentNoun } = getDocumentType(ctx.documentType);
+  notifyAgentDone(
+    readAgentDonePrefs(ctx.currentUserId),
+    agentDoneNotificationCopy({
+      documentNoun,
+      documentNo: ctx.documentNo,
+    })
+  );
+}
 
 type ToolPartInfo = {
   toolName: string;
@@ -567,29 +595,42 @@ function MentionMenu({
 function ChatBusyStatus({
   mode,
   stale,
+  background,
+  willNotify,
   onCancel,
 }: {
   mode: ChatMode;
   stale: boolean;
+  background: boolean;
+  willNotify: boolean;
   onCancel: () => void;
 }) {
   return (
-    <div className="flex items-center gap-2 text-xs text-[var(--muted-foreground)]">
-      <Loader2 className="size-3.5 animate-spin" />
-      <span>
-        {stale
-          ? "Still working — this can take a few minutes."
-          : mode === "plan"
-            ? "Thinking through your question…"
-            : "Working…"}
-      </span>
-      <button
-        type="button"
-        onClick={onCancel}
-        className="underline decoration-[var(--border)] underline-offset-2 transition-colors hover:text-[var(--foreground)]"
-      >
-        Cancel
-      </button>
+    <div className="space-y-1">
+      <div className="flex items-center gap-2 text-xs text-[var(--muted-foreground)]">
+        <Loader2 className="size-3.5 animate-spin" />
+        <span>
+          {background
+            ? "Still working in the background…"
+            : stale
+              ? "Still working — this can take a few minutes."
+              : mode === "plan"
+                ? "Thinking through your question…"
+                : "Working…"}
+        </span>
+        <button
+          type="button"
+          onClick={onCancel}
+          className="underline decoration-[var(--border)] underline-offset-2 transition-colors hover:text-[var(--foreground)]"
+        >
+          Cancel
+        </button>
+      </div>
+      {willNotify ? (
+        <p className="pl-[22px] text-xs text-[var(--muted-foreground)]">
+          We&apos;ll notify you when this is complete.
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -622,7 +663,10 @@ const MessageTurn = memo(function MessageTurn({
     if (!text && images.length === 0) return null;
     return (
       <div className="flex justify-end">
-        <div className="max-w-[92%] space-y-2 rounded-2xl rounded-br-md bg-[var(--primary)] px-3 py-2 text-sm text-[var(--primary-foreground)]">
+        <div
+          className="max-w-[92%] space-y-2 rounded-2xl rounded-br-md bg-[var(--primary)] px-3 py-2 text-sm text-[var(--primary-foreground)]"
+          aria-label="Your message"
+        >
           {images.length > 0 ? (
             <div className="flex flex-wrap gap-1.5">
               {images.map((image, i) => (
@@ -976,16 +1020,23 @@ export function ChatPanel() {
   const runtimeBySessionRef = useRef(new Map<string, ChatSessionRuntime>());
 
   const base = `/api/reports/${report.id}/chat`;
-  const { messages, status, error, stop } = runtime;
-  const hostReady = runtime !== IDLE_CHAT_RUNTIME;
-  const busy = isChatTurnBusy(status);
-  const { elapsedMs, silentMs } = useChatWatchdog({
+  const {
     messages,
     status,
-    stop,
-    onGiveUp: () => toast.error(CHAT_ASSISTANT_INTERRUPTED_MESSAGE),
+    error,
+    stopTurn,
+    streamBusy,
+    backgroundTurn,
+    busy,
+    elapsedMs,
+    silentMs,
+  } = runtime;
+  const hostReady = runtime !== IDLE_CHAT_RUNTIME;
+  const watchdog = chatWatchdogPhase({
+    busy: streamBusy,
+    elapsedMs,
+    silentMs,
   });
-  const watchdog = chatWatchdogPhase({ busy, elapsedMs, silentMs });
   const runningSessionIds = runningChatSessionIds(
     backgroundSessionIds,
     currentSessionId,
@@ -1144,6 +1195,17 @@ export function ChatPanel() {
     void loadSessions();
   }, [loadSessions, refresh]);
 
+  const onTurnCompleted = useCallback(
+    (startedAt: number | null) => {
+      announceCompletedAssistantTurn(startedAt, {
+        currentUserId,
+        documentNo: report.documentNo,
+        documentType: report.documentType,
+      });
+    },
+    [currentUserId, report.documentNo, report.documentType]
+  );
+
   const mountSession = useCallback((sessionId: string, hydrateOnMount: boolean) => {
     setMountedSessions((prev) =>
       rememberMountedSession(prev, sessionId, hydrateOnMount)
@@ -1152,11 +1214,7 @@ export function ChatPanel() {
 
   const openSession = useCallback(
     (sessionId: string) => {
-      if (
-        sessionId !== currentSessionId &&
-        currentSessionId &&
-        (status === "submitted" || status === "streaming")
-      ) {
+      if (sessionId !== currentSessionId && currentSessionId && busy) {
         setBackgroundSessionIds((prev) =>
           rememberBackgroundSession(prev, currentSessionId)
         );
@@ -1167,7 +1225,7 @@ export function ChatPanel() {
       setCurrentSessionId(sessionId);
       setHistoryOpen(false);
     },
-    [currentSessionId, mountSession, status]
+    [busy, currentSessionId, mountSession]
   );
 
   const createSession = useCallback(async (): Promise<string | null> => {
@@ -1189,7 +1247,7 @@ export function ChatPanel() {
       toast.error("Could not start a new chat.");
       return;
     }
-    if (currentSessionId && (status === "submitted" || status === "streaming")) {
+    if (currentSessionId && busy) {
       setBackgroundSessionIds((prev) =>
         rememberBackgroundSession(prev, currentSessionId)
       );
@@ -1202,7 +1260,7 @@ export function ChatPanel() {
     setPendingImages([]);
     setMentions([]);
     setMentionRange(null);
-  }, [createSession, currentSessionId, mountSession, status]);
+  }, [busy, createSession, currentSessionId, mountSession]);
 
   const onSessionSettled = useCallback((sessionId: string) => {
     setBackgroundSessionIds((prev) => dropBackgroundSession(prev, sessionId));
@@ -1211,7 +1269,11 @@ export function ChatPanel() {
   const onSessionRuntime = useCallback(
     (sessionId: string, next: ChatSessionRuntime) => {
       runtimeBySessionRef.current.set(sessionId, next);
-      const snapshot = chatSessionTabSnapshot(next.status, next.messages);
+      const snapshot = chatSessionTabSnapshot(
+        next.status,
+        next.messages,
+        next.backgroundTurn
+      );
       setTabSnapshots((prev) => {
         if (sessionTabSnapshotsEqual(prev[sessionId], snapshot)) return prev;
         return { ...prev, [sessionId]: snapshot };
@@ -1262,10 +1324,6 @@ export function ChatPanel() {
       loadOlderMessages();
     }
   }, [loadOlderMessages, messages.length, visibleCount]);
-
-  const stopTurn = useCallback(() => {
-    stop();
-  }, [stop]);
 
   useEffect(() => {
     currentSessionIdRef.current = currentSessionId;
@@ -1394,14 +1452,15 @@ export function ChatPanel() {
       const attached = images ?? pendingImages;
       const trimmed = text.trim();
       const files = attached.map((image) => image.part);
-      if (
-        (!trimmed && files.length === 0) ||
-        status === "submitted" ||
-        status === "streaming" ||
-        initializing ||
-        attaching
-      ) {
+      if ((!trimmed && files.length === 0) || busy || initializing || attaching) {
         return;
+      }
+      const agentDonePrefs = readAgentDonePrefs(currentUserId);
+      if (agentDonePrefs.sound) {
+        unlockAgentDoneAudio();
+      }
+      if (agentDonePrefs.notifications) {
+        void requestAgentDoneNotificationPermission();
       }
       let sessionId = currentSessionId;
       if (!sessionId) {
@@ -1421,7 +1480,7 @@ export function ChatPanel() {
         toast.error("Could not start a chat session.");
         return;
       }
-      if (isChatTurnBusy(sessionRuntime.status)) return;
+      if (sessionRuntime.busy) return;
       setInput("");
       setPendingImages([]);
       setMentionRange(null);
@@ -1456,7 +1515,7 @@ export function ChatPanel() {
     },
     [
       attaching,
-      status,
+      busy,
       initializing,
       currentSessionId,
       createSession,
@@ -1467,6 +1526,7 @@ export function ChatPanel() {
       pendingImages,
       mentions,
       report.documentType,
+      currentUserId,
     ]
   );
 
@@ -1492,8 +1552,8 @@ export function ChatPanel() {
           sessionId={session.id}
           api={base}
           hydrateOnMount={session.hydrateOnMount}
-          active={session.id === currentSessionId}
           onFinishTurn={onFinishTurn}
+          onTurnCompleted={onTurnCompleted}
           onSettled={onSessionSettled}
           onRuntime={onSessionRuntime}
         />
@@ -1653,6 +1713,11 @@ export function ChatPanel() {
           <ChatBusyStatus
             mode={mode}
             stale={watchdog === "stale" || watchdog === "give_up"}
+            background={backgroundTurn && !streamBusy}
+            willNotify={shouldShowAgentDonePendingHint({
+              notifications: readAgentDonePrefs(currentUserId).notifications,
+              elapsedMs,
+            })}
             onCancel={stopTurn}
           />
         ) : null}

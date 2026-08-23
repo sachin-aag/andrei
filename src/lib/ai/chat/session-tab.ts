@@ -80,19 +80,21 @@ export function chatHasOpenQuestions(
 
 export function chatSessionTabStatus(
   status: ChatStatus,
-  messages: readonly ChatSessionTabMessage[]
+  messages: readonly ChatSessionTabMessage[],
+  backgroundTurn = false
 ): ChatSessionTabStatus {
-  if (isChatTurnBusy(status)) return "running";
+  if (backgroundTurn || isChatTurnBusy(status)) return "running";
   if (chatHasOpenQuestions(messages)) return "questions";
   return "done";
 }
 
 export function chatSessionTabSnapshot(
   status: ChatStatus,
-  messages: readonly ChatSessionTabMessage[]
+  messages: readonly ChatSessionTabMessage[],
+  backgroundTurn = false
 ): SessionTabSnapshot {
   return {
-    status: chatSessionTabStatus(status, messages),
+    status: chatSessionTabStatus(status, messages, backgroundTurn),
     title: firstUserMessageTitle(messages),
   };
 }

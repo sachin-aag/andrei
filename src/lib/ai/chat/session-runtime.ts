@@ -25,6 +25,14 @@ export function isChatTurnBusy(status: ChatStatus): boolean {
   return status === "submitted" || status === "streaming";
 }
 
+/** Stream in flight, or the server is still generating after the SSE dropped. */
+export function isChatSessionBusy(input: {
+  status: ChatStatus;
+  backgroundTurn?: boolean;
+}): boolean {
+  return isChatTurnBusy(input.status) || Boolean(input.backgroundTurn);
+}
+
 /** False while a turn is in flight — replacing messages would drop the stream. */
 export function canReplaceChatMessages(status: ChatStatus): boolean {
   return !isChatTurnBusy(status);

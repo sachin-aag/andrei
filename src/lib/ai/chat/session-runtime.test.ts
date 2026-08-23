@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   canReplaceChatMessages,
   dropBackgroundSession,
+  isChatSessionBusy,
   isChatTurnBusy,
   rememberBackgroundSession,
   rememberMountedSession,
@@ -22,6 +23,13 @@ describe("session-runtime", () => {
     expect(isChatTurnBusy("streaming")).toBe(true);
     expect(isChatTurnBusy("ready")).toBe(false);
     expect(isChatTurnBusy("error")).toBe(false);
+    expect(isChatSessionBusy({ status: "ready" })).toBe(false);
+    expect(isChatSessionBusy({ status: "ready", backgroundTurn: true })).toBe(
+      true
+    );
+    expect(isChatSessionBusy({ status: "streaming", backgroundTurn: false })).toBe(
+      true
+    );
   });
 
   it("refuses to replace messages while a turn is in flight", () => {

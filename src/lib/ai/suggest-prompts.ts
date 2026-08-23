@@ -6,7 +6,7 @@ import {
   isDvTableSection,
 } from "@/lib/document-types/design-verification/sections";
 
-export const SUGGEST_PROMPT_VERSION = "suggest-v16-testers-dates-in-narrative" as const;
+export const SUGGEST_PROMPT_VERSION = "suggest-v19-exact-req-ids-citations" as const;
 
 /** Google model for suggestion generation (stronger reasoning + verbatim anchors). */
 export const SUGGEST_GOOGLE_MODEL_ID = "gemini-3.1-pro-preview" as const;
@@ -39,7 +39,10 @@ function fieldHintForSection(section: SectionType): string {
   return "";
 }
 
-export function buildSuggestionSystemPrompt(section: SectionType): string {
+export function buildSuggestionSystemPrompt(
+  section: SectionType,
+  opts?: { citationsAtEndOfSection?: boolean }
+): string {
   const fields = SUGGEST_TARGET_FIELD_PATTERNS[section].join(", ");
   const fieldHint = fieldHintForSection(section);
   const tableFormatBlock = isDvTableSection(section)
@@ -79,7 +82,20 @@ CRITERION-SPECIFIC PLACEMENT RULES:
 OPERATIONS (implicit from deleteText/insertText):
 - replace: both deleteText and insertText non-empty
 - insert: deleteText empty, insertText non-empty (anchor locates where to insert after)
-- delete: insertText empty, deleteText non-empty${tableFormatBlock}`;
+- delete: insertText empty, deleteText non-empty${tableFormatBlock}${
+    opts?.citationsAtEndOfSection
+      ? `
+
+CITATIONS AT END OF SECTION (required):
+- Do NOT put [filename, p. N] or [filename] inline next to the claim.
+- Put every new document citation at the END of the target field under a "Citations:" heading: blank line after the last prose/table, then "Citations:", then one [filename, p. N] or [filename] per line.
+- When a fix both changes prose (or a table cell) AND adds a citation, return a SPLIT edit:
+  - Primary: the body change only (no citation brackets) at the claim / cell.
+  - "second": { "anchorText": "", "deleteText": "", "insertText": "Citations:\\n[filename, p. N]" } — empty anchor appends the heading and citation at the end of the field. If the field already ends with a Citations: block, insert only the new [filename, p. N] line.
+- If the citation already appears in SECTION CONTENT, do not add it again.
+- Never write a citation as a placeholder.`
+      : ""
+  }`;
 }
 
 export function buildSuggestionUserPrompt({
@@ -88,6 +104,7 @@ export function buildSuggestionUserPrompt({
   priorBlock,
   evidenceBlock,
   failingCriteria,
+  citationsAtEndOfSection,
 }: {
   section: SectionType;
   contentStr: string;
@@ -99,6 +116,7 @@ export function buildSuggestionUserPrompt({
     reasoning: string;
     status: CriterionStatus;
   }>;
+  citationsAtEndOfSection?: boolean;
 }): string {
   const statusLabel = (status: CriterionStatus) =>
     status === "not_met" ? "NOT MET" : status === "partially_met" ? "PARTIALLY MET" : status;
@@ -160,6 +178,21 @@ Table cell edit (SECTION CONTENT shows "[2,3] Pass"):
   "scope": { "kind": "cell", "row": 2, "col": 3 },
   "reasoning": "Records the actual result for this test in its cell."
 }
-
+${
+    citationsAtEndOfSection
+      ? `
+Split edit (body change + citation at end of section):
+{
+  "criterionKey": "results.satisfied_by",
+  "targetField": "narrative",
+  "anchorText": "Output power met the acceptance limit.",
+  "deleteText": "",
+  "insertText": " The measured value was 9.8 W.",
+  "second": { "anchorText": "", "deleteText": "", "insertText": "Citations:\\n[protocol.pdf, p. 3]" },
+  "reasoning": "Adds the measured value in the claim and parks the citation at the end of the section."
+}
+`
+      : ""
+  }
 Return one suggestion object per failing criterion key listed above.`;
 }

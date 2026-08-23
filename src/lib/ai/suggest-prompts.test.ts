@@ -2,11 +2,53 @@ import { describe, expect, it } from "vitest";
 import {
   SUGGEST_PROMPT_VERSION,
   buildSuggestionSystemPrompt,
+  buildSuggestionUserPrompt,
 } from "@/lib/ai/suggest-prompts";
 
 describe("buildSuggestionSystemPrompt", () => {
   it("bumps the suggest prompt version when DV table guidance changes", () => {
-    expect(SUGGEST_PROMPT_VERSION).toBe("suggest-v16-testers-dates-in-narrative");
+    expect(SUGGEST_PROMPT_VERSION).toBe("suggest-v19-exact-req-ids-citations");
+  });
+
+  it("adds split-citation rules only when citations-at-end is on", () => {
+    expect(buildSuggestionSystemPrompt("define")).not.toContain(
+      "CITATIONS AT END OF SECTION"
+    );
+    expect(
+      buildSuggestionSystemPrompt("define", { citationsAtEndOfSection: true })
+    ).toContain("CITATIONS AT END OF SECTION");
+    const user = buildSuggestionUserPrompt({
+      section: "define",
+      contentStr: "Output power met the acceptance limit.",
+      priorBlock: "",
+      failingCriteria: [
+        {
+          key: "define.datetime",
+          label: "Date/time",
+          reasoning: "Missing measured value",
+          status: "not_met",
+        },
+      ],
+      citationsAtEndOfSection: true,
+    });
+    expect(user).toContain('"second"');
+    expect(user).toContain("Citations:");
+    expect(user).toContain("[protocol.pdf, p. 3]");
+    expect(
+      buildSuggestionUserPrompt({
+        section: "define",
+        contentStr: "Hello",
+        priorBlock: "",
+        failingCriteria: [
+          {
+            key: "define.datetime",
+            label: "Date/time",
+            reasoning: "x",
+            status: "not_met",
+          },
+        ],
+      })
+    ).not.toContain('"second"');
   });
 
   it("requires fixed matrix headers for traceability suggest fixes", () => {
@@ -35,6 +77,8 @@ describe("buildSuggestionSystemPrompt", () => {
     expect(prompt).toContain("Satisfied By");
     expect(prompt).toContain("configuration for which that P/F was achieved");
     expect(prompt).toContain("TOP-00017 PCON");
+    expect(prompt).toContain("SW-SST-5.1.1");
+    expect(prompt).not.toContain("Results and Discussions field split");
   });
 
   it("requires testers dates to land in the testers narrative", () => {

@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { z } from "zod";
+import { REV_U_REPORT_ONLY_REQ_IDS } from "@/lib/document-types/convergent/rev-u-report-only-req-ids";
 import { buildChatTools, collectSearchQueries, mergeExcludePages } from "@/lib/ai/chat/tools";
 import {
   DocumentReviewSession,
@@ -241,6 +242,41 @@ describe("buildChatTools tagged sections", () => {
   });
 });
 
+describe("buildChatTools propose_edit second", () => {
+  it("exposes propose_edit.second only when citations-at-end is on", () => {
+    const off = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      citationsAtEndOfSection: false,
+    });
+    const on = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      citationsAtEndOfSection: true,
+    });
+    const input = {
+      section: "define",
+      targetField: "narrative",
+      reasoning: "Add the measured value and cite the protocol",
+      anchorText: "met spec",
+      insertText: " at 9.8 W",
+      second: {
+        anchorText: "",
+        deleteText: "",
+        insertText: "[protocol.pdf, p. 3]",
+      },
+    };
+    const parsedOff = inputSchemaOf(off, "propose_edit").parse(input) as {
+      second?: unknown;
+    };
+    expect(parsedOff).not.toHaveProperty("second");
+    const parsedOn = inputSchemaOf(on, "propose_edit").parse(input) as {
+      second?: { insertText: string };
+    };
+    expect(parsedOn.second?.insertText).toBe("[protocol.pdf, p. 3]");
+  });
+});
+
 describe("buildChatTools edit_table", () => {
   it("accepts each table operation kind and defaults tableIndex to 0", () => {
     const tools = buildChatTools({ reportId: "report-1", canEdit: true });
@@ -375,6 +411,47 @@ describe("buildChatTools document review", () => {
       attachmentIds: ["att_b"],
     });
     expect(result).toMatchObject({ status: "started", totalPages: 1 });
+    expect(result).toMatchObject({
+      attachmentIds: ["att_b"],
+      documents: [{ attachmentId: "att_b", filename: "Appendix-B.pdf" }],
+    });
+  });
+
+  it("asks which attachment to review when several ready documents are untagged", async () => {
+    listReadyDocumentsForReportMock.mockResolvedValueOnce([
+      {
+        attachmentId: "att_b",
+        filename: "Appendix-B.pdf",
+        description: null,
+        pageCount: 62,
+        ingestRunId: "run",
+        documentSummary: null,
+      },
+      {
+        attachmentId: "att_other",
+        filename: "other.pdf",
+        description: null,
+        pageCount: 9,
+        ingestRunId: "run",
+        documentSummary: null,
+      },
+    ]);
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+    });
+    const result = await tools.start_document_review!.execute!(
+      { objective: "every requirement" },
+      TEST_TOOL_OPTIONS
+    );
+    expect(listDocumentPagesForReviewMock).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      status: "needs_attachment_scope",
+      documents: [
+        { attachmentId: "att_b", filename: "Appendix-B.pdf" },
+        { attachmentId: "att_other", filename: "other.pdf" },
+      ],
+    });
   });
 
   it("blocks drafting until finish_document_review", async () => {
@@ -468,5 +545,121 @@ describe("buildChatTools document review", () => {
       ])
     );
     expect(session.isFinished()).toBe(true);
+  });
+
+  describe("Convergent Results inventory gate", () => {
+    const previous = {
+      ANDREI_CUSTOMER: process.env.ANDREI_CUSTOMER,
+      NEXT_PUBLIC_ANDREI_CUSTOMER: process.env.NEXT_PUBLIC_ANDREI_CUSTOMER,
+      ANDREI_VERCEL_DEPLOY_SCOPE: process.env.ANDREI_VERCEL_DEPLOY_SCOPE,
+    };
+
+    beforeEach(() => {
+      process.env.ANDREI_CUSTOMER = "convergent";
+      process.env.NEXT_PUBLIC_ANDREI_CUSTOMER = "convergent";
+      delete process.env.ANDREI_VERCEL_DEPLOY_SCOPE;
+    });
+
+    afterEach(() => {
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    });
+
+    it("rejects a family-collapsed Results draft against the Rev U inventory", async () => {
+      const verifiedRows = REV_U_REPORT_ONLY_REQ_IDS.map(
+        (id) => `${id} Upgrade installation method A Pass`
+      ).join("\n");
+      listReadyDocumentsForReportMock.mockResolvedValue([
+        {
+          attachmentId: "att_b",
+          filename: "Appendix-B.pdf",
+          description: null,
+          pageCount: 2,
+          ingestRunId: "run",
+          documentSummary: null,
+        },
+      ]);
+      listDocumentPagesForReviewMock.mockResolvedValue([
+        {
+          attachmentId: "att_b",
+          filename: "Appendix-B.pdf",
+          pageNumber: 4,
+          transcript: `REQUIREMENTS VERIFIED\nReq ID Req Description Satisfied By P/F\n${verifiedRows}`,
+          pageContext: null,
+          printedPageLabel: "4",
+        },
+        {
+          attachmentId: "att_b",
+          filename: "Appendix-B.pdf",
+          pageNumber: 31,
+          transcript:
+            "TABLE 4 SOFTWARE REQUIREMENTS\nSW-SS-1 SW-AR-3 SW-SST-1 listed in the protocol body",
+          pageContext: null,
+          printedPageLabel: "31",
+        },
+      ]);
+      const session = new DocumentReviewSession({
+        extractBatch: async ({ pages }) => extractReviewFindingsFromPages(pages),
+      });
+      const tools = buildChatTools({
+        reportId: "report-1",
+        canEdit: true,
+        retrievalPolicy: "comprehensive",
+        documentReview: session,
+        documentType: "design_verification",
+        sectionScope: "results_and_discussions",
+      });
+      await tools.start_document_review!.execute!(
+        { objective: "results matrix" },
+        TEST_TOOL_OPTIONS
+      );
+      while (session.phase() === "in_progress") {
+        await tools.continue_document_review!.execute!({}, TEST_TOOL_OPTIONS);
+      }
+      await tools.finish_document_review!.execute!({}, TEST_TOOL_OPTIONS);
+
+      const collapsed = [
+        "SW-IN-1",
+        "SW-IN-2",
+        "SW-WLP-24",
+        "SW-WLP-5",
+        "SW-SST-5",
+        "SW-SST-6",
+        "SW-PA-1",
+        "SW-SIB-3",
+        "SW-EH-1",
+        "SW-SDT-1",
+        "SW-SS-4",
+        "SW-LCB-1",
+        "SW-LWB-4",
+      ];
+      const markdown = [
+        "| Req ID | Req Description | Satisfied By | P/F |",
+        "| --- | --- | --- | --- |",
+        ...collapsed.map(
+          (id) => `| ${id} | description | TOP-00051 datasheets | Pass |`
+        ),
+      ].join("\n");
+      const result = await tools.draft_field!.execute!(
+        {
+          section: "results_and_discussions",
+          targetField: "table",
+          markdown,
+          reasoning: "family list",
+        },
+        TEST_TOOL_OPTIONS
+      );
+      expect(result).toMatchObject({
+        status: "inventory_mismatch",
+      });
+      expect(result).toEqual(
+        expect.objectContaining({
+          missingIds: expect.arrayContaining(["SW-IN-1.1", "SW-SST-5.1.1"]),
+          unexpectedIds: expect.arrayContaining(["SW-SST-5", "SW-EH-1"]),
+        })
+      );
+    });
   });
 });

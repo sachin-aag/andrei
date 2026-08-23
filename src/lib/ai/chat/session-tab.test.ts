@@ -42,6 +42,16 @@ describe("chatSessionTabStatus", () => {
       ])
     ).toBe("done");
   });
+
+  it("treats a background server turn as still running", () => {
+    expect(
+      chatSessionTabStatus(
+        "ready",
+        [{ role: "user", parts: [{ type: "text", text: "Ping" }] }],
+        true
+      )
+    ).toBe("running");
+  });
 });
 
 describe("chatHasOpenQuestions", () => {

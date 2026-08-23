@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useChat } from "@ai-sdk/react";
 import {
   DefaultChatTransport,
@@ -12,14 +12,19 @@ import { toast } from "sonner";
 import { useChatWatchdog } from "@/hooks/use-chat-watchdog";
 import {
   CHAT_ASSISTANT_ERROR_MESSAGE,
-  CHAT_ASSISTANT_INTERRUPTED_MESSAGE,
   assistantPartsHaveVisibleContent,
 } from "@/lib/ai/chat/assistant-turn";
 import {
-  canReplaceChatMessages,
+  CHAT_TURN_POLL_MS,
+  backgroundTurnFromSessionView,
+  isChatAssistantTurnActive,
+} from "@/lib/ai/chat/background-turn-status";
+import {
+  isChatSessionBusy,
   isChatTurnBusy,
   reportChatInstanceId,
 } from "@/lib/ai/chat/session-runtime";
+import type { ChatSessionView } from "@/lib/ai/chat/sessions";
 
 export type ChatSessionSend = (
   message: { text?: string; files?: FileUIPart[] },
@@ -32,6 +37,12 @@ export type ChatSessionRuntime = {
   status: ChatStatus;
   error: Error | undefined;
   stop: () => void;
+  stopTurn: () => void;
+  streamBusy: boolean;
+  backgroundTurn: boolean;
+  busy: boolean;
+  elapsedMs: number;
+  silentMs: number;
 };
 
 export const IDLE_CHAT_RUNTIME: ChatSessionRuntime = {
@@ -40,19 +51,27 @@ export const IDLE_CHAT_RUNTIME: ChatSessionRuntime = {
   status: "ready",
   error: undefined,
   stop: () => {},
+  stopTurn: () => {},
+  streamBusy: false,
+  backgroundTurn: false,
+  busy: false,
+  elapsedMs: 0,
+  silentMs: 0,
 };
 
 /**
  * One `useChat` instance per session. Hidden hosts stay mounted so a
- * background turn keeps streaming after the user opens another thread.
+ * background turn keeps streaming (or polling) after the user opens another
+ * thread. Disconnect / watchdog give-up drop the SSE only — the server keeps
+ * going until persist, then this host reloads the finished row.
  */
 export function ChatSessionHost({
   reportId,
   sessionId,
   api,
   hydrateOnMount,
-  active,
   onFinishTurn,
+  onTurnCompleted,
   onSettled,
   onRuntime,
 }: {
@@ -60,28 +79,38 @@ export function ChatSessionHost({
   sessionId: string;
   api: string;
   hydrateOnMount: boolean;
-  active: boolean;
   onFinishTurn: () => void;
+  onTurnCompleted: (startedAt: number | null) => void;
   onSettled: (sessionId: string) => void;
   onRuntime: (sessionId: string, runtime: ChatSessionRuntime) => void;
 }) {
   const finishTurnRef = useRef(onFinishTurn);
+  const onTurnCompletedRef = useRef(onTurnCompleted);
   const statusRef = useRef<ChatStatus>("ready");
   const setMessagesRef = useRef<(messages: UIMessage[]) => void>(() => {});
+  const agentRunStartedAtRef = useRef<number | null>(null);
+  const [backgroundTurn, setBackgroundTurn] = useState(false);
 
   const hydrateFromServer = useCallback(async () => {
-    if (!canReplaceChatMessages(statusRef.current)) return;
+    if (isChatTurnBusy(statusRef.current)) return;
     try {
       const res = await fetch(`${api}/sessions/${sessionId}`);
       if (!res.ok) {
-        if (canReplaceChatMessages(statusRef.current)) setMessagesRef.current([]);
+        if (!isChatTurnBusy(statusRef.current)) setMessagesRef.current([]);
+        setBackgroundTurn(false);
         return;
       }
-      const data = (await res.json()) as { messages: UIMessage[] };
-      if (!canReplaceChatMessages(statusRef.current)) return;
+      const data = (await res.json()) as ChatSessionView;
+      if (isChatTurnBusy(statusRef.current)) return;
       setMessagesRef.current(data.messages ?? []);
+      const next = backgroundTurnFromSessionView(data);
+      if (next.startedAt != null) {
+        agentRunStartedAtRef.current = next.startedAt;
+      }
+      setBackgroundTurn(next.backgroundTurn);
     } catch {
-      if (canReplaceChatMessages(statusRef.current)) setMessagesRef.current([]);
+      if (!isChatTurnBusy(statusRef.current)) setMessagesRef.current([]);
+      setBackgroundTurn(false);
     }
   }, [api, sessionId]);
 
@@ -90,17 +119,36 @@ export function ChatSessionHost({
     transport: new DefaultChatTransport({ api }),
     onFinish: ({ message, isAbort, isDisconnect, isError }) => {
       finishTurnRef.current();
-      if (isAbort || isDisconnect) {
+      if (isAbort) {
+        agentRunStartedAtRef.current = null;
+        setBackgroundTurn(false);
         void hydrateFromServer();
         return;
       }
-      if (isError) return;
+      if (isDisconnect) {
+        // Tab close / navigation dropped the SSE. The server keeps going —
+        // poll until the assistant row is persisted.
+        setBackgroundTurn(true);
+        return;
+      }
+      if (isError) {
+        agentRunStartedAtRef.current = null;
+        setBackgroundTurn(false);
+        return;
+      }
       if (
         message.role === "assistant" &&
         !assistantPartsHaveVisibleContent(message.parts)
       ) {
         toast.error(CHAT_ASSISTANT_ERROR_MESSAGE);
+        agentRunStartedAtRef.current = null;
+        setBackgroundTurn(false);
+        return;
       }
+      const startedAt = agentRunStartedAtRef.current;
+      agentRunStartedAtRef.current = null;
+      setBackgroundTurn(false);
+      onTurnCompletedRef.current(startedAt);
     },
     onError: (err) => {
       console.error("chat error", err);
@@ -108,9 +156,16 @@ export function ChatSessionHost({
     },
   });
 
+  const streamBusy = isChatTurnBusy(status);
+  const busy = isChatSessionBusy({ status, backgroundTurn });
+
   useEffect(() => {
     finishTurnRef.current = onFinishTurn;
   }, [onFinishTurn]);
+
+  useEffect(() => {
+    onTurnCompletedRef.current = onTurnCompleted;
+  }, [onTurnCompleted]);
 
   useEffect(() => {
     statusRef.current = status;
@@ -120,12 +175,18 @@ export function ChatSessionHost({
     setMessagesRef.current = setMessages;
   }, [setMessages]);
 
-  useChatWatchdog({
+  useEffect(() => {
+    if (streamBusy && agentRunStartedAtRef.current == null) {
+      agentRunStartedAtRef.current = Date.now();
+    }
+  }, [streamBusy]);
+
+  const { elapsedMs, silentMs } = useChatWatchdog({
     messages,
     status,
     stop,
-    enabled: !active,
-    onGiveUp: () => toast.error(CHAT_ASSISTANT_INTERRUPTED_MESSAGE),
+    holdBusy: backgroundTurn,
+    onGiveUp: () => setBackgroundTurn(true),
   });
 
   useEffect(() => {
@@ -136,10 +197,47 @@ export function ChatSessionHost({
   }, [hydrateOnMount, sessionId]);
 
   useEffect(() => {
-    if (!isChatTurnBusy(status)) {
+    if (!backgroundTurn || streamBusy) return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const res = await fetch(`${api}/sessions/${sessionId}`);
+        if (!res.ok || cancelled) return;
+        const view = (await res.json()) as ChatSessionView;
+        if (cancelled) return;
+        if (isChatAssistantTurnActive(view.assistantTurnStatus)) return;
+        setMessages(view.messages ?? []);
+        setBackgroundTurn(false);
+        const startedAt = agentRunStartedAtRef.current;
+        agentRunStartedAtRef.current = null;
+        onTurnCompletedRef.current(startedAt);
+        finishTurnRef.current();
+      } catch {
+        // Keep polling until the turn row is readable.
+      }
+    };
+    void poll();
+    const id = window.setInterval(() => {
+      void poll();
+    }, CHAT_TURN_POLL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [api, backgroundTurn, sessionId, setMessages, streamBusy]);
+
+  const stopTurn = useCallback(() => {
+    void fetch(`${api}/sessions/${sessionId}/cancel`, { method: "POST" });
+    agentRunStartedAtRef.current = null;
+    setBackgroundTurn(false);
+    stop();
+  }, [api, sessionId, stop]);
+
+  useEffect(() => {
+    if (!busy) {
       onSettled(sessionId);
     }
-  }, [onSettled, sessionId, status]);
+  }, [busy, onSettled, sessionId]);
 
   useEffect(() => {
     onRuntime(sessionId, {
@@ -148,8 +246,28 @@ export function ChatSessionHost({
       status,
       error,
       stop,
+      stopTurn,
+      streamBusy,
+      backgroundTurn,
+      busy,
+      elapsedMs,
+      silentMs,
     });
-  }, [error, messages, onRuntime, sendMessage, sessionId, status, stop]);
+  }, [
+    backgroundTurn,
+    busy,
+    elapsedMs,
+    error,
+    messages,
+    onRuntime,
+    sendMessage,
+    sessionId,
+    silentMs,
+    status,
+    stop,
+    stopTurn,
+    streamBusy,
+  ]);
 
   return null;
 }

@@ -211,6 +211,45 @@ test.describe("authentication", () => {
     await expect(page.getByRole("button", { name: /log out/i })).toBeVisible();
   });
 
+  test("profile page keeps assistant notification settings independent", async ({
+    page,
+  }, testInfo) => {
+    await loginAsTestUser(page, {
+      email: scopedEmail("e2e.notify@mjbiopharm.com", testInfo),
+      role: "engineer",
+    });
+    await page.goto("/profile");
+    await expect(
+      page.getByRole("heading", { name: /assistant notifications/i })
+    ).toBeVisible();
+
+    const notifications = page.getByRole("checkbox", {
+      name: /show a notification when the assistant finishes/i,
+    });
+    const sound = page.getByRole("checkbox", {
+      name: /play a sound when the assistant finishes/i,
+    });
+    await expect(notifications).toBeChecked();
+    await expect(sound).not.toBeChecked();
+
+    await notifications.click();
+    await sound.click();
+    await expect(notifications).not.toBeChecked();
+    await expect(sound).toBeChecked();
+
+    await page.reload();
+    await expect(
+      page.getByRole("checkbox", {
+        name: /show a notification when the assistant finishes/i,
+      })
+    ).not.toBeChecked();
+    await expect(
+      page.getByRole("checkbox", {
+        name: /play a sound when the assistant finishes/i,
+      })
+    ).toBeChecked();
+  });
+
   test("password expiry warning can be ignored", async ({ page }, testInfo) => {
     await loginAsTestUser(page, {
       email: scopedEmail("e2e.warning@mjbiopharm.com", testInfo),

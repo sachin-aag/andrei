@@ -217,6 +217,7 @@ async function handleSuggestionsPost(
       deleteText: s.deleteText,
       insertText: s.insertText,
       scope: s.scope,
+      second: s.second,
     };
     const status = probeRichEdit(fieldDoc, edit);
     if (!isApplyableStatus(status)) {
@@ -229,12 +230,19 @@ async function handleSuggestionsPost(
 
     const suggestionId = createId();
     const insertText = normalizeSuggestionInsertText(s.insertText);
+    const second = s.second
+      ? {
+          ...s.second,
+          insertText: normalizeSuggestionInsertText(s.second.insertText),
+        }
+      : undefined;
 
     const payload: ParsedAiFixPayload = {
       deleteText: s.deleteText,
       insertText,
       reasoning: s.reasoning,
       scope: s.scope,
+      second,
       contentHashAtSuggestion: suggestionContentHash,
       evidenceSources: s.evidenceSources,
     };
@@ -266,10 +274,17 @@ async function handleSuggestionsPost(
   for (const s of structuredSuggestions) {
     const fieldPlain = getPlainTextFieldValue(workingContent, s.targetField);
     const insertText = normalizeSuggestionInsertText(s.insertText);
+    const second = s.second
+      ? {
+          ...s.second,
+          insertText: normalizeSuggestionInsertText(s.second.insertText),
+        }
+      : undefined;
     const edit: SuggestionEdit = {
       anchorText: s.anchorText,
       deleteText: s.deleteText,
       insertText,
+      second,
     };
     const status = probePlainEdit(fieldPlain, edit);
     if (!isApplyableStatus(status)) {
@@ -285,6 +300,7 @@ async function handleSuggestionsPost(
       deleteText: s.deleteText,
       insertText,
       reasoning: s.reasoning,
+      second,
       contentHashAtSuggestion: suggestionContentHash,
       evidenceSources: s.evidenceSources,
     };

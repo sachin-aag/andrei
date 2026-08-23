@@ -21,6 +21,7 @@ function formatAiFixForExport(content: string): string {
   const deleteText = payload.deleteText.trim();
   const insertText = payload.insertText.trim();
   const reasoning = payload.reasoning.trim();
+  const citation = payload.second?.insertText.trim() ?? "";
 
   const lines: string[] = [];
   if (reasoning) lines.push(reasoning);
@@ -31,6 +32,9 @@ function formatAiFixForExport(content: string): string {
     lines.push(`Suggested insertion: "${insertText}"`);
   } else if (deleteText) {
     lines.push(`Suggested deletion: "${deleteText}"`);
+  }
+  if (citation) {
+    lines.push(`Citation at end of section: "${citation}"`);
   }
 
   return lines.join("\n");

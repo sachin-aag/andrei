@@ -1,4 +1,12 @@
 import type { JSONContent } from "@tiptap/core";
+import {
+  isCitationAppendInsert,
+  isCitationListHeading,
+  isEmptyParagraphBlock,
+  keepEmptyParagraphBeforeCitationHeading,
+  normalizeCitationAppendInsert,
+  plainCitationAppendSeparator,
+} from "@/lib/suggestions/citations-at-end";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 import {
   inlineMarkdownToTextNodes,
@@ -41,7 +49,40 @@ export type SuggestionEdit = {
   deleteText: string;
   insertText: string;
   scope?: EditScope;
+  /**
+   * Optional second apply site in the same field (e.g. a citation appended
+   * at the end while the primary part edits the claim or a table cell).
+   */
+  second?: Omit<SuggestionEdit, "second">;
 };
+
+function hasEditContent(
+  edit: Pick<SuggestionEdit, "deleteText" | "insertText">
+): boolean {
+  return Boolean((edit.deleteText ?? "").trim() || (edit.insertText ?? "").trim());
+}
+
+/** Primary (and optional second) parts; empty primary is omitted when second exists. */
+export function suggestionEditParts(edit: SuggestionEdit): SuggestionEdit[] {
+  const primary: SuggestionEdit = {
+    anchorText: edit.anchorText,
+    deleteText: edit.deleteText,
+    insertText: edit.insertText,
+    scope: edit.scope,
+  };
+  const second = edit.second;
+  const parts: SuggestionEdit[] = [];
+  if (hasEditContent(primary)) parts.push(primary);
+  if (second && hasEditContent(second)) {
+    parts.push({
+      anchorText: second.anchorText,
+      deleteText: second.deleteText,
+      insertText: second.insertText,
+      scope: second.scope,
+    });
+  }
+  return parts.length > 0 ? parts : [primary];
+}
 
 export type TextSlice = {
   node: JSONContent;
@@ -638,18 +679,28 @@ function withLeadingSpaceIfNeeded(
   return before !== undefined && !/\s/.test(before) ? ` ${insert}` : insert;
 }
 
-export function applyEditToPlainText(
+function plainAppendSeparator(text: string, insert: string): string {
+  if (!text) return "";
+  if (isCitationAppendInsert(insert)) {
+    return plainCitationAppendSeparator(text, insert);
+  }
+  return /\s$/.test(text) ? "" : " ";
+}
+
+function applySingleEditToPlainText(
   text: string,
   edit: SuggestionEdit
 ): { status: LocateStatus; text: string } {
   const located = locateEdit(text, edit);
   if (located.status === "append") {
-    const ins = stripInlineMarkdown(
+    let ins = stripInlineMarkdown(
       normalizeSuggestionInsertText(edit.insertText ?? "")
     );
     if (!ins) return { status: "empty_edit", text };
-    const next =
-      text + (text.length > 0 && !/\s$/.test(text) ? " " : "") + ins;
+    if (isCitationAppendInsert(ins)) {
+      ins = normalizeCitationAppendInsert(text, ins);
+    }
+    const next = text + plainAppendSeparator(text, ins) + ins;
     return { status: "append", text: next };
   }
   if (located.status !== "located") {
@@ -667,11 +718,37 @@ export function applyEditToPlainText(
   return { status: "located", text: next };
 }
 
+export function applyEditToPlainText(
+  text: string,
+  edit: SuggestionEdit
+): { status: LocateStatus; text: string } {
+  const parts = suggestionEditParts(edit);
+  if (parts.length === 1) {
+    return applySingleEditToPlainText(text, parts[0]!);
+  }
+  let current = text;
+  let lastStatus: LocateStatus = "empty_edit";
+  for (const part of parts) {
+    const result = applySingleEditToPlainText(current, part);
+    if (!isApplyableStatus(result.status)) return result;
+    current = result.text;
+    lastStatus = result.status;
+  }
+  return { status: lastStatus, text: current };
+}
+
 export function probePlainEdit(
   text: string,
   edit: SuggestionEdit
 ): LocateStatus {
-  return locateEdit(text, edit).status;
+  const parts = suggestionEditParts(edit);
+  let sawLocated = false;
+  for (const part of parts) {
+    const status = locateEdit(text, part).status;
+    if (!isApplyableStatus(status)) return status;
+    if (status === "located") sawLocated = true;
+  }
+  return sawLocated ? "located" : "append";
 }
 
 function splitTextNodeForDelete(
@@ -880,7 +957,7 @@ function findLastDeleteMarked(
   return found;
 }
 
-export function applyEditToRichDoc(
+function applySingleEditToRichDoc(
   doc: JSONContent,
   edit: SuggestionEdit,
   attrs: InjectAttrs
@@ -890,12 +967,28 @@ export function applyEditToRichDoc(
 
   if (located.status === "append") {
     const cloned: JSONContent = JSON.parse(JSON.stringify(doc));
-    const inserted = insertAfterRef(
-      cloned,
-      null,
-      edit.insertText ?? "",
-      attrs
-    );
+    let raw = normalizeSuggestionInsertText(edit.insertText ?? "");
+    if (isCitationAppendInsert(raw)) {
+      raw = normalizeCitationAppendInsert(index.text, raw);
+    }
+    const paragraphs = raw
+      .split(/\n+/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    if (paragraphs.length === 0) return { status: "empty_edit", doc: cloned };
+    const lastBlock = cloned.content?.[cloned.content.length - 1];
+    if (
+      paragraphs[0] &&
+      isCitationListHeading(paragraphs[0]) &&
+      lastBlock &&
+      !isEmptyParagraphBlock(lastBlock)
+    ) {
+      cloned.content = [...(cloned.content ?? []), { type: "paragraph" }];
+    }
+    let inserted: JSONContent | null = null;
+    for (const paragraph of paragraphs) {
+      inserted = insertAfterRef(cloned, null, paragraph, attrs);
+    }
     if (!inserted) return { status: "empty_edit", doc: cloned };
     cleanupMarks(cloned);
     return { status: "append", doc: cloned };
@@ -998,7 +1091,27 @@ export function applyEditToRichDoc(
   return { status: "located", doc: cloned };
 }
 
-export function probeRichEdit(
+export function applyEditToRichDoc(
+  doc: JSONContent,
+  edit: SuggestionEdit,
+  attrs: InjectAttrs
+): { status: LocateStatus; doc: JSONContent } {
+  const parts = suggestionEditParts(edit);
+  if (parts.length === 1) {
+    return applySingleEditToRichDoc(doc, parts[0]!, attrs);
+  }
+  let current = doc;
+  let lastStatus: LocateStatus = "empty_edit";
+  for (const part of parts) {
+    const result = applySingleEditToRichDoc(current, part, attrs);
+    if (!isApplyableStatus(result.status)) return result;
+    current = result.doc;
+    lastStatus = result.status;
+  }
+  return { status: lastStatus, doc: current };
+}
+
+function probeSingleRichEdit(
   doc: JSONContent,
   edit: SuggestionEdit
 ): LocateStatus {
@@ -1010,6 +1123,20 @@ export function probeRichEdit(
     }
   }
   return located.status;
+}
+
+export function probeRichEdit(
+  doc: JSONContent,
+  edit: SuggestionEdit
+): LocateStatus {
+  const parts = suggestionEditParts(edit);
+  let sawLocated = false;
+  for (const part of parts) {
+    const status = probeSingleRichEdit(doc, part);
+    if (!isApplyableStatus(status)) return status;
+    if (status === "located") sawLocated = true;
+  }
+  return sawLocated ? "located" : "append";
 }
 
 export function isApplyableStatus(status: LocateStatus): boolean {
@@ -1066,7 +1193,10 @@ function dropBlocksFullyMarked(
 
 function dropEmptyBlocks(doc: JSONContent): void {
   if (!doc.content?.length) return;
-  doc.content = doc.content.filter((block) => {
+  doc.content = doc.content.filter((block, index) => {
+    if (keepEmptyParagraphBeforeCitationHeading(block, doc.content?.[index + 1])) {
+      return true;
+    }
     if (block.type === "paragraph" || block.type === "heading") {
       const text = (block.content ?? [])
         .map((c) => (c.type === "text" ? c.text ?? "" : ""))

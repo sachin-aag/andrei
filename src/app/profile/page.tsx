@@ -7,6 +7,7 @@ import { roleLabel } from "@/lib/auth/roles";
 import { AppShell } from "@/components/layout/app-shell";
 import { ChangeOwnPasswordForm } from "@/components/auth/change-own-password-form";
 import { LogoutButton } from "@/components/auth/logout-button";
+import { AgentDoneNotificationSettings } from "@/components/profile/agent-done-notification-settings";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +32,7 @@ export default async function ProfilePage() {
         <div className="border-b border-[var(--border)] px-10 py-6">
           <h1 className="text-2xl font-semibold tracking-tight">Profile</h1>
           <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-            Manage your account details and password.
+            Manage your account details, password, and assistant notifications.
           </p>
         </div>
 
@@ -73,6 +74,20 @@ export default async function ProfilePage() {
             </p>
             <div className="mt-5">
               <ChangeOwnPasswordForm />
+            </div>
+          </section>
+
+          <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-5 lg:col-span-2">
+            <h2 className="text-base font-semibold">Assistant notifications</h2>
+            <p className="mt-1 text-sm text-[var(--muted-foreground)]">
+              Choose how you are told when the assistant finishes a reply that
+              took at least 5 seconds, including when you have switched to
+              another window or tab. Closing the tab does not stop the
+              assistant. Notifications and sound are independent — the default
+              is a silent notice.
+            </p>
+            <div className="mt-5">
+              <AgentDoneNotificationSettings userId={user.id} />
             </div>
           </section>
 
