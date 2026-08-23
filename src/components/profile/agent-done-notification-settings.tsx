@@ -21,7 +21,7 @@ import {
 function permissionHint(permission: NotificationPermissionState): string {
   switch (permission) {
     case "granted":
-      return "Desktop notifications are allowed in this browser. They fire only after a reply takes at least 5 seconds. When this tab is in the background, the notice stays silent unless you also turn on sound.";
+      return "Desktop notifications are allowed in this browser. They fire only after a reply takes at least 5 seconds. Closing this tab does not stop the assistant — reopen the report to see the reply. When this tab is in the background, the notice stays silent unless you also turn on sound.";
     case "denied":
       return "This browser blocked desktop notifications. We'll show an in-app notice instead while this tab is open.";
     case "default":

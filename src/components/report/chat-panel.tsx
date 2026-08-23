@@ -90,7 +90,6 @@ import {
 } from "@/lib/ai/chat/image-parts";
 import {
   CHAT_ASSISTANT_ERROR_MESSAGE,
-  CHAT_ASSISTANT_INTERRUPTED_MESSAGE,
   assistantPartsHaveVisibleContent,
   assistantProgressSignature,
   chatWatchdogPhase,
@@ -100,7 +99,14 @@ import {
   detectSectionScopeMismatch,
   type SectionScopeMismatch,
 } from "@/lib/ai/chat/section-intent";
-import type { ChatSessionSummary } from "@/lib/ai/chat/sessions";
+import type {
+  ChatSessionSummary,
+  ChatSessionView,
+} from "@/lib/ai/chat/sessions";
+import {
+  CHAT_TURN_POLL_MS,
+  isChatAssistantTurnActive,
+} from "@/lib/ai/chat/background-turn";
 import {
   applyMentionToInput,
   filterMentionCandidates,
@@ -137,6 +143,26 @@ type PendingChatImage = {
   id: string;
   part: FileUIPart;
 };
+
+function announceCompletedAssistantTurn(
+  startedAt: number | null,
+  ctx: {
+    currentUserId: string;
+    documentNo: string;
+    documentType: DocumentType;
+  }
+): void {
+  const elapsedMs = elapsedSince(startedAt);
+  if (!shouldAnnounceAgentDone({ elapsedMs })) return;
+  const { documentNoun } = getDocumentType(ctx.documentType);
+  notifyAgentDone(
+    readAgentDonePrefs(ctx.currentUserId),
+    agentDoneNotificationCopy({
+      documentNoun,
+      documentNo: ctx.documentNo,
+    })
+  );
+}
 
 type ToolPartInfo = {
   toolName: string;
@@ -519,11 +545,13 @@ function MentionMenu({
 function ChatBusyStatus({
   mode,
   stale,
+  background,
   willNotify,
   onCancel,
 }: {
   mode: ChatMode;
   stale: boolean;
+  background: boolean;
   willNotify: boolean;
   onCancel: () => void;
 }) {
@@ -532,11 +560,13 @@ function ChatBusyStatus({
       <div className="flex items-center gap-2 text-xs text-[var(--muted-foreground)]">
         <Loader2 className="size-3.5 animate-spin" />
         <span>
-          {stale
-            ? "Still working — this can take a few minutes."
-            : mode === "plan"
-              ? "Thinking through your question…"
-              : "Working…"}
+          {background
+            ? "Still working in the background…"
+            : stale
+              ? "Still working — this can take a few minutes."
+              : mode === "plan"
+                ? "Thinking through your question…"
+                : "Working…"}
         </span>
         <button
           type="button"
@@ -939,6 +969,7 @@ export function ChatPanel() {
   });
   const [elapsedMs, setElapsedMs] = useState(0);
   const [silentMs, setSilentMs] = useState(0);
+  const [backgroundTurn, setBackgroundTurn] = useState(false);
 
   const base = `/api/reports/${report.id}/chat`;
 
@@ -950,15 +981,23 @@ export function ChatPanel() {
       // gutter card), and refresh session titles/order.
       void refresh();
       void loadSessions();
-      if (isAbort || isDisconnect) {
+      if (isAbort) {
         agentRunStartedAtRef.current = null;
+        setBackgroundTurn(false);
         void reloadSessionRef.current();
+        return;
+      }
+      if (isDisconnect) {
+        // Tab close / navigation dropped the SSE. The server keeps going —
+        // poll until the assistant row is persisted.
+        setBackgroundTurn(true);
         return;
       }
       // Stream protocol errors already toast via onError. Empty Gemini turns
       // (thought-only / no parts) finish as success unless we catch them here.
       if (isError) {
         agentRunStartedAtRef.current = null;
+        setBackgroundTurn(false);
         return;
       }
       const emptyAssistant =
@@ -970,27 +1009,8 @@ export function ChatPanel() {
       }
       const startedAt = agentRunStartedAtRef.current;
       agentRunStartedAtRef.current = null;
-      const elapsedMs = elapsedSince(startedAt);
-      if (
-        shouldAnnounceAgentDone({
-          isAbort,
-          isDisconnect,
-          isError,
-          emptyAssistant,
-          elapsedMs,
-        })
-      ) {
-        const { currentUserId: userId, documentNo, documentType } =
-          notifyContextRef.current;
-        const { documentNoun } = getDocumentType(documentType);
-        notifyAgentDone(
-          readAgentDonePrefs(userId),
-          agentDoneNotificationCopy({
-            documentNoun,
-            documentNo,
-          })
-        );
-      }
+      setBackgroundTurn(false);
+      announceCompletedAssistantTurn(startedAt, notifyContextRef.current);
     },
     onError: (err) => {
       console.error("chat error", err);
@@ -998,8 +1018,13 @@ export function ChatPanel() {
     },
   });
 
-  const busy = status === "submitted" || status === "streaming";
-  const watchdog = chatWatchdogPhase({ busy, elapsedMs, silentMs });
+  const streamBusy = status === "submitted" || status === "streaming";
+  const busy = streamBusy || backgroundTurn;
+  const watchdog = chatWatchdogPhase({
+    busy: streamBusy,
+    elapsedMs,
+    silentMs,
+  });
 
   // Only ready documents are taggable — an attachment still being ingested has
   // no chunks, so scoping search to it would return nothing.
@@ -1154,6 +1179,23 @@ export function ChatPanel() {
     }
   }, [base]);
 
+  const applySessionView = useCallback(
+    (view: ChatSessionView) => {
+      setMessages(view.messages ?? []);
+      if (isChatAssistantTurnActive(view.assistantTurnStatus)) {
+        if (view.assistantTurnStartedAt) {
+          agentRunStartedAtRef.current = new Date(
+            view.assistantTurnStartedAt
+          ).getTime();
+        }
+        setBackgroundTurn(true);
+        return;
+      }
+      setBackgroundTurn(false);
+    },
+    [setMessages]
+  );
+
   const openSession = useCallback(
     async (sessionId: string) => {
       setCurrentSessionId(sessionId);
@@ -1162,15 +1204,17 @@ export function ChatPanel() {
         const res = await fetch(`${base}/sessions/${sessionId}`);
         if (!res.ok) {
           setMessages([]);
+          setBackgroundTurn(false);
           return;
         }
-        const data = (await res.json()) as { messages: UIMessage[] };
-        setMessages(data.messages ?? []);
+        const data = (await res.json()) as ChatSessionView;
+        applySessionView(data);
       } catch {
         setMessages([]);
+        setBackgroundTurn(false);
       }
     },
-    [base, setMessages]
+    [applySessionView, base, setMessages]
   );
 
   const createSession = useCallback(async (): Promise<string | null> => {
@@ -1207,6 +1251,45 @@ export function ChatPanel() {
       if (id) await openSession(id);
     };
   }, [currentSessionId, openSession]);
+
+  useEffect(() => {
+    if (!backgroundTurn || !currentSessionId || streamBusy) return;
+    let cancelled = false;
+    const poll = async () => {
+      try {
+        const res = await fetch(`${base}/sessions/${currentSessionId}`);
+        if (!res.ok || cancelled) return;
+        const view = (await res.json()) as ChatSessionView;
+        if (cancelled) return;
+        if (isChatAssistantTurnActive(view.assistantTurnStatus)) return;
+        setMessages(view.messages ?? []);
+        setBackgroundTurn(false);
+        const startedAt = agentRunStartedAtRef.current;
+        agentRunStartedAtRef.current = null;
+        announceCompletedAssistantTurn(startedAt, notifyContextRef.current);
+        void refresh();
+        void loadSessions();
+      } catch {
+        // Keep polling until the turn row is readable.
+      }
+    };
+    void poll();
+    const id = window.setInterval(() => {
+      void poll();
+    }, CHAT_TURN_POLL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [
+    backgroundTurn,
+    base,
+    currentSessionId,
+    loadSessions,
+    refresh,
+    setMessages,
+    streamBusy,
+  ]);
 
   const messagesRef = useRef(messages);
   useEffect(() => {
@@ -1290,9 +1373,10 @@ export function ChatPanel() {
         }) === "give_up" &&
         !stoppedForWatchdogRef.current
       ) {
+        // Drop a hung SSE without cancelling the server turn.
         stoppedForWatchdogRef.current = true;
         stop();
-        toast.error(CHAT_ASSISTANT_INTERRUPTED_MESSAGE);
+        setBackgroundTurn(true);
       }
     };
     tick();
@@ -1301,8 +1385,14 @@ export function ChatPanel() {
   }, [busy, stop]);
 
   const stopTurn = useCallback(() => {
+    const sessionId = sessionIdRef.current;
+    if (sessionId) {
+      void fetch(`${base}/sessions/${sessionId}/cancel`, { method: "POST" });
+    }
+    agentRunStartedAtRef.current = null;
+    setBackgroundTurn(false);
     stop();
-  }, [stop]);
+  }, [base, stop]);
 
   // Initialize: load sessions, open the most recent or create the first.
   useEffect(() => {
@@ -1626,6 +1716,7 @@ export function ChatPanel() {
           <ChatBusyStatus
             mode={mode}
             stale={watchdog === "stale" || watchdog === "give_up"}
+            background={backgroundTurn && !streamBusy}
             willNotify={shouldShowAgentDonePendingHint({
               notifications: readAgentDonePrefs(currentUserId).notifications,
               elapsedMs,

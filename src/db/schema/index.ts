@@ -113,6 +113,12 @@ export const chatMessageRoleEnum = pgEnum("chat_message_role", [
   "assistant",
 ]);
 
+/** In-flight assistant generation for a chat session (survives tab close). */
+export const chatAssistantTurnStatusEnum = pgEnum(
+  "chat_assistant_turn_status",
+  ["idle", "running", "cancel_requested"]
+);
+
 export const aiFeedbackSessionStatusEnum = pgEnum("ai_feedback_session_status", [
   "evaluating",
   "ready_for_review",
@@ -773,6 +779,16 @@ export const chatSessions = pgTable(
       .notNull()
       .references(() => reports.id, { onDelete: "cascade" }),
     title: text("title").notNull().default(""),
+    /**
+     * `running` while the server is still generating after the client
+     * disconnects (tab close). Explicit Cancel sets `cancel_requested`.
+     */
+    assistantTurnStatus: chatAssistantTurnStatusEnum("assistant_turn_status")
+      .notNull()
+      .default("idle"),
+    assistantTurnStartedAt: timestamp("assistant_turn_started_at", {
+      withTimezone: true,
+    }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
