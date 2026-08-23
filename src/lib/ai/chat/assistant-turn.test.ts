@@ -15,6 +15,7 @@ import {
   CHAT_FUNCTION_MAX_DURATION_SEC,
   CHAT_SERVER_ABORT_MS,
 } from "./assistant-turn";
+import { CHAT_TURN_STALE_MS } from "./background-turn-status";
 
 describe("assistantPartsHaveVisibleContent", () => {
   it("is false for missing, empty, or whitespace-only text", () => {
@@ -84,6 +85,9 @@ describe("deadline constants", () => {
       CHAT_FUNCTION_MAX_DURATION_SEC * 1000
     );
     expect(CHAT_CLIENT_STALE_MS).toBeLessThan(CHAT_CLIENT_GIVE_UP_MS);
+    expect(CHAT_TURN_STALE_MS).toBeGreaterThan(
+      CHAT_FUNCTION_MAX_DURATION_SEC * 1000
+    );
   });
 });
 

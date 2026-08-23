@@ -55,6 +55,12 @@ import {
   findChatSession,
   touchChatSession,
 } from "@/lib/ai/chat/sessions";
+import {
+  clearAssistantTurn,
+  drainSseStream,
+  isAssistantTurnCancelRequested,
+  tryMarkAssistantTurnRunning,
+} from "@/lib/ai/chat/background-turn";
 import { buildGeminiThoughtSummaryProviderOptions } from "@/lib/eval/eval-generation-options";
 import { isTestStubChat } from "@/lib/test/ai-bypass";
 import {
@@ -171,6 +177,14 @@ export async function POST(
     sessionId = (await createChatSession(reportId)).id;
   }
 
+  const claimed = await tryMarkAssistantTurnRunning(sessionId);
+  if (!claimed) {
+    return NextResponse.json(
+      { error: "The assistant is still working on the previous reply." },
+      { status: 409 }
+    );
+  }
+
   // Persist the newest user turn. A failure here silently breaks the thread
   // (this masked a missing chat_messages.session_id column in prod), so fail
   // loudly: return 500 so the client's onError toast fires instead of
@@ -194,6 +208,7 @@ export async function POST(
       await touchChatSession(sessionId, userText || null);
     } catch (err) {
       console.error("chat: failed to persist user message", err);
+      await clearAssistantTurn(sessionId);
       return NextResponse.json(
         { error: "Failed to save your message. Please try again." },
         { status: 500 }
@@ -328,6 +343,15 @@ export async function POST(
       })
     : resolveChatLanguageModel(pace);
 
+  // Tab close / refresh abort the HTTP request. Keep generating anyway —
+  // only an explicit Cancel (DB flag) or the deadline stops the model.
+  const turnAbort = new AbortController();
+  const cancelPoll = setInterval(() => {
+    void isAssistantTurnCancelRequested(sessionId).then((requested) => {
+      if (requested) turnAbort.abort();
+    });
+  }, 1_000);
+
   let result;
   try {
     result = streamText({
@@ -335,14 +359,16 @@ export async function POST(
       system,
       messages: await convertToModelMessages(messages),
       tools,
-      stopWhen: ({ steps }) =>
-        shouldStopChatSteps({
+      stopWhen: async ({ steps }) => {
+        if (await isAssistantTurnCancelRequested(sessionId)) return true;
+        return shouldStopChatSteps({
           stepsTaken: steps.length,
           mode,
           policy: retrieval.policy,
           reviewPhase: documentReview.phase(),
           totalPages: documentReview.progress().totalPages || reviewPageCount,
-        }),
+        });
+      },
       prepareStep: ({ steps }) => {
         const tableEditDirective = tableEditLoopDirective(steps);
         if (tableEditDirective === "finish") {
@@ -368,7 +394,7 @@ export async function POST(
           ...(prepared.toolChoice ? { toolChoice: prepared.toolChoice } : {}),
         };
       },
-      abortSignal: req.signal,
+      abortSignal: turnAbort.signal,
       // Leave time to persist an interrupted row before Vercel kills the isolate.
       timeout: { totalMs: CHAT_SERVER_ABORT_MS },
       // Gemini 3.x: thinkingLevel only. Do not set temperature / topP / topK /
@@ -408,6 +434,8 @@ export async function POST(
       }),
     });
   } catch (err) {
+    clearInterval(cancelPoll);
+    await clearAssistantTurn(sessionId);
     console.error("chat: failed to start assistant stream", {
       reportId,
       sessionId,
@@ -419,13 +447,19 @@ export async function POST(
     );
   }
 
-  after(flushLangfuseTraces);
+  after(async () => {
+    await result.consumeStream();
+    await flushLangfuseTraces();
+  });
 
   return result.toUIMessageStreamResponse({
     originalMessages: messages,
     // Keep Gemini thought summaries in Langfuse (ai.response.reasoning) only —
     // do not stream or persist them as chat message parts.
     sendReasoning: false,
+    consumeSseStream: ({ stream }) => {
+      after(() => drainSseStream(stream));
+    },
     onError: (error) => {
       console.error("chat: assistant stream error", {
         reportId,
@@ -435,6 +469,7 @@ export async function POST(
       return CHAT_ASSISTANT_ERROR_MESSAGE;
     },
     onFinish: async ({ responseMessage, isAborted, finishReason }) => {
+      clearInterval(cancelPoll);
       const persisted = partsForPersistedAssistantTurn({
         parts: responseMessage.parts,
         isAborted,
@@ -480,6 +515,8 @@ export async function POST(
         // The reply already streamed to the client, so we can only log here —
         // a failure means it's missing from history on reload, nothing more.
         console.error("chat: failed to persist assistant message", err);
+      } finally {
+        await clearAssistantTurn(sessionId);
       }
     },
   });

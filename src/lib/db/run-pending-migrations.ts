@@ -290,6 +290,12 @@ async function repairMissingSchema(pool: pg.Pool): Promise<void> {
     "report_attachments",
     "description"
   );
+  await ensureMigrationColumn(
+    pool,
+    "0041_chat_assistant_turn_status",
+    "chat_sessions",
+    "assistant_turn_status"
+  );
   await ensureAuditHashChainTriggers(pool);
 }
 

@@ -2,6 +2,7 @@ import { and, asc, desc, eq } from "drizzle-orm";
 import type { UIMessage } from "ai";
 import { db } from "@/db";
 import { chatMessages, chatSessions } from "@/db/schema";
+import type { ChatAssistantTurnStatus } from "@/lib/ai/chat/background-turn-status";
 import { deriveSessionTitle, UNTITLED_SESSION } from "@/lib/ai/chat/session-title";
 
 export { deriveSessionTitle };
@@ -11,6 +12,8 @@ export type ChatSessionSummary = {
   title: string;
   updatedAt: string;
   messageCount: number;
+  assistantTurnStatus: ChatAssistantTurnStatus;
+  assistantTurnStartedAt: string | null;
 };
 
 export type PersistedChatMessage = {
@@ -44,6 +47,8 @@ export async function listChatSessions(
     title: s.title || UNTITLED_SESSION,
     updatedAt: s.updatedAt.toISOString(),
     messageCount: counts.get(s.id) ?? 0,
+    assistantTurnStatus: s.assistantTurnStatus,
+    assistantTurnStartedAt: s.assistantTurnStartedAt?.toISOString() ?? null,
   }));
 }
 
@@ -59,6 +64,9 @@ export async function createChatSession(
     title: UNTITLED_SESSION,
     updatedAt: created!.updatedAt.toISOString(),
     messageCount: 0,
+    assistantTurnStatus: created!.assistantTurnStatus,
+    assistantTurnStartedAt:
+      created!.assistantTurnStartedAt?.toISOString() ?? null,
   };
 }
 
@@ -66,14 +74,44 @@ export async function createChatSession(
 export async function findChatSession(
   reportId: string,
   sessionId: string
-): Promise<{ id: string; title: string } | null> {
+): Promise<{
+  id: string;
+  title: string;
+  assistantTurnStatus: ChatAssistantTurnStatus;
+  assistantTurnStartedAt: Date | null;
+} | null> {
   const [row] = await db
-    .select({ id: chatSessions.id, title: chatSessions.title })
+    .select({
+      id: chatSessions.id,
+      title: chatSessions.title,
+      assistantTurnStatus: chatSessions.assistantTurnStatus,
+      assistantTurnStartedAt: chatSessions.assistantTurnStartedAt,
+    })
     .from(chatSessions)
     .where(
       and(eq(chatSessions.id, sessionId), eq(chatSessions.reportId, reportId))
     );
   return row ?? null;
+}
+
+export type ChatSessionView = {
+  messages: PersistedChatMessage[];
+  assistantTurnStatus: ChatAssistantTurnStatus;
+  assistantTurnStartedAt: string | null;
+};
+
+export async function loadSessionView(
+  reportId: string,
+  sessionId: string
+): Promise<ChatSessionView | null> {
+  const session = await findChatSession(reportId, sessionId);
+  if (!session) return null;
+  const messages = await loadSessionMessages(sessionId);
+  return {
+    messages,
+    assistantTurnStatus: session.assistantTurnStatus,
+    assistantTurnStartedAt: session.assistantTurnStartedAt?.toISOString() ?? null,
+  };
 }
 
 export async function loadSessionMessages(
