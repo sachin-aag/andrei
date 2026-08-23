@@ -94,6 +94,8 @@ import {
 } from "@/lib/ai/chat/assistant-turn";
 import {
   dropBackgroundSession,
+  forgetMountedSession,
+  nextMountedSessionId,
   rememberBackgroundSession,
   rememberMountedSession,
   runningChatSessionIds,
@@ -1240,17 +1242,12 @@ export function ChatPanel() {
     }
   }, [base]);
 
-  const newChat = useCallback(async () => {
+  const startBlankChat = useCallback(async () => {
     setHistoryOpen(false);
     const id = await createSession();
     if (!id) {
       toast.error("Could not start a new chat.");
       return;
-    }
-    if (currentSessionId && busy) {
-      setBackgroundSessionIds((prev) =>
-        rememberBackgroundSession(prev, currentSessionId)
-      );
     }
     currentSessionIdRef.current = id;
     mountSession(id, false);
@@ -1260,7 +1257,53 @@ export function ChatPanel() {
     setPendingImages([]);
     setMentions([]);
     setMentionRange(null);
-  }, [busy, createSession, currentSessionId, mountSession]);
+  }, [createSession, mountSession]);
+
+  const newChat = useCallback(async () => {
+    if (currentSessionId && busy) {
+      setBackgroundSessionIds((prev) =>
+        rememberBackgroundSession(prev, currentSessionId)
+      );
+    }
+    await startBlankChat();
+  }, [busy, currentSessionId, startBlankChat]);
+
+  const closeChatTab = useCallback(
+    (sessionId: string) => {
+      const mountedIds = mountedSessions.map((session) => session.id);
+      const closingCurrent = currentSessionId === sessionId;
+      const nextId = closingCurrent
+        ? nextMountedSessionId(mountedIds, sessionId)
+        : null;
+
+      setMountedSessions((prev) => forgetMountedSession(prev, sessionId));
+      setBackgroundSessionIds((prev) => dropBackgroundSession(prev, sessionId));
+      setTabSnapshots((prev) => {
+        if (!(sessionId in prev)) return prev;
+        const next = { ...prev };
+        delete next[sessionId];
+        return next;
+      });
+      runtimeBySessionRef.current.delete(sessionId);
+
+      if (!closingCurrent) return;
+
+      if (nextId) {
+        currentSessionIdRef.current = nextId;
+        setRuntime(
+          runtimeBySessionRef.current.get(nextId) ?? IDLE_CHAT_RUNTIME
+        );
+        setCurrentSessionId(nextId);
+        return;
+      }
+
+      currentSessionIdRef.current = null;
+      setCurrentSessionId(null);
+      setRuntime(IDLE_CHAT_RUNTIME);
+      void startBlankChat();
+    },
+    [currentSessionId, mountedSessions, startBlankChat]
+  );
 
   const onSessionSettled = useCallback((sessionId: string) => {
     setBackgroundSessionIds((prev) => dropBackgroundSession(prev, sessionId));
@@ -1566,6 +1609,7 @@ export function ChatPanel() {
             items={sessionTabs}
             currentId={currentSessionId}
             onSelect={openSession}
+            onClose={closeChatTab}
           />
         ) : (
           <span className="min-w-0 flex-1 truncate text-sm font-medium" title={currentTitle}>
