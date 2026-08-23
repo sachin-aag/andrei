@@ -17,6 +17,22 @@ describe("formatCommentForExport", () => {
     );
   });
 
+  it("formats ai_fix with an end-of-section citation", () => {
+    const content = serializeAiFixCommentContent({
+      deleteText: "",
+      insertText: " The measured value was 9.8 W.",
+      reasoning: "Adds the reading.",
+      second: {
+        anchorText: "",
+        deleteText: "",
+        insertText: "[protocol.pdf, p. 3]",
+      },
+    });
+    expect(formatCommentForExport({ kind: "ai_fix", content })).toBe(
+      'Adds the reading.\nSuggested insertion: "The measured value was 9.8 W."\nCitation at end of section: "[protocol.pdf, p. 3]"'
+    );
+  });
+
   it("formats ai_fix insert-only", () => {
     const content = serializeAiFixCommentContent({
       deleteText: "",

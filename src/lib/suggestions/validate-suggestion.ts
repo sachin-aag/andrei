@@ -18,6 +18,7 @@ import {
 } from "@/lib/suggestions/locator";
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
 import { effectivePlainTextContentPath } from "@/lib/suggestions/resolve-suggestion-field-path";
+import { applyTableOperation } from "@/lib/suggestions/table-operation";
 
 export type SuggestionLocateStatus =
   | "locatable"
@@ -42,6 +43,7 @@ export function suggestionEditFromComment(
     deleteText: payload.deleteText,
     insertText: payload.insertText,
     scope: payload.scope,
+    second: payload.second,
   };
 }
 
@@ -113,8 +115,67 @@ export function validateSuggestionLocate(
     comment.contentPath,
     fieldContentPath
   );
-  const edit = suggestionEditFromComment(comment);
+  const payload = parseAiFixCommentContent(comment.content);
   const record = sectionContent as Record<string, unknown>;
+  const atGen = payload.contentHashAtSuggestion;
+  const hashChanged = Boolean(atGen && atGen !== currentHash);
+
+  if (payload.tableOperationInvalid) {
+    return {
+      locateStatus: "not_found",
+      documentChanged: true,
+      canApply: false,
+      canPreview: false,
+    };
+  }
+
+  if (payload.tableOperation) {
+    if (!isRichTargetField(section, path)) {
+      return {
+        locateStatus: "not_found",
+        documentChanged: hashChanged,
+        canApply: false,
+        canPreview: false,
+      };
+    }
+    const doc = getRichFieldValue(record, path);
+    const result = applyTableOperation(doc, payload.tableOperation, {
+      section,
+      targetField: path,
+    });
+    if (!result.ok) {
+      return {
+        locateStatus: "not_found",
+        documentChanged: result.status === "stale" || hashChanged,
+        canApply: false,
+        canPreview: false,
+      };
+    }
+    if (payload.second) {
+      const secondStatus = probeRichEdit(doc, {
+        anchorText: payload.second.anchorText,
+        deleteText: payload.second.deleteText,
+        insertText: payload.second.insertText,
+        scope: payload.second.scope,
+      });
+      if (!isApplyableStatus(secondStatus)) {
+        return {
+          locateStatus: mapProbeStatus(secondStatus),
+          documentChanged: hashChanged,
+          canApply: false,
+          canPreview: false,
+        };
+      }
+    }
+    return {
+      locateStatus: "locatable",
+      documentChanged: hashChanged,
+      canApply: true,
+      canPreview: true,
+    };
+  }
+
+  const edit = suggestionEditFromComment(comment);
 
   let locateStatus: SuggestionLocateStatus;
   if (isRichTargetField(section, path)) {
@@ -127,13 +188,9 @@ export function validateSuggestionLocate(
     locateStatus = mapProbeStatus(status);
   }
 
-  const payload = parseAiFixCommentContent(comment.content);
-  const atGen = payload.contentHashAtSuggestion;
-  const documentChanged = Boolean(atGen && atGen !== currentHash);
-
   return {
     locateStatus,
-    documentChanged,
+    documentChanged: hashChanged,
     canApply: locateStatus === "locatable",
     canPreview: locateStatus === "locatable",
   };

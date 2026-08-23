@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
   firstGeneratedSuggestionSection,
+  GUTTER_BRIDGE_VIEWPORT_MARGIN_PX,
   packGutterAnchors,
   rectIntersectsViewport,
   sectionOverflowPx,
+  stickyGutterCardTop,
   SUGGESTION_FIELD_CENTER_MAX_PX,
   suggestionAnchorY,
   suggestionFieldGutterLayout,
@@ -34,6 +36,61 @@ describe("rectIntersectsViewport", () => {
     expect(
       rectIntersectsViewport({ top: -100, bottom: 1000 }, 800, 80)
     ).toBe(true);
+  });
+});
+
+describe("stickyGutterCardTop", () => {
+  const cardHeight = 120;
+  const parkCenterY = 400;
+  const parkTop = parkCenterY - cardHeight / 2;
+
+  it("keeps the parked top when the card is already in the scrollport", () => {
+    expect(
+      stickyGutterCardTop({
+        parkCenterY,
+        cardHeight,
+        containerTop: 0,
+        viewportTop: 0,
+        viewportBottom: 800,
+      })
+    ).toBe(parkTop);
+  });
+
+  it("pins to the top of the scrollport after the user scrolls the park away", () => {
+    // Container has scrolled up 500px; park would sit above the viewport.
+    expect(
+      stickyGutterCardTop({
+        parkCenterY,
+        cardHeight,
+        containerTop: -500,
+        viewportTop: 0,
+        viewportBottom: 800,
+      })
+    ).toBe(GUTTER_BRIDGE_VIEWPORT_MARGIN_PX - -500);
+  });
+
+  it("pins to the bottom of the scrollport when the park is below the view", () => {
+    expect(
+      stickyGutterCardTop({
+        parkCenterY,
+        cardHeight,
+        containerTop: 0,
+        viewportTop: 0,
+        viewportBottom: 200,
+      })
+    ).toBe(200 - GUTTER_BRIDGE_VIEWPORT_MARGIN_PX - cardHeight);
+  });
+
+  it("pins to the top when the card is taller than the scrollport", () => {
+    expect(
+      stickyGutterCardTop({
+        parkCenterY,
+        cardHeight: 900,
+        containerTop: 0,
+        viewportTop: 0,
+        viewportBottom: 400,
+      })
+    ).toBe(GUTTER_BRIDGE_VIEWPORT_MARGIN_PX);
   });
 });
 

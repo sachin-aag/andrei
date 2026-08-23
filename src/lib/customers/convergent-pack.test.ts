@@ -31,6 +31,9 @@ describe("Convergent customer pack", () => {
       false
     );
     expect(CONVERGENT_PACK.wordImportEnabled).toBe(false);
+    expect(CONVERGENT_PACK.citationsAtEndOfSection).toBe(true);
+    expect(DEMO_PACK.citationsAtEndOfSection).toBe(false);
+    expect(MJ_PACK.citationsAtEndOfSection).toBe(false);
     expect(engineerReportsSubtitle([{ label: "Design Verification Report" }])).toBe(
       "Create and manage design verification reports."
     );

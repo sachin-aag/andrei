@@ -86,10 +86,10 @@ import {
 } from "@/lib/suggestions/accept-suggestion";
 import { suggestionTargetsField } from "@/lib/suggestions/resolve-suggestion-field-path";
 import { validateSuggestionLocate } from "@/lib/suggestions/validate-suggestion";
+import { buildTableOperationPreviewDoc } from "@/lib/suggestions/table-preview";
 import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
 import { editorRegistryKey } from "@/providers/report-provider";
 import type { SectionType } from "@/db/schema";
-import type { SectionContentMap } from "@/types/sections";
 
 function TableEditToolbar({
   editor,
@@ -331,6 +331,7 @@ export function TiptapSectionField({
     onAccept: () => {},
     onIgnore: () => {},
   });
+  const tablePreviewSuggestionIdRef = useRef<string | null>(null);
 
   const rangesRef = useRef<CommentHighlightRange[]>([]);
   const handlersRef = useRef<CommentHighlightHandlers>({
@@ -712,11 +713,12 @@ export function TiptapSectionField({
     if (!editor || !isRichField) return;
 
     let json = editor.getJSON() as JSONContent;
+    const canonicalJson = normalizeRichField(value) as JSONContent;
     const before = JSON.stringify(json);
 
     if (previewHeld) {
       // Queue bridge: don't keep the previous suggestion marks and don't inject
-      // the next one until the user jumps to it.
+      // the next one until the user jumps to it or dismisses the handoff.
       if (suggestionApplyTransition[section]?.bridge) {
         json = stripPendingSuggestionsExcept(json, null);
         if (JSON.stringify(json) === before) return;
@@ -732,6 +734,17 @@ export function TiptapSectionField({
       if (JSON.stringify(json) === before) return;
       editor.commands.setContent(json as Content, { emitUpdate: false });
       return;
+    }
+
+    if (
+      tablePreviewSuggestionIdRef.current &&
+      tablePreviewSuggestionIdRef.current !== activeSuggestionId
+    ) {
+      // Structural table previews do not use reversible suggestion marks.
+      // Restore the provider-owned value before showing the next suggestion
+      // (or after dismissing this one).
+      json = canonicalJson;
+      tablePreviewSuggestionIdRef.current = null;
     }
 
     json = stripPendingSuggestionsExcept(json, activeSuggestionId);
@@ -767,22 +780,66 @@ export function TiptapSectionField({
           });
         } else if (validation.canPreview) {
           const payload = parseAiFixCommentContent(comment.content);
-          const edit = buildSuggestionEdit({
-            anchorText: comment.anchorText,
-            deleteText: payload.deleteText,
-            insertText: payload.insertText,
-            scope: payload.scope,
-          });
-          const injected = injectSuggestionMarks(json, edit, {
-            id: activeSuggestionId,
-            authorId: AI_AUTHOR_ID,
-            status: "pending",
-            createdAt: comment.createdAt,
-            kind: "fix",
-          });
-          // Never paint a preview (or enable inline accept) unless locate succeeded.
-          if (injected.located) {
-            json = normalizeRichField(injected.doc);
+          if (payload.tableOperation) {
+            const preview = buildTableOperationPreviewDoc(
+              canonicalJson,
+              payload.tableOperation,
+              {
+                id: activeSuggestionId,
+                authorId: AI_AUTHOR_ID,
+                status: "pending",
+                createdAt: comment.createdAt,
+                kind: "fix",
+              },
+              {
+                section,
+                targetField: contentPath,
+              }
+            );
+            if (preview.ok) {
+              json = preview.doc;
+              tablePreviewSuggestionIdRef.current = activeSuggestionId;
+              if (payload.second) {
+                const citeInjected = injectSuggestionMarks(
+                  json,
+                  {
+                    anchorText: payload.second.anchorText,
+                    deleteText: payload.second.deleteText,
+                    insertText: payload.second.insertText,
+                    scope: payload.second.scope,
+                  },
+                  {
+                    id: activeSuggestionId,
+                    authorId: AI_AUTHOR_ID,
+                    status: "pending",
+                    createdAt: comment.createdAt,
+                    kind: "fix",
+                  }
+                );
+                if (citeInjected.located) {
+                  json = normalizeRichField(citeInjected.doc);
+                }
+              }
+            }
+          } else if (!payload.tableOperationInvalid) {
+            const edit = buildSuggestionEdit({
+              anchorText: comment.anchorText,
+              deleteText: payload.deleteText,
+              insertText: payload.insertText,
+              scope: payload.scope,
+              second: payload.second,
+            });
+            const injected = injectSuggestionMarks(json, edit, {
+              id: activeSuggestionId,
+              authorId: AI_AUTHOR_ID,
+              status: "pending",
+              createdAt: comment.createdAt,
+              kind: "fix",
+            });
+            // Never paint a preview (or enable inline accept) unless locate succeeded.
+            if (injected.located) {
+              json = normalizeRichField(injected.doc);
+            }
           }
         }
       }
@@ -804,6 +861,7 @@ export function TiptapSectionField({
     section,
     sectionContent,
     suggestionApplyTransition,
+    value,
   ]);
 
   // Debounced decoration refresh — coalesces hover-driven updates to one per frame.

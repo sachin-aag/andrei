@@ -23,6 +23,7 @@ import {
   Send,
   Sparkles,
   PencilLine,
+  Table2,
   BookOpen,
   FileText,
   Loader2,
@@ -169,6 +170,7 @@ type ToolPartInfo = {
   state: string;
   input: Record<string, unknown> | undefined;
   output: Record<string, unknown> | undefined;
+  errorText: string | undefined;
 };
 
 function readToolPart(part: UIMessagePart<never, never>): ToolPartInfo | null {
@@ -178,12 +180,14 @@ function readToolPart(part: UIMessagePart<never, never>): ToolPartInfo | null {
     state?: string;
     input?: Record<string, unknown>;
     output?: Record<string, unknown>;
+    errorText?: string;
   };
   return {
     toolName: p.type.slice("tool-".length),
     state: p.state ?? "",
     input: p.input,
     output: p.output,
+    errorText: p.errorText,
   };
 }
 
@@ -328,10 +332,45 @@ function ToolChip({
         ? info.output.hint
         : typeof info.output?.message === "string"
           ? info.output.message
-          : "Could not place this edit.";
+          : info.errorText
+            ? info.errorText
+            : "Could not place this edit.";
     return (
       <ToolLine icon={<PencilLine className="size-3.5 text-amber-500" />} tone="warn">
         Edit not applied: {hint}
+      </ToolLine>
+    );
+  }
+
+  if (info.toolName === "edit_table") {
+    const section = sectionLabel(info.input?.section);
+    const field = typeof info.input?.targetField === "string" ? info.input.targetField : "";
+    if (pending) {
+      return (
+        <ToolLine icon={<Table2 className="size-3.5" />}>
+          Editing table in {section}…
+        </ToolLine>
+      );
+    }
+    if (info.output?.status === "proposed") {
+      return (
+        <ToolLine icon={<Table2 className="size-3.5 text-emerald-500" />} tone="success">
+          Proposed table edit to {section}
+          {field ? ` · ${field}` : ""} — review it in the document.
+        </ToolLine>
+      );
+    }
+    const hint =
+      typeof info.output?.hint === "string"
+        ? info.output.hint
+        : typeof info.output?.message === "string"
+          ? info.output.message
+          : info.errorText
+            ? info.errorText
+            : "Could not place this table edit.";
+    return (
+      <ToolLine icon={<Table2 className="size-3.5 text-amber-500" />} tone="warn">
+        Table edit not applied: {hint}
       </ToolLine>
     );
   }
@@ -358,7 +397,9 @@ function ToolChip({
     const message =
       typeof info.output?.message === "string"
         ? info.output.message
-        : "Could not create this draft.";
+        : info.errorText
+          ? info.errorText
+          : "Could not create this draft.";
     return (
       <ToolLine icon={<FileText className="size-3.5 text-amber-500" />} tone="warn">
         Draft not created: {message}

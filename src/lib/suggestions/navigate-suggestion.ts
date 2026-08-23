@@ -41,7 +41,42 @@ export function suggestionFieldGutterLayout(
 }
 
 export const GUTTER_CARD_GAP_PX = 8;
-const GUTTER_CARD_HEIGHT_FALLBACK_PX = 80;
+export const GUTTER_CARD_HEIGHT_FALLBACK_PX = 80;
+/** Keep a parked "Go to next" card this far inside the scrollport. */
+export const GUTTER_BRIDGE_VIEWPORT_MARGIN_PX = 16;
+
+/**
+ * Card top (gutter-container Y) that keeps a parked queue-bridge card inside
+ * the visible scrollport. When the parked center is already on screen this
+ * is just `parkCenterY - cardHeight / 2`; as the user scrolls, the result
+ * clamps to the scrollport so the handoff stays visible until they jump or
+ * dismiss.
+ */
+export function stickyGutterCardTop({
+  parkCenterY,
+  cardHeight,
+  containerTop,
+  viewportTop,
+  viewportBottom,
+  marginPx = GUTTER_BRIDGE_VIEWPORT_MARGIN_PX,
+}: {
+  parkCenterY: number;
+  cardHeight: number;
+  containerTop: number;
+  viewportTop: number;
+  viewportBottom: number;
+  marginPx?: number;
+}): number {
+  const parkTop = parkCenterY - cardHeight / 2;
+  const parkTopViewport = parkTop + containerTop;
+  const minTopViewport = viewportTop + marginPx;
+  const maxTopViewport = viewportBottom - marginPx - cardHeight;
+  const clampedViewportTop =
+    maxTopViewport < minTopViewport
+      ? minTopViewport
+      : Math.min(Math.max(parkTopViewport, minTopViewport), maxTopViewport);
+  return clampedViewportTop - containerTop;
+}
 
 export type PackableGutterAnchor = {
   id: string;

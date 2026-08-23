@@ -20,6 +20,7 @@ export type ProposedEditInput = {
   deleteText: string;
   insertText: string;
   scope?: EditScope;
+  second?: Omit<SuggestionEdit, "second">;
 };
 
 export type ProposedEditCheck =
@@ -52,6 +53,7 @@ export function checkProposedEdit(
     deleteText: edit.deleteText,
     insertText: edit.insertText,
     scope: edit.scope,
+    second: edit.second,
   };
 
   const status = fieldDoc
@@ -80,20 +82,37 @@ export function checkProposedEdit(
 }
 
 /** Agent-facing repair hint for a non-ok check result. */
-export function proposedEditHint(check: ProposedEditCheck): string {
+export function looksLikeTableEdit(
+  anchorText: string,
+  fieldDoc?: JSONContent | null
+): boolean {
+  if (/\|.+\|/.test(anchorText)) return true;
+  if (!fieldDoc) return false;
+  const walk = (node: JSONContent): boolean =>
+    node.type === "table" || Boolean(node.content?.some(walk));
+  return walk(fieldDoc);
+}
+
+export function proposedEditHint(
+  check: ProposedEditCheck,
+  opts?: { anchorText?: string; fieldDoc?: JSONContent | null }
+): string {
   switch (check.status) {
     case "ok":
       return "";
     case "not_found":
+      if (looksLikeTableEdit(opts?.anchorText ?? "", opts?.fieldDoc)) {
+        return "That looks like a table change. Do not use a markdown pipe table as anchorText — propose_edit cannot match it. Call read_section, then edit_table with tableIndex and [row,col] from structuredText. Do not fall through to draft_field.";
+      }
       return "The anchorText was not found in the current field. Call read_section to get the exact current text, then quote a verbatim span.";
     case "ambiguous":
-      return "The anchorText matches more than once. Include more surrounding words so it is unique, or set `scope` to the exact table cell / list item.";
+      return "The anchorText matches more than once. Include more surrounding words so it is unique, or set `scope` to the exact list item. For tables, use edit_table instead of propose_edit.";
     case "cross_cell":
-      return "The edit spans more than one table cell. Set `scope` to a single cell ({kind:'cell',row,col}) and keep deleteText/insertText within that cell.";
+      return "The edit spans more than one table cell. Use edit_table (edit_cells) instead of propose_edit.";
     case "bad_scope":
-      return "The `scope` coordinate does not exist in this field. Re-read the field with read_section and use a valid R#/C# cell or list item index.";
+      return "The `scope` coordinate does not exist in this field. For tables, call read_section then edit_table. For lists, re-read and use a valid item index.";
     case "too_large":
-      return "This change rewrites most of the field. Make a smaller, targeted edit (block redraft is not available yet in this mode).";
+      return "This change rewrites most of the field. Make a smaller, targeted edit, or use draft_field for an explicit full replacement.";
     default: {
       const _exhaustive: never = check;
       return _exhaustive;
