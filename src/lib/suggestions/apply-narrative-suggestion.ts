@@ -21,12 +21,25 @@ export function buildSuggestionEdit(payload: {
   deleteText: string;
   insertText: string;
   scope?: EditScope;
+  second?: SuggestionEdit["second"];
 }): SuggestionEdit {
+  const second = payload.second
+    ? {
+        anchorText: payload.second.anchorText?.trim() ?? "",
+        deleteText: payload.second.deleteText,
+        insertText: normalizeSuggestionInsertText(payload.second.insertText),
+        scope: payload.second.scope,
+      }
+    : undefined;
   return {
     anchorText: payload.anchorText?.trim() ?? "",
     deleteText: payload.deleteText,
     insertText: normalizeSuggestionInsertText(payload.insertText),
     scope: payload.scope,
+    second:
+      second && (second.deleteText.trim() || second.insertText.trim())
+        ? second
+        : undefined,
   };
 }
 

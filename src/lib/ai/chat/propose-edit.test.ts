@@ -62,6 +62,36 @@ describe("checkProposedEdit", () => {
     });
     expect(result.status).toBe("ok");
   });
+
+  it("accepts a split body change plus end-of-field citation", () => {
+    expect(
+      checkProposedEdit(FIELD, {
+        anchorText: "failed dissolution testing at 68 percent",
+        deleteText: "",
+        insertText: " (spec: NLT 80%)",
+        second: {
+          anchorText: "",
+          deleteText: "",
+          insertText: "[protocol.pdf, p. 3]",
+        },
+      })
+    ).toEqual({ status: "ok" });
+  });
+
+  it("reports not_found when the citation part cannot be located", () => {
+    expect(
+      checkProposedEdit(FIELD, {
+        anchorText: "failed dissolution testing at 68 percent",
+        deleteText: "",
+        insertText: " (spec: NLT 80%)",
+        second: {
+          anchorText: "this text is not in the field",
+          deleteText: "this text is not in the field",
+          insertText: "[protocol.pdf, p. 3]",
+        },
+      })
+    ).toEqual({ status: "not_found" });
+  });
 });
 
 describe("proposedEditHint", () => {

@@ -241,6 +241,41 @@ describe("buildChatTools tagged sections", () => {
   });
 });
 
+describe("buildChatTools propose_edit second", () => {
+  it("exposes propose_edit.second only when citations-at-end is on", () => {
+    const off = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      citationsAtEndOfSection: false,
+    });
+    const on = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      citationsAtEndOfSection: true,
+    });
+    const input = {
+      section: "define",
+      targetField: "narrative",
+      reasoning: "Add the measured value and cite the protocol",
+      anchorText: "met spec",
+      insertText: " at 9.8 W",
+      second: {
+        anchorText: "",
+        deleteText: "",
+        insertText: "[protocol.pdf, p. 3]",
+      },
+    };
+    const parsedOff = inputSchemaOf(off, "propose_edit").parse(input) as {
+      second?: unknown;
+    };
+    expect(parsedOff).not.toHaveProperty("second");
+    const parsedOn = inputSchemaOf(on, "propose_edit").parse(input) as {
+      second?: { insertText: string };
+    };
+    expect(parsedOn.second?.insertText).toBe("[protocol.pdf, p. 3]");
+  });
+});
+
 describe("buildChatTools edit_table", () => {
   it("accepts each table operation kind and defaults tableIndex to 0", () => {
     const tools = buildChatTools({ reportId: "report-1", canEdit: true });

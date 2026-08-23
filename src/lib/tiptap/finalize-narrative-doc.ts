@@ -1,11 +1,15 @@
 import type { JSONContent } from "@tiptap/core";
+import { keepEmptyParagraphBeforeCitationHeading } from "@/lib/suggestions/citations-at-end";
 import { normalizeDocumentBracketPlaceholders } from "@/lib/placeholders/normalize-document-placeholders";
 import { coalesceAdjacentTextNodes } from "@/lib/tiptap/coalesce-text-nodes";
 
 /** Drop emptied top-level paragraphs/headings left after a cross-block delete. */
 function dropEmptyBlocks(doc: JSONContent): JSONContent {
   if (!doc.content?.length) return doc;
-  const next = doc.content.filter((block) => {
+  const next = doc.content.filter((block, index) => {
+    if (keepEmptyParagraphBeforeCitationHeading(block, doc.content?.[index + 1])) {
+      return true;
+    }
     if (block.type === "paragraph" || block.type === "heading") {
       const text = (block.content ?? [])
         .map((c) => (c.type === "text" ? c.text ?? "" : ""))

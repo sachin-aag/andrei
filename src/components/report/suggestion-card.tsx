@@ -281,12 +281,22 @@ function SuggestionCardFace({
               {line}
             </p>
           ))}
+          {card.payload.second?.insertText.trim() ? (
+            <p className="text-[11px] text-[var(--muted-foreground)]">
+              Citation at end of section:{" "}
+              <span className="suggestion-preview-insert font-medium">
+                {card.payload.second.insertText.trim()}
+              </span>
+            </p>
+          ) : null}
         </div>
       ) : null}
 
       {card.kind === "fix" &&
       !card.payload.tableOperation &&
-      (card.payload.deleteText || card.payload.insertText) ? (
+      (card.payload.deleteText ||
+        card.payload.insertText ||
+        card.payload.second?.insertText) ? (
         <div
           className={cn(
             "text-xs leading-relaxed space-y-1 transition-opacity duration-300",
@@ -299,6 +309,14 @@ function SuggestionCardFace({
           {card.normalizedInsert ? (
             <p className="suggestion-preview-insert">
               <PlaceholderHighlightedText text={card.normalizedInsert} />
+            </p>
+          ) : null}
+          {card.payload.second?.insertText.trim() ? (
+            <p className="text-[11px] text-[var(--muted-foreground)]">
+              Citation at end of section:{" "}
+              <span className="suggestion-preview-insert font-medium">
+                {card.payload.second.insertText.trim()}
+              </span>
             </p>
           ) : null}
         </div>
