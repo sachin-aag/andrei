@@ -21,10 +21,7 @@ import {
   rowsForSection,
 } from "@/lib/ai/criteria-view";
 import { canSuggestFixes } from "@/lib/ai/suggestion-gating";
-import {
-  aiSuggestionLockReason,
-  canSaveReportSection,
-} from "@/lib/reports/access";
+import { canSaveReportSection } from "@/lib/reports/access";
 import { useUserDirectory } from "@/providers/user-directory-provider";
 import { SECTION_LABELS } from "@/types/sections";
 import { captureEvent } from "@/lib/analytics/events";
@@ -62,12 +59,13 @@ function ExpandableReasoning({ text }: { text: string }) {
 }
 
 export function SectionStatusPill({ section }: { section: SectionType }) {
-  const { report } = useReportData();
+  const { report, workspaceMode } = useReportData();
   const {
     evaluations,
     runningEvalSections,
   } = useReportEvaluations();
   const [open, setOpen] = useState(false);
+  const showAiActions = workspaceMode !== "view";
   const rows = useMemo(
     () => rowsForSection(section, evaluations, report.documentType),
     [evaluations, section, report.documentType]
@@ -160,6 +158,7 @@ export function SectionStatusPill({ section }: { section: SectionType }) {
               </div>
             );
           })}
+          {showAiActions ? <SectionSuggestFixesButton section={section} /> : null}
         </div>
       )}
     </div>
@@ -237,10 +236,6 @@ export function SectionSuggestFixesButton({ section }: { section: SectionType })
   const { report, currentUserId } = useReportData();
   const { getUser } = useUserDirectory();
   const role = getUser(currentUserId)?.role;
-  const lockReason =
-    role != null
-      ? aiSuggestionLockReason({ id: currentUserId, role }, report)
-      : "You can't propose edits on this report right now.";
   const canPropose =
     role != null && canSaveReportSection({ id: currentUserId, role }, report);
   const isRunning = runningSuggestionSections.includes(section);
@@ -256,17 +251,40 @@ export function SectionSuggestFixesButton({ section }: { section: SectionType })
       allSections: sections,
     });
 
+  // Hide when it would be a disabled no-op. Keep the in-flight label after click.
+  if (!enabled && !isRunning) return null;
+
   return (
-    <StackedAndreiButton
-      primary={isRunning ? "Suggesting…" : "Suggest fixes"}
-      disabled={!enabled}
-      title={!canPropose ? (lockReason ?? undefined) : undefined}
-      spinning={isRunning}
-      onClick={() => {
-        captureEvent("ai_suggestion_generated", { section });
-        generateSuggestions(section);
-      }}
-    />
+    <div className="pt-1.5 mt-1 border-t border-[var(--border)]">
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        className="h-auto w-full justify-center py-1.5 px-2.5 text-xs bg-[var(--card)] shadow-sm [&_svg]:size-3"
+        disabled={!enabled}
+        aria-busy={isRunning}
+        aria-label={isRunning ? "Suggesting fixes" : "Suggest fixes"}
+        title={isRunning ? "Generating suggested fixes…" : undefined}
+        onClick={(event) => {
+          event.stopPropagation();
+          captureEvent("ai_suggestion_generated", { section });
+          void generateSuggestions(section);
+        }}
+      >
+        {isRunning ? (
+          <Loader2 className="size-3 animate-spin" aria-hidden="true" />
+        ) : (
+          <Sparkles className="size-3" aria-hidden="true" />
+        )}
+        <span>{isRunning ? "Suggesting…" : "Suggest fixes"}</span>
+        <span
+          className="text-[9px] text-[var(--muted-foreground)] font-normal"
+          aria-hidden="true"
+        >
+          {getCustomerPack().branding.aiAttribution}
+        </span>
+      </Button>
+    </div>
   );
 }
 
