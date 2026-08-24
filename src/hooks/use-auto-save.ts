@@ -60,11 +60,39 @@ export function useAutoSave<T>({
   /** Last value confirmed persisted by a successful `onSave`. */
   const lastPersisted = useRef<string>(serializeValue(value));
   const abortRef = useRef<AbortController | null>(null);
+  const persistDirtyOnLeave = useRef<() => void>(() => {});
 
   /** Keep in sync so flush() after flushSync(onChange) sees the latest doc immediately. */
   useLayoutEffect(() => {
     latestValue.current = value;
   }, [value]);
+
+  useLayoutEffect(() => {
+    persistDirtyOnLeave.current = () => {
+      if (!enabled || !beaconUrl) return;
+      const body = serializeValueRef.current(latestValue.current);
+      if (body === lastPersisted.current) return;
+      try {
+        void fetch(beaconUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body,
+          keepalive: true,
+        });
+      } catch {
+        try {
+          navigator.sendBeacon(
+            beaconUrl,
+            new Blob([body], { type: "application/json" })
+          );
+        } catch {
+          // Page is unloading; best-effort only.
+        }
+      }
+      lastPersisted.current = body;
+      lastSerialized.current = body;
+    };
+  }, [enabled, beaconUrl]);
 
   const flushImpl = useRef<() => Promise<void>>(async () => {});
 
@@ -125,6 +153,15 @@ export function useAutoSave<T>({
     };
   }, [enabled, onSave]);
 
+  // Persist first in declaration so abort cleanup runs first on unmount
+  // (in-flight PATCH is cancelled, then keepalive POST sends the latest value).
+  useEffect(
+    () => () => {
+      persistDirtyOnLeave.current();
+    },
+    []
+  );
+
   useEffect(
     () => () => {
       abortRef.current?.abort();
@@ -155,13 +192,7 @@ export function useAutoSave<T>({
   useEffect(() => {
     if (!enabled || !beaconUrl) return;
     const handler = () => {
-      try {
-        const body = serialize
-          ? serialize(latestValue.current)
-          : JSON.stringify(latestValue.current);
-        const blob = new Blob([body], { type: "application/json" });
-        navigator.sendBeacon(beaconUrl, blob);
-      } catch {}
+      persistDirtyOnLeave.current();
     };
     window.addEventListener("pagehide", handler);
     window.addEventListener("beforeunload", handler);
@@ -169,7 +200,7 @@ export function useAutoSave<T>({
       window.removeEventListener("pagehide", handler);
       window.removeEventListener("beforeunload", handler);
     };
-  }, [beaconUrl, enabled, serialize]);
+  }, [beaconUrl, enabled]);
 
   return { status, lastSavedAt, flush };
 }

@@ -1,15 +1,11 @@
 "use client";
 
-import {
-  useReportData,
-  useReportSection,
-} from "@/providers/report-provider";
+import { useReportSection } from "@/providers/report-provider";
 import { useSectionSave } from "@/hooks/use-section-save";
 import { TiptapSectionField } from "@/components/report/tiptap-section-field";
 import { SectionShell } from "./section-shell";
 
 export function ControlEditor() {
-  const { readOnly } = useReportData();
   const { update } = useReportSection("control");
   const { status, lastSavedAt, value, flushSave } = useSectionSave("control");
 
@@ -35,7 +31,6 @@ export function ControlEditor() {
           }))
         }
         onFlushSave={flushSave}
-        locked={readOnly}
       />
     </SectionShell>
   );

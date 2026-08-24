@@ -7,7 +7,8 @@ import {
   useReportEvaluations,
   useReportSection,
 } from "@/providers/report-provider";
-import { useAutoSave } from "./use-auto-save";
+import { useAutoSave, type AutoSaveContext } from "./use-auto-save";
+import { shouldAutosaveSection } from "@/lib/reports/section-save-policy";
 import type { SectionContentMap } from "@/types/sections";
 import type { SectionType } from "@/db/schema";
 
@@ -16,8 +17,14 @@ const saveBlockedReports = new Set<string>();
 export function useSectionSave<K extends keyof SectionContentMap & SectionType>(
   section: K
 ) {
-  const { report, readOnly, trackChangesMode, registerSectionFlush } =
-    useReportData();
+  const {
+    report,
+    readOnly,
+    trackChangesMode,
+    registerSectionFlush,
+    currentUserId,
+    currentUserRole,
+  } = useReportData();
   const { suggestionApplyTransition } = useReportEvaluations();
   const { value } = useReportSection(section);
   // Generation (Suggest fixes / chat) reads a fresh DB snapshot per request and
@@ -27,13 +34,14 @@ export function useSectionSave<K extends keyof SectionContentMap & SectionType>(
   const [saveBlocked, setSaveBlocked] = useState(false);
 
   const onSave = useCallback(
-    async (v: SectionContentMap[K]) => {
+    async (v: SectionContentMap[K], context?: AutoSaveContext) => {
       const res = await fetch(
         `/api/reports/${report.id}/sections/${section}`,
         {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ content: v }),
+          signal: context?.signal,
         }
       );
       if (res.ok) return;
@@ -63,13 +71,14 @@ export function useSectionSave<K extends keyof SectionContentMap & SectionType>(
   );
 
   const { status, lastSavedAt, flush } = useAutoSave({
-    enabled:
-      ((!readOnly &&
-        report.status !== "submitted" &&
-        report.status !== "approved") ||
-        trackChangesMode) &&
-      !applyInFlight &&
-      !saveBlocked,
+    enabled: shouldAutosaveSection({
+      user: { id: currentUserId, role: currentUserRole },
+      report,
+      readOnly,
+      trackChangesMode,
+      applyInFlight,
+      saveBlocked,
+    }),
     value,
     onSave,
     beaconUrl: `/api/reports/${report.id}/sections/${section}`,

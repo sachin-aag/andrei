@@ -110,6 +110,7 @@ type ReportContextValue = {
   setTrackChangesMode: React.Dispatch<React.SetStateAction<boolean>>;
   workspaceMode: WorkspaceMode;
   currentUserId: string;
+  currentUserRole: UserRole;
   /** Inline / sidebar: which anchored comment thread is focused (dark highlight + expanded panel). */
   activeCommentId: string | null;
   setActiveCommentId: React.Dispatch<React.SetStateAction<string | null>>;
@@ -233,6 +234,7 @@ type ReportDataContextValue = Pick<
   | "setTrackChangesMode"
   | "workspaceMode"
   | "currentUserId"
+  | "currentUserRole"
   | "setReport"
   | "refresh"
   | "getSectionId"
@@ -910,6 +912,7 @@ export function ReportProvider({
       setTrackChangesMode,
       workspaceMode,
       currentUserId,
+      currentUserRole,
       setReport,
       refresh,
       getSectionId,
@@ -924,6 +927,7 @@ export function ReportProvider({
       setTrackChangesMode,
       workspaceMode,
       currentUserId,
+      currentUserRole,
       refresh,
       getSectionId,
       registerSectionFlush,

@@ -4,6 +4,10 @@ import {
   suggestionInsertMarkName,
 } from "@/lib/tiptap/suggestion-marks";
 import {
+  atxHeadingParagraph,
+  hydrateLiteralMarkdownInDoc,
+} from "@/lib/tiptap/markdown-to-doc";
+import {
   listItemParagraph,
   listItemParagraphs,
   parseListLine,
@@ -115,6 +119,13 @@ export function linesToDoc(s: string): JSONContent {
       continue;
     }
 
+    const heading = atxHeadingParagraph(lineWithoutSoftBreak(line));
+    if (heading) {
+      content.push(heading);
+      i++;
+      continue;
+    }
+
     if (line.endsWith(MAMMOTH_SOFT_BREAK)) {
       const inline: JSONContent[] = [];
       while (i < lines.length) {
@@ -150,7 +161,7 @@ export function linesToDoc(s: string): JSONContent {
 
 /** Convert legacy plain-text narrative to a minimal doc (paragraphs by line breaks). */
 export function legacyStringToDoc(s: string): JSONContent {
-  return linesToDoc(s);
+  return hydrateLiteralMarkdownInDoc(linesToDoc(s));
 }
 
 /**
@@ -229,7 +240,7 @@ function coerceUnsupportedNodes(node: JSONContent): JSONContent {
 /** Normalize DB/client value to JSONContent (handles legacy strings). */
 export function normalizeRichField(v: unknown): JSONContent {
   if (v && typeof v === "object" && "type" in v && (v as JSONContent).type === "doc") {
-    return coerceUnsupportedNodes(v as JSONContent);
+    return hydrateLiteralMarkdownInDoc(coerceUnsupportedNodes(v as JSONContent));
   }
   if (typeof v === "string") {
     return coerceUnsupportedNodes(legacyStringToDoc(v));

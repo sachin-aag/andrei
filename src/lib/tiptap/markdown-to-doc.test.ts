@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  hydrateLiteralMarkdownInDoc,
   markdownHasTable,
   markdownToDoc,
   markdownToPlainText,
+  promoteAtxHeadingsInDoc,
 } from "@/lib/tiptap/markdown-to-doc";
 import { richJsonToPlainText } from "@/lib/tiptap/rich-text";
 
@@ -189,5 +191,116 @@ describe("markdownToPlainText", () => {
     expect(markdownToPlainText("## Title\n\n**Bold** and *italic* text")).toBe(
       "Title\n\nBold and italic text"
     );
+  });
+});
+
+describe("promoteAtxHeadingsInDoc", () => {
+  it("turns a literal ### paragraph into a bold paragraph", () => {
+    const doc = promoteAtxHeadingsInDoc({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "### Corrective Actions" }],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Retrain the operator." }],
+        },
+      ],
+    });
+    expect(doc.content).toEqual([
+      {
+        type: "paragraph",
+        content: [
+          { type: "text", text: "Corrective Actions", marks: [{ type: "bold" }] },
+        ],
+      },
+      {
+        type: "paragraph",
+        content: [{ type: "text", text: "Retrain the operator." }],
+      },
+    ]);
+  });
+
+  it("leaves hashes that are not an ATX heading at the start of the paragraph", () => {
+    const paragraph = {
+      type: "paragraph",
+      content: [{ type: "text", text: "See ### notes in the annex." }],
+    };
+    expect(
+      promoteAtxHeadingsInDoc({ type: "doc", content: [paragraph] })
+    ).toEqual({ type: "doc", content: [paragraph] });
+  });
+});
+
+describe("hydrateLiteralMarkdownInDoc", () => {
+  it("renders a corrective-action markdown blob that lives in one paragraph", () => {
+    const blob = [
+      "### Corrective Actions",
+      "1. **Retrospective Monitoring:** Collect [Lab Report Number: <to be filled>] dated [Date: <to be filled>].",
+      "2. **Personnel Training:** Retrain operators.",
+      "3. **Effectiveness Check:** Review on [Date: <to be filled>].",
+      "",
+      "### Preventive Actions",
+      "1. Update the SOP.",
+    ].join("\n");
+
+    const doc = hydrateLiteralMarkdownInDoc({
+      type: "doc",
+      content: [{ type: "paragraph", content: [{ type: "text", text: blob }] }],
+    });
+
+    expect(doc.content?.some((node) => node.type === "orderedList")).toBe(true);
+    const plain = richJsonToPlainText(doc);
+    expect(plain).not.toContain("###");
+    expect(plain).not.toContain("**");
+    expect(plain).toContain("Corrective Actions");
+    expect(plain).toContain("Retrospective Monitoring:");
+    expect(plain).toContain("Personnel Training:");
+  });
+
+  it("hydrates consecutive markdown paragraphs and leaves plain prose", () => {
+    const doc = hydrateLiteralMarkdownInDoc({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "### Corrective Actions" }],
+        },
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "1. **Personnel Training:** Retrain operators." },
+          ],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Normal follow-up sentence." }],
+        },
+      ],
+    });
+
+    expect(doc.content?.[0]).toEqual({
+      type: "paragraph",
+      content: [
+        { type: "text", text: "Corrective Actions", marks: [{ type: "bold" }] },
+      ],
+    });
+    expect(doc.content?.[1]?.type).toBe("orderedList");
+    expect(doc.content?.[2]).toEqual({
+      type: "paragraph",
+      content: [{ type: "text", text: "Normal follow-up sentence." }],
+    });
+  });
+
+  it("does not rewrite paragraphs that only mention hashes mid-sentence", () => {
+    const paragraph = {
+      type: "paragraph",
+      content: [{ type: "text", text: "See ### notes in the annex." }],
+    };
+    expect(
+      hydrateLiteralMarkdownInDoc({ type: "doc", content: [paragraph] })
+    ).toEqual({ type: "doc", content: [paragraph] });
   });
 });

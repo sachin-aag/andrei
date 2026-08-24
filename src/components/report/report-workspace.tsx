@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useRef, useCallback, useEffect, type ComponentType } from "react";
-import dynamic from "next/dynamic";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import {
@@ -46,176 +45,73 @@ import {
   ElectronicSignatureDialog,
   type SignatureMeaningUi,
 } from "./electronic-signature-dialog";
+import { DefineEditor } from "./sections/define-editor";
+import { MeasureEditor } from "./sections/measure-editor";
+import { AnalyzeEditor } from "./sections/analyze-editor";
+import { ImproveEditor } from "./sections/improve-editor";
+import { ControlEditor } from "./sections/control-editor";
+import { ConclusionEditor } from "./sections/conclusion-editor";
+import { DocumentsReviewedEditor } from "./sections/documents-reviewed-editor";
+import { AttachmentsEditor } from "./sections/attachments-editor";
+import { SignatureApprovalsSection } from "./sections/signature-approvals-section";
+import { DvCoverPageEditor } from "./sections/dv/cover-page-editor";
+import {
+  DvAppendicesEditor,
+  DvApprovalEditor,
+  DvConclusionEditor,
+  DvDeviationsEditor,
+  DvMethodsOfMeasurementEditor,
+  DvProblemsResolutionEditor,
+  DvPurposeEditor,
+  DvPurposeScopeEditor,
+  DvReferencesEditor,
+  DvResultsAndDiscussionsEditor,
+  DvScopeEditor,
+  DvTestEquipmentEditor,
+  DvTestMethodsEditor,
+  DvTestResultsEditor,
+  DvTestersDatesEditor,
+  DvTraceabilityEditor,
+} from "./sections/dv/dv-section-editors";
 
 export type { WorkspaceMode };
 
-function SectionEditorLoading() {
-  return (
-    <div className="rounded-xl border border-[var(--border)] bg-[var(--card)] p-5">
-      <div className="h-5 w-32 rounded bg-[var(--secondary)]" />
-      <div className="mt-3 h-24 rounded bg-[var(--secondary)]" />
-    </div>
-  );
-}
-
+/**
+ * Section editors are all rendered at once, so they must not be lazy: a lazy
+ * boundary that has not loaded when React hydrates makes React throw away the
+ * server-rendered section and replace it with a fallback, silently discarding
+ * focus and keystrokes typed into it.
+ */
 const INVESTIGATION_SECTION_EDITORS: Record<string, ComponentType> = {
-  define: dynamic(
-    () => import("./sections/define-editor").then((mod) => mod.DefineEditor),
-    { loading: SectionEditorLoading }
-  ),
-  measure: dynamic(
-    () => import("./sections/measure-editor").then((mod) => mod.MeasureEditor),
-    { loading: SectionEditorLoading }
-  ),
-  analyze: dynamic(
-    () => import("./sections/analyze-editor").then((mod) => mod.AnalyzeEditor),
-    { loading: SectionEditorLoading }
-  ),
-  improve: dynamic(
-    () => import("./sections/improve-editor").then((mod) => mod.ImproveEditor),
-    { loading: SectionEditorLoading }
-  ),
-  control: dynamic(
-    () => import("./sections/control-editor").then((mod) => mod.ControlEditor),
-    { loading: SectionEditorLoading }
-  ),
-  conclusion: dynamic(
-    () => import("./sections/conclusion-editor").then((mod) => mod.ConclusionEditor),
-    { loading: SectionEditorLoading }
-  ),
-  documents_reviewed: dynamic(
-    () =>
-      import("./sections/documents-reviewed-editor").then(
-        (mod) => mod.DocumentsReviewedEditor
-      ),
-    { loading: SectionEditorLoading }
-  ),
-  attachments: dynamic(
-    () =>
-      import("./sections/attachments-editor").then((mod) => mod.AttachmentsEditor),
-    { loading: SectionEditorLoading }
-  ),
-  signature_approvals: dynamic(
-    () =>
-      import("./sections/signature-approvals-section").then(
-        (mod) => mod.SignatureApprovalsSection
-      ),
-    { loading: SectionEditorLoading }
-  ),
+  define: DefineEditor,
+  measure: MeasureEditor,
+  analyze: AnalyzeEditor,
+  improve: ImproveEditor,
+  control: ControlEditor,
+  conclusion: ConclusionEditor,
+  documents_reviewed: DocumentsReviewedEditor,
+  attachments: AttachmentsEditor,
+  signature_approvals: SignatureApprovalsSection,
 };
 
 const DV_SECTION_EDITORS: Record<string, ComponentType> = {
-  cover_page: dynamic(
-    () =>
-      import("./sections/dv/cover-page-editor").then((mod) => mod.DvCoverPageEditor),
-    { loading: SectionEditorLoading }
-  ),
-  purpose_scope: dynamic(
-    () =>
-      import("./sections/dv/dv-section-editors").then(
-        (mod) => mod.DvPurposeScopeEditor
-      ),
-    { loading: SectionEditorLoading }
-  ),
-  references: dynamic(
-    () =>
-      import("./sections/dv/dv-section-editors").then(
-        (mod) => mod.DvReferencesEditor
-      ),
-    { loading: SectionEditorLoading }
-  ),
-  traceability: dynamic(
-    () =>
-      import("./sections/dv/dv-section-editors").then(
-        (mod) => mod.DvTraceabilityEditor
-      ),
-    { loading: SectionEditorLoading }
-  ),
-  test_methods: dynamic(
-    () =>
-      import("./sections/dv/dv-section-editors").then(
-        (mod) => mod.DvTestMethodsEditor
-      ),
-    { loading: SectionEditorLoading }
-  ),
-  test_results: dynamic(
-    () =>
-      import("./sections/dv/dv-section-editors").then(
-        (mod) => mod.DvTestResultsEditor
-      ),
-    { loading: SectionEditorLoading }
-  ),
-  deviations: dynamic(
-    () =>
-      import("./sections/dv/dv-section-editors").then(
-        (mod) => mod.DvDeviationsEditor
-      ),
-    { loading: SectionEditorLoading }
-  ),
-  conclusion: dynamic(
-    () =>
-      import("./sections/dv/dv-section-editors").then(
-        (mod) => mod.DvConclusionEditor
-      ),
-    { loading: SectionEditorLoading }
-  ),
-  approval_signoff: dynamic(
-    () =>
-      import("./sections/dv/dv-section-editors").then((mod) => mod.DvApprovalEditor),
-    { loading: SectionEditorLoading }
-  ),
-  appendices: dynamic(
-    () =>
-      import("./sections/dv/dv-section-editors").then(
-        (mod) => mod.DvAppendicesEditor
-      ),
-    { loading: SectionEditorLoading }
-  ),
-  purpose: dynamic(
-    () =>
-      import("./sections/dv/dv-section-editors").then((mod) => mod.DvPurposeEditor),
-    { loading: SectionEditorLoading }
-  ),
-  scope: dynamic(
-    () =>
-      import("./sections/dv/dv-section-editors").then((mod) => mod.DvScopeEditor),
-    { loading: SectionEditorLoading }
-  ),
-  testers_dates: dynamic(
-    () =>
-      import("./sections/dv/dv-section-editors").then(
-        (mod) => mod.DvTestersDatesEditor
-      ),
-    { loading: SectionEditorLoading }
-  ),
-  methods_of_measurement: dynamic(
-    () =>
-      import("./sections/dv/dv-section-editors").then(
-        (mod) => mod.DvMethodsOfMeasurementEditor
-      ),
-    { loading: SectionEditorLoading }
-  ),
-  test_equipment: dynamic(
-    () =>
-      import("./sections/dv/dv-section-editors").then(
-        (mod) => mod.DvTestEquipmentEditor
-      ),
-    { loading: SectionEditorLoading }
-  ),
-  results_and_discussions: dynamic(
-    () =>
-      import("./sections/dv/dv-section-editors").then(
-        (mod) => mod.DvResultsAndDiscussionsEditor
-      ),
-    { loading: SectionEditorLoading }
-  ),
-  problems_resolution: dynamic(
-    () =>
-      import("./sections/dv/dv-section-editors").then(
-        (mod) => mod.DvProblemsResolutionEditor
-      ),
-    { loading: SectionEditorLoading }
-  ),
+  cover_page: DvCoverPageEditor,
+  purpose_scope: DvPurposeScopeEditor,
+  references: DvReferencesEditor,
+  traceability: DvTraceabilityEditor,
+  test_methods: DvTestMethodsEditor,
+  test_results: DvTestResultsEditor,
+  deviations: DvDeviationsEditor,
+  conclusion: DvConclusionEditor,
+  approval_signoff: DvApprovalEditor,
+  appendices: DvAppendicesEditor,
+  purpose: DvPurposeEditor,
+  scope: DvScopeEditor,
+  testers_dates: DvTestersDatesEditor,
+  methods_of_measurement: DvMethodsOfMeasurementEditor,
+  test_equipment: DvTestEquipmentEditor,
+  results_and_discussions: DvResultsAndDiscussionsEditor,
+  problems_resolution: DvProblemsResolutionEditor,
 };
 
 export function ReportWorkspace({
@@ -369,13 +265,13 @@ export function ReportWorkspace({
 
     setLoading(true);
     try {
-      if (signDialog === "submission") {
-        try {
-          await flushPendingSectionSaves();
-        } catch {
-          toast.error("Could not save pending edits. Fix save errors, then submit again.");
-          return;
-        }
+      try {
+        await flushPendingSectionSaves();
+      } catch {
+        toast.error(
+          "Could not save pending edits. Fix save errors, then try again."
+        );
+        return;
       }
 
       const endpoint = endpoints[signDialog];
@@ -679,10 +575,11 @@ export function ReportWorkspace({
           >
             <div className="space-y-10 min-w-0">
               <ReportHeader />
-              {activeAttachmentId ? (
-                <AttachmentViewer />
-              ) : (
-                getWorkspaceSections(report.documentType).map((section) => {
+              <div
+                hidden={!!activeAttachmentId}
+                className="space-y-10 min-w-0"
+              >
+                {getWorkspaceSections(report.documentType).map((section) => {
                   const s = section.key;
                   const Editor =
                     report.documentType === "design_verification"
@@ -699,8 +596,9 @@ export function ReportWorkspace({
                       <Editor />
                     </section>
                   );
-                })
-              )}
+                })}
+              </div>
+              {activeAttachmentId ? <AttachmentViewer /> : null}
             </div>
             {showReviewGutter ? (
               <aside

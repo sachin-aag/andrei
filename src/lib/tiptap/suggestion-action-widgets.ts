@@ -53,6 +53,7 @@ function actionButton({
   button.className = className;
   button.title = label;
   button.setAttribute("aria-label", label);
+  button.tabIndex = -1;
   button.disabled = disabled;
   button.innerHTML = icon;
   button.addEventListener("mousedown", (event) => {
@@ -158,10 +159,15 @@ function buildSet(doc: PMNode, state: SuggestionActionWidgetState) {
   const decos: Decoration[] = [];
   const positions = collectActionPositions(doc, state);
   for (const [evaluationId, pos] of positions) {
-    decos.push(
+      decos.push(
       Decoration.widget(pos, () => widgetEl(evaluationId, state), {
         key: `suggestion-action-${evaluationId}-${state.pendingId ?? "idle"}`,
         side: 1,
+        ignoreSelection: true,
+        stopEvent: (event) => {
+          const target = event.target as HTMLElement | null;
+          return Boolean(target?.closest("button"));
+        },
       })
     );
   }

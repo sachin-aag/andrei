@@ -78,6 +78,69 @@ describe("rich text helpers", () => {
     });
   });
 
+  it("renders ATX heading lines as bold paragraphs", () => {
+    expect(legacyStringToDoc("### Corrective Actions\nRetrain operator.")).toEqual({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            { type: "text", text: "Corrective Actions", marks: [{ type: "bold" }] },
+          ],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Retrain operator." }],
+        },
+      ],
+    });
+  });
+
+  it("promotes persisted ### hashes when normalizing a rich field", () => {
+    const doc = normalizeRichField({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "### Preventive Actions" }],
+        },
+      ],
+    });
+    expect(doc.content).toEqual([
+      {
+        type: "paragraph",
+        content: [
+          { type: "text", text: "Preventive Actions", marks: [{ type: "bold" }] },
+        ],
+      },
+    ]);
+  });
+
+  it("hydrates leftover **bold** and numbered lists when normalizing a rich field", () => {
+    const doc = normalizeRichField({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "### Corrective Actions\n1. **Personnel Training:** Retrain operators.",
+            },
+          ],
+        },
+      ],
+    });
+    expect(doc.content?.[0]).toEqual({
+      type: "paragraph",
+      content: [
+        { type: "text", text: "Corrective Actions", marks: [{ type: "bold" }] },
+      ],
+    });
+    expect(doc.content?.[1]?.type).toBe("orderedList");
+    expect(richJsonToPlainText(doc)).not.toContain("**");
+  });
+
   it("preserves mammoth soft line breaks as hardBreak nodes", () => {
     expect(
       legacyStringToDoc(

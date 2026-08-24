@@ -3,8 +3,70 @@ import {
   isCitationListHeading,
   isEmptyParagraphBlock,
 } from "@/lib/suggestions/citations-at-end";
-import { emptyDoc } from "@/lib/tiptap/rich-text";
 import { parseListLine } from "@/lib/tiptap/list-style";
+
+const ATX_HEADING_RE = /^(#{1,3})\s+(.*)$/;
+
+/**
+ * CommonMark-ish emphasis: no space after the opener or before the closer.
+ * `* item` bullets are handled at line level; `2 * 3` stays literal.
+ */
+const INLINE_MARKDOWN_SPLIT_RE =
+  /(\*\*[^*]+\*\*|(?<!\*)\*(?!\s)[^*]+?(?<!\s)\*(?!\*)|(?<!_)_(?!\s)[^_]+?(?<!\s)_(?!_))/g;
+
+export function stripInlineMarkdown(text: string): string {
+  return text
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/(?<!\*)\*(?!\s)([^*]+?)(?<!\s)\*(?!\*)/g, "$1")
+    .replace(/(?<!_)_(?!\s)([^_]+?)(?<!\s)_(?!_)/g, "$1");
+}
+
+/** ATX `#`–`###` line → bold paragraph (section editor has no heading node). */
+export function atxHeadingParagraph(text: string): JSONContent | null {
+  const heading = ATX_HEADING_RE.exec(text.trim());
+  if (!heading) return null;
+  const headingText = stripInlineMarkdown(heading[2]!);
+  if (!headingText) return null;
+  return {
+    type: "paragraph",
+    content: [{ type: "text", text: headingText, marks: [{ type: "bold" }] }],
+  };
+}
+
+function paragraphPlainText(node: JSONContent): string {
+  return (node.content ?? [])
+    .map((child) => {
+      if (child.type === "text") return child.text ?? "";
+      if (child.type === "hardBreak") return "\n";
+      return "";
+    })
+    .join("");
+}
+
+function paragraphIsPlainInline(node: JSONContent): boolean {
+  return (node.content ?? []).every(
+    (child) => child.type === "text" || child.type === "hardBreak"
+  );
+}
+
+/**
+ * Turn persisted paragraphs that still start with `#` / `##` / `###` into the
+ * same bold paragraphs `markdownToDoc` emits, so Improve/Control don't show
+ * literal hashes.
+ */
+export function promoteAtxHeadingsInDoc(doc: JSONContent): JSONContent {
+  function visit(node: JSONContent): JSONContent {
+    if (node.type === "paragraph" && paragraphIsPlainInline(node)) {
+      const promoted = atxHeadingParagraph(paragraphPlainText(node));
+      if (promoted) return promoted;
+    }
+    if (node.content?.length) {
+      return { ...node, content: node.content.map(visit) };
+    }
+    return node;
+  }
+  return visit(doc);
+}
 
 /**
  * Deterministic GFM-subset markdown → TipTap doc converter for AI redrafts.
@@ -44,16 +106,9 @@ export function markdownToDoc(markdown: string): JSONContent {
       continue;
     }
 
-    const heading = /^(#{1,3})\s+(.*)$/.exec(trimmed);
+    const heading = atxHeadingParagraph(trimmed);
     if (heading) {
-      // The section rich-text editor has no heading node (StarterKit heading:false),
-      // so render markdown headings as a fully bold paragraph. Emitting a `heading`
-      // node here would make ProseMirror reject the whole doc and render nothing.
-      const headingText = stripInlineMarkdown(heading[2]!);
-      content.push({
-        type: "paragraph",
-        content: [{ type: "text", text: headingText, marks: [{ type: "bold" }] }],
-      });
+      content.push(heading);
       i++;
       continue;
     }
@@ -89,7 +144,9 @@ export function markdownToDoc(markdown: string): JSONContent {
     i++;
   }
 
-  if (content.length === 0) return emptyDoc();
+  if (content.length === 0) {
+    return { type: "doc", content: [{ type: "paragraph" }] };
+  }
   return { type: "doc", content };
 }
 
@@ -125,18 +182,89 @@ function parseListItemLine(
   return { kind: parsed.kind === "ordered" ? "ordered" : "bullet", text: parsed.text };
 }
 
-/**
- * CommonMark-ish emphasis: no space after the opener or before the closer.
- * `* item` bullets are handled at line level; `2 * 3` stays literal.
- */
-const INLINE_MARKDOWN_SPLIT_RE =
-  /(\*\*[^*]+\*\*|(?<!\*)\*(?!\s)[^*]+?(?<!\s)\*(?!\*)|(?<!_)_(?!\s)[^_]+?(?<!\s)_(?!_))/g;
+function paragraphHasSuggestionMarks(node: JSONContent): boolean {
+  return (node.content ?? []).some((child) =>
+    (child.marks ?? []).some(
+      (mark) =>
+        mark.type === "suggestionInsert" || mark.type === "suggestionDelete"
+    )
+  );
+}
 
-export function stripInlineMarkdown(text: string): string {
-  return text
-    .replace(/\*\*([^*]+)\*\*/g, "$1")
-    .replace(/(?<!\*)\*(?!\s)([^*]+?)(?<!\s)\*(?!\*)/g, "$1")
-    .replace(/(?<!_)_(?!\s)([^_]+?)(?<!\s)_(?!_)/g, "$1");
+/** True when a paragraph still stores markdown source (`###`, `**bold**`, `1. `). */
+export function looksLikeLiteralMarkdown(text: string): boolean {
+  if (ATX_HEADING_RE.test(text.trim())) return true;
+  if (/\*\*[^*]+\*\*/.test(text)) return true;
+  return text.split("\n").some((line) => parseListItemLine(line.trim()) != null);
+}
+
+function isHydrateableMarkdownParagraph(node: JSONContent): boolean {
+  if (node.type !== "paragraph" || !paragraphIsPlainInline(node)) return false;
+  if (paragraphHasSuggestionMarks(node)) return false;
+  return looksLikeLiteralMarkdown(paragraphPlainText(node));
+}
+
+function isBlankPlainParagraph(node: JSONContent): boolean {
+  return (
+    node.type === "paragraph" &&
+    paragraphIsPlainInline(node) &&
+    !paragraphHasSuggestionMarks(node) &&
+    !paragraphPlainText(node).trim()
+  );
+}
+
+function hydrateBlockArray(nodes: JSONContent[]): JSONContent[] {
+  const out: JSONContent[] = [];
+  let i = 0;
+  while (i < nodes.length) {
+    const node = nodes[i]!;
+    if (isHydrateableMarkdownParagraph(node)) {
+      const texts: string[] = [];
+      while (i < nodes.length) {
+        const current = nodes[i]!;
+        if (isHydrateableMarkdownParagraph(current)) {
+          texts.push(paragraphPlainText(current));
+          i++;
+          continue;
+        }
+        if (texts.length > 0 && isBlankPlainParagraph(current)) {
+          texts.push("");
+          i++;
+          continue;
+        }
+        break;
+      }
+      while (texts.length > 0 && !texts[texts.length - 1]!.trim()) {
+        texts.pop();
+      }
+      const converted = markdownToDoc(texts.join("\n"));
+      out.push(...(converted.content ?? []));
+      continue;
+    }
+    out.push(hydrateNode(node));
+    i++;
+  }
+  return out;
+}
+
+function hydrateNode(node: JSONContent): JSONContent {
+  if (node.type !== "paragraph" && node.content?.length) {
+    return { ...node, content: hydrateBlockArray(node.content) };
+  }
+  return node;
+}
+
+/**
+ * Chat / import can persist a whole markdown blob as one (or a few) paragraphs
+ * with literal `###`, `**bold**`, and `1. ` markers. Turn those into the same
+ * TipTap nodes `markdownToDoc` emits so Improve/Control render instead of
+ * showing hashes and asterisks.
+ */
+export function hydrateLiteralMarkdownInDoc(doc: JSONContent): JSONContent {
+  if (doc.type === "doc") {
+    return { ...doc, content: hydrateBlockArray(doc.content ?? []) };
+  }
+  return hydrateNode(doc);
 }
 
 function withExtraMarks(

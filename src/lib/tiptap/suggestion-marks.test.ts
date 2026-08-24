@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { Fragment, Schema, Slice } from "@tiptap/pm/model";
+import { Fragment, Schema, Slice, type Node as PMNode } from "@tiptap/pm/model";
 import { EditorState, TextSelection } from "@tiptap/pm/state";
+import { ReplaceStep } from "@tiptap/pm/transform";
 import {
+  continuingInsertAttrs,
+  sliceHasText,
   suggestionDeleteMarkName,
   suggestionInsertMarkName,
   stripSuggestionMarksFromSlice,
   trackChangesSelectionReplaceTransaction,
+  trackChangesTextInputTransaction,
 } from "@/lib/tiptap/suggestion-marks";
 
 const schema = new Schema({
@@ -25,6 +29,7 @@ const schema = new Schema({
         status: { default: "pending" },
         createdAt: { default: "" },
       },
+      inclusive: false,
       toDOM: () => ["span", 0],
     },
     [suggestionDeleteMarkName]: {
@@ -38,6 +43,345 @@ const schema = new Schema({
       toDOM: () => ["span", 0],
     },
   },
+});
+
+function insertMark(id: string, authorId = "user-1") {
+  return schema.marks[suggestionInsertMarkName]!.create({
+    id,
+    authorId,
+    status: "pending",
+    createdAt: "2026-01-01T00:00:00.000Z",
+  });
+}
+
+function textMarkNames(paragraph: PMNode) {
+  const rows: { text: string; marks: string[]; insertId?: string }[] = [];
+  paragraph.forEach((node) => {
+    if (!node.isText) return;
+    const insert = node.marks.find(
+      (mark) => mark.type.name === suggestionInsertMarkName
+    );
+    rows.push({
+      text: node.text ?? "",
+      marks: node.marks.map((mark) => mark.type.name),
+      insertId: insert ? String(insert.attrs.id) : undefined,
+    });
+  });
+  return rows;
+}
+
+describe("continuingInsertAttrs", () => {
+  it("reuses the pending insert mark at an empty caret after typed text", () => {
+    const doc = schema.node("doc", null, [
+      schema.node("paragraph", null, [schema.text("h", [insertMark("run-1")])]),
+    ]);
+    const state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, 2),
+    });
+
+    expect(continuingInsertAttrs(state, 2, "user-1").id).toBe("run-1");
+  });
+
+  it("starts a new insert run when the caret is not in pending insert text", () => {
+    const doc = schema.node("doc", null, [
+      schema.node("paragraph", null, [schema.text("hello")]),
+    ]);
+    const state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, 6),
+    });
+
+    const first = continuingInsertAttrs(state, 6, "user-1");
+    const second = continuingInsertAttrs(state, 6, "user-1");
+    expect(first.authorId).toBe("user-1");
+    expect(first.status).toBe("pending");
+    expect(first.id).not.toBe(second.id);
+  });
+});
+
+function helloThenEmpty() {
+  return schema.node("doc", null, [
+    schema.node("paragraph", null, [schema.text("hello")]),
+    schema.node("paragraph", null, []),
+  ]);
+}
+
+function typedDoc(
+  state: EditorState,
+  from: number,
+  to: number,
+  text = "a"
+) {
+  const tr = trackChangesTextInputTransaction(state, from, to, text, "user-1");
+  expect(tr).not.toBeNull();
+  return state.apply(tr!);
+}
+
+describe("sliceHasText", () => {
+  it("is false for splitBlock / Enter", () => {
+    const doc = schema.node("doc", null, [
+      schema.node("paragraph", null, [schema.text("hello")]),
+    ]);
+    const state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, 6),
+    });
+    const step = state.tr.split(6).steps[0];
+    expect(step).toBeInstanceOf(ReplaceStep);
+    expect(sliceHasText((step as ReplaceStep).slice)).toBe(false);
+  });
+
+  it("is true for an inserted character", () => {
+    const slice = new Slice(Fragment.from(schema.text("e")), 0, 0);
+    expect(sliceHasText(slice)).toBe(true);
+  });
+});
+
+describe("trackChangesTextInputTransaction", () => {
+  it("does not strikethrough the previous letter when Chrome reports a span range", () => {
+    const doc = schema.node("doc", null, [
+      schema.node("paragraph", null, [schema.text("h", [insertMark("run-1")])]),
+    ]);
+    const state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, 2),
+    });
+
+    const next = typedDoc(state, 1, 2, "e");
+    expect(next.doc.textBetween(0, next.doc.content.size, " ")).toBe("he");
+
+    const rows = textMarkNames(next.doc.firstChild!);
+    expect(rows.every((row) => !row.marks.includes(suggestionDeleteMarkName))).toBe(
+      true
+    );
+    expect(rows.map((row) => row.text).join("")).toBe("he");
+    expect(rows.every((row) => row.insertId === "run-1")).toBe(true);
+  });
+
+  it.each([
+    {
+      name: "the caret is in the new paragraph",
+      selection: (doc: ReturnType<typeof helloThenEmpty>) =>
+        TextSelection.create(doc, 8),
+      from: 6,
+      to: 8,
+    },
+    {
+      name: "the caret is still in the previous paragraph",
+      selection: (doc: ReturnType<typeof helloThenEmpty>) =>
+        TextSelection.create(doc, 6),
+      from: 6,
+      to: 8,
+    },
+    {
+      name: "the caret is on the block gap",
+      selection: (doc: ReturnType<typeof helloThenEmpty>) =>
+        TextSelection.create(doc, 7),
+      from: 6,
+      to: 8,
+    },
+    {
+      name: "Chrome selected the empty Enter split",
+      selection: (doc: ReturnType<typeof helloThenEmpty>) =>
+        TextSelection.create(doc, 6, 9),
+      from: 6,
+      to: 9,
+    },
+  ])("types into the new line when $name", ({ selection, from, to }) => {
+    const doc = helloThenEmpty();
+    const state = EditorState.create({ doc, selection: selection(doc) });
+    const next = typedDoc(state, from, to);
+    expect(next.doc.childCount).toBe(2);
+    expect(next.doc.textBetween(0, next.doc.content.size, "|")).toBe("hello|a");
+    expect(next.selection.$from.parent.inlineContent).toBe(true);
+  });
+
+  it("inserts at the caret when Chrome's range covers a later suggestion span", () => {
+    const doc = schema.node("doc", null, [
+      schema.node("paragraph", null, [
+        schema.text("AAA"),
+        schema.text("SUGGESTION", [insertMark("ai-span", "ai")]),
+        schema.text("BBB"),
+      ]),
+    ]);
+    const caret = 4;
+    const suggestionFrom = 4;
+    const suggestionTo = 14;
+    const state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, caret),
+    });
+
+    const next = typedDoc(state, suggestionFrom, suggestionTo, "x");
+    expect(next.doc.textBetween(0, next.doc.content.size, "")).toBe(
+      "AAAxSUGGESTIONBBB"
+    );
+    expect(next.selection.from).toBe(5);
+  });
+
+  it("inserts at the caret when Chrome's range covers a later paragraph's AI span", () => {
+    const doc = schema.node("doc", null, [
+      schema.node("paragraph", null, [schema.text("AAA")]),
+      schema.node("paragraph", null, [
+        schema.text("SUGGESTION", [insertMark("ai-span", "ai")]),
+      ]),
+    ]);
+    let caret = 0;
+    let suggestionTo = 0;
+    doc.descendants((node, pos) => {
+      if (node.isText && node.text === "AAA") caret = pos + node.nodeSize;
+      if (node.isText && node.text === "SUGGESTION") {
+        suggestionTo = pos + node.nodeSize;
+      }
+    });
+    const state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, caret),
+    });
+
+    const next = typedDoc(state, caret, suggestionTo, "x");
+    expect(next.doc.textBetween(0, next.doc.content.size, "|")).toBe(
+      "AAAx|SUGGESTION"
+    );
+    expect(next.selection.from).toBe(caret + 1);
+  });
+
+  it("inserts at a collapsed caret instead of inheriting an enclosing AI mark", () => {
+    const doc = schema.node("doc", null, [
+      schema.node("paragraph", null, [
+        schema.text("AAA"),
+        schema.text("SUGGESTION", [insertMark("ai-span", "ai")]),
+        schema.text("BBB"),
+      ]),
+    ]);
+    const caretInsideSuggestion = 8;
+    const state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, caretInsideSuggestion),
+    });
+
+    const next = typedDoc(state, caretInsideSuggestion, caretInsideSuggestion, "x");
+    expect(next.doc.textBetween(0, next.doc.content.size, "")).toBe(
+      "AAASUGGxESTIONBBB"
+    );
+    const rows = textMarkNames(next.doc.firstChild!);
+    const typed = rows.find((row) => row.text === "x");
+    expect(typed).toBeDefined();
+    expect(typed?.insertId).not.toBe("ai-span");
+    expect(typed?.marks).toContain(suggestionInsertMarkName);
+    expect(
+      rows.some(
+        (row) => row.text.includes("SUGG") && row.insertId === "ai-span"
+      )
+    ).toBe(true);
+  });
+
+  it("inserts at a collapsed caret when there is no AI span", () => {
+    const doc = schema.node("doc", null, [
+      schema.node("paragraph", null, [schema.text("ab")]),
+    ]);
+    const state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, 3),
+    });
+
+    const next = typedDoc(state, 3, 3, "c");
+    expect(next.doc.textBetween(0, next.doc.content.size, "")).toBe("abc");
+    const rows = textMarkNames(next.doc.firstChild!);
+    expect(rows.some((row) => row.text === "c")).toBe(true);
+    expect(rows.find((row) => row.text === "c")?.marks).toContain(
+      suggestionInsertMarkName
+    );
+  });
+
+  it("does not put new letters on an AI delete mark", () => {
+    const deleteMark = schema.marks[suggestionDeleteMarkName]!.create({
+      id: "ai-span",
+      authorId: "ai",
+      status: "pending",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    });
+    const doc = schema.node("doc", null, [
+      schema.node("paragraph", null, [
+        schema.text("OLD", [deleteMark]),
+        schema.text("NEW", [insertMark("ai-span", "ai")]),
+      ]),
+    ]);
+    const caret = 3;
+    const state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, caret),
+    });
+
+    const next = typedDoc(state, caret, caret, "x");
+    expect(next.doc.textBetween(0, next.doc.content.size, "")).toBe("OLxDNEW");
+    const rows = textMarkNames(next.doc.firstChild!);
+    const typed = rows.find((row) => row.text === "x");
+    expect(typed?.insertId).not.toBe("ai-span");
+    expect(typed?.marks).not.toContain(suggestionDeleteMarkName);
+  });
+
+  it("inserts at a collapsed caret next to an AI span without joining that mark", () => {
+    const doc = schema.node("doc", null, [
+      schema.node("paragraph", null, [
+        schema.text("AAA"),
+        schema.text("SUGGESTION", [insertMark("ai-span", "ai")]),
+      ]),
+    ]);
+    const caret = 4;
+    const state = EditorState.create({
+      doc,
+      selection: TextSelection.create(doc, caret),
+    });
+
+    const next = typedDoc(state, caret, caret, "x");
+    expect(next.doc.textBetween(0, next.doc.content.size, "")).toBe(
+      "AAAxSUGGESTION"
+    );
+    const rows = textMarkNames(next.doc.firstChild!);
+    expect(rows.find((row) => row.text === "x")?.insertId).not.toBe("ai-span");
+    expect(rows.find((row) => row.text === "SUGGESTION")?.insertId).toBe(
+      "ai-span"
+    );
+  });
+
+  it("still treats a real selection as delete-plus-insert", () => {
+    const doc = schema.node("doc", null, [
+      schema.node("paragraph", null, [schema.text("The original sentence.")]),
+    ]);
+    const from = 1 + "The ".length;
+    const to = from + "original".length;
+    const baseState = EditorState.create({ doc });
+    const state = baseState.apply(
+      baseState.tr.setSelection(TextSelection.create(doc, from, to))
+    );
+
+    const tr = trackChangesTextInputTransaction(
+      state,
+      from,
+      to,
+      "replacement",
+      "user-1"
+    );
+    expect(tr).not.toBeNull();
+    const next = state.apply(tr!);
+    const rows = textMarkNames(next.doc.firstChild!);
+    expect(
+      rows.some(
+        (row) =>
+          row.text === "original" &&
+          row.marks.includes(suggestionDeleteMarkName)
+      )
+    ).toBe(true);
+    expect(
+      rows.some(
+        (row) =>
+          row.text === "replacement" &&
+          row.marks.includes(suggestionInsertMarkName)
+      )
+    ).toBe(true);
+  });
 });
 
 describe("trackChangesSelectionReplaceTransaction", () => {
