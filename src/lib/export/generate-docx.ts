@@ -22,6 +22,7 @@ import {
   type ReportSectionRecord,
 } from "@/types/report";
 import type { SectionType, reports as reportsTable } from "@/db/schema";
+import { getCustomerPack } from "@/lib/customers/packs";
 import { getDocumentType, mergeSectionForType } from "@/lib/document-types";
 import { getUser } from "@/lib/auth/user-directory";
 import { formatCalendarDate } from "@/lib/utils";
@@ -519,7 +520,18 @@ async function generateDesignVerificationDocx({
   });
 
   const numberingBases = loadListNumberingBasesFromZip(zip);
-  const ctx = createDocxExportContext(numberingBases);
+  const pack = getCustomerPack();
+  const ctx = createDocxExportContext(
+    numberingBases,
+    pack.id === "convergent"
+      ? {
+          font: "Arial",
+          sizeHalfPoints: "18",
+          forceBlackText: true,
+          tableHeaderFill: "C6D9F1",
+        }
+      : undefined
+  );
   const def = getDocumentType("design_verification");
   const meta = designVerificationMetadata(report);
   const mergedSections = sections.map((row) => ({

@@ -187,13 +187,13 @@ export function DvConclusionEditor() {
       section="conclusion"
       description={
         convergent
-          ? "Overall outputs-meet-inputs or pass/fail statement, consistency with results, and open items."
+          ? "One paragraph per execution. Walk supported build history and close with 'deemed acceptable for release'."
           : "Overall and per-requirement met/not-met statements, open items, consistency with results."
       }
       fieldLabel="Conclusion"
       placeholder={
         convergent
-          ? "State whether design outputs meet design inputs. Note residual risk or follow-ups with owners, or explicit none…"
+          ? "Revision [letter] of this report contains results from [protocol] that was [fully/partially] executed on [configurations] to test [software version]. … has been deemed acceptable for release."
           : "State whether design outputs meet design inputs overall and per requirement. List open items with owners…"
       }
     />
@@ -226,9 +226,9 @@ export function DvPurposeEditor() {
   return (
     <DvNarrativeEditor
       section="purpose"
-      description="State the verification objective, design outputs under test, and change references."
+      description="Four paragraphs, ~200 words. Omit paragraph 2 if this is a single full execution. End with the VCS bullets and build-number explanation."
       fieldLabel="Purpose"
-      placeholder="Describe the objective of the verification activity, the specific design outputs or software items under test, and any ECO/DCR or revision reference…"
+      placeholder="This revision presents results of the [full/partial] execution of [protocol number Rev. X] used to test [software version] ([CUS/document]) for [release type]. This build was designed to…"
     />
   );
 }
@@ -237,9 +237,9 @@ export function DvScopeEditor() {
   return (
     <DvNarrativeEditor
       section="scope"
-      description="Bound in-scope functions or units and state exclusions (or explicit none)."
+      description="Two paragraphs (~190 words) plus a Software Under Test table (version | reason for build), segregated by test-plan revision."
       fieldLabel="Scope"
-      placeholder="Bound the functions, units, or features in scope. State exclusions, or that nothing is excluded…"
+      placeholder="This test report applies to [product] for system configurations [TOP IDs]…. Then the Software Under Test table: version | reason for build."
     />
   );
 }
@@ -258,8 +258,8 @@ export function DvTestersDatesEditor() {
 
   return (
     <SectionShell
-      title="Testers & Dates"
-      description="Name the testers and write start and end (or execution) dates in the same narrative."
+      title="Testers/Dates"
+      description="One block per test-plan revision. Name testers (title and affiliation) and write calendar start/end dates in the same narrative."
       status={status}
       lastSavedAt={lastSavedAt}
       section="testers_dates"
@@ -267,8 +267,8 @@ export function DvTestersDatesEditor() {
       <TiptapSectionField
         section="testers_dates"
         contentPath="testers"
-        label="Testers & dates"
-        placeholder="Name testers (role, qualification, or independence when relevant) and write the test start and end dates or execution date range…"
+        label="Testers/Dates"
+        placeholder="Testing per [test plan] Rev. [letter]: All testing was performed by [names, titles, affiliation] between [start] and [end]."
         className="grid gap-2"
         value={content.testers}
         onChange={(doc) => update((p) => ({ ...p, testers: doc }))}
@@ -282,9 +282,9 @@ export function DvMethodsOfMeasurementEditor() {
   return (
     <DvNarrativeEditor
       section="methods_of_measurement"
-      description="Describe each method, predefined acceptance criteria, environment, and how data are recorded."
+      description="Per execution: Executed Protocol, Protocol Modifications, and Units Under Test. Keep the equipment table in Test Equipment."
       fieldLabel="Methods of Measurement"
-      placeholder="Describe each measurement or test method, acceptance criteria, environment/configuration/software version, and how results are captured…"
+      placeholder="Testing per [test plan] Rev. [letter]: Executed Protocol — Full/Partial execution of [protocol] Rev. [letter]. Protocol Modifications — …. Units Under Test (UUTs) — …"
     />
   );
 }
@@ -293,7 +293,7 @@ export function DvTestEquipmentEditor() {
   return (
     <DvTableEditor
       section="test_equipment"
-      description="Keep the seeded columns. Add one row per instrument, including CD asset tag / serial and calibration due date."
+      description="Lead-in sentence plus the seeded columns. One table per execution; systems under test first, then instruments."
       fieldLabel="Test Equipment"
     />
   );
@@ -315,8 +315,8 @@ export function DvResultsAndDiscussionsEditor() {
 
   return (
     <SectionShell
-      title="Results and Discussions"
-      description="Requirement matrix with P/F, plus narrative discussion of outcomes."
+      title="Results and Discussion"
+      description="Discussion outline (Data Collection Forms, Requirements Verified, Observations) plus the four-column matrix for a partial execution."
       status={status}
       lastSavedAt={lastSavedAt}
       section="results_and_discussions"
@@ -325,7 +325,7 @@ export function DvResultsAndDiscussionsEditor() {
         section="results_and_discussions"
         contentPath="narrative"
         label="Discussion"
-        placeholder="Discuss outcomes, especially any failures, and how they relate to the requirements…"
+        placeholder="Testing per [test plan] Rev. [letter]. Data Collection Forms: appendix. Requirements Verified: … Observations: …"
         className="grid gap-2"
         value={content.narrative}
         onChange={(doc) => update((p) => ({ ...p, narrative: doc }))}
@@ -349,9 +349,9 @@ export function DvProblemsResolutionEditor() {
   return (
     <DvNarrativeEditor
       section="problems_resolution"
-      description="Address every Fail with cause, corrective action, and retest — or state that none remain."
-      fieldLabel="Problems or Failure Resolution"
-      placeholder="For each failure: cause, corrective action, and retest/verification. If all results passed, state that there were no open failures…"
+      description="Summarise the regression-round arc (builds, configurations, results, final version). Deviation detail stays in Deviations."
+      fieldLabel="Problem or Failure Resolution"
+      placeholder="During the initial [full/partial] execution of [software version] on [configurations], there were [n] deviations…. A new version [x.y.z] was generated and retested on…"
     />
   );
 }

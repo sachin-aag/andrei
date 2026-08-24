@@ -4,15 +4,12 @@ import {
   SUGGEST_TARGET_FIELD_PATTERNS,
 } from "@/lib/ai/suggest-target-fields";
 import { CONVERGENT_PROMPT_VERSION } from "@/lib/customers/packs";
+import { CONVERGENT_RECIPE_DRAFTING_GUIDANCE } from "@/lib/document-types/convergent/drafting-guidance";
 import {
   appendParagraphsToDoc,
   normalizeRichField,
   richJsonToPlainText,
 } from "@/lib/tiptap/rich-text";
-import {
-  CONVERGENT_DV_TABLE_SECTIONS,
-  dvFixedTableFormatGuidance,
-} from "@/lib/document-types/design-verification/sections";
 import type { CriterionDefinition, DocumentTypeDefinition } from "./types";
 import {
   checkEquipmentCalibrationDates,
@@ -62,78 +59,82 @@ function det(
 const PURPOSE_CRITERIA: CriterionDefinition[] = [
   llm(
     "purpose.objective",
-    "Verification objective is clearly stated",
-    "Is the objective of the verification activity clearly stated?"
+    "The report states what this revision presents and which protocol was executed",
+    "Does paragraph 1 (~60 words) say this revision presents testing results, name the protocol number and revision, and state whether execution was full or partial?"
   ),
   llm(
     "purpose.design_outputs",
-    "Design outputs or software items under test are identified",
-    "Are the specific design outputs, software items, or functions under verification identified?"
+    "The software under test is identified with version and controlled document",
+    "Are the software application name, version, controlled document number/revision, release type, and build intent stated?"
   ),
   llm(
-    "purpose.change_reference",
-    "A document ID, revision, or change reference is cited",
-    "Is a document ID/revision or design-change reference (ECO/DCR) cited?"
+    "purpose.partial_rationale",
+    "A partial execution explains why prior full-execution results are carried, or paragraph 2 is omitted",
+    "If this is a partial execution, does a ~50-word paragraph name the report revision and software version of the most recent full execution? If this is a single full execution, is that paragraph omitted?"
+  ),
+  llm(
+    "purpose.vcs",
+    "The software version-control scheme and build number are explained",
+    "Is mm.nn.ff.bb described as a short lead-in plus bullets (major, minor, fix, build), and is the build number explained as an internal identifier that may be omitted?"
   ),
 ];
 
 const SCOPE_CRITERIA: CriterionDefinition[] = [
   llm(
     "scope.boundaries",
-    "In-scope items, functions, or software units are clearly bounded",
-    "Are in-scope functions, units, or features clearly bounded?"
+    "Product, configurations, and where requirements are documented are stated",
+    "Does the first ~77-word paragraph name the product, how configurations are tracked (TOP/CUS/SUB), what makes them different, and the requirements document plus test-plan revision?"
   ),
   llm(
     "scope.exclusions",
-    "Exclusions are stated, or the section explicitly says there are none",
-    "Are out-of-scope items stated, or is it explicit that nothing is excluded?"
+    "Which configurations were tested, and why some requirements are not repeated, is stated",
+    "Does the second ~114-word paragraph say whether testing ran on all configurations and give the reasons a requirement might not be repeated on every platform?"
   ),
   llm(
-    "scope.aligns_with_purpose",
-    "The scope aligns with the stated purpose",
-    "Does Scope match the verification objective in Purpose?",
-    ["purpose"]
+    "scope.software_under_test",
+    "A Software Under Test table lists each build by test-plan revision",
+    "Is there a two-column Software Under Test table (version | reason for build), segregated by test-plan revision, with a differentiated reason for each build?"
   ),
 ];
 
 const TESTERS_CRITERIA: CriterionDefinition[] = [
   llm(
     "testers.personnel",
-    "Testers are identified by name",
-    "Are testers named, with role or qualification when relevant?"
+    "Each execution block names testers with title and affiliation",
+    "Is there one block per test-plan revision (oldest first), and does each block name every tester in full with job title and affiliation (employee, intern, contractor)?"
   ),
   llm(
     "testers.dates",
-    "Test start and end dates, or execution dates, are included",
-    "Are test start and end dates, or a clear execution date range, written in the Testers narrative?"
+    "Each execution block states calendar start and end dates",
+    "Are start and end dates written in the testers narrative for each execution block? There are no separate start/end date fields."
   ),
   llm(
     "testers.independence",
-    "Tester independence or qualifications are addressed",
-    "Is independence or qualification of testers addressed, or marked N/A?"
+    "Datasheet signature anomalies are explained, or clearly do not apply",
+    "If someone other than the tester signed a datasheet, is the reason, substitute signer, and that person's title stated? If everyone signed their own, is that extra paragraph omitted rather than invented?"
   ),
 ];
 
 const METHODS_CRITERIA: CriterionDefinition[] = [
   llm(
     "methods.description",
-    "Each measurement or test method is described",
-    "Is each method of measurement or test method clearly described?"
+    "Each execution block states full or partial execution of the named protocol",
+    "Does Executed Protocol (one sentence) state full or partial execution and cite the protocol number and revision?"
   ),
   llm(
     "methods.acceptance_criteria",
-    "Acceptance criteria are defined before results are reported",
-    "Are acceptance criteria defined before results are reported?"
+    "Protocol modifications are counted or listed by test case",
+    "For a full execution, is the number of modifications given (words and numerals) with a characterisation and a statement that they will go into the next protocol release? For a partial execution, are added and modified test cases listed by ID?"
   ),
   llm(
     "methods.environment",
-    "The test environment, configuration, and software version are documented",
-    "Are the test environment, configuration, and software version documented?"
+    "Units under test are reconciled to protocol section, appendix, systems, and UUTs",
+    "Does UUTs point to the UUT Data Sheet section and appendix, state system count by configuration/controller, and state how many distinct UUTs those systems represented?"
   ),
   llm(
     "methods.recording",
-    "The process for capturing and recording data is clear",
-    "Is it clear how measurements are taken and how data are recorded?"
+    "Methods of Measurement does not duplicate the equipment table",
+    "Is the equipment matrix left to Test Equipment rather than pasted into Methods?"
   ),
 ];
 
@@ -162,8 +163,8 @@ const EQUIPMENT_CRITERIA: CriterionDefinition[] = [
   ),
   llm(
     "equipment.covers_methods",
-    "The equipment list covers the described measurement methods",
-    "Does the equipment list cover the methods described in Methods of Measurement?",
+    "The equipment list is introduced and covers the execution(s) described in Methods",
+    "Is there a lead-in of the form \"The table below lists all equipment used for testing…\" and does the list cover the execution(s) in Methods of Measurement?",
     ["methods_of_measurement"]
   ),
 ];
@@ -171,38 +172,38 @@ const EQUIPMENT_CRITERIA: CriterionDefinition[] = [
 const DEVIATIONS_CRITERIA: CriterionDefinition[] = [
   llm(
     "deviations.stated",
-    "Deviations are documented, or the section explicitly states there are none",
-    "Are protocol or procedure deviations documented, or is it explicit that there were none?"
+    "Each execution block states the deviation count and appendix, or explicit none",
+    "Does each block open with a ~36-word lead-in giving the count (words and numerals), full/partial, protocol, and the appendix for approved deviation forms? If there were none, is that explicit?"
   ),
   llm(
     "deviations.impact",
-    "Each deviation includes an impact assessment or justification",
-    "Is impact assessment or justification provided for each deviation?"
+    "Each deviation separates observation from analysis",
+    "Does every numbered deviation keep observed behaviour (past tense, no cause) in one paragraph and why it occurred in the next?"
   ),
   llm(
     "deviations.disposition",
-    "Each nonconformance has a documented disposition",
-    "Do nonconforming results have a documented disposition?"
+    "Each deviation closes with a disposition and JIRA ticket",
+    "Is each entry dispositioned as corrected in a named software version and regression round, or \"No immediate action is required\" plus the document that will be updated, and closed with a JIRA ticket?"
   ),
 ];
 
 const RESULTS_CRITERIA: CriterionDefinition[] = [
   det(
     "results.matrix_complete",
-    "The results table includes requirement IDs and Pass/Fail values",
-    "Four-column table present; Req ID and P/F filled on data rows.",
+    "The four-column Requirements Verified table is present for a partial execution (or the full-execution narrative is used instead)",
+    "Four-column table present; Req. ID and P/F filled on data rows for a partial execution.",
     checkResultsMatrixComplete
   ),
   det(
     "results.pass_fail_values",
-    "Each Pass/Fail value is recorded as Pass or Fail",
-    "Each P/F cell is Pass or Fail (or P/F).",
+    "Each P/F value is Pass, Fail, or a per-configuration verdict",
+    "Each P/F cell is Pass, Fail, P/F, or a per-configuration form such as P for TOP-00017 PCON.",
     checkResultsPassFailValues
   ),
   llm(
     "results.satisfied_by",
-    "Each Satisfied By entry cites the method or evidence and the applicable configuration",
-    "Does Satisfied By cite a test method, procedure, or evidence reference AND the configuration for which P/F was achieved?"
+    "Satisfied by cites configuration datasheets and appendix; P/F is per configuration",
+    "Does Satisfied by name the configuration datasheets and appendix, and is P/F written per configuration (e.g. P for TOP-00017 PCON) rather than a bare Pass/Fail?"
   ),
   det(
     "results.ids_unique",
@@ -212,27 +213,27 @@ const RESULTS_CRITERIA: CriterionDefinition[] = [
   ),
   llm(
     "results.discussion",
-    "The discussion explains the outcomes, especially any failures",
-    "Does the discussion narrative explain outcomes and call out any failures?"
+    "Observations explain outcomes, or the section states there were none",
+    "Does Discussion include Data Collection Forms, Requirements Verified (narrative for a full execution), and Observations — or an explicit sentence that no observations were made outside the protocol?"
   ),
 ];
 
 const PROBLEMS_CRITERIA: CriterionDefinition[] = [
   llm(
     "problems.failures_addressed",
-    "Every failed result has a documented resolution",
-    "Is each failed result from Results and Discussions addressed here?",
+    "The section narrates the regression arc rather than duplicating deviations",
+    "Does this section summarise how failures were resolved (builds, configurations, results) in chronological order, without copying deviation-entry detail?",
     ["results_and_discussions"]
   ),
   llm(
     "problems.cause_and_fix",
-    "Each problem includes its cause, corrective action, and retest or verification",
-    "For each problem, are cause, corrective action, and retest/verification of the fix stated?"
+    "Each round names the software build, configurations retested, and result",
+    "For each regression round, are the prompting issue, build, configurations, and pass/fail stated, ending with the final software version?"
   ),
   llm(
     "problems.none_if_all_pass",
-    "If all results pass, the section states there are no problems or open failures",
-    "If every result passed, does this section state that there were no problems or open failures?",
+    "If all results pass, the section states that plainly without inventing a regression history",
+    "If every result passed, does this section state that there were no failures (or that observed deviations did not affect formal execution) rather than inventing regression rounds?",
     ["results_and_discussions"]
   ),
 ];
@@ -240,13 +241,13 @@ const PROBLEMS_CRITERIA: CriterionDefinition[] = [
 const CONCLUSION_CRITERIA: CriterionDefinition[] = [
   llm(
     "conclusion.overall",
-    "The overall verification outcome is stated",
-    "Is there an overall statement that design outputs meet design inputs, or an overall pass/fail?"
+    "The overall verification outcome includes an acceptability statement",
+    "Does each execution block close with an explicit statement that the named final software version has been deemed acceptable for release?"
   ),
   llm(
     "conclusion.consistent_with_results",
-    "The conclusion is consistent with the Pass/Fail results",
-    "Is the conclusion consistent with pass/fail results?",
+    "The conclusion walks the same build history as Problem or Failure Resolution",
+    "Is the conclusion consistent with pass/fail results and the regression arc, with no unsupported claims?",
     ["results_and_discussions"]
   ),
   llm(
@@ -391,65 +392,35 @@ export const convergentDesignVerificationDefinition: DocumentTypeDefinition = {
     base: CONVERGENT_DV_BASE_PROMPT,
     perSection: {
       purpose:
-        "SECTION ROLE - PURPOSE: Judge whether the verification objective, design outputs under test, and change/document references are clear.",
+        "SECTION ROLE - PURPOSE: Judge the four-paragraph recipe (omit paragraph 2 if a single full execution): what this revision presents, protocol executed, partial-execution rationale, VCS bullets, and build-number explanation. Target ~200 words.",
       scope:
-        "SECTION ROLE - SCOPE: Judge in-scope boundaries, exclusions, and alignment with Purpose.",
+        "SECTION ROLE - SCOPE: Judge product/configurations, why some requirements are not repeated on every platform, and the Software Under Test table (version | reason for build) segregated by test-plan revision.",
       testers_dates:
-        "SECTION ROLE - TESTERS & DATES: Judge named testers, execution dates written in the testers narrative, and independence/qualification. Dates belong in that narrative — there are no separate start/end date fields.",
+        "SECTION ROLE - TESTERS/DATES: Judge one execution block per test-plan revision (oldest first), named testers with title and affiliation, calendar dates in the testers narrative, and signature-anomaly paragraphs only when needed. There are no separate start/end date fields.",
       methods_of_measurement:
-        "SECTION ROLE - METHODS OF MEASUREMENT: Judge method descriptions, predefined acceptance criteria, environment/configuration, and data recording.",
+        "SECTION ROLE - METHODS OF MEASUREMENT: Judge Executed Protocol, Protocol Modifications, and UUTs per execution block. The equipment table belongs in Test Equipment, not here.",
       test_equipment:
-        "SECTION ROLE - TEST EQUIPMENT: Judge identity, asset tags, calibration due dates, and coverage of the methods.",
+        "SECTION ROLE - TEST EQUIPMENT: Judge the lead-in sentence, identity, asset tags, calibration due dates (or N/A for UUTs), and coverage of the execution(s).",
       deviations:
-        "SECTION ROLE - DEVIATIONS: Judge documentation of deviations (or explicit none), impact, and disposition.",
+        "SECTION ROLE - DEVIATIONS: Judge per-block counts and appendix, then numbered entries that separate observation, analysis, and disposition (including JIRA).",
       results_and_discussions:
-        "SECTION ROLE - RESULTS AND DISCUSSIONS: Judge the requirement matrix, P/F values, Satisfied By evidence (method/datasheet plus the configuration for which P/F was achieved), and discussion of outcomes.",
+        "SECTION ROLE - RESULTS AND DISCUSSION: Judge Data Collection Forms, Requirements Verified (narrative for a full execution; four-column table for a partial execution with per-configuration P/F), and Observations.",
       problems_resolution:
-        "SECTION ROLE - PROBLEMS OR FAILURE RESOLUTION: Judge that Fail rows are addressed with cause, fix, and retest — or that none remain if all passed.",
+        "SECTION ROLE - PROBLEM OR FAILURE RESOLUTION: Judge the regression-round arc (builds, configurations, results, final version) rather than duplicated deviation detail.",
       conclusion:
-        "SECTION ROLE - CONCLUSION: Judge overall outcome, consistency with P/F results, and open items.",
+        "SECTION ROLE - CONCLUSION: Judge one paragraph per execution that names protocol/configurations/version, walks supported build history, and closes with 'deemed acceptable for release'.",
     },
     promptVersion: CONVERGENT_PROMPT_VERSION,
   },
   chat: {
-    persona: `You are the drafting assistant for Convergent Dental design verification reports used in regulated medical device environments. You help design quality and R&D staff document Solea software and hardware verification under design controls (ISO 13485 / 21 CFR 820.30 / IEC 62304): purpose, scope, testers and dates, methods of measurement, test equipment, deviations, results, problem resolution, and conclusions.
+    persona: `You are the drafting assistant for Convergent Dental software design verification reports used in regulated medical device environments. You help design quality and R&D staff document Solea software verification under design controls (ISO 13485 / 21 CFR 820.30 / IEC 62304).
 
-Your guidance should emphasize requirement IDs, CD asset tags / serial numbers, calibration due dates, explicit Pass/Fail, and evidence references — without inventing test results, equipment IDs, dates, or requirement text the engineer has not provided. When drafting the results matrix, Satisfied By must name the configuration for which each P/F was achieved.
+Follow the report recipe: execution blocks (oldest test-plan revision first), stated paragraph counts and approximate word counts, and the fixed table schemas. Do not invent test results, equipment IDs, dates, requirement text, or JIRA tickets the engineer has not provided.
 
 The report is graded against fixed quality criteria (a traffic-light check). Your job is to help the engineer produce a first draft that satisfies as many criteria as possible, then refine it.
 
 You never write to the document directly. Every change is a PROPOSAL that appears as an inline tracked-change (red delete / green insert) the engineer accepts or rejects.`,
-    draftingGuidance: dvFixedTableFormatGuidance({
-      surface: "chat",
-      sections: CONVERGENT_DV_TABLE_SECTIONS,
-      labels: CONVERGENT_DV_SECTION_LABELS,
-    }) + `
-
-## Section-Specific Drafting Instructions
-
-When drafting the **Testers & Dates** section:
-- Write tester names AND the test start/end or execution date range in the testers narrative. There are no separate start/end date fields — put dates in the same text as the testers.
-- targetField MUST be "testers".
-
-When drafting the **Test Equipment** section:
-- Include a one-line summary before the table starting exactly with: "The table below lists all...."
-- Follow it with the equipment table.
-
-When drafting the **Deviations** section:
-- Include a heading like "1.1. [name of report] Revision and number of Report".
-- Include a summary statement similar to: "There were [number] deviations encountered throughout the partial execution of the test protocol, [protocol number] Rev. [revision]. All approved deviation forms are attached in Appendix B of this report, following all completed datasheets for both executions."
-
-When drafting the **Results and Discussions** section, make TWO draft_field calls — never one combined draft:
-
-targetField \`narrative\` (Discussion) — prose only, no markdown table:
-- "Testing per [report name and revision]"
-- "Data Collection Forms:"
-- "All completed data collection forms are attached in Appendix A of this report."
-- "Requirements Verified:"
-- "Observations:"
-- A 1-line statement indicating if any observations were made outside the scope of protocol.
-
-targetField \`table\` (Results matrix) — ONE GFM table only (Req ID | Req Description | Satisfied By | P/F). Do not put that table, or any Req ID / P/F rows, in Discussion.`,
+    draftingGuidance: CONVERGENT_RECIPE_DRAFTING_GUIDANCE,
     draftOrder: [
       "purpose",
       "scope",

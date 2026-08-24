@@ -17,7 +17,7 @@ function verdict(
 export function checkEquipmentTablePresent(ctx: EvaluationContext) {
   const parsed = parseEquipmentMatrix(ctx.content);
   if (!parsed.ok) return verdict("not_met", parsed.reason);
-  const required = ["Equipment", "Manufacturer", "Model/Part No."];
+  const required = ["Equipment", "Manufacturer", "Model / Part No."];
   const missingRequired = parsed.missingColumns.filter((c) =>
     required.includes(c)
   );
@@ -70,7 +70,7 @@ export function checkEquipmentCalibrationDates(ctx: EvaluationContext) {
 export function checkResultsMatrixComplete(ctx: EvaluationContext) {
   const parsed = parseResultsMatrix(ctx.content);
   if (!parsed.ok) return verdict("not_met", parsed.reason);
-  const required = ["Req ID", "P/F"];
+  const required = ["Req. ID", "P/F"];
   const missingRequired = parsed.missingColumns.filter((c) =>
     required.includes(c)
   );
@@ -89,12 +89,12 @@ export function checkResultsMatrixComplete(ctx: EvaluationContext) {
   if (incomplete.length > 0) {
     return verdict(
       "partially_met",
-      `${incomplete.length} row(s) missing Req ID or P/F`
+      `${incomplete.length} row(s) missing Req. ID or P/F`
     );
   }
   return verdict(
     "met",
-    `Results table present with ${parsed.rows.length} complete Req ID / P/F row(s)`
+    `Results table present with ${parsed.rows.length} complete Req. ID / P/F row(s)`
   );
 }
 
@@ -110,14 +110,14 @@ export function checkResultsPassFailValues(ctx: EvaluationContext) {
   if (invalid.length > 0) {
     return verdict(
       "not_met",
-      `${invalid.length} row(s) have a P/F value that is not Pass or Fail`
+      `${invalid.length} row(s) have a P/F value that is not Pass, Fail, or a per-configuration verdict (e.g. P for TOP-00017 PCON)`
     );
   }
   const blank = parsed.rows.filter((r) => !r.passFail.trim());
   if (blank.length > 0) {
     return verdict("partially_met", `${blank.length} row(s) missing P/F`);
   }
-  return verdict("met", "Every results row has a Pass or Fail verdict");
+  return verdict("met", "Every results row has a Pass/Fail or per-configuration P/F verdict");
 }
 
 export function checkResultsIdsUnique(ctx: EvaluationContext) {

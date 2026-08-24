@@ -214,6 +214,26 @@ describe("Convergent results matrix", () => {
     expect(bad.status).toBe("not_met");
   });
 
+  it("accepts per-configuration P/F values from the report recipe", () => {
+    const ok = checkResultsPassFailValues(
+      ctx(
+        {
+          table: tableDoc(CONVERGENT_RESULTS_HEADERS, [
+            ["SW-IN-1", "Upgrade", "TOP-00017 PCON datasheets (See Appendix B)", "P for TOP-00017 PCON"],
+            [
+              "SW-PA-1",
+              "Patterns",
+              "TOP-00017 PCON, TOP-00017 LCD-2 and TOP-00051 datasheets (See Appendix B)",
+              "P for TOP-00051, TOP-00017 PCON and TOP-00017 LCD-2",
+            ],
+          ]),
+        },
+        "results_and_discussions"
+      )
+    );
+    expect(ok.status).toBe("met");
+  });
+
   it("flags duplicate requirement IDs", () => {
     const dupes = checkResultsIdsUnique(
       ctx(
