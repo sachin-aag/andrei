@@ -650,9 +650,16 @@ export function MarginGutter({ onSectionOverflow }: Props) {
   // Keep the active comment card in view after sidebar "Open" / focus requests.
   // Uses instant scroll with block:"nearest" so it doesn't compete with the
   // smooth scroll that jumpToComment drives from report-workspace.
+  // Do not depend on `anchors` — typing with an AI suggestion recomputes
+  // card Y every keystroke and scrollIntoView jumps the shared document
+  // viewport.
+  const commentsRef = useRef(comments);
+  useEffect(() => {
+    commentsRef.current = comments;
+  }, [comments]);
   useEffect(() => {
     if (!activeCommentId) return;
-    const root = comments.find(
+    const root = commentsRef.current.find(
       (c) => c.id === activeCommentId && !c.parentId
     );
     if (!root) return;
@@ -664,7 +671,7 @@ export function MarginGutter({ onSectionOverflow }: Props) {
       el?.scrollIntoView({ block: "nearest" });
     });
     return () => cancelAnimationFrame(frame);
-  }, [activeCommentId, comments, anchors]);
+  }, [activeCommentId]);
 
   const activate = (a: GutterAnchor) => {
     setActiveAnchorId(a.id);

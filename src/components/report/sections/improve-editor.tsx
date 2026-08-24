@@ -1,16 +1,12 @@
 "use client";
 
-import {
-  useReportData,
-  useReportSection,
-} from "@/providers/report-provider";
+import { useReportSection } from "@/providers/report-provider";
 import { useSectionSave } from "@/hooks/use-section-save";
 import { TiptapSectionField } from "@/components/report/tiptap-section-field";
 import { SectionShell } from "./section-shell";
 import { emptyDoc } from "@/lib/tiptap/rich-text";
 
 export function ImproveEditor() {
-  const { readOnly } = useReportData();
   const { update } = useReportSection("improve");
   const { status, lastSavedAt, value, flushSave } = useSectionSave("improve");
 
@@ -37,7 +33,6 @@ export function ImproveEditor() {
           }))
         }
         onFlushSave={flushSave}
-        locked={readOnly}
       />
     </SectionShell>
   );

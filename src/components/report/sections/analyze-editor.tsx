@@ -10,6 +10,7 @@ import {
 import { useSectionSave } from "@/hooks/use-section-save";
 import { SectionShell } from "./section-shell";
 import { normalizeFiveWhyNarrative } from "@/lib/analyze-five-why";
+import { isTrackChangesFieldEditable } from "@/lib/reports/section-save-policy";
 
 const SIX_M_FIELDS: Array<[keyof Omit<{
   man: string;
@@ -29,7 +30,7 @@ const SIX_M_FIELDS: Array<[keyof Omit<{
 ];
 
 export function AnalyzeEditor() {
-  const { readOnly } = useReportData();
+  const { readOnly, trackChangesMode } = useReportData();
   const { update } = useReportSection("analyze");
   const { status, lastSavedAt, value, flushSave } = useSectionSave("analyze");
 
@@ -57,7 +58,7 @@ export function AnalyzeEditor() {
               contentPath={`sixM.${key}`}
               label={label}
               value={value.sixM[key]}
-              disabled={readOnly}
+              disabled={!isTrackChangesFieldEditable({ readOnly, trackChangesMode })}
               placeholder="Not Applicable"
               className="min-h-[70px]"
               onChange={(next) =>
@@ -74,7 +75,7 @@ export function AnalyzeEditor() {
           contentPath="sixM.conclusion"
           label="6M Conclusion"
           value={value.sixM.conclusion}
-          disabled={readOnly}
+          disabled={!isTrackChangesFieldEditable({ readOnly, trackChangesMode })}
           className="min-h-[70px]"
           onChange={(next) =>
             update((p) => ({
@@ -120,7 +121,7 @@ export function AnalyzeEditor() {
           contentPath="brainstorming"
           label="Brainstorming"
           value={value.brainstorming}
-          disabled={readOnly}
+          disabled={!isTrackChangesFieldEditable({ readOnly, trackChangesMode })}
           placeholder="Not Applicable"
           className="min-h-[80px]"
           onChange={(next) =>
@@ -135,7 +136,7 @@ export function AnalyzeEditor() {
           contentPath="otherTools"
           label="Other Tools (If any)"
           value={value.otherTools}
-          disabled={readOnly}
+          disabled={!isTrackChangesFieldEditable({ readOnly, trackChangesMode })}
           placeholder="Not Applicable"
           className="min-h-[60px]"
           onChange={(next) =>
@@ -205,7 +206,6 @@ export function AnalyzeEditor() {
             }))
           }
           onFlushSave={flushSave}
-          locked={readOnly}
         />
       </section>
     </SectionShell>

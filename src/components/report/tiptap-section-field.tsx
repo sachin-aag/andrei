@@ -66,6 +66,8 @@ import {
 } from "@/lib/tiptap/suggestion-action-widgets";
 import {
   injectSuggestionMarks,
+  richDocsMatchIgnoringAiPreview,
+  shouldSkipSuggestionDocSync,
   stripPendingSuggestionsExcept,
 } from "@/lib/tiptap/suggestion-inject";
 import { AI_AUTHOR_ID } from "@/lib/ai/constants";
@@ -74,6 +76,7 @@ import {
   parseAiFixCommentContent,
   parseAiRedraftCommentContent,
 } from "@/lib/ai/suggestion-gating";
+import { buildInactiveSuggestionCss } from "@/lib/tiptap/inactive-suggestion-css";
 import { buildRedraftPreviewDoc } from "@/lib/tiptap/redraft-preview";
 import { markdownToDoc } from "@/lib/tiptap/markdown-to-doc";
 import { normalizeRichField } from "@/lib/tiptap/rich-text";
@@ -89,6 +92,7 @@ import { validateSuggestionLocate } from "@/lib/suggestions/validate-suggestion"
 import { buildTableOperationPreviewDoc } from "@/lib/suggestions/table-preview";
 import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
 import { editorRegistryKey } from "@/providers/report-provider";
+import { isTrackChangesFieldEditable } from "@/lib/reports/section-save-policy";
 import type { SectionType } from "@/db/schema";
 
 function TableEditToolbar({
@@ -277,7 +281,7 @@ export type TiptapSectionFieldProps = {
   onChange: (doc: JSONContent) => void;
   /** Persist immediately after accept/reject suggestion (autosave flush). */
   onFlushSave?: () => void | Promise<void>;
-  /** When true, the field stays read-only even in engineer edit mode. */
+  /** When true, the field stays read-only even with track changes on. */
   locked?: boolean;
   /** Shrink the editor chrome for read-only blocks (e.g. signature tables). */
   compact?: boolean;
@@ -403,7 +407,11 @@ export function TiptapSectionField({
     onChangeRef.current = onChange;
   }, [onChange]);
 
-  const editable = !locked && (!readOnly || trackChangesMode);
+  const editable = isTrackChangesFieldEditable({
+    locked,
+    readOnly,
+    trackChangesMode,
+  });
   const manager = getUser(currentUserId)?.role === "manager";
   const canInlineComment =
     (report.status === "submitted" || report.status === "in_review" || report.status === "draft") &&
@@ -557,6 +565,10 @@ export function TiptapSectionField({
     editor.setEditable(editable);
   }, [editor, editable]);
 
+  const applySuggestionInEditorRef = useRef<
+    (suggestionId: string, mode: "accept" | "dismiss") => Promise<void>
+  >(async () => {});
+
   const applySuggestionInEditor = useCallback(
     async (suggestionId: string, mode: "accept" | "dismiss") => {
       const comment = comments.find((c) => c.id === suggestionId);
@@ -624,6 +636,10 @@ export function TiptapSectionField({
     ]
   );
 
+  useLayoutEffect(() => {
+    applySuggestionInEditorRef.current = applySuggestionInEditor;
+  }, [applySuggestionInEditor]);
+
   useEffect(() => {
     const ids = new Set<string>();
     if (activeSuggestionId) ids.add(activeSuggestionId);
@@ -637,7 +653,7 @@ export function TiptapSectionField({
           editor.state.tr.setMeta(suggestionActionWidgetsRefreshMeta, true)
         );
         try {
-          await applySuggestionInEditor(id, "accept");
+          await applySuggestionInEditorRef.current(id, "accept");
         } catch (err) {
           console.error(err);
           toast.error(
@@ -660,7 +676,7 @@ export function TiptapSectionField({
           editor.state.tr.setMeta(suggestionActionWidgetsRefreshMeta, true)
         );
         try {
-          await applySuggestionInEditor(id, "dismiss");
+          await applySuggestionInEditorRef.current(id, "dismiss");
         } catch (err) {
           console.error(err);
           toast.error(
@@ -681,18 +697,26 @@ export function TiptapSectionField({
     editor?.view.dispatch(
       editor.state.tr.setMeta(suggestionActionWidgetsRefreshMeta, true)
     );
-  }, [activeSuggestionId, isRichField, editor, applySuggestionInEditor, refresh]);
+    // Do not depend on applySuggestionInEditor — it changes on every section
+    // keystroke (sections in its closure) and a widget refresh here remounts
+    // the contenteditable=false accept/ignore island, which steals the caret.
+  }, [activeSuggestionId, isRichField, editor, refresh]);
 
   const applyExternalValueToEditor = useCallback(() => {
     const currentEditor = editor;
     if (!currentEditor || currentEditor.isDestroyed) return;
-    const nextDoc = normalizeRichField(value);
-    const cur = JSON.stringify(currentEditor.getJSON());
-    const next = JSON.stringify(nextDoc);
-    if (cur !== next) {
-      currentEditor.commands.setContent(nextDoc as Content, { emitUpdate: false });
+    const incoming = normalizeRichField(value);
+    const current = currentEditor.getJSON() as JSONContent;
+    if (richDocsMatchIgnoringAiPreview(current, incoming)) return;
+    // Keystrokes update the editor first; parent state catches up via onUpdate.
+    // Replacing the doc while focused jumps the viewport (and can land the
+    // caret in a later AI suggestion span). Suggestion accept still applies
+    // because the preview-held lock is set for that moment.
+    if (currentEditor.view.hasFocus() && !isSuggestionPreviewHeld(section)) {
+      return;
     }
-  }, [editor, value]);
+    currentEditor.commands.setContent(incoming as Content, { emitUpdate: false });
+  }, [editor, value, isSuggestionPreviewHeld, section]);
 
   useEffect(() => {
     applyExternalValueToEditor();
@@ -715,6 +739,20 @@ export function TiptapSectionField({
     let json = editor.getJSON() as JSONContent;
     const canonicalJson = normalizeRichField(value) as JSONContent;
     const before = JSON.stringify(json);
+
+    if (
+      shouldSkipSuggestionDocSync({
+        hasFocus: editor.view.hasFocus(),
+        previewHeld,
+        needsInject: Boolean(
+          activeSuggestionId &&
+            !narrativeHasSuggestionMarks(json, activeSuggestionId)
+        ),
+        hasLocalEdits: !richDocsMatchIgnoringAiPreview(json, canonicalJson),
+      })
+    ) {
+      return;
+    }
 
     if (previewHeld) {
       // Queue bridge: don't keep the previous suggestion marks and don't inject
@@ -944,27 +982,9 @@ export function TiptapSectionField({
   const tableHAlign = (activeTableCellAttrs?.align as string | undefined) ?? null;
   const tableVAlign = (activeTableCellAttrs?.verticalAlign as string | undefined) ?? null;
 
-  const inactiveSuggestionCss =
-    activeSuggestionId && isRichField
-      ? `
-[data-active-suggestion-id="${activeSuggestionId}"] [data-eval-id]:not([data-eval-id="${activeSuggestionId}"]).suggestion-insert,
-[data-active-suggestion-id="${activeSuggestionId}"] [data-eval-id]:not([data-eval-id="${activeSuggestionId}"]).suggestion-insert-ai,
-[data-active-suggestion-id="${activeSuggestionId}"] [data-eval-id]:not([data-eval-id="${activeSuggestionId}"]).suggestion-insert-ai::before,
-[data-active-suggestion-id="${activeSuggestionId}"] [data-eval-id]:not([data-eval-id="${activeSuggestionId}"]).suggestion-insert-ai::after {
-  display: none !important;
-  content: none !important;
-}
-[data-active-suggestion-id="${activeSuggestionId}"] [data-eval-id]:not([data-eval-id="${activeSuggestionId}"]).suggestion-delete,
-[data-active-suggestion-id="${activeSuggestionId}"] [data-eval-id]:not([data-eval-id="${activeSuggestionId}"]).suggestion-delete-ai {
-  text-decoration: none !important;
-  background-color: transparent !important;
-  color: inherit !important;
-}
-[data-active-suggestion-id="${activeSuggestionId}"] .suggestion-action-widget:not([data-eval-id="${activeSuggestionId}"]) {
-  display: none !important;
-}
-`
-      : "";
+  const inactiveSuggestionCss = isRichField
+    ? buildInactiveSuggestionCss(activeSuggestionId)
+    : "";
 
   return (
     <div className={className}>
