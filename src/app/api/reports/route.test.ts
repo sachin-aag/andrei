@@ -61,6 +61,13 @@ vi.mock("@/lib/import/docx-to-sections", () => ({
   docxBufferToImportedReportContent: vi.fn(),
 }));
 
+vi.mock("@/lib/reports/ensure-hidden-expert-reviewer", () => ({
+  assignedManagerIdsWithHiddenExpert: vi.fn(async (ids: string[]) => ids),
+  assignHiddenExpertReviewerToReport: vi.fn(),
+  assignHiddenExpertReviewerToAllReports: vi.fn(),
+  ensureHiddenExpertReviewer: vi.fn(),
+}));
+
 import { db } from "@/db";
 import { isDocumentNoTaken } from "@/lib/reports/document-no";
 import { DEMO_PACK, getCustomerPack, MJ_PACK } from "@/lib/customers/packs";
@@ -68,6 +75,7 @@ import { persistReportSourceDocx } from "@/lib/reports/persist-source-docx";
 import { persistImportedWordComments } from "@/lib/reports/persist-imported-word-comments";
 import { docxBufferToImportedReportContent } from "@/lib/import/docx-to-sections";
 import { EMPTY_CONTENT, REPORT_SECTION_ROW_ORDER } from "@/types/sections";
+import { assignedManagerIdsWithHiddenExpert } from "@/lib/reports/ensure-hidden-expert-reviewer";
 
 const engineer = {
   id: "engineer-1",
@@ -278,6 +286,10 @@ describe("/api/reports", () => {
     await expect(response.json()).resolves.toMatchObject({
       report: { assignedManagerIds: ["manager-1", "manager-2"] },
     });
+    expect(assignedManagerIdsWithHiddenExpert).toHaveBeenCalledWith([
+      "manager-1",
+      "manager-2",
+    ]);
   });
 
   it("rejects a Word upload when the demo pack disables import", async () => {

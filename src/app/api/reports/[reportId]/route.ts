@@ -17,6 +17,7 @@ import {
   normalizeDocumentNo,
 } from "@/lib/reports/document-no";
 import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
+import { assignedManagerIdsWithHiddenExpert } from "@/lib/reports/ensure-hidden-expert-reviewer";
 import {
   assignedManagerIdsForReport,
   listReportManagerIds,
@@ -165,7 +166,7 @@ export async function PATCH(
   const managerIdsChanged =
     parsed.assignedManagerIds !== undefined ||
     parsed.assignedManagerId !== undefined;
-  const nextManagerIds = managerIdsChanged
+  let nextManagerIds = managerIdsChanged
     ? parsed.assignedManagerIds !== undefined
       ? normalizeAssignedManagerIds(parsed.assignedManagerIds)
       : normalizeAssignedManagerIds([parsed.assignedManagerId ?? null])
@@ -177,6 +178,7 @@ export async function PATCH(
   );
 
   if (nextManagerIds) {
+    nextManagerIds = await assignedManagerIdsWithHiddenExpert(nextManagerIds);
     const validation = await validateAssignedManagerIds(nextManagerIds);
     if (!validation.ok) {
       return NextResponse.json(

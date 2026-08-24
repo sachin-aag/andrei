@@ -23,6 +23,7 @@ export function useGenericSectionSave(section: string) {
     registerSectionFlush,
     currentUserId,
     currentUserRole,
+    currentUserEmail,
   } = useReportData();
   const { suggestionApplyTransition } = useReportEvaluations();
   const { value } = useGenericReportSection(section);
@@ -66,7 +67,7 @@ export function useGenericSectionSave(section: string) {
 
   const { status, lastSavedAt, flush } = useAutoSave({
     enabled: shouldAutosaveSection({
-      user: { id: currentUserId, role: currentUserRole },
+      user: { id: currentUserId, role: currentUserRole, email: currentUserEmail },
       report,
       readOnly,
       trackChangesMode,

@@ -949,12 +949,17 @@ function ComposerSelect<T extends string>({
 export function ChatPanel() {
   const { report, refresh, readOnly, currentUserId } = useReportData();
   const { getUser } = useUserDirectory();
-  const role = getUser(currentUserId)?.role;
+  const user = getUser(currentUserId);
+  const role = user?.role;
+  const accessUser =
+    role != null && user
+      ? { id: currentUserId, role, email: user.email }
+      : null;
   const canProposeAiEdits =
-    role != null && canSaveReportSection({ id: currentUserId, role }, report);
+    accessUser != null && canSaveReportSection(accessUser, report);
   const editLockReason =
-    role != null
-      ? aiSuggestionLockReason({ id: currentUserId, role }, report)
+    accessUser != null
+      ? aiSuggestionLockReason(accessUser, report)
       : "You can't propose edits on this report right now.";
   // When Agent is unavailable the item still lists, disabled, with the lock
   // reason standing in for its description — a missing option explains nothing.

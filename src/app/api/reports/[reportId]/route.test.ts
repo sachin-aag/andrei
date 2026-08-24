@@ -22,9 +22,17 @@ vi.mock("@/lib/audit", () => ({
   recordAuditEvent: vi.fn().mockResolvedValue({ id: "audit-1" }),
 }));
 
+vi.mock("@/lib/reports/ensure-hidden-expert-reviewer", () => ({
+  assignedManagerIdsWithHiddenExpert: vi.fn(async (ids: string[]) => ids),
+  assignHiddenExpertReviewerToReport: vi.fn(),
+  assignHiddenExpertReviewerToAllReports: vi.fn(),
+  ensureHiddenExpertReviewer: vi.fn(),
+}));
+
 import { db } from "@/db";
 import { getCurrentUser } from "@/lib/auth/session";
 import { GET, PATCH } from "./route";
+import { assignedManagerIdsWithHiddenExpert } from "@/lib/reports/ensure-hidden-expert-reviewer";
 
 const engineer = {
   id: "engineer-1",

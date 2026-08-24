@@ -1,5 +1,12 @@
 import type { UserRole } from "@/lib/auth/roles";
+import { isHiddenExpertReviewer } from "@/lib/reports/hidden-expert-reviewer";
 import { canAccessDeletedReport, isReportDeleted } from "@/lib/reports/tombstone";
+
+export type ReportAccessUser = {
+  id: string;
+  role: UserRole;
+  email?: string | null;
+};
 
 export type ReportAccessRecord = {
   authorId: string;
@@ -9,19 +16,24 @@ export type ReportAccessRecord = {
   deletedAt?: Date | null;
 };
 
+function isLiveHiddenExpert(user: ReportAccessUser): boolean {
+  return user.role === "manager" && isHiddenExpertReviewer(user);
+}
+
 /**
  * Whether the user may view a report bundle (read-only or editable).
  * Admins can view all reports including tombstoned; engineers only their own;
  * managers assigned or submitted/in-review queue reports; QA viewers read-only all active reports.
  */
 export function canViewReport(
-  user: { id: string; role: UserRole },
+  user: ReportAccessUser,
   report: ReportAccessRecord
 ): boolean {
   if (isReportDeleted(report) && !canAccessDeletedReport(user)) {
     return false;
   }
 
+  if (isLiveHiddenExpert(user)) return true;
   if (user.role === "admin" || user.role === "qa") return true;
   if (user.role === "engineer") return user.id === report.authorId;
   if (user.role === "manager") {
@@ -41,12 +53,13 @@ export function canViewReport(
 }
 
 export function canEditReport(
-  user: { id: string; role: UserRole },
+  user: ReportAccessUser,
   report: ReportAccessRecord
 ): boolean {
   if (user.role === "qa") return false;
   if (isReportDeleted(report)) return false;
   if (report.status === "approved") return false;
+  if (isLiveHiddenExpert(user)) return true;
   if (user.role === "admin") return true;
   if (user.role === "engineer") return user.id === report.authorId;
   return false;
@@ -59,10 +72,14 @@ export function canEditReport(
  * Submitted author edits are blocked — content is locked until feedback.
  */
 export function canSaveReportSection(
-  user: { id: string; role: UserRole },
+  user: ReportAccessUser,
   report: Pick<ReportAccessRecord, "authorId" | "status" | "deletedAt">
 ): boolean {
   if (isReportDeleted(report)) return false;
+
+  if (isLiveHiddenExpert(user)) {
+    return report.status !== "approved";
+  }
 
   if (user.role === "engineer" && user.id === report.authorId) {
     return (
@@ -81,7 +98,7 @@ export function canSaveReportSection(
 
 /** Why AI Suggest fixes / agent proposals are blocked, or null when allowed. */
 export function aiSuggestionLockReason(
-  user: { id: string; role: UserRole },
+  user: ReportAccessUser,
   report: Pick<ReportAccessRecord, "authorId" | "status" | "deletedAt">
 ): string | null {
   if (canSaveReportSection(user, report)) return null;
@@ -100,7 +117,7 @@ export function aiSuggestionLockReason(
  * Submitted / in-review / approved evidence is immutable.
  */
 export function canMutateAttachments(
-  user: { id: string; role: UserRole },
+  user: ReportAccessUser,
   report: ReportAccessRecord
 ): boolean {
   if (!canEditReport(user, report)) return false;

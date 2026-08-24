@@ -37,6 +37,7 @@ import { normalizeCommentRecord } from "@/lib/comments/normalize";
 import { sectionsReadyForEvaluation } from "@/lib/ai/evaluation-readiness";
 import { collectPlaceholders } from "@/lib/placeholders/scan-sections";
 import type { Placeholder } from "@/lib/placeholders/find";
+import { canMutateAttachments } from "@/lib/reports/access";
 import type { UserRole } from "@/lib/auth/roles";
 import { ReportAttachmentsProvider } from "@/providers/report-attachments-provider";
 
@@ -51,26 +52,22 @@ function canMutateReportAttachmentsForUser({
   report,
   userId,
   userRole,
+  userEmail,
 }: {
   report: ReportRecord;
   userId: string;
   userRole: UserRole;
+  userEmail?: string | null;
 }) {
-  if (report.status !== "draft" && report.status !== "feedback") return false;
-
-  switch (userRole) {
-    case "admin":
-      return true;
-    case "engineer":
-      return report.authorId === userId;
-    case "manager":
-    case "qa":
-      return false;
-    default: {
-      const exhaustive: never = userRole;
-      return exhaustive;
+  return canMutateAttachments(
+    { id: userId, role: userRole, email: userEmail },
+    {
+      authorId: report.authorId,
+      assignedManagerId: report.assignedManagerId,
+      assignedManagerIds: report.assignedManagerIds,
+      status: report.status,
     }
-  }
+  );
 }
 
 export type WorkspaceMode = "edit" | "review" | "view";
@@ -111,6 +108,7 @@ type ReportContextValue = {
   workspaceMode: WorkspaceMode;
   currentUserId: string;
   currentUserRole: UserRole;
+  currentUserEmail: string;
   /** Inline / sidebar: which anchored comment thread is focused (dark highlight + expanded panel). */
   activeCommentId: string | null;
   setActiveCommentId: React.Dispatch<React.SetStateAction<string | null>>;
@@ -235,6 +233,7 @@ type ReportDataContextValue = Pick<
   | "workspaceMode"
   | "currentUserId"
   | "currentUserRole"
+  | "currentUserEmail"
   | "setReport"
   | "refresh"
   | "getSectionId"
@@ -361,6 +360,7 @@ export function ReportProvider({
   bundle,
   currentUserId,
   currentUserRole,
+  currentUserEmail,
   readOnly,
   initialTrackChangesMode = false,
   workspaceMode = "edit",
@@ -369,6 +369,7 @@ export function ReportProvider({
   bundle: ReportBundle;
   currentUserId: string;
   currentUserRole: UserRole;
+  currentUserEmail: string;
   readOnly: boolean;
   /** Manager: typically true on review; engineer: false. User can toggle in the workspace header. */
   initialTrackChangesMode?: boolean;
@@ -899,8 +900,9 @@ export function ReportProvider({
         report,
         userId: currentUserId,
         userRole: currentUserRole,
+        userEmail: currentUserEmail,
       }),
-    [currentUserId, currentUserRole, report]
+    [currentUserEmail, currentUserId, currentUserRole, report]
   );
 
   const reportDataValue = useMemo<ReportDataContextValue>(
@@ -913,6 +915,7 @@ export function ReportProvider({
       workspaceMode,
       currentUserId,
       currentUserRole,
+      currentUserEmail,
       setReport,
       refresh,
       getSectionId,
@@ -928,6 +931,7 @@ export function ReportProvider({
       workspaceMode,
       currentUserId,
       currentUserRole,
+      currentUserEmail,
       refresh,
       getSectionId,
       registerSectionFlush,

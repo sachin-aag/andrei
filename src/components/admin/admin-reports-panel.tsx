@@ -11,12 +11,13 @@ import type {
   AdminReportSummary,
 } from "@/lib/admin/reports";
 import { roleLabel } from "@/lib/auth/roles";
+import { visibleManagerNames } from "@/lib/reports/hidden-expert-reviewer";
 
 type AdminReportsPanelProps = {
   reports: AdminReportSummary[];
   authorOptions: AdminReportAuthorOption[];
   selectedUserId: string | null;
-  usersById: Record<string, { name: string; role: string } | undefined>;
+  usersById: Record<string, { name: string; role: string; email?: string } | undefined>;
 };
 
 export function AdminReportsPanel({
@@ -179,9 +180,7 @@ export function AdminReportsPanel({
                   : report.assignedManagerId
                     ? [report.assignedManagerId]
                     : [];
-              const managerNames = managerIds
-                .map((managerId) => usersById[managerId]?.name)
-                .filter((name): name is string => Boolean(name));
+              const managerNames = visibleManagerNames(managerIds, usersById);
 
               return (
                 <div key={report.id} className="relative">

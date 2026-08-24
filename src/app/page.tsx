@@ -12,6 +12,7 @@ import { CreateReportButton } from "@/components/dashboard/create-report-button"
 import { ReportList } from "@/components/dashboard/report-list";
 import { engineerReportsSubtitle } from "@/lib/document-types";
 import { withTransientRetry } from "@/lib/db/with-transient-retry";
+import { managersVisibleInPicker } from "@/lib/reports/hidden-expert-reviewer";
 import {
   listReportManagerIdsByReportIds,
   withAssignedManagerIds,
@@ -30,9 +31,12 @@ export default async function DashboardPage() {
     getPasswordStatusForUser(user.id),
     getPasswordPolicy(),
   ]);
-  const managers = workspaceUsers.filter((entry) => entry.role === "manager");
+  const managers = managersVisibleInPicker(workspaceUsers);
   const usersById = Object.fromEntries(
-    workspaceUsers.map((entry) => [entry.id, { name: entry.name }])
+    workspaceUsers.map((entry) => [
+      entry.id,
+      { name: entry.name, email: entry.email },
+    ])
   );
 
   const reportRows =

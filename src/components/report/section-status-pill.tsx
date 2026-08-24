@@ -236,13 +236,18 @@ export function SectionSuggestFixesButton({ section }: { section: SectionType })
   const { sections } = useReportSections();
   const { report, currentUserId } = useReportData();
   const { getUser } = useUserDirectory();
-  const role = getUser(currentUserId)?.role;
+  const user = getUser(currentUserId);
+  const role = user?.role;
+  const accessUser =
+    role != null && user
+      ? { id: currentUserId, role, email: user.email }
+      : null;
   const lockReason =
-    role != null
-      ? aiSuggestionLockReason({ id: currentUserId, role }, report)
+    accessUser != null
+      ? aiSuggestionLockReason(accessUser, report)
       : "You can't propose edits on this report right now.";
   const canPropose =
-    role != null && canSaveReportSection({ id: currentUserId, role }, report);
+    accessUser != null && canSaveReportSection(accessUser, report);
   const isRunning = runningSuggestionSections.includes(section);
   // Cover page criteria hash report.metadata (same as evaluate), not empty section JSON.
   const sectionContent =
