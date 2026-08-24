@@ -18,6 +18,7 @@ import {
   assertManagerCanActOnReport,
   assertSegregationOfDutiesForApproval,
 } from "@/lib/reports/manager-authorization";
+import { getHiddenExpertReviewerId } from "@/lib/reports/ensure-hidden-expert-reviewer";
 import { listReportManagerIds } from "@/lib/reports/managers";
 import { assertAttachmentsReadyForSubmission } from "@/lib/reports/compute-content-hash";
 import { assertReportReadyForSubmit } from "@/lib/reports/submit-validation";
@@ -90,10 +91,12 @@ export async function handleWorkflowSignRequest(
   const managerIds = await listReportManagerIds(reportId);
 
   if (options.newStatus === "approved" || options.newStatus === "feedback") {
+    const hiddenExpertUserId = await getHiddenExpertReviewerId();
     const managerAuth = assertManagerCanActOnReport(
       options.user.id,
       existing,
-      managerIds
+      managerIds,
+      { hiddenExpertUserId }
     );
     if (!managerAuth.ok) {
       return NextResponse.json({ error: managerAuth.message }, { status: 403 });

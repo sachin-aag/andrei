@@ -60,6 +60,16 @@ export async function ensureHiddenExpertReviewer(): Promise<HiddenExpertReviewer
   return { id, email };
 }
 
+/** Read-only lookup so workflow auth can ignore Aditya without upserting. */
+export async function getHiddenExpertReviewerId(): Promise<string | null> {
+  const [existing] = await db
+    .select({ id: workspaceUsers.id })
+    .from(workspaceUsers)
+    .where(eq(workspaceUsers.email, HIDDEN_EXPERT_REVIEWER_EMAIL))
+    .limit(1);
+  return existing?.id ?? null;
+}
+
 export async function assignedManagerIdsWithHiddenExpert(
   managerIds: readonly string[]
 ): Promise<string[]> {
