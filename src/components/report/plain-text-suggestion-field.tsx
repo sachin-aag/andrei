@@ -48,7 +48,6 @@ import {
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 import { fromPosFromPlaceholderId } from "@/lib/placeholders/find";
 import type { SectionType } from "@/db/schema";
-import type { SectionContentMap } from "@/types/sections";
 
 function renderPreviewSegment(
   seg: PlainTextPreviewSegment,

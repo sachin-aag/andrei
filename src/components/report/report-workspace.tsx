@@ -426,13 +426,18 @@ export function ReportWorkspace({
     };
   }, []);
 
+  if (suggestionsFocusSection) {
+    if (criteriaFocusSection !== suggestionsFocusSection) {
+      setCriteriaFocusSection(suggestionsFocusSection);
+    }
+    if (!sidebarCollapsed) {
+      setSidebarCollapsed(true);
+    }
+  }
+
   useEffect(() => {
     if (!suggestionsFocusSection) return;
     const section = suggestionsFocusSection;
-    setCriteriaFocusSection(section);
-    // Suggestions live in the review margin. Keep the assistant collapsed
-    // so the gutter is visible — do not auto-open the right panel.
-    setSidebarCollapsed(true);
 
     let cancelled = false;
     const timeouts: Array<ReturnType<typeof setTimeout>> = [];

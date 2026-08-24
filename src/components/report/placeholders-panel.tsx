@@ -25,7 +25,6 @@ import {
   placeholderPanelContext,
   resolvePlaceholderInPmDoc,
 } from "@/lib/placeholders/resolve-in-doc";
-import type { SectionContentMap } from "@/types/sections";
 import type { SectionType } from "@/db/schema";
 import { cn } from "@/lib/utils";
 

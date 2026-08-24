@@ -8,6 +8,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
 import {
@@ -74,10 +75,9 @@ import {
 } from "@/lib/ai/chat/fields";
 import { isChatPace, type ChatPace } from "@/lib/ai/chat/pace";
 import {
-  coerceChatMode,
-  coerceChatPace,
   DEFAULT_CHAT_COMPOSER_PREFS,
   readChatComposerPrefs,
+  subscribeChatComposerPrefs,
   writeChatComposerPrefs,
 } from "@/lib/ai/chat/composer-prefs";
 import { examplePromptsForMode } from "@/lib/ai/chat/example-prompts";
@@ -946,6 +946,10 @@ function ComposerSelect<T extends string>({
   );
 }
 
+function subscribeNoop() {
+  return () => {};
+}
+
 export function ChatPanel() {
   const { report, refresh, readOnly, currentUserId } = useReportData();
   const { getUser } = useUserDirectory();
@@ -978,15 +982,21 @@ export function ChatPanel() {
   const [mentionIndex, setMentionIndex] = useState(0);
   const [pendingImages, setPendingImages] = useState<PendingChatImage[]>([]);
   const [attaching, setAttaching] = useState(false);
-  const [mode, setModeState] = useState<ChatMode>(
-    DEFAULT_CHAT_COMPOSER_PREFS.mode
+  const storedComposerPrefs = useSyncExternalStore(
+    subscribeChatComposerPrefs,
+    () =>
+      currentUserId
+        ? readChatComposerPrefs(currentUserId, report.id)
+        : DEFAULT_CHAT_COMPOSER_PREFS,
+    () => DEFAULT_CHAT_COMPOSER_PREFS
   );
-  const [pace, setPaceState] = useState<ChatPace>(
-    DEFAULT_CHAT_COMPOSER_PREFS.pace
-  );
-  const [composerPrefsReady, setComposerPrefsReady] = useState(false);
-  const composerPrefsRef = useRef({ mode, pace });
-  composerPrefsRef.current = { mode, pace };
+  const isClient = useSyncExternalStore(subscribeNoop, () => true, () => false);
+  const composerPrefsReady = isClient && currentUserId != null;
+  const mode =
+    role != null && !canProposeAiEdits && storedComposerPrefs.mode === "agent"
+      ? "plan"
+      : storedComposerPrefs.mode;
+  const pace = storedComposerPrefs.pace;
   const [sectionScope, setSectionScope] = useState<ChatSectionScope>(CHAT_SECTION_SCOPE_ALL);
   const [clientScopeSuggestion, setClientScopeSuggestion] =
     useState<SectionScopeMismatch | null>(null);
@@ -1000,6 +1010,14 @@ export function ChatPanel() {
     Record<string, SessionTabSnapshot>
   >({});
   const [runtime, setRuntime] = useState<ChatSessionRuntime>(IDLE_CHAT_RUNTIME);
+  const [sessionsReportId, setSessionsReportId] = useState(report.id);
+  if (sessionsReportId !== report.id) {
+    setSessionsReportId(report.id);
+    setMountedSessions([]);
+    setBackgroundSessionIds([]);
+    setTabSnapshots({});
+    setRuntime(IDLE_CHAT_RUNTIME);
+  }
   const [historyOpen, setHistoryOpen] = useState(false);
   const [initializing, setInitializing] = useState(true);
   const sessionWindowKey = `${report.id}:${currentSessionId ?? ""}`;
@@ -1091,31 +1109,18 @@ export function ChatPanel() {
   const setMode = useCallback(
     (next: ChatMode) => {
       if (!isChatMode(next)) return;
-      setModeState(next);
-      persistComposerPrefs({ mode: next, pace: composerPrefsRef.current.pace });
+      persistComposerPrefs({ mode: next, pace: storedComposerPrefs.pace });
     },
-    [persistComposerPrefs]
+    [persistComposerPrefs, storedComposerPrefs.pace]
   );
 
   const setPace = useCallback(
     (next: ChatPace) => {
       if (!isChatPace(next)) return;
-      setPaceState(next);
-      persistComposerPrefs({ mode: composerPrefsRef.current.mode, pace: next });
+      persistComposerPrefs({ mode: storedComposerPrefs.mode, pace: next });
     },
-    [persistComposerPrefs]
+    [persistComposerPrefs, storedComposerPrefs.mode]
   );
-
-  useLayoutEffect(() => {
-    if (!currentUserId) {
-      setComposerPrefsReady(false);
-      return;
-    }
-    const stored = readChatComposerPrefs(currentUserId, report.id);
-    setModeState(coerceChatMode(stored.mode));
-    setPaceState(coerceChatPace(stored.pace));
-    setComposerPrefsReady(true);
-  }, [currentUserId, report.id]);
 
   // Restore the caret after a mention replaces the in-progress @ token.
   useEffect(() => {
@@ -1127,17 +1132,6 @@ export function ChatPanel() {
     element.focus();
     element.setSelectionRange(caret, caret);
   }, [input]);
-
-  // Agent proposes edits — fall back to Ask when the report isn't writable.
-  // Wait for `role`: until the user directory resolves, `canProposeAiEdits` is
-  // false for everyone, and firing early would knock every session off the
-  // Agent default with no way back.
-  useEffect(() => {
-    if (role != null && !canProposeAiEdits && mode === "agent") {
-      // Session lock only — don't persist over a stored Agent preference.
-      setModeState("plan");
-    }
-  }, [role, canProposeAiEdits, mode]);
 
   const updateMentionQuery = useCallback((value: string, caret: number) => {
     setMentionRange(findMentionQuery(value, caret));
@@ -1376,10 +1370,6 @@ export function ChatPanel() {
   useEffect(() => {
     let cancelled = false;
     runtimeBySessionRef.current = new Map();
-    setMountedSessions([]);
-    setBackgroundSessionIds([]);
-    setTabSnapshots({});
-    setRuntime(IDLE_CHAT_RUNTIME);
     void (async () => {
       const existing = await loadSessions();
       if (cancelled) return;

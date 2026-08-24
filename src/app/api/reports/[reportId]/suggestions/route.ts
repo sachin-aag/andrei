@@ -10,7 +10,6 @@ import {
   criteriaEvaluations,
   comments,
 } from "@/db/schema";
-import type { SectionType } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import { generateSuggestionsForSection } from "@/lib/ai/suggest";
 import { AI_AUTHOR_ID } from "@/lib/ai/constants";
