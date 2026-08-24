@@ -177,12 +177,10 @@ export function ReportWorkspace({
   const documentType = report.documentType;
   const showReviewGutter = isReviewGutterVisible(sidebarCollapsed, focusMode);
   const toggleFocusMode = useCallback(() => {
-    setFocusMode((prev) => {
-      const next = !prev;
-      captureEvent("focus_mode_toggled", { enabled: next });
-      return next;
-    });
-  }, []);
+    const next = !focusMode;
+    setFocusMode(next);
+    captureEvent("focus_mode_toggled", { enabled: next });
+  }, [focusMode]);
   const handleSectionOverflow = useCallback(
     (overflows: Record<SectionType, number>) => {
       setSectionMinHeights((prev) => {
