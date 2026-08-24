@@ -15,7 +15,10 @@ import {
   collapseReportSidebar,
   defineEditor,
   defineSection,
+  expandDocumentsPanel,
   expandReportSidebar,
+  focusModeButton,
+  documentsPanel,
   reportSidebar,
   reviewMargin,
 } from "./helpers/workspace";
@@ -120,6 +123,49 @@ test.describe("report editor", () => {
 
     await expandReportSidebar(page);
     await expect(reviewMargin(page)).toHaveCount(0);
+  });
+
+  test("focus mode hides the review margin while sidebars stay available", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1920, height: 900 });
+    await collapseReportSidebar(page);
+    await expect(reviewMargin(page)).toBeVisible();
+
+    await focusModeButton(page).click();
+    await expect(focusModeButton(page)).toHaveAttribute("aria-pressed", "true");
+    await expect(reviewMargin(page)).toHaveCount(0);
+
+    const editor = defineEditor(page);
+    await expect(editor).toBeVisible();
+    await editor.click();
+    await editor.pressSequentially(" Extra detail while writing in focus mode.");
+    await expect(defineSection(page).getByText(/saving|saved/i)).toBeVisible({
+      timeout: 15_000,
+    });
+
+    await expandReportSidebar(page);
+    await expect(
+      reportSidebar(page).getByRole("button", { name: /collapse sidebar/i })
+    ).toBeVisible();
+    await reportSidebar(page).getByRole("button", { name: /^comments$/i }).click();
+    await expect(
+      reportSidebar(page).getByText(/no comments yet/i)
+    ).toBeVisible();
+    await expect(reviewMargin(page)).toHaveCount(0);
+
+    await expandDocumentsPanel(page);
+    await expect(
+      documentsPanel(page).getByRole("button", { name: /collapse documents panel/i })
+    ).toBeVisible();
+    await expect(reviewMargin(page)).toHaveCount(0);
+
+    await collapseReportSidebar(page);
+    await expect(reviewMargin(page)).toHaveCount(0);
+
+    await focusModeButton(page).click();
+    await expect(focusModeButton(page)).toHaveAttribute("aria-pressed", "false");
+    await expect(reviewMargin(page)).toBeVisible();
   });
 
   test("resizes the assistant and documents panels from the keyboard", async ({

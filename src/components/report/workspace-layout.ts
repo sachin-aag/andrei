@@ -41,9 +41,13 @@ export const WORKSPACE_PANEL_WIDTH_TRANSITION_MS = 200;
 /**
  * Inline suggestions and comments live in the review margin. Show that gutter
  * only while the assistant is collapsed so the two surfaces never compete.
+ * Focus mode always hides it so the document can use that space.
  */
-export function isReviewGutterVisible(chatCollapsed: boolean): boolean {
-  return chatCollapsed;
+export function isReviewGutterVisible(
+  chatCollapsed: boolean,
+  focusMode = false
+): boolean {
+  return chatCollapsed && !focusMode;
 }
 
 export type PanelWidthBounds = {

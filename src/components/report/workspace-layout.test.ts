@@ -63,6 +63,12 @@ describe("isReviewGutterVisible", () => {
     expect(isReviewGutterVisible(true)).toBe(true);
     expect(isReviewGutterVisible(false)).toBe(false);
   });
+
+  it("hides the review margin in focus mode even when the assistant is collapsed", () => {
+    expect(isReviewGutterVisible(true, true)).toBe(false);
+    expect(isReviewGutterVisible(false, true)).toBe(false);
+    expect(isReviewGutterVisible(true, false)).toBe(true);
+  });
 });
 
 describe("mainMinWidth", () => {

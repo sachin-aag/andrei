@@ -22,6 +22,10 @@ export function reviewMargin(page: Page) {
   return page.getByRole("complementary", { name: "Review margin" });
 }
 
+export function focusModeButton(page: Page) {
+  return page.getByRole("button", { name: /^focus/i });
+}
+
 export function documentsPanel(page: Page) {
   return page.getByRole("complementary", { name: "Documents" });
 }

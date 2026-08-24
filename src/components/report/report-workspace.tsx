@@ -146,6 +146,7 @@ export function ReportWorkspace({
   const [detailsFormKey, setDetailsFormKey] = useState(0);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [documentsCollapsed, setDocumentsCollapsed] = useState(false);
+  const [focusMode, setFocusMode] = useState(false);
   const {
     containerRef,
     isResizing,
@@ -174,7 +175,14 @@ export function ReportWorkspace({
     null
   );
   const documentType = report.documentType;
-  const showReviewGutter = isReviewGutterVisible(sidebarCollapsed);
+  const showReviewGutter = isReviewGutterVisible(sidebarCollapsed, focusMode);
+  const toggleFocusMode = useCallback(() => {
+    setFocusMode((prev) => {
+      const next = !prev;
+      captureEvent("focus_mode_toggled", { enabled: next });
+      return next;
+    });
+  }, []);
   const handleSectionOverflow = useCallback(
     (overflows: Record<SectionType, number>) => {
       setSectionMinHeights((prev) => {
@@ -327,8 +335,10 @@ export function ReportWorkspace({
     const section = suggestionsFocusSection;
     setCriteriaFocusSection(section);
     // Suggestions live in the review margin. Keep the assistant collapsed
-    // so the gutter is visible — do not auto-open the right panel.
-    setSidebarCollapsed(true);
+    // so the gutter is visible — unless focus mode is hiding that margin.
+    if (!focusMode) {
+      setSidebarCollapsed(true);
+    }
 
     let cancelled = false;
     const timeouts: Array<ReturnType<typeof setTimeout>> = [];
@@ -365,12 +375,15 @@ export function ReportWorkspace({
       attempt(0);
     };
 
-    const gutterAlreadyVisible = isReviewGutterVisible(sidebarCollapsed);
+    const gutterAlreadyVisible = isReviewGutterVisible(
+      sidebarCollapsed,
+      focusMode
+    );
     if (gutterScrollTimeoutRef.current != null) {
       clearTimeout(gutterScrollTimeoutRef.current);
       gutterScrollTimeoutRef.current = null;
     }
-    if (gutterAlreadyVisible) {
+    if (gutterAlreadyVisible || focusMode) {
       let innerFrame = 0;
       const outerFrame = requestAnimationFrame(() => {
         innerFrame = requestAnimationFrame(start);
@@ -402,6 +415,7 @@ export function ReportWorkspace({
     evaluations,
     requestCommentFocus,
     sidebarCollapsed,
+    focusMode,
   ]);
 
   const jumpToComment = useCallback(
@@ -429,7 +443,21 @@ export function ReportWorkspace({
         );
       };
 
-      const gutterAlreadyVisible = isReviewGutterVisible(sidebarCollapsed);
+      const gutterAlreadyVisible = isReviewGutterVisible(
+        sidebarCollapsed,
+        focusMode
+      );
+      if (focusMode) {
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            const scrolledField = scrollToCommentFieldAnchor(root);
+            if (!scrolledField && root.section) {
+              jumpToSection(root.section);
+            }
+          })
+        );
+        return;
+      }
       setSidebarCollapsed(true);
       if (gutterScrollTimeoutRef.current != null) {
         clearTimeout(gutterScrollTimeoutRef.current);
@@ -445,7 +473,7 @@ export function ReportWorkspace({
         scrollToCard();
       }, WORKSPACE_PANEL_WIDTH_TRANSITION_MS + 50);
     },
-    [comments, jumpToSection, requestCommentFocus, sidebarCollapsed]
+    [comments, jumpToSection, requestCommentFocus, sidebarCollapsed, focusMode]
   );
 
   const handleJumpToPlaceholder = (p: Placeholder) => {
@@ -482,7 +510,7 @@ export function ReportWorkspace({
   };
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full flex-col" data-focus-mode={focusMode ? "true" : "false"}>
       <ElectronicSignatureDialog
         open={signDialog != null}
         meaning={signDialog ?? "submission"}
@@ -508,6 +536,8 @@ export function ReportWorkspace({
         managerNames={managerNames}
         trackChangesMode={trackChangesMode}
         onTrackChangesModeChange={setTrackChangesMode}
+        focusMode={focusMode}
+        onToggleFocusMode={toggleFocusMode}
         canSubmit={canSubmit}
         canReview={canReview}
         submitting={submitting}

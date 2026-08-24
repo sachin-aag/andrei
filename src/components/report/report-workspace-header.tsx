@@ -18,6 +18,7 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import type { WorkspaceMode } from "@/providers/report-provider";
 import type { ReportRecord } from "@/types/report";
+import { FocusModeToggle } from "./focus-mode-toggle";
 import { ReportExportButton } from "./report-export-button";
 import { RunAllEvaluationButton } from "./section-status-pill";
 import { StatusBadge } from "./status-badge";
@@ -29,6 +30,8 @@ type ReportWorkspaceHeaderProps = {
   managerNames?: string[];
   trackChangesMode: boolean;
   onTrackChangesModeChange: (next: boolean) => void;
+  focusMode: boolean;
+  onToggleFocusMode: () => void;
   canSubmit: boolean;
   canReview: boolean;
   submitting: boolean;
@@ -51,6 +54,8 @@ export function ReportWorkspaceHeader({
   managerNames = [],
   trackChangesMode,
   onTrackChangesModeChange,
+  focusMode,
+  onToggleFocusMode,
   canSubmit,
   canReview,
   submitting,
@@ -110,6 +115,7 @@ export function ReportWorkspaceHeader({
         </span>
       </div>
       <div className="ml-auto flex items-center gap-3 flex-wrap justify-end">
+        <FocusModeToggle enabled={focusMode} onToggle={onToggleFocusMode} />
         {!isViewMode && (
           <>
             <div className="flex items-center gap-2 flex-wrap">
