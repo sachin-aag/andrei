@@ -51,7 +51,7 @@ describe("Convergent customer pack", () => {
   it("uses convergent DV sections, table headers, and prompt version", () => {
     const def = buildDesignVerificationDefinition(CONVERGENT_PACK);
     expect(def.prompts.promptVersion).toBe(CONVERGENT_PROMPT_VERSION);
-    expect(def.prompts.promptVersion).toBe("convergent-dv-v5");
+    expect(def.prompts.promptVersion).toBe("convergent-dv-v6");
     expect(def.sections.map((s) => s.key)).toEqual([...CONVERGENT_DV_SECTION_KEYS]);
     expect(def.sections.find((s) => s.key === "cover_page")).toBeUndefined();
     expect(CONVERGENT_DV_SECTION_LABELS.purpose).toBe("Purpose");
@@ -66,7 +66,7 @@ describe("Convergent customer pack", () => {
     );
     expect(def.chat.draftOrder[0]).toBe("purpose");
     expect(def.chat.persona).toContain(
-      "Satisfied By must name the configuration for which each P/F was achieved"
+      "execution blocks (oldest test-plan revision first)"
     );
     expect(def.chat.draftingGuidance).toContain(
       CONVERGENT_RESULTS_MATRIX_FILLING_NOTES
@@ -78,14 +78,12 @@ describe("Convergent customer pack", () => {
     expect(def.chat.draftingGuidance).toContain(
       "not every requirement ID mentioned in the protocol body"
     );
+    expect(def.chat.draftingGuidance).toContain("P for TOP-00017 PCON");
     expect(def.chat.draftingGuidance).toContain(
-      "configuration for which that P/F was achieved"
+      "NEVER include a markdown table or Req. ID / Satisfied by / P/F rows here"
     );
     expect(def.chat.draftingGuidance).toContain(
-      "NEVER include a markdown table or Req ID / Satisfied By / P/F rows here"
-    );
-    expect(def.chat.draftingGuidance).toContain(
-      "Do not put that table, or any Req ID / P/F rows, in Discussion"
+      "4 paragraphs, ~200 words"
     );
     expect(def.chat.draftingGuidance).toContain(
       "There are no separate start/end date fields"
@@ -93,17 +91,17 @@ describe("Convergent customer pack", () => {
     expect(
       def.criteriaBySection.testers_dates?.find((c) => c.key === "testers.dates")
         ?.description
-    ).toContain("written in the Testers narrative");
+    ).toContain("written in the testers narrative");
     expect(
       def.criteriaBySection.results_and_discussions?.find(
         (c) => c.key === "results.satisfied_by"
       )?.description
-    ).toContain("configuration for which P/F was achieved");
+    ).toContain("P for TOP-00017 PCON");
     expect(
       def.criteriaBySection.purpose?.find(
         (criterion) => criterion.key === "purpose.objective"
       )?.label
-    ).toBe("Verification objective is clearly stated");
+    ).toBe("The report states what this revision presents and which protocol was executed");
   });
 
   it("keeps the demo DV 10-section shape", () => {

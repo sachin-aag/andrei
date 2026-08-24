@@ -6,7 +6,7 @@ import {
   isDvTableSection,
 } from "@/lib/document-types/design-verification/sections";
 
-export const SUGGEST_PROMPT_VERSION = "suggest-v19-exact-req-ids-citations" as const;
+export const SUGGEST_PROMPT_VERSION = "suggest-v20-convergent-recipe-headers" as const;
 
 /** Google model for suggestion generation (stronger reasoning + verbatim anchors). */
 export const SUGGEST_GOOGLE_MODEL_ID = "gemini-3.1-pro-preview" as const;

@@ -53,12 +53,12 @@ export const CONVERGENT_DV_SECTION_LABELS: Record<ConvergentDvSectionKey, string
   {
     purpose: "Purpose",
     scope: "Scope",
-    testers_dates: "Testers & Dates",
+    testers_dates: "Testers/Dates",
     methods_of_measurement: "Methods of Measurement",
     test_equipment: "Test Equipment",
     deviations: "Deviations",
-    results_and_discussions: "Results and Discussions",
-    problems_resolution: "Problems or Failure Resolution",
+    results_and_discussions: "Results and Discussion",
+    problems_resolution: "Problem or Failure Resolution",
     conclusion: "Conclusion",
   };
 

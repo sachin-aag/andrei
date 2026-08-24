@@ -27,7 +27,7 @@ export const EQUIPMENT_COLUMN_SCHEMA: readonly MatrixColumnSchema<EquipmentColum
     },
     {
       id: "modelPartNo",
-      label: "Model/Part No.",
+      label: "Model / Part No.",
       aliases: [
         "model part no",
         "model/part no",
@@ -74,8 +74,9 @@ export const RESULTS_COLUMN_SCHEMA: readonly MatrixColumnSchema<ResultsColumnId>
   [
     {
       id: "requirementId",
-      label: "Req ID",
+      label: "Req. ID",
       aliases: [
+        "req. id",
         "req id",
         "requirement id",
         "requirement",
@@ -87,8 +88,9 @@ export const RESULTS_COLUMN_SCHEMA: readonly MatrixColumnSchema<ResultsColumnId>
     },
     {
       id: "requirementDescription",
-      label: "Req Description",
+      label: "Req. Description",
       aliases: [
+        "req. description",
         "req description",
         "requirement description",
         "description",
@@ -98,7 +100,7 @@ export const RESULTS_COLUMN_SCHEMA: readonly MatrixColumnSchema<ResultsColumnId>
     },
     {
       id: "satisfiedBy",
-      label: "Satisfied By",
+      label: "Satisfied by",
       aliases: [
         "satisfied by",
         "satisfies",

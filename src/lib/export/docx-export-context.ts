@@ -26,6 +26,13 @@ const MIN_INLINE_EXPORT_WIDTH_PX = 96;
 const MAX_INLINE_EXPORT_WIDTH_PX = 600;
 const EMU_PER_PX = 9525;
 
+export type DocxRunStyle = {
+  font?: string;
+  sizeHalfPoints?: string;
+  forceBlackText?: boolean;
+  tableHeaderFill?: string;
+};
+
 export type DocxExportContext = {
   media: DocxMediaAsset[];
   nextImageIndex: number;
@@ -36,6 +43,10 @@ export type DocxExportContext = {
   allocatedNumIds: number[];
   comments: DocxCommentExportEntry[];
   nextCommentId: number;
+  runFont: string;
+  runSizeHalfPoints: string;
+  forceBlackText: boolean;
+  tableHeaderFill: string;
 };
 
 const EMPTY_NUMBERING_BASES: ListNumberingBases = {
@@ -45,8 +56,13 @@ const EMPTY_NUMBERING_BASES: ListNumberingBases = {
   maxNumId: 0,
 };
 
+const DEFAULT_RUN_FONT = "Times New Roman";
+const DEFAULT_RUN_SIZE_HALF_POINTS = "24";
+const DEFAULT_TABLE_HEADER_FILL = "D9E2F3";
+
 export function createDocxExportContext(
-  numberingBases: ListNumberingBases = EMPTY_NUMBERING_BASES
+  numberingBases: ListNumberingBases = EMPTY_NUMBERING_BASES,
+  runStyle?: DocxRunStyle
 ): DocxExportContext {
   return {
     media: [],
@@ -58,6 +74,10 @@ export function createDocxExportContext(
     allocatedNumIds: [],
     comments: [],
     nextCommentId: 0,
+    runFont: runStyle?.font ?? DEFAULT_RUN_FONT,
+    runSizeHalfPoints: runStyle?.sizeHalfPoints ?? DEFAULT_RUN_SIZE_HALF_POINTS,
+    forceBlackText: runStyle?.forceBlackText ?? false,
+    tableHeaderFill: runStyle?.tableHeaderFill ?? DEFAULT_TABLE_HEADER_FILL,
   };
 }
 

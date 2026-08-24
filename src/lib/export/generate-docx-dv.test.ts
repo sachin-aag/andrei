@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { JSONContent } from "@tiptap/core";
+import { DOMParser } from "@xmldom/xmldom";
 import PizZip from "pizzip";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { reports } from "@/db/schema";
@@ -248,10 +249,28 @@ describe("convergent design-verification DOCX export", () => {
   });
 
   it("uses a Convergent template with the 9-section placeholders", () => {
-    const xml =
-      new PizZip(fs.readFileSync(CONVERGENT_TEMPLATE)).file("word/document.xml")
-        ?.asText() ?? "";
-    expect(xml).toContain("Purpose");
+    const zip = new PizZip(fs.readFileSync(CONVERGENT_TEMPLATE));
+    expect(Object.keys(zip.files)[0]).toBe("[Content_Types].xml");
+    const xml = zip.file("word/document.xml")?.asText() ?? "";
+    expect(xml).toContain("<w:document");
+    expect(() => {
+      const parsed = new DOMParser().parseFromString(xml, "text/xml");
+      const err = parsed.getElementsByTagName("parsererror")[0];
+      if (err) throw new Error(err.textContent ?? "invalid xml");
+    }).not.toThrow();
+    expect(xml).toContain("PURPOSE:");
+    expect(xml).toContain("SCOPE:");
+    expect(xml).toContain("Testers/Dates:");
+    expect(xml).toContain("Methods of Measurement");
+    expect(xml).toContain("Test Equipment:");
+    expect(xml).toContain("Deviations:");
+    expect(xml).toContain("Results and Discussion:");
+    expect(xml).toContain("Problem or Failure Resolution:");
+    expect(xml).toContain("Conclusion:");
+    expect(xml).toContain("Revision History");
+    expect(xml).toContain("Revision Level");
+    expect(xml).toContain("DCO/ECO");
+    expect(xml).toContain("Revision Author");
     expect(xml).toContain("{@purposeXml}");
     expect(xml).toContain("{@equipmentXml}");
     expect(xml).toContain("{@resultsTableXml}");
@@ -260,11 +279,13 @@ describe("convergent design-verification DOCX export", () => {
     expect(xml).not.toContain("{@purposeScopeXml}");
     expect(xml).not.toContain("Purpose &amp; Scope");
     expect(xml).not.toContain("Define:");
+    expect(xml).not.toContain("0070C0");
 
     const header =
-      new PizZip(fs.readFileSync(CONVERGENT_TEMPLATE)).file("word/header2.xml")
+      new PizZip(fs.readFileSync(CONVERGENT_TEMPLATE)).file("word/header1.xml")
         ?.asText() ?? "";
-    expect(header).toContain("Convergent Dental");
+    expect(header).toContain("{productName}");
+    expect(header).toContain("{documentNo}");
     expect(header).not.toContain("Andrei");
   });
 
@@ -274,21 +295,26 @@ describe("convergent design-verification DOCX export", () => {
       sections: convergentSections(),
     });
     const xml = new PizZip(buf).file("word/document.xml")?.asText() ?? "";
-    const header = new PizZip(buf).file("word/header2.xml")?.asText() ?? "";
+    const header = new PizZip(buf).file("word/header1.xml")?.asText() ?? "";
 
-    expect(header).toContain("Convergent Dental");
+    expect(header).toContain("Solea Cart");
     expect(header).toContain("Design Verification Report");
+    expect(header).toContain("DVR-100");
     expect(xml).toContain("DVR-100");
     expect(xml).toContain("Verify Solea output REQ-101 meets the laser energy specification.");
     expect(xml).toContain("Alex Rivera, independent test engineer.");
     expect(xml).toContain("2026-03-01");
-    expect(xml).toContain("Testers");
+    expect(xml).toContain("Testers/Dates");
     expect(xml).toContain("Methods of Measurement");
     expect(xml).toContain("CD Asset Tag");
+    expect(xml).toContain("Revision History");
+    expect(xml).toContain("Problem or Failure Resolution");
     expect(xml).toContain("Citations:");
     expect(xml).toContain("[protocol.pdf, p. 3]");
     expect(xml).not.toContain("Purpose &amp; Scope");
     expect(xml).not.toContain("Define:");
+    expect(xml).toContain('w:ascii="Arial"');
+    expect(xml).toContain('<w:color w:val="000000"/>');
   });
 
   it("omits the trailing Citations block when requested", async () => {

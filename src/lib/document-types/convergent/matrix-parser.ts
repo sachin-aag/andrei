@@ -127,6 +127,8 @@ const PASS_FAIL_VALUES = new Set([
   "not met",
 ]);
 
+const VERDICT_TOKEN = /\b(pass(?:ed)?|fail(?:ed)?|not\s+met|met|[pf])\b/gi;
+
 export function normalizePassFail(value: string): "pass" | "fail" | null {
   const t = value.trim().toLowerCase().replace(/[./]/g, "");
   if (t === "p" || t === "pass" || t === "passed" || t === "met") return "pass";
@@ -137,6 +139,19 @@ export function normalizePassFail(value: string): "pass" | "fail" | null {
   if (PASS_FAIL_VALUES.has(compact)) {
     return compact.startsWith("p") || compact === "met" ? "pass" : "fail";
   }
+  const tokens = [...value.matchAll(VERDICT_TOKEN)].map((match) =>
+    match[1]!.toLowerCase().replace(/\s+/g, " ")
+  );
+  if (tokens.length === 0) return null;
+  const hasFail = tokens.some(
+    (token) => token === "f" || token.startsWith("fail") || token === "not met"
+  );
+  const hasPass = tokens.some(
+    (token) =>
+      token === "p" || token.startsWith("pass") || token === "met"
+  );
+  if (hasFail && !hasPass) return "fail";
+  if (hasPass) return "pass";
   return null;
 }
 
