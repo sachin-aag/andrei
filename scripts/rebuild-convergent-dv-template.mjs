@@ -1,6 +1,6 @@
 /**
  * Rebuild templates/convergent-design-verification-report-template.docx from
- * dvreportrecipe/DV Test Report Template.docx (gitignored). Uses PizZip so
+ * convergent/dvreportrecipe/DV Test Report Template.docx (gitignored). Uses PizZip so
  * [Content_Types].xml stays first — rewriting with Python zipfile breaks Word.
  */
 import fs from "node:fs";
@@ -10,7 +10,10 @@ import PizZip from "pizzip";
 
 const WNS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main";
 const ROOT = process.cwd();
-const SOURCE = path.join(ROOT, "dvreportrecipe/DV Test Report Template.docx");
+const SOURCE = path.join(
+  ROOT,
+  "convergent/dvreportrecipe/DV Test Report Template.docx"
+);
 const DEST = path.join(
   ROOT,
   "templates/convergent-design-verification-report-template.docx"

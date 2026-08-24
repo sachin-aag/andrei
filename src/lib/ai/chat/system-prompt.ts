@@ -11,7 +11,7 @@ import { getDocumentType } from "@/lib/document-types";
 import type { RetrievalPolicy } from "@/lib/ai/chat/retrieval-policy";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v37-convergent-recipe-structure";
+export const CHAT_PROMPT_VERSION = "chat-v39-convergent-recipe-structure";
 
 export type ChatMode = "plan" | "agent";
 

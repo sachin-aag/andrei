@@ -226,7 +226,7 @@ export function DvPurposeEditor() {
   return (
     <DvNarrativeEditor
       section="purpose"
-      description="Four paragraphs, ~200 words. Omit paragraph 2 if this is a single full execution. End with the VCS bullets and build-number explanation."
+      description="Four paragraphs. Omit paragraph 2 if this is a single full execution. End with the VCS bullets and build-number explanation."
       fieldLabel="Purpose"
       placeholder="This revision presents results of the [full/partial] execution of [protocol number Rev. X] used to test [software version] ([CUS/document]) for [release type]. This build was designed to…"
     />
@@ -237,7 +237,7 @@ export function DvScopeEditor() {
   return (
     <DvNarrativeEditor
       section="scope"
-      description="Two paragraphs (~190 words) plus a Software Under Test table (version | reason for build), segregated by test-plan revision."
+      description="Two packed paragraphs plus a Software Under Test table (version | reason for build), segregated by test-plan revision."
       fieldLabel="Scope"
       placeholder="This test report applies to [product] for system configurations [TOP IDs]…. Then the Software Under Test table: version | reason for build."
     />
