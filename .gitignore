@@ -94,6 +94,9 @@ docs/convergent-onboarding-temporary-passwords.md
 # Local-only demo DV Word template (do not commit)
 /templates/design-verification-report-template.docx
 
+# Local DV report recipe Word docs (do not commit)
+/dvreportrecipe/
+
 # Local customer PDFs / working copies (do not commit)
 /Appendix B DV Report*.pdf
 /convergent/
