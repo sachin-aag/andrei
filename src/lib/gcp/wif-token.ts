@@ -159,7 +159,7 @@ function flattenHeaders(
  */
 export function createWifAuthClient(config: WifConfig) {
   const client = {
-    async getRequestHeaders(_url?: string) {
+    async getRequestHeaders() {
       return { Authorization: `Bearer ${await getWifAccessToken(config)}` };
     },
     async getAccessToken() {

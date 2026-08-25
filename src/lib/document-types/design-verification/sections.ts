@@ -203,7 +203,7 @@ export function dvFixedTableFormatGuidance(opts?: {
   const equipmentLeadIn =
     sections.includes("test_equipment") && surface === "chat"
       ? `
-- Test Equipment exception: a one-line lead-in starting with "The table below lists all equipment used for testing..." is required before each GFM table (one table per execution). Do not put that lead-in in Methods of Measurement.`
+- Test Equipment exception: a one-line lead-in starting with "The table below lists all equipment used for testing during the [full/partial] execution of the test protocol." is required before each GFM table (one table per execution). Do not put that lead-in in Methods of Measurement.`
       : "";
 
   const surfaceRules =

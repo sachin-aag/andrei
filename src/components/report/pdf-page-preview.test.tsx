@@ -285,9 +285,11 @@ describe("PdfPagePreview", () => {
 
     await waitFor(() => {
       expect(renderPage).toHaveBeenCalled();
+      expect(screen.getByLabelText("Scan.pdf, page 1")).not.toHaveClass(
+        "hidden"
+      );
     });
     expect(screen.queryByText("Loading preview…")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Scan.pdf, page 1")).not.toHaveClass("hidden");
     expect(screen.queryByText("Batch page 1")).not.toBeInTheDocument();
   });
 

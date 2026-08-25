@@ -191,10 +191,35 @@ export function ChatSessionHost({
 
   useEffect(() => {
     if (!hydrateOnMount) return;
-    void hydrateFromServer();
-    // First mount only — a later switch back must not wipe an in-flight turn.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hydrateOnMount, sessionId]);
+    let cancelled = false;
+    void (async () => {
+      if (isChatTurnBusy(statusRef.current)) return;
+      try {
+        const res = await fetch(`${api}/sessions/${sessionId}`);
+        if (cancelled) return;
+        if (!res.ok) {
+          if (!isChatTurnBusy(statusRef.current)) setMessagesRef.current([]);
+          setBackgroundTurn(false);
+          return;
+        }
+        const data = (await res.json()) as ChatSessionView;
+        if (cancelled || isChatTurnBusy(statusRef.current)) return;
+        setMessagesRef.current(data.messages ?? []);
+        const next = backgroundTurnFromSessionView(data);
+        if (next.startedAt != null) {
+          agentRunStartedAtRef.current = next.startedAt;
+        }
+        setBackgroundTurn(next.backgroundTurn);
+      } catch {
+        if (cancelled) return;
+        if (!isChatTurnBusy(statusRef.current)) setMessagesRef.current([]);
+        setBackgroundTurn(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [hydrateOnMount, sessionId, api]);
 
   useEffect(() => {
     if (!backgroundTurn || streamBusy) return;

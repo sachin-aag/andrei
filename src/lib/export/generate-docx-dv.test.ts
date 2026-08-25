@@ -190,6 +190,25 @@ function narrativeDocWithCitations(body: string, citations: string[]): JSONConte
         type: "paragraph",
         content: [{ type: "text", text: body }],
       },
+      {
+        type: "bulletList",
+        content: [
+          {
+            type: "listItem",
+            content: [
+              {
+                type: "paragraph",
+                content: [
+                  {
+                    type: "text",
+                    text: "mm: represents major release number (01, 02, etc.)",
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
       { type: "paragraph" },
       {
         type: "paragraph",
@@ -286,7 +305,11 @@ describe("convergent design-verification DOCX export", () => {
         ?.asText() ?? "";
     expect(header).toContain("{productName}");
     expect(header).toContain("{documentNo}");
+    expect(header).toContain("Software Design Verification Test Report");
     expect(header).not.toContain("Andrei");
+    expect(xml).toContain('w:headerReference w:type="default" r:id="rId11"');
+    expect(xml).toContain('w:footerReference w:type="default" r:id="rId12"');
+    expect(xml).not.toContain('<w:b w:val="0"/>');
   });
 
   it("renders Convergent headings and tester dates", async () => {
@@ -298,10 +321,13 @@ describe("convergent design-verification DOCX export", () => {
     const header = new PizZip(buf).file("word/header1.xml")?.asText() ?? "";
 
     expect(header).toContain("Solea Cart");
-    expect(header).toContain("Design Verification Report");
+    expect(header).toContain("Software Design Verification Test Report");
     expect(header).toContain("DVR-100");
+    expect(xml).toContain("headerReference");
+    expect(xml).toContain("footerReference");
     expect(xml).toContain("DVR-100");
     expect(xml).toContain("Verify Solea output REQ-101 meets the laser energy specification.");
+    expect(xml).toContain("mm: represents major release number");
     expect(xml).toContain("Alex Rivera, independent test engineer.");
     expect(xml).toContain("2026-03-01");
     expect(xml).toContain("Testers/Dates");
@@ -314,6 +340,15 @@ describe("convergent design-verification DOCX export", () => {
     expect(xml).not.toContain("Purpose &amp; Scope");
     expect(xml).not.toContain("Define:");
     expect(xml).toContain('w:ascii="Arial"');
+    expect(xml).toContain('<w:sz w:val="20"/>');
+    expect(xml).toContain('<w:jc w:val="both"/>');
+    expect(xml).toContain('<w:spacing w:before="60" w:after="60"/>');
+    expect(xml).toContain('<w:pStyle w:val="ListParagraph"/>');
+    expect(xml).toContain('<w:tblStyle w:val="TableGrid"/>');
+    expect(xml).toContain('<w:jc w:val="center"/>');
+    expect(xml).toContain('w:fill="C6D9F1"');
+    expect(xml).toContain('<w:vAlign w:val="center"/>');
+    expect(xml).toContain('<w:sz w:val="18"/>');
     expect(xml).toContain('<w:color w:val="000000"/>');
   });
 

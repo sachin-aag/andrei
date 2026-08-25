@@ -230,7 +230,10 @@ type Props = {
 export function MarginGutter({ onSectionOverflow }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
   const { report, workspaceMode, currentUserId } = useReportData();
-  const evaluatableSections = evaluatableSectionKeys(report.documentType);
+  const evaluatableSections = useMemo(
+    () => evaluatableSectionKeys(report.documentType),
+    [report.documentType]
+  );
   const {
     comments,
     activeCommentId,
@@ -462,20 +465,26 @@ export function MarginGutter({ onSectionOverflow }: Props) {
     editorTick,
     layoutVersion,
     canComment,
+    evaluatableSections,
   ]);
 
   // Keep a parked queue-bridge card inside the scrollport. Other gutter
   // anchors stay document-relative — only this handoff follows the user.
+  const bridgedSections = useMemo(
+    () =>
+      (Object.keys(suggestionApplyTransition) as SectionType[]).filter(
+        (section) =>
+          suggestionApplyTransition[section]?.bridge &&
+          suggestionApplyTransition[section]?.parkCenterY != null
+      ),
+    [suggestionApplyTransition]
+  );
+  if (bridgedSections.length === 0 && Object.keys(bridgeStickyTops).length > 0) {
+    setBridgeStickyTops({});
+  }
+
   useEffect(() => {
-    const bridged = (Object.keys(suggestionApplyTransition) as SectionType[]).filter(
-      (section) =>
-        suggestionApplyTransition[section]?.bridge &&
-        suggestionApplyTransition[section]?.parkCenterY != null
-    );
-    if (bridged.length === 0) {
-      setBridgeStickyTops((prev) => (Object.keys(prev).length === 0 ? prev : {}));
-      return;
-    }
+    if (bridgedSections.length === 0) return;
 
     const container = containerRef.current;
     if (!container) return;
@@ -489,7 +498,7 @@ export function MarginGutter({ onSectionOverflow }: Props) {
         const containerTop = container.getBoundingClientRect().top;
         const port = scrollParent.getBoundingClientRect();
         const next: Record<string, number> = {};
-        for (const section of bridged) {
+        for (const section of bridgedSections) {
           const parkCenterY = suggestionApplyTransition[section]?.parkCenterY;
           if (parkCenterY == null) continue;
           const id = suggestionGutterAnchorId(section);
@@ -514,7 +523,7 @@ export function MarginGutter({ onSectionOverflow }: Props) {
       scrollParent.removeEventListener("scroll", update);
       window.removeEventListener("resize", update);
     };
-  }, [suggestionApplyTransition]);
+  }, [suggestionApplyTransition, bridgedSections]);
 
   // Pack per section so a tall draft in Purpose cannot shove Deviations
   // into empty space below its field. Section overflow padding keeps
@@ -573,7 +582,7 @@ export function MarginGutter({ onSectionOverflow }: Props) {
     lastOverflowRef.current = overflows;
 
     onSectionOverflow(overflows as Record<SectionType, number>);
-  }, [packed, cardHeights, onSectionOverflow]);
+  }, [packed, cardHeights, onSectionOverflow, evaluatableSections]);
 
   // Measure card heights once they render so the packer knows actual sizes.
   // Depends on anchors only — not packed (packed changes when heights update).

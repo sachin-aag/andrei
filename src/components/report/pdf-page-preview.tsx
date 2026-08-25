@@ -362,6 +362,9 @@ const PdfPreviewPage = memo(function PdfPreviewPage({
 }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [state, setState] = useState<PagePaintState>({ status: "pending" });
+  if (!shouldRender && state.status !== "pending") {
+    setState({ status: "pending" });
+  }
 
   useEffect(() => {
     if (!shouldRender) {
@@ -372,7 +375,6 @@ const PdfPreviewPage = memo(function PdfPreviewPage({
         canvas.width = 0;
         canvas.height = 0;
       }
-      setState({ status: "pending" });
       return;
     }
     const controller = new AbortController();

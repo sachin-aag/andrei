@@ -60,7 +60,7 @@ const PURPOSE_CRITERIA: CriterionDefinition[] = [
   llm(
     "purpose.objective",
     "The report states what this revision presents and which protocol was executed",
-    "Does paragraph 1 (~60 words) say this revision presents testing results, name the protocol number and revision, and state whether execution was full or partial?"
+    "Does the first packed paragraph say this revision presents testing results, name the protocol number and revision, and state whether execution was full or partial?"
   ),
   llm(
     "purpose.design_outputs",
@@ -70,7 +70,7 @@ const PURPOSE_CRITERIA: CriterionDefinition[] = [
   llm(
     "purpose.partial_rationale",
     "A partial execution explains why prior full-execution results are carried, or paragraph 2 is omitted",
-    "If this is a partial execution, does a ~50-word paragraph name the report revision and software version of the most recent full execution? If this is a single full execution, is that paragraph omitted?"
+    "If this is a partial execution, does a packed paragraph name the report revision and software version of the most recent full execution? If this is a single full execution, is that paragraph omitted?"
   ),
   llm(
     "purpose.vcs",
@@ -83,12 +83,12 @@ const SCOPE_CRITERIA: CriterionDefinition[] = [
   llm(
     "scope.boundaries",
     "Product, configurations, and where requirements are documented are stated",
-    "Does the first ~77-word paragraph name the product, how configurations are tracked (TOP/CUS/SUB), what makes them different, and the requirements document plus test-plan revision?"
+    "Does the first packed paragraph name the product, how configurations are tracked (TOP/CUS/SUB), what makes them different, and the requirements document plus test-plan revision?"
   ),
   llm(
     "scope.exclusions",
     "Which configurations were tested, and why some requirements are not repeated, is stated",
-    "Does the second ~114-word paragraph say whether testing ran on all configurations and give the reasons a requirement might not be repeated on every platform?"
+    "Does the second packed paragraph say whether testing ran on all configurations and give the reasons a requirement might not be repeated on every platform?"
   ),
   llm(
     "scope.software_under_test",
@@ -173,7 +173,7 @@ const DEVIATIONS_CRITERIA: CriterionDefinition[] = [
   llm(
     "deviations.stated",
     "Each execution block states the deviation count and appendix, or explicit none",
-    "Does each block open with a ~36-word lead-in giving the count (words and numerals), full/partial, protocol, and the appendix for approved deviation forms? If there were none, is that explicit?"
+    "Does each block open with a packed lead-in giving the count (words and numerals), full/partial, protocol, and the appendix for approved deviation forms? If there were none, is that explicit?"
   ),
   llm(
     "deviations.impact",
@@ -392,7 +392,7 @@ export const convergentDesignVerificationDefinition: DocumentTypeDefinition = {
     base: CONVERGENT_DV_BASE_PROMPT,
     perSection: {
       purpose:
-        "SECTION ROLE - PURPOSE: Judge the four-paragraph recipe (omit paragraph 2 if a single full execution): what this revision presents, protocol executed, partial-execution rationale, VCS bullets, and build-number explanation. Target ~200 words.",
+        "SECTION ROLE - PURPOSE: Judge the four-paragraph recipe (omit paragraph 2 if a single full execution): what this revision presents, protocol executed, partial-execution rationale, VCS bullets, and build-number explanation. Packed paragraphs, not padded to a word count.",
       scope:
         "SECTION ROLE - SCOPE: Judge product/configurations, why some requirements are not repeated on every platform, and the Software Under Test table (version | reason for build) segregated by test-plan revision.",
       testers_dates:
@@ -415,7 +415,7 @@ export const convergentDesignVerificationDefinition: DocumentTypeDefinition = {
   chat: {
     persona: `You are the drafting assistant for Convergent Dental software design verification reports used in regulated medical device environments. You help design quality and R&D staff document Solea software verification under design controls (ISO 13485 / 21 CFR 820.30 / IEC 62304).
 
-Follow the report recipe: execution blocks (oldest test-plan revision first), stated paragraph counts and approximate word counts, and the fixed table schemas. Do not invent test results, equipment IDs, dates, requirement text, or JIRA tickets the engineer has not provided.
+Follow the report recipe: execution blocks (oldest test-plan revision first), structure and relative verbosity (not word counts), omit-if / full-vs-partial switches, and the fixed table schemas. Do not invent test results, equipment IDs, dates, requirement text, or JIRA tickets the engineer has not provided.
 
 The report is graded against fixed quality criteria (a traffic-light check). Your job is to help the engineer produce a first draft that satisfies as many criteria as possible, then refine it.
 

@@ -54,7 +54,7 @@ describe("Convergent customer pack", () => {
   it("uses convergent DV sections, table headers, and prompt version", () => {
     const def = buildDesignVerificationDefinition(CONVERGENT_PACK);
     expect(def.prompts.promptVersion).toBe(CONVERGENT_PROMPT_VERSION);
-    expect(def.prompts.promptVersion).toBe("convergent-dv-v6");
+    expect(def.prompts.promptVersion).toBe("convergent-dv-v7");
     expect(def.sections.map((s) => s.key)).toEqual([...CONVERGENT_DV_SECTION_KEYS]);
     expect(def.sections.find((s) => s.key === "cover_page")).toBeUndefined();
     expect(CONVERGENT_DV_SECTION_LABELS.purpose).toBe("Purpose");
@@ -86,10 +86,26 @@ describe("Convergent customer pack", () => {
       "NEVER include a markdown table or Req. ID / Satisfied by / P/F rows here"
     );
     expect(def.chat.draftingGuidance).toContain(
-      "4 paragraphs, ~200 words"
+      "omit paragraph 2 if a single full execution"
     );
     expect(def.chat.draftingGuidance).toContain(
+      "SAMPLE inventory is not a quota"
+    );
+    expect(def.chat.draftingGuidance).not.toMatch(/~\d+ words/);
+    expect(def.chat.draftingGuidance).toContain(
       "There are no separate start/end date fields"
+    );
+    expect(def.chat.draftingGuidance).toContain(
+      "The purpose of this revision of this report"
+    );
+    expect(def.chat.draftingGuidance).toContain(
+      "Software version numbers (scheme `mm.nn.ff.bb`"
+    );
+    expect(def.chat.draftingGuidance).toContain(
+      "that primer is required inside Purpose paragraphs 3–4"
+    );
+    expect(def.chat.draftingGuidance).toContain(
+      "This is the only place the"
     );
     expect(
       def.criteriaBySection.testers_dates?.find((c) => c.key === "testers.dates")

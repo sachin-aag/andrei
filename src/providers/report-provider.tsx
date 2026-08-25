@@ -23,7 +23,6 @@ import type {
 } from "@/types/sections";
 import { EMPTY_CONTENT, REPORT_SECTION_ROW_ORDER } from "@/types/sections";
 import type { SectionType } from "@/db/schema";
-import { mergeSection } from "@/lib/sections-merge";
 import {
   getDocumentType,
   getEvaluatableSections,
@@ -1272,15 +1271,15 @@ export function useGenericReportSection<T = unknown>(
   section: string
 ): ReportSectionContextValue<T> {
   const { sections, updateSection, replaceSection } = useReportSections();
-  const value = (sections[section] ?? {}) as T;
+  const raw = sections[section];
   return useMemo(
     () => ({
-      value,
+      value: (raw ?? {}) as T,
       update: (updater: (prev: T) => T) =>
         updateSection(section, (prev) => updater(prev as T)),
       replace: (next: T) => replaceSection(section, next),
     }),
-    [section, value, updateSection, replaceSection]
+    [section, raw, updateSection, replaceSection]
   );
 }
 

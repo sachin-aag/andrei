@@ -28,6 +28,18 @@ export function coerceChatPace(value: unknown): ChatPace {
 }
 
 const memory = new Map<string, ChatComposerPrefs>();
+const listeners = new Set<() => void>();
+
+function notifyChatComposerPrefsListeners() {
+  for (const listener of listeners) listener();
+}
+
+export function subscribeChatComposerPrefs(onStoreChange: () => void): () => void {
+  listeners.add(onStoreChange);
+  return () => {
+    listeners.delete(onStoreChange);
+  };
+}
 
 export function chatComposerPrefsStorageKey(
   userId: string,
@@ -47,6 +59,7 @@ export function parseChatComposerPrefs(raw: unknown): ChatComposerPrefs | null {
 /** Test helper — module cache otherwise leaks across cases. */
 export function resetChatComposerPrefsStore(): void {
   memory.clear();
+  notifyChatComposerPrefsListeners();
 }
 
 function readFromLocalStorage(key: string): ChatComposerPrefs | null {
@@ -92,4 +105,5 @@ export function writeChatComposerPrefs(
   const key = chatComposerPrefsStorageKey(userId, reportId);
   memory.set(key, prefs);
   writeToLocalStorage(key, prefs);
+  notifyChatComposerPrefsListeners();
 }

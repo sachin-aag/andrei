@@ -25,7 +25,6 @@ import {
   prependNodesToDoc,
   richJsonToPlainText,
 } from "@/lib/tiptap/rich-text";
-import type { SectionType } from "@/db/schema";
 
 export function mergeDefineSection(content: unknown): DefineSection {
   const base = EMPTY_CONTENT.define;

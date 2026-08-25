@@ -20,6 +20,8 @@ vi.mock("@/components/report/pdf-page-preview", () => ({
     page: number;
     sizeBytes?: number;
   }) => (
+    // Mock preview — next/image is not under test here.
+    // eslint-disable-next-line @next/next/no-img-element
     <img
       alt={`${title}, page ${page}`}
       src="data:image/png;base64,abc"

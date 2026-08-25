@@ -94,7 +94,8 @@ docs/convergent-onboarding-temporary-passwords.md
 # Local-only demo DV Word template (do not commit)
 /templates/design-verification-report-template.docx
 
-# Local DV report recipe Word docs (do not commit)
+# Local DV report recipe Word docs (do not commit; under convergent/)
+/convergent/dvreportrecipe/
 /dvreportrecipe/
 
 # Local customer PDFs / working copies (do not commit)
@@ -105,6 +106,11 @@ docs/convergent-onboarding-temporary-passwords.md
 /822-*.pdf
 /775-*.pdf
 /790-00134R-RevU-Andrei-draft-report-sections.md
+
+# Root-level Word working copies (customer reports, scratch). Do not use
+# a repo-wide *.docx — export templates, e2e fixtures, and docs/ samples
+# must stay tracked.
+/*.docx
 
 # Ralph loop local scratch (do not commit)
 .cursor/ralph/scratchpad.md

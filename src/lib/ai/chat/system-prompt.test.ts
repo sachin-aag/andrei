@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("bumps the prompt version when section inline image guidance changes", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v37-convergent-recipe-structure");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v40-convergent-version-numbers");
   });
 
   it("puts citations at the end of the section when the pack mode is on", () => {
