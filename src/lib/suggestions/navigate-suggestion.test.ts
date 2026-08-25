@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  firstGeneratedSuggestion,
   firstGeneratedSuggestionSection,
   GUTTER_BRIDGE_VIEWPORT_MARGIN_PX,
+  openGeneratedSuggestionById,
   packGutterAnchors,
   rectIntersectsViewport,
   sectionOverflowPx,
@@ -240,9 +242,16 @@ const INVESTIGATION_SECTION_ORDER = [
   "conclusion",
 ] as const;
 
-describe("firstGeneratedSuggestionSection", () => {
+describe("firstGeneratedSuggestion", () => {
   it("returns null when every open suggestion was already known", () => {
     const existing = suggestionComment({ id: "c1" });
+    expect(
+      firstGeneratedSuggestion(
+        new Set(["c1"]),
+        [existing],
+        INVESTIGATION_SECTION_ORDER
+      )
+    ).toBeNull();
     expect(
       firstGeneratedSuggestionSection(
         new Set(["c1"]),
@@ -250,6 +259,33 @@ describe("firstGeneratedSuggestionSection", () => {
         INVESTIGATION_SECTION_ORDER
       )
     ).toBeNull();
+  });
+
+  it("picks the topmost new card, not the first already-open suggestion", () => {
+    const comments = [
+      suggestionComment({
+        id: "old-define",
+        section: "define",
+        createdAt: "2026-01-01T00:00:00Z",
+      }),
+      suggestionComment({
+        id: "new-define-later",
+        section: "define",
+        createdAt: "2026-01-03T00:00:00Z",
+      }),
+      suggestionComment({
+        id: "new-define",
+        section: "define",
+        createdAt: "2026-01-02T00:00:00Z",
+      }),
+    ];
+    expect(
+      firstGeneratedSuggestion(
+        new Set(["old-define"]),
+        comments,
+        INVESTIGATION_SECTION_ORDER
+      )?.id
+    ).toBe("new-define");
   });
 
   it("picks the topmost new section, not the latest timestamp", () => {
@@ -271,6 +307,13 @@ describe("firstGeneratedSuggestionSection", () => {
       }),
     ];
     expect(
+      firstGeneratedSuggestion(
+        new Set(["old"]),
+        comments,
+        INVESTIGATION_SECTION_ORDER
+      )?.id
+    ).toBe("new-measure");
+    expect(
       firstGeneratedSuggestionSection(
         new Set(["old"]),
         comments,
@@ -289,6 +332,13 @@ describe("firstGeneratedSuggestionSection", () => {
         createdAt: `2026-01-01T00:00:0${i}Z`,
       })
     );
+    expect(
+      firstGeneratedSuggestion(
+        new Set(),
+        comments.toReversed(),
+        INVESTIGATION_SECTION_ORDER
+      )?.id
+    ).toBe("new-define");
     expect(
       firstGeneratedSuggestionSection(
         new Set(),
@@ -318,7 +368,7 @@ describe("firstGeneratedSuggestionSection", () => {
       }),
     ];
     expect(
-      firstGeneratedSuggestionSection(
+      firstGeneratedSuggestion(
         new Set(),
         comments,
         INVESTIGATION_SECTION_ORDER
@@ -328,7 +378,7 @@ describe("firstGeneratedSuggestionSection", () => {
 
   it("treats a new redraft as a generated card", () => {
     expect(
-      firstGeneratedSuggestionSection(
+      firstGeneratedSuggestion(
         new Set(),
         [
           suggestionComment({
@@ -338,7 +388,25 @@ describe("firstGeneratedSuggestionSection", () => {
           }),
         ],
         ["purpose_scope", "references"]
-      )
-    ).toBe("purpose_scope");
+      )?.id
+    ).toBe("draft");
+  });
+});
+
+describe("openGeneratedSuggestionById", () => {
+  it("returns the matching open AI suggestion", () => {
+    const comments = [
+      suggestionComment({ id: "old" }),
+      suggestionComment({ id: "new", section: "measure" }),
+    ];
+    expect(openGeneratedSuggestionById(comments, "new")?.section).toBe(
+      "measure"
+    );
+  });
+
+  it("does not fall back to another open suggestion", () => {
+    const comments = [suggestionComment({ id: "old" })];
+    expect(openGeneratedSuggestionById(comments, "missing")).toBeNull();
+    expect(openGeneratedSuggestionById(comments, null)).toBeNull();
   });
 });
