@@ -304,34 +304,6 @@ export function firstGeneratedSuggestion(
 }
 
 /**
- * Section of the first newly generated open AI suggestion, in document
- * order. Prefer {@link firstGeneratedSuggestion} when the caller needs
- * the card itself (scroll / focus).
- */
-export function firstGeneratedSuggestionSection(
-  previousIds: ReadonlySet<string>,
-  comments: readonly CommentRecord[],
-  sectionOrder: readonly SectionType[]
-): SectionType | null {
-  return firstGeneratedSuggestion(previousIds, comments, sectionOrder)
-    ?.section ?? null;
-}
-
-/** Open AI suggestion matching `commentId`, if it is still in the queue. */
-export function openGeneratedSuggestionById(
-  comments: readonly CommentRecord[],
-  commentId: string | null
-): CommentRecord | null {
-  if (!commentId) return null;
-  const comment = comments.find((c) => c.id === commentId);
-  if (!comment) return null;
-  if (comment.parentId) return null;
-  if (comment.status !== "open") return null;
-  if (!isAiSuggestionKind(comment.kind)) return null;
-  return comment;
-}
-
-/**
  * Vertical center of the section's suggestion gutter card, in gutter-container
  * coordinates (same space as `GutterAnchor.desiredTop` with `valignCenter`).
  */

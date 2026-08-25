@@ -31,10 +31,7 @@ import {
 } from "@/lib/comments/navigate";
 import { evaluatableSectionKeys } from "@/lib/ai/criteria-view";
 import { getWorkspaceSections } from "@/lib/document-types";
-import {
-  openGeneratedSuggestionById,
-  scrollToGeneratedSuggestion,
-} from "@/lib/suggestions/navigate-suggestion";
+import { scrollToGeneratedSuggestion } from "@/lib/suggestions/navigate-suggestion";
 import { captureEvent } from "@/lib/analytics/events";
 import { cn } from "@/lib/utils";
 import { useWorkspaceLayout } from "@/hooks/use-workspace-layout";
@@ -134,8 +131,7 @@ export function ReportWorkspace({
   const { pendingPlaceholders } = useReportPlaceholders();
   const { getEditor } = useReportEditors();
   const { requestCommentFocus, comments } = useReportComments();
-  const { suggestionsFocusSection, suggestionsFocusCommentId, clearSuggestionsFocusSection } =
-    useReportEvaluations();
+  const { suggestionsFocus, clearSuggestionsFocus } = useReportEvaluations();
   const { activeAttachmentId } = useReportAttachments();
   const [criteriaFocusSection, setCriteriaFocusSection] = useState<
     SectionType | undefined
@@ -325,8 +321,8 @@ export function ReportWorkspace({
   }, []);
 
   useEffect(() => {
-    if (!suggestionsFocusSection) return;
-    const section = suggestionsFocusSection;
+    if (!suggestionsFocus) return;
+    const { section, commentId } = suggestionsFocus;
     setCriteriaFocusSection(section);
     // Suggestions live in the review margin. Keep the assistant collapsed
     // so the gutter is visible — do not auto-open the right panel.
@@ -339,15 +335,12 @@ export function ReportWorkspace({
     const finish = (scrolled: boolean) => {
       if (cancelled) return;
       if (!scrolled) jumpToSection(section);
-      clearSuggestionsFocusSection();
+      clearSuggestionsFocus();
     };
 
     const attempt = (index: number) => {
       if (cancelled) return;
-      const active = openGeneratedSuggestionById(
-        comments,
-        suggestionsFocusCommentId
-      );
+      const active = comments.find((c) => c.id === commentId) ?? null;
       if (active) {
         requestCommentFocus(active.id);
         if (scrollToGeneratedSuggestion(active)) {
@@ -398,9 +391,8 @@ export function ReportWorkspace({
       for (const id of timeouts) clearTimeout(id);
     };
   }, [
-    suggestionsFocusSection,
-    suggestionsFocusCommentId,
-    clearSuggestionsFocusSection,
+    suggestionsFocus,
+    clearSuggestionsFocus,
     jumpToSection,
     comments,
     requestCommentFocus,
