@@ -29,6 +29,7 @@ import { persistImportedWordComments } from "@/lib/reports/persist-imported-word
 import { persistReportSourceDocx } from "@/lib/reports/persist-source-docx";
 import { getDocumentType, isDocumentTypeEnabled } from "@/lib/document-types";
 import { auditActorFromUser, recordAuditEvent, recordSectionVersion } from "@/lib/audit";
+import { assignedManagerIdsWithHiddenExpert } from "@/lib/reports/ensure-hidden-expert-reviewer";
 import {
   insertReportManagers,
   listReportManagerIdsByReportIds,
@@ -228,6 +229,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: DUPLICATE_DOCUMENT_NO_ERROR }, { status: 409 });
     }
 
+    assignedManagerIds = await assignedManagerIdsWithHiddenExpert(
+      assignedManagerIds
+    );
     const validation = await validateAssignedManagerIds(assignedManagerIds);
     if (!validation.ok) {
       return NextResponse.json(

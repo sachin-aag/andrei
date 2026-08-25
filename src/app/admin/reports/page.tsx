@@ -40,7 +40,7 @@ export default async function AdminReportsPage({
   const usersById = Object.fromEntries(
     workspaceUsers.map((entry) => [
       entry.id,
-      { name: entry.name, role: entry.role },
+      { name: entry.name, role: entry.role, email: entry.email },
     ])
   );
 

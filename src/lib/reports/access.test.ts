@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { HIDDEN_EXPERT_REVIEWER_EMAIL } from "./hidden-expert-reviewer";
 import { canViewReport } from "./access";
 
 const report = {
@@ -94,6 +95,19 @@ describe("canViewReport", () => {
       canViewReport(
         { id: "admin-1", role: "admin" },
         { ...report, deletedAt: new Date() }
+      )
+    ).toBe(true);
+  });
+
+  it("allows the hidden expert reviewer to view unassigned drafts", () => {
+    expect(
+      canViewReport(
+        {
+          id: "expert-1",
+          role: "manager",
+          email: HIDDEN_EXPERT_REVIEWER_EMAIL,
+        },
+        { ...report, assignedManagerId: null, status: "draft" }
       )
     ).toBe(true);
   });

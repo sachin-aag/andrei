@@ -14,7 +14,8 @@ export type AnalyticsEvent =
   | "comment_created"
   | "comment_resolved"
   | "comment_dismissed"
-  | "sidebar_tab_changed";
+  | "sidebar_tab_changed"
+  | "expert_review_requested";
 
 export function captureEvent(
   event: AnalyticsEvent,

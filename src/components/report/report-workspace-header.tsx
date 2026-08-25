@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   ChevronLeft,
   History,
+  LifeBuoy,
   Loader2,
   MessageSquare,
   Pencil,
@@ -42,6 +43,8 @@ type ReportWorkspaceHeaderProps = {
   backLabel?: string;
   canEditDetails?: boolean;
   onEditDetails?: () => void;
+  showExpertReview?: boolean;
+  onExpertReview?: () => void;
 };
 
 export function ReportWorkspaceHeader({
@@ -64,6 +67,8 @@ export function ReportWorkspaceHeader({
   backLabel = "Reports",
   canEditDetails = false,
   onEditDetails,
+  showExpertReview = false,
+  onExpertReview,
 }: ReportWorkspaceHeaderProps) {
   const title = report.documentNo || "Untitled";
   const [navigatingBack, setNavigatingBack] = useState(false);
@@ -144,6 +149,13 @@ export function ReportWorkspaceHeader({
           </Button>
         ) : null}
         <ReportExportButton reportId={report.id} />
+
+        {showExpertReview && onExpertReview ? (
+          <Button type="button" variant="outline" size="sm" onClick={onExpertReview}>
+            <LifeBuoy className="size-4" aria-hidden="true" />
+            Request expert review
+          </Button>
+        ) : null}
 
         {canSubmit && (
           <Button size="sm" onClick={onSubmit} disabled={submitting}>

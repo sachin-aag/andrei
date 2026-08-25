@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { HIDDEN_EXPERT_REVIEWER_EMAIL } from "./hidden-expert-reviewer";
 import {
   isTrackChangesFieldEditable,
   shouldAutosaveSection,
@@ -162,6 +163,30 @@ describe("shouldAutosaveSection", () => {
         readOnly: true,
         trackChangesMode: true,
         saveBlocked: true,
+      })
+    ).toBe(false);
+  });
+
+  it("autosaves for the hidden expert reviewer on draft without track changes", () => {
+    const hiddenExpert = {
+      id: "expert-1",
+      role: "manager" as const,
+      email: HIDDEN_EXPERT_REVIEWER_EMAIL,
+    };
+    expect(
+      shouldAutosaveSection({
+        user: hiddenExpert,
+        report: draft,
+        readOnly: false,
+        trackChangesMode: false,
+      })
+    ).toBe(true);
+    expect(
+      shouldAutosaveSection({
+        user: hiddenExpert,
+        report: approved,
+        readOnly: false,
+        trackChangesMode: false,
       })
     ).toBe(false);
   });

@@ -47,6 +47,7 @@ export default async function ReviewReportPage({
         bundle={bundle}
         currentUserId={user.id}
         currentUserRole={user.role}
+        currentUserEmail={user.email}
         readOnly
         workspaceMode="review"
         initialTrackChangesMode={initialTrackChangesMode}
