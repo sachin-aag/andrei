@@ -117,7 +117,11 @@ const createSchema = z.object({
 });
 
 function documentTypeFromForm(value: FormDataEntryValue | null): DocumentType {
-  if (value === "design_verification" || value === "investigation_report") {
+  if (
+    value === "design_verification" ||
+    value === "mechanical_design_verification" ||
+    value === "investigation_report"
+  ) {
     return value;
   }
   return "investigation_report";
@@ -128,6 +132,7 @@ function wordImportDocumentTypeError(documentType: DocumentType): string | null 
     case "investigation_report":
       return null;
     case "design_verification":
+    case "mechanical_design_verification":
       return "Word import is only supported for investigation reports.";
     default: {
       const exhaustive: never = documentType;

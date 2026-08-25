@@ -240,6 +240,7 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("recommendedInventory");
     expect(prompt).toContain("allIdentifiers");
     expect(prompt).toContain("SW-SST-5.1.1 is not SW-SST-5");
+    expect(prompt).toContain("M3-SYS-FN-037 is not SYS-FN-037");
     expect(prompt).not.toContain(
       "MUST call search_documents (or use the evidence preview below) BEFORE ask_user or draft_field"
     );

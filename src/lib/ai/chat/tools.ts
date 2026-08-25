@@ -243,7 +243,7 @@ function resultsTableInventoryMismatch(
   const unexpected = comparison.unexpectedIds.join(", ") || "none";
   return {
     status: "inventory_mismatch",
-    message: `Results matrix IDs do not match the recommended inventory (${inventory.sourceKind}). Preserve exact dotted suffixes; SW-SST-5.1.1 is not SW-SST-5. Missing: ${missing}. Unexpected: ${unexpected}. Retry draft_field with one row per recommendedInventory ID.`,
+    message: `Results matrix IDs do not match the recommended inventory (${inventory.sourceKind}). Preserve each ID exactly, including its family prefix and any dotted suffix; M3-SYS-FN-037 is not SYS-FN-037, and SW-SST-5.1.1 is not SW-SST-5. Missing: ${missing}. Unexpected: ${unexpected}. Retry draft_field with one row per recommendedInventory ID.`,
     expectedIds: inventory.ids,
     missingIds: comparison.missingIds,
     unexpectedIds: comparison.unexpectedIds,

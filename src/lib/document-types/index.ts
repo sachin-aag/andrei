@@ -2,6 +2,7 @@ import type { DocumentType } from "@/db/schema";
 import { isDocumentTypeEnabled, getCustomerPack } from "@/lib/customers/packs";
 import { buildInvestigationReportDefinition } from "./investigation-report";
 import { buildDesignVerificationDefinition } from "./design-verification";
+import { mechanicalDesignVerificationDefinition } from "./mechanical-design-verification";
 import type {
   CriterionDefinition,
   DocumentTypeDefinition,
@@ -21,6 +22,8 @@ export function getDocumentType(type: DocumentType): DocumentTypeDefinition {
       return buildInvestigationReportDefinition();
     case "design_verification":
       return buildDesignVerificationDefinition();
+    case "mechanical_design_verification":
+      return mechanicalDesignVerificationDefinition;
     default: {
       const exhaustive: never = type;
       throw new Error(`Unknown document type: ${exhaustive}`);
@@ -31,7 +34,11 @@ export function getDocumentType(type: DocumentType): DocumentTypeDefinition {
 export function resolveDocumentType(
   type: DocumentType | null | undefined
 ): DocumentType {
-  if (type === "investigation_report" || type === "design_verification") {
+  if (
+    type === "investigation_report" ||
+    type === "design_verification" ||
+    type === "mechanical_design_verification"
+  ) {
     return type;
   }
   return "investigation_report";

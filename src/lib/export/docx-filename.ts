@@ -12,6 +12,8 @@ export function reportExportDocxFileName(
   switch (documentType) {
     case "design_verification":
       return `Design_Verification_Report_${safe}${suffix}.docx`;
+    case "mechanical_design_verification":
+      return `Mechanical_DV_Report_${safe}${suffix}.docx`;
     case "investigation_report":
       return `Investigation_Report_${safe}${suffix}.docx`;
     default: {
@@ -25,6 +27,8 @@ export function reportExportDocxArchiveName(documentType: DocumentType): string 
   switch (documentType) {
     case "design_verification":
       return "design-verification-report.docx";
+    case "mechanical_design_verification":
+      return "mechanical-dv-report.docx";
     case "investigation_report":
       return "investigation-report.docx";
     default: {

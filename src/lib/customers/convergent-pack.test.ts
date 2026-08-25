@@ -23,11 +23,17 @@ import {
 } from "@/lib/document-types/design-verification/sections";
 
 describe("Convergent customer pack", () => {
-  it("enables only design verification", () => {
-    expect(CONVERGENT_PACK.enabledDocumentTypes).toEqual(["design_verification"]);
+  it("enables both design verification types and no investigation report", () => {
+    expect(CONVERGENT_PACK.enabledDocumentTypes).toEqual([
+      "design_verification",
+      "mechanical_design_verification",
+    ]);
     expect(isDocumentTypeEnabled("design_verification", CONVERGENT_PACK)).toBe(
       true
     );
+    expect(
+      isDocumentTypeEnabled("mechanical_design_verification", CONVERGENT_PACK)
+    ).toBe(true);
     expect(isDocumentTypeEnabled("investigation_report", CONVERGENT_PACK)).toBe(
       false
     );
