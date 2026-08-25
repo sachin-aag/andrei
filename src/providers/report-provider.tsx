@@ -84,6 +84,14 @@ export type SuggestionQueueBridge = {
   nextCommentId: string;
 };
 
+type SuggestionApplyTransition = {
+  holdInlinePreview: boolean;
+  gutterAnchorCommentId: string;
+  mode: SuggestionApplyMode;
+  parkCenterY?: number;
+  bridge?: SuggestionQueueBridge;
+};
+
 export type EditorRegistryEntry = {
   editor: Editor;
   section: SectionType;
@@ -177,11 +185,12 @@ type ReportContextValue = {
       }
     >
   >;
-  /** Set after suggestions succeed — workspace opens Criteria tab for this section. */
-  suggestionsFocusSection: SectionType | null;
-  /** First newly generated card to scroll to (not the first already-open card). */
-  suggestionsFocusCommentId: string | null;
-  clearSuggestionsFocusSection: () => void;
+  /**
+   * Set after suggestions succeed — workspace opens Criteria for this
+   * section and scrolls to this newly generated card (not the first open).
+   */
+  suggestionsFocus: { section: SectionType; commentId: string } | null;
+  clearSuggestionsFocus: () => void;
   /** Unfilled `<to be filled>` placeholders across the live document. */
   pendingPlaceholders: Placeholder[];
   /** Placeholder panel fill input is focused — highlights the matching span in the doc. */
@@ -294,9 +303,8 @@ type ReportEvaluationContextValue = Pick<
   | "enterSuggestionQueueBridge"
   | "endSuggestionApplyTransition"
   | "suggestionApplyTransition"
-  | "suggestionsFocusSection"
-  | "suggestionsFocusCommentId"
-  | "clearSuggestionsFocusSection"
+  | "suggestionsFocus"
+  | "clearSuggestionsFocus"
   | "setEvaluations"
 >;
 
@@ -414,11 +422,13 @@ export function ReportProvider({
   useEffect(() => {
     commentsRef.current = comments;
   }, [comments]);
-  const [suggestionsFocusSection, setSuggestionsFocusSection] =
-    useState<SectionType | null>(null);
-  const [suggestionsFocusCommentId, setSuggestionsFocusCommentId] = useState<
-    string | null
-  >(null);
+  const [suggestionsFocus, setSuggestionsFocus] = useState<{
+    section: SectionType;
+    commentId: string;
+  } | null>(null);
+  const [suggestionApplyTransition, setSuggestionApplyTransition] = useState<
+    Partial<Record<SectionType, SuggestionApplyTransition>>
+  >({});
   const [isEvaluating, setIsEvaluating] = useState(false);
   const [overflowCounts, setOverflowCounts] = useState<
     Partial<Record<SectionType, number>>
@@ -622,8 +632,13 @@ export function ReportProvider({
       getWorkspaceSections(data.report.documentType).map((s) => s.key)
     );
     if (generated?.section) {
-      setSuggestionsFocusSection(generated.section);
-      setSuggestionsFocusCommentId(generated.id);
+      // A parked "Go to next" bridge pins the gutter to the previous section.
+      // Clear it so scroll/focus land on the newly generated card.
+      setSuggestionApplyTransition({});
+      setSuggestionsFocus({
+        section: generated.section,
+        commentId: generated.id,
+      });
     }
   }, [bundle.report.id, flushPendingSectionSaves]);
 
@@ -641,16 +656,6 @@ export function ReportProvider({
     SectionType[]
   >([]);
   const [isSuggesting, setIsSuggesting] = useState(false);
-  type SuggestionApplyTransition = {
-    holdInlinePreview: boolean;
-    gutterAnchorCommentId: string;
-    mode: SuggestionApplyMode;
-    parkCenterY?: number;
-    bridge?: SuggestionQueueBridge;
-  };
-  const [suggestionApplyTransition, setSuggestionApplyTransition] = useState<
-    Partial<Record<SectionType, SuggestionApplyTransition>>
-  >({});
 
   // Mirror of `sections` for callbacks that must read latest draft without widening deps.
   const sectionsRef = useRef<SectionContents>(sections);
@@ -773,11 +778,6 @@ export function ReportProvider({
           }
         }
         if (applied?.length) {
-          setSuggestionsFocusSection(section);
-          const fallbackId = applied[0]?.suggestionId;
-          if (fallbackId) {
-            setSuggestionsFocusCommentId((prev) => prev ?? fallbackId);
-          }
           toast.success(
             `Generated ${applied.length} suggestion${applied.length === 1 ? "" : "s"} — see inline preview in the narrative`
           );
@@ -808,9 +808,8 @@ export function ReportProvider({
     [bundle.report.id, refresh]
   );
 
-  const clearSuggestionsFocusSection = useCallback(() => {
-    setSuggestionsFocusSection(null);
-    setSuggestionsFocusCommentId(null);
+  const clearSuggestionsFocus = useCallback(() => {
+    setSuggestionsFocus(null);
   }, []);
 
   const beginSuggestionApplyTransition = useCallback(
@@ -1089,9 +1088,8 @@ export function ReportProvider({
       enterSuggestionQueueBridge,
       endSuggestionApplyTransition,
       suggestionApplyTransition,
-      suggestionsFocusSection,
-      suggestionsFocusCommentId,
-      clearSuggestionsFocusSection,
+      suggestionsFocus,
+      clearSuggestionsFocus,
       setEvaluations,
     }),
     [
@@ -1110,9 +1108,8 @@ export function ReportProvider({
       enterSuggestionQueueBridge,
       endSuggestionApplyTransition,
       suggestionApplyTransition,
-      suggestionsFocusSection,
-      suggestionsFocusCommentId,
-      clearSuggestionsFocusSection,
+      suggestionsFocus,
+      clearSuggestionsFocus,
     ]
   );
 
