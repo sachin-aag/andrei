@@ -87,6 +87,14 @@ export type SuggestionQueueBridge = {
   nextCommentId: string;
 };
 
+type SuggestionApplyTransition = {
+  holdInlinePreview: boolean;
+  gutterAnchorCommentId: string;
+  mode: SuggestionApplyMode;
+  parkCenterY?: number;
+  bridge?: SuggestionQueueBridge;
+};
+
 export type EditorRegistryEntry = {
   editor: Editor;
   section: SectionType;
@@ -417,6 +425,9 @@ export function ReportProvider({
     section: SectionType;
     commentId: string;
   } | null>(null);
+  const [suggestionApplyTransition, setSuggestionApplyTransition] = useState<
+    Partial<Record<SectionType, SuggestionApplyTransition>>
+  >({});
   const [isEvaluating, setIsEvaluating] = useState(false);
   const [overflowCounts, setOverflowCounts] = useState<
     Partial<Record<SectionType, number>>
@@ -620,6 +631,9 @@ export function ReportProvider({
       getWorkspaceSections(data.report.documentType).map((s) => s.key)
     );
     if (generated?.section) {
+      // A parked "Go to next" bridge pins the gutter to the previous section.
+      // Clear it so scroll/focus land on the newly generated card.
+      setSuggestionApplyTransition({});
       setSuggestionsFocus({
         section: generated.section,
         commentId: generated.id,
@@ -641,16 +655,6 @@ export function ReportProvider({
     SectionType[]
   >([]);
   const [isSuggesting, setIsSuggesting] = useState(false);
-  type SuggestionApplyTransition = {
-    holdInlinePreview: boolean;
-    gutterAnchorCommentId: string;
-    mode: SuggestionApplyMode;
-    parkCenterY?: number;
-    bridge?: SuggestionQueueBridge;
-  };
-  const [suggestionApplyTransition, setSuggestionApplyTransition] = useState<
-    Partial<Record<SectionType, SuggestionApplyTransition>>
-  >({});
 
   // Mirror of `sections` for callbacks that must read latest draft without widening deps.
   const sectionsRef = useRef<SectionContents>(sections);
