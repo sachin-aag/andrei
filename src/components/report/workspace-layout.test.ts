@@ -63,6 +63,12 @@ describe("isReviewGutterVisible", () => {
     expect(isReviewGutterVisible(true)).toBe(true);
     expect(isReviewGutterVisible(false)).toBe(false);
   });
+
+  it("hides the review margin while a PDF or Word document is open", () => {
+    expect(isReviewGutterVisible(true, true)).toBe(false);
+    expect(isReviewGutterVisible(false, true)).toBe(false);
+    expect(isReviewGutterVisible(true, false)).toBe(true);
+  });
 });
 
 describe("mainMinWidth", () => {

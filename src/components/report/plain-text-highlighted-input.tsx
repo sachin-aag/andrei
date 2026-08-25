@@ -33,7 +33,7 @@ import type { SectionType } from "@/db/schema";
 import { cn } from "@/lib/utils";
 
 const fieldTypography =
-  "px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap break-words";
+  "min-w-0 wrap-anywhere px-3 py-2 text-sm leading-relaxed whitespace-pre-wrap break-words";
 
 export function PlainTextHighlightedInput({
   value,
