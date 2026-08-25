@@ -1,12 +1,15 @@
 import type { JSONContent } from "@tiptap/core";
 import { isAllowedChatImageMediaType } from "@/lib/ai/chat/image-parts";
 import { CHAT_SECTION_IMAGE_MAX_DATA_URL_CHARS } from "@/lib/ai/chat/section-images";
+import { parseChartSpec, type ChartSpec } from "@/lib/charts/chart-spec";
 
 export type SuggestionImageInsert = {
   src: string;
   alt?: string | null;
   width?: number | null;
   mediaId?: string | null;
+  /** Audit trail for agent-generated plots. Absent on human photos. */
+  chartSpec?: ChartSpec | null;
 };
 
 const DATA_URL_RE = /^data:([^;,]+);base64,/i;
@@ -29,11 +32,13 @@ export function parseSuggestionImageInsert(
   if (typeof value.src !== "string" || !isValidSuggestionImageSrc(value.src)) {
     return undefined;
   }
+  const chartSpec = parseChartSpec(value.chartSpec);
   return {
     src: value.src.trim(),
     alt: typeof value.alt === "string" ? value.alt : null,
     width: typeof value.width === "number" && Number.isFinite(value.width) ? value.width : null,
     mediaId: typeof value.mediaId === "string" ? value.mediaId : null,
+    ...(chartSpec ? { chartSpec } : {}),
   };
 }
 
@@ -67,6 +72,7 @@ export function pendingImageInlineNode(
       alt: image.alt ?? null,
       width: image.width ?? null,
       mediaId: image.mediaId ?? null,
+      chartSpec: parseChartSpec(image.chartSpec),
       suggestionId,
       suggestionKind: "insert",
     },
@@ -193,6 +199,7 @@ export type ListedInlineImage = {
   alt: string;
   width: number | null;
   mediaId: string | null;
+  chartSpec: ChartSpec | null;
 };
 
 /** 1-based document order of imageInline nodes (no vision cap). */
@@ -216,6 +223,7 @@ export function listInlineImagesInDoc(
             : null,
         mediaId:
           typeof node.attrs?.mediaId === "string" ? node.attrs.mediaId : null,
+        chartSpec: parseChartSpec(node.attrs?.chartSpec),
       });
       return;
     }
@@ -287,4 +295,31 @@ export function markImageForDeletion(
   };
   walk(doc);
   return marked;
+}
+
+/** Insert a pending figure immediately after the delete-marked node (in-place replace). */
+export function insertPendingImageAfterDeletionMark(
+  doc: JSONContent,
+  image: SuggestionImageInsert,
+  suggestionId: string
+): boolean {
+  const node = pendingImageInlineNode(image, suggestionId);
+  const walk = (parent: JSONContent): boolean => {
+    const content = parent.content;
+    if (!content) return false;
+    for (let i = 0; i < content.length; i++) {
+      const child = content[i]!;
+      if (
+        child.type === "imageInline" &&
+        child.attrs?.suggestionId === suggestionId &&
+        child.attrs?.suggestionKind === "delete"
+      ) {
+        content.splice(i + 1, 0, node);
+        return true;
+      }
+      if (walk(child)) return true;
+    }
+    return false;
+  };
+  return walk(doc);
 }

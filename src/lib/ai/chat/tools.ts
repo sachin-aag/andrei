@@ -34,6 +34,8 @@ import {
   sectionImageNotFoundMessage,
   type InsertImageSource,
 } from "@/lib/ai/chat/insert-image";
+import { executePlotMeasurements } from "@/lib/charts/plot-measurements";
+import type { ChartSpec } from "@/lib/charts/chart-spec";
 import { fieldContentHash } from "@/lib/suggestions/validate-suggestion";
 import {
   markdownHasImage,
@@ -1161,7 +1163,7 @@ export function buildChatTools(opts: {
 
     insert_image: tool({
       description:
-        `Insert one existing image into a rich narrative field as a reviewable suggestion (the engineer accepts or rejects it). section/targetField are the DESTINATION. For source=section, set image.section to the section the figure is in NOW (required when copying between sections) and pass image.id from read_section (e.g. 'narrative#1') or image.index. Do not generate new pixels. Do not put markdown image syntax in draft_field or propose_edit — those cannot create figures. Empty anchorText appends at the end of the field.${scopeHint}`,
+        `Insert one existing image into a rich narrative field as a reviewable suggestion (the engineer accepts or rejects it). section/targetField are the DESTINATION. For source=section, set image.section to the section the figure is in NOW (required when copying between sections) and pass image.id from read_section (e.g. 'narrative#1') or image.index. Do not generate new pixels — use plot_measurements when the engineer asked for a chart. Do not put markdown image syntax in draft_field or propose_edit — those cannot create figures. Empty anchorText appends at the end of the field.${scopeHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
@@ -1296,6 +1298,7 @@ export function buildChatTools(opts: {
             alt: string | null;
             width: number | null;
             mediaId: string | null;
+            chartSpec?: ChartSpec | null;
           };
         };
         if (source.source === "chat") {
@@ -1368,6 +1371,7 @@ export function buildChatTools(opts: {
               alt: hit.alt || null,
               width: hit.width,
               mediaId: hit.mediaId,
+              chartSpec: hit.chartSpec,
             },
           };
         }
@@ -1439,6 +1443,49 @@ export function buildChatTools(opts: {
           };
         }
       },
+    }),
+
+    plot_measurements: tool({
+      description:
+        `Extract cited numeric measurements from attachments, render a scatter plot, and propose it as a reviewable figure. Call this only when the engineer asked in words for a chart. Never invent data points — the tool extracts and validates number tokens from page transcripts. Restyle reuses the stored chartSpec; do not extract again. Empty anchorText appends at the end of the field.${scopeHint}`,
+      inputSchema: z.object({
+        section: z.enum(sectionEnum),
+        targetField: z
+          .string()
+          .describe("DESTINATION rich field path to insert into, e.g. 'narrative'."),
+        query: z
+          .string()
+          .min(1)
+          .max(200)
+          .describe("Requirement ID or measurement name to extract, e.g. M3-SYS-FN-037."),
+        title: z.string().max(120).optional(),
+        xLabel: z.string().max(60).optional(),
+        yLabel: z.string().max(80).optional(),
+        layout: z
+          .object({
+            mode: z.enum(["combined", "per-series"]).optional(),
+            seriesBy: z.enum(["unit", "none"]).optional(),
+            xAxis: z.enum(["sequential", "replicate"]).optional(),
+            yMax: z.number().finite().optional(),
+          })
+          .optional(),
+        anchorText: z
+          .string()
+          .default("")
+          .describe("Verbatim span from the field's text; '' appends at end."),
+        reasoning: z
+          .string()
+          .max(300)
+          .describe("One short sentence explaining why this chart belongs here."),
+      }),
+      execute: async (args) =>
+        executePlotMeasurements(args, {
+          reportId,
+          canEdit,
+          documentType,
+          retrievalPolicy,
+          documentReview,
+        }),
     }),
 
     remove_image: tool({
