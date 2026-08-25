@@ -20,6 +20,17 @@ async function loginWithTour(page: Page, productTour: boolean | "resume") {
   await gotoWithNavigationRetry(page, "/", { waitUntil: "load" });
 }
 
+async function waitForWalkthroughStatus(page: Page, status: string) {
+  await expect
+    .poll(async () => {
+      const response = await page.request.get("/api/me/walkthrough");
+      if (!response.ok()) return null;
+      const body = (await response.json()) as { status?: string };
+      return body.status ?? null;
+    })
+    .toBe(status);
+}
+
 test.describe("product walkthrough", () => {
   test("shows on first login and resumes after skip", async ({ page }) => {
     await loginWithTour(page, true);
@@ -36,6 +47,7 @@ test.describe("product walkthrough", () => {
 
     await dialog.getByRole("button", { name: /^skip for now$/i }).click();
     await expect(dialog).toHaveCount(0);
+    await waitForWalkthroughStatus(page, "in_progress");
     await expect(page.getByRole("heading", { name: /my reports/i })).toBeVisible();
 
     await loginWithTour(page, "resume");
@@ -52,6 +64,7 @@ test.describe("product walkthrough", () => {
     await expect(dialog).toBeVisible({ timeout: 15_000 });
     await dialog.getByRole("button", { name: /don't show this tour again/i }).click();
     await expect(dialog).toHaveCount(0);
+    await waitForWalkthroughStatus(page, "dismissed");
 
     await loginWithTour(page, "resume");
     await expect(page.getByRole("heading", { name: /my reports/i })).toBeVisible({
@@ -65,10 +78,13 @@ test.describe("product walkthrough", () => {
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible({ timeout: 15_000 });
     await dialog.getByRole("button", { name: /don't show this tour again/i }).click();
+    await expect(dialog).toHaveCount(0);
+    await waitForWalkthroughStatus(page, "dismissed");
 
     await gotoWithNavigationRetry(page, "/profile", { waitUntil: "load" });
     await expect(page.getByRole("heading", { name: /^profile$/i })).toBeVisible();
-    await page.getByRole("button", { name: /replay product tour/i }).click();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await page.getByRole("button", { name: "Replay product tour" }).click();
     await expect(
       page.getByRole("dialog").getByRole("heading", { name: /welcome to/i })
     ).toBeVisible();

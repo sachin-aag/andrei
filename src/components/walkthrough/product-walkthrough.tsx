@@ -117,6 +117,7 @@ export function ProductWalkthroughProvider({
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(next),
+        keepalive: true,
       });
       if (seq !== persistSeq.current) return;
     } catch {

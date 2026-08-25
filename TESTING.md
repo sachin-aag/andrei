@@ -155,7 +155,7 @@ Specs run against Chromium, Firefox, and WebKit unless you pass `--project=chrom
 |------|------------------|
 | shows on first login and resumes after skip | Welcome → next → skip; next session resumes mid-tour (email scoped per Playwright project so Chromium/Firefox/WebKit do not share one user) |
 | dismiss forever stays closed | Don't show again, then resume login has no dialog |
-| replay from profile starts the tour again | Profile **Replay product tour** |
+| replay from profile starts the tour again | Dismiss, wait for `GET /api/me/walkthrough` `dismissed`, then Profile **Replay product tour** |
 
 </details>
 
