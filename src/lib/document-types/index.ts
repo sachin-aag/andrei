@@ -116,6 +116,10 @@ export function buildEvaluationSystemPromptForType(
   return `${def.prompts.base}\n\n${addition}`;
 }
 
+export function documentTypeShortLabel(type: DocumentType): string {
+  return getDocumentType(type).label.replace(/ report$/i, "");
+}
+
 export function engineerReportsSubtitle(
   types: readonly { label: string }[] = listDocumentTypes()
 ): string {
