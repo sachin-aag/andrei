@@ -1137,6 +1137,75 @@ export const documentChunksRelations = relations(documentChunks, ({ one }) => ({
   }),
 }));
 
+export const statisticalWorkspaces = pgTable(
+  "statistical_workspaces",
+  {
+    id: text("id").primaryKey().$defaultFn(() => createId()),
+    name: text("name").notNull(),
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => workspaceUsers.id, { onDelete: "cascade" }),
+    worksheet: jsonb("worksheet").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    ownerUpdatedIdx: index("statistical_workspaces_owner_updated_idx").on(
+      t.ownerId,
+      t.updatedAt
+    ),
+  })
+);
+
+export const statisticalAnalyses = pgTable(
+  "statistical_analyses",
+  {
+    id: text("id").primaryKey().$defaultFn(() => createId()),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => statisticalWorkspaces.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull().default("capability_sixpack_normal"),
+    title: text("title").notNull(),
+    config: jsonb("config").notNull(),
+    results: jsonb("results").notNull(),
+    sourceHash: text("source_hash").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    workspaceCreatedIdx: index("statistical_analyses_workspace_created_idx").on(
+      t.workspaceId,
+      t.createdAt
+    ),
+  })
+);
+
+export const statisticalWorkspacesRelations = relations(
+  statisticalWorkspaces,
+  ({ one, many }) => ({
+    owner: one(workspaceUsers, {
+      fields: [statisticalWorkspaces.ownerId],
+      references: [workspaceUsers.id],
+    }),
+    analyses: many(statisticalAnalyses),
+  })
+);
+
+export const statisticalAnalysesRelations = relations(
+  statisticalAnalyses,
+  ({ one }) => ({
+    workspace: one(statisticalWorkspaces, {
+      fields: [statisticalAnalyses.workspaceId],
+      references: [statisticalWorkspaces.id],
+    }),
+  })
+);
+
 export type ReportStatus = (typeof reportStatusEnum.enumValues)[number];
 export type DocumentType = (typeof documentTypeEnum.enumValues)[number];
 /** Free-text section key; validated by the document-type registry at write time. */

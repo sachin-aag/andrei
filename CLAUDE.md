@@ -60,7 +60,9 @@ pnpm exec playwright install --with-deps chromium firefox webkit
 
 - `src/app/api/reports/[reportId]/` — Route handlers for report CRUD, section auto-save (`sections/[sectionType]`), AI `evaluate`, evaluation bypass (`evaluations/[evalId]`), AI `suggestions`, `comments`, `submit`/`approve`/`feedback` workflow, `chat` (AI chat), `audit` (trail), `attachments`, and `export`/`complete-export` (DOCX).
 - `src/app/improve-ai/` — Improve AI pages: session list and `[sessionId]` review page.
+- `src/app/statistical-analysis/` — Standalone worksheet + Normal Capability Sixpack (demo/MJ).
 - `src/app/api/improve-ai/` — API routes for creating sessions (from report or uploaded DOCX), listing sessions, and completing review.
+- `src/app/api/statistical-analysis/` — Worksheet CRUD and sixpack analyses.
 - `src/app/api/reports/[reportId]/chat/` — AI chat sessions/messages scoped to a report (see AI Chat subsystem).
 - `src/app/admin/` + `src/app/api/admin/` — Admin console (audit log viewer, user management, retention/password-policy settings). API: `audit`, `users` (+ `reset-password`, `unlock`), `password-policy`, `retention`, `reports/[reportId]/{purge,source-docx}`.
 - `src/app/insights/` — Analytics dashboards (`dashboard`, `doc-insights`, `management`, `pitfalls`). Currently backed by `src/lib/insights/mock-data.ts`.
@@ -68,14 +70,16 @@ pnpm exec playwright install --with-deps chromium firefox webkit
 - `src/app/{login,change-password,forgot-password,reset-password,unlock,profile}/` — auth/account pages. `src/app/api/auth-pw/` — password-based auth routes (forgot/reset).
 - `src/components/report/` — Editor UI: `report-workspace.tsx` (header + tabs + sidebar), per-section editors in `sections/`, `report-sidebar.tsx` (AI traffic-light results), `review-rail/` (manager comment margin UI).
 - `src/components/improve-ai/` — Improve AI UI: session form, upload button, section content display, stale-rerun dialog.
+- `src/components/statistical-analysis/` — Worksheet grid, Stat menu, sixpack SVG, capability dialog.
 - `src/components/ui/` — shadcn-style Radix UI primitives.
-- `src/db/schema/index.ts` — Drizzle schema (single file, not a directory): `workspaceUsers`, `reports` (includes `documentType`), `reportManagers`, `reportSections`, `criteriaEvaluations`, `comments`, `chatSessions`/`chatMessages`, `reportSourceDocx`, `mathExtractionCache`, `aiFeedbackSessions`/`aiFeedbackResponses`, `auditEvents`/`sectionContentVersions`/`electronicSignatures`, `passwordPolicySettings`, `retentionSettings`, plus attachment evidence (`reportAttachments`, `attachmentIngestRuns`, `documentPages`, `documentChunks` with `vector(768)`). NextAuth tables + `authUsers` in `auth.ts`.
+- `src/db/schema/index.ts` — Drizzle schema (single file, not a directory): `workspaceUsers`, `reports` (includes `documentType`), `reportManagers`, `reportSections`, `criteriaEvaluations`, `comments`, `chatSessions`/`chatMessages`, `reportSourceDocx`, `mathExtractionCache`, `aiFeedbackSessions`/`aiFeedbackResponses`, `auditEvents`/`sectionContentVersions`/`electronicSignatures`, `passwordPolicySettings`, `retentionSettings`, `statisticalWorkspaces`/`statisticalAnalyses`, plus attachment evidence (`reportAttachments`, `attachmentIngestRuns`, `documentPages`, `documentChunks` with `vector(768)`). NextAuth tables + `authUsers` in `auth.ts`.
 - `src/lib/ai/` — AI evaluation, suggestion, and chat pipelines (see subsystems below).
 - `src/lib/document-types/` — Registry for `investigation_report` and `design_verification` (sections, criteria, prompts, chat persona, merge).
 - `src/lib/attachments/` — PDF/DOCX ingest, chunk/embed, hybrid retrieval (`searchReportDocuments`, `readDocumentPage`, `readDocumentOutline`).
 - `src/lib/storage/` — Attachment blob storage (GCS vs local).
 - `src/lib/audit/` — Hash-chained audit log, section version history, and e-signature workflow (see Audit subsystem).
-- `src/lib/customers/` — Customer pack resolver (`ANDREI_CUSTOMER` / `NEXT_PUBLIC_ANDREI_CUSTOMER`). Demo vs MJ vs Convergent overlays: criteria descriptions, eval prompts, export template, hidden sections, enabled document types, Word import, branding.
+- `src/lib/customers/` — Customer pack resolver (`ANDREI_CUSTOMER` / `NEXT_PUBLIC_ANDREI_CUSTOMER`). Demo vs MJ vs Convergent overlays: criteria descriptions, eval prompts, export template, hidden sections, enabled document types, Word import, branding, `statisticalAnalysisEnabled`.
+- `src/lib/statistical-analysis/` — Worksheet ops, I-MR Normal Capability Sixpack, workspace store.
 - `src/lib/reports/` — Report domain logic: access control (`access.ts`), manager authorization, deviation-no generation, submit validation, source-docx persistence, blank-section seeding, tombstones.
 - `src/lib/admin/` — Admin-console business logic (user/retention/password-policy operations).
 - `src/lib/improve-ai/` — Improve AI business logic: session store, session view, human-judgment tracking, response syncing, staleness detection.
@@ -274,6 +278,24 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
 4. `POST .../complete` marks session `reviewed`
 
 **Staleness:** `src/lib/improve-ai/session-staleness.ts` detects when the underlying report has changed since the session was created, prompting a re-run dialog.
+
+## Subsystem: Statistical Analysis
+
+**Purpose:** Standalone measurement worksheet and Minitab-style Normal Capability Sixpack (individuals / I-MR). Demo and MJ only (`statisticalAnalysisEnabled`); Convergent 404s the pages and APIs. Not a report section and not TipTap.
+
+**Entry points:**
+- `/statistical-analysis` list + `/statistical-analysis/[workspaceId]` workspace
+- `GET/POST /api/statistical-analysis/workspaces`
+- `GET/PATCH/POST/DELETE /api/statistical-analysis/workspaces/[workspaceId]` (`POST` aliases `PATCH` for autosave beacons)
+- `POST .../analyses` creates a sixpack; `POST/DELETE .../analyses/[analysisId]` recomputes or deletes
+
+**Data flow:**
+1. Create a workspace → JSONB worksheet (`C1`… columns)
+2. Enter or paste values (sample assay is a Data-menu helper)
+3. `Stat > Quality Tools > Capability Sixpack > Normal` computes I-MR limits, histogram, AD normal plot, Cp/Cpk/Pp/Ppk on the **server** (`computeCapabilitySixpack`)
+4. Editing the source column marks the analysis **stale** (`sourceHash`); Recompute refreshes results
+
+**Key invariant:** Analyses do not silently change when the worksheet changes. I-MR constants are Minitab n=2 (`d2=1.128`, `D4=3.267`, `E2=2.66`).
 
 ## Subsystem: Audit Trail & E-Signatures
 

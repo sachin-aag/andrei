@@ -97,5 +97,20 @@ describe("AppShell brand chrome", () => {
       "width",
       "40"
     );
+    expect(
+      screen.queryByRole("link", { name: "Statistical Analysis" })
+    ).not.toBeInTheDocument();
+  });
+
+  it("shows Statistical Analysis in the demo engineer nav", () => {
+    setCustomer("demo");
+    render(
+      <AppShell user={engineer} initialUsers={[engineer]}>
+        <div>main</div>
+      </AppShell>
+    );
+    expect(
+      screen.getByRole("link", { name: "Statistical Analysis" })
+    ).toHaveAttribute("href", "/statistical-analysis");
   });
 });
