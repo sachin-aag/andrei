@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("bumps the prompt version when insert_image and citation-marker guidance change", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v42-insert-image-citation-markers");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v43-insert-image-copy");
   });
 
   it("puts citations at the end of the section when the pack mode is on", () => {
@@ -134,6 +134,8 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("insert_image");
     expect(prompt).toContain("source=chat");
     expect(prompt).toContain("Do not invent or generate pixels");
+    expect(prompt).toContain('image: { source: "section", section: "purpose"');
+    expect(prompt).toContain("id: \"narrative#1\"");
     expect(prompt).not.toContain("Mode: ASK");
   });
 

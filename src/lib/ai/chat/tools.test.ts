@@ -269,6 +269,18 @@ describe("buildChatTools insert_image", () => {
         image: { source: "section", index: 1, targetField: "narrative" },
       })
     ).toBe(true);
+    expect(
+      accepts(tools, "insert_image", {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Copy using read_section id",
+        image: {
+          source: "section",
+          section: "measure",
+          id: "narrative#1",
+        },
+      })
+    ).toBe(true);
   });
 });
 
@@ -506,6 +518,37 @@ describe("buildChatTools document review", () => {
       TEST_TOOL_OPTIONS
     );
     expect(blocked).toMatchObject({ status: "review_incomplete" });
+  });
+
+  it("rejects markdown image syntax instead of drafting a fake figure", async () => {
+    const tools = buildChatTools({ reportId: "report-1", canEdit: true });
+    const result = await tools.draft_field!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        markdown: "![PXL_20260725_081416927](narrative#1)",
+        reasoning: "Inserting the image into Define via draft_field.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "figures_not_supported" });
+    expect((result as { message: string }).message).toContain("insert_image");
+  });
+
+  it("rejects a section image copy that has neither id nor index", async () => {
+    const tools = buildChatTools({ reportId: "report-1", canEdit: true });
+    const result = await tools.insert_image!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Copy the figure",
+        image: { source: "section" },
+        anchorText: "",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "image_not_found" });
+    expect((result as { message: string }).message).toContain("image.id");
   });
 
   it("covers every family in a 62-page synthetic appendix before drafting", async () => {

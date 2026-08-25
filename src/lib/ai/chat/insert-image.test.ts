@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { UIMessage } from "ai";
-import { listLatestUserChatImages, resolveChatImage } from "./insert-image";
+import {
+  listLatestUserChatImages,
+  parseSectionImageId,
+  resolveChatImage,
+  resolveSectionImageLocator,
+  sectionImageNotFoundMessage,
+} from "./insert-image";
 
 const TINY_PNG =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
@@ -56,5 +62,76 @@ describe("resolveChatImage", () => {
     expect(result.ok).toBe(false);
     if (result.ok) return;
     expect(result.message).toContain("no attached images");
+  });
+});
+
+describe("parseSectionImageId", () => {
+  it("parses read_section ids and image markers", () => {
+    expect(parseSectionImageId("narrative#1")).toEqual({
+      targetField: "narrative",
+      index: 1,
+    });
+    expect(parseSectionImageId("rootCause.narrative#2")).toEqual({
+      targetField: "rootCause.narrative",
+      index: 2,
+    });
+    expect(parseSectionImageId("[image:3]")).toEqual({
+      targetField: null,
+      index: 3,
+    });
+    expect(parseSectionImageId("not-an-id")).toBeNull();
+  });
+});
+
+describe("resolveSectionImageLocator", () => {
+  it("uses read_section id and an explicit source section for cross-section copy", () => {
+    const result = resolveSectionImageLocator({
+      destSection: "scope",
+      destField: "narrative",
+      sourceSection: "purpose",
+      id: "narrative#1",
+    });
+    expect(result).toEqual({
+      ok: true,
+      locator: { section: "purpose", targetField: "narrative", index: 1 },
+    });
+  });
+
+  it("defaults source section to the destination when it is omitted", () => {
+    const result = resolveSectionImageLocator({
+      destSection: "scope",
+      destField: "narrative",
+      index: 1,
+    });
+    expect(result).toEqual({
+      ok: true,
+      locator: { section: "scope", targetField: "narrative", index: 1 },
+    });
+  });
+
+  it("requires id or index", () => {
+    const result = resolveSectionImageLocator({
+      destSection: "scope",
+      destField: "narrative",
+      sourceSection: "purpose",
+    });
+    expect(result.ok).toBe(false);
+    if (result.ok) return;
+    expect(result.message).toContain("image.id");
+  });
+});
+
+describe("sectionImageNotFoundMessage", () => {
+  it("explains the destination default when copying without image.section", () => {
+    expect(
+      sectionImageNotFoundMessage({
+        destSection: "scope",
+        sourceSection: "scope",
+        sourceField: "narrative",
+        index: 1,
+        listedCount: 0,
+        sourceSectionOmitted: true,
+      })
+    ).toContain("defaults to the destination");
   });
 });

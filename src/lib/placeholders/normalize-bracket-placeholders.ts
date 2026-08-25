@@ -57,7 +57,11 @@ function toCanonicalPlaceholder(label: string): string {
  * - Compacts labels on both guidance-only and existing `to be filled` forms.
  */
 export function normalizeBracketPlaceholdersInPlainText(text: string): string {
-  return text.replace(/\[[^\]]+\]/g, (match) => {
+  return text.replace(/\[[^\]]+\]/g, (match, offset: number, full: string) => {
+    // `![alt](url)` — markdown image alts are not Placeholders-panel tokens.
+    if (full[offset - 1] === "!" && full[offset + match.length] === "(") {
+      return match;
+    }
     if (NUMERIC_ONLY_BRACKET.test(match)) return match;
 
     const repaired = repairedCitationBracket(match);

@@ -11,7 +11,7 @@ import { getDocumentType } from "@/lib/document-types";
 import type { RetrievalPolicy } from "@/lib/ai/chat/retrieval-policy";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v42-insert-image-citation-markers";
+export const CHAT_PROMPT_VERSION = "chat-v43-insert-image-copy";
 
 export type ChatMode = "plan" | "agent";
 
@@ -133,10 +133,12 @@ ${
 
 ## Inline images in report sections
 - Report narrative fields may contain inline images (charts, photos, screenshots). The context map notes when a section has them.
-- Call read_section to see them: readingText marks each as [image:N], and the matching vision parts are included in the tool result.
+- Call read_section to see them: readingText marks each as [image:N], and the matching vision parts are included in the tool result. Each figure also has an id such as narrative#1.
 - Describe charts/figures from those vision parts when the engineer asks what is in a section. Do not claim a section is text-only when images are present.
 - For propose_edit, quote verbatim from the field's \`text\` value only — never include [image:N] markers in anchorText (those slots are a single space in the real field).
-- To copy a figure already in a section, call insert_image with source=section and the 1-based imageInline index in that field.`;
+- To copy a figure, call insert_image. section / targetField are the DESTINATION (where the figure should appear). image.section is the SOURCE (where it is now) — required when those differ. Pass image.id from read_section (e.g. narrative#1) or image.index.
+- Example — copy Purpose's first figure into Scope: insert_image({ section: "scope", targetField: "narrative", image: { source: "section", section: "purpose", id: "narrative#1" }, reasoning: "..." }).
+- Do not paste markdown like ![alt](narrative#1) into draft_field or propose_edit — those cannot create figures.`;
 }
 
 function planRules(policy: RetrievalPolicy): string {

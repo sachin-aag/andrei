@@ -33,6 +33,14 @@ describe("normalizeBracketPlaceholdersInPlainText", () => {
     ).toBe("saw [particulate, e.g., fibers: <to be filled>] here");
   });
 
+  it("does not turn markdown image alts into placeholders", () => {
+    expect(
+      normalizeBracketPlaceholdersInPlainText(
+        "![PXL_20260725_081416927](narrative#1)"
+      )
+    ).toBe("![PXL_20260725_081416927](narrative#1)");
+  });
+
   it("compacts long AI guidance labels into canonical form under the limit", () => {
     const out = normalizeBracketPlaceholdersInPlainText(
       "system is [Name/ID of Monitoring System or Refrigerator Unit]."

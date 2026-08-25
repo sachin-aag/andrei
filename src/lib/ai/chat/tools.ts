@@ -30,10 +30,16 @@ import {
 } from "@/lib/images/compress-image";
 import {
   resolveChatImage,
+  resolveSectionImageLocator,
+  sectionImageNotFoundMessage,
   type InsertImageSource,
 } from "@/lib/ai/chat/insert-image";
 import { fieldContentHash } from "@/lib/suggestions/validate-suggestion";
-import { markdownHasTable, markdownToDoc } from "@/lib/tiptap/markdown-to-doc";
+import {
+  markdownHasImage,
+  markdownHasTable,
+  markdownToDoc,
+} from "@/lib/tiptap/markdown-to-doc";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 import {
   type ChatSectionScope,
@@ -199,6 +205,7 @@ export type DraftFieldResult =
   | { status: "invalid_field"; message: string; allowedFields: string[] }
   | { status: "section_not_found"; message: string }
   | { status: "table_not_supported"; message: string }
+  | { status: "figures_not_supported"; message: string }
   | { status: "review_incomplete"; message: string }
   | {
       status: "inventory_mismatch";
@@ -1154,12 +1161,12 @@ export function buildChatTools(opts: {
 
     insert_image: tool({
       description:
-        `Insert one existing image into a rich narrative field as a reviewable suggestion (the engineer accepts or rejects it). Sources: chat (an image attached on the latest user message, 1-based index) or section (an imageInline already in a field, 1-based in document order). Do not generate new pixels. Do not put markdown image syntax in draft_field or propose_edit — those cannot create figures. Empty anchorText appends at the end of the field.${scopeHint}`,
+        `Insert one existing image into a rich narrative field as a reviewable suggestion (the engineer accepts or rejects it). section/targetField are the DESTINATION. For source=section, set image.section to the section the figure is in NOW (required when copying between sections) and pass image.id from read_section (e.g. 'narrative#1') or image.index. Do not generate new pixels. Do not put markdown image syntax in draft_field or propose_edit — those cannot create figures. Empty anchorText appends at the end of the field.${scopeHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
           .string()
-          .describe("Rich field path to insert into, e.g. 'narrative'."),
+          .describe("DESTINATION rich field path to insert into, e.g. 'narrative'."),
         image: z.discriminatedUnion("source", [
           z.object({
             source: z.literal("chat"),
@@ -1174,16 +1181,25 @@ export function buildChatTools(opts: {
             section: z
               .string()
               .optional()
-              .describe("Section to copy from; defaults to the target section."),
+              .describe(
+                "Section to copy FROM (keys like 'purpose', not labels). Required when the figure is not in the destination section."
+              ),
             targetField: z
               .string()
               .optional()
-              .describe("Field to copy from; defaults to the target field."),
+              .describe("Field to copy FROM; defaults to the destination field."),
             index: z
               .number()
               .int()
               .min(1)
-              .describe("1-based imageInline index in that field."),
+              .optional()
+              .describe("1-based imageInline index in that field. Omit when passing id."),
+            id: z
+              .string()
+              .optional()
+              .describe(
+                "Image id from read_section (images[].id), e.g. 'narrative#1'. Prefer this after reading the source section."
+              ),
           }),
         ]),
         anchorText: z
@@ -1208,6 +1224,7 @@ export function buildChatTools(opts: {
         alt,
         reasoning,
       }): Promise<InsertImageResult> => {
+        try {
         if (!canEdit) {
           return {
             status: "not_editable",
@@ -1241,6 +1258,21 @@ export function buildChatTools(opts: {
           };
         }
 
+        const source = image as InsertImageSource;
+        if (source.source === "section") {
+          const locator = resolveSectionImageLocator({
+            destSection: section,
+            destField: resolvedField,
+            sourceSection: source.section,
+            sourceField: source.targetField,
+            index: source.index,
+            id: source.id,
+          });
+          if (!locator.ok) {
+            return { status: "image_not_found", message: locator.message };
+          }
+        }
+
         const loaded = await loadMergedSection(reportId, section);
         if (!loaded) {
           return { status: "section_not_found", message: "Section not found." };
@@ -1257,22 +1289,36 @@ export function buildChatTools(opts: {
           };
         }
 
-        const source = image as InsertImageSource;
         let resolved: ReturnType<typeof resolveChatImage> | {
           ok: true;
-          image: { src: string; alt: string | null; width: number | null; mediaId: string | null };
+          image: {
+            src: string;
+            alt: string | null;
+            width: number | null;
+            mediaId: string | null;
+          };
         };
         if (source.source === "chat") {
           resolved = resolveChatImage(messages, source.index);
         } else {
-          const sourceSectionKey = (source.section ?? section) as SectionType;
+          const locator = resolveSectionImageLocator({
+            destSection: section,
+            destField: resolvedField,
+            sourceSection: source.section,
+            sourceField: source.targetField,
+            index: source.index,
+            id: source.id,
+          });
+          if (!locator.ok) {
+            return { status: "image_not_found", message: locator.message };
+          }
+          const sourceSectionKey = locator.locator.section as SectionType;
           if (!isChatEditableSection(sourceSectionKey, documentType)) {
             return {
               status: "invalid_section",
-              message: `Unknown section '${source.section}'.`,
+              message: `Unknown section '${locator.locator.section}'.`,
             };
           }
-          const sourceFieldName = source.targetField ?? resolvedField;
           const sourceLoaded =
             sourceSectionKey === section
               ? loaded
@@ -1280,12 +1326,20 @@ export function buildChatTools(opts: {
           if (!sourceLoaded) {
             return { status: "section_not_found", message: "Source section not found." };
           }
-          const sourceResolved = resolveTargetField(sourceSectionKey, sourceFieldName);
-          if (!sourceResolved || !isRichTargetField(sourceSectionKey, sourceResolved)) {
+          const sourceResolved = resolveTargetField(
+            sourceSectionKey,
+            locator.locator.targetField
+          );
+          if (
+            !sourceResolved ||
+            !isRichTargetField(sourceSectionKey, sourceResolved)
+          ) {
             return {
               status: "invalid_field",
-              message: `'${sourceFieldName}' is not a rich field of ${sourceSectionKey}.`,
-              allowedFields: chatTargetFields(sourceSectionKey).map((f) => f.targetField),
+              message: `'${locator.locator.targetField}' is not a rich field of ${sourceSectionKey}.`,
+              allowedFields: chatTargetFields(sourceSectionKey).map(
+                (f) => f.targetField
+              ),
             };
           }
           const sourceDoc = getRichFieldValue(
@@ -1293,14 +1347,18 @@ export function buildChatTools(opts: {
             sourceResolved
           );
           const listed = listInlineImagesInDoc(sourceDoc);
-          const hit = listed.find((img) => img.index === source.index);
+          const hit = listed.find((img) => img.index === locator.locator.index);
           if (!hit) {
             return {
               status: "image_not_found",
-              message:
-                listed.length === 0
-                  ? `No images in ${sourceSectionKey} ${sourceResolved}.`
-                  : `No image at index ${source.index}. ${sourceSectionKey} ${sourceResolved} has ${listed.length} image${listed.length === 1 ? "" : "s"} (index 1–${listed.length}).`,
+              message: sectionImageNotFoundMessage({
+                destSection: section,
+                sourceSection: sourceSectionKey,
+                sourceField: sourceResolved,
+                index: locator.locator.index,
+                listedCount: listed.length,
+                sourceSectionOmitted: !source.section?.trim(),
+              }),
             };
           }
           resolved = {
@@ -1372,6 +1430,14 @@ export function buildChatTools(opts: {
           targetField: resolvedField,
           summary: reasoning,
         };
+        } catch (err) {
+          console.error("insert_image failed", err);
+          return {
+            status: "image_not_found",
+            message:
+              "Could not insert this image. Call insert_image with source=section, image.section set to the section the figure is in now, and image.id from read_section (e.g. 'narrative#1'). Do not put markdown image syntax in draft_field.",
+          };
+        }
       },
     }),
 
@@ -1499,7 +1565,7 @@ export function buildChatTools(opts: {
 
     draft_field: tool({
       description:
-        `Draft or fully rewrite ONE field. Provide the COMPLETE replacement content as markdown: paragraphs, '- ' bullets, '1. ' numbered lists, '## ' headings, '**bold**', '*italic*', and GFM tables ('| a | b |' rows with a '| --- |' separator). Use bracketed placeholders like [batch number] for facts you do not know — never invent facts. The engineer reviews the full draft and accepts or rejects it. Use this for empty fields, substantial rewrites, creating a NEW table, or an explicitly requested full table replacement. For any incremental change to an existing table, use edit_table — never draft_field. Use propose_edit only for small prose or list edits.${scopeHint}${fixedTableHint}`,
+        `Draft or fully rewrite ONE field. Provide the COMPLETE replacement content as markdown: paragraphs, '- ' bullets, '1. ' numbered lists, '## ' headings, '**bold**', '*italic*', and GFM tables ('| a | b |' rows with a '| --- |' separator). Use bracketed placeholders like [batch number] for facts you do not know — never invent facts. The engineer reviews the full draft and accepts or rejects it. Use this for empty fields, substantial rewrites, creating a NEW table, or an explicitly requested full table replacement. For any incremental change to an existing table, use edit_table — never draft_field. Use propose_edit only for small prose or list edits. Do not put markdown image syntax (![alt](url) or narrative#1) here — use insert_image.${scopeHint}${fixedTableHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
@@ -1553,6 +1619,13 @@ export function buildChatTools(opts: {
           return {
             status: "table_not_supported",
             message: `'${resolvedField}' is a plain-text field and cannot hold a table. Put the table in a rich narrative field instead.`,
+          };
+        }
+        if (markdownHasImage(markdown)) {
+          return {
+            status: "figures_not_supported",
+            message:
+              "draft_field cannot insert figures. Markdown like ![alt](narrative#1) is not an image. Call insert_image with source=section, image.section set to the section the figure is in now, and image.id from read_section (e.g. 'narrative#1').",
           };
         }
         if (section === "results_and_discussions" && resolvedField === "table") {
