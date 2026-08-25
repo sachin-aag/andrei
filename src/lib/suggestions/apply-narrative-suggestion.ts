@@ -13,6 +13,7 @@ import {
   suggestionInsertMarkName,
 } from "@/lib/tiptap/suggestion-marks";
 import type { JSONContent } from "@tiptap/core";
+import { docHasPendingImageSuggestion } from "@/lib/suggestions/image-insert";
 
 export type { SuggestionEdit };
 
@@ -20,6 +21,7 @@ export function buildSuggestionEdit(payload: {
   anchorText?: string | null;
   deleteText: string;
   insertText: string;
+  insertImage?: SuggestionEdit["insertImage"];
   scope?: EditScope;
   second?: SuggestionEdit["second"];
 }): SuggestionEdit {
@@ -28,6 +30,7 @@ export function buildSuggestionEdit(payload: {
         anchorText: payload.second.anchorText?.trim() ?? "",
         deleteText: payload.second.deleteText,
         insertText: normalizeSuggestionInsertText(payload.second.insertText),
+        insertImage: payload.second.insertImage,
         scope: payload.second.scope,
       }
     : undefined;
@@ -35,9 +38,13 @@ export function buildSuggestionEdit(payload: {
     anchorText: payload.anchorText?.trim() ?? "",
     deleteText: payload.deleteText,
     insertText: normalizeSuggestionInsertText(payload.insertText),
+    insertImage: payload.insertImage,
     scope: payload.scope,
     second:
-      second && (second.deleteText.trim() || second.insertText.trim())
+      second &&
+      (second.deleteText.trim() ||
+        second.insertText.trim() ||
+        second.insertImage)
         ? second
         : undefined,
   };
@@ -66,7 +73,7 @@ export function narrativeHasSuggestionMarks(
     node.content?.forEach(walk);
   };
   walk(narrative);
-  return found;
+  return found || docHasPendingImageSuggestion(narrative, suggestionId);
 }
 
 /** Finalize pending inline marks (preview → normal text). */

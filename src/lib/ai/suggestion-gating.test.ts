@@ -382,3 +382,24 @@ describe("parseAiFixCommentContent second", () => {
     expect(parseAiFixCommentContent(json).second).toBeUndefined();
   });
 });
+
+describe("parseAiFixCommentContent insertImage", () => {
+  it("round-trips an inline figure payload", () => {
+    const src =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const json = serializeAiFixCommentContent({
+      deleteText: "",
+      insertText: "",
+      reasoning: "Adds the chromatogram the engineer attached",
+      insertImage: { src, alt: "HPLC trace", width: 400, mediaId: null },
+    });
+    const parsed = parseAiFixCommentContent(json);
+    expect(parsed.insertImage).toEqual({
+      src,
+      alt: "HPLC trace",
+      width: 400,
+      mediaId: null,
+    });
+    expect(parsed.insertText).toBe("");
+  });
+});

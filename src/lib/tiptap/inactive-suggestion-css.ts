@@ -20,7 +20,9 @@ export function buildInactiveSuggestionCss(
 ${otherAiRun}.suggestion-insert,
 ${otherAiRun}.suggestion-insert-ai,
 ${otherAiRun}.suggestion-insert-ai::before,
-${otherAiRun}.suggestion-insert-ai::after {
+${otherAiRun}.suggestion-insert-ai::after,
+${otherAiRun}.suggestion-image-insert,
+${otherAiRun}.suggestion-image-insert-ai {
   display: none !important;
   content: none !important;
 }

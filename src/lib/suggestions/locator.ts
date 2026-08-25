@@ -23,6 +23,12 @@ import {
   type SuggestionStatus,
 } from "@/lib/tiptap/suggestion-marks";
 import { finalizeNarrativeDocAfterSuggestion } from "@/lib/tiptap/finalize-narrative-doc";
+import {
+  acceptPendingImageSuggestions,
+  dropPendingImageSuggestions,
+  pendingImageInlineNode,
+  type SuggestionImageInsert,
+} from "@/lib/suggestions/image-insert";
 
 /**
  * Single source of truth for suggestion anchor matching and apply.
@@ -48,6 +54,8 @@ export type SuggestionEdit = {
   anchorText: string;
   deleteText: string;
   insertText: string;
+  /** Inline figure to insert after the located site (rich fields only). */
+  insertImage?: SuggestionImageInsert;
   scope?: EditScope;
   /**
    * Optional second apply site in the same field (e.g. a citation appended
@@ -57,9 +65,13 @@ export type SuggestionEdit = {
 };
 
 function hasEditContent(
-  edit: Pick<SuggestionEdit, "deleteText" | "insertText">
+  edit: Pick<SuggestionEdit, "deleteText" | "insertText" | "insertImage">
 ): boolean {
-  return Boolean((edit.deleteText ?? "").trim() || (edit.insertText ?? "").trim());
+  return Boolean(
+    (edit.deleteText ?? "").trim() ||
+      (edit.insertText ?? "").trim() ||
+      edit.insertImage
+  );
 }
 
 /** Primary (and optional second) parts; empty primary is omitted when second exists. */
@@ -68,6 +80,7 @@ export function suggestionEditParts(edit: SuggestionEdit): SuggestionEdit[] {
     anchorText: edit.anchorText,
     deleteText: edit.deleteText,
     insertText: edit.insertText,
+    insertImage: edit.insertImage,
     scope: edit.scope,
   };
   const second = edit.second;
@@ -78,6 +91,7 @@ export function suggestionEditParts(edit: SuggestionEdit): SuggestionEdit[] {
       anchorText: second.anchorText,
       deleteText: second.deleteText,
       insertText: second.insertText,
+      insertImage: second.insertImage,
       scope: second.scope,
     });
   }
@@ -606,12 +620,13 @@ export function locateEdit(text: string, edit: SuggestionEdit): LocateResult {
   const anchorText = (edit.anchorText ?? "").trim();
   const deleteText = (edit.deleteText ?? "").trim();
   const insertText = normalizeSuggestionInsertText(edit.insertText ?? "");
+  const hasInsert = Boolean(insertText || edit.insertImage);
 
-  if (!deleteText && !insertText) {
+  if (!deleteText && !hasInsert) {
     return { status: "empty_edit" };
   }
 
-  if (!deleteText && insertText) {
+  if (!deleteText && hasInsert) {
     if (!anchorText) return { status: "append" };
     const match = findUniqueAnchorInText(text, anchorText);
     if (!match) {
@@ -882,23 +897,63 @@ function insertAfterRef(
  * Insert an insert-marked text node into an otherwise-empty scoped container
  * (a blank table cell or list item), creating a paragraph if needed.
  */
+function insertImageAfterRef(
+  cloned: JSONContent,
+  insertAfter: TextSlice | null,
+  image: SuggestionImageInsert,
+  suggestionId: string
+): JSONContent {
+  const node = pendingImageInlineNode(image, suggestionId);
+  if (insertAfter && insertAfter.indexInParent >= 0) {
+    insertAfter.parentArr.splice(insertAfter.indexInParent + 1, 0, node);
+    return node;
+  }
+  if (insertAfter && insertAfter.indexInParent < 0) {
+    insertAfter.parentArr.splice(0, 0, node);
+    return node;
+  }
+  const para: JSONContent = { type: "paragraph", content: [node] };
+  if (cloned.type !== "doc") return node;
+  const last = cloned.content?.[cloned.content.length - 1];
+  const lastEmpty =
+    last?.type === "paragraph" &&
+    !(last.content ?? []).some(
+      (child) =>
+        child.type === "text"
+          ? (child.text ?? "").length > 0
+          : child.type !== "hardBreak"
+    );
+  if (lastEmpty && last) {
+    last.content = [node];
+  } else {
+    cloned.content = [...(cloned.content ?? []), para];
+  }
+  return node;
+}
+
 function insertIntoEmptyContainer(
   node: JSONContent,
   insertText: string,
-  attrs: InjectAttrs
+  attrs: InjectAttrs,
+  insertImage?: SuggestionImageInsert
 ): boolean {
   const trimmed = normalizeSuggestionInsertText(insertText);
-  if (!trimmed) return false;
-  const textNodes = inlineMarkdownToTextNodes(trimmed, [
-    { type: suggestionInsertMarkName, attrs: { ...attrs } },
-  ]);
-  if (textNodes.length === 0) return false;
+  const textNodes = trimmed
+    ? inlineMarkdownToTextNodes(trimmed, [
+        { type: suggestionInsertMarkName, attrs: { ...attrs } },
+      ])
+    : [];
+  const imageNode = insertImage
+    ? pendingImageInlineNode(insertImage, attrs.id)
+    : null;
+  if (textNodes.length === 0 && !imageNode) return false;
+  const extra = imageNode ? [imageNode] : [];
   if (!node.content || node.content.length === 0) {
-    node.content = [{ type: "paragraph", content: textNodes }];
+    node.content = [{ type: "paragraph", content: [...textNodes, ...extra] }];
     return true;
   }
   const para = node.content.find((c) => c.type === "paragraph") ?? node.content[0]!;
-  para.content = [...(para.content ?? []), ...textNodes];
+  para.content = [...(para.content ?? []), ...textNodes, ...extra];
   return true;
 }
 
@@ -967,6 +1022,11 @@ function applySingleEditToRichDoc(
 
   if (located.status === "append") {
     const cloned: JSONContent = JSON.parse(JSON.stringify(doc));
+    if (edit.insertImage && !normalizeSuggestionInsertText(edit.insertText ?? "")) {
+      insertImageAfterRef(cloned, null, edit.insertImage, attrs.id);
+      cleanupMarks(cloned);
+      return { status: "append", doc: cloned };
+    }
     let raw = normalizeSuggestionInsertText(edit.insertText ?? "");
     if (isCitationAppendInsert(raw)) {
       raw = normalizeCitationAppendInsert(index.text, raw);
@@ -975,7 +1035,9 @@ function applySingleEditToRichDoc(
       .split(/\n+/)
       .map((line) => line.trim())
       .filter(Boolean);
-    if (paragraphs.length === 0) return { status: "empty_edit", doc: cloned };
+    if (paragraphs.length === 0 && !edit.insertImage) {
+      return { status: "empty_edit", doc: cloned };
+    }
     const lastBlock = cloned.content?.[cloned.content.length - 1];
     if (
       paragraphs[0] &&
@@ -988,6 +1050,9 @@ function applySingleEditToRichDoc(
     let inserted: JSONContent | null = null;
     for (const paragraph of paragraphs) {
       inserted = insertAfterRef(cloned, null, paragraph, attrs);
+    }
+    if (edit.insertImage) {
+      inserted = insertImageAfterRef(cloned, null, edit.insertImage, attrs.id);
     }
     if (!inserted) return { status: "empty_edit", doc: cloned };
     cleanupMarks(cloned);
@@ -1023,7 +1088,12 @@ function applySingleEditToRichDoc(
   if (edit.scope && deleteStart === deleteEnd) {
     const win = resolveScopeWindow(freshIndex, edit.scope);
     if (win && win.start === win.end && deleteStart === win.start) {
-      const ok = insertIntoEmptyContainer(win.node, insertText, attrs);
+      const ok = insertIntoEmptyContainer(
+        win.node,
+        insertText,
+        attrs,
+        edit.insertImage
+      );
       cleanupMarks(cloned);
       return { status: ok ? "located" : "empty_edit", doc: cloned };
     }
@@ -1084,7 +1154,16 @@ function applySingleEditToRichDoc(
   }
 
   if (insertText) {
-    insertAfterRef(cloned, insertAfter, insertText, attrs);
+    const inserted = insertAfterRef(cloned, insertAfter, insertText, attrs);
+    if (inserted && insertAfter) {
+      const idx = insertAfter.parentArr.indexOf(inserted);
+      if (idx >= 0) {
+        insertAfter = { ...insertAfter, indexInParent: idx, node: inserted };
+      }
+    }
+  }
+  if (edit.insertImage) {
+    insertImageAfterRef(cloned, insertAfter, edit.insertImage, attrs.id);
   }
 
   cleanupMarks(cloned);
@@ -1219,6 +1298,7 @@ export function acceptSuggestionMarksById(
 ): JSONContent {
   const cloned: JSONContent = JSON.parse(JSON.stringify(doc));
   dropBlocksFullyMarked(cloned, suggestionDeleteMarkName, markId);
+  acceptPendingImageSuggestions(cloned, markId);
 
   function visit(node: JSONContent) {
     if (node.content?.length) {
@@ -1261,6 +1341,7 @@ export function stripSuggestionMarksById(
 ): JSONContent {
   const cloned: JSONContent = JSON.parse(JSON.stringify(doc));
   dropBlocksFullyMarked(cloned, suggestionInsertMarkName, markId);
+  dropPendingImageSuggestions(cloned, markId);
 
   function visit(node: JSONContent) {
     if (node.content?.length) {

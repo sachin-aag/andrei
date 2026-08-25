@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("bumps the prompt version when section inline image guidance changes", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v40-convergent-version-numbers");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v41-insert-image");
   });
 
   it("puts citations at the end of the section when the pack mode is on", () => {
@@ -128,6 +128,14 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("never include [image:N] markers in anchorText");
   });
 
+  it("routes figure placement to insert_image instead of markdown", () => {
+    const prompt = buildChatSystemPrompt({ ...opts, mode: "agent" });
+    expect(prompt).toContain("insert_image");
+    expect(prompt).toContain("source=chat");
+    expect(prompt).toContain("Do not invent or generate pixels");
+    expect(prompt).not.toContain("Mode: ASK");
+  });
+
   it("plan mode forbids editing and asks questions via ask_user", () => {
     const prompt = buildChatSystemPrompt({ ...opts, mode: "plan" });
     expect(prompt).toContain("Mode: ASK");
@@ -156,7 +164,6 @@ describe("buildChatSystemPrompt", () => {
       "put every affected cell in one edit_cells call (source and destination together)"
     );
     expect(prompt).toContain("failed-retry cap");
-    expect(prompt).toContain("draft_field / edit_table / propose_edit");
   });
 
   it("uses a demo-wide compliance persona, not a single customer brand", () => {
@@ -176,6 +183,7 @@ describe("buildChatSystemPrompt", () => {
     });
     expect(prompt).toContain("Section focus: Define [define]");
     expect(prompt).toContain('on section "define"');
+    expect(prompt).toContain("draft_field / edit_table / propose_edit / insert_image");
     expect(prompt).toContain("DEFINE_ONLY");
     expect(prompt).not.toContain("[measure]:");
   });

@@ -42,6 +42,7 @@ export function suggestionEditFromComment(
     anchorText: comment.anchorText ?? "",
     deleteText: payload.deleteText,
     insertText: payload.insertText,
+    insertImage: payload.insertImage,
     scope: payload.scope,
     second: payload.second,
   };
@@ -124,6 +125,15 @@ export function validateSuggestionLocate(
     return {
       locateStatus: "not_found",
       documentChanged: true,
+      canApply: false,
+      canPreview: false,
+    };
+  }
+
+  if (payload.insertImage && !isRichTargetField(section, path)) {
+    return {
+      locateStatus: "not_found",
+      documentChanged: hashChanged,
       canApply: false,
       canPreview: false,
     };

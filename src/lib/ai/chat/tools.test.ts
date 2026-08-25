@@ -237,12 +237,42 @@ describe("buildChatTools tagged sections", () => {
       })
     ).toBe(false);
     expect(
+      accepts(tools, "insert_image", {
+        section: "control",
+        targetField: "narrative",
+        reasoning: "y",
+        image: { source: "chat", index: 1 },
+      })
+    ).toBe(false);
+    expect(
       accepts(tools, "draft_field", { ...edit, section: "define" })
     ).toBe(true);
   });
 });
 
-describe("buildChatTools propose_edit second", () => {
+describe("buildChatTools insert_image", () => {
+  it("accepts chat and section sources on an in-scope rich field", () => {
+    const tools = buildChatTools({ reportId: "report-1", canEdit: true });
+    expect(
+      accepts(tools, "insert_image", {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Place the photo under the event description",
+        image: { source: "chat", index: 1 },
+      })
+    ).toBe(true);
+    expect(
+      accepts(tools, "insert_image", {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Copy the chart",
+        image: { source: "section", index: 1, targetField: "narrative" },
+      })
+    ).toBe(true);
+  });
+});
+
+describe("buildChatTools propose_edit citations", () => {
   it("exposes propose_edit.second only when citations-at-end is on", () => {
     const off = buildChatTools({
       reportId: "report-1",

@@ -353,6 +353,39 @@ function ToolChip({
     );
   }
 
+  if (info.toolName === "insert_image") {
+    const section = sectionLabel(info.input?.section);
+    const field = typeof info.input?.targetField === "string" ? info.input.targetField : "";
+    if (pending) {
+      return (
+        <ToolLine icon={<ImagePlus className="size-3.5" />}>
+          Inserting image in {section}…
+        </ToolLine>
+      );
+    }
+    if (info.output?.status === "proposed") {
+      return (
+        <ToolLine icon={<ImagePlus className="size-3.5 text-emerald-500" />} tone="success">
+          Proposed image in {section}
+          {field ? ` · ${field}` : ""} — review it in the document.
+        </ToolLine>
+      );
+    }
+    const hint =
+      typeof info.output?.hint === "string"
+        ? info.output.hint
+        : typeof info.output?.message === "string"
+          ? info.output.message
+          : info.errorText
+            ? info.errorText
+            : "Could not place this image.";
+    return (
+      <ToolLine icon={<ImagePlus className="size-3.5 text-amber-500" />} tone="warn">
+        Image not inserted: {hint}
+      </ToolLine>
+    );
+  }
+
   if (info.toolName === "edit_table") {
     const section = sectionLabel(info.input?.section);
     const field = typeof info.input?.targetField === "string" ? info.input.targetField : "";

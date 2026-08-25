@@ -114,6 +114,19 @@ export function collectSuggestionActionWidgetPositions(
   if (!insertType && !deleteType) return new Map();
 
   doc.descendants((node, pos) => {
+    if (node.type.name === "imageInline") {
+      const suggestionId = node.attrs.suggestionId as string | null | undefined;
+      if (
+        suggestionId &&
+        actionableEvaluationIds.has(suggestionId)
+      ) {
+        insertEnds.set(
+          suggestionId,
+          Math.max(insertEnds.get(suggestionId) ?? 0, pos + node.nodeSize)
+        );
+      }
+      return true;
+    }
     if (!node.isText) return true;
     const len = node.text?.length ?? 0;
     for (const mark of node.marks) {
