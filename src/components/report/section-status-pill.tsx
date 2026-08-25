@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, Loader2, Sparkles } from "lucide-react";
 import {
   useReportComments,
@@ -21,10 +21,7 @@ import {
   rowsForSection,
 } from "@/lib/ai/criteria-view";
 import { canSuggestFixes } from "@/lib/ai/suggestion-gating";
-import {
-  aiSuggestionLockReason,
-  canSaveReportSection,
-} from "@/lib/reports/access";
+import { canSaveReportSection } from "@/lib/reports/access";
 import { useUserDirectory } from "@/providers/user-directory-provider";
 import { SECTION_LABELS } from "@/types/sections";
 import { captureEvent } from "@/lib/analytics/events";
@@ -37,6 +34,49 @@ const STATUS_LABEL = {
   not_met: "Issues to address",
   not_evaluated: "Not evaluated yet",
 } as const;
+
+/** First overflow-y ancestor, else the document. */
+export function nearestVerticalScroller(node: HTMLElement): HTMLElement {
+  let current: HTMLElement | null = node.parentElement;
+  while (current) {
+    const overflowY = getComputedStyle(current).overflowY;
+    if (overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay") {
+      return current;
+    }
+    current = current.parentElement;
+  }
+  return document.documentElement;
+}
+
+/** True when `el` sits entirely above the scroller's visible top edge. */
+export function isCompletelyAboveScroller(
+  el: HTMLElement,
+  scroller: HTMLElement
+): boolean {
+  const elRect = el.getBoundingClientRect();
+  const viewTop =
+    scroller === document.documentElement || scroller === document.body
+      ? 0
+      : scroller.getBoundingClientRect().top;
+  return elRect.bottom < viewTop;
+}
+
+export function keepViewportAfterGrowth(
+  scroller: HTMLElement,
+  heightBefore: number,
+  heightAfter: number,
+  scrollBefore: number
+): void {
+  const delta = heightAfter - heightBefore;
+  if (delta === 0) return;
+  scroller.scrollTop = scrollBefore + delta;
+}
+
+type PendingScrollFix = {
+  scroller: HTMLElement;
+  heightBefore: number;
+  scrollBefore: number;
+};
 
 function ExpandableReasoning({ text }: { text: string }) {
   const [expanded, setExpanded] = useState(false);
@@ -62,29 +102,69 @@ function ExpandableReasoning({ text }: { text: string }) {
 }
 
 export function SectionStatusPill({ section }: { section: SectionType }) {
-  const { report } = useReportData();
+  const { report, workspaceMode } = useReportData();
   const {
     evaluations,
     runningEvalSections,
   } = useReportEvaluations();
   const [open, setOpen] = useState(false);
+  const showAiActions = workspaceMode !== "view";
   const rows = useMemo(
     () => rowsForSection(section, evaluations, report.documentType),
     [evaluations, section, report.documentType]
   );
   const isRunning = runningEvalSections.includes(section);
   const [stableRows, setStableRows] = useState(rows);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const wasRunningRef = useRef(isRunning);
+  const pendingScrollFixRef = useRef<PendingScrollFix | null>(null);
 
   if (!isRunning && stableRows !== rows) {
     setStableRows(rows);
   }
+
+  useLayoutEffect(() => {
+    const justFinished = wasRunningRef.current && !isRunning;
+    wasRunningRef.current = isRunning;
+
+    if (justFinished && !open) {
+      const el = rootRef.current;
+      if (el) {
+        const scroller = nearestVerticalScroller(el);
+        if (isCompletelyAboveScroller(el, scroller)) {
+          pendingScrollFixRef.current = {
+            scroller,
+            heightBefore: el.offsetHeight,
+            scrollBefore: scroller.scrollTop,
+          };
+        }
+      }
+      setOpen(true);
+      return;
+    }
+
+    const fix = pendingScrollFixRef.current;
+    if (!fix || !open) return;
+    pendingScrollFixRef.current = null;
+    const el = rootRef.current;
+    if (!el) return;
+    keepViewportAfterGrowth(
+      fix.scroller,
+      fix.heightBefore,
+      el.offsetHeight,
+      fix.scrollBefore
+    );
+  }, [isRunning, open]);
 
   const displayRows = isRunning ? stableRows : rows;
   const status = aggregateStatus(displayRows);
   const { met, total } = metCount(displayRows);
 
   return (
-    <div className="rounded-md border border-[var(--border)] bg-[var(--card)] overflow-hidden">
+    <div
+      ref={rootRef}
+      className="rounded-md border border-[var(--border)] bg-[var(--card)] overflow-hidden"
+    >
       <div className="flex items-center gap-2 px-3 py-1.5 hover:bg-[var(--secondary)]">
         <button
           type="button"
@@ -160,6 +240,7 @@ export function SectionStatusPill({ section }: { section: SectionType }) {
               </div>
             );
           })}
+          {showAiActions ? <SectionSuggestFixesButton section={section} /> : null}
         </div>
       )}
     </div>
@@ -237,10 +318,6 @@ export function SectionSuggestFixesButton({ section }: { section: SectionType })
   const { report, currentUserId } = useReportData();
   const { getUser } = useUserDirectory();
   const role = getUser(currentUserId)?.role;
-  const lockReason =
-    role != null
-      ? aiSuggestionLockReason({ id: currentUserId, role }, report)
-      : "You can't propose edits on this report right now.";
   const canPropose =
     role != null && canSaveReportSection({ id: currentUserId, role }, report);
   const isRunning = runningSuggestionSections.includes(section);
@@ -256,17 +333,40 @@ export function SectionSuggestFixesButton({ section }: { section: SectionType })
       allSections: sections,
     });
 
+  // Hide when it would be a disabled no-op. Keep the in-flight label after click.
+  if (!enabled && !isRunning) return null;
+
   return (
-    <StackedAndreiButton
-      primary={isRunning ? "Suggesting…" : "Suggest fixes"}
-      disabled={!enabled}
-      title={!canPropose ? (lockReason ?? undefined) : undefined}
-      spinning={isRunning}
-      onClick={() => {
-        captureEvent("ai_suggestion_generated", { section });
-        generateSuggestions(section);
-      }}
-    />
+    <div className="pt-1.5 mt-1 border-t border-[var(--border)]">
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        className="h-auto w-full justify-center py-1.5 px-2.5 text-xs bg-[var(--card)] shadow-sm [&_svg]:size-3"
+        disabled={!enabled}
+        aria-busy={isRunning}
+        aria-label={isRunning ? "Suggesting fixes" : "Suggest fixes"}
+        title={isRunning ? "Generating suggested fixes…" : undefined}
+        onClick={(event) => {
+          event.stopPropagation();
+          captureEvent("ai_suggestion_generated", { section });
+          void generateSuggestions(section);
+        }}
+      >
+        {isRunning ? (
+          <Loader2 className="size-3 animate-spin" aria-hidden="true" />
+        ) : (
+          <Sparkles className="size-3" aria-hidden="true" />
+        )}
+        <span>{isRunning ? "Suggesting…" : "Suggest fixes"}</span>
+        <span
+          className="text-[9px] text-[var(--muted-foreground)] font-normal"
+          aria-hidden="true"
+        >
+          {getCustomerPack().branding.aiAttribution}
+        </span>
+      </Button>
+    </div>
   );
 }
 
