@@ -135,6 +135,14 @@ function findSuggestionMarkPos(editor: Editor, markId: string): number | null {
   let found: number | null = null;
   editor.state.doc.descendants((node, pos) => {
     if (found != null) return false;
+    if (node.type.name === "imageInline") {
+      const suggestionId = node.attrs.suggestionId as string | null | undefined;
+      if (suggestionId === markId) {
+        found = pos;
+        return false;
+      }
+      return true;
+    }
     if (!node.isText || !node.marks?.length) return;
     for (const mark of node.marks) {
       const attrs = mark.attrs as { id?: string | null } | undefined;
@@ -154,6 +162,14 @@ function findSuggestionMarkRange(
   let from: number | null = null;
   let to: number | null = null;
   editor.state.doc.descendants((node, pos) => {
+    if (node.type.name === "imageInline") {
+      const suggestionId = node.attrs.suggestionId as string | null | undefined;
+      if (suggestionId === markId) {
+        from = from === null ? pos : Math.min(from, pos);
+        to = to === null ? pos + node.nodeSize : Math.max(to, pos + node.nodeSize);
+      }
+      return true;
+    }
     if (!node.isText || !node.marks?.length) return;
     const len = node.text?.length ?? 0;
     for (const mark of node.marks) {

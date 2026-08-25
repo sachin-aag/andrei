@@ -16,6 +16,12 @@ import {
   parseTableOperation,
   type TableOperation,
 } from "@/lib/suggestions/table-operation";
+import {
+  parseSuggestionImageInsert,
+  parseSuggestionImageRemove,
+  type SuggestionImageInsert,
+  type SuggestionImageRemove,
+} from "@/lib/suggestions/image-insert";
 
 /** Validate an untrusted structural scope from persisted / model JSON. */
 export function parseEditScope(raw: unknown): EditScope | undefined {
@@ -181,6 +187,10 @@ export type ParsedAiFixPayload = {
   tableOperation?: TableOperation;
   /** Present when persisted JSON had a tableOperation that failed to parse. */
   tableOperationInvalid?: boolean;
+  /** Inline figure from `insert_image` (rich fields only). */
+  insertImage?: SuggestionImageInsert;
+  /** Existing inline figure from `remove_image` (rich fields only). */
+  removeImage?: SuggestionImageRemove;
   /** Second apply site in the same field (citation at end of section). */
   second?: {
     anchorText: string;
@@ -209,12 +219,17 @@ export function parseAiFixCommentContent(content: string): ParsedAiFixPayload {
     if (
       parsed &&
       typeof parsed === "object" &&
-      ("insertText" in parsed || "tableOperation" in parsed)
+      ("insertText" in parsed ||
+        "tableOperation" in parsed ||
+        "insertImage" in parsed ||
+        "removeImage" in parsed)
     ) {
       const tableOperation =
         parsed.tableOperation !== undefined
           ? parseTableOperation(parsed.tableOperation)
           : undefined;
+      const insertImage = parseSuggestionImageInsert(parsed.insertImage);
+      const removeImage = parseSuggestionImageRemove(parsed.removeImage);
       return {
         deleteText: typeof parsed.deleteText === "string" ? parsed.deleteText : "",
         insertText: typeof parsed.insertText === "string" ? parsed.insertText : "",
@@ -223,6 +238,8 @@ export function parseAiFixCommentContent(content: string): ParsedAiFixPayload {
         tableOperation,
         tableOperationInvalid:
           parsed.tableOperation !== undefined && !tableOperation ? true : undefined,
+        insertImage,
+        removeImage,
         second: parseSecondEdit(parsed.second),
         contentHashAtSuggestion:
           typeof parsed.contentHashAtSuggestion === "string"

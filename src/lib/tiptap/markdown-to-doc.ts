@@ -150,6 +150,13 @@ export function markdownToDoc(markdown: string): JSONContent {
   return { type: "doc", content };
 }
 
+/** Markdown image syntax (`![alt](url)`), including read_section ids like `narrative#1`. */
+const MARKDOWN_IMAGE_RE = /!\[[^\]]*]\(\s*[^)]+?\s*\)/;
+
+export function markdownHasImage(markdown: string): boolean {
+  return MARKDOWN_IMAGE_RE.test(markdown);
+}
+
 /** Markdown containing a GFM table (used to route tables away from plain fields). */
 export function markdownHasTable(markdown: string): boolean {
   const lines = markdown.replace(/\r\n/g, "\n").split("\n");

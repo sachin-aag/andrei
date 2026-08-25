@@ -125,6 +125,9 @@ export function collectPendingSuggestionMarkIds(
         if (attrs.id) ids.add(attrs.id);
       }
     }
+    const suggestionId = (node.attrs as { suggestionId?: string | null } | undefined)
+      ?.suggestionId;
+    if (node.type === "imageInline" && suggestionId) ids.add(suggestionId);
     node.content?.forEach(visit);
   }
 

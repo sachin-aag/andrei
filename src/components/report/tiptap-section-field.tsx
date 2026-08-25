@@ -873,6 +873,8 @@ export function TiptapSectionField({
               anchorText: comment.anchorText,
               deleteText: payload.deleteText,
               insertText: payload.insertText,
+              insertImage: payload.insertImage,
+              removeImage: payload.removeImage,
               scope: payload.scope,
               second: payload.second,
             });

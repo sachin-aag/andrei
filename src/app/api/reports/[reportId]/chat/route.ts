@@ -322,6 +322,7 @@ export async function POST(
     mentionedSections: mentionedSections(mentions),
     retrievalPolicy: retrieval.policy,
     documentReview,
+    messages,
   });
   const tools: ToolSet =
     mode === "plan"
