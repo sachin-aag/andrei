@@ -379,13 +379,13 @@ export function RunAllEvaluationButton({
   size = "sm",
   variant = "success",
   className,
-  layout = "stacked",
+  layout = "compact",
 }: {
   size?: "sm" | "default";
   variant?: "outline" | "secondary" | "default" | "success";
   className?: string;
-  /** `stacked` for the report header; `inline` for tight panels. */
-  layout?: "stacked" | "inline";
+  /** `compact` for the report header; `inline` names the scope for tight panels. */
+  layout?: "compact" | "inline";
 }) {
   const { report } = useReportData();
   const {
@@ -396,7 +396,7 @@ export function RunAllEvaluationButton({
 
   const sectionCount = evaluatableSectionKeys(report.documentType).length;
   const typeLabel = getDocumentType(report.documentType).label;
-  const title = `Run traffic-light criteria on all ${sectionCount} sections (${typeLabel})`;
+  const title = `Run traffic-light criteria on all ${sectionCount} sections (${typeLabel}) · ${getCustomerPack().branding.aiAttribution}`;
 
   const icon = isEvaluating ? (
     <Loader2 className="size-4 shrink-0 animate-spin" aria-hidden="true" />
@@ -404,46 +404,20 @@ export function RunAllEvaluationButton({
     <Sparkles className="size-4 shrink-0" aria-hidden="true" />
   );
 
-  const runningDetail =
-    runningEvalSections.length > 0
-      ? `${runningEvalSections.length} section${runningEvalSections.length === 1 ? "" : "s"} left`
-      : "Starting…";
-
-  if (layout === "inline") {
-    const label = isEvaluating
-      ? runningEvalSections.length > 0
-        ? `Checking criteria… ${runningEvalSections.length} left`
-        : "Checking all sections…"
-      : "Run criteria — all sections";
-
-    return (
-      <Button
-        type="button"
-        size={size}
-        variant={variant}
-        className={cn("gap-1.5", className)}
-        disabled={isEvaluating}
-        onClick={() => {
-          captureEvent("ai_evaluation_run", { scope: "all" });
-          runEvaluation();
-        }}
-        title={title}
-      >
-        {icon}
-        <span className="truncate">{label}</span>
-      </Button>
-    );
-  }
+  const label = isEvaluating
+    ? runningEvalSections.length > 0
+      ? `Checking… ${runningEvalSections.length} left`
+      : "Checking all sections…"
+    : layout === "inline"
+      ? "Run criteria — all sections"
+      : "Run criteria";
 
   return (
     <Button
       type="button"
       size={size}
       variant={variant}
-      className={cn(
-        "h-auto min-h-8 flex-col gap-0.5 py-1.5 px-2.5 whitespace-normal leading-tight",
-        className
-      )}
+      className={cn("gap-1.5", className)}
       disabled={isEvaluating}
       onClick={() => {
         captureEvent("ai_evaluation_run", { scope: "all" });
@@ -451,15 +425,8 @@ export function RunAllEvaluationButton({
       }}
       title={title}
     >
-      <span className="flex items-center justify-center gap-1.5 text-sm font-medium">
-        {icon}
-        {isEvaluating ? "Checking all sections…" : "Run criteria"}
-      </span>
-      <span className="text-[10px] font-normal opacity-90 text-center">
-        {isEvaluating
-          ? runningDetail
-          : `All ${sectionCount} sections · ${getCustomerPack().branding.aiAttribution}`}
-      </span>
+      {icon}
+      <span className="truncate">{label}</span>
     </Button>
   );
 }

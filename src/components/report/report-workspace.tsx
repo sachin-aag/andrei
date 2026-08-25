@@ -132,8 +132,6 @@ export function ReportWorkspace({
     refresh,
     currentUserId,
     currentUserEmail,
-    trackChangesMode,
-    setTrackChangesMode,
     flushPendingSectionSaves,
   } = useReportData();
   const { pendingPlaceholders } = useReportPlaceholders();
@@ -523,8 +521,6 @@ export function ReportWorkspace({
         mode={mode}
         authorName={author?.name}
         managerNames={managerNames}
-        trackChangesMode={trackChangesMode}
-        onTrackChangesModeChange={setTrackChangesMode}
         canSubmit={canSubmit}
         canReview={canReview}
         submitting={submitting}
