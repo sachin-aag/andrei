@@ -14,12 +14,14 @@ import { useReportAttachments } from "@/providers/report-attachments-provider";
 import { ReportHeader } from "./report-header";
 import { ReportDetailsEditDialog } from "./report-details-edit-dialog";
 import { ReportWorkspaceHeader } from "./report-workspace-header";
+import type { ReportWorkspaceSurface } from "./report-workspace-header";
 import { RequestExpertReviewDialog } from "./request-expert-review-dialog";
 import { ReportEditorToolbar } from "./report-editor-toolbar";
 import { MarginGutter } from "./review-rail/margin-gutter";
 import { ReportSidebar, type SidebarTab } from "./report-sidebar";
 import { DocumentsPanel } from "./documents/documents-panel";
 import { AttachmentViewer } from "./attachment-viewer";
+import { StatisticalWorkspace } from "@/components/statistical-analysis/workspace";
 import { useUserDirectory } from "@/providers/user-directory-provider";
 import type { DocumentType, SectionType } from "@/db/schema";
 import type { WorkspaceMode } from "@/providers/report-provider";
@@ -34,12 +36,13 @@ import { evaluatableSectionKeys } from "@/lib/ai/criteria-view";
 import { getWorkspaceSections } from "@/lib/document-types";
 import { scrollToGeneratedSuggestion } from "@/lib/suggestions/navigate-suggestion";
 import { captureEvent } from "@/lib/analytics/events";
-import { getCustomerPack } from "@/lib/customers/packs";
+import { getCustomerPack, isStatisticalAnalysisEnabled } from "@/lib/customers/packs";
 import {
   isHiddenExpertReviewer,
   managersVisibleInPicker,
   visibleManagerNames,
 } from "@/lib/reports/hidden-expert-reviewer";
+import { canSaveReportSection } from "@/lib/reports/access";
 import { cn } from "@/lib/utils";
 import { useWorkspaceLayout } from "@/hooks/use-workspace-layout";
 import { WorkspaceResizeHandle } from "./workspace-resize-handle";
@@ -174,6 +177,7 @@ export function ReportWorkspace({
     refresh,
     currentUserId,
     currentUserEmail,
+    currentUserRole,
     flushPendingSectionSaves,
   } = useReportData();
   const { pendingPlaceholders } = useReportPlaceholders();
@@ -212,6 +216,9 @@ export function ReportWorkspace({
     docsCollapsed: documentsCollapsed,
   });
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("assistant");
+  const [surface, setSurface] = useState<ReportWorkspaceSurface>("document");
+  const [analyticsOpen, setAnalyticsOpen] = useState(false);
+  const [analyticsReloadEpoch, setAnalyticsReloadEpoch] = useState(0);
   const [sectionMinHeights, setSectionMinHeights] = useState<
     Partial<Record<SectionType, number>>
   >({});
@@ -221,11 +228,16 @@ export function ReportWorkspace({
     null
   );
   const documentType = report.documentType;
-  const viewingDocument = !!activeAttachmentId;
-  const showReviewGutter = isReviewGutterVisible(
-    sidebarCollapsed,
-    viewingDocument
+  const statsEnabled = isStatisticalAnalysisEnabled();
+  const analyticsSurface = surface === "analytics";
+  const analyticsCanEdit = canSaveReportSection(
+    { id: currentUserId, role: currentUserRole, email: currentUserEmail },
+    report
   );
+  const viewingDocument = !!activeAttachmentId;
+  const showReviewGutter =
+    !analyticsSurface &&
+    isReviewGutterVisible(sidebarCollapsed, viewingDocument);
   const handleSectionOverflow = useCallback(
     (overflows: Record<SectionType, number>) => {
       setSectionMinHeights((prev) => {
@@ -592,9 +604,27 @@ export function ReportWorkspace({
         }}
         showExpertReview={showExpertReview}
         onExpertReview={() => setExpertReviewOpen(true)}
+        surface={surface}
+        showAnalyticsToggle={statsEnabled}
+        onSurfaceChange={(next) => {
+          switch (next) {
+            case "analytics":
+              setSurface(next);
+              setAnalyticsOpen(true);
+              setSidebarTab("assistant");
+              return;
+            case "document":
+              setSurface(next);
+              return;
+            default: {
+              const exhaustive: never = next;
+              return exhaustive;
+            }
+          }
+        }}
       />
 
-      <ReportEditorToolbar />
+      {analyticsSurface ? null : <ReportEditorToolbar />}
 
       <div
         ref={containerRef}
@@ -632,8 +662,34 @@ export function ReportWorkspace({
 
         <main
           ref={mainRef}
-          className="@container min-h-0 min-w-0 flex-1 overflow-auto bg-[var(--background)]"
+          className={cn(
+            "@container min-h-0 min-w-0 flex-1 bg-[var(--background)]",
+            analyticsSurface
+              ? "flex flex-col overflow-hidden"
+              : "overflow-auto"
+          )}
         >
+          {analyticsSurface ? (
+            <div className="relative flex min-h-0 flex-1 flex-col">
+              <div
+                className={cn(
+                  "min-h-0 flex-1",
+                  activeAttachmentId && "hidden"
+                )}
+              >
+                <StatisticalWorkspace
+                  reportId={report.id}
+                  readOnly={!analyticsCanEdit}
+                  reloadEpoch={analyticsReloadEpoch}
+                />
+              </div>
+              {activeAttachmentId ? (
+                <div className="min-h-0 flex-1 overflow-auto">
+                  <AttachmentViewer />
+                </div>
+              ) : null}
+            </div>
+          ) : (
           <div
             className={cn(
               "mx-auto grid w-full min-w-0 grid-cols-1 gap-8 px-6 py-8 pb-24 max-w-[1180px]",
@@ -677,6 +733,7 @@ export function ReportWorkspace({
               </aside>
             ) : null}
           </div>
+          )}
         </main>
 
         <div
@@ -695,6 +752,11 @@ export function ReportWorkspace({
             onJumpToPlaceholder={handleJumpToPlaceholder}
             onJumpToComment={jumpToComment}
             initialCriteriaSection={criteriaFocusSection}
+            surface={surface}
+            analyticsOpen={analyticsOpen}
+            onAnalyticsSettled={() =>
+              setAnalyticsReloadEpoch((epoch) => epoch + 1)
+            }
           />
           {sidebarCollapsed ? null : (
             <WorkspaceResizeHandle

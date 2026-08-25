@@ -1,14 +1,14 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { statisticalAnalyses, statisticalWorkspaces } from "@/db/schema";
+import { isPostgresUniqueViolation } from "@/lib/reports/document-no";
 import { CAPABILITY_SIXPACK_NORMAL } from "./types";
 import type {
   AnalysisKind,
   CapabilitySixpackConfig,
   CapabilitySixpackResult,
+  ReportAnalyticsView,
   StatisticalAnalysisSummary,
-  StatisticalWorkspaceSummary,
-  StatisticalWorkspaceView,
   WorksheetData,
 } from "./types";
 import { createEmptyWorksheet, findColumn } from "./worksheet";
@@ -66,138 +66,97 @@ function toAnalysisSummary(
   };
 }
 
-export async function listWorkspacesForUser(
-  userId: string
-): Promise<StatisticalWorkspaceSummary[]> {
-  const rows = await db
-    .select({
-      workspace: statisticalWorkspaces,
-      analysisCount: sql<number>`cast(count(${statisticalAnalyses.id}) as int)`,
-    })
-    .from(statisticalWorkspaces)
-    .leftJoin(
-      statisticalAnalyses,
-      eq(statisticalAnalyses.workspaceId, statisticalWorkspaces.id)
-    )
-    .where(eq(statisticalWorkspaces.ownerId, userId))
-    .groupBy(statisticalWorkspaces.id)
-    .orderBy(desc(statisticalWorkspaces.updatedAt));
-
-  return rows.map(({ workspace, analysisCount }) => ({
-    id: workspace.id,
-    name: workspace.name,
-    ownerId: workspace.ownerId,
-    analysisCount: Number(analysisCount),
-    createdAt: iso(workspace.createdAt),
-    updatedAt: iso(workspace.updatedAt),
-  }));
+async function analysesForWorkspace(
+  workspaceId: string,
+  worksheet: WorksheetData
+): Promise<StatisticalAnalysisSummary[]> {
+  const analysisRows = await db
+    .select()
+    .from(statisticalAnalyses)
+    .where(eq(statisticalAnalyses.workspaceId, workspaceId))
+    .orderBy(desc(statisticalAnalyses.createdAt));
+  return analysisRows.map((row) => toAnalysisSummary(row, worksheet));
 }
 
-export async function createWorkspaceForUser(
-  userId: string,
-  name = "Untitled worksheet"
-): Promise<StatisticalWorkspaceView> {
-  const [row] = await db
-    .insert(statisticalWorkspaces)
-    .values({
-      name,
-      ownerId: userId,
-      worksheet: createEmptyWorksheet(),
-    })
-    .returning();
-  if (!row) throw new Error("Failed to create statistical workspace");
+function toView(
+  row: typeof statisticalWorkspaces.$inferSelect,
+  analyses: StatisticalAnalysisSummary[]
+): ReportAnalyticsView {
   return {
     id: row.id,
-    name: row.name,
-    ownerId: row.ownerId,
+    reportId: row.reportId,
     worksheet: asWorksheet(row.worksheet),
-    analyses: [],
+    analyses,
     createdAt: iso(row.createdAt),
     updatedAt: iso(row.updatedAt),
   };
 }
 
-export async function getWorkspaceForUser(
-  workspaceId: string,
-  userId: string
-): Promise<StatisticalWorkspaceView | null> {
+export async function getReportAnalytics(
+  reportId: string
+): Promise<ReportAnalyticsView | null> {
   const [workspace] = await db
     .select()
     .from(statisticalWorkspaces)
-    .where(
-      and(
-        eq(statisticalWorkspaces.id, workspaceId),
-        eq(statisticalWorkspaces.ownerId, userId)
-      )
-    );
+    .where(eq(statisticalWorkspaces.reportId, reportId));
   if (!workspace) return null;
-
-  const analysisRows = await db
-    .select()
-    .from(statisticalAnalyses)
-    .where(eq(statisticalAnalyses.workspaceId, workspace.id))
-    .orderBy(desc(statisticalAnalyses.createdAt));
-
   const worksheet = asWorksheet(workspace.worksheet);
-  return {
-    id: workspace.id,
-    name: workspace.name,
-    ownerId: workspace.ownerId,
-    worksheet,
-    analyses: analysisRows.map((row) => toAnalysisSummary(row, worksheet)),
-    createdAt: iso(workspace.createdAt),
-    updatedAt: iso(workspace.updatedAt),
-  };
+  return toView(workspace, await analysesForWorkspace(workspace.id, worksheet));
 }
 
-export async function updateWorkspaceForUser(
-  workspaceId: string,
-  userId: string,
-  patch: { name?: string; worksheet?: WorksheetData }
-): Promise<StatisticalWorkspaceView | null> {
-  const existing = await getWorkspaceForUser(workspaceId, userId);
-  if (!existing) return null;
+/**
+ * One worksheet per report. Unique on `report_id`; concurrent first visits
+ * catch `23505` and reload the winner.
+ */
+export async function getOrCreateReportAnalytics(
+  reportId: string
+): Promise<ReportAnalyticsView> {
+  const existing = await getReportAnalytics(reportId);
+  if (existing) return existing;
+
+  try {
+    const [row] = await db
+      .insert(statisticalWorkspaces)
+      .values({
+        name: "Worksheet",
+        reportId,
+        worksheet: createEmptyWorksheet(),
+      })
+      .returning();
+    if (!row) throw new Error("Failed to create report analytics");
+    return toView(row, []);
+  } catch (error) {
+    if (!isPostgresUniqueViolation(error)) throw error;
+    const raced = await getReportAnalytics(reportId);
+    if (!raced) throw error;
+    return raced;
+  }
+}
+
+export async function updateReportAnalytics(
+  reportId: string,
+  worksheet: WorksheetData
+): Promise<ReportAnalyticsView | null> {
+  const parsed = worksheetDataSchema.safeParse(worksheet);
+  if (!parsed.success) return null;
 
   const [row] = await db
     .update(statisticalWorkspaces)
     .set({
-      ...(patch.name !== undefined ? { name: patch.name } : {}),
-      ...(patch.worksheet !== undefined ? { worksheet: patch.worksheet } : {}),
+      worksheet: parsed.data,
       updatedAt: new Date(),
     })
-    .where(
-      and(
-        eq(statisticalWorkspaces.id, workspaceId),
-        eq(statisticalWorkspaces.ownerId, userId)
-      )
-    )
+    .where(eq(statisticalWorkspaces.reportId, reportId))
     .returning();
   if (!row) return null;
-  return getWorkspaceForUser(workspaceId, userId);
+  return getReportAnalytics(reportId);
 }
 
-export async function deleteWorkspaceForUser(
-  workspaceId: string,
-  userId: string
-): Promise<boolean> {
-  const deleted = await db
-    .delete(statisticalWorkspaces)
-    .where(
-      and(
-        eq(statisticalWorkspaces.id, workspaceId),
-        eq(statisticalWorkspaces.ownerId, userId)
-      )
-    )
-    .returning({ id: statisticalWorkspaces.id });
-  return deleted.length > 0;
-}
-
-export async function createAnalysisForUser(
-  workspaceId: string,
-  userId: string,
+export async function createAnalysisForReport(
+  reportId: string,
   input: unknown
 ): Promise<
-  | { ok: true; workspace: StatisticalWorkspaceView; analysis: StatisticalAnalysisSummary }
+  | { ok: true; analytics: ReportAnalyticsView; analysis: StatisticalAnalysisSummary }
   | { ok: false; status: 400 | 404; error: string }
 > {
   const parsed = capabilitySixpackInputSchema.safeParse(input);
@@ -209,10 +168,10 @@ export async function createAnalysisForUser(
     };
   }
 
-  const workspace = await getWorkspaceForUser(workspaceId, userId);
-  if (!workspace) return { ok: false, status: 404, error: "Not found" };
+  const analytics = await getReportAnalytics(reportId);
+  if (!analytics) return { ok: false, status: 404, error: "Not found" };
 
-  const column = findColumn(workspace.worksheet, parsed.data.columnId);
+  const column = findColumn(analytics.worksheet, parsed.data.columnId);
   if (!column) {
     return { ok: false, status: 400, error: "Select a worksheet column." };
   }
@@ -226,7 +185,7 @@ export async function createAnalysisForUser(
     target: parsed.data.target,
   };
 
-  const outcome = computeCapabilitySixpack(workspace.worksheet, config);
+  const outcome = computeCapabilitySixpack(analytics.worksheet, config);
   if (!outcome.ok) {
     return { ok: false, status: 400, error: outcome.message };
   }
@@ -234,7 +193,7 @@ export async function createAnalysisForUser(
   const [row] = await db
     .insert(statisticalAnalyses)
     .values({
-      workspaceId: workspace.id,
+      workspaceId: analytics.id,
       kind: CAPABILITY_SIXPACK_NORMAL,
       title: config.title,
       config,
@@ -249,29 +208,28 @@ export async function createAnalysisForUser(
   await db
     .update(statisticalWorkspaces)
     .set({ updatedAt: new Date() })
-    .where(eq(statisticalWorkspaces.id, workspace.id));
+    .where(eq(statisticalWorkspaces.id, analytics.id));
 
-  const next = await getWorkspaceForUser(workspaceId, userId);
+  const next = await getReportAnalytics(reportId);
   if (!next) return { ok: false, status: 404, error: "Not found" };
   const analysis = next.analyses.find((item) => item.id === row.id);
   if (!analysis) return { ok: false, status: 404, error: "Not found" };
-  return { ok: true, workspace: next, analysis };
+  return { ok: true, analytics: next, analysis };
 }
 
-export async function recomputeAnalysisForUser(
-  workspaceId: string,
-  analysisId: string,
-  userId: string
+export async function recomputeAnalysisForReport(
+  reportId: string,
+  analysisId: string
 ): Promise<
-  | { ok: true; workspace: StatisticalWorkspaceView; analysis: StatisticalAnalysisSummary }
+  | { ok: true; analytics: ReportAnalyticsView; analysis: StatisticalAnalysisSummary }
   | { ok: false; status: 400 | 404; error: string }
 > {
-  const workspace = await getWorkspaceForUser(workspaceId, userId);
-  if (!workspace) return { ok: false, status: 404, error: "Not found" };
-  const existing = workspace.analyses.find((item) => item.id === analysisId);
+  const analytics = await getReportAnalytics(reportId);
+  if (!analytics) return { ok: false, status: 404, error: "Not found" };
+  const existing = analytics.analyses.find((item) => item.id === analysisId);
   if (!existing) return { ok: false, status: 404, error: "Not found" };
 
-  const column = findColumn(workspace.worksheet, existing.config.columnId);
+  const column = findColumn(analytics.worksheet, existing.config.columnId);
   if (!column) {
     return {
       ok: false,
@@ -284,7 +242,7 @@ export async function recomputeAnalysisForUser(
     ...existing.config,
     columnName: column.name,
   };
-  const outcome = computeCapabilitySixpack(workspace.worksheet, config);
+  const outcome = computeCapabilitySixpack(analytics.worksheet, config);
   if (!outcome.ok) {
     return { ok: false, status: 400, error: outcome.message };
   }
@@ -300,36 +258,35 @@ export async function recomputeAnalysisForUser(
     .where(
       and(
         eq(statisticalAnalyses.id, analysisId),
-        eq(statisticalAnalyses.workspaceId, workspace.id)
+        eq(statisticalAnalyses.workspaceId, analytics.id)
       )
     );
 
   await db
     .update(statisticalWorkspaces)
     .set({ updatedAt: new Date() })
-    .where(eq(statisticalWorkspaces.id, workspace.id));
+    .where(eq(statisticalWorkspaces.id, analytics.id));
 
-  const next = await getWorkspaceForUser(workspaceId, userId);
+  const next = await getReportAnalytics(reportId);
   if (!next) return { ok: false, status: 404, error: "Not found" };
   const analysis = next.analyses.find((item) => item.id === analysisId);
   if (!analysis) return { ok: false, status: 404, error: "Not found" };
-  return { ok: true, workspace: next, analysis };
+  return { ok: true, analytics: next, analysis };
 }
 
-export async function deleteAnalysisForUser(
-  workspaceId: string,
-  analysisId: string,
-  userId: string
-): Promise<StatisticalWorkspaceView | null> {
-  const workspace = await getWorkspaceForUser(workspaceId, userId);
-  if (!workspace) return null;
+export async function deleteAnalysisForReport(
+  reportId: string,
+  analysisId: string
+): Promise<ReportAnalyticsView | null> {
+  const analytics = await getReportAnalytics(reportId);
+  if (!analytics) return null;
   await db
     .delete(statisticalAnalyses)
     .where(
       and(
         eq(statisticalAnalyses.id, analysisId),
-        eq(statisticalAnalyses.workspaceId, workspace.id)
+        eq(statisticalAnalyses.workspaceId, analytics.id)
       )
     );
-  return getWorkspaceForUser(workspaceId, userId);
+  return getReportAnalytics(reportId);
 }

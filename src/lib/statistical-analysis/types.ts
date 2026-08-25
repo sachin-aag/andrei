@@ -141,19 +141,10 @@ export type StatisticalAnalysisSummary = {
   createdAt: string;
 };
 
-export type StatisticalWorkspaceSummary = {
+/** One analytics worksheet per report (1:1 with `statistical_workspaces`). */
+export type ReportAnalyticsView = {
   id: string;
-  name: string;
-  ownerId: string;
-  analysisCount: number;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type StatisticalWorkspaceView = {
-  id: string;
-  name: string;
-  ownerId: string;
+  reportId: string;
   worksheet: WorksheetData;
   analyses: StatisticalAnalysisSummary[];
   createdAt: string;

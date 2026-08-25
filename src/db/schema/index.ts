@@ -440,6 +440,7 @@ export const reportsRelations = relations(reports, ({ one, many }) => ({
   sourceDocx: one(reportSourceDocx),
   managers: many(reportManagers),
   attachments: many(reportAttachments),
+  analytics: one(statisticalWorkspaces),
 }));
 
 export const reportManagersRelations = relations(reportManagers, ({ one }) => ({
@@ -779,6 +780,12 @@ export const chatSessions = pgTable(
     reportId: text("report_id")
       .notNull()
       .references(() => reports.id, { onDelete: "cascade" }),
+    /**
+     * Which assistant owns the thread. `report` is the drafting chat;
+     * `analytics` is the Statistical Analysis assistant. Must be filtered on
+     * every list/create/find or analytics threads leak into the report UI.
+     */
+    surface: text("surface").notNull().default("report"),
     title: text("title").notNull().default(""),
     /**
      * `running` while the server is still generating after the client
@@ -798,8 +805,9 @@ export const chatSessions = pgTable(
       .defaultNow(),
   },
   (t) => ({
-    reportUpdatedIdx: index("chat_sessions_report_updated_idx").on(
+    reportSurfaceUpdatedIdx: index("chat_sessions_report_surface_updated_idx").on(
       t.reportId,
+      t.surface,
       t.updatedAt
     ),
   })
@@ -1141,10 +1149,10 @@ export const statisticalWorkspaces = pgTable(
   "statistical_workspaces",
   {
     id: text("id").primaryKey().$defaultFn(() => createId()),
-    name: text("name").notNull(),
-    ownerId: text("owner_id")
+    name: text("name").notNull().default("Worksheet"),
+    reportId: text("report_id")
       .notNull()
-      .references(() => workspaceUsers.id, { onDelete: "cascade" }),
+      .references(() => reports.id, { onDelete: "cascade" }),
     worksheet: jsonb("worksheet").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
@@ -1154,9 +1162,8 @@ export const statisticalWorkspaces = pgTable(
       .defaultNow(),
   },
   (t) => ({
-    ownerUpdatedIdx: index("statistical_workspaces_owner_updated_idx").on(
-      t.ownerId,
-      t.updatedAt
+    reportIdUnique: uniqueIndex("statistical_workspaces_report_id_unique").on(
+      t.reportId
     ),
   })
 );
@@ -1188,9 +1195,9 @@ export const statisticalAnalyses = pgTable(
 export const statisticalWorkspacesRelations = relations(
   statisticalWorkspaces,
   ({ one, many }) => ({
-    owner: one(workspaceUsers, {
-      fields: [statisticalWorkspaces.ownerId],
-      references: [workspaceUsers.id],
+    report: one(reports, {
+      fields: [statisticalWorkspaces.reportId],
+      references: [reports.id],
     }),
     analyses: many(statisticalAnalyses),
   })

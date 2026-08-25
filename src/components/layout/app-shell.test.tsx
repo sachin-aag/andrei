@@ -102,7 +102,7 @@ describe("AppShell brand chrome", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("shows Statistical Analysis in the demo engineer nav", () => {
+  it("does not show a Statistical Analysis nav item in the demo engineer nav", () => {
     setCustomer("demo");
     render(
       <AppShell user={engineer} initialUsers={[engineer]}>
@@ -110,7 +110,7 @@ describe("AppShell brand chrome", () => {
       </AppShell>
     );
     expect(
-      screen.getByRole("link", { name: "Statistical Analysis" })
-    ).toHaveAttribute("href", "/statistical-analysis");
+      screen.queryByRole("link", { name: "Statistical Analysis" })
+    ).not.toBeInTheDocument();
   });
 });

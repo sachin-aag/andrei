@@ -170,11 +170,11 @@ export async function POST(
   // Resolve the session (create one if the client didn't supply a valid id).
   let sessionId = body.sessionId?.trim() || "";
   if (sessionId) {
-    const found = await findChatSession(reportId, sessionId);
+    const found = await findChatSession(reportId, sessionId, "report");
     if (!found) sessionId = "";
   }
   if (!sessionId) {
-    sessionId = (await createChatSession(reportId)).id;
+    sessionId = (await createChatSession(reportId, "report")).id;
   }
 
   const claimed = await tryMarkAssistantTurnRunning(sessionId);

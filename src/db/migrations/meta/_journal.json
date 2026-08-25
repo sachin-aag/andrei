@@ -302,6 +302,13 @@
       "when": 1783495200000,
       "tag": "0043_statistical_analysis",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1783581600000,
+      "tag": "0044_report_analytics",
+      "breakpoints": true
     }
   ]
 }

@@ -1,7 +1,4 @@
-import type {
-  StatisticalWorkspaceSummary,
-  StatisticalWorkspaceView,
-} from "./types";
+import type { ReportAnalyticsView } from "./types";
 
 async function readError(response: Response): Promise<string> {
   try {
@@ -13,64 +10,40 @@ async function readError(response: Response): Promise<string> {
   return `Request failed (${response.status})`;
 }
 
-async function parseWorkspace(response: Response): Promise<StatisticalWorkspaceView> {
-  const body = (await response.json()) as { workspace: StatisticalWorkspaceView };
-  return body.workspace;
+async function parseAnalytics(response: Response): Promise<ReportAnalyticsView> {
+  const body = (await response.json()) as { analytics: ReportAnalyticsView };
+  return body.analytics;
 }
 
-export async function listStatisticalWorkspaces(): Promise<
-  StatisticalWorkspaceSummary[]
-> {
-  const response = await fetch("/api/statistical-analysis/workspaces");
+function analyticsUrl(reportId: string, suffix = ""): string {
+  return `/api/reports/${encodeURIComponent(reportId)}/analytics${suffix}`;
+}
+
+export async function getReportAnalytics(
+  reportId: string
+): Promise<ReportAnalyticsView> {
+  const response = await fetch(analyticsUrl(reportId));
   if (!response.ok) throw new Error(await readError(response));
-  const body = (await response.json()) as {
-    workspaces: StatisticalWorkspaceSummary[];
-  };
-  return body.workspaces;
+  return parseAnalytics(response);
 }
 
-export async function createStatisticalWorkspace(
-  name?: string
-): Promise<StatisticalWorkspaceView> {
-  const response = await fetch("/api/statistical-analysis/workspaces", {
-    method: "POST",
+export async function patchReportAnalytics(
+  reportId: string,
+  body: { worksheet: ReportAnalyticsView["worksheet"] },
+  signal?: AbortSignal
+): Promise<ReportAnalyticsView> {
+  const response = await fetch(analyticsUrl(reportId), {
+    method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(name ? { name } : {}),
+    body: JSON.stringify(body),
+    signal,
   });
   if (!response.ok) throw new Error(await readError(response));
-  return parseWorkspace(response);
-}
-
-export async function patchStatisticalWorkspace(
-  workspaceId: string,
-  body: { name?: string; worksheet?: StatisticalWorkspaceView["worksheet"] },
-  signal?: AbortSignal
-): Promise<StatisticalWorkspaceView> {
-  const response = await fetch(
-    `/api/statistical-analysis/workspaces/${workspaceId}`,
-    {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      signal,
-    }
-  );
-  if (!response.ok) throw new Error(await readError(response));
-  return parseWorkspace(response);
-}
-
-export async function deleteStatisticalWorkspace(
-  workspaceId: string
-): Promise<void> {
-  const response = await fetch(
-    `/api/statistical-analysis/workspaces/${workspaceId}`,
-    { method: "DELETE" }
-  );
-  if (!response.ok) throw new Error(await readError(response));
+  return parseAnalytics(response);
 }
 
 export async function createCapabilitySixpack(
-  workspaceId: string,
+  reportId: string,
   input: {
     columnId: string;
     title?: string;
@@ -78,25 +51,22 @@ export async function createCapabilitySixpack(
     usl: number | null;
     target: number | null;
   }
-): Promise<StatisticalWorkspaceView> {
-  const response = await fetch(
-    `/api/statistical-analysis/workspaces/${workspaceId}/analyses`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(input),
-    }
-  );
+): Promise<ReportAnalyticsView> {
+  const response = await fetch(analyticsUrl(reportId, "/analyses"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
   if (!response.ok) throw new Error(await readError(response));
-  return parseWorkspace(response);
+  return parseAnalytics(response);
 }
 
 export async function recomputeCapabilitySixpack(
-  workspaceId: string,
+  reportId: string,
   analysisId: string
-): Promise<StatisticalWorkspaceView> {
+): Promise<ReportAnalyticsView> {
   const response = await fetch(
-    `/api/statistical-analysis/workspaces/${workspaceId}/analyses/${analysisId}`,
+    analyticsUrl(reportId, `/analyses/${encodeURIComponent(analysisId)}`),
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -104,17 +74,17 @@ export async function recomputeCapabilitySixpack(
     }
   );
   if (!response.ok) throw new Error(await readError(response));
-  return parseWorkspace(response);
+  return parseAnalytics(response);
 }
 
 export async function deleteCapabilitySixpack(
-  workspaceId: string,
+  reportId: string,
   analysisId: string
-): Promise<StatisticalWorkspaceView> {
+): Promise<ReportAnalyticsView> {
   const response = await fetch(
-    `/api/statistical-analysis/workspaces/${workspaceId}/analyses/${analysisId}`,
+    analyticsUrl(reportId, `/analyses/${encodeURIComponent(analysisId)}`),
     { method: "DELETE" }
   );
   if (!response.ok) throw new Error(await readError(response));
-  return parseWorkspace(response);
+  return parseAnalytics(response);
 }

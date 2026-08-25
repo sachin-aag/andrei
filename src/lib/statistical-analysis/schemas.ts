@@ -41,23 +41,12 @@ export const capabilitySixpackInputSchema = z
     }
   });
 
-export const workspaceNameSchema = z
-  .string()
-  .trim()
-  .min(1)
-  .max(80);
-
-export const createWorkspaceBodySchema = z
+export const patchAnalyticsBodySchema = z
   .object({
-    name: workspaceNameSchema.optional(),
-  })
-  .optional();
-
-export const patchWorkspaceBodySchema = z
-  .object({
-    name: workspaceNameSchema.optional(),
     worksheet: worksheetDataSchema.optional(),
+    /** Ignored leftover from the old named-workspace autosave body. */
+    name: z.string().optional(),
   })
-  .refine((value) => value.name !== undefined || value.worksheet !== undefined, {
-    message: "Provide a name or worksheet to update.",
+  .refine((value) => value.worksheet !== undefined, {
+    message: "Provide a worksheet to update.",
   });

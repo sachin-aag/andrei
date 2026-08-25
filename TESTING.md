@@ -257,13 +257,14 @@ Both AI-suggestion cases seed an open suggestion through `POST /api/test/seed-ai
 </details>
 
 <details>
-<summary><strong>statistical-analysis.spec.ts</strong> — worksheet + Normal Capability Sixpack</summary>
+<summary><strong>statistical-analysis.spec.ts</strong> — report Analytics worksheet + Normal Capability Sixpack</summary>
 
 | Test | What it verifies |
 |------|------------------|
-| shows empty state and creates a worksheet from the list | `/statistical-analysis` empty copy → new workspace grid |
-| loads sample assay and runs a Normal Capability Sixpack | Data menu sample → Stat menu → Cp/Cpk sixpack |
-| marks a sixpack stale after the source column changes | API-seeded analysis, edit cell, Recompute clears stale |
+| opens the Analytics tab with an empty worksheet | `/reports/:id/edit` → Analytics → grid, Define hidden |
+| loads sample assay and runs a Normal Capability Sixpack | Data menu sample → flattened Stat menu → Cp/Cpk sixpack |
+| marks a sixpack stale after the source column changes | API-seeded analysis, edit cell, Recompute clears stale badge |
+| streams a stats-assistant reply | Stub chat streams and persists (cannot assert tools) |
 
 </details>
 
@@ -294,6 +295,18 @@ Skipped when `docs/Draft Investigation (DEV-QC-26-001).docx` is missing.
 - Rolls back report when source DOCX persistence fails
 
 File: `src/app/api/reports/route.test.ts`
+
+</details>
+
+<details>
+<summary><strong>/api/reports/[reportId]/analytics</strong> — worksheet + sixpack</summary>
+
+- Pack/auth failures pass through `requireAnalyticsAccess` (404/401/403)
+- GET loads or creates the per-report worksheet
+- PATCH/POST persist worksheet JSON (POST is the autosave beacon alias)
+- POST analyses creates a sixpack; POST analyses/[id] recomputes
+
+File: `src/app/api/reports/[reportId]/analytics/route.test.ts`
 
 </details>
 

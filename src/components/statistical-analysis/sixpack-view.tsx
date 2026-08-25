@@ -478,11 +478,13 @@ export function SixpackView({
   onRecompute,
   onDelete,
   recomputing,
+  readOnly = false,
 }: {
   analysis: StatisticalAnalysisSummary;
   onRecompute: () => void;
   onDelete: () => void;
   recomputing: boolean;
+  readOnly?: boolean;
 }) {
   const { results, config, stale, title } = analysis;
   return (
@@ -498,25 +500,32 @@ export function SixpackView({
         </div>
         <div className="flex items-center gap-2">
           {stale ? (
-            <Badge variant="warning">Stale</Badge>
+            <Badge data-testid="sixpack-stale-badge" variant="warning">
+              Stale
+            </Badge>
           ) : null}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            disabled={recomputing}
-            onClick={onRecompute}
-          >
-            {recomputing ? "Recomputing…" : "Recompute"}
-          </Button>
-          <Button type="button" variant="ghost" size="sm" onClick={onDelete}>
-            Delete
-          </Button>
+          {readOnly ? null : (
+            <>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={recomputing}
+                onClick={onRecompute}
+              >
+                {recomputing ? "Recomputing…" : "Recompute"}
+              </Button>
+              <Button type="button" variant="ghost" size="sm" onClick={onDelete}>
+                Delete
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
       {stale ? (
         <p
+          data-testid="sixpack-stale-banner"
           className="rounded-md border border-amber-300/60 bg-amber-50 px-3 py-2 text-sm text-amber-950"
           role="status"
         >

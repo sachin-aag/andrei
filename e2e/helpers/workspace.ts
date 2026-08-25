@@ -89,6 +89,13 @@ export async function openReportAssistant(page: Page): Promise<void> {
   ).toBeEnabled({ timeout: 15_000 });
 }
 
+export async function openReportAnalytics(page: Page): Promise<void> {
+  await page.getByTestId("report-surface-analytics").click();
+  await expect(page.getByTestId("report-analytics-workspace")).toBeVisible({
+    timeout: 30_000,
+  });
+}
+
 /** Collapse the assistant so the review margin (suggestions/comments) can show. */
 export async function collapseReportSidebar(page: Page): Promise<void> {
   const sidebar = reportSidebar(page);

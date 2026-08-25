@@ -6,16 +6,11 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
 export function WorkspaceMenubar({
-  onRename,
-  onDelete,
-  onClose,
+  readOnly,
   onInsertColumn,
   onDeleteColumn,
   onInsertRow,
@@ -23,9 +18,7 @@ export function WorkspaceMenubar({
   onLoadSample,
   onNormalSixpack,
 }: {
-  onRename: () => void;
-  onDelete: () => void;
-  onClose: () => void;
+  readOnly: boolean;
   onInsertColumn: () => void;
   onDeleteColumn: () => void;
   onInsertRow: () => void;
@@ -37,21 +30,7 @@ export function WorkspaceMenubar({
     <div className="flex flex-wrap items-center gap-0.5">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="sm">
-            File
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="start">
-          <DropdownMenuItem onSelect={onRename}>Rename worksheet…</DropdownMenuItem>
-          <DropdownMenuItem onSelect={onDelete}>Delete worksheet</DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem onSelect={onClose}>Close</DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="sm">
+          <Button variant="ghost" size="sm" disabled={readOnly}>
             Data
           </Button>
         </DropdownMenuTrigger>
@@ -72,27 +51,17 @@ export function WorkspaceMenubar({
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="sm">
+          <Button variant="ghost" size="sm" disabled={readOnly}>
             Stat
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start">
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger>Quality Tools</DropdownMenuSubTrigger>
-            <DropdownMenuSubContent>
-              <DropdownMenuSub>
-                <DropdownMenuSubTrigger>Capability Sixpack</DropdownMenuSubTrigger>
-                <DropdownMenuSubContent>
-                  <DropdownMenuItem
-                    data-testid="stat-normal-sixpack"
-                    onSelect={onNormalSixpack}
-                  >
-                    Normal…
-                  </DropdownMenuItem>
-                </DropdownMenuSubContent>
-              </DropdownMenuSub>
-            </DropdownMenuSubContent>
-          </DropdownMenuSub>
+          <DropdownMenuItem
+            data-testid="stat-normal-sixpack"
+            onSelect={onNormalSixpack}
+          >
+            Normal Capability Sixpack…
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

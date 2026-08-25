@@ -21,6 +21,12 @@ vi.mock("@/components/report/chat-panel", () => ({
   },
 }));
 
+vi.mock("@/components/statistical-analysis/analytics-chat-panel", () => ({
+  AnalyticsChatPanel: function MockAnalyticsChatPanel() {
+    return <div data-testid="analytics-chat-panel">analytics chat</div>;
+  },
+}));
+
 vi.mock("@/components/report/placeholders-panel", () => ({
   PlaceholdersPanelContent: () => <div>placeholders</div>,
 }));
@@ -91,6 +97,36 @@ describe("ReportSidebar chat keep-alive", () => {
 
     expect(screen.getByTestId("chat-panel")).toBeInTheDocument();
     expect(screen.getByTestId("chat-panel").parentElement).toHaveClass("hidden");
+    expect(chatPanelMounts).toBe(1);
+  });
+
+  it("keeps ChatPanel mounted and shows analytics chat on the Analytics surface", () => {
+    chatPanelMounts = 0;
+    const { rerender } = renderSidebar(false, "assistant");
+    expect(screen.getByTestId("chat-panel")).toBeInTheDocument();
+    expect(screen.queryByTestId("analytics-chat-panel")).not.toBeInTheDocument();
+
+    rerender(
+      <ReportSidebar
+        collapsed={false}
+        onToggleCollapse={noop}
+        activeTab="assistant"
+        onTabChange={noop}
+        onJumpToSection={noop}
+        onJumpToPlaceholder={noop}
+        onJumpToComment={noop}
+        surface="analytics"
+        analyticsOpen
+      />
+    );
+
+    expect(screen.getByTestId("chat-panel")).toBeInTheDocument();
+    expect(screen.getByTestId("chat-panel").parentElement).toHaveClass("hidden");
+    expect(screen.getByTestId("analytics-chat-panel")).toBeInTheDocument();
+    expect(screen.getByTestId("analytics-chat-panel").parentElement).not.toHaveClass(
+      "hidden"
+    );
+    expect(screen.queryByRole("button", { name: "Criteria" })).not.toBeInTheDocument();
     expect(chatPanelMounts).toBe(1);
   });
 });

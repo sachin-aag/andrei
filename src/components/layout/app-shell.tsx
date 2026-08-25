@@ -8,7 +8,6 @@ import {
   AlertTriangle,
   BarChart3,
   FileText,
-  LineChart,
   Sparkles,
   Users,
   PanelLeftClose,
@@ -21,7 +20,7 @@ import { roleLabel } from "@/lib/auth/roles";
 import { DEFAULT_INACTIVITY_TIMEOUT_MINUTES } from "@/lib/auth/inactivity-timeout";
 import { InactivityLogout } from "@/components/auth/inactivity-logout";
 import { BrandLogo } from "@/components/brand/brand-logo";
-import { getCustomerPack, isStatisticalAnalysisEnabled } from "@/lib/customers/packs";
+import { getCustomerPack } from "@/lib/customers/packs";
 
 export function AppShell({
   user,
@@ -43,7 +42,6 @@ export function AppShell({
   );
   const mainId = useId();
   const { branding } = getCustomerPack();
-  const statsEnabled = isStatisticalAnalysisEnabled();
 
   const navItems = [
     ...(user.role === "admin"
@@ -55,15 +53,6 @@ export function AppShell({
           { href: "/", label: "Reports", icon: FileText },
           { href: "/insights/dashboard", label: "Insights", icon: BarChart3 },
           { href: "/improve-ai", label: "Improve AI", icon: Sparkles },
-          ...(statsEnabled
-            ? [
-                {
-                  href: "/statistical-analysis",
-                  label: "Statistical Analysis",
-                  icon: LineChart,
-                },
-              ]
-            : []),
         ]),
   ];
 

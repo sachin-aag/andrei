@@ -14,7 +14,7 @@ export async function GET(
   const access = await loadAccessibleReport(reportId, user);
   if (!access) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const sessions = await listChatSessions(reportId);
+  const sessions = await listChatSessions(reportId, "report");
   return NextResponse.json({ sessions });
 }
 
@@ -29,6 +29,6 @@ export async function POST(
   const access = await loadAccessibleReport(reportId, user);
   if (!access) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  const session = await createChatSession(reportId);
+  const session = await createChatSession(reportId, "report");
   return NextResponse.json({ session });
 }

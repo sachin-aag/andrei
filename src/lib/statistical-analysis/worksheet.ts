@@ -238,6 +238,24 @@ export function findColumn(
   return data.columns.find((column) => column.id === columnId);
 }
 
+export function findColumnIndex(
+  data: WorksheetData,
+  columnId: string
+): number {
+  return data.columns.findIndex((column) => column.id === columnId);
+}
+
+export function findColumnIndexByName(
+  data: WorksheetData,
+  name: string
+): number {
+  const trimmed = name.trim().toLowerCase();
+  if (!trimmed) return -1;
+  return data.columns.findIndex(
+    (column) => column.name.trim().toLowerCase() === trimmed
+  );
+}
+
 /** Stable preimage used by `hashColumnSource` (server) and stale detection (client). */
 export function columnSourceKey(column: WorksheetColumn): string {
   return JSON.stringify(trimTrailingEmpty(column.values));

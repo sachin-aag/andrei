@@ -18,6 +18,7 @@ type WorksheetGridProps = {
   selection: GridSelection;
   onSelectionChange: (selection: GridSelection) => void;
   onChange: (worksheet: WorksheetData) => void;
+  readOnly?: boolean;
 };
 
 const EXTRA_EMPTY_ROWS = 8;
@@ -35,6 +36,7 @@ export function WorksheetGrid({
   selection,
   onSelectionChange,
   onChange,
+  readOnly = false,
 }: WorksheetGridProps) {
   const gridRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -60,6 +62,7 @@ export function WorksheetGrid({
   };
 
   const beginEdit = (initial: string) => {
+    if (readOnly) return;
     setDraft(initial);
     setEditing(true);
   };
@@ -103,6 +106,7 @@ export function WorksheetGrid({
       return;
     }
     if (event.key === "Delete" || event.key === "Backspace") {
+      if (readOnly) return;
       event.preventDefault();
       onChange(setCell(worksheet, selection.col, selection.row, ""));
       return;
@@ -141,6 +145,7 @@ export function WorksheetGrid({
       return;
     }
     if (isPrintableKey(event)) {
+      if (readOnly) return;
       event.preventDefault();
       beginEdit(event.key);
     }
@@ -173,7 +178,7 @@ export function WorksheetGrid({
   };
 
   const handlePaste = (event: React.ClipboardEvent) => {
-    if (editing) return;
+    if (editing || readOnly) return;
     event.preventDefault();
     const text = event.clipboardData.getData("text/plain");
     onChange(pasteTsv(worksheet, selection.col, selection.row, text));
@@ -238,6 +243,7 @@ export function WorksheetGrid({
                       className="w-full truncate px-1 text-left font-medium"
                       onClick={() => select({ col: colIndex, row: selection.row })}
                       onDoubleClick={() => {
+                        if (readOnly) return;
                         setEditingHeader(colIndex);
                         setHeaderDraft(column.name);
                       }}
@@ -286,6 +292,7 @@ export function WorksheetGrid({
                       gridRef.current?.focus();
                     }}
                     onDoubleClick={() => {
+                      if (readOnly) return;
                       select({ col: colIndex, row: rowIndex });
                       beginEdit(cellValue(colIndex, rowIndex));
                     }}

@@ -5,6 +5,7 @@ import {
   columnSourceKey,
   createEmptyWorksheet,
   deleteColumn,
+  findColumnIndexByName,
   insertColumn,
   parseTsv,
   pasteTsv,
@@ -80,5 +81,11 @@ describe("worksheet grid operations", () => {
     expect(sheet.columns[0]?.name).toBe("Assay");
     expect(sheet.columns[0]?.values).toHaveLength(50);
     expect(columnNumericValues(sheet.columns[0]!).values).toHaveLength(50);
+  });
+
+  it("finds a column by case-insensitive name", () => {
+    const sheet = applySampleAssay(createEmptyWorksheet(), 0);
+    expect(findColumnIndexByName(sheet, "assay")).toBe(0);
+    expect(findColumnIndexByName(sheet, "missing")).toBe(-1);
   });
 });
