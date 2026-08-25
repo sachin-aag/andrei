@@ -373,7 +373,13 @@ test.describe("manager track changes persist", () => {
       }).toPass({ timeout: 30_000 });
       await expect(field).toBeEnabled({ timeout: 30_000 });
       await field.focus();
-      await expect(page.getByRole("toolbar", { name: "Active field" })).toBeVisible();
+      // Toolbar is always mounted in review (aria-label "Editing"). Wait until
+      // focus registered — the label names the field — before typing.
+      const fieldLabel =
+        contentPath === "brainstorming" ? "Brainstorming" : "Other Tools";
+      await expect(page.getByRole("toolbar", { name: "Editing" })).toContainText(
+        `Editing: ${fieldLabel}`
+      );
       const mark = `mgr-${contentPath}-${Date.now()}`;
       await field.pressSequentially(mark, { delay: 20 });
       await expect(field).toHaveValue(mark);
