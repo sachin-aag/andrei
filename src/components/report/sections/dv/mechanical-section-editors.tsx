@@ -27,12 +27,10 @@ function NarrativeEditor({
   section,
   fieldLabel,
   placeholder,
-  description,
 }: {
   section: MechanicalDvSectionKey;
   fieldLabel: string;
   placeholder: string;
-  description?: string;
 }) {
   const { update } = useGenericReportSection<NarrativeContent>(section);
   const { status, lastSavedAt, value, flushSave } =
@@ -44,7 +42,6 @@ function NarrativeEditor({
   return (
     <SectionShell
       title={label(section)}
-      description={description}
       status={status}
       lastSavedAt={lastSavedAt}
       section={section}
@@ -72,13 +69,11 @@ function NarrativeTableEditor({
   narrativeLabel,
   narrativePlaceholder,
   tableLabel,
-  description,
 }: {
   section: MechanicalDvSectionKey;
   narrativeLabel: string;
   narrativePlaceholder: string;
   tableLabel: string;
-  description?: string;
 }) {
   const { update } = useGenericReportSection<NarrativeTableContent>(section);
   const { status, lastSavedAt, value, flushSave } =
@@ -91,7 +86,6 @@ function NarrativeTableEditor({
   return (
     <SectionShell
       title={label(section)}
-      description={description}
       status={status}
       lastSavedAt={lastSavedAt}
       section={section}
@@ -127,11 +121,9 @@ type TableContent = { table: JSONContent };
 function TableEditor({
   section,
   fieldLabel,
-  description,
 }: {
   section: MechanicalDvSectionKey;
   fieldLabel: string;
-  description?: string;
 }) {
   const { update } = useGenericReportSection<TableContent>(section);
   const { status, lastSavedAt, value, flushSave } =
@@ -141,7 +133,6 @@ function TableEditor({
   return (
     <SectionShell
       title={label(section)}
-      description={description}
       status={status}
       lastSavedAt={lastSavedAt}
       section={section}
@@ -217,7 +208,6 @@ export function MechExecutedProtocolEditor() {
     <NarrativeEditor
       section="executed_protocol"
       fieldLabel="Executed Protocol"
-      description="One sentence. Full or partial, each protocol by number and revision."
       placeholder="[Full/Partial] executions of [number], Rev. [letter] and [number], Rev. [letter], respectively."
     />
   );
@@ -228,7 +218,6 @@ export function MechProtocolDeviationsEditor() {
     <NarrativeEditor
       section="protocol_deviations"
       fieldLabel="Protocol Deviations"
-      description="Changes to the test method. A result that failed its requirement belongs in section 3."
       placeholder="Throughout the execution of the test protocol, the test engineers implemented [n words] ([n]) deviations to the protocol method to [reason]. All original approved deviation forms can be found attached at the end of the executed protocol in Appendix [letter] of this report."
     />
   );
@@ -240,7 +229,6 @@ export function MechUnitsUnderTestEditor() {
       section="units_under_test"
       narrativeLabel="Units Under Test"
       tableLabel="Table 1. Units Under Test"
-      description="Three paragraphs: system-to-UUT reconciliation, component assemblies, and the UUT datasheet pointer. Measurement instruments belong in 2.4."
       narrativePlaceholder="[N words] ([n]) [product] systems, [n] [config] systems and [n] [config] systems were required to complete testing. … [n] [assembly] ([PART-NO] Rev. [n]) … were required to complete testing. More details … are detailed in the Unit Under Test Datasheet in Section [n] of the executed [protocol] and section [n] of the [protocol], which are attached in Appendix [letter] of this report."
     />
   );
@@ -252,7 +240,6 @@ export function MechTestEquipmentEditor() {
       section="equipment_and_calibration"
       narrativeLabel="Lead-in"
       tableLabel="Table 2. Test Equipment"
-      description="One table covers both executions. The units under test belong in Table 1."
       narrativePlaceholder="The table below lists all equipment used for testing during the [full/partial] executions of the test protocols."
     />
   );
@@ -263,7 +250,6 @@ export function MechFailureFormsEditor() {
     <NarrativeEditor
       section="failure_forms"
       fieldLabel="Failure/Out of Specification Forms"
-      description="A failure is a result that did not satisfy its requirement. Method changes belong in 2.2."
       placeholder={
         "There [was/were] [n words] ([n]) failure(s) encountered throughout the [full/partial] execution of the test protocol, [number] Rev. [letter]. The approved failure form is attached in Appendix [letter] of this report, following all completed datasheets. A summary of the failure is listed below.\n\nFailure #01:\nRequirement: [REQ-ID]\n[What was observed, the technical cause, and any related change record.]\n[Disposition: whether action is needed, and every document that will be corrected, by number.]"
       }
@@ -302,7 +288,6 @@ export function MechRequirementsVerifiedEditor() {
   return (
     <SectionShell
       title={label(section)}
-      description="Coverage is the test plan's requirement set, not the requirements document. Hardware first."
       status={status}
       lastSavedAt={lastSavedAt}
       section={section}
@@ -346,7 +331,6 @@ export function MechObservationsEditor() {
     <NarrativeEditor
       section="observations"
       fieldLabel="Observations"
-      description="One paragraph per observation, in the order they arose. Failures belong in section 3."
       placeholder="[When the observation was made], it was determined that … Refer to [design review / change record / deviation] for further details regarding this [scope change]. As a result, …"
     />
   );
@@ -357,7 +341,6 @@ export function MechProblemsResolutionEditor() {
     <NarrativeEditor
       section="problems_resolution"
       fieldLabel="Problem or Failure Resolution"
-      description="One paragraph covering every failure. Restates and resolves — introduces no new facts."
       placeholder="There [was/were] [n words] ([n]) reported failure(s) that occurred during the execution of the test protocol, which [is/are] captured in Failure/Out of Specification Form No. [n]. … [Product limitation or test case error, and the protocol revision that introduced the test case.] [No] immediate action was required."
     />
   );
@@ -378,7 +361,6 @@ export function MechRevisionHistoryEditor() {
     <TableEditor
       section="revision_history"
       fieldLabel="Table 5. Revision History"
-      description="One row per revision, oldest at the top. Historical rows are never edited or removed."
     />
   );
 }

@@ -112,6 +112,9 @@ docs/convergent-onboarding-temporary-passwords.md
 # must stay tracked.
 /*.docx
 
+# Local chart fixture renders (`scripts/render-chart-fixture.ts`)
+/tmp/
+
 # Ralph loop local scratch (do not commit)
 .cursor/ralph/scratchpad.md
 

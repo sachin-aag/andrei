@@ -27,6 +27,7 @@ import { finalizeNarrativeDocAfterSuggestion } from "@/lib/tiptap/finalize-narra
 import {
   acceptPendingImageSuggestions,
   dropPendingImageSuggestions,
+  insertPendingImageAfterDeletionMark,
   locateImageRemoval,
   markImageForDeletion,
   pendingImageInlineNode,
@@ -1042,6 +1043,11 @@ function applySingleEditToRichDoc(
     const cloned: JSONContent = JSON.parse(JSON.stringify(doc));
     if (!markImageForDeletion(cloned, edit.removeImage, attrs.id)) {
       return { status: "not_found", doc };
+    }
+    if (edit.insertImage) {
+      if (!insertPendingImageAfterDeletionMark(cloned, edit.insertImage, attrs.id)) {
+        return { status: "not_found", doc };
+      }
     }
     cleanupMarks(cloned);
     return { status: "located", doc: cloned };

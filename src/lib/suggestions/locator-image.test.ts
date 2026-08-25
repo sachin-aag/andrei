@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { JSONContent } from "@tiptap/core";
+import { getSchema, type JSONContent } from "@tiptap/core";
+import StarterKit from "@tiptap/starter-kit";
 import {
   applyAndAcceptRichEdit,
   applyEditToRichDoc,
@@ -9,7 +10,12 @@ import {
 import {
   listInlineImagesInDoc,
   parseSuggestionImageInsert,
+  pendingImageInlineNode,
+  acceptPendingImageSuggestions,
 } from "@/lib/suggestions/image-insert";
+import { parseChartSpec } from "@/lib/charts/chart-spec";
+import { TORQUE_MOCK_SPEC } from "@/lib/charts/__fixtures__/torque-mock";
+import { ImageInline } from "@/lib/tiptap/image-inline";
 
 const TINY_PNG =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
@@ -350,3 +356,146 @@ describe("locator — removeImage", () => {
     ).toBe("ambiguous");
   });
 });
+
+describe("locator — replace image (remove + insert)", () => {
+  const replacement = {
+    src: PNG,
+    alt: "Restyled chart",
+    width: 600,
+    mediaId: null,
+    chartSpec: TORQUE_MOCK_SPEC,
+  };
+
+  it("marks the old figure for deletion and inserts the pending chart after it", () => {
+    const doc = docWithImage("See the figure.");
+    const result = applyEditToRichDoc(
+      doc,
+      {
+        anchorText: "",
+        deleteText: "",
+        insertText: "",
+        removeImage: { ...IMAGE, index: 1 },
+        insertImage: replacement,
+      },
+      ATTRS
+    );
+    expect(result.status).toBe("located");
+    const images = result.doc.content?.[0]?.content?.filter((c) => c.type === "imageInline") ?? [];
+    expect(images).toHaveLength(2);
+    expect(images[0]?.attrs?.suggestionKind).toBe("delete");
+    expect(images[1]?.attrs?.suggestionKind).toBe("insert");
+    expect(images[1]?.attrs?.chartSpec).toEqual(TORQUE_MOCK_SPEC);
+  });
+
+  it("accept keeps the new chartSpec and drops the old figure", () => {
+    const doc = docWithImage("See the figure.");
+    const accepted = applyAndAcceptRichEdit(
+      doc,
+      ATTRS.id,
+      {
+        anchorText: "",
+        deleteText: "",
+        insertText: "",
+        removeImage: { ...IMAGE, index: 1 },
+        insertImage: replacement,
+      },
+      ATTRS
+    );
+    expect(accepted.status).toBe("located");
+    const listed = listInlineImagesInDoc(accepted.doc);
+    expect(listed).toHaveLength(1);
+    expect(listed[0]?.chartSpec?.query).toBe("mock-torque");
+    const node = walkImage(accepted.doc);
+    expect(node?.attrs?.suggestionId).toBeUndefined();
+    expect(node?.attrs?.chartSpec).toEqual(TORQUE_MOCK_SPEC);
+  });
+
+  it("dismiss restores the original figure", () => {
+    const doc = docWithImage("See the figure.");
+    const preview = applyEditToRichDoc(
+      doc,
+      {
+        anchorText: "",
+        deleteText: "",
+        insertText: "",
+        removeImage: { ...IMAGE, index: 1 },
+        insertImage: replacement,
+      },
+      ATTRS
+    );
+    const stripped = stripSuggestionMarksById(preview.doc, ATTRS.id);
+    const listed = listInlineImagesInDoc(stripped);
+    expect(listed).toHaveLength(1);
+    expect(listed[0]?.alt).toBe("HPLC trace");
+    expect(listed[0]?.chartSpec).toBeNull();
+  });
+});
+
+describe("imageInline chartSpec plumbing", () => {
+  it("surfaces chartSpec from listInlineImagesInDoc and pending nodes", () => {
+    const pending = pendingImageInlineNode(
+      { src: PNG, alt: "chart", width: 600, mediaId: null, chartSpec: TORQUE_MOCK_SPEC },
+      "sug-chart"
+    );
+    expect(pending.attrs?.chartSpec).toEqual(TORQUE_MOCK_SPEC);
+    const doc: JSONContent = {
+      type: "doc",
+      content: [{ type: "paragraph", content: [pending] }],
+    };
+    expect(listInlineImagesInDoc(doc)[0]?.chartSpec?.query).toBe("mock-torque");
+  });
+
+  it("leaves unknown photo attrs as a null chartSpec", () => {
+    expect(parseSuggestionImageInsert({ src: PNG, alt: "photo", extra: "nope" })?.chartSpec).toBeUndefined();
+    const doc = docWithImage("photo");
+    expect(listInlineImagesInDoc(doc)[0]?.chartSpec).toBeNull();
+  });
+
+  it("acceptPendingImageSuggestions leaves chartSpec on the node", () => {
+    const pending = pendingImageInlineNode(
+      { src: PNG, alt: "chart", width: 600, mediaId: null, chartSpec: TORQUE_MOCK_SPEC },
+      "sug-chart"
+    );
+    const doc: JSONContent = {
+      type: "doc",
+      content: [{ type: "paragraph", content: [pending] }],
+    };
+    acceptPendingImageSuggestions(doc, "sug-chart");
+    expect(walkImage(doc)?.attrs?.chartSpec).toEqual(TORQUE_MOCK_SPEC);
+    expect(walkImage(doc)?.attrs?.suggestionId).toBeUndefined();
+  });
+
+  it("round-trips chartSpec through TipTap schema JSON", () => {
+    const schema = getSchema([
+      StarterKit.configure({ heading: false }),
+      ImageInline,
+    ]);
+    const doc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "imageInline",
+              attrs: {
+                src: PNG,
+                alt: "chart",
+                width: 600,
+                mediaId: null,
+                chartSpec: TORQUE_MOCK_SPEC,
+                suggestionId: null,
+                suggestionKind: null,
+              },
+            },
+          ],
+        },
+      ],
+    };
+    const json = schema.nodeFromJSON(doc).toJSON() as JSONContent;
+    const image = json.content?.[0]?.content?.[0];
+    expect(parseChartSpec(image?.attrs?.chartSpec)?.query).toBe("mock-torque");
+    expect(image?.attrs?.chartSpec).toEqual(TORQUE_MOCK_SPEC);
+  });
+});
+
