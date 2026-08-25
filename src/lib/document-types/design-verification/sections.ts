@@ -91,15 +91,15 @@ export const DV_TEST_RESULTS_HEADERS = [
 export const CONVERGENT_EQUIPMENT_HEADERS = [
   "Equipment",
   "Manufacturer",
-  "Model/Part No.",
+  "Model / Part No.",
   "CD Asset Tag / Serial No.",
   "Calibration Due",
 ] as const;
 
 export const CONVERGENT_RESULTS_HEADERS = [
-  "Req ID",
-  "Req Description",
-  "Satisfied By",
+  "Req. ID",
+  "Req. Description",
+  "Satisfied by",
   "P/F",
 ] as const;
 
@@ -154,20 +154,21 @@ function gfmHeaderExample(headers: readonly string[]): string {
   return `| ${cells} |\n| ${sep} |`;
 }
 
-/** How to fill Convergent Results and Discussions P/F rows (chat + suggest). */
-export const CONVERGENT_RESULTS_MATRIX_FILLING_NOTES = `Results and Discussions P/F table — column filling:
-- P/F: write only Pass or Fail (or P/F). That cell is the verdict, not the configuration.
-- Satisfied By MUST include both (1) the method, procedure, datasheet, or evidence that satisfied the requirement and (2) the configuration for which that P/F was achieved (UUT / software version / TOP or PCON / fixture / execution). Example: "TOP-00051 datasheets — TOP-00017 PCON (SW 4.7.1)".
-- If the same requirement was run on more than one configuration, name each configuration in Satisfied By so the verdict is attributable. Keep one row per Req ID.
-- Req ID must match the evidence exactly, including dotted suffixes (\`SW-SST-5.1.1\` is not \`SW-SST-5\`). Do not collapse a child ID into its parent family.
+/** How to fill Convergent Results and Discussion P/F rows (chat + suggest). */
+export const CONVERGENT_RESULTS_MATRIX_FILLING_NOTES = `Results and Discussion P/F table — column filling:
+- Headers are Req. ID | Req. Description | Satisfied by | P/F (punctuation and capitalisation as shown).
+- P/F is per configuration, not a bare Pass/Fail: "P for TOP-00017 PCON" or "P for TOP-00051, TOP-00017 PCON and TOP-00017 LCD-2".
+- Satisfied by names the configuration datasheets and the appendix they are attached in. Example: "TOP-00017 PCON datasheets (See Appendix B)".
+- If the same requirement was run on more than one configuration, list every configuration in both Satisfied by and P/F. Keep one row per Req. ID.
+- Req. ID must match the evidence exactly, including dotted suffixes (\`SW-SST-5.1.1\` is not \`SW-SST-5\`). Do not collapse a child ID into its parent family.
 - When the source has a Requirements Verified table (or a partial-execution datasheet/TOC list), publish those rows — not every requirement ID mentioned in the protocol body.
 - Do not invent a configuration. If evidence does not name one, use a bracketed placeholder like [configuration].`;
 
-/** Chat-only: Results and Discussions has two fields — never put the matrix in Discussion. */
-export const CONVERGENT_RESULTS_FIELD_SPLIT_NOTES = `Results and Discussions field split (required):
+/** Chat-only: Results and Discussion has two fields — never put the matrix in Discussion. */
+export const CONVERGENT_RESULTS_FIELD_SPLIT_NOTES = `Results and Discussion field split (required):
 - This section has TWO fields. Always make two separate draft_field calls.
-- targetField \`narrative\` (Discussion): prose only. Testing-per line, Data Collection Forms, Requirements Verified heading, and Observations. NEVER include a markdown table or Req ID / Satisfied By / P/F rows here.
-- targetField \`table\` (Results matrix): ONE GFM table only with headers Req ID | Req Description | Satisfied By | P/F. No headings, no observations, no wrapping prose.
+- targetField \`narrative\` (Discussion): prose only. Testing-per line, Data Collection Forms, Requirements Verified heading, and Observations. NEVER include a markdown table or Req. ID / Satisfied by / P/F rows here.
+- targetField \`table\` (Results matrix): ONE GFM table only with headers Req. ID | Req. Description | Satisfied by | P/F. No headings, no observations, no wrapping prose.
 - WRONG: one draft_field to narrative that contains the requirements table. RIGHT: narrative gets the outline; table gets the matrix.`;
 
 /**
@@ -199,12 +200,18 @@ export function dvFixedTableFormatGuidance(opts?: {
     })
     .join("\n\n");
 
+  const equipmentLeadIn =
+    sections.includes("test_equipment") && surface === "chat"
+      ? `
+- Test Equipment exception: a one-line lead-in starting with "The table below lists all equipment used for testing..." is required before each GFM table (one table per execution). Do not put that lead-in in Methods of Measurement.`
+      : "";
+
   const surfaceRules =
     surface === "chat"
-      ? `- When creating a new table or the engineer explicitly asks for a full replacement via draft_field, emit ONE GFM markdown table only (header + separator + data rows). Do not wrap the table in prose paragraphs.
+      ? `- When creating a new table or the engineer explicitly asks for a full replacement via draft_field, emit ONE GFM markdown table only (header + separator + data rows), except for the Test Equipment lead-in noted below.
 - Use EXACTLY the headers below, in this order — never rename, reorder, add, or drop columns.
 - If the section already has a table, use edit_table to change cells or add/delete rows. Do not use draft_field for an incremental change — that would overwrite filled cells.
-- Fill known cells; use bracketed placeholders like [requirement ID] for unknowns. Leave optional cells blank rather than inventing new columns.`
+- Fill known cells; use bracketed placeholders like [requirement ID] for unknowns. Leave optional cells blank rather than inventing new columns.${equipmentLeadIn}`
       : `- targetField MUST be "table".
 - Preserve the existing column headers exactly — never rename, reorder, add, or drop columns.
 - Prefer minimal cell-value edits (anchorText from SECTION CONTENT). Do not rewrite the matrix into a different column layout or free-form prose.

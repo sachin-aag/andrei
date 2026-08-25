@@ -7,7 +7,7 @@ import {
 
 describe("buildSuggestionSystemPrompt", () => {
   it("bumps the suggest prompt version when DV table guidance changes", () => {
-    expect(SUGGEST_PROMPT_VERSION).toBe("suggest-v19-exact-req-ids-citations");
+    expect(SUGGEST_PROMPT_VERSION).toBe("suggest-v20-convergent-recipe-headers");
   });
 
   it("adds split-citation rules only when citations-at-end is on", () => {
@@ -74,11 +74,11 @@ describe("buildSuggestionSystemPrompt", () => {
   it("requires Satisfied By to include configuration for Convergent results", () => {
     const prompt = buildSuggestionSystemPrompt("results_and_discussions");
     expect(prompt).toContain("Fixed table formats (required)");
-    expect(prompt).toContain("Satisfied By");
-    expect(prompt).toContain("configuration for which that P/F was achieved");
+    expect(prompt).toContain("Satisfied by");
+    expect(prompt).toContain("P for TOP-00017 PCON");
     expect(prompt).toContain("TOP-00017 PCON");
     expect(prompt).toContain("SW-SST-5.1.1");
-    expect(prompt).not.toContain("Results and Discussions field split");
+    expect(prompt).not.toContain("Results and Discussion field split");
   });
 
   it("requires testers dates to land in the testers narrative", () => {

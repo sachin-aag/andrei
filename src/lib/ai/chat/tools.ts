@@ -227,7 +227,7 @@ function resultsTableInventoryMismatch(
   if (!parsed.ok) {
     return {
       status: "inventory_mismatch",
-      message: `Results matrix draft must be a GFM table with headers Req ID | Req Description | Satisfied By | P/F, one exact-ID row per recommendedInventory identifier (${inventory.ids.length} rows from ${inventory.sourceKind}).`,
+      message: `Results matrix draft must be a GFM table with headers Req. ID | Req. Description | Satisfied by | P/F, one exact-ID row per recommendedInventory identifier (${inventory.ids.length} rows from ${inventory.sourceKind}).`,
       expectedIds: inventory.ids,
       missingIds: inventory.ids,
       unexpectedIds: [],

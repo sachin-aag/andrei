@@ -31,7 +31,7 @@ import {
   mergeSectionForType,
 } from "@/lib/document-types";
 import { activeSuggestionForSection } from "@/lib/ai/suggestion-gating";
-import { firstGeneratedSuggestionSection } from "@/lib/suggestions/navigate-suggestion";
+import { firstGeneratedSuggestion } from "@/lib/suggestions/navigate-suggestion";
 import { validateSuggestionLocate } from "@/lib/suggestions/validate-suggestion";
 import { normalizeCommentRecord } from "@/lib/comments/normalize";
 import { sectionsReadyForEvaluation } from "@/lib/ai/evaluation-readiness";
@@ -179,6 +179,8 @@ type ReportContextValue = {
   >;
   /** Set after suggestions succeed — workspace opens Criteria tab for this section. */
   suggestionsFocusSection: SectionType | null;
+  /** First newly generated card to scroll to (not the first already-open card). */
+  suggestionsFocusCommentId: string | null;
   clearSuggestionsFocusSection: () => void;
   /** Unfilled `<to be filled>` placeholders across the live document. */
   pendingPlaceholders: Placeholder[];
@@ -293,6 +295,7 @@ type ReportEvaluationContextValue = Pick<
   | "endSuggestionApplyTransition"
   | "suggestionApplyTransition"
   | "suggestionsFocusSection"
+  | "suggestionsFocusCommentId"
   | "clearSuggestionsFocusSection"
   | "setEvaluations"
 >;
@@ -413,6 +416,9 @@ export function ReportProvider({
   }, [comments]);
   const [suggestionsFocusSection, setSuggestionsFocusSection] =
     useState<SectionType | null>(null);
+  const [suggestionsFocusCommentId, setSuggestionsFocusCommentId] = useState<
+    string | null
+  >(null);
   const [isEvaluating, setIsEvaluating] = useState(false);
   const [overflowCounts, setOverflowCounts] = useState<
     Partial<Record<SectionType, number>>
@@ -610,13 +616,14 @@ export function ReportProvider({
       (c) => normalizeCommentRecord(c)
     );
     setComments(nextComments);
-    const generatedSection = firstGeneratedSuggestionSection(
+    const generated = firstGeneratedSuggestion(
       previousSuggestionIds,
       nextComments,
       getWorkspaceSections(data.report.documentType).map((s) => s.key)
     );
-    if (generatedSection) {
-      setSuggestionsFocusSection(generatedSection);
+    if (generated?.section) {
+      setSuggestionsFocusSection(generated.section);
+      setSuggestionsFocusCommentId(generated.id);
     }
   }, [bundle.report.id, flushPendingSectionSaves]);
 
@@ -767,6 +774,10 @@ export function ReportProvider({
         }
         if (applied?.length) {
           setSuggestionsFocusSection(section);
+          const fallbackId = applied[0]?.suggestionId;
+          if (fallbackId) {
+            setSuggestionsFocusCommentId((prev) => prev ?? fallbackId);
+          }
           toast.success(
             `Generated ${applied.length} suggestion${applied.length === 1 ? "" : "s"} — see inline preview in the narrative`
           );
@@ -799,6 +810,7 @@ export function ReportProvider({
 
   const clearSuggestionsFocusSection = useCallback(() => {
     setSuggestionsFocusSection(null);
+    setSuggestionsFocusCommentId(null);
   }, []);
 
   const beginSuggestionApplyTransition = useCallback(
@@ -1078,6 +1090,7 @@ export function ReportProvider({
       endSuggestionApplyTransition,
       suggestionApplyTransition,
       suggestionsFocusSection,
+      suggestionsFocusCommentId,
       clearSuggestionsFocusSection,
       setEvaluations,
     }),
@@ -1098,6 +1111,7 @@ export function ReportProvider({
       endSuggestionApplyTransition,
       suggestionApplyTransition,
       suggestionsFocusSection,
+      suggestionsFocusCommentId,
       clearSuggestionsFocusSection,
     ]
   );

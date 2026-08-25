@@ -197,8 +197,8 @@ function paragraphProperties(
   return `<w:pPr>${keep}${jc}</w:pPr>`;
 }
 
-function wrapParagraph(text: string): string {
-  return `<w:p>${paragraphProperties()}<w:r>${runProperties()}<w:t xml:space="preserve">${escapeXml(
+function wrapParagraph(text: string, ctx?: DocxExportContext): string {
+  return `<w:p>${paragraphProperties()}<w:r>${runProperties({}, ctx)}<w:t xml:space="preserve">${escapeXml(
     text
   )}</w:t></w:r></w:p>`;
 }
@@ -244,7 +244,7 @@ function inlineNodesToRuns(
         subscript: isSubscript,
         superscript: isSuperscript,
         color: colorFromTextMarks(marks),
-      });
+      }, ctx);
 
       const lines = text.split("\n");
       const runParts: string[] = [];
@@ -267,7 +267,7 @@ function inlineNodesToRuns(
         revision && runXml ? revisionWrapper(revision, runXml) : runXml
       );
     } else if (child.type === "hardBreak") {
-      parts.push(`<w:r>${runProperties()}<w:br/></w:r>`);
+      parts.push(`<w:r>${runProperties({}, ctx)}<w:br/></w:r>`);
     } else if (child.type === "imageInline" && ctx) {
       const src = child.attrs?.src as string | undefined;
       if (src) {
@@ -275,7 +275,7 @@ function inlineNodesToRuns(
         parts.push(registerInlineImage(ctx, src, width));
       }
     } else if (child.type === "mathInline") {
-      parts.push(mathInlineToRun(child));
+      parts.push(mathInlineToRun(child, ctx));
     }
   }
 
@@ -291,11 +291,11 @@ function mathOmmlFromNode(node: JSONContent): string {
   });
 }
 
-function mathInlineToRun(node: JSONContent): string {
+function mathInlineToRun(node: JSONContent, ctx?: DocxExportContext): string {
   const omml = mathOmmlFromNode(node);
   if (!omml) return "";
   const inner = omml.startsWith("<m:oMath") ? omml : `<m:oMath>${omml}</m:oMath>`;
-  return `<w:r>${runProperties()}${inner}</w:r>`;
+  return `<w:r>${runProperties({}, ctx)}${inner}</w:r>`;
 }
 
 function mathBlockToXml(node: JSONContent): string {
@@ -313,17 +313,22 @@ function runProperties(
     color?: string;
     subscript?: boolean;
     superscript?: boolean;
-  } = {}
+  } = {},
+  ctx?: DocxExportContext
 ): string {
+  const font = ctx?.runFont ?? DEFAULT_RUN_FONT;
+  const size = ctx?.runSizeHalfPoints ?? DEFAULT_RUN_SIZE_HALF_POINTS;
   let rPr =
-    `<w:rPr><w:rFonts w:ascii="${DEFAULT_RUN_FONT}" w:eastAsia="${DEFAULT_RUN_FONT}" ` +
-    `w:hAnsi="${DEFAULT_RUN_FONT}" w:cs="${DEFAULT_RUN_FONT}"/>` +
-    `<w:sz w:val="${DEFAULT_RUN_SIZE_HALF_POINTS}"/>` +
-    `<w:szCs w:val="${DEFAULT_RUN_SIZE_HALF_POINTS}"/>`;
+    `<w:rPr><w:rFonts w:ascii="${font}" w:eastAsia="${font}" ` +
+    `w:hAnsi="${font}" w:cs="${font}"/>` +
+    `<w:sz w:val="${size}"/>` +
+    `<w:szCs w:val="${size}"/>`;
   if (options.bold) rPr += "<w:b/>";
   if (options.italic) rPr += "<w:i/>";
   if (options.underline) rPr += '<w:u w:val="single"/>';
-  const wordColor = cssColorToWordVal(options.color);
+  const wordColor = ctx?.forceBlackText
+    ? "000000"
+    : cssColorToWordVal(options.color);
   if (wordColor) rPr += `<w:color w:val="${wordColor}"/>`;
   if (options.subscript) rPr += '<w:vertAlign w:val="subscript"/>';
   if (options.superscript) rPr += '<w:vertAlign w:val="superscript"/>';
@@ -581,7 +586,7 @@ function tableCellToXml(
     tcPr += `<w:vMerge w:val="${options.vMerge}"/>`;
   }
   if (isHeader) {
-    tcPr += '<w:shd w:val="clear" w:color="auto" w:fill="D9E2F3"/>';
+    tcPr += `<w:shd w:val="clear" w:color="auto" w:fill="${ctx?.tableHeaderFill ?? "D9E2F3"}"/>`;
   }
   if (vWord) {
     tcPr += `<w:vAlign w:val="${vWord}"/>`;
