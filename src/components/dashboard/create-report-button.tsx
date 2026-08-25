@@ -231,7 +231,9 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
                   placeholder={
                     documentType === "design_verification"
                       ? "e.g. DVR-2026-001"
-                      : "e.g. DEV/PK/26/001"
+                      : documentType === "mechanical_design_verification"
+                        ? "e.g. 825-00101"
+                        : "e.g. DEV/PK/26/001"
                   }
                   value={documentNo}
                   disabled={busy}

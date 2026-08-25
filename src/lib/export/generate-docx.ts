@@ -462,8 +462,12 @@ export async function generateReportDocx({
   omitCitations?: boolean;
 }): Promise<Buffer> {
   const exportSections = sectionsForDocxExport(sections, omitCitations);
-  if (report.documentType === "design_verification") {
+  if (
+    report.documentType === "design_verification" ||
+    report.documentType === "mechanical_design_verification"
+  ) {
     return generateDesignVerificationDocx({
+      documentType: report.documentType,
       report,
       sections: exportSections,
       electronicSignatures,
@@ -506,16 +510,18 @@ export async function generateReportDocx({
 }
 
 async function generateDesignVerificationDocx({
+  documentType,
   report,
   sections,
   electronicSignatures,
 }: {
+  documentType: "design_verification" | "mechanical_design_verification";
   report: ReportRowWithManagers;
   sections: ReportSectionRecord[];
   electronicSignatures: DocxAuditSignature[];
 }): Promise<Buffer> {
   const templateContent = fs.readFileSync(
-    getDocumentType("design_verification").export.templatePath
+    getDocumentType(documentType).export.templatePath
   );
   const zip = new PizZip(templateContent);
   const doc = new Docxtemplater(zip, {
@@ -531,11 +537,11 @@ async function generateDesignVerificationDocx({
     numberingBases,
     pack.id === "convergent" ? CONVERGENT_DOCX_RUN_STYLE : undefined
   );
-  const def = getDocumentType("design_verification");
+  const def = getDocumentType(documentType);
   const meta = designVerificationMetadata(report);
   const mergedSections = sections.map((row) => ({
     section: row.section,
-    content: mergeSectionForType("design_verification", row.section, row.content),
+    content: mergeSectionForType(documentType, row.section, row.content),
   }));
   const built = def.export.buildTemplateData({
     report: report as unknown as ReportRecord,

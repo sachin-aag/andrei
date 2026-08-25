@@ -5,6 +5,7 @@ import {
   evaluateCompareGate,
   idRecall,
   isRequirementId,
+  isRequirementRowId,
   isWeakOcrTranscript,
   normalizeRequirementIds,
   requirementIds,
@@ -81,6 +82,69 @@ describe("idRecall", () => {
     ).toEqual(["SW-SST-5.1.1"]);
     expect(isRequirementId("SW-SST-5.1.1")).toBe(true);
     expect(isRequirementId("SW-SST-")).toBe(false);
+  });
+});
+
+describe("requirement IDs with an alphanumeric family prefix", () => {
+  it("keeps the M3- prefix instead of matching from the second segment", () => {
+    expect(requirementIds("Refer to M3-SYS-FN-037 and M3-HRS-BD-011.")).toEqual([
+      "M3-SYS-FN-037",
+      "M3-HRS-BD-011",
+    ]);
+    expect(isRequirementId("M3-SYS-FN-037")).toBe(true);
+  });
+
+  it("still keeps document and protocol numbers out", () => {
+    expect(
+      requirementIds(
+        "Partial executions of 825-00024, Rev. G and 825-00025, Rev. F per 790-00134R."
+      )
+    ).toEqual([]);
+  });
+
+  it("does not report a dotted software version as an ID", () => {
+    expect(requirementIds("Solea Software Version 4.8.0.982 was under test.")).toEqual(
+      []
+    );
+  });
+});
+
+describe("isRequirementRowId", () => {
+  it("accepts requirement IDs from both report families", () => {
+    for (const id of [
+      "SW-PA-1",
+      "SW-IN-1.1",
+      "SW-SST-5.1.1",
+      "M3-SYS-FN-037",
+      "M3-HRS-GN-001",
+    ]) {
+      expect(isRequirementRowId(id), id).toBe(true);
+    }
+  });
+
+  it("rejects part numbers, configurations, change orders and serials", () => {
+    for (const id of [
+      "SUB-00448",
+      "CUS-01819",
+      "OTS-00325",
+      "TOP-00017",
+      "DCO-02058",
+      "DEV-00079",
+      "ECO-12",
+      "SEN-0724-10001",
+      "MTR-0724-10000",
+      "P33-0724-10002",
+    ]) {
+      expect(isRequirementRowId(id), id).toBe(false);
+    }
+  });
+
+  it("still treats those as valid identifiers for retrieval", () => {
+    // requirementIds is deliberately wider than isRequirementRowId.
+    expect(requirementIds("TOP-00051 and CUS-01188")).toEqual([
+      "TOP-00051",
+      "CUS-01188",
+    ]);
   });
 });
 

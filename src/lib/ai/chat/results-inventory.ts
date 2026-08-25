@@ -1,4 +1,7 @@
-import { requirementIds } from "@/lib/attachments/ocr-quality";
+import {
+  isRequirementRowId,
+  requirementIds,
+} from "@/lib/attachments/ocr-quality";
 
 export type InventoryFinding = {
   attachmentId: string;
@@ -39,8 +42,22 @@ export type DraftedInventoryMismatch = {
   collapsedIds: Array<{ drafted: string; expected: string }>;
 };
 
-const VERIFIED_TABLE_RE =
-  /requirements?\s+verified|req(?:uirement)?\.?\s*id\b.{0,80}satisfied\s+by|req(?:uirement)?\.?\s*id\b.{0,80}p\s*\/\s*f/i;
+/**
+ * Recognises a Requirements Verified page in either report family. The software
+ * report heads its evidence and verdict columns "Satisfied by" and "P/F"; the
+ * mechanical report captions its tables "<discipline> Requirement Results" and
+ * heads the same columns "Notes/Results" and "Pass/Fail".
+ */
+const VERIFIED_TABLE_RE = new RegExp(
+  [
+    String.raw`requirements?\s+verified`,
+    String.raw`requirements?\s+results?\b`,
+    String.raw`req(?:uirement)?\.?\s*id\b.{0,80}satisfied\s+by`,
+    String.raw`req(?:uirement)?\.?\s*id\b.{0,80}notes\s*\/\s*results`,
+    String.raw`req(?:uirement)?\.?\s*id\b.{0,80}p(?:ass)?\s*\/\s*f(?:ail)?\b`,
+  ].join("|"),
+  "i"
+);
 
 const EXECUTED_SET_RE =
   /table of contents|partial execution|(?:^|\b)\d+(?:\.\d+)*\s+datasheets?\b|test methods and data collection/i;
@@ -120,6 +137,9 @@ function collectFromFindings(
       )
     );
     for (const id of extracted) {
+      // A Requirements Verified page also names part numbers, configurations
+      // and change orders. Those are cited by a row, never a row themselves.
+      if (!isRequirementRowId(id)) continue;
       if (seenIds.has(id)) continue;
       seenIds.add(id);
       ids.push(id);

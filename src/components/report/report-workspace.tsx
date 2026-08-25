@@ -21,7 +21,7 @@ import { ReportSidebar, type SidebarTab } from "./report-sidebar";
 import { DocumentsPanel } from "./documents/documents-panel";
 import { AttachmentViewer } from "./attachment-viewer";
 import { useUserDirectory } from "@/providers/user-directory-provider";
-import type { SectionType } from "@/db/schema";
+import type { DocumentType, SectionType } from "@/db/schema";
 import type { WorkspaceMode } from "@/providers/report-provider";
 import type { Placeholder } from "@/lib/placeholders/find";
 import { resolvePlaceholderInPmDoc } from "@/lib/placeholders/resolve-in-doc";
@@ -79,6 +79,22 @@ import {
   DvTestersDatesEditor,
   DvTraceabilityEditor,
 } from "./sections/dv/dv-section-editors";
+import {
+  MechConclusionEditor,
+  MechDataCollectionFormsEditor,
+  MechExecutedProtocolEditor,
+  MechFailureFormsEditor,
+  MechObservationsEditor,
+  MechProblemsResolutionEditor,
+  MechProtocolDeviationsEditor,
+  MechPurposeEditor,
+  MechRequirementsVerifiedEditor,
+  MechRevisionHistoryEditor,
+  MechScopeEditor,
+  MechTestEquipmentEditor,
+  MechTestersDatesEditor,
+  MechUnitsUnderTestEditor,
+} from "./sections/dv/mechanical-section-editors";
 
 export type { WorkspaceMode };
 
@@ -118,6 +134,32 @@ const DV_SECTION_EDITORS: Record<string, ComponentType> = {
   test_equipment: DvTestEquipmentEditor,
   results_and_discussions: DvResultsAndDiscussionsEditor,
   problems_resolution: DvProblemsResolutionEditor,
+};
+
+const MECHANICAL_DV_SECTION_EDITORS: Record<string, ComponentType> = {
+  purpose: MechPurposeEditor,
+  scope: MechScopeEditor,
+  testers_dates: MechTestersDatesEditor,
+  executed_protocol: MechExecutedProtocolEditor,
+  protocol_deviations: MechProtocolDeviationsEditor,
+  units_under_test: MechUnitsUnderTestEditor,
+  equipment_and_calibration: MechTestEquipmentEditor,
+  failure_forms: MechFailureFormsEditor,
+  data_collection_forms: MechDataCollectionFormsEditor,
+  requirements_verified: MechRequirementsVerifiedEditor,
+  observations: MechObservationsEditor,
+  problems_resolution: MechProblemsResolutionEditor,
+  conclusion: MechConclusionEditor,
+  revision_history: MechRevisionHistoryEditor,
+};
+
+const SECTION_EDITORS_BY_DOCUMENT_TYPE: Record<
+  DocumentType,
+  Record<string, ComponentType>
+> = {
+  investigation_report: INVESTIGATION_SECTION_EDITORS,
+  design_verification: DV_SECTION_EDITORS,
+  mechanical_design_verification: MECHANICAL_DV_SECTION_EDITORS,
 };
 
 export function ReportWorkspace({
@@ -608,9 +650,7 @@ export function ReportWorkspace({
                 {getWorkspaceSections(report.documentType).map((section) => {
                   const s = section.key;
                   const Editor =
-                    report.documentType === "design_verification"
-                      ? DV_SECTION_EDITORS[s]
-                      : INVESTIGATION_SECTION_EDITORS[s];
+                    SECTION_EDITORS_BY_DOCUMENT_TYPE[report.documentType]?.[s];
                   if (!Editor) return null;
                   const extra = showReviewGutter ? sectionMinHeights[s] : undefined;
                   return (

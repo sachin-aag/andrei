@@ -152,10 +152,11 @@ export const DEMO_PACK: CustomerPack = {
 };
 
 export const CONVERGENT_PROMPT_VERSION = "convergent-dv-v7";
+export const MECHANICAL_PROMPT_VERSION = "convergent-mechanical-dv-v1";
 
 export const CONVERGENT_PACK: CustomerPack = {
   id: "convergent",
-  enabledDocumentTypes: ["design_verification"],
+  enabledDocumentTypes: ["design_verification", "mechanical_design_verification"],
   hiddenInvestigationSections: [],
   investigationTemplateFile: "investigation-report-template.docx",
   promptVersion: CONVERGENT_PROMPT_VERSION,

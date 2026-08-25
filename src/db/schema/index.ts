@@ -51,6 +51,7 @@ export const reportStatusEnum = pgEnum("report_status", [
 export const documentTypeEnum = pgEnum("document_type", [
   "investigation_report",
   "design_verification",
+  "mechanical_design_verification",
 ]);
 
 /**
