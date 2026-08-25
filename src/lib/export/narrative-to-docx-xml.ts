@@ -178,27 +178,46 @@ function escapeXml(text: string): string {
     .replace(/'/g, "&apos;");
 }
 
-function paragraphJustification(align?: string | null): string {
+function paragraphJustification(
+  align?: string | null,
+  ctx?: DocxExportContext
+): string {
   const val =
-    align === "center" || align === "right" ? align : "left";
+    align === "center" ||
+    align === "right" ||
+    align === "left" ||
+    align === "both"
+      ? align
+      : (ctx?.paragraphAlign ?? "left");
   return `<w:jc w:val="${val}"/>`;
 }
 
 function paragraphProperties(
   align?: string | null,
   numId?: number | null,
-  keepNext?: boolean
+  keepNext?: boolean,
+  ctx?: DocxExportContext
 ): string {
-  const jc = paragraphJustification(align);
+  const jc = paragraphJustification(align, ctx);
   const keep = keepNext ? "<w:keepNext/>" : "";
-  if (numId) {
-    return `<w:pPr>${keep}${jc}<w:numPr><w:ilvl w:val="0"/><w:numId w:val="${numId}"/></w:numPr></w:pPr>`;
-  }
-  return `<w:pPr>${keep}${jc}</w:pPr>`;
+  const style =
+    numId && ctx?.listParagraphStyle
+      ? `<w:pStyle w:val="ListParagraph"/>`
+      : "";
+  const before = ctx?.paragraphSpacingBefore;
+  const after = ctx?.paragraphSpacingAfter;
+  const spacing =
+    before || after
+      ? `<w:spacing w:before="${before ?? "0"}" w:after="${after ?? "0"}"/>`
+      : "";
+  const num = numId
+    ? `<w:numPr><w:ilvl w:val="0"/><w:numId w:val="${numId}"/></w:numPr>`
+    : "";
+  return `<w:pPr>${style}${keep}${spacing}${jc}${num}</w:pPr>`;
 }
 
 function wrapParagraph(text: string, ctx?: DocxExportContext): string {
-  return `<w:p>${paragraphProperties()}<w:r>${runProperties({}, ctx)}<w:t xml:space="preserve">${escapeXml(
+  return `<w:p>${paragraphProperties(null, null, false, ctx)}<w:r>${runProperties({}, ctx)}<w:t xml:space="preserve">${escapeXml(
     text
   )}</w:t></w:r></w:p>`;
 }
@@ -209,10 +228,11 @@ function paragraphToXml(
   paragraphAlign?: string | null,
   numId?: number | null,
   keepNext = false,
-  ctx?: DocxExportContext
+  ctx?: DocxExportContext,
+  runSizeOverride?: string
 ): string {
-  const runs = inlineNodesToRuns(node.content ?? [], bold, ctx);
-  const pPr = paragraphProperties(paragraphAlign, numId, keepNext);
+  const runs = inlineNodesToRuns(node.content ?? [], bold, ctx, runSizeOverride);
+  const pPr = paragraphProperties(paragraphAlign, numId, keepNext, ctx);
   if (!runs) return `<w:p>${pPr}</w:p>`;
   return `<w:p>${pPr}${runs}</w:p>`;
 }
@@ -220,7 +240,8 @@ function paragraphToXml(
 function inlineNodesToRuns(
   nodes: JSONContent[],
   forceBold = false,
-  ctx?: DocxExportContext
+  ctx?: DocxExportContext,
+  runSizeOverride?: string
 ): string {
   const parts: string[] = [];
 
@@ -244,6 +265,7 @@ function inlineNodesToRuns(
         subscript: isSubscript,
         superscript: isSuperscript,
         color: colorFromTextMarks(marks),
+        sizeHalfPoints: runSizeOverride,
       }, ctx);
 
       const lines = text.split("\n");
@@ -267,7 +289,7 @@ function inlineNodesToRuns(
         revision && runXml ? revisionWrapper(revision, runXml) : runXml
       );
     } else if (child.type === "hardBreak") {
-      parts.push(`<w:r>${runProperties({}, ctx)}<w:br/></w:r>`);
+      parts.push(`<w:r>${runProperties({ sizeHalfPoints: runSizeOverride }, ctx)}<w:br/></w:r>`);
     } else if (child.type === "imageInline" && ctx) {
       const src = child.attrs?.src as string | undefined;
       if (src) {
@@ -313,11 +335,15 @@ function runProperties(
     color?: string;
     subscript?: boolean;
     superscript?: boolean;
+    sizeHalfPoints?: string;
   } = {},
   ctx?: DocxExportContext
 ): string {
   const font = ctx?.runFont ?? DEFAULT_RUN_FONT;
-  const size = ctx?.runSizeHalfPoints ?? DEFAULT_RUN_SIZE_HALF_POINTS;
+  const size =
+    options.sizeHalfPoints ??
+    ctx?.runSizeHalfPoints ??
+    DEFAULT_RUN_SIZE_HALF_POINTS;
   let rPr =
     `<w:rPr><w:rFonts w:ascii="${font}" w:eastAsia="${font}" ` +
     `w:hAnsi="${font}" w:cs="${font}"/>` +
@@ -368,6 +394,9 @@ function listToXml(node: JSONContent, ctx: DocxExportContext): string {
 function tableToXml(node: JSONContent, ctx?: DocxExportContext): string {
   const inner = buildInnerTableXml(node, ctx);
   if (!inner) return "";
+  if (ctx && ctx.tableKeepTogetherWrapper === false) {
+    return inner;
+  }
 
   // Wrap the real table inside a single-row, single-cell, borderless table
   // marked <w:cantSplit/>. Word treats the wrapper row as atomic, which keeps
@@ -417,6 +446,7 @@ function buildInnerTableXml(node: JSONContent, ctx?: DocxExportContext): string 
   if (rows.length === 0) return "";
 
   const colCount = Math.max(1, getLogicalColumnCount(rows));
+  const maxGridDxa = ctx?.tableGridMaxDxa ?? TABLE_GRID_TOTAL_MAX_DXA;
 
   const colWidthsRaw = node.attrs?.colWidths as unknown;
   let storedWidths: number[] | null = null;
@@ -429,30 +459,39 @@ function buildInnerTableXml(node: JSONContent, ctx?: DocxExportContext): string 
 
   const perColFallback = Math.max(
     360,
-    Math.floor(TABLE_GRID_TOTAL_MAX_DXA / colCount)
+    Math.floor(maxGridDxa / colCount)
   );
   const rawWidths = storedWidths
     ? storedWidths
     : Array.from({ length: colCount }, () => perColFallback);
-  const colWidths = normalizeGridColWidths(rawWidths, TABLE_GRID_TOTAL_MAX_DXA);
+  const colWidths = normalizeGridColWidths(rawWidths, maxGridDxa);
   const gridTotalDxa = colWidths.reduce((a, b) => a + b, 0);
   const gridColXmlParts = colWidths.map(
     (w) => `<w:gridCol w:w="${Math.round(w)}"/>`
   );
   const tblGrid = `<w:tblGrid>${gridColXmlParts.join("")}</w:tblGrid>`;
 
+  const borderColor = ctx?.tableBorderColor ?? "auto";
+  const tblW = ctx?.tableWidthPct
+    ? `<w:tblW w:w="${ctx.tableWidthPct}" w:type="pct"/>`
+    : `<w:tblW w:w="${gridTotalDxa}" w:type="dxa"/>`;
+  const tblJc = ctx?.tableJustify
+    ? `<w:jc w:val="${ctx.tableJustify}"/>`
+    : "";
+
   // Nested inside the keep-together wrapper: explicit dxa width prevents Word
   // from honoring an oversized imported tblGrid sum and clipping the right edge.
   const tblPr = `<w:tblPr>
 <w:tblStyle w:val="TableGrid"/>
-<w:tblW w:w="${gridTotalDxa}" w:type="dxa"/>
+${tblW}
+${tblJc}
 <w:tblBorders>
-<w:top w:val="single" w:sz="4" w:space="0" w:color="auto"/>
-<w:left w:val="single" w:sz="4" w:space="0" w:color="auto"/>
-<w:bottom w:val="single" w:sz="4" w:space="0" w:color="auto"/>
-<w:right w:val="single" w:sz="4" w:space="0" w:color="auto"/>
-<w:insideH w:val="single" w:sz="4" w:space="0" w:color="auto"/>
-<w:insideV w:val="single" w:sz="4" w:space="0" w:color="auto"/>
+<w:top w:val="single" w:sz="4" w:space="0" w:color="${borderColor}"/>
+<w:left w:val="single" w:sz="4" w:space="0" w:color="${borderColor}"/>
+<w:bottom w:val="single" w:sz="4" w:space="0" w:color="${borderColor}"/>
+<w:right w:val="single" w:sz="4" w:space="0" w:color="${borderColor}"/>
+<w:insideH w:val="single" w:sz="4" w:space="0" w:color="${borderColor}"/>
+<w:insideV w:val="single" w:sz="4" w:space="0" w:color="${borderColor}"/>
 </w:tblBorders>
 <w:tblLook w:val="04A0" w:firstRow="1" w:lastRow="0" w:firstColumn="1" w:lastColumn="0" w:noHBand="0" w:noVBand="1"/>
 </w:tblPr>`;
@@ -493,6 +532,7 @@ function tableRowToXml(
   // Header rows additionally repeat at the top of each page if the table spills.
   let trPr = "<w:trPr><w:cantSplit/>";
   if (isHeader) trPr += "<w:tblHeader/>";
+  if (ctx?.tableJustify) trPr += `<w:jc w:val="${ctx.tableJustify}"/>`;
   trPr += "</w:trPr>";
   const consumedMerges = new Set<ActiveRowMerge>();
   const cellsXml: string[] = [];
@@ -576,7 +616,11 @@ function tableCellToXml(
   const hAlign = cell.attrs?.align as string | undefined;
   const vAttr = cell.attrs?.verticalAlign as string | undefined;
   const vWord =
-    vAttr === "middle" ? "center" : vAttr === "top" || vAttr === "bottom" ? vAttr : null;
+    vAttr === "middle"
+      ? "center"
+      : vAttr === "top" || vAttr === "bottom"
+        ? vAttr
+        : (ctx?.tableCellVAlign ?? null);
 
   let tcPr = "<w:tcPr><w:tcW w:w=\"0\" w:type=\"auto\"/>";
   if (options.colspan && options.colspan > 1) {
@@ -598,19 +642,25 @@ function tableCellToXml(
   // genuine split when the table is too tall for one page.
   const keepNext = !isLastRow;
   const paragraphs = options.empty ? [] : cell.content ?? [];
+  const cellAlign = isHeader
+    ? (hAlign ?? ctx?.tableHeaderAlign ?? "left")
+    : (hAlign ?? "left");
+  const cellSize = ctx?.tableCellSizeHalfPoints ?? undefined;
   const content = paragraphs
     .map((p) => {
       if (p.type === "paragraph") {
-        return paragraphToXml(p, isHeader, hAlign ?? null, null, keepNext, ctx);
+        return paragraphToXml(p, isHeader, cellAlign, null, keepNext, ctx, cellSize);
       }
-      return paragraphToXml(p, false, hAlign ?? null, null, keepNext, ctx);
+      return paragraphToXml(p, false, cellAlign, null, keepNext, ctx, cellSize);
     })
     .join("");
 
   // Word requires at least one paragraph in each cell
   const cellContent =
     content ||
-    (keepNext ? `<w:p>${paragraphProperties(null, null, true)}</w:p>` : "<w:p/>");
+    (keepNext
+      ? `<w:p>${paragraphProperties(cellAlign, null, true, ctx)}</w:p>`
+      : `<w:p>${paragraphProperties(cellAlign, null, false, ctx)}</w:p>`);
   return `<w:tc>${tcPr}${cellContent}</w:tc>`;
 }
 

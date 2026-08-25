@@ -5,7 +5,10 @@ import type { JSONContent } from "@tiptap/core";
 import PizZip from "pizzip";
 import { reports } from "@/db/schema";
 import { hydrateUserDirectory } from "@/lib/auth/user-directory";
-import { createDocxExportContext } from "@/lib/export/docx-export-context";
+import {
+  CONVERGENT_DOCX_RUN_STYLE,
+  createDocxExportContext,
+} from "@/lib/export/docx-export-context";
 import { generateReportDocx } from "@/lib/export/generate-docx";
 import { loadListNumberingBasesFromZip } from "@/lib/export/docx-numbering";
 import {
@@ -86,6 +89,67 @@ describe("narrativeToDocxXml tables", () => {
     );
     expect(xml).toContain('<w:sz w:val="24"/>');
     expect(xml).toContain('<w:jc w:val="left"/>');
+  });
+
+  it("uses Solea DV paragraph, list, and table formatting for Convergent", () => {
+    const ctx = createDocxExportContext(
+      { decimal: 0, disc: 0, dash: 0, maxNumId: 0 },
+      CONVERGENT_DOCX_RUN_STYLE
+    );
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Purpose body" }],
+        },
+        {
+          type: "bulletList",
+          content: [
+            {
+              type: "listItem",
+              content: [
+                {
+                  type: "paragraph",
+                  content: [{ type: "text", text: "mm: major release" }],
+                },
+              ],
+            },
+          ],
+        },
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [textCell("tableHeader", "Req. ID"), textCell("tableHeader", "P/F")],
+            },
+            {
+              type: "tableRow",
+              content: [textCell("tableCell", "SW-IN-1"), textCell("tableCell", "Pass")],
+            },
+          ],
+        },
+      ],
+    };
+
+    const xml = narrativeToDocxXml(doc, ctx);
+
+    expect(xml).toContain('w:ascii="Arial"');
+    expect(xml).toContain('<w:sz w:val="20"/>');
+    expect(xml).toContain('<w:jc w:val="both"/>');
+    expect(xml).toContain('<w:spacing w:before="60" w:after="60"/>');
+    expect(xml).toContain('<w:pStyle w:val="ListParagraph"/>');
+    expect(xml).toContain("mm: major release");
+    expect(xml).toContain('<w:tblStyle w:val="TableGrid"/>');
+    expect(xml).toContain('<w:tblW w:w="5000" w:type="pct"/>');
+    expect(xml).toContain('<w:jc w:val="center"/>');
+    expect(xml).toContain('w:fill="C6D9F1"');
+    expect(xml).toContain('<w:vAlign w:val="center"/>');
+    expect(xml).toContain('<w:sz w:val="18"/>');
+    expect(xml).toContain('w:color="000000"');
+    expect(xml.match(/<w:tbl>/g)).toHaveLength(1);
+    expect(xml).not.toContain("<w:top w:val=\"nil\"/>");
   });
 
   it("exports bold, italic, and underline marks to OOXML", () => {

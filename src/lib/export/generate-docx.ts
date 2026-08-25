@@ -31,6 +31,7 @@ import { mergeSection } from "@/lib/sections-merge";
 import { applyInvestigationToolCheckboxes } from "@/lib/export/docx-form-checkbox";
 import { applyInlineMediaToDocxZip } from "@/lib/export/docx-inline-media";
 import {
+  CONVERGENT_DOCX_RUN_STYLE,
   createDocxExportContext,
   type DocxExportContext,
 } from "@/lib/export/docx-export-context";
@@ -523,14 +524,7 @@ async function generateDesignVerificationDocx({
   const pack = getCustomerPack();
   const ctx = createDocxExportContext(
     numberingBases,
-    pack.id === "convergent"
-      ? {
-          font: "Arial",
-          sizeHalfPoints: "18",
-          forceBlackText: true,
-          tableHeaderFill: "C6D9F1",
-        }
-      : undefined
+    pack.id === "convergent" ? CONVERGENT_DOCX_RUN_STYLE : undefined
   );
   const def = getDocumentType("design_verification");
   const meta = designVerificationMetadata(report);

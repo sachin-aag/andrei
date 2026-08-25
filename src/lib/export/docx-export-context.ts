@@ -1,3 +1,6 @@
+import type { ListNumberingBases } from "@/lib/export/docx-numbering";
+import { readRasterDimensions } from "@/lib/export/raster-dimensions";
+
 export type DocxMediaAsset = {
   relId: string;
   fileName: string;
@@ -19,18 +22,29 @@ export type DocxCommentExportEntry = {
   content: string;
 };
 
-import type { ListNumberingBases } from "@/lib/export/docx-numbering";
-import { readRasterDimensions } from "@/lib/export/raster-dimensions";
-
 const MIN_INLINE_EXPORT_WIDTH_PX = 96;
 const MAX_INLINE_EXPORT_WIDTH_PX = 600;
 const EMU_PER_PX = 9525;
+
+export type DocxParagraphAlign = "left" | "center" | "right" | "both";
 
 export type DocxRunStyle = {
   font?: string;
   sizeHalfPoints?: string;
   forceBlackText?: boolean;
   tableHeaderFill?: string;
+  paragraphAlign?: DocxParagraphAlign;
+  paragraphSpacingBefore?: string;
+  paragraphSpacingAfter?: string;
+  listParagraphStyle?: boolean;
+  tableKeepTogetherWrapper?: boolean;
+  tableJustify?: "center";
+  tableWidthPct?: string;
+  tableGridMaxDxa?: number;
+  tableCellSizeHalfPoints?: string;
+  tableCellVAlign?: "center";
+  tableHeaderAlign?: "center";
+  tableBorderColor?: string;
 };
 
 export type DocxExportContext = {
@@ -47,6 +61,38 @@ export type DocxExportContext = {
   runSizeHalfPoints: string;
   forceBlackText: boolean;
   tableHeaderFill: string;
+  paragraphAlign: DocxParagraphAlign;
+  paragraphSpacingBefore: string | null;
+  paragraphSpacingAfter: string | null;
+  listParagraphStyle: boolean;
+  tableKeepTogetherWrapper: boolean;
+  tableJustify: "center" | null;
+  tableWidthPct: string | null;
+  tableGridMaxDxa: number | null;
+  tableCellSizeHalfPoints: string | null;
+  tableCellVAlign: "center" | null;
+  tableHeaderAlign: "center" | null;
+  tableBorderColor: string | null;
+};
+
+/** Matches 790-00134R Solea DV: Arial 10pt justified body, 9pt centered tables. */
+export const CONVERGENT_DOCX_RUN_STYLE: DocxRunStyle = {
+  font: "Arial",
+  sizeHalfPoints: "20",
+  forceBlackText: true,
+  tableHeaderFill: "C6D9F1",
+  paragraphAlign: "both",
+  paragraphSpacingBefore: "60",
+  paragraphSpacingAfter: "60",
+  listParagraphStyle: true,
+  tableKeepTogetherWrapper: false,
+  tableJustify: "center",
+  tableWidthPct: "5000",
+  tableGridMaxDxa: 9346,
+  tableCellSizeHalfPoints: "18",
+  tableCellVAlign: "center",
+  tableHeaderAlign: "center",
+  tableBorderColor: "000000",
 };
 
 const EMPTY_NUMBERING_BASES: ListNumberingBases = {
@@ -78,6 +124,18 @@ export function createDocxExportContext(
     runSizeHalfPoints: runStyle?.sizeHalfPoints ?? DEFAULT_RUN_SIZE_HALF_POINTS,
     forceBlackText: runStyle?.forceBlackText ?? false,
     tableHeaderFill: runStyle?.tableHeaderFill ?? DEFAULT_TABLE_HEADER_FILL,
+    paragraphAlign: runStyle?.paragraphAlign ?? "left",
+    paragraphSpacingBefore: runStyle?.paragraphSpacingBefore ?? null,
+    paragraphSpacingAfter: runStyle?.paragraphSpacingAfter ?? null,
+    listParagraphStyle: runStyle?.listParagraphStyle ?? false,
+    tableKeepTogetherWrapper: runStyle?.tableKeepTogetherWrapper ?? true,
+    tableJustify: runStyle?.tableJustify ?? null,
+    tableWidthPct: runStyle?.tableWidthPct ?? null,
+    tableGridMaxDxa: runStyle?.tableGridMaxDxa ?? null,
+    tableCellSizeHalfPoints: runStyle?.tableCellSizeHalfPoints ?? null,
+    tableCellVAlign: runStyle?.tableCellVAlign ?? null,
+    tableHeaderAlign: runStyle?.tableHeaderAlign ?? null,
+    tableBorderColor: runStyle?.tableBorderColor ?? null,
   };
 }
 
@@ -159,7 +217,7 @@ export function registerInlineImage(
   const docPrId = relNum;
 
   return (
-    `<w:r>${runProperties()}` +
+    `<w:r>${runProperties(ctx)}` +
     `<w:drawing>` +
     `<wp:inline distT="0" distB="0" distL="0" distR="0" xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing">` +
     `<wp:extent cx="${cx}" cy="${cy}"/>` +
@@ -191,11 +249,13 @@ export function registerInlineImage(
   );
 }
 
-function runProperties(): string {
+function runProperties(ctx: DocxExportContext): string {
+  const font = ctx.runFont;
+  const size = ctx.runSizeHalfPoints;
   return (
     `<w:rPr>` +
-    `<w:rFonts w:ascii="Times New Roman" w:eastAsia="Times New Roman" w:hAnsi="Times New Roman" w:cs="Times New Roman"/>` +
-    `<w:sz w:val="24"/><w:szCs w:val="24"/>` +
+    `<w:rFonts w:ascii="${font}" w:eastAsia="${font}" w:hAnsi="${font}" w:cs="${font}"/>` +
+    `<w:sz w:val="${size}"/><w:szCs w:val="${size}"/>` +
     `</w:rPr>`
   );
 }
