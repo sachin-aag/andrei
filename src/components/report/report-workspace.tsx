@@ -29,10 +29,12 @@ import {
   scrollToCommentFieldAnchor,
   scrollToGutterAnchor,
 } from "@/lib/comments/navigate";
-import { sortedOpenSuggestionsForSection } from "@/lib/ai/suggestion-gating";
-import { scrollToGeneratedSuggestion } from "@/lib/suggestions/navigate-suggestion";
 import { evaluatableSectionKeys } from "@/lib/ai/criteria-view";
 import { getWorkspaceSections } from "@/lib/document-types";
+import {
+  openGeneratedSuggestionById,
+  scrollToGeneratedSuggestion,
+} from "@/lib/suggestions/navigate-suggestion";
 import { captureEvent } from "@/lib/analytics/events";
 import { cn } from "@/lib/utils";
 import { useWorkspaceLayout } from "@/hooks/use-workspace-layout";
@@ -132,7 +134,7 @@ export function ReportWorkspace({
   const { pendingPlaceholders } = useReportPlaceholders();
   const { getEditor } = useReportEditors();
   const { requestCommentFocus, comments } = useReportComments();
-  const { suggestionsFocusSection, clearSuggestionsFocusSection, evaluations } =
+  const { suggestionsFocusSection, suggestionsFocusCommentId, clearSuggestionsFocusSection } =
     useReportEvaluations();
   const { activeAttachmentId } = useReportAttachments();
   const [criteriaFocusSection, setCriteriaFocusSection] = useState<
@@ -342,9 +344,10 @@ export function ReportWorkspace({
 
     const attempt = (index: number) => {
       if (cancelled) return;
-      const active =
-        sortedOpenSuggestionsForSection(section, comments, evaluations)[0] ??
-        null;
+      const active = openGeneratedSuggestionById(
+        comments,
+        suggestionsFocusCommentId
+      );
       if (active) {
         requestCommentFocus(active.id);
         if (scrollToGeneratedSuggestion(active)) {
@@ -396,10 +399,10 @@ export function ReportWorkspace({
     };
   }, [
     suggestionsFocusSection,
+    suggestionsFocusCommentId,
     clearSuggestionsFocusSection,
     jumpToSection,
     comments,
-    evaluations,
     requestCommentFocus,
     sidebarCollapsed,
   ]);
