@@ -17,8 +17,8 @@ describe("isChatMode", () => {
 });
 
 describe("buildChatSystemPrompt", () => {
-  it("bumps the prompt version when section inline image guidance changes", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v41-insert-image");
+  it("bumps the prompt version when insert_image and citation-marker guidance change", () => {
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v42-insert-image-citation-markers");
   });
 
   it("puts citations at the end of the section when the pack mode is on", () => {
@@ -28,9 +28,10 @@ describe("buildChatSystemPrompt", () => {
       citationsAtEndOfSection: true,
     });
     expect(prompt).toContain("END of the section field");
-    expect(prompt).toContain("second");
     expect(prompt).toContain("Citations:");
-    expect(prompt).toContain("Citations go at the end of the field");
+    expect(prompt).toContain("immediately after the supported statement");
+    expect(prompt).toContain("cite it as [filename, p. N]");
+    expect(prompt).toContain("Do not invent [1]/[2] numbers");
     expect(prompt).not.toContain(
       "When you rely on retrieved evidence in prose, cite it as"
     );

@@ -14,6 +14,7 @@ import {
   suggestionInsertMarkName,
 } from "@/lib/tiptap/suggestion-marks";
 import { colorFromTextMarks, cssColorToWordVal } from "@/lib/tiptap/text-color";
+import { citationNumbersFromDoc } from "@/lib/suggestions/citations-at-end";
 
 export type NarrativeDocxXmlResult = {
   xml: string;
@@ -55,6 +56,7 @@ export function narrativeToDocxXmlWithContext(
   }
 
   const sanitized = sanitizeDocTextNodes(doc);
+  ctx.citationNumbers = citationNumbersFromDoc(sanitized);
   const parts: string[] = [];
 
   for (const node of sanitized.content ?? []) {
@@ -178,6 +180,52 @@ function escapeXml(text: string): string {
     .replace(/'/g, "&apos;");
 }
 
+function textLineToCitationAwareRuns(
+  line: string,
+  rPr: string,
+  textTag: "w:t" | "w:delText",
+  superscriptRPr: string,
+  citationNumbers: ReadonlySet<number> | undefined
+): string {
+  if (!line) return "";
+  if (!citationNumbers || citationNumbers.size === 0) {
+    return `<w:r>${rPr}<${textTag} xml:space="preserve">${escapeXml(line)}</${textTag}></w:r>`;
+  }
+
+  const parts: string[] = [];
+  const markerRe = /\[(\d+)\]/g;
+  let last = 0;
+  let match: RegExpExecArray | null;
+  while ((match = markerRe.exec(line)) !== null) {
+    const n = Number(match[1]);
+    if (!citationNumbers.has(n)) continue;
+    if (match.index > last) {
+      parts.push(
+        `<w:r>${rPr}<${textTag} xml:space="preserve">${escapeXml(
+          line.slice(last, match.index)
+        )}</${textTag}></w:r>`
+      );
+    }
+    parts.push(
+      `<w:r>${superscriptRPr}<${textTag} xml:space="preserve">${escapeXml(
+        String(n)
+      )}</${textTag}></w:r>`
+    );
+    last = match.index + match[0].length;
+  }
+  if (parts.length === 0) {
+    return `<w:r>${rPr}<${textTag} xml:space="preserve">${escapeXml(line)}</${textTag}></w:r>`;
+  }
+  if (last < line.length) {
+    parts.push(
+      `<w:r>${rPr}<${textTag} xml:space="preserve">${escapeXml(
+        line.slice(last)
+      )}</${textTag}></w:r>`
+    );
+  }
+  return parts.join("");
+}
+
 function paragraphJustification(
   align?: string | null,
   ctx?: DocxExportContext
@@ -267,6 +315,15 @@ function inlineNodesToRuns(
         color: colorFromTextMarks(marks),
         sizeHalfPoints: runSizeOverride,
       }, ctx);
+      const superscriptRPr = runProperties({
+        bold: isBold,
+        italic: isItalic,
+        underline: isUnderline,
+        subscript: false,
+        superscript: true,
+        color: colorFromTextMarks(marks),
+        sizeHalfPoints: runSizeOverride,
+      }, ctx);
 
       const lines = text.split("\n");
       const runParts: string[] = [];
@@ -278,9 +335,13 @@ function inlineNodesToRuns(
           const textTag =
             revision?.type === suggestionDeleteMarkName ? "w:delText" : "w:t";
           runParts.push(
-            `<w:r>${rPr}<${textTag} xml:space="preserve">${escapeXml(
-              lines[i]!
-            )}</${textTag}></w:r>`
+            textLineToCitationAwareRuns(
+              lines[i]!,
+              rPr,
+              textTag,
+              superscriptRPr,
+              ctx?.citationNumbers
+            )
           );
         }
       }

@@ -232,8 +232,8 @@ function convergentSections(): ReportSectionRecord[] {
       section === "purpose"
         ? {
             narrative: narrativeDocWithCitations(
-              "Verify Solea output REQ-101 meets the laser energy specification.",
-              ["[protocol.pdf, p. 3]"]
+              "Verify Solea output REQ-101 meets the laser energy specification [1].",
+              ["1. [protocol.pdf, p. 3]"]
             ),
           }
         : section === "testers_dates"
@@ -326,7 +326,9 @@ describe("convergent design-verification DOCX export", () => {
     expect(xml).toContain("headerReference");
     expect(xml).toContain("footerReference");
     expect(xml).toContain("DVR-100");
-    expect(xml).toContain("Verify Solea output REQ-101 meets the laser energy specification.");
+    expect(xml).toContain("Verify Solea output REQ-101 meets the laser energy specification");
+    expect(xml).toContain('<w:vertAlign w:val="superscript"/>');
+    expect(xml).not.toContain("[1]");
     expect(xml).toContain("mm: represents major release number");
     expect(xml).toContain("Alex Rivera, independent test engineer.");
     expect(xml).toContain("2026-03-01");
@@ -361,9 +363,11 @@ describe("convergent design-verification DOCX export", () => {
     const xml = new PizZip(buf).file("word/document.xml")?.asText() ?? "";
 
     expect(xml).toContain(
-      "Verify Solea output REQ-101 meets the laser energy specification."
+      "Verify Solea output REQ-101 meets the laser energy specification"
     );
     expect(xml).not.toContain("Citations:");
     expect(xml).not.toContain("[protocol.pdf, p. 3]");
+    expect(xml).not.toContain("[1]");
+    expect(xml).not.toContain('<w:vertAlign w:val="superscript"/>');
   });
 });

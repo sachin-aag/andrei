@@ -1,5 +1,5 @@
 import type { JSONContent } from "@tiptap/core";
-import { isCitationShapedBracket } from "@/lib/placeholders/citation-bracket";
+import { isSourceCitationBracket } from "@/lib/placeholders/citation-bracket";
 import type { EditScope } from "@/lib/suggestions/locator";
 import type { TableOperation } from "@/lib/suggestions/table-operation";
 
@@ -15,6 +15,8 @@ export type SplitSuggestionEdit = SuggestionEditPart & {
 };
 
 const BRACKET_RE = /\[[^\]]+\]/g;
+const NUMBERED_LIST_PREFIX = /^(\d+)\.\s+/;
+const ADJACENT_MARKER_GAP = /(\[\d+\])[ \t]+(?=\[\d+\])/g;
 
 /** Heading written once above the parked citation list. */
 export const CITATIONS_HEADING = "Citations:";
@@ -25,7 +27,7 @@ export function isCitationsHeading(line: string): boolean {
 
 export function documentCitationRule(citationsAtEndOfSection: boolean): string {
   if (citationsAtEndOfSection) {
-    return 'Cite evidence as [filename, p. N] when the page is known, or [filename] when it is not. Place those citations at the end of the section field under a "Citations:" heading (blank line, then the heading, then one citation per line), not inline beside the claim. For a body change plus a new citation, use one split edit (primary + second). Never use <to be filled> in a citation.';
+    return 'Cite evidence as [filename, p. N] when the page is known, or [filename] when it is not. Place those source brackets immediately after the supported statement (or table cell). The application converts them to numbered markers and parks the sources at the end of the section field under a "Citations:" heading. For a body change plus a citation you may still use a split edit (primary + second); inline source brackets in the primary are numbered automatically. Never use <to be filled> in a citation.';
   }
   return "Cite evidence in prose as [filename, p. N] when the page is known, or [filename] when it is not. Never use <to be filled> in a citation.";
 }
@@ -41,14 +43,14 @@ function uniquePreserveOrder(items: readonly string[]): string[] {
   return out;
 }
 
-function findCitationSpans(
+function findSourceCitationSpans(
   text: string
 ): Array<{ start: number; end: number; text: string }> {
   const spans: Array<{ start: number; end: number; text: string }> = [];
   BRACKET_RE.lastIndex = 0;
   let match: RegExpExecArray | null;
   while ((match = BRACKET_RE.exec(text)) !== null) {
-    if (!isCitationShapedBracket(match[0])) continue;
+    if (!isSourceCitationBracket(match[0])) continue;
     spans.push({
       start: match.index,
       end: match.index + match[0].length,
@@ -58,27 +60,163 @@ function findCitationSpans(
   return spans;
 }
 
-/** Citation brackets in `text`, in document order, de-duplicated. */
+/** Source citation brackets in `text`, in document order, de-duplicated. */
 export function extractCitationBrackets(text: string): string[] {
-  return uniquePreserveOrder(findCitationSpans(text).map((span) => span.text));
+  return uniquePreserveOrder(
+    findSourceCitationSpans(text).map((span) => span.text)
+  );
+}
+
+export function citationMarker(n: number): string {
+  return `[${n}]`;
+}
+
+function numberedCitationLine(n: number, source: string): string {
+  return `${n}. ${source}`;
+}
+
+class FieldCitationNumbering {
+  private readonly sourceToNumber = new Map<string, number>();
+  private readonly used = new Set<number>();
+
+  seed(source: string, number?: number): void {
+    if (this.sourceToNumber.has(source)) return;
+    const n =
+      number != null && Number.isFinite(number) && number > 0 && !this.used.has(number)
+        ? number
+        : this.nextUnused();
+    this.sourceToNumber.set(source, n);
+    this.used.add(n);
+  }
+
+  assign(source: string): { number: number; isNew: boolean } {
+    const existing = this.sourceToNumber.get(source);
+    if (existing != null) return { number: existing, isNew: false };
+    const n = this.nextUnused();
+    this.sourceToNumber.set(source, n);
+    this.used.add(n);
+    return { number: n, isNew: true };
+  }
+
+  private nextUnused(): number {
+    let n = 1;
+    while (this.used.has(n)) n += 1;
+    return n;
+  }
+
+  entries(): Array<{ number: number; source: string }> {
+    return [...this.sourceToNumber.entries()]
+      .map(([source, number]) => ({ number, source }))
+      .sort((a, b) => a.number - b.number);
+  }
+
+  numbers(): Set<number> {
+    return new Set(this.used);
+  }
+}
+
+function parseCitationListLine(
+  line: string
+): { number: number | null; sources: string[] } | null {
+  const trimmed = line.trim();
+  if (!trimmed || isCitationBlockHeading(trimmed)) return null;
+  const numbered = NUMBERED_LIST_PREFIX.exec(trimmed);
+  const rest = numbered ? trimmed.slice(numbered[0].length) : trimmed;
+  const sources = extractCitationBrackets(rest);
+  if (sources.length === 0) return null;
+  const leftover = stripCitationsFromText(rest).prose.trim();
+  if (leftover) return null;
+  return {
+    number: numbered ? Number(numbered[1]) : null,
+    sources,
+  };
+}
+
+function numberingFromTrailingLines(lines: readonly string[]): FieldCitationNumbering {
+  const numbering = new FieldCitationNumbering();
+  const parsed = lines
+    .map((line) => parseCitationListLine(line))
+    .filter((line): line is { number: number | null; sources: string[] } => line != null);
+  for (const line of parsed) {
+    if (line.number != null && line.sources[0]) {
+      numbering.seed(line.sources[0], line.number);
+    }
+  }
+  for (const line of parsed) {
+    for (const source of line.sources) numbering.seed(source);
+  }
+  return numbering;
+}
+
+function parseFieldCitationNumbering(existingFieldText: string): FieldCitationNumbering {
+  return numberingFromTrailingLines(splitTrailingCitationBlock(existingFieldText).lines);
+}
+
+function replaceSourceCitationsWithMarkers(
+  text: string,
+  numbering: FieldCitationNumbering
+): {
+  text: string;
+  assigned: Array<{ source: string; number: number; isNew: boolean }>;
+} {
+  const spans = findSourceCitationSpans(text);
+  if (spans.length === 0) return { text, assigned: [] };
+
+  const assigned: Array<{ source: string; number: number; isNew: boolean }> = [];
+  const replacements: Array<{ start: number; end: number; marker: string }> = [];
+  for (const span of spans) {
+    const result = numbering.assign(span.text);
+    assigned.push({ source: span.text, number: result.number, isNew: result.isNew });
+    replacements.push({
+      start: span.start,
+      end: span.end,
+      marker: citationMarker(result.number),
+    });
+  }
+
+  let next = text;
+  for (let i = replacements.length - 1; i >= 0; i--) {
+    const replacement = replacements[i]!;
+    next =
+      next.slice(0, replacement.start) +
+      replacement.marker +
+      next.slice(replacement.end);
+  }
+  return { text: collapseAdjacentCitationMarkers(next), assigned };
+}
+
+function collapseAdjacentCitationMarkers(text: string): string {
+  return text.replace(ADJACENT_MARKER_GAP, "$1");
+}
+
+function appendCitationMarkers(prose: string, numbers: readonly number[]): string {
+  const markers = uniquePreserveOrder(numbers.map((n) => citationMarker(n))).join("");
+  if (!markers) return prose;
+  if (!prose) return markers;
+  if (/\s$/.test(prose) || /\[\d+\]$/.test(prose.trimEnd())) {
+    return collapseAdjacentCitationMarkers(`${prose.trimEnd()}${markers}`);
+  }
+  return collapseAdjacentCitationMarkers(`${prose} ${markers}`);
 }
 
 export function isCitationOnlyText(text: string): boolean {
   const trimmed = text.trim();
   if (!trimmed) return false;
-  const { prose, citations } = stripCitationsFromText(trimmed);
+  const withoutNumber = trimmed.replace(NUMBERED_LIST_PREFIX, "");
+  const { prose, citations } = stripCitationsFromText(withoutNumber);
   return citations.length > 0 && prose.trim() === "";
 }
 
 /**
- * Remove document citations from `text` and return the leftover prose.
- * Preserves a single leading space when the original insert was mid-sentence.
+ * Remove document source citations from `text` and return the leftover prose.
+ * Numeric markers such as `[1]` stay in place. Preserves a single leading
+ * space when the original insert was mid-sentence.
  */
 export function stripCitationsFromText(text: string): {
   prose: string;
   citations: string[];
 } {
-  const spans = findCitationSpans(text);
+  const spans = findSourceCitationSpans(text);
   if (spans.length === 0) return { prose: text, citations: [] };
 
   let prose = text;
@@ -86,9 +224,7 @@ export function stripCitationsFromText(text: string): {
     const span = spans[i]!;
     prose = prose.slice(0, span.start) + prose.slice(span.end);
   }
-  prose = prose.replace(/[ \t]+([,.;:!?])/g, "$1");
-  prose = prose.replace(/\(\s*\)/g, "");
-  prose = prose.replace(/[ \t]{2,}/g, " ");
+  prose = tidyAfterCitationRemoval(prose);
   const hadLeadingSpace = /^\s/.test(text);
   prose = prose.replace(/[ \t]+$/g, "");
   prose = prose.replace(/^[ \t]+/, hadLeadingSpace && prose.trim() ? " " : "");
@@ -101,11 +237,17 @@ export function stripCitationsFromText(text: string): {
   };
 }
 
+function tidyAfterCitationRemoval(text: string): string {
+  return text
+    .replace(/[ \t]+([,.;:!?])/g, "$1")
+    .replace(/\(\s*\)/g, "")
+    .replace(/[ \t]{2,}/g, " ");
+}
+
 function isCitationOnlyLine(line: string): boolean {
   const trimmed = line.trim();
   if (!trimmed) return false;
-  const { prose, citations } = stripCitationsFromText(trimmed);
-  return citations.length > 0 && prose.trim() === "";
+  return isCitationOnlyText(trimmed);
 }
 
 function isReferencesHeading(line: string): boolean {
@@ -180,20 +322,79 @@ export function keepEmptyParagraphBeforeCitationHeading(
   );
 }
 
-/** Drop a trailing Citations:/References: block from plain text. */
-export function stripTrailingCitationBlockFromText(text: string): string {
-  return splitTrailingCitationBlock(text).body;
+function paragraphWithText(text: string): JSONContent {
+  return { type: "paragraph", content: [{ type: "text", text }] };
 }
 
-/**
- * Drop a trailing citation list from a TipTap doc (heading + cite lines +
- * the spacer before it). Leaves the body and any tables intact.
- */
-export function stripTrailingCitationBlockFromDoc(doc: JSONContent): JSONContent {
-  if (doc.type !== "doc" || !Array.isArray(doc.content) || doc.content.length === 0) {
-    return doc;
+function mapJsonTextNodes(
+  node: JSONContent,
+  rewrite: (text: string) => string
+): JSONContent {
+  if (node.type === "text" && typeof node.text === "string") {
+    return { ...node, text: rewrite(node.text) };
   }
-  const blocks = doc.content;
+  if (node.content?.length) {
+    return {
+      ...node,
+      content: node.content.map((child) => mapJsonTextNodes(child, rewrite)),
+    };
+  }
+  return node;
+}
+
+function stripNumericMarkersFromText(
+  text: string,
+  numbers: ReadonlySet<number>
+): string {
+  if (numbers.size === 0) return text;
+  const next = text.replace(/\[\s*(\d+)\s*\]/g, (full, raw: string) =>
+    numbers.has(Number(raw)) ? "" : full
+  );
+  return tidyAfterCitationRemoval(next).replace(/[ \t]+$/g, "");
+}
+
+type TrailingCitationSplit = {
+  body: string;
+  trailingCitations: string[];
+  heading: string;
+  lines: string[];
+};
+
+function splitTrailingCitationBlock(text: string): TrailingCitationSplit {
+  const lines = text.split("\n");
+  const citations: string[] = [];
+  const trailingLines: string[] = [];
+  let i = lines.length - 1;
+  while (i >= 0 && lines[i]!.trim() === "") i--;
+  while (i >= 0 && isCitationOnlyLine(lines[i]!)) {
+    const line = lines[i]!;
+    trailingLines.unshift(line);
+    citations.unshift(...extractCitationBrackets(line));
+    i--;
+  }
+  let heading = "";
+  if (i >= 0 && isCitationBlockHeading(lines[i]!)) {
+    heading = lines[i]!.trim();
+    i--;
+  }
+  while (i >= 0 && lines[i]!.trim() === "") i--;
+  return {
+    body: lines.slice(0, i + 1).join("\n"),
+    trailingCitations: uniquePreserveOrder(citations),
+    heading,
+    lines: trailingLines,
+  };
+}
+
+type TrailingDocRange = {
+  cut: number;
+  headingStart: number;
+  end: number;
+};
+
+function findTrailingCitationRange(
+  blocks: JSONContent[]
+): TrailingDocRange | null {
   let end = blocks.length;
   while (end > 0 && isEmptyParagraphBlock(blocks[end - 1]!)) {
     end -= 1;
@@ -206,17 +407,80 @@ export function stripTrailingCitationBlockFromDoc(doc: JSONContent): JSONContent
   if (citeStart > 0 && isCitationHeadingParagraph(blocks[citeStart - 1]!)) {
     headingStart = citeStart - 1;
   }
-  if (headingStart === end) return doc;
+  if (headingStart === end) return null;
 
   let cut = headingStart;
   while (cut > 0 && isEmptyParagraphBlock(blocks[cut - 1]!)) {
     cut -= 1;
   }
-  const next = blocks.slice(0, cut);
-  return {
+  return { cut, headingStart, end };
+}
+
+function trailingLinesFromDoc(blocks: JSONContent[], range: TrailingDocRange): string[] {
+  const lines: string[] = [];
+  for (let i = range.headingStart; i < range.end; i++) {
+    const block = blocks[i]!;
+    if (isCitationHeadingParagraph(block) || isEmptyParagraphBlock(block)) continue;
+    if (block.type === "paragraph" || block.type === "heading") {
+      lines.push(paragraphPlainText(block));
+    } else {
+      lines.push(nodePlainText(block));
+    }
+  }
+  return lines;
+}
+
+function numberingFromDoc(doc: JSONContent): FieldCitationNumbering {
+  if (doc.type !== "doc" || !Array.isArray(doc.content) || doc.content.length === 0) {
+    return new FieldCitationNumbering();
+  }
+  const range = findTrailingCitationRange(doc.content);
+  if (!range) return new FieldCitationNumbering();
+  return numberingFromTrailingLines(trailingLinesFromDoc(doc.content, range));
+}
+
+/** Numbers assigned in the field's trailing Citations list. */
+export function citationNumbersFromText(text: string): Set<number> {
+  return parseFieldCitationNumbering(text).numbers();
+}
+
+/** Numbers assigned in a TipTap field's trailing Citations list. */
+export function citationNumbersFromDoc(doc: JSONContent): Set<number> {
+  return numberingFromDoc(doc).numbers();
+}
+
+/** Drop a trailing Citations:/References: block from plain text. */
+export function stripTrailingCitationBlockFromText(text: string): string {
+  const split = splitTrailingCitationBlock(text);
+  const numbers = numberingFromTrailingLines(split.lines).numbers();
+  return stripNumericMarkersFromText(split.body, numbers);
+}
+
+/**
+ * Drop a trailing citation list from a TipTap doc (heading + cite lines +
+ * the spacer before it), then strip matching `[n]` markers from the remaining
+ * body and table cells.
+ */
+export function stripTrailingCitationBlockFromDoc(doc: JSONContent): JSONContent {
+  if (doc.type !== "doc" || !Array.isArray(doc.content) || doc.content.length === 0) {
+    return doc;
+  }
+  const blocks = doc.content;
+  const range = findTrailingCitationRange(blocks);
+  if (!range) return doc;
+
+  const numbers = numberingFromTrailingLines(
+    trailingLinesFromDoc(blocks, range)
+  ).numbers();
+  const next = blocks.slice(0, range.cut);
+  const stripped: JSONContent = {
     ...doc,
     content: next.length > 0 ? next : [{ type: "paragraph" }],
   };
+  if (numbers.size === 0) return stripped;
+  return mapJsonTextNodes(stripped, (text) =>
+    stripNumericMarkersFromText(text, numbers)
+  );
 }
 
 function isTiptapDoc(value: unknown): value is JSONContent {
@@ -230,7 +494,7 @@ function isTiptapDoc(value: unknown): value is JSONContent {
 
 /**
  * Walk section JSON and strip trailing citation blocks from each TipTap doc
- * or plain-text field. Does not walk into a doc's children (table cells stay).
+ * or plain-text field, including `[n]` markers inside table cells.
  */
 export function stripTrailingCitationsFromContent(content: unknown): unknown {
   if (typeof content === "string") {
@@ -253,32 +517,6 @@ export function stripTrailingCitationsFromContent(content: unknown): unknown {
   return content;
 }
 
-function splitTrailingCitationBlock(text: string): {
-  body: string;
-  trailingCitations: string[];
-  heading: string;
-} {
-  const lines = text.split("\n");
-  const citations: string[] = [];
-  let i = lines.length - 1;
-  while (i >= 0 && lines[i]!.trim() === "") i--;
-  while (i >= 0 && isCitationOnlyLine(lines[i]!)) {
-    citations.unshift(...extractCitationBrackets(lines[i]!));
-    i--;
-  }
-  let heading = "";
-  if (i >= 0 && isCitationBlockHeading(lines[i]!)) {
-    heading = lines[i]!.trim();
-    i--;
-  }
-  while (i >= 0 && lines[i]!.trim() === "") i--;
-  return {
-    body: lines.slice(0, i + 1).join("\n"),
-    trailingCitations: uniquePreserveOrder(citations),
-    heading,
-  };
-}
-
 /** True when the field already ends with a Citations/References block. */
 export function trailingIsCitationBlock(text: string): boolean {
   const { trailingCitations, heading } = splitTrailingCitationBlock(text);
@@ -287,7 +525,7 @@ export function trailingIsCitationBlock(text: string): boolean {
 
 /**
  * Insert text for newly parked citations. Adds a `Citations:` heading the
- * first time; later cites append as extra lines under the existing block.
+ * first time; later cites append as extra numbered lines under the existing block.
  */
 export function citationInsertText(
   citations: readonly string[],
@@ -295,10 +533,15 @@ export function citationInsertText(
 ): string {
   const unique = uniquePreserveOrder(citations);
   if (unique.length === 0) return "";
+  const numbering = parseFieldCitationNumbering(existingFieldText);
+  const lines = unique.map((source) => {
+    const { number } = numbering.assign(source);
+    return numberedCitationLine(number, source);
+  });
   if (trailingIsCitationBlock(existingFieldText)) {
-    return unique.join("\n");
+    return lines.join("\n");
   }
-  return `${CITATIONS_HEADING}\n${unique.join("\n")}`;
+  return `${CITATIONS_HEADING}\n${lines.join("\n")}`;
 }
 
 /** Insert that is only a heading plus citation brackets (or just brackets). */
@@ -324,7 +567,9 @@ export function normalizeCitationAppendInsert(
     .split(/\n/)
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
-  const cites = lines.filter((line) => !isCitationBlockHeading(line));
+  const cites = lines.flatMap((line) =>
+    isCitationBlockHeading(line) ? [] : extractCitationBrackets(line)
+  );
   if (cites.length === 0) return insert;
   return citationInsertText(cites, existing);
 }
@@ -358,17 +603,69 @@ export function joinBodyAndCitationInsert(
   return `${body}${plainCitationAppendSeparator(body, citationInsert)}${citationInsert}`;
 }
 
+function rebuildCitationBlock(numbering: FieldCitationNumbering): string {
+  const lines = numbering.entries().map(({ number, source }) =>
+    numberedCitationLine(number, source)
+  );
+  if (lines.length === 0) return "";
+  return `${CITATIONS_HEADING}\n${lines.join("\n")}`;
+}
+
+/** Rewrite a trailing citation list into numbered `n. [source]` lines. */
+export function normalizeTrailingCitationBlockInText(text: string): string {
+  const split = splitTrailingCitationBlock(text);
+  if (split.trailingCitations.length === 0 && !split.heading) return text;
+  const numbering = numberingFromTrailingLines(split.lines);
+  const block = rebuildCitationBlock(numbering);
+  if (!block) return split.body;
+  const bodyOut = split.body.replace(/\n{3,}/g, "\n\n").replace(/[ \t]+\n/g, "\n").trimEnd();
+  return bodyOut ? `${bodyOut}\n\n${block}` : block;
+}
+
+/** Rewrite a TipTap field's trailing citation list into numbered lines. */
+export function normalizeTrailingCitationBlockInDoc(doc: JSONContent): JSONContent {
+  if (doc.type !== "doc" || !Array.isArray(doc.content) || doc.content.length === 0) {
+    return doc;
+  }
+  const range = findTrailingCitationRange(doc.content);
+  if (!range) return doc;
+  const numbering = numberingFromTrailingLines(
+    trailingLinesFromDoc(doc.content, range)
+  );
+  const entries = numbering.entries();
+  if (entries.length === 0) return doc;
+
+  const prefix = doc.content.slice(0, range.cut);
+  const last = prefix[prefix.length - 1];
+  const withSpacer =
+    last && !isEmptyParagraphBlock(last) ? [...prefix, { type: "paragraph" }] : prefix;
+  return {
+    ...doc,
+    content: [
+      ...withSpacer,
+      paragraphWithText(CITATIONS_HEADING),
+      ...entries.map(({ number, source }) =>
+        paragraphWithText(numberedCitationLine(number, source))
+      ),
+    ],
+  };
+}
+
 /**
  * Move inline document citations to a trailing block at the end of `text`.
  * Used for whole-field drafts when citations-at-end mode is on.
  */
 export function moveCitationsToEndOfText(text: string): string {
-  const { body, trailingCitations } = splitTrailingCitationBlock(text);
-  const { prose, citations } = stripCitationsFromText(body);
-  const all = uniquePreserveOrder([...trailingCitations, ...citations]);
-  if (all.length === 0) return text;
-  const bodyOut = prose.replace(/\n{3,}/g, "\n\n").replace(/[ \t]+\n/g, "\n").trimEnd();
-  const block = `${CITATIONS_HEADING}\n${all.join("\n")}`;
+  const { body, lines } = splitTrailingCitationBlock(text);
+  const numbering = numberingFromTrailingLines(lines);
+  const replaced = replaceSourceCitationsWithMarkers(body, numbering);
+  const block = rebuildCitationBlock(numbering);
+  if (!block && replaced.assigned.length === 0) return text;
+  const bodyOut = replaced.text
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/[ \t]+\n/g, "\n")
+    .trimEnd();
+  if (!block) return bodyOut;
   return bodyOut ? `${bodyOut}\n\n${block}` : block;
 }
 
@@ -376,65 +673,62 @@ function hasPartContent(part: Pick<SuggestionEditPart, "deleteText" | "insertTex
   return Boolean(part.deleteText.trim() || part.insertText.trim());
 }
 
-function leftoverCitationLines(prose: string): string[] {
-  return prose
-    .split(/\n/)
-    .map((line) => line.trim())
-    .filter((line) => line.length > 0 && !isCitationBlockHeading(line));
-}
-
-function citationsAlreadyInField(
-  citations: readonly string[],
-  existingFieldText: string
-): string[] {
-  if (!existingFieldText) return [...citations];
-  return citations.filter((citation) => !existingFieldText.includes(citation));
-}
-
 /**
- * Split a single-site edit so new citations land at the end of the field.
- * No-op when the insert has no citation brackets (and no `second` part).
+ * Split a single-site edit so new citations land at the end of the field
+ * and the claim keeps a numbered `[n]` marker.
  */
 export function splitEditForCitationsAtEnd(
   edit: SplitSuggestionEdit,
   opts?: { existingFieldText?: string }
 ): SplitSuggestionEdit {
-  const fromPrimary = stripCitationsFromText(edit.insertText);
-  const fromSecond = edit.second
-    ? stripCitationsFromText(edit.second.insertText)
-    : { prose: "", citations: [] };
-
-  const leftoverSecondProse = leftoverCitationLines(fromSecond.prose);
-  const endLines = uniquePreserveOrder([
-    ...fromPrimary.citations,
-    ...fromSecond.citations,
-    ...leftoverSecondProse,
-  ]);
   const existingFieldText = opts?.existingFieldText ?? "";
-  const newCitations = citationsAlreadyInField(endLines, existingFieldText);
+  const numbering = parseFieldCitationNumbering(existingFieldText);
+
+  const fromPrimary = replaceSourceCitationsWithMarkers(edit.insertText, numbering);
+  const fromSecondSources = edit.second
+    ? extractCitationBrackets(edit.second.insertText)
+    : [];
+
+  const secondAssigned = fromSecondSources.map((source) => numbering.assign(source));
+  const newSources = uniquePreserveOrder([
+    ...fromPrimary.assigned.filter((item) => item.isNew).map((item) => item.source),
+    ...fromSecondSources.filter((_, i) => secondAssigned[i]?.isNew),
+  ]);
+
+  let bodyInsert = fromPrimary.text;
+  if (fromPrimary.assigned.length === 0 && secondAssigned.length > 0) {
+    bodyInsert = appendCitationMarkers(
+      bodyInsert,
+      secondAssigned.map((item) => item.number)
+    );
+  }
 
   const primary: SuggestionEditPart = {
     anchorText: edit.anchorText,
     deleteText: edit.deleteText,
-    insertText: fromPrimary.prose,
+    insertText: bodyInsert,
     scope: edit.scope,
   };
 
-  if (newCitations.length === 0) {
-    return primary;
-  }
-
-  const citationPart: SuggestionEditPart = {
-    anchorText: edit.second?.anchorText ?? "",
-    deleteText: edit.second?.deleteText ?? "",
-    insertText: citationInsertText(newCitations, existingFieldText),
-    scope: edit.second?.scope,
-  };
+  const citationPart: SuggestionEditPart | undefined =
+    newSources.length > 0
+      ? {
+          anchorText: edit.second?.anchorText ?? "",
+          deleteText: edit.second?.deleteText ?? "",
+          insertText: citationInsertText(newSources, existingFieldText),
+          scope: edit.second?.scope,
+        }
+      : undefined;
 
   if (!hasPartContent(primary)) {
+    if (!citationPart) return primary;
+    if (edit.anchorText || edit.deleteText) {
+      return citationPart;
+    }
     return citationPart;
   }
 
+  if (!citationPart) return primary;
   return { ...primary, second: citationPart };
 }
 
@@ -456,18 +750,25 @@ export function prepareEditForCitationMode<T extends SplitSuggestionEdit>(
 }
 
 /**
- * Strip citation brackets from table-operation cell/row/header strings so
- * they can be appended at the end of the field as a split `second` part.
+ * Replace source citation brackets in table-operation strings with numbered
+ * markers so they can be appended at the end of the field as a split `second`
+ * part.
  */
-export function stripCitationsFromTableOperation(operation: TableOperation): {
+export function stripCitationsFromTableOperation(
+  operation: TableOperation,
+  existingFieldText = ""
+): {
   operation: TableOperation;
   citations: string[];
 } {
+  const numbering = parseFieldCitationNumbering(existingFieldText);
   const citations: string[] = [];
   const take = (value: string): string => {
-    const { prose, citations: found } = stripCitationsFromText(value);
-    citations.push(...found);
-    return prose;
+    const { text, assigned } = replaceSourceCitationsWithMarkers(value, numbering);
+    for (const item of assigned) {
+      if (item.isNew) citations.push(item.source);
+    }
+    return text;
   };
 
   switch (operation.kind) {
@@ -513,7 +814,10 @@ export function citationAppendPart(
   citations: readonly string[],
   existingFieldText = ""
 ): SuggestionEditPart | undefined {
-  const fresh = citationsAlreadyInField(citations, existingFieldText);
+  const numbering = parseFieldCitationNumbering(existingFieldText);
+  const fresh = uniquePreserveOrder(citations).filter(
+    (source) => numbering.assign(source).isNew
+  );
   if (fresh.length === 0) return undefined;
   return {
     anchorText: "",

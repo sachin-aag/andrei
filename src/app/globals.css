@@ -154,6 +154,8 @@ html[data-customer="convergent"] {
     background-color: var(--background);
     color: var(--foreground);
     font-feature-settings: "rlig" 1, "calt" 1;
+    /* Filenames, IDs, and other unspaced tokens wrap instead of overflowing. */
+    overflow-wrap: anywhere;
   }
   body {
     min-height: 100vh;
@@ -801,6 +803,14 @@ html[data-customer="convergent"] {
 
 /* redraft (future) — handled by section banner, not inline marks. No styles. */
 
+/* Long unspaced tokens (filenames, requirement IDs) wrap inside the editor. */
+.ProseMirror {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
 /* ProseMirror / Tiptap — table editing */
 .ProseMirror table {
   border-collapse: collapse;
@@ -819,6 +829,8 @@ html[data-customer="convergent"] {
   vertical-align: top;
   box-sizing: border-box;
   position: relative;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .ProseMirror th {
@@ -950,6 +962,31 @@ html[data-customer="convergent"] {
   border: none;
   box-shadow: none !important;
   background: transparent !important;
+}
+
+/* Numeric `[n]` citation markers — static raised bubbles, screen-only. */
+.ProseMirror .citation-ref {
+  font-size: 0.68em;
+  font-weight: 600;
+  line-height: 1.2;
+  vertical-align: super;
+  color: var(--muted-foreground);
+  background: var(--muted);
+  border-radius: 999px;
+  padding: 0 0.32em;
+  margin: 0 0.05em;
+  white-space: nowrap;
+  display: inline-block;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.ProseMirror span.suggestion-insert .citation-ref,
+.ProseMirror span.suggestion-insert-ai .citation-ref,
+.ProseMirror span.suggestion-delete .citation-ref,
+.ProseMirror span.suggestion-delete-ai .citation-ref {
+  color: var(--muted-foreground);
+  background: var(--muted);
 }
 
 /* Plain-text mirror layer — no border/padding so line heights match the textarea. */
