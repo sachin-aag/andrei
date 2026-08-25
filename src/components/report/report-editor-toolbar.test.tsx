@@ -60,6 +60,7 @@ describe("ReportEditorToolbar", () => {
     const user = userEvent.setup();
     render(<ReportEditorToolbar />);
 
+    expect(screen.getByRole("toolbar", { name: "Editing" })).toBeInTheDocument();
     expect(screen.getByText(/select a field to start editing/i)).toBeInTheDocument();
     const toggle = trackChanges();
     expect(toggle).toBeInTheDocument();
@@ -73,6 +74,7 @@ describe("ReportEditorToolbar", () => {
     mockState.readOnly = true;
     render(<ReportEditorToolbar />);
 
+    expect(screen.getByRole("toolbar", { name: "Editing" })).toBeInTheDocument();
     expect(trackChanges()).toBeInTheDocument();
   });
 
@@ -88,8 +90,25 @@ describe("ReportEditorToolbar", () => {
     mockState.activeFieldKind = "plain";
     render(<ReportEditorToolbar />);
 
-    expect(screen.getByText(/editing: root cause narrative/i)).toBeInTheDocument();
-    expect(screen.getByText(/plain text —/i)).toBeInTheDocument();
+    const toolbar = screen.getByRole("toolbar", { name: "Editing" });
+    expect(toolbar).toHaveTextContent(/editing: root cause narrative/i);
+    expect(toolbar).toHaveTextContent(/plain text —/i);
+  });
+
+  it("names Analyze Brainstorming and Other Tools when those plain fields are focused", () => {
+    mockState.activeFieldKey = "analyze:brainstorming";
+    mockState.activeFieldKind = "plain";
+    const { rerender } = render(<ReportEditorToolbar />);
+
+    expect(screen.getByRole("toolbar", { name: "Editing" })).toHaveTextContent(
+      /editing: brainstorming/i
+    );
+
+    mockState.activeFieldKey = "analyze:otherTools";
+    rerender(<ReportEditorToolbar />);
+    expect(screen.getByRole("toolbar", { name: "Editing" })).toHaveTextContent(
+      /editing: other tools/i
+    );
   });
 
   it("renders nothing in view mode", () => {
