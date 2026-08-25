@@ -1,31 +1,22 @@
-import { expect, test } from "@playwright/test";
-import {
-  gotoWithNavigationRetry,
-  parkPageForSessionSwap,
-} from "./helpers/navigation";
-import { scopedTestEmail } from "./helpers/auth";
-
-const TOUR_EMAIL = scopedTestEmail(
-  process.env.TEST_AUTH_EMAIL ?? "test.engineer@mjbiopharm.com",
-  "product-tour"
-);
+import { expect, test, type Page } from "@playwright/test";
+import { gotoWithNavigationRetry } from "./helpers/navigation";
+import { loginAsTestUser, scopedTestEmail } from "./helpers/auth";
 
 test.describe.configure({ mode: "serial" });
 
-async function loginWithTour(
-  page: import("@playwright/test").Page,
-  productTour: boolean | "resume"
-) {
-  await parkPageForSessionSwap(page);
-  await page.context().clearCookies();
-  const res = await page.request.post("/api/test/login", {
-    data: {
-      email: TOUR_EMAIL,
-      role: "engineer",
-      productTour,
-    },
+function tourEmail(): string {
+  return scopedTestEmail(
+    process.env.TEST_AUTH_EMAIL ?? "test.engineer@mjbiopharm.com",
+    `product-tour-${test.info().project.name}`
+  );
+}
+
+async function loginWithTour(page: Page, productTour: boolean | "resume") {
+  await loginAsTestUser(page, {
+    email: tourEmail(),
+    role: "engineer",
+    productTour,
   });
-  expect(res.ok(), `test login failed (${res.status()})`).toBeTruthy();
   await gotoWithNavigationRetry(page, "/", { waitUntil: "load" });
 }
 

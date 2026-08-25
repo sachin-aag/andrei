@@ -59,6 +59,7 @@ async function testLogin(
     mustChangePassword?: boolean;
     passwordExpired?: boolean;
     passwordWarning?: boolean;
+    productTour?: boolean | "resume";
   }
 ): Promise<TestLoginResult> {
   await parkPageForSessionSwap(page);
@@ -138,6 +139,7 @@ export async function loginAsTestUser(
     mustChangePassword?: boolean;
     passwordExpired?: boolean;
     passwordWarning?: boolean;
+    productTour?: boolean | "resume";
   }
 ): Promise<TestLoginResult> {
   return testLogin(page, body);
