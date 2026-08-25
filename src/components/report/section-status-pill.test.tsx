@@ -6,6 +6,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   SectionRunEvaluationButton,
   SectionStatusPill,
+  isCompletelyAboveScroller,
+  keepViewportAfterGrowth,
+  nearestVerticalScroller,
 } from "@/components/report/section-status-pill";
 import type { WorkspaceMode } from "@/providers/report-provider";
 
@@ -19,6 +22,7 @@ const {
   mockState: {
     workspaceMode: "edit" as WorkspaceMode,
     runningSuggestionSections: [] as string[],
+    runningEvalSections: [] as string[],
     isEvaluating: false,
     isSuggesting: false,
     evaluations: [] as unknown[],
@@ -53,7 +57,7 @@ vi.mock("@/providers/report-provider", () => ({
   }),
   useReportEvaluations: () => ({
     evaluations: mockState.evaluations,
-    runningEvalSections: [],
+    runningEvalSections: mockState.runningEvalSections,
     generateSuggestions,
     runEvaluation: vi.fn(),
     isEvaluating: mockState.isEvaluating,
@@ -77,6 +81,7 @@ describe("SectionStatusPill Suggest fixes", () => {
     canSuggestFixesMock.mockReturnValue(false);
     mockState.workspaceMode = "edit";
     mockState.runningSuggestionSections = [];
+    mockState.runningEvalSections = [];
     mockState.isEvaluating = false;
     mockState.isSuggesting = false;
   });
@@ -157,5 +162,114 @@ describe("SectionRunEvaluationButton", () => {
   it("still renders Run criteria as its own control", () => {
     render(<SectionRunEvaluationButton section="define" />);
     expect(screen.getByRole("button", { name: /Run criteria/ })).toBeInTheDocument();
+  });
+});
+
+describe("SectionStatusPill auto-open after Run criteria", () => {
+  beforeEach(() => {
+    mockState.runningEvalSections = [];
+  });
+
+  it("stays collapsed on first paint when evaluation is not running", () => {
+    render(<SectionStatusPill section="define" />);
+    expect(screen.getByRole("button", { expanded: false })).toBeInTheDocument();
+    expect(
+      screen.queryByText("Clearly define what happened actually")
+    ).not.toBeInTheDocument();
+  });
+
+  it("opens this section's dropdown when its criteria run finishes", () => {
+    mockState.runningEvalSections = ["define"];
+    const { rerender } = render(<SectionStatusPill section="define" />);
+    expect(screen.getByRole("button", { expanded: false })).toBeInTheDocument();
+
+    mockState.runningEvalSections = [];
+    rerender(<SectionStatusPill section="define" />);
+
+    expect(screen.getByRole("button", { expanded: true })).toBeInTheDocument();
+    expect(
+      screen.getByText("Clearly define what happened actually")
+    ).toBeInTheDocument();
+  });
+
+  it("does not open when a different section's run finishes", () => {
+    mockState.runningEvalSections = ["measure"];
+    const { rerender } = render(<SectionStatusPill section="define" />);
+    expect(screen.getByRole("button", { expanded: false })).toBeInTheDocument();
+
+    mockState.runningEvalSections = [];
+    rerender(<SectionStatusPill section="define" />);
+
+    expect(screen.getByRole("button", { expanded: false })).toBeInTheDocument();
+    expect(
+      screen.queryByText("Clearly define what happened actually")
+    ).not.toBeInTheDocument();
+  });
+});
+
+function mockRect(
+  top: number,
+  bottom: number
+): () => DOMRect {
+  return () =>
+    ({
+      top,
+      bottom,
+      left: 0,
+      right: 100,
+      width: 100,
+      height: bottom - top,
+      x: 0,
+      y: top,
+      toJSON: () => ({}),
+    }) as DOMRect;
+}
+
+describe("criteria dropdown scroll helpers", () => {
+  it("finds the nearest overflow-y scroller", () => {
+    const scroller = document.createElement("div");
+    scroller.style.overflowY = "auto";
+    const child = document.createElement("div");
+    const inner = document.createElement("div");
+    scroller.append(child);
+    child.append(inner);
+    document.body.append(scroller);
+
+    expect(nearestVerticalScroller(inner)).toBe(scroller);
+    scroller.remove();
+  });
+
+  it("treats the pill as scrolled-away only when it is fully above the scroller", () => {
+    const el = document.createElement("div");
+    const scroller = document.createElement("div");
+    el.getBoundingClientRect = mockRect(-200, -40);
+    scroller.getBoundingClientRect = mockRect(80, 800);
+    expect(isCompletelyAboveScroller(el, scroller)).toBe(true);
+
+    el.getBoundingClientRect = mockRect(100, 140);
+    expect(isCompletelyAboveScroller(el, scroller)).toBe(false);
+
+    el.getBoundingClientRect = mockRect(900, 960);
+    expect(isCompletelyAboveScroller(el, scroller)).toBe(false);
+  });
+
+  it("shifts scrollTop by the height growth so the viewport does not jump back", () => {
+    const scroller = document.createElement("div");
+    Object.defineProperty(scroller, "scrollTop", {
+      writable: true,
+      value: 500,
+    });
+    keepViewportAfterGrowth(scroller, 40, 240, 500);
+    expect(scroller.scrollTop).toBe(700);
+  });
+
+  it("leaves scrollTop alone when height did not change", () => {
+    const scroller = document.createElement("div");
+    Object.defineProperty(scroller, "scrollTop", {
+      writable: true,
+      value: 500,
+    });
+    keepViewportAfterGrowth(scroller, 40, 40, 500);
+    expect(scroller.scrollTop).toBe(500);
   });
 });

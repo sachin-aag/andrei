@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ChevronDown, ChevronRight, Loader2, Sparkles } from "lucide-react";
 import {
   useReportComments,
@@ -34,6 +34,49 @@ const STATUS_LABEL = {
   not_met: "Issues to address",
   not_evaluated: "Not evaluated yet",
 } as const;
+
+/** First overflow-y ancestor, else the document. */
+export function nearestVerticalScroller(node: HTMLElement): HTMLElement {
+  let current: HTMLElement | null = node.parentElement;
+  while (current) {
+    const overflowY = getComputedStyle(current).overflowY;
+    if (overflowY === "auto" || overflowY === "scroll" || overflowY === "overlay") {
+      return current;
+    }
+    current = current.parentElement;
+  }
+  return document.documentElement;
+}
+
+/** True when `el` sits entirely above the scroller's visible top edge. */
+export function isCompletelyAboveScroller(
+  el: HTMLElement,
+  scroller: HTMLElement
+): boolean {
+  const elRect = el.getBoundingClientRect();
+  const viewTop =
+    scroller === document.documentElement || scroller === document.body
+      ? 0
+      : scroller.getBoundingClientRect().top;
+  return elRect.bottom < viewTop;
+}
+
+export function keepViewportAfterGrowth(
+  scroller: HTMLElement,
+  heightBefore: number,
+  heightAfter: number,
+  scrollBefore: number
+): void {
+  const delta = heightAfter - heightBefore;
+  if (delta === 0) return;
+  scroller.scrollTop = scrollBefore + delta;
+}
+
+type PendingScrollFix = {
+  scroller: HTMLElement;
+  heightBefore: number;
+  scrollBefore: number;
+};
 
 function ExpandableReasoning({ text }: { text: string }) {
   const [expanded, setExpanded] = useState(false);
@@ -72,17 +115,56 @@ export function SectionStatusPill({ section }: { section: SectionType }) {
   );
   const isRunning = runningEvalSections.includes(section);
   const [stableRows, setStableRows] = useState(rows);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const wasRunningRef = useRef(isRunning);
+  const pendingScrollFixRef = useRef<PendingScrollFix | null>(null);
 
   if (!isRunning && stableRows !== rows) {
     setStableRows(rows);
   }
+
+  useLayoutEffect(() => {
+    const justFinished = wasRunningRef.current && !isRunning;
+    wasRunningRef.current = isRunning;
+
+    if (justFinished && !open) {
+      const el = rootRef.current;
+      if (el) {
+        const scroller = nearestVerticalScroller(el);
+        if (isCompletelyAboveScroller(el, scroller)) {
+          pendingScrollFixRef.current = {
+            scroller,
+            heightBefore: el.offsetHeight,
+            scrollBefore: scroller.scrollTop,
+          };
+        }
+      }
+      setOpen(true);
+      return;
+    }
+
+    const fix = pendingScrollFixRef.current;
+    if (!fix || !open) return;
+    pendingScrollFixRef.current = null;
+    const el = rootRef.current;
+    if (!el) return;
+    keepViewportAfterGrowth(
+      fix.scroller,
+      fix.heightBefore,
+      el.offsetHeight,
+      fix.scrollBefore
+    );
+  }, [isRunning, open]);
 
   const displayRows = isRunning ? stableRows : rows;
   const status = aggregateStatus(displayRows);
   const { met, total } = metCount(displayRows);
 
   return (
-    <div className="rounded-md border border-[var(--border)] bg-[var(--card)] overflow-hidden">
+    <div
+      ref={rootRef}
+      className="rounded-md border border-[var(--border)] bg-[var(--card)] overflow-hidden"
+    >
       <div className="flex items-center gap-2 px-3 py-1.5 hover:bg-[var(--secondary)]">
         <button
           type="button"
