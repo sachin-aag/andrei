@@ -2,12 +2,16 @@ import { expect, test, type Page } from "@playwright/test";
 import { gotoWithNavigationRetry } from "./helpers/navigation";
 import { loginAsTestUser, scopedTestEmail } from "./helpers/auth";
 
-test.describe.configure({ mode: "serial" });
-
 function tourEmail(): string {
+  const info = test.info();
+  const slug = info.title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "")
+    .slice(0, 28);
   return scopedTestEmail(
     process.env.TEST_AUTH_EMAIL ?? "test.engineer@mjbiopharm.com",
-    `product-tour-${test.info().project.name}`
+    `pt-${info.project.name}-${slug}-r${info.repeatEachIndex}`
   );
 }
 
@@ -20,15 +24,28 @@ async function loginWithTour(page: Page, productTour: boolean | "resume") {
   await gotoWithNavigationRetry(page, "/", { waitUntil: "load" });
 }
 
-async function waitForWalkthroughStatus(page: Page, status: string) {
+async function waitForWalkthroughProgress(
+  page: Page,
+  expected: { status: string; stepId?: string | null }
+) {
   await expect
     .poll(async () => {
       const response = await page.request.get("/api/me/walkthrough");
       if (!response.ok()) return null;
-      const body = (await response.json()) as { status?: string };
+      const body = (await response.json()) as {
+        status?: string
+        stepId?: string | null
+      };
+      if (expected.stepId !== undefined) {
+        return `${body.status ?? ""}:${body.stepId ?? ""}`;
+      }
       return body.status ?? null;
     })
-    .toBe(status);
+    .toBe(
+      expected.stepId !== undefined
+        ? `${expected.status}:${expected.stepId ?? ""}`
+        : expected.status
+    );
 }
 
 test.describe("product walkthrough", () => {
@@ -44,10 +61,17 @@ test.describe("product walkthrough", () => {
     await expect(
       dialog.getByRole("heading", { name: /your reports live here/i })
     ).toBeVisible();
+    await waitForWalkthroughProgress(page, {
+      status: "in_progress",
+      stepId: "reports",
+    });
 
     await dialog.getByRole("button", { name: /^skip for now$/i }).click();
     await expect(dialog).toHaveCount(0);
-    await waitForWalkthroughStatus(page, "in_progress");
+    await waitForWalkthroughProgress(page, {
+      status: "in_progress",
+      stepId: "reports",
+    });
     await expect(page.getByRole("heading", { name: /my reports/i })).toBeVisible();
 
     await loginWithTour(page, "resume");
@@ -64,7 +88,7 @@ test.describe("product walkthrough", () => {
     await expect(dialog).toBeVisible({ timeout: 15_000 });
     await dialog.getByRole("button", { name: /don't show this tour again/i }).click();
     await expect(dialog).toHaveCount(0);
-    await waitForWalkthroughStatus(page, "dismissed");
+    await waitForWalkthroughProgress(page, { status: "dismissed" });
 
     await loginWithTour(page, "resume");
     await expect(page.getByRole("heading", { name: /my reports/i })).toBeVisible({
@@ -79,7 +103,7 @@ test.describe("product walkthrough", () => {
     await expect(dialog).toBeVisible({ timeout: 15_000 });
     await dialog.getByRole("button", { name: /don't show this tour again/i }).click();
     await expect(dialog).toHaveCount(0);
-    await waitForWalkthroughStatus(page, "dismissed");
+    await waitForWalkthroughProgress(page, { status: "dismissed" });
 
     await gotoWithNavigationRetry(page, "/profile", { waitUntil: "load" });
     await expect(page.getByRole("heading", { name: /^profile$/i })).toBeVisible();
