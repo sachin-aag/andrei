@@ -30,7 +30,7 @@ function DvNarrativeEditor({
   title,
 }: {
   section: string;
-  description: string;
+  description?: string;
   fieldLabel: string;
   placeholder: string;
   title?: string;
@@ -73,7 +73,7 @@ function DvTableEditor({
   title,
 }: {
   section: string;
-  description: string;
+  description?: string;
   fieldLabel: string;
   title?: string;
 }) {
@@ -167,7 +167,7 @@ export function DvDeviationsEditor() {
       title={convergent ? "Deviations" : undefined}
       description={
         convergent
-          ? "Document deviations (or explicit none), impact, and disposition."
+          ? undefined
           : "Document protocol deviations, impact, disposition, and CAPA linkage."
       }
       fieldLabel="Deviations"
@@ -187,7 +187,7 @@ export function DvConclusionEditor() {
       section="conclusion"
       description={
         convergent
-          ? "One paragraph per execution. Walk supported build history and close with 'deemed acceptable for release'."
+          ? undefined
           : "Overall and per-requirement met/not-met statements, open items, consistency with results."
       }
       fieldLabel="Conclusion"
@@ -226,7 +226,6 @@ export function DvPurposeEditor() {
   return (
     <DvNarrativeEditor
       section="purpose"
-      description="Four paragraphs. Omit paragraph 2 if this is a single full execution. End with the VCS bullets and build-number explanation."
       fieldLabel="Purpose"
       placeholder="This revision presents results of the [full/partial] execution of [protocol number Rev. X] used to test [software version] ([CUS/document]) for [release type]. This build was designed to…"
     />
@@ -237,7 +236,6 @@ export function DvScopeEditor() {
   return (
     <DvNarrativeEditor
       section="scope"
-      description="Two packed paragraphs plus a Software Under Test table (version | reason for build), segregated by test-plan revision."
       fieldLabel="Scope"
       placeholder="This test report applies to [product] for system configurations [TOP IDs]…. Then the Software Under Test table: version | reason for build."
     />
@@ -259,7 +257,6 @@ export function DvTestersDatesEditor() {
   return (
     <SectionShell
       title="Testers/Dates"
-      description="One block per test-plan revision. Name testers (title and affiliation) and write calendar start/end dates in the same narrative."
       status={status}
       lastSavedAt={lastSavedAt}
       section="testers_dates"
@@ -282,7 +279,6 @@ export function DvMethodsOfMeasurementEditor() {
   return (
     <DvNarrativeEditor
       section="methods_of_measurement"
-      description="Per execution: Executed Protocol, Protocol Modifications, and Units Under Test. Keep the equipment table in Test Equipment."
       fieldLabel="Methods of Measurement"
       placeholder="Testing per [test plan] Rev. [letter]: Executed Protocol — Full/Partial execution of [protocol] Rev. [letter]. Protocol Modifications — …. Units Under Test (UUTs) — …"
     />
@@ -293,7 +289,6 @@ export function DvTestEquipmentEditor() {
   return (
     <DvTableEditor
       section="test_equipment"
-      description="Lead-in sentence plus the seeded columns. One table per execution; systems under test first, then instruments."
       fieldLabel="Test Equipment"
     />
   );
@@ -316,7 +311,6 @@ export function DvResultsAndDiscussionsEditor() {
   return (
     <SectionShell
       title="Results and Discussion"
-      description="Discussion outline (Data Collection Forms, Requirements Verified, Observations) plus the four-column matrix for a partial execution."
       status={status}
       lastSavedAt={lastSavedAt}
       section="results_and_discussions"
@@ -349,7 +343,6 @@ export function DvProblemsResolutionEditor() {
   return (
     <DvNarrativeEditor
       section="problems_resolution"
-      description="Summarise the regression-round arc (builds, configurations, results, final version). Deviation detail stays in Deviations."
       fieldLabel="Problem or Failure Resolution"
       placeholder="During the initial [full/partial] execution of [software version] on [configurations], there were [n] deviations…. A new version [x.y.z] was generated and retested on…"
     />
