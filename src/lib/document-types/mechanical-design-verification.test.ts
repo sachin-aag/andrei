@@ -77,6 +77,12 @@ describe("mechanical design verification definition", () => {
     expect(sections).toContain("revision_history");
   });
 
+  it("keeps numbered headings out of workspace labels", () => {
+    for (const section of getWorkspaceSections(TYPE)) {
+      expect(section.label, section.key).not.toMatch(/^\d+(\.\d+)?\s/);
+    }
+  });
+
   it("gives every section at least one criterion", () => {
     for (const key of MECHANICAL_DV_SECTION_KEYS) {
       expect(getCriteria(TYPE, key).length, key).toBeGreaterThan(0);
