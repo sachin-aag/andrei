@@ -35,6 +35,15 @@ describe("product tour pause token", () => {
     ).toBe("2026-08-25T08:00:00.000Z");
     expect(productTourSessionKeyFromAuth(null)).toBe("");
   });
+
+  it("prefers a per-sign-in session id over expires", () => {
+    expect(
+      productTourSessionKeyFromAuth({
+        expires: "2026-08-25T08:00:00.000Z",
+        productTourSessionId: "tour-sess-1",
+      })
+    ).toBe("tour-sess-1");
+  });
 });
 
 describe("shouldShowProductTour", () => {

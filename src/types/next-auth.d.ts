@@ -7,6 +7,8 @@ declare module "next-auth" {
       mustChangePassword?: boolean;
       passwordExpired?: boolean;
     } & DefaultSession["user"];
+    /** Unique per sign-in so Skip for now does not survive logout. */
+    productTourSessionId?: string;
   }
 }
 
@@ -15,5 +17,6 @@ declare module "next-auth/jwt" {
     workspaceUserId?: string;
     mustChangePassword?: boolean;
     passwordExpired?: boolean;
+    productTourSessionId?: string;
   }
 }

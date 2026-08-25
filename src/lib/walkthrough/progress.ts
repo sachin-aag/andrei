@@ -35,8 +35,17 @@ export function shouldShowProductTour(status: ProductTourStatus): boolean {
 export const PRODUCT_TOUR_SESSION_PAUSE_KEY = "andrei:product-tour:paused";
 
 export function productTourSessionKeyFromAuth(
-  session: { expires?: string } | null | undefined
+  session:
+    | { expires?: string; productTourSessionId?: string }
+    | null
+    | undefined
 ): string {
+  if (
+    typeof session?.productTourSessionId === "string" &&
+    session.productTourSessionId.length > 0
+  ) {
+    return session.productTourSessionId;
+  }
   return typeof session?.expires === "string" && session.expires.length > 0
     ? session.expires
     : "";
