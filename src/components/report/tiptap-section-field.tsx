@@ -48,6 +48,8 @@ import { useUserDirectory } from "@/providers/user-directory-provider";
 import { cn } from "@/lib/utils";
 import { createCommentHighlightExtension } from "@/lib/tiptap/comment-highlights";
 import type { CommentHighlightRange, CommentHighlightHandlers } from "@/lib/tiptap/comment-highlights";
+import { getCustomerPack } from "@/lib/customers/packs";
+import { createCitationHighlightExtension } from "@/lib/tiptap/citation-highlights";
 import {
   createPlaceholderHighlightExtension,
   isSelectionOverPlaceholder,
@@ -371,6 +373,12 @@ export function TiptapSectionField({
     [focusedPanelPlaceholderId, section, contentPath]
   );
 
+  const citationsAtEndOfSection = getCustomerPack().citationsAtEndOfSection;
+  const citationHighlightExtension = useMemo(
+    () => (citationsAtEndOfSection ? createCitationHighlightExtension() : null),
+    [citationsAtEndOfSection]
+  );
+
   const filteredRanges = useMemo(() => {
     return comments
       .filter(
@@ -450,6 +458,7 @@ export function TiptapSectionField({
         highlightExtension,
         suggestionWidgetsExtension,
         placeholderHighlightExtension,
+        ...(citationHighlightExtension ? [citationHighlightExtension] : []),
       ],
       content: normalizeRichField(value),
       editable,
@@ -459,7 +468,7 @@ export function TiptapSectionField({
         onChangeRef.current(json);
       },
     },
-    [highlightExtension, placeholder, placeholderHighlightExtension, suggestionWidgetsExtension]
+    [highlightExtension, placeholder, placeholderHighlightExtension, citationHighlightExtension, suggestionWidgetsExtension]
   );
 
 
@@ -1115,7 +1124,7 @@ export function TiptapSectionField({
 
       <div
         className={cn(
-          "rounded-md border border-[var(--border)] bg-[var(--input)] px-3 py-2 text-sm leading-relaxed focus-within:ring-2 focus-within:ring-[var(--ring)]",
+          "min-w-0 max-w-full rounded-md border border-[var(--border)] bg-[var(--input)] px-3 py-2 text-sm leading-relaxed focus-within:ring-2 focus-within:ring-[var(--ring)]",
           compact
             ? "[&_.ProseMirror]:min-h-0 [&_.ProseMirror>p.is-empty:last-child]:hidden [&_.ProseMirror_table]:my-0"
             : "min-h-[200px] [&_.ProseMirror]:min-h-[180px]",

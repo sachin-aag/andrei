@@ -106,7 +106,7 @@ describe("splitPlainTextPreviewSegments", () => {
     )!;
     expect(segments.at(-1)).toEqual({
       kind: "insert",
-      text: "\n\nCitations:\n[protocol.pdf, p. 3]",
+      text: "\n\nCitations:\n1. [protocol.pdf, p. 3]",
     });
     const split = splitPlainTextPreviewSegments(segments);
     expect(split.suggestion).toEqual([
@@ -115,7 +115,7 @@ describe("splitPlainTextPreviewSegments", () => {
     ]);
     expect(split.after).toEqual([
       { kind: "context", text: " rest" },
-      { kind: "insert", text: "\n\nCitations:\n[protocol.pdf, p. 3]" },
+      { kind: "insert", text: "\n\nCitations:\n1. [protocol.pdf, p. 3]" },
     ]);
   });
 });

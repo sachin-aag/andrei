@@ -1,5 +1,8 @@
 import type { JSONContent } from "@tiptap/core";
-import { keepEmptyParagraphBeforeCitationHeading } from "@/lib/suggestions/citations-at-end";
+import {
+  keepEmptyParagraphBeforeCitationHeading,
+  normalizeTrailingCitationBlockInDoc,
+} from "@/lib/suggestions/citations-at-end";
 import { normalizeDocumentBracketPlaceholders } from "@/lib/placeholders/normalize-document-placeholders";
 import { coalesceAdjacentTextNodes } from "@/lib/tiptap/coalesce-text-nodes";
 
@@ -30,6 +33,8 @@ function dropEmptyBlocks(doc: JSONContent): JSONContent {
 /** Run after accepting an AI suggestion so placeholders scan/highlight reliably. */
 export function finalizeNarrativeDocAfterSuggestion(doc: JSONContent): JSONContent {
   return normalizeDocumentBracketPlaceholders(
-    coalesceAdjacentTextNodes(dropEmptyBlocks(doc))
+    coalesceAdjacentTextNodes(
+      dropEmptyBlocks(normalizeTrailingCitationBlockInDoc(doc))
+    )
   );
 }

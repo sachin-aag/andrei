@@ -5,6 +5,7 @@ import {
   isEmptyParagraphBlock,
   keepEmptyParagraphBeforeCitationHeading,
   normalizeCitationAppendInsert,
+  normalizeTrailingCitationBlockInText,
   plainCitationAppendSeparator,
 } from "@/lib/suggestions/citations-at-end";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
@@ -724,7 +725,12 @@ export function applyEditToPlainText(
 ): { status: LocateStatus; text: string } {
   const parts = suggestionEditParts(edit);
   if (parts.length === 1) {
-    return applySingleEditToPlainText(text, parts[0]!);
+    const result = applySingleEditToPlainText(text, parts[0]!);
+    if (!isApplyableStatus(result.status)) return result;
+    return {
+      status: result.status,
+      text: normalizeTrailingCitationBlockInText(result.text),
+    };
   }
   let current = text;
   let lastStatus: LocateStatus = "empty_edit";
@@ -734,7 +740,10 @@ export function applyEditToPlainText(
     current = result.text;
     lastStatus = result.status;
   }
-  return { status: lastStatus, text: current };
+  return {
+    status: lastStatus,
+    text: normalizeTrailingCitationBlockInText(current),
+  };
 }
 
 export function probePlainEdit(

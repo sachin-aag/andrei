@@ -73,6 +73,8 @@ export type DocxExportContext = {
   tableCellVAlign: "center" | null;
   tableHeaderAlign: "center" | null;
   tableBorderColor: string | null;
+  /** Numeric citation markers in the field currently being converted. */
+  citationNumbers?: ReadonlySet<number>;
 };
 
 /** Matches 790-00134R Solea DV: Arial 10pt justified body, 9pt centered tables. */

@@ -7,7 +7,7 @@ import {
 
 describe("buildSuggestionSystemPrompt", () => {
   it("bumps the suggest prompt version when DV table guidance changes", () => {
-    expect(SUGGEST_PROMPT_VERSION).toBe("suggest-v20-convergent-recipe-headers");
+    expect(SUGGEST_PROMPT_VERSION).toBe("suggest-v21-convergent-citation-markers");
   });
 
   it("adds split-citation rules only when citations-at-end is on", () => {
@@ -17,6 +17,9 @@ describe("buildSuggestionSystemPrompt", () => {
     expect(
       buildSuggestionSystemPrompt("define", { citationsAtEndOfSection: true })
     ).toContain("CITATIONS AT END OF SECTION");
+    expect(
+      buildSuggestionSystemPrompt("define", { citationsAtEndOfSection: true })
+    ).toContain("immediately after the claim");
     const user = buildSuggestionUserPrompt({
       section: "define",
       contentStr: "Output power met the acceptance limit.",
@@ -31,9 +34,8 @@ describe("buildSuggestionSystemPrompt", () => {
       ],
       citationsAtEndOfSection: true,
     });
-    expect(user).toContain('"second"');
-    expect(user).toContain("Citations:");
     expect(user).toContain("[protocol.pdf, p. 3]");
+    expect(user).toContain("the app numbers it");
     expect(
       buildSuggestionUserPrompt({
         section: "define",
@@ -48,7 +50,7 @@ describe("buildSuggestionSystemPrompt", () => {
           },
         ],
       })
-    ).not.toContain('"second"');
+    ).not.toContain("[protocol.pdf, p. 3]");
   });
 
   it("requires fixed matrix headers for traceability suggest fixes", () => {

@@ -7,6 +7,7 @@ import {
   isCitationOnlyText,
   keepEmptyParagraphBeforeCitationHeading,
   moveCitationsToEndOfText,
+  normalizeTrailingCitationBlockInText,
   prepareEditForCitationMode,
   splitEditForCitationsAtEnd,
   stripCitationsFromTableOperation,
@@ -33,6 +34,13 @@ describe("stripCitationsFromText", () => {
     });
   });
 
+  it("leaves numeric citation markers in the prose", () => {
+    expect(stripCitationsFromText("The test met spec [1].")).toEqual({
+      prose: "The test met spec [1].",
+      citations: [],
+    });
+  });
+
   it("treats a citation-only insert as empty prose", () => {
     expect(stripCitationsFromText("[results.xlsx, p. 1]")).toEqual({
       prose: "",
@@ -41,11 +49,13 @@ describe("stripCitationsFromText", () => {
     expect(isCitationOnlyText("[results.xlsx, p. 1]\n[protocol.pdf, p. 2]")).toBe(
       true
     );
+    expect(isCitationOnlyText("1. [results.xlsx, p. 1]")).toBe(true);
+    expect(isCitationOnlyText("[1]")).toBe(false);
   });
 });
 
 describe("moveCitationsToEndOfText", () => {
-  it("moves inline citations after the prose and any table", () => {
+  it("moves inline citations after the prose and any table, leaving numbered markers", () => {
     const markdown = [
       "Power output met the acceptance limit [protocol.pdf, p. 2].",
       "",
@@ -55,20 +65,20 @@ describe("moveCitationsToEndOfText", () => {
     ].join("\n");
     expect(moveCitationsToEndOfText(markdown)).toBe(
       [
-        "Power output met the acceptance limit.",
+        "Power output met the acceptance limit [1].",
         "",
         "| Req | P/F |",
         "| --- | --- |",
-        "| R-1 | Pass |",
+        "| R-1 | Pass [2] |",
         "",
         "Citations:",
-        "[protocol.pdf, p. 2]",
-        "[datasheet.pdf, p. 4]",
+        "1. [protocol.pdf, p. 2]",
+        "2. [datasheet.pdf, p. 4]",
       ].join("\n")
     );
   });
 
-  it("does not duplicate citations already at the end", () => {
+  it("reuses an existing list number instead of duplicating the source", () => {
     const markdown = [
       "Outcome is Pass [protocol.pdf, p. 2].",
       "",
@@ -76,24 +86,50 @@ describe("moveCitationsToEndOfText", () => {
       "[protocol.pdf, p. 2]",
     ].join("\n");
     expect(moveCitationsToEndOfText(markdown)).toBe(
-      ["Outcome is Pass.", "", "Citations:", "[protocol.pdf, p. 2]"].join("\n")
+      [
+        "Outcome is Pass [1].",
+        "",
+        "Citations:",
+        "1. [protocol.pdf, p. 2]",
+      ].join("\n")
     );
   });
 
-  it("rewrites a bare trailing cite list under a Citations heading", () => {
+  it("rewrites a bare trailing cite list under a numbered Citations heading", () => {
     const markdown = [
       "Outcome is Pass [protocol.pdf, p. 2].",
       "",
       "[protocol.pdf, p. 2]",
     ].join("\n");
     expect(moveCitationsToEndOfText(markdown)).toBe(
-      ["Outcome is Pass.", "", "Citations:", "[protocol.pdf, p. 2]"].join("\n")
+      [
+        "Outcome is Pass [1].",
+        "",
+        "Citations:",
+        "1. [protocol.pdf, p. 2]",
+      ].join("\n")
+    );
+  });
+
+  it("emits adjacent markers for multiple sources on one claim", () => {
+    expect(
+      moveCitationsToEndOfText(
+        "Met spec [protocol.pdf, p. 2] [datasheet.pdf, p. 4]."
+      )
+    ).toBe(
+      [
+        "Met spec [1][2].",
+        "",
+        "Citations:",
+        "1. [protocol.pdf, p. 2]",
+        "2. [datasheet.pdf, p. 4]",
+      ].join("\n")
     );
   });
 });
 
 describe("splitEditForCitationsAtEnd", () => {
-  it("splits a body insert plus citation into a two-part edit", () => {
+  it("splits a body insert plus citation into a marker and a numbered list", () => {
     expect(
       splitEditForCitationsAtEnd({
         anchorText: "output power was acceptable",
@@ -103,16 +139,16 @@ describe("splitEditForCitationsAtEnd", () => {
     ).toEqual({
       anchorText: "output power was acceptable",
       deleteText: "",
-      insertText: " at 9.8 W",
+      insertText: " at 9.8 W [1]",
       second: {
         anchorText: "",
         deleteText: "",
-        insertText: "Citations:\n[protocol.pdf, p. 3]",
+        insertText: "Citations:\n1. [protocol.pdf, p. 3]",
       },
     });
   });
 
-  it("keeps a scoped cell edit and appends the citation at the field end", () => {
+  it("keeps a scoped cell edit marker and appends the numbered citation", () => {
     const split = splitEditForCitationsAtEnd({
       anchorText: "",
       deleteText: "Pass",
@@ -120,15 +156,15 @@ describe("splitEditForCitationsAtEnd", () => {
       scope: { kind: "cell", row: 2, col: 3 },
     });
     expect(split.scope).toEqual({ kind: "cell", row: 2, col: 3 });
-    expect(split.insertText).toBe("Pass — see protocol");
+    expect(split.insertText).toBe("Pass — see protocol [1]");
     expect(split.second).toEqual({
       anchorText: "",
       deleteText: "",
-      insertText: "Citations:\n[protocol.pdf, p. 1]",
+      insertText: "Citations:\n1. [protocol.pdf, p. 1]",
     });
   });
 
-  it("promotes a citation-only insert to a single end-of-field append", () => {
+  it("keeps a citation-only insert as a marker at the claim", () => {
     expect(
       splitEditForCitationsAtEnd({
         anchorText: "the requirement is met",
@@ -136,13 +172,18 @@ describe("splitEditForCitationsAtEnd", () => {
         insertText: " [protocol.pdf, p. 2]",
       })
     ).toEqual({
-      anchorText: "",
+      anchorText: "the requirement is met",
       deleteText: "",
-      insertText: "Citations:\n[protocol.pdf, p. 2]",
+      insertText: " [1]",
+      second: {
+        anchorText: "",
+        deleteText: "",
+        insertText: "Citations:\n1. [protocol.pdf, p. 2]",
+      },
     });
   });
 
-  it("does not repeat the Citations heading when the field already has one", () => {
+  it("reuses the next number when the field already has a Citations list", () => {
     expect(
       splitEditForCitationsAtEnd(
         {
@@ -162,16 +203,16 @@ describe("splitEditForCitationsAtEnd", () => {
     ).toEqual({
       anchorText: "the requirement is met",
       deleteText: "",
-      insertText: " for configuration B",
+      insertText: " for configuration B [2]",
       second: {
         anchorText: "",
         deleteText: "",
-        insertText: "[datasheet.pdf, p. 4]",
+        insertText: "2. [datasheet.pdf, p. 4]",
       },
     });
   });
 
-  it("strips a leftover Citations heading from second.insertText", () => {
+  it("attaches markers when the model still uses a split second part", () => {
     expect(
       splitEditForCitationsAtEnd({
         anchorText: "output power was acceptable",
@@ -186,16 +227,16 @@ describe("splitEditForCitationsAtEnd", () => {
     ).toEqual({
       anchorText: "output power was acceptable",
       deleteText: "",
-      insertText: " at 9.8 W",
+      insertText: " at 9.8 W [1]",
       second: {
         anchorText: "",
         deleteText: "",
-        insertText: "Citations:\n[protocol.pdf, p. 3]",
+        insertText: "Citations:\n1. [protocol.pdf, p. 3]",
       },
     });
   });
 
-  it("skips citations already present in the field", () => {
+  it("reuses an existing list number at a new claim without appending again", () => {
     expect(
       splitEditForCitationsAtEnd(
         {
@@ -203,12 +244,19 @@ describe("splitEditForCitationsAtEnd", () => {
           deleteText: "",
           insertText: " for configuration A [protocol.pdf, p. 2]",
         },
-        { existingFieldText: "Existing note [protocol.pdf, p. 2]" }
+        {
+          existingFieldText: [
+            "Existing note",
+            "",
+            "Citations:",
+            "1. [protocol.pdf, p. 2]",
+          ].join("\n"),
+        }
       )
     ).toEqual({
       anchorText: "the requirement is met",
       deleteText: "",
-      insertText: " for configuration A",
+      insertText: " for configuration A [1]",
     });
   });
 });
@@ -248,11 +296,11 @@ describe("prepareEditForCitationMode", () => {
     ).toEqual({
       anchorText: "met spec",
       deleteText: "",
-      insertText: " at 9.8 W",
+      insertText: " at 9.8 W [1]",
       second: {
         anchorText: "",
         deleteText: "",
-        insertText: "Citations:\n[protocol.pdf, p. 3]",
+        insertText: "Citations:\n1. [protocol.pdf, p. 3]",
       },
     });
   });
@@ -269,7 +317,7 @@ describe("documentCitationRule", () => {
 });
 
 describe("stripCitationsFromTableOperation", () => {
-  it("pulls cites out of edited cells and returns an append part", () => {
+  it("puts numbered markers in edited cells and returns an append part", () => {
     const { operation, citations } = stripCitationsFromTableOperation({
       kind: "edit_cells",
       tableIndex: 0,
@@ -285,11 +333,11 @@ describe("stripCitationsFromTableOperation", () => {
     expect(citations).toEqual(["[protocol.pdf, p. 3]"]);
     expect(operation.kind).toBe("edit_cells");
     if (operation.kind !== "edit_cells") return;
-    expect(operation.cells[0]?.insertText).toBe("Pass");
+    expect(operation.cells[0]?.insertText).toBe("Pass [1]");
     expect(citationAppendPart(citations, "Existing prose")).toEqual({
       anchorText: "",
       deleteText: "",
-      insertText: "Citations:\n[protocol.pdf, p. 3]",
+      insertText: "Citations:\n1. [protocol.pdf, p. 3]",
     });
     expect(
       citationAppendPart(
@@ -299,10 +347,13 @@ describe("stripCitationsFromTableOperation", () => {
     ).toEqual({
       anchorText: "",
       deleteText: "",
-      insertText: "[protocol.pdf, p. 3]",
+      insertText: "2. [protocol.pdf, p. 3]",
     });
     expect(
-      citationAppendPart(citations, "Already cited [protocol.pdf, p. 3]")
+      citationAppendPart(
+        citations,
+        ["Already listed", "", "Citations:", "[protocol.pdf, p. 3]"].join("\n")
+      )
     ).toBeUndefined();
   });
 });
@@ -331,18 +382,28 @@ describe("keepEmptyParagraphBeforeCitationHeading", () => {
 });
 
 describe("extractCitationBrackets", () => {
-  it("dedupes repeated cites", () => {
+  it("dedupes repeated source cites and ignores numeric markers", () => {
     expect(
-      extractCitationBrackets("[a.pdf, p. 1] and again [a.pdf, p. 1]")
+      extractCitationBrackets("[a.pdf, p. 1] and again [a.pdf, p. 1] [1]")
     ).toEqual(["[a.pdf, p. 1]"]);
   });
 });
 
+describe("normalizeTrailingCitationBlockInText", () => {
+  it("numbers a legacy unnumbered list without inventing body markers", () => {
+    expect(
+      normalizeTrailingCitationBlockInText(
+        "Verify REQ-101.\n\nCitations:\n[protocol.pdf, p. 3]"
+      )
+    ).toBe("Verify REQ-101.\n\nCitations:\n1. [protocol.pdf, p. 3]");
+  });
+});
+
 describe("stripTrailingCitationBlockFromText", () => {
-  it("drops a trailing Citations: list and keeps the body", () => {
+  it("drops a trailing Citations: list, numbered markers, and keeps the body", () => {
     expect(
       stripTrailingCitationBlockFromText(
-        "Verify REQ-101.\n\nCitations:\n[protocol.pdf, p. 3]\n[results.xlsx, p. 1]"
+        "Verify REQ-101 [1].\n\nCitations:\n1. [protocol.pdf, p. 3]\n2. [results.xlsx, p. 1]"
       )
     ).toBe("Verify REQ-101.");
   });
@@ -351,6 +412,14 @@ describe("stripTrailingCitationBlockFromText", () => {
     expect(stripTrailingCitationBlockFromText("Verify REQ-101.")).toBe(
       "Verify REQ-101."
     );
+  });
+
+  it("does not strip numeric brackets that are not in the citation list", () => {
+    expect(
+      stripTrailingCitationBlockFromText(
+        "See SOP [12] and the result [1].\n\nCitations:\n1. [protocol.pdf, p. 3]"
+      )
+    ).toBe("See SOP [12] and the result.");
   });
 });
 
@@ -388,6 +457,47 @@ describe("stripTrailingCitationBlockFromDoc", () => {
     expect(stripped.content).toEqual([table]);
   });
 
+  it("strips matching numbered markers from table cells", () => {
+    const stripped = stripTrailingCitationBlockFromDoc({
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [
+                {
+                  type: "tableCell",
+                  content: [paragraph("Pass [1]")],
+                },
+              ],
+            },
+          ],
+        },
+        paragraph(),
+        paragraph("Citations:"),
+        paragraph("1. [protocol.pdf, p. 3]"),
+      ],
+    });
+    expect(stripped.content).toEqual([
+      {
+        type: "table",
+        content: [
+          {
+            type: "tableRow",
+            content: [
+              {
+                type: "tableCell",
+                content: [paragraph("Pass")],
+              },
+            ],
+          },
+        ],
+      },
+    ]);
+  });
+
   it("does not strip inline body text that is not a trailing block", () => {
     const doc: JSONContent = {
       type: "doc",
@@ -405,7 +515,7 @@ describe("stripTrailingCitationsFromContent", () => {
         content: [
           {
             type: "paragraph",
-            content: [{ type: "text", text: "Verify REQ-101." }],
+            content: [{ type: "text", text: "Verify REQ-101 [1]." }],
           },
           { type: "paragraph" },
           {
@@ -414,7 +524,7 @@ describe("stripTrailingCitationsFromContent", () => {
           },
           {
             type: "paragraph",
-            content: [{ type: "text", text: "[protocol.pdf, p. 3]" }],
+            content: [{ type: "text", text: "1. [protocol.pdf, p. 3]" }],
           },
         ],
       },

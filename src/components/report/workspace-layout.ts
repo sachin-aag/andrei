@@ -40,10 +40,14 @@ export const WORKSPACE_PANEL_WIDTH_TRANSITION_MS = 200;
 
 /**
  * Inline suggestions and comments live in the review margin. Show that gutter
- * only while the assistant is collapsed so the two surfaces never compete.
+ * only while the assistant is collapsed so the two surfaces never compete,
+ * and never while a PDF/Word preview is filling the canvas.
  */
-export function isReviewGutterVisible(chatCollapsed: boolean): boolean {
-  return chatCollapsed;
+export function isReviewGutterVisible(
+  chatCollapsed: boolean,
+  viewingDocument = false
+): boolean {
+  return chatCollapsed && !viewingDocument;
 }
 
 export type PanelWidthBounds = {
