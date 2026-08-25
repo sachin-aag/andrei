@@ -50,7 +50,11 @@ describe("ProductWalkthroughProvider", () => {
       "fetch",
       vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ status: "not_started", stepId: null }),
+        json: async () => ({
+          status: "not_started",
+          stepId: null,
+          sessionKey: "sess-1",
+        }),
       })
     );
 
@@ -70,7 +74,11 @@ describe("ProductWalkthroughProvider", () => {
       "fetch",
       vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ status: "in_progress", stepId: "welcome" }),
+        json: async () => ({
+          status: "in_progress",
+          stepId: "welcome",
+          sessionKey: "sess-1",
+        }),
       })
     );
 
@@ -88,7 +96,11 @@ describe("ProductWalkthroughProvider", () => {
       "fetch",
       vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ status: "in_progress", stepId: "create-report" }),
+        json: async () => ({
+          status: "in_progress",
+          stepId: "create-report",
+          sessionKey: "sess-1",
+        }),
       })
     );
 
@@ -104,7 +116,11 @@ describe("ProductWalkthroughProvider", () => {
       "fetch",
       vi.fn().mockResolvedValue({
         ok: true,
-        json: async () => ({ status: "dismissed", stepId: "welcome" }),
+        json: async () => ({
+          status: "dismissed",
+          stepId: "welcome",
+          sessionKey: "sess-1",
+        }),
       })
     );
 
@@ -118,7 +134,11 @@ describe("ProductWalkthroughProvider", () => {
   it("hides for this session when Skip for now is clicked", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ status: "in_progress", stepId: "welcome" }),
+      json: async () => ({
+        status: "in_progress",
+        stepId: "welcome",
+        sessionKey: "sess-1",
+      }),
     });
     vi.stubGlobal("fetch", fetchMock);
 
@@ -129,7 +149,9 @@ describe("ProductWalkthroughProvider", () => {
     await user.click(screen.getByRole("button", { name: /^skip for now$/i }));
 
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(sessionStorage.getItem("andrei:product-tour:paused")).toBe("u1");
+    expect(sessionStorage.getItem("andrei:product-tour:paused")).toBe(
+      "u1:sess-1"
+    );
   });
 
   it("persists dismissed when Don't show this tour again is clicked", async () => {
@@ -142,7 +164,11 @@ describe("ProductWalkthroughProvider", () => {
       }
       return {
         ok: true,
-        json: async () => ({ status: "in_progress", stepId: "welcome" }),
+        json: async () => ({
+          status: "in_progress",
+          stepId: "welcome",
+          sessionKey: "sess-1",
+        }),
       };
     });
     vi.stubGlobal("fetch", fetchMock);
@@ -165,5 +191,26 @@ describe("ProductWalkthroughProvider", () => {
         body: JSON.stringify({ status: "dismissed", stepId: "welcome" }),
       })
     );
+  });
+
+  it("shows the tour again after skip when a new login session starts", async () => {
+    sessionStorage.setItem("andrei:product-tour:paused", "u1:sess-1");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          status: "in_progress",
+          stepId: "reports",
+          sessionKey: "sess-2",
+        }),
+      })
+    );
+
+    render(wrapper(<div>dashboard</div>));
+
+    expect(
+      await screen.findByRole("heading", { name: /your reports live here/i })
+    ).toBeInTheDocument();
   });
 });

@@ -16,14 +16,17 @@ import { captureEvent } from "@/lib/analytics/events";
 import { getCustomerPack } from "@/lib/customers/packs";
 import { listDocumentTypes } from "@/lib/document-types";
 import { resolveStepIndex, stepsForRole } from "@/lib/walkthrough/steps";
-import { shouldShowProductTour } from "@/lib/walkthrough/progress";
+import {
+  isProductTourPausedForSession,
+  PRODUCT_TOUR_SESSION_PAUSE_KEY,
+  productTourPauseToken,
+  shouldShowProductTour,
+} from "@/lib/walkthrough/progress";
 import type {
   ProductTourProgress,
   ProductTourStep,
 } from "@/lib/walkthrough/types";
 import { WalkthroughOverlay } from "@/components/walkthrough/walkthrough-overlay";
-
-const SESSION_PAUSE_KEY = "andrei:product-tour:paused";
 
 type WalkthroughContextValue = {
   restart: () => void
@@ -52,6 +55,7 @@ export function ProductWalkthroughProvider({
   const pathname = usePathname();
   const router = useRouter();
   const [progress, setProgress] = useState<ProductTourProgress | null>(null);
+  const [sessionKey, setSessionKey] = useState("");
   const [pausedThisSession, setPausedThisSession] = useState(false);
   const [sessionPauseReady, setSessionPauseReady] = useState(false);
   const [index, setIndex] = useState(0);
@@ -70,27 +74,32 @@ export function ProductWalkthroughProvider({
   const step: ProductTourStep | undefined = steps[index];
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
-      try {
-        setPausedThisSession(sessionStorage.getItem(SESSION_PAUSE_KEY) === userId);
-      } catch {
-        setPausedThisSession(false);
-      }
-      setSessionPauseReady(true);
-    }, 0);
-    return () => window.clearTimeout(timer);
-  }, [userId]);
-
-  useEffect(() => {
     let cancelled = false;
     void (async () => {
       try {
         const res = await fetch("/api/me/walkthrough", { cache: "no-store" });
         if (!res.ok) return;
-        const data = (await res.json()) as ProductTourProgress;
+        const data = (await res.json()) as ProductTourProgress & {
+          sessionKey?: string
+        };
         if (cancelled) return;
-        setProgress(data);
+        const nextSessionKey =
+          typeof data.sessionKey === "string" ? data.sessionKey : "";
+        setProgress({ status: data.status, stepId: data.stepId });
+        setSessionKey(nextSessionKey);
         setIndex(resolveStepIndex(steps, data.stepId));
+        try {
+          setPausedThisSession(
+            isProductTourPausedForSession(
+              sessionStorage.getItem(PRODUCT_TOUR_SESSION_PAUSE_KEY),
+              userId,
+              nextSessionKey
+            )
+          );
+        } catch {
+          setPausedThisSession(false);
+        }
+        setSessionPauseReady(true);
       } catch {
         // Fail closed — do not block the app if progress cannot be loaded.
       }
@@ -98,7 +107,7 @@ export function ProductWalkthroughProvider({
     return () => {
       cancelled = true;
     };
-  }, [steps]);
+  }, [steps, userId]);
 
   const persist = useCallback(async (next: ProductTourProgress) => {
     const seq = ++persistSeq.current;
@@ -160,7 +169,10 @@ export function ProductWalkthroughProvider({
 
   const skipForNow = useCallback(() => {
     try {
-      sessionStorage.setItem(SESSION_PAUSE_KEY, userId);
+      sessionStorage.setItem(
+        PRODUCT_TOUR_SESSION_PAUSE_KEY,
+        productTourPauseToken(userId, sessionKey)
+      );
     } catch {
       // Private mode can throw; in-memory pause still applies.
     }
@@ -169,11 +181,11 @@ export function ProductWalkthroughProvider({
       void persist({ status: "in_progress", stepId: step.id });
     }
     captureEvent("product_tour_skipped_session", { role, stepId: step?.id });
-  }, [persist, role, step, userId]);
+  }, [persist, role, sessionKey, step, userId]);
 
   const restart = useCallback(() => {
     try {
-      sessionStorage.removeItem(SESSION_PAUSE_KEY);
+      sessionStorage.removeItem(PRODUCT_TOUR_SESSION_PAUSE_KEY);
     } catch {
       // ignore
     }

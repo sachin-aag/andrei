@@ -33,6 +33,7 @@ describe("/api/me/walkthrough", () => {
   it("GET returns stored progress", async () => {
     vi.mocked(auth).mockResolvedValue({
       user: { workspaceUserId: "u1" },
+      expires: "2026-08-25T12:00:00.000Z",
     } as never);
     vi.mocked(db.query.workspaceUsers.findFirst).mockResolvedValue({
       productTourStatus: "in_progress",
@@ -44,6 +45,7 @@ describe("/api/me/walkthrough", () => {
     expect(await res.json()).toEqual({
       status: "in_progress",
       stepId: "create-report",
+      sessionKey: "2026-08-25T12:00:00.000Z",
     });
   });
 
