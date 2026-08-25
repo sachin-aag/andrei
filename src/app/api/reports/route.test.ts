@@ -70,7 +70,12 @@ vi.mock("@/lib/reports/ensure-hidden-expert-reviewer", () => ({
 
 import { db } from "@/db";
 import { isDocumentNoTaken } from "@/lib/reports/document-no";
-import { DEMO_PACK, getCustomerPack, MJ_PACK } from "@/lib/customers/packs";
+import {
+  CONVERGENT_PACK,
+  DEMO_PACK,
+  getCustomerPack,
+  MJ_PACK,
+} from "@/lib/customers/packs";
 import { persistReportSourceDocx } from "@/lib/reports/persist-source-docx";
 import { persistImportedWordComments } from "@/lib/reports/persist-imported-word-comments";
 import { docxBufferToImportedReportContent } from "@/lib/import/docx-to-sections";
@@ -127,6 +132,9 @@ describe("/api/reports", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(getCustomerPack).mockReturnValue(DEMO_PACK);
+    vi.mocked(assignedManagerIdsWithHiddenExpert).mockImplementation(
+      async (ids: string[]) => ids
+    );
   });
 
   it("requires authentication for listing reports", async () => {
@@ -254,6 +262,59 @@ describe("/api/reports", () => {
 
     expect(response.status).toBe(200);
     expect(db.transaction).not.toHaveBeenCalled();
+  });
+
+  it("creates a mechanical DV report from JSON payload", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
+    vi.mocked(getCustomerPack).mockReturnValue(CONVERGENT_PACK);
+    vi.mocked(isDocumentNoTaken).mockResolvedValueOnce(false);
+    const { values } = mockSuccessfulCreate("report-mechanical");
+    mockSectionRowsSelect("report-mechanical");
+
+    const response = await POST(
+      new Request("http://localhost/api/reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          documentType: "mechanical_design_verification",
+          documentNo: "dvr abcde",
+          assignedManagerIds: [],
+        }),
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(values).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        documentType: "mechanical_design_verification",
+        documentNo: "dvr abcde",
+      })
+    );
+    expect(isDocumentNoTaken).toHaveBeenCalledWith(
+      "dvr abcde",
+      engineer.id,
+      "mechanical_design_verification"
+    );
+  });
+
+  it("rejects an unknown document type as an invalid payload", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
+
+    const response = await POST(
+      new Request("http://localhost/api/reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          documentType: "not_a_real_type",
+          documentNo: "dvr abcde",
+        }),
+      })
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "Invalid payload" });
+    expect(db.insert).not.toHaveBeenCalled();
   });
 
   it("creates a report with multiple assigned managers", async () => {

@@ -3,6 +3,7 @@ import { and, desc, eq, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import {
+  documentTypeEnum,
   reportManagers,
   reports,
   reportSections,
@@ -106,10 +107,10 @@ export async function GET() {
   return NextResponse.json({ reports: rowsWithManagers });
 }
 
+const DOCUMENT_TYPE_VALUES = documentTypeEnum.enumValues;
+
 const createSchema = z.object({
-  documentType: z
-    .enum(["investigation_report", "design_verification"])
-    .default("investigation_report"),
+  documentType: z.enum(DOCUMENT_TYPE_VALUES).default("investigation_report"),
   documentNo: z.string().min(1).optional(),
   deviationNo: z.string().min(1).optional(), // alias for investigation
   assignedManagerId: z.string().nullable().optional(),
@@ -118,11 +119,10 @@ const createSchema = z.object({
 
 function documentTypeFromForm(value: FormDataEntryValue | null): DocumentType {
   if (
-    value === "design_verification" ||
-    value === "mechanical_design_verification" ||
-    value === "investigation_report"
+    typeof value === "string" &&
+    (DOCUMENT_TYPE_VALUES as readonly string[]).includes(value)
   ) {
-    return value;
+    return value as DocumentType;
   }
   return "investigation_report";
 }
@@ -212,7 +212,7 @@ export async function POST(req: Request) {
         : normalizeAssignedManagerIds([parse.data.assignedManagerId ?? null]);
     }
 
-    if (!isDocumentTypeEnabled(documentType)) {
+    if (!isDocumentTypeEnabled(documentType, getCustomerPack())) {
       return NextResponse.json(
         {
           error: `${getDocumentType(documentType).label} is not enabled for this workspace.`,
