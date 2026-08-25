@@ -9,7 +9,7 @@ import {
   isDocumentTypeEnabled,
 } from "./packs";
 import { buildDesignVerificationDefinition } from "@/lib/document-types/design-verification";
-import { engineerReportsSubtitle } from "@/lib/document-types";
+import { engineerReportsSubtitle, documentTypeShortLabel } from "@/lib/document-types";
 import {
   CONVERGENT_DV_SECTION_KEYS,
   CONVERGENT_DV_SECTION_LABELS,
@@ -47,6 +47,13 @@ describe("Convergent customer pack", () => {
     expect(engineerReportsSubtitle([{ label: "Design Verification Report" }])).toBe(
       "Create and manage design verification reports."
     );
+    expect(documentTypeShortLabel("design_verification")).toBe(
+      "Design Verification"
+    );
+    expect(documentTypeShortLabel("mechanical_design_verification")).toBe(
+      "Mechanical DV"
+    );
+    expect(documentTypeShortLabel("investigation_report")).toBe("Investigation");
   });
 
   it("does not change demo or MJ enabled types", () => {

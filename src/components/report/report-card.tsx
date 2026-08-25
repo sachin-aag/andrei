@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { StatusBadge } from "@/components/report/status-badge";
 import { formatCalendarDate, formatDate } from "@/lib/utils";
 import type { DocumentType, ReportStatus } from "@/db/schema";
+import { documentTypeShortLabel } from "@/lib/document-types";
 
 export type ReportCardData = {
   id: string;
@@ -47,12 +48,9 @@ export function ReportCard({
       (isDesignVerification
         ? "Untitled design verification"
         : "Untitled deviation"));
-  const typeLabel =
-    report.documentType === "mechanical_design_verification"
-      ? "Mechanical DV"
-      : report.documentType === "design_verification"
-        ? "Design Verification"
-        : "Investigation";
+  const typeLabel = report.documentType
+    ? documentTypeShortLabel(report.documentType)
+    : "Investigation";
   const managerLabel = managerNames.length === 1 ? "Manager" : "Managers";
 
   return (

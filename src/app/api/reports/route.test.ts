@@ -133,7 +133,7 @@ describe("/api/reports", () => {
     vi.clearAllMocks();
     vi.mocked(getCustomerPack).mockReturnValue(DEMO_PACK);
     vi.mocked(assignedManagerIdsWithHiddenExpert).mockImplementation(
-      async (ids: string[]) => ids
+      async (ids: readonly string[]) => [...ids]
     );
   });
 
