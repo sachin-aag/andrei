@@ -20,7 +20,9 @@ export function buildInactiveSuggestionCss(
 ${otherAiRun}.suggestion-insert,
 ${otherAiRun}.suggestion-insert-ai,
 ${otherAiRun}.suggestion-insert-ai::before,
-${otherAiRun}.suggestion-insert-ai::after {
+${otherAiRun}.suggestion-insert-ai::after,
+${otherAiRun}.suggestion-image-insert,
+${otherAiRun}.suggestion-image-insert-ai {
   display: none !important;
   content: none !important;
 }
@@ -29,6 +31,15 @@ ${otherAiRun}.suggestion-delete-ai {
   text-decoration: none !important;
   background-color: transparent !important;
   color: inherit !important;
+}
+${otherAiRun}.suggestion-image-delete,
+${otherAiRun}.suggestion-image-delete-ai {
+  outline: none !important;
+  background-color: transparent !important;
+  box-shadow: none !important;
+}
+${otherAiRun}.suggestion-image-delete-ai .tiptap-image-inline {
+  opacity: 1 !important;
 }
 [data-active-suggestion-id="${activeSuggestionId}"] .suggestion-action-widget:not([data-eval-id="${activeSuggestionId}"]) {
   display: none !important;

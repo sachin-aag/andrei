@@ -237,12 +237,84 @@ describe("buildChatTools tagged sections", () => {
       })
     ).toBe(false);
     expect(
+      accepts(tools, "insert_image", {
+        section: "control",
+        targetField: "narrative",
+        reasoning: "y",
+        image: { source: "chat", index: 1 },
+      })
+    ).toBe(false);
+    expect(
+      accepts(tools, "remove_image", {
+        section: "control",
+        targetField: "narrative",
+        reasoning: "y",
+        image: { id: "narrative#1" },
+      })
+    ).toBe(false);
+    expect(
       accepts(tools, "draft_field", { ...edit, section: "define" })
     ).toBe(true);
   });
 });
 
-describe("buildChatTools propose_edit second", () => {
+describe("buildChatTools insert_image", () => {
+  it("accepts chat and section sources on an in-scope rich field", () => {
+    const tools = buildChatTools({ reportId: "report-1", canEdit: true });
+    expect(
+      accepts(tools, "insert_image", {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Place the photo under the event description",
+        image: { source: "chat", index: 1 },
+      })
+    ).toBe(true);
+    expect(
+      accepts(tools, "insert_image", {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Copy the chart",
+        image: { source: "section", index: 1, targetField: "narrative" },
+      })
+    ).toBe(true);
+    expect(
+      accepts(tools, "insert_image", {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Copy using read_section id",
+        image: {
+          source: "section",
+          section: "measure",
+          id: "narrative#1",
+        },
+      })
+    ).toBe(true);
+  });
+});
+
+describe("buildChatTools remove_image", () => {
+  it("accepts id or index on an in-scope rich field", () => {
+    const tools = buildChatTools({ reportId: "report-1", canEdit: true });
+    expect(
+      accepts(tools, "remove_image", {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "This figure belongs in Measure",
+        image: { id: "narrative#1" },
+      })
+    ).toBe(true);
+    expect(
+      accepts(tools, "remove_image", {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Drop the second photo",
+        image: { index: 2 },
+      })
+    ).toBe(true);
+  });
+});
+
+describe("buildChatTools propose_edit citations", () => {
   it("exposes propose_edit.second only when citations-at-end is on", () => {
     const off = buildChatTools({
       reportId: "report-1",
@@ -476,6 +548,52 @@ describe("buildChatTools document review", () => {
       TEST_TOOL_OPTIONS
     );
     expect(blocked).toMatchObject({ status: "review_incomplete" });
+  });
+
+  it("rejects markdown image syntax instead of drafting a fake figure", async () => {
+    const tools = buildChatTools({ reportId: "report-1", canEdit: true });
+    const result = await tools.draft_field!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        markdown: "![PXL_20260725_081416927](narrative#1)",
+        reasoning: "Inserting the image into Define via draft_field.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "figures_not_supported" });
+    expect((result as { message: string }).message).toContain("insert_image");
+  });
+
+  it("rejects a section image copy that has neither id nor index", async () => {
+    const tools = buildChatTools({ reportId: "report-1", canEdit: true });
+    const result = await tools.insert_image!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Copy the figure",
+        image: { source: "section" },
+        anchorText: "",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "image_not_found" });
+    expect((result as { message: string }).message).toContain("image.id");
+  });
+
+  it("rejects a figure removal that has neither id nor index", async () => {
+    const tools = buildChatTools({ reportId: "report-1", canEdit: true });
+    const result = await tools.remove_image!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Drop the figure",
+        image: {},
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "image_not_found" });
+    expect((result as { message: string }).message).toContain("image.id");
   });
 
   it("covers every family in a 62-page synthetic appendix before drafting", async () => {

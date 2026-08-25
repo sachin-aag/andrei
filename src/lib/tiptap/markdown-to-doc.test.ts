@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   hydrateLiteralMarkdownInDoc,
+  markdownHasImage,
   markdownHasTable,
   markdownToDoc,
   markdownToPlainText,
@@ -126,6 +127,14 @@ describe("markdownToDoc", () => {
   it("treats pipe lines without a separator as plain paragraphs", () => {
     const doc = markdownToDoc("| just text with pipes |");
     expect(doc.content![0]!.type).toBe("paragraph");
+  });
+
+  it("detects markdown image syntax including read_section ids", () => {
+    expect(markdownHasImage("![PXL_20260725_081416927](narrative#1)")).toBe(
+      true
+    );
+    expect(markdownHasTable("| a | b |\n| --- | --- |\n| 1 | 2 |")).toBe(true);
+    expect(markdownHasImage("No figure here.")).toBe(false);
   });
 
   it("round-trips through richJsonToPlainText markdown tables", () => {

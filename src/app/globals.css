@@ -765,6 +765,26 @@ html[data-customer="convergent"] {
   background-color: rgb(22 101 52);
 }
 
+.suggestion-image-insert-ai {
+  border-radius: 4px;
+  outline: 2px solid rgb(22 101 52 / 0.7);
+  outline-offset: 2px;
+  background-color: rgb(22 101 52 / 0.08);
+  box-shadow: 0 0 0 1px rgb(22 101 52 / 0.2);
+}
+
+.suggestion-image-delete-ai {
+  border-radius: 4px;
+  outline: 2px solid rgb(190 18 60 / 0.7);
+  outline-offset: 2px;
+  background-color: rgb(190 18 60 / 0.08);
+  box-shadow: 0 0 0 1px rgb(190 18 60 / 0.2);
+}
+
+.suggestion-image-delete-ai .tiptap-image-inline {
+  opacity: 0.45;
+}
+
 .suggestion-delete-ai::before,
 .suggestion-delete-ai::after {
   background-color: rgb(190 18 60);

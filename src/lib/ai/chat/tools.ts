@@ -1,4 +1,4 @@
-import { tool, type ToolSet } from "ai";
+import { tool, type ToolSet, type UIMessage } from "ai";
 import { z } from "zod";
 import { and, eq } from "drizzle-orm";
 import { createId } from "@paralleldrive/cuid2";
@@ -23,8 +23,23 @@ import {
 } from "@/lib/ai/suggest-target-fields";
 import { parseEditScope } from "@/lib/ai/suggestion-gating";
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
+import { listInlineImagesInDoc } from "@/lib/suggestions/image-insert";
+import {
+  countImagesInDoc,
+  MAX_IMAGES_PER_SECTION,
+} from "@/lib/images/compress-image";
+import {
+  resolveChatImage,
+  resolveSectionImageLocator,
+  sectionImageNotFoundMessage,
+  type InsertImageSource,
+} from "@/lib/ai/chat/insert-image";
 import { fieldContentHash } from "@/lib/suggestions/validate-suggestion";
-import { markdownHasTable, markdownToDoc } from "@/lib/tiptap/markdown-to-doc";
+import {
+  markdownHasImage,
+  markdownHasTable,
+  markdownToDoc,
+} from "@/lib/tiptap/markdown-to-doc";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 import {
   type ChatSectionScope,
@@ -129,6 +144,28 @@ export type ProposeEditResult =
   | { status: "too_large"; hint: string }
   | { status: "review_incomplete"; message: string };
 
+export type InsertImageResult =
+  | {
+      status: "proposed";
+      suggestionId: string;
+      section: SectionType;
+      targetField: string;
+      summary: string;
+    }
+  | { status: "not_editable"; message: string }
+  | { status: "invalid_section"; message: string }
+  | { status: "invalid_field"; message: string; allowedFields: string[] }
+  | { status: "plain_field"; message: string }
+  | { status: "section_not_found"; message: string }
+  | { status: "image_not_found"; message: string }
+  | { status: "too_many_images"; message: string }
+  | { status: "not_found"; hint: string }
+  | { status: "ambiguous"; hint: string }
+  | { status: "cross_cell"; hint: string }
+  | { status: "bad_scope"; hint: string }
+  | { status: "too_large"; hint: string }
+  | { status: "review_incomplete"; message: string };
+
 type ProposedSecondInput = {
   anchorText?: string;
   deleteText?: string;
@@ -168,6 +205,7 @@ export type DraftFieldResult =
   | { status: "invalid_field"; message: string; allowedFields: string[] }
   | { status: "section_not_found"; message: string }
   | { status: "table_not_supported"; message: string }
+  | { status: "figures_not_supported"; message: string }
   | { status: "review_incomplete"; message: string }
   | {
       status: "inventory_mismatch";
@@ -566,6 +604,8 @@ export function buildChatTools(opts: {
   documentReview?: DocumentReviewSession;
   /** Pack policy: citations at end of each field (Convergent on; demo/MJ off). */
   citationsAtEndOfSection?: boolean;
+  /** Current chat messages — used to resolve chat-attached images. */
+  messages?: UIMessage[];
 }): ToolSet {
   const { reportId, canEdit, actor } = opts;
   const documentType = opts.documentType ?? "investigation_report";
@@ -574,6 +614,7 @@ export function buildChatTools(opts: {
   const documentReview = opts.documentReview ?? new DocumentReviewSession();
   const citationsAtEndOfSection =
     opts.citationsAtEndOfSection ?? getCustomerPack().citationsAtEndOfSection;
+  const messages = opts.messages ?? [];
   const citationRule = documentCitationRule(citationsAtEndOfSection);
   const allowedSections = chatSectionsInScope(sectionScope, documentType);
   const pinnedAttachmentIds = Array.from(
@@ -1118,6 +1159,473 @@ export function buildChatTools(opts: {
       },
     }),
 
+    insert_image: tool({
+      description:
+        `Insert one existing image into a rich narrative field as a reviewable suggestion (the engineer accepts or rejects it). section/targetField are the DESTINATION. For source=section, set image.section to the section the figure is in NOW (required when copying between sections) and pass image.id from read_section (e.g. 'narrative#1') or image.index. Do not generate new pixels. Do not put markdown image syntax in draft_field or propose_edit — those cannot create figures. Empty anchorText appends at the end of the field.${scopeHint}`,
+      inputSchema: z.object({
+        section: z.enum(sectionEnum),
+        targetField: z
+          .string()
+          .describe("DESTINATION rich field path to insert into, e.g. 'narrative'."),
+        image: z.discriminatedUnion("source", [
+          z.object({
+            source: z.literal("chat"),
+            index: z
+              .number()
+              .int()
+              .min(1)
+              .describe("1-based index among images on the latest user message."),
+          }),
+          z.object({
+            source: z.literal("section"),
+            section: z
+              .string()
+              .optional()
+              .describe(
+                "Section to copy FROM (keys like 'purpose', not labels). Required when the figure is not in the destination section."
+              ),
+            targetField: z
+              .string()
+              .optional()
+              .describe("Field to copy FROM; defaults to the destination field."),
+            index: z
+              .number()
+              .int()
+              .min(1)
+              .optional()
+              .describe("1-based imageInline index in that field. Omit when passing id."),
+            id: z
+              .string()
+              .optional()
+              .describe(
+                "Image id from read_section (images[].id), e.g. 'narrative#1'. Prefer this after reading the source section."
+              ),
+          }),
+        ]),
+        anchorText: z
+          .string()
+          .default("")
+          .describe("Verbatim span from the field's text; '' appends at end."),
+        alt: z
+          .string()
+          .max(200)
+          .optional()
+          .describe("Optional alt text override shown to the engineer."),
+        reasoning: z
+          .string()
+          .max(300)
+          .describe("One short sentence explaining why this figure belongs here."),
+      }),
+      execute: async ({
+        section,
+        targetField,
+        image,
+        anchorText,
+        alt,
+        reasoning,
+      }): Promise<InsertImageResult> => {
+        try {
+        if (!canEdit) {
+          return {
+            status: "not_editable",
+            message:
+              "This report is not editable in its current state, so images cannot be proposed.",
+          };
+        }
+        if (
+          shouldGateDraftOnDocumentReview({ retrievalPolicy, documentReview })
+        ) {
+          return {
+            status: "review_incomplete",
+            message: REVIEW_INCOMPLETE_MESSAGE,
+          };
+        }
+        if (!isChatEditableSection(section, documentType)) {
+          return { status: "invalid_section", message: `Unknown section '${section}'.` };
+        }
+        const resolvedField = resolveTargetField(section, targetField);
+        if (!resolvedField) {
+          return {
+            status: "invalid_field",
+            message: `'${targetField}' is not an editable field of ${section}.`,
+            allowedFields: chatTargetFields(section).map((f) => f.targetField),
+          };
+        }
+        if (!isRichTargetField(section, resolvedField)) {
+          return {
+            status: "plain_field",
+            message: `'${resolvedField}' is a plain-text field and cannot hold an image. Insert into a rich narrative field instead.`,
+          };
+        }
+
+        const source = image as InsertImageSource;
+        if (source.source === "section") {
+          const locator = resolveSectionImageLocator({
+            destSection: section,
+            destField: resolvedField,
+            sourceSection: source.section,
+            sourceField: source.targetField,
+            index: source.index,
+            id: source.id,
+          });
+          if (!locator.ok) {
+            return { status: "image_not_found", message: locator.message };
+          }
+        }
+
+        const loaded = await loadMergedSection(reportId, section);
+        if (!loaded) {
+          return { status: "section_not_found", message: "Section not found." };
+        }
+
+        const fieldDoc = getRichFieldValue(
+          loaded.content as Record<string, unknown>,
+          resolvedField
+        );
+        if (countImagesInDoc(fieldDoc) >= MAX_IMAGES_PER_SECTION) {
+          return {
+            status: "too_many_images",
+            message: `This field already has ${MAX_IMAGES_PER_SECTION} images (the maximum). Remove one before inserting another.`,
+          };
+        }
+
+        let resolved: ReturnType<typeof resolveChatImage> | {
+          ok: true;
+          image: {
+            src: string;
+            alt: string | null;
+            width: number | null;
+            mediaId: string | null;
+          };
+        };
+        if (source.source === "chat") {
+          resolved = resolveChatImage(messages, source.index);
+        } else {
+          const locator = resolveSectionImageLocator({
+            destSection: section,
+            destField: resolvedField,
+            sourceSection: source.section,
+            sourceField: source.targetField,
+            index: source.index,
+            id: source.id,
+          });
+          if (!locator.ok) {
+            return { status: "image_not_found", message: locator.message };
+          }
+          const sourceSectionKey = locator.locator.section as SectionType;
+          if (!isChatEditableSection(sourceSectionKey, documentType)) {
+            return {
+              status: "invalid_section",
+              message: `Unknown section '${locator.locator.section}'.`,
+            };
+          }
+          const sourceLoaded =
+            sourceSectionKey === section
+              ? loaded
+              : await loadMergedSection(reportId, sourceSectionKey);
+          if (!sourceLoaded) {
+            return { status: "section_not_found", message: "Source section not found." };
+          }
+          const sourceResolved = resolveTargetField(
+            sourceSectionKey,
+            locator.locator.targetField
+          );
+          if (
+            !sourceResolved ||
+            !isRichTargetField(sourceSectionKey, sourceResolved)
+          ) {
+            return {
+              status: "invalid_field",
+              message: `'${locator.locator.targetField}' is not a rich field of ${sourceSectionKey}.`,
+              allowedFields: chatTargetFields(sourceSectionKey).map(
+                (f) => f.targetField
+              ),
+            };
+          }
+          const sourceDoc = getRichFieldValue(
+            sourceLoaded.content as Record<string, unknown>,
+            sourceResolved
+          );
+          const listed = listInlineImagesInDoc(sourceDoc);
+          const hit = listed.find((img) => img.index === locator.locator.index);
+          if (!hit) {
+            return {
+              status: "image_not_found",
+              message: sectionImageNotFoundMessage({
+                destSection: section,
+                sourceSection: sourceSectionKey,
+                sourceField: sourceResolved,
+                index: locator.locator.index,
+                listedCount: listed.length,
+                sourceSectionOmitted: !source.section?.trim(),
+              }),
+            };
+          }
+          resolved = {
+            ok: true,
+            image: {
+              src: hit.src,
+              alt: hit.alt || null,
+              width: hit.width,
+              mediaId: hit.mediaId,
+            },
+          };
+        }
+        if (!resolved.ok) {
+          return { status: "image_not_found", message: resolved.message };
+        }
+
+        const insertImage = {
+          ...resolved.image,
+          alt: alt?.trim() || resolved.image.alt,
+        };
+        const fieldText = sectionFieldPlainText(loaded.content, section, resolvedField);
+        const check = checkProposedEdit(
+          fieldText,
+          {
+            anchorText: anchorText ?? "",
+            deleteText: "",
+            insertText: "",
+            insertImage,
+          },
+          fieldDoc
+        );
+        if (check.status !== "ok") {
+          return {
+            status: check.status,
+            hint: proposedEditHint(check, {
+              anchorText: anchorText ?? "",
+              fieldDoc,
+            }),
+          } as InsertImageResult;
+        }
+
+        const suggestionId = createId();
+        await db.insert(comments).values({
+          id: suggestionId,
+          reportId,
+          sectionId: loaded.sectionId,
+          section,
+          authorId: AI_AUTHOR_ID,
+          content: serializeAiFixCommentContent({
+            deleteText: "",
+            insertText: "",
+            insertImage,
+            reasoning,
+            contentHashAtSuggestion: sectionContentHash(section, loaded.content),
+          }),
+          anchorText: (anchorText ?? "").trim(),
+          contentPath: resolvedField,
+          fromPos: null,
+          toPos: null,
+          status: "open",
+          kind: "ai_fix",
+          evaluationId: null,
+        });
+
+        return {
+          status: "proposed",
+          suggestionId,
+          section,
+          targetField: resolvedField,
+          summary: reasoning,
+        };
+        } catch (err) {
+          console.error("insert_image failed", err);
+          return {
+            status: "image_not_found",
+            message:
+              "Could not insert this image. Call insert_image with source=section, image.section set to the section the figure is in now, and image.id from read_section (e.g. 'narrative#1'). Do not put markdown image syntax in draft_field.",
+          };
+        }
+      },
+    }),
+
+    remove_image: tool({
+      description:
+        `Remove one existing inline figure from a rich narrative field as a reviewable suggestion (the engineer accepts or rejects it). Call read_section first and pass image.id (e.g. 'narrative#1') or image.index. Do not rewrite the field with draft_field just to drop a figure — that drops every figure. Do not use propose_edit against [image:N] markers.${scopeHint}`,
+      inputSchema: z.object({
+        section: z.enum(sectionEnum),
+        targetField: z
+          .string()
+          .describe("Rich field path that currently contains the figure, e.g. 'narrative'."),
+        image: z.object({
+          index: z
+            .number()
+            .int()
+            .min(1)
+            .optional()
+            .describe("1-based imageInline index in that field. Omit when passing id."),
+          id: z
+            .string()
+            .optional()
+            .describe(
+              "Image id from read_section (images[].id), e.g. 'narrative#1'. Prefer this after reading the field."
+            ),
+        }),
+        reasoning: z
+          .string()
+          .max(300)
+          .describe("One short sentence explaining why this figure should be removed."),
+      }),
+      execute: async ({
+        section,
+        targetField,
+        image,
+        reasoning,
+      }): Promise<InsertImageResult> => {
+        try {
+          if (!canEdit) {
+            return {
+              status: "not_editable",
+              message:
+                "This report is not editable in its current state, so image removals cannot be proposed.",
+            };
+          }
+          if (
+            shouldGateDraftOnDocumentReview({ retrievalPolicy, documentReview })
+          ) {
+            return {
+              status: "review_incomplete",
+              message: REVIEW_INCOMPLETE_MESSAGE,
+            };
+          }
+          if (!isChatEditableSection(section, documentType)) {
+            return { status: "invalid_section", message: `Unknown section '${section}'.` };
+          }
+          const resolvedField = resolveTargetField(section, targetField);
+          if (!resolvedField) {
+            return {
+              status: "invalid_field",
+              message: `'${targetField}' is not an editable field of ${section}.`,
+              allowedFields: chatTargetFields(section).map((f) => f.targetField),
+            };
+          }
+          if (!isRichTargetField(section, resolvedField)) {
+            return {
+              status: "plain_field",
+              message: `'${resolvedField}' is a plain-text field and cannot hold an image.`,
+            };
+          }
+
+          const locator = resolveSectionImageLocator({
+            destSection: section,
+            destField: resolvedField,
+            index: image.index,
+            id: image.id,
+          });
+          if (!locator.ok) {
+            return { status: "image_not_found", message: locator.message };
+          }
+          if (
+            locator.locator.section !== section ||
+            locator.locator.targetField !== resolvedField
+          ) {
+            return {
+              status: "image_not_found",
+              message:
+                "remove_image only removes a figure from the field you are editing. Pass image.id from that field's read_section (e.g. 'narrative#1'). To copy a figure elsewhere, use insert_image.",
+            };
+          }
+
+          const loaded = await loadMergedSection(reportId, section);
+          if (!loaded) {
+            return { status: "section_not_found", message: "Section not found." };
+          }
+
+          const fieldDoc = getRichFieldValue(
+            loaded.content as Record<string, unknown>,
+            resolvedField
+          );
+          const listed = listInlineImagesInDoc(fieldDoc);
+          const hit = listed.find((img) => img.index === locator.locator.index);
+          if (!hit) {
+            return {
+              status: "image_not_found",
+              message: sectionImageNotFoundMessage({
+                destSection: section,
+                sourceSection: section,
+                sourceField: resolvedField,
+                index: locator.locator.index,
+                listedCount: listed.length,
+                sourceSectionOmitted: false,
+              }),
+            };
+          }
+
+          const removeImage = {
+            src: hit.src,
+            alt: hit.alt || null,
+            width: hit.width,
+            mediaId: hit.mediaId,
+            index: hit.index,
+          };
+          const fieldText = sectionFieldPlainText(
+            loaded.content,
+            section,
+            resolvedField
+          );
+          const check = checkProposedEdit(
+            fieldText,
+            {
+              anchorText: "",
+              deleteText: "",
+              insertText: "",
+              removeImage,
+            },
+            fieldDoc
+          );
+          if (check.status !== "ok") {
+            return {
+              status: check.status,
+              hint: proposedEditHint(check, {
+                anchorText: "",
+                fieldDoc,
+              }),
+            } as InsertImageResult;
+          }
+
+          const suggestionId = createId();
+          await db.insert(comments).values({
+            id: suggestionId,
+            reportId,
+            sectionId: loaded.sectionId,
+            section,
+            authorId: AI_AUTHOR_ID,
+            content: serializeAiFixCommentContent({
+              deleteText: "",
+              insertText: "",
+              removeImage,
+              reasoning,
+              contentHashAtSuggestion: sectionContentHash(section, loaded.content),
+            }),
+            anchorText: "",
+            contentPath: resolvedField,
+            fromPos: null,
+            toPos: null,
+            status: "open",
+            kind: "ai_fix",
+            evaluationId: null,
+          });
+
+          return {
+            status: "proposed",
+            suggestionId,
+            section,
+            targetField: resolvedField,
+            summary: reasoning,
+          };
+        } catch (err) {
+          console.error("remove_image failed", err);
+          return {
+            status: "image_not_found",
+            message:
+              "Could not remove this image. Call read_section and pass image.id (e.g. 'narrative#1') or image.index. Do not rewrite the field with draft_field just to drop a figure.",
+          };
+        }
+      },
+    }),
+
     edit_table: tool({
       description:
         `Change an existing table without rewriting the field. Operations: edit_cells (including clear), insert_rows (omit afterRow to append; afterRow 0 inserts after the header), delete_rows, insert_column (optional per-row values), delete_column. Call read_section first and copy tableIndex plus [row,col] / header text from structuredText. Row 0 is the header and cannot be deleted; the first data row is row 1. For delete_rows, provide the row coordinate and omit expectedCells so the server captures the current row safely. When adding a class of units (systems, UUTs, equipment), put every distinct matching unit in one insert_rows call — never a single representative row. edit_cells may list cells in any columns; a move or rewrite across columns is one edit_cells covering every affected cell — never a second proposal for the other column, and never a no-op cell (insertText === expectedText). The two-call limit is a failed-retry cap, not two successful edits. Clearing a cell is edit_cells with empty insertText. Do not use propose_edit or draft_field for incremental table changes.${scopeHint}${fixedTableHint}`,
@@ -1242,7 +1750,7 @@ export function buildChatTools(opts: {
 
     draft_field: tool({
       description:
-        `Draft or fully rewrite ONE field. Provide the COMPLETE replacement content as markdown: paragraphs, '- ' bullets, '1. ' numbered lists, '## ' headings, '**bold**', '*italic*', and GFM tables ('| a | b |' rows with a '| --- |' separator). Use bracketed placeholders like [batch number] for facts you do not know — never invent facts. The engineer reviews the full draft and accepts or rejects it. Use this for empty fields, substantial rewrites, creating a NEW table, or an explicitly requested full table replacement. For any incremental change to an existing table, use edit_table — never draft_field. Use propose_edit only for small prose or list edits.${scopeHint}${fixedTableHint}`,
+        `Draft or fully rewrite ONE field. Provide the COMPLETE replacement content as markdown: paragraphs, '- ' bullets, '1. ' numbered lists, '## ' headings, '**bold**', '*italic*', and GFM tables ('| a | b |' rows with a '| --- |' separator). Use bracketed placeholders like [batch number] for facts you do not know — never invent facts. The engineer reviews the full draft and accepts or rejects it. Use this for empty fields, substantial rewrites, creating a NEW table, or an explicitly requested full table replacement. For any incremental change to an existing table, use edit_table — never draft_field. Use propose_edit only for small prose or list edits. Do not put markdown image syntax (![alt](url) or narrative#1) here — use insert_image. To remove a figure, call remove_image; do not rewrite the field just to drop one.${scopeHint}${fixedTableHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
@@ -1296,6 +1804,13 @@ export function buildChatTools(opts: {
           return {
             status: "table_not_supported",
             message: `'${resolvedField}' is a plain-text field and cannot hold a table. Put the table in a rich narrative field instead.`,
+          };
+        }
+        if (markdownHasImage(markdown)) {
+          return {
+            status: "figures_not_supported",
+            message:
+              "draft_field cannot insert figures. Markdown like ![alt](narrative#1) is not an image. Call insert_image with source=section, image.section set to the section the figure is in now, and image.id from read_section (e.g. 'narrative#1').",
           };
         }
         if (section === "results_and_discussions" && resolvedField === "table") {
