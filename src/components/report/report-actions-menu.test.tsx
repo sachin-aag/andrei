@@ -30,29 +30,26 @@ describe("ReportActionsMenu", () => {
     vi.mocked(getCustomerPack).mockReturnValue(DEMO_PACK);
   });
 
-  it("offers a single Export DOCX item on demo", async () => {
+  it("leaves plain export to the header button on demo", async () => {
     render(<ReportActionsMenu reportId="report-1" />);
     await openMenu();
 
     expect(
-      screen.getByRole("menuitem", { name: /^export docx$/i })
-    ).toHaveAttribute("href", "/api/reports/report-1/export");
-    expect(
-      screen.queryByRole("menuitem", { name: /without citations/i })
+      screen.queryByRole("menuitem", { name: /export/i })
     ).not.toBeInTheDocument();
   });
 
-  it("adds a without-citations item on Convergent", async () => {
+  it("carries only the without-citations variant on Convergent", async () => {
     vi.mocked(getCustomerPack).mockReturnValue(CONVERGENT_PACK);
     render(<ReportActionsMenu reportId="report-1" />);
     await openMenu();
 
     expect(
-      screen.getByRole("menuitem", { name: /^export docx$/i })
-    ).toHaveAttribute("href", "/api/reports/report-1/export");
-    expect(
       screen.getByRole("menuitem", { name: /export without citations/i })
     ).toHaveAttribute("href", "/api/reports/report-1/export?omitCitations=1");
+    expect(
+      screen.queryByRole("menuitem", { name: /^export docx$/i })
+    ).not.toBeInTheDocument();
   });
 
   it("hides expert review, audit trail, and track changes unless enabled", async () => {

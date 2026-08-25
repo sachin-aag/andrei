@@ -14,11 +14,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { captureEvent } from "@/lib/analytics/events";
 import { getCustomerPack } from "@/lib/customers/packs";
-
-export function exportHref(reportId: string, omitCitations: boolean): string {
-  const path = `/api/reports/${reportId}/export`;
-  return omitCitations ? `${path}?omitCitations=1` : path;
-}
+import { exportHref } from "./report-export-button";
 
 type ReportActionsMenuProps = {
   reportId: string;
@@ -33,8 +29,8 @@ type ReportActionsMenuProps = {
 };
 
 /**
- * Secondary report actions, folded off the header so the bar carries only the
- * primary workflow step.
+ * Overflow for report actions that do not earn a slot on the header bar —
+ * export variants, expert review, the audit trail, and the track-changes mode.
  */
 export function ReportActionsMenu({
   reportId,
@@ -47,12 +43,10 @@ export function ReportActionsMenu({
 }: ReportActionsMenuProps) {
   const omitCitationsEnabled = getCustomerPack().citationsAtEndOfSection;
 
-  const trackExport = (omitCitations: boolean) => {
-    captureEvent("report_exported", { reportId, omitCitations });
-  };
-
   const canToggleTrackChanges = showTrackChanges && onTrackChangesModeChange;
-  const hasReviewGroup = (showExpertReview && onExpertReview) || auditHref;
+  const hasReviewGroup = Boolean((showExpertReview && onExpertReview) || auditHref);
+  // Separators only earn their place between two populated groups.
+  const showTrackChangesDivider = omitCitationsEnabled || hasReviewGroup;
 
   return (
     <DropdownMenu>
@@ -69,24 +63,15 @@ export function ReportActionsMenu({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="min-w-[15rem]">
-        <DropdownMenuItem asChild>
-          <a
-            href={exportHref(reportId, false)}
-            target="_blank"
-            rel="noreferrer"
-            onClick={() => trackExport(false)}
-          >
-            <Download aria-hidden="true" />
-            Export DOCX
-          </a>
-        </DropdownMenuItem>
         {omitCitationsEnabled ? (
           <DropdownMenuItem asChild>
             <a
               href={exportHref(reportId, true)}
               target="_blank"
               rel="noreferrer"
-              onClick={() => trackExport(true)}
+              onClick={() =>
+                captureEvent("report_exported", { reportId, omitCitations: true })
+              }
             >
               <Download aria-hidden="true" />
               Export without citations
@@ -94,7 +79,7 @@ export function ReportActionsMenu({
           </DropdownMenuItem>
         ) : null}
 
-        {hasReviewGroup ? <DropdownMenuSeparator /> : null}
+        {omitCitationsEnabled && hasReviewGroup ? <DropdownMenuSeparator /> : null}
         {showExpertReview && onExpertReview ? (
           <DropdownMenuItem onSelect={onExpertReview}>
             <LifeBuoy aria-hidden="true" />
@@ -112,7 +97,7 @@ export function ReportActionsMenu({
 
         {canToggleTrackChanges ? (
           <>
-            <DropdownMenuSeparator />
+            {showTrackChangesDivider ? <DropdownMenuSeparator /> : null}
             <DropdownMenuCheckboxItem
               checked={trackChangesMode}
               onCheckedChange={(next) => onTrackChangesModeChange(next === true)}

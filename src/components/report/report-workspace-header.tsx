@@ -17,6 +17,7 @@ import { Separator } from "@/components/ui/separator";
 import type { WorkspaceMode } from "@/providers/report-provider";
 import type { ReportRecord } from "@/types/report";
 import { ReportActionsMenu } from "./report-actions-menu";
+import { ReportExportButton } from "./report-export-button";
 import { RunAllEvaluationButton } from "./section-status-pill";
 import { StatusBadge } from "./status-badge";
 
@@ -115,6 +116,8 @@ export function ReportWorkspaceHeader({
         {!isViewMode && trackChangesMode ? (
           <TrackChangesPill onTurnOff={() => onTrackChangesModeChange(false)} />
         ) : null}
+
+        <ReportExportButton reportId={report.id} />
 
         {!isViewMode && <RunAllEvaluationButton />}
 
