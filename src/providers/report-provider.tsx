@@ -30,12 +30,13 @@ import {
   mergeSectionForType,
 } from "@/lib/document-types";
 import { activeSuggestionForSection } from "@/lib/ai/suggestion-gating";
-import { firstGeneratedSuggestionSection } from "@/lib/suggestions/navigate-suggestion";
+import { firstGeneratedSuggestion } from "@/lib/suggestions/navigate-suggestion";
 import { validateSuggestionLocate } from "@/lib/suggestions/validate-suggestion";
 import { normalizeCommentRecord } from "@/lib/comments/normalize";
 import { sectionsReadyForEvaluation } from "@/lib/ai/evaluation-readiness";
 import { collectPlaceholders } from "@/lib/placeholders/scan-sections";
 import type { Placeholder } from "@/lib/placeholders/find";
+import { canMutateAttachments } from "@/lib/reports/access";
 import type { UserRole } from "@/lib/auth/roles";
 import { ReportAttachmentsProvider } from "@/providers/report-attachments-provider";
 
@@ -50,26 +51,22 @@ function canMutateReportAttachmentsForUser({
   report,
   userId,
   userRole,
+  userEmail,
 }: {
   report: ReportRecord;
   userId: string;
   userRole: UserRole;
+  userEmail?: string | null;
 }) {
-  if (report.status !== "draft" && report.status !== "feedback") return false;
-
-  switch (userRole) {
-    case "admin":
-      return true;
-    case "engineer":
-      return report.authorId === userId;
-    case "manager":
-    case "qa":
-      return false;
-    default: {
-      const exhaustive: never = userRole;
-      return exhaustive;
+  return canMutateAttachments(
+    { id: userId, role: userRole, email: userEmail },
+    {
+      authorId: report.authorId,
+      assignedManagerId: report.assignedManagerId,
+      assignedManagerIds: report.assignedManagerIds,
+      status: report.status,
     }
-  }
+  );
 }
 
 export type WorkspaceMode = "edit" | "review" | "view";
@@ -84,6 +81,14 @@ export type SuggestionApplyMode = "accept" | "dismiss";
 /** Queue handoff: wait for the user to jump to — or dismiss — the next off-screen suggestion (any section). */
 export type SuggestionQueueBridge = {
   nextCommentId: string;
+};
+
+type SuggestionApplyTransition = {
+  holdInlinePreview: boolean;
+  gutterAnchorCommentId: string;
+  mode: SuggestionApplyMode;
+  parkCenterY?: number;
+  bridge?: SuggestionQueueBridge;
 };
 
 export type EditorRegistryEntry = {
@@ -110,6 +115,7 @@ type ReportContextValue = {
   workspaceMode: WorkspaceMode;
   currentUserId: string;
   currentUserRole: UserRole;
+  currentUserEmail: string;
   /** Inline / sidebar: which anchored comment thread is focused (dark highlight + expanded panel). */
   activeCommentId: string | null;
   setActiveCommentId: React.Dispatch<React.SetStateAction<string | null>>;
@@ -178,9 +184,12 @@ type ReportContextValue = {
       }
     >
   >;
-  /** Set after suggestions succeed — workspace opens Criteria tab for this section. */
-  suggestionsFocusSection: SectionType | null;
-  clearSuggestionsFocusSection: () => void;
+  /**
+   * Set after suggestions succeed — workspace opens Criteria for this
+   * section and scrolls to this newly generated card (not the first open).
+   */
+  suggestionsFocus: { section: SectionType; commentId: string } | null;
+  clearSuggestionsFocus: () => void;
   /** Unfilled `<to be filled>` placeholders across the live document. */
   pendingPlaceholders: Placeholder[];
   /** Placeholder panel fill input is focused — highlights the matching span in the doc. */
@@ -234,6 +243,7 @@ type ReportDataContextValue = Pick<
   | "workspaceMode"
   | "currentUserId"
   | "currentUserRole"
+  | "currentUserEmail"
   | "setReport"
   | "refresh"
   | "getSectionId"
@@ -292,8 +302,8 @@ type ReportEvaluationContextValue = Pick<
   | "enterSuggestionQueueBridge"
   | "endSuggestionApplyTransition"
   | "suggestionApplyTransition"
-  | "suggestionsFocusSection"
-  | "clearSuggestionsFocusSection"
+  | "suggestionsFocus"
+  | "clearSuggestionsFocus"
   | "setEvaluations"
 >;
 
@@ -360,6 +370,7 @@ export function ReportProvider({
   bundle,
   currentUserId,
   currentUserRole,
+  currentUserEmail,
   readOnly,
   initialTrackChangesMode = false,
   workspaceMode = "edit",
@@ -368,6 +379,7 @@ export function ReportProvider({
   bundle: ReportBundle;
   currentUserId: string;
   currentUserRole: UserRole;
+  currentUserEmail: string;
   readOnly: boolean;
   /** Manager: typically true on review; engineer: false. User can toggle in the workspace header. */
   initialTrackChangesMode?: boolean;
@@ -409,8 +421,13 @@ export function ReportProvider({
   useEffect(() => {
     commentsRef.current = comments;
   }, [comments]);
-  const [suggestionsFocusSection, setSuggestionsFocusSection] =
-    useState<SectionType | null>(null);
+  const [suggestionsFocus, setSuggestionsFocus] = useState<{
+    section: SectionType;
+    commentId: string;
+  } | null>(null);
+  const [suggestionApplyTransition, setSuggestionApplyTransition] = useState<
+    Partial<Record<SectionType, SuggestionApplyTransition>>
+  >({});
   const [isEvaluating, setIsEvaluating] = useState(false);
   const [overflowCounts, setOverflowCounts] = useState<
     Partial<Record<SectionType, number>>
@@ -608,13 +625,19 @@ export function ReportProvider({
       (c) => normalizeCommentRecord(c)
     );
     setComments(nextComments);
-    const generatedSection = firstGeneratedSuggestionSection(
+    const generated = firstGeneratedSuggestion(
       previousSuggestionIds,
       nextComments,
       getWorkspaceSections(data.report.documentType).map((s) => s.key)
     );
-    if (generatedSection) {
-      setSuggestionsFocusSection(generatedSection);
+    if (generated?.section) {
+      // A parked "Go to next" bridge pins the gutter to the previous section.
+      // Clear it so scroll/focus land on the newly generated card.
+      setSuggestionApplyTransition({});
+      setSuggestionsFocus({
+        section: generated.section,
+        commentId: generated.id,
+      });
     }
   }, [bundle.report.id, flushPendingSectionSaves]);
 
@@ -632,16 +655,6 @@ export function ReportProvider({
     SectionType[]
   >([]);
   const [isSuggesting, setIsSuggesting] = useState(false);
-  type SuggestionApplyTransition = {
-    holdInlinePreview: boolean;
-    gutterAnchorCommentId: string;
-    mode: SuggestionApplyMode;
-    parkCenterY?: number;
-    bridge?: SuggestionQueueBridge;
-  };
-  const [suggestionApplyTransition, setSuggestionApplyTransition] = useState<
-    Partial<Record<SectionType, SuggestionApplyTransition>>
-  >({});
 
   // Mirror of `sections` for callbacks that must read latest draft without widening deps.
   const sectionsRef = useRef<SectionContents>(sections);
@@ -764,7 +777,6 @@ export function ReportProvider({
           }
         }
         if (applied?.length) {
-          setSuggestionsFocusSection(section);
           toast.success(
             `Generated ${applied.length} suggestion${applied.length === 1 ? "" : "s"} — see inline preview in the narrative`
           );
@@ -795,8 +807,8 @@ export function ReportProvider({
     [bundle.report.id, refresh]
   );
 
-  const clearSuggestionsFocusSection = useCallback(() => {
-    setSuggestionsFocusSection(null);
+  const clearSuggestionsFocus = useCallback(() => {
+    setSuggestionsFocus(null);
   }, []);
 
   const beginSuggestionApplyTransition = useCallback(
@@ -898,8 +910,9 @@ export function ReportProvider({
         report,
         userId: currentUserId,
         userRole: currentUserRole,
+        userEmail: currentUserEmail,
       }),
-    [currentUserId, currentUserRole, report]
+    [currentUserEmail, currentUserId, currentUserRole, report]
   );
 
   const reportDataValue = useMemo<ReportDataContextValue>(
@@ -912,6 +925,7 @@ export function ReportProvider({
       workspaceMode,
       currentUserId,
       currentUserRole,
+      currentUserEmail,
       setReport,
       refresh,
       getSectionId,
@@ -927,6 +941,7 @@ export function ReportProvider({
       workspaceMode,
       currentUserId,
       currentUserRole,
+      currentUserEmail,
       refresh,
       getSectionId,
       registerSectionFlush,
@@ -1072,8 +1087,8 @@ export function ReportProvider({
       enterSuggestionQueueBridge,
       endSuggestionApplyTransition,
       suggestionApplyTransition,
-      suggestionsFocusSection,
-      clearSuggestionsFocusSection,
+      suggestionsFocus,
+      clearSuggestionsFocus,
       setEvaluations,
     }),
     [
@@ -1092,8 +1107,8 @@ export function ReportProvider({
       enterSuggestionQueueBridge,
       endSuggestionApplyTransition,
       suggestionApplyTransition,
-      suggestionsFocusSection,
-      clearSuggestionsFocusSection,
+      suggestionsFocus,
+      clearSuggestionsFocus,
     ]
   );
 

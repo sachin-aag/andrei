@@ -31,6 +31,10 @@ describe("customer packs (demo)", () => {
     expect(DEMO_PACK.citationsAtEndOfSection).toBe(false);
   });
 
+  it("keeps expert review off on demo", () => {
+    expect(DEMO_PACK.expertReviewEnabled).toBe(false);
+  });
+
   it("lists both document types on demo", () => {
     expect(listDocumentTypes().map((d) => d.key)).toEqual([
       "investigation_report",

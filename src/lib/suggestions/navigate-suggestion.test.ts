@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  firstGeneratedSuggestionSection,
+  firstGeneratedSuggestion,
   GUTTER_BRIDGE_VIEWPORT_MARGIN_PX,
   packGutterAnchors,
   rectIntersectsViewport,
@@ -240,19 +240,45 @@ const INVESTIGATION_SECTION_ORDER = [
   "conclusion",
 ] as const;
 
-describe("firstGeneratedSuggestionSection", () => {
+describe("firstGeneratedSuggestion", () => {
   it("returns null when every open suggestion was already known", () => {
-    const existing = suggestionComment({ id: "c1" });
     expect(
-      firstGeneratedSuggestionSection(
+      firstGeneratedSuggestion(
         new Set(["c1"]),
-        [existing],
+        [suggestionComment({ id: "c1" })],
         INVESTIGATION_SECTION_ORDER
       )
     ).toBeNull();
   });
 
-  it("picks the topmost new section, not the latest timestamp", () => {
+  it("picks the first new card, not the first already-open suggestion", () => {
+    const comments = [
+      suggestionComment({
+        id: "old-define",
+        section: "define",
+        createdAt: "2026-01-01T00:00:00Z",
+      }),
+      suggestionComment({
+        id: "new-define-later",
+        section: "define",
+        createdAt: "2026-01-03T00:00:00Z",
+      }),
+      suggestionComment({
+        id: "new-define",
+        section: "define",
+        createdAt: "2026-01-02T00:00:00Z",
+      }),
+    ];
+    expect(
+      firstGeneratedSuggestion(
+        new Set(["old-define"]),
+        comments,
+        INVESTIGATION_SECTION_ORDER
+      )?.id
+    ).toBe("new-define");
+  });
+
+  it("picks the topmost new section even when comments arrive out of order", () => {
     const comments = [
       suggestionComment({
         id: "old",
@@ -266,36 +292,18 @@ describe("firstGeneratedSuggestionSection", () => {
       }),
       suggestionComment({
         id: "new-measure",
+        kind: "ai_redraft",
         section: "measure",
         createdAt: "2026-01-02T00:00:00Z",
       }),
     ];
     expect(
-      firstGeneratedSuggestionSection(
+      firstGeneratedSuggestion(
         new Set(["old"]),
-        comments,
-        INVESTIGATION_SECTION_ORDER
-      )
-    ).toBe("measure");
-  });
-
-  it("scrolls to the first of five simultaneously generated cards", () => {
-    const comments = (
-      ["define", "measure", "analyze", "improve", "control"] as const
-    ).map((section, i) =>
-      suggestionComment({
-        id: `new-${section}`,
-        section,
-        createdAt: `2026-01-01T00:00:0${i}Z`,
-      })
-    );
-    expect(
-      firstGeneratedSuggestionSection(
-        new Set(),
         comments.toReversed(),
         INVESTIGATION_SECTION_ORDER
-      )
-    ).toBe("define");
+      )?.id
+    ).toBe("new-measure");
   });
 
   it("ignores resolved cards, replies, and human comments", () => {
@@ -318,27 +326,11 @@ describe("firstGeneratedSuggestionSection", () => {
       }),
     ];
     expect(
-      firstGeneratedSuggestionSection(
+      firstGeneratedSuggestion(
         new Set(),
         comments,
         INVESTIGATION_SECTION_ORDER
       )
     ).toBeNull();
-  });
-
-  it("treats a new redraft as a generated card", () => {
-    expect(
-      firstGeneratedSuggestionSection(
-        new Set(),
-        [
-          suggestionComment({
-            id: "draft",
-            kind: "ai_redraft",
-            section: "purpose_scope",
-          }),
-        ],
-        ["purpose_scope", "references"]
-      )
-    ).toBe("purpose_scope");
   });
 });

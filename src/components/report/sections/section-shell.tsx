@@ -6,7 +6,6 @@ import { SaveStatus } from "../save-status";
 import {
   SectionRunEvaluationButton,
   SectionStatusPill,
-  SectionSuggestFixesButton,
 } from "../section-status-pill";
 import { SectionSuggestionCard } from "../suggestion-card";
 import { useReportData } from "@/providers/report-provider";
@@ -59,7 +58,6 @@ export function SectionShell({
             {showAiActions && (
               <div className="flex flex-wrap items-center gap-2">
                 <SectionRunEvaluationButton section={section} />
-                <SectionSuggestFixesButton section={section} />
               </div>
             )}
           </div>

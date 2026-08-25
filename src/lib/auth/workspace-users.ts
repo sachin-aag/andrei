@@ -4,6 +4,7 @@ import {
   rowToWorkspaceUser,
   type WorkspaceUser,
 } from "@/lib/auth/workspace-user";
+import { managersVisibleInPicker } from "@/lib/reports/hidden-expert-reviewer";
 
 export type { UserRole, WorkspaceUser } from "@/lib/auth/workspace-user";
 
@@ -16,7 +17,7 @@ export async function listWorkspaceUsers(): Promise<WorkspaceUser[]> {
 
 export async function listManagers(): Promise<WorkspaceUser[]> {
   const users = await listWorkspaceUsers();
-  return users.filter((user) => user.role === "manager");
+  return managersVisibleInPicker(users);
 }
 
 export async function getWorkspaceUserById(

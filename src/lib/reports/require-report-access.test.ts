@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { HIDDEN_EXPERT_REVIEWER_EMAIL } from "./hidden-expert-reviewer";
 import {
   aiSuggestionLockReason,
   canEditReport,
@@ -287,5 +288,55 @@ describe("access matrix (view / edit / mutate attachments)", () => {
       edit: false,
       mutate: false,
     });
+  });
+});
+
+describe("hidden expert reviewer access", () => {
+  const hiddenExpert = {
+    id: "expert-1",
+    role: "manager" as const,
+    email: HIDDEN_EXPERT_REVIEWER_EMAIL,
+  };
+  const unassignedDraft = {
+    ...baseReport,
+    assignedManagerId: null,
+    assignedManagerIds: [] as string[],
+  };
+
+  it("can view, edit, and save any live non-approved report", () => {
+    for (const status of STATUSES) {
+      const report = { ...unassignedDraft, status };
+      expect(canViewReport(hiddenExpert, report)).toBe(true);
+      expect(canEditReport(hiddenExpert, report)).toBe(status !== "approved");
+      expect(canSaveReportSection(hiddenExpert, report)).toBe(
+        status !== "approved"
+      );
+    }
+  });
+
+  it("can mutate attachments only on draft/feedback", () => {
+    expect(canMutateAttachments(hiddenExpert, unassignedDraft)).toBe(true);
+    expect(
+      canMutateAttachments(hiddenExpert, {
+        ...unassignedDraft,
+        status: "feedback",
+      })
+    ).toBe(true);
+    expect(
+      canMutateAttachments(hiddenExpert, {
+        ...unassignedDraft,
+        status: "submitted",
+      })
+    ).toBe(false);
+  });
+
+  it("does not unlock AI suggestions on approved reports", () => {
+    expect(
+      aiSuggestionLockReason(hiddenExpert, {
+        ...unassignedDraft,
+        status: "approved",
+      })
+    ).toMatch(/approved/i);
+    expect(aiSuggestionLockReason(hiddenExpert, unassignedDraft)).toBeNull();
   });
 });

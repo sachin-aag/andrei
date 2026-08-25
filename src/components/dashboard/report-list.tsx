@@ -7,6 +7,7 @@ import { ReportCard, type ReportCardData } from "@/components/report/report-card
 import { DeleteReportButton } from "@/components/dashboard/delete-report-button";
 import { EvaluateWithAiButton } from "@/components/dashboard/evaluate-with-ai-button";
 import { listDocumentTypes } from "@/lib/document-types";
+import { visibleManagerNames } from "@/lib/reports/hidden-expert-reviewer";
 import type { DocumentType } from "@/db/schema";
 
 type DashboardReport = ReportCardData;
@@ -20,7 +21,7 @@ export function ReportList({
   reports: DashboardReport[];
   currentUserId: string;
   userRole: "engineer" | "manager" | "qa";
-  usersById: Record<string, { name: string } | undefined>;
+  usersById: Record<string, { name: string; email?: string } | undefined>;
 }) {
   const router = useRouter();
   const [deletedIds, setDeletedIds] = useState<Set<string>>(() => new Set());
@@ -94,9 +95,7 @@ export function ReportList({
             : report.assignedManagerId
               ? [report.assignedManagerId]
               : [];
-        const managerNames = managerIds
-          .map((managerId) => usersById[managerId]?.name)
-          .filter((name): name is string => Boolean(name));
+        const managerNames = visibleManagerNames(managerIds, usersById);
         const isOwner = report.authorId === currentUserId;
         const title =
           report.documentNo ||

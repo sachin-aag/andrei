@@ -54,6 +54,11 @@ export type CustomerPack = {
    * without citations DOCX option (trailing citation blocks are dropped).
    */
   citationsAtEndOfSection: boolean;
+  /**
+   * Convergent-only. Engineers can request an Andrei expert review
+   * (email + edit link). The hidden reviewer is still assigned on every pack.
+   */
+  expertReviewEnabled: boolean;
   branding: CustomerBranding;
 };
 
@@ -141,6 +146,7 @@ export const DEMO_PACK: CustomerPack = {
   criterionDescriptionOverrides: {},
   wordImportEnabled: false,
   citationsAtEndOfSection: false,
+  expertReviewEnabled: false,
   branding: ANDREI_BRANDING,
 };
 
@@ -157,6 +163,7 @@ export const CONVERGENT_PACK: CustomerPack = {
   criterionDescriptionOverrides: {},
   wordImportEnabled: false,
   citationsAtEndOfSection: true,
+  expertReviewEnabled: true,
   branding: CONVERGENT_BRANDING,
 };
 
@@ -171,6 +178,7 @@ export const MJ_PACK: CustomerPack = {
   criterionDescriptionOverrides: MJ_CRITERION_DESCRIPTION_OVERRIDES,
   wordImportEnabled: true,
   citationsAtEndOfSection: false,
+  expertReviewEnabled: false,
   branding: MJ_BRANDING,
 };
 

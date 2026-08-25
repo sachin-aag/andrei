@@ -36,6 +36,64 @@ describe("canManagerActOnReport", () => {
       })
     ).toBe(true);
   });
+
+  it("keeps the queue open when only the hidden expert is assigned", () => {
+    expect(
+      canManagerActOnReport(
+        "m2",
+        {
+          ...report,
+          assignedManagerId: "expert-1",
+          assignedManagerIds: ["expert-1"],
+          status: "submitted",
+        },
+        ["expert-1"],
+        { hiddenExpertUserId: "expert-1" }
+      )
+    ).toBe(true);
+    expect(
+      canManagerActOnReport(
+        "expert-1",
+        {
+          ...report,
+          assignedManagerId: "expert-1",
+          assignedManagerIds: ["expert-1"],
+          status: "submitted",
+        },
+        ["expert-1"],
+        { hiddenExpertUserId: "expert-1" }
+      )
+    ).toBe(true);
+  });
+
+  it("still restricts to assigned managers when a visible manager is set", () => {
+    expect(
+      canManagerActOnReport(
+        "m2",
+        {
+          ...report,
+          assignedManagerId: "m1",
+          assignedManagerIds: ["m1", "expert-1"],
+          status: "submitted",
+        },
+        ["m1", "expert-1"],
+        { hiddenExpertUserId: "expert-1" }
+      )
+    ).toBe(false);
+    expect(
+      canManagerActOnReport(
+        "m1",
+        {
+          ...report,
+          assignedManagerId: "m1",
+          assignedManagerIds: ["m1", "expert-1"],
+          status: "submitted",
+        },
+        ["m1", "expert-1"],
+        { hiddenExpertUserId: "expert-1" }
+      )
+    ).toBe(true);
+  });
 });
 
 describe("assertSegregationOfDutiesForApproval", () => {

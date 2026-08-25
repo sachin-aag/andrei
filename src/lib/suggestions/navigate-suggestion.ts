@@ -267,16 +267,16 @@ export function scrollToGeneratedSuggestion(comment: CommentRecord): boolean {
 }
 
 /**
- * Section of the first newly generated open AI suggestion, in document
- * order. A batch that lands on several sections at once (chat drafts, or
- * five sections suggested together) should pin the viewport to the topmost
- * card — not the last timestamp.
+ * First newly generated open AI suggestion, in document order. A batch
+ * that lands on several sections at once (chat drafts, or five sections
+ * suggested together) should pin the viewport to that card — not the
+ * first already-open suggestion, and not the last timestamp.
  */
-export function firstGeneratedSuggestionSection(
+export function firstGeneratedSuggestion(
   previousIds: ReadonlySet<string>,
   comments: readonly CommentRecord[],
   sectionOrder: readonly SectionType[]
-): SectionType | null {
+): CommentRecord | null {
   const rankBySection = new Map(
     sectionOrder.map((section, index) => [section, index])
   );
@@ -291,12 +291,16 @@ export function firstGeneratedSuggestionSection(
     const rank =
       rankBySection.get(comment.section as SectionType) ??
       Number.MAX_SAFE_INTEGER;
-    if (!first || rank < firstRank) {
+    if (
+      !first ||
+      rank < firstRank ||
+      (rank === firstRank && comment.createdAt < first.createdAt)
+    ) {
       first = comment;
       firstRank = rank;
     }
   }
-  return first?.section ?? null;
+  return first;
 }
 
 /**

@@ -25,6 +25,7 @@ import type { SectionType, reports as reportsTable } from "@/db/schema";
 import { getCustomerPack } from "@/lib/customers/packs";
 import { getDocumentType, mergeSectionForType } from "@/lib/document-types";
 import { getUser } from "@/lib/auth/user-directory";
+import { isHiddenExpertReviewerEmail } from "@/lib/reports/hidden-expert-reviewer";
 import { formatCalendarDate } from "@/lib/utils";
 import { collapseFiveWhyFields } from "@/lib/analyze-five-why";
 import { mergeSection } from "@/lib/sections-merge";
@@ -245,8 +246,12 @@ function buildTemplateData(
         ? [report.assignedManagerId]
         : [];
   const managerNames = assignedManagerIds
-    .map((id) => getUser(id)?.name)
-    .filter((name): name is string => Boolean(name));
+    .map((id) => getUser(id))
+    .filter((user): user is NonNullable<typeof user> => {
+      if (!user) return false;
+      return !isHiddenExpertReviewerEmail(user.email);
+    })
+    .map((user) => user.name);
 
   return {
     // Header row

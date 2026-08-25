@@ -24,6 +24,7 @@ export function useSectionSave<K extends keyof SectionContentMap & SectionType>(
     registerSectionFlush,
     currentUserId,
     currentUserRole,
+    currentUserEmail,
   } = useReportData();
   const { suggestionApplyTransition } = useReportEvaluations();
   const { value } = useReportSection(section);
@@ -72,7 +73,7 @@ export function useSectionSave<K extends keyof SectionContentMap & SectionType>(
 
   const { status, lastSavedAt, flush } = useAutoSave({
     enabled: shouldAutosaveSection({
-      user: { id: currentUserId, role: currentUserRole },
+      user: { id: currentUserId, role: currentUserRole, email: currentUserEmail },
       report,
       readOnly,
       trackChangesMode,

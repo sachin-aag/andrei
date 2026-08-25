@@ -14,6 +14,7 @@ import { useReportAttachments } from "@/providers/report-attachments-provider";
 import { ReportHeader } from "./report-header";
 import { ReportDetailsEditDialog } from "./report-details-edit-dialog";
 import { ReportWorkspaceHeader } from "./report-workspace-header";
+import { RequestExpertReviewDialog } from "./request-expert-review-dialog";
 import { ReportEditorToolbar } from "./report-editor-toolbar";
 import { MarginGutter } from "./review-rail/margin-gutter";
 import { ReportSidebar, type SidebarTab } from "./report-sidebar";
@@ -29,11 +30,16 @@ import {
   scrollToCommentFieldAnchor,
   scrollToGutterAnchor,
 } from "@/lib/comments/navigate";
-import { sortedOpenSuggestionsForSection } from "@/lib/ai/suggestion-gating";
-import { scrollToGeneratedSuggestion } from "@/lib/suggestions/navigate-suggestion";
 import { evaluatableSectionKeys } from "@/lib/ai/criteria-view";
 import { getWorkspaceSections } from "@/lib/document-types";
+import { scrollToGeneratedSuggestion } from "@/lib/suggestions/navigate-suggestion";
 import { captureEvent } from "@/lib/analytics/events";
+import { getCustomerPack } from "@/lib/customers/packs";
+import {
+  isHiddenExpertReviewer,
+  managersVisibleInPicker,
+  visibleManagerNames,
+} from "@/lib/reports/hidden-expert-reviewer";
 import { cn } from "@/lib/utils";
 import { useWorkspaceLayout } from "@/hooks/use-workspace-layout";
 import { WorkspaceResizeHandle } from "./workspace-resize-handle";
@@ -125,6 +131,7 @@ export function ReportWorkspace({
     readOnly,
     refresh,
     currentUserId,
+    currentUserEmail,
     trackChangesMode,
     setTrackChangesMode,
     flushPendingSectionSaves,
@@ -132,8 +139,7 @@ export function ReportWorkspace({
   const { pendingPlaceholders } = useReportPlaceholders();
   const { getEditor } = useReportEditors();
   const { requestCommentFocus, comments } = useReportComments();
-  const { suggestionsFocusSection, clearSuggestionsFocusSection, evaluations } =
-    useReportEvaluations();
+  const { suggestionsFocus, clearSuggestionsFocus } = useReportEvaluations();
   const { activeAttachmentId } = useReportAttachments();
   const [criteriaFocusSection, setCriteriaFocusSection] = useState<
     SectionType | undefined
@@ -144,6 +150,7 @@ export function ReportWorkspace({
   const [signDialog, setSignDialog] = useState<SignatureMeaningUi | null>(null);
   const [detailsDialogOpen, setDetailsDialogOpen] = useState(false);
   const [detailsFormKey, setDetailsFormKey] = useState(0);
+  const [expertReviewOpen, setExpertReviewOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [documentsCollapsed, setDocumentsCollapsed] = useState(false);
   const {
@@ -200,17 +207,24 @@ export function ReportWorkspace({
   );
 
   const { getUser, users } = useUserDirectory();
-  const managers = users.filter((user) => user.role === "manager");
+  const managers = managersVisibleInPicker(users);
   const assignedManagerIds =
     (report.assignedManagerIds?.length ?? 0) > 0
       ? report.assignedManagerIds ?? []
       : report.assignedManagerId
         ? [report.assignedManagerId]
         : [];
-  const managerNames = assignedManagerIds
-    .map((id) => getUser(id)?.name)
-    .filter((name): name is string => Boolean(name));
+  const usersById = Object.fromEntries(
+    users.map((user) => [user.id, { name: user.name, email: user.email }])
+  );
+  const managerNames = visibleManagerNames(assignedManagerIds, usersById);
   const author = getUser(report.authorId);
+  const showExpertReview =
+    getCustomerPack().expertReviewEnabled &&
+    mode === "edit" &&
+    report.authorId === currentUserId &&
+    report.status !== "approved" &&
+    !isHiddenExpertReviewer({ email: currentUserEmail });
 
   const canSubmit =
     mode === "edit" &&
@@ -322,18 +336,13 @@ export function ReportWorkspace({
     };
   }, []);
 
-  if (suggestionsFocusSection) {
-    if (criteriaFocusSection !== suggestionsFocusSection) {
-      setCriteriaFocusSection(suggestionsFocusSection);
-    }
-    if (!sidebarCollapsed) {
-      setSidebarCollapsed(true);
-    }
-  }
-
   useEffect(() => {
-    if (!suggestionsFocusSection) return;
-    const section = suggestionsFocusSection;
+    if (!suggestionsFocus) return;
+    const { section, commentId } = suggestionsFocus;
+    setCriteriaFocusSection(section);
+    // Suggestions live in the review margin. Keep the assistant collapsed
+    // so the gutter is visible — do not auto-open the right panel.
+    setSidebarCollapsed(true);
 
     let cancelled = false;
     const timeouts: Array<ReturnType<typeof setTimeout>> = [];
@@ -342,14 +351,12 @@ export function ReportWorkspace({
     const finish = (scrolled: boolean) => {
       if (cancelled) return;
       if (!scrolled) jumpToSection(section);
-      clearSuggestionsFocusSection();
+      clearSuggestionsFocus();
     };
 
     const attempt = (index: number) => {
       if (cancelled) return;
-      const active =
-        sortedOpenSuggestionsForSection(section, comments, evaluations)[0] ??
-        null;
+      const active = comments.find((c) => c.id === commentId) ?? null;
       if (active) {
         requestCommentFocus(active.id);
         if (scrollToGeneratedSuggestion(active)) {
@@ -400,11 +407,10 @@ export function ReportWorkspace({
       for (const id of timeouts) clearTimeout(id);
     };
   }, [
-    suggestionsFocusSection,
-    clearSuggestionsFocusSection,
+    suggestionsFocus,
+    clearSuggestionsFocus,
     jumpToSection,
     comments,
-    evaluations,
     requestCommentFocus,
     sidebarCollapsed,
   ]);
@@ -506,6 +512,12 @@ export function ReportWorkspace({
         onSaved={setReport}
         formKey={detailsFormKey}
       />
+      <RequestExpertReviewDialog
+        open={expertReviewOpen}
+        onOpenChange={setExpertReviewOpen}
+        reportId={report.id}
+        documentNo={report.documentNo}
+      />
       <ReportWorkspaceHeader
         report={report}
         mode={mode}
@@ -529,6 +541,8 @@ export function ReportWorkspace({
           setDetailsFormKey((key) => key + 1);
           setDetailsDialogOpen(true);
         }}
+        showExpertReview={showExpertReview}
+        onExpertReview={() => setExpertReviewOpen(true)}
       />
 
       <ReportEditorToolbar />

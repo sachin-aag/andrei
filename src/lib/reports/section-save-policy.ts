@@ -4,7 +4,7 @@ import {
   type ReportAccessRecord,
 } from "@/lib/reports/access";
 
-type SaveActor = { id: string; role: UserRole };
+type SaveActor = { id: string; role: UserRole; email?: string | null };
 
 /**
  * Rich/plain fields are editable when the section is not explicitly locked
