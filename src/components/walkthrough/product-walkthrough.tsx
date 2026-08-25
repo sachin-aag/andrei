@@ -85,19 +85,22 @@ export function ProductWalkthroughProvider({
         if (cancelled) return;
         const nextSessionKey =
           typeof data.sessionKey === "string" ? data.sessionKey : "";
-        setProgress({ status: data.status, stepId: data.stepId });
         setSessionKey(nextSessionKey);
-        setIndex(resolveStepIndex(steps, data.stepId));
-        try {
-          setPausedThisSession(
-            isProductTourPausedForSession(
-              sessionStorage.getItem(PRODUCT_TOUR_SESSION_PAUSE_KEY),
-              userId,
-              nextSessionKey
-            )
-          );
-        } catch {
-          setPausedThisSession(false);
+        // Replay (or any persist) can beat this GET. Do not clobber local progress.
+        if (persistSeq.current === 0) {
+          setProgress({ status: data.status, stepId: data.stepId });
+          setIndex(resolveStepIndex(steps, data.stepId));
+          try {
+            setPausedThisSession(
+              isProductTourPausedForSession(
+                sessionStorage.getItem(PRODUCT_TOUR_SESSION_PAUSE_KEY),
+                userId,
+                nextSessionKey
+              )
+            );
+          } catch {
+            setPausedThisSession(false);
+          }
         }
         setSessionPauseReady(true);
       } catch {
@@ -192,6 +195,7 @@ export function ProductWalkthroughProvider({
     }
     startedRef.current = false;
     setPausedThisSession(false);
+    setSessionPauseReady(true);
     setIndex(0);
     const first = steps[0];
     void persist({

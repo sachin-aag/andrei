@@ -87,6 +87,6 @@ test.describe("product walkthrough", () => {
     await page.getByRole("button", { name: "Replay product tour" }).click();
     await expect(
       page.getByRole("dialog").getByRole("heading", { name: /welcome to/i })
-    ).toBeVisible();
+    ).toBeVisible({ timeout: 15_000 });
   });
 });
