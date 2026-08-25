@@ -96,7 +96,10 @@ describe("Convergent customer pack", () => {
       "The purpose of this revision of this report"
     );
     expect(def.chat.draftingGuidance).toContain(
-      "Do not explain major, minor, fix, or build numbering"
+      "Software version numbers (scheme `mm.nn.ff.bb`"
+    );
+    expect(def.chat.draftingGuidance).toContain(
+      "that primer is required inside Purpose paragraphs 3–4"
     );
     expect(def.chat.draftingGuidance).toContain(
       "This is the only place the"

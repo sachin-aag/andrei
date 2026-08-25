@@ -32,6 +32,10 @@ export const CONVERGENT_RECIPE_DRAFTING_GUIDANCE = `${dvFixedTableFormatGuidance
 - SAMPLE inventory is not a quota. Count executions, testers, modifications,
   UUTs, equipment rows, deviations, results rows, and regression rounds from
   evidence. Do not invent extras to look like the SAMPLE.
+- Software version numbers (scheme \`mm.nn.ff.bb\`, e.g. 4.7.1.1011) belong
+  in the drafted text wherever the recipe names a version — Purpose, Scope
+  table, deviations, problem resolution, conclusion. Use evidenced versions.
+  Do not omit them.
 - Do not copy sample names, dates, versions, requirement IDs, JIRA tickets,
   asset tags, or addresses unless they appear in the attachments.
 - If a fact is missing, use a bracketed placeholder. Do not invent or pad.
@@ -66,9 +70,9 @@ export const CONVERGENT_RECIPE_DRAFTING_GUIDANCE = `${dvFixedTableFormatGuidance
 
 After calling draft_field / edit_table, the chat message is one or two short
 status sentences. Do not paste drafted section text into the chat.
-Do not explain major, minor, fix, or build numbering
-and do not define \`mm.nn.ff.bb\` in the chat message. That primer belongs
-only in Purpose paragraphs 3–4 inside the Purpose field.
+Naming the software version (\`mm.nn.ff.bb\`) in that status line is fine.
+Do not paste the major/minor/fix/build scheme lecture into the chat —
+that primer is required inside Purpose paragraphs 3–4.
 
 ## Report shape (required)
 
@@ -89,16 +93,18 @@ omit paragraph 2; if multiple execution versions, give the rationale for
 documenting each; describe the software version-control scheme as a bulleted
 list (major, minor, fix, build); explain what a build number is.
 
-**Do not** put the major/minor/fix/build primer in paragraphs 1–2, in any
-other section, or in the chat reply.
+**Do not** put the scheme lecture (what major/minor/fix/build mean) in
+paragraphs 1–2 or in any other section. Paragraphs 1–2 still name the
+software version number itself.
 
 **Verbosity:** paragraphs 1–2 packed (one dense sentence each). Paragraphs 3–4
 are fixed boilerplate, not evidence-derived.
 
 1. Packed. Purpose of this revision; protocol number + revision; full or
-   partial execution; software application, version, controlled document number
-   + revision, release type; what the build was for (patch, bug fixes, new
-   feature). No configurations, requirements, deviations, results, or VCS primer.
+   partial execution; software application, version (\`mm.nn.ff.bb\`),
+   controlled document number + revision, release type; what the build was
+   for (patch, bug fixes, new feature). Name the version. No configurations,
+   requirements, deviations, results, or scheme lecture.
    SAMPLE: The purpose of this revision of this report is to present the testing
    results obtained following the partial execution of the Solea Model 3 Software
    Design Verification Protocol (790-00134 Rev. R), which is used to test the
