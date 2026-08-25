@@ -142,13 +142,15 @@ export function ReportWorkspaceHeader({
         )}
         {auditHref ? (
           <Button variant="outline" size="sm" asChild>
-            <Link href={auditHref}>
+            <Link href={auditHref} data-walkthrough="audit-trail">
               <History className="size-4" aria-hidden="true" />
               Audit Trail
             </Link>
           </Button>
         ) : null}
-        <ReportExportButton reportId={report.id} />
+        <span data-walkthrough="export-docx" className="inline-flex">
+          <ReportExportButton reportId={report.id} />
+        </span>
 
         {showExpertReview && onExpertReview ? (
           <Button type="button" variant="outline" size="sm" onClick={onExpertReview}>
@@ -158,7 +160,12 @@ export function ReportWorkspaceHeader({
         ) : null}
 
         {canSubmit && (
-          <Button size="sm" onClick={onSubmit} disabled={submitting}>
+          <Button
+            size="sm"
+            onClick={onSubmit}
+            disabled={submitting}
+            data-walkthrough="submit-review"
+          >
             {submitting ? (
               <Loader2 className="size-4 animate-spin" aria-hidden="true" />
             ) : (
@@ -169,7 +176,7 @@ export function ReportWorkspaceHeader({
         )}
 
         {canReview && (
-          <>
+          <span data-walkthrough="review-actions" className="inline-flex items-center gap-3">
             <Button
               variant="outline"
               size="sm"
@@ -196,7 +203,7 @@ export function ReportWorkspaceHeader({
               )}
               Approve
             </Button>
-          </>
+          </span>
         )}
       </div>
     </header>

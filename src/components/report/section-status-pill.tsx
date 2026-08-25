@@ -423,6 +423,7 @@ export function RunAllEvaluationButton({
         variant={variant}
         className={cn("gap-1.5", className)}
         disabled={isEvaluating}
+        data-walkthrough="ai-check"
         onClick={() => {
           captureEvent("ai_evaluation_run", { scope: "all" });
           runEvaluation();
@@ -445,6 +446,7 @@ export function RunAllEvaluationButton({
         className
       )}
       disabled={isEvaluating}
+      data-walkthrough="ai-check"
       onClick={() => {
         captureEvent("ai_evaluation_run", { scope: "all" });
         runEvaluation();

@@ -19,7 +19,7 @@ export function ImproveAiListHeader({
   reports: ImproveAiReportOption[];
 }) {
   return (
-    <header className="shrink-0 border-b border-[var(--border)] px-6 py-4">
+    <header className="shrink-0 border-b border-[var(--border)] px-6 py-4" data-walkthrough="improve-ai-start">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0 space-y-1">
           <Link

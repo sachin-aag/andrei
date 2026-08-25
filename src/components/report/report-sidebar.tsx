@@ -63,6 +63,7 @@ export function ReportSidebar({
     <aside
       id="report-chat-sidebar"
       aria-label="Report sidebar"
+      data-walkthrough="assistant"
       className="flex h-full w-full min-w-0 flex-col overflow-hidden border-l border-[var(--border)] bg-[var(--card)]"
     >
       {/* Collapse toggle */}

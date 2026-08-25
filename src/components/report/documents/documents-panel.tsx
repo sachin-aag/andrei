@@ -41,6 +41,7 @@ export function DocumentsPanel({
       <aside
         id="report-documents-panel"
         aria-label="Documents"
+        data-walkthrough="documents"
         className="relative flex h-full w-full min-w-0 flex-col items-center border-r border-[var(--border)] bg-[var(--card)] py-2"
       >
         <button
@@ -116,6 +117,7 @@ function ExpandedDocumentsPanel({
     <aside
       id="report-documents-panel"
       aria-label="Documents"
+      data-walkthrough="documents"
       className="flex h-full w-full min-w-0 flex-col border-r border-[var(--border)] bg-[var(--card)]"
     >
       <div className="flex items-center justify-between gap-1 border-b border-[var(--border)] px-3 py-2">

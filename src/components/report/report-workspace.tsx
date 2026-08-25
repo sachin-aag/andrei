@@ -583,6 +583,7 @@ export function ReportWorkspace({
 
         <main
           ref={mainRef}
+          data-walkthrough="report-editor"
           className="@container min-h-0 min-w-0 flex-1 overflow-auto bg-[var(--background)]"
         >
           <div

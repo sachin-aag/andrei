@@ -288,6 +288,13 @@
       "when": 1783322400000,
       "tag": "0041_chat_assistant_turn_status",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1783408800000,
+      "tag": "0042_product_tour",
+      "breakpoints": true
     }
   ]
 }

@@ -46,7 +46,7 @@ export async function InsightsPageShell({
         <header className="border-b border-[var(--border)] bg-[var(--card)] px-6 py-4">
           <h1 className="text-xl font-semibold text-[var(--foreground)]">{title}</h1>
           <p className="mt-1 text-sm text-[var(--muted-foreground)]">{description}</p>
-          <nav className="mt-4 flex flex-wrap gap-2" aria-label="Insights sections">
+          <nav className="mt-4 flex flex-wrap gap-2" aria-label="Insights sections" data-walkthrough="insights-tabs">
             {tabs.map((tab) => (
               <Link
                 key={tab.href}

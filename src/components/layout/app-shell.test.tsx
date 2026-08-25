@@ -49,6 +49,11 @@ vi.mock("@/providers/user-directory-provider", () => ({
   UserDirectoryProvider: ({ children }: { children: ReactNode }) => children,
 }));
 
+vi.mock("@/components/walkthrough/product-walkthrough", () => ({
+  ProductWalkthroughProvider: ({ children }: { children: ReactNode }) => children,
+  useProductWalkthrough: () => ({ restart: () => undefined, canReplay: false }),
+}));
+
 import { AppShell } from "./app-shell";
 
 const engineer: WorkspaceUser = {

@@ -132,6 +132,14 @@ export const userRoleEnum = pgEnum("user_role", [
   "qa",
 ]);
 
+/** First-login product tour. `not_started` shows on next session until completed or dismissed. */
+export const productTourStatusEnum = pgEnum("product_tour_status", [
+  "not_started",
+  "in_progress",
+  "completed",
+  "dismissed",
+]);
+
 export const auditActionEnum = pgEnum("audit_action", [
   "report_created",
   "report_updated",
@@ -249,6 +257,11 @@ export const workspaceUsers = pgTable(
     }),
     /** Non-null means the account is deactivated and cannot sign in. */
     deactivatedAt: timestamp("deactivated_at", { withTimezone: true }),
+    /** First-login product tour. Resume from `productTourStepId` while `in_progress`. */
+    productTourStatus: productTourStatusEnum("product_tour_status")
+      .notNull()
+      .default("not_started"),
+    productTourStepId: text("product_tour_step_id"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -1163,5 +1176,7 @@ export type DocumentChunkSourceKind =
   (typeof documentChunkSourceKindEnum.enumValues)[number];
 export type StorageOutboxStatus =
   (typeof storageOutboxStatusEnum.enumValues)[number];
+export type ProductTourStatus =
+  (typeof productTourStatusEnum.enumValues)[number];
 
 export * from "./auth";
