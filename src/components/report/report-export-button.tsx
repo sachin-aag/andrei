@@ -12,7 +12,7 @@ import {
 import { captureEvent } from "@/lib/analytics/events";
 import { getCustomerPack } from "@/lib/customers/packs";
 
-function exportHref(reportId: string, omitCitations: boolean): string {
+export function exportHref(reportId: string, omitCitations: boolean): string {
   const path = `/api/reports/${reportId}/export`;
   return omitCitations ? `${path}?omitCitations=1` : path;
 }

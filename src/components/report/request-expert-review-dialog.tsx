@@ -50,7 +50,9 @@ export function RequestExpertReviewDialog({
         return;
       }
       captureEvent("expert_review_requested", { reportId });
-      toast.success("Expert review requested. Aditya and you will get an email.");
+      toast.success(
+        "Request sent to Andrei's experts. You are copied on the email."
+      );
       setNote("");
       onOpenChange(false);
     } catch {
@@ -70,23 +72,23 @@ export function RequestExpertReviewDialog({
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Request expert review</DialogTitle>
+          <DialogTitle>Ask an Andrei expert</DialogTitle>
           <DialogDescription>
-            Send {documentNo || "this report"} to Andrei&apos;s expert reviewer.
-            Aditya gets a link to open and edit the report; you are copied on
-            the email.
+            Send {documentNo || "this report"} to Andrei&apos;s human experts.
+            They get a link to open and edit the report, and you are copied on
+            the email. This does not submit the report to your manager.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-2 py-1">
           <Label htmlFor="expert-review-note" className="normal-case tracking-normal">
-            Note for the reviewer
+            Note for the experts
           </Label>
           <Textarea
             id="expert-review-note"
             value={note}
             disabled={sending}
             maxLength={EXPERT_REVIEW_NOTE_MAX_LENGTH}
-            placeholder="What should Aditya look at? (optional)"
+            placeholder="What should they look at? (optional)"
             onChange={(event) => setNote(event.target.value)}
           />
         </div>

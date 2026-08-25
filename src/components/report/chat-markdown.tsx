@@ -62,7 +62,7 @@ const COMPONENTS: Components = {
     </a>
   ),
   code: ({ children }) => (
-    <code className="rounded bg-[var(--secondary)] px-1 py-0.5 font-mono text-[12px]">
+    <code className="wrap-anywhere rounded bg-[var(--secondary)] px-1 py-0.5 font-mono text-[12px]">
       {children}
     </code>
   ),
@@ -98,7 +98,7 @@ export const ChatMarkdown = memo(function ChatMarkdown({
 }) {
   const markdown = rewriteChatMathHtmlConflicts(children);
   return (
-    <div className="chat-markdown space-y-2 text-sm leading-relaxed text-[var(--foreground)]">
+    <div className="chat-markdown min-w-0 wrap-anywhere space-y-2 text-sm leading-relaxed text-[var(--foreground)]">
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath]}
         remarkRehypeOptions={{ handlers: CHAT_MATH_HAST_HANDLERS }}

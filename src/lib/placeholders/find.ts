@@ -1,7 +1,10 @@
 import type { JSONContent } from "@tiptap/core";
 import type { Node as PMNode } from "@tiptap/pm/model";
 import type { SectionType } from "@/db/schema";
-import { isCitationShapedBracket } from "@/lib/placeholders/citation-bracket";
+import {
+  isCitationShapedBracket,
+  NUMERIC_ONLY_BRACKET,
+} from "@/lib/placeholders/citation-bracket";
 import { clipBracketPlaceholderText } from "@/lib/text/bracket-span";
 
 export type Placeholder = {
@@ -45,7 +48,7 @@ export const PLACEHOLDER_REGEX = /\[[^\]]*(?:<\s*)?to be filled(?:\s*>)?[^\]]*\]
 export const BRACKET_SPAN_REGEX = /\[[^\]]+\]/g;
 
 /** Citation-style `[12]` — not treated as an editable placeholder. */
-export const NUMERIC_ONLY_BRACKET = /^\[\s*\d+\s*\]$/;
+export { NUMERIC_ONLY_BRACKET };
 
 /**
  * Max length for a placeholder label (inner text before `: <to be filled>`).

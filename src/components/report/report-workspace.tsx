@@ -132,8 +132,6 @@ export function ReportWorkspace({
     refresh,
     currentUserId,
     currentUserEmail,
-    trackChangesMode,
-    setTrackChangesMode,
     flushPendingSectionSaves,
   } = useReportData();
   const { pendingPlaceholders } = useReportPlaceholders();
@@ -181,7 +179,11 @@ export function ReportWorkspace({
     null
   );
   const documentType = report.documentType;
-  const showReviewGutter = isReviewGutterVisible(sidebarCollapsed);
+  const viewingDocument = !!activeAttachmentId;
+  const showReviewGutter = isReviewGutterVisible(
+    sidebarCollapsed,
+    viewingDocument
+  );
   const handleSectionOverflow = useCallback(
     (overflows: Record<SectionType, number>) => {
       setSectionMinHeights((prev) => {
@@ -377,7 +379,10 @@ export function ReportWorkspace({
       attempt(0);
     };
 
-    const gutterAlreadyVisible = isReviewGutterVisible(sidebarCollapsed);
+    const gutterAlreadyVisible = isReviewGutterVisible(
+      sidebarCollapsed,
+      viewingDocument
+    );
     if (gutterScrollTimeoutRef.current != null) {
       clearTimeout(gutterScrollTimeoutRef.current);
       gutterScrollTimeoutRef.current = null;
@@ -413,6 +418,7 @@ export function ReportWorkspace({
     comments,
     requestCommentFocus,
     sidebarCollapsed,
+    viewingDocument,
   ]);
 
   const jumpToComment = useCallback(
@@ -440,7 +446,10 @@ export function ReportWorkspace({
         );
       };
 
-      const gutterAlreadyVisible = isReviewGutterVisible(sidebarCollapsed);
+      const gutterAlreadyVisible = isReviewGutterVisible(
+        sidebarCollapsed,
+        viewingDocument
+      );
       setSidebarCollapsed(true);
       if (gutterScrollTimeoutRef.current != null) {
         clearTimeout(gutterScrollTimeoutRef.current);
@@ -456,7 +465,7 @@ export function ReportWorkspace({
         scrollToCard();
       }, WORKSPACE_PANEL_WIDTH_TRANSITION_MS + 50);
     },
-    [comments, jumpToSection, requestCommentFocus, sidebarCollapsed]
+    [comments, jumpToSection, requestCommentFocus, sidebarCollapsed, viewingDocument]
   );
 
   const handleJumpToPlaceholder = (p: Placeholder) => {
@@ -523,8 +532,6 @@ export function ReportWorkspace({
         mode={mode}
         authorName={author?.name}
         managerNames={managerNames}
-        trackChangesMode={trackChangesMode}
-        onTrackChangesModeChange={setTrackChangesMode}
         canSubmit={canSubmit}
         canReview={canReview}
         submitting={submitting}

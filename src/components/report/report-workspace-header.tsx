@@ -5,8 +5,6 @@ import Link from "next/link";
 import {
   CheckCircle2,
   ChevronLeft,
-  History,
-  LifeBuoy,
   Loader2,
   MessageSquare,
   Pencil,
@@ -14,11 +12,10 @@ import {
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import type { WorkspaceMode } from "@/providers/report-provider";
 import type { ReportRecord } from "@/types/report";
+import { ReportActionsMenu } from "./report-actions-menu";
 import { ReportExportButton } from "./report-export-button";
 import { RunAllEvaluationButton } from "./section-status-pill";
 import { StatusBadge } from "./status-badge";
@@ -28,8 +25,6 @@ type ReportWorkspaceHeaderProps = {
   mode: WorkspaceMode;
   authorName?: string;
   managerNames?: string[];
-  trackChangesMode: boolean;
-  onTrackChangesModeChange: (next: boolean) => void;
   canSubmit: boolean;
   canReview: boolean;
   submitting: boolean;
@@ -52,8 +47,6 @@ export function ReportWorkspaceHeader({
   mode,
   authorName,
   managerNames = [],
-  trackChangesMode,
-  onTrackChangesModeChange,
   canSubmit,
   canReview,
   submitting,
@@ -111,53 +104,15 @@ export function ReportWorkspaceHeader({
         </div>
         <span className="text-xs text-[var(--muted-foreground)] truncate">
           {authorName ?? "Unknown author"}
-          {managerNames.length > 0 ? ` \u2192 ${managerNames.join(", ")}` : ""}
+          {managerNames.length > 0 ? ` → ${managerNames.join(", ")}` : ""}
         </span>
       </div>
-      <div className="ml-auto flex items-center gap-3 flex-wrap justify-end">
-        {!isViewMode && (
-          <>
-            <div className="flex items-center gap-2 flex-wrap">
-              <Checkbox
-                id={`track-changes-toggle-${mode}`}
-                checked={trackChangesMode}
-                onCheckedChange={(v) => onTrackChangesModeChange(v === true)}
-              />
-              <Label
-                htmlFor={`track-changes-toggle-${mode}`}
-                className="text-sm font-normal cursor-pointer whitespace-nowrap"
-              >
-                Track changes
-              </Label>
-              {trackChangesMode && (
-                <span className="text-[10px] uppercase tracking-wide text-amber-800 bg-amber-100 px-2 py-0.5 rounded border border-amber-200/80">
-                  On
-                </span>
-              )}
-            </div>
-            <Separator orientation="vertical" className="h-6 hidden sm:block" />
-
-            <RunAllEvaluationButton />
-          </>
-        )}
-        {auditHref ? (
-          <Button variant="outline" size="sm" asChild>
-            <Link href={auditHref} data-walkthrough="audit-trail">
-              <History className="size-4" aria-hidden="true" />
-              Audit Trail
-            </Link>
-          </Button>
-        ) : null}
+      <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
         <span data-walkthrough="export-docx" className="inline-flex">
           <ReportExportButton reportId={report.id} />
         </span>
 
-        {showExpertReview && onExpertReview ? (
-          <Button type="button" variant="outline" size="sm" onClick={onExpertReview}>
-            <LifeBuoy className="size-4" aria-hidden="true" />
-            Request expert review
-          </Button>
-        ) : null}
+        {!isViewMode && <RunAllEvaluationButton />}
 
         {canSubmit && (
           <Button
@@ -171,7 +126,7 @@ export function ReportWorkspaceHeader({
             ) : (
               <Send className="size-4" aria-hidden="true" />
             )}
-            Submit for Review
+            Submit for review
           </Button>
         )}
 
@@ -188,7 +143,7 @@ export function ReportWorkspaceHeader({
               ) : (
                 <MessageSquare className="size-4" aria-hidden="true" />
               )}
-              Return with Feedback
+              Return with feedback
             </Button>
             <Button
               variant="success"
@@ -205,6 +160,12 @@ export function ReportWorkspaceHeader({
             </Button>
           </span>
         )}
+
+        <ReportActionsMenu
+          auditHref={auditHref}
+          showExpertReview={showExpertReview}
+          onExpertReview={onExpertReview}
+        />
       </div>
     </header>
   );

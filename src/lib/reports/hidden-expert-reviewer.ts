@@ -3,7 +3,7 @@
  *
  * Provisioned on every customer pack (demo, MJ, Convergent). Assigned to
  * every report, omitted from engineer-facing manager pickers and name chips.
- * The Convergent "Request expert review" button is a separate pack flag.
+ * The Convergent "Ask an Andrei expert" action is a separate pack flag.
  */
 export const HIDDEN_EXPERT_REVIEWER_EMAIL = "aditya+manager@andreihealth.com";
 export const HIDDEN_EXPERT_REVIEWER_NAME = "Aditya";

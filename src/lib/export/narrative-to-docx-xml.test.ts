@@ -897,3 +897,64 @@ describe("narrativeToDocxXml advanced formatting", () => {
     expect(xml).toContain("<m:oMath");
   });
 });
+
+describe("narrativeToDocxXml citation markers", () => {
+  it("renders matching numeric markers as bare superscript numbers", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "Verify REQ-101 meets the specification [1].",
+            },
+          ],
+        },
+        { type: "paragraph" },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Citations:" }],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "1. [protocol.pdf, p. 3]" }],
+        },
+      ],
+    };
+
+    const xml = narrativeToDocxXml(doc);
+    expect(xml).toContain('<w:vertAlign w:val="superscript"/>');
+    expect(xml).toContain(">1</w:t>");
+    expect(xml).not.toContain("[1]");
+    expect(xml).toContain("Citations:");
+    expect(xml).toContain("1. [protocol.pdf, p. 3]");
+  });
+
+  it("leaves unrelated numeric brackets alone", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "See SOP [12] and result [1]." }],
+        },
+        { type: "paragraph" },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Citations:" }],
+        },
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "1. [protocol.pdf, p. 3]" }],
+        },
+      ],
+    };
+
+    const xml = narrativeToDocxXml(doc);
+    expect(xml).toContain("See SOP [12] and result ");
+    expect(xml).toContain("[12]");
+    expect(xml).not.toContain("[1]");
+  });
+});

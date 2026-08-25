@@ -4,7 +4,7 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CONVERGENT_PACK, DEMO_PACK, getCustomerPack } from "@/lib/customers/packs";
-import { ReportExportButton } from "./report-export-button";
+import { ReportExportButton, exportHref } from "./report-export-button";
 
 vi.mock("@/lib/customers/packs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/customers/packs")>();
@@ -27,13 +27,12 @@ describe("ReportExportButton", () => {
   it("shows a single Export DOCX link on demo", () => {
     render(<ReportExportButton reportId="report-1" />);
 
-    const link = screen.getByRole("link", { name: /export docx/i });
-    expect(link).toHaveAttribute("href", "/api/reports/report-1/export");
+    expect(screen.getByRole("link", { name: /export docx/i })).toHaveAttribute(
+      "href",
+      "/api/reports/report-1/export"
+    );
     expect(
       screen.queryByRole("button", { name: /more export options/i })
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("menuitem", { name: /without citations/i })
     ).not.toBeInTheDocument();
   });
 
@@ -54,9 +53,13 @@ describe("ReportExportButton", () => {
     ).toHaveAttribute("href", "/api/reports/report-1/export");
     expect(
       screen.getByRole("menuitem", { name: /export without citations/i })
-    ).toHaveAttribute(
-      "href",
-      "/api/reports/report-1/export?omitCitations=1"
-    );
+    ).toHaveAttribute("href", "/api/reports/report-1/export?omitCitations=1");
+  });
+});
+
+describe("exportHref", () => {
+  it("appends omitCitations only when asked", () => {
+    expect(exportHref("r1", false)).toBe("/api/reports/r1/export");
+    expect(exportHref("r1", true)).toBe("/api/reports/r1/export?omitCitations=1");
   });
 });

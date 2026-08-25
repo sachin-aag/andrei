@@ -48,10 +48,11 @@ export type CustomerPack = {
   criterionDescriptionOverrides: Readonly<Record<string, string>>;
   wordImportEnabled: boolean;
   /**
-   * When true, document citations belong at the end of each section field
-   * (not inline). New edits that add a citation are split: body change +
-   * end-of-field citation. Off for demo/MJ. Also enables the Export
-   * without citations DOCX option (trailing citation blocks are dropped).
+   * When true, document citations are numbered at the claim and parked at
+   * the end of each section field. New edits that add a source citation keep
+   * a `[n]` marker beside the claim and append `n. [filename, p. N]` under
+   * Citations:. Off for demo/MJ. Also enables the Export without citations
+   * DOCX option (trailing citation blocks and matching markers are dropped).
    */
   citationsAtEndOfSection: boolean;
   /**
