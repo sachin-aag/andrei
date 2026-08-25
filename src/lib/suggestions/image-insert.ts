@@ -37,6 +37,25 @@ export function parseSuggestionImageInsert(
   };
 }
 
+export type SuggestionImageKind = "insert" | "delete";
+
+export type SuggestionImageRemove = SuggestionImageInsert & {
+  /** 1-based imageInline index in the field when the suggestion was created. */
+  index: number;
+};
+
+export function parseSuggestionImageRemove(
+  raw: unknown
+): SuggestionImageRemove | undefined {
+  const image = parseSuggestionImageInsert(raw);
+  if (!image || !raw || typeof raw !== "object") return undefined;
+  const index = (raw as Record<string, unknown>).index;
+  if (typeof index !== "number" || !Number.isInteger(index) || index < 1) {
+    return undefined;
+  }
+  return { ...image, index };
+}
+
 export function pendingImageInlineNode(
   image: SuggestionImageInsert,
   suggestionId: string
@@ -49,6 +68,7 @@ export function pendingImageInlineNode(
       width: image.width ?? null,
       mediaId: image.mediaId ?? null,
       suggestionId,
+      suggestionKind: "insert",
     },
   };
 }
@@ -75,17 +95,64 @@ export function docHasPendingImageSuggestion(
   return walk(doc);
 }
 
-/** Strip pending suggestionId from matching images (accept). */
+function pendingImageKind(
+  node: JSONContent,
+  suggestionId: string
+): SuggestionImageKind | null {
+  if (!isPendingSuggestionImage(node, suggestionId)) return null;
+  return node.attrs?.suggestionKind === "delete" ? "delete" : "insert";
+}
+
+function shouldDropPendingImage(
+  node: JSONContent,
+  suggestionId: string,
+  outcome: "accept" | "dismiss"
+): boolean {
+  const kind = pendingImageKind(node, suggestionId);
+  if (!kind) return false;
+  return outcome === "accept" ? kind === "delete" : kind === "insert";
+}
+
+function stripPendingImageAttrs(node: JSONContent, suggestionId: string): void {
+  if (!isPendingSuggestionImage(node, suggestionId) || !node.attrs) return;
+  const next = { ...node.attrs };
+  delete next.suggestionId;
+  delete next.suggestionKind;
+  node.attrs = next;
+}
+
+function resolvePendingImageSuggestions(
+  node: JSONContent,
+  suggestionId: string,
+  outcome: "accept" | "dismiss"
+): void {
+  if (!node.content?.length) {
+    if (!shouldDropPendingImage(node, suggestionId, outcome)) {
+      stripPendingImageAttrs(node, suggestionId);
+    }
+    return;
+  }
+  const next: JSONContent[] = [];
+  for (const child of node.content) {
+    if (shouldDropPendingImage(child, suggestionId, outcome)) continue;
+    const hadPending = docHasPendingImageSuggestion(child, suggestionId);
+    resolvePendingImageSuggestions(child, suggestionId, outcome);
+    stripPendingImageAttrs(child, suggestionId);
+    if (hadPending && isVisuallyEmptyBlock(child)) continue;
+    next.push(child);
+  }
+  node.content = next;
+  if (node.type === "doc" && node.content.length === 0) {
+    node.content = [{ type: "paragraph" }];
+  }
+}
+
+/** Accept: keep inserts (strip overlay), drop deletions. */
 export function acceptPendingImageSuggestions(
   node: JSONContent,
   suggestionId: string
 ): void {
-  if (isPendingSuggestionImage(node, suggestionId) && node.attrs) {
-    const next = { ...node.attrs };
-    delete next.suggestionId;
-    node.attrs = next;
-  }
-  node.content?.forEach((child) => acceptPendingImageSuggestions(child, suggestionId));
+  resolvePendingImageSuggestions(node, suggestionId, "accept");
 }
 
 function isVisuallyEmptyBlock(node: JSONContent): boolean {
@@ -97,24 +164,12 @@ function isVisuallyEmptyBlock(node: JSONContent): boolean {
   });
 }
 
-/** Remove pending image nodes (dismiss). */
+/** Dismiss: drop pending inserts, keep deletions (strip overlay). */
 export function dropPendingImageSuggestions(
   node: JSONContent,
   suggestionId: string
 ): void {
-  if (!node.content?.length) return;
-  const next: JSONContent[] = [];
-  for (const child of node.content) {
-    if (isPendingSuggestionImage(child, suggestionId)) continue;
-    const hadPending = docHasPendingImageSuggestion(child, suggestionId);
-    dropPendingImageSuggestions(child, suggestionId);
-    if (hadPending && isVisuallyEmptyBlock(child)) continue;
-    next.push(child);
-  }
-  node.content = next;
-  if (node.type === "doc" && node.content.length === 0) {
-    node.content = [{ type: "paragraph" }];
-  }
+  resolvePendingImageSuggestions(node, suggestionId, "dismiss");
 }
 
 export function collectPendingImageSuggestionIds(
@@ -168,4 +223,68 @@ export function listInlineImagesInDoc(
   };
   walk(doc);
   return listed;
+}
+
+export type ImageRemovalLocateStatus = "located" | "not_found" | "ambiguous";
+
+function resolveRemovalTarget(
+  doc: JSONContent,
+  removal: SuggestionImageRemove
+):
+  | { status: "located"; target: ListedInlineImage }
+  | { status: "not_found" | "ambiguous" } {
+  const images = listInlineImagesInDoc(doc);
+  if (images.length === 0) return { status: "not_found" };
+
+  const atIndex = images[removal.index - 1];
+  if (atIndex?.src === removal.src) {
+    return { status: "located", target: atIndex };
+  }
+
+  const srcMatches = images.filter((image) => image.src === removal.src);
+  if (srcMatches.length === 1) {
+    return { status: "located", target: srcMatches[0]! };
+  }
+  if (srcMatches.length > 1) return { status: "ambiguous" };
+  return { status: "not_found" };
+}
+
+export function locateImageRemoval(
+  doc: JSONContent,
+  removal: SuggestionImageRemove
+): ImageRemovalLocateStatus {
+  return resolveRemovalTarget(doc, removal).status;
+}
+
+export function markImageForDeletion(
+  doc: JSONContent,
+  removal: SuggestionImageRemove,
+  suggestionId: string
+): boolean {
+  const resolved = resolveRemovalTarget(doc, removal);
+  if (resolved.status !== "located") return false;
+
+  let marked = false;
+  let seen = 0;
+  const walk = (node: JSONContent): void => {
+    if (marked) return;
+    if (node.type === "imageInline") {
+      const src =
+        typeof node.attrs?.src === "string" ? node.attrs.src.trim() : "";
+      if (!isValidSuggestionImageSrc(src)) return;
+      seen += 1;
+      if (seen === resolved.target.index) {
+        node.attrs = {
+          ...(node.attrs ?? {}),
+          suggestionId,
+          suggestionKind: "delete",
+        };
+        marked = true;
+      }
+      return;
+    }
+    node.content?.forEach(walk);
+  };
+  walk(doc);
+  return marked;
 }

@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("bumps the prompt version when insert_image and citation-marker guidance change", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v43-insert-image-copy");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v44-remove-image");
   });
 
   it("puts citations at the end of the section when the pack mode is on", () => {
@@ -139,6 +139,13 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).not.toContain("Mode: ASK");
   });
 
+  it("routes figure removal to remove_image instead of rewriting the field", () => {
+    const prompt = buildChatSystemPrompt({ ...opts, mode: "agent" });
+    expect(prompt).toContain("remove_image");
+    expect(prompt).toContain("Never draft_field a field just to drop a figure");
+    expect(prompt).toContain("use insert_image / remove_image");
+  });
+
   it("plan mode forbids editing and asks questions via ask_user", () => {
     const prompt = buildChatSystemPrompt({ ...opts, mode: "plan" });
     expect(prompt).toContain("Mode: ASK");
@@ -186,7 +193,7 @@ describe("buildChatSystemPrompt", () => {
     });
     expect(prompt).toContain("Section focus: Define [define]");
     expect(prompt).toContain('on section "define"');
-    expect(prompt).toContain("draft_field / edit_table / propose_edit / insert_image");
+    expect(prompt).toContain("draft_field / edit_table / propose_edit / insert_image / remove_image");
     expect(prompt).toContain("DEFINE_ONLY");
     expect(prompt).not.toContain("[measure]:");
   });

@@ -1441,6 +1441,191 @@ export function buildChatTools(opts: {
       },
     }),
 
+    remove_image: tool({
+      description:
+        `Remove one existing inline figure from a rich narrative field as a reviewable suggestion (the engineer accepts or rejects it). Call read_section first and pass image.id (e.g. 'narrative#1') or image.index. Do not rewrite the field with draft_field just to drop a figure — that drops every figure. Do not use propose_edit against [image:N] markers.${scopeHint}`,
+      inputSchema: z.object({
+        section: z.enum(sectionEnum),
+        targetField: z
+          .string()
+          .describe("Rich field path that currently contains the figure, e.g. 'narrative'."),
+        image: z.object({
+          index: z
+            .number()
+            .int()
+            .min(1)
+            .optional()
+            .describe("1-based imageInline index in that field. Omit when passing id."),
+          id: z
+            .string()
+            .optional()
+            .describe(
+              "Image id from read_section (images[].id), e.g. 'narrative#1'. Prefer this after reading the field."
+            ),
+        }),
+        reasoning: z
+          .string()
+          .max(300)
+          .describe("One short sentence explaining why this figure should be removed."),
+      }),
+      execute: async ({
+        section,
+        targetField,
+        image,
+        reasoning,
+      }): Promise<InsertImageResult> => {
+        try {
+          if (!canEdit) {
+            return {
+              status: "not_editable",
+              message:
+                "This report is not editable in its current state, so image removals cannot be proposed.",
+            };
+          }
+          if (
+            shouldGateDraftOnDocumentReview({ retrievalPolicy, documentReview })
+          ) {
+            return {
+              status: "review_incomplete",
+              message: REVIEW_INCOMPLETE_MESSAGE,
+            };
+          }
+          if (!isChatEditableSection(section, documentType)) {
+            return { status: "invalid_section", message: `Unknown section '${section}'.` };
+          }
+          const resolvedField = resolveTargetField(section, targetField);
+          if (!resolvedField) {
+            return {
+              status: "invalid_field",
+              message: `'${targetField}' is not an editable field of ${section}.`,
+              allowedFields: chatTargetFields(section).map((f) => f.targetField),
+            };
+          }
+          if (!isRichTargetField(section, resolvedField)) {
+            return {
+              status: "plain_field",
+              message: `'${resolvedField}' is a plain-text field and cannot hold an image.`,
+            };
+          }
+
+          const locator = resolveSectionImageLocator({
+            destSection: section,
+            destField: resolvedField,
+            index: image.index,
+            id: image.id,
+          });
+          if (!locator.ok) {
+            return { status: "image_not_found", message: locator.message };
+          }
+          if (
+            locator.locator.section !== section ||
+            locator.locator.targetField !== resolvedField
+          ) {
+            return {
+              status: "image_not_found",
+              message:
+                "remove_image only removes a figure from the field you are editing. Pass image.id from that field's read_section (e.g. 'narrative#1'). To copy a figure elsewhere, use insert_image.",
+            };
+          }
+
+          const loaded = await loadMergedSection(reportId, section);
+          if (!loaded) {
+            return { status: "section_not_found", message: "Section not found." };
+          }
+
+          const fieldDoc = getRichFieldValue(
+            loaded.content as Record<string, unknown>,
+            resolvedField
+          );
+          const listed = listInlineImagesInDoc(fieldDoc);
+          const hit = listed.find((img) => img.index === locator.locator.index);
+          if (!hit) {
+            return {
+              status: "image_not_found",
+              message: sectionImageNotFoundMessage({
+                destSection: section,
+                sourceSection: section,
+                sourceField: resolvedField,
+                index: locator.locator.index,
+                listedCount: listed.length,
+                sourceSectionOmitted: false,
+              }),
+            };
+          }
+
+          const removeImage = {
+            src: hit.src,
+            alt: hit.alt || null,
+            width: hit.width,
+            mediaId: hit.mediaId,
+            index: hit.index,
+          };
+          const fieldText = sectionFieldPlainText(
+            loaded.content,
+            section,
+            resolvedField
+          );
+          const check = checkProposedEdit(
+            fieldText,
+            {
+              anchorText: "",
+              deleteText: "",
+              insertText: "",
+              removeImage,
+            },
+            fieldDoc
+          );
+          if (check.status !== "ok") {
+            return {
+              status: check.status,
+              hint: proposedEditHint(check, {
+                anchorText: "",
+                fieldDoc,
+              }),
+            } as InsertImageResult;
+          }
+
+          const suggestionId = createId();
+          await db.insert(comments).values({
+            id: suggestionId,
+            reportId,
+            sectionId: loaded.sectionId,
+            section,
+            authorId: AI_AUTHOR_ID,
+            content: serializeAiFixCommentContent({
+              deleteText: "",
+              insertText: "",
+              removeImage,
+              reasoning,
+              contentHashAtSuggestion: sectionContentHash(section, loaded.content),
+            }),
+            anchorText: "",
+            contentPath: resolvedField,
+            fromPos: null,
+            toPos: null,
+            status: "open",
+            kind: "ai_fix",
+            evaluationId: null,
+          });
+
+          return {
+            status: "proposed",
+            suggestionId,
+            section,
+            targetField: resolvedField,
+            summary: reasoning,
+          };
+        } catch (err) {
+          console.error("remove_image failed", err);
+          return {
+            status: "image_not_found",
+            message:
+              "Could not remove this image. Call read_section and pass image.id (e.g. 'narrative#1') or image.index. Do not rewrite the field with draft_field just to drop a figure.",
+          };
+        }
+      },
+    }),
+
     edit_table: tool({
       description:
         `Change an existing table without rewriting the field. Operations: edit_cells (including clear), insert_rows (omit afterRow to append; afterRow 0 inserts after the header), delete_rows, insert_column (optional per-row values), delete_column. Call read_section first and copy tableIndex plus [row,col] / header text from structuredText. Row 0 is the header and cannot be deleted; the first data row is row 1. For delete_rows, provide the row coordinate and omit expectedCells so the server captures the current row safely. When adding a class of units (systems, UUTs, equipment), put every distinct matching unit in one insert_rows call — never a single representative row. edit_cells may list cells in any columns; a move or rewrite across columns is one edit_cells covering every affected cell — never a second proposal for the other column, and never a no-op cell (insertText === expectedText). The two-call limit is a failed-retry cap, not two successful edits. Clearing a cell is edit_cells with empty insertText. Do not use propose_edit or draft_field for incremental table changes.${scopeHint}${fixedTableHint}`,
@@ -1565,7 +1750,7 @@ export function buildChatTools(opts: {
 
     draft_field: tool({
       description:
-        `Draft or fully rewrite ONE field. Provide the COMPLETE replacement content as markdown: paragraphs, '- ' bullets, '1. ' numbered lists, '## ' headings, '**bold**', '*italic*', and GFM tables ('| a | b |' rows with a '| --- |' separator). Use bracketed placeholders like [batch number] for facts you do not know — never invent facts. The engineer reviews the full draft and accepts or rejects it. Use this for empty fields, substantial rewrites, creating a NEW table, or an explicitly requested full table replacement. For any incremental change to an existing table, use edit_table — never draft_field. Use propose_edit only for small prose or list edits. Do not put markdown image syntax (![alt](url) or narrative#1) here — use insert_image.${scopeHint}${fixedTableHint}`,
+        `Draft or fully rewrite ONE field. Provide the COMPLETE replacement content as markdown: paragraphs, '- ' bullets, '1. ' numbered lists, '## ' headings, '**bold**', '*italic*', and GFM tables ('| a | b |' rows with a '| --- |' separator). Use bracketed placeholders like [batch number] for facts you do not know — never invent facts. The engineer reviews the full draft and accepts or rejects it. Use this for empty fields, substantial rewrites, creating a NEW table, or an explicitly requested full table replacement. For any incremental change to an existing table, use edit_table — never draft_field. Use propose_edit only for small prose or list edits. Do not put markdown image syntax (![alt](url) or narrative#1) here — use insert_image. To remove a figure, call remove_image; do not rewrite the field just to drop one.${scopeHint}${fixedTableHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z

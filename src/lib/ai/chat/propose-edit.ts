@@ -7,7 +7,10 @@ import {
   type SuggestionEdit,
 } from "@/lib/suggestions/locator";
 import { collapseWhitespace } from "@/lib/text/normalize-for-anchor";
-import type { SuggestionImageInsert } from "@/lib/suggestions/image-insert";
+import type {
+  SuggestionImageInsert,
+  SuggestionImageRemove,
+} from "@/lib/suggestions/image-insert";
 
 /**
  * Fraction of a field a single `propose_edit` may delete before it should be
@@ -21,6 +24,7 @@ export type ProposedEditInput = {
   deleteText: string;
   insertText: string;
   insertImage?: SuggestionImageInsert;
+  removeImage?: SuggestionImageRemove;
   scope?: EditScope;
   second?: Omit<SuggestionEdit, "second">;
 };
@@ -55,6 +59,7 @@ export function checkProposedEdit(
     deleteText: edit.deleteText,
     insertText: edit.insertText,
     insertImage: edit.insertImage,
+    removeImage: edit.removeImage,
     scope: edit.scope,
     second: edit.second,
   };

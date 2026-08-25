@@ -27,8 +27,11 @@ import { finalizeNarrativeDocAfterSuggestion } from "@/lib/tiptap/finalize-narra
 import {
   acceptPendingImageSuggestions,
   dropPendingImageSuggestions,
+  locateImageRemoval,
+  markImageForDeletion,
   pendingImageInlineNode,
   type SuggestionImageInsert,
+  type SuggestionImageRemove,
 } from "@/lib/suggestions/image-insert";
 
 /**
@@ -57,6 +60,8 @@ export type SuggestionEdit = {
   insertText: string;
   /** Inline figure to insert after the located site (rich fields only). */
   insertImage?: SuggestionImageInsert;
+  /** Existing inline figure to mark for deletion (rich fields only). */
+  removeImage?: SuggestionImageRemove;
   scope?: EditScope;
   /**
    * Optional second apply site in the same field (e.g. a citation appended
@@ -66,12 +71,16 @@ export type SuggestionEdit = {
 };
 
 function hasEditContent(
-  edit: Pick<SuggestionEdit, "deleteText" | "insertText" | "insertImage">
+  edit: Pick<
+    SuggestionEdit,
+    "deleteText" | "insertText" | "insertImage" | "removeImage"
+  >
 ): boolean {
   return Boolean(
     (edit.deleteText ?? "").trim() ||
       (edit.insertText ?? "").trim() ||
-      edit.insertImage
+      edit.insertImage ||
+      edit.removeImage
   );
 }
 
@@ -82,6 +91,7 @@ export function suggestionEditParts(edit: SuggestionEdit): SuggestionEdit[] {
     deleteText: edit.deleteText,
     insertText: edit.insertText,
     insertImage: edit.insertImage,
+    removeImage: edit.removeImage,
     scope: edit.scope,
   };
   const second = edit.second;
@@ -1026,6 +1036,17 @@ function applySingleEditToRichDoc(
   edit: SuggestionEdit,
   attrs: InjectAttrs
 ): { status: LocateStatus; doc: JSONContent } {
+  if (edit.removeImage) {
+    const status = locateImageRemoval(doc, edit.removeImage);
+    if (status !== "located") return { status, doc };
+    const cloned: JSONContent = JSON.parse(JSON.stringify(doc));
+    if (!markImageForDeletion(cloned, edit.removeImage, attrs.id)) {
+      return { status: "not_found", doc };
+    }
+    cleanupMarks(cloned);
+    return { status: "located", doc: cloned };
+  }
+
   const index = flattenForAnchor(doc);
   const located = locateScopedEdit(index, edit);
 
@@ -1203,6 +1224,9 @@ function probeSingleRichEdit(
   doc: JSONContent,
   edit: SuggestionEdit
 ): LocateStatus {
+  if (edit.removeImage) {
+    return locateImageRemoval(doc, edit.removeImage);
+  }
   const index = flattenForAnchor(doc);
   const located = locateScopedEdit(index, edit);
   if (located.status === "located" && !edit.scope) {

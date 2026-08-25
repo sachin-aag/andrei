@@ -396,6 +396,7 @@ describe("pickPlanModeChatTools", () => {
       draft_field: { kind: "draft" },
       propose_edit: { kind: "edit" },
       insert_image: { kind: "image" },
+      remove_image: { kind: "image-remove" },
       edit_table: { kind: "table" },
     };
     const planTools = pickPlanModeChatTools(allTools);
@@ -416,6 +417,7 @@ describe("pickPlanModeChatTools", () => {
     expect(planTools).not.toHaveProperty("draft_field");
     expect(planTools).not.toHaveProperty("propose_edit");
     expect(planTools).not.toHaveProperty("insert_image");
+    expect(planTools).not.toHaveProperty("remove_image");
     expect(planTools).not.toHaveProperty("edit_table");
   });
 });

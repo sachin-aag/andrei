@@ -874,6 +874,7 @@ export function TiptapSectionField({
               deleteText: payload.deleteText,
               insertText: payload.insertText,
               insertImage: payload.insertImage,
+              removeImage: payload.removeImage,
               scope: payload.scope,
               second: payload.second,
             });

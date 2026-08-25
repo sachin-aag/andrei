@@ -229,6 +229,8 @@ function SuggestionCardFace({
             ? "Full draft"
             : card.kind === "fix" && card.payload.tableOperation
               ? "Table edit"
+              : card.kind === "fix" && card.payload.removeImage
+              ? "Remove figure"
               : card.kind === "fix" && card.payload.insertImage
                 ? "Figure"
                 : "Suggestion"}{" "}
@@ -319,9 +321,31 @@ function SuggestionCardFace({
         </div>
       ) : null}
 
+      {card.kind === "fix" && card.payload.removeImage ? (
+        <div
+          className={cn(
+            "space-y-1.5 transition-opacity duration-300",
+            phase !== "steady" && "opacity-70"
+          )}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element -- suggestion preview of a data URL */}
+          <img
+            src={card.payload.removeImage.src}
+            alt={card.payload.removeImage.alt ?? ""}
+            className="max-h-32 w-auto max-w-full rounded-sm border border-rose-700/30 opacity-60"
+          />
+          {card.payload.removeImage.alt ? (
+            <p className="text-[11px] text-[var(--muted-foreground)]">
+              {card.payload.removeImage.alt}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
       {card.kind === "fix" &&
       !card.payload.tableOperation &&
       !card.payload.insertImage &&
+      !card.payload.removeImage &&
       (card.payload.deleteText ||
         card.payload.insertText ||
         card.payload.second?.insertText) ? (

@@ -43,6 +43,7 @@ export function suggestionEditFromComment(
     deleteText: payload.deleteText,
     insertText: payload.insertText,
     insertImage: payload.insertImage,
+    removeImage: payload.removeImage,
     scope: payload.scope,
     second: payload.second,
   };
@@ -130,7 +131,10 @@ export function validateSuggestionLocate(
     };
   }
 
-  if (payload.insertImage && !isRichTargetField(section, path)) {
+  if (
+    (payload.insertImage || payload.removeImage) &&
+    !isRichTargetField(section, path)
+  ) {
     return {
       locateStatus: "not_found",
       documentChanged: hashChanged,

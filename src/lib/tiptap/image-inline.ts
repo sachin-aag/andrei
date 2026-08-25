@@ -9,6 +9,8 @@ export type ImageInlineAttrs = {
   mediaId?: string | null;
   /** Set while an Agent insert is pending review; stripped on accept. */
   suggestionId?: string | null;
+  /** Pending Agent insert vs proposed deletion; omitted/null means a committed figure. */
+  suggestionKind?: "insert" | "delete" | null;
 };
 
 declare module "@tiptap/core" {
@@ -39,6 +41,7 @@ export const ImageInline = Node.create({
       width: { default: null },
       mediaId: { default: null },
       suggestionId: { default: null },
+      suggestionKind: { default: null },
     };
   },
 

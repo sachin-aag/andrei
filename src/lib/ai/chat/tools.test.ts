@@ -245,6 +245,14 @@ describe("buildChatTools tagged sections", () => {
       })
     ).toBe(false);
     expect(
+      accepts(tools, "remove_image", {
+        section: "control",
+        targetField: "narrative",
+        reasoning: "y",
+        image: { id: "narrative#1" },
+      })
+    ).toBe(false);
+    expect(
       accepts(tools, "draft_field", { ...edit, section: "define" })
     ).toBe(true);
   });
@@ -279,6 +287,28 @@ describe("buildChatTools insert_image", () => {
           section: "measure",
           id: "narrative#1",
         },
+      })
+    ).toBe(true);
+  });
+});
+
+describe("buildChatTools remove_image", () => {
+  it("accepts id or index on an in-scope rich field", () => {
+    const tools = buildChatTools({ reportId: "report-1", canEdit: true });
+    expect(
+      accepts(tools, "remove_image", {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "This figure belongs in Measure",
+        image: { id: "narrative#1" },
+      })
+    ).toBe(true);
+    expect(
+      accepts(tools, "remove_image", {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Drop the second photo",
+        image: { index: 2 },
       })
     ).toBe(true);
   });
@@ -544,6 +574,21 @@ describe("buildChatTools document review", () => {
         reasoning: "Copy the figure",
         image: { source: "section" },
         anchorText: "",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "image_not_found" });
+    expect((result as { message: string }).message).toContain("image.id");
+  });
+
+  it("rejects a figure removal that has neither id nor index", async () => {
+    const tools = buildChatTools({ reportId: "report-1", canEdit: true });
+    const result = await tools.remove_image!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Drop the figure",
+        image: {},
       },
       TEST_TOOL_OPTIONS
     );

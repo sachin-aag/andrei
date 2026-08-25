@@ -22,6 +22,7 @@ export function buildSuggestionEdit(payload: {
   deleteText: string;
   insertText: string;
   insertImage?: SuggestionEdit["insertImage"];
+  removeImage?: SuggestionEdit["removeImage"];
   scope?: EditScope;
   second?: SuggestionEdit["second"];
 }): SuggestionEdit {
@@ -39,6 +40,7 @@ export function buildSuggestionEdit(payload: {
     deleteText: payload.deleteText,
     insertText: normalizeSuggestionInsertText(payload.insertText),
     insertImage: payload.insertImage,
+    removeImage: payload.removeImage,
     scope: payload.scope,
     second:
       second &&

@@ -141,3 +141,212 @@ describe("locator — insertImage", () => {
     expect(parseSuggestionImageInsert({ src: PNG, alt: "ok" })?.src).toBe(PNG);
   });
 });
+
+function docWithImage(text: string, image = IMAGE): JSONContent {
+  return {
+    type: "doc",
+    content: [
+      {
+        type: "paragraph",
+        content: [
+          { type: "text", text },
+          {
+            type: "imageInline",
+            attrs: {
+              src: image.src,
+              alt: image.alt,
+              width: image.width,
+              mediaId: image.mediaId,
+            },
+          },
+        ],
+      },
+    ],
+  };
+}
+
+function walkImage(node: JSONContent): JSONContent | null {
+  if (node.type === "imageInline") return node;
+  for (const child of node.content ?? []) {
+    const hit = walkImage(child);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+describe("locator — removeImage", () => {
+  const removal = { ...IMAGE, index: 1 };
+
+  it("marks the existing figure for deletion", () => {
+    const doc = docWithImage("See the chromatogram.");
+    const result = applyEditToRichDoc(
+      doc,
+      {
+        anchorText: "",
+        deleteText: "",
+        insertText: "",
+        removeImage: removal,
+      },
+      ATTRS
+    );
+    expect(result.status).toBe("located");
+    expect(probeRichEdit(doc, {
+      anchorText: "",
+      deleteText: "",
+      insertText: "",
+      removeImage: removal,
+    })).toBe("located");
+    const image = walkImage(result.doc);
+    expect(image?.attrs?.suggestionId).toBe("sug-img");
+    expect(image?.attrs?.suggestionKind).toBe("delete");
+    expect(listInlineImagesInDoc(result.doc)).toHaveLength(1);
+  });
+
+  it("accept drops the figure and an empty leftover paragraph", () => {
+    const doc = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "imageInline",
+              attrs: {
+                src: PNG,
+                alt: "HPLC trace",
+                width: 400,
+                mediaId: null,
+              },
+            },
+          ],
+        },
+      ],
+    } satisfies JSONContent;
+    const accepted = applyAndAcceptRichEdit(
+      doc,
+      "sug-img",
+      {
+        anchorText: "",
+        deleteText: "",
+        insertText: "",
+        removeImage: removal,
+      },
+      ATTRS
+    );
+    expect(accepted.status).toBe("located");
+    expect(listInlineImagesInDoc(accepted.doc)).toHaveLength(0);
+    expect(accepted.doc.content).toHaveLength(1);
+    expect(accepted.doc.content?.[0]?.type).toBe("paragraph");
+    expect(walkImage(accepted.doc)).toBeNull();
+  });
+
+  it("dismiss keeps the figure and strips pending attrs", () => {
+    const doc = docWithImage("See below.");
+    const preview = applyEditToRichDoc(
+      doc,
+      {
+        anchorText: "",
+        deleteText: "",
+        insertText: "",
+        removeImage: removal,
+      },
+      ATTRS
+    );
+    const stripped = stripSuggestionMarksById(preview.doc, ATTRS.id);
+    const images = listInlineImagesInDoc(stripped);
+    expect(images).toHaveLength(1);
+    expect(images[0]!.src).toBe(PNG);
+    const image = walkImage(stripped);
+    expect(image?.attrs?.suggestionId).toBeUndefined();
+    expect(image?.attrs?.suggestionKind).toBeUndefined();
+  });
+
+  it("falls back to a unique src when the stored index is stale", () => {
+    const otherSrc =
+      "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7";
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "imageInline",
+              attrs: { src: otherSrc, alt: "other", width: 100, mediaId: null },
+            },
+            {
+              type: "imageInline",
+              attrs: { src: PNG, alt: "HPLC trace", width: 400, mediaId: null },
+            },
+          ],
+        },
+      ],
+    };
+    const result = applyEditToRichDoc(
+      doc,
+      {
+        anchorText: "",
+        deleteText: "",
+        insertText: "",
+        removeImage: { ...IMAGE, index: 1 },
+      },
+      ATTRS
+    );
+    expect(result.status).toBe("located");
+    const pendingNode = (function findPending(node: JSONContent): JSONContent | null {
+      if (
+        node.type === "imageInline" &&
+        node.attrs?.src === PNG &&
+        node.attrs?.suggestionKind === "delete"
+      ) {
+        return node;
+      }
+      for (const child of node.content ?? []) {
+        const hit = findPending(child);
+        if (hit) return hit;
+      }
+      return null;
+    })(result.doc);
+    const otherNode = (function findOther(node: JSONContent): JSONContent | null {
+      if (node.type === "imageInline" && node.attrs?.src === otherSrc) {
+        return node;
+      }
+      for (const child of node.content ?? []) {
+        const hit = findOther(child);
+        if (hit) return hit;
+      }
+      return null;
+    })(result.doc);
+    expect(pendingNode).not.toBeNull();
+    expect(otherNode?.attrs?.suggestionKind).toBeUndefined();
+  });
+
+  it("is ambiguous when the same src appears twice and the index does not match", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "imageInline",
+              attrs: { src: PNG, alt: "a", width: 100, mediaId: null },
+            },
+            {
+              type: "imageInline",
+              attrs: { src: PNG, alt: "b", width: 200, mediaId: null },
+            },
+          ],
+        },
+      ],
+    };
+    expect(
+      probeRichEdit(doc, {
+        anchorText: "",
+        deleteText: "",
+        insertText: "",
+        removeImage: { ...IMAGE, index: 3 },
+      })
+    ).toBe("ambiguous");
+  });
+});

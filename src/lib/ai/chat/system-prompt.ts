@@ -11,7 +11,7 @@ import { getDocumentType } from "@/lib/document-types";
 import type { RetrievalPolicy } from "@/lib/ai/chat/retrieval-policy";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v43-insert-image-copy";
+export const CHAT_PROMPT_VERSION = "chat-v44-remove-image";
 
 export type ChatMode = "plan" | "agent";
 
@@ -55,8 +55,8 @@ The engineer has not narrowed scope. You may plan or draft across any editable s
       ? `\n- Exception for Analyze method selection: you MAY call read_section on define and measure (read-only) to choose 6M vs 5-Why vs Brainstorming.`
       : "";
   const editTools = analyzeInScope
-    ? "draft_field / edit_table / propose_edit / insert_image / select_analyze_method"
-    : "draft_field / edit_table / propose_edit / insert_image";
+    ? "draft_field / edit_table / propose_edit / insert_image / remove_image / select_analyze_method"
+    : "draft_field / edit_table / propose_edit / insert_image / remove_image";
   return `## Section focus: ${label} [${scope}]
 The engineer selected **${label}** for this conversation. Focus Ask questions and Agent edits on this section only.
 - Ask mode: ask what is needed to complete ${label}; do not plan other sections unless they change the section dropdown.
@@ -138,7 +138,8 @@ ${
 - For propose_edit, quote verbatim from the field's \`text\` value only — never include [image:N] markers in anchorText (those slots are a single space in the real field).
 - To copy a figure, call insert_image. section / targetField are the DESTINATION (where the figure should appear). image.section is the SOURCE (where it is now) — required when those differ. Pass image.id from read_section (e.g. narrative#1) or image.index.
 - Example — copy Purpose's first figure into Scope: insert_image({ section: "scope", targetField: "narrative", image: { source: "section", section: "purpose", id: "narrative#1" }, reasoning: "..." }).
-- Do not paste markdown like ![alt](narrative#1) into draft_field or propose_edit — those cannot create figures.`;
+- To remove a figure, call remove_image with image.id from read_section (e.g. narrative#1) or image.index. Never draft_field a field just to drop a figure — that drops every figure.
+- Do not paste markdown like ![alt](narrative#1) into draft_field or propose_edit — those cannot create or remove figures.`;
 }
 
 function planRules(policy: RetrievalPolicy): string {
@@ -209,9 +210,10 @@ You are in Agent mode. Use the tools to read sections and propose changes. Every
 
 Choosing the right tool:
 - edit_table — ANY change to an existing table: edit cells (including clear), insert/append/delete rows, insert/delete columns. Call read_section first and copy tableIndex plus [row,col] / header text from structuredText. One suggestion can edit several cells in any columns, or add a column and fill its values. A move or rewrite across columns is still one edit_cells.
-- draft_field — a FULL draft or rewrite of one field, written as markdown. Use it for empty fields, substantial prose rewrites, creating a NEW table, or an explicitly requested full table replacement. Do not use it for incremental table edits — accepting a draft overwrites every cell, including filled placeholders. draft_field cannot insert figures; use insert_image. A full rewrite of a field that already has images will drop those images.
+- draft_field — a FULL draft or rewrite of one field, written as markdown. Use it for empty fields, substantial prose rewrites, creating a NEW table, or an explicitly requested full table replacement. Do not use it for incremental table edits — accepting a draft overwrites every cell, including filled placeholders. draft_field cannot insert or remove figures; use insert_image / remove_image. A full rewrite of a field that already has images will drop those images.
 - propose_edit — one small targeted change inside existing prose, or a list item (targeted with "scope"). Never use it for tables, and never quote a markdown pipe table as anchorText. Never put image markdown in insertText.
 - insert_image — place one existing image (chat attachment or a figure already in a section) into a rich field. The engineer reviews it like any other suggestion. Do not invent or generate pixels.
+- remove_image — remove one existing figure from a rich field. Call read_section first and pass image.id (e.g. narrative#1). The engineer reviews it like any other suggestion. Do not rewrite the field with draft_field just to drop a figure.
 - search_documents — grep ready evidence attachments in rounds. Prefer complementary queries. Pass excludePages from the previous nextExcludePages. Required before ask_user or draft_field when Documents are listed.
 - document_outline — list per-page context for one attachment so you can pick which pages to read. Not a substitute for search_documents.
 - read_document_page — read bounded transcript/visual context for one page from a retrieved attachment.

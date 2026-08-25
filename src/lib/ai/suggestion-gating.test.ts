@@ -403,3 +403,26 @@ describe("parseAiFixCommentContent insertImage", () => {
     expect(parsed.insertText).toBe("");
   });
 });
+
+describe("parseAiFixCommentContent removeImage", () => {
+  it("round-trips a figure-removal payload", () => {
+    const src =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const json = serializeAiFixCommentContent({
+      deleteText: "",
+      insertText: "",
+      reasoning: "This chromatogram belongs in Measure, not Define",
+      removeImage: { src, alt: "HPLC trace", width: 400, mediaId: null, index: 1 },
+    });
+    const parsed = parseAiFixCommentContent(json);
+    expect(parsed.removeImage).toEqual({
+      src,
+      alt: "HPLC trace",
+      width: 400,
+      mediaId: null,
+      index: 1,
+    });
+    expect(parsed.insertImage).toBeUndefined();
+    expect(parsed.insertText).toBe("");
+  });
+});

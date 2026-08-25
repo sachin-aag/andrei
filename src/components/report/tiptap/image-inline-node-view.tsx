@@ -11,6 +11,8 @@ export function ImageInlineNodeView({ node, selected }: NodeViewProps) {
     typeof node.attrs.suggestionId === "string" && node.attrs.suggestionId
       ? node.attrs.suggestionId
       : null;
+  const suggestionKind =
+    node.attrs.suggestionKind === "delete" ? "delete" : suggestionId ? "insert" : null;
 
   if (!src) return null;
 
@@ -20,7 +22,8 @@ export function ImageInlineNodeView({ node, selected }: NodeViewProps) {
       className={cn(
         "inline-block align-middle",
         selected && "rounded-sm ring-2 ring-[var(--ring)]",
-        suggestionId && "suggestion-image-insert suggestion-image-insert-ai"
+        suggestionKind === "insert" && "suggestion-image-insert suggestion-image-insert-ai",
+        suggestionKind === "delete" && "suggestion-image-delete suggestion-image-delete-ai"
       )}
       contentEditable={false}
       data-eval-id={suggestionId ?? undefined}
