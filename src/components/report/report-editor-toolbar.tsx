@@ -5,6 +5,7 @@ import { Separator } from "@/components/ui/separator";
 import { useReportData, useReportEditors } from "@/providers/report-provider";
 import { isTrackChangesFieldEditable } from "@/lib/reports/section-save-policy";
 import { AdvancedFormattingToolbar } from "@/components/report/advanced-formatting-toolbar";
+import { TrackChangesToggle } from "@/components/report/track-changes-toggle";
 import {
   FontColorToolbar,
   InsertImageButton,
@@ -40,7 +41,8 @@ function activeFieldLabel(activeFieldKey: string | null): string | null {
 }
 
 export function ReportEditorToolbar() {
-  const { readOnly, trackChangesMode } = useReportData();
+  const { readOnly, trackChangesMode, setTrackChangesMode, workspaceMode } =
+    useReportData();
   const { activeFieldKey, activeFieldKind, getActiveEditor } = useReportEditors();
   const editor = getActiveEditor();
   useEditorToolbarState(editor);
@@ -50,60 +52,63 @@ export function ReportEditorToolbar() {
     [activeFieldKey]
   );
 
-  if (
-    !isTrackChangesFieldEditable({ readOnly, trackChangesMode }) ||
-    !activeFieldKey
-  ) {
-    return null;
-  }
+  // Read-only surfaces get no toolbar. Managers do, even before they turn track
+  // changes on — otherwise the toggle would be unreachable from review mode.
+  if (workspaceMode === "view") return null;
 
-  if (activeFieldKind === "plain" || !editor) {
-    return (
-      <div
-        className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--border)] bg-[var(--card)] px-6 py-1.5"
-        role="toolbar"
-        aria-label="Active field"
-      >
-        {fieldLabel ? (
-          <span className="text-xs text-[var(--muted-foreground)] whitespace-nowrap">
-            Editing: {fieldLabel}
-          </span>
-        ) : null}
-        <span className="text-[10px] text-[var(--muted-foreground)]">
-          Plain text — formatting, tables, and equations are not available in this field.
-        </span>
-      </div>
-    );
-  }
+  const canFormat =
+    isTrackChangesFieldEditable({ readOnly, trackChangesMode }) &&
+    activeFieldKey &&
+    activeFieldKind === "rich" &&
+    editor;
 
   return (
     <div
       className="flex shrink-0 flex-wrap items-center gap-2 border-b border-[var(--border)] bg-[var(--card)] px-6 py-1.5"
       role="toolbar"
-      aria-label="Text formatting"
+      aria-label="Editing"
     >
+      <TrackChangesToggle
+        checked={trackChangesMode}
+        onCheckedChange={setTrackChangesMode}
+      />
+      <Separator orientation="vertical" className="h-5" />
+
       {fieldLabel ? (
         <span className="text-xs text-[var(--muted-foreground)] whitespace-nowrap">
           Editing: {fieldLabel}
         </span>
+      ) : (
+        <span className="text-xs text-[var(--muted-foreground)]">
+          Select a field to start editing.
+        </span>
+      )}
+
+      {canFormat ? (
+        <>
+          <Separator orientation="vertical" className="h-5 hidden sm:block" />
+          <TextFormatToolbar editor={editor} />
+          <Separator orientation="vertical" className="h-5" />
+          <FontColorToolbar editor={editor} />
+          <Separator orientation="vertical" className="h-5" />
+          <ListEditToolbar editor={editor} />
+          <Separator orientation="vertical" className="h-5" />
+          <AdvancedFormattingToolbar editor={editor} />
+          <Separator orientation="vertical" className="h-5" />
+          <InsertImageButton editor={editor} />
+          <Separator orientation="vertical" className="h-5" />
+          <InsertTableButton editor={editor} />
+          {editor.isActive("table") ? (
+            <span className="text-[10px] text-[var(--muted-foreground)]">
+              Table tools float above the cell
+            </span>
+          ) : null}
+        </>
       ) : null}
-      {fieldLabel ? (
-        <Separator orientation="vertical" className="h-5 hidden sm:block" />
-      ) : null}
-      <TextFormatToolbar editor={editor} />
-      <Separator orientation="vertical" className="h-5" />
-      <FontColorToolbar editor={editor} />
-      <Separator orientation="vertical" className="h-5" />
-      <ListEditToolbar editor={editor} />
-      <Separator orientation="vertical" className="h-5" />
-      <AdvancedFormattingToolbar editor={editor} />
-      <Separator orientation="vertical" className="h-5" />
-      <InsertImageButton editor={editor} />
-      <Separator orientation="vertical" className="h-5" />
-      <InsertTableButton editor={editor} />
-      {editor.isActive("table") ? (
+
+      {activeFieldKey && activeFieldKind === "plain" ? (
         <span className="text-[10px] text-[var(--muted-foreground)]">
-          Table tools float above the cell
+          Plain text — formatting, tables, and equations are not available in this field.
         </span>
       ) : null}
     </div>

@@ -9,7 +9,6 @@ import {
   MessageSquare,
   Pencil,
   Send,
-  X,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -26,8 +25,6 @@ type ReportWorkspaceHeaderProps = {
   mode: WorkspaceMode;
   authorName?: string;
   managerNames?: string[];
-  trackChangesMode: boolean;
-  onTrackChangesModeChange: (next: boolean) => void;
   canSubmit: boolean;
   canReview: boolean;
   submitting: boolean;
@@ -50,8 +47,6 @@ export function ReportWorkspaceHeader({
   mode,
   authorName,
   managerNames = [],
-  trackChangesMode,
-  onTrackChangesModeChange,
   canSubmit,
   canReview,
   submitting,
@@ -113,10 +108,6 @@ export function ReportWorkspaceHeader({
         </span>
       </div>
       <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
-        {!isViewMode && trackChangesMode ? (
-          <TrackChangesPill onTurnOff={() => onTrackChangesModeChange(false)} />
-        ) : null}
-
         <ReportExportButton reportId={report.id} />
 
         {!isViewMode && <RunAllEvaluationButton />}
@@ -164,32 +155,11 @@ export function ReportWorkspaceHeader({
         )}
 
         <ReportActionsMenu
-          reportId={report.id}
           auditHref={auditHref}
-          showTrackChanges={!isViewMode}
-          trackChangesMode={trackChangesMode}
-          onTrackChangesModeChange={onTrackChangesModeChange}
           showExpertReview={showExpertReview}
           onExpertReview={onExpertReview}
         />
       </div>
     </header>
-  );
-}
-
-/** Only rendered while track changes is on, so the mode is never silently active. */
-function TrackChangesPill({ onTurnOff }: { onTurnOff: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onTurnOff}
-      aria-label="Turn off track changes"
-      title="Track changes is on — click to turn it off"
-      className="inline-flex h-8 items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-3 text-xs font-medium text-amber-900 transition-colors hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)] cursor-pointer"
-    >
-      <span className="size-1.5 rounded-full bg-amber-500" aria-hidden="true" />
-      Track changes
-      <X className="size-3" aria-hidden="true" />
-    </button>
   );
 }
