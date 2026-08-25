@@ -5,21 +5,18 @@ import Link from "next/link";
 import {
   CheckCircle2,
   ChevronLeft,
-  History,
-  LifeBuoy,
   Loader2,
   MessageSquare,
   Pencil,
   Send,
+  X,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import type { WorkspaceMode } from "@/providers/report-provider";
 import type { ReportRecord } from "@/types/report";
-import { ReportExportButton } from "./report-export-button";
+import { ReportActionsMenu } from "./report-actions-menu";
 import { RunAllEvaluationButton } from "./section-status-pill";
 import { StatusBadge } from "./status-badge";
 
@@ -111,51 +108,15 @@ export function ReportWorkspaceHeader({
         </div>
         <span className="text-xs text-[var(--muted-foreground)] truncate">
           {authorName ?? "Unknown author"}
-          {managerNames.length > 0 ? ` \u2192 ${managerNames.join(", ")}` : ""}
+          {managerNames.length > 0 ? ` → ${managerNames.join(", ")}` : ""}
         </span>
       </div>
-      <div className="ml-auto flex items-center gap-3 flex-wrap justify-end">
-        {!isViewMode && (
-          <>
-            <div className="flex items-center gap-2 flex-wrap">
-              <Checkbox
-                id={`track-changes-toggle-${mode}`}
-                checked={trackChangesMode}
-                onCheckedChange={(v) => onTrackChangesModeChange(v === true)}
-              />
-              <Label
-                htmlFor={`track-changes-toggle-${mode}`}
-                className="text-sm font-normal cursor-pointer whitespace-nowrap"
-              >
-                Track changes
-              </Label>
-              {trackChangesMode && (
-                <span className="text-[10px] uppercase tracking-wide text-amber-800 bg-amber-100 px-2 py-0.5 rounded border border-amber-200/80">
-                  On
-                </span>
-              )}
-            </div>
-            <Separator orientation="vertical" className="h-6 hidden sm:block" />
-
-            <RunAllEvaluationButton />
-          </>
-        )}
-        {auditHref ? (
-          <Button variant="outline" size="sm" asChild>
-            <Link href={auditHref}>
-              <History className="size-4" aria-hidden="true" />
-              Audit Trail
-            </Link>
-          </Button>
+      <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
+        {!isViewMode && trackChangesMode ? (
+          <TrackChangesPill onTurnOff={() => onTrackChangesModeChange(false)} />
         ) : null}
-        <ReportExportButton reportId={report.id} />
 
-        {showExpertReview && onExpertReview ? (
-          <Button type="button" variant="outline" size="sm" onClick={onExpertReview}>
-            <LifeBuoy className="size-4" aria-hidden="true" />
-            Request expert review
-          </Button>
-        ) : null}
+        {!isViewMode && <RunAllEvaluationButton />}
 
         {canSubmit && (
           <Button size="sm" onClick={onSubmit} disabled={submitting}>
@@ -164,7 +125,7 @@ export function ReportWorkspaceHeader({
             ) : (
               <Send className="size-4" aria-hidden="true" />
             )}
-            Submit for Review
+            Submit for review
           </Button>
         )}
 
@@ -181,7 +142,7 @@ export function ReportWorkspaceHeader({
               ) : (
                 <MessageSquare className="size-4" aria-hidden="true" />
               )}
-              Return with Feedback
+              Return with feedback
             </Button>
             <Button
               variant="success"
@@ -198,7 +159,34 @@ export function ReportWorkspaceHeader({
             </Button>
           </>
         )}
+
+        <ReportActionsMenu
+          reportId={report.id}
+          auditHref={auditHref}
+          showTrackChanges={!isViewMode}
+          trackChangesMode={trackChangesMode}
+          onTrackChangesModeChange={onTrackChangesModeChange}
+          showExpertReview={showExpertReview}
+          onExpertReview={onExpertReview}
+        />
       </div>
     </header>
+  );
+}
+
+/** Only rendered while track changes is on, so the mode is never silently active. */
+function TrackChangesPill({ onTurnOff }: { onTurnOff: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onTurnOff}
+      aria-label="Turn off track changes"
+      title="Track changes is on — click to turn it off"
+      className="inline-flex h-8 items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-3 text-xs font-medium text-amber-900 transition-colors hover:bg-amber-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)] cursor-pointer"
+    >
+      <span className="size-1.5 rounded-full bg-amber-500" aria-hidden="true" />
+      Track changes
+      <X className="size-3" aria-hidden="true" />
+    </button>
   );
 }
