@@ -944,6 +944,31 @@ html[data-customer="convergent"] {
   background: transparent !important;
 }
 
+/* Numeric `[n]` citation markers — static raised bubbles, screen-only. */
+.ProseMirror .citation-ref {
+  font-size: 0.68em;
+  font-weight: 600;
+  line-height: 1.2;
+  vertical-align: super;
+  color: var(--muted-foreground);
+  background: var(--muted);
+  border-radius: 999px;
+  padding: 0 0.32em;
+  margin: 0 0.05em;
+  white-space: nowrap;
+  display: inline-block;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+.ProseMirror span.suggestion-insert .citation-ref,
+.ProseMirror span.suggestion-insert-ai .citation-ref,
+.ProseMirror span.suggestion-delete .citation-ref,
+.ProseMirror span.suggestion-delete-ai .citation-ref {
+  color: var(--muted-foreground);
+  background: var(--muted);
+}
+
 /* Plain-text mirror layer — no border/padding so line heights match the textarea. */
 .placeholder-todo-mirror {
   background-color: rgb(245 158 11 / 0.22);

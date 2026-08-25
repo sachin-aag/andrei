@@ -1,7 +1,24 @@
 import { hasSupportedAttachmentExtension } from "@/lib/attachments/file-types";
 
 /** Citation-style `[12]` — not a fill-in placeholder. */
-const NUMERIC_ONLY_BRACKET = /^\[\s*\d+\s*\]$/;
+export const NUMERIC_ONLY_BRACKET = /^\[\s*\d+\s*\]$/;
+
+/** True when `[...]` is a numeric citation marker such as `[3]`. */
+export function isNumericCitationMarker(match: string): boolean {
+  return NUMERIC_ONLY_BRACKET.test(match);
+}
+
+/** Number inside `[3]`, or null when the span is not a numeric marker. */
+export function citationNumberFromMarker(match: string): number | null {
+  const matched = /^\[\s*(\d+)\s*\]$/.exec(match);
+  if (!matched) return null;
+  return Number(matched[1]);
+}
+
+/** Document source cite (`[file.pdf, p. N]`), not a numeric `[3]` marker. */
+export function isSourceCitationBracket(match: string): boolean {
+  return isCitationShapedBracket(match) && !isNumericCitationMarker(match);
+}
 
 const LABEL_THEN_TO_BE_FILLED =
   /^(.*?)\s*:\s*(?:<\s*)?to\s+be\s+filled(?:\s*>)?\s*$/i;

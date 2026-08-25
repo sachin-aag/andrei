@@ -594,7 +594,7 @@ describe("locator — split edits", () => {
     const result = applyEditToPlainText(text, edit);
     expect(isApplyableStatus(result.status)).toBe(true);
     expect(result.text).toBe(
-      "Output power met the acceptance limit. The measured value was 9.8 W.\n\nCitations:\n[protocol.pdf, p. 3]"
+      "Output power met the acceptance limit. The measured value was 9.8 W.\n\nCitations:\n1. [protocol.pdf, p. 3]"
     );
   });
 
@@ -621,7 +621,7 @@ describe("locator — split edits", () => {
     });
     expect(result.status).toBe("append");
     expect(result.text).toBe(
-      "The requirement is met.\n\nCitations:\n[protocol.pdf, p. 2]"
+      "The requirement is met.\n\nCitations:\n1. [protocol.pdf, p. 2]"
     );
   });
 
