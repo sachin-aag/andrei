@@ -85,7 +85,7 @@ export async function openReportAssistant(page: Page): Promise<void> {
     timeout: 15_000,
   });
   await expect(
-    sidebar.getByPlaceholder(/describe the deviation|ask the assistant/i)
+    sidebar.getByPlaceholder(/ask about the report or attachments|ask the assistant/i)
   ).toBeEnabled({ timeout: 15_000 });
 }
 

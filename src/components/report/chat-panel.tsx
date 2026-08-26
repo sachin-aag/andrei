@@ -1775,8 +1775,8 @@ export function ChatPanel() {
             <p className="text-sm text-[var(--muted-foreground)]">
               {mode === "plan"
                 ? sectionScope === CHAT_SECTION_SCOPE_ALL
-                  ? "I'll ask focused questions to plan a strong deviation investigation draft. I won't edit the document in Ask mode."
-                  : `Focused on ${scopeDescription(sectionScope)} — I'll ask what we need to complete that section. I won't edit the document in Ask mode.`
+                  ? "I'll answer questions about your deviation investigation using the report and attachments. I won't edit the document in Ask mode."
+                  : `Focused on ${scopeDescription(sectionScope)} — I'll answer questions about that section. I won't edit the document in Ask mode.`
                 : sectionScope === CHAT_SECTION_SCOPE_ALL
                   ? "Ask me to draft or improve any section of your deviation investigation. I read the report and propose targeted edits you accept or reject."
                   : `Focused on ${scopeDescription(sectionScope)} — ask me to draft or improve that section. I'll propose targeted edits you accept or reject.`}
@@ -2015,8 +2015,8 @@ export function ChatPanel() {
               placeholder={
                 mode === "plan"
                   ? sectionScope === CHAT_SECTION_SCOPE_ALL
-                    ? "Describe the deviation, or type @ to tag a document or section…"
-                    : `What should we capture in ${scopeDescription(sectionScope)}? Type @ to tag a document.`
+                    ? "Ask about the report or attachments… type @ to tag a document or section"
+                    : `Ask about ${scopeDescription(sectionScope)}… type @ to tag a document`
                   : sectionScope === CHAT_SECTION_SCOPE_ALL
                     ? "Ask the assistant to draft or improve a section… type @ to tag a document"
                     : `Ask the assistant to draft or improve ${scopeDescription(sectionScope)}… @ to tag a document`
