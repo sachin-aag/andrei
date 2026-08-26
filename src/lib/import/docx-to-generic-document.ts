@@ -36,7 +36,11 @@ export async function docxBufferToGenericDocument(
     narrative.content = emptyDoc().content;
   }
 
-  await enrichNarrativesFromDocxBuffer(buffer, { body: { narrative } });
+  await enrichNarrativesFromDocxBuffer(
+    buffer,
+    { body: { narrative } },
+    { headings: true, lists: true }
+  );
 
   return { narrative, warnings };
 }
