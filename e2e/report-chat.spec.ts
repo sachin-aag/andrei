@@ -89,7 +89,7 @@ test.describe("report chat", () => {
     await sidebar.getByLabel("Assistant mode").click();
     await page.getByRole("option", { name: /^ask$/i }).click();
 
-    const composer = sidebar.getByPlaceholder(/describe the deviation/i);
+    const composer = sidebar.getByPlaceholder(/ask about the report or attachments/i);
     await expect(composer).toBeEnabled({ timeout: 15_000 });
     await composer.fill("help me start this report");
     await sidebar.getByRole("button", { name: /^send message$/i }).click();
@@ -100,14 +100,14 @@ test.describe("report chat", () => {
     await expect(sidebar.getByText(/^assistant$/i)).toBeVisible({
       timeout: 30_000,
     });
-    await expect(sidebar.getByText(/before i draft anything/i)).toBeVisible({
+    await expect(sidebar.getByText(/out-of-spec dissolution result/i)).toBeVisible({
       timeout: 30_000,
     });
 
     await collapseReportSidebar(page);
     await expandReportSidebar(page);
     await expect(
-      reportSidebar(page).getByText(/before i draft anything/i)
+      reportSidebar(page).getByText(/out-of-spec dissolution result/i)
     ).toBeVisible({ timeout: 5_000 });
 
     await reloadWithNavigationRetry(page, { waitUntil: "domcontentloaded" });
@@ -117,7 +117,7 @@ test.describe("report chat", () => {
     });
     await openReportAssistant(page);
     await expect(
-      reportSidebar(page).getByText(/before i draft anything/i)
+      reportSidebar(page).getByText(/out-of-spec dissolution result/i)
     ).toBeVisible({ timeout: 30_000 });
   });
 
@@ -166,7 +166,7 @@ test.describe("report chat", () => {
       await sidebar.getByLabel("Assistant mode").click();
       await page.getByRole("option", { name: /^ask$/i }).click();
 
-      const composer = sidebar.getByPlaceholder(/describe the deviation/i);
+      const composer = sidebar.getByPlaceholder(/ask about the report or attachments/i);
       await expect(composer).toBeEnabled({ timeout: 15_000 });
       await composer.fill("first concurrent chat ping");
       await sidebar.getByRole("button", { name: /^send message$/i }).click();
@@ -196,7 +196,7 @@ test.describe("report chat", () => {
       await expect(
         sidebar.getByRole("button", { name: /^send message$/i })
       ).toBeVisible();
-      const newComposer = sidebar.getByPlaceholder(/describe the deviation/i);
+      const newComposer = sidebar.getByPlaceholder(/ask about the report or attachments/i);
       await expect(newComposer).toBeEnabled({ timeout: 15_000 });
 
       await newComposer.fill("second concurrent chat ping");
@@ -237,7 +237,7 @@ test.describe("report chat", () => {
     await sidebar.getByLabel("Assistant mode").click();
     await page.getByRole("option", { name: /^ask$/i }).click();
 
-    const composer = sidebar.getByPlaceholder(/describe the deviation/i);
+    const composer = sidebar.getByPlaceholder(/ask about the report or attachments/i);
     await expect(composer).toBeEnabled({ timeout: 15_000 });
     await composer.fill("first chat for close test");
     await sidebar.getByRole("button", { name: /^send message$/i }).click();

@@ -18,7 +18,9 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("bumps the prompt version when insert_image and citation-marker guidance change", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v47-metric-series-plots");
+    expect(CHAT_PROMPT_VERSION).toBe(
+      "chat-v48-ask-mode-qna-metric-series-plots"
+    );
   });
 
   it("puts citations at the end of the section when the pack mode is on", () => {
@@ -155,11 +157,14 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("use insert_image / plot_measurements / remove_image");
   });
 
-  it("plan mode forbids editing and asks questions via ask_user", () => {
+  it("ask mode forbids editing and answers questions", () => {
     const prompt = buildChatSystemPrompt({ ...opts, mode: "plan" });
     expect(prompt).toContain("Mode: ASK");
+    expect(prompt).toContain("answer questions");
     expect(prompt).toContain("edit tools are disabled");
     expect(prompt).toContain("ask_user");
+    expect(prompt).not.toContain("propose a short outline");
+    expect(prompt).not.toContain("switch to Agent mode to generate");
     expect(prompt).not.toContain("Mode: AGENT");
   });
 
@@ -350,16 +355,17 @@ describe("buildChatSystemPrompt", () => {
     expect(analyzeScope).toContain("exactly ONE of 6M / 5-Why / Brainstorming");
   });
 
-  it("includes Analyze planning rules in plan mode when analyze is in scope", () => {
+  it("includes Analyze ask rules in ask mode when analyze is in scope", () => {
     const planAnalyze = buildChatSystemPrompt({
       ...opts,
       mode: "plan",
       sectionScope: "analyze",
     });
-    expect(planAnalyze).toContain("## Analyze planning rules");
-    expect(planAnalyze).toContain("recommended method");
-    expect(planAnalyze).toContain("read_section on define AND measure");
-    expect(planAnalyze).toContain("leave 6M and Brainstorming blank");
+    expect(planAnalyze).toContain("## Analyze questions");
+    expect(planAnalyze).toContain("your recommendation");
+    expect(planAnalyze).toContain("read define and measure");
+    expect(planAnalyze).toContain("Do not draft Analyze fields");
+    expect(planAnalyze).not.toContain("closing outline");
     expect(planAnalyze).not.toContain("## Analyze drafting rules");
   });
 
@@ -370,13 +376,13 @@ describe("buildChatSystemPrompt", () => {
       sectionScope: "define",
     });
     expect(defineScope).not.toContain("## Analyze drafting rules");
-    expect(defineScope).not.toContain("## Analyze planning rules");
+    expect(defineScope).not.toContain("## Analyze questions");
 
     const planDefine = buildChatSystemPrompt({
       ...opts,
       mode: "plan",
       sectionScope: "define",
     });
-    expect(planDefine).not.toContain("## Analyze planning rules");
+    expect(planDefine).not.toContain("## Analyze questions");
   });
 });
