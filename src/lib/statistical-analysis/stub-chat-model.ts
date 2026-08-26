@@ -15,7 +15,7 @@ export async function buildStubAnalyticsChatModel(): Promise<LanguageModel> {
   };
 
   const reply =
-    "I can pull numbers from this report's attachments into the worksheet and run a Normal Capability Sixpack. Ask me to extract a column or plot the sixpack.";
+    "I can pull numbers from this report's attachments into the worksheet, run a Normal Capability Sixpack, or plot measurements as a scatter. Ask me to extract a column, run the sixpack, or plot a requirement ID.";
 
   const doStream = async () => {
     const stubDelayMs = Number.parseInt(process.env.CHAT_STUB_DELAY_MS ?? "", 10);

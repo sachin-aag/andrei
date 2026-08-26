@@ -55,6 +55,34 @@ export async function createCapabilitySixpack(
     rows?: number[];
   }
 ): Promise<{ analytics: ReportAnalyticsView; analysisId: string }> {
+  return postAnalysis(reportId, input);
+}
+
+export async function createMeasurementScatter(
+  reportId: string,
+  input: {
+    query: string;
+    title?: string;
+    xLabel?: string;
+    yLabel?: string;
+    layout?: {
+      mode?: "combined" | "per-series";
+      seriesBy?: "unit" | "none";
+      xAxis?: "sequential" | "replicate";
+      yMax?: number;
+    };
+  }
+): Promise<{ analytics: ReportAnalyticsView; analysisId: string }> {
+  return postAnalysis(reportId, {
+    kind: "measurement_scatter",
+    ...input,
+  });
+}
+
+async function postAnalysis(
+  reportId: string,
+  input: unknown
+): Promise<{ analytics: ReportAnalyticsView; analysisId: string }> {
   const response = await fetch(analyticsUrl(reportId, "/analyses"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },

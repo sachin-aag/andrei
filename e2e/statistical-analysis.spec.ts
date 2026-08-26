@@ -80,7 +80,7 @@ test.describe("report analytics", () => {
       timeout: 30_000,
     });
 
-    await page.getByRole("button", { name: "Data" }).click();
+    await page.getByTestId("worksheet-data-menu").click();
     await page.getByTestId("load-sample-assay").click();
     await expect(page.getByTestId("cell-c1-0")).toHaveText("101.84");
     await expect(page.getByTestId("column-header-c1")).toHaveText("Assay");
@@ -127,9 +127,9 @@ test.describe("report analytics", () => {
     await page.getByTestId("analyze-selected-column").click();
     await expect(page.getByTestId("capability-dialog")).toBeVisible();
     await expect(page.getByTestId("sixpack-column")).toContainText("Assay");
-    await page.getByTestId("sixpack-lsl").fill("90");
-    await page.getByTestId("sixpack-usl").fill("110");
-    await page.getByTestId("sixpack-target").fill("100");
+    await expect(page.getByTestId("sixpack-lsl")).toHaveValue("90");
+    await expect(page.getByTestId("sixpack-usl")).toHaveValue("110");
+    await expect(page.getByTestId("sixpack-target")).toHaveValue("100");
     await page.getByRole("dialog").getByRole("button", { name: /^ok$/i }).click();
     await expect(page.getByTestId("capability-sixpack")).toBeVisible({
       timeout: 30_000,
@@ -143,6 +143,9 @@ test.describe("report analytics", () => {
     await page.getByTestId("column-analyze-c2").click();
     await expect(page.getByTestId("capability-dialog")).toBeVisible();
     await expect(page.getByTestId("sixpack-column")).toContainText("Moisture");
+    await expect(page.getByTestId("sixpack-lsl")).toHaveValue("3.97");
+    await expect(page.getByTestId("sixpack-usl")).toHaveValue("4.25");
+    await expect(page.getByTestId("sixpack-target")).toHaveValue("4.11");
     await page.getByTestId("sixpack-lsl").fill("3.5");
     await page.getByTestId("sixpack-usl").fill("4.5");
     await page.getByTestId("sixpack-target").fill("4");
@@ -313,6 +316,8 @@ test.describe("report analytics", () => {
     const sidebar = reportSidebar(page);
     const composer = sidebar.getByTestId("analytics-chat-input");
     await expect(composer).toBeEnabled({ timeout: 15_000 });
+    await expect(sidebar.getByTestId("analytics-chat-pace")).toBeVisible();
+    await expect(sidebar.getByTestId("analytics-chat-attach-image")).toBeVisible();
     await composer.fill("extract assay numbers from the attachments");
     await sidebar.getByRole("button", { name: /^send message$/i }).click();
     await expect(
@@ -321,5 +326,31 @@ test.describe("report analytics", () => {
     await expect(
       sidebar.getByText(/normal capability sixpack/i)
     ).toBeVisible({ timeout: 30_000 });
+  });
+
+  test("shows Data and Specs tabs and Plot measurements", async ({ page }) => {
+    test.setTimeout(90_000);
+    await openReportAnalytics(page);
+    await expect(page.getByTestId("worksheet-grid")).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByTestId("worksheet-sheet-tab-data-1")).toHaveText("Data");
+    await expect(page.getByTestId("worksheet-sheet-tab-specs")).toBeVisible();
+
+    await page.getByTestId("worksheet-data-menu").click();
+    await page.getByTestId("load-sample-assay").click();
+    await page.getByTestId("worksheet-sheet-tab-specs").click();
+    await expect(page.getByTestId("worksheet-specs")).toBeVisible();
+    await expect(page.getByTestId("spec-column-0")).toHaveValue("Assay");
+    await expect(page.getByTestId("spec-lsl-0")).toHaveValue("90");
+    await expect(page.getByTestId("spec-usl-0")).toHaveValue("110");
+
+    await page.getByRole("button", { name: "Stat" }).click();
+    await page.getByTestId("stat-plot-measurements").click();
+    await expect(page.getByTestId("plot-measurements-dialog")).toBeVisible();
+    await expect(page.getByTestId("plot-measurements-submit")).toBeDisabled();
+    await page.getByTestId("plot-query").fill("M3-SYS-FN-037");
+    await page.getByTestId("plot-measurements-submit").click();
+    await expect(page.getByRole("alert")).toBeVisible({ timeout: 30_000 });
   });
 });

@@ -1,5 +1,5 @@
 import type { WorksheetData } from "./types";
-import { replaceColumnValues } from "./worksheet";
+import { replaceColumnValues, upsertSpecRow } from "./worksheet";
 
 /** Demo assay % observations for the capability sixpack walkthrough. */
 export const SAMPLE_ASSAY_COLUMN_NAME = "Assay";
@@ -28,5 +28,13 @@ export function applySampleAssay(
   colIndex = 0
 ): WorksheetData {
   const sample = sampleAssayWorksheetColumn();
-  return replaceColumnValues(data, colIndex, sample.values, sample.name);
+  return upsertSpecRow(
+    replaceColumnValues(data, colIndex, sample.values, sample.name),
+    {
+      columnName: sample.name,
+      lsl: "90",
+      usl: "110",
+      target: "100",
+    }
+  );
 }

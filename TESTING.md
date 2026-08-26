@@ -257,17 +257,18 @@ Both AI-suggestion cases seed an open suggestion through `POST /api/test/seed-ai
 </details>
 
 <details>
-<summary><strong>statistical-analysis.spec.ts</strong> — report Analytics worksheet + Normal Capability Sixpack</summary>
+<summary><strong>statistical-analysis.spec.ts</strong> — report Analytics worksheet, sixpack, scatter</summary>
 
 | Test | What it verifies |
 |------|------------------|
 | opens the Analytics tab with an empty worksheet | `/reports/:id/edit` → Analytics → grid, Define hidden |
 | loads sample assay and runs a Normal Capability Sixpack | Data menu sample → flattened Stat menu → Cp/Cpk sixpack |
-| saves a sixpack per column and switches between them | Analyze selected column + column context menu; two Results entries |
+| saves a sixpack per column and switches between them | Analyze selected column + column context menu; Specs then min/max form defaults; two Results entries |
 | shift+arrow selects rows and runs a sixpack on that range | Range highlight, Analyze label, Sample N matches the span |
 | saves a sixpack for specific row numbers | POST `rows` list; Results shows that subset; Download saves a CSV |
 | marks a sixpack stale after the source column changes | API-seeded analysis, edit cell, Recompute clears stale badge |
-| streams a stats-assistant reply | Stub chat streams and persists (cannot assert tools) |
+| streams a stats-assistant reply | Stub chat streams and persists; Quick/Deep + attach image are present (cannot assert tools) |
+| shows Data and Specs tabs and Plot measurements | Sheet tabs, Specs filled from sample assay, Plot measurements dialog errors without attachments |
 
 </details>
 
@@ -307,7 +308,7 @@ File: `src/app/api/reports/route.test.ts`
 - Pack/auth failures pass through `requireAnalyticsAccess` (404/401/403)
 - GET loads or creates the per-report worksheet
 - PATCH/POST persist worksheet JSON (POST is the autosave beacon alias)
-- POST analyses creates a sixpack; POST analyses/[id] recomputes
+- POST analyses creates a sixpack (or `kind: "measurement_scatter"`); POST analyses/[id] recomputes
 
 File: `src/app/api/reports/[reportId]/analytics/route.test.ts`
 

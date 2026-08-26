@@ -6,6 +6,7 @@ import {
   CONVERGENT_PROMPT_VERSION,
   DEMO_PACK,
   MJ_PACK,
+  isDocumentChatPlotMeasurementsEnabled,
   isDocumentTypeEnabled,
 } from "./packs";
 import { buildDesignVerificationDefinition } from "@/lib/document-types/design-verification";
@@ -44,9 +45,12 @@ describe("Convergent customer pack", () => {
     expect(CONVERGENT_PACK.expertReviewEnabled).toBe(true);
     expect(DEMO_PACK.expertReviewEnabled).toBe(false);
     expect(MJ_PACK.expertReviewEnabled).toBe(false);
-    expect(CONVERGENT_PACK.statisticalAnalysisEnabled).toBe(false);
+    expect(CONVERGENT_PACK.statisticalAnalysisEnabled).toBe(true);
     expect(DEMO_PACK.statisticalAnalysisEnabled).toBe(true);
     expect(MJ_PACK.statisticalAnalysisEnabled).toBe(true);
+    expect(isDocumentChatPlotMeasurementsEnabled(CONVERGENT_PACK)).toBe(false);
+    expect(isDocumentChatPlotMeasurementsEnabled(DEMO_PACK)).toBe(true);
+    expect(isDocumentChatPlotMeasurementsEnabled(MJ_PACK)).toBe(true);
     expect(engineerReportsSubtitle([{ label: "Design Verification Report" }])).toBe(
       "Create and manage design verification reports."
     );

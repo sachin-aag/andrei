@@ -7,7 +7,7 @@ import type {
   CurvePoint,
   HistogramBin,
   ProbabilityPlotPoint,
-  StatisticalAnalysisSummary,
+  SixpackAnalysisSummary,
 } from "@/lib/statistical-analysis/types";
 import {
   formatLimit,
@@ -500,7 +500,7 @@ export function SixpackView({
   recomputing,
   readOnly = false,
 }: {
-  analysis: StatisticalAnalysisSummary;
+  analysis: SixpackAnalysisSummary;
   onRecompute: () => void;
   onDelete: () => void;
   recomputing: boolean;

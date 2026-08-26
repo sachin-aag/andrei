@@ -38,6 +38,15 @@ const analytics: ReportAnalyticsView = {
   reportId: "report-1",
   worksheet: {
     columns: [{ id: "c1", name: "Assay", values: ["101.84", "103.12"] }],
+    sheets: [
+      {
+        id: "data-1",
+        name: "Data",
+        columns: [{ id: "c1", name: "Assay", values: ["101.84", "103.12"] }],
+      },
+    ],
+    specs: [],
+    activeSheetId: "data-1",
   },
   analyses: [],
   createdAt: "2026-01-01T00:00:00.000Z",
