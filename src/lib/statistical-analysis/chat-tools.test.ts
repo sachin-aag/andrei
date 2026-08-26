@@ -3,24 +3,33 @@ import type { z } from "zod";
 
 vi.mock("@/db", () => ({ db: {} }));
 
-vi.mock("@/lib/attachments/retrieval", () => ({
-  listDocumentPagesForReview: vi.fn(),
-  listReadyDocumentsForReport: vi.fn(),
-  readDocumentOutline: vi.fn(),
-  readDocumentPage: vi.fn(),
-}));
+vi.mock("@/lib/attachments/retrieval", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/attachments/retrieval")>();
+  return {
+    ...actual,
+    listDocumentPagesForReview: vi.fn(),
+    listReadyDocumentsForReport: vi.fn(),
+    readDocumentOutline: vi.fn(),
+    readDocumentPage: vi.fn(),
+    searchReportDocuments: vi.fn(),
+  };
+});
 
-vi.mock("@/lib/ai/chat/tools", () => ({
-  buildChatTools: vi.fn(() => ({
-    search_documents: { kind: "search" },
-    read_document_page: { kind: "page" },
-    document_outline: { kind: "outline" },
-    ask_user: { kind: "ask" },
-    propose_edit: { kind: "edit" },
-    draft_field: { kind: "draft" },
-    read_section: { kind: "section" },
-  })),
-}));
+vi.mock("@/lib/ai/chat/tools", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/ai/chat/tools")>();
+  return {
+    ...actual,
+    buildChatTools: vi.fn(() => ({
+      search_documents: { kind: "search" },
+      read_document_page: { kind: "page" },
+      document_outline: { kind: "outline" },
+      ask_user: { kind: "ask" },
+      propose_edit: { kind: "edit" },
+      draft_field: { kind: "draft" },
+      read_section: { kind: "section" },
+    })),
+  };
+});
 
 vi.mock("@/lib/ai/chat/model", () => ({
   resolveChatExtractLanguageModel: vi.fn(),
@@ -121,8 +130,16 @@ describe("analytics chat tools", () => {
     expect(locked.run_capability_sixpack).toBeUndefined();
     expect(locked.run_one_way_anova).toBeUndefined();
     expect(locked.plot_measurements).toBeUndefined();
-    expect(locked.search_documents).toBeDefined();
     expect(locked.scan_attachments).toBeDefined();
+    expect(locked.search_documents).toBeDefined();
+    const searchSchema = locked.search_documents?.inputSchema as unknown as ZodToolSchema;
+    expect(searchSchema.parse({ query: "Conductivity" })).toMatchObject({
+      mode: "keyword",
+    });
+    expect(locked.search_documents?.description).toContain("At most two calls");
+    expect(locked.search_documents?.description).not.toContain(
+      "truncated=true means keep grepping"
+    );
   });
 
   it("extracts finite numeric tokens and stops at the worksheet cap", () => {
@@ -248,7 +265,8 @@ describe("analytics chat tools", () => {
     expect(prompt).toContain("ask_user");
     expect(prompt).toContain('Never pass "A or B"');
     expect(prompt).toContain("copy the dates array from that same extract");
-    expect(prompt).toContain("Do not keep searching");
+    expect(prompt).toContain("stop searching");
+    expect(prompt).toContain("at most two search_documents calls");
     expect(prompt).toContain("Whole table");
     expect(prompt).toContain("scan_attachments");
   });

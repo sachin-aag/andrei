@@ -17,7 +17,7 @@ const emptyAnalytics: ReportAnalyticsView = {
 
 describe("analytics chat prompt", () => {
   it("bumps when sixpack/scatter/ANOVA policy or tools change", () => {
-    expect(ANALYTICS_CHAT_PROMPT_VERSION).toBe("analytics-chat-v10");
+    expect(ANALYTICS_CHAT_PROMPT_VERSION).toBe("analytics-chat-v11");
   });
 
   it("covers worksheet, sixpack, scatter, and ANOVA without drafting the report", () => {
@@ -34,6 +34,8 @@ describe("analytics chat prompt", () => {
     expect(prompt).toContain("manage_worksheet");
     expect(prompt).toContain("create a new data sheet");
     expect(prompt).toContain("Do not search attachments, scan files, extract numbers");
+    expect(prompt).toContain("at most two search_documents calls");
+    expect(prompt).toContain("truncated does not mean grep again");
     expect(prompt).toContain("run_one_way_anova");
     expect(prompt).toContain("Normal Capability Sixpack");
     expect(prompt).toContain("one-way ANOVA");

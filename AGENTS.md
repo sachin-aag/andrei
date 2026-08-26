@@ -110,6 +110,8 @@ worksheet + Normal Capability Sixpack + measurement scatter + one-way ANOVA) is 
 and Convergent (`statisticalAnalysisEnabled`). Analytics chat uses the same
 Ask/Agent + Quick/Deep composer as Document chat (Ask searches/extracts only;
 Agent fills the worksheet and runs plots when the report is writable).
+Analytics `search_documents` is keyword-first and stops after a cited page —
+it does not reuse Document chat's grep-loop copy.
 Convergent Document chat does not propose measurement plots; use Analytics
 instead.
 

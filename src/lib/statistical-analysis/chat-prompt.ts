@@ -14,7 +14,7 @@ import {
 import { formatRowSelection, normalizeRowSelection } from "./row-selection";
 
 /** Bump when analytics chat policy / tool instructions change. */
-export const ANALYTICS_CHAT_PROMPT_VERSION = "analytics-chat-v10";
+export const ANALYTICS_CHAT_PROMPT_VERSION = "analytics-chat-v11";
 
 const STRUCTURE_RULES = `## Worksheet structure
 If the engineer asked to create, add, insert, rename, edit (a header/name), or delete a data sheet, column, or row, call manage_worksheet immediately. Do not search attachments, scan files, extract numbers, or call write_column.
@@ -32,9 +32,9 @@ Cite the live filename field on each hit, not a stale "Document:" prefix in the 
 Skip this OCR path when the request is only worksheet structure (manage_worksheet).
 
 OCR / data-pull path (worksheet + sixpack):
-1. Named file family or whole table / log sheet / "all information": call scan_attachments once with filenameContains from the live index (e.g. Seed-2) and the table title. It outlines matching files and reads the hit pages in that one call. Do not grep in a loop.
-2. Otherwise locate with one or two search_documents calls (queries[], mode=keyword, excludePages=nextExcludePages). Do not keep searching.
-3. As soon as a hit has a page number, call scan_attachments, read_document_page, or extract_numeric_series. Search snippets are not enough to fill the worksheet.
+1. Named file family or whole table / log sheet / "all information": call scan_attachments once with filenameContains from the live index (e.g. Seed-2) and the table title. It outlines matching files and reads the hit pages in that one call. Do not grep.
+2. Otherwise at most two search_documents calls (default is keyword; do not switch to hybrid unless the query has no lexical tokens). truncated does not mean grep again.
+3. As soon as a hit has a page number, stop searching and call scan_attachments, read_document_page, or extract_numeric_series. Search snippets are not enough to fill the worksheet.
 4. Whole table dump: write_column from the scanned page text (labels in one column, each batch or series in its own). Do not ask_user for one assay and do not call extract_numeric_series.
 5. One named measurement series (e.g. Conductivity): extract_numeric_series with that metric, then write_column with lsl/usl/target when the pages name them (column specs). Never pass "A or B". If you also write dates, copy the dates array from that same extract. If the engineer did not name a series and did not ask for a whole table, call ask_user first.
 6. run_capability_sixpack when the engineer wants a capability plot (needs LSL and/or USL)

@@ -15,6 +15,7 @@ import {
   alignExtractedDates,
   gateMetricSeriesExtract,
 } from "@/lib/extraction/metric-series";
+import { buildAnalyticsSearchDocumentsTool } from "./search-documents";
 import { runScanAttachments } from "./scan-attachments";
 import { capabilitySixpackInputSchema, measurementScatterInputSchema, oneWayAnovaBodySchema } from "./schemas";
 import {
@@ -199,6 +200,9 @@ export function buildAnalyticsChatTools(opts: {
       includePlotMeasurements: false,
     }) as Record<string, unknown>
   ) as ToolSet;
+  documentTools.search_documents = buildAnalyticsSearchDocumentsTool({
+    reportId,
+  });
 
   const statsTools: ToolSet = {
     scan_attachments: tool({
