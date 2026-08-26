@@ -175,7 +175,11 @@ function AnalyticsToolChip({
         >
           {count && count > 0
             ? `Extracted ${count} value${count === 1 ? "" : "s"}`
-            : "No numbers found"}
+            : info.output?.status === "ambiguous"
+              ? typeof info.output?.message === "string"
+                ? info.output.message
+                : "Need one measurement series"
+              : "No numbers found"}
         </ToolLine>
       );
     }
