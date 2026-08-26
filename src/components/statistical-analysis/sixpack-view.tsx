@@ -19,6 +19,11 @@ import {
   formatRowSelection,
   normalizeRowSelection,
 } from "@/lib/statistical-analysis/row-selection";
+import {
+  analysisDownloadFilename,
+  analysisToCsv,
+  downloadTextFile,
+} from "@/lib/statistical-analysis/download";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
@@ -524,6 +529,20 @@ export function SixpackView({
               Stale
             </Badge>
           ) : null}
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            data-testid="download-analysis"
+            onClick={() => {
+              downloadTextFile(
+                analysisDownloadFilename(analysis),
+                analysisToCsv(analysis)
+              );
+            }}
+          >
+            Download
+          </Button>
           {readOnly ? null : (
             <>
               <Button

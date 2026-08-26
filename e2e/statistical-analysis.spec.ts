@@ -252,6 +252,10 @@ test.describe("report analytics", () => {
     await expect(page.getByTestId("sixpack-row-range")).toContainText(
       "rows 1, 3, 5, 8, 12"
     );
+    const downloadPromise = page.waitForEvent("download");
+    await page.getByTestId("download-analysis").click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toMatch(/capability-sixpack\.csv$/);
   });
 
   test("marks a sixpack stale after the source column changes", async ({
