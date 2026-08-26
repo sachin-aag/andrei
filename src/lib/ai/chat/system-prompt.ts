@@ -14,7 +14,7 @@ import { getDocumentType } from "@/lib/document-types";
 import type { RetrievalPolicy } from "@/lib/ai/chat/retrieval-policy";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v46-convergent-analytics-plots";
+export const CHAT_PROMPT_VERSION = "chat-v48-ask-mode-qna-metric-series-plots";
 
 export type ChatMode = "plan" | "agent";
 
@@ -56,7 +56,7 @@ function sectionFocusBlock(
 ): string {
   if (scope === "all") {
     return `## Section focus: ALL SECTIONS
-The engineer has not narrowed scope. You may plan or draft across any editable section unless they ask to focus on one.`;
+The engineer has not narrowed scope. Answer questions about any section unless they focus on one. Agent mode drafts; Ask mode does not.`;
   }
 
   const label = sectionLabel(scope);
@@ -70,7 +70,7 @@ The engineer has not narrowed scope. You may plan or draft across any editable s
     : `draft_field / edit_table / propose_edit / ${figures}`;
   return `## Section focus: ${label} [${scope}]
 The engineer selected **${label}** for this conversation. Focus Ask questions and Agent edits on this section only.
-- Ask mode: ask what is needed to complete ${label}; do not plan other sections unless they change the section dropdown.
+- Ask mode: answer questions about ${label}; do not address other sections unless they change the section dropdown.
 - Agent mode: only call ${editTools} on section "${scope}". Prefer read_section on "${scope}" too.${priorReadNote}
 - If the request clearly belongs elsewhere, call suggest_section_scope before answering substantively — do not edit other sections.`;
 }
@@ -159,16 +159,16 @@ ${
 - Do not paste markdown like ![alt](narrative#1) into draft_field or propose_edit — those cannot create or remove figures.`;
 }
 
-function planRules(policy: RetrievalPolicy): string {
+function askRules(policy: RetrievalPolicy): string {
   let firstStep: string;
   switch (policy) {
     case "comprehensive":
       firstStep =
-        "1. If Documents are listed, start_document_review then continue_document_review until finish_document_review. Do not treat search_documents as enough for a matrix or complete inventory. Then call ask_user only for facts the review did not contain.";
+        "1. If Documents are listed and the question needs a complete inventory or matrix, start_document_review then continue_document_review until finish_document_review. Do not treat search_documents as enough for that kind of answer. Then answer from the review; use ask_user only for facts the review did not contain.";
       break;
     case "adaptive":
       firstStep =
-        "1. If Documents are listed, grep adaptively: complementary search_documents queries, pass excludePages=nextExcludePages on later rounds, document_outline for sibling sections, read_document_page for hits. Do not start a document review. Then call ask_user only for facts the documents do not contain.";
+        "1. If Documents are listed, grep adaptively: complementary search_documents queries, pass excludePages=nextExcludePages on later rounds, document_outline for sibling sections, read_document_page for hits. Do not start a document review unless the question needs a complete inventory. Then answer from retrieved evidence; use ask_user only for facts the documents do not contain.";
       break;
     case "focused":
       firstStep =
@@ -179,14 +179,15 @@ function planRules(policy: RetrievalPolicy): string {
       throw new Error(`Unhandled retrieval policy: ${String(_exhaustive)}`);
     }
   }
-  return `## Mode: ASK (gather information — do NOT edit the document)
-You are in Ask mode. You CANNOT edit the document in this mode; the edit tools are disabled. Your goal is to gather just enough information to draft a strong first version later.
+  return `## Mode: ASK (answer questions — do NOT edit the document)
+You are in Ask mode. You CANNOT edit the document in this mode; the edit tools are disabled. Answer the engineer's questions about the report, attachments, and quality criteria.
 
 Do this:
 ${firstStep}
-2. Once you have enough retrieved evidence to draft, briefly propose a short outline: which sections you can draft now (enough info → will fill, with placeholders for small gaps), and which you'll skip for now (too little info → not worth a page of placeholders). Then invite the engineer to switch to Agent mode to generate the draft. The document index (filenames/topics) is not enough information by itself.
+2. Answer directly in conversational prose. Cite retrieved evidence when you rely on it. If the question cannot be answered from the report or attachments, say what is missing — use ask_user only when you need their input to answer the question at hand.
+3. Do not propose section drafts, drafting outlines, or field-by-field plans unless they explicitly ask for writing advice. Do not invite them to switch to Agent mode unless they ask how to apply changes to the document. The document index (filenames/topics) is not enough information by itself.
 
-Keep prose conversational and concise. Do not dump the whole criteria list back at the engineer. Never fabricate regulated facts.`;
+Keep prose conversational and concise. Do not dump the whole criteria list back at the engineer unless they ask about criteria coverage. Never fabricate regulated facts.`;
 }
 
 function agentRules(opts: {
@@ -231,7 +232,7 @@ Choosing the right tool:
 - draft_field — a FULL draft or rewrite of one field, written as markdown. Use it for empty fields, substantial prose rewrites, creating a NEW table, or an explicitly requested full table replacement. Do not use it for incremental table edits — accepting a draft overwrites every cell, including filled placeholders. draft_field cannot insert or remove figures; use ${figureEditTools(opts.includePlotMeasurements)}. A full rewrite of a field that already has images will drop those images.
 - propose_edit — one small targeted change inside existing prose, or a list item (targeted with "scope"). Never use it for tables, and never quote a markdown pipe table as anchorText. Never put image markdown in insertText.
 - insert_image — place one existing image (chat attachment or a figure already in a section) into a rich field. The engineer reviews it like any other suggestion. Do not invent or generate pixels${opts.includePlotMeasurements ? " — use plot_measurements when the engineer asked for a chart" : ". Measurement charts belong in Analytics, not Document chat"}.
-${opts.includePlotMeasurements ? "- plot_measurements — extract cited numeric measurements from attachments and propose a scatter plot as a reviewable figure. Only when the engineer asked in words for a chart. Never volunteer. Restyle reuses chartSpec." : "- Measurement plots — not available in Document chat. Tell the engineer to open Analytics and use Plot measurements or the Statistical Analysis assistant."}
+${opts.includePlotMeasurements ? "- plot_measurements — extract cited numeric measurements from attachments and propose a scatter plot as a reviewable figure. Only when the engineer asked in words for a chart. Never volunteer. Name one series or requirement ID (not \"Conductivity or TOC\"). Restyle reuses chartSpec." : "- Measurement plots — not available in Document chat. Tell the engineer to open Analytics and use Plot measurements or the Statistical Analysis assistant."}
 - remove_image — remove one existing figure from a rich field. Call read_section first and pass image.id (e.g. narrative#1). The engineer reviews it like any other suggestion. Do not rewrite the field with draft_field just to drop a figure.
 - search_documents — grep ready evidence attachments in rounds. Prefer complementary queries. Pass excludePages from the previous nextExcludePages. Required before ask_user or draft_field when Documents are listed.
 - document_outline — list per-page context for one attachment so you can pick which pages to read. Not a substitute for search_documents.
@@ -273,14 +274,14 @@ const ANALYZE_METHOD_HEURISTICS = `Method selection heuristics (exactly ONE of 6
 - Never plan or draft two methods with real content. Leave unused methods blank (do not write "Not Applicable" into them — DOCX export fills that).
 - Always include Investigation Outcome, Root Cause, and Impact Assessment (all six areas: System, Document, Product, Equipment, Patient safety, Past batches).`;
 
-const ANALYZE_PLAN_RULES = `## Analyze planning rules (required when planning Analyze)
+const ANALYZE_ASK_RULES = `## Analyze questions (when the engineer asks about Analyze)
 ${ANALYZE_METHOD_HEURISTICS}
 
-In Ask mode you MUST:
-1. Read define and measure (unless the engineer already named a method or the context map already shows one).
-2. State your recommended method and a one-sentence rationale in prose BEFORE asking more questions.
-3. Then ask_user only for facts still missing for that chosen method plus the always-required fields (investigation outcome, root cause, impact across the six areas). Do not ask 6M-grid questions if you recommended 5-Why, and vice versa.
-4. In your closing outline, name the chosen method explicitly (e.g. "Analyze: draft 5-Why only; leave 6M and Brainstorming blank; fill outcome / root cause / six-area impact").`;
+When answering questions about Analyze in Ask mode:
+1. You MAY read define and measure (unless the engineer already named a method or the context map already shows one) to explain which root-cause method fits.
+2. When asked which method to use, state your recommendation and a one-sentence rationale in prose. Do not draft Analyze fields.
+3. Use ask_user only for facts still missing to answer their question about investigation outcome, root cause, or impact. Do not ask 6M-grid questions if you recommended 5-Why, and vice versa.
+4. Do not propose drafting outlines, field-by-field plans, or Agent-mode workflows unless they explicitly ask how to write Analyze.`;
 
 const ANALYZE_AGENT_RULES = `## Analyze drafting rules (required when drafting Analyze)
 ${ANALYZE_METHOD_HEURISTICS}
@@ -324,7 +325,7 @@ export function buildChatSystemPrompt(opts: {
   );
   const modeRules =
     mode === "plan"
-      ? planRules(retrievalPolicy)
+      ? askRules(retrievalPolicy)
       : agentRules({
           draftOrder: chat.draftOrder,
           analyzeInScope,
@@ -339,7 +340,7 @@ export function buildChatSystemPrompt(opts: {
     ? `\n\n${opts.mentionBlock.trim()}`
     : "";
   const analyzeBlock = analyzeInScope
-    ? `\n\n${mode === "plan" ? ANALYZE_PLAN_RULES : ANALYZE_AGENT_RULES}`
+    ? `\n\n${mode === "plan" ? ANALYZE_ASK_RULES : ANALYZE_AGENT_RULES}`
     : "";
   const evidencePreview = opts.autoEvidenceBlock?.trim()
     ? `\n\n${opts.autoEvidenceBlock.trim()}`

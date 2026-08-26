@@ -3,6 +3,7 @@
 import {
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
   useSyncExternalStore,
@@ -41,20 +42,25 @@ import {
   type AskUserQuestionInput,
 } from "@/components/report/chat-ask-user-form";
 import {
+  ANALYTICS_CHAT_MODE_OPTIONS,
+  CHAT_PACE_OPTIONS,
+  ChatBusyStatus,
+  ComposerSelect,
+} from "@/components/report/chat-composer-controls";
+import {
   ChatSessionHost,
   IDLE_CHAT_RUNTIME,
   type ChatSessionRuntime,
 } from "@/components/report/chat-session-host";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { useReportData } from "@/providers/report-provider";
-import { canSaveReportSection } from "@/lib/reports/access";
-import { CHAT_ASSISTANT_ERROR_MESSAGE } from "@/lib/ai/chat/assistant-turn";
+import {
+  aiSuggestionLockReason,
+  canSaveReportSection,
+} from "@/lib/reports/access";
+import {
+  CHAT_ASSISTANT_ERROR_MESSAGE,
+  chatWatchdogPhase,
+} from "@/lib/ai/chat/assistant-turn";
 import type { ChatSessionSummary } from "@/lib/ai/chat/sessions";
 import { waitForValue } from "@/lib/ai/chat/session-runtime";
 import {
@@ -70,13 +76,21 @@ import {
   writeChatComposerPrefs,
 } from "@/lib/ai/chat/composer-prefs";
 import { isChatPace, type ChatPace } from "@/lib/ai/chat/pace";
+import { isChatMode, type ChatMode } from "@/lib/ai/chat/system-prompt";
 
-const EXAMPLE_PROMPTS = [
-  "Extract assay measurements from the attachments into a worksheet column.",
-  "Run a Normal Capability Sixpack on the Assay column with LSL 90 and USL 110.",
-  "Run one-way ANOVA of Assay by Lot.",
-  "Plot measurements for M3-SYS-FN-037 from the attachments.",
-];
+const ANALYTICS_EXAMPLE_PROMPTS: Record<ChatMode, string[]> = {
+  plan: [
+    "Where is TABLE NO. 01 for the 60 L fermenter in the Seed-2 BMRs?",
+    "What assay LSL and USL are named in the attachments?",
+    "Summarize the worksheet columns and any saved sixpacks.",
+  ],
+  agent: [
+    "Extract assay measurements from the attachments into a worksheet column.",
+    "Run a Normal Capability Sixpack on the Assay column with LSL 90 and USL 110.",
+    "Run one-way ANOVA of Assay by Lot.",
+    "Plot measurements for M3-SYS-FN-037 from the attachments.",
+  ],
+};
 
 type PendingChatImage = {
   id: string;
@@ -151,6 +165,31 @@ function ToolLine({
   );
 }
 
+function manageWorksheetPendingLabel(action: string): string {
+  switch (action) {
+    case "add_sheet":
+      return "Adding data sheet…";
+    case "rename_sheet":
+      return "Renaming sheet…";
+    case "delete_sheet":
+      return "Deleting sheet…";
+    case "add_column":
+      return "Adding column…";
+    case "rename_column":
+      return "Renaming column…";
+    case "delete_column":
+      return "Deleting column…";
+    case "add_row":
+      return "Adding row…";
+    case "delete_row":
+      return "Deleting row…";
+    case "set_cell":
+      return "Updating cell…";
+    default:
+      return "Updating worksheet…";
+  }
+}
+
 function AnalyticsToolChip({
   info,
   askUserActive,
@@ -187,6 +226,12 @@ function AnalyticsToolChip({
           {pending ? "Reading outline…" : "Read document outline"}
         </ToolLine>
       );
+    case "scan_attachments":
+      return (
+        <ToolLine icon={<FileSearch className="size-3.5" />}>
+          {pending ? "Scanning attachments…" : "Scanned attachments"}
+        </ToolLine>
+      );
     case "read_worksheet":
       return (
         <ToolLine icon={<Table2 className="size-3.5" />}>
@@ -212,7 +257,11 @@ function AnalyticsToolChip({
         >
           {count && count > 0
             ? `Extracted ${count} value${count === 1 ? "" : "s"}`
-            : "No numbers found"}
+            : info.output?.status === "ambiguous"
+              ? typeof info.output?.message === "string"
+                ? info.output.message
+                : "Need one measurement series"
+              : "No numbers found"}
         </ToolLine>
       );
     }
@@ -243,6 +292,36 @@ function AnalyticsToolChip({
           {typeof info.output?.message === "string"
             ? info.output.message
             : "Could not write the column."}
+        </ToolLine>
+      );
+    }
+    case "manage_worksheet": {
+      const action =
+        typeof info.input?.action === "string" ? info.input.action : "";
+      if (pending) {
+        return (
+          <ToolLine icon={<Table2 className="size-3.5" />}>
+            {manageWorksheetPendingLabel(action)}
+          </ToolLine>
+        );
+      }
+      if (info.output?.status === "ok") {
+        return (
+          <ToolLine
+            icon={<Table2 className="size-3.5 text-emerald-500" />}
+            tone="success"
+          >
+            {typeof info.output.message === "string"
+              ? info.output.message
+              : "Updated the worksheet"}
+          </ToolLine>
+        );
+      }
+      return (
+        <ToolLine icon={<Table2 className="size-3.5" />} tone="warn">
+          {typeof info.output?.message === "string"
+            ? info.output.message
+            : "Could not update the worksheet."}
         </ToolLine>
       );
     }
@@ -412,6 +491,10 @@ function MessageTurn({
   );
 }
 
+function subscribeNoop() {
+  return () => {};
+}
+
 export function AnalyticsChatPanel({
   onWorksheetChanged,
 }: {
@@ -419,10 +502,13 @@ export function AnalyticsChatPanel({
 }) {
   const { report, currentUserId, currentUserRole, currentUserEmail } =
     useReportData();
-  const canEdit = canSaveReportSection(
-    { id: currentUserId, role: currentUserRole, email: currentUserEmail },
-    report
-  );
+  const accessUser = {
+    id: currentUserId,
+    role: currentUserRole,
+    email: currentUserEmail,
+  };
+  const canEdit = canSaveReportSection(accessUser, report);
+  const editLockReason = aiSuggestionLockReason(accessUser, report);
   const api = `/api/reports/${report.id}/analytics/chat`;
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
@@ -445,10 +531,43 @@ export function AnalyticsChatPanel({
         : DEFAULT_CHAT_COMPOSER_PREFS,
     () => DEFAULT_CHAT_COMPOSER_PREFS
   );
+  const isClient = useSyncExternalStore(subscribeNoop, () => true, () => false);
+  const composerPrefsReady = isClient && currentUserId != null;
+  const modeOptions = useMemo(
+    () =>
+      ANALYTICS_CHAT_MODE_OPTIONS.map((option) =>
+        option.value === "agent" && !canEdit
+          ? {
+              ...option,
+              disabled: true,
+              description: editLockReason ?? option.description,
+            }
+          : option
+      ),
+    [canEdit, editLockReason]
+  );
+  const mode =
+    !canEdit && storedComposerPrefs.mode === "agent"
+      ? "plan"
+      : storedComposerPrefs.mode;
   const pace = storedComposerPrefs.pace;
 
-  const { messages, error, stopTurn, busy } = runtime;
+  const {
+    messages,
+    error,
+    stopTurn,
+    busy,
+    streamBusy,
+    backgroundTurn,
+    elapsedMs,
+    silentMs,
+  } = runtime;
   const hostReady = runtime !== IDLE_CHAT_RUNTIME;
+  const watchdog = chatWatchdogPhase({
+    busy: streamBusy,
+    elapsedMs,
+    silentMs,
+  });
 
   const loadSessions = useCallback(async (): Promise<ChatSessionSummary[]> => {
     try {
@@ -557,15 +676,28 @@ export function AnalyticsChatPanel({
     []
   );
 
+  const persistComposerPrefs = useCallback(
+    (next: { mode: ChatMode; pace: ChatPace }) => {
+      if (!currentUserId) return;
+      writeChatComposerPrefs(currentUserId, report.id, next);
+    },
+    [currentUserId, report.id]
+  );
+
+  const setMode = useCallback(
+    (next: ChatMode) => {
+      if (!isChatMode(next)) return;
+      persistComposerPrefs({ mode: next, pace: storedComposerPrefs.pace });
+    },
+    [persistComposerPrefs, storedComposerPrefs.pace]
+  );
+
   const setPace = useCallback(
     (next: ChatPace) => {
-      if (!isChatPace(next) || !currentUserId) return;
-      writeChatComposerPrefs(currentUserId, report.id, {
-        mode: storedComposerPrefs.mode,
-        pace: next,
-      });
+      if (!isChatPace(next)) return;
+      persistComposerPrefs({ mode: storedComposerPrefs.mode, pace: next });
     },
-    [currentUserId, report.id, storedComposerPrefs.mode]
+    [persistComposerPrefs, storedComposerPrefs.mode]
   );
 
   const addImageFiles = useCallback(
@@ -663,7 +795,7 @@ export function AnalyticsChatPanel({
       if (sessionRuntime.busy) return;
       setInput("");
       setPendingImages([]);
-      const body = { sessionId, pace };
+      const body = { sessionId, mode, pace };
       if (trimmed && files.length > 0) {
         void sessionRuntime.sendMessage({ text: trimmed, files }, { body });
       } else if (files.length > 0) {
@@ -678,6 +810,7 @@ export function AnalyticsChatPanel({
       createSession,
       currentSessionId,
       initializing,
+      mode,
       pace,
       pendingImages,
     ]
@@ -779,18 +912,12 @@ export function AnalyticsChatPanel({
         {messages.length === 0 ? (
           <div className="space-y-3">
             <p className="text-sm text-[var(--muted-foreground)]">
-              I read this report&apos;s attachments, fill a worksheet column,
-              run a Normal Capability Sixpack, and plot measurements as a
-              scatter. I don&apos;t draft the document.
+              {mode === "plan"
+                ? "I read this report's attachments and the worksheet. I don't fill columns or run plots in Ask mode — switch to Agent for that. I don't draft the document."
+                : "I read this report's attachments, fill a worksheet column, run a Normal Capability Sixpack or one-way ANOVA, and plot measurements as a scatter. I don't draft the document."}
             </p>
-            {!canEdit ? (
-              <p className="text-xs text-[var(--muted-foreground)]">
-                This report is locked. You can search attachments but cannot
-                change the worksheet.
-              </p>
-            ) : null}
             <div className="space-y-1.5">
-              {EXAMPLE_PROMPTS.map((prompt) => (
+              {ANALYTICS_EXAMPLE_PROMPTS[mode].map((prompt) => (
                 <button
                   key={prompt}
                   type="button"
@@ -816,18 +943,13 @@ export function AnalyticsChatPanel({
           ))
         )}
         {busy ? (
-          <div className="flex items-center gap-2 text-xs text-[var(--muted-foreground)]">
-            <Loader2 className="size-3 animate-spin" />
-            Working…
-            <button
-              type="button"
-              onClick={stopTurn}
-              aria-label="Stop generating"
-              className="rounded-md px-1.5 py-0.5 hover:bg-[var(--secondary)]"
-            >
-              Stop
-            </button>
-          </div>
+          <ChatBusyStatus
+            mode={mode}
+            stale={watchdog === "stale" || watchdog === "give_up"}
+            background={backgroundTurn && !streamBusy}
+            willNotify={false}
+            onCancel={stopTurn}
+          />
         ) : null}
         {error ? (
           <p className="text-xs text-red-500">{CHAT_ASSISTANT_ERROR_MESSAGE}</p>
@@ -841,32 +963,37 @@ export function AnalyticsChatPanel({
           void send(input);
         }}
       >
-        <div className="mb-2 flex items-center gap-2">
-          <Select
-            value={pace}
-            onValueChange={(value) => {
-              if (isChatPace(value)) setPace(value);
-            }}
-            disabled={busy}
-          >
-            <SelectTrigger
-              data-testid="analytics-chat-pace"
-              aria-label="Answer depth"
-              className="h-7 w-[6rem] border-[var(--border)] bg-[var(--secondary)]/30 px-2 text-[11px] font-medium"
-              title={
-                pace === "deep"
-                  ? "Digs through your documents and reasons further before answering. Slower."
-                  : "Fast answers with lighter reasoning."
-              }
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent side="top" className="text-[11px]">
-              <SelectItem value="quick">Quick</SelectItem>
-              <SelectItem value="deep">Deep</SelectItem>
-            </SelectContent>
-          </Select>
+        <div className="mb-2 flex items-center gap-1.5">
+          {composerPrefsReady ? (
+            <>
+              <ComposerSelect
+                value={mode}
+                options={modeOptions}
+                onChange={setMode}
+                disabled={busy}
+                ariaLabel="Assistant mode"
+                className="w-[6rem]"
+                testId="analytics-chat-mode"
+              />
+              <ComposerSelect
+                value={pace}
+                options={CHAT_PACE_OPTIONS}
+                onChange={setPace}
+                disabled={busy}
+                ariaLabel="Answer depth"
+                className="w-[6rem]"
+                testId="analytics-chat-pace"
+              />
+            </>
+          ) : null}
         </div>
+        {!canEdit ? (
+          <p className="mb-2 text-[11px] text-[var(--muted-foreground)]">
+            {editLockReason ??
+              "You can't change the worksheet on this report right now."}{" "}
+            Ask mode can still search attachments.
+          </p>
+        ) : null}
         {pendingImages.length > 0 ? (
           <div className="mb-2 flex flex-wrap gap-2">
             {pendingImages.map((image) => (
@@ -941,7 +1068,11 @@ export function AnalyticsChatPanel({
             }}
             rows={2}
             disabled={initializing}
-            placeholder="Extract numbers, run a sixpack, ANOVA, or plot measurements…"
+            placeholder={
+              mode === "plan"
+                ? "Ask about measurements in the attachments…"
+                : "Extract numbers, run a sixpack, ANOVA, or plot measurements…"
+            }
             className="min-h-[40px] max-h-40 w-full resize-none rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)] disabled:opacity-50"
           />
           {busy ? (

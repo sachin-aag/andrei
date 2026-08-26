@@ -9,6 +9,10 @@ import {
   m3SysFn037ExtractedRows,
 } from "@/lib/charts/__fixtures__/m3-sys-fn-037-transcript";
 import {
+  P1_PUW_COMBINED_TRANSCRIPT,
+  P1_PUW_FILENAME,
+} from "@/lib/extraction/__fixtures__/p1-puw-qualification-phase-ii";
+import {
   buildChartSpec,
   extractMeasurements,
   extractNumberTokens,
@@ -129,5 +133,62 @@ describe("extractMeasurements", () => {
       extraction,
     });
     expect(spec.points.map((p) => p.x)).toEqual([1, 2]);
+  });
+
+  it("refuses an OR-list query without reading pages", async () => {
+    const result = await extractMeasurements({
+      reportId: "r1",
+      query: "Conductivity or TOC or Level",
+      search: async () => {
+        throw new Error("search should not run");
+      },
+      readPage: async () => {
+        throw new Error("read should not run");
+      },
+      extractRows: async () => {
+        throw new Error("extract should not run");
+      },
+    });
+    expect(result.status).toBe("unverified");
+    if (result.status !== "unverified") return;
+    expect(result.message).toMatch(/exactly one measurement series/i);
+  });
+
+  it("fails closed on the water PDF dual unlabeled RESULT columns", async () => {
+    const result = await extractMeasurements({
+      reportId: "r1",
+      query: "Conductivity",
+      search: async () => [
+        {
+          attachmentId: "puw",
+          filename: P1_PUW_FILENAME,
+          description: null,
+          pageNumber: 1,
+          chunkId: "c1",
+          sourceKind: "pdf",
+          text: "snippet",
+          quote: "snippet",
+          citationId: "cit_1",
+          ingestRunId: "run_1",
+        },
+      ],
+      readPage: async () => ({
+        attachmentId: "puw",
+        filename: P1_PUW_FILENAME,
+        description: null,
+        pageNumber: 1,
+        printedPageLabel: null,
+        transcript: P1_PUW_COMBINED_TRANSCRIPT,
+        visualInterpretation: "",
+        pageContext: null,
+        ingestRunId: "run_1",
+      }),
+      extractRows: async () => {
+        throw new Error("extract should not run on unbound dual series");
+      },
+    });
+    expect(result.status).toBe("unverified");
+    if (result.status !== "unverified") return;
+    expect(result.message).toMatch(/unlabeled RESULT/i);
   });
 });

@@ -15,6 +15,7 @@ import {
   normalizeWorksheet,
   parseTsv,
   pasteTsv,
+  renameColumn,
   replaceColumnValues,
   rowCount,
   setCell,
@@ -153,12 +154,18 @@ describe("worksheet grid operations", () => {
     expect(next.activeSheetId).toBe(PRIMARY_DATA_SHEET_ID);
   });
 
-  it("adds a second data sheet and keeps Specs as a non-data tab", () => {
+  it("adds a named data sheet", () => {
+    const sheet = addDataSheet(createEmptyWorksheet(), "Assay");
+    expect(sheet.sheets).toHaveLength(2);
+    expect(sheet.sheets[1]?.name).toBe("Assay");
+    expect(sheet.activeSheetId).toBe("data-2");
+  });
+
+  it("adds a second data sheet and maps a legacy Specs tab onto Data", () => {
     let sheet = createEmptyWorksheet();
     sheet = addDataSheet(sheet);
     expect(sheet.sheets).toHaveLength(2);
     expect(sheet.activeSheetId).toBe("data-2");
-    const secondId = sheet.activeSheetId;
     expect(sheet.columns[0]?.id).not.toBe(sheet.sheets[0]?.columns[0]?.id);
     expect(sheet.columns.map((column) => column.id)).toEqual([
       "c9",
@@ -171,13 +178,29 @@ describe("worksheet grid operations", () => {
       "c16",
     ]);
     sheet = switchWorksheetTab(sheet, SPECS_TAB_ID);
-    expect(isSpecsTab(sheet)).toBe(true);
-    sheet = setCell(sheet, 0, 0, "12");
-    expect(isSpecsTab(sheet)).toBe(true);
-    const second = sheet.sheets.find((item) => item.id === secondId);
-    expect(second?.columns[0]?.values).toEqual(["12"]);
-    const first = sheet.sheets.find((item) => item.id === PRIMARY_DATA_SHEET_ID);
-    expect(first?.columns[0]?.values ?? []).toEqual([]);
+    expect(isSpecsTab(sheet)).toBe(false);
+    expect(sheet.activeSheetId).toBe(PRIMARY_DATA_SHEET_ID);
+    const legacy = normalizeWorksheet({
+      ...sheet,
+      activeSheetId: SPECS_TAB_ID,
+    });
+    expect(legacy.activeSheetId).toBe(PRIMARY_DATA_SHEET_ID);
+    expect(isSpecsTab(legacy)).toBe(false);
+  });
+
+  it("renames and deletes column specs with the column", () => {
+    let sheet = applySampleAssay(createEmptyWorksheet(), 0);
+    expect(specRowForColumn(sheet, "Assay")?.lsl).toBe("90");
+    sheet = renameColumn(sheet, 0, "Assay %");
+    expect(specRowForColumn(sheet, "Assay")).toBeUndefined();
+    expect(specRowForColumn(sheet, "Assay %")).toEqual({
+      columnName: "Assay %",
+      lsl: "90",
+      usl: "110",
+      target: "100",
+    });
+    sheet = deleteColumn(sheet, 0);
+    expect(specRowForColumn(sheet, "Assay %")).toBeUndefined();
   });
 
   it("prefers named spec limits, then min/max of the selected values", () => {

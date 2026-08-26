@@ -26,14 +26,14 @@ import {
   deleteColumn,
   deleteDataSheet,
   deleteRow,
+  dropSpecRow,
   insertColumn,
   insertRow,
-  isSpecsTab,
-  setSpecRows,
+  specRowForColumn,
   switchWorksheetTab,
+  upsertSpecRow,
 } from "@/lib/statistical-analysis/worksheet";
 import {
-  SPECS_TAB_ID,
   isAnovaAnalysis,
   isScatterAnalysis,
   isSixpackAnalysis,
@@ -48,7 +48,7 @@ import { PlotMeasurementsDialog } from "@/components/statistical-analysis/plot-m
 import { ScatterView } from "@/components/statistical-analysis/scatter-view";
 import { AnovaView } from "@/components/statistical-analysis/anova-view";
 import { SixpackView } from "@/components/statistical-analysis/sixpack-view";
-import { SpecsTable } from "@/components/statistical-analysis/specs-table";
+import { ColumnSpecsDialog } from "@/components/statistical-analysis/column-specs-dialog";
 import {
   WorksheetGrid,
 } from "@/components/statistical-analysis/worksheet-grid";
@@ -105,6 +105,7 @@ export function StatisticalWorkspace({
   const [anovaRowEnd, setAnovaRowEnd] = useState<number | null>(null);
   const [anovaSubmitting, setAnovaSubmitting] = useState(false);
   const [anovaError, setAnovaError] = useState<string | null>(null);
+  const [specsColumnId, setSpecsColumnId] = useState<string | null>(null);
   const [recomputing, setRecomputing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -211,7 +212,8 @@ export function StatisticalWorkspace({
   const analyzeLabel = selectedRowRange
     ? `Analyze ${selectedColumnName} rows ${selectedRowRange.start}–${selectedRowRange.end}`
     : `Analyze ${selectedColumnName}`;
-  const specsOpen = isSpecsTab(worksheet);
+  const specsColumn =
+    worksheet.columns.find((column) => column.id === specsColumnId) ?? null;
 
   const openSixpackForColumn = async (
     columnId: string,
@@ -325,7 +327,7 @@ export function StatisticalWorkspace({
                 setSelection(collapseSelection(0, 0));
               }}
             />
-            {readOnly || specsOpen ? null : (
+            {readOnly ? null : (
               <Button
                 type="button"
                 size="sm"
@@ -401,23 +403,7 @@ export function StatisticalWorkspace({
                   </button>
                 );
               })}
-              <button
-                type="button"
-                data-testid="worksheet-sheet-tab-specs"
-                onClick={() =>
-                  setWorksheet((current) =>
-                    switchWorksheetTab(current, SPECS_TAB_ID)
-                  )
-                }
-                className={`rounded-md px-2 py-1 text-xs ${
-                  specsOpen
-                    ? "bg-[var(--secondary)] font-medium text-[var(--foreground)]"
-                    : "text-[var(--muted-foreground)] hover:bg-[var(--secondary)]/60"
-                }`}
-              >
-                Specs
-              </button>
-              {readOnly || worksheet.sheets.length <= 1 || specsOpen ? null : (
+              {readOnly || worksheet.sheets.length <= 1 ? null : (
                 <button
                   type="button"
                   data-testid="delete-data-sheet"
@@ -433,29 +419,25 @@ export function StatisticalWorkspace({
                 </button>
               )}
             </div>
-            {specsOpen ? (
-              <SpecsTable
-                specs={worksheet.specs}
-                readOnly={readOnly}
-                onChange={(specs) =>
-                  setWorksheet((current) => setSpecRows(current, specs))
-                }
-              />
-            ) : (
-              <WorksheetGrid
-                worksheet={worksheet}
-                selection={selection}
-                onSelectionChange={setSelection}
-                onChange={setWorksheet}
-                readOnly={readOnly}
-                onAnalyzeColumn={(colIndex) => {
-                  const column = worksheet.columns[colIndex];
-                  if (!column) return;
-                  setSelection(collapseSelection(colIndex, selection.row));
-                  void openSixpackForColumn(column.id, null);
-                }}
-              />
-            )}
+            <WorksheetGrid
+              worksheet={worksheet}
+              selection={selection}
+              onSelectionChange={setSelection}
+              onChange={setWorksheet}
+              readOnly={readOnly}
+              onAnalyzeColumn={(colIndex) => {
+                const column = worksheet.columns[colIndex];
+                if (!column) return;
+                setSelection(collapseSelection(colIndex, selection.row));
+                void openSixpackForColumn(column.id, null);
+              }}
+              onEditColumnSpecs={(colIndex) => {
+                const column = worksheet.columns[colIndex];
+                if (!column) return;
+                setSelection(collapseSelection(colIndex, selection.row));
+                setSpecsColumnId(column.id);
+              }}
+            />
           </div>
         </TabsContent>
 
@@ -713,6 +695,37 @@ export function StatisticalWorkspace({
           } finally {
             setCapabilitySubmitting(false);
           }
+        }}
+      />
+
+      <ColumnSpecsDialog
+        key={specsColumn ? `${specsColumn.id}-open` : "specs-closed"}
+        open={Boolean(specsColumn)}
+        columnName={specsColumn?.name ?? ""}
+        spec={
+          specsColumn
+            ? specRowForColumn(worksheet, specsColumn.name)
+            : undefined
+        }
+        readOnly={readOnly}
+        onOpenChange={(open) => {
+          if (!open) setSpecsColumnId(null);
+        }}
+        onSave={(values) => {
+          if (!specsColumn) return;
+          const empty =
+            !values.lsl.trim() && !values.usl.trim() && !values.target.trim();
+          setWorksheet((current) =>
+            empty
+              ? dropSpecRow(current, specsColumn.name)
+              : upsertSpecRow(current, {
+                  columnName: specsColumn.name,
+                  lsl: values.lsl,
+                  usl: values.usl,
+                  target: values.target,
+                })
+          );
+          setSpecsColumnId(null);
         }}
       />
 

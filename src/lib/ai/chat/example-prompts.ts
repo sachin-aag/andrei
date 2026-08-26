@@ -3,9 +3,9 @@ import type { ChatMode } from "@/lib/ai/chat/system-prompt";
 
 export const EXAMPLE_PROMPTS: Record<ChatMode, string[]> = {
   plan: [
-    "Help me document this deviation from scratch.",
-    "What do you need to complete the Define section?",
-    "Plan an investigation for an out-of-spec result on a medical device line.",
+    "What does the evidence say about the root cause?",
+    "Which quality criteria is the Define section still missing?",
+    "Summarize what the batch record says about the out-of-spec result.",
   ],
   agent: [
     "Draft the Define section from what we discussed.",

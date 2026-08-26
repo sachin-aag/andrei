@@ -10,6 +10,10 @@ import { requireAnalyticsAccess } from "@/lib/statistical-analysis/access";
 import { buildAnalyticsChatSystemPrompt } from "@/lib/statistical-analysis/chat-prompt";
 import { ANALYTICS_CHAT_PROMPT_VERSION } from "@/lib/statistical-analysis/chat-prompt";
 import { buildAnalyticsChatTools } from "@/lib/statistical-analysis/chat-tools";
+import {
+  ANALYTICS_CHAT_STEP_BUDGET,
+  prepareAnalyticsChatStep,
+} from "@/lib/statistical-analysis/search-loop";
 import { getOrCreateReportAnalytics } from "@/lib/statistical-analysis/store";
 import { buildStubAnalyticsChatModel } from "@/lib/statistical-analysis/stub-chat-model";
 import {
@@ -19,6 +23,10 @@ import {
   resolveChatLanguageModel,
 } from "@/lib/ai/chat/model";
 import { DEFAULT_CHAT_PACE, isChatPace, type ChatPace } from "@/lib/ai/chat/pace";
+import {
+  isChatMode,
+  type ChatMode,
+} from "@/lib/ai/chat/system-prompt";
 import {
   ANALYTICS_CHAT_SURFACE,
   createChatSession,
@@ -78,6 +86,7 @@ export async function POST(
     messages?: UIMessage[];
     sessionId?: string;
     pace?: unknown;
+    mode?: unknown;
   };
   const messages = sanitizeChatMessagesForModel(
     Array.isArray(body.messages) ? body.messages : []
@@ -134,16 +143,19 @@ export async function POST(
     getOrCreateReportAnalytics(reportId),
   ]);
 
+  const mode: ChatMode = isChatMode(body.mode) ? body.mode : "agent";
+  const canWrite = mode === "agent" && canEdit;
   const system = buildAnalyticsChatSystemPrompt({
     documentNo: report.documentNo,
     status: report.status,
     documents,
     analytics,
     canEdit,
+    mode,
   });
   const tools = buildAnalyticsChatTools({
     reportId,
-    canEdit,
+    canEdit: canWrite,
     documentType: report.documentType,
   });
   const pace: ChatPace = isChatPace(body.pace) ? body.pace : DEFAULT_CHAT_PACE;
@@ -159,6 +171,7 @@ export async function POST(
     });
   }, 1_000);
   const stopCancelPoll = () => clearInterval(cancelPoll);
+  let stoppedForStepBudget = false;
 
   let result;
   try {
@@ -169,8 +182,14 @@ export async function POST(
       tools,
       stopWhen: async ({ steps }) => {
         if (await isAssistantTurnCancelRequested(sessionId)) return true;
-        return steps.length >= 12;
+        if (steps.length >= ANALYTICS_CHAT_STEP_BUDGET) {
+          stoppedForStepBudget = true;
+          return true;
+        }
+        return false;
       },
+      prepareStep: ({ steps }) =>
+        prepareAnalyticsChatStep({ steps, canEdit: canWrite }),
       abortSignal: turnAbort.signal,
       timeout: { totalMs: CHAT_SERVER_ABORT_MS },
       providerOptions: buildGeminiThoughtSummaryProviderOptions({
@@ -188,7 +207,8 @@ export async function POST(
         metadata: {
           reportId,
           sessionId,
-          canEdit,
+          canEdit: canWrite,
+          mode,
           chatPromptVersion: ANALYTICS_CHAT_PROMPT_VERSION,
           pace,
           chatModelId: paceConfig.modelId,
@@ -239,6 +259,7 @@ export async function POST(
       const persisted = partsForPersistedAssistantTurn({
         parts: responseMessage.parts,
         isAborted,
+        stepBudgetExhausted: stoppedForStepBudget,
       });
       if (persisted.interrupted) {
         console.warn("analytics-chat: interrupted assistant turn", {
@@ -246,6 +267,12 @@ export async function POST(
           sessionId,
           finishReason: finishReason ?? "unknown",
           isAborted,
+        });
+      } else if (persisted.stepBudgetExhausted) {
+        console.warn("analytics-chat: step budget exhausted", {
+          reportId,
+          sessionId,
+          finishReason: finishReason ?? "unknown",
         });
       } else if (
         persisted.emptyFailure ||
@@ -266,7 +293,7 @@ export async function POST(
           parts: persisted.parts,
           metadata: chatAssistantTurnMetadata({
             pace,
-            mode: "agent",
+            mode,
             promptVersion: ANALYTICS_CHAT_PROMPT_VERSION,
           }),
           authorId: null,

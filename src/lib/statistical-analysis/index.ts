@@ -42,6 +42,7 @@ export {
   dataSheets,
   defaultSixpackLimits,
   upsertSpecRow,
+  dropSpecRow,
   specRowForColumn,
 } from "./worksheet";
 export {

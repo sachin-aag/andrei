@@ -33,14 +33,10 @@ export async function buildStubChatModel(plan: StubChatPlan): Promise<LanguageMo
   const label = sectionLabel(plan.section);
   let call = 0;
 
-  const planText =
-    `Before I draft anything, a few quick questions (**skip any you don't know** — I'll use placeholders):\n\n` +
-    `1. What exactly happened, and on which equipment or system?\n` +
-    `2. When was it detected, and by whom?\n` +
-    `3. Which product/batch or material is impacted?\n` +
-    `4. Any early idea of the root cause?\n\n` +
-    `With answers to 1–3 I can draft the ${label} section now (placeholders for gaps) and skip sections I have too little for. ` +
-    `Switch to Agent mode when you're ready and I'll generate the draft.`;
+  const askText =
+    `From the report and attachments so far, the deviation looks tied to an out-of-spec dissolution result on batch B-441. ` +
+    `Define still lacks a clear containment statement, and the batch record doesn't name the analyst who detected it. ` +
+    `If you share when it was detected and any early equipment suspects, I can narrow whether 5-Why or 6M fits — otherwise I can explain what each method would need.`;
 
   const agentSummary =
     `I drafted an addition to the **${label}** section — review the highlighted insertion in the document and accept or reject it. ` +
@@ -93,7 +89,7 @@ export async function buildStubChatModel(plan: StubChatPlan): Promise<LanguageMo
         stream: convertArrayToReadableStream([
           { type: "stream-start", warnings: [] },
           { type: "text-start", id: "t1" },
-          { type: "text-delta", id: "t1", delta: planText },
+          { type: "text-delta", id: "t1", delta: askText },
           { type: "text-end", id: "t1" },
           { type: "finish", finishReason: "stop", usage },
         ]),
