@@ -110,14 +110,40 @@ export const measurementScatterLayoutInputSchema = z.object({
   yMax: z.number().finite().optional(),
 });
 
-export const measurementScatterInputSchema = z.object({
-  kind: z.literal(MEASUREMENT_SCATTER),
+function refineOptionalSpecPair(
+  value: { lsl?: number | null; usl?: number | null },
+  ctx: z.RefinementCtx
+): void {
+  if (value.lsl != null && value.usl != null && !(value.lsl < value.usl)) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Lower spec must be less than upper spec.",
+      path: ["lsl"],
+    });
+  }
+}
+
+const measurementScatterFields = {
   query: z.string().trim().min(1).max(200),
   title: z.string().trim().max(120).optional(),
   xLabel: z.string().trim().max(60).optional(),
   yLabel: z.string().trim().max(80).optional(),
   layout: measurementScatterLayoutInputSchema.optional(),
-});
+  lsl: z.number().finite().nullable().optional(),
+  usl: z.number().finite().nullable().optional(),
+} as const;
+
+/** Chat tool body — same fields as create, without the persisted `kind`. */
+export const measurementScatterToolInputSchema = z
+  .object(measurementScatterFields)
+  .superRefine(refineOptionalSpecPair);
+
+export const measurementScatterInputSchema = z
+  .object({
+    kind: z.literal(MEASUREMENT_SCATTER),
+    ...measurementScatterFields,
+  })
+  .superRefine(refineOptionalSpecPair);
 
 const anovaRowFields = {
   rowStart: z

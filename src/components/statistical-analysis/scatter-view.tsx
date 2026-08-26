@@ -15,6 +15,10 @@ import {
   type ChartSpec,
 } from "@/lib/charts/chart-spec";
 import { chartBrandColors, seriesFill } from "@/lib/charts/brand-colors";
+import {
+  layoutHorizontalSpecLabels,
+  type HorizontalSpecKind,
+} from "@/lib/statistical-analysis/spec-limit-labels";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
@@ -76,6 +80,32 @@ function ScatterChart({ spec }: { spec: ChartSpec }) {
   const xTickStep = xTickMax <= 15 ? 1 : xTickMax <= 40 ? 5 : 10;
   const xTicks: number[] = [];
   for (let x = xTickMin; x <= xTickMax; x += xTickStep) xTicks.push(x);
+  const plotBox = {
+    left: plotLeft,
+    right: plotRight,
+    top: plotTop,
+    bottom: plotBottom,
+  };
+  const specLimits: Array<{
+    kind: HorizontalSpecKind;
+    value: number;
+    lineY: number;
+  }> = [];
+  if (spec.limits.lower != null) {
+    specLimits.push({
+      kind: "lsl",
+      value: spec.limits.lower,
+      lineY: yToPx(spec.limits.lower),
+    });
+  }
+  if (spec.limits.upper != null) {
+    specLimits.push({
+      kind: "usl",
+      value: spec.limits.upper,
+      lineY: yToPx(spec.limits.upper),
+    });
+  }
+  const specLabels = layoutHorizontalSpecLabels(specLimits, plotBox);
 
   return (
     <svg
@@ -162,20 +192,35 @@ function ScatterChart({ spec }: { spec: ChartSpec }) {
         strokeWidth="1.25"
         points={`${plotLeft},${plotTop} ${plotLeft},${plotBottom} ${plotRight},${plotBottom}`}
       />
-      {[spec.limits.lower, spec.limits.upper].map((limit, index) =>
-        limit == null ? null : (
-          <line
-            key={`limit-${index}`}
-            x1={plotLeft}
-            x2={plotRight}
-            y1={yToPx(limit)}
-            y2={yToPx(limit)}
-            stroke={colors.limit}
-            strokeWidth="1.5"
-            strokeDasharray="6 4"
-          />
-        )
-      )}
+      {specLimits.map((limit) => (
+        <line
+          key={limit.kind}
+          data-testid={`scatter-spec-line-${limit.kind}`}
+          x1={plotLeft}
+          x2={plotRight}
+          y1={limit.lineY}
+          y2={limit.lineY}
+          stroke={colors.limit}
+          strokeWidth="1.5"
+          strokeDasharray="6 4"
+        />
+      ))}
+      {specLabels.map((label) => (
+        <text
+          key={label.kind}
+          data-testid={`scatter-spec-label-${label.kind}`}
+          aria-label={`${label.kind.toUpperCase()} ${label.text}`}
+          className="tabular-nums"
+          x={label.x}
+          y={label.y}
+          textAnchor={label.textAnchor}
+          fontSize="11"
+          fontWeight="600"
+          fill={colors.limit}
+        >
+          {label.text}
+        </text>
+      ))}
       {points.map((point, index) => {
         const color =
           spec.layout.seriesBy === "unit"

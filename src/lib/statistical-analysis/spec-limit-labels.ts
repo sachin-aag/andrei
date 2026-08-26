@@ -138,6 +138,8 @@ export function layoutSpecLimitLabels(
 }
 
 export type ControlLimitKind = "ucl" | "lcl";
+export type HorizontalSpecKind = "lsl" | "usl";
+export type HorizontalLimitKind = ControlLimitKind | HorizontalSpecKind;
 
 export type ControlLimitInput = {
   kind: ControlLimitKind;
@@ -145,8 +147,14 @@ export type ControlLimitInput = {
   lineY: number;
 };
 
+export type HorizontalLimitInput = {
+  kind: HorizontalLimitKind;
+  value: number;
+  lineY: number;
+};
+
 export type ControlLimitLabelLayout = {
-  kind: ControlLimitKind;
+  kind: HorizontalLimitKind;
   text: string;
   lineY: number;
   x: number;
@@ -164,8 +172,12 @@ function verticalOverlap(
   return Math.abs(a.y - b.y) < LABEL_HEIGHT;
 }
 
+function isUpperHorizontalLimit(kind: HorizontalLimitKind): boolean {
+  return kind === "ucl" || kind === "usl";
+}
+
 function placeAlongLine(
-  input: ControlLimitInput,
+  input: HorizontalLimitInput,
   plot: PlotBox,
   side: "above" | "below"
 ): ControlLimitLabelLayout {
@@ -184,15 +196,19 @@ function placeAlongLine(
   };
 }
 
-export function layoutControlLimitLabels(
-  limits: ControlLimitInput[],
+export function layoutHorizontalLimitLabels(
+  limits: HorizontalLimitInput[],
   plot: PlotBox
 ): ControlLimitLabelLayout[] {
   const finite = limits.filter(
     (limit) => Number.isFinite(limit.value) && Number.isFinite(limit.lineY)
   );
   const placed = finite.map((limit) =>
-    placeAlongLine(limit, plot, limit.kind === "ucl" ? "above" : "below")
+    placeAlongLine(
+      limit,
+      plot,
+      isUpperHorizontalLimit(limit.kind) ? "above" : "below"
+    )
   );
   if (placed.length < 2) return placed;
 
@@ -201,12 +217,12 @@ export function layoutControlLimitLabels(
   );
   if (!colliding) return placed;
 
-  const ucl = finite.find((limit) => limit.kind === "ucl");
-  const lcl = finite.find((limit) => limit.kind === "lcl");
-  if (!ucl || !lcl) return placed;
+  const upper = finite.find((limit) => isUpperHorizontalLimit(limit.kind));
+  const lower = finite.find((limit) => !isUpperHorizontalLimit(limit.kind));
+  if (!upper || !lower) return placed;
 
-  const top = placeAlongLine(ucl, plot, "above");
-  let bottom = placeAlongLine(lcl, plot, "below");
+  const top = placeAlongLine(upper, plot, "above");
+  let bottom = placeAlongLine(lower, plot, "below");
   if (verticalOverlap(top, bottom)) {
     bottom = {
       ...bottom,
@@ -217,4 +233,18 @@ export function layoutControlLimitLabels(
     };
   }
   return [top, bottom];
+}
+
+export function layoutControlLimitLabels(
+  limits: ControlLimitInput[],
+  plot: PlotBox
+): ControlLimitLabelLayout[] {
+  return layoutHorizontalLimitLabels(limits, plot);
+}
+
+export function layoutHorizontalSpecLabels(
+  limits: Array<{ kind: HorizontalSpecKind; value: number; lineY: number }>,
+  plot: PlotBox
+): ControlLimitLabelLayout[] {
+  return layoutHorizontalLimitLabels(limits, plot);
 }
