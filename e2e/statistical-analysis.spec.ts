@@ -16,7 +16,7 @@ import {
 test.describe.configure({ mode: "serial" });
 
 async function openNormalSixpackDialog(page: Page): Promise<void> {
-  await page.getByRole("button", { name: "Stat" }).click();
+  await page.getByTestId("worksheet-stat-menu").click();
   await page.getByTestId("stat-normal-sixpack").click();
   await expect(page.getByTestId("capability-dialog")).toBeVisible();
 }
@@ -356,7 +356,7 @@ test.describe("report analytics", () => {
     await page.getByTestId("column-specs-save").click();
     await expect(page.getByTestId("column-specs-dialog")).toHaveCount(0);
 
-    await page.getByRole("button", { name: "Stat" }).click();
+    await page.getByTestId("worksheet-stat-menu").click();
     await page.getByTestId("stat-plot-measurements").click();
     await expect(page.getByTestId("plot-measurements-dialog")).toBeVisible();
     await expect(page.getByTestId("plot-measurements-submit")).toBeDisabled();
@@ -379,7 +379,7 @@ test.describe("report analytics", () => {
     await expect(page.getByTestId("column-header-c1")).toHaveText("Assay");
     await expect(page.getByTestId("column-header-c2")).toHaveText("Lot");
 
-    await page.getByRole("button", { name: "Stat" }).click();
+    await page.getByTestId("worksheet-stat-menu").click();
     await page.getByTestId("stat-one-way-anova").click();
     await expect(page.getByTestId("anova-dialog")).toBeVisible();
     await expect(page.getByTestId("anova-response")).toContainText("Assay");
