@@ -124,6 +124,18 @@ describe("markdownToDoc", () => {
     expect(cell.content![0]!.content).toEqual([{ type: "text", text: "5 | 10" }]);
   });
 
+  it("converts <br> inside a table cell to hardBreak nodes", () => {
+    const doc = markdownToDoc(
+      ["| Label | Detail |", "| --- | --- |", "| Line one<br>Line two | x |"].join("\n")
+    );
+    const cell = doc.content![0]!.content![1]!.content![0]!;
+    expect(cell.content![0]!.content).toEqual([
+      { type: "text", text: "Line one" },
+      { type: "hardBreak" },
+      { type: "text", text: "Line two" },
+    ]);
+  });
+
   it("treats pipe lines without a separator as plain paragraphs", () => {
     const doc = markdownToDoc("| just text with pipes |");
     expect(doc.content![0]!.type).toBe("paragraph");
