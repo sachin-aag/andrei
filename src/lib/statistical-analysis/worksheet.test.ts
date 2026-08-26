@@ -144,6 +144,13 @@ describe("worksheet grid operations", () => {
     expect(next.activeSheetId).toBe(PRIMARY_DATA_SHEET_ID);
   });
 
+  it("adds a named data sheet", () => {
+    const sheet = addDataSheet(createEmptyWorksheet(), "Assay");
+    expect(sheet.sheets).toHaveLength(2);
+    expect(sheet.sheets[1]?.name).toBe("Assay");
+    expect(sheet.activeSheetId).toBe("data-2");
+  });
+
   it("adds a second data sheet and keeps Specs as a non-data tab", () => {
     let sheet = createEmptyWorksheet();
     sheet = addDataSheet(sheet);

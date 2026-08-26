@@ -9,7 +9,6 @@ import {
   useRef,
   useState,
   useSyncExternalStore,
-  type ReactNode,
 } from "react";
 import {
   isFileUIPart,
@@ -29,10 +28,7 @@ import {
   Plus,
   History,
   ClipboardList,
-  MessageCircleQuestionMark,
   Wrench,
-  Zap,
-  Telescope,
   Check,
   ArrowRightLeft,
   ImagePlus,
@@ -55,11 +51,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+  ChatBusyStatus,
+  CHAT_PACE_OPTIONS,
+  ComposerSelect,
+  DOCUMENT_CHAT_MODE_OPTIONS,
+} from "@/components/report/chat-composer-controls";
 import { useReportData } from "@/providers/report-provider";
 import { useReportAttachments } from "@/providers/report-attachments-provider";
 import { useUserDirectory } from "@/providers/user-directory-provider";
@@ -661,49 +657,6 @@ function MentionMenu({
   );
 }
 
-function ChatBusyStatus({
-  mode,
-  stale,
-  background,
-  willNotify,
-  onCancel,
-}: {
-  mode: ChatMode;
-  stale: boolean;
-  background: boolean;
-  willNotify: boolean;
-  onCancel: () => void;
-}) {
-  return (
-    <div className="space-y-1">
-      <div className="flex items-center gap-2 text-xs text-[var(--muted-foreground)]">
-        <Loader2 className="size-3.5 animate-spin" />
-        <span>
-          {background
-            ? "Still working in the background…"
-            : stale
-              ? "Still working — this can take a few minutes."
-              : mode === "plan"
-                ? "Thinking through your question…"
-                : "Working…"}
-        </span>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="underline decoration-[var(--border)] underline-offset-2 transition-colors hover:text-[var(--foreground)]"
-        >
-          Cancel
-        </button>
-      </div>
-      {willNotify ? (
-        <p className="pl-[22px] text-xs text-[var(--muted-foreground)]">
-          We&apos;ll notify you when this is complete.
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
 const MessageTurn = memo(function MessageTurn({
   message,
   onSwitchSectionScope,
@@ -848,171 +801,6 @@ function SectionScopeSelect({
   );
 }
 
-type ComposerOption<T extends string> = {
-  value: T;
-  label: string;
-  description: string;
-  icon: typeof Wrench;
-  disabled?: boolean;
-};
-
-/**
- * Wire values are unchanged — `plan` is labelled "Ask" because that is what it
- * does from the engineer's side.
- */
-const CHAT_MODE_OPTIONS: readonly ComposerOption<ChatMode>[] = [
-  {
-    value: "plan",
-    label: "Ask",
-    description: "Answers questions about the report. Never edits the document.",
-    icon: MessageCircleQuestionMark,
-  },
-  {
-    value: "agent",
-    label: "Agent",
-    description: "Drafts and proposes edits you accept or reject.",
-    icon: Wrench,
-  },
-];
-
-/**
- * Pace, never a model name. The description is the only explanation a user
- * gets, so it says what changes for them — not what runs underneath.
- */
-const CHAT_PACE_OPTIONS: readonly ComposerOption<ChatPace>[] = [
-  {
-    value: "quick",
-    label: "Quick",
-    description:
-      "Fast answers with lighter reasoning. Handles most questions, lookups, and short edits.",
-    icon: Zap,
-  },
-  {
-    value: "deep",
-    label: "Deep",
-    description:
-      "Digs through your documents and reasons further before answering. Slower.",
-    icon: Telescope,
-  },
-];
-
-/**
- * Radix Tooltip also opens on focus. Opening a Select focuses the current
- * option, which would flash its description immediately. Gate on pointer
- * hover so the text only appears when the mouse is over that row.
- */
-function HoverOnlyTooltip({
-  content,
-  children,
-}: {
-  content: ReactNode;
-  children: ReactNode;
-}) {
-  const [open, setOpen] = useState(false);
-  const hoverIntentRef = useRef(false);
-
-  return (
-    <Tooltip
-      open={open}
-      onOpenChange={(next) => {
-        if (next) {
-          if (hoverIntentRef.current) setOpen(true);
-          return;
-        }
-        hoverIntentRef.current = false;
-        setOpen(false);
-      }}
-    >
-      <TooltipTrigger asChild>
-        <span
-          className="block"
-          onPointerEnter={() => {
-            hoverIntentRef.current = true;
-          }}
-          onPointerLeave={() => {
-            hoverIntentRef.current = false;
-          }}
-        >
-          {children}
-        </span>
-      </TooltipTrigger>
-      <TooltipContent side="left" align="center" collisionPadding={8}>
-        {content}
-      </TooltipContent>
-    </Tooltip>
-  );
-}
-
-/**
- * Select for the composer control strip. Explanations live on hover so the
- * open menu stays as wide as the label — the closed trigger is an icon and
- * one word.
- */
-function ComposerSelect<T extends string>({
-  value,
-  options,
-  onChange,
-  disabled,
-  ariaLabel,
-  className,
-}: {
-  value: T;
-  options: readonly ComposerOption<T>[];
-  onChange: (value: T) => void;
-  disabled?: boolean;
-  ariaLabel: string;
-  className?: string;
-}) {
-  const active = options.find((option) => option.value === value) ?? options[0];
-  const ActiveIcon = active.icon;
-  return (
-    <Select
-      value={value}
-      onValueChange={(next) => {
-        const selected = options.find((option) => option.value === next);
-        if (!selected) return;
-        onChange(selected.value);
-      }}
-      disabled={disabled}
-    >
-      <SelectTrigger
-        className={cn(
-          "h-7 border-[var(--border)] bg-[var(--secondary)]/30 px-2 text-[11px] font-medium",
-          className
-        )}
-        aria-label={ariaLabel}
-        title={active.description}
-      >
-        {/* A div, not a span: the trigger line-clamps direct span children,
-            which would override the flex layout. */}
-        <div className="flex min-w-0 items-center gap-1.5">
-          <ActiveIcon className="size-3.5 shrink-0" />
-          <SelectValue />
-        </div>
-      </SelectTrigger>
-      {/* Opens upward: the control strip sits at the bottom of the panel. */}
-      <SelectContent side="top" sideOffset={6} className="text-[11px]">
-        <TooltipProvider delayDuration={150}>
-          {options.map((option) => (
-            <HoverOnlyTooltip key={option.value} content={option.description}>
-              {/* The wrapper, not the item, is the hover target: a disabled
-                  option has pointer events off, and its lock reason is the
-                  one description a user most needs to read. */}
-              <SelectItem
-                value={option.value}
-                disabled={option.disabled}
-                className="text-[11px]"
-              >
-                {option.label}
-              </SelectItem>
-            </HoverOnlyTooltip>
-          ))}
-        </TooltipProvider>
-      </SelectContent>
-    </Select>
-  );
-}
-
 function subscribeNoop() {
   return () => {};
 }
@@ -1036,7 +824,7 @@ export function ChatPanel() {
   // reason standing in for its description — a missing option explains nothing.
   const modeOptions = useMemo(
     () =>
-      CHAT_MODE_OPTIONS.map((option) =>
+      DOCUMENT_CHAT_MODE_OPTIONS.map((option) =>
         option.value === "agent" && !canProposeAiEdits
           ? {
               ...option,

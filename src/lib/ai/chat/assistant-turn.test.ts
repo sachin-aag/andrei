@@ -2,6 +2,7 @@ import type { UIMessage } from "ai";
 import { describe, expect, it } from "vitest";
 import {
   assistantPartsHaveVisibleContent,
+  assistantPartsHaveVisibleText,
   assistantProgressSignature,
   chatWatchdogPhase,
   formatChatLlmError,
@@ -10,6 +11,7 @@ import {
   shouldShowEmptyAssistantError,
   CHAT_ASSISTANT_ERROR_MESSAGE,
   CHAT_ASSISTANT_INTERRUPTED_MESSAGE,
+  CHAT_ASSISTANT_STEP_BUDGET_MESSAGE,
   CHAT_CLIENT_GIVE_UP_MS,
   CHAT_CLIENT_STALE_MS,
   CHAT_FUNCTION_MAX_DURATION_SEC,
@@ -43,6 +45,17 @@ describe("assistantPartsHaveVisibleContent", () => {
         { type: "tool-read_section" },
       ])
     ).toBe(true);
+  });
+
+  it("treats tool chips without prose as having no visible text", () => {
+    expect(
+      assistantPartsHaveVisibleText([
+        { type: "tool-search_documents" },
+      ])
+    ).toBe(false);
+    expect(assistantPartsHaveVisibleText([{ type: "text", text: "ok" }])).toBe(
+      true
+    );
   });
 });
 
@@ -137,7 +150,12 @@ describe("partsForPersistedAssistantTurn", () => {
     const parts = [{ type: "text" as const, text: "ok" }];
     expect(
       partsForPersistedAssistantTurn({ parts, isAborted: false })
-    ).toEqual({ parts, emptyFailure: false, interrupted: false });
+    ).toEqual({
+      parts,
+      emptyFailure: false,
+      interrupted: false,
+      stepBudgetExhausted: false,
+    });
   });
 
   it("persists an interrupted line for empty aborted turns", () => {
@@ -147,6 +165,7 @@ describe("partsForPersistedAssistantTurn", () => {
       parts: [{ type: "text", text: CHAT_ASSISTANT_INTERRUPTED_MESSAGE }],
       emptyFailure: true,
       interrupted: true,
+      stepBudgetExhausted: false,
     });
   });
 
@@ -163,6 +182,7 @@ describe("partsForPersistedAssistantTurn", () => {
       ],
       emptyFailure: false,
       interrupted: true,
+      stepBudgetExhausted: false,
     });
   });
 
@@ -170,7 +190,12 @@ describe("partsForPersistedAssistantTurn", () => {
     const parts = [{ type: "text" as const, text: "Draft Define." }];
     expect(
       partsForPersistedAssistantTurn({ parts, isAborted: true })
-    ).toEqual({ parts, emptyFailure: false, interrupted: false });
+    ).toEqual({
+      parts,
+      emptyFailure: false,
+      interrupted: false,
+      stepBudgetExhausted: false,
+    });
   });
 
   it("persists a user-visible error line for empty finished turns", () => {
@@ -180,6 +205,28 @@ describe("partsForPersistedAssistantTurn", () => {
       parts: [{ type: "text", text: CHAT_ASSISTANT_ERROR_MESSAGE }],
       emptyFailure: true,
       interrupted: false,
+      stepBudgetExhausted: false,
+    });
+  });
+
+  it("appends a step-budget notice when tools ran but there is no prose", () => {
+    const parts = [
+      { type: "tool-search_documents", toolCallId: "call_1" },
+    ] as unknown as UIMessage["parts"];
+    expect(
+      partsForPersistedAssistantTurn({
+        parts,
+        isAborted: false,
+        stepBudgetExhausted: true,
+      })
+    ).toEqual({
+      parts: [
+        parts[0],
+        { type: "text", text: CHAT_ASSISTANT_STEP_BUDGET_MESSAGE },
+      ],
+      emptyFailure: false,
+      interrupted: false,
+      stepBudgetExhausted: true,
     });
   });
 });

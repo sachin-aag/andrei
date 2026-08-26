@@ -294,7 +294,7 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
 4. `Stat → Plot measurements…` (or analytics `plot_measurements`) extracts cited numeric measurements from attachments and saves a scatter (`measurement_scatter`) on Results. Do not reuse Document-chat `executePlotMeasurements` here (that path writes section suggestions).
 5. Results lists every saved analysis; selecting one does not discard the others. Editing cells **in the analyzed rows** marks a sixpack **stale** (`sourceHash`); scatter is not worksheet-stale. Recompute refreshes only that row. **Download** saves a CSV.
 
-**Chat:** Tools are search/outline/page/extract/worksheet/sixpack/scatter. Images and Quick/Deep pace match Document chat. No `propose_edit` / `draft_field` / Plan-Agent toggle. Do not add these tools to the report Plan-mode allowlist. Stub chat is text-only (`buildStubAnalyticsChatModel`).
+**Chat:** Tools are search/outline/scan/page/extract/worksheet/sixpack/scatter. Images, Quick/Deep, and Ask vs Agent match Document chat. Ask searches and extracts only; Agent can `write_column`, run a sixpack, and plot measurements when the report is writable. No `propose_edit` / `draft_field`. Do not add those tools to the report Plan-mode allowlist. Stub chat is text-only (`buildStubAnalyticsChatModel`).
 
 **Key invariant:** Analyses do not silently change when the worksheet changes, and a new run never overwrites an earlier sixpack. I-MR constants are Minitab n=2 (`d2=1.128`, `D4=3.267`, `E2=2.66`). Mutations use `canSaveReportSection` (same lock as section autosave).
 

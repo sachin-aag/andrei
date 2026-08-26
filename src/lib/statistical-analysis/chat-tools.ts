@@ -15,6 +15,7 @@ import {
   alignExtractedDates,
   gateMetricSeriesExtract,
 } from "@/lib/extraction/metric-series";
+import { runScanAttachments } from "./scan-attachments";
 import { capabilitySixpackInputSchema, measurementScatterInputSchema } from "./schemas";
 import {
   createAnalysisForReport,
@@ -42,6 +43,7 @@ import {
   trimTrailingEmpty,
   upsertSpecRow,
 } from "./worksheet";
+import { applyManageWorksheet, manageWorksheetInputSchema } from "./manage-worksheet";
 import { normalizeRowSelection } from "./row-selection";
 
 export const ANALYTICS_DOCUMENT_TOOL_NAMES = [
@@ -55,10 +57,12 @@ export const ANALYTICS_CHAT_READ_TOOL_NAMES = [
   ...ANALYTICS_DOCUMENT_TOOL_NAMES,
   "read_worksheet",
   "extract_numeric_series",
+  "scan_attachments",
 ] as const;
 
 export const ANALYTICS_CHAT_WRITE_TOOL_NAMES = [
   "write_column",
+  "manage_worksheet",
   "run_capability_sixpack",
   "plot_measurements",
 ] as const;
@@ -182,6 +186,57 @@ export function buildAnalyticsChatTools(opts: {
   ) as ToolSet;
 
   const statsTools: ToolSet = {
+    scan_attachments: tool({
+      description:
+        "Outline matching ready files and read the pages whose labels match the query, in one call. Use when the engineer named a document family (Seed-2 BMRs) or a whole table / log sheet. Pass filenameContains from the live index names. Do not spend the turn grepping.",
+      inputSchema: z
+        .object({
+          filenameContains: z
+            .string()
+            .trim()
+            .min(1)
+            .max(80)
+            .optional()
+            .describe(
+              'Substring of the live filename, e.g. "Seed-2". Prefer this over grep when the engineer named a file family.'
+            ),
+          attachmentIds: z
+            .array(z.string().trim().min(1))
+            .max(8)
+            .optional()
+            .describe("Attachment ids from the document index."),
+          query: z
+            .string()
+            .trim()
+            .max(200)
+            .optional()
+            .describe(
+              'Table or locator, e.g. "TABLE NO 01 LOG SHEETS FOR 60 L FERMENTER".'
+            ),
+          queries: z
+            .array(z.string().trim().min(1).max(200))
+            .max(4)
+            .optional(),
+        })
+        .refine(
+          (value) =>
+            Boolean(
+              value.filenameContains ||
+                (value.attachmentIds && value.attachmentIds.length > 0) ||
+                value.query ||
+                (value.queries && value.queries.length > 0)
+            ),
+          { message: "Provide filenameContains, attachmentIds, or a query." }
+        ),
+      execute: async ({ filenameContains, attachmentIds, query, queries }) =>
+        runScanAttachments({
+          reportId,
+          filenameContains,
+          attachmentIds,
+          query,
+          queries,
+        }),
+    }),
     read_worksheet: tool({
       description:
         "Read the saved Statistical Analysis worksheet: column names, counts, and values. Pass columnId for one column's full values; omit it for a compact index of every column.",
@@ -501,6 +556,27 @@ export function buildAnalyticsChatTools(opts: {
           numericCount: numeric.values.length,
           skipped: numeric.skipped,
         };
+      },
+    });
+
+    statsTools.manage_worksheet = tool({
+      description:
+        "Create, rename, or delete a data sheet, column, or row. Call this immediately when the engineer asks to add/create/insert, rename/edit a header, or delete a sheet, column, or row. Do not search attachments and do not extract numbers. Filling a column with values is write_column, not this tool. set_cell edits one cell.",
+      inputSchema: manageWorksheetInputSchema,
+      execute: async (input) => {
+        const analytics = await getOrCreateReportAnalytics(reportId);
+        const applied = applyManageWorksheet(analytics.worksheet, input);
+        if (applied.result.status !== "ok" || !applied.worksheet) {
+          return applied.result;
+        }
+        const saved = await updateReportAnalytics(reportId, applied.worksheet);
+        if (!saved) {
+          return {
+            status: "error" as const,
+            message: "Could not save the worksheet.",
+          };
+        }
+        return applied.result;
       },
     });
 

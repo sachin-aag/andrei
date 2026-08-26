@@ -316,7 +316,9 @@ test.describe("report analytics", () => {
     const sidebar = reportSidebar(page);
     const composer = sidebar.getByTestId("analytics-chat-input");
     await expect(composer).toBeEnabled({ timeout: 15_000 });
+    await expect(sidebar.getByLabel("Assistant mode")).toBeVisible();
     await expect(sidebar.getByTestId("analytics-chat-pace")).toBeVisible();
+    await expect(sidebar.getByLabel("Answer depth")).toBeVisible();
     await expect(sidebar.getByTestId("analytics-chat-attach-image")).toBeVisible();
     await composer.fill("extract assay numbers from the attachments");
     await sidebar.getByRole("button", { name: /^send message$/i }).click();

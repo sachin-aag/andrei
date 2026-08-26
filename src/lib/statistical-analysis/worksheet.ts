@@ -197,14 +197,28 @@ function nextSheetName(data: WorksheetData): string {
   return name;
 }
 
-export function addDataSheet(data: WorksheetData): WorksheetData {
+export function findSheet(
+  data: WorksheetData,
+  sheetIdOrName: string
+): WorksheetSheet | undefined {
+  const workbook = normalizeWorksheet(data);
+  const key = sheetIdOrName.trim();
+  if (!key) return undefined;
+  const byId = workbook.sheets.find((sheet) => sheet.id === key);
+  if (byId) return byId;
+  const lower = key.toLowerCase();
+  return workbook.sheets.find((sheet) => sheet.name.toLowerCase() === lower);
+}
+
+export function addDataSheet(data: WorksheetData, name?: string): WorksheetData {
   const workbook = normalizeWorksheet(data);
   if (workbook.sheets.length >= MAX_DATA_SHEETS) return workbook;
   const id = nextSheetId(workbook);
   const columns = emptyColumnsForWorkbook(workbook);
+  const requested = name?.trim().slice(0, 40) ?? "";
   const sheet: WorksheetSheet = {
     id,
-    name: nextSheetName(workbook),
+    name: requested || nextSheetName(workbook),
     columns,
   };
   return {

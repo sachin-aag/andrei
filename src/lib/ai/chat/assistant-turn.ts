@@ -8,6 +8,10 @@ export const CHAT_ASSISTANT_ERROR_MESSAGE =
 export const CHAT_ASSISTANT_INTERRUPTED_MESSAGE =
   "The assistant stopped before finishing. Please try again.";
 
+/** User-facing copy when the turn hits the tool-step budget with no prose. */
+export const CHAT_ASSISTANT_STEP_BUDGET_MESSAGE =
+  "I reached the search/read step limit for this turn before I could finish. Ask me to continue from the last hits, or name the file and page.";
+
 /** Vercel `maxDuration` for the chat route, in seconds. */
 export const CHAT_FUNCTION_MAX_DURATION_SEC = 300;
 
@@ -47,6 +51,14 @@ export function assistantPartsHaveVisibleContent(
     if (part.type === "file" || part.type.startsWith("tool-")) return true;
   }
   return false;
+}
+
+/** True when the engineer would see written prose (not only tool chips). */
+export function assistantPartsHaveVisibleText(
+  parts: readonly ChatTurnPart[] | null | undefined
+): boolean {
+  if (!parts || parts.length === 0) return false;
+  return parts.some((part) => partHasVisibleText(part));
 }
 
 /** Finish reasons that mean the model did not complete a usable reply. */
@@ -109,18 +121,25 @@ function partHasVisibleText(part: ChatTurnPart | undefined): boolean {
   );
 }
 
-function appendInterruptedNotice(parts: UIMessage["parts"]): UIMessage["parts"] {
+function appendNoticeIfMissing(
+  parts: UIMessage["parts"],
+  notice: string
+): UIMessage["parts"] {
   const last = parts[parts.length - 1];
   if (
     last &&
     last.type === "text" &&
     "text" in last &&
     typeof last.text === "string" &&
-    last.text.includes(CHAT_ASSISTANT_INTERRUPTED_MESSAGE)
+    last.text.includes(notice)
   ) {
     return parts;
   }
-  return [...parts, { type: "text", text: CHAT_ASSISTANT_INTERRUPTED_MESSAGE }];
+  return [...parts, { type: "text", text: notice }];
+}
+
+function appendInterruptedNotice(parts: UIMessage["parts"]): UIMessage["parts"] {
+  return appendNoticeIfMissing(parts, CHAT_ASSISTANT_INTERRUPTED_MESSAGE);
 }
 
 /**
@@ -131,10 +150,12 @@ function appendInterruptedNotice(parts: UIMessage["parts"]): UIMessage["parts"] 
 export function partsForPersistedAssistantTurn(options: {
   parts: UIMessage["parts"] | undefined;
   isAborted: boolean;
+  stepBudgetExhausted?: boolean;
 }): {
   parts: UIMessage["parts"];
   emptyFailure: boolean;
   interrupted: boolean;
+  stepBudgetExhausted: boolean;
 } {
   const parts = options.parts ?? [];
   const visible = assistantPartsHaveVisibleContent(parts);
@@ -142,29 +163,54 @@ export function partsForPersistedAssistantTurn(options: {
 
   if (options.isAborted) {
     if (hasVisibleText) {
-      return { parts, emptyFailure: false, interrupted: false };
+      return {
+        parts,
+        emptyFailure: false,
+        interrupted: false,
+        stepBudgetExhausted: false,
+      };
     }
     if (visible) {
       return {
         parts: appendInterruptedNotice(parts),
         emptyFailure: false,
         interrupted: true,
+        stepBudgetExhausted: false,
       };
     }
     return {
       parts: INTERRUPTED_ASSISTANT_PARTS,
       emptyFailure: true,
       interrupted: true,
+      stepBudgetExhausted: false,
+    };
+  }
+
+  if (options.stepBudgetExhausted && !hasVisibleText) {
+    return {
+      parts:
+        parts.length === 0
+          ? [{ type: "text", text: CHAT_ASSISTANT_STEP_BUDGET_MESSAGE }]
+          : appendNoticeIfMissing(parts, CHAT_ASSISTANT_STEP_BUDGET_MESSAGE),
+      emptyFailure: false,
+      interrupted: false,
+      stepBudgetExhausted: true,
     };
   }
 
   if (visible) {
-    return { parts, emptyFailure: false, interrupted: false };
+    return {
+      parts,
+      emptyFailure: false,
+      interrupted: false,
+      stepBudgetExhausted: false,
+    };
   }
   return {
     parts: EMPTY_ASSISTANT_ERROR_PARTS,
     emptyFailure: true,
     interrupted: false,
+    stepBudgetExhausted: false,
   };
 }
 

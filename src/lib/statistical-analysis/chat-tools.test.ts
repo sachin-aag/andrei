@@ -6,6 +6,7 @@ vi.mock("@/db", () => ({ db: {} }));
 vi.mock("@/lib/attachments/retrieval", () => ({
   listDocumentPagesForReview: vi.fn(),
   listReadyDocumentsForReport: vi.fn(),
+  readDocumentOutline: vi.fn(),
   readDocumentPage: vi.fn(),
 }));
 
@@ -59,8 +60,10 @@ describe("analytics chat tools", () => {
     expect(ANALYTICS_CHAT_TOOL_NAMES).not.toContain("read_section");
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("search_documents");
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("write_column");
+    expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("manage_worksheet");
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("run_capability_sixpack");
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("plot_measurements");
+    expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("scan_attachments");
   });
 
   it("picks only the document tools the analytics assistant is allowed to call", () => {
@@ -84,6 +87,7 @@ describe("analytics chat tools", () => {
     expect(writable.propose_edit).toBeUndefined();
     expect(writable.draft_field).toBeUndefined();
     expect(writable.write_column).toBeDefined();
+    expect(writable.manage_worksheet).toBeDefined();
     expect(writable.run_capability_sixpack).toBeDefined();
     expect(writable.plot_measurements).toBeDefined();
 
@@ -93,9 +97,11 @@ describe("analytics chat tools", () => {
       documentType: "investigation_report",
     });
     expect(locked.write_column).toBeUndefined();
+    expect(locked.manage_worksheet).toBeUndefined();
     expect(locked.run_capability_sixpack).toBeUndefined();
     expect(locked.plot_measurements).toBeUndefined();
     expect(locked.search_documents).toBeDefined();
+    expect(locked.scan_attachments).toBeDefined();
   });
 
   it("extracts finite numeric tokens and stops at the worksheet cap", () => {
@@ -216,9 +222,13 @@ describe("analytics chat tools", () => {
       documents: [],
       analytics: emptyAnalytics,
       canEdit: true,
+      mode: "agent",
     });
     expect(prompt).toContain("ask_user");
-    expect(prompt).toContain('Never pass "A or B" to extract_numeric_series');
+    expect(prompt).toContain('Never pass "A or B"');
     expect(prompt).toContain("copy the dates array from that same extract");
+    expect(prompt).toContain("Do not keep searching");
+    expect(prompt).toContain("Whole table");
+    expect(prompt).toContain("scan_attachments");
   });
 });

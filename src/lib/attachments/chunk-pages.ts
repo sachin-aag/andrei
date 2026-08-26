@@ -85,6 +85,24 @@ function contextualizeChunk(input: {
   return `Document: ${input.filename} | Page ${input.page.pageNumber} | ${pageContext}\n\n${input.rawText}`;
 }
 
+const CHUNK_DOCUMENT_HEADER_RE = /^Document: .+? \| Page (\d+) \|/;
+
+/**
+ * Search snippets keep the ingest-time `Document: filename | Page N |`
+ * prefix. After a rename the live attachment name can diverge — rewrite
+ * the header so chat cites the current filename. Page number is preserved.
+ */
+export function rewriteChunkDocumentHeader(
+  text: string,
+  filename: string
+): string {
+  const trimmed = filename.trim();
+  if (!trimmed) return text;
+  const match = CHUNK_DOCUMENT_HEADER_RE.exec(text);
+  if (!match) return text;
+  return text.replace(CHUNK_DOCUMENT_HEADER_RE, `Document: ${trimmed} | Page ${match[1]} |`);
+}
+
 function splitText(
   text: string,
   options: { maxChars: number; overlapChars: number }
