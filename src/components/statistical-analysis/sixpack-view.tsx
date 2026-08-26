@@ -20,6 +20,10 @@ import {
   normalizeRowSelection,
 } from "@/lib/statistical-analysis/row-selection";
 import {
+  layoutSpecLimitLabels,
+  type SpecLimitInput,
+} from "@/lib/statistical-analysis/spec-limit-labels";
+import {
   analysisDownloadFilename,
   analysisToCsv,
   downloadTextFile,
@@ -272,6 +276,11 @@ function HistogramChart({
   const yMax = Math.max(1, ...counts, ...curveYs) * 1.12;
   const x = scale(xMin, xMax, PLOT.left, PLOT.right);
   const y = scale(0, yMax, PLOT.bottom, PLOT.top);
+  const specLimits: SpecLimitInput[] = [
+    ...(lsl != null ? [{ kind: "lsl" as const, value: lsl, lineX: x(lsl) }] : []),
+    ...(usl != null ? [{ kind: "usl" as const, value: usl, lineX: x(usl) }] : []),
+  ];
+  const specLabels = layoutSpecLimitLabels(specLimits, PLOT);
 
   const toPath = (points: CurvePoint[]) =>
     points
@@ -318,26 +327,38 @@ function HistogramChart({
         strokeWidth="1.2"
         strokeDasharray="4 3"
       />
-      {lsl != null ? (
+      {specLimits.map((limit) => (
         <line
-          x1={x(lsl)}
-          x2={x(lsl)}
+          key={limit.kind}
+          x1={limit.lineX}
+          x2={limit.lineX}
           y1={PLOT.top}
           y2={PLOT.bottom}
           stroke="var(--destructive)"
           strokeDasharray="3 2"
         />
-      ) : null}
-      {usl != null ? (
-        <line
-          x1={x(usl)}
-          x2={x(usl)}
-          y1={PLOT.top}
-          y2={PLOT.bottom}
-          stroke="var(--destructive)"
-          strokeDasharray="3 2"
-        />
-      ) : null}
+      ))}
+      {specLabels.map((label) => {
+        const insidePlot = label.y > PLOT.top;
+        return (
+          <text
+            key={label.kind}
+            data-testid={`sixpack-spec-label-${label.kind}`}
+            className="tabular-nums"
+            x={label.x}
+            y={label.y}
+            textAnchor={label.textAnchor}
+            fontSize="8"
+            fontWeight="600"
+            fill="var(--destructive)"
+            stroke={insidePlot ? "var(--card)" : undefined}
+            strokeWidth={insidePlot ? 3 : undefined}
+            paintOrder={insidePlot ? "stroke" : undefined}
+          >
+            {label.text}
+          </text>
+        );
+      })}
     </ChartSvg>
   );
 }
