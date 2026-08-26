@@ -4,6 +4,14 @@ import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { MIN_VISIBLE_ROWS } from "@/lib/statistical-analysis/types";
 import {
+  clampSelection,
+  collapseSelection,
+  isCellInSelection,
+  moveSelection,
+  selectionBounds,
+  type GridSelection,
+} from "@/lib/statistical-analysis/grid-selection";
+import {
   pasteTsv,
   renameColumn,
   rowCount,
@@ -17,7 +25,7 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 
-export type GridSelection = { col: number; row: number };
+export type { GridSelection };
 
 type WorksheetGridProps = {
   worksheet: WorksheetData;
@@ -32,6 +40,33 @@ const EXTRA_EMPTY_ROWS = 8;
 
 function visibleRowCount(data: WorksheetData): number {
   return Math.max(MIN_VISIBLE_ROWS, rowCount(data) + EXTRA_EMPTY_ROWS);
+}
+
+function tsvFromSelection(worksheet: WorksheetData, selection: GridSelection): string {
+  const bounds = selectionBounds(selection);
+  const lines: string[] = [];
+  for (let row = bounds.rowStart; row <= bounds.rowEnd; row++) {
+    const cells: string[] = [];
+    for (let col = bounds.colStart; col <= bounds.colEnd; col++) {
+      cells.push(worksheet.columns[col]?.values[row] ?? "");
+    }
+    lines.push(cells.join("\t"));
+  }
+  return lines.join("\n");
+}
+
+function clearSelectionCells(
+  worksheet: WorksheetData,
+  selection: GridSelection
+): WorksheetData {
+  let next = worksheet;
+  const bounds = selectionBounds(selection);
+  for (let row = bounds.rowStart; row <= bounds.rowEnd; row++) {
+    for (let col = bounds.colStart; col <= bounds.colEnd; col++) {
+      next = setCell(next, col, row, "");
+    }
+  }
+  return next;
 }
 
 function isPrintableKey(event: React.KeyboardEvent): boolean {
@@ -149,17 +184,15 @@ export function WorksheetGrid({
 
   const columns = worksheet.columns;
   const rows = visibleRowCount(worksheet);
+  const bounds = selectionBounds(selection);
+  const maxCol = Math.max(0, columns.length - 1);
+  const maxRow = Math.max(0, rows - 1);
 
   const cellValue = (col: number, row: number): string =>
     columns[col]?.values[row] ?? "";
 
-  const clampSelection = (next: GridSelection): GridSelection => ({
-    col: Math.max(0, Math.min(next.col, columns.length - 1)),
-    row: Math.max(0, Math.min(next.row, rows - 1)),
-  });
-
   const select = (next: GridSelection) => {
-    onSelectionChange(clampSelection(next));
+    onSelectionChange(clampSelection(next, maxCol, maxRow));
   };
 
   const beginEdit = (initial: string) => {
@@ -173,7 +206,7 @@ export function WorksheetGrid({
       onChange(setCell(worksheet, selection.col, selection.row, draft));
       setEditing(false);
     }
-    if (move) select(move);
+    if (move) select(collapseSelection(move.col, move.row));
     gridRef.current?.focus();
   };
 
@@ -209,40 +242,50 @@ export function WorksheetGrid({
     if (event.key === "Delete" || event.key === "Backspace") {
       if (readOnly) return;
       event.preventDefault();
-      onChange(setCell(worksheet, selection.col, selection.row, ""));
+      onChange(clearSelectionCells(worksheet, selection));
       return;
     }
     if (event.key === "Enter") {
       event.preventDefault();
-      select({ col: selection.col, row: selection.row + 1 });
+      select(moveSelection(selection, 0, 1, false, maxCol, maxRow));
       return;
     }
     if (event.key === "Tab") {
       event.preventDefault();
-      select({
-        col: selection.col + (event.shiftKey ? -1 : 1),
-        row: selection.row,
-      });
+      select(
+        moveSelection(
+          selection,
+          event.shiftKey ? -1 : 1,
+          0,
+          false,
+          maxCol,
+          maxRow
+        )
+      );
       return;
     }
     if (event.key === "ArrowLeft") {
       event.preventDefault();
-      select({ col: selection.col - 1, row: selection.row });
+      select(
+        moveSelection(selection, -1, 0, event.shiftKey, maxCol, maxRow)
+      );
       return;
     }
     if (event.key === "ArrowRight") {
       event.preventDefault();
-      select({ col: selection.col + 1, row: selection.row });
+      select(moveSelection(selection, 1, 0, event.shiftKey, maxCol, maxRow));
       return;
     }
     if (event.key === "ArrowUp") {
       event.preventDefault();
-      select({ col: selection.col, row: selection.row - 1 });
+      select(
+        moveSelection(selection, 0, -1, event.shiftKey, maxCol, maxRow)
+      );
       return;
     }
     if (event.key === "ArrowDown") {
       event.preventDefault();
-      select({ col: selection.col, row: selection.row + 1 });
+      select(moveSelection(selection, 0, 1, event.shiftKey, maxCol, maxRow));
       return;
     }
     if (isPrintableKey(event)) {
@@ -275,14 +318,14 @@ export function WorksheetGrid({
   const handleCopy = (event: React.ClipboardEvent) => {
     if (editing) return;
     event.preventDefault();
-    event.clipboardData.setData("text/plain", cellValue(selection.col, selection.row));
+    event.clipboardData.setData("text/plain", tsvFromSelection(worksheet, selection));
   };
 
   const handlePaste = (event: React.ClipboardEvent) => {
     if (editing || readOnly) return;
     event.preventDefault();
     const text = event.clipboardData.getData("text/plain");
-    onChange(pasteTsv(worksheet, selection.col, selection.row, text));
+    onChange(pasteTsv(worksheet, bounds.colStart, bounds.rowStart, text));
   };
 
   return (
@@ -291,7 +334,12 @@ export function WorksheetGrid({
       role="grid"
       tabIndex={0}
       data-testid="worksheet-grid"
+      data-col-start={bounds.colStart}
+      data-col-end={bounds.colEnd}
+      data-row-start={bounds.rowStart}
+      data-row-end={bounds.rowEnd}
       aria-label="Worksheet"
+      aria-multiselectable="true"
       aria-rowcount={rows + 1}
       aria-colcount={columns.length + 1}
       className="h-full overflow-auto bg-[var(--card)] outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]"
@@ -310,12 +358,16 @@ export function WorksheetGrid({
               <WorksheetColumnHeader
                 key={column.id}
                 column={column}
-                selected={selection.col === colIndex}
+                selected={
+                  colIndex >= bounds.colStart && colIndex <= bounds.colEnd
+                }
                 editing={editingHeader === colIndex}
                 headerDraft={headerDraft}
                 headerInputRef={headerInputRef}
                 readOnly={readOnly}
-                onSelect={() => select({ col: colIndex, row: selection.row })}
+                onSelect={() =>
+                  select(collapseSelection(colIndex, selection.row))
+                }
                 onBeginRename={() => {
                   if (readOnly) return;
                   setEditingHeader(colIndex);
@@ -345,35 +397,65 @@ export function WorksheetGrid({
             >
               <th
                 scope="row"
+                data-testid={`row-header-${rowIndex}`}
                 className={cn(
-                  "sticky left-0 z-10 w-10 min-w-10 border border-[var(--border)] bg-[var(--secondary)] text-center font-medium tabular-nums text-[var(--muted-foreground)]",
-                  selection.row === rowIndex && "bg-[var(--brand-100)]"
+                  "sticky left-0 z-10 w-10 min-w-10 cursor-pointer border border-[var(--border)] bg-[var(--secondary)] text-center font-medium tabular-nums text-[var(--muted-foreground)]",
+                  rowIndex >= bounds.rowStart &&
+                    rowIndex <= bounds.rowEnd &&
+                    "bg-[var(--brand-100)]"
                 )}
+                onClick={(event) => {
+                  if (event.shiftKey) {
+                    select({
+                      ...selection,
+                      row: rowIndex,
+                    });
+                    gridRef.current?.focus();
+                    return;
+                  }
+                  select(collapseSelection(selection.col, rowIndex));
+                  gridRef.current?.focus();
+                }}
               >
                 {rowIndex + 1}
               </th>
               {columns.map((column, colIndex) => {
-                const selected =
+                const inSelection = isCellInSelection(
+                  selection,
+                  colIndex,
+                  rowIndex
+                );
+                const focused =
                   selection.col === colIndex && selection.row === rowIndex;
-                const isEditing = selected && editing;
+                const isEditing = focused && editing;
                 return (
                   <td
                     key={column.id}
                     role="gridcell"
-                    aria-selected={selected}
+                    aria-selected={inSelection}
                     data-testid={`cell-${column.id}-${rowIndex}`}
+                    data-in-selection={inSelection ? "true" : undefined}
                     className={cn(
                       "h-7 min-w-[6.5rem] border border-[var(--border)] bg-[var(--card)] px-1 tabular-nums",
-                      selected && "bg-[var(--brand-50)] ring-1 ring-inset ring-[var(--ring)]"
+                      inSelection && "bg-[var(--brand-50)]",
+                      focused && "ring-1 ring-inset ring-[var(--ring)]"
                     )}
-                    onClick={() => {
-                      if (editing && !selected) commitEdit();
-                      select({ col: colIndex, row: rowIndex });
+                    onClick={(event) => {
+                      if (editing && !focused) commitEdit();
+                      if (event.shiftKey) {
+                        select({
+                          ...selection,
+                          col: colIndex,
+                          row: rowIndex,
+                        });
+                      } else {
+                        select(collapseSelection(colIndex, rowIndex));
+                      }
                       gridRef.current?.focus();
                     }}
                     onDoubleClick={() => {
                       if (readOnly) return;
-                      select({ col: colIndex, row: rowIndex });
+                      select(collapseSelection(colIndex, rowIndex));
                       beginEdit(cellValue(colIndex, rowIndex));
                     }}
                   >

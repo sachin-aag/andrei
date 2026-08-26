@@ -7,6 +7,7 @@ import {
   type WorksheetColumn,
   type WorksheetData,
 } from "./types";
+import type { AnalysisRowSelection } from "./row-selection";
 
 export function defaultColumnName(index: number): string {
   return `C${index + 1}`;
@@ -212,14 +213,50 @@ export function parseNumericCell(raw: string): number | null {
   return value;
 }
 
-export function columnNumericValues(column: WorksheetColumn): {
+export function cellsForRowSelection(
+  column: WorksheetColumn,
+  selection: AnalysisRowSelection
+): string[] {
+  switch (selection.mode) {
+    case "all":
+      return trimTrailingEmpty(column.values);
+    case "range": {
+      const start = Math.max(0, selection.start - 1);
+      const requestedEnd = selection.end - 1;
+      const lastFilled = column.values.length - 1;
+      const end = Math.min(requestedEnd, Math.max(lastFilled, start));
+      const out: string[] = [];
+      for (let i = start; i <= end; i++) {
+        out.push(column.values[i] ?? "");
+      }
+      return out;
+    }
+    case "from": {
+      const start = Math.max(0, selection.start - 1);
+      const end = column.values.length - 1;
+      if (end < start) return [];
+      return column.values.slice(start);
+    }
+    case "rows":
+      return selection.rows.map((row) => column.values[row - 1] ?? "");
+    default: {
+      const exhaustive: never = selection;
+      return exhaustive;
+    }
+  }
+}
+
+export function columnNumericValues(
+  column: WorksheetColumn,
+  selection: AnalysisRowSelection = { mode: "all" }
+): {
   values: number[];
   skipped: number;
 } {
-  const trimmed = trimTrailingEmpty(column.values);
+  const cells = cellsForRowSelection(column, selection);
   const values: number[] = [];
   let skipped = 0;
-  for (const cell of trimmed) {
+  for (const cell of cells) {
     if (cell.trim() === "") continue;
     const parsed = parseNumericCell(cell);
     if (parsed === null) {
@@ -257,8 +294,15 @@ export function findColumnIndexByName(
 }
 
 /** Stable preimage used by `hashColumnSource` (server) and stale detection (client). */
+export function analysisSourceKey(
+  column: WorksheetColumn,
+  selection: AnalysisRowSelection = { mode: "all" }
+): string {
+  return JSON.stringify(cellsForRowSelection(column, selection));
+}
+
 export function columnSourceKey(column: WorksheetColumn): string {
-  return JSON.stringify(trimTrailingEmpty(column.values));
+  return analysisSourceKey(column, { mode: "all" });
 }
 
 export function replaceColumnValues(

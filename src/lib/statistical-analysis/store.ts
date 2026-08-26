@@ -16,6 +16,11 @@ import { createEmptyWorksheet, findColumn } from "./worksheet";
 import { hashColumnSource } from "./hash";
 import { computeCapabilitySixpack } from "./sixpack";
 import { capabilitySixpackInputSchema, worksheetDataSchema } from "./schemas";
+import {
+  configRowFields,
+  formatRowSelection,
+  normalizeRowSelection,
+} from "./row-selection";
 
 function asWorksheet(value: unknown): WorksheetData {
   return worksheetDataSchema.parse(value);
@@ -23,6 +28,9 @@ function asWorksheet(value: unknown): WorksheetData {
 
 function asConfig(value: unknown): CapabilitySixpackConfig {
   const parsed = value as CapabilitySixpackConfig;
+  const rows = Array.isArray(parsed.rows)
+    ? parsed.rows.filter((row) => Number.isInteger(row) && row >= 1)
+    : null;
   return {
     columnId: parsed.columnId,
     columnName: parsed.columnName,
@@ -30,6 +38,9 @@ function asConfig(value: unknown): CapabilitySixpackConfig {
     lsl: parsed.lsl,
     usl: parsed.usl,
     target: parsed.target,
+    rowStart: parsed.rowStart ?? null,
+    rowEnd: parsed.rowEnd ?? null,
+    rows: rows && rows.length > 0 ? rows : null,
   };
 }
 
@@ -53,7 +64,9 @@ function toAnalysisSummary(
 ): StatisticalAnalysisSummary {
   const config = asConfig(row.config);
   const column = findColumn(worksheet, config.columnId);
-  const currentHash = column ? hashColumnSource(column) : "";
+  const currentHash = column
+    ? hashColumnSource(column, normalizeRowSelection(config))
+    : "";
   return {
     id: row.id,
     workspaceId: row.workspaceId,
@@ -177,9 +190,13 @@ export async function createAnalysisForReport(
     return { ok: false, status: 400, error: "Select a worksheet column." };
   }
 
+  const rowSelection = normalizeRowSelection(parsed.data);
+  const rowFields = configRowFields(rowSelection);
+  const rowLabel = formatRowSelection(rowSelection);
   const title = nextAnalysisTitle(
     analytics.analyses.map((item) => item.title),
-    parsed.data.title?.trim() || column.name
+    parsed.data.title?.trim() ||
+      (rowLabel ? `${column.name} (${rowLabel})` : column.name)
   );
 
   const config: CapabilitySixpackConfig = {
@@ -189,6 +206,7 @@ export async function createAnalysisForReport(
     lsl: parsed.data.lsl,
     usl: parsed.data.usl,
     target: parsed.data.target,
+    ...rowFields,
   };
 
   const outcome = computeCapabilitySixpack(analytics.worksheet, config);
@@ -204,7 +222,7 @@ export async function createAnalysisForReport(
       title: config.title,
       config,
       results: outcome.result,
-      sourceHash: hashColumnSource(column),
+      sourceHash: hashColumnSource(column, rowSelection),
     })
     .returning();
   if (!row) {
@@ -259,7 +277,7 @@ export async function recomputeAnalysisForReport(
       title: config.title,
       config,
       results: outcome.result,
-      sourceHash: hashColumnSource(column),
+      sourceHash: hashColumnSource(column, normalizeRowSelection(config)),
     })
     .where(
       and(

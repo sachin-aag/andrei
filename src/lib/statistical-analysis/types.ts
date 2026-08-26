@@ -36,6 +36,11 @@ export type CapabilitySixpackConfig = {
   lsl: number | null;
   usl: number | null;
   target: number | null;
+  /** 1-based inclusive. Null with `rowEnd` null means the whole column. */
+  rowStart?: number | null;
+  rowEnd?: number | null;
+  /** Explicit 1-based row numbers. When set, overrides `rowStart`/`rowEnd`. */
+  rows?: number[] | null;
 };
 
 export type ControlChartSeries = {

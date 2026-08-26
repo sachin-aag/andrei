@@ -50,6 +50,9 @@ export async function createCapabilitySixpack(
     lsl: number | null;
     usl: number | null;
     target: number | null;
+    rowStart?: number | null;
+    rowEnd?: number | null;
+    rows?: number[];
   }
 ): Promise<{ analytics: ReportAnalyticsView; analysisId: string }> {
   const response = await fetch(analyticsUrl(reportId, "/analyses"), {

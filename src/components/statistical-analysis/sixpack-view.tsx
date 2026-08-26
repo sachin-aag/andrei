@@ -15,6 +15,10 @@ import {
   formatPValue,
   formatStat,
 } from "@/lib/statistical-analysis/format";
+import {
+  formatRowSelection,
+  normalizeRowSelection,
+} from "@/lib/statistical-analysis/row-selection";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
@@ -414,14 +418,21 @@ function NormalPlot({
 function StatRow({
   label,
   value,
+  testId,
 }: {
   label: string;
   value: string;
+  testId?: string;
 }) {
   return (
     <div className="flex items-baseline justify-between gap-3 py-0.5">
       <dt className="text-[11px] text-[var(--muted-foreground)]">{label}</dt>
-      <dd className="text-[11px] font-medium tabular-nums">{value}</dd>
+      <dd
+        data-testid={testId}
+        className="text-[11px] font-medium tabular-nums"
+      >
+        {value}
+      </dd>
     </div>
   );
 }
@@ -434,7 +445,11 @@ function CapabilitySummary({ result }: { result: CapabilitySixpackResult }) {
         <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
           Process data
         </p>
-        <StatRow label="Sample N" value={String(result.n)} />
+        <StatRow
+          label="Sample N"
+          value={String(result.n)}
+          testId="sixpack-sample-n"
+        />
         {result.skipped > 0 ? (
           <StatRow label="Skipped" value={String(result.skipped)} />
         ) : null}
@@ -487,6 +502,7 @@ export function SixpackView({
   readOnly?: boolean;
 }) {
   const { results, config, stale, title } = analysis;
+  const rowLabel = formatRowSelection(normalizeRowSelection(config));
   return (
     <div data-testid="capability-sixpack" className="flex h-full flex-col gap-3 overflow-auto p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -494,8 +510,12 @@ export function SixpackView({
           <h2 className="text-base font-semibold">
             Process Capability Sixpack of {config.columnName}
           </h2>
-          <p className="text-xs text-[var(--muted-foreground)]">
+          <p
+            className="text-xs text-[var(--muted-foreground)]"
+            data-testid="sixpack-row-range"
+          >
             {title} · Normal · Individuals / I-MR
+            {rowLabel ? ` · ${rowLabel}` : ""}
           </p>
         </div>
         <div className="flex items-center gap-2">

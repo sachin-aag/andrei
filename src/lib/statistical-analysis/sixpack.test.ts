@@ -85,6 +85,25 @@ describe("capability sixpack (normal, individuals)", () => {
     expect(outcome.result.normalPlot.points).toHaveLength(50);
   });
 
+  it("reads a row range from the selected worksheet column", () => {
+    let sheet = createEmptyWorksheet(1);
+    sheet = pasteTsv(sheet, 0, 0, ["1", "2", ...SMALL, "99"].join("\n"));
+    const outcome = computeCapabilitySixpack(sheet, {
+      columnId: "c1",
+      columnName: "C1",
+      title: "C1",
+      lsl: 8,
+      usl: 16,
+      target: null,
+      rowStart: 3,
+      rowEnd: 7,
+    });
+    expect(outcome.ok).toBe(true);
+    if (!outcome.ok) return;
+    expect(outcome.result.n).toBe(5);
+    expect(outcome.result.mean).toBeCloseTo(12, 10);
+  });
+
   it("reads the selected worksheet column", () => {
     let sheet = createEmptyWorksheet(1);
     sheet = pasteTsv(sheet, 0, 0, SMALL.join("\n"));

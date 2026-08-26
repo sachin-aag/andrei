@@ -264,6 +264,8 @@ Both AI-suggestion cases seed an open suggestion through `POST /api/test/seed-ai
 | opens the Analytics tab with an empty worksheet | `/reports/:id/edit` → Analytics → grid, Define hidden |
 | loads sample assay and runs a Normal Capability Sixpack | Data menu sample → flattened Stat menu → Cp/Cpk sixpack |
 | saves a sixpack per column and switches between them | Analyze selected column + column context menu; two Results entries |
+| shift+arrow selects rows and runs a sixpack on that range | Range highlight, Analyze label, Sample N matches the span |
+| saves a sixpack for specific row numbers | POST `rows` list; Results shows that subset |
 | marks a sixpack stale after the source column changes | API-seeded analysis, edit cell, Recompute clears stale badge |
 | streams a stats-assistant reply | Stub chat streams and persists (cannot assert tools) |
 

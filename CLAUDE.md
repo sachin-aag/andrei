@@ -290,8 +290,8 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
 **Data flow:**
 1. Opening Analytics `getOrCreate`s one worksheet per report (`statistical_workspaces.report_id` unique)
 2. Enter, paste, or ask the assistant to extract values from attachments (`extract_numeric_series` → `write_column`)
-3. `Analyze {column}` (selected column), column-header context menu, or `Stat → Normal Capability Sixpack…` (or `run_capability_sixpack`) computes I-MR limits, histogram, AD normal plot, Cp/Cpk/Pp/Ppk on the **server** (`computeCapabilitySixpack`). Each run **inserts** a new `statistical_analyses` row — same-column titles become `Assay (2)`.
-4. Results lists every saved analysis; selecting one does not discard the others. Editing a source column marks that analysis **stale** (`sourceHash`); Recompute refreshes only that row.
+3. `Analyze {column}` (or a Shift+arrow row range), column-header context menu, or `Stat → Normal Capability Sixpack…` (or `run_capability_sixpack` with optional `rowStart`/`rowEnd`/`rows`) computes I-MR limits, histogram, AD normal plot, Cp/Cpk/Pp/Ppk on the **server** (`computeCapabilitySixpack`). Each run **inserts** a new `statistical_analyses` row — same-column titles become `Assay (2)`; a subset is titled `Assay (rows 1–10)`.
+4. Results lists every saved analysis; selecting one does not discard the others. Editing cells **in the analyzed rows** marks that analysis **stale** (`sourceHash`); Recompute refreshes only that row. Shift+arrow / Shift+click extends a cell range on the worksheet.
 
 **Chat:** Tools are search/outline/page/extract/worksheet/sixpack only. No `propose_edit` / `draft_field` / Plan-Agent toggle. Do not add these tools to the report Plan-mode allowlist. Stub chat is text-only (`buildStubAnalyticsChatModel`).
 

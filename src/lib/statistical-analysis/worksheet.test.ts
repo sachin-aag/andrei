@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { applySampleAssay } from "./sample-data";
 import {
+  analysisSourceKey,
   columnNumericValues,
   columnSourceKey,
   createEmptyWorksheet,
@@ -22,6 +23,31 @@ describe("worksheet grid operations", () => {
     expect(sheet.columns[0]?.name).toBe("C1");
     expect(sheet.columns[7]?.name).toBe("C8");
     expect(rowCount(sheet)).toBe(0);
+  });
+
+  it("parses a numeric subset of rows without using the rest of the column", () => {
+    let sheet = createEmptyWorksheet(1);
+    sheet = setCell(sheet, 0, 0, "10");
+    sheet = setCell(sheet, 0, 1, "11");
+    sheet = setCell(sheet, 0, 2, "skip");
+    sheet = setCell(sheet, 0, 3, "13");
+    sheet = setCell(sheet, 0, 4, "14");
+    expect(
+      columnNumericValues(sheet.columns[0]!, {
+        mode: "range",
+        start: 2,
+        end: 4,
+      })
+    ).toEqual({ values: [11, 13], skipped: 1 });
+    expect(
+      columnNumericValues(sheet.columns[0]!, { mode: "rows", rows: [1, 5] })
+    ).toEqual({ values: [10, 14], skipped: 0 });
+    expect(analysisSourceKey(sheet.columns[0]!)).toBe(
+      JSON.stringify(["10", "11", "skip", "13", "14"])
+    );
+    expect(
+      analysisSourceKey(sheet.columns[0]!, { mode: "range", start: 1, end: 2 })
+    ).toBe(JSON.stringify(["10", "11"]));
   });
 
   it("sets, trims, and parses numeric cells including percents", () => {

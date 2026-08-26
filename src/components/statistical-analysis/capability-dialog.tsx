@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -24,6 +24,10 @@ import {
   columnNumericValues,
   findColumn,
 } from "@/lib/statistical-analysis/worksheet";
+import {
+  formatRowSelection,
+  normalizeRowSelection,
+} from "@/lib/statistical-analysis/row-selection";
 import type { WorksheetData } from "@/lib/statistical-analysis/types";
 
 export type CapabilityDialogValues = {
@@ -32,6 +36,8 @@ export type CapabilityDialogValues = {
   lsl: number | null;
   usl: number | null;
   target: number | null;
+  rowStart: number | null;
+  rowEnd: number | null;
 };
 
 function parseOptionalNumber(raw: string): number | null {
@@ -41,6 +47,14 @@ function parseOptionalNumber(raw: string): number | null {
   return Number.isFinite(value) ? value : null;
 }
 
+function parseOptionalRow(raw: string): number | null {
+  const text = raw.trim();
+  if (text === "") return null;
+  if (!/^\d+$/.test(text)) return null;
+  const value = Number(text);
+  return Number.isInteger(value) && value >= 1 ? value : null;
+}
+
 const fieldLabelClass =
   "normal-case tracking-normal text-sm font-medium text-[var(--foreground)]";
 
@@ -48,6 +62,8 @@ export function CapabilityDialog({
   open,
   worksheet,
   defaultColumnId,
+  defaultRowStart = null,
+  defaultRowEnd = null,
   submitting,
   error,
   onOpenChange,
@@ -56,6 +72,8 @@ export function CapabilityDialog({
   open: boolean;
   worksheet: WorksheetData;
   defaultColumnId: string;
+  defaultRowStart?: number | null;
+  defaultRowEnd?: number | null;
   submitting: boolean;
   error: string | null;
   onOpenChange: (open: boolean) => void;
@@ -66,15 +84,22 @@ export function CapabilityDialog({
   const [lsl, setLsl] = useState("90");
   const [usl, setUsl] = useState("110");
   const [target, setTarget] = useState("100");
+  const [rowStart, setRowStart] = useState(
+    defaultRowStart != null ? String(defaultRowStart) : ""
+  );
+  const [rowEnd, setRowEnd] = useState(
+    defaultRowEnd != null ? String(defaultRowEnd) : ""
+  );
 
   const selectedColumn = findColumn(worksheet, columnId) ?? worksheet.columns[0];
-  const numeric = useMemo(
-    () =>
-      selectedColumn
-        ? columnNumericValues(selectedColumn)
-        : { values: [], skipped: 0 },
-    [selectedColumn]
-  );
+  const rowSelection = normalizeRowSelection({
+    rowStart: parseOptionalRow(rowStart),
+    rowEnd: parseOptionalRow(rowEnd),
+  });
+  const numeric = selectedColumn
+    ? columnNumericValues(selectedColumn, rowSelection)
+    : { values: [], skipped: 0 };
+  const rowLabel = formatRowSelection(rowSelection);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -83,7 +108,8 @@ export function CapabilityDialog({
           <DialogTitle>Normal Capability Sixpack</DialogTitle>
           <DialogDescription>
             Individuals / moving range (I-MR). Choose a numeric column and at
-            least one specification limit.
+            least one specification limit. Optionally limit the sixpack to a
+            row range.
           </DialogDescription>
         </DialogHeader>
 
@@ -107,6 +133,7 @@ export function CapabilityDialog({
             <p className="text-xs text-[var(--muted-foreground)]">
               {numeric.values.length} numeric value
               {numeric.values.length === 1 ? "" : "s"}
+              {rowLabel ? ` in ${rowLabel}` : ""}
               {numeric.skipped > 0 ? `, ${numeric.skipped} skipped` : ""}
             </p>
             {numeric.values.length > 0 &&
@@ -118,6 +145,39 @@ export function CapabilityDialog({
             ) : null}
           </div>
 
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-1.5">
+              <Label htmlFor="sixpack-row-start" className={fieldLabelClass}>
+                First row
+              </Label>
+              <Input
+                id="sixpack-row-start"
+                data-testid="sixpack-row-start"
+                inputMode="numeric"
+                placeholder="All"
+                value={rowStart}
+                onChange={(event) => setRowStart(event.target.value)}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="sixpack-row-end" className={fieldLabelClass}>
+                Last row
+              </Label>
+              <Input
+                id="sixpack-row-end"
+                data-testid="sixpack-row-end"
+                inputMode="numeric"
+                placeholder="All"
+                value={rowEnd}
+                onChange={(event) => setRowEnd(event.target.value)}
+              />
+            </div>
+          </div>
+          <p className="-mt-2 text-xs text-[var(--muted-foreground)]">
+            Worksheet rows are numbered from 1. Leave both blank to use the
+            whole column.
+          </p>
+
           <div className="grid gap-1.5">
             <Label htmlFor="sixpack-title" className={fieldLabelClass}>
               Title (optional)
@@ -125,7 +185,11 @@ export function CapabilityDialog({
             <Input
               id="sixpack-title"
               value={title}
-              placeholder={selectedColumn?.name ?? "Analysis title"}
+              placeholder={
+                rowLabel
+                  ? `${selectedColumn?.name ?? "Analysis"} (${rowLabel})`
+                  : (selectedColumn?.name ?? "Analysis title")
+              }
               onChange={(event) => setTitle(event.target.value)}
             />
           </div>
@@ -194,6 +258,8 @@ export function CapabilityDialog({
                 lsl: parseOptionalNumber(lsl),
                 usl: parseOptionalNumber(usl),
                 target: parseOptionalNumber(target),
+                rowStart: parseOptionalRow(rowStart),
+                rowEnd: parseOptionalRow(rowEnd),
               })
             }
           >

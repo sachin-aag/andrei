@@ -29,6 +29,7 @@ import {
   replaceColumnValues,
   trimTrailingEmpty,
 } from "./worksheet";
+import { normalizeRowSelection } from "./row-selection";
 
 export const ANALYTICS_DOCUMENT_TOOL_NAMES = [
   "search_documents",
@@ -364,7 +365,7 @@ export function buildAnalyticsChatTools(opts: {
 
     statsTools.run_capability_sixpack = tool({
       description:
-        "Compute and save a new Normal Capability Sixpack (I-MR) for a worksheet column. Requires LSL and/or USL. Does not replace earlier analyses. Tell the engineer to open the Results tab.",
+        "Compute and save a new Normal Capability Sixpack (I-MR) for a worksheet column. Requires LSL and/or USL. Optional rowStart/rowEnd (1-based inclusive) or rows (1-based row numbers) limits the sixpack to those observations. Does not replace earlier analyses. Tell the engineer to open the Results tab.",
       inputSchema: capabilitySixpackInputSchema,
       execute: async (input) => {
         const created = await getOrCreateReportAnalytics(reportId);
@@ -372,7 +373,8 @@ export function buildAnalyticsChatTools(opts: {
         if (!column) {
           return { status: "not_found" as const, columnId: input.columnId };
         }
-        const numeric = columnNumericValues(column);
+        const rowSelection = normalizeRowSelection(input);
+        const numeric = columnNumericValues(column, rowSelection);
         if (
           numeric.values.length > 0 &&
           numeric.values.length < WARN_VALUES_FOR_SIXPACK
@@ -392,6 +394,9 @@ export function buildAnalyticsChatTools(opts: {
           title: result.analysis.title,
           columnId: result.analysis.config.columnId,
           columnName: result.analysis.config.columnName,
+          rowStart: result.analysis.config.rowStart ?? null,
+          rowEnd: result.analysis.config.rowEnd ?? null,
+          rows: result.analysis.config.rows ?? null,
           analysisCount: result.analytics.analyses.length,
           n: result.analysis.results.n,
           mean: result.analysis.results.mean,

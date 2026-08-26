@@ -17,6 +17,7 @@ import {
   stdNormInv,
 } from "./normal";
 import { columnNumericValues, findColumn } from "./worksheet";
+import { normalizeRowSelection } from "./row-selection";
 import type { WorksheetData } from "./types";
 
 function meanOf(values: number[]): number {
@@ -328,7 +329,7 @@ export function computeCapabilitySixpackFromValues(
     return {
       ok: false,
       code: "too_few_values",
-      message: `Need at least ${MIN_VALUES_FOR_SIXPACK} numeric observations in the selected column.`,
+      message: `Need at least ${MIN_VALUES_FOR_SIXPACK} numeric observations in the selected data.`,
     };
   }
 
@@ -393,7 +394,10 @@ export function computeCapabilitySixpack(
       message: "The selected column was not found in the worksheet.",
     };
   }
-  const { values, skipped } = columnNumericValues(column);
+  const { values, skipped } = columnNumericValues(
+    column,
+    normalizeRowSelection(config)
+  );
   return computeCapabilitySixpackFromValues(values, skipped, {
     ...config,
     columnName: column.name,

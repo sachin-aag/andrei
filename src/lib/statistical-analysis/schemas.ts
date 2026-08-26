@@ -23,6 +23,24 @@ export const capabilitySixpackInputSchema = z
     lsl: z.number().finite().nullable(),
     usl: z.number().finite().nullable(),
     target: z.number().finite().nullable(),
+    rowStart: z
+      .number()
+      .int()
+      .min(1)
+      .max(MAX_WORKSHEET_ROWS)
+      .nullable()
+      .optional(),
+    rowEnd: z
+      .number()
+      .int()
+      .min(1)
+      .max(MAX_WORKSHEET_ROWS)
+      .nullable()
+      .optional(),
+    rows: z
+      .array(z.number().int().min(1).max(MAX_WORKSHEET_ROWS))
+      .max(MAX_WORKSHEET_ROWS)
+      .optional(),
   })
   .superRefine((value, ctx) => {
     if (value.lsl == null && value.usl == null) {

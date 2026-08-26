@@ -5,9 +5,10 @@ import {
 import type { ReadyDocumentIndexItem } from "@/lib/attachments/retrieval";
 import type { ReportAnalyticsView } from "./types";
 import { columnNumericValues, trimTrailingEmpty } from "./worksheet";
+import { formatRowSelection, normalizeRowSelection } from "./row-selection";
 
 /** Bump when analytics chat policy / tool instructions change. */
-export const ANALYTICS_CHAT_PROMPT_VERSION = "analytics-chat-v2";
+export const ANALYTICS_CHAT_PROMPT_VERSION = "analytics-chat-v3";
 
 const DOCUMENT_RULES = `## Attachments
 Ready files on this report are listed below. The document index (filename / topics) is not evidence — search or read pages before quoting numbers.
@@ -20,7 +21,8 @@ OCR / data-pull path:
 3. write_column with the numeric series
 4. run_capability_sixpack when the engineer wants a plot (needs LSL and/or USL)
 
-Each run_capability_sixpack **creates a new saved analysis**. Do not treat a second run as a replacement. Different columns, or the same column with different specs, are separate Results entries.
+Each run_capability_sixpack **creates a new saved analysis**. Do not treat a second run as a replacement. Different columns, a row subset, or the same column with different specs, are separate Results entries.
+Optional rowStart/rowEnd (1-based inclusive) or rows (a list of 1-based row numbers) limit the sixpack to those worksheet rows. Omit them to use the whole column.
 
 After a sixpack is saved, tell them to open the Results tab. Do not claim you rendered the chart in chat.`;
 
@@ -30,7 +32,7 @@ Refuse other plots and methods (Xbar-R, Xbar-S, CUSUM, EWMA, ANOVA, regression, 
 
 Do not draft DMAIC sections, CAPA, comments, or report edits. That is a different assistant.
 
-You may fill a worksheet column from extracted numbers and run the sixpack. Ask for LSL/USL/target with ask_user only after searching attachments.`;
+You may fill a worksheet column from extracted numbers and run the sixpack on the whole column or on specific rows. Ask for LSL/USL/target with ask_user only after searching attachments.`;
 
 function documentIndex(documents: ReadyDocumentIndexItem[]): string {
   if (documents.length === 0) {
@@ -63,10 +65,10 @@ function worksheetIndex(analytics: ReportAnalyticsView): string {
       ? "Analyses: none"
       : [
           "Analyses:",
-          ...analytics.analyses.map(
-            (item) =>
-              `- ${item.title} (${item.id})${item.stale ? " STALE" : ""} LSL=${item.config.lsl ?? "—"} USL=${item.config.usl ?? "—"}`
-          ),
+          ...analytics.analyses.map((item) => {
+            const rows = formatRowSelection(normalizeRowSelection(item.config));
+            return `- ${item.title} (${item.id})${item.stale ? " STALE" : ""}${rows ? ` ${rows}` : ""} LSL=${item.config.lsl ?? "—"} USL=${item.config.usl ?? "—"}`;
+          }),
         ].join("\n");
   return [`Worksheet columns:`, ...lines, analyses].join("\n");
 }

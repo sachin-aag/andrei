@@ -163,6 +163,97 @@ test.describe("report analytics", () => {
     ).toBeVisible();
   });
 
+  test("shift+arrow selects rows and runs a sixpack on that range", async ({
+    page,
+  }) => {
+    test.setTimeout(90_000);
+    if (!reportId) throw new Error("missing report");
+    const sheet = applySampleAssay(createEmptyWorksheet(), 0);
+    const patched = await page.request.patch(
+      `/api/reports/${reportId}/analytics`,
+      { data: { worksheet: sheet } }
+    );
+    expect(patched.ok()).toBeTruthy();
+
+    await openReportAnalytics(page);
+    await expect(page.getByTestId("worksheet-grid")).toBeVisible({
+      timeout: 30_000,
+    });
+    await page.getByTestId("cell-c1-0").click();
+    await page.getByTestId("worksheet-grid").focus();
+    for (let i = 0; i < 9; i++) {
+      await page.keyboard.press("Shift+ArrowDown");
+    }
+    await expect(page.getByTestId("worksheet-grid")).toHaveAttribute(
+      "data-row-start",
+      "0"
+    );
+    await expect(page.getByTestId("worksheet-grid")).toHaveAttribute(
+      "data-row-end",
+      "9"
+    );
+    await expect(page.getByTestId("analyze-selected-column")).toHaveText(
+      /analyze assay rows 1–10/i
+    );
+
+    await page.getByTestId("analyze-selected-column").click();
+    await expect(page.getByTestId("capability-dialog")).toBeVisible();
+    await expect(page.getByTestId("sixpack-row-start")).toHaveValue("1");
+    await expect(page.getByTestId("sixpack-row-end")).toHaveValue("10");
+    await page.getByTestId("sixpack-lsl").fill("90");
+    await page.getByTestId("sixpack-usl").fill("110");
+    await page.getByTestId("sixpack-target").fill("100");
+    await page.getByRole("dialog").getByRole("button", { name: /^ok$/i }).click();
+
+    await expect(page.getByTestId("capability-sixpack")).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByTestId("sixpack-sample-n")).toHaveText("10");
+    await expect(page.getByTestId("sixpack-row-range")).toContainText(
+      "rows 1–10"
+    );
+  });
+
+  test("saves a sixpack for specific row numbers", async ({ page }) => {
+    test.setTimeout(90_000);
+    if (!reportId) throw new Error("missing report");
+    const sheet = applySampleAssay(createEmptyWorksheet(), 0);
+    const patched = await page.request.patch(
+      `/api/reports/${reportId}/analytics`,
+      { data: { worksheet: sheet } }
+    );
+    expect(patched.ok()).toBeTruthy();
+
+    const analyzed = await page.request.post(
+      `/api/reports/${reportId}/analytics/analyses`,
+      {
+        data: {
+          columnId: "c1",
+          lsl: 90,
+          usl: 110,
+          target: 100,
+          rows: [1, 3, 5, 8, 12],
+        },
+      }
+    );
+    expect(analyzed.ok()).toBeTruthy();
+    const body = (await analyzed.json()) as {
+      analysis: { results: { n: number } };
+    };
+    expect(body.analysis.results.n).toBe(5);
+
+    await openReportAnalytics(page);
+    await expect(page.getByTestId("worksheet-grid")).toBeVisible({
+      timeout: 30_000,
+    });
+    await page.getByTestId("workspace-tab-results").click();
+    await expect(page.getByTestId("capability-sixpack")).toBeVisible();
+    await expect(page.getByTestId("sixpack-sample-n")).toHaveText("5");
+    await expect(page.getByTestId("sixpack-row-range")).toContainText(
+      "rows 1, 3, 5, 8, 12"
+    );
+  });
+
   test("marks a sixpack stale after the source column changes", async ({
     page,
   }) => {
