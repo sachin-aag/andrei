@@ -17,6 +17,7 @@ import {
   type UIMessagePart,
 } from "ai";
 import {
+  BarChart3,
   Check,
   ChartScatter,
   FileSearch,
@@ -86,6 +87,7 @@ const ANALYTICS_EXAMPLE_PROMPTS: Record<ChatMode, string[]> = {
   agent: [
     "Extract assay measurements from the attachments into a worksheet column.",
     "Run a Normal Capability Sixpack on the Assay column with LSL 90 and USL 110.",
+    "Run one-way ANOVA of Assay by Lot.",
     "Plot measurements for M3-SYS-FN-037 from the attachments.",
   ],
 };
@@ -346,6 +348,32 @@ function AnalyticsToolChip({
           {typeof info.output?.message === "string"
             ? info.output.message
             : "Could not run the sixpack."}
+        </ToolLine>
+      );
+    }
+    case "run_one_way_anova": {
+      if (pending) {
+        return (
+          <ToolLine icon={<BarChart3 className="size-3.5" />}>
+            Running one-way ANOVA…
+          </ToolLine>
+        );
+      }
+      if (info.output?.status === "ok") {
+        return (
+          <ToolLine
+            icon={<BarChart3 className="size-3.5 text-emerald-500" />}
+            tone="success"
+          >
+            Saved one-way ANOVA — open the Results tab
+          </ToolLine>
+        );
+      }
+      return (
+        <ToolLine icon={<BarChart3 className="size-3.5" />} tone="warn">
+          {typeof info.output?.message === "string"
+            ? info.output.message
+            : "Could not run the ANOVA."}
         </ToolLine>
       );
     }
@@ -886,7 +914,7 @@ export function AnalyticsChatPanel({
             <p className="text-sm text-[var(--muted-foreground)]">
               {mode === "plan"
                 ? "I read this report's attachments and the worksheet. I don't fill columns or run plots in Ask mode — switch to Agent for that. I don't draft the document."
-                : "I read this report's attachments, fill a worksheet column, run a Normal Capability Sixpack, and plot measurements as a scatter. I don't draft the document."}
+                : "I read this report's attachments, fill a worksheet column, run a Normal Capability Sixpack or one-way ANOVA, and plot measurements as a scatter. I don't draft the document."}
             </p>
             <div className="space-y-1.5">
               {ANALYTICS_EXAMPLE_PROMPTS[mode].map((prompt) => (
@@ -1043,7 +1071,7 @@ export function AnalyticsChatPanel({
             placeholder={
               mode === "plan"
                 ? "Ask about measurements in the attachments…"
-                : "Extract numbers, run a sixpack, or plot measurements…"
+                : "Extract numbers, run a sixpack, ANOVA, or plot measurements…"
             }
             className="min-h-[40px] max-h-40 w-full resize-none rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)] disabled:opacity-50"
           />

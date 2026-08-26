@@ -10,6 +10,8 @@ export type {
 export {
   CAPABILITY_SIXPACK_NORMAL,
   MEASUREMENT_SCATTER,
+  ONE_WAY_ANOVA,
+  isAnovaAnalysis,
   isScatterAnalysis,
   isSixpackAnalysis,
 } from "./types";
@@ -17,6 +19,7 @@ export {
   createEmptyWorksheet,
   normalizeWorksheet,
   analysisSourceKey,
+  anovaSourceKey,
   columnNumericValues,
   columnSourceKey,
   findColumn,
@@ -39,10 +42,16 @@ export {
   dataSheets,
   defaultSixpackLimits,
   upsertSpecRow,
+  dropSpecRow,
   specRowForColumn,
 } from "./worksheet";
-export { applySampleAssay, SAMPLE_ASSAY_COLUMN_NAME } from "./sample-data";
+export {
+  applySampleAssay,
+  SAMPLE_ASSAY_COLUMN_NAME,
+  SAMPLE_LOT_COLUMN_NAME,
+} from "./sample-data";
 export { computeCapabilitySixpack } from "./sixpack";
+export { computeOneWayAnova, suggestFactorColumn } from "./anova";
 export { formatLimit, formatPpm, formatPValue, formatStat, formatSpecSummary } from "./format";
 export {
   formatRowSelection,

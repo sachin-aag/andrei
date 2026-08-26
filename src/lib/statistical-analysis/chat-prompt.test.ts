@@ -16,11 +16,11 @@ const emptyAnalytics: ReportAnalyticsView = {
 };
 
 describe("analytics chat prompt", () => {
-  it("bumps when sixpack/scatter policy or tools change", () => {
-    expect(ANALYTICS_CHAT_PROMPT_VERSION).toBe("analytics-chat-v8");
+  it("bumps when sixpack/scatter/ANOVA policy or tools change", () => {
+    expect(ANALYTICS_CHAT_PROMPT_VERSION).toBe("analytics-chat-v10");
   });
 
-  it("covers worksheet, sixpack, and scatter without drafting the report", () => {
+  it("covers worksheet, sixpack, scatter, and ANOVA without drafting the report", () => {
     const prompt = buildAnalyticsChatSystemPrompt({
       documentNo: "DEV-1",
       status: "draft",
@@ -34,8 +34,13 @@ describe("analytics chat prompt", () => {
     expect(prompt).toContain("manage_worksheet");
     expect(prompt).toContain("create a new data sheet");
     expect(prompt).toContain("Do not search attachments, scan files, extract numbers");
+    expect(prompt).toContain("run_one_way_anova");
     expect(prompt).toContain("Normal Capability Sixpack");
-    expect(prompt).toContain("Specs tab");
+    expect(prompt).toContain("one-way ANOVA");
+    expect(prompt).toContain("Bonferroni");
+    expect(prompt).not.toContain("Refuse other plots and methods (Xbar-R, Xbar-S, CUSUM, EWMA, ANOVA,");
+    expect(prompt).toContain("Column specs: none");
+    expect(prompt).not.toContain("Specs tab");
     expect(prompt).toContain("Quick vs Deep");
     expect(prompt).toContain("## Mode: AGENT");
     expect(prompt).not.toContain("There is no Ask/Agent toggle here");

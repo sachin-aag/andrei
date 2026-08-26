@@ -16,6 +16,7 @@ const WRITE_AFTER_SEARCH_TOOLS = [
   "write_column",
   "manage_worksheet",
   "run_capability_sixpack",
+  "run_one_way_anova",
   "plot_measurements",
 ] as const;
 

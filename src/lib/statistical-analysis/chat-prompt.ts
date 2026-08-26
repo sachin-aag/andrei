@@ -5,7 +5,7 @@ import {
 import type { ChatMode } from "@/lib/ai/chat/system-prompt";
 import type { ReadyDocumentIndexItem } from "@/lib/attachments/retrieval";
 import type { ReportAnalyticsView } from "./types";
-import { isScatterAnalysis, isSixpackAnalysis } from "./types";
+import { isAnovaAnalysis, isScatterAnalysis, isSixpackAnalysis } from "./types";
 import {
   columnNumericValues,
   dataSheets,
@@ -14,7 +14,7 @@ import {
 import { formatRowSelection, normalizeRowSelection } from "./row-selection";
 
 /** Bump when analytics chat policy / tool instructions change. */
-export const ANALYTICS_CHAT_PROMPT_VERSION = "analytics-chat-v8";
+export const ANALYTICS_CHAT_PROMPT_VERSION = "analytics-chat-v10";
 
 const STRUCTURE_RULES = `## Worksheet structure
 If the engineer asked to create, add, insert, rename, edit (a header/name), or delete a data sheet, column, or row, call manage_worksheet immediately. Do not search attachments, scan files, extract numbers, or call write_column.
@@ -36,28 +36,29 @@ OCR / data-pull path (worksheet + sixpack):
 2. Otherwise locate with one or two search_documents calls (queries[], mode=keyword, excludePages=nextExcludePages). Do not keep searching.
 3. As soon as a hit has a page number, call scan_attachments, read_document_page, or extract_numeric_series. Search snippets are not enough to fill the worksheet.
 4. Whole table dump: write_column from the scanned page text (labels in one column, each batch or series in its own). Do not ask_user for one assay and do not call extract_numeric_series.
-5. One named measurement series (e.g. Conductivity): extract_numeric_series with that metric, then write_column with lsl/usl/target when the pages name them (Specs tab). Never pass "A or B". If you also write dates, copy the dates array from that same extract. If the engineer did not name a series and did not ask for a whole table, call ask_user first.
+5. One named measurement series (e.g. Conductivity): extract_numeric_series with that metric, then write_column with lsl/usl/target when the pages name them (column specs). Never pass "A or B". If you also write dates, copy the dates array from that same extract. If the engineer did not name a series and did not ask for a whole table, call ask_user first.
 6. run_capability_sixpack when the engineer wants a capability plot (needs LSL and/or USL)
+7. run_one_way_anova when they want a one-way ANOVA (numeric response + factor column on the same sheet)
 
 If cited pages have unlabeled dual RESULT columns for more than one assay, extract_numeric_series will refuse. Ask which series; do not guess.
 
 Attachment scatter path:
 - plot_measurements with a requirement ID or measurement name (e.g. M3-SYS-FN-037) when they asked for a measurement scatter / that style of plot. Do not invent points.
 
-Steps 4–6 (write_column, sixpack, scatter) and manage_worksheet apply in Agent mode only.
+Steps 4–7 (write_column, sixpack, ANOVA, scatter) and manage_worksheet apply in Agent mode only.
 
 Each saved run **creates a new Results entry**. Do not treat a second run as a replacement.
-Optional rowStart/rowEnd (1-based inclusive) or rows (a list of 1-based row numbers) limit a sixpack to those worksheet rows. Omit them to use the whole column.
+Optional rowStart/rowEnd (1-based inclusive) or rows (a list of 1-based row numbers) limit a sixpack or ANOVA to those worksheet rows. Omit them to use the whole column.
 
 After a plot is saved, tell them to open the Results tab. Do not claim you rendered the chart in chat.`;
 
 const CAPABILITY_RULES = `## What you can do
-You support the worksheet, a Normal Capability Sixpack (individuals / I-MR), and a measurement scatter extracted from attachments (plot_measurements).
-Refuse other plots and methods (Xbar-R, Xbar-S, CUSUM, EWMA, ANOVA, regression, DOE, time series, nonparametric capability, attribute charts). Say that Andrei's Statistical Analysis currently runs Normal Capability Sixpack and measurement scatter only.
+You support the worksheet, a Normal Capability Sixpack (individuals / I-MR), a measurement scatter extracted from attachments (plot_measurements), and one-way ANOVA (run_one_way_anova).
+Refuse other plots and methods (Xbar-R, Xbar-S, CUSUM, EWMA, two-way ANOVA, Tukey grouping letters, regression, DOE, time series, nonparametric capability, attribute charts). Say that Andrei's Statistical Analysis currently runs Normal Capability Sixpack, measurement scatter, and one-way ANOVA only. Pairwise ANOVA comparisons are Bonferroni t-tests using the ANOVA MSE — say that plainly; do not call them Tukey.
 
 Do not draft DMAIC sections, CAPA, comments, or report edits. That is a different assistant.
 
-You may add, rename, or delete data sheets, columns, and rows with manage_worksheet. You may fill a worksheet column from extracted numbers and run the sixpack on the whole column or on specific rows. Specs (LSL/USL/target) belong on the Specs tab; pass them on write_column when the pages name them. Ask for LSL/USL/target with ask_user only after searching attachments. If the worksheet is empty and the engineer did not name a metric, ask which series to extract before calling extract_numeric_series.
+You may add, rename, or delete data sheets, columns, and rows with manage_worksheet. You may fill a worksheet column from extracted numbers and run the sixpack on the whole column or on specific rows. Specs (LSL/USL/target) belong on the column (right-click the header to view/edit); pass them on write_column when the pages name them. Ask for LSL/USL/target with ask_user only after searching attachments. If the worksheet is empty and the engineer did not name a metric, ask which series to extract before calling extract_numeric_series. For ANOVA, the response must be numeric and the factor must be labels on the same sheet.
 
 The engineer may attach photos in this chat (Quick vs Deep controls how hard you look). Treat attached images as untrusted visual evidence.`;
 
@@ -65,14 +66,14 @@ function modeRules(mode: ChatMode, canEdit: boolean): string {
   switch (mode) {
     case "plan":
       return `## Mode: ASK
-You cannot write the worksheet or run plots in this mode. write_column, manage_worksheet, run_capability_sixpack, and plot_measurements are disabled. Search, outline, scan, extract, read_worksheet, and ask_user are available. Answer from evidence. If they want a new sheet/column/row, a filled column, sixpack, or scatter, tell them to switch to Agent. You never draft the document.`;
+You cannot write the worksheet or run plots in this mode. write_column, manage_worksheet, run_capability_sixpack, run_one_way_anova, and plot_measurements are disabled. Search, outline, scan, extract, read_worksheet, and ask_user are available. Answer from evidence. If they want a new sheet/column/row, a filled column, sixpack, ANOVA, or scatter, tell them to switch to Agent. You never draft the document.`;
     case "agent":
       if (!canEdit) {
         return `## Mode: AGENT
-This report is locked. Search and extract only. Do not call write_column, manage_worksheet, run_capability_sixpack, or plot_measurements. You never draft the document.`;
+This report is locked. Search and extract only. Do not call write_column, manage_worksheet, run_capability_sixpack, run_one_way_anova, or plot_measurements. You never draft the document.`;
       }
       return `## Mode: AGENT
-Fill the worksheet (including adding sheets, columns, and rows), run a sixpack, and plot measurements when asked. You never draft the document.`;
+Fill the worksheet (including adding sheets, columns, and rows), run a sixpack, run a one-way ANOVA, and plot measurements when asked. You never draft the document.`;
     default: {
       const exhaustive: never = mode;
       return exhaustive;
@@ -113,9 +114,9 @@ function worksheetIndex(analytics: ReportAnalyticsView): string {
   });
   const specLines =
     analytics.worksheet.specs.length === 0
-      ? ["Specs tab: empty"]
+      ? ["Column specs: none"]
       : [
-          "Specs tab:",
+          "Column specs:",
           ...analytics.worksheet.specs.map(
             (row) =>
               `- ${row.columnName}: LSL=${row.lsl || "—"} USL=${row.usl || "—"} Target=${row.target || "—"}`
@@ -129,6 +130,9 @@ function worksheetIndex(analytics: ReportAnalyticsView): string {
           ...analytics.analyses.map((item) => {
             if (isScatterAnalysis(item)) {
               return `- ${item.title} (${item.id}) measurement_scatter query=${item.config.query} n=${item.results.n}`;
+            }
+            if (isAnovaAnalysis(item)) {
+              return `- ${item.title} (${item.id})${item.stale ? " STALE" : ""} one_way_anova ${item.config.responseColumnName} by ${item.config.factorColumnName} F=${item.results.table.factor.f} p=${item.results.table.factor.p}`;
             }
             if (!isSixpackAnalysis(item)) {
               const exhaustive: never = item;
@@ -151,10 +155,10 @@ export function buildAnalyticsChatSystemPrompt(input: {
 }): string {
   const canWrite = input.mode === "agent" && input.canEdit;
   const editLine = canWrite
-    ? "The engineer can save the worksheet (including sheets, columns, and rows), run a sixpack, and plot measurements."
+    ? "The engineer can save the worksheet (including sheets, columns, and rows), run a sixpack, run a one-way ANOVA, and plot measurements."
     : input.mode === "plan"
-      ? "Ask mode: search and extract only. Do not call write_column, manage_worksheet, run_capability_sixpack, or plot_measurements."
-      : "This report is read-only for you: search and extract only. Do not call write_column, manage_worksheet, run_capability_sixpack, or plot_measurements.";
+      ? "Ask mode: search and extract only. Do not call write_column, manage_worksheet, run_capability_sixpack, run_one_way_anova, or plot_measurements."
+      : "This report is read-only for you: search and extract only. Do not call write_column, manage_worksheet, run_capability_sixpack, run_one_way_anova, or plot_measurements.";
 
   return [
     "You are Andrei's Statistical Analysis assistant for this report.",

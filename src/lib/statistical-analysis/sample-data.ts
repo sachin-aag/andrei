@@ -3,6 +3,8 @@ import { replaceColumnValues, upsertSpecRow } from "./worksheet";
 
 /** Demo assay % observations for the capability sixpack walkthrough. */
 export const SAMPLE_ASSAY_COLUMN_NAME = "Assay";
+export const SAMPLE_LOT_COLUMN_NAME = "Lot";
+export const SAMPLE_LOT_LEVELS = ["A", "B", "C"] as const;
 
 export const SAMPLE_ASSAY_VALUES = [
   101.84, 103.12, 100.47, 104.55, 102.31, 99.88, 105.02, 101.19, 103.67,
@@ -23,12 +25,19 @@ export function sampleAssayWorksheetColumn(): {
   };
 }
 
+export function sampleLotValues(count: number): string[] {
+  return Array.from(
+    { length: count },
+    (_, index) => SAMPLE_LOT_LEVELS[index % SAMPLE_LOT_LEVELS.length]!
+  );
+}
+
 export function applySampleAssay(
   data: WorksheetData,
   colIndex = 0
 ): WorksheetData {
   const sample = sampleAssayWorksheetColumn();
-  return upsertSpecRow(
+  let next = upsertSpecRow(
     replaceColumnValues(data, colIndex, sample.values, sample.name),
     {
       columnName: sample.name,
@@ -37,4 +46,15 @@ export function applySampleAssay(
       target: "100",
     }
   );
+  const lotIndex =
+    colIndex + 1 < next.columns.length ? colIndex + 1 : colIndex - 1;
+  if (lotIndex >= 0 && lotIndex !== colIndex && next.columns[lotIndex]) {
+    next = replaceColumnValues(
+      next,
+      lotIndex,
+      sampleLotValues(sample.values.length),
+      SAMPLE_LOT_COLUMN_NAME
+    );
+  }
+  return next;
 }

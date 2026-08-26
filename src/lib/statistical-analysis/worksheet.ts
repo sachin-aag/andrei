@@ -110,13 +110,11 @@ export function normalizeWorksheet(raw: unknown): WorksheetData {
   const requested =
     typeof record.activeSheetId === "string" ? record.activeSheetId : "";
   const activeSheetId =
-    requested === SPECS_TAB_ID || sheets.some((sheet) => sheet.id === requested)
+    requested !== SPECS_TAB_ID && sheets.some((sheet) => sheet.id === requested)
       ? requested
       : sheets[0]!.id;
   const active =
-    activeSheetId === SPECS_TAB_ID
-      ? sheets[0]!
-      : (sheets.find((sheet) => sheet.id === activeSheetId) ?? sheets[0]!);
+    sheets.find((sheet) => sheet.id === activeSheetId) ?? sheets[0]!;
   return {
     columns: active.columns,
     sheets,
@@ -166,7 +164,13 @@ export function switchWorksheetTab(
 ): WorksheetData {
   const workbook = normalizeWorksheet(data);
   if (sheetId === SPECS_TAB_ID) {
-    return { ...workbook, activeSheetId: SPECS_TAB_ID };
+    const first = workbook.sheets[0];
+    if (!first) return workbook;
+    return {
+      ...workbook,
+      activeSheetId: first.id,
+      columns: first.columns,
+    };
   }
   const sheet = workbook.sheets.find((item) => item.id === sheetId);
   if (!sheet) return workbook;
@@ -254,17 +258,13 @@ export function deleteDataSheet(
   const remaining = workbook.sheets.filter((sheet) => sheet.id !== sheetId);
   if (remaining.length === workbook.sheets.length) return workbook;
   const nextActive =
-    workbook.activeSheetId === sheetId
+    workbook.activeSheetId === sheetId ||
+    workbook.activeSheetId === SPECS_TAB_ID ||
+    !remaining.some((sheet) => sheet.id === workbook.activeSheetId)
       ? remaining[0]!.id
-      : workbook.activeSheetId === SPECS_TAB_ID
-        ? SPECS_TAB_ID
-        : remaining.some((sheet) => sheet.id === workbook.activeSheetId)
-          ? workbook.activeSheetId
-          : remaining[0]!.id;
+      : workbook.activeSheetId;
   const active =
-    nextActive === SPECS_TAB_ID
-      ? remaining[0]!
-      : (remaining.find((sheet) => sheet.id === nextActive) ?? remaining[0]!);
+    remaining.find((sheet) => sheet.id === nextActive) ?? remaining[0]!;
   return {
     ...workbook,
     sheets: remaining,
@@ -312,6 +312,21 @@ export function upsertSpecRow(
       ? workbook.specs.map((item, i) => (i === index ? nextRow : item))
       : [...workbook.specs, nextRow];
   return { ...workbook, specs };
+}
+
+export function dropSpecRow(
+  data: WorksheetData,
+  columnName: string
+): WorksheetData {
+  const workbook = normalizeWorksheet(data);
+  const key = columnName.trim().toLowerCase();
+  if (!key) return workbook;
+  return {
+    ...workbook,
+    specs: workbook.specs.filter(
+      (row) => row.columnName.trim().toLowerCase() !== key
+    ),
+  };
 }
 
 export function setSpecRows(
@@ -474,10 +489,23 @@ export function renameColumn(
 ): WorksheetData {
   const column = data.columns[colIndex];
   if (!column) return data;
-  const next = data.columns.map((item, index) =>
-    index === colIndex ? { ...item, name: sanitizeColumnName(name) } : item
+  const previousName = column.name;
+  const nextName = sanitizeColumnName(name);
+  const next = withWorkbook(
+    data,
+    data.columns.map((item, index) =>
+      index === colIndex ? { ...item, name: nextName } : item
+    )
   );
-  return withWorkbook(data, next);
+  if (previousName.trim().toLowerCase() === nextName.toLowerCase()) {
+    return next;
+  }
+  const existing = specRowForColumn(next, previousName);
+  if (!existing) return next;
+  return upsertSpecRow(dropSpecRow(next, previousName), {
+    ...existing,
+    columnName: nextName,
+  });
 }
 
 export function insertColumn(data: WorksheetData, atIndex: number): WorksheetData {
@@ -494,14 +522,17 @@ export function insertColumn(data: WorksheetData, atIndex: number): WorksheetDat
 }
 
 export function deleteColumn(data: WorksheetData, colIndex: number): WorksheetData {
+  const removed = data.columns[colIndex];
   if (data.columns.length <= 1) {
-    return withWorkbook(data, emptyColumnsForWorkbook(data, 1));
+    const next = withWorkbook(data, emptyColumnsForWorkbook(data, 1));
+    return removed ? dropSpecRow(next, removed.name) : next;
   }
   if (colIndex < 0 || colIndex >= data.columns.length) return data;
-  return withWorkbook(
+  const next = withWorkbook(
     data,
     data.columns.filter((_, index) => index !== colIndex)
   );
+  return removed ? dropSpecRow(next, removed.name) : next;
 }
 
 export function insertRow(data: WorksheetData, atIndex: number): WorksheetData {
@@ -689,6 +720,18 @@ export function analysisSourceKey(
   selection: AnalysisRowSelection = { mode: "all" }
 ): string {
   return JSON.stringify(cellsForRowSelection(column, selection));
+}
+
+/** Client-safe ANOVA source key — do not import `hash.ts` from the browser. */
+export function anovaSourceKey(
+  response: WorksheetColumn,
+  factor: WorksheetColumn,
+  selection: AnalysisRowSelection = { mode: "all" }
+): string {
+  return JSON.stringify({
+    response: cellsForRowSelection(response, selection),
+    factor: cellsForRowSelection(factor, selection),
+  });
 }
 
 export function columnSourceKey(column: WorksheetColumn): string {

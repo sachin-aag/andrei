@@ -16,7 +16,7 @@ import {
   gateMetricSeriesExtract,
 } from "@/lib/extraction/metric-series";
 import { runScanAttachments } from "./scan-attachments";
-import { capabilitySixpackInputSchema, measurementScatterInputSchema } from "./schemas";
+import { capabilitySixpackInputSchema, measurementScatterInputSchema, oneWayAnovaBodySchema } from "./schemas";
 import {
   createAnalysisForReport,
   getOrCreateReportAnalytics,
@@ -24,8 +24,10 @@ import {
 } from "./store";
 import {
   MEASUREMENT_SCATTER,
+  ONE_WAY_ANOVA,
   MAX_WORKSHEET_ROWS,
   WARN_VALUES_FOR_SIXPACK,
+  isAnovaAnalysis,
   isScatterAnalysis,
   isSixpackAnalysis,
 } from "./types";
@@ -64,6 +66,7 @@ export const ANALYTICS_CHAT_WRITE_TOOL_NAMES = [
   "write_column",
   "manage_worksheet",
   "run_capability_sixpack",
+  "run_one_way_anova",
   "plot_measurements",
 ] as const;
 
@@ -111,6 +114,18 @@ function analysisIndexItem(
       stale: item.stale,
       query: item.config.query,
       n: item.results.n,
+    };
+  }
+  if (isAnovaAnalysis(item)) {
+    return {
+      id: item.id,
+      title: item.title,
+      kind: item.kind,
+      stale: item.stale,
+      responseColumnId: item.config.responseColumnId,
+      factorColumnId: item.config.factorColumnId,
+      f: item.results.table.factor.f,
+      p: item.results.table.factor.p,
     };
   }
   if (!isSixpackAnalysis(item)) {
@@ -479,7 +494,7 @@ export function buildAnalyticsChatTools(opts: {
   if (canEdit) {
     statsTools.write_column = tool({
       description:
-        "Write values into a worksheet column (replaces that column). Use for a numeric series or a full table dump (row labels in one column, each batch/series in its own). Pass lsl/usl/target when known so they land on the Specs tab. Then call run_capability_sixpack for a capability plot, or plot_measurements for an attachment scatter. When writing sampling dates from extract_numeric_series, copy that same dates array — do not drop a date because a different assay was NA.",
+        "Write values into a worksheet column (replaces that column). Use for a numeric series or a full table dump (row labels in one column, each batch/series in its own). Pass lsl/usl/target when known so they land on that column's specs (right-click header). Then call run_capability_sixpack for a capability plot, run_one_way_anova for a one-way ANOVA, or plot_measurements for an attachment scatter. When writing sampling dates from extract_numeric_series, copy that same dates array — do not drop a date because a different assay was NA.",
       inputSchema: z.object({
         values: z
           .array(z.union([z.number().finite(), z.string().max(64)]))
@@ -626,6 +641,46 @@ export function buildAnalyticsChatTools(opts: {
           cp: result.analysis.results.capability.cp,
           cpk: result.analysis.results.capability.cpk,
           ppk: result.analysis.results.capability.ppk,
+          stale: result.analysis.stale,
+          openResultsTab: true,
+        };
+      },
+    });
+
+    statsTools.run_one_way_anova = tool({
+      description:
+        "Compute and save a one-way ANOVA for a numeric response column by a factor column on the same worksheet sheet. Optional rowStart/rowEnd (1-based inclusive) or rows (1-based row numbers) limits the rows. Pairwise tests are Bonferroni t-tests using the ANOVA MSE. Does not replace earlier analyses. Tell the engineer to open the Results tab.",
+      inputSchema: oneWayAnovaBodySchema,
+      execute: async (input) => {
+        const result = await createAnalysisForReport(reportId, {
+          kind: ONE_WAY_ANOVA,
+          ...input,
+        });
+        if (!result.ok) {
+          return {
+            status: "error" as const,
+            message: result.error,
+          };
+        }
+        if (!isAnovaAnalysis(result.analysis)) {
+          return {
+            status: "error" as const,
+            message: "Saved analysis was not a one-way ANOVA.",
+          };
+        }
+        return {
+          status: "ok" as const,
+          analysisId: result.analysis.id,
+          title: result.analysis.title,
+          responseColumnId: result.analysis.config.responseColumnId,
+          responseColumnName: result.analysis.config.responseColumnName,
+          factorColumnId: result.analysis.config.factorColumnId,
+          factorColumnName: result.analysis.config.factorColumnName,
+          n: result.analysis.results.n,
+          groupCount: result.analysis.results.groupCount,
+          f: result.analysis.results.table.factor.f,
+          p: result.analysis.results.table.factor.p,
+          analysisCount: result.analytics.analyses.length,
           stale: result.analysis.stale,
           openResultsTab: true,
         };

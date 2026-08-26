@@ -279,22 +279,23 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
 
 ## Subsystem: Statistical Analysis
 
-**Purpose:** Report-scoped measurement worksheet and Minitab-style Normal Capability Sixpack (individuals / I-MR), plus attachment measurement scatter. Lives on the report **Analytics** tab (same attachments as the document). On for demo, MJ, and Convergent (`statisticalAnalysisEnabled`). Not a document type, not TipTap, and not DMAIC chat. Convergent Document chat does **not** propose `plot_measurements` figures — those plots live in Analytics.
+**Purpose:** Report-scoped measurement worksheet and Minitab-style Normal Capability Sixpack (individuals / I-MR), attachment measurement scatter, and one-way ANOVA. Lives on the report **Analytics** tab (same attachments as the document). On for demo, MJ, and Convergent (`statisticalAnalysisEnabled`). Not a document type, not TipTap, and not DMAIC chat. Convergent Document chat does **not** propose `plot_measurements` figures — those plots live in Analytics.
 
 **Entry points:**
 - Report workspace header: Document | Analytics (`data-testid="report-surface-analytics"`)
 - `GET/PATCH/POST /api/reports/[reportId]/analytics` (`POST` aliases `PATCH` for autosave beacons)
-- `POST .../analytics/analyses` creates a sixpack (default) or `kind: "measurement_scatter"`; `POST/DELETE .../analytics/analyses/[analysisId]` recomputes or deletes
+- `POST .../analytics/analyses` creates a sixpack (default), `kind: "measurement_scatter"`, or `kind: "one_way_anova"`; `POST/DELETE .../analytics/analyses/[analysisId]` recomputes or deletes
 - `POST /api/reports/[reportId]/analytics/chat` — stats-only assistant (`ANALYTICS_CHAT_PROMPT_VERSION`, surface `analytics`)
 
 **Data flow:**
-1. Opening Analytics `getOrCreate`s one worksheet per report (`statistical_workspaces.report_id` unique). The workbook has one or more data sheets plus a Specs tab (LSL/USL/target).
-2. Enter, paste, or ask the assistant to extract values from attachments (`extract_numeric_series` → `write_column`). Extraction also fills Specs when pages name limits.
-3. `Analyze {column}` (or a Shift+arrow row range), column-header context menu, or `Stat → Normal Capability Sixpack…` (or `run_capability_sixpack` with optional `rowStart`/`rowEnd`/`rows`) computes I-MR limits, histogram, AD normal plot, Cp/Cpk/Pp/Ppk on the **server** (`computeCapabilitySixpack`). Specs tab values prefill the form; if that tab is empty, min/max (and midpoint target) of the selected range are used. Each run **inserts** a new `statistical_analyses` row — same-column titles become `Assay (2)`; a subset is titled `Assay (rows 1–10)`.
+1. Opening Analytics `getOrCreate`s one worksheet per report (`statistical_workspaces.report_id` unique). The workbook has one or more data sheets. Specs (LSL/USL/target) are edited from a column-header context menu.
+2. Enter, paste, or ask the assistant to extract values from attachments (`extract_numeric_series` → `write_column`). Extraction also fills column specs when pages name limits.
+3. `Analyze {column}` (or a Shift+arrow row range), column-header context menu, or `Stat → Normal Capability Sixpack…` (or `run_capability_sixpack` with optional `rowStart`/`rowEnd`/`rows`) computes I-MR limits, histogram, AD normal plot, Cp/Cpk/Pp/Ppk on the **server** (`computeCapabilitySixpack`). Column specs (right-click header) prefill the form; if those are empty, min/max (and midpoint target) of the selected range are used. Each run **inserts** a new `statistical_analyses` row — same-column titles become `Assay (2)`; a subset is titled `Assay (rows 1–10)`.
 4. `Stat → Plot measurements…` (or analytics `plot_measurements`) extracts cited numeric measurements from attachments and saves a scatter (`measurement_scatter`) on Results. Do not reuse Document-chat `executePlotMeasurements` here (that path writes section suggestions).
-5. Results lists every saved analysis; selecting one does not discard the others. Editing cells **in the analyzed rows** marks a sixpack **stale** (`sourceHash`); scatter is not worksheet-stale. Recompute refreshes only that row. **Download** saves a CSV.
+5. `Stat → One-Way ANOVA…` (or analytics `run_one_way_anova`) compares a numeric response by a factor column on the same sheet. Pairwise tests are Bonferroni t-tests using the ANOVA MSE (not Tukey). Each run **inserts** a new Results row.
+6. Results lists every saved analysis; selecting one does not discard the others. Editing cells **in the analyzed rows** marks a sixpack or ANOVA **stale** (`sourceHash`); scatter is not worksheet-stale. Recompute refreshes only that row. **Download** saves a CSV.
 
-**Chat:** Tools are search/outline/scan/page/extract/worksheet (`read_worksheet`, `write_column`, `manage_worksheet` for sheets/columns/rows)/sixpack/scatter. Images, Quick/Deep, and Ask vs Agent match Document chat. Ask searches and extracts only; Agent can `manage_worksheet`, `write_column`, run a sixpack, and plot measurements when the report is writable. No `propose_edit` / `draft_field`. Do not add those tools to the report Plan-mode allowlist. Stub chat is text-only (`buildStubAnalyticsChatModel`).
+**Chat:** Tools are search/outline/scan/page/extract/worksheet (`read_worksheet`, `write_column`, `manage_worksheet` for sheets/columns/rows)/sixpack/ANOVA/scatter. Images, Quick/Deep, and Ask vs Agent match Document chat. Ask searches and extracts only; Agent can `manage_worksheet`, `write_column`, run a sixpack, run one-way ANOVA, and plot measurements when the report is writable. No `propose_edit` / `draft_field`. Do not add those tools to the report Plan-mode allowlist. Stub chat is text-only (`buildStubAnalyticsChatModel`).
 
 **Key invariant:** Analyses do not silently change when the worksheet changes, and a new run never overwrites an earlier sixpack. I-MR constants are Minitab n=2 (`d2=1.128`, `D4=3.267`, `E2=2.66`). Mutations use `canSaveReportSection` (same lock as section autosave).
 

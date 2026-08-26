@@ -80,6 +80,7 @@ describe("analytics chat tools", () => {
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("write_column");
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("manage_worksheet");
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("run_capability_sixpack");
+    expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("run_one_way_anova");
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("plot_measurements");
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("scan_attachments");
   });
@@ -107,6 +108,7 @@ describe("analytics chat tools", () => {
     expect(writable.write_column).toBeDefined();
     expect(writable.manage_worksheet).toBeDefined();
     expect(writable.run_capability_sixpack).toBeDefined();
+    expect(writable.run_one_way_anova).toBeDefined();
     expect(writable.plot_measurements).toBeDefined();
 
     const locked = buildAnalyticsChatTools({
@@ -117,6 +119,7 @@ describe("analytics chat tools", () => {
     expect(locked.write_column).toBeUndefined();
     expect(locked.manage_worksheet).toBeUndefined();
     expect(locked.run_capability_sixpack).toBeUndefined();
+    expect(locked.run_one_way_anova).toBeUndefined();
     expect(locked.plot_measurements).toBeUndefined();
     expect(locked.search_documents).toBeDefined();
     expect(locked.scan_attachments).toBeDefined();

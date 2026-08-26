@@ -5,6 +5,7 @@ import {
   MAX_WORKSHEET_COLUMNS,
   MAX_WORKSHEET_ROWS,
   MEASUREMENT_SCATTER,
+  ONE_WAY_ANOVA,
 } from "./types";
 
 export const worksheetColumnSchema = z.object({
@@ -117,6 +118,61 @@ export const measurementScatterInputSchema = z.object({
   yLabel: z.string().trim().max(80).optional(),
   layout: measurementScatterLayoutInputSchema.optional(),
 });
+
+const anovaRowFields = {
+  rowStart: z
+    .number()
+    .int()
+    .min(1)
+    .max(MAX_WORKSHEET_ROWS)
+    .nullable()
+    .optional(),
+  rowEnd: z
+    .number()
+    .int()
+    .min(1)
+    .max(MAX_WORKSHEET_ROWS)
+    .nullable()
+    .optional(),
+  rows: z
+    .array(z.number().int().min(1).max(MAX_WORKSHEET_ROWS))
+    .max(MAX_WORKSHEET_ROWS)
+    .optional(),
+} as const;
+
+function refineDistinctAnovaColumns(
+  value: { responseColumnId: string; factorColumnId: string },
+  ctx: z.RefinementCtx
+): void {
+  if (value.responseColumnId === value.factorColumnId) {
+    ctx.addIssue({
+      code: "custom",
+      message: "Response and factor must be different columns.",
+      path: ["factorColumnId"],
+    });
+  }
+}
+
+export const oneWayAnovaBodySchema = z
+  .object({
+    responseColumnId: z.string().trim().min(1),
+    factorColumnId: z.string().trim().min(1),
+    title: z.string().trim().max(120).optional(),
+    alpha: z.number().gt(0).lt(1).optional(),
+    ...anovaRowFields,
+  })
+  .superRefine(refineDistinctAnovaColumns);
+
+export const oneWayAnovaInputSchema = z
+  .object({
+    kind: z.literal(ONE_WAY_ANOVA),
+    responseColumnId: z.string().trim().min(1),
+    factorColumnId: z.string().trim().min(1),
+    title: z.string().trim().max(120).optional(),
+    alpha: z.number().gt(0).lt(1).optional(),
+    ...anovaRowFields,
+  })
+  .superRefine(refineDistinctAnovaColumns);
 
 export const patchAnalyticsBodySchema = z
   .object({

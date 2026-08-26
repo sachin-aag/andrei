@@ -257,7 +257,7 @@ Both AI-suggestion cases seed an open suggestion through `POST /api/test/seed-ai
 </details>
 
 <details>
-<summary><strong>statistical-analysis.spec.ts</strong> — report Analytics worksheet, sixpack, scatter</summary>
+<summary><strong>statistical-analysis.spec.ts</strong> — report Analytics worksheet, sixpack, scatter, ANOVA</summary>
 
 | Test | What it verifies |
 |------|------------------|
@@ -268,7 +268,8 @@ Both AI-suggestion cases seed an open suggestion through `POST /api/test/seed-ai
 | saves a sixpack for specific row numbers | POST `rows` list; Results shows that subset; Download saves a CSV |
 | marks a sixpack stale after the source column changes | API-seeded analysis, edit cell, Recompute clears stale badge |
 | streams a stats-assistant reply | Stub chat streams and persists; Ask/Agent + Quick/Deep + attach image are present (cannot assert tools) |
-| shows Data and Specs tabs and Plot measurements | Sheet tabs, Specs filled from sample assay, Plot measurements dialog errors without attachments |
+| shows Data sheets and column specs from the header menu | Data tab only; right-click column Specs dialog filled from sample assay; Plot measurements dialog errors without attachments |
+| loads sample assay and runs one-way ANOVA of Assay by Lot | Data menu sample fills Assay + Lot; Stat → One-Way ANOVA; Results table + interval plot |
 
 </details>
 
@@ -303,12 +304,12 @@ File: `src/app/api/reports/route.test.ts`
 </details>
 
 <details>
-<summary><strong>/api/reports/[reportId]/analytics</strong> — worksheet + sixpack</summary>
+<summary><strong>/api/reports/[reportId]/analytics</strong> — worksheet + sixpack + scatter + ANOVA</summary>
 
 - Pack/auth failures pass through `requireAnalyticsAccess` (404/401/403)
 - GET loads or creates the per-report worksheet
 - PATCH/POST persist worksheet JSON (POST is the autosave beacon alias)
-- POST analyses creates a sixpack (or `kind: "measurement_scatter"`); POST analyses/[id] recomputes
+- POST analyses creates a sixpack, `kind: "measurement_scatter"`, or `kind: "one_way_anova"`; POST analyses/[id] recomputes
 
 File: `src/app/api/reports/[reportId]/analytics/route.test.ts`
 
