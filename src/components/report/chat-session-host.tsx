@@ -13,6 +13,7 @@ import { useChatWatchdog } from "@/hooks/use-chat-watchdog";
 import {
   CHAT_ASSISTANT_ERROR_MESSAGE,
   assistantPartsHaveVisibleContent,
+  assistantPartsHaveVisibleText,
 } from "@/lib/ai/chat/assistant-turn";
 import {
   CHAT_TURN_POLL_MS,
@@ -144,6 +145,13 @@ export function ChatSessionHost({
         agentRunStartedAtRef.current = null;
         setBackgroundTurn(false);
         return;
+      }
+      if (
+        message.role === "assistant" &&
+        !assistantPartsHaveVisibleText(message.parts)
+      ) {
+        // Tool-only finish: pick up a persisted budget/interrupt notice.
+        void hydrateFromServer();
       }
       const startedAt = agentRunStartedAtRef.current;
       agentRunStartedAtRef.current = null;

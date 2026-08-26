@@ -1451,7 +1451,7 @@ export function buildChatTools(opts: {
 
     plot_measurements: tool({
       description:
-        `Extract cited numeric measurements from attachments, render a scatter plot, and propose it as a reviewable figure. Call this only when the engineer asked in words for a chart. Never invent data points — the tool extracts and validates number tokens from page transcripts. Restyle reuses the stored chartSpec; do not extract again. Empty anchorText appends at the end of the field.${scopeHint}`,
+        `Extract cited numeric measurements from attachments, render a scatter plot, and propose it as a reviewable figure. Call this only when the engineer asked in words for a chart. Query must name one series or requirement ID — not two assays joined with or. Never invent data points — the tool extracts and validates number tokens from page transcripts. Restyle reuses the stored chartSpec; do not extract again. Empty anchorText appends at the end of the field.${scopeHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
@@ -1461,7 +1461,7 @@ export function buildChatTools(opts: {
           .string()
           .min(1)
           .max(200)
-          .describe("Requirement ID or measurement name to extract, e.g. M3-SYS-FN-037."),
+          .describe("One requirement ID or measurement name, e.g. M3-SYS-FN-037 or Conductivity. Do not pass two assays joined with or."),
         title: z.string().max(120).optional(),
         xLabel: z.string().max(60).optional(),
         yLabel: z.string().max(80).optional(),

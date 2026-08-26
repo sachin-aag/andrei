@@ -18,7 +18,9 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("bumps the prompt version when insert_image and citation-marker guidance change", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v47-ask-mode-qna");
+    expect(CHAT_PROMPT_VERSION).toBe(
+      "chat-v48-ask-mode-qna-metric-series-plots"
+    );
   });
 
   it("puts citations at the end of the section when the pack mode is on", () => {

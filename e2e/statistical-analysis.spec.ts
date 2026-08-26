@@ -316,7 +316,9 @@ test.describe("report analytics", () => {
     const sidebar = reportSidebar(page);
     const composer = sidebar.getByTestId("analytics-chat-input");
     await expect(composer).toBeEnabled({ timeout: 15_000 });
+    await expect(sidebar.getByLabel("Assistant mode")).toBeVisible();
     await expect(sidebar.getByTestId("analytics-chat-pace")).toBeVisible();
+    await expect(sidebar.getByLabel("Answer depth")).toBeVisible();
     await expect(sidebar.getByTestId("analytics-chat-attach-image")).toBeVisible();
     await composer.fill("extract assay numbers from the attachments");
     await sidebar.getByRole("button", { name: /^send message$/i }).click();
@@ -328,22 +330,27 @@ test.describe("report analytics", () => {
     ).toBeVisible({ timeout: 30_000 });
   });
 
-  test("shows Data and Specs tabs and Plot measurements", async ({ page }) => {
+  test("shows Data sheets and column specs from the header menu", async ({
+    page,
+  }) => {
     test.setTimeout(90_000);
     await openReportAnalytics(page);
     await expect(page.getByTestId("worksheet-grid")).toBeVisible({
       timeout: 30_000,
     });
     await expect(page.getByTestId("worksheet-sheet-tab-data-1")).toHaveText("Data");
-    await expect(page.getByTestId("worksheet-sheet-tab-specs")).toBeVisible();
+    await expect(page.getByTestId("worksheet-sheet-tab-specs")).toHaveCount(0);
 
     await page.getByTestId("worksheet-data-menu").click();
     await page.getByTestId("load-sample-assay").click();
-    await page.getByTestId("worksheet-sheet-tab-specs").click();
-    await expect(page.getByTestId("worksheet-specs")).toBeVisible();
-    await expect(page.getByTestId("spec-column-0")).toHaveValue("Assay");
-    await expect(page.getByTestId("spec-lsl-0")).toHaveValue("90");
-    await expect(page.getByTestId("spec-usl-0")).toHaveValue("110");
+    await page.getByTestId("column-header-c1").click({ button: "right" });
+    await page.getByTestId("column-specs-c1").click();
+    await expect(page.getByTestId("column-specs-dialog")).toBeVisible();
+    await expect(page.getByTestId("column-spec-lsl")).toHaveValue("90");
+    await expect(page.getByTestId("column-spec-usl")).toHaveValue("110");
+    await expect(page.getByTestId("column-spec-target")).toHaveValue("100");
+    await page.getByTestId("column-specs-save").click();
+    await expect(page.getByTestId("column-specs-dialog")).toHaveCount(0);
 
     await page.getByRole("button", { name: "Stat" }).click();
     await page.getByTestId("stat-plot-measurements").click();

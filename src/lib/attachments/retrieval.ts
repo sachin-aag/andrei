@@ -14,6 +14,7 @@ import {
   buildOutlineFromStoredPages,
   type OutlineSpan,
 } from "@/lib/attachments/page-outline";
+import { rewriteChunkDocumentHeader } from "@/lib/attachments/chunk-pages";
 
 export { buildOutlineFromStoredPages };
 
@@ -273,9 +274,12 @@ function toSearchResult(
   row: CandidateRow,
   opts: { snippetChars?: number } = {}
 ): DocumentSearchResult {
-  const quote = truncateSnippet(
-    row.contextualText || row.rawText,
-    opts.snippetChars ?? DEFAULT_SNIPPET_CHARS
+  const quote = rewriteChunkDocumentHeader(
+    truncateSnippet(
+      row.contextualText || row.rawText,
+      opts.snippetChars ?? DEFAULT_SNIPPET_CHARS
+    ),
+    row.filename
   );
   return {
     attachmentId: row.attachmentId,

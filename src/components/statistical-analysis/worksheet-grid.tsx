@@ -34,6 +34,7 @@ type WorksheetGridProps = {
   onChange: (worksheet: WorksheetData) => void;
   readOnly?: boolean;
   onAnalyzeColumn?: (colIndex: number) => void;
+  onEditColumnSpecs?: (colIndex: number) => void;
 };
 
 const EXTRA_EMPTY_ROWS = 8;
@@ -86,6 +87,7 @@ function WorksheetColumnHeader({
   onCommitHeader,
   onCancelHeader,
   onAnalyze,
+  onEditSpecs,
 }: {
   column: WorksheetColumn;
   selected: boolean;
@@ -99,6 +101,7 @@ function WorksheetColumnHeader({
   onCommitHeader: () => void;
   onCancelHeader: () => void;
   onAnalyze?: () => void;
+  onEditSpecs?: () => void;
 }) {
   const headerClass = cn(
     "min-w-[6.5rem] border border-[var(--border)] bg-[var(--secondary)] px-1 py-1 font-medium",
@@ -139,7 +142,7 @@ function WorksheetColumnHeader({
     </button>
   );
 
-  if (readOnly || !onAnalyze || editing) {
+  if (editing || (!onAnalyze && !onEditSpecs)) {
     return (
       <th scope="col" className={headerClass}>
         {headerBody}
@@ -154,12 +157,22 @@ function WorksheetColumnHeader({
           <div>{headerBody}</div>
         </ContextMenuTrigger>
         <ContextMenuContent>
-          <ContextMenuItem
-            data-testid={`column-analyze-${column.id}`}
-            onSelect={onAnalyze}
-          >
-            Analyze {column.name}…
-          </ContextMenuItem>
+          {onEditSpecs ? (
+            <ContextMenuItem
+              data-testid={`column-specs-${column.id}`}
+              onSelect={onEditSpecs}
+            >
+              {readOnly ? "View specs…" : "Specs…"}
+            </ContextMenuItem>
+          ) : null}
+          {readOnly || !onAnalyze ? null : (
+            <ContextMenuItem
+              data-testid={`column-analyze-${column.id}`}
+              onSelect={onAnalyze}
+            >
+              Analyze {column.name}…
+            </ContextMenuItem>
+          )}
         </ContextMenuContent>
       </ContextMenu>
     </th>
@@ -173,6 +186,7 @@ export function WorksheetGrid({
   onChange,
   readOnly = false,
   onAnalyzeColumn,
+  onEditColumnSpecs,
 }: WorksheetGridProps) {
   const gridRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -382,6 +396,11 @@ export function WorksheetGrid({
                 onAnalyze={
                   onAnalyzeColumn
                     ? () => onAnalyzeColumn(colIndex)
+                    : undefined
+                }
+                onEditSpecs={
+                  onEditColumnSpecs
+                    ? () => onEditColumnSpecs(colIndex)
                     : undefined
                 }
               />

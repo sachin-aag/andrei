@@ -14,7 +14,7 @@ import { getDocumentType } from "@/lib/document-types";
 import type { RetrievalPolicy } from "@/lib/ai/chat/retrieval-policy";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v47-ask-mode-qna";
+export const CHAT_PROMPT_VERSION = "chat-v48-ask-mode-qna-metric-series-plots";
 
 export type ChatMode = "plan" | "agent";
 
@@ -232,7 +232,7 @@ Choosing the right tool:
 - draft_field — a FULL draft or rewrite of one field, written as markdown. Use it for empty fields, substantial prose rewrites, creating a NEW table, or an explicitly requested full table replacement. Do not use it for incremental table edits — accepting a draft overwrites every cell, including filled placeholders. draft_field cannot insert or remove figures; use ${figureEditTools(opts.includePlotMeasurements)}. A full rewrite of a field that already has images will drop those images.
 - propose_edit — one small targeted change inside existing prose, or a list item (targeted with "scope"). Never use it for tables, and never quote a markdown pipe table as anchorText. Never put image markdown in insertText.
 - insert_image — place one existing image (chat attachment or a figure already in a section) into a rich field. The engineer reviews it like any other suggestion. Do not invent or generate pixels${opts.includePlotMeasurements ? " — use plot_measurements when the engineer asked for a chart" : ". Measurement charts belong in Analytics, not Document chat"}.
-${opts.includePlotMeasurements ? "- plot_measurements — extract cited numeric measurements from attachments and propose a scatter plot as a reviewable figure. Only when the engineer asked in words for a chart. Never volunteer. Restyle reuses chartSpec." : "- Measurement plots — not available in Document chat. Tell the engineer to open Analytics and use Plot measurements or the Statistical Analysis assistant."}
+${opts.includePlotMeasurements ? "- plot_measurements — extract cited numeric measurements from attachments and propose a scatter plot as a reviewable figure. Only when the engineer asked in words for a chart. Never volunteer. Name one series or requirement ID (not \"Conductivity or TOC\"). Restyle reuses chartSpec." : "- Measurement plots — not available in Document chat. Tell the engineer to open Analytics and use Plot measurements or the Statistical Analysis assistant."}
 - remove_image — remove one existing figure from a rich field. Call read_section first and pass image.id (e.g. narrative#1). The engineer reviews it like any other suggestion. Do not rewrite the field with draft_field just to drop a figure.
 - search_documents — grep ready evidence attachments in rounds. Prefer complementary queries. Pass excludePages from the previous nextExcludePages. Required before ask_user or draft_field when Documents are listed.
 - document_outline — list per-page context for one attachment so you can pick which pages to read. Not a substitute for search_documents.

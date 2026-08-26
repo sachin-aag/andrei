@@ -30,6 +30,7 @@ export type AnalysisKind =
   | typeof ONE_WAY_ANOVA;
 
 export const PRIMARY_DATA_SHEET_ID = "data-1";
+/** Legacy workbook tab id. Specs now live on the column (right-click header). */
 export const SPECS_TAB_ID = "__specs__";
 export const MAX_DATA_SHEETS = 12;
 
@@ -45,7 +46,7 @@ export type WorksheetSheet = {
   columns: WorksheetColumn[];
 };
 
-/** Spec limits for a data column, shown on the Specs tab. */
+/** Spec limits for a data column (right-click the header to view/edit). */
 export type WorksheetSpecRow = {
   columnName: string;
   lsl: string;
@@ -55,7 +56,9 @@ export type WorksheetSpecRow = {
 
 /**
  * One workbook per report. `columns` is the active data sheet (kept in
- * sync with `sheets`). `activeSheetId` is a data-sheet id or `SPECS_TAB_ID`.
+ * sync with `sheets`). `activeSheetId` is a data-sheet id. Legacy
+ * worksheets may still store `SPECS_TAB_ID`; normalize onto the first
+ * data sheet.
  */
 export type WorksheetData = {
   columns: WorksheetColumn[];
