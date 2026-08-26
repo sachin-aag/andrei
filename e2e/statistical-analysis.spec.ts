@@ -97,12 +97,11 @@ test.describe("report analytics", () => {
     await expect(
       page.getByText(/process capability sixpack of assay/i)
     ).toBeVisible();
-    await expect(page.getByTestId("sixpack-spec-label-lsl")).toHaveText(
-      "LSL 90.00"
-    );
-    await expect(page.getByTestId("sixpack-spec-label-usl")).toHaveText(
-      "USL 110.00"
-    );
+    await expect(page.getByTestId("sixpack-spec-label-lsl")).toHaveText("90.00");
+    await expect(page.getByTestId("sixpack-spec-label-usl")).toHaveText("110.00");
+    await expect(page.getByTestId("sixpack-ichart-label-ucl")).toBeVisible();
+    await expect(page.getByTestId("sixpack-last25-label-ucl")).toBeVisible();
+    await expect(page.getByTestId("sixpack-mr-label-ucl")).toBeVisible();
     await expect(page.getByText("Cpk")).toBeVisible();
     await expect(page.getByTestId("analysis-list")).toBeVisible();
   });

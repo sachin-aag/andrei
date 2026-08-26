@@ -35,23 +35,6 @@ const TOP_GUTTER_OFFSET = 3;
 /** Inside-plot fallback, above the x-axis numbers. */
 const BOTTOM_INNER_OFFSET = 8;
 
-function kindLabel(kind: SpecLimitKind): string {
-  switch (kind) {
-    case "lsl":
-      return "LSL";
-    case "usl":
-      return "USL";
-    default: {
-      const exhaustive: never = kind;
-      return exhaustive;
-    }
-  }
-}
-
-export function specLimitLabelText(kind: SpecLimitKind, value: number): string {
-  return `${kindLabel(kind)} ${formatLimit(value)}`;
-}
-
 export function estimateLabelWidth(text: string): number {
   return text.length * CHAR_WIDTH;
 }
@@ -89,7 +72,7 @@ function placeOnSide(
   plot: PlotBox,
   side: "top" | "bottom"
 ): SpecLimitLabelLayout {
-  const text = specLimitLabelText(input.kind, input.value);
+  const text = formatLimit(input.value);
   const width = estimateLabelWidth(text);
   const y =
     side === "top"
@@ -152,4 +135,86 @@ export function layoutSpecLimitLabels(
   return finite.map((limit) =>
     placeOnSide(limit, plot, limit.kind === "usl" ? "bottom" : "top")
   );
+}
+
+export type ControlLimitKind = "ucl" | "lcl";
+
+export type ControlLimitInput = {
+  kind: ControlLimitKind;
+  value: number;
+  lineY: number;
+};
+
+export type ControlLimitLabelLayout = {
+  kind: ControlLimitKind;
+  text: string;
+  lineY: number;
+  x: number;
+  y: number;
+  textAnchor: "start" | "middle" | "end";
+};
+
+const ABOVE_LINE = 4;
+const BELOW_LINE = 10;
+
+function verticalOverlap(
+  a: ControlLimitLabelLayout,
+  b: ControlLimitLabelLayout
+): boolean {
+  return Math.abs(a.y - b.y) < LABEL_HEIGHT;
+}
+
+function placeAlongLine(
+  input: ControlLimitInput,
+  plot: PlotBox,
+  side: "above" | "below"
+): ControlLimitLabelLayout {
+  const text = formatLimit(input.value);
+  const minY = plot.top - TOP_GUTTER_OFFSET;
+  const maxY = plot.bottom - BOTTOM_INNER_OFFSET;
+  const yUnclamped =
+    side === "above" ? input.lineY - ABOVE_LINE : input.lineY + BELOW_LINE;
+  return {
+    kind: input.kind,
+    text,
+    lineY: input.lineY,
+    x: plot.right - EDGE_PAD,
+    y: Math.min(maxY, Math.max(minY, yUnclamped)),
+    textAnchor: "end",
+  };
+}
+
+export function layoutControlLimitLabels(
+  limits: ControlLimitInput[],
+  plot: PlotBox
+): ControlLimitLabelLayout[] {
+  const finite = limits.filter(
+    (limit) => Number.isFinite(limit.value) && Number.isFinite(limit.lineY)
+  );
+  const placed = finite.map((limit) =>
+    placeAlongLine(limit, plot, limit.kind === "ucl" ? "above" : "below")
+  );
+  if (placed.length < 2) return placed;
+
+  const colliding = placed.some((label, i) =>
+    placed.some((other, j) => i < j && verticalOverlap(label, other))
+  );
+  if (!colliding) return placed;
+
+  const ucl = finite.find((limit) => limit.kind === "ucl");
+  const lcl = finite.find((limit) => limit.kind === "lcl");
+  if (!ucl || !lcl) return placed;
+
+  const top = placeAlongLine(ucl, plot, "above");
+  let bottom = placeAlongLine(lcl, plot, "below");
+  if (verticalOverlap(top, bottom)) {
+    bottom = {
+      ...bottom,
+      y: Math.min(
+        plot.bottom - BOTTOM_INNER_OFFSET,
+        top.y + LABEL_HEIGHT + MIN_LABEL_GAP
+      ),
+    };
+  }
+  return [top, bottom];
 }
