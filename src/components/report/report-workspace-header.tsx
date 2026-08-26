@@ -157,7 +157,10 @@ export function ReportWorkspaceHeader({
       ) : null}
 
       <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
-        <ReportExportButton reportId={report.id} />
+        <ReportExportButton
+          reportId={report.id}
+          sourceDocxFilename={report.sourceDocxFilename}
+        />
 
         {!isViewMode && documentSurface ? <RunAllEvaluationButton /> : null}
 

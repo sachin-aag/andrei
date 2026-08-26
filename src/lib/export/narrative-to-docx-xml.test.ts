@@ -91,6 +91,30 @@ describe("narrativeToDocxXml tables", () => {
     expect(xml).toContain('<w:jc w:val="left"/>');
   });
 
+  it("renders heading nodes as bold paragraphs unless useHeadingStyles is set", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "heading",
+          attrs: { level: 2 },
+          content: [{ type: "text", text: "Scope" }],
+        },
+      ],
+    };
+
+    const defaultXml = narrativeToDocxXml(doc);
+    expect(defaultXml).not.toContain('<w:pStyle w:val="Heading2"/>');
+    expect(defaultXml).toContain("<w:b/>");
+
+    const styled = narrativeToDocxXmlWithContext(
+      doc,
+      createDocxExportContext(undefined, undefined, { useHeadingStyles: true })
+    ).xml;
+    expect(styled).toContain('<w:pStyle w:val="Heading2"/>');
+    expect(styled).toContain("Scope");
+  });
+
   it("uses Solea DV paragraph, list, and table formatting for Convergent", () => {
     const ctx = createDocxExportContext(
       { decimal: 0, disc: 0, dash: 0, maxNumId: 0 },

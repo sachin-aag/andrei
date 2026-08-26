@@ -67,6 +67,7 @@ describe("Convergent customer pack", () => {
     expect(DEMO_PACK.enabledDocumentTypes).toEqual([
       "investigation_report",
       "design_verification",
+      "generic_document",
     ]);
     expect(MJ_PACK.enabledDocumentTypes).toEqual(["investigation_report"]);
   });

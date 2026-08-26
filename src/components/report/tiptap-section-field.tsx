@@ -82,6 +82,7 @@ import { buildInactiveSuggestionCss } from "@/lib/tiptap/inactive-suggestion-css
 import { buildRedraftPreviewDoc } from "@/lib/tiptap/redraft-preview";
 import { markdownToDoc } from "@/lib/tiptap/markdown-to-doc";
 import { normalizeRichField } from "@/lib/tiptap/rich-text";
+import { editorProfileFor, getDocumentType, suggestionApplyModeFor } from "@/lib/document-types";
 import { buildSuggestionEdit, narrativeHasSuggestionMarks } from "@/lib/suggestions/apply-narrative-suggestion";
 import {
   acceptSuggestion,
@@ -429,13 +430,24 @@ export function TiptapSectionField({
   const [commentDraft, setCommentDraft] = useState("");
   const [pendingSel, setPendingSel] = useState<{ from: number; to: number } | null>(null);
   const [posting, setPosting] = useState(false);
+  const headingEnabled =
+    editorProfileFor(getDocumentType(report.documentType)) === "generic_document";
+  const suggestionPersistMode = suggestionApplyModeFor(
+    getDocumentType(report.documentType)
+  );
+  const richFieldOptions = headingEnabled
+    ? { preserveHeadings: true as const }
+    : undefined;
+  const markdownOptions = headingEnabled
+    ? { headingNodes: true as const }
+    : undefined;
 
   const editor = useEditor(
     {
       immediatelyRender: false,
       extensions: [
         StarterKit.configure({
-          heading: false,
+          heading: headingEnabled ? { levels: [1, 2, 3] } : false,
           bulletList: false,
         }),
         BulletListWithStyle,
@@ -460,7 +472,7 @@ export function TiptapSectionField({
         placeholderHighlightExtension,
         ...(citationHighlightExtension ? [citationHighlightExtension] : []),
       ],
-      content: normalizeRichField(value),
+      content: normalizeRichField(value, richFieldOptions),
       editable,
       onUpdate: ({ editor: ed }) => {
         const json = ed.getJSON() as JSONContent;
@@ -592,6 +604,7 @@ export function TiptapSectionField({
               comment,
               sectionContent: currentSection,
               fieldContentPath: contentPath,
+              applyMode: suggestionPersistMode,
             })
           : await dismissSuggestion({
               reportId: report.id,
@@ -642,6 +655,7 @@ export function TiptapSectionField({
       sections,
       replaceSection,
       setComments,
+      suggestionPersistMode,
     ]
   );
 
@@ -714,7 +728,7 @@ export function TiptapSectionField({
   const applyExternalValueToEditor = useCallback(() => {
     const currentEditor = editor;
     if (!currentEditor || currentEditor.isDestroyed) return;
-    const incoming = normalizeRichField(value);
+    const incoming = normalizeRichField(value, richFieldOptions);
     const current = currentEditor.getJSON() as JSONContent;
     if (richDocsMatchIgnoringAiPreview(current, incoming)) return;
     // Keystrokes update the editor first; parent state catches up via onUpdate.
@@ -746,7 +760,7 @@ export function TiptapSectionField({
     if (!editor || !isRichField) return;
 
     let json = editor.getJSON() as JSONContent;
-    const canonicalJson = normalizeRichField(value) as JSONContent;
+    const canonicalJson = normalizeRichField(value, richFieldOptions) as JSONContent;
     const before = JSON.stringify(json);
 
     if (
@@ -818,7 +832,10 @@ export function TiptapSectionField({
           // Full-field redraft: current content struck through, replacement
           // highlighted. Same mark machinery as fixes handles accept/dismiss.
           const redraft = parseAiRedraftCommentContent(comment.content);
-          json = buildRedraftPreviewDoc(json, markdownToDoc(redraft.markdown), {
+          json = buildRedraftPreviewDoc(
+            json,
+            markdownToDoc(redraft.markdown, markdownOptions),
+            {
             id: activeSuggestionId,
             authorId: AI_AUTHOR_ID,
             status: "pending",
@@ -864,7 +881,7 @@ export function TiptapSectionField({
                   }
                 );
                 if (citeInjected.located) {
-                  json = normalizeRichField(citeInjected.doc);
+                  json = normalizeRichField(citeInjected.doc, richFieldOptions);
                 }
               }
             }
@@ -887,7 +904,7 @@ export function TiptapSectionField({
             });
             // Never paint a preview (or enable inline accept) unless locate succeeded.
             if (injected.located) {
-              json = normalizeRichField(injected.doc);
+              json = normalizeRichField(injected.doc, richFieldOptions);
             }
           }
         }

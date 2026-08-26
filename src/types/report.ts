@@ -23,6 +23,8 @@ export type ReportRecord = {
   assignedManagerIds?: string[];
   createdAt: string;
   updatedAt: string;
+  /** Present when a source .docx was uploaded at create time. */
+  sourceDocxFilename?: string | null;
 };
 
 /** Convenience accessors for investigation_report metadata. */

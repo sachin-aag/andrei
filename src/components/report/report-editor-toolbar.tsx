@@ -8,12 +8,14 @@ import { AdvancedFormattingToolbar } from "@/components/report/advanced-formatti
 import { TrackChangesToggle } from "@/components/report/track-changes-toggle";
 import {
   FontColorToolbar,
+  HeadingToolbar,
   InsertImageButton,
   InsertTableButton,
   ListEditToolbar,
   TextFormatToolbar,
   useEditorToolbarState,
 } from "@/components/report/editor-toolbars";
+import { editorProfileFor, getDocumentType } from "@/lib/document-types";
 
 const FIELD_LABELS: Record<string, string> = {
   "define:narrative": "Details of Investigation (Narrative)",
@@ -24,6 +26,7 @@ const FIELD_LABELS: Record<string, string> = {
   "analyze:impactAssessment": "Impact assessment",
   "improve:correctiveActions": "Corrective Action",
   "control:preventiveActions": "Preventive actions",
+  "body:narrative": "Document",
   "analyze:sixM.man": "6M · Man",
   "analyze:sixM.machine": "6M · Machine",
   "analyze:sixM.measurement": "6M · Measurement",
@@ -41,7 +44,7 @@ function activeFieldLabel(activeFieldKey: string | null): string | null {
 }
 
 export function ReportEditorToolbar() {
-  const { readOnly, trackChangesMode, setTrackChangesMode, workspaceMode } =
+  const { report, readOnly, trackChangesMode, setTrackChangesMode, workspaceMode } =
     useReportData();
   const { activeFieldKey, activeFieldKind, getActiveEditor } = useReportEditors();
   const editor = getActiveEditor();
@@ -88,6 +91,13 @@ export function ReportEditorToolbar() {
         <>
           <Separator orientation="vertical" className="h-5 hidden sm:block" />
           <TextFormatToolbar editor={editor} />
+          {editorProfileFor(getDocumentType(report.documentType)) ===
+          "generic_document" ? (
+            <>
+              <Separator orientation="vertical" className="h-5" />
+              <HeadingToolbar editor={editor} />
+            </>
+          ) : null}
           <Separator orientation="vertical" className="h-5" />
           <FontColorToolbar editor={editor} />
           <Separator orientation="vertical" className="h-5" />

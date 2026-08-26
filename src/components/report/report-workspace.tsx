@@ -98,6 +98,7 @@ import {
   MechTestersDatesEditor,
   MechUnitsUnderTestEditor,
 } from "./sections/dv/mechanical-section-editors";
+import { GenericDocumentEditor } from "./sections/generic/generic-document-editor";
 
 export type { WorkspaceMode };
 
@@ -163,6 +164,7 @@ const SECTION_EDITORS_BY_DOCUMENT_TYPE: Record<
   investigation_report: INVESTIGATION_SECTION_EDITORS,
   design_verification: DV_SECTION_EDITORS,
   mechanical_design_verification: MECHANICAL_DV_SECTION_EDITORS,
+  generic_document: { body: GenericDocumentEditor },
 };
 
 export function ReportWorkspace({

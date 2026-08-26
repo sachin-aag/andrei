@@ -24,6 +24,7 @@ import {
 import type { SectionType, reports as reportsTable } from "@/db/schema";
 import { getCustomerPack } from "@/lib/customers/packs";
 import { getDocumentType, mergeSectionForType } from "@/lib/document-types";
+import { GENERIC_DOCUMENT_SECTION } from "@/lib/document-types/generic/sections";
 import { getUser } from "@/lib/auth/user-directory";
 import { isHiddenExpertReviewerEmail } from "@/lib/reports/hidden-expert-reviewer";
 import { formatCalendarDate } from "@/lib/utils";
@@ -462,6 +463,14 @@ export async function generateReportDocx({
   omitCitations?: boolean;
 }): Promise<Buffer> {
   const exportSections = sectionsForDocxExport(sections, omitCitations);
+  if (report.documentType === "generic_document") {
+    return generateGenericDocumentDocx({
+      report,
+      sections: exportSections,
+      comments,
+      electronicSignatures,
+    });
+  }
   if (
     report.documentType === "design_verification" ||
     report.documentType === "mechanical_design_verification"
@@ -507,6 +516,77 @@ export async function generateReportDocx({
   });
 
   return buf;
+}
+
+/** Turn on Word Track Changes so pending ins/del marks are visible in Word. */
+export function enableTrackRevisionsInDocxZip(zip: PizZip): void {
+  const file = zip.file("word/settings.xml");
+  if (!file) return;
+  let xml = file.asText();
+  if (/<w:trackRevisions\b/.test(xml)) return;
+  xml = xml.replace(/<w:settings\b[^>]*>/, (open) => `${open}<w:trackRevisions/>`);
+  zip.file("word/settings.xml", xml);
+}
+
+async function generateGenericDocumentDocx({
+  report,
+  sections,
+  comments,
+  electronicSignatures,
+}: {
+  report: ReportRowWithManagers;
+  sections: ReportSectionRecord[];
+  comments: ReportDocxComment[];
+  electronicSignatures: DocxAuditSignature[];
+}): Promise<Buffer> {
+  const templateContent = fs.readFileSync(
+    getDocumentType("generic_document").export.templatePath
+  );
+  const zip = new PizZip(templateContent);
+  const doc = new Docxtemplater(zip, {
+    paragraphLoop: true,
+    linebreaks: true,
+    delimiters: { start: "{", end: "}" },
+    nullGetter: () => "",
+  });
+
+  const numberingBases = loadListNumberingBasesFromZip(zip);
+  const ctx = createDocxExportContext(numberingBases, undefined, {
+    useHeadingStyles: true,
+  });
+  const bodyRow = sections.find((row) => row.section === GENERIC_DOCUMENT_SECTION);
+  const merged = mergeSectionForType(
+    "generic_document",
+    GENERIC_DOCUMENT_SECTION,
+    bodyRow?.content
+  ) as { narrative?: JSONContent };
+  const bodyXml = withWordComments(
+    narrativeToDocxXmlWithContext(
+      normalizeRichField(merged.narrative, { preserveHeadings: true }),
+      ctx
+    ).xml,
+    ctx,
+    comments,
+    GENERIC_DOCUMENT_SECTION,
+    "narrative"
+  );
+
+  doc.render({
+    date: formatCalendarDate(report.date),
+    documentNo: report.documentNo,
+    bodyXml,
+  });
+  applyElectronicSignaturesToDocxZip(doc.getZip(), electronicSignatures);
+  applyNumberingToDocxZip(doc.getZip(), ctx);
+  applyInlineMediaToDocxZip(doc.getZip(), ctx);
+  applyWordCommentsToDocxZip(doc.getZip(), ctx);
+  enableTrackRevisionsInDocxZip(doc.getZip());
+  await applyGoogleDocsImageCompat(doc.getZip());
+
+  return doc.getZip().generate({
+    type: "nodebuffer",
+    compression: "DEFLATE",
+  });
 }
 
 async function generateDesignVerificationDocx({

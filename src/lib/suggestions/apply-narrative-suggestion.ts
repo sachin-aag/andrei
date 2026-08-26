@@ -3,6 +3,7 @@ import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-sugg
 import {
   acceptSuggestionMarksById,
   applyAndAcceptRichEdit,
+  applyEditToRichDoc,
   isApplyableStatus,
   stripSuggestionMarksById,
   type EditScope,
@@ -94,6 +95,29 @@ export function applyNarrativeSuggestion(
 ): JSONContent {
   const result = applyAndAcceptRichEdit(narrative, suggestionId, edit, {
     authorId: AI_AUTHOR_ID,
+  });
+  if (!isApplyableStatus(result.status)) {
+    throw new Error("Suggestion could not be located in the current text");
+  }
+  return result.doc;
+}
+
+/**
+ * Inject insert/delete marks and leave them pending so Word export can emit
+ * `<w:ins>` / `<w:del>`. Used by generic documents; investigation/DV still
+ * call `applyNarrativeSuggestion` (finalize).
+ */
+export function applyNarrativeSuggestionAsRevision(
+  narrative: JSONContent,
+  suggestionId: string,
+  edit: SuggestionEdit
+): JSONContent {
+  const result = applyEditToRichDoc(narrative, edit, {
+    id: suggestionId,
+    authorId: AI_AUTHOR_ID,
+    status: "pending",
+    createdAt: new Date().toISOString(),
+    kind: "fix",
   });
   if (!isApplyableStatus(result.status)) {
     throw new Error("Suggestion could not be located in the current text");

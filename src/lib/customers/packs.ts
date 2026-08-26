@@ -143,7 +143,11 @@ const MJ_BRANDING: CustomerBranding = {
 /** Demo pack is the default engine overlay (Andrei branding). */
 export const DEMO_PACK: CustomerPack = {
   id: "demo",
-  enabledDocumentTypes: ["investigation_report", "design_verification"],
+  enabledDocumentTypes: [
+    "investigation_report",
+    "design_verification",
+    "generic_document",
+  ],
   hiddenInvestigationSections: [],
   investigationTemplateFile: "investigation-report-template.docx",
   promptVersion: PROMPT_VERSION,

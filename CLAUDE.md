@@ -6,7 +6,7 @@ with this file, trust `AGENTS.md` / the rules / the code — then fix this file.
 
 ## Project
 
-Andrei — a Next.js 16 investigation-report engine with per-customer packs. Demo (`ANDREI_CUSTOMER=demo`) is Andrei-branded with design verification and a conclusion section. MJ (`ANDREI_CUSTOMER=mj`) overlays SOP/DP/QA/008 criteria and prompts, the MJ Word template, MJ branding, Word import, and hides conclusion plus design verification. Convergent (`ANDREI_CUSTOMER=convergent`) is Convergent Dental branding with design verification only (9-section Solea DV template). Features: in-browser DMAIC editor with auto-save, AI traffic-light evaluation (Gemini via Vercel AI Gateway or Vertex), manager review with comments, attachment evidence (PDF/DOCX ingest + chat retrieval), and DOCX export.
+Andrei — a Next.js 16 investigation-report engine with per-customer packs. Demo (`ANDREI_CUSTOMER=demo`) is Andrei-branded with design verification, a conclusion section, and a demo-only free-form Document (`generic_document`: one TipTap body, no criteria). MJ (`ANDREI_CUSTOMER=mj`) overlays SOP/DP/QA/008 criteria and prompts, the MJ Word template, MJ branding, Word import, and hides conclusion plus design verification. Convergent (`ANDREI_CUSTOMER=convergent`) is Convergent Dental branding with design verification only (9-section Solea DV template). Features: in-browser DMAIC editor with auto-save, AI traffic-light evaluation (Gemini via Vercel AI Gateway or Vertex), manager review with comments, attachment evidence (PDF/DOCX ingest + chat retrieval), and DOCX export.
 
 ## Commands
 
@@ -112,6 +112,7 @@ Owned by `getWorkspaceSections(documentType)` in `src/lib/document-types/`. The 
 
 - **Investigation:** DMAIC (`define`, `measure`, `analyze`, `improve`, `control`) plus `conclusion`, plus non-editable `documents_reviewed`, `attachments`, `signature_approvals`. Content types in `src/types/sections.ts`.
 - **Design verification:** demo/MJ shape is `purpose_scope`, `references`, `traceability`, `test_methods`, `test_results`, `deviations`, `conclusion`, `approval_signoff`, `appendices`, plus virtual `cover_page` (lives in `reports.metadata`, not `report_sections`). Convergent pack (`buildDesignVerificationDefinition`) is a 9-section Solea DV (`purpose` … `conclusion`, no cover page). Content types in `src/lib/document-types/design-verification/sections.ts` and `src/lib/document-types/convergent/sections.ts`.
+- **Generic document (demo pack only):** one continuous `body` section (`{ narrative }`). No criteria, no Criteria tab / Run AI Check. Headings (H1–H3) are enabled for this type only. Word upload is type-owned (`wordImport.kind === "generic_body"`) and does **not** use pack `wordImportEnabled`. Accepting AI suggestions persists TipTap revision marks and exports them as Word tracked changes. Content types in `src/lib/document-types/generic/sections.ts`.
 
 ### Auth
 
@@ -221,13 +222,13 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
 
 **Locator (single matcher):** `src/lib/suggestions/locator.ts` — `flattenForAnchor`, `locateEdit`, `applyEditToRichDoc` / `applyEditToPlainText`, `probeRichEdit` / `probePlainEdit`. Gate ≡ apply is structural (probe is locate without commit).
 
-**Applying suggestions:** all three UI surfaces (suggestion card, rich TipTap widget, plain-text field) go through `acceptSuggestion` / `dismissSuggestion` in `accept-suggestion.ts`. Order: locate → apply → PATCH section → flip comment status. Never resolve without a successful apply.
+**Applying suggestions:** all three UI surfaces (suggestion card, rich TipTap widget, plain-text field) go through `acceptSuggestion` / `dismissSuggestion` in `accept-suggestion.ts`. Order: locate → apply → PATCH section → flip comment status. Never resolve without a successful apply. Investigation/DV finalize marks (`acceptSuggestionMarksById`). Generic documents use `suggestionApplyMode: "tracked_change"`: locate → apply pending insert/delete marks → keep them in JSON → PATCH. Export serializes those marks as Word `w:ins`/`w:del`.
 
 **Key invariant:** Anchor must be unique in the canonical field text. Whitespace is normalized for matching (multiple spaces/newlines → single space). Cross-paragraph deletes are allowed; cross-cell deletes are dropped.
 
 ## Subsystem: DOCX Export
 
-**Entry point:** `generateReportDocx()` in `src/lib/export/generate-docx.ts`. Investigation and design-verification are separate branches (IR template vs `templates/design-verification-report-template.docx`). The numbered pipeline below is the investigation-report path. Registry `export.templatePath` exists but generate-docx still hardcodes those paths.
+**Entry point:** `generateReportDocx()` in `src/lib/export/generate-docx.ts`. Investigation, design-verification, and generic-document are separate branches (IR template vs `templates/design-verification-report-template.docx` vs `templates/generic-document-template.docx`). The numbered pipeline below is the investigation-report path. Registry `export.templatePath` exists but generate-docx still hardcodes those paths. Generic export maps Heading1–3 (when `useHeadingStyles`), skips investigation checkboxes/signature blocks, and sets `w:trackRevisions` so pending insert/delete marks survive as Word tracked changes.
 
 **Pipeline:**
 1. Load template DOCX (`templates/investigation-report-template.docx`) via PizZip + Docxtemplater

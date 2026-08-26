@@ -55,6 +55,8 @@ export const SUGGEST_TARGET_FIELD_PATTERNS: Record<string, readonly string[]> = 
   requirements_verified: ["narrative", "hardwareTable", "systemTable"],
   observations: ["narrative"],
   revision_history: ["table"],
+  // Demo-only continuous Word-like document
+  body: ["narrative"],
 };
 
 function patternToRegex(pattern: string): RegExp {
@@ -136,6 +138,7 @@ export const RICH_FIELD_PATHS: Partial<Record<string, readonly string[]>> = {
   requirements_verified: ["narrative", "hardwareTable", "systemTable"],
   observations: ["narrative"],
   revision_history: ["table"],
+  body: ["narrative"],
 };
 
 export function isRichTargetField(section: SectionType, contentPath: string): boolean {

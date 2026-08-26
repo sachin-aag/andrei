@@ -17,10 +17,22 @@ export function exportHref(reportId: string, omitCitations: boolean): string {
   return omitCitations ? `${path}?omitCitations=1` : path;
 }
 
-export function ReportExportButton({ reportId }: { reportId: string }) {
+export function sourceDocxHref(reportId: string): string {
+  return `/api/reports/${reportId}/source-docx`;
+}
+
+export function ReportExportButton({
+  reportId,
+  sourceDocxFilename,
+}: {
+  reportId: string;
+  sourceDocxFilename?: string | null;
+}) {
   const omitCitationsEnabled = getCustomerPack().citationsAtEndOfSection;
+  const hasOriginal = Boolean(sourceDocxFilename);
   const defaultHref = exportHref(reportId, false);
   const omitHref = exportHref(reportId, true);
+  const originalHref = sourceDocxHref(reportId);
 
   const track = (omitCitations: boolean) => {
     captureEvent("report_exported", { reportId, omitCitations });
@@ -38,7 +50,7 @@ export function ReportExportButton({ reportId }: { reportId: string }) {
     </a>
   );
 
-  if (!omitCitationsEnabled) {
+  if (!omitCitationsEnabled && !hasOriginal) {
     return (
       <Button variant="outline" size="sm" asChild>
         {defaultLink}
@@ -79,16 +91,26 @@ export function ReportExportButton({ reportId }: { reportId: string }) {
               Export DOCX
             </a>
           </DropdownMenuItem>
-          <DropdownMenuItem asChild>
-            <a
-              href={omitHref}
-              target="_blank"
-              rel="noreferrer"
-              onClick={() => track(true)}
-            >
-              Export without citations
-            </a>
-          </DropdownMenuItem>
+          {omitCitationsEnabled ? (
+            <DropdownMenuItem asChild>
+              <a
+                href={omitHref}
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => track(true)}
+              >
+                Export without citations
+              </a>
+            </DropdownMenuItem>
+          ) : null}
+          {hasOriginal ? (
+            <DropdownMenuItem asChild>
+              <a href={originalHref} rel="noreferrer">
+                Download original
+                {sourceDocxFilename ? ` (${sourceDocxFilename})` : ""}
+              </a>
+            </DropdownMenuItem>
+          ) : null}
         </DropdownMenuContent>
       </DropdownMenu>
     </div>

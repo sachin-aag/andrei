@@ -117,9 +117,7 @@ function ReportHeaderForm({
 
 export function ReportHeader() {
   const { report, setReport, readOnly } = useReportData();
-  // Investigation-only preamble (date + tool checkboxes). DV cover/control
-  // fields live in the cover_page section editor instead.
-  if (report.documentType === "design_verification") {
+  if (report.documentType !== "investigation_report") {
     return null;
   }
   return (

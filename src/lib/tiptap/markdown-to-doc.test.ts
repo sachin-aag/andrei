@@ -37,6 +37,17 @@ describe("markdownToDoc", () => {
     ]);
   });
 
+  it("emits heading nodes when headingNodes is true", () => {
+    const doc = markdownToDoc("## Investigation Summary", { headingNodes: true });
+    expect(doc.content).toEqual([
+      {
+        type: "heading",
+        attrs: { level: 2 },
+        content: [{ type: "text", text: "Investigation Summary" }],
+      },
+    ]);
+  });
+
   it("converts bullet lists including * markers", () => {
     const doc = markdownToDoc("- alpha\n* beta");
     expect(doc.content).toHaveLength(1);

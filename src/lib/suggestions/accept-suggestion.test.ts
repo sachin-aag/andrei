@@ -97,6 +97,29 @@ describe("acceptSuggestion / dismissSuggestion (one writer)", () => {
     expect(fetches[1]?.body).toEqual({ status: "resolved" });
   });
 
+  it("tracked_change apply keeps pending insert/delete marks", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => ({}) }) as Response)
+    );
+
+    const result = await acceptSuggestion({
+      reportId,
+      section: "body",
+      comment: { ...comment, section: "body" },
+      sectionContent: structuredClone(sectionContent),
+      applyMode: "tracked_change",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const json = JSON.stringify(result.nextSection);
+    expect(json).toContain("suggestionInsert");
+    expect(json).toContain("suggestionDelete");
+    expect(json).toContain("DD/MM/YYYY");
+    expect(json).toContain("[detection date: <to be filled>]");
+  });
+
   it("accept leaves comment open when locate fails (no status flip)", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);

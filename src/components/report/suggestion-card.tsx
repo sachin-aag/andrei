@@ -34,7 +34,11 @@ import {
   type ParsedAiFixPayload,
   type ParsedAiRedraftPayload,
 } from "@/lib/ai/suggestion-gating";
-import { resolveSection } from "@/lib/document-types";
+import {
+  getDocumentType,
+  resolveSection,
+  suggestionApplyModeFor,
+} from "@/lib/document-types";
 import { formatChartProvenance } from "@/lib/charts/chart-spec";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 import { splitPlainTextWithPlaceholders } from "@/lib/placeholders/plain-text-segments";
@@ -855,6 +859,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
         section,
         comment: snapshot.comment,
         sectionContent: sections[section] as Record<string, unknown>,
+        applyMode: suggestionApplyModeFor(getDocumentType(report.documentType)),
       });
       if (!result.ok) {
         if (result.reason === "status_failed") {

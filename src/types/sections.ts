@@ -167,6 +167,7 @@ export const SECTION_LABELS: Record<string, string> = {
   test_equipment: "Test Equipment",
   results_and_discussions: "Results and Discussion",
   problems_resolution: "Problem or Failure Resolution",
+  body: "Document",
 };
 
 export const EDITABLE_SECTIONS = [

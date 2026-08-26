@@ -519,6 +519,7 @@ type EnrichableSections = {
     investigationOutcome?: JSONContent;
     rootCause?: { narrative?: JSONContent };
   };
+  body?: { narrative?: JSONContent };
 };
 
 function collectEnrichableDocs(sections: EnrichableSections): JSONContent[] {
@@ -529,6 +530,7 @@ function collectEnrichableDocs(sections: EnrichableSections): JSONContent[] {
     sections.analyze?.fiveWhy?.narrative,
     sections.analyze?.investigationOutcome,
     sections.analyze?.rootCause?.narrative,
+    sections.body?.narrative,
   ].filter((n): n is JSONContent => !!n && n.type === "doc");
 }
 
@@ -639,8 +641,18 @@ function enrichDocFromOoxml(
 
   for (let i = 0; i < doc.content.length; i++) {
     const node = doc.content[i]!;
-    if (node.type === "paragraph") {
+    if (node.type === "paragraph" || node.type === "heading") {
       enrichParagraphNode(node, parsed, usedParsed, pIdxRef, { parent: doc, index: i });
+      continue;
+    }
+    if (node.type === "bulletList" || node.type === "orderedList") {
+      for (const item of node.content ?? []) {
+        enrichDocFromOoxml(item, parsed, usedParsed, pIdxRef);
+      }
+      continue;
+    }
+    if (node.type === "listItem" || node.type === "blockquote") {
+      enrichDocFromOoxml(node, parsed, usedParsed, pIdxRef);
       continue;
     }
     if (node.type === "table") {

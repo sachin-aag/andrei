@@ -203,16 +203,19 @@ function expandPhraseItalicText(
 
 /**
  * Coerce nodes the section editor schema can't render into supported ones.
- * The editor registers no heading node (StarterKit `heading: false`), so a
- * stray `heading` (e.g. persisted by an older redraft) would make ProseMirror
- * reject the entire doc and render blank. Convert it to a bold paragraph.
+ * Investigation/DV editors register no heading node (StarterKit `heading: false`),
+ * so a stray `heading` would make ProseMirror reject the entire doc. Convert it
+ * to a bold paragraph unless `preserveHeadings` is set (generic documents).
  */
-function coerceUnsupportedNodes(node: JSONContent): JSONContent {
-  if (node.type === "heading") {
+function coerceUnsupportedNodes(
+  node: JSONContent,
+  preserveHeadings = false
+): JSONContent {
+  if (node.type === "heading" && !preserveHeadings) {
     return {
       type: "paragraph",
       content: (node.content ?? []).map((child) => {
-        if (child.type !== "text") return coerceUnsupportedNodes(child);
+        if (child.type !== "text") return coerceUnsupportedNodes(child, preserveHeadings);
         const marks = child.marks ?? [];
         return marks.some((m) => m.type === "bold")
           ? child
@@ -230,20 +233,33 @@ function coerceUnsupportedNodes(node: JSONContent): JSONContent {
           continue;
         }
       }
-      content.push(coerceUnsupportedNodes(child));
+      content.push(coerceUnsupportedNodes(child, preserveHeadings));
     }
     return { ...node, content };
   }
   return node;
 }
 
+export type NormalizeRichFieldOptions = {
+  /** Keep TipTap heading nodes (generic documents). Default converts them to bold paragraphs. */
+  preserveHeadings?: boolean;
+};
+
 /** Normalize DB/client value to JSONContent (handles legacy strings). */
-export function normalizeRichField(v: unknown): JSONContent {
+export function normalizeRichField(
+  v: unknown,
+  options?: NormalizeRichFieldOptions
+): JSONContent {
+  const preserveHeadings = options?.preserveHeadings === true;
+  const headingOptions = preserveHeadings ? { headingNodes: true } : undefined;
   if (v && typeof v === "object" && "type" in v && (v as JSONContent).type === "doc") {
-    return hydrateLiteralMarkdownInDoc(coerceUnsupportedNodes(v as JSONContent));
+    return hydrateLiteralMarkdownInDoc(
+      coerceUnsupportedNodes(v as JSONContent, preserveHeadings),
+      headingOptions
+    );
   }
   if (typeof v === "string") {
-    return coerceUnsupportedNodes(legacyStringToDoc(v));
+    return coerceUnsupportedNodes(legacyStringToDoc(v), preserveHeadings);
   }
   return emptyDoc();
 }

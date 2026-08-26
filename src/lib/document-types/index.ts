@@ -2,6 +2,7 @@ import type { DocumentType } from "@/db/schema";
 import { isDocumentTypeEnabled, getCustomerPack } from "@/lib/customers/packs";
 import { buildInvestigationReportDefinition } from "./investigation-report";
 import { buildDesignVerificationDefinition } from "./design-verification";
+import { genericDocumentDefinition } from "./generic-document";
 import { mechanicalDesignVerificationDefinition } from "./mechanical-design-verification";
 import type {
   CriterionDefinition,
@@ -13,6 +14,7 @@ import {
   getSectionDefinition,
   isValidSectionForType,
   seedableSections,
+  wordImportFor,
   workspaceSections,
 } from "./types";
 
@@ -24,6 +26,8 @@ export function getDocumentType(type: DocumentType): DocumentTypeDefinition {
       return buildDesignVerificationDefinition();
     case "mechanical_design_verification":
       return mechanicalDesignVerificationDefinition;
+    case "generic_document":
+      return genericDocumentDefinition;
     default: {
       const exhaustive: never = type;
       throw new Error(`Unknown document type: ${exhaustive}`);
@@ -37,11 +41,36 @@ export function resolveDocumentType(
   if (
     type === "investigation_report" ||
     type === "design_verification" ||
-    type === "mechanical_design_verification"
+    type === "mechanical_design_verification" ||
+    type === "generic_document"
   ) {
     return type;
   }
   return "investigation_report";
+}
+
+/**
+ * Word upload at create time. Investigation import stays pack-gated.
+ * Generic-body import is available whenever the type is enabled.
+ */
+export function isWordImportAvailable(
+  type: DocumentType,
+  pack: ReturnType<typeof getCustomerPack> = getCustomerPack()
+): boolean {
+  if (!isDocumentTypeEnabled(type, pack)) return false;
+  const kind = wordImportFor(getDocumentType(type)).kind;
+  switch (kind) {
+    case "none":
+      return false;
+    case "investigation":
+      return pack.wordImportEnabled;
+    case "generic_body":
+      return true;
+    default: {
+      const exhaustive: never = kind;
+      return exhaustive;
+    }
+  }
 }
 
 export function listDocumentTypes(): DocumentTypeDefinition[] {
@@ -141,10 +170,18 @@ export type {
   DocumentTypeChatConfig,
   SectionDefinition,
   EvaluationContext,
+  EditorProfile,
+  SuggestionApplyMode,
+  WordImportCapability,
 } from "./types";
 export {
   seedableSections,
   evaluableSections,
   workspaceSections,
   isValidSectionForType,
+  wordImportFor,
+  workspacePresentationFor,
+  evaluationCapabilityFor,
+  suggestionApplyModeFor,
+  editorProfileFor,
 } from "./types";

@@ -36,6 +36,20 @@ describe("ReportExportButton", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("offers Download original when a source Word file was uploaded", async () => {
+    const user = userEvent.setup();
+    render(
+      <ReportExportButton
+        reportId="report-1"
+        sourceDocxFilename="memo.docx"
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: /more export options/i }));
+    const original = screen.getByRole("menuitem", { name: /download original/i });
+    expect(original).toHaveAttribute("href", "/api/reports/report-1/source-docx");
+  });
+
   it("adds a split-button menu with a without-citations option on Convergent", async () => {
     vi.mocked(getCustomerPack).mockReturnValue(CONVERGENT_PACK);
     const user = userEvent.setup();

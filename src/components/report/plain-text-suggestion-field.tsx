@@ -19,6 +19,10 @@ import {
   parseAiFixCommentContent,
   parseAiRedraftCommentContent,
 } from "@/lib/ai/suggestion-gating";
+import {
+  getDocumentType,
+  suggestionApplyModeFor,
+} from "@/lib/document-types";
 import { redraftPlainTextValue } from "@/lib/suggestions/apply-redraft";
 import {
   acceptSuggestion,
@@ -339,6 +343,9 @@ export function PlainTextSuggestionField({
           comment: activeComment,
           sectionContent: sections[section] as Record<string, unknown>,
           fieldContentPath: contentPath,
+          applyMode: suggestionApplyModeFor(
+            getDocumentType(report.documentType)
+          ),
         }),
         delay(SUGGESTION_DIFF_FADE_MS),
       ]);

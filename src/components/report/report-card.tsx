@@ -8,6 +8,23 @@ import { formatCalendarDate, formatDate } from "@/lib/utils";
 import type { DocumentType, ReportStatus } from "@/db/schema";
 import { documentTypeShortLabel } from "@/lib/document-types";
 
+function untitledFallback(documentType: DocumentType | undefined): string {
+  switch (documentType) {
+    case "design_verification":
+    case "mechanical_design_verification":
+      return "Untitled design verification";
+    case "generic_document":
+      return "Untitled document";
+    case "investigation_report":
+    case undefined:
+      return "Untitled deviation";
+    default: {
+      const exhaustive: never = documentType;
+      return exhaustive;
+    }
+  }
+}
+
 export type ReportCardData = {
   id: string;
   documentNo: string;
@@ -39,15 +56,9 @@ export function ReportCard({
   titleAction?: ReactNode;
   trailingAction?: ReactNode;
 }) {
-  const isDesignVerification =
-    report.documentType === "design_verification" ||
-    report.documentType === "mechanical_design_verification";
   const title =
     displayTitle ??
-    (report.documentNo ||
-      (isDesignVerification
-        ? "Untitled design verification"
-        : "Untitled deviation"));
+    (report.documentNo || untitledFallback(report.documentType));
   const typeLabel = report.documentType
     ? documentTypeShortLabel(report.documentType)
     : "Investigation";

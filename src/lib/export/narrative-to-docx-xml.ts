@@ -67,7 +67,7 @@ export function narrativeToDocxXmlWithContext(
     } else if (node.type === "bulletList" || node.type === "orderedList") {
       parts.push(listToXml(node, ctx));
     } else if (node.type === "heading") {
-      parts.push(paragraphToXml(node, true, null, null, false, ctx));
+      parts.push(headingToXml(node, ctx));
     } else if (node.type === "mathBlock") {
       parts.push(mathBlockToXml(node));
     } else {
@@ -268,6 +268,24 @@ function wrapParagraph(text: string, ctx?: DocxExportContext): string {
   return `<w:p>${paragraphProperties(null, null, false, ctx)}<w:r>${runProperties({}, ctx)}<w:t xml:space="preserve">${escapeXml(
     text
   )}</w:t></w:r></w:p>`;
+}
+
+function headingStyleName(level: unknown): "Heading1" | "Heading2" | "Heading3" {
+  const n = typeof level === "number" ? level : Number(level);
+  if (n <= 1 || Number.isNaN(n)) return "Heading1";
+  if (n >= 3) return "Heading3";
+  return "Heading2";
+}
+
+function headingToXml(node: JSONContent, ctx: DocxExportContext): string {
+  if (!ctx.useHeadingStyles) {
+    return paragraphToXml(node, true, null, null, false, ctx);
+  }
+  const style = headingStyleName(node.attrs?.level);
+  const runs = inlineNodesToRuns(node.content ?? [], false, ctx);
+  const pPr = `<w:pPr><w:pStyle w:val="${style}"/>${paragraphJustification(null, ctx)}</w:pPr>`;
+  if (!runs) return `<w:p>${pPr}</w:p>`;
+  return `<w:p>${pPr}${runs}</w:p>`;
 }
 
 function paragraphToXml(

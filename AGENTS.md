@@ -22,15 +22,13 @@ cover only non-obvious, durable setup/run caveats for this environment.
 ## What this app is
 
 Next.js 16 App Router (Turbopack, React 19, Drizzle, TipTap, AI SDK v6).
-Pharmaceutical quality documents for M.J. Biopharm and Convergent Dental design verification — **two** `documentType`s:
+Pharmaceutical quality documents for M.J. Biopharm and Convergent Dental design verification, plus a demo-only free-form Word-like document. Chat, eval, suggestions, and editors **must** go through `src/lib/document-types/`. Do not hardcode DMAIC as if it were the only type.
 
 | `documentType` | Noun | Sections |
 |----------------|------|----------|
 | `investigation_report` | deviation | DMAIC + conclusion + attachments/approvals |
 | `design_verification` | design verification | demo: cover page + 10 sections; Convergent pack: 9 Solea DV sections |
-
-Chat, eval, suggestions, and editors **must** go through
-`src/lib/document-types/`. Do not hardcode DMAIC as if it were the only type.
+| `generic_document` | document | one continuous `body` section (demo pack only; no criteria) |
 
 Package manager is **pnpm**. Path alias `@/*` → `src/*`.
 
