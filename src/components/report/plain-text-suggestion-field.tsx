@@ -416,6 +416,7 @@ export function PlainTextSuggestionField({
     contentPath,
     sections,
     report.id,
+    report.documentType,
     onChange,
     replaceSection,
     setComments,

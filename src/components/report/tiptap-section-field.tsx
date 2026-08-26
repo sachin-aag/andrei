@@ -98,6 +98,9 @@ import { editorRegistryKey } from "@/providers/report-provider";
 import { isTrackChangesFieldEditable } from "@/lib/reports/section-save-policy";
 import type { SectionType } from "@/db/schema";
 
+const GENERIC_RICH_FIELD_OPTIONS = { preserveHeadings: true } as const;
+const GENERIC_MARKDOWN_OPTIONS = { headingNodes: true } as const;
+
 function TableEditToolbar({
   editor,
   tableHAlign,
@@ -436,10 +439,10 @@ export function TiptapSectionField({
     getDocumentType(report.documentType)
   );
   const richFieldOptions = headingEnabled
-    ? { preserveHeadings: true as const }
+    ? GENERIC_RICH_FIELD_OPTIONS
     : undefined;
   const markdownOptions = headingEnabled
-    ? { headingNodes: true as const }
+    ? GENERIC_MARKDOWN_OPTIONS
     : undefined;
 
   const editor = useEditor(
@@ -739,7 +742,7 @@ export function TiptapSectionField({
       return;
     }
     currentEditor.commands.setContent(incoming as Content, { emitUpdate: false });
-  }, [editor, value, isSuggestionPreviewHeld, section]);
+  }, [editor, value, isSuggestionPreviewHeld, section, richFieldOptions]);
 
   useEffect(() => {
     applyExternalValueToEditor();
@@ -928,6 +931,8 @@ export function TiptapSectionField({
     sectionContent,
     suggestionApplyTransition,
     value,
+    richFieldOptions,
+    markdownOptions,
   ]);
 
   // Debounced decoration refresh — coalesces hover-driven updates to one per frame.
