@@ -60,6 +60,8 @@ export type CustomerPack = {
    * (email + edit link). The hidden reviewer is still assigned on every pack.
    */
   expertReviewEnabled: boolean;
+  /** Demo + MJ. Standalone worksheet + capability sixpack workspace. */
+  statisticalAnalysisEnabled: boolean;
   branding: CustomerBranding;
 };
 
@@ -148,6 +150,7 @@ export const DEMO_PACK: CustomerPack = {
   wordImportEnabled: false,
   citationsAtEndOfSection: false,
   expertReviewEnabled: false,
+  statisticalAnalysisEnabled: true,
   branding: ANDREI_BRANDING,
 };
 
@@ -166,6 +169,7 @@ export const CONVERGENT_PACK: CustomerPack = {
   wordImportEnabled: false,
   citationsAtEndOfSection: true,
   expertReviewEnabled: true,
+  statisticalAnalysisEnabled: false,
   branding: CONVERGENT_BRANDING,
 };
 
@@ -181,6 +185,7 @@ export const MJ_PACK: CustomerPack = {
   wordImportEnabled: true,
   citationsAtEndOfSection: false,
   expertReviewEnabled: false,
+  statisticalAnalysisEnabled: true,
   branding: MJ_BRANDING,
 };
 
@@ -204,4 +209,10 @@ export function isDocumentTypeEnabled(
   pack: CustomerPack = getCustomerPack()
 ): boolean {
   return pack.enabledDocumentTypes.includes(type);
+}
+
+export function isStatisticalAnalysisEnabled(
+  pack: CustomerPack = getCustomerPack()
+): boolean {
+  return pack.statisticalAnalysisEnabled;
 }

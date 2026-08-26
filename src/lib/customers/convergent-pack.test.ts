@@ -44,6 +44,9 @@ describe("Convergent customer pack", () => {
     expect(CONVERGENT_PACK.expertReviewEnabled).toBe(true);
     expect(DEMO_PACK.expertReviewEnabled).toBe(false);
     expect(MJ_PACK.expertReviewEnabled).toBe(false);
+    expect(CONVERGENT_PACK.statisticalAnalysisEnabled).toBe(false);
+    expect(DEMO_PACK.statisticalAnalysisEnabled).toBe(true);
+    expect(MJ_PACK.statisticalAnalysisEnabled).toBe(true);
     expect(engineerReportsSubtitle([{ label: "Design Verification Report" }])).toBe(
       "Create and manage design verification reports."
     );

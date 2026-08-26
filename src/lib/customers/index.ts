@@ -8,6 +8,7 @@ export { applyCriterionDescriptionOverrides } from "./overrides";
 export {
   getCustomerPack,
   isDocumentTypeEnabled,
+  isStatisticalAnalysisEnabled,
   DEMO_PACK,
   MJ_PACK,
   CONVERGENT_PACK,

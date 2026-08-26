@@ -1,0 +1,101 @@
+import type { ReportAnalyticsView } from "./types";
+
+async function readError(response: Response): Promise<string> {
+  try {
+    const body = (await response.json()) as { error?: string };
+    if (typeof body.error === "string" && body.error.trim()) return body.error;
+  } catch {
+    // Body may be empty or HTML.
+  }
+  return `Request failed (${response.status})`;
+}
+
+async function parseAnalytics(response: Response): Promise<ReportAnalyticsView> {
+  const body = (await response.json()) as { analytics: ReportAnalyticsView };
+  return body.analytics;
+}
+
+function analyticsUrl(reportId: string, suffix = ""): string {
+  return `/api/reports/${encodeURIComponent(reportId)}/analytics${suffix}`;
+}
+
+export async function getReportAnalytics(
+  reportId: string
+): Promise<ReportAnalyticsView> {
+  const response = await fetch(analyticsUrl(reportId));
+  if (!response.ok) throw new Error(await readError(response));
+  return parseAnalytics(response);
+}
+
+export async function patchReportAnalytics(
+  reportId: string,
+  body: { worksheet: ReportAnalyticsView["worksheet"] },
+  signal?: AbortSignal
+): Promise<ReportAnalyticsView> {
+  const response = await fetch(analyticsUrl(reportId), {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+    signal,
+  });
+  if (!response.ok) throw new Error(await readError(response));
+  return parseAnalytics(response);
+}
+
+export async function createCapabilitySixpack(
+  reportId: string,
+  input: {
+    columnId: string;
+    title?: string;
+    lsl: number | null;
+    usl: number | null;
+    target: number | null;
+    rowStart?: number | null;
+    rowEnd?: number | null;
+    rows?: number[];
+  }
+): Promise<{ analytics: ReportAnalyticsView; analysisId: string }> {
+  const response = await fetch(analyticsUrl(reportId, "/analyses"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (!response.ok) throw new Error(await readError(response));
+  const body = (await response.json()) as {
+    analytics: ReportAnalyticsView;
+    analysis?: { id: string };
+  };
+  const analysisId = body.analysis?.id ?? body.analytics.analyses[0]?.id;
+  if (!analysisId) {
+    throw new Error("The analysis was saved but no id was returned.");
+  }
+  return { analytics: body.analytics, analysisId };
+}
+
+export async function recomputeCapabilitySixpack(
+  reportId: string,
+  analysisId: string
+): Promise<ReportAnalyticsView> {
+  const response = await fetch(
+    analyticsUrl(reportId, `/analyses/${encodeURIComponent(analysisId)}`),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "recompute" }),
+    }
+  );
+  if (!response.ok) throw new Error(await readError(response));
+  return parseAnalytics(response);
+}
+
+export async function deleteCapabilitySixpack(
+  reportId: string,
+  analysisId: string
+): Promise<ReportAnalyticsView> {
+  const response = await fetch(
+    analyticsUrl(reportId, `/analyses/${encodeURIComponent(analysisId)}`),
+    { method: "DELETE" }
+  );
+  if (!response.ok) throw new Error(await readError(response));
+  return parseAnalytics(response);
+}

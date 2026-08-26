@@ -15,8 +15,10 @@ import { captureEvent } from "@/lib/analytics/events";
 import { PlaceholdersPanelContent } from "./placeholders-panel";
 import { CriteriaPanelContent, CommentsPanelContent } from "./criteria-sheet";
 import { ChatPanel } from "./chat-panel";
+import { AnalyticsChatPanel } from "@/components/statistical-analysis/analytics-chat-panel";
 import type { SectionType } from "@/db/schema";
 import type { Placeholder } from "@/lib/placeholders/find";
+import type { ReportWorkspaceSurface } from "./report-workspace-header";
 
 export type SidebarTab =
   | "assistant"
@@ -33,6 +35,9 @@ type Props = {
   onJumpToPlaceholder: (p: Placeholder) => void;
   onJumpToComment: (commentId: string) => void;
   initialCriteriaSection?: SectionType;
+  surface?: ReportWorkspaceSurface;
+  analyticsOpen?: boolean;
+  onAnalyticsSettled?: () => void;
 };
 
 const TABS: { value: SidebarTab; label: string; icon: typeof ListChecks }[] = [
@@ -51,7 +56,11 @@ export function ReportSidebar({
   onJumpToPlaceholder,
   onJumpToComment,
   initialCriteriaSection,
+  surface = "document",
+  analyticsOpen = false,
+  onAnalyticsSettled,
 }: Props) {
+  const analyticsSurface = surface === "analytics";
   const { pendingPlaceholders } = useReportPlaceholders();
   const { comments } = useReportComments();
   const rootCommentCount = comments.filter((c) => !c.parentId).length;
@@ -97,6 +106,7 @@ export function ReportSidebar({
       </div>
 
       {/* Tab buttons — icons only when collapsed; wrap when expanded so none get clipped */}
+      {analyticsSurface ? null : (
       <div
         className={cn(
           "border-b border-[var(--border)] shrink-0",
@@ -184,6 +194,7 @@ export function ReportSidebar({
           );
         })}
       </div>
+      )}
 
       {/* ChatPanel stays mounted across collapse and tab changes so the
           thread, composer prefs, and rendered markdown are not reset.
@@ -194,12 +205,24 @@ export function ReportSidebar({
       <div
         className={cn(
           "min-h-0 flex-1",
-          (collapsed || activeTab !== "assistant") && "hidden"
+          (collapsed || analyticsSurface || activeTab !== "assistant") && "hidden"
         )}
       >
         <ChatPanel />
       </div>
-      {!collapsed && activeTab !== "assistant" ? (
+      {analyticsOpen ? (
+        <div
+          className={cn(
+            "min-h-0 flex-1",
+            (collapsed || !analyticsSurface) && "hidden"
+          )}
+        >
+          <AnalyticsChatPanel
+            onWorksheetChanged={() => onAnalyticsSettled?.()}
+          />
+        </div>
+      ) : null}
+      {!collapsed && !analyticsSurface && activeTab !== "assistant" ? (
         <div className="flex-1 overflow-y-auto p-4 min-w-0">
           {activeTab === "placeholders" && (
             <PlaceholdersPanelContent

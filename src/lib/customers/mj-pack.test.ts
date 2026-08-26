@@ -81,6 +81,11 @@ describe("MJ customer pack content", () => {
     expect(MJ_PACK.expertReviewEnabled).toBe(false);
   });
 
+  it("enables statistical analysis on MJ", () => {
+    expect(MJ_PACK.statisticalAnalysisEnabled).toBe(true);
+    expect(DEMO_PACK.statisticalAnalysisEnabled).toBe(true);
+  });
+
   it("disables design verification", () => {
     expect(MJ_PACK.enabledDocumentTypes).toEqual(["investigation_report"]);
     expect(isDocumentTypeEnabled("design_verification", MJ_PACK)).toBe(false);

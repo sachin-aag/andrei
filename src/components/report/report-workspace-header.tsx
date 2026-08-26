@@ -19,10 +19,16 @@ import { ReportActionsMenu } from "./report-actions-menu";
 import { ReportExportButton } from "./report-export-button";
 import { RunAllEvaluationButton } from "./section-status-pill";
 import { StatusBadge } from "./status-badge";
+import { cn } from "@/lib/utils";
+
+export type ReportWorkspaceSurface = "document" | "analytics";
 
 type ReportWorkspaceHeaderProps = {
   report: ReportRecord;
   mode: WorkspaceMode;
+  surface?: ReportWorkspaceSurface;
+  onSurfaceChange?: (surface: ReportWorkspaceSurface) => void;
+  showAnalyticsToggle?: boolean;
   authorName?: string;
   managerNames?: string[];
   canSubmit: boolean;
@@ -62,10 +68,14 @@ export function ReportWorkspaceHeader({
   onEditDetails,
   showExpertReview = false,
   onExpertReview,
+  surface = "document",
+  onSurfaceChange,
+  showAnalyticsToggle = false,
 }: ReportWorkspaceHeaderProps) {
   const title = report.documentNo || "Untitled";
   const [navigatingBack, setNavigatingBack] = useState(false);
   const isViewMode = mode === "view";
+  const documentSurface = surface === "document";
 
   return (
     <header className="h-16 border-b border-[var(--border)] bg-[var(--card)] px-6 flex items-center gap-4 shrink-0">
@@ -107,10 +117,49 @@ export function ReportWorkspaceHeader({
           {managerNames.length > 0 ? ` → ${managerNames.join(", ")}` : ""}
         </span>
       </div>
+      {showAnalyticsToggle && onSurfaceChange ? (
+        <div
+          role="tablist"
+          aria-label="Report workspace"
+          className="flex shrink-0 rounded-md border border-[var(--border)] p-0.5"
+        >
+          <button
+            type="button"
+            role="tab"
+            data-testid="report-surface-document"
+            aria-selected={documentSurface}
+            onClick={() => onSurfaceChange("document")}
+            className={cn(
+              "rounded px-2.5 py-1 text-xs font-medium transition-colors",
+              documentSurface
+                ? "bg-[var(--secondary)] text-[var(--foreground)]"
+                : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+            )}
+          >
+            Document
+          </button>
+          <button
+            type="button"
+            role="tab"
+            data-testid="report-surface-analytics"
+            aria-selected={!documentSurface}
+            onClick={() => onSurfaceChange("analytics")}
+            className={cn(
+              "rounded px-2.5 py-1 text-xs font-medium transition-colors",
+              !documentSurface
+                ? "bg-[var(--secondary)] text-[var(--foreground)]"
+                : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+            )}
+          >
+            Analytics
+          </button>
+        </div>
+      ) : null}
+
       <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
         <ReportExportButton reportId={report.id} />
 
-        {!isViewMode && <RunAllEvaluationButton />}
+        {!isViewMode && documentSurface ? <RunAllEvaluationButton /> : null}
 
         {canSubmit && (
           <Button size="sm" onClick={onSubmit} disabled={submitting}>

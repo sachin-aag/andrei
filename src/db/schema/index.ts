@@ -440,6 +440,7 @@ export const reportsRelations = relations(reports, ({ one, many }) => ({
   sourceDocx: one(reportSourceDocx),
   managers: many(reportManagers),
   attachments: many(reportAttachments),
+  analytics: one(statisticalWorkspaces),
 }));
 
 export const reportManagersRelations = relations(reportManagers, ({ one }) => ({
@@ -779,6 +780,12 @@ export const chatSessions = pgTable(
     reportId: text("report_id")
       .notNull()
       .references(() => reports.id, { onDelete: "cascade" }),
+    /**
+     * Which assistant owns the thread. `report` is the drafting chat;
+     * `analytics` is the Statistical Analysis assistant. Must be filtered on
+     * every list/create/find or analytics threads leak into the report UI.
+     */
+    surface: text("surface").notNull().default("report"),
     title: text("title").notNull().default(""),
     /**
      * `running` while the server is still generating after the client
@@ -798,8 +805,9 @@ export const chatSessions = pgTable(
       .defaultNow(),
   },
   (t) => ({
-    reportUpdatedIdx: index("chat_sessions_report_updated_idx").on(
+    reportSurfaceUpdatedIdx: index("chat_sessions_report_surface_updated_idx").on(
       t.reportId,
+      t.surface,
       t.updatedAt
     ),
   })
@@ -1136,6 +1144,74 @@ export const documentChunksRelations = relations(documentChunks, ({ one }) => ({
     references: [documentPages.id],
   }),
 }));
+
+export const statisticalWorkspaces = pgTable(
+  "statistical_workspaces",
+  {
+    id: text("id").primaryKey().$defaultFn(() => createId()),
+    name: text("name").notNull().default("Worksheet"),
+    reportId: text("report_id")
+      .notNull()
+      .references(() => reports.id, { onDelete: "cascade" }),
+    worksheet: jsonb("worksheet").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    reportIdUnique: uniqueIndex("statistical_workspaces_report_id_unique").on(
+      t.reportId
+    ),
+  })
+);
+
+export const statisticalAnalyses = pgTable(
+  "statistical_analyses",
+  {
+    id: text("id").primaryKey().$defaultFn(() => createId()),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => statisticalWorkspaces.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull().default("capability_sixpack_normal"),
+    title: text("title").notNull(),
+    config: jsonb("config").notNull(),
+    results: jsonb("results").notNull(),
+    sourceHash: text("source_hash").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    workspaceCreatedIdx: index("statistical_analyses_workspace_created_idx").on(
+      t.workspaceId,
+      t.createdAt
+    ),
+  })
+);
+
+export const statisticalWorkspacesRelations = relations(
+  statisticalWorkspaces,
+  ({ one, many }) => ({
+    report: one(reports, {
+      fields: [statisticalWorkspaces.reportId],
+      references: [reports.id],
+    }),
+    analyses: many(statisticalAnalyses),
+  })
+);
+
+export const statisticalAnalysesRelations = relations(
+  statisticalAnalyses,
+  ({ one }) => ({
+    workspace: one(statisticalWorkspaces, {
+      fields: [statisticalAnalyses.workspaceId],
+      references: [statisticalWorkspaces.id],
+    }),
+  })
+);
 
 export type ReportStatus = (typeof reportStatusEnum.enumValues)[number];
 export type DocumentType = (typeof documentTypeEnum.enumValues)[number];

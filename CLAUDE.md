@@ -58,7 +58,7 @@ pnpm exec playwright install --with-deps chromium firefox webkit
 
 ### Key directories
 
-- `src/app/api/reports/[reportId]/` — Route handlers for report CRUD, section auto-save (`sections/[sectionType]`), AI `evaluate`, evaluation bypass (`evaluations/[evalId]`), AI `suggestions`, `comments`, `submit`/`approve`/`feedback` workflow, `chat` (AI chat), `audit` (trail), `attachments`, and `export`/`complete-export` (DOCX).
+- `src/app/api/reports/[reportId]/` — Route handlers for report CRUD, section auto-save (`sections/[sectionType]`), AI `evaluate`, evaluation bypass (`evaluations/[evalId]`), AI `suggestions`, `comments`, `submit`/`approve`/`feedback` workflow, `chat` (AI chat), `analytics` (worksheet + sixpack + stats chat), `audit` (trail), `attachments`, and `export`/`complete-export` (DOCX).
 - `src/app/improve-ai/` — Improve AI pages: session list and `[sessionId]` review page.
 - `src/app/api/improve-ai/` — API routes for creating sessions (from report or uploaded DOCX), listing sessions, and completing review.
 - `src/app/api/reports/[reportId]/chat/` — AI chat sessions/messages scoped to a report (see AI Chat subsystem).
@@ -66,16 +66,18 @@ pnpm exec playwright install --with-deps chromium firefox webkit
 - `src/app/insights/` — Analytics dashboards (`dashboard`, `doc-insights`, `management`, `pitfalls`). Currently backed by `src/lib/insights/mock-data.ts`.
 - `src/app/api/site-access/` — Site-wide password gate (see Site Access subsystem).
 - `src/app/{login,change-password,forgot-password,reset-password,unlock,profile}/` — auth/account pages. `src/app/api/auth-pw/` — password-based auth routes (forgot/reset).
-- `src/components/report/` — Editor UI: `report-workspace.tsx` (header + tabs + sidebar), per-section editors in `sections/`, `report-sidebar.tsx` (AI traffic-light results), `review-rail/` (manager comment margin UI).
+- `src/components/report/` — Editor UI: `report-workspace.tsx` (header + Document/Analytics toggle + sidebar), per-section editors in `sections/`, `report-sidebar.tsx` (AI traffic-light results + analytics chat), `review-rail/` (manager comment margin UI).
 - `src/components/improve-ai/` — Improve AI UI: session form, upload button, section content display, stale-rerun dialog.
+- `src/components/statistical-analysis/` — Report Analytics worksheet grid, Stat menu, sixpack SVG, capability dialog, stats chat panel.
 - `src/components/ui/` — shadcn-style Radix UI primitives.
-- `src/db/schema/index.ts` — Drizzle schema (single file, not a directory): `workspaceUsers`, `reports` (includes `documentType`), `reportManagers`, `reportSections`, `criteriaEvaluations`, `comments`, `chatSessions`/`chatMessages`, `reportSourceDocx`, `mathExtractionCache`, `aiFeedbackSessions`/`aiFeedbackResponses`, `auditEvents`/`sectionContentVersions`/`electronicSignatures`, `passwordPolicySettings`, `retentionSettings`, plus attachment evidence (`reportAttachments`, `attachmentIngestRuns`, `documentPages`, `documentChunks` with `vector(768)`). NextAuth tables + `authUsers` in `auth.ts`.
+- `src/db/schema/index.ts` — Drizzle schema (single file, not a directory): `workspaceUsers`, `reports` (includes `documentType`), `reportManagers`, `reportSections`, `criteriaEvaluations`, `comments`, `chatSessions`/`chatMessages`, `reportSourceDocx`, `mathExtractionCache`, `aiFeedbackSessions`/`aiFeedbackResponses`, `auditEvents`/`sectionContentVersions`/`electronicSignatures`, `passwordPolicySettings`, `retentionSettings`, `statisticalWorkspaces`/`statisticalAnalyses`, plus attachment evidence (`reportAttachments`, `attachmentIngestRuns`, `documentPages`, `documentChunks` with `vector(768)`). NextAuth tables + `authUsers` in `auth.ts`.
 - `src/lib/ai/` — AI evaluation, suggestion, and chat pipelines (see subsystems below).
 - `src/lib/document-types/` — Registry for `investigation_report` and `design_verification` (sections, criteria, prompts, chat persona, merge).
 - `src/lib/attachments/` — PDF/DOCX ingest, chunk/embed, hybrid retrieval (`searchReportDocuments`, `readDocumentPage`, `readDocumentOutline`).
 - `src/lib/storage/` — Attachment blob storage (GCS vs local).
 - `src/lib/audit/` — Hash-chained audit log, section version history, and e-signature workflow (see Audit subsystem).
-- `src/lib/customers/` — Customer pack resolver (`ANDREI_CUSTOMER` / `NEXT_PUBLIC_ANDREI_CUSTOMER`). Demo vs MJ vs Convergent overlays: criteria descriptions, eval prompts, export template, hidden sections, enabled document types, Word import, branding.
+- `src/lib/customers/` — Customer pack resolver (`ANDREI_CUSTOMER` / `NEXT_PUBLIC_ANDREI_CUSTOMER`). Demo vs MJ vs Convergent overlays: criteria descriptions, eval prompts, export template, hidden sections, enabled document types, Word import, branding, `statisticalAnalysisEnabled`.
+- `src/lib/statistical-analysis/` — Report-scoped worksheet ops, I-MR Normal Capability Sixpack, analytics store and stats-only chat tools.
 - `src/lib/reports/` — Report domain logic: access control (`access.ts`), manager authorization, deviation-no generation, submit validation, source-docx persistence, blank-section seeding, tombstones.
 - `src/lib/admin/` — Admin-console business logic (user/retention/password-policy operations).
 - `src/lib/improve-ai/` — Improve AI business logic: session store, session view, human-judgment tracking, response syncing, staleness detection.
@@ -274,6 +276,26 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
 4. `POST .../complete` marks session `reviewed`
 
 **Staleness:** `src/lib/improve-ai/session-staleness.ts` detects when the underlying report has changed since the session was created, prompting a re-run dialog.
+
+## Subsystem: Statistical Analysis
+
+**Purpose:** Report-scoped measurement worksheet and Minitab-style Normal Capability Sixpack (individuals / I-MR). Lives on the report **Analytics** tab (same attachments as the document). Demo and MJ only (`statisticalAnalysisEnabled`); Convergent 404s the APIs and hides the tab. Not a document type, not TipTap, and not DMAIC chat.
+
+**Entry points:**
+- Report workspace header: Document | Analytics (`data-testid="report-surface-analytics"`)
+- `GET/PATCH/POST /api/reports/[reportId]/analytics` (`POST` aliases `PATCH` for autosave beacons)
+- `POST .../analytics/analyses` creates a sixpack; `POST/DELETE .../analytics/analyses/[analysisId]` recomputes or deletes
+- `POST /api/reports/[reportId]/analytics/chat` — stats-only assistant (`ANALYTICS_CHAT_PROMPT_VERSION`, surface `analytics`)
+
+**Data flow:**
+1. Opening Analytics `getOrCreate`s one worksheet per report (`statistical_workspaces.report_id` unique)
+2. Enter, paste, or ask the assistant to extract values from attachments (`extract_numeric_series` → `write_column`)
+3. `Analyze {column}` (or a Shift+arrow row range), column-header context menu, or `Stat → Normal Capability Sixpack…` (or `run_capability_sixpack` with optional `rowStart`/`rowEnd`/`rows`) computes I-MR limits, histogram, AD normal plot, Cp/Cpk/Pp/Ppk on the **server** (`computeCapabilitySixpack`). Each run **inserts** a new `statistical_analyses` row — same-column titles become `Assay (2)`; a subset is titled `Assay (rows 1–10)`.
+4. Results lists every saved analysis; selecting one does not discard the others. Editing cells **in the analyzed rows** marks that analysis **stale** (`sourceHash`); Recompute refreshes only that row. **Download** saves a CSV of specs, capability indices, and observations. Shift+arrow / Shift+click extends a cell range on the worksheet.
+
+**Chat:** Tools are search/outline/page/extract/worksheet/sixpack only. No `propose_edit` / `draft_field` / Plan-Agent toggle. Do not add these tools to the report Plan-mode allowlist. Stub chat is text-only (`buildStubAnalyticsChatModel`).
+
+**Key invariant:** Analyses do not silently change when the worksheet changes, and a new run never overwrites an earlier sixpack. I-MR constants are Minitab n=2 (`d2=1.128`, `D4=3.267`, `E2=2.66`). Mutations use `canSaveReportSection` (same lock as section autosave).
 
 ## Subsystem: Audit Trail & E-Signatures
 

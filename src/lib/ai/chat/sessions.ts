@@ -7,6 +7,15 @@ import { deriveSessionTitle, UNTITLED_SESSION } from "@/lib/ai/chat/session-titl
 
 export { deriveSessionTitle };
 
+export const CHAT_SURFACES = ["report", "analytics"] as const;
+export type ChatSurface = (typeof CHAT_SURFACES)[number];
+export const REPORT_CHAT_SURFACE: ChatSurface = "report";
+export const ANALYTICS_CHAT_SURFACE: ChatSurface = "analytics";
+
+export function isChatSurface(value: unknown): value is ChatSurface {
+  return value === "report" || value === "analytics";
+}
+
 export type ChatSessionSummary = {
   id: string;
   title: string;
@@ -23,12 +32,18 @@ export type PersistedChatMessage = {
 };
 
 export async function listChatSessions(
-  reportId: string
+  reportId: string,
+  surface: ChatSurface = REPORT_CHAT_SURFACE
 ): Promise<ChatSessionSummary[]> {
   const sessions = await db
     .select()
     .from(chatSessions)
-    .where(eq(chatSessions.reportId, reportId))
+    .where(
+      and(
+        eq(chatSessions.reportId, reportId),
+        eq(chatSessions.surface, surface)
+      )
+    )
     .orderBy(desc(chatSessions.updatedAt));
 
   const rows = await db
@@ -36,9 +51,10 @@ export async function listChatSessions(
     .from(chatMessages)
     .where(eq(chatMessages.reportId, reportId));
 
+  const sessionIds = new Set(sessions.map((s) => s.id));
   const counts = new Map<string, number>();
   for (const row of rows) {
-    if (!row.sessionId) continue;
+    if (!row.sessionId || !sessionIds.has(row.sessionId)) continue;
     counts.set(row.sessionId, (counts.get(row.sessionId) ?? 0) + 1);
   }
 
@@ -53,11 +69,12 @@ export async function listChatSessions(
 }
 
 export async function createChatSession(
-  reportId: string
+  reportId: string,
+  surface: ChatSurface = REPORT_CHAT_SURFACE
 ): Promise<ChatSessionSummary> {
   const [created] = await db
     .insert(chatSessions)
-    .values({ reportId, title: "" })
+    .values({ reportId, title: "", surface })
     .returning();
   return {
     id: created!.id,
@@ -70,10 +87,11 @@ export async function createChatSession(
   };
 }
 
-/** Returns the session if it belongs to the report, else null. */
+/** Returns the session if it belongs to the report and surface, else null. */
 export async function findChatSession(
   reportId: string,
-  sessionId: string
+  sessionId: string,
+  surface: ChatSurface = REPORT_CHAT_SURFACE
 ): Promise<{
   id: string;
   title: string;
@@ -89,7 +107,11 @@ export async function findChatSession(
     })
     .from(chatSessions)
     .where(
-      and(eq(chatSessions.id, sessionId), eq(chatSessions.reportId, reportId))
+      and(
+        eq(chatSessions.id, sessionId),
+        eq(chatSessions.reportId, reportId),
+        eq(chatSessions.surface, surface)
+      )
     );
   return row ?? null;
 }
@@ -102,9 +124,10 @@ export type ChatSessionView = {
 
 export async function loadSessionView(
   reportId: string,
-  sessionId: string
+  sessionId: string,
+  surface: ChatSurface = REPORT_CHAT_SURFACE
 ): Promise<ChatSessionView | null> {
-  const session = await findChatSession(reportId, sessionId);
+  const session = await findChatSession(reportId, sessionId, surface);
   if (!session) return null;
   const messages = await loadSessionMessages(sessionId);
   return {

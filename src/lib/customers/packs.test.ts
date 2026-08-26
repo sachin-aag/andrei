@@ -3,7 +3,7 @@ import { PROMPT_VERSION } from "@/lib/ai/section-prompts";
 import { getInvestigationCriteriaBySection } from "@/lib/ai/criteria";
 import { getDocumentType, listDocumentTypes, engineerReportsSubtitle } from "@/lib/document-types";
 import { applyCriterionDescriptionOverrides } from "./overrides";
-import { DEMO_PACK, getCustomerPack, isDocumentTypeEnabled } from "./packs";
+import { DEMO_PACK, getCustomerPack, isDocumentTypeEnabled, isStatisticalAnalysisEnabled } from "./packs";
 
 describe("customer packs (demo)", () => {
   it("defaults to the demo pack", () => {
@@ -33,6 +33,11 @@ describe("customer packs (demo)", () => {
 
   it("keeps expert review off on demo", () => {
     expect(DEMO_PACK.expertReviewEnabled).toBe(false);
+  });
+
+  it("enables statistical analysis on demo", () => {
+    expect(DEMO_PACK.statisticalAnalysisEnabled).toBe(true);
+    expect(isStatisticalAnalysisEnabled(DEMO_PACK)).toBe(true);
   });
 
   it("lists both document types on demo", () => {
