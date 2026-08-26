@@ -14,6 +14,7 @@ const READ_AFTER_SEARCH_TOOLS = [
 
 const WRITE_AFTER_SEARCH_TOOLS = [
   "write_column",
+  "manage_worksheet",
   "run_capability_sixpack",
   "plot_measurements",
 ] as const;

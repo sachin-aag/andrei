@@ -56,6 +56,7 @@ describe("prepareAnalyticsChatStep", () => {
     expect(prepared?.activeTools).toContain("document_outline");
     expect(prepared?.activeTools).toContain("scan_attachments");
     expect(prepared?.activeTools).toContain("write_column");
+    expect(prepared?.activeTools).toContain("manage_worksheet");
     expect(prepared?.activeTools).toContain("plot_measurements");
     expect(prepared?.activeTools).not.toContain("search_documents");
     expect(

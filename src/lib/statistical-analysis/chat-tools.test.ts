@@ -45,7 +45,25 @@ import {
 import { P1_PUW_COMBINED_TRANSCRIPT, P1_PUW_FILENAME } from "@/lib/extraction/__fixtures__/p1-puw-qualification-phase-ii";
 import { AMBIGUOUS_METRIC_REQUEST_MESSAGE } from "@/lib/extraction/metric-series";
 import { buildAnalyticsChatSystemPrompt } from "./chat-prompt";
+import {
+  getOrCreateReportAnalytics,
+  updateReportAnalytics,
+} from "./store";
 import type { ReportAnalyticsView } from "./types";
+import { createEmptyWorksheet } from "./worksheet";
+
+function analyticsView(
+  worksheet = createEmptyWorksheet()
+): ReportAnalyticsView {
+  return {
+    id: "ws-1",
+    reportId: "report-1",
+    worksheet,
+    analyses: [],
+    createdAt: "2026-08-26T00:00:00.000Z",
+    updatedAt: "2026-08-26T00:00:00.000Z",
+  };
+}
 
 type ZodToolSchema = z.ZodType<Record<string, unknown>>;
 
@@ -230,5 +248,35 @@ describe("analytics chat tools", () => {
     expect(prompt).toContain("Do not keep searching");
     expect(prompt).toContain("Whole table");
     expect(prompt).toContain("scan_attachments");
+  });
+
+  it("adds a data sheet without searching attachments", async () => {
+    const initial = analyticsView();
+    vi.mocked(getOrCreateReportAnalytics).mockResolvedValue(initial);
+    vi.mocked(updateReportAnalytics).mockImplementation(async (_id, worksheet) =>
+      analyticsView(worksheet)
+    );
+    const tools = buildAnalyticsChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "investigation_report",
+    });
+    const execute = tools.manage_worksheet?.execute;
+    if (!execute) throw new Error("manage_worksheet has no execute");
+    const result = await execute(
+      { action: "add_sheet", name: "Assay" },
+      {
+        toolCallId: "test",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    expect(result).toMatchObject({
+      status: "ok",
+      action: "add_sheet",
+      sheetName: "Assay",
+    });
+    expect(updateReportAnalytics).toHaveBeenCalled();
+    expect(listReadyDocumentsForReport).not.toHaveBeenCalled();
   });
 });
