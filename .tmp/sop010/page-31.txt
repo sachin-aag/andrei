@@ -1,0 +1,54 @@
+Standard Operating Procedure Unit: Drug Product
+
+M.J. Biopharm Private Limited Grey
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+Title: Quality Risk Assessment
+Dept.: Quality Assurance SOP No.: SOP/DP/QA/010 Revision No: R04 | Page 31 of 51
+
+1. DETAILS OF THE RISK ASSESSMENT
+
+1.1 OBJECTIVE:
+The objective of this document is to perform the quality risk management and evaluation of controls
+and procedures for risk associated with (Name of equipment, process, activity..etc.) in the facility and
+identification of potential risk and risk mitigation plan for the same.
+
+1.2 SCOPE:
+This risk assessment document is applicable to (Name of equipment, process, activity..etc) in the Drug
+Product Facility of M.J. Biopharm Pvt. Ltd. Pune.
+
+1.3 SYSTEM/ EQUIPMENT/ INSTRUMENT/ OTHER (IF ANY) OVERVIEW:
+In this section brief description of the System/ Equipment/ Instrument/ other (if any) shall be mentioned.
+Which includes following details but not limited to,
+1.3.1 Equipment/system/instrument details and functions.
+1.3.2 Intended use of the equipment.
+1.3.3 Brief details about various components related to particular system.
+1.3.4 Process flow (if any).
+
+1.4 PROCEDURE:
+
+Quality risk management should include systematic processes designed to coordinate, facilitate and
+
+improve science-based decision making with respect to risk. Possible steps used to initiate and plan a
+
+quality risk management process might include the following:
+
+1.4.1 Define the problem and/or risk question, including pertinent assumptions identifying the potential
+for risk.
+
+1.4.2. Assemble background information and/ or data on the potential hazard, harm or human health
+impact relevant to the risk assessment.
+
+1.4.3 Identify a leader and necessary resources.
+
+1.4.4 Specify a timeline, deliverables and appropriate level of decision making for the risk
+management process.
+
+1.4.5 Following flow chart shall be followed for risk assessment,
+
+Prepared By (User Department) Sign/Date Reviewed By (Quality Assurance) Sign/Date
+Leas fob )ee Toss
+Confidential and Proprietary SOP/DP/QA/001/F01-R02
+
+MASTER COPY
+

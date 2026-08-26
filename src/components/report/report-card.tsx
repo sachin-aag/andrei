@@ -42,12 +42,15 @@ export function ReportCard({
   const isDesignVerification =
     report.documentType === "design_verification" ||
     report.documentType === "mechanical_design_verification";
+  const isQra = report.documentType === "quality_risk_assessment";
   const title =
     displayTitle ??
     (report.documentNo ||
-      (isDesignVerification
-        ? "Untitled design verification"
-        : "Untitled deviation"));
+      (isQra
+        ? "Untitled quality risk assessment"
+        : isDesignVerification
+          ? "Untitled design verification"
+          : "Untitled deviation"));
   const typeLabel = report.documentType
     ? documentTypeShortLabel(report.documentType)
     : "Investigation";

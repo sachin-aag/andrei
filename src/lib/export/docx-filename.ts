@@ -14,6 +14,8 @@ export function reportExportDocxFileName(
       return `Design_Verification_Report_${safe}${suffix}.docx`;
     case "mechanical_design_verification":
       return `Mechanical_DV_Report_${safe}${suffix}.docx`;
+    case "quality_risk_assessment":
+      return `Quality_Risk_Assessment_${safe}${suffix}.docx`;
     case "investigation_report":
       return `Investigation_Report_${safe}${suffix}.docx`;
     default: {
@@ -29,6 +31,8 @@ export function reportExportDocxArchiveName(documentType: DocumentType): string 
       return "design-verification-report.docx";
     case "mechanical_design_verification":
       return "mechanical-dv-report.docx";
+    case "quality_risk_assessment":
+      return "quality-risk-assessment.docx";
     case "investigation_report":
       return "investigation-report.docx";
     default: {

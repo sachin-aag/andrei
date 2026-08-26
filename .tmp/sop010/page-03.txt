@@ -1,0 +1,51 @@
+Standard Operating Procedure Unit: Drug Product
+
+M.J. Biopharm Private Limited Gysy
+Plot No. 18, International Biotech Park, Hinjawadi, Phase IT, Pune 411057.
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance | SOP No.: SOP/DP/QA/010 | Revision No: R04 | Page 3 of 51
+
+3.3.6 Verification of the implementation status of the contro] measures.
+
+3.3.7. Approval of the risk assessment.
+
+3.3.8 Final closure of the risk assessment.
+
+3.4 RISK ASSESSMENT TEAM (RAT):
+
+3.4.1 Risk Assessment Team shall consist of members from different department viz. Quality
+Assurance, Quality Control, Regulatory Affairs, Production, Packing, Warehouse and Engineering
+ete.
+
+3.4.2 Brain storming during risk assessment meetings to identify the risks based on scientific judgment.
+
+4.0 ABBREVIATIONS:
+A Annexure QC Quality Control
+AHU Air Handling Unit QMS _} Quality Management System
+APQR_ | Annual Product Quality Review QRM_ | Quality Risk Management
+CAPA Corrective Action and Preventive RA Risk Assessment
+Action
+CFT Cross Functional Team RAT | Risk Assessment Team
+EHS Environment Health and Safety RPN _| Risk Priority Number
+F Format RPR_ | Risk Priority Ranking
+FMEA | Failure Mode Effect Analysis SOP | Standard Operating Procedure
+No. Number Sr. No. | Serial Number
+QA Quality Assurance TCD | Target Completion Date
+5.0 DEFINITIONS:
+5.1 Quality Risk Management:
+A systematic process for the assessment, control, communication, implementation and review of
+risks to the quality of the drug product across the product lifecycle.
+5.2 Risk:
+The combination of the probability of occurrence of harm and the severity of that harm.
+5.3 Risk Assessment:
+A systematic process of organizing information to support a risk decision. It consists of the
+identification of hazards and the analysis and evaluation of risks associated with exposure to those
+hazards.
+Prepared By (User Department) Sign/Date Reviewed By (Quality Assurance) Sign/Date
+PSs25\06}26 2
+Confidential and Proprietary SOP/DP/QA/001/F01-R02
+
+MASTER COPY
+

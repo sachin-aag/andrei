@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ManagerSelector } from "@/components/report/manager-selector";
 import { assignedManagerIdsForReport } from "@/lib/reports/assigned-manager-ids";
+import { getDocumentType } from "@/lib/document-types";
 import type { WorkspaceUser } from "@/lib/auth/workspace-user";
 import type { ReportRecord } from "@/types/report";
 
@@ -32,6 +33,7 @@ function ReportDetailsEditForm({
   onSaved: (report: ReportRecord) => void;
   onClose: () => void;
 }) {
+  const documentNoLabel = getDocumentType(report.documentType).documentNoLabel;
   const [deviationNo, setDeviationNo] = useState(report.documentNo);
   const [assignedManagerIds, setAssignedManagerIds] = useState<string[]>(() =>
     assignedManagerIdsForReport(report)
@@ -41,7 +43,7 @@ function ReportDetailsEditForm({
   const save = async () => {
     const trimmedDeviationNo = deviationNo.trim();
     if (!trimmedDeviationNo) {
-      toast.error("Deviation number is required");
+      toast.error(`${documentNoLabel} is required`);
       return;
     }
 
@@ -75,7 +77,7 @@ function ReportDetailsEditForm({
     <>
       <div className="grid gap-4 py-1">
         <div className="grid gap-2">
-          <Label htmlFor="edit-deviation-no">Deviation number</Label>
+          <Label htmlFor="edit-deviation-no">{documentNoLabel}</Label>
           <Input
             id="edit-deviation-no"
             placeholder="e.g. DEV/PK/26/001"

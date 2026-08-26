@@ -159,6 +159,7 @@ export const DEMO_PACK: CustomerPack = {
 
 export const CONVERGENT_PROMPT_VERSION = "convergent-dv-v7";
 export const MECHANICAL_PROMPT_VERSION = "convergent-mechanical-dv-v1";
+export const QRA_PROMPT_VERSION = "mj-qra-sop-010-r04-v1";
 
 export const CONVERGENT_PACK: CustomerPack = {
   id: "convergent",
@@ -178,7 +179,7 @@ export const CONVERGENT_PACK: CustomerPack = {
 
 export const MJ_PACK: CustomerPack = {
   id: "mj",
-  enabledDocumentTypes: ["investigation_report"],
+  enabledDocumentTypes: ["investigation_report", "quality_risk_assessment"],
   hiddenInvestigationSections: ["conclusion"],
   investigationTemplateFile: "mj-investigation-report-template.docx",
   promptVersion: MJ_PROMPT_VERSION,

@@ -3,6 +3,7 @@ import { isDocumentTypeEnabled, getCustomerPack } from "@/lib/customers/packs";
 import { buildInvestigationReportDefinition } from "./investigation-report";
 import { buildDesignVerificationDefinition } from "./design-verification";
 import { mechanicalDesignVerificationDefinition } from "./mechanical-design-verification";
+import { qualityRiskAssessmentDefinition } from "./quality-risk-assessment";
 import type {
   CriterionDefinition,
   DocumentTypeDefinition,
@@ -24,6 +25,8 @@ export function getDocumentType(type: DocumentType): DocumentTypeDefinition {
       return buildDesignVerificationDefinition();
     case "mechanical_design_verification":
       return mechanicalDesignVerificationDefinition;
+    case "quality_risk_assessment":
+      return qualityRiskAssessmentDefinition;
     default: {
       const exhaustive: never = type;
       throw new Error(`Unknown document type: ${exhaustive}`);
@@ -37,7 +40,8 @@ export function resolveDocumentType(
   if (
     type === "investigation_report" ||
     type === "design_verification" ||
-    type === "mechanical_design_verification"
+    type === "mechanical_design_verification" ||
+    type === "quality_risk_assessment"
   ) {
     return type;
   }
