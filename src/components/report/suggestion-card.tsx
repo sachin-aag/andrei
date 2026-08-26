@@ -35,6 +35,7 @@ import {
   type ParsedAiRedraftPayload,
 } from "@/lib/ai/suggestion-gating";
 import { resolveSection } from "@/lib/document-types";
+import { formatChartProvenance } from "@/lib/charts/chart-spec";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 import { splitPlainTextWithPlaceholders } from "@/lib/placeholders/plain-text-segments";
 import { inlineMarkdownToTextNodes } from "@/lib/tiptap/markdown-to-doc";
@@ -316,6 +317,11 @@ function SuggestionCardFace({
           {card.payload.insertImage.alt ? (
             <p className="text-[11px] text-[var(--muted-foreground)]">
               {card.payload.insertImage.alt}
+            </p>
+          ) : null}
+          {card.payload.insertImage.chartSpec ? (
+            <p className="text-[11px] text-[var(--muted-foreground)]">
+              {formatChartProvenance(card.payload.insertImage.chartSpec)}
             </p>
           ) : null}
         </div>

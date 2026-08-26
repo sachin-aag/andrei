@@ -108,24 +108,24 @@ export type MechanicalDvSectionMap = {
   revision_history: MechanicalTableSection;
 };
 
-/** Labels carry the report's own numbering so the workspace mirrors its TOC. */
+/** Workspace labels. Numbered headings (2.1, 4.3, …) live only in the export template. */
 export const MECHANICAL_DV_SECTION_LABELS: Record<
   MechanicalDvSectionKey,
   string
 > = {
   purpose: "Purpose",
   scope: "Scope",
-  testers_dates: "1. Testers/Dates",
-  executed_protocol: "2.1 Executed Protocol",
-  protocol_deviations: "2.2 Protocol Deviations",
-  units_under_test: "2.3 Units Under Test",
-  equipment_and_calibration: "2.4 Test Equipment",
-  failure_forms: "3. Failure/Out of Specification Forms",
-  data_collection_forms: "4.1 Data Collection Forms",
-  requirements_verified: "4.2 Requirements Verified",
-  observations: "4.3 Observations",
-  problems_resolution: "5. Problem or Failure Resolution",
-  conclusion: "6. Conclusion",
+  testers_dates: "Testers/Dates",
+  executed_protocol: "Executed Protocol",
+  protocol_deviations: "Protocol Deviations",
+  units_under_test: "Units Under Test",
+  equipment_and_calibration: "Test Equipment",
+  failure_forms: "Failure/Out of Specification Forms",
+  data_collection_forms: "Data Collection Forms",
+  requirements_verified: "Requirements Verified",
+  observations: "Observations",
+  problems_resolution: "Problem or Failure Resolution",
+  conclusion: "Conclusion",
   revision_history: "Revision History",
 };
 

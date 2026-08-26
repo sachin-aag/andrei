@@ -253,6 +253,14 @@ describe("buildChatTools tagged sections", () => {
       })
     ).toBe(false);
     expect(
+      accepts(tools, "plot_measurements", {
+        section: "control",
+        targetField: "narrative",
+        query: "M3-SYS-FN-037",
+        reasoning: "y",
+      })
+    ).toBe(false);
+    expect(
       accepts(tools, "draft_field", { ...edit, section: "define" })
     ).toBe(true);
   });
@@ -289,6 +297,29 @@ describe("buildChatTools insert_image", () => {
         },
       })
     ).toBe(true);
+  });
+});
+
+describe("buildChatTools plot_measurements", () => {
+  it("accepts a query and layout on an in-scope rich field", () => {
+    const tools = buildChatTools({ reportId: "report-1", canEdit: true });
+    expect(tools).toHaveProperty("plot_measurements");
+    expect(
+      accepts(tools, "plot_measurements", {
+        section: "define",
+        targetField: "narrative",
+        query: "M3-SYS-FN-037",
+        reasoning: "Engineer asked for a torque scatter plot",
+        layout: { mode: "combined", seriesBy: "unit", xAxis: "sequential" },
+      })
+    ).toBe(true);
+    expect(
+      accepts(tools, "plot_measurements", {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "missing query",
+      })
+    ).toBe(false);
   });
 });
 
