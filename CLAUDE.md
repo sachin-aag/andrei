@@ -290,12 +290,12 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
 **Data flow:**
 1. Opening Analytics `getOrCreate`s one worksheet per report (`statistical_workspaces.report_id` unique)
 2. Enter, paste, or ask the assistant to extract values from attachments (`extract_numeric_series` → `write_column`)
-3. `Stat → Normal Capability Sixpack…` (or `run_capability_sixpack`) computes I-MR limits, histogram, AD normal plot, Cp/Cpk/Pp/Ppk on the **server** (`computeCapabilitySixpack`)
-4. Editing the source column marks the analysis **stale** (`sourceHash`); Recompute refreshes results
+3. `Analyze {column}` (selected column), column-header context menu, or `Stat → Normal Capability Sixpack…` (or `run_capability_sixpack`) computes I-MR limits, histogram, AD normal plot, Cp/Cpk/Pp/Ppk on the **server** (`computeCapabilitySixpack`). Each run **inserts** a new `statistical_analyses` row — same-column titles become `Assay (2)`.
+4. Results lists every saved analysis; selecting one does not discard the others. Editing a source column marks that analysis **stale** (`sourceHash`); Recompute refreshes only that row.
 
 **Chat:** Tools are search/outline/page/extract/worksheet/sixpack only. No `propose_edit` / `draft_field` / Plan-Agent toggle. Do not add these tools to the report Plan-mode allowlist. Stub chat is text-only (`buildStubAnalyticsChatModel`).
 
-**Key invariant:** Analyses do not silently change when the worksheet changes. I-MR constants are Minitab n=2 (`d2=1.128`, `D4=3.267`, `E2=2.66`). Mutations use `canSaveReportSection` (same lock as section autosave).
+**Key invariant:** Analyses do not silently change when the worksheet changes, and a new run never overwrites an earlier sixpack. I-MR constants are Minitab n=2 (`d2=1.128`, `D4=3.267`, `E2=2.66`). Mutations use `canSaveReportSection` (same lock as section autosave).
 
 ## Subsystem: Audit Trail & E-Signatures
 

@@ -2,7 +2,10 @@ import { expect, test, type Page } from "@playwright/test";
 import { loginAsEngineer } from "./helpers/auth";
 import { createReport, deleteReport } from "./helpers/reports";
 import { applySampleAssay } from "@/lib/statistical-analysis/sample-data";
-import { createEmptyWorksheet } from "@/lib/statistical-analysis/worksheet";
+import {
+  createEmptyWorksheet,
+  replaceColumnValues,
+} from "@/lib/statistical-analysis/worksheet";
 import {
   chatUserMessage,
   expandReportSidebar,
@@ -17,6 +20,29 @@ async function openNormalSixpackDialog(page: Page): Promise<void> {
   await page.getByTestId("stat-normal-sixpack").click();
   await expect(page.getByTestId("capability-dialog")).toBeVisible();
 }
+
+const SAMPLE_MOISTURE = [
+  "4.12",
+  "4.08",
+  "4.21",
+  "3.97",
+  "4.15",
+  "4.09",
+  "4.18",
+  "4.02",
+  "4.11",
+  "4.25",
+  "3.99",
+  "4.14",
+  "4.07",
+  "4.19",
+  "4.03",
+  "4.16",
+  "4.10",
+  "4.22",
+  "4.05",
+  "4.13",
+];
 
 test.describe("report analytics", () => {
   let reportId: string | null = null;
@@ -73,6 +99,68 @@ test.describe("report analytics", () => {
     ).toBeVisible();
     await expect(page.getByText("Cpk")).toBeVisible();
     await expect(page.getByTestId("analysis-list")).toBeVisible();
+  });
+
+  test("saves a sixpack per column and switches between them", async ({
+    page,
+  }) => {
+    test.setTimeout(90_000);
+    if (!reportId) throw new Error("missing report");
+
+    let sheet = applySampleAssay(createEmptyWorksheet(), 0);
+    sheet = replaceColumnValues(sheet, 1, SAMPLE_MOISTURE, "Moisture");
+    const patched = await page.request.patch(
+      `/api/reports/${reportId}/analytics`,
+      { data: { worksheet: sheet } }
+    );
+    expect(patched.ok()).toBeTruthy();
+
+    await openReportAnalytics(page);
+    await expect(page.getByTestId("worksheet-grid")).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByTestId("column-header-c1")).toHaveText("Assay");
+    await expect(page.getByTestId("analyze-selected-column")).toHaveText(
+      /analyze assay/i
+    );
+
+    await page.getByTestId("analyze-selected-column").click();
+    await expect(page.getByTestId("capability-dialog")).toBeVisible();
+    await expect(page.getByTestId("sixpack-column")).toContainText("Assay");
+    await page.getByTestId("sixpack-lsl").fill("90");
+    await page.getByTestId("sixpack-usl").fill("110");
+    await page.getByTestId("sixpack-target").fill("100");
+    await page.getByRole("dialog").getByRole("button", { name: /^ok$/i }).click();
+    await expect(page.getByTestId("capability-sixpack")).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(
+      page.getByText(/process capability sixpack of assay/i)
+    ).toBeVisible();
+
+    await page.getByTestId("workspace-tab-worksheet").click();
+    await page.getByTestId("column-header-c2").click({ button: "right" });
+    await page.getByTestId("column-analyze-c2").click();
+    await expect(page.getByTestId("capability-dialog")).toBeVisible();
+    await expect(page.getByTestId("sixpack-column")).toContainText("Moisture");
+    await page.getByTestId("sixpack-lsl").fill("3.5");
+    await page.getByTestId("sixpack-usl").fill("4.5");
+    await page.getByTestId("sixpack-target").fill("4");
+    await page.getByRole("dialog").getByRole("button", { name: /^ok$/i }).click();
+    await expect(
+      page.getByText(/process capability sixpack of moisture/i)
+    ).toBeVisible({ timeout: 30_000 });
+
+    const list = page.getByTestId("analysis-list");
+    await expect(list.locator("[data-analysis-title]")).toHaveCount(2);
+    await list.locator("[data-analysis-title='Assay']").click();
+    await expect(
+      page.getByText(/process capability sixpack of assay/i)
+    ).toBeVisible();
+    await list.locator("[data-analysis-title='Moisture']").click();
+    await expect(
+      page.getByText(/process capability sixpack of moisture/i)
+    ).toBeVisible();
   });
 
   test("marks a sixpack stale after the source column changes", async ({

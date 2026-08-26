@@ -28,5 +28,5 @@ export {
 } from "./worksheet";
 export { applySampleAssay, SAMPLE_ASSAY_COLUMN_NAME } from "./sample-data";
 export { computeCapabilitySixpack } from "./sixpack";
-export { formatLimit, formatPpm, formatPValue, formatStat } from "./format";
+export { formatLimit, formatPpm, formatPValue, formatStat, formatSpecSummary } from "./format";
 export { isStatisticalAnalysisEnabled } from "@/lib/customers/packs";

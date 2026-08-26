@@ -9,7 +9,13 @@ import {
   rowCount,
   setCell,
 } from "@/lib/statistical-analysis/worksheet";
-import type { WorksheetData } from "@/lib/statistical-analysis/types";
+import type { WorksheetColumn, WorksheetData } from "@/lib/statistical-analysis/types";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 
 export type GridSelection = { col: number; row: number };
 
@@ -19,6 +25,7 @@ type WorksheetGridProps = {
   onSelectionChange: (selection: GridSelection) => void;
   onChange: (worksheet: WorksheetData) => void;
   readOnly?: boolean;
+  onAnalyzeColumn?: (colIndex: number) => void;
 };
 
 const EXTRA_EMPTY_ROWS = 8;
@@ -31,12 +38,106 @@ function isPrintableKey(event: React.KeyboardEvent): boolean {
   return event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey;
 }
 
+function WorksheetColumnHeader({
+  column,
+  selected,
+  editing,
+  headerDraft,
+  headerInputRef,
+  readOnly,
+  onSelect,
+  onBeginRename,
+  onHeaderDraftChange,
+  onCommitHeader,
+  onCancelHeader,
+  onAnalyze,
+}: {
+  column: WorksheetColumn;
+  selected: boolean;
+  editing: boolean;
+  headerDraft: string;
+  headerInputRef: React.RefObject<HTMLInputElement | null>;
+  readOnly: boolean;
+  onSelect: () => void;
+  onBeginRename: () => void;
+  onHeaderDraftChange: (value: string) => void;
+  onCommitHeader: () => void;
+  onCancelHeader: () => void;
+  onAnalyze?: () => void;
+}) {
+  const headerClass = cn(
+    "min-w-[6.5rem] border border-[var(--border)] bg-[var(--secondary)] px-1 py-1 font-medium",
+    selected && "bg-[var(--brand-100)]"
+  );
+
+  const headerBody = editing ? (
+    <input
+      ref={headerInputRef}
+      value={headerDraft}
+      aria-label="Column name"
+      className="h-6 w-full rounded-sm border border-[var(--ring)] bg-[var(--input)] px-1 text-xs font-medium"
+      onChange={(event) => onHeaderDraftChange(event.target.value)}
+      onBlur={onCommitHeader}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          onCommitHeader();
+        }
+        if (event.key === "Escape") {
+          event.preventDefault();
+          onCancelHeader();
+        }
+      }}
+    />
+  ) : (
+    <button
+      type="button"
+      data-testid={`column-header-${column.id}`}
+      className="w-full truncate px-1 text-left font-medium"
+      onClick={onSelect}
+      onDoubleClick={() => {
+        if (readOnly) return;
+        onBeginRename();
+      }}
+    >
+      {column.name}
+    </button>
+  );
+
+  if (readOnly || !onAnalyze || editing) {
+    return (
+      <th scope="col" className={headerClass}>
+        {headerBody}
+      </th>
+    );
+  }
+
+  return (
+    <th scope="col" className={headerClass}>
+      <ContextMenu>
+        <ContextMenuTrigger asChild>
+          <div>{headerBody}</div>
+        </ContextMenuTrigger>
+        <ContextMenuContent>
+          <ContextMenuItem
+            data-testid={`column-analyze-${column.id}`}
+            onSelect={onAnalyze}
+          >
+            Analyze {column.name}…
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
+    </th>
+  );
+}
+
 export function WorksheetGrid({
   worksheet,
   selection,
   onSelectionChange,
   onChange,
   readOnly = false,
+  onAnalyzeColumn,
 }: WorksheetGridProps) {
   const gridRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -205,55 +306,34 @@ export function WorksheetGrid({
               className="sticky left-0 z-30 w-10 min-w-10 border border-[var(--border)] bg-[var(--secondary)] font-medium text-[var(--muted-foreground)]"
               scope="col"
             />
-            {columns.map((column, colIndex) => {
-              const selected = selection.col === colIndex;
-              return (
-                <th
-                  key={column.id}
-                  scope="col"
-                  className={cn(
-                    "min-w-[6.5rem] border border-[var(--border)] bg-[var(--secondary)] px-1 py-1 font-medium",
-                    selected && "bg-[var(--brand-100)]"
-                  )}
-                >
-                  {editingHeader === colIndex ? (
-                    <input
-                      ref={headerInputRef}
-                      value={headerDraft}
-                      aria-label="Column name"
-                      className="h-6 w-full rounded-sm border border-[var(--ring)] bg-[var(--input)] px-1 text-xs font-medium"
-                      onChange={(event) => setHeaderDraft(event.target.value)}
-                      onBlur={commitHeader}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          commitHeader();
-                        }
-                        if (event.key === "Escape") {
-                          event.preventDefault();
-                          setEditingHeader(null);
-                          gridRef.current?.focus();
-                        }
-                      }}
-                    />
-                  ) : (
-                    <button
-                      type="button"
-                      data-testid={`column-header-${column.id}`}
-                      className="w-full truncate px-1 text-left font-medium"
-                      onClick={() => select({ col: colIndex, row: selection.row })}
-                      onDoubleClick={() => {
-                        if (readOnly) return;
-                        setEditingHeader(colIndex);
-                        setHeaderDraft(column.name);
-                      }}
-                    >
-                      {column.name}
-                    </button>
-                  )}
-                </th>
-              );
-            })}
+            {columns.map((column, colIndex) => (
+              <WorksheetColumnHeader
+                key={column.id}
+                column={column}
+                selected={selection.col === colIndex}
+                editing={editingHeader === colIndex}
+                headerDraft={headerDraft}
+                headerInputRef={headerInputRef}
+                readOnly={readOnly}
+                onSelect={() => select({ col: colIndex, row: selection.row })}
+                onBeginRename={() => {
+                  if (readOnly) return;
+                  setEditingHeader(colIndex);
+                  setHeaderDraft(column.name);
+                }}
+                onHeaderDraftChange={setHeaderDraft}
+                onCommitHeader={commitHeader}
+                onCancelHeader={() => {
+                  setEditingHeader(null);
+                  gridRef.current?.focus();
+                }}
+                onAnalyze={
+                  onAnalyzeColumn
+                    ? () => onAnalyzeColumn(colIndex)
+                    : undefined
+                }
+              />
+            ))}
           </tr>
         </thead>
         <tbody>

@@ -2,8 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAutoSave, type SaveStatus } from "@/hooks/use-auto-save";
+import { formatSpecSummary } from "@/lib/statistical-analysis/format";
 import {
   createCapabilitySixpack,
   deleteCapabilitySixpack,
@@ -82,6 +84,7 @@ export function StatisticalWorkspace({
   const [tab, setTab] = useState("worksheet");
   const [selectedAnalysisId, setSelectedAnalysisId] = useState<string | null>(null);
   const [capabilityOpen, setCapabilityOpen] = useState(false);
+  const [capabilityColumnId, setCapabilityColumnId] = useState("");
   const [capabilitySubmitting, setCapabilitySubmitting] = useState(false);
   const [capabilityError, setCapabilityError] = useState<string | null>(null);
   const [recomputing, setRecomputing] = useState(false);
@@ -89,12 +92,21 @@ export function StatisticalWorkspace({
   const [loadError, setLoadError] = useState<string | null>(null);
   const analysisCountRef = useRef(0);
 
-  const applyAnalytics = useCallback((next: ReportAnalyticsView) => {
+  const applyAnalytics = useCallback((
+    next: ReportAnalyticsView,
+    opts?: { selectAnalysisId?: string }
+  ) => {
     setWorksheet(next.worksheet);
     setPersistedWorksheet(next.worksheet);
     setAnalyses(next.analyses);
     analysisCountRef.current = next.analyses.length;
     setSelectedAnalysisId((current) => {
+      if (
+        opts?.selectAnalysisId &&
+        next.analyses.some((item) => item.id === opts.selectAnalysisId)
+      ) {
+        return opts.selectAnalysisId;
+      }
       if (current && next.analyses.some((item) => item.id === current)) {
         return current;
       }
@@ -173,12 +185,15 @@ export function StatisticalWorkspace({
     displayedAnalyses[0] ??
     null;
 
-  const selectedColumnId =
-    worksheet.columns[selection.col]?.id ?? worksheet.columns[0]?.id ?? "";
+  const selectedColumn =
+    worksheet.columns[selection.col] ?? worksheet.columns[0] ?? null;
+  const selectedColumnId = selectedColumn?.id ?? "";
+  const selectedColumnName = selectedColumn?.name ?? "column";
 
-  const handleNormalSixpack = async () => {
+  const openSixpackForColumn = async (columnId: string) => {
     if (readOnly) return;
     await flush().catch(() => undefined);
+    setCapabilityColumnId(columnId);
     setCapabilityError(null);
     setCapabilityOpen(true);
   };
@@ -218,33 +233,46 @@ export function StatisticalWorkspace({
               {readOnly ? "View only" : saveLabel(status)}
             </span>
           </div>
-          <WorkspaceMenubar
-            readOnly={readOnly}
-            onInsertColumn={() => {
-              setWorksheet((current) => insertColumn(current, selection.col));
-            }}
-            onDeleteColumn={() => {
-              setWorksheet((current) => {
-                const next = deleteColumn(current, selection.col);
-                setSelection((sel) => ({
-                  ...sel,
-                  col: Math.min(sel.col, next.columns.length - 1),
-                }));
-                return next;
-              });
-            }}
-            onInsertRow={() => {
-              setWorksheet((current) => insertRow(current, selection.row));
-            }}
-            onDeleteRow={() => {
-              setWorksheet((current) => deleteRow(current, selection.row));
-            }}
-            onLoadSample={() => {
-              setWorksheet((current) => applySampleAssay(current, selection.col));
-              toast.success("Loaded sample assay measurements into the selected column.");
-            }}
-            onNormalSixpack={() => void handleNormalSixpack()}
-          />
+          <div className="flex flex-wrap items-center gap-1">
+            <WorkspaceMenubar
+              readOnly={readOnly}
+              onInsertColumn={() => {
+                setWorksheet((current) => insertColumn(current, selection.col));
+              }}
+              onDeleteColumn={() => {
+                setWorksheet((current) => {
+                  const next = deleteColumn(current, selection.col);
+                  setSelection((sel) => ({
+                    ...sel,
+                    col: Math.min(sel.col, next.columns.length - 1),
+                  }));
+                  return next;
+                });
+              }}
+              onInsertRow={() => {
+                setWorksheet((current) => insertRow(current, selection.row));
+              }}
+              onDeleteRow={() => {
+                setWorksheet((current) => deleteRow(current, selection.row));
+              }}
+              onLoadSample={() => {
+                setWorksheet((current) => applySampleAssay(current, selection.col));
+                toast.success("Loaded sample assay measurements into the selected column.");
+              }}
+              onNormalSixpack={() => void openSixpackForColumn(selectedColumnId)}
+            />
+            {readOnly ? null : (
+              <Button
+                type="button"
+                size="sm"
+                data-testid="analyze-selected-column"
+                disabled={!selectedColumnId}
+                onClick={() => void openSixpackForColumn(selectedColumnId)}
+              >
+                Analyze {selectedColumnName}
+              </Button>
+            )}
+          </div>
         </div>
       </header>
 
@@ -268,6 +296,9 @@ export function StatisticalWorkspace({
               className="rounded-none border-b-2 border-transparent data-[state=active]:border-[var(--brand-600)] data-[state=active]:bg-transparent data-[state=active]:text-[var(--foreground)] data-[state=active]:shadow-none"
             >
               Results
+              {displayedAnalyses.length > 0
+                ? ` (${displayedAnalyses.length})`
+                : ""}
             </TabsTrigger>
           </TabsList>
         </div>
@@ -282,6 +313,12 @@ export function StatisticalWorkspace({
             onSelectionChange={setSelection}
             onChange={setWorksheet}
             readOnly={readOnly}
+            onAnalyzeColumn={(colIndex) => {
+              const column = worksheet.columns[colIndex];
+              if (!column) return;
+              setSelection((sel) => ({ ...sel, col: colIndex }));
+              void openSixpackForColumn(column.id);
+            }}
           />
         </TabsContent>
 
@@ -292,9 +329,11 @@ export function StatisticalWorkspace({
           {displayedAnalyses.length === 0 ? (
             <div className="flex flex-1 items-center justify-center p-8 text-center">
               <p className="max-w-md text-sm text-[var(--muted-foreground)]">
-                Run <strong>Stat → Normal Capability Sixpack…</strong> to analyze
-                a worksheet column, or ask the assistant to extract numbers from
-                attachments and plot them.
+                Select a worksheet column and click{" "}
+                <strong>Analyze {selectedColumnName}</strong>, or{" "}
+                <strong>Stat → Normal Capability Sixpack…</strong>. Each run is
+                saved as its own result — you can analyze Assay, Moisture, and
+                more on the same report.
               </p>
             </div>
           ) : (
@@ -303,35 +342,65 @@ export function StatisticalWorkspace({
                 data-testid="analysis-list"
                 className="w-56 shrink-0 overflow-y-auto border-r border-[var(--border)] p-2"
               >
-                <p className="px-2 pb-2 text-[10px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
-                  Analyses
-                </p>
+                <div className="flex items-center justify-between gap-2 px-2 pb-2">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
+                    Analyses
+                  </p>
+                  {readOnly ? null : (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-6 px-1.5 text-[11px]"
+                      data-testid="new-analysis"
+                      onClick={() => void openSixpackForColumn(selectedColumnId)}
+                    >
+                      New
+                    </Button>
+                  )}
+                </div>
                 <ul className="space-y-1">
-                  {displayedAnalyses.map((analysis) => (
-                    <li key={analysis.id}>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedAnalysisId(analysis.id)}
-                        className={`w-full rounded-md px-2 py-2 text-left text-xs transition-colors ${
-                          selectedAnalysis?.id === analysis.id
-                            ? "bg-[var(--brand-700)] text-white"
-                            : "hover:bg-[var(--secondary)]"
-                        }`}
-                      >
-                        <span className="block font-medium">{analysis.title}</span>
-                        <span
-                          className={`block ${
-                            selectedAnalysis?.id === analysis.id
-                              ? "text-white/80"
-                              : "text-[var(--muted-foreground)]"
+                  {displayedAnalyses.map((analysis) => {
+                    const active = selectedAnalysis?.id === analysis.id;
+                    const specs = formatSpecSummary(analysis.config);
+                    return (
+                      <li key={analysis.id}>
+                        <button
+                          type="button"
+                          data-testid={`analysis-item-${analysis.id}`}
+                          data-analysis-title={analysis.title}
+                          onClick={() => setSelectedAnalysisId(analysis.id)}
+                          className={`w-full rounded-md px-2 py-2 text-left text-xs transition-colors ${
+                            active
+                              ? "bg-[var(--brand-700)] text-white"
+                              : "hover:bg-[var(--secondary)]"
                           }`}
                         >
-                          {analysis.stale ? "Needs recompute · " : ""}
-                          {new Date(analysis.createdAt).toLocaleString()}
-                        </span>
-                      </button>
-                    </li>
-                  ))}
+                          <span className="block font-medium">{analysis.title}</span>
+                          <span
+                            className={`block ${
+                              active
+                                ? "text-white/80"
+                                : "text-[var(--muted-foreground)]"
+                            }`}
+                          >
+                            {analysis.config.columnName}
+                            {specs ? ` · ${specs}` : ""}
+                          </span>
+                          <span
+                            className={`block ${
+                              active
+                                ? "text-white/80"
+                                : "text-[var(--muted-foreground)]"
+                            }`}
+                          >
+                            {analysis.stale ? "Needs recompute · " : ""}
+                            {new Date(analysis.createdAt).toLocaleString()}
+                          </span>
+                        </button>
+                      </li>
+                    );
+                  })}
                 </ul>
               </aside>
               <div className="min-w-0 flex-1 overflow-hidden">
@@ -387,7 +456,7 @@ export function StatisticalWorkspace({
         key={capabilityOpen ? "open" : "closed"}
         open={capabilityOpen}
         worksheet={worksheet}
-        defaultColumnId={selectedColumnId}
+        defaultColumnId={capabilityColumnId || selectedColumnId}
         submitting={capabilitySubmitting}
         error={capabilityError}
         onOpenChange={setCapabilityOpen}
@@ -396,14 +465,16 @@ export function StatisticalWorkspace({
           setCapabilityError(null);
           try {
             await flush().catch(() => undefined);
-            const next = await createCapabilitySixpack(reportId, {
+            const created = await createCapabilitySixpack(reportId, {
               columnId: values.columnId,
               title: values.title || undefined,
               lsl: values.lsl,
               usl: values.usl,
               target: values.target,
             });
-            applyAnalytics(next);
+            applyAnalytics(created.analytics, {
+              selectAnalysisId: created.analysisId,
+            });
             setCapabilityOpen(false);
             setTab("results");
           } catch (error) {

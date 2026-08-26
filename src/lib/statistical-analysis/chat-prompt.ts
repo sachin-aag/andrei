@@ -7,7 +7,7 @@ import type { ReportAnalyticsView } from "./types";
 import { columnNumericValues, trimTrailingEmpty } from "./worksheet";
 
 /** Bump when analytics chat policy / tool instructions change. */
-export const ANALYTICS_CHAT_PROMPT_VERSION = "analytics-chat-v1";
+export const ANALYTICS_CHAT_PROMPT_VERSION = "analytics-chat-v2";
 
 const DOCUMENT_RULES = `## Attachments
 Ready files on this report are listed below. The document index (filename / topics) is not evidence — search or read pages before quoting numbers.
@@ -19,6 +19,8 @@ OCR / data-pull path:
 2. read_document_page and/or extract_numeric_series (cap 6 pages)
 3. write_column with the numeric series
 4. run_capability_sixpack when the engineer wants a plot (needs LSL and/or USL)
+
+Each run_capability_sixpack **creates a new saved analysis**. Do not treat a second run as a replacement. Different columns, or the same column with different specs, are separate Results entries.
 
 After a sixpack is saved, tell them to open the Results tab. Do not claim you rendered the chart in chat.`;
 

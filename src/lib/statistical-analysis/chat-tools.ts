@@ -364,7 +364,7 @@ export function buildAnalyticsChatTools(opts: {
 
     statsTools.run_capability_sixpack = tool({
       description:
-        "Compute and save a Normal Capability Sixpack (I-MR) for a worksheet column. Requires LSL and/or USL. Tell the engineer to open the Results tab.",
+        "Compute and save a new Normal Capability Sixpack (I-MR) for a worksheet column. Requires LSL and/or USL. Does not replace earlier analyses. Tell the engineer to open the Results tab.",
       inputSchema: capabilitySixpackInputSchema,
       execute: async (input) => {
         const created = await getOrCreateReportAnalytics(reportId);
@@ -390,6 +390,9 @@ export function buildAnalyticsChatTools(opts: {
           status: "ok" as const,
           analysisId: result.analysis.id,
           title: result.analysis.title,
+          columnId: result.analysis.config.columnId,
+          columnName: result.analysis.config.columnName,
+          analysisCount: result.analytics.analyses.length,
           n: result.analysis.results.n,
           mean: result.analysis.results.mean,
           cp: result.analysis.results.capability.cp,

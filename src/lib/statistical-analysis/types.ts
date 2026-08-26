@@ -141,7 +141,11 @@ export type StatisticalAnalysisSummary = {
   createdAt: string;
 };
 
-/** One analytics worksheet per report (1:1 with `statistical_workspaces`). */
+/**
+ * One analytics worksheet per report (1:1 with `statistical_workspaces`).
+ * Saved sixpacks live in `analyses` — many per report, never overwritten
+ * by a later run on the same column.
+ */
 export type ReportAnalyticsView = {
   id: string;
   reportId: string;

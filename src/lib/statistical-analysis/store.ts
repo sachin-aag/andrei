@@ -11,6 +11,7 @@ import type {
   StatisticalAnalysisSummary,
   WorksheetData,
 } from "./types";
+import { nextAnalysisTitle } from "./analysis-title";
 import { createEmptyWorksheet, findColumn } from "./worksheet";
 import { hashColumnSource } from "./hash";
 import { computeCapabilitySixpack } from "./sixpack";
@@ -176,10 +177,15 @@ export async function createAnalysisForReport(
     return { ok: false, status: 400, error: "Select a worksheet column." };
   }
 
+  const title = nextAnalysisTitle(
+    analytics.analyses.map((item) => item.title),
+    parsed.data.title?.trim() || column.name
+  );
+
   const config: CapabilitySixpackConfig = {
     columnId: column.id,
     columnName: column.name,
-    title: parsed.data.title?.trim() || column.name,
+    title,
     lsl: parsed.data.lsl,
     usl: parsed.data.usl,
     target: parsed.data.target,

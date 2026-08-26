@@ -25,3 +25,15 @@ export function formatPpm(value: number | null | undefined): string {
 export function formatLimit(value: number): string {
   return formatStat(value, 2);
 }
+
+export function formatSpecSummary(config: {
+  lsl: number | null;
+  usl: number | null;
+  target: number | null;
+}): string {
+  const parts: string[] = [];
+  if (config.lsl != null) parts.push(`LSL ${formatLimit(config.lsl)}`);
+  if (config.target != null) parts.push(`Target ${formatLimit(config.target)}`);
+  if (config.usl != null) parts.push(`USL ${formatLimit(config.usl)}`);
+  return parts.join(" · ");
+}

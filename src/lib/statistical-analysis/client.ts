@@ -51,14 +51,22 @@ export async function createCapabilitySixpack(
     usl: number | null;
     target: number | null;
   }
-): Promise<ReportAnalyticsView> {
+): Promise<{ analytics: ReportAnalyticsView; analysisId: string }> {
   const response = await fetch(analyticsUrl(reportId, "/analyses"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(input),
   });
   if (!response.ok) throw new Error(await readError(response));
-  return parseAnalytics(response);
+  const body = (await response.json()) as {
+    analytics: ReportAnalyticsView;
+    analysis?: { id: string };
+  };
+  const analysisId = body.analysis?.id ?? body.analytics.analyses[0]?.id;
+  if (!analysisId) {
+    throw new Error("The analysis was saved but no id was returned.");
+  }
+  return { analytics: body.analytics, analysisId };
 }
 
 export async function recomputeCapabilitySixpack(
