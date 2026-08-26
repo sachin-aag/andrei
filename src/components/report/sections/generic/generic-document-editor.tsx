@@ -55,7 +55,7 @@ export function GenericDocumentEditor() {
           </div>
         </div>
       ) : null}
-      <div className="flex flex-wrap items-start justify-center gap-6 pl-16">
+      <div className="flex items-start justify-center gap-6 overflow-x-auto pl-16">
         <PagedDocumentSurface>
           <TiptapSectionField
             section={GENERIC_DOCUMENT_SECTION}
