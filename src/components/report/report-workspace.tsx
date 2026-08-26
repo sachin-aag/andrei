@@ -33,7 +33,7 @@ import {
   scrollToGutterAnchor,
 } from "@/lib/comments/navigate";
 import { evaluatableSectionKeys } from "@/lib/ai/criteria-view";
-import { getWorkspaceSections } from "@/lib/document-types";
+import { getDocumentType, getWorkspaceSections, workspacePresentationFor } from "@/lib/document-types";
 import { scrollToGeneratedSuggestion } from "@/lib/suggestions/navigate-suggestion";
 import { captureEvent } from "@/lib/analytics/events";
 import { getCustomerPack, isStatisticalAnalysisEnabled } from "@/lib/customers/packs";
@@ -230,6 +230,9 @@ export function ReportWorkspace({
     null
   );
   const documentType = report.documentType;
+  const continuousDocument =
+    workspacePresentationFor(getDocumentType(documentType)).kind ===
+    "continuous_document";
   const statsEnabled = isStatisticalAnalysisEnabled();
   const analyticsSurface = surface === "analytics";
   const analyticsCanEdit = canSaveReportSection(
@@ -668,7 +671,9 @@ export function ReportWorkspace({
             "@container min-h-0 min-w-0 flex-1 bg-[var(--background)]",
             analyticsSurface
               ? "flex flex-col overflow-hidden"
-              : "overflow-auto"
+              : continuousDocument
+                ? "overflow-auto bg-[var(--muted)]"
+                : "overflow-auto"
           )}
         >
           {analyticsSurface ? (
@@ -694,7 +699,10 @@ export function ReportWorkspace({
           ) : (
           <div
             className={cn(
-              "mx-auto grid w-full min-w-0 grid-cols-1 gap-8 px-6 py-8 pb-24 max-w-[1180px]",
+              "mx-auto grid w-full min-w-0 grid-cols-1 gap-8 pb-24",
+              continuousDocument
+                ? "max-w-none px-4 py-6"
+                : "max-w-[1180px] px-6 py-8",
               showReviewGutter &&
                 "@[800px]:grid-cols-[minmax(0,1fr)_minmax(200px,360px)]"
             )}
@@ -703,7 +711,7 @@ export function ReportWorkspace({
               <ReportHeader />
               <div
                 hidden={!!activeAttachmentId}
-                className="space-y-10 min-w-0"
+                className={cn("min-w-0", continuousDocument ? "space-y-4" : "space-y-10")}
               >
                 {getWorkspaceSections(report.documentType).map((section) => {
                   const s = section.key;

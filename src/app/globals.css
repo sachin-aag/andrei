@@ -1068,3 +1068,63 @@ html[data-customer="convergent"] {
   overflow-x: auto;
   max-width: 100%;
 }
+
+/* Generic document: one TipTap field laid out as US Letter pages. */
+.generic-paged-document {
+  --generic-page-width: 8.5in;
+  --generic-page-height: 11in;
+  --generic-page-margin: 0.9in;
+  --generic-page-gap: 2rem;
+  width: min(100%, var(--generic-page-width));
+  min-height: var(--generic-page-height);
+  margin-bottom: 2.5rem;
+}
+
+.generic-page-metric {
+  width: 1px;
+  height: var(--generic-page-height);
+}
+
+.generic-page-sheet {
+  min-height: var(--generic-page-height);
+  background: var(--card);
+  box-shadow:
+    0 1px 3px rgb(15 30 51 / 0.08),
+    0 10px 28px rgb(15 30 51 / 0.1);
+}
+
+.generic-paged-document [data-editor-chrome="page"] .ProseMirror {
+  min-height: calc(var(--generic-page-height) - 2 * var(--generic-page-margin));
+  padding: var(--generic-page-margin);
+  padding-bottom: calc(var(--generic-page-margin) + 0.5rem);
+  font-size: 12pt;
+  line-height: 1.5;
+}
+
+.generic-page-separator {
+  left: -1.5rem;
+  right: -1.5rem;
+  height: var(--generic-page-gap);
+  transform: translateY(-50%);
+  background: var(--muted);
+  box-shadow:
+    inset 0 10px 10px -10px rgb(15 30 51 / 0.22),
+    inset 0 -10px 10px -10px rgb(15 30 51 / 0.22);
+}
+
+.generic-page-separator-label {
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--card);
+  padding: 0.125rem 0.5rem;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--muted-foreground);
+}
+
+.generic-page-number {
+  right: 0.9in;
+  font-size: 10px;
+  color: var(--muted-foreground);
+}

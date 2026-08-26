@@ -2,11 +2,14 @@
 
 import type { JSONContent } from "@tiptap/core";
 import { AlertTriangle } from "lucide-react";
-import { SectionShell } from "@/components/report/sections/section-shell";
 import { TiptapSectionField } from "@/components/report/tiptap-section-field";
-import { useGenericReportSection } from "@/providers/report-provider";
+import { SaveStatus } from "@/components/report/save-status";
+import { PagedDocumentSurface } from "@/components/report/sections/generic/paged-document-surface";
+import {
+  useGenericReportSection,
+  useReportData,
+} from "@/providers/report-provider";
 import { useGenericSectionSave } from "@/hooks/use-generic-section-save";
-import { useReportData } from "@/providers/report-provider";
 import type { GenericDocumentMetadata } from "@/db/schema";
 import { GENERIC_DOCUMENT_SECTION } from "@/lib/document-types/generic/sections";
 
@@ -23,15 +26,14 @@ export function GenericDocumentEditor() {
   const meta = report.metadata as GenericDocumentMetadata;
   const importWarnings = meta.importWarnings ?? [];
   const importedFrom = meta.importedFromFilename;
+  const title = report.documentNo.trim() || "Untitled";
 
   return (
-    <SectionShell
-      title="Document"
-      description="A continuous Word-like body. Use headings from the toolbar. AI edits stay as tracked changes when you accept them."
-      status={status}
-      lastSavedAt={lastSavedAt}
-      section={GENERIC_DOCUMENT_SECTION}
-    >
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <h2 className="truncate text-xl font-semibold">{title}</h2>
+        <SaveStatus status={status} lastSavedAt={lastSavedAt ?? null} />
+      </div>
       {importWarnings.length > 0 ? (
         <div
           role="status"
@@ -50,16 +52,17 @@ export function GenericDocumentEditor() {
           </div>
         </div>
       ) : null}
-      <TiptapSectionField
-        section={GENERIC_DOCUMENT_SECTION}
-        contentPath="narrative"
-        label="Body"
-        placeholder="Start writing, or ask the assistant to draft. Headings, lists, tables, and images are supported."
-        className="grid gap-2"
-        value={content.narrative}
-        onChange={(doc) => update((p) => ({ ...p, narrative: doc }))}
-        onFlushSave={flushSave}
-      />
-    </SectionShell>
+      <PagedDocumentSurface>
+        <TiptapSectionField
+          section={GENERIC_DOCUMENT_SECTION}
+          contentPath="narrative"
+          chrome="page"
+          placeholder="Start writing, or ask the assistant to draft."
+          value={content.narrative}
+          onChange={(doc) => update((p) => ({ ...p, narrative: doc }))}
+          onFlushSave={flushSave}
+        />
+      </PagedDocumentSurface>
+    </div>
   );
 }

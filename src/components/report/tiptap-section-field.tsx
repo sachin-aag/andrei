@@ -280,7 +280,8 @@ function TableEditToolbar({
 export type TiptapSectionFieldProps = {
   section: SectionType;
   contentPath: string;
-  label: string;
+  /** Omit to hide the uppercase field label (paged documents). */
+  label?: string;
   placeholder?: string;
   className?: string;
   value: JSONContent;
@@ -291,6 +292,8 @@ export type TiptapSectionFieldProps = {
   locked?: boolean;
   /** Shrink the editor chrome for read-only blocks (e.g. signature tables). */
   compact?: boolean;
+  /** `page` is a Letter-sized surface without the boxed input chrome. */
+  chrome?: "input" | "page";
 };
 
 export function TiptapSectionField({
@@ -303,6 +306,7 @@ export function TiptapSectionField({
   onChange,
   locked = false,
   compact = false,
+  chrome = "input",
 }: TiptapSectionFieldProps) {
   const {
     report,
@@ -1024,9 +1028,11 @@ export function TiptapSectionField({
       {inactiveSuggestionCss ? (
         <style dangerouslySetInnerHTML={{ __html: inactiveSuggestionCss }} />
       ) : null}
-      <div className="mb-1.5 flex flex-wrap items-center gap-2">
-        <Label>{label}</Label>
-      </div>
+      {label ? (
+        <div className="mb-1.5 flex flex-wrap items-center gap-2">
+          <Label>{label}</Label>
+        </div>
+      ) : null}
 
       {editor && editable && activeEditorKey === thisEditorKey && (
         <FloatingMenu
@@ -1148,10 +1154,15 @@ export function TiptapSectionField({
 
       <div
         className={cn(
-          "min-w-0 max-w-full rounded-md border border-[var(--border)] bg-[var(--input)] px-3 py-2 text-sm leading-relaxed focus-within:ring-2 focus-within:ring-[var(--ring)]",
+          "min-w-0 max-w-full text-sm leading-relaxed",
+          chrome === "page"
+            ? "bg-transparent"
+            : "rounded-md border border-[var(--border)] bg-[var(--input)] px-3 py-2 focus-within:ring-2 focus-within:ring-[var(--ring)]",
           compact
             ? "[&_.ProseMirror]:min-h-0 [&_.ProseMirror>p.is-empty:last-child]:hidden [&_.ProseMirror_table]:my-0"
-            : "min-h-[200px] [&_.ProseMirror]:min-h-[180px]",
+            : chrome === "page"
+              ? "[&_.ProseMirror]:min-h-[calc(var(--generic-page-height)-2*var(--generic-page-margin))]"
+              : "min-h-[200px] [&_.ProseMirror]:min-h-[180px]",
           "[&_.ProseMirror]:outline-none",
           "[&_.tiptap-image-inline]:my-1 [&_.tiptap-image-inline]:max-w-full [&_.tiptap-image-inline]:h-auto [&_.tiptap-image-inline]:rounded-sm",
           "[&_.tiptap-math-block]:my-2",
@@ -1159,8 +1170,10 @@ export function TiptapSectionField({
           previewHeld && "suggestion-field-settling"
         )}
         data-field-anchor={`${section}.${contentPath}`}
+        data-editor-chrome={chrome}
         data-active-suggestion-id={activeSuggestionId ?? ""}
         data-suggestion-preview-held={previewHeldMode}
+        {...(chrome === "page" ? { "aria-label": "Document body" } : {})}
       >
         {editor ? <EditorContent editor={editor} /> : null}
       </div>

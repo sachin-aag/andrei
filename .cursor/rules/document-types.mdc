@@ -51,3 +51,5 @@ const sections = getWorkspaceSections(report.documentType);
   (`wordImport.kind === "generic_body"` — do **not** set pack `wordImportEnabled`
   on demo), and accepting AI suggestions uses `suggestionApplyMode: "tracked_change"`
   (pending insert/delete marks persist and export as Word tracked changes).
+  The editor is one TipTap field laid out as Letter pages (`PagedDocumentSurface`);
+  do not persist page-break nodes.
