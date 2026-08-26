@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("bumps the prompt version when insert_image and citation-marker guidance change", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v45-plot-measurements");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v46-convergent-analytics-plots");
   });
 
   it("puts citations at the end of the section when the pack mode is on", () => {
@@ -130,7 +130,11 @@ describe("buildChatSystemPrompt", () => {
   });
 
   it("routes figure placement to insert_image instead of markdown", () => {
-    const prompt = buildChatSystemPrompt({ ...opts, mode: "agent" });
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      includePlotMeasurements: true,
+    });
     expect(prompt).toContain("insert_image");
     expect(prompt).toContain("source=chat");
     expect(prompt).toContain("Do not invent or generate pixels — use plot_measurements");
@@ -141,7 +145,11 @@ describe("buildChatSystemPrompt", () => {
   });
 
   it("routes figure removal to remove_image instead of rewriting the field", () => {
-    const prompt = buildChatSystemPrompt({ ...opts, mode: "agent" });
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      includePlotMeasurements: true,
+    });
     expect(prompt).toContain("remove_image");
     expect(prompt).toContain("Never draft_field a field just to drop a figure");
     expect(prompt).toContain("use insert_image / plot_measurements / remove_image");
@@ -191,12 +199,26 @@ describe("buildChatSystemPrompt", () => {
       mode: "agent",
       sectionScope: "define",
       criteriaOutline: "DEFINE_ONLY",
+      includePlotMeasurements: true,
     });
     expect(prompt).toContain("Section focus: Define [define]");
     expect(prompt).toContain('on section "define"');
     expect(prompt).toContain("draft_field / edit_table / propose_edit / insert_image / plot_measurements / remove_image");
     expect(prompt).toContain("DEFINE_ONLY");
     expect(prompt).not.toContain("[measure]:");
+  });
+
+  it("sends Convergent document chat to Analytics instead of plot_measurements", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      includePlotMeasurements: false,
+    });
+    expect(prompt).toContain("use insert_image / remove_image");
+    expect(prompt).not.toContain("use insert_image / plot_measurements / remove_image");
+    expect(prompt).toContain("Measurement charts belong in Analytics, not Document chat");
+    expect(prompt).toContain("Tell the engineer to open Analytics");
+    expect(prompt).not.toContain("- plot_measurements — extract cited numeric measurements");
   });
 
   it("includes scope mismatch guidance when detected", () => {

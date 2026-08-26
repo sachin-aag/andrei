@@ -18,7 +18,7 @@ import {
   chatPaceConfig,
   resolveChatLanguageModel,
 } from "@/lib/ai/chat/model";
-import { DEFAULT_CHAT_PACE } from "@/lib/ai/chat/pace";
+import { DEFAULT_CHAT_PACE, isChatPace, type ChatPace } from "@/lib/ai/chat/pace";
 import {
   ANALYTICS_CHAT_SURFACE,
   createChatSession,
@@ -77,6 +77,7 @@ export async function POST(
   const body = (await req.json().catch(() => ({}))) as {
     messages?: UIMessage[];
     sessionId?: string;
+    pace?: unknown;
   };
   const messages = sanitizeChatMessagesForModel(
     Array.isArray(body.messages) ? body.messages : []
@@ -145,7 +146,7 @@ export async function POST(
     canEdit,
     documentType: report.documentType,
   });
-  const pace = DEFAULT_CHAT_PACE;
+  const pace: ChatPace = isChatPace(body.pace) ? body.pace : DEFAULT_CHAT_PACE;
   const paceConfig = chatPaceConfig(pace);
   const model = isTestStubChat()
     ? await buildStubAnalyticsChatModel()

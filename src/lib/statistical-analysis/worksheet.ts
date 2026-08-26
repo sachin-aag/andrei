@@ -1,11 +1,16 @@
 import {
   MAX_CELL_LENGTH,
   MAX_COLUMN_NAME_LENGTH,
+  MAX_DATA_SHEETS,
   MAX_WORKSHEET_COLUMNS,
   MAX_WORKSHEET_ROWS,
   MIN_VISIBLE_COLUMNS,
+  PRIMARY_DATA_SHEET_ID,
+  SPECS_TAB_ID,
   type WorksheetColumn,
   type WorksheetData,
+  type WorksheetSheet,
+  type WorksheetSpecRow,
 } from "./types";
 import type { AnalysisRowSelection } from "./row-selection";
 
@@ -17,20 +22,323 @@ export function defaultColumnId(index: number): string {
   return `c${index + 1}`;
 }
 
-export function createEmptyWorksheet(
-  columnCount = MIN_VISIBLE_COLUMNS
-): WorksheetData {
+function emptyColumns(columnCount = MIN_VISIBLE_COLUMNS): WorksheetColumn[] {
   const count = Math.min(
     MAX_WORKSHEET_COLUMNS,
     Math.max(1, Math.floor(columnCount))
   );
+  return Array.from({ length: count }, (_, i) => ({
+    id: defaultColumnId(i),
+    name: defaultColumnName(i),
+    values: [],
+  }));
+}
+
+export function createEmptyWorksheet(
+  columnCount = MIN_VISIBLE_COLUMNS
+): WorksheetData {
+  const columns = emptyColumns(columnCount);
   return {
-    columns: Array.from({ length: count }, (_, i) => ({
-      id: defaultColumnId(i),
-      name: defaultColumnName(i),
-      values: [],
+    columns,
+    sheets: [{ id: PRIMARY_DATA_SHEET_ID, name: "Data", columns }],
+    specs: [],
+    activeSheetId: PRIMARY_DATA_SHEET_ID,
+  };
+}
+
+function asSheet(value: unknown): WorksheetSheet | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = value as Partial<WorksheetSheet>;
+  if (typeof raw.id !== "string" || !raw.id.trim()) return null;
+  if (typeof raw.name !== "string" || !raw.name.trim()) return null;
+  if (!Array.isArray(raw.columns) || raw.columns.length === 0) return null;
+  return {
+    id: raw.id.trim(),
+    name: raw.name.trim().slice(0, 40),
+    columns: raw.columns as WorksheetColumn[],
+  };
+}
+
+function asSpecRow(value: unknown): WorksheetSpecRow | null {
+  if (!value || typeof value !== "object") return null;
+  const raw = value as Partial<WorksheetSpecRow>;
+  if (typeof raw.columnName !== "string" || !raw.columnName.trim()) return null;
+  return {
+    columnName: raw.columnName.trim().slice(0, MAX_COLUMN_NAME_LENGTH),
+    lsl: typeof raw.lsl === "string" ? raw.lsl : "",
+    usl: typeof raw.usl === "string" ? raw.usl : "",
+    target: typeof raw.target === "string" ? raw.target : "",
+  };
+}
+
+/**
+ * Accepts the current workbook shape and the pre-sheets `{ columns }` JSON
+ * still stored on older reports.
+ */
+export function normalizeWorksheet(raw: unknown): WorksheetData {
+  const record =
+    raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const fallback = createEmptyWorksheet();
+  const legacyColumns = Array.isArray(record.columns)
+    ? (record.columns as WorksheetColumn[])
+    : null;
+  const parsedSheets = Array.isArray(record.sheets)
+    ? record.sheets.flatMap((item) => {
+        const sheet = asSheet(item);
+        return sheet ? [sheet] : [];
+      })
+    : [];
+  const sheets =
+    parsedSheets.length > 0
+      ? parsedSheets
+      : [
+          {
+            id: PRIMARY_DATA_SHEET_ID,
+            name: "Data",
+            columns:
+              legacyColumns && legacyColumns.length > 0
+                ? legacyColumns
+                : fallback.columns,
+          },
+        ];
+  const specs = Array.isArray(record.specs)
+    ? record.specs.flatMap((item) => {
+        const row = asSpecRow(item);
+        return row ? [row] : [];
+      })
+    : [];
+  const requested =
+    typeof record.activeSheetId === "string" ? record.activeSheetId : "";
+  const activeSheetId =
+    requested === SPECS_TAB_ID || sheets.some((sheet) => sheet.id === requested)
+      ? requested
+      : sheets[0]!.id;
+  const active =
+    activeSheetId === SPECS_TAB_ID
+      ? sheets[0]!
+      : (sheets.find((sheet) => sheet.id === activeSheetId) ?? sheets[0]!);
+  return {
+    columns: active.columns,
+    sheets,
+    specs,
+    activeSheetId,
+  };
+}
+
+function sheetIdForColumns(
+  workbook: WorksheetData,
+  columns: WorksheetColumn[]
+): string {
+  if (workbook.activeSheetId !== SPECS_TAB_ID) return workbook.activeSheetId;
+  const firstId = columns[0]?.id;
+  const match = workbook.sheets.find((sheet) =>
+    sheet.columns.some((column) => column.id === firstId)
+  );
+  return match?.id ?? workbook.sheets[0]!.id;
+}
+
+function withWorkbook(
+  data: WorksheetData,
+  columns: WorksheetColumn[]
+): WorksheetData {
+  const workbook = normalizeWorksheet(data);
+  const sheetId = sheetIdForColumns(workbook, columns);
+  return {
+    ...workbook,
+    columns,
+    sheets: workbook.sheets.map((sheet) =>
+      sheet.id === sheetId ? { ...sheet, columns } : sheet
+    ),
+  };
+}
+
+export function dataSheets(data: WorksheetData): WorksheetSheet[] {
+  return normalizeWorksheet(data).sheets;
+}
+
+export function isSpecsTab(data: WorksheetData): boolean {
+  return normalizeWorksheet(data).activeSheetId === SPECS_TAB_ID;
+}
+
+export function switchWorksheetTab(
+  data: WorksheetData,
+  sheetId: string
+): WorksheetData {
+  const workbook = normalizeWorksheet(data);
+  if (sheetId === SPECS_TAB_ID) {
+    return { ...workbook, activeSheetId: SPECS_TAB_ID };
+  }
+  const sheet = workbook.sheets.find((item) => item.id === sheetId);
+  if (!sheet) return workbook;
+  return {
+    ...workbook,
+    activeSheetId: sheet.id,
+    columns: sheet.columns,
+  };
+}
+
+function nextSheetId(data: WorksheetData): string {
+  let max = data.sheets.length;
+  for (const sheet of data.sheets) {
+    const match = /^data-(\d+)$/i.exec(sheet.id);
+    if (match) max = Math.max(max, Number(match[1]));
+  }
+  return `data-${max + 1}`;
+}
+
+function nextSheetName(data: WorksheetData): string {
+  const used = new Set(data.sheets.map((sheet) => sheet.name.toLowerCase()));
+  let index = data.sheets.length + 1;
+  let name = `Data ${index}`;
+  while (used.has(name.toLowerCase())) {
+    index += 1;
+    name = `Data ${index}`;
+  }
+  return name;
+}
+
+export function addDataSheet(data: WorksheetData): WorksheetData {
+  const workbook = normalizeWorksheet(data);
+  if (workbook.sheets.length >= MAX_DATA_SHEETS) return workbook;
+  const id = nextSheetId(workbook);
+  const columns = emptyColumnsForWorkbook(workbook);
+  const sheet: WorksheetSheet = {
+    id,
+    name: nextSheetName(workbook),
+    columns,
+  };
+  return {
+    ...workbook,
+    sheets: [...workbook.sheets, sheet],
+    activeSheetId: id,
+    columns,
+  };
+}
+
+export function renameDataSheet(
+  data: WorksheetData,
+  sheetId: string,
+  name: string
+): WorksheetData {
+  const workbook = normalizeWorksheet(data);
+  const nextName = name.trim().slice(0, 40);
+  if (!nextName) return workbook;
+  return {
+    ...workbook,
+    sheets: workbook.sheets.map((sheet) =>
+      sheet.id === sheetId ? { ...sheet, name: nextName } : sheet
+    ),
+  };
+}
+
+export function deleteDataSheet(
+  data: WorksheetData,
+  sheetId: string
+): WorksheetData {
+  const workbook = normalizeWorksheet(data);
+  if (workbook.sheets.length <= 1) return workbook;
+  const remaining = workbook.sheets.filter((sheet) => sheet.id !== sheetId);
+  if (remaining.length === workbook.sheets.length) return workbook;
+  const nextActive =
+    workbook.activeSheetId === sheetId
+      ? remaining[0]!.id
+      : workbook.activeSheetId === SPECS_TAB_ID
+        ? SPECS_TAB_ID
+        : remaining.some((sheet) => sheet.id === workbook.activeSheetId)
+          ? workbook.activeSheetId
+          : remaining[0]!.id;
+  const active =
+    nextActive === SPECS_TAB_ID
+      ? remaining[0]!
+      : (remaining.find((sheet) => sheet.id === nextActive) ?? remaining[0]!);
+  return {
+    ...workbook,
+    sheets: remaining,
+    activeSheetId: nextActive,
+    columns: active.columns,
+  };
+}
+
+function parseOptionalSpecNumber(raw: string): number | null {
+  const text = raw.trim();
+  if (text === "") return null;
+  const value = Number(text);
+  return Number.isFinite(value) ? value : null;
+}
+
+export function specRowForColumn(
+  data: WorksheetData,
+  columnName: string
+): WorksheetSpecRow | undefined {
+  const key = columnName.trim().toLowerCase();
+  if (!key) return undefined;
+  return normalizeWorksheet(data).specs.find(
+    (row) => row.columnName.trim().toLowerCase() === key
+  );
+}
+
+export function upsertSpecRow(
+  data: WorksheetData,
+  row: WorksheetSpecRow
+): WorksheetData {
+  const workbook = normalizeWorksheet(data);
+  const columnName = row.columnName.trim().slice(0, MAX_COLUMN_NAME_LENGTH);
+  if (!columnName) return workbook;
+  const nextRow: WorksheetSpecRow = {
+    columnName,
+    lsl: row.lsl.trim(),
+    usl: row.usl.trim(),
+    target: row.target.trim(),
+  };
+  const index = workbook.specs.findIndex(
+    (item) => item.columnName.trim().toLowerCase() === columnName.toLowerCase()
+  );
+  const specs =
+    index >= 0
+      ? workbook.specs.map((item, i) => (i === index ? nextRow : item))
+      : [...workbook.specs, nextRow];
+  return { ...workbook, specs };
+}
+
+export function setSpecRows(
+  data: WorksheetData,
+  specs: WorksheetSpecRow[]
+): WorksheetData {
+  const workbook = normalizeWorksheet(data);
+  return {
+    ...workbook,
+    specs: specs.map((row) => ({
+      columnName: row.columnName.trim().slice(0, MAX_COLUMN_NAME_LENGTH),
+      lsl: row.lsl.trim(),
+      usl: row.usl.trim(),
+      target: row.target.trim(),
     })),
   };
+}
+
+export function defaultSixpackLimits(input: {
+  columnName: string;
+  values: readonly number[];
+  worksheet: WorksheetData;
+}): { lsl: number | null; usl: number | null; target: number | null } {
+  const named = specRowForColumn(input.worksheet, input.columnName);
+  if (named) {
+    const lsl = parseOptionalSpecNumber(named.lsl);
+    const usl = parseOptionalSpecNumber(named.usl);
+    const target = parseOptionalSpecNumber(named.target);
+    if (lsl != null || usl != null || target != null) {
+      return { lsl, usl, target };
+    }
+  }
+  if (input.values.length === 0) {
+    return { lsl: null, usl: null, target: null };
+  }
+  const min = Math.min(...input.values);
+  const max = Math.max(...input.values);
+  if (min === max) {
+    return { lsl: min, usl: max, target: min };
+  }
+  return { lsl: min, usl: max, target: (min + max) / 2 };
 }
 
 export function trimTrailingEmpty(values: string[]): string[] {
@@ -48,11 +356,18 @@ export function rowCount(data: WorksheetData): number {
 }
 
 export function nextColumnId(data: WorksheetData): string {
-  let max = data.columns.length;
-  for (const column of data.columns) {
+  const workbook = normalizeWorksheet(data);
+  let max = 0;
+  const consider = (column: WorksheetColumn) => {
     const match = /^c(\d+)$/i.exec(column.id);
     if (match) max = Math.max(max, Number(match[1]));
+  };
+  for (const sheet of workbook.sheets) {
+    for (const column of sheet.columns) consider(column);
   }
+  // Caller may pass in-progress columns that are not a sheet yet
+  // (e.g. allocating a new data sheet).
+  for (const column of data.columns) consider(column);
   return `c${max + 1}`;
 }
 
@@ -65,6 +380,26 @@ export function nextColumnName(data: WorksheetData): string {
     name = defaultColumnName(index);
   }
   return name;
+}
+
+function emptyColumnsForWorkbook(
+  data: WorksheetData,
+  columnCount = MIN_VISIBLE_COLUMNS
+): WorksheetColumn[] {
+  const count = Math.min(
+    MAX_WORKSHEET_COLUMNS,
+    Math.max(1, Math.floor(columnCount))
+  );
+  const columns: WorksheetColumn[] = [];
+  for (let i = 0; i < count; i++) {
+    const growing = { ...normalizeWorksheet(data), columns };
+    columns.push({
+      id: nextColumnId(growing),
+      name: defaultColumnName(i),
+      values: [],
+    });
+  }
+  return columns;
 }
 
 export function sanitizeCell(value: string): string {
@@ -99,9 +434,10 @@ export function setCell(
   }));
 
   while (columns.length <= colIndex && columns.length < MAX_WORKSHEET_COLUMNS) {
+    const growing = { ...data, columns };
     columns.push({
-      id: nextColumnId({ columns }),
-      name: nextColumnName({ columns }),
+      id: nextColumnId(growing),
+      name: nextColumnName(growing),
       values: [],
     });
   }
@@ -114,7 +450,7 @@ export function setCell(
   nextValues[rowIndex] = sanitizeCell(value);
   column.values = trimTrailingEmpty(nextValues);
 
-  return { columns };
+  return withWorkbook(data, columns);
 }
 
 export function renameColumn(
@@ -127,7 +463,7 @@ export function renameColumn(
   const next = data.columns.map((item, index) =>
     index === colIndex ? { ...item, name: sanitizeColumnName(name) } : item
   );
-  return { columns: next };
+  return withWorkbook(data, next);
 }
 
 export function insertColumn(data: WorksheetData, atIndex: number): WorksheetData {
@@ -140,40 +476,45 @@ export function insertColumn(data: WorksheetData, atIndex: number): WorksheetDat
   };
   const columns = [...data.columns];
   columns.splice(index, 0, column);
-  return { columns };
+  return withWorkbook(data, columns);
 }
 
 export function deleteColumn(data: WorksheetData, colIndex: number): WorksheetData {
   if (data.columns.length <= 1) {
-    return createEmptyWorksheet(1);
+    return withWorkbook(data, emptyColumnsForWorkbook(data, 1));
   }
   if (colIndex < 0 || colIndex >= data.columns.length) return data;
-  return { columns: data.columns.filter((_, index) => index !== colIndex) };
+  return withWorkbook(
+    data,
+    data.columns.filter((_, index) => index !== colIndex)
+  );
 }
 
 export function insertRow(data: WorksheetData, atIndex: number): WorksheetData {
   const currentRows = rowCount(data);
   if (currentRows >= MAX_WORKSHEET_ROWS) return data;
   const index = Math.max(0, Math.min(atIndex, currentRows));
-  return {
-    columns: data.columns.map((column) => {
+  return withWorkbook(
+    data,
+    data.columns.map((column) => {
       const values = [...column.values];
       while (values.length < index) values.push("");
       values.splice(index, 0, "");
       return { ...column, values: trimTrailingEmpty(values) };
-    }),
-  };
+    })
+  );
 }
 
 export function deleteRow(data: WorksheetData, rowIndex: number): WorksheetData {
   if (rowIndex < 0) return data;
-  return {
-    columns: data.columns.map((column) => {
+  return withWorkbook(
+    data,
+    data.columns.map((column) => {
       if (rowIndex >= column.values.length) return column;
       const values = column.values.filter((_, index) => index !== rowIndex);
       return { ...column, values: trimTrailingEmpty(values) };
-    }),
-  };
+    })
+  );
 }
 
 export function parseTsv(text: string): string[][] {
@@ -272,7 +613,12 @@ export function findColumn(
   data: WorksheetData,
   columnId: string
 ): WorksheetColumn | undefined {
-  return data.columns.find((column) => column.id === columnId);
+  const workbook = normalizeWorksheet(data);
+  for (const sheet of workbook.sheets) {
+    const column = sheet.columns.find((item) => item.id === columnId);
+    if (column) return column;
+  }
+  return workbook.columns.find((column) => column.id === columnId);
 }
 
 export function findColumnIndex(
@@ -291,6 +637,36 @@ export function findColumnIndexByName(
   return data.columns.findIndex(
     (column) => column.name.trim().toLowerCase() === trimmed
   );
+}
+
+export function findSheetIdForColumn(
+  data: WorksheetData,
+  columnId: string
+): string | null {
+  const workbook = normalizeWorksheet(data);
+  for (const sheet of workbook.sheets) {
+    if (sheet.columns.some((column) => column.id === columnId)) return sheet.id;
+  }
+  return null;
+}
+
+export function findSheetIdForColumnName(
+  data: WorksheetData,
+  name: string
+): string | null {
+  const trimmed = name.trim().toLowerCase();
+  if (!trimmed) return null;
+  const workbook = normalizeWorksheet(data);
+  for (const sheet of workbook.sheets) {
+    if (
+      sheet.columns.some(
+        (column) => column.name.trim().toLowerCase() === trimmed
+      )
+    ) {
+      return sheet.id;
+    }
+  }
+  return null;
 }
 
 /** Stable preimage used by `hashColumnSource` (server) and stale detection (client). */
@@ -316,8 +692,9 @@ export function replaceColumnValues(
   const nextValues = trimTrailingEmpty(
     values.slice(0, MAX_WORKSHEET_ROWS).map(sanitizeCell)
   );
-  return {
-    columns: data.columns.map((item, index) =>
+  return withWorkbook(
+    data,
+    data.columns.map((item, index) =>
       index === colIndex
         ? {
             ...item,
@@ -325,6 +702,6 @@ export function replaceColumnValues(
             values: nextValues,
           }
         : item
-    ),
-  };
+    )
+  );
 }
