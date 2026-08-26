@@ -12,8 +12,8 @@ import {
 
 /**
  * Compact per-section list of the quality criteria the report is graded on.
- * Injected into the chat prompt so Plan mode asks questions that close real
- * criteria gaps and Agent mode drafts toward them (rather than generic prose).
+ * Injected into the chat prompt so Ask mode can reference quality criteria and
+ * Agent mode drafts toward them (rather than generic prose).
  */
 export function buildCriteriaOutline(
   scope: ChatSectionScope = "all",
