@@ -14,7 +14,7 @@ import { getDocumentType } from "@/lib/document-types";
 import type { RetrievalPolicy } from "@/lib/ai/chat/retrieval-policy";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v48-ask-mode-qna-metric-series-plots";
+export const CHAT_PROMPT_VERSION = "chat-v49-demo-end-citations-structured-headings";
 
 export type ChatMode = "plan" | "agent";
 

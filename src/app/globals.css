@@ -402,6 +402,8 @@ html[data-customer="convergent"] {
 }
 
 .suggestion-action-widget {
+  position: relative;
+  z-index: 4;
   display: inline-flex;
   align-items: center;
   margin: 0 0.2rem;
@@ -989,6 +991,7 @@ html[data-customer="convergent"] {
   margin: 0 0.05em;
   white-space: nowrap;
   display: inline-block;
+  cursor: pointer;
   box-decoration-break: clone;
   -webkit-box-decoration-break: clone;
 }
@@ -1074,10 +1077,10 @@ html[data-customer="convergent"] {
   --generic-page-width: 8.5in;
   --generic-page-height: 11in;
   --generic-page-margin: 0.9in;
-  --generic-page-gap: 2rem;
   width: min(100%, var(--generic-page-width));
   min-height: var(--generic-page-height);
   margin-bottom: 2.5rem;
+  overflow: visible;
 }
 
 .generic-page-metric {
@@ -1087,6 +1090,7 @@ html[data-customer="convergent"] {
 
 .generic-page-sheet {
   min-height: var(--generic-page-height);
+  overflow: visible;
   background: var(--card);
   box-shadow:
     0 1px 3px rgb(15 30 51 / 0.08),
@@ -1101,18 +1105,63 @@ html[data-customer="convergent"] {
   line-height: 1.5;
 }
 
+.generic-paged-document [data-editor-chrome="page"] .ProseMirror h1 {
+  font-size: 18pt;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+  margin: 0 0 0.55em;
+  color: var(--foreground);
+}
+
+.generic-paged-document [data-editor-chrome="page"] .ProseMirror h2 {
+  font-size: 14pt;
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 1.1em 0 0.4em;
+  color: var(--foreground);
+}
+
+.generic-paged-document [data-editor-chrome="page"] .ProseMirror h3 {
+  font-size: 12pt;
+  font-weight: 600;
+  line-height: 1.35;
+  margin: 0.9em 0 0.3em;
+  color: var(--brand-700);
+}
+
+.generic-paged-document [data-editor-chrome="page"] .ProseMirror p {
+  margin: 0 0 0.65em;
+}
+
+.generic-paged-document [data-editor-chrome="page"] .ProseMirror ul,
+.generic-paged-document [data-editor-chrome="page"] .ProseMirror ol {
+  margin: 0.25em 0 0.75em;
+  padding-left: 1.4em;
+}
+
+.generic-paged-document [data-editor-chrome="page"] .ProseMirror li {
+  margin: 0.15em 0;
+}
+
+.generic-paged-document [data-editor-chrome="page"] .ProseMirror li p {
+  margin: 0;
+}
+
+/* Hairline only — never a covering band that hides suggestion widgets. */
 .generic-page-separator {
-  left: -1.5rem;
-  right: -1.5rem;
-  height: var(--generic-page-gap);
-  transform: translateY(-50%);
-  background: var(--muted);
-  box-shadow:
-    inset 0 10px 10px -10px rgb(15 30 51 / 0.22),
-    inset 0 -10px 10px -10px rgb(15 30 51 / 0.22);
+  left: 0;
+  right: 0;
+  height: 0;
+  z-index: 2;
+  border-top: 1px solid color-mix(in oklab, var(--border) 70%, var(--muted-foreground));
 }
 
 .generic-page-separator-label {
+  position: absolute;
+  top: 0;
+  right: calc(100% + 0.65rem);
+  transform: translateY(-50%);
   border: 1px solid var(--border);
   border-radius: 999px;
   background: var(--card);
@@ -1121,10 +1170,35 @@ html[data-customer="convergent"] {
   font-weight: 500;
   letter-spacing: 0.04em;
   color: var(--muted-foreground);
+  white-space: nowrap;
+  box-shadow: 0 1px 2px rgb(15 30 51 / 0.06);
 }
 
 .generic-page-number {
   right: 0.9in;
+  z-index: 2;
   font-size: 10px;
   color: var(--muted-foreground);
+}
+
+.generic-citations-rail {
+  min-height: 8rem;
+}
+
+.citation-source-index {
+  display: inline-flex;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--muted-foreground);
+}
+
+.citation-source-item[data-active="true"] {
+  background: var(--brand-50);
+  box-shadow: inset 0 0 0 1px var(--brand-200);
 }

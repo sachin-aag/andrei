@@ -50,7 +50,7 @@ export function PagedDocumentSurface({ children }: { children: ReactNode }) {
   return (
     <div
       ref={rootRef}
-      className="generic-paged-document relative mx-auto"
+      className="generic-paged-document relative"
       data-testid="paged-document"
       data-page-count={pageCount}
     >
@@ -66,7 +66,7 @@ export function PagedDocumentSurface({ children }: { children: ReactNode }) {
               key={`sep-${index}`}
               role="separator"
               aria-label={`Page ${index + 1} of ${pageCount}`}
-              className="generic-page-separator pointer-events-none absolute z-[2] flex items-center justify-center"
+              className="generic-page-separator pointer-events-none absolute"
               style={{ top: pageHeightPx * (index + 1) }}
             >
               <span className="generic-page-separator-label">
@@ -79,7 +79,7 @@ export function PagedDocumentSurface({ children }: { children: ReactNode }) {
         ? Array.from({ length: pageCount }, (_, index) => (
             <div
               key={`num-${index}`}
-              className="generic-page-number pointer-events-none absolute z-[2] tabular-nums"
+              className="generic-page-number pointer-events-none absolute tabular-nums"
               style={{ top: pageHeightPx * (index + 1) - 28 }}
             >
               {index + 1}

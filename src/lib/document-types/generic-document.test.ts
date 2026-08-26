@@ -28,4 +28,12 @@ describe("generic document type", () => {
     expect(isWordImportAvailable("investigation_report", MJ_PACK)).toBe(true);
     expect(isWordImportAvailable("design_verification", DEMO_PACK)).toBe(false);
   });
+
+  it("requires ATX headings when the assistant drafts the body", () => {
+    const def = getDocumentType("generic_document");
+    expect(def.prompts.promptVersion).toBe("generic-document-v2");
+    expect(def.chat.draftingGuidance).toContain("Document structure (required)");
+    expect(def.chat.draftingGuidance).toContain("`#` document title");
+    expect(def.chat.persona).toContain("Always use markdown headings");
+  });
 });

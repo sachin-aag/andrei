@@ -44,4 +44,62 @@ describe("PagedDocumentSurface", () => {
     );
     expect(screen.getByText("Hello")).toBeInTheDocument();
   });
+
+  it("places page labels outside a hairline so they cannot cover the sheet", () => {
+    Object.defineProperty(HTMLElement.prototype, "scrollHeight", {
+      configurable: true,
+      get() {
+        return this.classList.contains("ProseMirror") ? 900 : 0;
+      },
+    });
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        cb: ResizeObserverCallback;
+        constructor(cb: ResizeObserverCallback) {
+          this.cb = cb;
+        }
+        observe() {
+          this.cb([], this as unknown as ResizeObserver);
+        }
+        unobserve() {}
+        disconnect() {}
+      }
+    );
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+      function (this: HTMLElement) {
+        const height = this.classList.contains("generic-page-metric") ? 400 : 0;
+        return {
+          x: 0,
+          y: 0,
+          width: 100,
+          height,
+          top: 0,
+          left: 0,
+          bottom: height,
+          right: 100,
+          toJSON() {
+            return {};
+          },
+        };
+      }
+    );
+
+    render(
+      <PagedDocumentSurface>
+        <div className="ProseMirror">Hello</div>
+      </PagedDocumentSurface>
+    );
+
+    expect(screen.getByTestId("paged-document")).toHaveAttribute(
+      "data-page-count",
+      "3"
+    );
+    const separator = screen.getByRole("separator", { name: /page 1 of 3/i });
+    expect(separator).toHaveClass("pointer-events-none");
+    expect(separator).toHaveClass("generic-page-separator");
+    expect(separator.querySelector(".generic-page-separator-label")).toHaveTextContent(
+      "Page 1"
+    );
+  });
 });

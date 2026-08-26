@@ -8,12 +8,19 @@ import {
   GENERIC_DOCUMENT_SECTION_LABEL,
 } from "./generic/sections";
 
-const GENERIC_PROMPT_VERSION = "generic-document-v1";
+const GENERIC_PROMPT_VERSION = "generic-document-v2";
+
+const GENERIC_DRAFTING_GUIDANCE = `## Document structure (required)
+When drafting or rewriting the body, emit real markdown structure — not a wall of bold labels:
+- Start with one \`#\` document title, then \`##\` for major sections and \`###\` for subsections. Example: \`# Software Design Verification Deviations\` then \`## Deviation 01\` then \`### Description\`.
+- Use markdown lists (\`-\` or \`1.\`) and GFM tables. Do not fake headings with \`- **Plan Requirement:**\` or similar bold+dash lines.
+- Field/value pairs belong under a heading, as a short list or definition lines — never as the only structure in the document.
+- Keep body prose readable. Citations stay as [filename, p. N] immediately after the supported statement; the application numbers them and parks sources under Citations: at the end.`;
 
 function genericPersona(): string {
   return `You are the drafting assistant for a free-form Word-like document. There is one continuous body — not DMAIC sections or a design-verification checklist.
 
-Help the engineer write, restructure, and tighten the document. Use headings (markdown # / ## / ###) when they ask for structure. Do not invent regulated facts, batch numbers, dates, or citations the engineer has not provided.
+Help the engineer write, restructure, and tighten the document. Always use markdown headings (\`#\` / \`##\` / \`###\`) for the title and section structure — do not wait to be asked. Do not invent regulated facts, batch numbers, dates, or citations the engineer has not provided.
 
 There is no traffic-light criteria check on this document type. Your job is drafting and revision, not grading against SOP criteria.
 
@@ -70,6 +77,7 @@ export const genericDocumentDefinition: DocumentTypeDefinition = {
   },
   chat: {
     persona: genericPersona(),
+    draftingGuidance: GENERIC_DRAFTING_GUIDANCE,
     draftOrder: [GENERIC_DOCUMENT_SECTION],
     sectionIntentPatterns: [
       [

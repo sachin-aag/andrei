@@ -19,7 +19,7 @@ describe("isChatMode", () => {
 describe("buildChatSystemPrompt", () => {
   it("bumps the prompt version when insert_image and citation-marker guidance change", () => {
     expect(CHAT_PROMPT_VERSION).toBe(
-      "chat-v48-ask-mode-qna-metric-series-plots"
+      "chat-v49-demo-end-citations-structured-headings"
     );
   });
 
@@ -196,6 +196,22 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("deviation");
     expect(prompt).not.toContain("M.J. Biopharm");
     expect(prompt).not.toContain("SOP/DP/QA/008");
+  });
+
+  it("defaults demo chat to citations-at-end and structures generic drafts with headings", () => {
+    const investigation = buildChatSystemPrompt({ ...opts, mode: "agent" });
+    expect(investigation).toContain("END of the section field");
+    expect(investigation).toContain("Citations:");
+
+    const generic = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      documentType: "generic_document",
+    });
+    expect(generic).toContain("Document structure (required)");
+    expect(generic).toContain("`#` document title");
+    expect(generic).toContain("Always use markdown headings");
+    expect(generic).not.toContain("when they ask for structure");
   });
 
   it("scoped mode limits criteria and section focus in the prompt", () => {

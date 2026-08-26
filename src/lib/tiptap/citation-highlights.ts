@@ -7,6 +7,10 @@ import {
   isNumericCitationMarker,
 } from "@/lib/placeholders/citation-bracket";
 import { BRACKET_SPAN_REGEX } from "@/lib/placeholders/find";
+import {
+  citationNumberFromClickTarget,
+  scrollToCitationSource,
+} from "@/lib/suggestions/navigate-citation";
 
 const citationKey = new PluginKey<DecorationSet>("citationHighlights");
 
@@ -102,6 +106,7 @@ export function buildCitationDecorations(
       Decoration.inline(highlight.fromPos, highlight.toPos, {
         class: "citation-ref",
         "data-citation-number": String(highlight.number),
+        title: `Citation ${highlight.number}`,
       })
     );
   }
@@ -134,6 +139,11 @@ export function createCitationHighlightExtension() {
           props: {
             decorations(state) {
               return citationKey.getState(state) ?? DecorationSet.empty;
+            },
+            handleClick(_view, _pos, event) {
+              const n = citationNumberFromClickTarget(event.target);
+              if (n == null) return false;
+              return scrollToCitationSource(n);
             },
           },
         }),

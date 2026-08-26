@@ -83,6 +83,9 @@ describe("GenericDocumentEditor", () => {
     ).not.toBeInTheDocument();
     expect(screen.queryByText(/^Body$/i)).not.toBeInTheDocument();
     expect(screen.getByTestId("paged-document")).toBeInTheDocument();
+    expect(
+      screen.getByRole("complementary", { name: /citations/i })
+    ).toBeInTheDocument();
 
     const field = screen.getByTestId("tiptap-field");
     expect(field).toHaveAttribute("data-chrome", "page");

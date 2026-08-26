@@ -24,16 +24,19 @@ describe("ReportExportButton", () => {
     vi.mocked(getCustomerPack).mockReturnValue(DEMO_PACK);
   });
 
-  it("shows a single Export DOCX link on demo", () => {
+  it("offers a without-citations export on demo", async () => {
+    const user = userEvent.setup();
     render(<ReportExportButton reportId="report-1" />);
 
     expect(screen.getByRole("link", { name: /export docx/i })).toHaveAttribute(
       "href",
       "/api/reports/report-1/export"
     );
+
+    await user.click(screen.getByRole("button", { name: /more export options/i }));
     expect(
-      screen.queryByRole("button", { name: /more export options/i })
-    ).not.toBeInTheDocument();
+      screen.getByRole("menuitem", { name: /export without citations/i })
+    ).toHaveAttribute("href", "/api/reports/report-1/export?omitCitations=1");
   });
 
   it("offers Download original when a source Word file was uploaded", async () => {

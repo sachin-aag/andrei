@@ -7,7 +7,7 @@ import {
 
 describe("buildSuggestionSystemPrompt", () => {
   it("bumps the suggest prompt version when DV table guidance changes", () => {
-    expect(SUGGEST_PROMPT_VERSION).toBe("suggest-v21-convergent-citation-markers");
+    expect(SUGGEST_PROMPT_VERSION).toBe("suggest-v22-demo-end-citations");
   });
 
   it("adds split-citation rules only when citations-at-end is on", () => {

@@ -6,6 +6,7 @@ import {
   extractCitationBrackets,
   isCitationOnlyText,
   keepEmptyParagraphBeforeCitationHeading,
+  listParkedCitationsFromDoc,
   moveCitationsToEndOfText,
   normalizeTrailingCitationBlockInText,
   prepareEditForCitationMode,
@@ -541,5 +542,40 @@ describe("stripTrailingCitationsFromContent", () => {
       type: "doc",
       content: [{ type: "paragraph" }],
     });
+  });
+});
+
+describe("listParkedCitationsFromDoc", () => {
+  function paragraph(text?: string): JSONContent {
+    return text
+      ? { type: "paragraph", content: [{ type: "text", text }] }
+      : { type: "paragraph" };
+  }
+
+  it("reads numbered sources from the trailing Citations block", () => {
+    expect(
+      listParkedCitationsFromDoc({
+        type: "doc",
+        content: [
+          paragraph("Output met spec [1]."),
+          paragraph(),
+          paragraph("Citations:"),
+          paragraph("1. [protocol.pdf, p. 3]"),
+          paragraph("2. [results.xlsx, p. 1]"),
+        ],
+      })
+    ).toEqual([
+      { number: 1, source: "[protocol.pdf, p. 3]" },
+      { number: 2, source: "[results.xlsx, p. 1]" },
+    ]);
+  });
+
+  it("is empty when the field has no parked list", () => {
+    expect(
+      listParkedCitationsFromDoc({
+        type: "doc",
+        content: [paragraph("No citations yet.")],
+      })
+    ).toEqual([]);
   });
 });

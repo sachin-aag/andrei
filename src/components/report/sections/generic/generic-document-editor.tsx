@@ -4,6 +4,7 @@ import type { JSONContent } from "@tiptap/core";
 import { AlertTriangle } from "lucide-react";
 import { TiptapSectionField } from "@/components/report/tiptap-section-field";
 import { SaveStatus } from "@/components/report/save-status";
+import { DocumentCitationsRail } from "@/components/report/sections/generic/document-citations-rail";
 import { PagedDocumentSurface } from "@/components/report/sections/generic/paged-document-surface";
 import {
   useGenericReportSection,
@@ -12,6 +13,7 @@ import {
 import { useGenericSectionSave } from "@/hooks/use-generic-section-save";
 import type { GenericDocumentMetadata } from "@/db/schema";
 import { GENERIC_DOCUMENT_SECTION } from "@/lib/document-types/generic/sections";
+import { listParkedCitationsFromDoc } from "@/lib/suggestions/citations-at-end";
 
 type BodyContent = { narrative: JSONContent };
 
@@ -27,6 +29,7 @@ export function GenericDocumentEditor() {
   const importWarnings = meta.importWarnings ?? [];
   const importedFrom = meta.importedFromFilename;
   const title = report.documentNo.trim() || "Untitled";
+  const citations = listParkedCitationsFromDoc(content.narrative);
 
   return (
     <div className="space-y-4">
@@ -52,17 +55,20 @@ export function GenericDocumentEditor() {
           </div>
         </div>
       ) : null}
-      <PagedDocumentSurface>
-        <TiptapSectionField
-          section={GENERIC_DOCUMENT_SECTION}
-          contentPath="narrative"
-          chrome="page"
-          placeholder="Start writing, or ask the assistant to draft."
-          value={content.narrative}
-          onChange={(doc) => update((p) => ({ ...p, narrative: doc }))}
-          onFlushSave={flushSave}
-        />
-      </PagedDocumentSurface>
+      <div className="flex flex-wrap items-start justify-center gap-6 pl-16">
+        <PagedDocumentSurface>
+          <TiptapSectionField
+            section={GENERIC_DOCUMENT_SECTION}
+            contentPath="narrative"
+            chrome="page"
+            placeholder="Start writing, or ask the assistant to draft."
+            value={content.narrative}
+            onChange={(doc) => update((p) => ({ ...p, narrative: doc }))}
+            onFlushSave={flushSave}
+          />
+        </PagedDocumentSurface>
+        <DocumentCitationsRail citations={citations} />
+      </div>
     </div>
   );
 }

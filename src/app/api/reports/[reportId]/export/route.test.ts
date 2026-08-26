@@ -39,7 +39,7 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { hydrateUserDirectory } from "@/lib/auth/user-directory";
 import { listWorkspaceUsers } from "@/lib/auth/workspace-users";
 import { listReportSignatures } from "@/lib/audit";
-import { CONVERGENT_PACK, DEMO_PACK, getCustomerPack } from "@/lib/customers/packs";
+import { CONVERGENT_PACK, DEMO_PACK, MJ_PACK, getCustomerPack } from "@/lib/customers/packs";
 import { generateReportDocx } from "@/lib/export/generate-docx";
 import { GET } from "./route";
 
@@ -156,6 +156,7 @@ describe("GET /api/reports/[reportId]/export", () => {
   });
 
   it("ignores omitCitations on packs that keep citations inline", async () => {
+    vi.mocked(getCustomerPack).mockReturnValue(MJ_PACK);
     vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
     mockSelectOnce([report]);
     mockOrderedSelectOnce([]);
@@ -173,6 +174,28 @@ describe("GET /api/reports/[reportId]/export", () => {
     );
     expect(response.headers.get("Content-Disposition")).toBe(
       'attachment; filename="Investigation_Report_DEV-001.docx"'
+    );
+  });
+
+  it("omits citations for demo when requested", async () => {
+    vi.mocked(getCustomerPack).mockReturnValue(DEMO_PACK);
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
+    mockSelectOnce([report]);
+    mockOrderedSelectOnce([]);
+    mockSelectOnce([]);
+    mockSelectOnce([]);
+
+    const response = await GET(
+      request("http://localhost/api/reports/report-1/export?omitCitations=1"),
+      { params: Promise.resolve({ reportId: report.id }) }
+    );
+
+    expect(response.status).toBe(200);
+    expect(generateReportDocx).toHaveBeenCalledWith(
+      expect.objectContaining({ omitCitations: true })
+    );
+    expect(response.headers.get("Content-Disposition")).toBe(
+      'attachment; filename="Investigation_Report_DEV-001_without_citations.docx"'
     );
   });
 
