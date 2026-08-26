@@ -106,7 +106,7 @@ NEXT_PUBLIC_ANDREI_CUSTOMER=mj
 
 They must agree with `ANDREI_VERCEL_DEPLOY_SCOPE` when that is set. See
 `docs/whitelabel-vercel-deploy.md`. Statistical Analysis (report Analytics tab:
-worksheet + Normal Capability Sixpack + measurement scatter) is on for demo, MJ,
+worksheet + Normal Capability Sixpack + measurement scatter + one-way ANOVA) is on for demo, MJ,
 and Convergent (`statisticalAnalysisEnabled`). Convergent Document chat does not
 propose measurement plots; use Analytics instead.
 

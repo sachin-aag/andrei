@@ -19,10 +19,15 @@ export const IMR_CONSTANTS = {
 
 export const CAPABILITY_SIXPACK_NORMAL = "capability_sixpack_normal" as const;
 export const MEASUREMENT_SCATTER = "measurement_scatter" as const;
+export const ONE_WAY_ANOVA = "one_way_anova" as const;
+
+export const MIN_ANOVA_GROUPS = 2;
+export const MAX_ANOVA_GROUPS = 40;
 
 export type AnalysisKind =
   | typeof CAPABILITY_SIXPACK_NORMAL
-  | typeof MEASUREMENT_SCATTER;
+  | typeof MEASUREMENT_SCATTER
+  | typeof ONE_WAY_ANOVA;
 
 export const PRIMARY_DATA_SHEET_ID = "data-1";
 export const SPECS_TAB_ID = "__specs__";
@@ -206,9 +211,109 @@ export type ScatterAnalysisSummary = AnalysisSummaryBase & {
   results: MeasurementScatterResult;
 };
 
+export type OneWayAnovaConfig = {
+  responseColumnId: string;
+  responseColumnName: string;
+  factorColumnId: string;
+  factorColumnName: string;
+  title: string;
+  /** 1-based inclusive. Null with `rowEnd` null means the whole columns. */
+  rowStart?: number | null;
+  rowEnd?: number | null;
+  /** Explicit 1-based row numbers. When set, overrides `rowStart`/`rowEnd`. */
+  rows?: number[] | null;
+  /** Two-sided family error rate for CIs and Bonferroni pairwise. Default 0.05. */
+  alpha?: number;
+};
+
+export type AnovaSourceRow = {
+  df: number;
+  ss: number;
+  ms: number;
+  f: number;
+  p: number;
+};
+
+export type AnovaErrorRow = {
+  df: number;
+  ss: number;
+  ms: number;
+};
+
+export type AnovaTotalRow = {
+  df: number;
+  ss: number;
+};
+
+export type AnovaGroupStats = {
+  label: string;
+  n: number;
+  mean: number;
+  stdev: number;
+  se: number;
+  ciLow: number;
+  ciHigh: number;
+};
+
+export type AnovaPairwiseRow = {
+  groupA: string;
+  groupB: string;
+  diff: number;
+  se: number;
+  t: number;
+  pUnadjusted: number;
+  pBonferroni: number;
+  significant: boolean;
+};
+
+export type OneWayAnovaResult = {
+  n: number;
+  skipped: number;
+  groupCount: number;
+  grandMean: number;
+  alpha: number;
+  table: {
+    factor: AnovaSourceRow;
+    error: AnovaErrorRow;
+    total: AnovaTotalRow;
+  };
+  rSquared: number;
+  groups: AnovaGroupStats[];
+  pairwise: AnovaPairwiseRow[];
+};
+
+export type AnovaComputeErrorCode =
+  | "too_few_groups"
+  | "too_few_observations"
+  | "too_many_groups"
+  | "missing_columns"
+  | "different_sheets"
+  | "same_column"
+  | "invalid_alpha";
+
+export type AnovaComputeSuccess = {
+  ok: true;
+  result: OneWayAnovaResult;
+};
+
+export type AnovaComputeFailure = {
+  ok: false;
+  code: AnovaComputeErrorCode;
+  message: string;
+};
+
+export type AnovaComputeOutcome = AnovaComputeSuccess | AnovaComputeFailure;
+
+export type AnovaAnalysisSummary = AnalysisSummaryBase & {
+  kind: typeof ONE_WAY_ANOVA;
+  config: OneWayAnovaConfig;
+  results: OneWayAnovaResult;
+};
+
 export type StatisticalAnalysisSummary =
   | SixpackAnalysisSummary
-  | ScatterAnalysisSummary;
+  | ScatterAnalysisSummary
+  | AnovaAnalysisSummary;
 
 export function isSixpackAnalysis(
   analysis: StatisticalAnalysisSummary
@@ -220,6 +325,12 @@ export function isScatterAnalysis(
   analysis: StatisticalAnalysisSummary
 ): analysis is ScatterAnalysisSummary {
   return analysis.kind === MEASUREMENT_SCATTER;
+}
+
+export function isAnovaAnalysis(
+  analysis: StatisticalAnalysisSummary
+): analysis is AnovaAnalysisSummary {
+  return analysis.kind === ONE_WAY_ANOVA;
 }
 
 /**

@@ -677,6 +677,18 @@ export function analysisSourceKey(
   return JSON.stringify(cellsForRowSelection(column, selection));
 }
 
+/** Client-safe ANOVA source key — do not import `hash.ts` from the browser. */
+export function anovaSourceKey(
+  response: WorksheetColumn,
+  factor: WorksheetColumn,
+  selection: AnalysisRowSelection = { mode: "all" }
+): string {
+  return JSON.stringify({
+    response: cellsForRowSelection(response, selection),
+    factor: cellsForRowSelection(factor, selection),
+  });
+}
+
 export function columnSourceKey(column: WorksheetColumn): string {
   return analysisSourceKey(column, { mode: "all" });
 }

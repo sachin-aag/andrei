@@ -353,4 +353,36 @@ test.describe("report analytics", () => {
     await page.getByTestId("plot-measurements-submit").click();
     await expect(page.getByRole("alert")).toBeVisible({ timeout: 30_000 });
   });
+
+  test("loads sample assay and runs one-way ANOVA of Assay by Lot", async ({
+    page,
+  }) => {
+    test.setTimeout(90_000);
+    await openReportAnalytics(page);
+    await expect(page.getByTestId("worksheet-grid")).toBeVisible({
+      timeout: 30_000,
+    });
+
+    await page.getByTestId("worksheet-data-menu").click();
+    await page.getByTestId("load-sample-assay").click();
+    await expect(page.getByTestId("column-header-c1")).toHaveText("Assay");
+    await expect(page.getByTestId("column-header-c2")).toHaveText("Lot");
+
+    await page.getByRole("button", { name: "Stat" }).click();
+    await page.getByTestId("stat-one-way-anova").click();
+    await expect(page.getByTestId("anova-dialog")).toBeVisible();
+    await expect(page.getByTestId("anova-response")).toContainText("Assay");
+    await expect(page.getByTestId("anova-factor")).toContainText("Lot");
+    await page.getByRole("dialog").getByRole("button", { name: /^ok$/i }).click();
+
+    await expect(page.getByTestId("one-way-anova")).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByTestId("anova-interval-plot")).toBeVisible();
+    await expect(page.getByTestId("anova-f")).not.toHaveText("");
+    await expect(page.getByTestId("anova-p")).toBeVisible();
+    await expect(
+      page.getByText(/one-way anova: assay versus lot/i)
+    ).toBeVisible();
+  });
 });
