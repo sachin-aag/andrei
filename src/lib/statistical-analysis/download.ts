@@ -4,8 +4,10 @@ import {
   normalizeRowSelection,
 } from "./row-selection";
 import {
+  isAnovaAnalysis,
   isScatterAnalysis,
   isSixpackAnalysis,
+  type AnovaAnalysisSummary,
   type StatisticalAnalysisSummary,
 } from "./types";
 
@@ -34,12 +36,22 @@ export function analysisDownloadFilename(
   if (isScatterAnalysis(analysis)) {
     return `${safeFilenameBase(analysis.title, "scatter")}-measurement-scatter.csv`;
   }
+  if (isAnovaAnalysis(analysis)) {
+    return `${safeFilenameBase(analysis.title, "anova")}-one-way-anova.csv`;
+  }
+  if (!isSixpackAnalysis(analysis)) {
+    const exhaustive: never = analysis;
+    return exhaustive;
+  }
   return `${safeFilenameBase(analysis.title, "sixpack")}-capability-sixpack.csv`;
 }
 
 export function analysisToCsv(analysis: StatisticalAnalysisSummary): string {
   if (isScatterAnalysis(analysis)) {
     return scatterToCsv(analysis);
+  }
+  if (isAnovaAnalysis(analysis)) {
+    return anovaToCsv(analysis);
   }
   if (!isSixpackAnalysis(analysis)) {
     const exhaustive: never = analysis;
@@ -89,6 +101,98 @@ export function analysisToCsv(analysis: StatisticalAnalysisSummary): string {
     ...results.individuals.values.map((value, index) =>
       csvRow([String(index + 1), formatStat(value)])
     ),
+  ];
+  return `\uFEFF${lines.join("\n")}\n`;
+}
+
+function csvNumber(value: number): string {
+  if (value === Number.POSITIVE_INFINITY) return "Inf";
+  if (value === Number.NEGATIVE_INFINITY) return "-Inf";
+  return formatStat(value);
+}
+
+function anovaToCsv(analysis: AnovaAnalysisSummary): string {
+  const { config, results } = analysis;
+  const rows = formatRowSelection(normalizeRowSelection(config)) || "all";
+  const { factor, error, total } = results.table;
+  const summary: Array<[string, string]> = [
+    ["Title", analysis.title],
+    ["Response", config.responseColumnName],
+    ["Factor", config.factorColumnName],
+    ["Rows", rows],
+    ["Kind", "One-way ANOVA"],
+    ["Alpha", formatStat(results.alpha)],
+    ["Created", analysis.createdAt],
+  ];
+  const tableRows = [
+    csvRow([
+      config.factorColumnName,
+      String(factor.df),
+      csvNumber(factor.ss),
+      csvNumber(factor.ms),
+      csvNumber(factor.f),
+      formatPValue(factor.p),
+    ]),
+    csvRow([
+      "Error",
+      String(error.df),
+      csvNumber(error.ss),
+      csvNumber(error.ms),
+      "",
+      "",
+    ]),
+    csvRow(["Total", String(total.df), csvNumber(total.ss), "", "", ""]),
+  ];
+  const groupRows = results.groups.map((group) =>
+    csvRow([
+      group.label,
+      String(group.n),
+      csvNumber(group.mean),
+      csvNumber(group.stdev),
+      csvNumber(group.se),
+      csvNumber(group.ciLow),
+      csvNumber(group.ciHigh),
+    ])
+  );
+  const pairRows = results.pairwise.map((pair) =>
+    csvRow([
+      `${pair.groupA} - ${pair.groupB}`,
+      csvNumber(pair.diff),
+      csvNumber(pair.se),
+      csvNumber(pair.t),
+      formatPValue(pair.pUnadjusted),
+      formatPValue(pair.pBonferroni),
+      pair.significant ? "yes" : "no",
+    ])
+  );
+  const lines = [
+    "Summary",
+    csvRow(["Field", "Value"]),
+    ...summary.map(([field, value]) => csvRow([field, value])),
+    "",
+    "ANOVA",
+    csvRow(["Source", "DF", "SS", "MS", "F", "P"]),
+    ...tableRows,
+    csvRow(["R-sq", formatStat(results.rSquared)]),
+    csvRow(["N", String(results.n)]),
+    csvRow(["Skipped", String(results.skipped)]),
+    csvRow(["Grand mean", csvNumber(results.grandMean)]),
+    "",
+    "Group means",
+    csvRow(["Factor", "N", "Mean", "StDev", "SE", "CI low", "CI high"]),
+    ...groupRows,
+    "",
+    "Pairwise (Bonferroni t-tests using ANOVA MSE)",
+    csvRow([
+      "Comparison",
+      "Diff",
+      "SE",
+      "t",
+      "P unadjusted",
+      "P Bonferroni",
+      "Significant",
+    ]),
+    ...pairRows,
   ];
   return `\uFEFF${lines.join("\n")}\n`;
 }

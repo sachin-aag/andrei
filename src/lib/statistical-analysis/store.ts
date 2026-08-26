@@ -6,15 +6,20 @@ import { parseChartSpec } from "@/lib/charts/chart-spec";
 import {
   CAPABILITY_SIXPACK_NORMAL,
   MEASUREMENT_SCATTER,
+  ONE_WAY_ANOVA,
+  isAnovaAnalysis,
   isScatterAnalysis,
   isSixpackAnalysis,
 } from "./types";
 import type {
   AnalysisKind,
+  AnovaAnalysisSummary,
   CapabilitySixpackConfig,
   CapabilitySixpackResult,
   MeasurementScatterConfig,
   MeasurementScatterResult,
+  OneWayAnovaConfig,
+  OneWayAnovaResult,
   ReportAnalyticsView,
   ScatterAnalysisSummary,
   SixpackAnalysisSummary,
@@ -22,13 +27,21 @@ import type {
   WorksheetData,
 } from "./types";
 import { nextAnalysisTitle } from "./analysis-title";
-import { createEmptyWorksheet, findColumn, normalizeWorksheet, upsertSpecRow } from "./worksheet";
-import { hashColumnSource, hashScatterSource } from "./hash";
+import {
+  createEmptyWorksheet,
+  findColumn,
+  findSheetIdForColumn,
+  normalizeWorksheet,
+  upsertSpecRow,
+} from "./worksheet";
+import { hashAnovaSource, hashColumnSource, hashScatterSource } from "./hash";
 import { computeCapabilitySixpack } from "./sixpack";
+import { computeOneWayAnova } from "./anova";
 import { runMeasurementScatter } from "./measurement-scatter";
 import {
   capabilitySixpackInputSchema,
   measurementScatterInputSchema,
+  oneWayAnovaInputSchema,
   worksheetDataSchema,
 } from "./schemas";
 import {
@@ -90,9 +103,31 @@ function asScatterResults(value: unknown): MeasurementScatterResult {
 }
 
 function asKind(value: string): AnalysisKind {
-  return value === MEASUREMENT_SCATTER
-    ? MEASUREMENT_SCATTER
-    : CAPABILITY_SIXPACK_NORMAL;
+  if (value === MEASUREMENT_SCATTER) return MEASUREMENT_SCATTER;
+  if (value === ONE_WAY_ANOVA) return ONE_WAY_ANOVA;
+  return CAPABILITY_SIXPACK_NORMAL;
+}
+
+function asAnovaConfig(value: unknown): OneWayAnovaConfig {
+  const parsed = value as OneWayAnovaConfig;
+  const rows = Array.isArray(parsed.rows)
+    ? parsed.rows.filter((row) => Number.isInteger(row) && row >= 1)
+    : null;
+  return {
+    responseColumnId: parsed.responseColumnId,
+    responseColumnName: parsed.responseColumnName,
+    factorColumnId: parsed.factorColumnId,
+    factorColumnName: parsed.factorColumnName,
+    title: parsed.title,
+    rowStart: parsed.rowStart ?? null,
+    rowEnd: parsed.rowEnd ?? null,
+    rows: rows && rows.length > 0 ? rows : null,
+    alpha: parsed.alpha ?? 0.05,
+  };
+}
+
+function asAnovaResults(value: unknown): OneWayAnovaResult {
+  return value as OneWayAnovaResult;
 }
 
 function iso(value: Date): string {
@@ -116,6 +151,28 @@ function toAnalysisSummary(
       results,
       sourceHash: row.sourceHash,
       stale: false,
+      createdAt: iso(row.createdAt),
+    };
+    return summary;
+  }
+
+  if (kind === ONE_WAY_ANOVA) {
+    const config = asAnovaConfig(row.config);
+    const response = findColumn(worksheet, config.responseColumnId);
+    const factor = findColumn(worksheet, config.factorColumnId);
+    const currentHash =
+      response && factor
+        ? hashAnovaSource(response, factor, normalizeRowSelection(config))
+        : "";
+    const summary: AnovaAnalysisSummary = {
+      id: row.id,
+      workspaceId: row.workspaceId,
+      kind: ONE_WAY_ANOVA,
+      title: row.title,
+      config,
+      results: asAnovaResults(row.results),
+      sourceHash: row.sourceHash,
+      stale: currentHash !== row.sourceHash,
       createdAt: iso(row.createdAt),
     };
     return summary;
@@ -233,13 +290,15 @@ export async function createAnalysisForReport(
   | { ok: true; analytics: ReportAnalyticsView; analysis: StatisticalAnalysisSummary }
   | { ok: false; status: 400 | 404; error: string }
 > {
-  if (
-    input &&
-    typeof input === "object" &&
-    "kind" in input &&
-    (input as { kind?: unknown }).kind === MEASUREMENT_SCATTER
-  ) {
+  const kind =
+    input && typeof input === "object" && "kind" in input
+      ? (input as { kind?: unknown }).kind
+      : undefined;
+  if (kind === MEASUREMENT_SCATTER) {
     return createScatterAnalysisForReport(reportId, input);
+  }
+  if (kind === ONE_WAY_ANOVA) {
+    return createAnovaAnalysisForReport(reportId, input);
   }
   return createSixpackAnalysisForReport(reportId, input);
 }
@@ -355,13 +414,96 @@ async function createScatterAnalysisForReport(
   });
 }
 
+async function createAnovaAnalysisForReport(
+  reportId: string,
+  input: unknown
+): Promise<
+  | { ok: true; analytics: ReportAnalyticsView; analysis: StatisticalAnalysisSummary }
+  | { ok: false; status: 400 | 404; error: string }
+> {
+  const parsed = oneWayAnovaInputSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      status: 400,
+      error: parsed.error.issues[0]?.message ?? "Invalid ANOVA options.",
+    };
+  }
+
+  const analytics = await getReportAnalytics(reportId);
+  if (!analytics) return { ok: false, status: 404, error: "Not found" };
+
+  const response = findColumn(analytics.worksheet, parsed.data.responseColumnId);
+  const factor = findColumn(analytics.worksheet, parsed.data.factorColumnId);
+  if (!response || !factor) {
+    return {
+      ok: false,
+      status: 400,
+      error: "Select a response column and a factor column.",
+    };
+  }
+  const responseSheet = findSheetIdForColumn(
+    analytics.worksheet,
+    parsed.data.responseColumnId
+  );
+  const factorSheet = findSheetIdForColumn(
+    analytics.worksheet,
+    parsed.data.factorColumnId
+  );
+  if (!responseSheet || !factorSheet || responseSheet !== factorSheet) {
+    return {
+      ok: false,
+      status: 400,
+      error: "Response and factor must be on the same data sheet.",
+    };
+  }
+
+  const rowSelection = normalizeRowSelection(parsed.data);
+  const rowFields = configRowFields(rowSelection);
+  const rowLabel = formatRowSelection(rowSelection);
+  const baseTitle =
+    parsed.data.title?.trim() ||
+    (rowLabel
+      ? `${response.name} by ${factor.name} (${rowLabel})`
+      : `${response.name} by ${factor.name}`);
+  const title = nextAnalysisTitle(
+    analytics.analyses.map((item) => item.title),
+    baseTitle
+  );
+
+  const config: OneWayAnovaConfig = {
+    responseColumnId: response.id,
+    responseColumnName: response.name,
+    factorColumnId: factor.id,
+    factorColumnName: factor.name,
+    title,
+    alpha: parsed.data.alpha ?? 0.05,
+    ...rowFields,
+  };
+
+  const outcome = computeOneWayAnova(analytics.worksheet, config);
+  if (!outcome.ok) {
+    return { ok: false, status: 400, error: outcome.message };
+  }
+
+  return insertAnalysisRow({
+    reportId,
+    workspaceId: analytics.id,
+    kind: ONE_WAY_ANOVA,
+    title: config.title,
+    config,
+    results: outcome.result,
+    sourceHash: hashAnovaSource(response, factor, rowSelection),
+  });
+}
+
 async function insertAnalysisRow(input: {
   reportId: string;
   workspaceId: string;
   kind: AnalysisKind;
   title: string;
-  config: CapabilitySixpackConfig | MeasurementScatterConfig;
-  results: CapabilitySixpackResult | MeasurementScatterResult;
+  config: CapabilitySixpackConfig | MeasurementScatterConfig | OneWayAnovaConfig;
+  results: CapabilitySixpackResult | MeasurementScatterResult | OneWayAnovaResult;
   sourceHash: string;
 }): Promise<
   | { ok: true; analytics: ReportAnalyticsView; analysis: StatisticalAnalysisSummary }
@@ -406,7 +548,50 @@ export async function recomputeAnalysisForReport(
   const existing = analytics.analyses.find((item) => item.id === analysisId);
   if (!existing) return { ok: false, status: 404, error: "Not found" };
 
-  if (isScatterAnalysis(existing)) {
+  if (isAnovaAnalysis(existing)) {
+    const response = findColumn(
+      analytics.worksheet,
+      existing.config.responseColumnId
+    );
+    const factor = findColumn(
+      analytics.worksheet,
+      existing.config.factorColumnId
+    );
+    if (!response || !factor) {
+      return {
+        ok: false,
+        status: 400,
+        error: "The original response or factor column is no longer in the worksheet.",
+      };
+    }
+    const config: OneWayAnovaConfig = {
+      ...existing.config,
+      responseColumnName: response.name,
+      factorColumnName: factor.name,
+    };
+    const outcome = computeOneWayAnova(analytics.worksheet, config);
+    if (!outcome.ok) {
+      return { ok: false, status: 400, error: outcome.message };
+    }
+    await db
+      .update(statisticalAnalyses)
+      .set({
+        title: config.title,
+        config,
+        results: outcome.result,
+        sourceHash: hashAnovaSource(
+          response,
+          factor,
+          normalizeRowSelection(config)
+        ),
+      })
+      .where(
+        and(
+          eq(statisticalAnalyses.id, analysisId),
+          eq(statisticalAnalyses.workspaceId, analytics.id)
+        )
+      );
+  } else if (isScatterAnalysis(existing)) {
     const scatter = await runMeasurementScatter({
       reportId,
       query: existing.config.query,

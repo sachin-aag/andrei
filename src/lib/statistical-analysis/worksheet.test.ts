@@ -126,6 +126,15 @@ describe("worksheet grid operations", () => {
     });
   });
 
+  it("fills Lot labels on the adjacent column of the sample assay", () => {
+    const sheet = applySampleAssay(createEmptyWorksheet(), 0);
+    expect(sheet.columns[1]?.name).toBe("Lot");
+    expect(sheet.columns[1]?.values[0]).toBe("A");
+    expect(sheet.columns[1]?.values[1]).toBe("B");
+    expect(sheet.columns[1]?.values[2]).toBe("C");
+    expect(sheet.columns[1]?.values).toHaveLength(50);
+  });
+
   it("finds a column by case-insensitive name", () => {
     const sheet = applySampleAssay(createEmptyWorksheet(), 0);
     expect(findColumnIndexByName(sheet, "assay")).toBe(0);

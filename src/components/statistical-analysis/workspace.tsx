@@ -13,6 +13,7 @@ import {
 import {
   createCapabilitySixpack,
   createMeasurementScatter,
+  createOneWayAnova,
   deleteCapabilitySixpack,
   getReportAnalytics,
   patchReportAnalytics,
@@ -33,6 +34,7 @@ import {
 } from "@/lib/statistical-analysis/worksheet";
 import {
   SPECS_TAB_ID,
+  isAnovaAnalysis,
   isScatterAnalysis,
   isSixpackAnalysis,
   type ReportAnalyticsView,
@@ -41,8 +43,10 @@ import {
 } from "@/lib/statistical-analysis/types";
 import { analysisListSubtitle, withLocalStale } from "@/lib/statistical-analysis/stale";
 import { CapabilityDialog } from "@/components/statistical-analysis/capability-dialog";
+import { AnovaDialog } from "@/components/statistical-analysis/anova-dialog";
 import { PlotMeasurementsDialog } from "@/components/statistical-analysis/plot-measurements-dialog";
 import { ScatterView } from "@/components/statistical-analysis/scatter-view";
+import { AnovaView } from "@/components/statistical-analysis/anova-view";
 import { SixpackView } from "@/components/statistical-analysis/sixpack-view";
 import { SpecsTable } from "@/components/statistical-analysis/specs-table";
 import {
@@ -95,6 +99,12 @@ export function StatisticalWorkspace({
   const [plotOpen, setPlotOpen] = useState(false);
   const [plotSubmitting, setPlotSubmitting] = useState(false);
   const [plotError, setPlotError] = useState<string | null>(null);
+  const [anovaOpen, setAnovaOpen] = useState(false);
+  const [anovaResponseColumnId, setAnovaResponseColumnId] = useState("");
+  const [anovaRowStart, setAnovaRowStart] = useState<number | null>(null);
+  const [anovaRowEnd, setAnovaRowEnd] = useState<number | null>(null);
+  const [anovaSubmitting, setAnovaSubmitting] = useState(false);
+  const [anovaError, setAnovaError] = useState<string | null>(null);
   const [recomputing, setRecomputing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -223,6 +233,19 @@ export function StatisticalWorkspace({
     setPlotOpen(true);
   };
 
+  const openOneWayAnova = async (
+    columnId: string,
+    rows: { start: number; end: number } | null = null
+  ) => {
+    if (readOnly) return;
+    await flush().catch(() => undefined);
+    setAnovaResponseColumnId(columnId);
+    setAnovaRowStart(rows?.start ?? null);
+    setAnovaRowEnd(rows?.end ?? null);
+    setAnovaError(null);
+    setAnovaOpen(true);
+  };
+
   if (loading) {
     return (
       <div
@@ -286,10 +309,15 @@ export function StatisticalWorkspace({
               }}
               onLoadSample={() => {
                 setWorksheet((current) => applySampleAssay(current, selection.col));
-                toast.success("Loaded sample assay measurements into the selected column.");
+                toast.success(
+                  "Loaded sample assay measurements and Lot labels into the selected columns."
+                );
               }}
               onNormalSixpack={() =>
                 void openSixpackForColumn(selectedColumnId, selectedRowRange)
+              }
+              onOneWayAnova={() =>
+                void openOneWayAnova(selectedColumnId, selectedRowRange)
               }
               onPlotMeasurements={() => void openPlotMeasurements()}
               onAddDataSheet={() => {
@@ -439,7 +467,8 @@ export function StatisticalWorkspace({
             <div className="flex flex-1 items-center justify-center p-8 text-center">
               <p className="max-w-md text-sm text-[var(--muted-foreground)]">
                 Select a worksheet column — or Shift+arrow a row range — and
-                click <strong>Analyze {selectedColumnName}</strong>, or use{" "}
+                click <strong>Analyze {selectedColumnName}</strong>, use{" "}
+                <strong>Stat → One-Way ANOVA</strong>, or{" "}
                 <strong>Stat → Plot measurements</strong> for an attachment
                 scatter. Each run is saved as its own result.
               </p>
@@ -557,6 +586,47 @@ export function StatisticalWorkspace({
                       }
                     }}
                   />
+                ) : selectedAnalysis && isAnovaAnalysis(selectedAnalysis) ? (
+                  <AnovaView
+                    analysis={selectedAnalysis}
+                    readOnly={readOnly}
+                    recomputing={recomputing}
+                    onRecompute={async () => {
+                      setRecomputing(true);
+                      try {
+                        await flush().catch(() => undefined);
+                        const next = await recomputeCapabilitySixpack(
+                          reportId,
+                          selectedAnalysis.id
+                        );
+                        applyAnalytics(next);
+                        toast.success("ANOVA recomputed from the current columns.");
+                      } catch (error) {
+                        toast.error(
+                          error instanceof Error
+                            ? error.message
+                            : "Could not recompute the analysis."
+                        );
+                      } finally {
+                        setRecomputing(false);
+                      }
+                    }}
+                    onDelete={async () => {
+                      try {
+                        const next = await deleteCapabilitySixpack(
+                          reportId,
+                          selectedAnalysis.id
+                        );
+                        applyAnalytics(next);
+                      } catch (error) {
+                        toast.error(
+                          error instanceof Error
+                            ? error.message
+                            : "Could not delete the analysis."
+                        );
+                      }
+                    }}
+                  />
                 ) : selectedAnalysis && isSixpackAnalysis(selectedAnalysis) ? (
                   <SixpackView
                     analysis={selectedAnalysis}
@@ -642,6 +712,45 @@ export function StatisticalWorkspace({
             );
           } finally {
             setCapabilitySubmitting(false);
+          }
+        }}
+      />
+
+      <AnovaDialog
+        key={anovaOpen ? "anova-open" : "anova-closed"}
+        open={anovaOpen}
+        worksheet={worksheet}
+        defaultResponseColumnId={anovaResponseColumnId || selectedColumnId}
+        defaultRowStart={anovaRowStart}
+        defaultRowEnd={anovaRowEnd}
+        submitting={anovaSubmitting}
+        error={anovaError}
+        onOpenChange={setAnovaOpen}
+        onSubmit={async (values) => {
+          setAnovaSubmitting(true);
+          setAnovaError(null);
+          try {
+            await flush().catch(() => undefined);
+            const created = await createOneWayAnova(reportId, {
+              responseColumnId: values.responseColumnId,
+              factorColumnId: values.factorColumnId,
+              title: values.title || undefined,
+              rowStart: values.rowStart,
+              rowEnd: values.rowEnd,
+            });
+            applyAnalytics(created.analytics, {
+              selectAnalysisId: created.analysisId,
+            });
+            setAnovaOpen(false);
+            setTab("results");
+          } catch (error) {
+            setAnovaError(
+              error instanceof Error
+                ? error.message
+                : "Could not run the ANOVA."
+            );
+          } finally {
+            setAnovaSubmitting(false);
           }
         }}
       />

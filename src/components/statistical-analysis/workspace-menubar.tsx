@@ -17,6 +17,7 @@ export function WorkspaceMenubar({
   onDeleteRow,
   onLoadSample,
   onNormalSixpack,
+  onOneWayAnova,
   onPlotMeasurements,
   onAddDataSheet,
 }: {
@@ -27,6 +28,7 @@ export function WorkspaceMenubar({
   onDeleteRow: () => void;
   onLoadSample: () => void;
   onNormalSixpack: () => void;
+  onOneWayAnova: () => void;
   onPlotMeasurements: () => void;
   onAddDataSheet: () => void;
 }) {
@@ -76,6 +78,12 @@ export function WorkspaceMenubar({
             onSelect={onNormalSixpack}
           >
             Normal Capability Sixpack…
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            data-testid="stat-one-way-anova"
+            onSelect={onOneWayAnova}
+          >
+            One-Way ANOVA…
           </DropdownMenuItem>
           <DropdownMenuItem
             data-testid="stat-plot-measurements"

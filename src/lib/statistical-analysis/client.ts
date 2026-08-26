@@ -79,6 +79,24 @@ export async function createMeasurementScatter(
   });
 }
 
+export async function createOneWayAnova(
+  reportId: string,
+  input: {
+    responseColumnId: string;
+    factorColumnId: string;
+    title?: string;
+    rowStart?: number | null;
+    rowEnd?: number | null;
+    rows?: number[];
+    alpha?: number;
+  }
+): Promise<{ analytics: ReportAnalyticsView; analysisId: string }> {
+  return postAnalysis(reportId, {
+    kind: "one_way_anova",
+    ...input,
+  });
+}
+
 async function postAnalysis(
   reportId: string,
   input: unknown
