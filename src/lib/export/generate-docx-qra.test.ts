@@ -127,16 +127,51 @@ function qraSections(): ReportSectionRecord[] {
   });
 }
 
+function partText(zip: PizZip, name: string): string {
+  const xml = zip.file(name)?.asText() ?? "";
+  return Array.from(xml.matchAll(/<w:t[^>]*>([^<]*)<\/w:t>/g), (m) => m[1] ?? "").join(
+    ""
+  );
+}
+
 describe("QRA DOCX template", () => {
-  it("is a valid docx with F02 placeholders", () => {
+  it("is a valid MJ F02 docx, not the Convergent mechanical clone", () => {
     const zip = new PizZip(fs.readFileSync(TEMPLATE));
     expect(Object.keys(zip.files)[0]).toBe("[Content_Types].xml");
+    expect(zip.file("word/media/image1.png")).toBeTruthy();
+    expect(zip.file("word/media/image1.jpeg")).toBeFalsy();
+
+    const investigation = new PizZip(
+      fs.readFileSync(
+        path.join(process.cwd(), "templates", "mj-investigation-report-template.docx")
+      )
+    );
+    expect(zip.file("word/media/image1.png")?.asBinary()).toBe(
+      investigation.file("word/media/image1.png")?.asBinary()
+    );
+
     const xml = zip.file("word/document.xml")?.asText() ?? "";
     expect(() => {
       const parsed = new DOMParser().parseFromString(xml, "text/xml");
       const err = parsed.getElementsByTagName("parsererror")[0];
       if (err) throw new Error(err.textContent ?? "invalid xml");
     }).not.toThrow();
+
+    const header = partText(zip, "word/header2.xml");
+    const footer = partText(zip, "word/footer1.xml");
+    const body = partText(zip, "word/document.xml");
+    expect(header).toContain("M.J.");
+    expect(header).toContain("Biopharm Private Limited");
+    expect(header).toContain("Quality Risk Assessment");
+    expect(header).toContain("SOP/DP/QA/010");
+    expect(header).toContain("Standard Operating Procedure");
+    expect(footer).toContain("SOP/DP/QA/010/F02-R04");
+    expect(body).toContain("FORMAT");
+    expect(body).toContain("PRE-APPROVAL");
+    expect(body).toContain("TABLE OF CONTENTS");
+    expect(body).not.toMatch(/Convergent|Solea|731-00008/i);
+    expect(header).not.toMatch(/Convergent|Solea/i);
+
     for (const tag of [
       "{@objectiveXml}",
       "{@fmeaTableXml}",
@@ -182,6 +217,13 @@ describe("QRA DOCX export", () => {
     expect(xml).toContain("Underfill");
     expect(xml).toContain("12 (Medium)");
     expect(xml).toContain("RA/DP/QA/26/001");
+    expect(xml).toContain("FORMAT");
+    expect(xml).toContain("PRE-APPROVAL");
+    expect(xml).toContain("TABLE OF CONTENTS");
+    expect(zip.file("word/media/image1.png")).toBeTruthy();
+    expect(zip.file("word/media/image1.jpeg")).toBeFalsy();
+    expect(partText(zip, "word/header2.xml")).toContain("M.J.");
+    expect(partText(zip, "word/footer1.xml")).toContain("F02-R04");
   });
 
   it("names the exported file for the QRA type", () => {

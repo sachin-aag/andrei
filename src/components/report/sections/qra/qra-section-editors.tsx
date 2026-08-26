@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { toast } from "sonner";
 import type { JSONContent } from "@tiptap/core";
 import { Button } from "@/components/ui/button";
@@ -20,12 +21,19 @@ import {
 } from "@/lib/document-types/qra/sections";
 import { recalculateFmeaTable } from "@/lib/document-types/qra/recalculate-table";
 import {
+  DEFAULT_FMEA_STAGE,
+  FMEA_STAGE_LABELS,
+  FMEA_STAGES,
+  type FmeaStage,
+} from "@/lib/document-types/qra/fmea-stages";
+import {
   QUALITATIVE_RUBRIC,
   QUANTITATIVE_RUBRIC,
   parseYesNo,
   selectAssessmentMode,
   type AssessmentMode,
 } from "@/lib/document-types/qra/scoring";
+import { cn } from "@/lib/utils";
 
 const EMPTY_DOC: JSONContent = { type: "doc", content: [{ type: "paragraph" }] };
 
@@ -327,6 +335,51 @@ function ScoringLegend({ mode }: { mode: AssessmentMode }) {
   );
 }
 
+function FmeaStageToolbar({
+  stage,
+  onStageChange,
+}: {
+  stage: FmeaStage;
+  onStageChange: (next: FmeaStage) => void;
+}) {
+  return (
+    <div className="grid gap-1.5">
+      <div
+        role="tablist"
+        aria-label="FMEA column groups"
+        data-testid="fmea-stage-tabs"
+        className="flex flex-wrap gap-0.5 rounded-md border border-[var(--border)] p-0.5"
+      >
+        {FMEA_STAGES.map((item) => {
+          const selected = item === stage;
+          return (
+            <button
+              key={item}
+              type="button"
+              role="tab"
+              aria-selected={selected}
+              data-testid={`fmea-stage-${item}`}
+              onClick={() => onStageChange(item)}
+              className={cn(
+                "rounded px-2.5 py-1 text-xs font-medium transition-colors",
+                selected
+                  ? "bg-[var(--secondary)] text-[var(--foreground)]"
+                  : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+              )}
+            >
+              {FMEA_STAGE_LABELS[item]}
+            </button>
+          );
+        })}
+      </div>
+      <p className="text-xs text-[var(--muted-foreground)]">
+        Hidden columns stay in the document. All columns shows the full SOP
+        grid.
+      </p>
+    </div>
+  );
+}
+
 function FmeaLikeEditor({
   section,
   tableLabel,
@@ -343,6 +396,7 @@ function FmeaLikeEditor({
   const { status, lastSavedAt, value, flushSave } =
     useGenericSectionSave(section);
   const { readOnly } = useReportData();
+  const [stage, setStage] = useState<FmeaStage>(DEFAULT_FMEA_STAGE);
   const content = (value as NarrativeTableContent | undefined) ?? {
     narrative: EMPTY_DOC,
     table: EMPTY_DOC,
@@ -393,16 +447,23 @@ function FmeaLikeEditor({
           Recalculate risk scores
         </Button>
       </div>
-      <TiptapSectionField
-        section={section}
-        contentPath="table"
-        label={tableLabel}
-        placeholder={TABLE_PLACEHOLDER}
-        className="grid gap-2"
-        value={content.table}
-        onChange={(doc) => update((p) => ({ ...p, table: doc }))}
-        onFlushSave={flushSave}
-      />
+      <FmeaStageToolbar stage={stage} onStageChange={setStage} />
+      <div
+        className="fmea-grid min-w-0"
+        data-fmea-stage={stage}
+        data-testid={`fmea-grid-${section}`}
+      >
+        <TiptapSectionField
+          section={section}
+          contentPath="table"
+          label={tableLabel}
+          placeholder={TABLE_PLACEHOLDER}
+          className="grid gap-2"
+          value={content.table}
+          onChange={(doc) => update((p) => ({ ...p, table: doc }))}
+          onFlushSave={flushSave}
+        />
+      </div>
     </SectionShell>
   );
 }
