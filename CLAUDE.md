@@ -68,7 +68,7 @@ pnpm exec playwright install --with-deps chromium firefox webkit
 - `src/app/{login,change-password,forgot-password,reset-password,unlock,profile}/` — auth/account pages. `src/app/api/auth-pw/` — password-based auth routes (forgot/reset).
 - `src/components/report/` — Editor UI: `report-workspace.tsx` (header + Document/Analytics toggle + sidebar), per-section editors in `sections/`, `report-sidebar.tsx` (AI traffic-light results + analytics chat), `review-rail/` (manager comment margin UI).
 - `src/components/improve-ai/` — Improve AI UI: session form, upload button, section content display, stale-rerun dialog.
-- `src/components/statistical-analysis/` — Report Analytics worksheet grid, Stat menu, sixpack SVG, capability dialog, stats chat panel.
+- `src/components/statistical-analysis/` — Report Analytics worksheet grid, Stat menu, sixpack/scatter SVG, capability and plot-measurements dialogs, stats chat panel.
 - `src/components/ui/` — shadcn-style Radix UI primitives.
 - `src/db/schema/index.ts` — Drizzle schema (single file, not a directory): `workspaceUsers`, `reports` (includes `documentType`), `reportManagers`, `reportSections`, `criteriaEvaluations`, `comments`, `chatSessions`/`chatMessages`, `reportSourceDocx`, `mathExtractionCache`, `aiFeedbackSessions`/`aiFeedbackResponses`, `auditEvents`/`sectionContentVersions`/`electronicSignatures`, `passwordPolicySettings`, `retentionSettings`, `statisticalWorkspaces`/`statisticalAnalyses`, plus attachment evidence (`reportAttachments`, `attachmentIngestRuns`, `documentPages`, `documentChunks` with `vector(768)`). NextAuth tables + `authUsers` in `auth.ts`.
 - `src/lib/ai/` — AI evaluation, suggestion, and chat pipelines (see subsystems below).
@@ -279,21 +279,22 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
 
 ## Subsystem: Statistical Analysis
 
-**Purpose:** Report-scoped measurement worksheet and Minitab-style Normal Capability Sixpack (individuals / I-MR). Lives on the report **Analytics** tab (same attachments as the document). Demo and MJ only (`statisticalAnalysisEnabled`); Convergent 404s the APIs and hides the tab. Not a document type, not TipTap, and not DMAIC chat.
+**Purpose:** Report-scoped measurement worksheet and Minitab-style Normal Capability Sixpack (individuals / I-MR), plus attachment measurement scatter. Lives on the report **Analytics** tab (same attachments as the document). On for demo, MJ, and Convergent (`statisticalAnalysisEnabled`). Not a document type, not TipTap, and not DMAIC chat. Convergent Document chat does **not** propose `plot_measurements` figures — those plots live in Analytics.
 
 **Entry points:**
 - Report workspace header: Document | Analytics (`data-testid="report-surface-analytics"`)
 - `GET/PATCH/POST /api/reports/[reportId]/analytics` (`POST` aliases `PATCH` for autosave beacons)
-- `POST .../analytics/analyses` creates a sixpack; `POST/DELETE .../analytics/analyses/[analysisId]` recomputes or deletes
+- `POST .../analytics/analyses` creates a sixpack (default) or `kind: "measurement_scatter"`; `POST/DELETE .../analytics/analyses/[analysisId]` recomputes or deletes
 - `POST /api/reports/[reportId]/analytics/chat` — stats-only assistant (`ANALYTICS_CHAT_PROMPT_VERSION`, surface `analytics`)
 
 **Data flow:**
-1. Opening Analytics `getOrCreate`s one worksheet per report (`statistical_workspaces.report_id` unique)
-2. Enter, paste, or ask the assistant to extract values from attachments (`extract_numeric_series` → `write_column`)
-3. `Analyze {column}` (or a Shift+arrow row range), column-header context menu, or `Stat → Normal Capability Sixpack…` (or `run_capability_sixpack` with optional `rowStart`/`rowEnd`/`rows`) computes I-MR limits, histogram, AD normal plot, Cp/Cpk/Pp/Ppk on the **server** (`computeCapabilitySixpack`). Each run **inserts** a new `statistical_analyses` row — same-column titles become `Assay (2)`; a subset is titled `Assay (rows 1–10)`.
-4. Results lists every saved analysis; selecting one does not discard the others. Editing cells **in the analyzed rows** marks that analysis **stale** (`sourceHash`); Recompute refreshes only that row. **Download** saves a CSV of specs, capability indices, and observations. Shift+arrow / Shift+click extends a cell range on the worksheet.
+1. Opening Analytics `getOrCreate`s one worksheet per report (`statistical_workspaces.report_id` unique). The workbook has one or more data sheets plus a Specs tab (LSL/USL/target).
+2. Enter, paste, or ask the assistant to extract values from attachments (`extract_numeric_series` → `write_column`). Extraction also fills Specs when pages name limits.
+3. `Analyze {column}` (or a Shift+arrow row range), column-header context menu, or `Stat → Normal Capability Sixpack…` (or `run_capability_sixpack` with optional `rowStart`/`rowEnd`/`rows`) computes I-MR limits, histogram, AD normal plot, Cp/Cpk/Pp/Ppk on the **server** (`computeCapabilitySixpack`). Specs tab values prefill the form; if that tab is empty, min/max (and midpoint target) of the selected range are used. Each run **inserts** a new `statistical_analyses` row — same-column titles become `Assay (2)`; a subset is titled `Assay (rows 1–10)`.
+4. `Stat → Plot measurements…` (or analytics `plot_measurements`) extracts cited numeric measurements from attachments and saves a scatter (`measurement_scatter`) on Results. Do not reuse Document-chat `executePlotMeasurements` here (that path writes section suggestions).
+5. Results lists every saved analysis; selecting one does not discard the others. Editing cells **in the analyzed rows** marks a sixpack **stale** (`sourceHash`); scatter is not worksheet-stale. Recompute refreshes only that row. **Download** saves a CSV.
 
-**Chat:** Tools are search/outline/page/extract/worksheet/sixpack only. No `propose_edit` / `draft_field` / Plan-Agent toggle. Do not add these tools to the report Plan-mode allowlist. Stub chat is text-only (`buildStubAnalyticsChatModel`).
+**Chat:** Tools are search/outline/page/extract/worksheet/sixpack/scatter. Images and Quick/Deep pace match Document chat. No `propose_edit` / `draft_field` / Plan-Agent toggle. Do not add these tools to the report Plan-mode allowlist. Stub chat is text-only (`buildStubAnalyticsChatModel`).
 
 **Key invariant:** Analyses do not silently change when the worksheet changes, and a new run never overwrites an earlier sixpack. I-MR constants are Minitab n=2 (`d2=1.128`, `D4=3.267`, `E2=2.66`). Mutations use `canSaveReportSection` (same lock as section autosave).
 
@@ -321,7 +322,7 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
 - `system-prompt.ts` — mode-aware prompt (`plan` vs `agent`); `CHAT_PROMPT_VERSION`; search-then-ask `DOCUMENT_RULES`
 - `auto-evidence.ts` — kickoff hybrid retrieval (≤1.5s, fail-soft) injected after document rules
 - `context-map.ts` — serializes report state + ready docs (sanitized `summary=`)
-- `tools.ts` — `read_section`, `search_documents`, `document_outline`, `read_document_page`, `ask_user`, draft/edit tools; sanitizes untrusted metadata here (not in `src/lib/attachments/`)
+- `tools.ts` — `read_section`, `search_documents`, `document_outline`, `read_document_page`, `ask_user`, draft/edit tools, pack-gated `plot_measurements` (off for Convergent Document chat); sanitizes untrusted metadata here (not in `src/lib/attachments/`)
 - `fields.ts` / `section-scope.ts` — type-specific editable sections (`chatEditableSections`)
 - `mentions.ts` — `@` documents/sections
 - `propose-edit.ts`, `session-title.ts`, `access.ts`

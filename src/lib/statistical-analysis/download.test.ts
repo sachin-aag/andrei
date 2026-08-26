@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { CAPABILITY_SIXPACK_NORMAL } from "./types";
+import { CAPABILITY_SIXPACK_NORMAL, MEASUREMENT_SCATTER } from "./types";
 import type { StatisticalAnalysisSummary } from "./types";
+import { TORQUE_MOCK_SPEC } from "@/lib/charts/__fixtures__/torque-mock";
 import { computeCapabilitySixpackFromValues } from "./sixpack";
 import {
   analysisDownloadFilename,
@@ -66,5 +67,38 @@ describe("analysis download", () => {
     expect(csv).toContain("Index,Value");
     expect(csv).toContain("1,10.0000");
     expect(csv).toContain("5,14.0000");
+  });
+
+  it("downloads measurement scatter points and citations", () => {
+    const analysis: StatisticalAnalysisSummary = {
+      id: "an-scatter",
+      workspaceId: "ws-1",
+      kind: MEASUREMENT_SCATTER,
+      title: "Tip Detachment Torque",
+      config: {
+        query: "M3-SYS-FN-037",
+        title: "Tip Detachment Torque",
+        xLabel: "Measurement",
+        yLabel: "Torque (ozf-in)",
+        layout: TORQUE_MOCK_SPEC.layout,
+      },
+      results: {
+        specs: [TORQUE_MOCK_SPEC],
+        n: TORQUE_MOCK_SPEC.points.length,
+        uom: "ozf-in",
+      },
+      sourceHash: "def",
+      stale: false,
+      createdAt: "2026-08-26T00:00:00.000Z",
+    };
+    expect(analysisDownloadFilename(analysis)).toBe(
+      "Tip-Detachment-Torque-measurement-scatter.csv"
+    );
+    const csv = analysisToCsv(analysis);
+    expect(csv).toContain("Measurement scatter");
+    expect(csv).toContain("M3-SYS-FN-037");
+    expect(csv).toContain("Chart,Series,Label,X,Y,UOM");
+    expect(csv).toContain("Tip 1");
+    expect(csv).toContain(String(TORQUE_MOCK_SPEC.points[0]?.y));
   });
 });

@@ -22,6 +22,8 @@ import {
 import { WARN_VALUES_FOR_SIXPACK } from "@/lib/statistical-analysis/types";
 import {
   columnNumericValues,
+  dataSheets,
+  defaultSixpackLimits,
   findColumn,
 } from "@/lib/statistical-analysis/worksheet";
 import {
@@ -55,6 +57,39 @@ function parseOptionalRow(raw: string): number | null {
   return Number.isInteger(value) && value >= 1 ? value : null;
 }
 
+function formatLimitInput(value: number | null): string {
+  if (value == null) return "";
+  if (Number.isInteger(value)) return String(value);
+  return String(Number(value.toPrecision(6)));
+}
+
+function limitsForColumn(
+  worksheet: WorksheetData,
+  columnId: string,
+  rowStartRaw: string,
+  rowEndRaw: string
+): { lsl: string; usl: string; target: string } {
+  const selectedColumn = findColumn(worksheet, columnId) ?? worksheet.columns[0];
+  if (!selectedColumn) return { lsl: "", usl: "", target: "" };
+  const numeric = columnNumericValues(
+    selectedColumn,
+    normalizeRowSelection({
+      rowStart: parseOptionalRow(rowStartRaw),
+      rowEnd: parseOptionalRow(rowEndRaw),
+    })
+  );
+  const limits = defaultSixpackLimits({
+    columnName: selectedColumn.name,
+    values: numeric.values,
+    worksheet,
+  });
+  return {
+    lsl: formatLimitInput(limits.lsl),
+    usl: formatLimitInput(limits.usl),
+    target: formatLimitInput(limits.target),
+  };
+}
+
 const fieldLabelClass =
   "normal-case tracking-normal text-sm font-medium text-[var(--foreground)]";
 
@@ -79,11 +114,17 @@ export function CapabilityDialog({
   onOpenChange: (open: boolean) => void;
   onSubmit: (values: CapabilityDialogValues) => void;
 }) {
+  const initialLimits = limitsForColumn(
+    worksheet,
+    defaultColumnId,
+    defaultRowStart != null ? String(defaultRowStart) : "",
+    defaultRowEnd != null ? String(defaultRowEnd) : ""
+  );
   const [columnId, setColumnId] = useState(defaultColumnId);
   const [title, setTitle] = useState("");
-  const [lsl, setLsl] = useState("90");
-  const [usl, setUsl] = useState("110");
-  const [target, setTarget] = useState("100");
+  const [lsl, setLsl] = useState(initialLimits.lsl);
+  const [usl, setUsl] = useState(initialLimits.usl);
+  const [target, setTarget] = useState(initialLimits.target);
   const [rowStart, setRowStart] = useState(
     defaultRowStart != null ? String(defaultRowStart) : ""
   );
@@ -91,7 +132,24 @@ export function CapabilityDialog({
     defaultRowEnd != null ? String(defaultRowEnd) : ""
   );
 
+  const applyColumnLimits = (
+    nextColumnId: string,
+    nextRowStart: string,
+    nextRowEnd: string
+  ) => {
+    const next = limitsForColumn(
+      worksheet,
+      nextColumnId,
+      nextRowStart,
+      nextRowEnd
+    );
+    setLsl(next.lsl);
+    setUsl(next.usl);
+    setTarget(next.target);
+  };
+
   const selectedColumn = findColumn(worksheet, columnId) ?? worksheet.columns[0];
+  const sheets = dataSheets(worksheet);
   const rowSelection = normalizeRowSelection({
     rowStart: parseOptionalRow(rowStart),
     rowEnd: parseOptionalRow(rowEnd),
@@ -118,16 +176,26 @@ export function CapabilityDialog({
             <Label htmlFor="sixpack-column" className={fieldLabelClass}>
               Data column
             </Label>
-            <Select value={columnId} onValueChange={setColumnId}>
+            <Select
+              value={columnId}
+              onValueChange={(value) => {
+                setColumnId(value);
+                applyColumnLimits(value, rowStart, rowEnd);
+              }}
+            >
               <SelectTrigger id="sixpack-column" data-testid="sixpack-column">
                 <SelectValue placeholder="Select a column" />
               </SelectTrigger>
               <SelectContent>
-                {worksheet.columns.map((column) => (
-                  <SelectItem key={column.id} value={column.id}>
-                    {column.name}
-                  </SelectItem>
-                ))}
+                {sheets.flatMap((sheet) =>
+                  sheet.columns.map((column) => (
+                    <SelectItem key={column.id} value={column.id}>
+                      {sheets.length > 1
+                        ? `${sheet.name}: ${column.name}`
+                        : column.name}
+                    </SelectItem>
+                  ))
+                )}
               </SelectContent>
             </Select>
             <p className="text-xs text-[var(--muted-foreground)]">
@@ -156,7 +224,11 @@ export function CapabilityDialog({
                 inputMode="numeric"
                 placeholder="All"
                 value={rowStart}
-                onChange={(event) => setRowStart(event.target.value)}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setRowStart(value);
+                  applyColumnLimits(columnId, value, rowEnd);
+                }}
               />
             </div>
             <div className="grid gap-1.5">
@@ -169,7 +241,11 @@ export function CapabilityDialog({
                 inputMode="numeric"
                 placeholder="All"
                 value={rowEnd}
-                onChange={(event) => setRowEnd(event.target.value)}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setRowEnd(value);
+                  applyColumnLimits(columnId, rowStart, value);
+                }}
               />
             </div>
           </div>

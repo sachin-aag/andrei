@@ -56,7 +56,7 @@ import {
   dataUrlToBase64,
   type SectionInlineImage,
 } from "@/lib/ai/chat/section-images";
-import { getCustomerPack } from "@/lib/customers/packs";
+import { getCustomerPack, isDocumentChatPlotMeasurementsEnabled } from "@/lib/customers/packs";
 import { checkProposedEdit, proposedEditHint } from "@/lib/ai/chat/propose-edit";
 import {
   citationAppendPart,
@@ -608,6 +608,8 @@ export function buildChatTools(opts: {
   citationsAtEndOfSection?: boolean;
   /** Current chat messages — used to resolve chat-attached images. */
   messages?: UIMessage[];
+  /** Document-chat scatter plots. Off for Convergent (plots live in Analytics). */
+  includePlotMeasurements?: boolean;
 }): ToolSet {
   const { reportId, canEdit, actor } = opts;
   const documentType = opts.documentType ?? "investigation_report";
@@ -617,6 +619,8 @@ export function buildChatTools(opts: {
   const citationsAtEndOfSection =
     opts.citationsAtEndOfSection ?? getCustomerPack().citationsAtEndOfSection;
   const messages = opts.messages ?? [];
+  const includePlotMeasurements =
+    opts.includePlotMeasurements ?? isDocumentChatPlotMeasurementsEnabled();
   const citationRule = documentCitationRule(citationsAtEndOfSection);
   const allowedSections = chatSectionsInScope(sectionScope, documentType);
   const pinnedAttachmentIds = Array.from(
@@ -1163,7 +1167,7 @@ export function buildChatTools(opts: {
 
     insert_image: tool({
       description:
-        `Insert one existing image into a rich narrative field as a reviewable suggestion (the engineer accepts or rejects it). section/targetField are the DESTINATION. For source=section, set image.section to the section the figure is in NOW (required when copying between sections) and pass image.id from read_section (e.g. 'narrative#1') or image.index. Do not generate new pixels — use plot_measurements when the engineer asked for a chart. Do not put markdown image syntax in draft_field or propose_edit — those cannot create figures. Empty anchorText appends at the end of the field.${scopeHint}`,
+        `Insert one existing image into a rich narrative field as a reviewable suggestion (the engineer accepts or rejects it). section/targetField are the DESTINATION. For source=section, set image.section to the section the figure is in NOW (required when copying between sections) and pass image.id from read_section (e.g. 'narrative#1') or image.index. Do not generate new pixels${includePlotMeasurements ? " — use plot_measurements when the engineer asked for a chart" : ". Measurement charts belong in Analytics, not Document chat"}. Do not put markdown image syntax in draft_field or propose_edit — those cannot create figures. Empty anchorText appends at the end of the field.${scopeHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
@@ -2046,6 +2050,10 @@ export function buildChatTools(opts: {
         reason,
       }),
     });
+  }
+
+  if (!includePlotMeasurements) {
+    delete tools.plot_measurements;
   }
 
   return tools;

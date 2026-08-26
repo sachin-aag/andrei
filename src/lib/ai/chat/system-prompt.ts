@@ -6,12 +6,15 @@ import {
   chatTargetFields,
   sectionLabel,
 } from "@/lib/ai/chat/fields";
-import { getCustomerPack } from "@/lib/customers/packs";
+import {
+  getCustomerPack,
+  isDocumentChatPlotMeasurementsEnabled,
+} from "@/lib/customers/packs";
 import { getDocumentType } from "@/lib/document-types";
 import type { RetrievalPolicy } from "@/lib/ai/chat/retrieval-policy";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v46-metric-series";
+export const CHAT_PROMPT_VERSION = "chat-v47-metric-series-plots";
 
 export type ChatMode = "plan" | "agent";
 
@@ -40,9 +43,16 @@ function draftPriorityPhrase(draftOrder: readonly SectionType[]): string {
   return `${labels[0]}, then ${labels[1]}`;
 }
 
+function figureEditTools(includePlotMeasurements: boolean): string {
+  return includePlotMeasurements
+    ? "insert_image / plot_measurements / remove_image"
+    : "insert_image / remove_image";
+}
+
 function sectionFocusBlock(
   scope: ChatSectionScope,
-  analyzeInScope: boolean
+  analyzeInScope: boolean,
+  includePlotMeasurements: boolean
 ): string {
   if (scope === "all") {
     return `## Section focus: ALL SECTIONS
@@ -54,9 +64,10 @@ The engineer has not narrowed scope. You may plan or draft across any editable s
     scope === "analyze"
       ? `\n- Exception for Analyze method selection: you MAY call read_section on define and measure (read-only) to choose 6M vs 5-Why vs Brainstorming.`
       : "";
+  const figures = figureEditTools(includePlotMeasurements);
   const editTools = analyzeInScope
-    ? "draft_field / edit_table / propose_edit / insert_image / plot_measurements / remove_image / select_analyze_method"
-    : "draft_field / edit_table / propose_edit / insert_image / plot_measurements / remove_image";
+    ? `draft_field / edit_table / propose_edit / ${figures} / select_analyze_method`
+    : `draft_field / edit_table / propose_edit / ${figures}`;
   return `## Section focus: ${label} [${scope}]
 The engineer selected **${label}** for this conversation. Focus Ask questions and Agent edits on this section only.
 - Ask mode: ask what is needed to complete ${label}; do not plan other sections unless they change the section dropdown.
@@ -79,7 +90,8 @@ When you need facts from the engineer, call the ask_user tool. It renders a stru
 
 function documentRules(
   policy: RetrievalPolicy,
-  citationsAtEndOfSection: boolean
+  citationsAtEndOfSection: boolean,
+  includePlotMeasurements: boolean
 ): string {
   let retrievalMode: string;
   switch (policy) {
@@ -139,7 +151,11 @@ ${
 - To copy a figure, call insert_image. section / targetField are the DESTINATION (where the figure should appear). image.section is the SOURCE (where it is now) — required when those differ. Pass image.id from read_section (e.g. narrative#1) or image.index.
 - Example — copy Purpose's first figure into Scope: insert_image({ section: "scope", targetField: "narrative", image: { source: "section", section: "purpose", id: "narrative#1" }, reasoning: "..." }).
 - To remove a figure, call remove_image with image.id from read_section (e.g. narrative#1) or image.index. Never draft_field a field just to drop a figure — that drops every figure.
-- Charts are the only generated pixels. When the engineer asked in words for a chart of cited attachment data, call plot_measurements (never invent a data point, and never volunteer a chart). Restyle reuses the stored chartSpec — do not extract again.
+${
+    includePlotMeasurements
+      ? "- Charts are the only generated pixels. When the engineer asked in words for a chart of cited attachment data, call plot_measurements (never invent a data point, and never volunteer a chart). Restyle reuses the stored chartSpec — do not extract again."
+      : "- Do not generate chart pixels in Document chat. When the engineer asked for a measurement plot, scatter, or capability chart, tell them to open **Analytics** (Document | Analytics at the top of the report) and use Plot measurements or the Statistical Analysis assistant. Do not call a chart tool here — it is not available."
+  }
 - Do not paste markdown like ![alt](narrative#1) into draft_field or propose_edit — those cannot create or remove figures.`;
 }
 
@@ -178,6 +194,7 @@ function agentRules(opts: {
   analyzeInScope: boolean;
   retrievalPolicy: RetrievalPolicy;
   citationsAtEndOfSection: boolean;
+  includePlotMeasurements: boolean;
 }): string {
   const priority = draftPriorityPhrase(opts.draftOrder);
   const analyzeToolLine = opts.analyzeInScope
@@ -211,10 +228,10 @@ You are in Agent mode. Use the tools to read sections and propose changes. Every
 
 Choosing the right tool:
 - edit_table — ANY change to an existing table: edit cells (including clear), insert/append/delete rows, insert/delete columns. Call read_section first and copy tableIndex plus [row,col] / header text from structuredText. One suggestion can edit several cells in any columns, or add a column and fill its values. A move or rewrite across columns is still one edit_cells.
-- draft_field — a FULL draft or rewrite of one field, written as markdown. Use it for empty fields, substantial prose rewrites, creating a NEW table, or an explicitly requested full table replacement. Do not use it for incremental table edits — accepting a draft overwrites every cell, including filled placeholders. draft_field cannot insert or remove figures; use insert_image / plot_measurements / remove_image. A full rewrite of a field that already has images will drop those images.
+- draft_field — a FULL draft or rewrite of one field, written as markdown. Use it for empty fields, substantial prose rewrites, creating a NEW table, or an explicitly requested full table replacement. Do not use it for incremental table edits — accepting a draft overwrites every cell, including filled placeholders. draft_field cannot insert or remove figures; use ${figureEditTools(opts.includePlotMeasurements)}. A full rewrite of a field that already has images will drop those images.
 - propose_edit — one small targeted change inside existing prose, or a list item (targeted with "scope"). Never use it for tables, and never quote a markdown pipe table as anchorText. Never put image markdown in insertText.
-- insert_image — place one existing image (chat attachment or a figure already in a section) into a rich field. The engineer reviews it like any other suggestion. Do not invent or generate pixels — use plot_measurements when the engineer asked for a chart.
-- plot_measurements — extract cited numeric measurements from attachments and propose a scatter plot as a reviewable figure. Only when the engineer asked in words for a chart. Never volunteer. Name one series or requirement ID (not "Conductivity or TOC"). Restyle reuses chartSpec.
+- insert_image — place one existing image (chat attachment or a figure already in a section) into a rich field. The engineer reviews it like any other suggestion. Do not invent or generate pixels${opts.includePlotMeasurements ? " — use plot_measurements when the engineer asked for a chart" : ". Measurement charts belong in Analytics, not Document chat"}.
+${opts.includePlotMeasurements ? "- plot_measurements — extract cited numeric measurements from attachments and propose a scatter plot as a reviewable figure. Only when the engineer asked in words for a chart. Never volunteer. Name one series or requirement ID (not \"Conductivity or TOC\"). Restyle reuses chartSpec." : "- Measurement plots — not available in Document chat. Tell the engineer to open Analytics and use Plot measurements or the Statistical Analysis assistant."}
 - remove_image — remove one existing figure from a rich field. Call read_section first and pass image.id (e.g. narrative#1). The engineer reviews it like any other suggestion. Do not rewrite the field with draft_field just to drop a figure.
 - search_documents — grep ready evidence attachments in rounds. Prefer complementary queries. Pass excludePages from the previous nextExcludePages. Required before ask_user or draft_field when Documents are listed.
 - document_outline — list per-page context for one attachment so you can pick which pages to read. Not a substitute for search_documents.
@@ -290,6 +307,8 @@ export function buildChatSystemPrompt(opts: {
   autoEvidenceBlock?: string;
   retrievalPolicy?: RetrievalPolicy;
   citationsAtEndOfSection?: boolean;
+  /** Document-chat measurement plots. Off for Convergent (plots live in Analytics). */
+  includePlotMeasurements?: boolean;
 }): string {
   const { contextMap, criteriaOutline, mode } = opts;
   const sectionScope = opts.sectionScope ?? "all";
@@ -297,6 +316,8 @@ export function buildChatSystemPrompt(opts: {
   const retrievalPolicy = opts.retrievalPolicy ?? "adaptive";
   const citationsAtEndOfSection =
     opts.citationsAtEndOfSection ?? getCustomerPack().citationsAtEndOfSection;
+  const includePlotMeasurements =
+    opts.includePlotMeasurements ?? isDocumentChatPlotMeasurementsEnabled();
   const chat = getDocumentType(documentType).chat;
   const analyzeInScope = chatSectionsInScope(sectionScope, documentType).includes(
     "analyze"
@@ -309,6 +330,7 @@ export function buildChatSystemPrompt(opts: {
           analyzeInScope,
           retrievalPolicy,
           citationsAtEndOfSection,
+          includePlotMeasurements,
         });
   const mismatchBlock = opts.scopeMismatch
     ? `\n\n${scopeMismatchBlock(opts.scopeMismatch)}`
@@ -329,7 +351,7 @@ export function buildChatSystemPrompt(opts: {
 
   return `${chat.persona}
 
-${sectionFocusBlock(sectionScope, analyzeInScope)}${mismatchBlock}${mentions}
+${sectionFocusBlock(sectionScope, analyzeInScope, includePlotMeasurements)}${mismatchBlock}${mentions}
 
 ## Editable fields (section → targetField (kind))
 ${fieldTaxonomy(sectionScope, documentType)}
@@ -338,7 +360,7 @@ targetField is the in-section path from the list above (usually \`narrative\` or
 
 ${modeRules}${analyzeBlock}${draftingGuidance}
 
-${documentRules(retrievalPolicy, citationsAtEndOfSection)}${evidencePreview}
+${documentRules(retrievalPolicy, citationsAtEndOfSection, includePlotMeasurements)}${evidencePreview}
 
 ${QUESTION_RULES}
 

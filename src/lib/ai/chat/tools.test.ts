@@ -302,7 +302,11 @@ describe("buildChatTools insert_image", () => {
 
 describe("buildChatTools plot_measurements", () => {
   it("accepts a query and layout on an in-scope rich field", () => {
-    const tools = buildChatTools({ reportId: "report-1", canEdit: true });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      includePlotMeasurements: true,
+    });
     expect(tools).toHaveProperty("plot_measurements");
     expect(
       accepts(tools, "plot_measurements", {
@@ -320,6 +324,15 @@ describe("buildChatTools plot_measurements", () => {
         reasoning: "missing query",
       })
     ).toBe(false);
+  });
+
+  it("omits the document-chat plot tool when Analytics owns plots", () => {
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      includePlotMeasurements: false,
+    });
+    expect(tools).not.toHaveProperty("plot_measurements");
   });
 });
 

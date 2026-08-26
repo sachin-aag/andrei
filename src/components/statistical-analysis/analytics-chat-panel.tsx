@@ -5,14 +5,22 @@ import {
   useEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
 import { formatDistanceToNow } from "date-fns";
-import type { UIMessage, UIMessagePart } from "ai";
+import {
+  isFileUIPart,
+  type FileUIPart,
+  type UIMessage,
+  type UIMessagePart,
+} from "ai";
 import {
   Check,
+  ChartScatter,
   FileSearch,
   History,
+  ImagePlus,
   LayoutList,
   LineChart,
   Loader2,
@@ -22,6 +30,7 @@ import {
   Square,
   Table2,
   Wrench,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -35,16 +44,42 @@ import {
   IDLE_CHAT_RUNTIME,
   type ChatSessionRuntime,
 } from "@/components/report/chat-session-host";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useReportData } from "@/providers/report-provider";
 import { canSaveReportSection } from "@/lib/reports/access";
 import { CHAT_ASSISTANT_ERROR_MESSAGE } from "@/lib/ai/chat/assistant-turn";
 import type { ChatSessionSummary } from "@/lib/ai/chat/sessions";
 import { waitForValue } from "@/lib/ai/chat/session-runtime";
+import {
+  CHAT_IMAGE_MAX_BYTES,
+  CHAT_MAX_IMAGES_PER_MESSAGE,
+  isAllowedChatImageMediaType,
+} from "@/lib/ai/chat/image-parts";
+import { compressImageFile } from "@/lib/images/compress-image";
+import {
+  DEFAULT_CHAT_COMPOSER_PREFS,
+  readChatComposerPrefs,
+  subscribeChatComposerPrefs,
+  writeChatComposerPrefs,
+} from "@/lib/ai/chat/composer-prefs";
+import { isChatPace, type ChatPace } from "@/lib/ai/chat/pace";
 
 const EXAMPLE_PROMPTS = [
   "Extract assay measurements from the attachments into a worksheet column.",
   "Run a Normal Capability Sixpack on the Assay column with LSL 90 and USL 110.",
+  "Plot measurements for M3-SYS-FN-037 from the attachments.",
 ];
+
+type PendingChatImage = {
+  id: string;
+  part: FileUIPart;
+};
 
 type ToolPartInfo = {
   toolName: string;
@@ -239,6 +274,32 @@ function AnalyticsToolChip({
         </ToolLine>
       );
     }
+    case "plot_measurements": {
+      if (pending) {
+        return (
+          <ToolLine icon={<ChartScatter className="size-3.5" />}>
+            Plotting measurements…
+          </ToolLine>
+        );
+      }
+      if (info.output?.status === "ok") {
+        return (
+          <ToolLine
+            icon={<ChartScatter className="size-3.5 text-emerald-500" />}
+            tone="success"
+          >
+            Saved scatter — open the Results tab
+          </ToolLine>
+        );
+      }
+      return (
+        <ToolLine icon={<ChartScatter className="size-3.5" />} tone="warn">
+          {typeof info.output?.message === "string"
+            ? info.output.message
+            : "Could not plot measurements."}
+        </ToolLine>
+      );
+    }
     case "ask_user": {
       const questions = parseAskUserQuestions(info.input);
       if (questions.length === 0) return null;
@@ -273,14 +334,28 @@ function MessageTurn({
       .map((p) => p.text)
       .join("\n")
       .trim();
-    if (!text) return null;
+    const files = (message.parts ?? []).filter(isFileUIPart);
+    if (!text && files.length === 0) return null;
     return (
       <div className="flex justify-end">
         <div
           className="max-w-[92%] rounded-2xl rounded-br-md bg-[var(--primary)] px-3 py-2 text-sm text-[var(--primary-foreground)]"
           aria-label="Your message"
         >
-          <div className="whitespace-pre-wrap">{text}</div>
+          {files.length > 0 ? (
+            <div className="mb-2 flex flex-wrap gap-1.5">
+              {files.map((file, index) => (
+                // eslint-disable-next-line @next/next/no-img-element -- chat data-URL previews
+                <img
+                  key={`${file.filename ?? "image"}-${index}`}
+                  src={file.url}
+                  alt={file.filename ?? "Attached image"}
+                  className="max-h-24 rounded-md"
+                />
+              ))}
+            </div>
+          ) : null}
+          {text ? <div className="whitespace-pre-wrap">{text}</div> : null}
         </div>
       </div>
     );
@@ -331,10 +406,22 @@ export function AnalyticsChatPanel({
   const [initializing, setInitializing] = useState(true);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [input, setInput] = useState("");
+  const [pendingImages, setPendingImages] = useState<PendingChatImage[]>([]);
+  const [attaching, setAttaching] = useState(false);
   const historyRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const runtimeBySessionRef = useRef(new Map<string, ChatSessionRuntime>());
   const currentSessionIdRef = useRef<string | null>(null);
+  const storedComposerPrefs = useSyncExternalStore(
+    subscribeChatComposerPrefs,
+    () =>
+      currentUserId
+        ? readChatComposerPrefs(currentUserId, report.id)
+        : DEFAULT_CHAT_COMPOSER_PREFS,
+    () => DEFAULT_CHAT_COMPOSER_PREFS
+  );
+  const pace = storedComposerPrefs.pace;
 
   const { messages, error, stopTurn, busy } = runtime;
   const hostReady = runtime !== IDLE_CHAT_RUNTIME;
@@ -381,6 +468,7 @@ export function AnalyticsChatPanel({
     setCurrentSessionId(id);
     setRuntime(IDLE_CHAT_RUNTIME);
     setInput("");
+    setPendingImages([]);
     setHistoryOpen(false);
   }, [createSession]);
 
@@ -445,10 +533,92 @@ export function AnalyticsChatPanel({
     []
   );
 
+  const setPace = useCallback(
+    (next: ChatPace) => {
+      if (!isChatPace(next) || !currentUserId) return;
+      writeChatComposerPrefs(currentUserId, report.id, {
+        mode: storedComposerPrefs.mode,
+        pace: next,
+      });
+    },
+    [currentUserId, report.id, storedComposerPrefs.mode]
+  );
+
+  const addImageFiles = useCallback(
+    async (files: File[]) => {
+      const imageFiles = files.filter((file) =>
+        isAllowedChatImageMediaType(file.type)
+      );
+      if (imageFiles.length === 0) {
+        toast.error("Please attach a PNG, JPEG, WebP, or GIF image.");
+        return;
+      }
+      const remaining = CHAT_MAX_IMAGES_PER_MESSAGE - pendingImages.length;
+      if (remaining <= 0) {
+        toast.error(
+          `You can attach up to ${CHAT_MAX_IMAGES_PER_MESSAGE} images per message.`
+        );
+        return;
+      }
+      if (imageFiles.length > remaining) {
+        toast.error(
+          `You can attach up to ${CHAT_MAX_IMAGES_PER_MESSAGE} images per message.`
+        );
+      }
+      setAttaching(true);
+      try {
+        const next: PendingChatImage[] = [];
+        for (const file of imageFiles.slice(0, remaining)) {
+          try {
+            const compressed = await compressImageFile(file, {
+              maxWidthPx: 1280,
+              maxBytes: CHAT_IMAGE_MAX_BYTES,
+              jpegQuality: 0.8,
+            });
+            next.push({
+              id: crypto.randomUUID(),
+              part: {
+                type: "file",
+                mediaType: compressed.mimeType,
+                filename: file.name || "image",
+                url: compressed.dataUrl,
+              },
+            });
+          } catch (err) {
+            toast.error(
+              err instanceof Error ? err.message : `Could not attach ${file.name}`
+            );
+          }
+        }
+        if (next.length > 0) {
+          setPendingImages((prev) =>
+            [...prev, ...next].slice(0, CHAT_MAX_IMAGES_PER_MESSAGE)
+          );
+        }
+      } finally {
+        setAttaching(false);
+      }
+    },
+    [pendingImages.length]
+  );
+
+  const removePendingImage = useCallback((id: string) => {
+    setPendingImages((prev) => prev.filter((image) => image.id !== id));
+  }, []);
+
   const send = useCallback(
-    async (text: string) => {
+    async (text: string, images?: PendingChatImage[]) => {
+      const attached = images ?? pendingImages;
       const trimmed = text.trim();
-      if (!trimmed || busy || initializing) return;
+      const files = attached.map((image) => image.part);
+      if (
+        (!trimmed && files.length === 0) ||
+        busy ||
+        initializing ||
+        attaching
+      ) {
+        return;
+      }
       let sessionId = currentSessionId;
       if (!sessionId) {
         sessionId = await createSession();
@@ -468,12 +638,25 @@ export function AnalyticsChatPanel({
       }
       if (sessionRuntime.busy) return;
       setInput("");
-      void sessionRuntime.sendMessage(
-        { text: trimmed },
-        { body: { sessionId } }
-      );
+      setPendingImages([]);
+      const body = { sessionId, pace };
+      if (trimmed && files.length > 0) {
+        void sessionRuntime.sendMessage({ text: trimmed, files }, { body });
+      } else if (files.length > 0) {
+        void sessionRuntime.sendMessage({ files }, { body });
+      } else {
+        void sessionRuntime.sendMessage({ text: trimmed }, { body });
+      }
     },
-    [busy, createSession, currentSessionId, initializing]
+    [
+      attaching,
+      busy,
+      createSession,
+      currentSessionId,
+      initializing,
+      pace,
+      pendingImages,
+    ]
   );
 
   const currentTitle =
@@ -573,8 +756,8 @@ export function AnalyticsChatPanel({
           <div className="space-y-3">
             <p className="text-sm text-[var(--muted-foreground)]">
               I read this report&apos;s attachments, fill a worksheet column,
-              and run a Normal Capability Sixpack. I don&apos;t draft the
-              document.
+              run a Normal Capability Sixpack, and plot measurements as a
+              scatter. I don&apos;t draft the document.
             </p>
             {!canEdit ? (
               <p className="text-xs text-[var(--muted-foreground)]">
@@ -634,11 +817,98 @@ export function AnalyticsChatPanel({
           void send(input);
         }}
       >
+        <div className="mb-2 flex items-center gap-2">
+          <Select
+            value={pace}
+            onValueChange={(value) => {
+              if (isChatPace(value)) setPace(value);
+            }}
+            disabled={busy}
+          >
+            <SelectTrigger
+              data-testid="analytics-chat-pace"
+              aria-label="Answer depth"
+              className="h-7 w-[6rem] border-[var(--border)] bg-[var(--secondary)]/30 px-2 text-[11px] font-medium"
+              title={
+                pace === "deep"
+                  ? "Digs through your documents and reasons further before answering. Slower."
+                  : "Fast answers with lighter reasoning."
+              }
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent side="top" className="text-[11px]">
+              <SelectItem value="quick">Quick</SelectItem>
+              <SelectItem value="deep">Deep</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        {pendingImages.length > 0 ? (
+          <div className="mb-2 flex flex-wrap gap-2">
+            {pendingImages.map((image) => (
+              <div
+                key={image.id}
+                className="relative size-16 overflow-hidden rounded-md border border-[var(--border)] bg-[var(--secondary)]/40"
+              >
+                {/* eslint-disable-next-line @next/next/no-img-element -- chat data-URL previews */}
+                <img
+                  src={image.part.url}
+                  alt={image.part.filename ?? "Attached image"}
+                  className="size-full object-cover"
+                />
+                <button
+                  type="button"
+                  onClick={() => removePendingImage(image.id)}
+                  aria-label={`Remove ${image.part.filename ?? "image"}`}
+                  className="absolute right-0.5 top-0.5 flex size-5 items-center justify-center rounded-full bg-black/65 text-white hover:bg-black/80"
+                >
+                  <X className="size-3" aria-hidden="true" />
+                </button>
+              </div>
+            ))}
+          </div>
+        ) : null}
         <div className="flex items-end gap-2">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            multiple
+            className="hidden"
+            onChange={(event) => {
+              const files = Array.from(event.target.files ?? []);
+              event.target.value = "";
+              if (files.length > 0) void addImageFiles(files);
+            }}
+          />
+          <button
+            type="button"
+            disabled={busy || initializing || attaching || !hostReady}
+            aria-label="Attach image"
+            title="Attach image"
+            data-testid="analytics-chat-attach-image"
+            onClick={() => fileInputRef.current?.click()}
+            className="flex size-9 shrink-0 items-center justify-center rounded-md border border-[var(--border)] text-[var(--muted-foreground)] transition-colors hover:bg-[var(--secondary)] hover:text-[var(--foreground)] disabled:opacity-40"
+          >
+            {attaching ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <ImagePlus className="size-4" />
+            )}
+          </button>
           <textarea
             data-testid="analytics-chat-input"
             value={input}
             onChange={(event) => setInput(event.target.value)}
+            onPaste={(event) => {
+              const files = Array.from(event.clipboardData.items)
+                .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+                .map((item) => item.getAsFile())
+                .filter((file): file is File => file != null);
+              if (files.length === 0) return;
+              event.preventDefault();
+              void addImageFiles(files);
+            }}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault();
@@ -647,7 +917,7 @@ export function AnalyticsChatPanel({
             }}
             rows={2}
             disabled={initializing}
-            placeholder="Extract numbers from attachments, or run a Normal Capability Sixpack…"
+            placeholder="Extract numbers, run a sixpack, or plot measurements…"
             className="min-h-[40px] max-h-40 w-full resize-none rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)] disabled:opacity-50"
           />
           {busy ? (
@@ -663,7 +933,9 @@ export function AnalyticsChatPanel({
             <button
               type="submit"
               aria-label="Send message"
-              disabled={initializing || !input.trim()}
+              disabled={
+                initializing || attaching || (!input.trim() && pendingImages.length === 0)
+              }
               className="flex size-9 shrink-0 items-center justify-center rounded-md bg-[var(--primary)] text-[var(--primary-foreground)] disabled:opacity-50"
             >
               <Send className="size-4" />

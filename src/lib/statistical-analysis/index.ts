@@ -7,9 +7,15 @@ export type {
   WorksheetData,
   WorksheetColumn,
 } from "./types";
-export { CAPABILITY_SIXPACK_NORMAL } from "./types";
+export {
+  CAPABILITY_SIXPACK_NORMAL,
+  MEASUREMENT_SCATTER,
+  isScatterAnalysis,
+  isSixpackAnalysis,
+} from "./types";
 export {
   createEmptyWorksheet,
+  normalizeWorksheet,
   analysisSourceKey,
   columnNumericValues,
   columnSourceKey,
@@ -26,6 +32,14 @@ export {
   deleteRow,
   renameColumn,
   replaceColumnValues,
+  addDataSheet,
+  deleteDataSheet,
+  switchWorksheetTab,
+  isSpecsTab,
+  dataSheets,
+  defaultSixpackLimits,
+  upsertSpecRow,
+  specRowForColumn,
 } from "./worksheet";
 export { applySampleAssay, SAMPLE_ASSAY_COLUMN_NAME } from "./sample-data";
 export { computeCapabilitySixpack } from "./sixpack";

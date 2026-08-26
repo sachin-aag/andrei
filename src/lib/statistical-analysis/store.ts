@@ -2,20 +2,35 @@ import { and, desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { statisticalAnalyses, statisticalWorkspaces } from "@/db/schema";
 import { isPostgresUniqueViolation } from "@/lib/reports/document-no";
-import { CAPABILITY_SIXPACK_NORMAL } from "./types";
+import { parseChartSpec } from "@/lib/charts/chart-spec";
+import {
+  CAPABILITY_SIXPACK_NORMAL,
+  MEASUREMENT_SCATTER,
+  isScatterAnalysis,
+  isSixpackAnalysis,
+} from "./types";
 import type {
   AnalysisKind,
   CapabilitySixpackConfig,
   CapabilitySixpackResult,
+  MeasurementScatterConfig,
+  MeasurementScatterResult,
   ReportAnalyticsView,
+  ScatterAnalysisSummary,
+  SixpackAnalysisSummary,
   StatisticalAnalysisSummary,
   WorksheetData,
 } from "./types";
 import { nextAnalysisTitle } from "./analysis-title";
-import { createEmptyWorksheet, findColumn } from "./worksheet";
-import { hashColumnSource } from "./hash";
+import { createEmptyWorksheet, findColumn, normalizeWorksheet, upsertSpecRow } from "./worksheet";
+import { hashColumnSource, hashScatterSource } from "./hash";
 import { computeCapabilitySixpack } from "./sixpack";
-import { capabilitySixpackInputSchema, worksheetDataSchema } from "./schemas";
+import { runMeasurementScatter } from "./measurement-scatter";
+import {
+  capabilitySixpackInputSchema,
+  measurementScatterInputSchema,
+  worksheetDataSchema,
+} from "./schemas";
 import {
   configRowFields,
   formatRowSelection,
@@ -23,7 +38,7 @@ import {
 } from "./row-selection";
 
 function asWorksheet(value: unknown): WorksheetData {
-  return worksheetDataSchema.parse(value);
+  return normalizeWorksheet(worksheetDataSchema.parse(value));
 }
 
 function asConfig(value: unknown): CapabilitySixpackConfig {
@@ -48,9 +63,35 @@ function asResults(value: unknown): CapabilitySixpackResult {
   return value as CapabilitySixpackResult;
 }
 
+function asScatterConfig(value: unknown): MeasurementScatterConfig {
+  const parsed = value as MeasurementScatterConfig;
+  return {
+    query: parsed.query,
+    title: parsed.title,
+    xLabel: parsed.xLabel,
+    yLabel: parsed.yLabel,
+    layout: parsed.layout,
+  };
+}
+
+function asScatterResults(value: unknown): MeasurementScatterResult {
+  const parsed = value as MeasurementScatterResult;
+  const specs = Array.isArray(parsed.specs)
+    ? parsed.specs.flatMap((item) => {
+        const spec = parseChartSpec(item);
+        return spec ? [spec] : [];
+      })
+    : [];
+  return {
+    specs,
+    n: typeof parsed.n === "number" ? parsed.n : specs[0]?.points.length ?? 0,
+    uom: typeof parsed.uom === "string" ? parsed.uom : "",
+  };
+}
+
 function asKind(value: string): AnalysisKind {
-  return value === CAPABILITY_SIXPACK_NORMAL
-    ? CAPABILITY_SIXPACK_NORMAL
+  return value === MEASUREMENT_SCATTER
+    ? MEASUREMENT_SCATTER
     : CAPABILITY_SIXPACK_NORMAL;
 }
 
@@ -62,15 +103,33 @@ function toAnalysisSummary(
   row: typeof statisticalAnalyses.$inferSelect,
   worksheet: WorksheetData
 ): StatisticalAnalysisSummary {
+  const kind = asKind(row.kind);
+  if (kind === MEASUREMENT_SCATTER) {
+    const config = asScatterConfig(row.config);
+    const results = asScatterResults(row.results);
+    const summary: ScatterAnalysisSummary = {
+      id: row.id,
+      workspaceId: row.workspaceId,
+      kind: MEASUREMENT_SCATTER,
+      title: row.title,
+      config,
+      results,
+      sourceHash: row.sourceHash,
+      stale: false,
+      createdAt: iso(row.createdAt),
+    };
+    return summary;
+  }
+
   const config = asConfig(row.config);
   const column = findColumn(worksheet, config.columnId);
   const currentHash = column
     ? hashColumnSource(column, normalizeRowSelection(config))
     : "";
-  return {
+  const summary: SixpackAnalysisSummary = {
     id: row.id,
     workspaceId: row.workspaceId,
-    kind: asKind(row.kind),
+    kind: CAPABILITY_SIXPACK_NORMAL,
     title: row.title,
     config,
     results: asResults(row.results),
@@ -78,6 +137,7 @@ function toAnalysisSummary(
     stale: currentHash !== row.sourceHash,
     createdAt: iso(row.createdAt),
   };
+  return summary;
 }
 
 async function analysesForWorkspace(
@@ -173,6 +233,24 @@ export async function createAnalysisForReport(
   | { ok: true; analytics: ReportAnalyticsView; analysis: StatisticalAnalysisSummary }
   | { ok: false; status: 400 | 404; error: string }
 > {
+  if (
+    input &&
+    typeof input === "object" &&
+    "kind" in input &&
+    (input as { kind?: unknown }).kind === MEASUREMENT_SCATTER
+  ) {
+    return createScatterAnalysisForReport(reportId, input);
+  }
+  return createSixpackAnalysisForReport(reportId, input);
+}
+
+async function createSixpackAnalysisForReport(
+  reportId: string,
+  input: unknown
+): Promise<
+  | { ok: true; analytics: ReportAnalyticsView; analysis: StatisticalAnalysisSummary }
+  | { ok: false; status: 400 | 404; error: string }
+> {
   const parsed = capabilitySixpackInputSchema.safeParse(input);
   if (!parsed.success) {
     return {
@@ -214,15 +292,90 @@ export async function createAnalysisForReport(
     return { ok: false, status: 400, error: outcome.message };
   }
 
+  return insertAnalysisRow({
+    reportId,
+    workspaceId: analytics.id,
+    kind: CAPABILITY_SIXPACK_NORMAL,
+    title: config.title,
+    config,
+    results: outcome.result,
+    sourceHash: hashColumnSource(column, rowSelection),
+  });
+}
+
+async function createScatterAnalysisForReport(
+  reportId: string,
+  input: unknown
+): Promise<
+  | { ok: true; analytics: ReportAnalyticsView; analysis: StatisticalAnalysisSummary }
+  | { ok: false; status: 400 | 404; error: string }
+> {
+  const parsed = measurementScatterInputSchema.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      status: 400,
+      error: parsed.error.issues[0]?.message ?? "Invalid plot options.",
+    };
+  }
+
+  const analytics = await getOrCreateReportAnalytics(reportId);
+  const scatter = await runMeasurementScatter({
+    reportId,
+    query: parsed.data.query,
+    title: parsed.data.title,
+    xLabel: parsed.data.xLabel,
+    yLabel: parsed.data.yLabel,
+    layout: parsed.data.layout,
+    existingTitles: analytics.analyses.map((item) => item.title),
+  });
+  if (!scatter.ok) {
+    return { ok: false, status: 400, error: scatter.error };
+  }
+
+  const limits = scatter.results.specs[0]?.limits;
+  if (limits && (limits.lower != null || limits.upper != null)) {
+    const withSpecs = upsertSpecRow(analytics.worksheet, {
+      columnName: scatter.config.query,
+      lsl: limits.lower != null ? String(limits.lower) : "",
+      usl: limits.upper != null ? String(limits.upper) : "",
+      target: "",
+    });
+    await updateReportAnalytics(reportId, withSpecs);
+  }
+
+  return insertAnalysisRow({
+    reportId,
+    workspaceId: analytics.id,
+    kind: MEASUREMENT_SCATTER,
+    title: scatter.config.title,
+    config: scatter.config,
+    results: scatter.results,
+    sourceHash: hashScatterSource(scatter.config.query, scatter.results),
+  });
+}
+
+async function insertAnalysisRow(input: {
+  reportId: string;
+  workspaceId: string;
+  kind: AnalysisKind;
+  title: string;
+  config: CapabilitySixpackConfig | MeasurementScatterConfig;
+  results: CapabilitySixpackResult | MeasurementScatterResult;
+  sourceHash: string;
+}): Promise<
+  | { ok: true; analytics: ReportAnalyticsView; analysis: StatisticalAnalysisSummary }
+  | { ok: false; status: 400 | 404; error: string }
+> {
   const [row] = await db
     .insert(statisticalAnalyses)
     .values({
-      workspaceId: analytics.id,
-      kind: CAPABILITY_SIXPACK_NORMAL,
-      title: config.title,
-      config,
-      results: outcome.result,
-      sourceHash: hashColumnSource(column, rowSelection),
+      workspaceId: input.workspaceId,
+      kind: input.kind,
+      title: input.title,
+      config: input.config,
+      results: input.results,
+      sourceHash: input.sourceHash,
     })
     .returning();
   if (!row) {
@@ -232,9 +385,9 @@ export async function createAnalysisForReport(
   await db
     .update(statisticalWorkspaces)
     .set({ updatedAt: new Date() })
-    .where(eq(statisticalWorkspaces.id, analytics.id));
+    .where(eq(statisticalWorkspaces.id, input.workspaceId));
 
-  const next = await getReportAnalytics(reportId);
+  const next = await getReportAnalytics(input.reportId);
   if (!next) return { ok: false, status: 404, error: "Not found" };
   const analysis = next.analyses.find((item) => item.id === row.id);
   if (!analysis) return { ok: false, status: 404, error: "Not found" };
@@ -253,38 +406,77 @@ export async function recomputeAnalysisForReport(
   const existing = analytics.analyses.find((item) => item.id === analysisId);
   if (!existing) return { ok: false, status: 404, error: "Not found" };
 
-  const column = findColumn(analytics.worksheet, existing.config.columnId);
-  if (!column) {
-    return {
-      ok: false,
-      status: 400,
-      error: "The original column is no longer in the worksheet.",
+  if (isScatterAnalysis(existing)) {
+    const scatter = await runMeasurementScatter({
+      reportId,
+      query: existing.config.query,
+      title: existing.config.title,
+      xLabel: existing.config.xLabel,
+      yLabel: existing.config.yLabel,
+      layout: {
+        mode: existing.config.layout.mode,
+        seriesBy: existing.config.layout.seriesBy,
+        xAxis: existing.config.layout.xAxis,
+        yMax: existing.config.layout.yRange?.max,
+      },
+      existingTitles: analytics.analyses
+        .filter((item) => item.id !== existing.id)
+        .map((item) => item.title),
+    });
+    if (!scatter.ok) {
+      return { ok: false, status: 400, error: scatter.error };
+    }
+    await db
+      .update(statisticalAnalyses)
+      .set({
+        title: scatter.config.title,
+        config: scatter.config,
+        results: scatter.results,
+        sourceHash: hashScatterSource(scatter.config.query, scatter.results),
+      })
+      .where(
+        and(
+          eq(statisticalAnalyses.id, analysisId),
+          eq(statisticalAnalyses.workspaceId, analytics.id)
+        )
+      );
+  } else if (isSixpackAnalysis(existing)) {
+    const column = findColumn(analytics.worksheet, existing.config.columnId);
+    if (!column) {
+      return {
+        ok: false,
+        status: 400,
+        error: "The original column is no longer in the worksheet.",
+      };
+    }
+
+    const config: CapabilitySixpackConfig = {
+      ...existing.config,
+      columnName: column.name,
     };
-  }
+    const outcome = computeCapabilitySixpack(analytics.worksheet, config);
+    if (!outcome.ok) {
+      return { ok: false, status: 400, error: outcome.message };
+    }
 
-  const config: CapabilitySixpackConfig = {
-    ...existing.config,
-    columnName: column.name,
-  };
-  const outcome = computeCapabilitySixpack(analytics.worksheet, config);
-  if (!outcome.ok) {
-    return { ok: false, status: 400, error: outcome.message };
+    await db
+      .update(statisticalAnalyses)
+      .set({
+        title: config.title,
+        config,
+        results: outcome.result,
+        sourceHash: hashColumnSource(column, normalizeRowSelection(config)),
+      })
+      .where(
+        and(
+          eq(statisticalAnalyses.id, analysisId),
+          eq(statisticalAnalyses.workspaceId, analytics.id)
+        )
+      );
+  } else {
+    const exhaustive: never = existing;
+    return exhaustive;
   }
-
-  await db
-    .update(statisticalAnalyses)
-    .set({
-      title: config.title,
-      config,
-      results: outcome.result,
-      sourceHash: hashColumnSource(column, normalizeRowSelection(config)),
-    })
-    .where(
-      and(
-        eq(statisticalAnalyses.id, analysisId),
-        eq(statisticalAnalyses.workspaceId, analytics.id)
-      )
-    );
 
   await db
     .update(statisticalWorkspaces)

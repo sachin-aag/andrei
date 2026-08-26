@@ -17,6 +17,8 @@ export function WorkspaceMenubar({
   onDeleteRow,
   onLoadSample,
   onNormalSixpack,
+  onPlotMeasurements,
+  onAddDataSheet,
 }: {
   readOnly: boolean;
   onInsertColumn: () => void;
@@ -25,12 +27,19 @@ export function WorkspaceMenubar({
   onDeleteRow: () => void;
   onLoadSample: () => void;
   onNormalSixpack: () => void;
+  onPlotMeasurements: () => void;
+  onAddDataSheet: () => void;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-0.5">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="sm" disabled={readOnly}>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={readOnly}
+            data-testid="worksheet-data-menu"
+          >
             Data
           </Button>
         </DropdownMenuTrigger>
@@ -40,6 +49,12 @@ export function WorkspaceMenubar({
           <DropdownMenuItem onSelect={onInsertRow}>Insert row</DropdownMenuItem>
           <DropdownMenuItem onSelect={onDeleteRow}>Delete row</DropdownMenuItem>
           <DropdownMenuSeparator />
+          <DropdownMenuItem
+            data-testid="add-data-sheet"
+            onSelect={onAddDataSheet}
+          >
+            New data sheet
+          </DropdownMenuItem>
           <DropdownMenuItem
             data-testid="load-sample-assay"
             onSelect={onLoadSample}
@@ -61,6 +76,12 @@ export function WorkspaceMenubar({
             onSelect={onNormalSixpack}
           >
             Normal Capability Sixpack…
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            data-testid="stat-plot-measurements"
+            onSelect={onPlotMeasurements}
+          >
+            Plot measurements…
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>

@@ -60,6 +60,7 @@ describe("analytics chat tools", () => {
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("search_documents");
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("write_column");
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("run_capability_sixpack");
+    expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("plot_measurements");
   });
 
   it("picks only the document tools the analytics assistant is allowed to call", () => {
@@ -84,6 +85,7 @@ describe("analytics chat tools", () => {
     expect(writable.draft_field).toBeUndefined();
     expect(writable.write_column).toBeDefined();
     expect(writable.run_capability_sixpack).toBeDefined();
+    expect(writable.plot_measurements).toBeDefined();
 
     const locked = buildAnalyticsChatTools({
       reportId: "report-1",
@@ -92,6 +94,7 @@ describe("analytics chat tools", () => {
     });
     expect(locked.write_column).toBeUndefined();
     expect(locked.run_capability_sixpack).toBeUndefined();
+    expect(locked.plot_measurements).toBeUndefined();
     expect(locked.search_documents).toBeDefined();
   });
 
@@ -203,6 +206,7 @@ describe("analytics chat tools", () => {
         columns: [
           { id: "c1", name: "C1", values: [] },
         ],
+        specs: [],
       },
       analyses: [],
     } as unknown as ReportAnalyticsView;

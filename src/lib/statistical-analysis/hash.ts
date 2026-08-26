@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { AnalysisRowSelection } from "./row-selection";
 import { analysisSourceKey } from "./worksheet";
-import type { WorksheetColumn } from "./types";
+import type { MeasurementScatterResult, WorksheetColumn } from "./types";
 
 export function hashColumnSource(
   column: WorksheetColumn,
@@ -10,4 +10,28 @@ export function hashColumnSource(
   return createHash("sha256")
     .update(analysisSourceKey(column, selection))
     .digest("hex");
+}
+
+export function scatterSourceKey(
+  query: string,
+  result: MeasurementScatterResult
+): string {
+  const points = result.specs.flatMap((spec) =>
+    spec.points.map((point) => [point.series ?? "", point.label, point.y])
+  );
+  const limits = result.specs[0]?.limits ?? { lower: null, upper: null };
+  return JSON.stringify({
+    query,
+    n: result.n,
+    uom: result.uom,
+    limits,
+    points,
+  });
+}
+
+export function hashScatterSource(
+  query: string,
+  result: MeasurementScatterResult
+): string {
+  return createHash("sha256").update(scatterSourceKey(query, result)).digest("hex");
 }

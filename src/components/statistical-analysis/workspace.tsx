@@ -5,8 +5,6 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useAutoSave, type SaveStatus } from "@/hooks/use-auto-save";
-import { formatSpecSummary } from "@/lib/statistical-analysis/format";
-import { formatRowSelection, normalizeRowSelection } from "@/lib/statistical-analysis/row-selection";
 import {
   collapseSelection,
   rowRangeFromGridSelection,
@@ -14,6 +12,7 @@ import {
 } from "@/lib/statistical-analysis/grid-selection";
 import {
   createCapabilitySixpack,
+  createMeasurementScatter,
   deleteCapabilitySixpack,
   getReportAnalytics,
   patchReportAnalytics,
@@ -21,25 +20,35 @@ import {
 } from "@/lib/statistical-analysis/client";
 import { applySampleAssay } from "@/lib/statistical-analysis/sample-data";
 import {
-  analysisSourceKey,
+  addDataSheet,
+  createEmptyWorksheet,
   deleteColumn,
+  deleteDataSheet,
   deleteRow,
-  findColumn,
   insertColumn,
   insertRow,
+  isSpecsTab,
+  setSpecRows,
+  switchWorksheetTab,
 } from "@/lib/statistical-analysis/worksheet";
-import type {
-  ReportAnalyticsView,
-  StatisticalAnalysisSummary,
-  WorksheetData,
+import {
+  SPECS_TAB_ID,
+  isScatterAnalysis,
+  isSixpackAnalysis,
+  type ReportAnalyticsView,
+  type StatisticalAnalysisSummary,
+  type WorksheetData,
 } from "@/lib/statistical-analysis/types";
+import { analysisListSubtitle, withLocalStale } from "@/lib/statistical-analysis/stale";
 import { CapabilityDialog } from "@/components/statistical-analysis/capability-dialog";
+import { PlotMeasurementsDialog } from "@/components/statistical-analysis/plot-measurements-dialog";
+import { ScatterView } from "@/components/statistical-analysis/scatter-view";
 import { SixpackView } from "@/components/statistical-analysis/sixpack-view";
+import { SpecsTable } from "@/components/statistical-analysis/specs-table";
 import {
   WorksheetGrid,
 } from "@/components/statistical-analysis/worksheet-grid";
 import { WorkspaceMenubar } from "@/components/statistical-analysis/workspace-menubar";
-import { createEmptyWorksheet } from "@/lib/statistical-analysis/worksheet";
 
 function saveLabel(status: SaveStatus): string {
   switch (status) {
@@ -56,24 +65,6 @@ function saveLabel(status: SaveStatus): string {
       return exhaustive;
     }
   }
-}
-
-function withLocalStale(
-  analyses: StatisticalAnalysisSummary[],
-  worksheet: WorksheetData,
-  persisted: WorksheetData
-): StatisticalAnalysisSummary[] {
-  return analyses.map((analysis) => {
-    const current = findColumn(worksheet, analysis.config.columnId);
-    const saved = findColumn(persisted, analysis.config.columnId);
-    if (!current) return { ...analysis, stale: true };
-    if (!saved) return analysis;
-    const selection = normalizeRowSelection(analysis.config);
-    const changed =
-      analysisSourceKey(current, selection) !==
-      analysisSourceKey(saved, selection);
-    return { ...analysis, stale: analysis.stale || changed };
-  });
 }
 
 export function StatisticalWorkspace({
@@ -101,6 +92,9 @@ export function StatisticalWorkspace({
   const [capabilityRowEnd, setCapabilityRowEnd] = useState<number | null>(null);
   const [capabilitySubmitting, setCapabilitySubmitting] = useState(false);
   const [capabilityError, setCapabilityError] = useState<string | null>(null);
+  const [plotOpen, setPlotOpen] = useState(false);
+  const [plotSubmitting, setPlotSubmitting] = useState(false);
+  const [plotError, setPlotError] = useState<string | null>(null);
   const [recomputing, setRecomputing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -207,6 +201,7 @@ export function StatisticalWorkspace({
   const analyzeLabel = selectedRowRange
     ? `Analyze ${selectedColumnName} rows ${selectedRowRange.start}–${selectedRowRange.end}`
     : `Analyze ${selectedColumnName}`;
+  const specsOpen = isSpecsTab(worksheet);
 
   const openSixpackForColumn = async (
     columnId: string,
@@ -219,6 +214,13 @@ export function StatisticalWorkspace({
     setCapabilityRowEnd(rows?.end ?? null);
     setCapabilityError(null);
     setCapabilityOpen(true);
+  };
+
+  const openPlotMeasurements = async () => {
+    if (readOnly) return;
+    await flush().catch(() => undefined);
+    setPlotError(null);
+    setPlotOpen(true);
   };
 
   if (loading) {
@@ -289,8 +291,13 @@ export function StatisticalWorkspace({
               onNormalSixpack={() =>
                 void openSixpackForColumn(selectedColumnId, selectedRowRange)
               }
+              onPlotMeasurements={() => void openPlotMeasurements()}
+              onAddDataSheet={() => {
+                setWorksheet((current) => addDataSheet(current));
+                setSelection(collapseSelection(0, 0));
+              }}
             />
-            {readOnly ? null : (
+            {readOnly || specsOpen ? null : (
               <Button
                 type="button"
                 size="sm"
@@ -338,19 +345,90 @@ export function StatisticalWorkspace({
           value="worksheet"
           className="mt-0 min-h-0 flex-1 overflow-hidden"
         >
-          <WorksheetGrid
-            worksheet={worksheet}
-            selection={selection}
-            onSelectionChange={setSelection}
-            onChange={setWorksheet}
-            readOnly={readOnly}
-            onAnalyzeColumn={(colIndex) => {
-              const column = worksheet.columns[colIndex];
-              if (!column) return;
-              setSelection(collapseSelection(colIndex, selection.row));
-              void openSixpackForColumn(column.id, null);
-            }}
-          />
+          <div className="flex h-full min-h-0 flex-col">
+            <div
+              data-testid="worksheet-sheet-tabs"
+              className="flex shrink-0 flex-wrap items-center gap-1 border-b border-[var(--border)] px-4 py-1.5"
+            >
+              {worksheet.sheets.map((sheet) => {
+                const active = worksheet.activeSheetId === sheet.id;
+                return (
+                  <button
+                    key={sheet.id}
+                    type="button"
+                    aria-label={`${sheet.name} sheet`}
+                    data-testid={`worksheet-sheet-tab-${sheet.id}`}
+                    onClick={() =>
+                      setWorksheet((current) =>
+                        switchWorksheetTab(current, sheet.id)
+                      )
+                    }
+                    className={`rounded-md px-2 py-1 text-xs ${
+                      active
+                        ? "bg-[var(--secondary)] font-medium text-[var(--foreground)]"
+                        : "text-[var(--muted-foreground)] hover:bg-[var(--secondary)]/60"
+                    }`}
+                  >
+                    {sheet.name}
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                data-testid="worksheet-sheet-tab-specs"
+                onClick={() =>
+                  setWorksheet((current) =>
+                    switchWorksheetTab(current, SPECS_TAB_ID)
+                  )
+                }
+                className={`rounded-md px-2 py-1 text-xs ${
+                  specsOpen
+                    ? "bg-[var(--secondary)] font-medium text-[var(--foreground)]"
+                    : "text-[var(--muted-foreground)] hover:bg-[var(--secondary)]/60"
+                }`}
+              >
+                Specs
+              </button>
+              {readOnly || worksheet.sheets.length <= 1 || specsOpen ? null : (
+                <button
+                  type="button"
+                  data-testid="delete-data-sheet"
+                  onClick={() => {
+                    setWorksheet((current) =>
+                      deleteDataSheet(current, current.activeSheetId)
+                    );
+                    setSelection(collapseSelection(0, 0));
+                  }}
+                  className="ml-auto rounded-md px-2 py-1 text-xs text-[var(--muted-foreground)] hover:bg-[var(--secondary)]/60"
+                >
+                  Delete sheet
+                </button>
+              )}
+            </div>
+            {specsOpen ? (
+              <SpecsTable
+                specs={worksheet.specs}
+                readOnly={readOnly}
+                onChange={(specs) =>
+                  setWorksheet((current) => setSpecRows(current, specs))
+                }
+              />
+            ) : (
+              <WorksheetGrid
+                worksheet={worksheet}
+                selection={selection}
+                onSelectionChange={setSelection}
+                onChange={setWorksheet}
+                readOnly={readOnly}
+                onAnalyzeColumn={(colIndex) => {
+                  const column = worksheet.columns[colIndex];
+                  if (!column) return;
+                  setSelection(collapseSelection(colIndex, selection.row));
+                  void openSixpackForColumn(column.id, null);
+                }}
+              />
+            )}
+          </div>
         </TabsContent>
 
         <TabsContent
@@ -361,8 +439,9 @@ export function StatisticalWorkspace({
             <div className="flex flex-1 items-center justify-center p-8 text-center">
               <p className="max-w-md text-sm text-[var(--muted-foreground)]">
                 Select a worksheet column — or Shift+arrow a row range — and
-                click <strong>Analyze {selectedColumnName}</strong>. Each run
-                is saved as its own result.
+                click <strong>Analyze {selectedColumnName}</strong>, or use{" "}
+                <strong>Stat → Plot measurements</strong> for an attachment
+                scatter. Each run is saved as its own result.
               </p>
             </div>
           ) : (
@@ -396,10 +475,7 @@ export function StatisticalWorkspace({
                 <ul className="space-y-1">
                   {displayedAnalyses.map((analysis) => {
                     const active = selectedAnalysis?.id === analysis.id;
-                    const specs = formatSpecSummary(analysis.config);
-                    const rows = formatRowSelection(
-                      normalizeRowSelection(analysis.config)
-                    );
+                    const subtitle = analysisListSubtitle(analysis);
                     return (
                       <li key={analysis.id}>
                         <button
@@ -421,9 +497,7 @@ export function StatisticalWorkspace({
                                 : "text-[var(--muted-foreground)]"
                             }`}
                           >
-                            {analysis.config.columnName}
-                            {rows ? ` · ${rows}` : ""}
-                            {specs ? ` · ${specs}` : ""}
+                            {subtitle}
                           </span>
                           <span
                             className={`block ${
@@ -442,7 +516,48 @@ export function StatisticalWorkspace({
                 </ul>
               </aside>
               <div className="min-w-0 flex-1 overflow-hidden">
-                {selectedAnalysis ? (
+                {selectedAnalysis && isScatterAnalysis(selectedAnalysis) ? (
+                  <ScatterView
+                    analysis={selectedAnalysis}
+                    readOnly={readOnly}
+                    recomputing={recomputing}
+                    onRecompute={async () => {
+                      setRecomputing(true);
+                      try {
+                        await flush().catch(() => undefined);
+                        const next = await recomputeCapabilitySixpack(
+                          reportId,
+                          selectedAnalysis.id
+                        );
+                        applyAnalytics(next);
+                        toast.success("Scatter recomputed from the attachments.");
+                      } catch (error) {
+                        toast.error(
+                          error instanceof Error
+                            ? error.message
+                            : "Could not recompute the analysis."
+                        );
+                      } finally {
+                        setRecomputing(false);
+                      }
+                    }}
+                    onDelete={async () => {
+                      try {
+                        const next = await deleteCapabilitySixpack(
+                          reportId,
+                          selectedAnalysis.id
+                        );
+                        applyAnalytics(next);
+                      } catch (error) {
+                        toast.error(
+                          error instanceof Error
+                            ? error.message
+                            : "Could not delete the analysis."
+                        );
+                      }
+                    }}
+                  />
+                ) : selectedAnalysis && isSixpackAnalysis(selectedAnalysis) ? (
                   <SixpackView
                     analysis={selectedAnalysis}
                     readOnly={readOnly}
@@ -527,6 +642,41 @@ export function StatisticalWorkspace({
             );
           } finally {
             setCapabilitySubmitting(false);
+          }
+        }}
+      />
+
+      <PlotMeasurementsDialog
+        key={plotOpen ? "plot-open" : "plot-closed"}
+        open={plotOpen}
+        submitting={plotSubmitting}
+        error={plotError}
+        onOpenChange={setPlotOpen}
+        onSubmit={async (values) => {
+          setPlotSubmitting(true);
+          setPlotError(null);
+          try {
+            await flush().catch(() => undefined);
+            const created = await createMeasurementScatter(reportId, {
+              query: values.query,
+              title: values.title || undefined,
+              xLabel: values.xLabel || undefined,
+              yLabel: values.yLabel || undefined,
+              layout: { mode: values.mode },
+            });
+            applyAnalytics(created.analytics, {
+              selectAnalysisId: created.analysisId,
+            });
+            setPlotOpen(false);
+            setTab("results");
+          } catch (error) {
+            setPlotError(
+              error instanceof Error
+                ? error.message
+                : "Could not plot measurements."
+            );
+          } finally {
+            setPlotSubmitting(false);
           }
         }}
       />

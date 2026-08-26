@@ -2,19 +2,30 @@ import { describe, expect, it } from "vitest";
 import { applySampleAssay } from "./sample-data";
 import {
   analysisSourceKey,
+  addDataSheet,
   columnNumericValues,
   columnSourceKey,
   createEmptyWorksheet,
+  defaultSixpackLimits,
   deleteColumn,
+  deleteDataSheet,
   findColumnIndexByName,
   insertColumn,
+  isSpecsTab,
+  normalizeWorksheet,
   parseTsv,
   pasteTsv,
   replaceColumnValues,
   rowCount,
   setCell,
+  specRowForColumn,
+  switchWorksheetTab,
   trimTrailingEmpty,
 } from "./worksheet";
+import {
+  PRIMARY_DATA_SHEET_ID,
+  SPECS_TAB_ID,
+} from "./types";
 
 describe("worksheet grid operations", () => {
   it("starts with C1–C8 empty columns", () => {
@@ -107,11 +118,89 @@ describe("worksheet grid operations", () => {
     expect(sheet.columns[0]?.name).toBe("Assay");
     expect(sheet.columns[0]?.values).toHaveLength(50);
     expect(columnNumericValues(sheet.columns[0]!).values).toHaveLength(50);
+    expect(specRowForColumn(sheet, "Assay")).toEqual({
+      columnName: "Assay",
+      lsl: "90",
+      usl: "110",
+      target: "100",
+    });
   });
 
   it("finds a column by case-insensitive name", () => {
     const sheet = applySampleAssay(createEmptyWorksheet(), 0);
     expect(findColumnIndexByName(sheet, "assay")).toBe(0);
     expect(findColumnIndexByName(sheet, "missing")).toBe(-1);
+  });
+
+  it("normalizes a legacy columns-only worksheet into a Data sheet", () => {
+    const next = normalizeWorksheet({
+      columns: [{ id: "c1", name: "Assay", values: ["101"] }],
+    });
+    expect(next.sheets).toHaveLength(1);
+    expect(next.sheets[0]?.id).toBe(PRIMARY_DATA_SHEET_ID);
+    expect(next.sheets[0]?.name).toBe("Data");
+    expect(next.columns[0]?.values).toEqual(["101"]);
+    expect(next.specs).toEqual([]);
+    expect(next.activeSheetId).toBe(PRIMARY_DATA_SHEET_ID);
+  });
+
+  it("adds a second data sheet and keeps Specs as a non-data tab", () => {
+    let sheet = createEmptyWorksheet();
+    sheet = addDataSheet(sheet);
+    expect(sheet.sheets).toHaveLength(2);
+    expect(sheet.activeSheetId).toBe("data-2");
+    const secondId = sheet.activeSheetId;
+    expect(sheet.columns[0]?.id).not.toBe(sheet.sheets[0]?.columns[0]?.id);
+    expect(sheet.columns.map((column) => column.id)).toEqual([
+      "c9",
+      "c10",
+      "c11",
+      "c12",
+      "c13",
+      "c14",
+      "c15",
+      "c16",
+    ]);
+    sheet = switchWorksheetTab(sheet, SPECS_TAB_ID);
+    expect(isSpecsTab(sheet)).toBe(true);
+    sheet = setCell(sheet, 0, 0, "12");
+    expect(isSpecsTab(sheet)).toBe(true);
+    const second = sheet.sheets.find((item) => item.id === secondId);
+    expect(second?.columns[0]?.values).toEqual(["12"]);
+    const first = sheet.sheets.find((item) => item.id === PRIMARY_DATA_SHEET_ID);
+    expect(first?.columns[0]?.values ?? []).toEqual([]);
+  });
+
+  it("prefers named spec limits, then min/max of the selected values", () => {
+    const withSpecs = applySampleAssay(createEmptyWorksheet(), 0);
+    expect(
+      defaultSixpackLimits({
+        columnName: "Assay",
+        values: [101, 103],
+        worksheet: withSpecs,
+      })
+    ).toEqual({ lsl: 90, usl: 110, target: 100 });
+
+    const empty = createEmptyWorksheet();
+    expect(
+      defaultSixpackLimits({
+        columnName: "Moisture",
+        values: [3.97, 4.25, 4.11],
+        worksheet: empty,
+      })
+    ).toEqual({ lsl: 3.97, usl: 4.25, target: 4.11 });
+
+    expect(
+      defaultSixpackLimits({
+        columnName: "Moisture",
+        values: [],
+        worksheet: empty,
+      })
+    ).toEqual({ lsl: null, usl: null, target: null });
+  });
+
+  it("refuses to delete the last data sheet", () => {
+    const sheet = deleteDataSheet(createEmptyWorksheet(), PRIMARY_DATA_SHEET_ID);
+    expect(sheet.sheets).toHaveLength(1);
   });
 });

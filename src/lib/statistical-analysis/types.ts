@@ -1,3 +1,5 @@
+import type { ChartLayout, ChartSpec } from "@/lib/charts/chart-spec";
+
 export const MAX_WORKSHEET_COLUMNS = 50;
 export const MAX_WORKSHEET_ROWS = 10_000;
 export const MAX_CELL_LENGTH = 64;
@@ -16,8 +18,15 @@ export const IMR_CONSTANTS = {
 } as const;
 
 export const CAPABILITY_SIXPACK_NORMAL = "capability_sixpack_normal" as const;
+export const MEASUREMENT_SCATTER = "measurement_scatter" as const;
 
-export type AnalysisKind = typeof CAPABILITY_SIXPACK_NORMAL;
+export type AnalysisKind =
+  | typeof CAPABILITY_SIXPACK_NORMAL
+  | typeof MEASUREMENT_SCATTER;
+
+export const PRIMARY_DATA_SHEET_ID = "data-1";
+export const SPECS_TAB_ID = "__specs__";
+export const MAX_DATA_SHEETS = 12;
 
 export type WorksheetColumn = {
   id: string;
@@ -25,8 +34,29 @@ export type WorksheetColumn = {
   values: string[];
 };
 
+export type WorksheetSheet = {
+  id: string;
+  name: string;
+  columns: WorksheetColumn[];
+};
+
+/** Spec limits for a data column, shown on the Specs tab. */
+export type WorksheetSpecRow = {
+  columnName: string;
+  lsl: string;
+  usl: string;
+  target: string;
+};
+
+/**
+ * One workbook per report. `columns` is the active data sheet (kept in
+ * sync with `sheets`). `activeSheetId` is a data-sheet id or `SPECS_TAB_ID`.
+ */
 export type WorksheetData = {
   columns: WorksheetColumn[];
+  sheets: WorksheetSheet[];
+  specs: WorksheetSpecRow[];
+  activeSheetId: string;
 };
 
 export type CapabilitySixpackConfig = {
@@ -134,17 +164,63 @@ export type SixpackComputeFailure = {
 
 export type SixpackComputeOutcome = SixpackComputeSuccess | SixpackComputeFailure;
 
-export type StatisticalAnalysisSummary = {
+export type MeasurementScatterLayoutInput = {
+  mode?: "combined" | "per-series";
+  seriesBy?: "unit" | "none";
+  xAxis?: "sequential" | "replicate";
+  yMax?: number;
+};
+
+export type MeasurementScatterConfig = {
+  query: string;
+  title: string;
+  xLabel: string;
+  yLabel: string;
+  layout: ChartLayout;
+};
+
+export type MeasurementScatterResult = {
+  specs: ChartSpec[];
+  n: number;
+  uom: string;
+};
+
+type AnalysisSummaryBase = {
   id: string;
   workspaceId: string;
-  kind: AnalysisKind;
   title: string;
-  config: CapabilitySixpackConfig;
-  results: CapabilitySixpackResult;
   sourceHash: string;
   stale: boolean;
   createdAt: string;
 };
+
+export type SixpackAnalysisSummary = AnalysisSummaryBase & {
+  kind: typeof CAPABILITY_SIXPACK_NORMAL;
+  config: CapabilitySixpackConfig;
+  results: CapabilitySixpackResult;
+};
+
+export type ScatterAnalysisSummary = AnalysisSummaryBase & {
+  kind: typeof MEASUREMENT_SCATTER;
+  config: MeasurementScatterConfig;
+  results: MeasurementScatterResult;
+};
+
+export type StatisticalAnalysisSummary =
+  | SixpackAnalysisSummary
+  | ScatterAnalysisSummary;
+
+export function isSixpackAnalysis(
+  analysis: StatisticalAnalysisSummary
+): analysis is SixpackAnalysisSummary {
+  return analysis.kind === CAPABILITY_SIXPACK_NORMAL;
+}
+
+export function isScatterAnalysis(
+  analysis: StatisticalAnalysisSummary
+): analysis is ScatterAnalysisSummary {
+  return analysis.kind === MEASUREMENT_SCATTER;
+}
 
 /**
  * One analytics worksheet per report (1:1 with `statistical_workspaces`).

@@ -60,7 +60,10 @@ export type CustomerPack = {
    * (email + edit link). The hidden reviewer is still assigned on every pack.
    */
   expertReviewEnabled: boolean;
-  /** Demo + MJ. Standalone worksheet + capability sixpack workspace. */
+  /**
+   * Report Analytics tab (worksheet, sixpack, measurement scatter).
+   * On for demo, MJ, and Convergent.
+   */
   statisticalAnalysisEnabled: boolean;
   branding: CustomerBranding;
 };
@@ -169,7 +172,7 @@ export const CONVERGENT_PACK: CustomerPack = {
   wordImportEnabled: false,
   citationsAtEndOfSection: true,
   expertReviewEnabled: true,
-  statisticalAnalysisEnabled: false,
+  statisticalAnalysisEnabled: true,
   branding: CONVERGENT_BRANDING,
 };
 
@@ -215,4 +218,14 @@ export function isStatisticalAnalysisEnabled(
   pack: CustomerPack = getCustomerPack()
 ): boolean {
   return pack.statisticalAnalysisEnabled;
+}
+
+/**
+ * Document (report-body) chat may propose a measurement scatter as a
+ * reviewable figure. Convergent plots live in Analytics instead.
+ */
+export function isDocumentChatPlotMeasurementsEnabled(
+  pack: CustomerPack = getCustomerPack()
+): boolean {
+  return pack.id !== "convergent";
 }
