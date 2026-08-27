@@ -180,23 +180,27 @@ export function StatisticalWorkspace({
     [applyAnalytics]
   );
 
-  const load = useCallback(async () => {
-    try {
-      const next = await getReportAnalytics(reportId);
-      applyAnalytics(next);
-      setLoadError(null);
-    } catch (error) {
-      setLoadError(
-        error instanceof Error ? error.message : "Could not load analytics."
-      );
-    } finally {
-      setLoading(false);
-    }
-  }, [applyAnalytics, reportId]);
-
   useEffect(() => {
-    void load();
-  }, [load]);
+    let cancelled = false;
+    void (async () => {
+      try {
+        const next = await getReportAnalytics(reportId);
+        if (cancelled) return;
+        applyAnalytics(next);
+        setLoadError(null);
+      } catch (error) {
+        if (cancelled) return;
+        setLoadError(
+          error instanceof Error ? error.message : "Could not load analytics."
+        );
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [applyAnalytics, reportId]);
 
   useEffect(() => {
     if (reloadEpoch === 0) return;

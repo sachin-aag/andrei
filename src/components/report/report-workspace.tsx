@@ -437,12 +437,15 @@ export function ReportWorkspace({
   useEffect(() => {
     if (!suggestionsFocus) return;
     const { section, commentId } = suggestionsFocus;
-    setCriteriaFocusSection(section);
-    // Suggestions live in the review margin. Keep the assistant collapsed
-    // so the gutter is visible — do not auto-open the right panel.
-    setSidebarCollapsed(true);
 
     let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setCriteriaFocusSection(section);
+      // Suggestions live in the review margin. Keep the assistant collapsed
+      // so the gutter is visible — do not auto-open the right panel.
+      setSidebarCollapsed(true);
+    });
     const timeouts: Array<ReturnType<typeof setTimeout>> = [];
     const retryDelaysMs = [0, 50, 100, 200];
 

@@ -37,7 +37,6 @@ vi.mock("@/lib/reports/persist-source-docx", () => ({
 import { db } from "@/db";
 import { getCurrentUser } from "@/lib/auth/session";
 import { GET, PATCH } from "./route";
-import { assignedManagerIdsWithHiddenExpert } from "@/lib/reports/ensure-hidden-expert-reviewer";
 
 const engineer = {
   id: "engineer-1",
