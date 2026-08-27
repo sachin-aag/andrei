@@ -160,7 +160,7 @@ test.describe("report chat", () => {
       await uploadPdf(page);
 
       const composer = sidebar.getByPlaceholder(
-        /ask about the report or attachments/i
+        /ask about the report or attachments|ask the assistant/i
       );
       await expect(composer).toBeEnabled({ timeout: 15_000 });
       await expect(
