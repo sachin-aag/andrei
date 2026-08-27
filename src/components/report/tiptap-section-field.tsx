@@ -69,6 +69,7 @@ import {
 import {
   injectSuggestionMarks,
   richDocsMatchIgnoringAiPreview,
+  shouldApplyExternalValueToEditor,
   shouldSkipSuggestionDocSync,
   stripPendingSuggestionsExcept,
 } from "@/lib/tiptap/suggestion-inject";
@@ -82,6 +83,7 @@ import { buildInactiveSuggestionCss } from "@/lib/tiptap/inactive-suggestion-css
 import { buildRedraftPreviewDoc } from "@/lib/tiptap/redraft-preview";
 import { markdownToDoc } from "@/lib/tiptap/markdown-to-doc";
 import { normalizeRichField } from "@/lib/tiptap/rich-text";
+import { afterPaint } from "@/lib/suggestions/apply-transition";
 import { buildSuggestionEdit, narrativeHasSuggestionMarks } from "@/lib/suggestions/apply-narrative-suggestion";
 import {
   acceptSuggestion,
@@ -325,8 +327,13 @@ export function TiptapSectionField({
   const { registerEditor, setActiveEditor, activeEditorKey } = useReportEditors();
   const isRichField = isRichTargetField(section, contentPath);
   const thisEditorKey = editorRegistryKey(section, contentPath);
-  const { activeSuggestionIdForSection, isSuggestionPreviewHeld, suggestionApplyTransition } =
-    useReportEvaluations();
+  const {
+    activeSuggestionIdForSection,
+    isSuggestionPreviewHeld,
+    suggestionApplyTransition,
+    beginSuggestionApplyTransition,
+    endSuggestionApplyTransition,
+  } = useReportEvaluations();
   const { replaceSection, sections } = useReportSections();
   const { getUser } = useUserDirectory();
   const activeSuggestionId = activeSuggestionIdForSection(section);
@@ -583,56 +590,65 @@ export function TiptapSectionField({
       const comment = comments.find((c) => c.id === suggestionId);
       if (!comment) throw new Error("Suggestion not found");
 
-      const currentSection = sections[section] as Record<string, unknown>;
-      const result =
-        mode === "accept"
-          ? await acceptSuggestion({
-              reportId: report.id,
-              section,
-              comment,
-              sectionContent: currentSection,
-              fieldContentPath: contentPath,
-            })
-          : await dismissSuggestion({
-              reportId: report.id,
-              section,
-              comment,
-              sectionContent: currentSection,
-              fieldContentPath: contentPath,
-            });
+      beginSuggestionApplyTransition(section, suggestionId, mode);
 
-      if (!result.ok) {
-        if (result.reason === "status_failed") {
-          throw (
-            result.error instanceof CommentPersistError
-              ? result.error
-              : new CommentPersistError(0, "Could not update suggestion")
+      try {
+        const currentSection = sections[section] as Record<string, unknown>;
+        const result =
+          mode === "accept"
+            ? await acceptSuggestion({
+                reportId: report.id,
+                section,
+                comment,
+                sectionContent: currentSection,
+                fieldContentPath: contentPath,
+              })
+            : await dismissSuggestion({
+                reportId: report.id,
+                section,
+                comment,
+                sectionContent: currentSection,
+                fieldContentPath: contentPath,
+              });
+
+        if (!result.ok) {
+          if (result.reason === "status_failed") {
+            throw (
+              result.error instanceof CommentPersistError
+                ? result.error
+                : new CommentPersistError(0, "Could not update suggestion")
+            );
+          }
+          if (result.reason === "save_failed") {
+            throw (
+              result.error instanceof SectionPersistError
+                ? result.error
+                : new SectionPersistError(0, "Save failed")
+            );
+          }
+          throw new Error("Suggestion could not be located");
+        }
+
+        // Do not mutate editor-local JSON — external-value sync repaints from section state.
+        if (result.nextSection) {
+          replaceSection(
+            section,
+            result.nextSection as unknown
           );
         }
-        if (result.reason === "save_failed") {
-          throw (
-            result.error instanceof SectionPersistError
-              ? result.error
-              : new SectionPersistError(0, "Save failed")
-          );
-        }
-        throw new Error("Suggestion could not be located");
-      }
-
-      // Do not mutate editor-local JSON — external-value sync repaints from section state.
-      if (result.nextSection) {
-        replaceSection(
-          section,
-          result.nextSection as unknown
+        setComments((prev) =>
+          mode === "dismiss"
+            ? prev.filter((c) => c.id !== suggestionId)
+            : prev.map((c) =>
+                c.id === suggestionId ? { ...c, status: "resolved" as const } : c
+              )
         );
+        // Let the accepted/dismissed value paint while preview-held is still on,
+        // otherwise ending the lock in the same tick re-strips the preview.
+        await afterPaint();
+      } finally {
+        endSuggestionApplyTransition(section);
       }
-      setComments((prev) =>
-        mode === "dismiss"
-          ? prev.filter((c) => c.id !== suggestionId)
-          : prev.map((c) =>
-              c.id === suggestionId ? { ...c, status: "resolved" as const } : c
-            )
-      );
     },
     [
       comments,
@@ -642,6 +658,8 @@ export function TiptapSectionField({
       sections,
       replaceSection,
       setComments,
+      beginSuggestionApplyTransition,
+      endSuggestionApplyTransition,
     ]
   );
 
@@ -711,17 +729,33 @@ export function TiptapSectionField({
     // the contenteditable=false accept/ignore island, which steals the caret.
   }, [activeSuggestionId, isRichField, editor, refresh]);
 
+  const lastPersistedJsonRef = useRef<string | null>(null);
+
   const applyExternalValueToEditor = useCallback(() => {
     const currentEditor = editor;
     if (!currentEditor || currentEditor.isDestroyed) return;
     const incoming = normalizeRichField(value);
+    const incomingJson = JSON.stringify(incoming);
+    const prevPersisted = lastPersistedJsonRef.current;
+    lastPersistedJsonRef.current = incomingJson;
     const current = currentEditor.getJSON() as JSONContent;
-    if (richDocsMatchIgnoringAiPreview(current, incoming)) return;
     // Keystrokes update the editor first; parent state catches up via onUpdate.
     // Replacing the doc while focused jumps the viewport (and can land the
     // caret in a later AI suggestion span). Suggestion accept still applies
-    // because the preview-held lock is set for that moment.
-    if (currentEditor.view.hasFocus() && !isSuggestionPreviewHeld(section)) {
+    // once the persisted value changes — not when the preview-held lock
+    // first flips, which would wipe the live preview with the old snapshot.
+    if (
+      !shouldApplyExternalValueToEditor({
+        previewHeld: isSuggestionPreviewHeld(section),
+        persistedChanged:
+          prevPersisted !== null && prevPersisted !== incomingJson,
+        hasFocus: currentEditor.view.hasFocus(),
+        docsMatchIgnoringPreview: richDocsMatchIgnoringAiPreview(
+          current,
+          incoming
+        ),
+      })
+    ) {
       return;
     }
     currentEditor.commands.setContent(incoming as Content, { emitUpdate: false });

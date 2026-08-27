@@ -167,6 +167,27 @@ export function shouldSkipSuggestionDocSync(opts: {
   return true;
 }
 
+/**
+ * Whether the persisted section `value` may replace the live editor doc.
+ *
+ * Accept/dismiss sets the preview-held lock *before* the PATCH returns, so
+ * `value` is still the pre-accept snapshot. Rewriting the editor then strips
+ * the inline preview (inserts vanish, deletes fade to empty) for the whole
+ * request — the "text disappears for a second" flash. Only apply once the
+ * persisted value actually changed (the accepted/dismissed result).
+ */
+export function shouldApplyExternalValueToEditor(opts: {
+  previewHeld: boolean;
+  persistedChanged: boolean;
+  hasFocus: boolean;
+  docsMatchIgnoringPreview: boolean;
+}): boolean {
+  if (opts.docsMatchIgnoringPreview) return false;
+  if (opts.previewHeld) return opts.persistedChanged;
+  if (opts.hasFocus) return false;
+  return true;
+}
+
 export function stripPendingSuggestionsExcept(
   doc: JSONContent,
   keepMarkId: string | null
