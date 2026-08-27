@@ -174,7 +174,6 @@ export function ReportBulkSuggestionActions() {
       <Button
         type="button"
         size="sm"
-        variant="outline"
         disabled={busy}
         title={`Apply all ${openTotal} open suggestions across the document`}
         onClick={() => {
