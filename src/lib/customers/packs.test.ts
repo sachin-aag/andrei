@@ -27,8 +27,8 @@ describe("customer packs (demo)", () => {
     expect(DEMO_PACK.wordImportEnabled).toBe(false);
   });
 
-  it("parks citations at the end of each section on demo", () => {
-    expect(DEMO_PACK.citationsAtEndOfSection).toBe(true);
+  it("keeps citations inline on demo investigation reports", () => {
+    expect(DEMO_PACK.citationsAtEndOfSection).toBe(false);
   });
 
   it("keeps expert review off on demo", () => {

@@ -177,7 +177,7 @@ describe("GET /api/reports/[reportId]/export", () => {
     );
   });
 
-  it("omits citations for demo when requested", async () => {
+  it("ignores omitCitations on demo investigation reports", async () => {
     vi.mocked(getCustomerPack).mockReturnValue(DEMO_PACK);
     vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
     mockSelectOnce([report]);
@@ -192,10 +192,35 @@ describe("GET /api/reports/[reportId]/export", () => {
 
     expect(response.status).toBe(200);
     expect(generateReportDocx).toHaveBeenCalledWith(
+      expect.objectContaining({ omitCitations: false })
+    );
+  });
+
+  it("omits citations for a demo generic document when requested", async () => {
+    vi.mocked(getCustomerPack).mockReturnValue(DEMO_PACK);
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
+    mockSelectOnce([
+      {
+        ...report,
+        documentType: "generic_document",
+        documentNo: "DOC-001",
+      },
+    ]);
+    mockOrderedSelectOnce([]);
+    mockSelectOnce([]);
+    mockSelectOnce([]);
+
+    const response = await GET(
+      request("http://localhost/api/reports/report-1/export?omitCitations=1"),
+      { params: Promise.resolve({ reportId: report.id }) }
+    );
+
+    expect(response.status).toBe(200);
+    expect(generateReportDocx).toHaveBeenCalledWith(
       expect.objectContaining({ omitCitations: true })
     );
     expect(response.headers.get("Content-Disposition")).toBe(
-      'attachment; filename="Investigation_Report_DEV-001_without_citations.docx"'
+      'attachment; filename="Document_DOC-001_without_citations.docx"'
     );
   });
 

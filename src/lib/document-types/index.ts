@@ -153,6 +153,22 @@ export function documentTypeShortLabel(type: DocumentType): string {
   return getDocumentType(type).label.replace(/ report$/i, "");
 }
 
+/**
+ * Numbered `[n]` markers + trailing Citations: list. On for the whole
+ * Convergent pack, and for generic (blank) documents on demo. Off for
+ * demo investigation / design verification and for MJ.
+ */
+export function citationsAtEndOfSectionFor(
+  documentType?: DocumentType | null
+): boolean {
+  if (getCustomerPack().citationsAtEndOfSection) return true;
+  if (!documentType) return false;
+  return (
+    getDocumentType(resolveDocumentType(documentType)).citationsAtEndOfSection ===
+    true
+  );
+}
+
 export function engineerReportsSubtitle(
   types: readonly { label: string }[] = listDocumentTypes()
 ): string {

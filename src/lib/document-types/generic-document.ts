@@ -59,6 +59,7 @@ export const genericDocumentDefinition: DocumentTypeDefinition = {
   evaluation: { kind: "none" },
   suggestionApplyMode: "tracked_change",
   editorProfile: "generic_document",
+  citationsAtEndOfSection: true,
   sections: [
     {
       key: GENERIC_DOCUMENT_SECTION,

@@ -40,7 +40,7 @@ describe("Convergent customer pack", () => {
     );
     expect(CONVERGENT_PACK.wordImportEnabled).toBe(false);
     expect(CONVERGENT_PACK.citationsAtEndOfSection).toBe(true);
-    expect(DEMO_PACK.citationsAtEndOfSection).toBe(true);
+    expect(DEMO_PACK.citationsAtEndOfSection).toBe(false);
     expect(MJ_PACK.citationsAtEndOfSection).toBe(false);
     expect(CONVERGENT_PACK.expertReviewEnabled).toBe(true);
     expect(DEMO_PACK.expertReviewEnabled).toBe(false);

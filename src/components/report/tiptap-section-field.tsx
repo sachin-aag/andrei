@@ -48,7 +48,6 @@ import { useUserDirectory } from "@/providers/user-directory-provider";
 import { cn } from "@/lib/utils";
 import { createCommentHighlightExtension } from "@/lib/tiptap/comment-highlights";
 import type { CommentHighlightRange, CommentHighlightHandlers } from "@/lib/tiptap/comment-highlights";
-import { getCustomerPack } from "@/lib/customers/packs";
 import { createCitationHighlightExtension } from "@/lib/tiptap/citation-highlights";
 import {
   createPlaceholderHighlightExtension,
@@ -82,7 +81,12 @@ import { buildInactiveSuggestionCss } from "@/lib/tiptap/inactive-suggestion-css
 import { buildRedraftPreviewDoc } from "@/lib/tiptap/redraft-preview";
 import { markdownToDoc } from "@/lib/tiptap/markdown-to-doc";
 import { normalizeRichField } from "@/lib/tiptap/rich-text";
-import { editorProfileFor, getDocumentType, suggestionApplyModeFor } from "@/lib/document-types";
+import {
+  citationsAtEndOfSectionFor,
+  editorProfileFor,
+  getDocumentType,
+  suggestionApplyModeFor,
+} from "@/lib/document-types";
 import { buildSuggestionEdit, narrativeHasSuggestionMarks } from "@/lib/suggestions/apply-narrative-suggestion";
 import {
   acceptSuggestion,
@@ -381,7 +385,7 @@ export function TiptapSectionField({
     [focusedPanelPlaceholderId, section, contentPath]
   );
 
-  const citationsAtEndOfSection = getCustomerPack().citationsAtEndOfSection;
+  const citationsAtEndOfSection = citationsAtEndOfSectionFor(report.documentType);
   const citationHighlightExtension = useMemo(
     () => (citationsAtEndOfSection ? createCitationHighlightExtension() : null),
     [citationsAtEndOfSection]

@@ -19,7 +19,7 @@ describe("isChatMode", () => {
 describe("buildChatSystemPrompt", () => {
   it("bumps the prompt version when insert_image and citation-marker guidance change", () => {
     expect(CHAT_PROMPT_VERSION).toBe(
-      "chat-v49-demo-end-citations-structured-headings"
+      "chat-v48-ask-mode-qna-metric-series-plots"
     );
   });
 
@@ -210,10 +210,12 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).not.toContain("SOP/DP/QA/008");
   });
 
-  it("defaults demo chat to citations-at-end and structures generic drafts with headings", () => {
+  it("parks citations at the end on generic documents, not demo investigation", () => {
     const investigation = buildChatSystemPrompt({ ...opts, mode: "agent" });
-    expect(investigation).toContain("END of the section field");
-    expect(investigation).toContain("Citations:");
+    expect(investigation).toContain(
+      "When you rely on retrieved evidence in prose, cite it as"
+    );
+    expect(investigation).not.toContain("END of the section field");
 
     const generic = buildChatSystemPrompt({
       ...opts,
@@ -223,6 +225,8 @@ describe("buildChatSystemPrompt", () => {
     expect(generic).toContain("Document structure (required)");
     expect(generic).toContain("`#` document title");
     expect(generic).toContain("Always use markdown headings");
+    expect(generic).toContain("END of the section field");
+    expect(generic).toContain("Citations:");
     expect(generic).not.toContain("when they ask for structure");
   });
 
