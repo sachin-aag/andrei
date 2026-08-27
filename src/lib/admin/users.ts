@@ -14,6 +14,7 @@ export type AdminUser = {
   isActive: boolean;
   lockedAt: Date | null;
   deactivatedAt: Date | null;
+  lastLoginAt: Date | null;
 };
 
 export function adminUserFromRow(
@@ -30,6 +31,7 @@ export function adminUserFromRow(
     isActive: row.deactivatedAt == null,
     lockedAt: row.lockedAt,
     deactivatedAt: row.deactivatedAt,
+    lastLoginAt: row.lastLoginAt,
   };
 }
 

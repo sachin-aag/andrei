@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/select";
 import type { AdminUser } from "@/lib/admin/users";
 import { USER_ROLES, roleLabel, type UserRole } from "@/lib/auth/roles";
+import { formatDateTime } from "@/lib/utils";
 import {
   MAX_INACTIVITY_TIMEOUT_MINUTES,
   MIN_INACTIVITY_TIMEOUT_MINUTES,
@@ -503,6 +504,7 @@ export function AdminUsersPanel({
                 <th className="px-4 py-2 font-medium">User</th>
                 <th className="px-4 py-2 font-medium">Role</th>
                 <th className="px-4 py-2 font-medium">Password</th>
+                <th className="px-4 py-2 font-medium">Last login</th>
                 <th className="px-4 py-2 font-medium" />
               </tr>
             </thead>
@@ -565,6 +567,9 @@ export function AdminUsersPanel({
                     ) : (
                       "Magic link only"
                     )}
+                  </td>
+                  <td className="px-4 py-3 text-[var(--muted-foreground)]">
+                    {user.lastLoginAt ? formatDateTime(user.lastLoginAt) : "Never"}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex justify-end gap-2">

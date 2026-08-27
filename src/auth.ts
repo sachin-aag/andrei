@@ -18,6 +18,7 @@ import {
   loadWorkspaceUserJwtState,
   loadWorkspaceUserJwtStateByEmail,
   recordFailedLoginAttempt,
+  recordLastLogin,
 } from "@/lib/auth/workspace-login";
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
@@ -89,6 +90,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }),
   ],
   session: { strategy: "jwt" },
+  events: {
+    async signIn({ user }) {
+      if (!user.email) return;
+      const wsUser = await db.query.workspaceUsers.findFirst({
+        where: eq(workspaceUsers.email, user.email),
+        columns: { id: true },
+      });
+      if (wsUser) {
+        await recordLastLogin(wsUser.id);
+      }
+    },
+  },
   callbacks: {
     async signIn({ user }) {
       if (!user.email) return false;
