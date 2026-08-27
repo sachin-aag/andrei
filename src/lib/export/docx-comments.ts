@@ -183,11 +183,14 @@ export function attachCommentsToFirstParagraph(
   if (anchoredXml) return anchoredXml;
 
   const marker = commentReferenceXml(rootEntry.docxId);
-  const paragraphStart =
-    /<w:p\b[^>]*>(?:<w:pPr>[\s\S]*?<\/w:pPr>)?/.exec(xml);
-  if (!paragraphStart) return `${marker}${xml}`;
-  const insertAt = paragraphStart.index + paragraphStart[0].length;
-  return `${xml.slice(0, insertAt)}${marker}${xml.slice(insertAt)}`;
+  const paragraphStart = /<w:p\b[^>]*>(?:<w:pPr>[\s\S]*?<\/w:pPr>)?/g;
+  let match: RegExpExecArray | null;
+  while ((match = paragraphStart.exec(xml))) {
+    if (match[0].includes("<w:sectPr")) continue;
+    const insertAt = match.index + match[0].length;
+    return `${xml.slice(0, insertAt)}${marker}${xml.slice(insertAt)}`;
+  }
+  return `${marker}${xml}`;
 }
 
 function commentsXml(entries: DocxCommentExportEntry[]): string {
