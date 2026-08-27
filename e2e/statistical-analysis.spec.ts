@@ -357,6 +357,8 @@ test.describe("report analytics", () => {
     await expect(page.getByTestId("worksheet-sheet-tab-specs")).toHaveCount(0);
 
     await page.getByTestId("worksheet-data-menu").click();
+    await expect(page.getByRole("menuitem", { name: "Insert column" })).toHaveCount(0);
+    await expect(page.getByRole("menuitem", { name: "Insert row" })).toHaveCount(0);
     await page.getByTestId("load-sample-assay").click();
     await page.getByTestId("column-header-c1").click({ button: "right" });
     await page.getByTestId("column-specs-c1").click();
@@ -378,6 +380,65 @@ test.describe("report analytics", () => {
     await page.getByTestId("plot-usl").fill("6");
     await page.getByTestId("plot-measurements-submit").click();
     await expect(page.getByRole("alert")).toBeVisible({ timeout: 30_000 });
+  });
+
+  test("row headers select the whole row and the row menu inserts, clears, and deletes", async ({
+    page,
+  }) => {
+    test.setTimeout(90_000);
+    if (!reportId) throw new Error("missing report");
+    const sheet = applySampleAssay(createEmptyWorksheet(), 0);
+    const patched = await page.request.patch(
+      `/api/reports/${reportId}/analytics`,
+      { data: { worksheet: sheet } }
+    );
+    expect(patched.ok()).toBeTruthy();
+
+    await openReportAnalytics(page);
+    await expect(page.getByTestId("worksheet-grid")).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByTestId("cell-c1-0")).toHaveText("101.84");
+    const second = await page.getByTestId("cell-c1-1").innerText();
+
+    await page.getByTestId("row-header-0").click();
+    await expect(page.getByTestId("worksheet-grid")).toHaveAttribute(
+      "data-selection-axis",
+      "row"
+    );
+    await expect(page.getByTestId("cell-c1-0")).toHaveAttribute(
+      "data-in-selection",
+      "true"
+    );
+    await expect(page.getByTestId("cell-c2-0")).toHaveAttribute(
+      "data-in-selection",
+      "true"
+    );
+
+    await page.getByTestId("row-header-0").click({ button: "right" });
+    await expect(page.getByTestId("row-menu-0")).toBeVisible();
+    await expect(page.getByTestId("row-insert-above-0")).toBeVisible();
+    await expect(page.getByTestId("row-insert-below-0")).toBeVisible();
+    await expect(page.getByTestId("row-clear-0")).toBeVisible();
+    await expect(page.getByTestId("row-delete-0")).toBeVisible();
+    await page.getByTestId("row-insert-above-0").click();
+    await expect(page.getByTestId("cell-c1-0")).toHaveText("");
+    await expect(page.getByTestId("cell-c1-1")).toHaveText("101.84");
+
+    await page.getByTestId("row-header-0").click({ button: "right" });
+    await page.getByTestId("row-delete-0").click();
+    await expect(page.getByTestId("cell-c1-0")).toHaveText("101.84");
+
+    await page.getByTestId("row-header-0").click({ button: "right" });
+    await page.getByTestId("row-insert-below-0").click();
+    await expect(page.getByTestId("cell-c1-0")).toHaveText("101.84");
+    await expect(page.getByTestId("cell-c1-1")).toHaveText("");
+    await expect(page.getByTestId("cell-c1-2")).toHaveText(second);
+
+    await page.getByTestId("row-header-0").click({ button: "right" });
+    await page.getByTestId("row-clear-0").click();
+    await expect(page.getByTestId("cell-c1-0")).toHaveText("");
+    await expect(page.getByTestId("cell-c1-2")).toHaveText(second);
   });
 
   test("column context menu inserts, clears, and opens Analyze with prefilled plot values", async ({

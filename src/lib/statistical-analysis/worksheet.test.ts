@@ -9,9 +9,13 @@ import {
   defaultSixpackLimits,
   deleteColumn,
   deleteDataSheet,
+  deleteRow,
+  deleteRows,
   findColumnIndexByName,
   clearColumn,
+  clearRows,
   insertColumn,
+  insertRow,
   isSpecsTab,
   normalizeWorksheet,
   parseTsv,
@@ -130,6 +134,32 @@ describe("worksheet grid operations", () => {
       usl: "110",
       target: "100",
     });
+  });
+
+  it("inserts, clears, and deletes rows across every column", () => {
+    let sheet = createEmptyWorksheet(2);
+    sheet = setCell(sheet, 0, 0, "a1");
+    sheet = setCell(sheet, 1, 0, "b1");
+    sheet = setCell(sheet, 0, 1, "a2");
+    sheet = setCell(sheet, 1, 1, "b2");
+    sheet = setCell(sheet, 0, 2, "a3");
+    sheet = setCell(sheet, 1, 2, "b3");
+
+    sheet = insertRow(sheet, 1);
+    expect(sheet.columns[0]?.values).toEqual(["a1", "", "a2", "a3"]);
+    expect(sheet.columns[1]?.values).toEqual(["b1", "", "b2", "b3"]);
+
+    sheet = clearRows(sheet, 0, 1);
+    expect(sheet.columns[0]?.values).toEqual(["", "", "a2", "a3"]);
+    expect(sheet.columns[1]?.values).toEqual(["", "", "b2", "b3"]);
+
+    sheet = deleteRows(sheet, 0, 1);
+    expect(sheet.columns[0]?.values).toEqual(["a2", "a3"]);
+    expect(sheet.columns[1]?.values).toEqual(["b2", "b3"]);
+
+    sheet = deleteRow(sheet, 0);
+    expect(sheet.columns[0]?.values).toEqual(["a3"]);
+    expect(sheet.columns[1]?.values).toEqual(["b3"]);
   });
 
   it("replaces a column and reports a stable source key", () => {
