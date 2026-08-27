@@ -1,0 +1,94 @@
+Standard Operating Procedure Unit: Drug Product
+
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+M.J. Biopharm Private Limited ansy
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance
+
+| SOP No.: SOP/DP/QA/010__| Revision No: R04 _| Page 21 of 51
+
+Revision
+No.
+
+Effective
+date
+
+Change Control
+
+Change History No
+
+2. Risk treatment for medium overall risk in table no. 3 of
+existing SOP and in point no. 1.8.2.2 of format
+SOP/DP/QA/010/F02-R00 changed from “Mitigation
+plan shall be done to reduce the risk to an acceptable
+level” to “Mitigation plan shall be done to reduce the
+risk and based on the mitigation risk can be acceptable”.
+
+RO2
+
+28/03/2024
+
+1. SOP template aligned with SOP for SOP
+(SOP/DP/QA/001-R03)
+
+4.0 ABBREVIATIONS: arranged alphabetically.
+7.3.2.15 New point added. CCF/QA/23/042
+In format II point 4.1 modified.
+
+New format added, Format [V: Templates for New
+Risk/Residual Risk (SOP/DP/QA/010/F04-R00)
+
+a2 Y
+
+RO3
+
+13/12/2024
+
+1. SOP template aligned with SOP for SOP
+(SOP/DP/QA/001-R04)
+
+2. Incorporated Section 3.3.2 for responsibility of site
+Quality head/QA head.
+
+3. Point 7.6 updated for periodic review procedure of
+risk assessment and editorial changes.
+
+4. Typographical error corrected in section no. 1.7 in
+Format II: Templates for Risk Assessment by
+FMEA (SOP/DP/QA/010/F02-R02).
+
+5. New formats incorporated, Format V: Periodic
+Review Schedule for Risk Assessment
+(SOP/DP/QA/010/F05-R00) and Format VI:
+Periodic Review Checklist for Risk Assessment
+(SOP/DP/QA/010/F06-R00)
+
+CCF/QA/24/034
+
+RO4
+
+04 oA lro276
+
+1. In Section 7.6.2 periodic review applicability
+procedure for risk assessment incorporated.
+
+2. Content sequence updated in Format I: Minutes of
+Meeting for Risk Assessment
+(SOP/DP/QA/010/F01-R00).
+
+3. Periodic review applicability section incorporated
+in Format II: Templates for Risk Assessment by
+FMEA (SOP/DP/QA/010/F02-R03)
+
+CCF/QA/26/012
+
+Prepared By (User Department) Sign/Date Reviewed By (Quality Assurance) Sign/Date
+
+Ligiecie® uns
+
+Confidential and Proprietary SOP/DP/QA/001/F01-R02
+MASTER COPY
+

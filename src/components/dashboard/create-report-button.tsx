@@ -233,7 +233,9 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
                       ? "e.g. DVR-2026-001"
                       : documentType === "mechanical_design_verification"
                         ? "e.g. 825-00101"
-                        : "e.g. DEV/PK/26/001"
+                        : documentType === "quality_risk_assessment"
+                          ? "e.g. RA/DP/QA/26/001"
+                          : "e.g. DEV/PK/26/001"
                   }
                   value={documentNo}
                   disabled={busy}

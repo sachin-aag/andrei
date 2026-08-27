@@ -1,0 +1,57 @@
+Standard Operating Procedure Unit: Drug Product
+
+M.J. Biopharm Private Limited Gay
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance | SOP No.: SOP/DP/QA/010 | Revision No: R04 | Page 5 of 51
+
+5.17
+
+Risk Priority Number (RPN):
+A quantitative method for determining the level of risk by multiplying the severity, probability of
+occurrence and detectability rankings of the failure or event.
+
+5.18 Risk Priority Ranking (RPR):
+A qualitative method for determining the level of risk by combining severity, occurrence and
+detectability rankings of the failure or event.
+
+5.19 Residual Risk:
+Risk remaining after risk control measures has been taken.
+
+5.20 Validation:
+Establishing documented evidence that provides a high degree of assurance that a specific process
+will consistently produce a product meeting its predetermined specifications and quality attributes.
+
+5.21 Direct Impact System:
+Those Building /Facility / Utility / Equipment / Instrument / Process which controls and or sustain
+a cGMP operation directly thereby impacting safety, efficacy and or purity of a product. (example :
+Manufacturing block, Clean room, Facility to ensure flow of material and personnel to minimize
+contamination, dedicated facilities / equipment, Purified water system, Filling machine, AHU
+system for areas where product / materials are exposed during operation.)
+
+5.22 Indirect Impact Systems:
+Those Building / Facility / Utility / Equipment / Instrument / Process which do not control and or
+sustain a cGMP operation directly, but still perceived to have an impact on safety, efficacy and or
+purity of a product (e.g. : Boiler steam, Raw water system, Building Management System, access
+control etc.).
+
+5.23 Qualitative Risk Assessment (Informal):
+Qualitative risk assessment shall be performed based on the level of risk ranking, as high, medium
+and low. Risk priority ranking shall be evaluated in qualitative risk assessment.
+
+5.24 Quantitative Risk Assessment (Formal):
+Quantitative risk assessment shall be performed based on the level of risk rating. Risk priority
+number shall be calculated in quantitative risk assessment.
+
+6.0 MATERIAL AND EQUIPMENTS:
+Not Applicable.
+
+Prepared By (User Department) Sign/Date Reviewed By (Quality Assurance) Sign/Date
+, =
+L549 06! 24 Agel
+Confidential and Proprietary SOP/DP/QA/001/F01-R02
+
+MASTER COPY
+

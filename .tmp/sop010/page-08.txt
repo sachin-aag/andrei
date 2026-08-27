@@ -1,0 +1,74 @@
+Standard Operating Procedure Unit: Drug Product
+
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+M.J. Biopharm Private Limited Gysy
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance | SOP No.: SOP/DP/QA/010 _| Revision No: R04 _| Page 8 of 51
+
+7.3.2.9.)
+
+Informal Risk Assessment: Informal risk assessment considered as ‘Qualitative Risk Assessment’.
+Risk priority ranking shall be evaluated in informal risk assessment as, High, Medium and Low.
+
+7.3.2.9.2 Formal Risk Assessment: Formal risk assessment considered as ‘Quantitative Risk Assessment’.
+
+7.3.2.10
+
+Risk priority number shall be evaluated in formal risk assessment based on rating.
+
+Risk Identification and Evaluation Considering Current Control Measures: All potential failure
+shall be mentioned in tabular form along with control measure and detection.
+Note: Font size for this section shall be ‘10’ and page size can be ‘A4’ or’ A3’ as applicable.
+
+7.3.2.10.1 After evaluation, if risk found with high or medium risk category, mitigation plan need to be
+
+7.3.2.11
+
+7.3.2.12
+
+7.3.2.13
+
+7.3.2.14
+
+7.3.2.15
+
+identify to control the risk within acceptance. Mitigation plan is not required for low risk category.
+
+Risk Communication: Identified risk and mitigation plan shall be communicated within the cross
+functional departments including allocation of responsibility and target completion date of
+mitigation plan. If applicable risk communicated to Customer / regulatory authorities by
+Regulatory Affairs department in due consultation with QA Head/Designee.
+
+Risk Assessment Summary and Conclusion (Before Implementation): Summarize the outcome of
+risk assessment including control of risk and requirement of mitigation plan. Conclusion shall be
+made before implementation of mitigation plan.
+
+Mitigation Plan and Closure: This section includes the plan, closure status and closure date and
+sign/date of responsible person.
+
+New Risk Identified During Execution (Residual Risk): If any new risk identified during the
+implementation of mitigation plan, it shall be evaluated and requirement of re-assessment of initial
+risk assessment or any other action need to be taken shall be decided by user department in
+consultation with QA Head/Designee.
+
+If new risk identified, then format for New Risk/Residual Risk SOP/DP/QA/010/F04 shall be
+initiated. After evaluation of new risk in format, preapproval shall be taken by recording summary
+and conclusion (before implementation). If new risk found with high or medium risk category,
+mitigation plan need to be identify to control the risk within acceptance and after verification of
+implemented mitigation plan, post approval shall be taken by recording the summary and
+conclusion (after implementation). Process flow of handing the format SOP/DP/QA/010/F04 shall
+be as per initial risk assessment process flow. .
+
+Note: After closing of mitigation plan of new risk (if applicable), initial risk assessment shall be
+closed.
+
+7.3.2.16 Risk Assessment Summary and Conclusion (After Implementation): Summary and conclusion shall
+Prepared By (User Department) Sign/Date Reviewed By (Quality Assurance) Sign/Date
+LE 506 J26 “ot
+Confidential and Proprietary SOP/DP/QA/001/F01-R02
+
+MASTER COPY
+

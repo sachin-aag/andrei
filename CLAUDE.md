@@ -72,7 +72,7 @@ pnpm exec playwright install --with-deps chromium firefox webkit
 - `src/components/ui/` — shadcn-style Radix UI primitives.
 - `src/db/schema/index.ts` — Drizzle schema (single file, not a directory): `workspaceUsers`, `reports` (includes `documentType`), `reportManagers`, `reportSections`, `criteriaEvaluations`, `comments`, `chatSessions`/`chatMessages`, `reportSourceDocx`, `mathExtractionCache`, `aiFeedbackSessions`/`aiFeedbackResponses`, `auditEvents`/`sectionContentVersions`/`electronicSignatures`, `passwordPolicySettings`, `retentionSettings`, `statisticalWorkspaces`/`statisticalAnalyses`, plus attachment evidence (`reportAttachments`, `attachmentIngestRuns`, `documentPages`, `documentChunks` with `vector(768)`). NextAuth tables + `authUsers` in `auth.ts`.
 - `src/lib/ai/` — AI evaluation, suggestion, and chat pipelines (see subsystems below).
-- `src/lib/document-types/` — Registry for `investigation_report` and `design_verification` (sections, criteria, prompts, chat persona, merge).
+- `src/lib/document-types/` — Registry for `investigation_report`, `design_verification`, `mechanical_design_verification`, and `quality_risk_assessment` (sections, criteria, prompts, chat persona, merge).
 - `src/lib/attachments/` — PDF/DOCX ingest, chunk/embed, hybrid retrieval (`searchReportDocuments`, `readDocumentPage`, `readDocumentOutline`).
 - `src/lib/storage/` — Attachment blob storage (GCS vs local).
 - `src/lib/audit/` — Hash-chained audit log, section version history, and e-signature workflow (see Audit subsystem).
@@ -112,6 +112,7 @@ Owned by `getWorkspaceSections(documentType)` in `src/lib/document-types/`. The 
 
 - **Investigation:** DMAIC (`define`, `measure`, `analyze`, `improve`, `control`) plus `conclusion`, plus non-editable `documents_reviewed`, `attachments`, `signature_approvals`. Content types in `src/types/sections.ts`.
 - **Design verification:** demo/MJ shape is `purpose_scope`, `references`, `traceability`, `test_methods`, `test_results`, `deviations`, `conclusion`, `approval_signoff`, `appendices`, plus virtual `cover_page` (lives in `reports.metadata`, not `report_sections`). Convergent pack (`buildDesignVerificationDefinition`) is a 9-section Solea DV (`purpose` … `conclusion`, no cover page). Content types in `src/lib/document-types/design-verification/sections.ts` and `src/lib/document-types/convergent/sections.ts`.
+- **Quality risk assessment (MJ only):** SOP/DP/QA/010 F02 + F04. Keys are prefixed `qra_` (`qra_approach` … `qra_revision_history`). Identity lives in `reports.metadata`. RPN/RPR are computed in `src/lib/document-types/qra/scoring.ts`, not by the LLM.
 
 ### Auth
 

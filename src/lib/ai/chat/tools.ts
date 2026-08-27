@@ -641,7 +641,9 @@ export function buildChatTools(opts: {
   const fixedTableHint =
     documentType === "design_verification"
       ? " For Traceability and Test Results (`targetField: table`), use the seeded column headers exactly — see Fixed table formats in the system prompt; never invent alternate columns."
-      : "";
+      : documentType === "quality_risk_assessment"
+        ? " For FMEA and F04 tables, keep the seeded headers. Fill Severity, Probability and Detectability only — never write RPN/RPR or Risk Acceptable cells; the engineer clicks Recalculate risk scores."
+        : "";
   const analyzeInScope = allowedSections.includes("analyze");
   // When Analyze is in scope, allow reading Define/Measure for method selection
   // even if the dropdown is narrowed to Analyze (draft/propose stay restricted).

@@ -1,0 +1,60 @@
+Standard Operating Procedure Unit: Drug Product
+
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+M.J. Biopharm Private Limited ensy
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance SOP No.: SOP/DP/QA/010 | Revision No: R04 | Page 17 of 51
+
+during risk assessment review.
+
+74.15 Risk Acceptance:
+
+7.4.15.1 For some types of harms, even the best quality risk management practices might not entirely
+eliminate risk. In these circumstances, it might be agreed that an appropriate quality risk
+management strategy has been applied and that quality risk is reduced to a specified (acceptable)
+level. This (specified) acceptable level will depend on many parameters and should be decided on a
+case-by-case basis.
+
+74.16 Following quality risk management practices may be considered:
+
+7.4.16.1 Modify the process to reduce the risk to an acceptable level. (This usually involves modifications
+which will decrease the likelihood of occurrence.)
+
+7.4.16.2 Enhance the method of detection to reduce the risk to an acceptable level
+
+7.4.16.3 Employ a new process that has an acceptable level of risk.
+
+7.4.16.4 Communicate the risk level to the appropriate stakeholders for further consideration.
+
+75 Risk Communication:
+
+75.1 Is sharing of information about risk and risk mitigation between risk assessment team and
+responsible person of risk action. Communication can be at any stage of the risk management
+process. The output/ result of the quality risk management process should be appropriately
+documented and communicated
+
+7.5.2 During the implementation of mitigation plan, the implementation status shall be communicated to
+risk assessment team by the initiator. Based on the criticality of the risk, the risk management
+process shall be communicated to Customer / regulatory authorities by Regulatory Affairs
+department in due consultation with QA Head/Designee.
+
+75.3 After approval of risk assessment, identified risk shall be communicated to responsible cross-
+functional team along with QA.
+
+7.6 Risk Review:
+
+7.6.1 After implementation of controls as mentioned in the mitigation plan, Initiator shall inform to the
+risk assessment team for risk review. Risk assessment team shall review the risk assessment and
+after confirmation as risks are controlled, forward it to QA Head/Designee for approval. QA
+Head/Designee shall review the risk assessment followed by approval of risk assessment and status
+shall be updated in the “Quality Risk Assessment Log” as per format no. SOP/DP/QA/010/F03.
+
+Prepared By (User Department) Sign/Date Reviewed By (Quality Assurance) Sign/Date
+Lsx<y)o6he oan
+Confidential and Proprietary SOP/DP/QA/001/F01-R02
+
+MASTER COPY
+

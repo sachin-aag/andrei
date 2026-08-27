@@ -133,6 +133,7 @@ function wordImportDocumentTypeError(documentType: DocumentType): string | null 
       return null;
     case "design_verification":
     case "mechanical_design_verification":
+    case "quality_risk_assessment":
       return "Word import is only supported for investigation reports.";
     default: {
       const exhaustive: never = documentType;

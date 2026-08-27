@@ -1,0 +1,71 @@
+Standard Operating Procedure Unit: Drug Product
+
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+M.J. Biopharm Private Limited Gysy
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance | SOP No.: SOP/DP/QA/010 _| Revision No: R04 _| Page 10 of 51
+
+7.3.4.6
+
+7.3.5
+
+7.3.6
+
+7.3.7
+
+7.3.8
+7.3.9
+7.3.9.1
+
+7.3.9.2
+
+7.3.9.3
+
+and material condition etc.
+
+Personnel:
+Attributes, education, experience, training, competence, reporting relationships, tampering,
+communication, theft and substitution etc.
+
+Risk assessment team and user department shall carry out risk assessment. All risks associated
+shall be identified through a discussion and for each process subjected to risk assessment, the
+potential failure mode to be identified and its relevant potential effect / impact on quality shall be
+assessed with following four fundamental questions:
+What might go wrong (Potential failure / Cause) and its relevant risk (the Hazard)?
+What are the consequences (severity)?
+What is the likelihood (probability) it will go wrong?
+What are the ability to find the hazard if it occurs (detectability)?
+
+Hazard identification is a systematic use of information to identify hazards referring to the risk
+question or problem description. Information can include historical data, theoretical analysis,
+informed opinions, and the concerns of stakeholders.
+
+Risk analysis is the estimation of the risk associated with the identified hazards. It is the qualitative
+or quantitative process of linking the likelihood of occurrence, severity of harms and detectability
+of harms.
+
+Risk evaluation is to compares the identified and analyzed risk against established risk criteria.
+
+Qualitative Risk Assessment:
+
+During qualitative risk assessment, risk priority ranking (RPR) shall be evaluated as High, Medium
+and Low.
+
+Risk assessment shall be performed considering with FMEA approach (Failure Mode Effect
+Analysis). All identified failure mode shall be irrespective of their probability of occurrence and or
+severity and or detectability.
+
+Based on the below table (table no. 01, 02 and 03), risk priority ranking (RPR) shall be evaluated,
+
+Prepared By (User Department) Sign/Date Reviewed By (Quality Assurance) Sign/Date
+
+P&ag\s le Ane
+
+2
+
+Confidential and Proprietary SOP/DP/QA/001/F01-R02
+MASTER COPY
+

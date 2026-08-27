@@ -68,7 +68,10 @@ describe("Convergent customer pack", () => {
       "investigation_report",
       "design_verification",
     ]);
-    expect(MJ_PACK.enabledDocumentTypes).toEqual(["investigation_report"]);
+    expect(MJ_PACK.enabledDocumentTypes).toEqual([
+      "investigation_report",
+      "quality_risk_assessment",
+    ]);
   });
 
   it("uses convergent DV sections, table headers, and prompt version", () => {

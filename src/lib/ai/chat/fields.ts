@@ -103,6 +103,12 @@ export function primaryFieldForSection(section: SectionType): string {
     case "traceability":
     case "test_results":
     case "test_equipment":
+    case "qra_team":
+    case "qra_risk_identification":
+    case "qra_fmea":
+    case "qra_mitigation":
+    case "qra_residual_risk":
+    case "qra_revision_history":
       return "table";
     case "testers_dates":
       return "testers";

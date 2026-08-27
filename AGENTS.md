@@ -22,12 +22,14 @@ cover only non-obvious, durable setup/run caveats for this environment.
 ## What this app is
 
 Next.js 16 App Router (Turbopack, React 19, Drizzle, TipTap, AI SDK v6).
-Pharmaceutical quality documents for M.J. Biopharm and Convergent Dental design verification — **two** `documentType`s:
+Pharmaceutical quality documents for M.J. Biopharm and Convergent Dental — **four** `documentType`s (pack-gated):
 
-| `documentType` | Noun | Sections |
-|----------------|------|----------|
-| `investigation_report` | deviation | DMAIC + conclusion + attachments/approvals |
-| `design_verification` | design verification | demo: cover page + 10 sections; Convergent pack: 9 Solea DV sections |
+| `documentType` | Noun | Packs | Sections |
+|----------------|------|-------|----------|
+| `investigation_report` | deviation | demo, MJ | DMAIC + conclusion + attachments/approvals |
+| `design_verification` | design verification | demo, Convergent | demo: cover page + 10 sections; Convergent: 9 Solea DV sections |
+| `mechanical_design_verification` | mechanical DV | Convergent | 14-section Solea mechanical DV |
+| `quality_risk_assessment` | quality risk assessment | MJ | SOP/DP/QA/010 F02 + F04 (`qra_*` keys) |
 
 Chat, eval, suggestions, and editors **must** go through
 `src/lib/document-types/`. Do not hardcode DMAIC as if it were the only type.
