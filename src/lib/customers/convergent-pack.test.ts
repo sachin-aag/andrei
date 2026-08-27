@@ -24,10 +24,11 @@ import {
 } from "@/lib/document-types/design-verification/sections";
 
 describe("Convergent customer pack", () => {
-  it("enables both design verification types and no investigation report", () => {
+  it("enables both design verification types, blank documents, and no investigation report", () => {
     expect(CONVERGENT_PACK.enabledDocumentTypes).toEqual([
       "design_verification",
       "mechanical_design_verification",
+      "generic_document",
     ]);
     expect(isDocumentTypeEnabled("design_verification", CONVERGENT_PACK)).toBe(
       true
@@ -35,6 +36,9 @@ describe("Convergent customer pack", () => {
     expect(
       isDocumentTypeEnabled("mechanical_design_verification", CONVERGENT_PACK)
     ).toBe(true);
+    expect(isDocumentTypeEnabled("generic_document", CONVERGENT_PACK)).toBe(
+      true
+    );
     expect(isDocumentTypeEnabled("investigation_report", CONVERGENT_PACK)).toBe(
       false
     );
@@ -61,6 +65,16 @@ describe("Convergent customer pack", () => {
       "Mechanical DV"
     );
     expect(documentTypeShortLabel("investigation_report")).toBe("Investigation");
+    expect(documentTypeShortLabel("generic_document")).toBe("Document");
+    expect(
+      engineerReportsSubtitle([
+        { label: "Design Verification Report" },
+        { label: "Mechanical DV Report" },
+        { label: "Document" },
+      ])
+    ).toBe(
+      "Create and manage design verification, mechanical dv and document reports."
+    );
   });
 
   it("does not change demo or MJ enabled types", () => {

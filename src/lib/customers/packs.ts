@@ -169,7 +169,11 @@ export const QRA_PROMPT_VERSION = "mj-qra-sop-010-r04-v1";
 
 export const CONVERGENT_PACK: CustomerPack = {
   id: "convergent",
-  enabledDocumentTypes: ["design_verification", "mechanical_design_verification"],
+  enabledDocumentTypes: [
+    "design_verification",
+    "mechanical_design_verification",
+    "generic_document",
+  ],
   hiddenInvestigationSections: [],
   investigationTemplateFile: "investigation-report-template.docx",
   promptVersion: CONVERGENT_PROMPT_VERSION,

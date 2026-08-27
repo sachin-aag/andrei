@@ -309,6 +309,35 @@ describe("/api/reports", () => {
     );
   });
 
+  it("creates a blank Document on the Convergent pack", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
+    vi.mocked(getCustomerPack).mockReturnValue(CONVERGENT_PACK);
+    vi.mocked(isDocumentNoTaken).mockResolvedValueOnce(false);
+    const { values } = mockSuccessfulCreate("report-generic-convergent");
+    mockSectionRowsSelect("report-generic-convergent");
+
+    const response = await POST(
+      new Request("http://localhost/api/reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          documentType: "generic_document",
+          documentNo: "DOC-001",
+          assignedManagerIds: [],
+        }),
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(values).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        documentType: "generic_document",
+        documentNo: "DOC-001",
+      })
+    );
+  });
+
   it("rejects an unknown document type as an invalid payload", async () => {
     vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
 
