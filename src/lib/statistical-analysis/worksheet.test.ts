@@ -10,6 +10,7 @@ import {
   deleteColumn,
   deleteDataSheet,
   findColumnIndexByName,
+  clearColumn,
   insertColumn,
   isSpecsTab,
   normalizeWorksheet,
@@ -102,6 +103,33 @@ describe("worksheet grid operations", () => {
     sheet = deleteColumn(sheet, 0);
     sheet = deleteColumn(sheet, 0);
     expect(sheet.columns).toHaveLength(1);
+  });
+
+  it("inserts a column to the left or right of an index", () => {
+    let sheet = createEmptyWorksheet(2);
+    sheet = insertColumn(sheet, 0);
+    expect(sheet.columns.map((column) => column.name)).toEqual(["C3", "C1", "C2"]);
+    sheet = insertColumn(sheet, sheet.columns.length);
+    expect(sheet.columns.map((column) => column.name)).toEqual([
+      "C3",
+      "C1",
+      "C2",
+      "C4",
+    ]);
+  });
+
+  it("clears column values without dropping the column or specs", () => {
+    let sheet = applySampleAssay(createEmptyWorksheet(), 0);
+    expect(sheet.columns[0]?.values.length).toBeGreaterThan(0);
+    sheet = clearColumn(sheet, 0);
+    expect(sheet.columns[0]?.name).toBe("Assay");
+    expect(sheet.columns[0]?.values).toEqual([]);
+    expect(specRowForColumn(sheet, "Assay")).toEqual({
+      columnName: "Assay",
+      lsl: "90",
+      usl: "110",
+      target: "100",
+    });
   });
 
   it("replaces a column and reports a stable source key", () => {

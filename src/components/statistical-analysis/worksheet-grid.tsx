@@ -22,8 +22,17 @@ import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+
+export type ColumnMenuAction =
+  | "insert-left"
+  | "insert-right"
+  | "delete"
+  | "clear"
+  | "specs"
+  | "analyze";
 
 export type { GridSelection };
 
@@ -33,8 +42,7 @@ type WorksheetGridProps = {
   onSelectionChange: (selection: GridSelection) => void;
   onChange: (worksheet: WorksheetData) => void;
   readOnly?: boolean;
-  onAnalyzeColumn?: (colIndex: number) => void;
-  onEditColumnSpecs?: (colIndex: number) => void;
+  onColumnMenuAction?: (action: ColumnMenuAction, colIndex: number) => void;
 };
 
 const EXTRA_EMPTY_ROWS = 8;
@@ -86,8 +94,7 @@ function WorksheetColumnHeader({
   onHeaderDraftChange,
   onCommitHeader,
   onCancelHeader,
-  onAnalyze,
-  onEditSpecs,
+  onMenuAction,
 }: {
   column: WorksheetColumn;
   selected: boolean;
@@ -100,8 +107,7 @@ function WorksheetColumnHeader({
   onHeaderDraftChange: (value: string) => void;
   onCommitHeader: () => void;
   onCancelHeader: () => void;
-  onAnalyze?: () => void;
-  onEditSpecs?: () => void;
+  onMenuAction?: (action: ColumnMenuAction) => void;
 }) {
   const headerClass = cn(
     "min-w-[6.5rem] border border-[var(--border)] bg-[var(--secondary)] px-1 py-1 font-medium",
@@ -142,7 +148,7 @@ function WorksheetColumnHeader({
     </button>
   );
 
-  if (editing || (!onAnalyze && !onEditSpecs)) {
+  if (editing || !onMenuAction) {
     return (
       <th scope="col" className={headerClass}>
         {headerBody}
@@ -152,25 +158,57 @@ function WorksheetColumnHeader({
 
   return (
     <th scope="col" className={headerClass}>
-      <ContextMenu>
+      <ContextMenu
+        onOpenChange={(open) => {
+          if (open) onSelect();
+        }}
+      >
         <ContextMenuTrigger asChild>
           <div>{headerBody}</div>
         </ContextMenuTrigger>
-        <ContextMenuContent>
-          {onEditSpecs ? (
-            <ContextMenuItem
-              data-testid={`column-specs-${column.id}`}
-              onSelect={onEditSpecs}
-            >
-              {readOnly ? "View specs…" : "Specs…"}
-            </ContextMenuItem>
-          ) : null}
-          {readOnly || !onAnalyze ? null : (
+        <ContextMenuContent data-testid={`column-menu-${column.id}`}>
+          {readOnly ? null : (
+            <>
+              <ContextMenuItem
+                data-testid={`column-insert-left-${column.id}`}
+                onSelect={() => onMenuAction("insert-left")}
+              >
+                Insert column left
+              </ContextMenuItem>
+              <ContextMenuItem
+                data-testid={`column-insert-right-${column.id}`}
+                onSelect={() => onMenuAction("insert-right")}
+              >
+                Insert column right
+              </ContextMenuItem>
+              <ContextMenuItem
+                data-testid={`column-delete-${column.id}`}
+                variant="destructive"
+                onSelect={() => onMenuAction("delete")}
+              >
+                Delete column
+              </ContextMenuItem>
+              <ContextMenuItem
+                data-testid={`column-clear-${column.id}`}
+                onSelect={() => onMenuAction("clear")}
+              >
+                Clear data
+              </ContextMenuItem>
+              <ContextMenuSeparator />
+            </>
+          )}
+          <ContextMenuItem
+            data-testid={`column-specs-${column.id}`}
+            onSelect={() => onMenuAction("specs")}
+          >
+            {readOnly ? "View specs…" : "Specs…"}
+          </ContextMenuItem>
+          {readOnly ? null : (
             <ContextMenuItem
               data-testid={`column-analyze-${column.id}`}
-              onSelect={onAnalyze}
+              onSelect={() => onMenuAction("analyze")}
             >
-              Analyze {column.name}…
+              Analyze data…
             </ContextMenuItem>
           )}
         </ContextMenuContent>
@@ -185,8 +223,7 @@ export function WorksheetGrid({
   onSelectionChange,
   onChange,
   readOnly = false,
-  onAnalyzeColumn,
-  onEditColumnSpecs,
+  onColumnMenuAction,
 }: WorksheetGridProps) {
   const gridRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -393,14 +430,9 @@ export function WorksheetGrid({
                   setEditingHeader(null);
                   gridRef.current?.focus();
                 }}
-                onAnalyze={
-                  onAnalyzeColumn
-                    ? () => onAnalyzeColumn(colIndex)
-                    : undefined
-                }
-                onEditSpecs={
-                  onEditColumnSpecs
-                    ? () => onEditColumnSpecs(colIndex)
+                onMenuAction={
+                  onColumnMenuAction
+                    ? (action) => onColumnMenuAction(action, colIndex)
                     : undefined
                 }
               />

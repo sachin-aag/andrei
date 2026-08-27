@@ -130,7 +130,10 @@ test.describe("report analytics", () => {
     );
 
     await page.getByTestId("analyze-selected-column").click();
-    await expect(page.getByTestId("capability-dialog")).toBeVisible();
+    await expect(page.getByTestId("analyze-dialog")).toBeVisible();
+    await expect(page.getByTestId("analyze-plot-type")).toContainText(
+      /normal capability sixpack/i
+    );
     await expect(page.getByTestId("sixpack-column")).toContainText("Assay");
     await expect(page.getByTestId("sixpack-lsl")).toHaveValue("90");
     await expect(page.getByTestId("sixpack-usl")).toHaveValue("110");
@@ -145,8 +148,16 @@ test.describe("report analytics", () => {
 
     await page.getByTestId("workspace-tab-worksheet").click();
     await page.getByTestId("column-header-c2").click({ button: "right" });
+    await expect(page.getByTestId("column-menu-c2")).toBeVisible();
+    await expect(page.getByTestId("column-insert-left-c2")).toBeVisible();
+    await expect(page.getByTestId("column-insert-right-c2")).toBeVisible();
+    await expect(page.getByTestId("column-delete-c2")).toBeVisible();
+    await expect(page.getByTestId("column-clear-c2")).toBeVisible();
     await page.getByTestId("column-analyze-c2").click();
-    await expect(page.getByTestId("capability-dialog")).toBeVisible();
+    await expect(page.getByTestId("analyze-dialog")).toBeVisible();
+    await expect(page.getByTestId("analyze-plot-type")).toContainText(
+      /normal capability sixpack/i
+    );
     await expect(page.getByTestId("sixpack-column")).toContainText("Moisture");
     await expect(page.getByTestId("sixpack-lsl")).toHaveValue("3.97");
     await expect(page.getByTestId("sixpack-usl")).toHaveValue("4.25");
@@ -205,7 +216,7 @@ test.describe("report analytics", () => {
     );
 
     await page.getByTestId("analyze-selected-column").click();
-    await expect(page.getByTestId("capability-dialog")).toBeVisible();
+    await expect(page.getByTestId("analyze-dialog")).toBeVisible();
     await expect(page.getByTestId("sixpack-row-start")).toHaveValue("1");
     await expect(page.getByTestId("sixpack-row-end")).toHaveValue("10");
     await page.getByTestId("sixpack-lsl").fill("90");
@@ -367,6 +378,74 @@ test.describe("report analytics", () => {
     await page.getByTestId("plot-usl").fill("6");
     await page.getByTestId("plot-measurements-submit").click();
     await expect(page.getByRole("alert")).toBeVisible({ timeout: 30_000 });
+  });
+
+  test("column context menu inserts, clears, and opens Analyze with prefilled plot values", async ({
+    page,
+  }) => {
+    test.setTimeout(90_000);
+    if (!reportId) throw new Error("missing report");
+    const sheet = applySampleAssay(createEmptyWorksheet(), 0);
+    const patched = await page.request.patch(
+      `/api/reports/${reportId}/analytics`,
+      { data: { worksheet: sheet } }
+    );
+    expect(patched.ok()).toBeTruthy();
+
+    await openReportAnalytics(page);
+    await expect(page.getByTestId("worksheet-grid")).toBeVisible({
+      timeout: 30_000,
+    });
+    await expect(page.getByTestId("column-header-c1")).toHaveText("Assay");
+    await expect(page.getByTestId("cell-c1-0")).toHaveText("101.84");
+
+    await page.getByTestId("column-header-c1").click({ button: "right" });
+    await expect(page.getByTestId("column-menu-c1")).toBeVisible();
+    await expect(page.getByTestId("column-insert-left-c1")).toBeVisible();
+    await expect(page.getByTestId("column-insert-right-c1")).toBeVisible();
+    await expect(page.getByTestId("column-delete-c1")).toBeVisible();
+    await expect(page.getByTestId("column-clear-c1")).toBeVisible();
+    await page.getByTestId("column-analyze-c1").click();
+    await expect(page.getByTestId("analyze-dialog")).toBeVisible();
+    await expect(page.getByRole("heading", { name: /analyze data/i })).toBeVisible();
+    await expect(page.getByTestId("analyze-plot-type")).toContainText(
+      /normal capability sixpack/i
+    );
+    await expect(page.getByTestId("sixpack-column")).toContainText("Assay");
+    await expect(page.getByTestId("sixpack-lsl")).toHaveValue("90");
+    await expect(page.getByTestId("sixpack-usl")).toHaveValue("110");
+    await expect(page.getByTestId("sixpack-target")).toHaveValue("100");
+
+    await page.getByTestId("analyze-plot-type").click();
+    await page.getByRole("option", { name: /one-way anova/i }).click();
+    await expect(page.getByTestId("anova-response")).toContainText("Assay");
+    await expect(page.getByTestId("anova-factor")).toContainText("Lot");
+
+    await page.getByTestId("analyze-plot-type").click();
+    await page.getByRole("option", { name: /plot measurements/i }).click();
+    await expect(page.getByTestId("plot-query")).toHaveValue("Assay");
+    await expect(page.getByTestId("plot-lsl")).toHaveValue("90");
+    await expect(page.getByTestId("plot-usl")).toHaveValue("110");
+    await page.getByRole("dialog").getByRole("button", { name: /^cancel$/i }).click();
+    await expect(page.getByTestId("analyze-dialog")).toHaveCount(0);
+
+    await page.getByTestId("column-header-c1").click({ button: "right" });
+    await page.getByTestId("column-insert-left-c1").click();
+    await expect(page.getByTestId("column-header-c9")).toHaveText("C1");
+    await expect(page.getByTestId("column-header-c1")).toHaveText("Assay");
+
+    await page.getByTestId("column-header-c1").click({ button: "right" });
+    await page.getByTestId("column-insert-right-c1").click();
+    await expect(page.getByTestId("column-header-c10")).toBeVisible();
+
+    await page.getByTestId("column-header-c9").click({ button: "right" });
+    await page.getByTestId("column-delete-c9").click();
+    await expect(page.getByTestId("column-header-c9")).toHaveCount(0);
+
+    await page.getByTestId("column-header-c1").click({ button: "right" });
+    await page.getByTestId("column-clear-c1").click();
+    await expect(page.getByTestId("cell-c1-0")).toHaveText("");
+    await expect(page.getByTestId("column-header-c1")).toHaveText("Assay");
   });
 
   test("loads sample assay and runs one-way ANOVA of Assay by Lot", async ({
