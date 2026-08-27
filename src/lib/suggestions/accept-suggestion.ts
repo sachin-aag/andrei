@@ -11,6 +11,7 @@ import {
   applyNarrativeSuggestion,
   applyNarrativeSuggestionAsRevision,
   buildSuggestionEdit,
+  commitNarrativeSuggestionMarks,
   narrativeHasSuggestionMarks,
   removePendingNarrativeSuggestion,
 } from "@/lib/suggestions/apply-narrative-suggestion";
@@ -123,16 +124,19 @@ export async function acceptSuggestion(args: {
         ? setRichFieldValue(
             sectionContent,
             path,
-            buildRedraftPreviewDoc(
-              getRichFieldValue(sectionContent, path),
-              markdownToDoc(redraft.markdown, { headingNodes: true }),
-              {
-                id: comment.id,
-                authorId: AI_AUTHOR_ID,
-                status: "pending",
-                createdAt: new Date().toISOString(),
-                kind: "redraft",
-              }
+            commitNarrativeSuggestionMarks(
+              buildRedraftPreviewDoc(
+                getRichFieldValue(sectionContent, path),
+                markdownToDoc(redraft.markdown, { headingNodes: true }),
+                {
+                  id: comment.id,
+                  authorId: AI_AUTHOR_ID,
+                  status: "pending",
+                  createdAt: new Date().toISOString(),
+                  kind: "redraft",
+                }
+              ),
+              comment.id
             )
           )
         : applyRedraftToSection(
@@ -188,6 +192,9 @@ export async function acceptSuggestion(args: {
         return { ok: false, reason: "not_found" };
       }
     }
+    if (persistAsTrackedChange) {
+      nextDoc = commitNarrativeSuggestionMarks(nextDoc, comment.id);
+    }
     const nextSection = setRichFieldValue(sectionContent, path, nextDoc);
     try {
       await patchSection(reportId, section, nextSection);
@@ -217,6 +224,7 @@ export async function acceptSuggestion(args: {
       nextDoc = alreadyMarked
         ? doc
         : applyNarrativeSuggestionAsRevision(doc, comment.id, edit);
+      nextDoc = commitNarrativeSuggestionMarks(nextDoc, comment.id);
     } else {
       nextDoc = alreadyMarked
         ? acceptPendingNarrativeSuggestion(doc, comment.id)

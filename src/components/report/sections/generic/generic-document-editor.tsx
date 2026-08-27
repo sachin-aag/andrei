@@ -4,7 +4,7 @@ import type { JSONContent } from "@tiptap/core";
 import { AlertTriangle } from "lucide-react";
 import { TiptapSectionField } from "@/components/report/tiptap-section-field";
 import { SaveStatus } from "@/components/report/save-status";
-import { DocumentCitationsRail } from "@/components/report/sections/generic/document-citations-rail";
+import { SectionSuggestionCard } from "@/components/report/suggestion-card";
 import { PagedDocumentSurface } from "@/components/report/sections/generic/paged-document-surface";
 import {
   useGenericReportSection,
@@ -13,7 +13,6 @@ import {
 import { useGenericSectionSave } from "@/hooks/use-generic-section-save";
 import type { GenericDocumentMetadata } from "@/db/schema";
 import { GENERIC_DOCUMENT_SECTION } from "@/lib/document-types/generic/sections";
-import { listParkedCitationsFromDoc } from "@/lib/suggestions/citations-at-end";
 
 type BodyContent = { narrative: JSONContent };
 
@@ -29,7 +28,6 @@ export function GenericDocumentEditor() {
   const importWarnings = meta.importWarnings ?? [];
   const importedFrom = meta.importedFromFilename;
   const title = report.documentNo.trim() || "Untitled";
-  const citations = listParkedCitationsFromDoc(content.narrative);
 
   return (
     <div className="space-y-4">
@@ -55,7 +53,10 @@ export function GenericDocumentEditor() {
           </div>
         </div>
       ) : null}
-      <div className="flex items-start justify-center gap-6 overflow-x-auto pl-16">
+      <div className="lg:hidden">
+        <SectionSuggestionCard section={GENERIC_DOCUMENT_SECTION} />
+      </div>
+      <div className="flex items-start justify-center overflow-x-auto pl-16">
         <PagedDocumentSurface>
           <TiptapSectionField
             section={GENERIC_DOCUMENT_SECTION}
@@ -67,7 +68,6 @@ export function GenericDocumentEditor() {
             onFlushSave={flushSave}
           />
         </PagedDocumentSurface>
-        <DocumentCitationsRail citations={citations} />
       </div>
     </div>
   );

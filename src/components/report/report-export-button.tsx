@@ -10,7 +10,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { captureEvent } from "@/lib/analytics/events";
-import { getCustomerPack } from "@/lib/customers/packs";
+import type { DocumentType } from "@/db/schema";
+import { citationsAtEndOfSectionFor } from "@/lib/document-types";
 
 export function exportHref(reportId: string, omitCitations: boolean): string {
   const path = `/api/reports/${reportId}/export`;
@@ -24,11 +25,13 @@ export function sourceDocxHref(reportId: string): string {
 export function ReportExportButton({
   reportId,
   sourceDocxFilename,
+  documentType,
 }: {
   reportId: string;
   sourceDocxFilename?: string | null;
+  documentType?: DocumentType;
 }) {
-  const omitCitationsEnabled = getCustomerPack().citationsAtEndOfSection;
+  const omitCitationsEnabled = citationsAtEndOfSectionFor(documentType);
   const hasOriginal = Boolean(sourceDocxFilename);
   const defaultHref = exportHref(reportId, false);
   const omitHref = exportHref(reportId, true);

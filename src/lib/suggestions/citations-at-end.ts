@@ -449,16 +449,6 @@ export function citationNumbersFromDoc(doc: JSONContent): Set<number> {
   return numberingFromDoc(doc).numbers();
 }
 
-export type ParkedCitation = {
-  number: number;
-  source: string;
-};
-
-/** Numbered sources parked under the field's trailing Citations: block. */
-export function listParkedCitationsFromDoc(doc: JSONContent): ParkedCitation[] {
-  return numberingFromDoc(doc).entries();
-}
-
 /** Drop a trailing Citations:/References: block from plain text. */
 export function stripTrailingCitationBlockFromText(text: string): string {
   const split = splitTrailingCitationBlock(text);

@@ -4,6 +4,7 @@ import {
   acceptSuggestionMarksById,
   applyAndAcceptRichEdit,
   applyEditToRichDoc,
+  commitSuggestionMarksById,
   isApplyableStatus,
   stripSuggestionMarksById,
   type EditScope,
@@ -123,6 +124,17 @@ export function applyNarrativeSuggestionAsRevision(
     throw new Error("Suggestion could not be located in the current text");
   }
   return result.doc;
+}
+
+/**
+ * Preview marks (`pending`) become committed tracked changes (`accepted`)
+ * so the editor's preview-strip pass will not revert them after Accept.
+ */
+export function commitNarrativeSuggestionMarks(
+  narrative: JSONContent,
+  suggestionId: string
+): JSONContent {
+  return commitSuggestionMarksById(narrative, suggestionId);
 }
 
 /** Remove pending suggestion marks if present (legacy pre-apply injections). */

@@ -160,6 +160,7 @@ export function ReportWorkspaceHeader({
         <ReportExportButton
           reportId={report.id}
           sourceDocxFilename={report.sourceDocxFilename}
+          documentType={report.documentType}
         />
 
         {!isViewMode && documentSurface ? <RunAllEvaluationButton /> : null}

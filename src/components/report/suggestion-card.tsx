@@ -23,7 +23,7 @@ import {
   STATUS_COLOR,
   STATUS_TEXT_COLOR,
   effectiveStatus,
-  evaluatableSectionKeys,
+  suggestionCardSectionKeys,
 } from "@/lib/ai/criteria-view";
 import {
   countOpenAiSuggestions,
@@ -665,7 +665,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
   const enterRef = useRef<HTMLDivElement>(null);
 
   const sectionOrder = useMemo(
-    () => evaluatableSectionKeys(report.documentType),
+    () => suggestionCardSectionKeys(report.documentType),
     [report.documentType]
   );
 

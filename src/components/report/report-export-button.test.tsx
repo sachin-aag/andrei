@@ -24,9 +24,28 @@ describe("ReportExportButton", () => {
     vi.mocked(getCustomerPack).mockReturnValue(DEMO_PACK);
   });
 
-  it("offers a without-citations export on demo", async () => {
+  it("shows a single Export DOCX link on demo investigation reports", () => {
+    render(
+      <ReportExportButton
+        reportId="report-1"
+        documentType="investigation_report"
+      />
+    );
+
+    expect(screen.getByRole("link", { name: /export docx/i })).toHaveAttribute(
+      "href",
+      "/api/reports/report-1/export"
+    );
+    expect(
+      screen.queryByRole("button", { name: /more export options/i })
+    ).not.toBeInTheDocument();
+  });
+
+  it("offers a without-citations export on demo generic documents", async () => {
     const user = userEvent.setup();
-    render(<ReportExportButton reportId="report-1" />);
+    render(
+      <ReportExportButton reportId="report-1" documentType="generic_document" />
+    );
 
     expect(screen.getByRole("link", { name: /export docx/i })).toHaveAttribute(
       "href",

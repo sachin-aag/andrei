@@ -32,7 +32,7 @@ import {
   scrollToCommentFieldAnchor,
   scrollToGutterAnchor,
 } from "@/lib/comments/navigate";
-import { evaluatableSectionKeys } from "@/lib/ai/criteria-view";
+import { suggestionCardSectionKeys } from "@/lib/ai/criteria-view";
 import { getDocumentType, getWorkspaceSections, workspacePresentationFor } from "@/lib/document-types";
 import { scrollToGeneratedSuggestion } from "@/lib/suggestions/navigate-suggestion";
 import { captureEvent } from "@/lib/analytics/events";
@@ -285,7 +285,7 @@ export function ReportWorkspace({
         const next: Partial<Record<SectionType, number>> = {};
         let changed = false;
 
-        for (const section of evaluatableSectionKeys(documentType)) {
+        for (const section of suggestionCardSectionKeys(documentType)) {
           const delta = overflows[section];
           if (delta != null && delta > 1) {
             next[section] = Math.ceil(delta);

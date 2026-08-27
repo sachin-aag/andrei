@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEMO_PACK, MJ_PACK } from "@/lib/customers/packs";
 import {
+  citationsAtEndOfSectionFor,
   editorProfileFor,
   evaluationCapabilityFor,
   getDocumentType,
@@ -27,6 +28,15 @@ describe("generic document type", () => {
     expect(isWordImportAvailable("investigation_report", DEMO_PACK)).toBe(false);
     expect(isWordImportAvailable("investigation_report", MJ_PACK)).toBe(true);
     expect(isWordImportAvailable("design_verification", DEMO_PACK)).toBe(false);
+  });
+
+  it("uses Convergent numbered citations parked at the end of the body", () => {
+    expect(getDocumentType("generic_document").citationsAtEndOfSection).toBe(
+      true
+    );
+    expect(citationsAtEndOfSectionFor("generic_document")).toBe(true);
+    expect(citationsAtEndOfSectionFor("investigation_report")).toBe(false);
+    expect(citationsAtEndOfSectionFor("design_verification")).toBe(false);
   });
 
   it("requires ATX headings when the assistant drafts the body", () => {

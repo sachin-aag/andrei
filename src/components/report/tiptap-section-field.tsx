@@ -48,7 +48,6 @@ import { useUserDirectory } from "@/providers/user-directory-provider";
 import { cn } from "@/lib/utils";
 import { createCommentHighlightExtension } from "@/lib/tiptap/comment-highlights";
 import type { CommentHighlightRange, CommentHighlightHandlers } from "@/lib/tiptap/comment-highlights";
-import { getCustomerPack } from "@/lib/customers/packs";
 import { createCitationHighlightExtension } from "@/lib/tiptap/citation-highlights";
 import {
   createPlaceholderHighlightExtension,
@@ -82,7 +81,12 @@ import { buildInactiveSuggestionCss } from "@/lib/tiptap/inactive-suggestion-css
 import { buildRedraftPreviewDoc } from "@/lib/tiptap/redraft-preview";
 import { markdownToDoc } from "@/lib/tiptap/markdown-to-doc";
 import { normalizeRichField } from "@/lib/tiptap/rich-text";
-import { editorProfileFor, getDocumentType, suggestionApplyModeFor } from "@/lib/document-types";
+import {
+  citationsAtEndOfSectionFor,
+  editorProfileFor,
+  getDocumentType,
+  suggestionApplyModeFor,
+} from "@/lib/document-types";
 import { buildSuggestionEdit, narrativeHasSuggestionMarks } from "@/lib/suggestions/apply-narrative-suggestion";
 import {
   acceptSuggestion,
@@ -90,6 +94,7 @@ import {
   CommentPersistError,
   SectionPersistError,
 } from "@/lib/suggestions/accept-suggestion";
+import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { suggestionTargetsField } from "@/lib/suggestions/resolve-suggestion-field-path";
 import { validateSuggestionLocate } from "@/lib/suggestions/validate-suggestion";
 import { buildTableOperationPreviewDoc } from "@/lib/suggestions/table-preview";
@@ -381,7 +386,7 @@ export function TiptapSectionField({
     [focusedPanelPlaceholderId, section, contentPath]
   );
 
-  const citationsAtEndOfSection = getCustomerPack().citationsAtEndOfSection;
+  const citationsAtEndOfSection = citationsAtEndOfSectionFor(report.documentType);
   const citationHighlightExtension = useMemo(
     () => (citationsAtEndOfSection ? createCitationHighlightExtension() : null),
     [citationsAtEndOfSection]
@@ -639,12 +644,24 @@ export function TiptapSectionField({
         throw new Error("Suggestion could not be located");
       }
 
-      // Do not mutate editor-local JSON — external-value sync repaints from section state.
+      // Paint the applied result immediately. External-value sync skips a
+      // focused editor, and the preview-strip effect would otherwise revert
+      // pending AI marks once the comment is no longer the active suggestion.
       if (result.nextSection) {
         replaceSection(
           section,
           result.nextSection as unknown
         );
+        if (editor && !editor.isDestroyed && isRichField) {
+          editor.commands.setContent(
+            getRichFieldValue(
+              result.nextSection,
+              contentPath,
+              richFieldOptions
+            ) as Content,
+            { emitUpdate: false }
+          );
+        }
       }
       setComments((prev) =>
         mode === "dismiss"
@@ -663,6 +680,9 @@ export function TiptapSectionField({
       replaceSection,
       setComments,
       suggestionPersistMode,
+      editor,
+      isRichField,
+      richFieldOptions,
     ]
   );
 
