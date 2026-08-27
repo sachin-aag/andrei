@@ -8,6 +8,9 @@ import { ReportSidebar } from "@/components/report/report-sidebar";
 vi.mock("@/providers/report-provider", () => ({
   useReportPlaceholders: () => ({ pendingPlaceholders: [] }),
   useReportComments: () => ({ comments: [] }),
+  useReportData: () => ({
+    report: { id: "report-1", documentType: "investigation_report" },
+  }),
 }));
 
 let chatPanelMounts = 0;

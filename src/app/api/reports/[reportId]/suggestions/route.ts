@@ -182,6 +182,7 @@ async function handleSuggestionsPost(
       content: sectionContent,
       reportContext: { deviationNo: report.documentNo, date: report.date },
       reportId,
+      documentType: report.documentType,
       allSections,
       gapCriteria: gap.map((g) => ({
         criterionKey: g.criterionKey,

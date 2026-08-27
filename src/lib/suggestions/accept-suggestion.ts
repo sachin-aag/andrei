@@ -1,3 +1,4 @@
+import type { JSONContent } from "@tiptap/core";
 import type { SectionType } from "@/db/schema";
 import type { CommentRecord } from "@/types/report";
 import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
@@ -8,12 +9,18 @@ import {
 import {
   acceptPendingNarrativeSuggestion,
   applyNarrativeSuggestion,
+  applyNarrativeSuggestionAsRevision,
   buildSuggestionEdit,
+  commitNarrativeSuggestionMarks,
   narrativeHasSuggestionMarks,
   removePendingNarrativeSuggestion,
 } from "@/lib/suggestions/apply-narrative-suggestion";
 import { applyStructuredFieldSuggestion } from "@/lib/suggestions/apply-field";
 import { applyRedraftToSection } from "@/lib/suggestions/apply-redraft";
+import { AI_AUTHOR_ID } from "@/lib/ai/constants";
+import { buildRedraftPreviewDoc } from "@/lib/tiptap/redraft-preview";
+import { markdownToDoc } from "@/lib/tiptap/markdown-to-doc";
+import type { SuggestionApplyMode } from "@/lib/document-types";
 import {
   isApplyableStatus,
   type LocateStatus,
@@ -92,8 +99,18 @@ export async function acceptSuggestion(args: {
   sectionContent: Record<string, unknown>;
   /** Optional field path override for plain-text editors with legacy paths. */
   fieldContentPath?: string;
+  /** How to persist the applied edit. Default `final` (investigation/DV). */
+  applyMode?: SuggestionApplyMode;
 }): Promise<AcceptSuggestionResult> {
-  const { reportId, section, comment, sectionContent, fieldContentPath } = args;
+  const {
+    reportId,
+    section,
+    comment,
+    sectionContent,
+    fieldContentPath,
+    applyMode = "final",
+  } = args;
+  const persistAsTrackedChange = applyMode === "tracked_change";
   const path = resolveSuggestionFieldPath(
     section,
     comment.contentPath,
@@ -102,12 +119,33 @@ export async function acceptSuggestion(args: {
 
   if (comment.kind === "ai_redraft") {
     const redraft = parseAiRedraftCommentContent(comment.content);
-    const nextSection = applyRedraftToSection(
-      sectionContent,
-      section,
-      path,
-      redraft.markdown
-    );
+    const nextSection =
+      persistAsTrackedChange && isRichTargetField(section, path)
+        ? setRichFieldValue(
+            sectionContent,
+            path,
+            commitNarrativeSuggestionMarks(
+              buildRedraftPreviewDoc(
+                getRichFieldValue(sectionContent, path),
+                markdownToDoc(redraft.markdown, { headingNodes: true }),
+                {
+                  id: comment.id,
+                  authorId: AI_AUTHOR_ID,
+                  status: "pending",
+                  createdAt: new Date().toISOString(),
+                  kind: "redraft",
+                }
+              ),
+              comment.id
+            )
+          )
+        : applyRedraftToSection(
+            sectionContent,
+            section,
+            path,
+            redraft.markdown,
+            { headingNodes: persistAsTrackedChange }
+          );
     try {
       await patchSection(reportId, section, nextSection);
     } catch (error) {
@@ -140,15 +178,22 @@ export async function acceptSuggestion(args: {
     let nextDoc = result.doc;
     if (payload.second) {
       try {
-        nextDoc = applyNarrativeSuggestion(nextDoc, comment.id, {
+        const secondEdit = {
           anchorText: payload.second.anchorText,
           deleteText: payload.second.deleteText,
           insertText: payload.second.insertText,
           scope: payload.second.scope,
-        });
+        };
+        nextDoc =
+          applyMode === "tracked_change"
+            ? applyNarrativeSuggestionAsRevision(nextDoc, comment.id, secondEdit)
+            : applyNarrativeSuggestion(nextDoc, comment.id, secondEdit);
       } catch {
         return { ok: false, reason: "not_found" };
       }
+    }
+    if (persistAsTrackedChange) {
+      nextDoc = commitNarrativeSuggestionMarks(nextDoc, comment.id);
     }
     const nextSection = setRichFieldValue(sectionContent, path, nextDoc);
     try {
@@ -167,14 +212,24 @@ export async function acceptSuggestion(args: {
   const edit = suggestionEditFromComment(comment);
 
   if (isRichTargetField(section, path)) {
+    const persistMarks = applyMode === "tracked_change";
     const doc = getRichFieldValue(sectionContent, path);
+    const alreadyMarked = narrativeHasSuggestionMarks(doc, comment.id);
     const status = probeRichEdit(doc, edit);
-    if (!isApplyableStatus(status) && !narrativeHasSuggestionMarks(doc, comment.id)) {
+    if (!isApplyableStatus(status) && !alreadyMarked) {
       return { ok: false, reason: status };
     }
-    const nextDoc = narrativeHasSuggestionMarks(doc, comment.id)
-      ? acceptPendingNarrativeSuggestion(doc, comment.id)
-      : applyNarrativeSuggestion(doc, comment.id, edit);
+    let nextDoc: JSONContent;
+    if (persistMarks) {
+      nextDoc = alreadyMarked
+        ? doc
+        : applyNarrativeSuggestionAsRevision(doc, comment.id, edit);
+      nextDoc = commitNarrativeSuggestionMarks(nextDoc, comment.id);
+    } else {
+      nextDoc = alreadyMarked
+        ? acceptPendingNarrativeSuggestion(doc, comment.id)
+        : applyNarrativeSuggestion(doc, comment.id, edit);
+    }
     const nextSection = setRichFieldValue(sectionContent, path, nextDoc);
     try {
       await patchSection(reportId, section, nextSection);

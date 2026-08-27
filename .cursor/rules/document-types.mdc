@@ -16,7 +16,9 @@ alwaysApply: false
 
 # Document types
 
-Reports are `investigation_report`, `design_verification`, `mechanical_design_verification`, or `quality_risk_assessment`. The registry is
+Reports are `investigation_report`, `design_verification`,
+`mechanical_design_verification`, `quality_risk_assessment`, or
+`generic_document` (demo pack only). The registry is
 `src/lib/document-types/`. Call `getDocumentType(type)` for sections, criteria,
 prompts, chat persona, and merge.
 
@@ -41,6 +43,14 @@ const sections = getWorkspaceSections(report.documentType);
   content. Cover page eval reads `reports.metadata` (document number),
   not a `report_sections` body.
 - Adding a type: extend `documentTypeEnum` in schema, add a definition, wire
-  `REGISTRY`, then editors / chat / eval. DOCX export uses each type's
+  `getDocumentType()`, then editors / chat / eval. DOCX export uses each type's
   `export.templatePath` and `buildTemplateData` (investigation still has an
-  explicit DMAIC branch in `generate-docx.ts`).
+  explicit DMAIC branch in `generate-docx.ts`; generic documents use
+  `templates/generic-document-template.docx`).
+- `generic_document` is demo-only: one `body` section, `evaluation.kind === "none"`
+  (hide Criteria / Run AI Check), headings enabled, Word import is type-owned
+  (`wordImport.kind === "generic_body"` — do **not** set pack `wordImportEnabled`
+  on demo), and accepting AI suggestions uses `suggestionApplyMode: "tracked_change"`
+  (pending insert/delete marks persist and export as Word tracked changes).
+  The editor is one TipTap field laid out as Letter pages (`PagedDocumentSurface`);
+  do not persist page-break nodes.

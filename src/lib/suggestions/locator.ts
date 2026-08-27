@@ -1374,6 +1374,53 @@ export function acceptSuggestionMarksById(
   return finalizeNarrativeDocAfterSuggestion(cloned);
 }
 
+/**
+ * Keep insert/delete marks in the doc but flip them from preview (`pending`)
+ * to a committed tracked change (`accepted`). Preview stripping only removes
+ * pending AI marks, so accepted revisions survive after the suggestion card
+ * is resolved.
+ */
+export function commitSuggestionMarksById(
+  doc: JSONContent,
+  markId: string
+): JSONContent {
+  const cloned: JSONContent = JSON.parse(JSON.stringify(doc));
+
+  function visit(node: JSONContent) {
+    if (
+      node.type === "imageInline" &&
+      (node.attrs as { suggestionId?: string | null } | undefined)?.suggestionId ===
+        markId
+    ) {
+      const next = { ...(node.attrs ?? {}) };
+      delete next.suggestionId;
+      delete next.suggestionKind;
+      node.attrs = next;
+    }
+    if (node.type === "text" && node.marks?.length) {
+      node.marks = node.marks.map((mark) => {
+        const attrs = mark.attrs as { id?: string; status?: string } | undefined;
+        if (
+          attrs?.id !== markId ||
+          attrs.status !== "pending" ||
+          (mark.type !== suggestionInsertMarkName &&
+            mark.type !== suggestionDeleteMarkName)
+        ) {
+          return mark;
+        }
+        return {
+          ...mark,
+          attrs: { ...attrs, status: "accepted" satisfies SuggestionStatus },
+        };
+      });
+    }
+    node.content?.forEach(visit);
+  }
+
+  visit(cloned);
+  return cloned;
+}
+
 export function stripSuggestionMarksById(
   doc: JSONContent,
   markId: string

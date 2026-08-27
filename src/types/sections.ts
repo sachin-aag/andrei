@@ -167,6 +167,7 @@ export const SECTION_LABELS: Record<string, string> = {
   test_equipment: "Test Equipment",
   results_and_discussions: "Results and Discussion",
   problems_resolution: "Problem or Failure Resolution",
+  body: "Document",
   qra_approach: "Risk Assessment Approach",
   qra_objective: "Objective",
   qra_scope: "Scope",

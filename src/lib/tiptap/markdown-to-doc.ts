@@ -5,6 +5,11 @@ import {
 } from "@/lib/suggestions/citations-at-end";
 import { parseListLine } from "@/lib/tiptap/list-style";
 
+export type MarkdownToDocOptions = {
+  /** Emit TipTap `heading` nodes instead of bold paragraphs. Generic documents only. */
+  headingNodes?: boolean;
+};
+
 const ATX_HEADING_RE = /^(#{1,3})\s+(.*)$/;
 
 /**
@@ -24,12 +29,23 @@ export function stripInlineMarkdown(text: string): string {
     .replace(/(?<!_)_(?!\s)([^_]+?)(?<!\s)_(?!_)/g, "$1");
 }
 
-/** ATX `#`–`###` line → bold paragraph (section editor has no heading node). */
-export function atxHeadingParagraph(text: string): JSONContent | null {
+/** ATX `#`–`###` line → heading node or bold paragraph. */
+export function atxHeadingParagraph(
+  text: string,
+  options?: MarkdownToDocOptions
+): JSONContent | null {
   const heading = ATX_HEADING_RE.exec(text.trim());
   if (!heading) return null;
   const headingText = stripInlineMarkdown(heading[2]!);
   if (!headingText) return null;
+  const level = Math.min(3, heading[1]!.length);
+  if (options?.headingNodes) {
+    return {
+      type: "heading",
+      attrs: { level },
+      content: [{ type: "text", text: headingText }],
+    };
+  }
   return {
     type: "paragraph",
     content: [{ type: "text", text: headingText, marks: [{ type: "bold" }] }],
@@ -57,10 +73,13 @@ function paragraphIsPlainInline(node: JSONContent): boolean {
  * same bold paragraphs `markdownToDoc` emits, so Improve/Control don't show
  * literal hashes.
  */
-export function promoteAtxHeadingsInDoc(doc: JSONContent): JSONContent {
+export function promoteAtxHeadingsInDoc(
+  doc: JSONContent,
+  options?: MarkdownToDocOptions
+): JSONContent {
   function visit(node: JSONContent): JSONContent {
     if (node.type === "paragraph" && paragraphIsPlainInline(node)) {
-      const promoted = atxHeadingParagraph(paragraphPlainText(node));
+      const promoted = atxHeadingParagraph(paragraphPlainText(node), options);
       if (promoted) return promoted;
     }
     if (node.content?.length) {
@@ -76,15 +95,18 @@ export function promoteAtxHeadingsInDoc(doc: JSONContent): JSONContent {
  *
  * Supported (matches what the drafting prompt allows the model to emit):
  * - paragraphs (one line = one paragraph)
- * - headings `#` … `###` → rendered as a bold paragraph (the section editor
- *   schema has no heading node; emitting one makes ProseMirror drop the doc)
+ * - headings `#` … `###` → bold paragraph by default (section editors have
+ *   no heading node). Pass `{ headingNodes: true }` for generic documents.
  * - bullet (`- `, `* `) and ordered (`1. `) lists
  * - GFM tables (first row = header)
  * - `**bold**`, `*italic*`, and `_italic_` inline emphasis
  *
  * Anything else is kept as literal text. No HTML, no fuzziness.
  */
-export function markdownToDoc(markdown: string): JSONContent {
+export function markdownToDoc(
+  markdown: string,
+  options?: MarkdownToDocOptions
+): JSONContent {
   const lines = markdown.replace(/\r\n/g, "\n").split("\n");
   const content: JSONContent[] = [];
   let i = 0;
@@ -109,7 +131,7 @@ export function markdownToDoc(markdown: string): JSONContent {
       continue;
     }
 
-    const heading = atxHeadingParagraph(trimmed);
+    const heading = atxHeadingParagraph(trimmed, options);
     if (heading) {
       content.push(heading);
       i++;
@@ -223,7 +245,10 @@ function isBlankPlainParagraph(node: JSONContent): boolean {
   );
 }
 
-function hydrateBlockArray(nodes: JSONContent[]): JSONContent[] {
+function hydrateBlockArray(
+  nodes: JSONContent[],
+  options?: MarkdownToDocOptions
+): JSONContent[] {
   const out: JSONContent[] = [];
   let i = 0;
   while (i < nodes.length) {
@@ -247,19 +272,22 @@ function hydrateBlockArray(nodes: JSONContent[]): JSONContent[] {
       while (texts.length > 0 && !texts[texts.length - 1]!.trim()) {
         texts.pop();
       }
-      const converted = markdownToDoc(texts.join("\n"));
+      const converted = markdownToDoc(texts.join("\n"), options);
       out.push(...(converted.content ?? []));
       continue;
     }
-    out.push(hydrateNode(node));
+    out.push(hydrateNode(node, options));
     i++;
   }
   return out;
 }
 
-function hydrateNode(node: JSONContent): JSONContent {
+function hydrateNode(
+  node: JSONContent,
+  options?: MarkdownToDocOptions
+): JSONContent {
   if (node.type !== "paragraph" && node.content?.length) {
-    return { ...node, content: hydrateBlockArray(node.content) };
+    return { ...node, content: hydrateBlockArray(node.content, options) };
   }
   return node;
 }
@@ -270,11 +298,14 @@ function hydrateNode(node: JSONContent): JSONContent {
  * TipTap nodes `markdownToDoc` emits so Improve/Control render instead of
  * showing hashes and asterisks.
  */
-export function hydrateLiteralMarkdownInDoc(doc: JSONContent): JSONContent {
+export function hydrateLiteralMarkdownInDoc(
+  doc: JSONContent,
+  options?: MarkdownToDocOptions
+): JSONContent {
   if (doc.type === "doc") {
-    return { ...doc, content: hydrateBlockArray(doc.content ?? []) };
+    return { ...doc, content: hydrateBlockArray(doc.content ?? [], options) };
   }
-  return hydrateNode(doc);
+  return hydrateNode(doc, options);
 }
 
 function withExtraMarks(

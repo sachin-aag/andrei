@@ -1,10 +1,15 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
+import type { JSONContent } from "@tiptap/core";
 import type { CommentRecord } from "@/types/report";
 import {
   acceptSuggestion,
   dismissSuggestion,
   SectionPersistError,
 } from "@/lib/suggestions/accept-suggestion";
+import {
+  injectSuggestionMarks,
+  stripPendingSuggestionsExcept,
+} from "@/lib/tiptap/suggestion-inject";
 
 const reportId = "report-1";
 const comment: CommentRecord = {
@@ -95,6 +100,77 @@ describe("acceptSuggestion / dismissSuggestion (one writer)", () => {
     expect(fetches[0]?.url).toContain("/sections/define");
     expect(fetches[1]?.url).toContain("/comments/c1");
     expect(fetches[1]?.body).toEqual({ status: "resolved" });
+  });
+
+  it("tracked_change apply keeps insert/delete marks as accepted revisions", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => ({}) }) as Response)
+    );
+
+    const result = await acceptSuggestion({
+      reportId,
+      section: "body",
+      comment: { ...comment, section: "body" },
+      sectionContent: structuredClone(sectionContent),
+      applyMode: "tracked_change",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const json = JSON.stringify(result.nextSection);
+    expect(json).toContain("suggestionInsert");
+    expect(json).toContain("suggestionDelete");
+    expect(json).toContain('"status":"accepted"');
+    expect(json).not.toContain('"status":"pending"');
+    expect(json).toContain("DD/MM/YYYY");
+    expect(json).toContain("[detection date: <to be filled>]");
+  });
+
+  it("tracked_change accept of an already-injected preview commits marks so they survive strip", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => ({}) }) as Response)
+    );
+
+    const bodyComment = { ...comment, section: "body" as const };
+    const payload = JSON.parse(bodyComment.content) as {
+      deleteText: string;
+      insertText: string;
+    };
+    const preview = injectSuggestionMarks(
+      structuredClone(sectionContent.narrative),
+      {
+        anchorText: bodyComment.anchorText ?? "",
+        deleteText: payload.deleteText,
+        insertText: payload.insertText,
+      },
+      {
+        id: bodyComment.id,
+        authorId: "ai",
+        status: "pending",
+        createdAt: bodyComment.createdAt,
+        kind: "fix",
+      }
+    );
+    expect(preview.located).toBe(true);
+
+    const result = await acceptSuggestion({
+      reportId,
+      section: "body",
+      comment: bodyComment,
+      sectionContent: { narrative: preview.doc },
+      applyMode: "tracked_change",
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    const narrative = (result.nextSection.narrative ?? result.nextSection) as JSONContent;
+    const json = JSON.stringify(narrative);
+    expect(json).toContain('"status":"accepted"');
+    const stripped = stripPendingSuggestionsExcept(narrative, null);
+    expect(JSON.stringify(stripped)).toContain("suggestionInsert");
+    expect(JSON.stringify(stripped)).toContain("[detection date: <to be filled>]");
   });
 
   it("accept leaves comment open when locate fails (no status flip)", async () => {

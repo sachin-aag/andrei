@@ -94,6 +94,23 @@ describe("CreateReportButton", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("shows a Word upload field when Document is selected on demo", async () => {
+    const user = userEvent.setup();
+    render(<CreateReportButton managers={managers} />);
+
+    await user.click(screen.getByRole("button", { name: /new report/i }));
+    await user.selectOptions(
+      screen.getByLabelText(/document type/i),
+      "generic_document"
+    );
+
+    expect(
+      screen.getByRole("heading", { name: /create document/i })
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText(/document number/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/existing document/i)).toBeInTheDocument();
+  });
+
   it("shows a Word-body field without an attachment dropzone when the MJ pack is active", async () => {
     vi.mocked(getCustomerPack).mockReturnValue(MJ_PACK);
     const user = userEvent.setup();

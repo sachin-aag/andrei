@@ -307,7 +307,8 @@ export function ReportHeader() {
     );
   }
   // Investigation-only preamble (date + tool checkboxes). DV cover/control
-  // fields live in the cover_page section editor instead.
+  // fields live in the cover_page section editor instead. Generic documents
+  // have no header chrome.
   if (report.documentType !== "investigation_report") {
     return null;
   }

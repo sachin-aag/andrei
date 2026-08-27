@@ -6,11 +6,11 @@ import {
   chatTargetFields,
   sectionLabel,
 } from "@/lib/ai/chat/fields";
+import { isDocumentChatPlotMeasurementsEnabled } from "@/lib/customers/packs";
 import {
-  getCustomerPack,
-  isDocumentChatPlotMeasurementsEnabled,
-} from "@/lib/customers/packs";
-import { getDocumentType } from "@/lib/document-types";
+  citationsAtEndOfSectionFor,
+  getDocumentType,
+} from "@/lib/document-types";
 import type { RetrievalPolicy } from "@/lib/ai/chat/retrieval-policy";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
@@ -316,7 +316,7 @@ export function buildChatSystemPrompt(opts: {
   const documentType = opts.documentType ?? "investigation_report";
   const retrievalPolicy = opts.retrievalPolicy ?? "adaptive";
   const citationsAtEndOfSection =
-    opts.citationsAtEndOfSection ?? getCustomerPack().citationsAtEndOfSection;
+    opts.citationsAtEndOfSection ?? citationsAtEndOfSectionFor(documentType);
   const includePlotMeasurements =
     opts.includePlotMeasurements ?? isDocumentChatPlotMeasurementsEnabled();
   const chat = getDocumentType(documentType).chat;

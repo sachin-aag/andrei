@@ -19,10 +19,15 @@ export function applyRedraftToSection(
   content: Record<string, unknown>,
   section: SectionType,
   targetField: string,
-  markdown: string
+  markdown: string,
+  options?: { headingNodes?: boolean }
 ): Record<string, unknown> {
   if (isRichTargetField(section, targetField)) {
-    return setRichFieldValue(content, targetField, markdownToDoc(markdown));
+    return setRichFieldValue(
+      content,
+      targetField,
+      markdownToDoc(markdown, { headingNodes: options?.headingNodes === true })
+    );
   }
   return setPlainTextFieldValue(
     content,

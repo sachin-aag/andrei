@@ -27,7 +27,8 @@ type TableWithPosition = {
 };
 
 export function parseHtmlTablesWithPositions(
-  html: string
+  html: string,
+  options?: { includeLayoutTables?: boolean }
 ): TableWithPosition[] {
   const allRanges = findAllTableRanges(html);
   const docOrderRank = new Map(
@@ -41,7 +42,11 @@ export function parseHtmlTablesWithPositions(
   const tables: TableWithPosition[] = [];
 
   for (const range of inDocOrder) {
-    if (!isDataTableRange(html, range)) continue;
+    const include =
+      options?.includeLayoutTables === true
+        ? range.depth === 0
+        : isDataTableRange(html, range);
+    if (!include) continue;
 
     const tableHtml = html.slice(range.contentStart, range.contentEnd);
     const cleanedHtml = stripNestedTables(tableHtml);
@@ -419,7 +424,7 @@ const UNDERLINE_INLINE_TAGS = new Set(["u"]);
 /** Tags whose contents are ignored (mammoth form controls, etc.). */
 const SKIP_INLINE_TAGS = new Set(["input", "img", "script", "style", "meta"]);
 
-function parseHtmlInlineParagraph(innerHtml: string): JSONContent {
+export function parseHtmlInlineParagraph(innerHtml: string): JSONContent {
   const parts = innerHtml.split(/<br\s*\/?>/gi);
   const inline: JSONContent[] = [];
 
