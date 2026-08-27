@@ -207,4 +207,33 @@ describe("useAutoSave", () => {
     );
     fetchSpy.mockRestore();
   });
+
+  it("clears Saving… when disabled with a pending edit, then flushes on re-enable", async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const { rerender, result } = renderHook(
+      ({ value, enabled }) =>
+        useAutoSave({ value, onSave, delayMs: 1_000, enabled }),
+      { initialProps: { value: "initial", enabled: true } }
+    );
+
+    rerender({ value: "dirty", enabled: true });
+    expect(result.current.status).toBe("saving");
+
+    rerender({ value: "dirty", enabled: false });
+    expect(result.current.status).toBe("idle");
+    expect(onSave).not.toHaveBeenCalled();
+
+    rerender({ value: "dirty", enabled: true });
+    expect(result.current.status).toBe("saving");
+
+    await act(async () => {
+      vi.advanceTimersByTime(1_000);
+    });
+
+    expect(onSave).toHaveBeenCalledWith(
+      "dirty",
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
+    );
+    expect(result.current.status).toBe("saved");
+  });
 });

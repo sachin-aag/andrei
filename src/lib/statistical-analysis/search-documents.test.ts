@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { buildKeywordTsQuery } from "@/lib/attachments/retrieval";
 import {
   ANALYTICS_SEARCH_COVERAGE_HINT,
@@ -45,6 +45,10 @@ describe("resolveAnalyticsSearchMode", () => {
 });
 
 describe("buildAnalyticsSearchDocumentsTool", () => {
+  beforeEach(() => {
+    searchReportDocuments.mockReset();
+  });
+
   it("defaults mode to keyword and does not tell the model to keep grepping", async () => {
     searchReportDocuments.mockResolvedValue([
       {
@@ -111,6 +115,29 @@ describe("buildAnalyticsSearchDocumentsTool", () => {
       mode: "hybrid",
       requestedMode: "keyword",
       keywordFallback: true,
+    });
+  });
+
+  it("refuses further greps when the search gate is closed", async () => {
+    const tool = buildAnalyticsSearchDocumentsTool({
+      reportId: "report-1",
+      searchGate: { closed: true },
+    });
+    const execute = tool.execute;
+    if (!execute) throw new Error("search_documents has no execute");
+    const result = await execute(
+      { query: "Conductivity", limit: 8, mode: "keyword" },
+      {
+        toolCallId: "test",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    expect(searchReportDocuments).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      status: "search_closed",
+      returnedCount: 0,
+      results: [],
     });
   });
 });

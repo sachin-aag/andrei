@@ -17,6 +17,7 @@ import {
   insertColumn,
   insertRow,
   isSpecsTab,
+  mergeDirtyWorksheet,
   normalizeWorksheet,
   parseTsv,
   pasteTsv,
@@ -292,5 +293,34 @@ describe("worksheet grid operations", () => {
   it("refuses to delete the last data sheet", () => {
     const sheet = deleteDataSheet(createEmptyWorksheet(), PRIMARY_DATA_SHEET_ID);
     expect(sheet.sheets).toHaveLength(1);
+  });
+
+  it("keeps local cell edits when merging a newer remote worksheet", () => {
+    const persisted = replaceColumnValues(
+      createEmptyWorksheet(),
+      0,
+      ["3", "2.5"],
+      "Torque (ozf-in)"
+    );
+    const local = setCell(persisted, 0, 1, "9");
+    const remote = insertColumn(persisted, 1);
+    const merged = mergeDirtyWorksheet(local, persisted, remote);
+    expect(merged.columns[0]?.values.slice(0, 2)).toEqual(["3", "9"]);
+    expect(merged.columns).toHaveLength(remote.columns.length);
+    expect(merged.columns[1]?.id).toBe(remote.columns[1]?.id);
+  });
+
+  it("takes the remote sheet when local has no unsaved cells", () => {
+    const persisted = replaceColumnValues(
+      createEmptyWorksheet(),
+      0,
+      ["3", "2.5"],
+      "Torque (ozf-in)"
+    );
+    const remote = insertColumn(persisted, 1);
+    const merged = mergeDirtyWorksheet(persisted, persisted, remote);
+    expect(merged.columns[0]?.values.slice(0, 2)).toEqual(["3", "2.5"]);
+    expect(merged.columns).toHaveLength(remote.columns.length);
+    expect(merged.columns[1]?.id).toBe(remote.columns[1]?.id);
   });
 });

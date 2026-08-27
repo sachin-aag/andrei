@@ -12,6 +12,7 @@ import { ANALYTICS_CHAT_PROMPT_VERSION } from "@/lib/statistical-analysis/chat-p
 import { buildAnalyticsChatTools } from "@/lib/statistical-analysis/chat-tools";
 import {
   ANALYTICS_CHAT_STEP_BUDGET,
+  createAnalyticsSearchGate,
   prepareAnalyticsChatStep,
 } from "@/lib/statistical-analysis/search-loop";
 import { getOrCreateReportAnalytics } from "@/lib/statistical-analysis/store";
@@ -145,6 +146,7 @@ export async function POST(
 
   const mode: ChatMode = isChatMode(body.mode) ? body.mode : "agent";
   const canWrite = mode === "agent" && canEdit;
+  const searchGate = createAnalyticsSearchGate();
   const system = buildAnalyticsChatSystemPrompt({
     documentNo: report.documentNo,
     status: report.status,
@@ -157,6 +159,7 @@ export async function POST(
     reportId,
     canEdit: canWrite,
     documentType: report.documentType,
+    searchGate,
   });
   const pace: ChatPace = isChatPace(body.pace) ? body.pace : DEFAULT_CHAT_PACE;
   const paceConfig = chatPaceConfig(pace);
@@ -189,7 +192,7 @@ export async function POST(
         return false;
       },
       prepareStep: ({ steps }) =>
-        prepareAnalyticsChatStep({ steps, canEdit: canWrite }),
+        prepareAnalyticsChatStep({ steps, canEdit: canWrite, searchGate }),
       abortSignal: turnAbort.signal,
       timeout: { totalMs: CHAT_SERVER_ABORT_MS },
       providerOptions: buildGeminiThoughtSummaryProviderOptions({
@@ -260,6 +263,7 @@ export async function POST(
         parts: responseMessage.parts,
         isAborted,
         stepBudgetExhausted: stoppedForStepBudget,
+        finishReason,
       });
       if (persisted.interrupted) {
         console.warn("analytics-chat: interrupted assistant turn", {
@@ -270,6 +274,12 @@ export async function POST(
         });
       } else if (persisted.stepBudgetExhausted) {
         console.warn("analytics-chat: step budget exhausted", {
+          reportId,
+          sessionId,
+          finishReason: finishReason ?? "unknown",
+        });
+      } else if (persisted.incomplete) {
+        console.warn("analytics-chat: incomplete assistant turn", {
           reportId,
           sessionId,
           finishReason: finishReason ?? "unknown",

@@ -44,9 +44,11 @@ vi.mock("@/lib/statistical-analysis/store", () => ({
 import {
   listReadyDocumentsForReport,
   readDocumentPage,
+  type DocumentPageRead,
 } from "@/lib/attachments/retrieval";
 import {
   ANALYTICS_CHAT_TOOL_NAMES,
+  WRITE_COLUMN_NEED_SOURCE_MESSAGE,
   buildAnalyticsChatTools,
   extractNumericTokens,
   pickAnalyticsDocumentTools,
@@ -59,7 +61,21 @@ import {
   updateReportAnalytics,
 } from "./store";
 import type { ReportAnalyticsView } from "./types";
-import { createEmptyWorksheet } from "./worksheet";
+import { createEmptyWorksheet, insertColumn, renameColumn, replaceColumnValues } from "./worksheet";
+
+function pageRead(transcript: string): DocumentPageRead {
+  return {
+    attachmentId: "att_1",
+    filename: "bmr.pdf",
+    description: null,
+    pageNumber: 31,
+    printedPageLabel: null,
+    transcript,
+    visualInterpretation: "",
+    pageContext: null,
+    ingestRunId: "run_1",
+  };
+}
 
 function analyticsView(
   worksheet = createEmptyWorksheet()
@@ -122,6 +138,16 @@ describe("analytics chat tools", () => {
     expect(writable.run_one_way_anova).toBeDefined();
     expect(writable.plot_measurements).toBeDefined();
     expect(writable.plot_xy_scatter).toBeDefined();
+    expect(writable.run_capability_sixpack?.description).toContain(
+      "not when they asked for a scatter"
+    );
+    expect(writable.run_one_way_anova?.description).toContain("not a scatter");
+    expect(writable.plot_xy_scatter?.description).toContain(
+      "cannot overlay or color by a third grouping column"
+    );
+    expect(writable.plot_measurements?.description).toContain(
+      "cannot color by serial number"
+    );
 
     const locked = buildAnalyticsChatTools({
       reportId: "report-1",
@@ -373,6 +399,59 @@ describe("analytics chat tools", () => {
     expect(String((result as { note?: string }).note)).toMatch(/not numbers/i);
   });
 
+  it("writes serials to the named column when add_column assigned a new id", async () => {
+    let sheet = replaceColumnValues(
+      createEmptyWorksheet(),
+      0,
+      ["3", "2.5"],
+      "Torque (ozf-in)"
+    );
+    sheet = insertColumn(sheet, 1);
+    sheet = renameColumn(sheet, 1, "Handpiece S/N");
+    const neighbor = sheet.columns[2];
+    const added = sheet.columns[1];
+    expect(neighbor?.id).toBe("c2");
+    expect(added?.id).not.toBe("c2");
+    expect(added?.name).toBe("Handpiece S/N");
+
+    vi.mocked(getOrCreateReportAnalytics).mockResolvedValue(analyticsView(sheet));
+    vi.mocked(updateReportAnalytics).mockImplementation(async (_id, worksheet) => ({
+      ok: true,
+      analytics: analyticsView(worksheet),
+    }));
+    const tools = buildAnalyticsChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "investigation_report",
+    });
+    const execute = tools.write_column?.execute;
+    if (!execute) throw new Error("write_column has no execute");
+    const result = await execute(
+      {
+        columnId: "c2",
+        name: "Handpiece S/N",
+        values: ["P33-0924-10012", "P33-0924-10012"],
+      },
+      {
+        toolCallId: "test",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    expect(result).toMatchObject({
+      status: "written",
+      columnId: added?.id,
+      columnName: "Handpiece S/N",
+      rowsWritten: 2,
+    });
+    const saved = vi.mocked(updateReportAnalytics).mock.calls[0]?.[1];
+    expect(saved?.columns.find((col) => col.id === added?.id)?.values.slice(0, 2)).toEqual([
+      "P33-0924-10012",
+      "P33-0924-10012",
+    ]);
+    expect(saved?.columns.find((col) => col.id === "c2")?.values ?? []).toEqual([]);
+  });
+
   it("retries write_column once after a version conflict", async () => {
     const initial = analyticsView();
     vi.mocked(getOrCreateReportAnalytics).mockResolvedValue(initial);
@@ -409,5 +488,221 @@ describe("analytics chat tools", () => {
       expect.anything(),
       { expectedVersion: 2 }
     );
+  });
+
+  it("requires values or columns on write_column", () => {
+    const tools = buildAnalyticsChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "investigation_report",
+    });
+    const schema = tools.write_column?.inputSchema as unknown as ZodToolSchema;
+    expect(schema.safeParse({}).success).toBe(false);
+    expect(schema.safeParse({ name: "Temp", values: [37.1] }).success).toBe(
+      true
+    );
+    expect(
+      schema.safeParse({
+        columns: [
+          { name: "Temp", values: [37.1] },
+          { name: "pH", values: [6.8] },
+        ],
+      }).success
+    ).toBe(true);
+    expect(tools.write_column?.description).toContain(
+      "do not call this tool once per column"
+    );
+    expect(tools.write_column?.description).toContain("never invent 0");
+    expect(tools.write_column?.description).toContain(
+      "Do not substitute a sixpack or ANOVA for a scatter"
+    );
+  });
+
+  it("writes several columns in one persist", async () => {
+    const initial = analyticsView();
+    vi.mocked(getOrCreateReportAnalytics).mockResolvedValue(initial);
+    vi.mocked(updateReportAnalytics).mockImplementation(async (_id, worksheet) => ({
+      ok: true,
+      analytics: analyticsView(worksheet),
+    }));
+    vi.mocked(readDocumentPage).mockResolvedValue(
+      pageRead("37.1 6.8 96.7\n37.2 6.9 81.6")
+    );
+    const tools = buildAnalyticsChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "investigation_report",
+    });
+    const execute = tools.write_column?.execute;
+    if (!execute) throw new Error("write_column has no execute");
+    const result = await execute(
+      {
+        sourceAttachmentId: "att_1",
+        sourcePages: [31],
+        columns: [
+          { name: "Temp", values: [37.1, 37.2] },
+          { name: "pH", values: [6.8, 6.9] },
+          { name: "DO%", values: ["96.7", "81.6"] },
+        ],
+      },
+      {
+        toolCallId: "test",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    expect(result).toMatchObject({
+      status: "written",
+      columnCount: 3,
+      columns: [
+        { columnName: "Temp", rowsWritten: 2, nonNumericCells: 0 },
+        { columnName: "pH", rowsWritten: 2, nonNumericCells: 0 },
+        { columnName: "DO%", rowsWritten: 2, nonNumericCells: 0 },
+      ],
+    });
+    expect(updateReportAnalytics).toHaveBeenCalledTimes(1);
+    const saved = vi.mocked(updateReportAnalytics).mock.calls[0]?.[1] as {
+      columns: { name: string; values: string[] }[];
+    };
+    expect(saved.columns[0]).toMatchObject({
+      name: "Temp",
+      values: ["37.1", "37.2"],
+    });
+    expect(saved.columns[1]).toMatchObject({
+      name: "pH",
+      values: ["6.8", "6.9"],
+    });
+    expect(saved.columns[2]).toMatchObject({
+      name: "DO%",
+      values: ["96.7", "81.6"],
+    });
+  });
+
+  it("refuses a table dump with no source page text", async () => {
+    const tools = buildAnalyticsChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "investigation_report",
+    });
+    const execute = tools.write_column?.execute;
+    if (!execute) throw new Error("write_column has no execute");
+    const result = await execute(
+      {
+        columns: [
+          { name: "Air flow (LPM)", values: [38] },
+          { name: "O2 flow (LPM)", values: [0] },
+        ],
+      },
+      {
+        toolCallId: "test",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    expect(result).toMatchObject({
+      status: "need_source",
+      message: WRITE_COLUMN_NEED_SOURCE_MESSAGE,
+    });
+    expect(updateReportAnalytics).not.toHaveBeenCalled();
+  });
+
+  it("blanks invented O2 zeros that are not between Air and DO on the source page", async () => {
+    const initial = analyticsView();
+    vi.mocked(getOrCreateReportAnalytics).mockResolvedValue(initial);
+    vi.mocked(updateReportAnalytics).mockImplementation(async (_id, worksheet) => ({
+      ok: true,
+      analytics: analyticsView(worksheet),
+    }));
+    vi.mocked(readDocumentPage).mockResolvedValue(
+      pageRead(
+        "02:57 05 36.9 6.99 875 38 2 50.2 0.50 17.2 12.5 0 0 0 yes\n05Hr 03:12 37.2 6.99 875 38 3 58.3 0.50 21.05 11.0 0 0 0 yes"
+      )
+    );
+    const tools = buildAnalyticsChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "investigation_report",
+    });
+    const execute = tools.write_column?.execute;
+    if (!execute) throw new Error("write_column has no execute");
+    const result = await execute(
+      {
+        sourceAttachmentId: "att_1",
+        sourcePages: [31],
+        columns: [
+          { name: "RPM", values: [875, 875] },
+          { name: "Air flow (LPM)", values: [38, 38] },
+          { name: "O2 flow (LPM)", values: [0, 0] },
+          { name: "DO (%)", values: [50.2, 58.3] },
+        ],
+      },
+      {
+        toolCallId: "test",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    expect(result).toMatchObject({
+      status: "written",
+      blankedCount: 2,
+    });
+    const saved = vi.mocked(updateReportAnalytics).mock.calls[0]?.[1] as {
+      columns: { name: string; values: string[] }[];
+    };
+    const o2 = saved.columns.find((column) => column.name === "O2 flow (LPM)");
+    expect(o2?.values).toEqual([]);
+    expect(saved.columns.find((column) => column.name === "DO (%)")?.values).toEqual([
+      "50.2",
+      "58.3",
+    ]);
+  });
+
+  it("blanks invented 0.02 when the source token is 02", async () => {
+    const initial = analyticsView();
+    vi.mocked(getOrCreateReportAnalytics).mockResolvedValue(initial);
+    vi.mocked(updateReportAnalytics).mockImplementation(async (_id, worksheet) => ({
+      ok: true,
+      analytics: analyticsView(worksheet),
+    }));
+    vi.mocked(readDocumentPage).mockResolvedValue(
+      pageRead("875 38.02 02 73.2 0.50")
+    );
+    const tools = buildAnalyticsChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "investigation_report",
+    });
+    const execute = tools.write_column?.execute;
+    if (!execute) throw new Error("write_column has no execute");
+    const result = await execute(
+      {
+        sourceAttachmentId: "att_1",
+        sourcePages: [31],
+        columns: [
+          { name: "RPM", values: [875] },
+          { name: "Air flow (LPM)", values: [38.02] },
+          { name: "O2 flow (LPM)", values: [0.02] },
+          { name: "DO (%)", values: [73.2] },
+        ],
+      },
+      {
+        toolCallId: "test",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    expect(result).toMatchObject({
+      status: "written",
+      blankedCount: 1,
+    });
+    const saved = vi.mocked(updateReportAnalytics).mock.calls[0]?.[1] as {
+      columns: { name: string; values: string[] }[];
+    };
+    expect(
+      saved.columns.find((column) => column.name === "O2 flow (LPM)")?.values
+    ).toEqual([]);
+    expect(
+      saved.columns.find((column) => column.name === "Air flow (LPM)")?.values
+    ).toEqual(["38.02"]);
   });
 });

@@ -218,7 +218,7 @@ export function AnalyzeDialog({
     kind === ONE_WAY_ANOVA
       ? "Compare means of a numeric response across factor levels on the same data sheet. Pairwise tests use Bonferroni-adjusted t-tests with the ANOVA MSE."
       : kind === MEASUREMENT_SCATTER
-        ? "Extract cited numeric measurements from this report's attachments and save a scatter plot in Results. Query and limits start from the selected column and can be edited."
+        ? "Extract cited numeric measurements from this report's attachments and save a scatter of that series versus observation index in Results. One series, one color — not a grouped overlay. Query and limits start from the selected column and can be edited."
         : "Individuals / moving range (I-MR). Values are filled from the selected column and can be edited before you run the plot.";
 
   const submit = () => {

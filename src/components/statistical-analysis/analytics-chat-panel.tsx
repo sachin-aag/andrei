@@ -129,6 +129,37 @@ function readToolPart(part: UIMessagePart<never, never>): ToolPartInfo | null {
   };
 }
 
+function writeColumnNamesFromTool(info: ToolPartInfo): string[] {
+  const names: string[] = [];
+  const seen = new Set<string>();
+  const push = (raw: unknown) => {
+    if (typeof raw !== "string") return;
+    const name = raw.trim();
+    if (!name || seen.has(name)) return;
+    seen.add(name);
+    names.push(name);
+  };
+  if (Array.isArray(info.input?.columns)) {
+    for (const column of info.input.columns) {
+      if (!column || typeof column !== "object" || Array.isArray(column)) {
+        continue;
+      }
+      push((column as { name?: unknown }).name);
+    }
+  }
+  push(info.input?.name);
+  if (Array.isArray(info.output?.columns)) {
+    for (const column of info.output.columns) {
+      if (!column || typeof column !== "object" || Array.isArray(column)) {
+        continue;
+      }
+      push((column as { columnName?: unknown }).columnName);
+    }
+  }
+  push(info.output?.columnName);
+  return names;
+}
+
 function parseAskUserQuestions(
   input: Record<string, unknown> | undefined
 ): AskUserQuestionInput[] {
@@ -270,18 +301,17 @@ function AnalyticsToolChip({
       );
     }
     case "write_column": {
+      const columnNames = writeColumnNamesFromTool(info);
       if (pending) {
         return (
           <ToolLine icon={<Table2 className="size-3.5" />}>
-            Writing column…
+            {columnNames.length > 1 ? "Writing columns…" : "Writing column…"}
           </ToolLine>
         );
       }
       if (info.output?.status === "written") {
         const name =
-          typeof info.output.columnName === "string"
-            ? info.output.columnName
-            : "column";
+          columnNames.length > 0 ? columnNames.join(", ") : "column";
         return (
           <ToolLine
             icon={<Table2 className="size-3.5 text-emerald-500" />}
@@ -976,7 +1006,7 @@ export function AnalyticsChatPanel({
             <p className="text-sm text-[var(--muted-foreground)]">
               {mode === "plan"
                 ? "I read this report's attachments and the worksheet. I don't fill columns or run plots in Ask mode — switch to Agent for that. I don't draft the document."
-                : "I read this report's attachments, fill a worksheet column, run a Normal Capability Sixpack or one-way ANOVA, and plot measurements as a scatter. I don't draft the document."}
+                : "I fill the worksheet, run a sixpack or one-way ANOVA, and plot an XY scatter (two numeric columns) or a measurement scatter (one series vs index). I can't color points by group or use serial numbers as an X axis. I don't draft the document."}
             </p>
             <div className="space-y-1.5">
               {ANALYTICS_EXAMPLE_PROMPTS[mode].map((prompt) => (
@@ -1133,7 +1163,7 @@ export function AnalyticsChatPanel({
             placeholder={
               mode === "plan"
                 ? "Ask about measurements in the attachments…"
-                : "Extract numbers, run a sixpack, ANOVA, or plot measurements…"
+                : "Extract numbers, run a sixpack or ANOVA, or plot an XY/measurement scatter…"
             }
             className="min-h-[40px] max-h-40 w-full resize-none rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)] disabled:opacity-50"
           />

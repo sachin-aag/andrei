@@ -30,31 +30,94 @@ const WRITE_AFTER_SEARCH_TOOLS = [
 ] as const;
 
 type ToolCallLike = {
-  toolName: string;
+  toolName?: string;
+  type?: string;
+  tool?: string;
 };
 
 type ToolResultLike = {
-  toolName: string;
+  toolName?: string;
+  type?: string;
+  tool?: string;
   output?: unknown;
   result?: unknown;
 };
 
 export type AnalyticsChatStep = {
-  toolCalls: readonly ToolCallLike[];
+  toolCalls?: readonly ToolCallLike[];
   toolResults?: readonly ToolResultLike[];
+  staticToolCalls?: readonly ToolCallLike[];
+  content?: readonly unknown[];
 };
 
 export type AnalyticsSearchLoopDirective = "continue" | "read";
 
+/** Per-request latch: once search is closed, execute refuses further greps. */
+export type AnalyticsSearchGate = {
+  closed: boolean;
+};
+
+export function createAnalyticsSearchGate(): AnalyticsSearchGate {
+  return { closed: false };
+}
+
+function callToolName(call: ToolCallLike | undefined): string {
+  if (!call) return "";
+  if (typeof call.toolName === "string" && call.toolName) return call.toolName;
+  if (typeof call.tool === "string" && call.tool) return call.tool;
+  if (typeof call.type === "string" && call.type.startsWith("tool-")) {
+    return call.type.slice("tool-".length);
+  }
+  return "";
+}
+
+function contentToolName(part: unknown): string {
+  if (!part || typeof part !== "object" || Array.isArray(part)) return "";
+  const record = part as Record<string, unknown>;
+  const type = typeof record.type === "string" ? record.type : "";
+  if (type === "tool-call" || type === "tool-result") {
+    return callToolName(record as ToolCallLike);
+  }
+  if (type.startsWith("tool-")) return type.slice("tool-".length);
+  return "";
+}
+
+function collectToolCalls(step: AnalyticsChatStep): ToolCallLike[] {
+  const calls: ToolCallLike[] = [
+    ...(step.toolCalls ?? []),
+    ...(step.staticToolCalls ?? []),
+  ];
+  for (const part of step.content ?? []) {
+    const name = contentToolName(part);
+    if (name) calls.push({ toolName: name });
+  }
+  return calls;
+}
+
+function unwrapToolPayload(output: unknown): unknown {
+  if (!output || typeof output !== "object" || Array.isArray(output)) {
+    return output;
+  }
+  const record = output as Record<string, unknown>;
+  if (
+    record.value !== undefined &&
+    (record.type === "json" || record.type === "text")
+  ) {
+    return unwrapToolPayload(record.value);
+  }
+  return output;
+}
+
 function toolPayload(result: ToolResultLike): unknown {
-  return result.output ?? result.result;
+  return unwrapToolPayload(result.output ?? result.result);
 }
 
 function searchHitCount(output: unknown): number {
-  if (!output || typeof output !== "object" || Array.isArray(output)) {
+  const payload = unwrapToolPayload(output);
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return 0;
   }
-  const record = output as Record<string, unknown>;
+  const record = payload as Record<string, unknown>;
   if (typeof record.returnedCount === "number" && record.returnedCount > 0) {
     return record.returnedCount;
   }
@@ -70,18 +133,30 @@ function searchHitCount(output: unknown): number {
 function stepSearchHitCount(step: AnalyticsChatStep): number {
   let hits = 0;
   for (const result of step.toolResults ?? []) {
-    if (result.toolName !== SEARCH_TOOL) continue;
+    if (callToolName(result) !== SEARCH_TOOL) continue;
     hits += searchHitCount(toolPayload(result));
+  }
+  for (const part of step.content ?? []) {
+    if (!part || typeof part !== "object" || Array.isArray(part)) continue;
+    const record = part as Record<string, unknown>;
+    if (contentToolName(part) !== SEARCH_TOOL) continue;
+    hits += searchHitCount(
+      unwrapToolPayload(record.output ?? record.result)
+    );
   }
   return hits;
 }
 
 function stepCalledSearch(step: AnalyticsChatStep): boolean {
-  return step.toolCalls.some((call) => call.toolName === SEARCH_TOOL);
+  return collectToolCalls(step).some(
+    (call) => callToolName(call) === SEARCH_TOOL
+  );
 }
 
 function stepLocatedAttachment(step: AnalyticsChatStep): boolean {
-  return step.toolCalls.some((call) => ATTACHMENT_LOCATE_TOOLS.has(call.toolName));
+  return collectToolCalls(step).some((call) =>
+    ATTACHMENT_LOCATE_TOOLS.has(callToolName(call))
+  );
 }
 
 /**
@@ -109,7 +184,14 @@ export function analyticsSearchLoopDirective(
 export function prepareAnalyticsChatStep(input: {
   steps: readonly AnalyticsChatStep[];
   canEdit: boolean;
+  searchGate?: AnalyticsSearchGate;
 }): { activeTools: string[] } | undefined {
+  if (
+    input.searchGate &&
+    analyticsSearchLoopDirective(input.steps) === "read"
+  ) {
+    input.searchGate.closed = true;
+  }
   // Last allowed step is text-only so a budget stop is never a silent
   // tool-call dump.
   if (input.steps.length >= ANALYTICS_CHAT_STEP_BUDGET - 1) {

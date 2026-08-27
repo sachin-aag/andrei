@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   ANALYTICS_CHAT_STEP_BUDGET,
   analyticsSearchLoopDirective,
+  createAnalyticsSearchGate,
   prepareAnalyticsChatStep,
   type AnalyticsChatStep,
 } from "./search-loop";
@@ -126,5 +127,47 @@ describe("prepareAnalyticsChatStep", () => {
     expect(
       prepareAnalyticsChatStep({ steps, canEdit: true })?.activeTools
     ).toEqual([]);
+  });
+
+  it("hides search from AI SDK content parts after a page read", () => {
+    const contentStep: AnalyticsChatStep = {
+      content: [{ type: "tool-call", toolName: "read_document_page" }],
+    };
+    expect(analyticsSearchLoopDirective([contentStep])).toBe("read");
+    expect(
+      prepareAnalyticsChatStep({
+        steps: [contentStep],
+        canEdit: true,
+      })?.activeTools
+    ).not.toContain("search_documents");
+  });
+
+  it("counts nested search payloads as cited pages", () => {
+    expect(
+      analyticsSearchLoopDirective([
+        {
+          toolCalls: [{ toolName: "search_documents" }],
+          toolResults: [
+            {
+              toolName: "search_documents",
+              output: {
+                type: "json",
+                value: { returnedCount: 2, results: [{ pageNumber: 37 }] },
+              },
+            },
+          ],
+        },
+      ])
+    ).toBe("read");
+  });
+
+  it("closes the search gate so execute can refuse later greps", () => {
+    const searchGate = createAnalyticsSearchGate();
+    prepareAnalyticsChatStep({
+      steps: [step(["read_document_page"])],
+      canEdit: true,
+      searchGate,
+    });
+    expect(searchGate.closed).toBe(true);
   });
 });

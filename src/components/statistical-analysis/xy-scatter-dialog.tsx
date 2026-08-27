@@ -107,8 +107,10 @@ export function XyScatterDialog({
           <DialogTitle>Scatter</DialogTitle>
           <DialogDescription>
             Plot two numeric worksheet columns. Y is the output (vertical). X
-            is the other variable (horizontal). Pairs skip rows where either
-            cell is not a number.
+            is the other variable (horizontal). Both must be numbers — a
+            serial-number or factor column cannot be X. One series, one
+            color; this is not a grouped overlay. Pairs skip rows where
+            either cell is not a number.
           </DialogDescription>
         </DialogHeader>
 

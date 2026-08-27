@@ -53,6 +53,12 @@ import {
 } from "./worksheet";
 import { applyManageWorksheet, manageWorksheetInputSchema } from "./manage-worksheet";
 import { normalizeRowSelection } from "./row-selection";
+import {
+  verifyTableWrite,
+  type BlankedTableCell,
+} from "./table-row-verify";
+import type { ScanAttachmentsResult } from "./scan-attachments";
+import type { AnalyticsSearchGate } from "./search-loop";
 
 export const ANALYTICS_DOCUMENT_TOOL_NAMES = [
   "search_documents",
@@ -190,6 +196,250 @@ function optionalSpecString(value: number | null | undefined): string {
   return value == null ? "" : String(value);
 }
 
+const MAX_WRITE_COLUMNS = 40;
+const MAX_WRITE_SOURCE_PAGES = 12;
+
+export const WRITE_COLUMN_NEED_SOURCE_MESSAGE =
+  "Table dumps must pass sourceAttachmentId and sourcePages from the page you just read, or read/scan that page in this turn first.";
+
+function rememberPageText(bucket: string[], text: string | null | undefined) {
+  const trimmed = text?.trim();
+  if (trimmed) bucket.push(trimmed);
+}
+
+function rememberScanResult(bucket: string[], result: ScanAttachmentsResult) {
+  if (result.status !== "ok") return;
+  for (const file of result.files) {
+    for (const page of file.pages) {
+      rememberPageText(bucket, page.transcript);
+    }
+  }
+}
+
+function rememberReadPageResult(bucket: string[], result: unknown) {
+  if (!result || typeof result !== "object") return;
+  const record = result as {
+    status?: string;
+    page?: { transcript?: string; visualInterpretation?: string };
+  };
+  if (record.status !== "found" || !record.page) return;
+  rememberPageText(bucket, record.page.transcript);
+  rememberPageText(bucket, record.page.visualInterpretation);
+}
+
+function withRememberedExecute<T>(
+  toolValue: T,
+  remember: (result: unknown) => void
+): T {
+  if (!toolValue || typeof toolValue !== "object") return toolValue;
+  const record = toolValue as { execute?: (...args: never[]) => Promise<unknown> };
+  const execute = record.execute;
+  if (typeof execute !== "function") return toolValue;
+  return {
+    ...record,
+    execute: async (...args: never[]) => {
+      const result = await execute(...args);
+      remember(result);
+      return result;
+    },
+  } as T;
+}
+
+const writeColumnValueSchema = z.union([
+  z.number().finite(),
+  z.string().max(64),
+]);
+
+const writeColumnValuesSchema = z
+  .array(writeColumnValueSchema)
+  .min(1)
+  .max(MAX_WORKSHEET_ROWS);
+
+const writeColumnEntrySchema = z.object({
+  values: writeColumnValuesSchema,
+  columnId: z.string().trim().min(1).optional(),
+  name: z
+    .string()
+    .trim()
+    .max(80)
+    .optional()
+    .describe("Column header, e.g. Assay % or Batch."),
+  lsl: z.number().finite().nullable().optional(),
+  usl: z.number().finite().nullable().optional(),
+  target: z.number().finite().nullable().optional(),
+});
+
+const writeColumnInputSchema = z
+  .object({
+    values: writeColumnValuesSchema.optional(),
+    columnId: z.string().trim().min(1).optional(),
+    name: z
+      .string()
+      .trim()
+      .max(80)
+      .optional()
+      .describe("Column header, e.g. Assay %."),
+    lsl: z.number().finite().nullable().optional(),
+    usl: z.number().finite().nullable().optional(),
+    target: z.number().finite().nullable().optional(),
+    columns: z
+      .array(writeColumnEntrySchema)
+      .min(1)
+      .max(MAX_WRITE_COLUMNS)
+      .optional()
+      .describe(
+        "Write several columns in one save. Prefer this for a full log-sheet dump (Batch labels plus each series). Do not call write_column once per column."
+      ),
+    sourceAttachmentId: z
+      .string()
+      .trim()
+      .min(1)
+      .optional()
+      .describe(
+        "Attachment id of the page this table was read from. Required for a multi-column dump unless that page was already read or scanned in this turn."
+      ),
+    sourcePages: z
+      .array(z.number().int().min(1))
+      .max(MAX_WRITE_SOURCE_PAGES)
+      .optional()
+      .describe("Page numbers just read for this table dump."),
+  })
+  .superRefine((value, ctx) => {
+    if (value.columns && value.columns.length > 0) return;
+    if (!value.values || value.values.length === 0) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Provide values or columns.",
+        path: ["values"],
+      });
+    }
+  });
+
+type WriteColumnEntry = z.infer<typeof writeColumnEntrySchema>;
+type WriteColumnInput = z.infer<typeof writeColumnInputSchema>;
+
+type WrittenColumnResult = {
+  columnId: string;
+  columnName: string;
+  rowsWritten: number;
+  numericCells: number;
+  nonNumericCells: number;
+  note?: string;
+};
+
+function writeColumnEntriesFromInput(input: WriteColumnInput): WriteColumnEntry[] {
+  if (input.columns && input.columns.length > 0) return input.columns;
+  return [
+    {
+      values: input.values ?? [],
+      columnId: input.columnId,
+      name: input.name,
+      lsl: input.lsl,
+      usl: input.usl,
+      target: input.target,
+    },
+  ];
+}
+
+function switchSheetForWrite(
+  worksheet: WorksheetData,
+  entry: WriteColumnEntry
+): WorksheetData {
+  if (entry.name) {
+    const sheetId = findSheetIdForColumnName(worksheet, entry.name);
+    if (sheetId) return switchWorksheetTab(worksheet, sheetId);
+  }
+  if (entry.columnId) {
+    const sheetId = findSheetIdForColumn(worksheet, entry.columnId);
+    if (sheetId) return switchWorksheetTab(worksheet, sheetId);
+    return worksheet;
+  }
+  return worksheet;
+}
+
+function resolveWriteColumnIndex(
+  worksheet: WorksheetData,
+  entry: WriteColumnEntry,
+  occupied: Set<number>
+):
+  | { index: number }
+  | { status: "not_found"; columnId?: string; name?: string } {
+  // Prefer the header. add_column ignores a guessed columnId (c2) and
+  // returns a new id (c9); writing by c2 would overwrite the neighbor.
+  if (entry.name) {
+    const named = findColumnIndexByName(worksheet, entry.name);
+    if (named >= 0 && !occupied.has(named)) return { index: named };
+  }
+  if (entry.columnId) {
+    const index = findColumnIndex(worksheet, entry.columnId);
+    if (index < 0) {
+      return { status: "not_found" as const, columnId: entry.columnId };
+    }
+    return { index };
+  }
+  for (let i = 0; i < worksheet.columns.length; i++) {
+    if (!occupied.has(i)) return { index: i };
+  }
+  return { status: "not_found" as const, name: entry.name };
+}
+
+function applyWriteColumnEntries(
+  worksheet: WorksheetData,
+  entries: readonly WriteColumnEntry[]
+):
+  | { ok: true; worksheet: WorksheetData; indices: number[] }
+  | { ok: false; status: "not_found"; columnId?: string; name?: string } {
+  let next = worksheet;
+  const occupied = new Set<number>();
+  const indices: number[] = [];
+  for (const entry of entries) {
+    next = switchSheetForWrite(next, entry);
+    const resolved = resolveWriteColumnIndex(next, entry, occupied);
+    if ("status" in resolved) return { ok: false, ...resolved };
+    const cells = entry.values.map((value) => String(value));
+    next = replaceColumnValues(next, resolved.index, cells, entry.name);
+    const column = next.columns[resolved.index];
+    if (
+      column &&
+      (entry.lsl != null || entry.usl != null || entry.target != null)
+    ) {
+      next = upsertSpecRow(next, {
+        columnName: column.name,
+        lsl: optionalSpecString(entry.lsl),
+        usl: optionalSpecString(entry.usl),
+        target: optionalSpecString(entry.target),
+      });
+    }
+    occupied.add(resolved.index);
+    indices.push(resolved.index);
+  }
+  return { ok: true, worksheet: next, indices };
+}
+
+function writtenColumnResult(
+  worksheet: WorksheetData,
+  index: number,
+  columnId?: string
+): WrittenColumnResult | null {
+  const column =
+    (columnId ? findColumn(worksheet, columnId) : null) ??
+    worksheet.columns[index];
+  if (!column) return null;
+  const numeric = columnNumericValues(column);
+  const rowsWritten = trimTrailingEmpty(column.values).length;
+  return {
+    columnId: column.id,
+    columnName: column.name,
+    rowsWritten,
+    numericCells: numeric.values.length,
+    nonNumericCells: numeric.skipped,
+    note:
+      numeric.skipped > 0
+        ? `${numeric.skipped} of ${rowsWritten} cells are not numbers; this column cannot drive a sixpack, ANOVA, or XY scatter.`
+        : undefined,
+  };
+}
+
 const extractedSeriesSchema = z.object({
   values: z.array(z.number().finite()).max(MAX_WORKSHEET_ROWS),
   dates: z.array(z.string().trim().max(32).nullable()).max(MAX_WORKSHEET_ROWS).optional(),
@@ -230,8 +480,9 @@ export function buildAnalyticsChatTools(opts: {
   reportId: string;
   canEdit: boolean;
   documentType: import("@/db/schema").DocumentType;
+  searchGate?: AnalyticsSearchGate;
 }): ToolSet {
-  const { reportId, canEdit, documentType } = opts;
+  const { reportId, canEdit, documentType, searchGate } = opts;
   const documentTools = pickAnalyticsDocumentTools(
     buildChatTools({
       reportId,
@@ -243,7 +494,38 @@ export function buildAnalyticsChatTools(opts: {
   ) as ToolSet;
   documentTools.search_documents = buildAnalyticsSearchDocumentsTool({
     reportId,
+    searchGate,
   });
+
+  const sourceTexts: string[] = [];
+  if (documentTools.read_document_page) {
+    documentTools.read_document_page = withRememberedExecute(
+      documentTools.read_document_page,
+      (result) => rememberReadPageResult(sourceTexts, result)
+    );
+  }
+
+  async function loadWriteSourceText(input: WriteColumnInput): Promise<string> {
+    const attachmentId = input.sourceAttachmentId?.trim();
+    const pages = (input.sourcePages ?? []).filter(
+      (page) => Number.isInteger(page) && page >= 1
+    );
+    if (attachmentId && pages.length > 0) {
+      const reads = await Promise.all(
+        pages.slice(0, MAX_WRITE_SOURCE_PAGES).map((pageNumber) =>
+          readDocumentPage({ reportId, attachmentId, pageNumber })
+        )
+      );
+      const parts: string[] = [];
+      for (const page of reads) {
+        if (!page) continue;
+        rememberPageText(parts, page.transcript);
+        rememberPageText(parts, page.visualInterpretation);
+      }
+      return parts.join("\n");
+    }
+    return sourceTexts.join("\n");
+  }
 
   const statsTools: ToolSet = {
     scan_attachments: tool({
@@ -288,14 +570,17 @@ export function buildAnalyticsChatTools(opts: {
             ),
           { message: "Provide filenameContains, attachmentIds, or a query." }
         ),
-      execute: async ({ filenameContains, attachmentIds, query, queries }) =>
-        runScanAttachments({
+      execute: async ({ filenameContains, attachmentIds, query, queries }) => {
+        const result = await runScanAttachments({
           reportId,
           filenameContains,
           attachmentIds,
           query,
           queries,
-        }),
+        });
+        rememberScanResult(sourceTexts, result);
+        return result;
+      },
     }),
     read_worksheet: tool({
       description:
@@ -541,67 +826,46 @@ export function buildAnalyticsChatTools(opts: {
   if (canEdit) {
     statsTools.write_column = tool({
       description:
-        "Write values into a worksheet column (replaces that column). Use for a numeric series or a full table dump (row labels in one column, each batch/series in its own). Pass lsl/usl/target when known so they land on that column's specs (right-click header). Then call run_capability_sixpack for a capability plot, run_one_way_anova for a one-way ANOVA, plot_xy_scatter for two worksheet columns, or plot_measurements for an attachment scatter. When writing sampling dates from extract_numeric_series, copy that same dates array — do not drop a date because a different assay was NA.",
-      inputSchema: z.object({
-        values: z
-          .array(z.union([z.number().finite(), z.string().max(64)]))
-          .min(1)
-          .max(MAX_WORKSHEET_ROWS),
-        columnId: z.string().trim().min(1).optional(),
-        name: z
-          .string()
-          .trim()
-          .max(80)
-          .optional()
-          .describe("Column header, e.g. Assay %."),
-        lsl: z.number().finite().nullable().optional(),
-        usl: z.number().finite().nullable().optional(),
-        target: z.number().finite().nullable().optional(),
-      }),
-      execute: async ({ values, columnId, name, lsl, usl, target }) => {
+        "Write values into worksheet columns (replaces those columns). Pass columns for a full table dump in one save (row labels / Batch in one column, each series in its own) — do not call this tool once per column and do not fill a series with set_cell. For a table dump also pass sourceAttachmentId and sourcePages from the page you just read. Cells that are not tokens on that page are left blank — never invent 0. A single name+values write is for one series. Pass lsl/usl/target when known so they land on that column's specs (right-click header). After writing, call only the analysis they asked for: run_capability_sixpack for capability, run_one_way_anova for ANOVA, plot_xy_scatter for two numeric columns, or plot_measurements for an attachment scatter. Do not substitute a sixpack or ANOVA for a scatter. When writing sampling dates from extract_numeric_series, copy that same dates array — do not drop a date because a different assay was NA.",
+      inputSchema: writeColumnInputSchema,
+      execute: async (input) => {
+        let entries = writeColumnEntriesFromInput(input);
+        let blanked: BlankedTableCell[] = [];
+        if (entries.length >= 2) {
+          const sourceText = await loadWriteSourceText(input);
+          if (!sourceText.trim()) {
+            return {
+              status: "need_source" as const,
+              message: WRITE_COLUMN_NEED_SOURCE_MESSAGE,
+            };
+          }
+          const verified = verifyTableWrite({
+            sourceText,
+            columns: entries.map((entry) => entry.values),
+          });
+          blanked = verified.blanked;
+          entries = entries.map((entry, index) => ({
+            ...entry,
+            values: verified.columns[index] ?? [],
+          }));
+        }
         const analytics = await getOrCreateReportAnalytics(reportId);
         let worksheet = analytics.worksheet;
         if (isSpecsTab(worksheet)) {
           const first = dataSheets(worksheet)[0];
           if (first) worksheet = switchWorksheetTab(worksheet, first.id);
         }
-        if (columnId) {
-          const sheetId = findSheetIdForColumn(worksheet, columnId);
-          if (!sheetId) {
-            return { status: "not_found" as const, columnId };
-          }
-          worksheet = switchWorksheetTab(worksheet, sheetId);
-        } else if (name) {
-          const sheetId = findSheetIdForColumnName(worksheet, name);
-          if (sheetId) worksheet = switchWorksheetTab(worksheet, sheetId);
-        }
-        let index = 0;
-        if (columnId) {
-          index = findColumnIndex(worksheet, columnId);
-          if (index < 0) {
-            return { status: "not_found" as const, columnId };
-          }
-        } else if (name) {
-          const named = findColumnIndexByName(worksheet, name);
-          if (named >= 0) index = named;
-        }
-        const cells = values.map((value) => String(value));
-        let next = replaceColumnValues(worksheet, index, cells, name);
-        const column = next.columns[index];
-        if (
-          column &&
-          (lsl != null || usl != null || target != null)
-        ) {
-          next = upsertSpecRow(next, {
-            columnName: column.name,
-            lsl: optionalSpecString(lsl),
-            usl: optionalSpecString(usl),
-            target: optionalSpecString(target),
-          });
+        const applied = applyWriteColumnEntries(worksheet, entries);
+        if (!applied.ok) {
+          return {
+            status: "not_found" as const,
+            columnId: applied.columnId,
+            name: applied.name,
+          };
         }
         const savedResult = await persistWorksheet(
           reportId,
-          next,
+          applied.worksheet,
           analytics.version
         );
         if (!savedResult.ok) {
@@ -611,14 +875,24 @@ export function buildAnalyticsChatTools(opts: {
           };
         }
         const saved = savedResult.analytics;
-        const savedColumn =
-          (columnId ? findColumn(saved.worksheet, columnId) : null) ??
-          saved.worksheet.columns[index];
-        if (!savedColumn) {
+        const columns: WrittenColumnResult[] = [];
+        for (let i = 0; i < applied.indices.length; i++) {
+          const written = writtenColumnResult(
+            saved.worksheet,
+            applied.indices[i]!
+          );
+          if (!written) {
+            return {
+              status: "error" as const,
+              message: "Column missing after save.",
+            };
+          }
+          columns.push(written);
+        }
+        const first = columns[0];
+        if (!first) {
           return { status: "error" as const, message: "Column missing after save." };
         }
-        const numeric = columnNumericValues(savedColumn);
-        const rowsWritten = trimTrailingEmpty(savedColumn.values).length;
         const sheet =
           findSheet(saved.worksheet, saved.worksheet.activeSheetId) ??
           dataSheets(saved.worksheet)[0];
@@ -626,17 +900,25 @@ export function buildAnalyticsChatTools(opts: {
           status: "written" as const,
           sheetId: sheet?.id ?? saved.worksheet.activeSheetId,
           sheetName: sheet?.name ?? "Data",
-          columnId: savedColumn.id,
-          columnName: savedColumn.name,
-          rowsWritten,
-          valueCount: rowsWritten,
-          numericCount: numeric.values.length,
-          numericCells: numeric.values.length,
-          nonNumericCells: numeric.skipped,
-          note:
-            numeric.skipped > 0
-              ? `${numeric.skipped} of ${rowsWritten} cells are not numbers; this column cannot drive a sixpack, ANOVA, or XY scatter.`
-              : undefined,
+          columnId: first.columnId,
+          columnName: first.columnName,
+          rowsWritten: first.rowsWritten,
+          valueCount: first.rowsWritten,
+          numericCount: first.numericCells,
+          numericCells: first.numericCells,
+          nonNumericCells: first.nonNumericCells,
+          note: first.note,
+          columns,
+          columnCount: columns.length,
+          blankedCells: blanked.map((cell) => ({
+            row: cell.row,
+            columnIndex: cell.column,
+            columnName:
+              entries[cell.column]?.name ??
+              columns[cell.column]?.columnName ??
+              null,
+          })),
+          blankedCount: blanked.length,
         };
       },
     });
@@ -692,7 +974,7 @@ export function buildAnalyticsChatTools(opts: {
 
     statsTools.run_capability_sixpack = tool({
       description:
-        "Compute and save a new Normal Capability Sixpack (I-MR) for a worksheet column. Requires LSL and/or USL. Optional rowStart/rowEnd (1-based inclusive) or rows (1-based row numbers) limits the sixpack to those observations. Does not replace earlier analyses. Tell the engineer to open the Results tab.",
+        "Compute and save a new Normal Capability Sixpack (I-MR) for a worksheet column. Requires LSL and/or USL. Call only when they asked for capability / sixpack / Cp Cpk — not when they asked for a scatter, XY plot, or colored-by-group chart. Optional rowStart/rowEnd (1-based inclusive) or rows (1-based row numbers) limits the sixpack to those observations. Does not replace earlier analyses. Tell the engineer to open the Results tab.",
       inputSchema: capabilitySixpackInputSchema,
       execute: async (input) => {
         const created = await getOrCreateReportAnalytics(reportId);
@@ -744,7 +1026,7 @@ export function buildAnalyticsChatTools(opts: {
 
     statsTools.run_one_way_anova = tool({
       description:
-        "Compute and save a one-way ANOVA for a numeric response column by a factor column on the same worksheet sheet. Optional rowStart/rowEnd (1-based inclusive) or rows (1-based row numbers) limits the rows. Pairwise tests are Bonferroni t-tests using the ANOVA MSE. Does not replace earlier analyses. Tell the engineer to open the Results tab.",
+        "Compute and save a one-way ANOVA (F/p table, not a scatter) for a numeric response column by a factor column on the same worksheet sheet. Call only when they asked to compare groups statistically — not when they asked for a scatter or colored overlay. Optional rowStart/rowEnd (1-based inclusive) or rows (1-based row numbers) limits the rows. Pairwise tests are Bonferroni t-tests using the ANOVA MSE. Does not replace earlier analyses. Tell the engineer to open the Results tab.",
       inputSchema: oneWayAnovaBodySchema,
       execute: async (input) => {
         const result = await createAnalysisForReport(reportId, {
@@ -784,7 +1066,7 @@ export function buildAnalyticsChatTools(opts: {
 
     statsTools.plot_xy_scatter = tool({
       description:
-        "Plot two numeric worksheet columns as an XY scatter (Y vs X) and save it on the Results tab. Use when the engineer asked to plot A vs B, Y against X, or a correlation plot of two columns. Output variable is Y. Optional rowStart/rowEnd or rows limits the paired rows. Reports Pearson r; does not fit a regression line. Tell them to open Results.",
+        "Plot two numeric worksheet columns as an XY scatter (Y vs X) and save it on the Results tab. Both columns must be numeric — a serial-number / factor column cannot be X. One series, one color; cannot overlay or color by a third grouping column. Use when they asked to plot A vs B, Y against X, a correlation plot, or a scatter of two columns. Output variable is Y. Optional rowStart/rowEnd or rows limits the paired rows. Reports Pearson r; does not fit a regression line. Tell them to open Results.",
       inputSchema: xyScatterBodySchema,
       execute: async (input) => {
         const result = await createAnalysisForReport(reportId, {
@@ -823,7 +1105,7 @@ export function buildAnalyticsChatTools(opts: {
 
     statsTools.plot_measurements = tool({
       description:
-        "Extract cited numeric measurements from this report's attachments and save a scatter of those values vs observation index on the Results tab. Call when the engineer asked for a measurement plot or requirement chart from attachments (e.g. M3-SYS-FN-037). Do not use this for two worksheet columns — that is plot_xy_scatter. Optional lsl/usl override extracted acceptance limits; omit them to keep cited limits. Does not insert into the document. Tell them to open Results. Never invent data points.",
+        "Extract cited numeric measurements from this report's attachments and save a scatter of those values vs observation index on the Results tab. One series, one color — cannot color by serial number or overlay groups. Call when they asked for a measurement plot or requirement chart from attachments (e.g. M3-SYS-FN-037). Do not use this for two worksheet columns — that is plot_xy_scatter. Optional lsl/usl override extracted acceptance limits; omit them to keep cited limits. Does not insert into the document. Tell them to open Results. Never invent data points.",
       inputSchema: measurementScatterToolInputSchema,
       execute: async (input) => {
         const result = await createAnalysisForReport(reportId, {
