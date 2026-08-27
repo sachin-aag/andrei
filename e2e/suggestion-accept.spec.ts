@@ -170,3 +170,77 @@ test.describe("suggestion accept keeps text visible", () => {
     expectInsertNeverDropped(await stopSamplingDefine(page));
   });
 });
+
+const SECOND_ANCHOR = "The result exceeded acceptance limits";
+const SECOND_INSERT = " by 12%";
+
+test.describe("suggestion apply all and dismiss all", () => {
+  let reportId: string | null = null;
+
+  test.beforeEach(async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await loginAsEngineer(page);
+    const created = await createReport(page);
+    reportId = created.id;
+    await seedDefineSuggestion(page, reportId);
+    const second = await page.request.post("/api/test/seed-ai-suggestion", {
+      data: {
+        reportId,
+        section: "define",
+        contentPath: "narrative",
+        anchorText: SECOND_ANCHOR,
+        insertText: SECOND_INSERT,
+        criterionKey: "define_impact",
+        criterionLabel: "Impact is described",
+      },
+      headers: await browserCookieHeaders(page),
+    });
+    expect(second.ok(), `second seed failed (${second.status()})`).toBeTruthy();
+  });
+
+  test.afterEach(async ({ page }) => {
+    if (reportId) {
+      await deleteReport(page, reportId);
+      reportId = null;
+    }
+  });
+
+  test("Apply all applies every remaining suggestion in the section", async ({
+    page,
+  }) => {
+    const editor = await openDefineWithPreview(page, reportId!);
+    await collapseReportSidebar(page);
+
+    const applyAll = reviewMargin(page).getByRole("button", {
+      name: /^apply all$/i,
+    });
+    await expect(applyAll).toBeVisible({ timeout: 15_000 });
+    await applyAll.click();
+
+    await expect(editor).toContainText("filling line FL-02", { timeout: 15_000 });
+    await expect(editor).toContainText("by 12%", { timeout: 15_000 });
+    await expect(editor.locator(".suggestion-insert")).toHaveCount(0);
+    await expect(
+      reviewMargin(page).getByRole("button", { name: /^apply all$/i })
+    ).toHaveCount(0);
+  });
+
+  test("Dismiss all removes the queue without changing the text", async ({
+    page,
+  }) => {
+    const editor = await openDefineWithPreview(page, reportId!);
+    await collapseReportSidebar(page);
+
+    const dismissAll = reviewMargin(page).getByRole("button", {
+      name: /^dismiss all$/i,
+    });
+    await expect(dismissAll).toBeVisible({ timeout: 15_000 });
+    await dismissAll.click();
+
+    await expect(editor).not.toContainText("filling line FL-02");
+    await expect(editor).not.toContainText("by 12%");
+    await expect(
+      reviewMargin(page).getByRole("button", { name: /^dismiss all$/i })
+    ).toHaveCount(0, { timeout: 15_000 });
+  });
+});

@@ -10,6 +10,8 @@ import {
 } from "react";
 import { ArrowDown, Check, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
+import { captureEvent } from "@/lib/analytics/events";
+import { SuggestionBulkActions } from "@/components/report/suggestion-bulk-actions";
 import {
   useReportComments,
   useReportData,
@@ -59,6 +61,12 @@ import {
   CommentPersistError,
   SectionPersistError,
 } from "@/lib/suggestions/accept-suggestion";
+import {
+  acceptAllSuggestions,
+  dismissAllSuggestions,
+  formatBulkApplyToast,
+  formatBulkDismissToast,
+} from "@/lib/suggestions/bulk-suggestions";
 import {
   isSuggestionTargetInViewport,
   measureSuggestionGutterParkCenterY,
@@ -186,8 +194,11 @@ function SuggestionCardFace({
   validation,
   queueStaleHint,
   canResolve,
+  bulkAction = null,
   onAccept,
   onDismiss,
+  onAcceptAll,
+  onDismissAll,
 }: {
   card: FrozenCard;
   phase: CardPhase;
@@ -196,8 +207,11 @@ function SuggestionCardFace({
   validation: SuggestionValidation;
   queueStaleHint: string | null;
   canResolve: boolean;
+  bulkAction?: "accept" | "dismiss" | null;
   onAccept: () => void;
   onDismiss: () => void;
+  onAcceptAll?: () => void;
+  onDismissAll?: () => void;
 }) {
   const { linkedEval, queueIndex, queueTotal } = card;
   const eff = linkedEval ? effectiveStatus(linkedEval) : "not_evaluated";
@@ -206,15 +220,19 @@ function SuggestionCardFace({
     card.kind === "fix" ? (card.payload.evidenceSources ?? []) : [];
 
   const statusLine =
-    phase === "applying"
-      ? queueTotal > 1
-        ? "Applying this change to the document…"
-        : "Applying to document…"
-      : phase === "applied"
-        ? "Change applied — review the updated text"
-        : phase === "preparing-next"
-          ? `Preparing suggestion ${Math.min(queueIndex + 1, queueTotal)} of ${queueTotal}…`
-          : null;
+    phase === "applying" && bulkAction === "accept"
+      ? "Applying all suggestions…"
+      : phase === "applying" && bulkAction === "dismiss"
+        ? "Dismissing all suggestions…"
+        : phase === "applying"
+          ? queueTotal > 1
+            ? "Applying this change to the document…"
+            : "Applying to document…"
+          : phase === "applied"
+            ? "Change applied — review the updated text"
+            : phase === "preparing-next"
+              ? `Preparing suggestion ${Math.min(queueIndex + 1, queueTotal)} of ${queueTotal}…`
+              : null;
 
   return (
     <div
@@ -456,6 +474,16 @@ function SuggestionCardFace({
               Dismiss
             </Button>
           </div>
+          {onAcceptAll && onDismissAll ? (
+            <SuggestionBulkActions
+              queueTotal={queueTotal}
+              pending={pending}
+              canResolve={canResolve}
+              resolveHint={RESOLVE_HINT}
+              onAcceptAll={onAcceptAll}
+              onDismissAll={onDismissAll}
+            />
+          ) : null}
         </>
       ) : null}
     </div>
@@ -597,6 +625,8 @@ function EnteringSuggestionLayer({
   canResolve,
   onAccept,
   onDismiss,
+  onAcceptAll,
+  onDismissAll,
 }: {
   card: FrozenCard;
   enterRef: RefObject<HTMLDivElement | null>;
@@ -607,6 +637,8 @@ function EnteringSuggestionLayer({
   canResolve: boolean;
   onAccept: () => void;
   onDismiss: () => void;
+  onAcceptAll?: () => void;
+  onDismissAll?: () => void;
 }) {
   const [animateIn, setAnimateIn] = useState(false);
 
@@ -635,6 +667,8 @@ function EnteringSuggestionLayer({
         canResolve={canResolve}
         onAccept={onAccept}
         onDismiss={onDismiss}
+        onAcceptAll={onAcceptAll}
+        onDismissAll={onDismissAll}
       />
     </div>
   );
@@ -657,6 +691,9 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
   const { comments, setComments } = useReportComments();
   const { sections, replaceSection } = useReportSections();
   const [pending, setPending] = useState(false);
+  const [bulkAction, setBulkAction] = useState<"accept" | "dismiss" | null>(
+    null
+  );
   const [phase, setPhase] = useState<CardPhase>("steady");
   const [frozenCard, setFrozenCard] = useState<FrozenCard | null>(null);
   const [exitingCard, setExitingCard] = useState<FrozenCard | null>(null);
@@ -1043,6 +1080,142 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
     endSuggestionApplyTransition,
   ]);
 
+  const handleAcceptAll = useCallback(async () => {
+    if (pending || !canResolve || openSorted.length <= 1) return;
+
+    setPending(true);
+    setBulkAction("accept");
+    if (liveCard) setFrozenCard(liveCard);
+    setPhase("applying");
+
+    try {
+      beginSuggestionApplyTransition(section, openSorted[0].id, "accept");
+      const result = await acceptAllSuggestions({
+        reportId: report.id,
+        section,
+        comments: openSorted,
+        sectionContent: sections[section] as Record<string, unknown>,
+        applyMode: suggestionApplyModeFor(getDocumentType(report.documentType)),
+      });
+      replaceSection(section, result.nextSection as unknown);
+      const applied = new Set(result.appliedIds);
+      setComments((prev) =>
+        prev.map((c) =>
+          applied.has(c.id) ? { ...c, status: "resolved" as const } : c
+        )
+      );
+      for (const id of result.appliedIds) {
+        captureEvent("ai_suggestion_accepted", { suggestionId: id, bulk: true });
+      }
+
+      const message = formatBulkApplyToast(
+        result.appliedIds.length,
+        result.skippedIds.length
+      );
+      if (result.failedIds.length > 0 && result.appliedIds.length === 0) {
+        toast.error("Could not apply suggestions");
+        await refresh();
+      } else if (result.failedIds.length > 0) {
+        toast.error(`${message}. Stopped after a save error.`);
+        await refresh();
+      } else if (result.appliedIds.length === 0) {
+        toast.error(message);
+      } else {
+        toast.success(message);
+      }
+      setFrozenCard(null);
+      setPhase("steady");
+    } catch (err) {
+      console.error(err);
+      toast.error("Could not apply suggestions");
+      await refresh();
+      setFrozenCard(null);
+      setPhase("steady");
+    } finally {
+      endSuggestionApplyTransition(section);
+      setBulkAction(null);
+      setPending(false);
+    }
+  }, [
+    pending,
+    canResolve,
+    openSorted,
+    liveCard,
+    section,
+    sections,
+    report.id,
+    report.documentType,
+    replaceSection,
+    setComments,
+    refresh,
+    beginSuggestionApplyTransition,
+    endSuggestionApplyTransition,
+  ]);
+
+  const handleDismissAll = useCallback(async () => {
+    if (pending || !canResolve || openSorted.length <= 1) return;
+
+    setPending(true);
+    setBulkAction("dismiss");
+    if (liveCard) setFrozenCard(liveCard);
+    setPhase("applying");
+
+    try {
+      beginSuggestionApplyTransition(section, openSorted[0].id, "dismiss");
+      const result = await dismissAllSuggestions({
+        reportId: report.id,
+        section,
+        comments: openSorted,
+        sectionContent: sections[section] as Record<string, unknown>,
+      });
+      replaceSection(section, result.nextSection as unknown);
+      const dismissed = new Set(result.appliedIds);
+      setComments((prev) => prev.filter((c) => !dismissed.has(c.id)));
+      for (const id of result.appliedIds) {
+        captureEvent("ai_suggestion_dismissed", { suggestionId: id, bulk: true });
+      }
+
+      const message = formatBulkDismissToast(
+        result.appliedIds.length,
+        result.failedIds.length
+      );
+      if (result.appliedIds.length === 0) {
+        toast.error(message);
+        await refresh();
+      } else if (result.failedIds.length > 0) {
+        toast.error(message);
+        await refresh();
+      } else {
+        toast.success(message);
+      }
+      setFrozenCard(null);
+      setPhase("steady");
+    } catch (err) {
+      console.error(err);
+      toast.error("Could not dismiss suggestions");
+      await refresh();
+      setFrozenCard(null);
+      setPhase("steady");
+    } finally {
+      endSuggestionApplyTransition(section);
+      setBulkAction(null);
+      setPending(false);
+    }
+  }, [
+    pending,
+    canResolve,
+    openSorted,
+    liveCard,
+    section,
+    sections,
+    report.id,
+    replaceSection,
+    setComments,
+    refresh,
+    beginSuggestionApplyTransition,
+    endSuggestionApplyTransition,
+  ]);
+
   if (showBridge && bridgeNext) {
     const nextSection =
       typeof bridgeNext.section === "string" ? bridgeNext.section : null;
@@ -1097,6 +1270,12 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
         canResolve={canResolve}
         onAccept={handleAccept}
         onDismiss={handleDismiss}
+        onAcceptAll={() => {
+          void handleAcceptAll();
+        }}
+        onDismissAll={() => {
+          void handleDismissAll();
+        }}
       />
     );
   }
@@ -1117,8 +1296,15 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
       }
       queueStaleHint={phase === "steady" ? queueStaleHint : null}
       canResolve={canResolve}
+      bulkAction={bulkAction}
       onAccept={handleAccept}
       onDismiss={handleDismiss}
+      onAcceptAll={() => {
+        void handleAcceptAll();
+      }}
+      onDismissAll={() => {
+        void handleDismissAll();
+      }}
     />
   );
 }
