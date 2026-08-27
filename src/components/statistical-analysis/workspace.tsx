@@ -26,10 +26,8 @@ import {
   createEmptyWorksheet,
   deleteColumn,
   deleteDataSheet,
-  deleteRow,
   dropSpecRow,
   insertColumn,
-  insertRow,
   specRowForColumn,
   switchWorksheetTab,
   upsertSpecRow,
@@ -358,14 +356,6 @@ export function StatisticalWorkspace({
           <div className="flex flex-wrap items-center gap-1">
             <WorkspaceMenubar
               readOnly={readOnly}
-              onInsertColumn={() => insertColumnAt(selection.col)}
-              onDeleteColumn={() => removeColumnAt(selection.col)}
-              onInsertRow={() => {
-                setWorksheet((current) => insertRow(current, selection.row));
-              }}
-              onDeleteRow={() => {
-                setWorksheet((current) => deleteRow(current, selection.row));
-              }}
               onLoadSample={() => {
                 setWorksheet((current) => applySampleAssay(current, selection.col));
                 toast.success(

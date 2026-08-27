@@ -3,8 +3,11 @@ import {
   clampSelection,
   collapseSelection,
   isCellInSelection,
+  isRowSelection,
   moveSelection,
+  rowIsInSelection,
   rowRangeFromGridSelection,
+  selectRows,
   selectionBounds,
 } from "./grid-selection";
 
@@ -58,5 +61,39 @@ describe("grid selection", () => {
         29
       )
     ).toEqual({ col: 7, row: 0, anchorCol: 0, anchorRow: 29 });
+  });
+
+  it("selects every cell in the chosen rows without moving Analyze focus", () => {
+    const selection = selectRows(4, 1, 2);
+    expect(selection).toEqual({
+      col: 2,
+      row: 4,
+      anchorCol: 2,
+      anchorRow: 1,
+      axis: "row",
+    });
+    expect(isRowSelection(selection)).toBe(true);
+    expect(isCellInSelection(selection, 0, 2)).toBe(true);
+    expect(isCellInSelection(selection, 7, 4)).toBe(true);
+    expect(isCellInSelection(selection, 2, 0)).toBe(false);
+    expect(rowIsInSelection(selection, 1)).toBe(true);
+    expect(rowIsInSelection(selection, 5)).toBe(false);
+    expect(selectionBounds(selection, 7)).toEqual({
+      colStart: 0,
+      colEnd: 7,
+      rowStart: 1,
+      rowEnd: 4,
+    });
+    expect(rowRangeFromGridSelection(selection)).toEqual({ start: 2, end: 5 });
+  });
+
+  it("keeps row-axis when Shift+Arrow extends vertically", () => {
+    const start = selectRows(2, 2, 1);
+    const extended = moveSelection(start, 0, 2, true, 7, 29);
+    expect(extended.axis).toBe("row");
+    expect(extended.row).toBe(4);
+    expect(extended.anchorRow).toBe(2);
+    const sideways = moveSelection(extended, 1, 0, true, 7, 29);
+    expect(sideways.axis).toBeUndefined();
   });
 });

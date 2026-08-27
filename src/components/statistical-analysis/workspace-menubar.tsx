@@ -5,16 +5,11 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
 export function WorkspaceMenubar({
   readOnly,
-  onInsertColumn,
-  onDeleteColumn,
-  onInsertRow,
-  onDeleteRow,
   onLoadSample,
   onNormalSixpack,
   onOneWayAnova,
@@ -22,10 +17,6 @@ export function WorkspaceMenubar({
   onAddDataSheet,
 }: {
   readOnly: boolean;
-  onInsertColumn: () => void;
-  onDeleteColumn: () => void;
-  onInsertRow: () => void;
-  onDeleteRow: () => void;
   onLoadSample: () => void;
   onNormalSixpack: () => void;
   onOneWayAnova: () => void;
@@ -46,11 +37,6 @@ export function WorkspaceMenubar({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start">
-          <DropdownMenuItem onSelect={onInsertColumn}>Insert column</DropdownMenuItem>
-          <DropdownMenuItem onSelect={onDeleteColumn}>Delete column</DropdownMenuItem>
-          <DropdownMenuItem onSelect={onInsertRow}>Insert row</DropdownMenuItem>
-          <DropdownMenuItem onSelect={onDeleteRow}>Delete row</DropdownMenuItem>
-          <DropdownMenuSeparator />
           <DropdownMenuItem
             data-testid="add-data-sheet"
             onSelect={onAddDataSheet}
