@@ -174,15 +174,37 @@ test.describe("suggestion accept keeps text visible", () => {
 const SECOND_ANCHOR = "The result exceeded acceptance limits";
 const SECOND_INSERT = " by 12%";
 
-test.describe("suggestion apply all and dismiss all", () => {
+const MEASURE_ANCHOR = "Samples were pulled at the start of the run";
+const MEASURE_INSERT = " using a calibrated balance";
+
+const measureNarrative = {
+  type: "doc",
+  content: [
+    {
+      type: "paragraph",
+      content: [{ type: "text", text: `${MEASURE_ANCHOR}.` }],
+    },
+  ],
+};
+
+function bulkApplyAll(page: import("@playwright/test").Page) {
+  return page.getByRole("button", { name: /^apply all \d+$/i });
+}
+
+function bulkDismissAll(page: import("@playwright/test").Page) {
+  return page.getByRole("button", { name: /^dismiss all$/i });
+}
+
+test.describe("document-wide apply all and dismiss all", () => {
   let reportId: string | null = null;
 
   test.beforeEach(async ({ page }) => {
-    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.setViewportSize({ width: 1600, height: 900 });
     await loginAsEngineer(page);
     const created = await createReport(page);
     reportId = created.id;
     await seedDefineSuggestion(page, reportId);
+
     const second = await page.request.post("/api/test/seed-ai-suggestion", {
       data: {
         reportId,
@@ -196,6 +218,33 @@ test.describe("suggestion apply all and dismiss all", () => {
       headers: await browserCookieHeaders(page),
     });
     expect(second.ok(), `second seed failed (${second.status()})`).toBeTruthy();
+
+    // A third suggestion in a different section — the point of the bulk action.
+    const seedMeasure = await page.request.patch(
+      `/api/reports/${reportId}/sections/measure`,
+      {
+        data: { content: { narrative: measureNarrative } },
+        headers: await browserCookieHeaders(page),
+      }
+    );
+    expect(
+      seedMeasure.ok(),
+      `seed measure failed (${seedMeasure.status()})`
+    ).toBeTruthy();
+
+    const third = await page.request.post("/api/test/seed-ai-suggestion", {
+      data: {
+        reportId,
+        section: "measure",
+        contentPath: "narrative",
+        anchorText: MEASURE_ANCHOR,
+        insertText: MEASURE_INSERT,
+        criterionKey: "measure.facts_data",
+        criterionLabel: "Facts and data are stated",
+      },
+      headers: await browserCookieHeaders(page),
+    });
+    expect(third.ok(), `measure seed failed (${third.status()})`).toBeTruthy();
   });
 
   test.afterEach(async ({ page }) => {
@@ -205,42 +254,44 @@ test.describe("suggestion apply all and dismiss all", () => {
     }
   });
 
-  test("Apply all applies every remaining suggestion in the section", async ({
+  test("Apply all applies suggestions in every section, not just the open one", async ({
     page,
   }) => {
     const editor = await openDefineWithPreview(page, reportId!);
     await collapseReportSidebar(page);
 
-    const applyAll = reviewMargin(page).getByRole("button", {
-      name: /^apply all$/i,
-    });
+    const applyAll = bulkApplyAll(page);
     await expect(applyAll).toBeVisible({ timeout: 15_000 });
+    await expect(applyAll).toHaveText(/apply all 3/i);
     await applyAll.click();
 
     await expect(editor).toContainText("filling line FL-02", { timeout: 15_000 });
     await expect(editor).toContainText("by 12%", { timeout: 15_000 });
     await expect(editor.locator(".suggestion-insert")).toHaveCount(0);
-    await expect(
-      reviewMargin(page).getByRole("button", { name: /^apply all$/i })
-    ).toHaveCount(0);
+
+    // The measure suggestion was applied without ever opening that section.
+    await expect(bulkApplyAll(page)).toHaveCount(0, { timeout: 15_000 });
+    const measure = page.locator("#measure .ProseMirror");
+    await expect(measure).toContainText("using a calibrated balance", {
+      timeout: 15_000,
+    });
   });
 
-  test("Dismiss all removes the queue without changing the text", async ({
+  test("Dismiss all clears the whole document without changing the text", async ({
     page,
   }) => {
     const editor = await openDefineWithPreview(page, reportId!);
     await collapseReportSidebar(page);
 
-    const dismissAll = reviewMargin(page).getByRole("button", {
-      name: /^dismiss all$/i,
-    });
+    const dismissAll = bulkDismissAll(page);
     await expect(dismissAll).toBeVisible({ timeout: 15_000 });
     await dismissAll.click();
 
     await expect(editor).not.toContainText("filling line FL-02");
     await expect(editor).not.toContainText("by 12%");
-    await expect(
-      reviewMargin(page).getByRole("button", { name: /^dismiss all$/i })
-    ).toHaveCount(0, { timeout: 15_000 });
+    await expect(bulkDismissAll(page)).toHaveCount(0, { timeout: 15_000 });
+    await expect(page.locator("#measure .ProseMirror")).not.toContainText(
+      "using a calibrated balance"
+    );
   });
 });
