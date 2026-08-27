@@ -26,10 +26,19 @@ export type PlotMeasurementsDialogValues = {
   xLabel: string;
   yLabel: string;
   mode: "combined" | "per-series";
+  lsl: number | null;
+  usl: number | null;
 };
 
 const fieldLabelClass =
   "normal-case tracking-normal text-sm font-medium text-[var(--foreground)]";
+
+function parseOptionalNumber(raw: string): number | null {
+  const text = raw.trim();
+  if (text === "") return null;
+  const value = Number(text);
+  return Number.isFinite(value) ? value : null;
+}
 
 export function PlotMeasurementsDialog({
   open,
@@ -49,6 +58,8 @@ export function PlotMeasurementsDialog({
   const [xLabel, setXLabel] = useState("");
   const [yLabel, setYLabel] = useState("");
   const [mode, setMode] = useState<"combined" | "per-series">("combined");
+  const [lsl, setLsl] = useState("");
+  const [usl, setUsl] = useState("");
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -58,7 +69,8 @@ export function PlotMeasurementsDialog({
           <DialogDescription>
             Extract cited numeric measurements from this report&apos;s
             attachments and save a scatter plot in Results. Use a requirement
-            ID or measurement name, for example M3-SYS-FN-037.
+            ID or measurement name, for example M3-SYS-FN-037. LSL and USL are
+            optional — leave them blank to use limits cited in the files.
           </DialogDescription>
         </DialogHeader>
 
@@ -129,6 +141,34 @@ export function PlotMeasurementsDialog({
               </SelectContent>
             </Select>
           </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="grid gap-1.5">
+              <Label htmlFor="plot-lsl" className={fieldLabelClass}>
+                LSL (optional)
+              </Label>
+              <Input
+                id="plot-lsl"
+                data-testid="plot-lsl"
+                inputMode="decimal"
+                value={lsl}
+                placeholder="From attachments"
+                onChange={(event) => setLsl(event.target.value)}
+              />
+            </div>
+            <div className="grid gap-1.5">
+              <Label htmlFor="plot-usl" className={fieldLabelClass}>
+                USL (optional)
+              </Label>
+              <Input
+                id="plot-usl"
+                data-testid="plot-usl"
+                inputMode="decimal"
+                value={usl}
+                placeholder="From attachments"
+                onChange={(event) => setUsl(event.target.value)}
+              />
+            </div>
+          </div>
           {error ? (
             <p className="text-sm text-[var(--destructive)]" role="alert">
               {error}
@@ -156,6 +196,8 @@ export function PlotMeasurementsDialog({
                 xLabel: xLabel.trim(),
                 yLabel: yLabel.trim(),
                 mode,
+                lsl: parseOptionalNumber(lsl),
+                usl: parseOptionalNumber(usl),
               })
             }
           >

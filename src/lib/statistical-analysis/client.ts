@@ -71,6 +71,8 @@ export async function createMeasurementScatter(
       xAxis?: "sequential" | "replicate";
       yMax?: number;
     };
+    lsl?: number | null;
+    usl?: number | null;
   }
 ): Promise<{ analytics: ReportAnalyticsView; analysisId: string }> {
   return postAnalysis(reportId, {

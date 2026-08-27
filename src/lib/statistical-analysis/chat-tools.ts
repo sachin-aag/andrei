@@ -17,7 +17,7 @@ import {
 } from "@/lib/extraction/metric-series";
 import { buildAnalyticsSearchDocumentsTool } from "./search-documents";
 import { runScanAttachments } from "./scan-attachments";
-import { capabilitySixpackInputSchema, measurementScatterInputSchema, oneWayAnovaBodySchema } from "./schemas";
+import { capabilitySixpackInputSchema, measurementScatterToolInputSchema, oneWayAnovaBodySchema } from "./schemas";
 import {
   createAnalysisForReport,
   getOrCreateReportAnalytics,
@@ -693,8 +693,8 @@ export function buildAnalyticsChatTools(opts: {
 
     statsTools.plot_measurements = tool({
       description:
-        "Extract cited numeric measurements from this report's attachments and save a scatter plot on the Results tab. Call when the engineer asked for a measurement plot, requirement chart, or scatter. Does not insert into the document. Tell them to open Results. Never invent data points.",
-      inputSchema: measurementScatterInputSchema.omit({ kind: true }),
+        "Extract cited numeric measurements from this report's attachments and save a scatter plot on the Results tab. Call when the engineer asked for a measurement plot, requirement chart, or scatter. Optional lsl/usl override extracted acceptance limits; omit them to keep cited limits. Does not insert into the document. Tell them to open Results. Never invent data points.",
+      inputSchema: measurementScatterToolInputSchema,
       execute: async (input) => {
         const result = await createAnalysisForReport(reportId, {
           kind: MEASUREMENT_SCATTER,
@@ -719,6 +719,8 @@ export function buildAnalyticsChatTools(opts: {
           query: result.analysis.config.query,
           n: result.analysis.results.n,
           uom: result.analysis.results.uom,
+          lsl: result.analysis.results.specs[0]?.limits.lower ?? null,
+          usl: result.analysis.results.specs[0]?.limits.upper ?? null,
           analysisCount: result.analytics.analyses.length,
           openResultsTab: true,
         };

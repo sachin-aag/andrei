@@ -787,6 +787,8 @@ export function StatisticalWorkspace({
               xLabel: values.xLabel || undefined,
               yLabel: values.yLabel || undefined,
               layout: { mode: values.mode },
+              lsl: values.lsl,
+              usl: values.usl,
             });
             applyAnalytics(created.analytics, {
               selectAnalysisId: created.analysisId,

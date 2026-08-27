@@ -185,6 +185,9 @@ export type MeasurementScatterConfig = {
   xLabel: string;
   yLabel: string;
   layout: ChartLayout;
+  /** User override. Null keeps the limit extracted from attachments. */
+  lsl: number | null;
+  usl: number | null;
 };
 
 export type MeasurementScatterResult = {

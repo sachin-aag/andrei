@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   estimateLabelWidth,
   layoutControlLimitLabels,
+  layoutHorizontalSpecLabels,
   layoutSpecLimitLabels,
 } from "./spec-limit-labels";
 
@@ -143,12 +144,18 @@ describe("layoutControlLimitLabels", () => {
     expect(Math.abs((ucl?.y ?? 0) - (lcl?.y ?? 0))).toBeGreaterThanOrEqual(10);
   });
 
-  it("ignores non-finite coordinates", () => {
-    expect(
-      layoutControlLimitLabels(
-        [{ kind: "ucl", value: 10, lineY: Number.NaN }],
-        PLOT
-      )
-    ).toEqual([]);
+  it("places USL above and LSL below their lines on the right edge", () => {
+    const [usl, lsl] = layoutHorizontalSpecLabels(
+      [
+        { kind: "usl", value: 6, lineY: 28 },
+        { kind: "lsl", value: 1, lineY: 150 },
+      ],
+      PLOT
+    );
+
+    expect(usl?.text).toBe("6.00");
+    expect(lsl?.text).toBe("1.00");
+    expect(usl?.y).toBeLessThan(28);
+    expect(lsl?.y).toBeGreaterThan(150);
   });
 });

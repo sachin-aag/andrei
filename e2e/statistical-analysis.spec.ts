@@ -360,7 +360,11 @@ test.describe("report analytics", () => {
     await page.getByTestId("stat-plot-measurements").click();
     await expect(page.getByTestId("plot-measurements-dialog")).toBeVisible();
     await expect(page.getByTestId("plot-measurements-submit")).toBeDisabled();
+    await expect(page.getByTestId("plot-lsl")).toHaveValue("");
+    await expect(page.getByTestId("plot-usl")).toHaveValue("");
     await page.getByTestId("plot-query").fill("M3-SYS-FN-037");
+    await page.getByTestId("plot-lsl").fill("1");
+    await page.getByTestId("plot-usl").fill("6");
     await page.getByTestId("plot-measurements-submit").click();
     await expect(page.getByRole("alert")).toBeVisible({ timeout: 30_000 });
   });
