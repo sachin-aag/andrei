@@ -74,14 +74,20 @@ test.describe("report PDF documents", () => {
 
     // Scope to the Documents panel — a success toast also contains the filename.
     await panel.getByRole("button", { name: fileName, exact: true }).click();
-    await expect(page.getByRole("button", { name: /^back$/i })).toBeVisible({
+    await expect(page.getByRole("button", { name: /back to report/i })).toBeVisible({
       timeout: 15_000,
     });
+    await expect(page.getByRole("heading", { name: /^define$/i })).toBeHidden();
+    await expect(page.getByRole("toolbar", { name: "Editing" })).toBeHidden();
     // PDFs paint to a canvas (Chrome/Comet block application/pdf iframes).
     await expect(page.getByLabel(`${fileName}, page 1`)).toBeVisible({
       timeout: 15_000,
     });
     await expect(page.locator(`iframe[title="${fileName}"]`)).toHaveCount(0);
+
+    await page.getByRole("button", { name: /back to report/i }).click();
+    await expect(page.getByRole("heading", { name: /^define$/i })).toBeVisible();
+    await expect(page.getByTestId("attachment-viewer")).toHaveCount(0);
   });
 
   test("renders later PDF pages in a scrollable preview", async ({ page }) => {
@@ -93,7 +99,7 @@ test.describe("report PDF documents", () => {
     ).toBeVisible({ timeout: 30_000 });
 
     await panel.getByRole("button", { name: fileName, exact: true }).click();
-    await expect(page.getByRole("button", { name: /^back$/i })).toBeVisible({
+    await expect(page.getByRole("button", { name: /back to report/i })).toBeVisible({
       timeout: 15_000,
     });
     await expect(page.getByLabel(`${fileName}, page 1`)).toBeVisible({

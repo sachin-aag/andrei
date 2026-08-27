@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import { render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { AttachmentViewer } from "@/components/report/attachment-viewer";
 
@@ -92,5 +93,30 @@ describe("AttachmentViewer", () => {
 
     expect(screen.queryByRole("img")).not.toBeInTheDocument();
     expect(screen.getByText(/Upload is still finishing/)).toBeInTheDocument();
+  });
+
+  it("exposes labeled back and close controls that return to the report", async () => {
+    const closeDocument = vi.fn();
+    mockContext({ closeDocument });
+    const user = userEvent.setup();
+
+    render(<AttachmentViewer />);
+
+    await user.click(screen.getByRole("button", { name: "Back to report" }));
+    expect(closeDocument).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole("button", { name: "Close document" }));
+    expect(closeDocument).toHaveBeenCalledTimes(2);
+  });
+
+  it("closes the document when Escape is pressed", async () => {
+    const closeDocument = vi.fn();
+    mockContext({ closeDocument });
+    const user = userEvent.setup();
+
+    render(<AttachmentViewer />);
+
+    await user.keyboard("{Escape}");
+    expect(closeDocument).toHaveBeenCalledTimes(1);
   });
 });
