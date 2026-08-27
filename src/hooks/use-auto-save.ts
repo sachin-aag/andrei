@@ -61,6 +61,7 @@ export function useAutoSave<T>({
   const lastPersisted = useRef<string>(serializeValue(value));
   const abortRef = useRef<AbortController | null>(null);
   const persistDirtyOnLeave = useRef<() => void>(() => {});
+  const wasEnabled = useRef(enabled);
 
   /** Keep in sync so flush() after flushSync(onChange) sees the latest doc immediately. */
   useLayoutEffect(() => {
@@ -172,9 +173,24 @@ export function useAutoSave<T>({
   const flush = useCallback(() => flushImpl.current(), []);
 
   useEffect(() => {
-    if (!enabled) return;
+    const justEnabled = enabled && !wasEnabled.current;
+    wasEnabled.current = enabled;
+    if (!enabled) {
+      if (timer.current) {
+        clearTimeout(timer.current);
+        timer.current = null;
+      }
+      if (!isSaving.current) {
+        setStatus((current) => (current === "saving" ? "idle" : current));
+      }
+      return;
+    }
     const next = serializeValue(value);
-    if (next === lastSerialized.current) return;
+    if (next === lastPersisted.current) {
+      lastSerialized.current = next;
+      return;
+    }
+    if (next === lastSerialized.current && !justEnabled) return;
     lastSerialized.current = next;
     if (timer.current) clearTimeout(timer.current);
     setStatus("saving");

@@ -113,6 +113,9 @@ worksheet + Normal Capability Sixpack + measurement scatter + worksheet XY scatt
 and Convergent (`statisticalAnalysisEnabled`). Analytics chat uses the same
 Ask/Agent + Quick/Deep composer as Document chat (Ask searches/extracts only;
 Agent fills the worksheet and runs plots when the report is writable).
+Scatters are one series, one color (`plot_xy_scatter` needs two numeric
+columns; `plot_measurements` is vs observation index). Do not substitute
+sixpack/ANOVA for a scatter, and do not color by group.
 Worksheet PATCH is version-guarded so an empty autosave cannot overwrite an
 assistant write; Agent `write_column` / `manage_worksheet` refresh the grid
 mid-turn. Analytics `search_documents` is keyword-first and stops after a cited page —

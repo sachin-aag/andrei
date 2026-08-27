@@ -9,7 +9,9 @@ import {
   isFailedChatFinishReason,
   partsForPersistedAssistantTurn,
   shouldShowEmptyAssistantError,
+  writtenColumnNamesFromParts,
   CHAT_ASSISTANT_ERROR_MESSAGE,
+  CHAT_ASSISTANT_INCOMPLETE_TURN_MESSAGE,
   CHAT_ASSISTANT_INTERRUPTED_MESSAGE,
   CHAT_ASSISTANT_STEP_BUDGET_MESSAGE,
   CHAT_CLIENT_GIVE_UP_MS,
@@ -155,6 +157,7 @@ describe("partsForPersistedAssistantTurn", () => {
       emptyFailure: false,
       interrupted: false,
       stepBudgetExhausted: false,
+      incomplete: false,
     });
   });
 
@@ -166,6 +169,7 @@ describe("partsForPersistedAssistantTurn", () => {
       emptyFailure: true,
       interrupted: true,
       stepBudgetExhausted: false,
+      incomplete: true,
     });
   });
 
@@ -183,6 +187,7 @@ describe("partsForPersistedAssistantTurn", () => {
       emptyFailure: false,
       interrupted: true,
       stepBudgetExhausted: false,
+      incomplete: true,
     });
   });
 
@@ -195,6 +200,7 @@ describe("partsForPersistedAssistantTurn", () => {
       emptyFailure: false,
       interrupted: false,
       stepBudgetExhausted: false,
+      incomplete: false,
     });
   });
 
@@ -206,6 +212,7 @@ describe("partsForPersistedAssistantTurn", () => {
       emptyFailure: true,
       interrupted: false,
       stepBudgetExhausted: false,
+      incomplete: false,
     });
   });
 
@@ -227,6 +234,72 @@ describe("partsForPersistedAssistantTurn", () => {
       emptyFailure: false,
       interrupted: false,
       stepBudgetExhausted: true,
+      incomplete: true,
+    });
+  });
+
+  it("appends an incomplete notice when the model stops on tool-calls with no prose", () => {
+    const parts = [
+      {
+        type: "tool-write_column",
+        toolCallId: "call_1",
+        output: { status: "written", columnName: "Temp" },
+      },
+      {
+        type: "tool-write_column",
+        toolCallId: "call_2",
+        output: {
+          status: "written",
+          columnName: "pH",
+          columns: [
+            { columnName: "Temp" },
+            { columnName: "pH" },
+          ],
+        },
+      },
+    ] as unknown as UIMessage["parts"];
+    expect(writtenColumnNamesFromParts(parts)).toEqual(["Temp", "pH"]);
+    expect(
+      partsForPersistedAssistantTurn({
+        parts,
+        isAborted: false,
+        finishReason: "tool-calls",
+      })
+    ).toEqual({
+      parts: [
+        parts[0],
+        parts[1],
+        {
+          type: "text",
+          text: "I stopped after writing Temp and pH and did not finish this turn. Ask me to continue if any columns are still empty.",
+        },
+      ],
+      emptyFailure: false,
+      interrupted: false,
+      stepBudgetExhausted: false,
+      incomplete: true,
+    });
+  });
+
+  it("uses the generic incomplete line when tool-calls stop with no writes", () => {
+    const parts = [
+      { type: "tool-search_documents", toolCallId: "call_1" },
+    ] as unknown as UIMessage["parts"];
+    expect(
+      partsForPersistedAssistantTurn({
+        parts,
+        isAborted: false,
+        finishReason: "tool-calls",
+      })
+    ).toEqual({
+      parts: [
+        parts[0],
+        { type: "text", text: CHAT_ASSISTANT_INCOMPLETE_TURN_MESSAGE },
+      ],
+      emptyFailure: false,
+      interrupted: false,
+      stepBudgetExhausted: false,
+      incomplete: true,
     });
   });
 });

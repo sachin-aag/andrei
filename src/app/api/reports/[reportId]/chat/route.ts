@@ -483,6 +483,7 @@ export async function POST(
       const persisted = partsForPersistedAssistantTurn({
         parts: responseMessage.parts,
         isAborted,
+        finishReason,
       });
       if (persisted.interrupted) {
         console.warn("chat: interrupted assistant turn", {
@@ -490,6 +491,13 @@ export async function POST(
           sessionId,
           finishReason: finishReason ?? "unknown",
           isAborted,
+          partTypes: (responseMessage.parts ?? []).map((part) => part.type),
+        });
+      } else if (persisted.incomplete) {
+        console.warn("chat: incomplete assistant turn", {
+          reportId,
+          sessionId,
+          finishReason: finishReason ?? "unknown",
           partTypes: (responseMessage.parts ?? []).map((part) => part.type),
         });
       } else if (

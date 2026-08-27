@@ -442,6 +442,90 @@ export function sanitizeColumnName(name: string): string {
   return trimmed.slice(0, MAX_COLUMN_NAME_LENGTH);
 }
 
+function cellAt(values: readonly string[], index: number): string {
+  return values[index] ?? "";
+}
+
+function mergeColumnValues(
+  local: WorksheetColumn,
+  persisted: WorksheetColumn,
+  remote: WorksheetColumn
+): WorksheetColumn {
+  const length = Math.max(
+    local.values.length,
+    persisted.values.length,
+    remote.values.length
+  );
+  const values: string[] = [];
+  for (let i = 0; i < length; i++) {
+    const localCell = cellAt(local.values, i);
+    const persistedCell = cellAt(persisted.values, i);
+    values.push(localCell !== persistedCell ? localCell : cellAt(remote.values, i));
+  }
+  return {
+    ...remote,
+    name: local.name !== persisted.name ? local.name : remote.name,
+    values: trimTrailingEmpty(values),
+  };
+}
+
+/**
+ * Keep in-progress local cell edits when a newer server worksheet arrives
+ * (assistant write or 409). Remote wins for cells the user did not change.
+ */
+export function mergeDirtyWorksheet(
+  local: WorksheetData,
+  persisted: WorksheetData,
+  remote: WorksheetData
+): WorksheetData {
+  const localWb = normalizeWorksheet(local);
+  const persistedWb = normalizeWorksheet(persisted);
+  const remoteWb = normalizeWorksheet(remote);
+  const localSheets = new Map(localWb.sheets.map((sheet) => [sheet.id, sheet]));
+  const persistedSheets = new Map(
+    persistedWb.sheets.map((sheet) => [sheet.id, sheet])
+  );
+
+  const sheets = remoteWb.sheets.map((remoteSheet) => {
+    const localSheet = localSheets.get(remoteSheet.id);
+    const persistedSheet = persistedSheets.get(remoteSheet.id);
+    if (!localSheet || !persistedSheet) return remoteSheet;
+    const localCols = new Map(localSheet.columns.map((col) => [col.id, col]));
+    const persistedCols = new Map(
+      persistedSheet.columns.map((col) => [col.id, col])
+    );
+    const remoteIds = new Set(remoteSheet.columns.map((col) => col.id));
+    const columns = remoteSheet.columns.map((remoteCol) => {
+      const localCol = localCols.get(remoteCol.id);
+      const persistedCol = persistedCols.get(remoteCol.id);
+      if (!localCol || !persistedCol) return remoteCol;
+      return mergeColumnValues(localCol, persistedCol, remoteCol);
+    });
+    for (const col of localSheet.columns) {
+      if (!remoteIds.has(col.id) && !persistedCols.has(col.id)) {
+        columns.push(col);
+      }
+    }
+    return { ...remoteSheet, columns };
+  });
+
+  const remoteSheetIds = new Set(remoteWb.sheets.map((sheet) => sheet.id));
+  for (const sheet of localWb.sheets) {
+    if (!remoteSheetIds.has(sheet.id) && !persistedSheets.has(sheet.id)) {
+      sheets.push(sheet);
+    }
+  }
+
+  const active =
+    sheets.find((sheet) => sheet.id === remoteWb.activeSheetId) ?? sheets[0]!;
+  return {
+    ...remoteWb,
+    sheets,
+    activeSheetId: active.id,
+    columns: active.columns,
+  };
+}
+
 export function setCell(
   data: WorksheetData,
   colIndex: number,

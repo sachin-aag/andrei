@@ -32,6 +32,7 @@ import {
   dropSpecRow,
   insertColumn,
   insertRow,
+  mergeDirtyWorksheet,
   specRowForColumn,
   switchWorksheetTab,
   upsertSpecRow,
@@ -137,9 +138,6 @@ export function StatisticalWorkspace({
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [version, setVersion] = useState(1);
-  const [remoteUpdate, setRemoteUpdate] = useState<ReportAnalyticsView | null>(
-    null
-  );
   const analysisCountRef = useRef(0);
   const worksheetRef = useRef(worksheet);
   const persistedRef = useRef(persistedWorksheet);
@@ -158,7 +156,6 @@ export function StatisticalWorkspace({
     setWorksheet(next.worksheet);
     setPersistedWorksheet(next.worksheet);
     setVersion(next.version);
-    setRemoteUpdate(null);
     setAnalyses(next.analyses);
     analysisCountRef.current = next.analyses.length;
     setSelectedAnalysisId((current) => {
@@ -176,17 +173,27 @@ export function StatisticalWorkspace({
   }, []);
 
   const ingestRemote = useCallback(
-    (next: ReportAnalyticsView, force = false) => {
-      const dirty = !worksheetsEqual(
+    (next: ReportAnalyticsView) => {
+      const merged = mergeDirtyWorksheet(
         worksheetRef.current,
-        persistedRef.current
+        persistedRef.current,
+        next.worksheet
       );
-      if (!force && dirty) {
-        setVersion(next.version);
-        setRemoteUpdate(next);
+      if (worksheetsEqual(merged, next.worksheet)) {
+        applyAnalytics(next);
         return;
       }
-      applyAnalytics(next);
+      setWorksheet(merged);
+      setPersistedWorksheet(next.worksheet);
+      setVersion(next.version);
+      setAnalyses(next.analyses);
+      analysisCountRef.current = next.analyses.length;
+      setSelectedAnalysisId((current) => {
+        if (current && next.analyses.some((item) => item.id === current)) {
+          return current;
+        }
+        return next.analyses[0]?.id ?? null;
+      });
     },
     [applyAnalytics]
   );
@@ -246,21 +253,40 @@ export function StatisticalWorkspace({
       value: { worksheet: WorksheetData; version: number },
       context?: { signal?: AbortSignal }
     ) => {
-      try {
-        const next = await patchReportAnalytics(
+      const persist = (worksheet: WorksheetData, version: number) =>
+        patchReportAnalytics(
           reportId,
-          { worksheet: value.worksheet, version: value.version },
+          { worksheet, version },
           context?.signal
         );
+      try {
+        const next = await persist(value.worksheet, value.version);
         setPersistedWorksheet(next.worksheet);
         setVersion(next.version);
         setAnalyses(next.analyses);
-        setRemoteUpdate(null);
       } catch (error) {
         if (context?.signal?.aborted) throw error;
         if (error instanceof AnalyticsConflictError) {
-          ingestRemote(error.analytics);
-          throw error;
+          const merged = mergeDirtyWorksheet(
+            worksheetRef.current,
+            persistedRef.current,
+            error.analytics.worksheet
+          );
+          try {
+            const saved = await persist(merged, error.analytics.version);
+            applyAnalytics(saved);
+            return;
+          } catch (retryError) {
+            if (context?.signal?.aborted) throw retryError;
+            ingestRemote(error.analytics);
+            if (retryError instanceof AnalyticsConflictError) throw retryError;
+            toast.error(
+              retryError instanceof Error
+                ? retryError.message
+                : "Could not save the worksheet."
+            );
+            throw retryError;
+          }
         }
         toast.error(
           error instanceof Error ? error.message : "Could not save the worksheet."
@@ -268,7 +294,7 @@ export function StatisticalWorkspace({
         throw error;
       }
     },
-    [ingestRemote, reportId]
+    [applyAnalytics, ingestRemote, reportId]
   );
 
   const { status, flush } = useAutoSave({
@@ -522,23 +548,6 @@ export function StatisticalWorkspace({
           className="mt-0 min-h-0 flex-1 overflow-hidden"
         >
           <div className="flex h-full min-h-0 flex-col">
-            {remoteUpdate ? (
-              <div
-                data-testid="worksheet-assistant-update-banner"
-                className="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--border)] bg-[var(--secondary)] px-4 py-2 text-xs text-[var(--foreground)]"
-              >
-                <p>The assistant updated this worksheet.</p>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="outline"
-                  data-testid="worksheet-reload-from-assistant"
-                  onClick={() => ingestRemote(remoteUpdate, true)}
-                >
-                  Reload
-                </Button>
-              </div>
-            ) : null}
             <div
               data-testid="worksheet-sheet-tabs"
               className="flex shrink-0 flex-wrap items-center gap-1 border-b border-[var(--border)] px-4 py-1.5"
