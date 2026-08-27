@@ -11,9 +11,16 @@ import { Label } from "@/components/ui/label";
 import { MagicLinkSent } from "@/components/auth/magic-link-sent";
 import { sendMagicLinkEmail } from "@/components/auth/send-magic-link";
 import { captureEvent } from "@/lib/analytics/events";
+import { DEACTIVATED_ACCOUNT_MESSAGE } from "@/lib/auth/login-status-messages";
 
 type EmailCheckResult =
-  | { ok: true; allowed: boolean; hasPassword: boolean; locked: boolean }
+  | {
+      ok: true;
+      allowed: boolean;
+      hasPassword: boolean;
+      locked: boolean;
+      deactivated: boolean;
+    }
   | { ok: false; error: string };
 
 type Step =
@@ -49,6 +56,7 @@ async function readEmailCheckResult(res: Response): Promise<EmailCheckResult> {
     allowed: data.allowed,
     hasPassword: !!data.hasPassword,
     locked: !!data.locked,
+    deactivated: !!data.deactivated,
   };
 }
 
@@ -91,7 +99,11 @@ export function PasswordLoginForm({ redirectTo }: { redirectTo?: string }) {
         setError(result.error);
         return;
       }
-      const { allowed, hasPassword, locked } = result;
+      const { allowed, hasPassword, locked, deactivated } = result;
+      if (deactivated) {
+        setError(DEACTIVATED_ACCOUNT_MESSAGE);
+        return;
+      }
       if (!allowed) {
         setError(
           "This email isn't registered. Please contact your admin to get access."
@@ -130,6 +142,10 @@ export function PasswordLoginForm({ redirectTo }: { redirectTo?: string }) {
       const result = await checkRegisteredEmail(email.trim());
       if (!result.ok) {
         setError(result.error);
+        return;
+      }
+      if (result.deactivated) {
+        setError(DEACTIVATED_ACCOUNT_MESSAGE);
         return;
       }
       if (!result.allowed) {

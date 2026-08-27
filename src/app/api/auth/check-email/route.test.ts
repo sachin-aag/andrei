@@ -44,6 +44,7 @@ describe("POST /api/auth/check-email", () => {
       .mockResolvedValueOnce({
         id: "user-1",
         passwordHash: "hash",
+        deactivatedAt: null,
       } as never)
       .mockResolvedValueOnce({
         lockedAt: new Date("2026-01-01"),
@@ -56,7 +57,27 @@ describe("POST /api/auth/check-email", () => {
       allowed: true,
       hasPassword: true,
       locked: true,
+      deactivated: false,
     });
+  });
+
+  it("reports deactivated accounts as not allowed", async () => {
+    vi.mocked(db.query.workspaceUsers.findFirst).mockResolvedValueOnce({
+      id: "user-1",
+      passwordHash: "hash",
+      deactivatedAt: new Date("2026-06-24T00:00:00.000Z"),
+    } as never);
+
+    const res = await POST(jsonRequest({ email: "retired@mjbiopharm.com" }));
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({
+      allowed: false,
+      hasPassword: true,
+      locked: false,
+      deactivated: true,
+    });
+    expect(db.query.workspaceUsers.findFirst).toHaveBeenCalledTimes(1);
   });
 
   it("returns allowed false for unknown users", async () => {
@@ -69,6 +90,7 @@ describe("POST /api/auth/check-email", () => {
       allowed: false,
       hasPassword: false,
       locked: false,
+      deactivated: false,
     });
   });
 

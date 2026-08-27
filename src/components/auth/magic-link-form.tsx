@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { MagicLinkSent } from "@/components/auth/magic-link-sent";
 import { sendMagicLinkEmail } from "@/components/auth/send-magic-link";
+import { DEACTIVATED_ACCOUNT_MESSAGE } from "@/lib/auth/login-status-messages";
 
 export function MagicLinkForm({ redirectTo }: { redirectTo?: string }) {
   const [email, setEmail] = useState("");
@@ -23,8 +24,12 @@ export function MagicLinkForm({ redirectTo }: { redirectTo?: string }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: email.trim() }),
       });
-      const { allowed } = await res.json();
-      if (!allowed) {
+      const data = await res.json();
+      if (data.deactivated) {
+        setError(DEACTIVATED_ACCOUNT_MESSAGE);
+        return;
+      }
+      if (!data.allowed) {
         setError("This email isn't registered. Please contact your admin to get access.");
         return;
       }
