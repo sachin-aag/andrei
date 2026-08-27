@@ -524,7 +524,7 @@ const PdfPreviewPage = memo(function PdfPreviewPage({
   return (
     <div
       data-pdf-page={pageNumber}
-      className="pdf-page-preview relative max-w-full bg-white shadow-sm [container-type:inline-size]"
+      className="pdf-page-preview relative shrink-0 bg-white shadow-sm [container-type:inline-size]"
       style={{ width, minHeight: height }}
     >
       {state.status === "error" ? (
@@ -535,7 +535,7 @@ const PdfPreviewPage = memo(function PdfPreviewPage({
       <canvas
         ref={canvasRef}
         aria-label={`${title}, page ${pageNumber}`}
-        className={canvasVisible ? "block h-auto w-full" : "hidden"}
+        className={canvasVisible ? "block max-w-none" : "hidden"}
       />
       {state.status === "ready" ? (
         <div

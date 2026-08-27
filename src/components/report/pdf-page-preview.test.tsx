@@ -541,7 +541,12 @@ describe("PdfPagePreview", () => {
       />
     );
 
-    await screen.findByLabelText("Evidence.pdf, page 1");
+    const canvas = await screen.findByLabelText("Evidence.pdf, page 1");
+    const pageShell = canvas.closest("[data-pdf-page]") as HTMLElement;
+    await waitFor(() => {
+      expect(pageShell.style.width).toBe(`${200 * PDF_PREVIEW_SCALE}px`);
+    });
+
     fireEvent.click(screen.getByTestId("pdf-toolbar-zoom-in"));
 
     await waitFor(() => {
@@ -551,6 +556,9 @@ describe("PdfPagePreview", () => {
             width: 200 * PDF_PREVIEW_SCALE * 1.25,
           }),
         })
+      );
+      expect(pageShell.style.width).toBe(
+        `${200 * PDF_PREVIEW_SCALE * 1.25}px`
       );
     });
     expect(screen.getByText("125%")).toBeInTheDocument();
