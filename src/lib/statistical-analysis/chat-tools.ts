@@ -10,7 +10,7 @@ import {
   readDocumentPage,
 } from "@/lib/attachments/retrieval";
 import { isTestStubChat } from "@/lib/test/ai-bypass";
-import { getCustomerPack } from "@/lib/customers/packs";
+import { citationsAtEndOfSectionFor } from "@/lib/document-types";
 import {
   alignExtractedDates,
   gateMetricSeriesExtract,
@@ -237,7 +237,7 @@ export function buildAnalyticsChatTools(opts: {
       reportId,
       canEdit: false,
       documentType,
-      citationsAtEndOfSection: getCustomerPack().citationsAtEndOfSection,
+      citationsAtEndOfSection: citationsAtEndOfSectionFor(documentType),
       includePlotMeasurements: false,
     }) as Record<string, unknown>
   ) as ToolSet;

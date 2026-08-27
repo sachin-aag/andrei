@@ -29,6 +29,11 @@ vi.mock("@/lib/reports/ensure-hidden-expert-reviewer", () => ({
   ensureHiddenExpertReviewer: vi.fn(),
 }));
 
+vi.mock("@/lib/reports/persist-source-docx", () => ({
+  persistReportSourceDocx: vi.fn(),
+  sourceDocxFilenameFor: vi.fn().mockResolvedValue(null),
+}));
+
 import { db } from "@/db";
 import { getCurrentUser } from "@/lib/auth/session";
 import { GET, PATCH } from "./route";

@@ -56,7 +56,8 @@ import {
   dataUrlToBase64,
   type SectionInlineImage,
 } from "@/lib/ai/chat/section-images";
-import { getCustomerPack, isDocumentChatPlotMeasurementsEnabled } from "@/lib/customers/packs";
+import { isDocumentChatPlotMeasurementsEnabled } from "@/lib/customers/packs";
+import { citationsAtEndOfSectionFor } from "@/lib/document-types";
 import { checkProposedEdit, proposedEditHint } from "@/lib/ai/chat/propose-edit";
 import {
   citationAppendPart,
@@ -604,7 +605,7 @@ export function buildChatTools(opts: {
   mentionedSections?: readonly SectionType[];
   retrievalPolicy?: RetrievalPolicy;
   documentReview?: DocumentReviewSession;
-  /** Pack policy: citations at end of each field (Convergent on; demo/MJ off). */
+  /** Citations at end of each field (Convergent pack, or generic documents). */
   citationsAtEndOfSection?: boolean;
   /** Current chat messages — used to resolve chat-attached images. */
   messages?: UIMessage[];
@@ -617,7 +618,7 @@ export function buildChatTools(opts: {
   const retrievalPolicy = opts.retrievalPolicy ?? "adaptive";
   const documentReview = opts.documentReview ?? new DocumentReviewSession();
   const citationsAtEndOfSection =
-    opts.citationsAtEndOfSection ?? getCustomerPack().citationsAtEndOfSection;
+    opts.citationsAtEndOfSection ?? citationsAtEndOfSectionFor(documentType);
   const messages = opts.messages ?? [];
   const includePlotMeasurements =
     opts.includePlotMeasurements ?? isDocumentChatPlotMeasurementsEnabled();

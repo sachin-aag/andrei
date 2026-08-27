@@ -23,7 +23,7 @@ import {
   STATUS_COLOR,
   STATUS_TEXT_COLOR,
   effectiveStatus,
-  evaluatableSectionKeys,
+  suggestionCardSectionKeys,
 } from "@/lib/ai/criteria-view";
 import {
   countOpenAiSuggestions,
@@ -34,7 +34,11 @@ import {
   type ParsedAiFixPayload,
   type ParsedAiRedraftPayload,
 } from "@/lib/ai/suggestion-gating";
-import { resolveSection } from "@/lib/document-types";
+import {
+  getDocumentType,
+  resolveSection,
+  suggestionApplyModeFor,
+} from "@/lib/document-types";
 import { formatChartProvenance } from "@/lib/charts/chart-spec";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 import { splitPlainTextWithPlaceholders } from "@/lib/placeholders/plain-text-segments";
@@ -661,7 +665,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
   const enterRef = useRef<HTMLDivElement>(null);
 
   const sectionOrder = useMemo(
-    () => evaluatableSectionKeys(report.documentType),
+    () => suggestionCardSectionKeys(report.documentType),
     [report.documentType]
   );
 
@@ -855,6 +859,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
         section,
         comment: snapshot.comment,
         sectionContent: sections[section] as Record<string, unknown>,
+        applyMode: suggestionApplyModeFor(getDocumentType(report.documentType)),
       });
       if (!result.ok) {
         if (result.reason === "status_failed") {
@@ -923,6 +928,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
     evaluations,
     sectionOrder,
     report.id,
+    report.documentType,
     replaceSection,
     animateQueueTransition,
     setComments,
@@ -1029,6 +1035,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
     evaluations,
     sectionOrder,
     report.id,
+    report.documentType,
     replaceSection,
     animateQueueTransition,
     setComments,

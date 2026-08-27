@@ -3,6 +3,8 @@ import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-sugg
 import {
   acceptSuggestionMarksById,
   applyAndAcceptRichEdit,
+  applyEditToRichDoc,
+  commitSuggestionMarksById,
   isApplyableStatus,
   stripSuggestionMarksById,
   type EditScope,
@@ -99,6 +101,40 @@ export function applyNarrativeSuggestion(
     throw new Error("Suggestion could not be located in the current text");
   }
   return result.doc;
+}
+
+/**
+ * Inject insert/delete marks and leave them pending so Word export can emit
+ * `<w:ins>` / `<w:del>`. Used by generic documents; investigation/DV still
+ * call `applyNarrativeSuggestion` (finalize).
+ */
+export function applyNarrativeSuggestionAsRevision(
+  narrative: JSONContent,
+  suggestionId: string,
+  edit: SuggestionEdit
+): JSONContent {
+  const result = applyEditToRichDoc(narrative, edit, {
+    id: suggestionId,
+    authorId: AI_AUTHOR_ID,
+    status: "pending",
+    createdAt: new Date().toISOString(),
+    kind: "fix",
+  });
+  if (!isApplyableStatus(result.status)) {
+    throw new Error("Suggestion could not be located in the current text");
+  }
+  return result.doc;
+}
+
+/**
+ * Preview marks (`pending`) become committed tracked changes (`accepted`)
+ * so the editor's preview-strip pass will not revert them after Accept.
+ */
+export function commitNarrativeSuggestionMarks(
+  narrative: JSONContent,
+  suggestionId: string
+): JSONContent {
+  return commitSuggestionMarksById(narrative, suggestionId);
 }
 
 /** Remove pending suggestion marks if present (legacy pre-apply injections). */

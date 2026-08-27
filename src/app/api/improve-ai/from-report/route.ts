@@ -11,6 +11,7 @@ import {
   rerunImproveAiSession,
 } from "@/lib/improve-ai/store";
 import { ImproveAiEvaluationError } from "@/lib/improve-ai/evaluate-report";
+import { evaluationCapabilityFor, getDocumentType } from "@/lib/document-types";
 
 export const maxDuration = 120;
 
@@ -41,6 +42,13 @@ export async function POST(req: Request) {
     return NextResponse.json(
       { error: "Only the report author can submit it for AI feedback" },
       { status: 403 }
+    );
+  }
+
+  if (evaluationCapabilityFor(getDocumentType(report.documentType)).kind === "none") {
+    return NextResponse.json(
+      { error: "Improve AI is not available for this document type." },
+      { status: 400 }
     );
   }
 

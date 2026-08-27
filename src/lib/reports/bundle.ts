@@ -13,6 +13,7 @@ import {
   listReportManagerIds,
   withAssignedManagerIds,
 } from "@/lib/reports/managers";
+import { sourceDocxFilenameFor } from "@/lib/reports/persist-source-docx";
 
 // Loads the section/evaluation/comment/attachment rows for a report in parallel.
 // Split out from loadReportBundle so callers that authorize on the report row
@@ -60,14 +61,18 @@ export async function loadReportBundle(
     .where(eq(reports.id, reportId));
   if (!report) return null;
 
-  const [subtables, managerIds] = await Promise.all([
+  const [subtables, managerIds, sourceDocxFilename] = await Promise.all([
     loadReportSubtables(reportId),
     listReportManagerIds(reportId),
+    sourceDocxFilenameFor(reportId),
   ]);
 
   return JSON.parse(
     JSON.stringify({
-      report: withAssignedManagerIds(report, managerIds),
+      report: {
+        ...withAssignedManagerIds(report, managerIds),
+        sourceDocxFilename,
+      },
       ...subtables,
     })
   ) as ReportBundle;

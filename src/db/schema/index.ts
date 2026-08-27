@@ -52,6 +52,7 @@ export const documentTypeEnum = pgEnum("document_type", [
   "investigation_report",
   "design_verification",
   "mechanical_design_verification",
+  "generic_document",
   "quality_risk_assessment",
 ]);
 
@@ -286,9 +287,15 @@ export type DesignVerificationMetadata = {
   productName: string;
 };
 
+export type GenericDocumentMetadata = {
+  importWarnings?: string[];
+  importedFromFilename?: string;
+};
+
 export type ReportMetadata =
   | InvestigationReportMetadata
   | DesignVerificationMetadata
+  | GenericDocumentMetadata
   | Record<string, unknown>;
 
 export const reports = pgTable(

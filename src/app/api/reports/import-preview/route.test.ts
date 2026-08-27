@@ -28,6 +28,19 @@ vi.mock("@/lib/import/docx-to-sections", () => ({
   }),
 }));
 
+vi.mock("@/lib/import/docx-to-generic-document", () => ({
+  GenericDocxImportError: class GenericDocxImportError extends Error {
+    constructor(message: string) {
+      super(message);
+      this.name = "GenericDocxImportError";
+    }
+  },
+  docxBufferToGenericDocument: vi.fn().mockResolvedValue({
+    narrative: { type: "doc", content: [{ type: "paragraph" }] },
+    warnings: [],
+  }),
+}));
+
 const engineer = {
   id: "engineer-1",
   name: "Engineer",
@@ -77,6 +90,32 @@ describe("/api/reports/import-preview", () => {
     await expect(response.json()).resolves.toEqual({
       deviationNo: "DEV/PK/26/001",
       documentNo: "DEV/PK/26/001",
+    });
+  });
+
+  it("accepts a generic document Word preview on demo", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
+
+    const form = new FormData();
+    form.append("documentType", "generic_document");
+    form.append(
+      "file",
+      new File(["x"], "memo.docx", {
+        type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      })
+    );
+
+    const response = await POST(
+      new Request("http://localhost/api/reports/import-preview", {
+        method: "POST",
+        body: form,
+      })
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      deviationNo: null,
+      documentNo: null,
     });
   });
 });

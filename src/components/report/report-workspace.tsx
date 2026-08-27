@@ -32,8 +32,8 @@ import {
   scrollToCommentFieldAnchor,
   scrollToGutterAnchor,
 } from "@/lib/comments/navigate";
-import { evaluatableSectionKeys } from "@/lib/ai/criteria-view";
-import { getWorkspaceSections } from "@/lib/document-types";
+import { suggestionCardSectionKeys } from "@/lib/ai/criteria-view";
+import { getDocumentType, getWorkspaceSections, workspacePresentationFor } from "@/lib/document-types";
 import { scrollToGeneratedSuggestion } from "@/lib/suggestions/navigate-suggestion";
 import { captureEvent } from "@/lib/analytics/events";
 import { getCustomerPack, isStatisticalAnalysisEnabled } from "@/lib/customers/packs";
@@ -98,6 +98,7 @@ import {
   MechTestersDatesEditor,
   MechUnitsUnderTestEditor,
 } from "./sections/dv/mechanical-section-editors";
+import { GenericDocumentEditor } from "./sections/generic/generic-document-editor";
 import {
   QraApproachEditor,
   QraCommunicationEditor,
@@ -198,6 +199,7 @@ const SECTION_EDITORS_BY_DOCUMENT_TYPE: Record<
   investigation_report: INVESTIGATION_SECTION_EDITORS,
   design_verification: DV_SECTION_EDITORS,
   mechanical_design_verification: MECHANICAL_DV_SECTION_EDITORS,
+  generic_document: { body: GenericDocumentEditor },
   quality_risk_assessment: QRA_SECTION_EDITORS,
 };
 
@@ -265,6 +267,9 @@ export function ReportWorkspace({
     null
   );
   const documentType = report.documentType;
+  const continuousDocument =
+    workspacePresentationFor(getDocumentType(documentType)).kind ===
+    "continuous_document";
   const statsEnabled = isStatisticalAnalysisEnabled();
   const analyticsSurface = surface === "analytics";
   const analyticsCanEdit = canSaveReportSection(
@@ -281,7 +286,7 @@ export function ReportWorkspace({
         const next: Partial<Record<SectionType, number>> = {};
         let changed = false;
 
-        for (const section of evaluatableSectionKeys(documentType)) {
+        for (const section of suggestionCardSectionKeys(documentType)) {
           const delta = overflows[section];
           if (delta != null && delta > 1) {
             next[section] = Math.ceil(delta);
@@ -703,7 +708,9 @@ export function ReportWorkspace({
             "@container min-h-0 min-w-0 flex-1 bg-[var(--background)]",
             analyticsSurface
               ? "flex flex-col overflow-hidden"
-              : "overflow-auto"
+              : continuousDocument
+                ? "overflow-auto bg-[var(--muted)]"
+                : "overflow-auto"
           )}
         >
           {analyticsSurface ? (
@@ -730,7 +737,10 @@ export function ReportWorkspace({
           ) : (
           <div
             className={cn(
-              "mx-auto grid w-full min-w-0 grid-cols-1 gap-8 px-6 py-8 pb-24 max-w-[1180px]",
+              "mx-auto grid w-full min-w-0 grid-cols-1 gap-8 pb-24",
+              continuousDocument
+                ? "max-w-none px-4 py-6"
+                : "max-w-[1180px] px-6 py-8",
               showReviewGutter &&
                 "@[800px]:grid-cols-[minmax(0,1fr)_minmax(200px,360px)]"
             )}
@@ -739,7 +749,7 @@ export function ReportWorkspace({
               <ReportHeader />
               <div
                 hidden={!!activeAttachmentId}
-                className="space-y-10 min-w-0"
+                className={cn("min-w-0", continuousDocument ? "space-y-4" : "space-y-10")}
               >
                 {getWorkspaceSections(report.documentType).map((section) => {
                   const s = section.key;

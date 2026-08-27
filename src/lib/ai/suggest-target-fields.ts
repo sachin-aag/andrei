@@ -55,6 +55,8 @@ export const SUGGEST_TARGET_FIELD_PATTERNS: Record<string, readonly string[]> = 
   requirements_verified: ["narrative", "hardwareTable", "systemTable"],
   observations: ["narrative"],
   revision_history: ["table"],
+  // Demo-only continuous Word-like document
+  body: ["narrative"],
   qra_approach: ["narrative", "impactKnown", "scopeDefined", "scopeNarrow"],
   qra_objective: ["narrative"],
   qra_scope: ["narrative"],
@@ -151,6 +153,7 @@ export const RICH_FIELD_PATHS: Partial<Record<string, readonly string[]>> = {
   requirements_verified: ["narrative", "hardwareTable", "systemTable"],
   observations: ["narrative"],
   revision_history: ["table"],
+  body: ["narrative"],
   qra_approach: ["narrative"],
   qra_objective: ["narrative"],
   qra_scope: ["narrative"],

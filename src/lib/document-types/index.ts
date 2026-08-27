@@ -2,6 +2,7 @@ import type { DocumentType } from "@/db/schema";
 import { isDocumentTypeEnabled, getCustomerPack } from "@/lib/customers/packs";
 import { buildInvestigationReportDefinition } from "./investigation-report";
 import { buildDesignVerificationDefinition } from "./design-verification";
+import { genericDocumentDefinition } from "./generic-document";
 import { mechanicalDesignVerificationDefinition } from "./mechanical-design-verification";
 import { qualityRiskAssessmentDefinition } from "./quality-risk-assessment";
 import type {
@@ -14,6 +15,7 @@ import {
   getSectionDefinition,
   isValidSectionForType,
   seedableSections,
+  wordImportFor,
   workspaceSections,
 } from "./types";
 
@@ -25,6 +27,8 @@ export function getDocumentType(type: DocumentType): DocumentTypeDefinition {
       return buildDesignVerificationDefinition();
     case "mechanical_design_verification":
       return mechanicalDesignVerificationDefinition;
+    case "generic_document":
+      return genericDocumentDefinition;
     case "quality_risk_assessment":
       return qualityRiskAssessmentDefinition;
     default: {
@@ -41,11 +45,36 @@ export function resolveDocumentType(
     type === "investigation_report" ||
     type === "design_verification" ||
     type === "mechanical_design_verification" ||
+    type === "generic_document" ||
     type === "quality_risk_assessment"
   ) {
     return type;
   }
   return "investigation_report";
+}
+
+/**
+ * Word upload at create time. Investigation import stays pack-gated.
+ * Generic-body import is available whenever the type is enabled.
+ */
+export function isWordImportAvailable(
+  type: DocumentType,
+  pack: ReturnType<typeof getCustomerPack> = getCustomerPack()
+): boolean {
+  if (!isDocumentTypeEnabled(type, pack)) return false;
+  const kind = wordImportFor(getDocumentType(type)).kind;
+  switch (kind) {
+    case "none":
+      return false;
+    case "investigation":
+      return pack.wordImportEnabled;
+    case "generic_body":
+      return true;
+    default: {
+      const exhaustive: never = kind;
+      return exhaustive;
+    }
+  }
 }
 
 export function listDocumentTypes(): DocumentTypeDefinition[] {
@@ -124,6 +153,22 @@ export function documentTypeShortLabel(type: DocumentType): string {
   return getDocumentType(type).label.replace(/ report$/i, "");
 }
 
+/**
+ * Numbered `[n]` markers + trailing Citations: list. On for the whole
+ * Convergent pack, and for generic (blank) documents on demo. Off for
+ * demo investigation / design verification and for MJ.
+ */
+export function citationsAtEndOfSectionFor(
+  documentType?: DocumentType | null
+): boolean {
+  if (getCustomerPack().citationsAtEndOfSection) return true;
+  if (!documentType) return false;
+  return (
+    getDocumentType(resolveDocumentType(documentType)).citationsAtEndOfSection ===
+    true
+  );
+}
+
 export function engineerReportsSubtitle(
   types: readonly { label: string }[] = listDocumentTypes()
 ): string {
@@ -145,10 +190,18 @@ export type {
   DocumentTypeChatConfig,
   SectionDefinition,
   EvaluationContext,
+  EditorProfile,
+  SuggestionApplyMode,
+  WordImportCapability,
 } from "./types";
 export {
   seedableSections,
   evaluableSections,
   workspaceSections,
   isValidSectionForType,
+  wordImportFor,
+  workspacePresentationFor,
+  evaluationCapabilityFor,
+  suggestionApplyModeFor,
+  editorProfileFor,
 } from "./types";

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { getCriteria } from "@/lib/document-types";
-import { rowsForSection } from "./criteria-view";
+import { rowsForSection, suggestionCardSectionKeys } from "./criteria-view";
 import type { EvaluationRecord } from "@/types/report";
 
 const storedEval = (overrides: Partial<EvaluationRecord>): EvaluationRecord => ({
@@ -33,5 +33,18 @@ describe("rowsForSection", () => {
     expect(row?.status).toBe("met");
     expect(row?.reasoning).toBe("Both times are present.");
     expect(row?.isPlaceholder).toBe(false);
+  });
+});
+
+describe("suggestionCardSectionKeys", () => {
+  it("uses evaluatable DMAIC sections for investigation reports", () => {
+    const keys = suggestionCardSectionKeys("investigation_report");
+    expect(keys).toContain("define");
+    expect(keys).toContain("conclusion");
+    expect(keys).not.toContain("body");
+  });
+
+  it("falls back to the editable body for blank documents", () => {
+    expect(suggestionCardSectionKeys("generic_document")).toEqual(["body"]);
   });
 });

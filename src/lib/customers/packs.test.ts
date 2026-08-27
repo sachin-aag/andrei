@@ -27,7 +27,7 @@ describe("customer packs (demo)", () => {
     expect(DEMO_PACK.wordImportEnabled).toBe(false);
   });
 
-  it("keeps citations inline on demo", () => {
+  it("keeps citations inline on demo investigation reports", () => {
     expect(DEMO_PACK.citationsAtEndOfSection).toBe(false);
   });
 
@@ -40,17 +40,19 @@ describe("customer packs (demo)", () => {
     expect(isStatisticalAnalysisEnabled(DEMO_PACK)).toBe(true);
   });
 
-  it("lists both document types on demo", () => {
+  it("lists investigation, design verification, and document types on demo", () => {
     expect(listDocumentTypes().map((d) => d.key)).toEqual([
       "investigation_report",
       "design_verification",
+      "generic_document",
     ]);
     expect(isDocumentTypeEnabled("design_verification")).toBe(true);
+    expect(isDocumentTypeEnabled("generic_document")).toBe(true);
   });
 
-  it("describes both document types on the demo dashboard", () => {
+  it("describes investigation, design verification, and documents on the demo dashboard", () => {
     expect(engineerReportsSubtitle(listDocumentTypes())).toBe(
-      "Create and manage investigation and design verification reports."
+      "Create and manage investigation, design verification and document reports."
     );
   });
 

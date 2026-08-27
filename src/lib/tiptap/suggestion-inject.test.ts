@@ -4,6 +4,7 @@ import {
   collectPendingSuggestionMarkIds,
   injectSuggestionMarks,
   richDocsMatchIgnoringAiPreview,
+  shouldApplyExternalValueToEditor,
   shouldSkipSuggestionDocSync,
   stripPendingSuggestionsExcept,
 } from "./suggestion-inject";
@@ -91,6 +92,39 @@ describe("stripPendingSuggestionsExcept", () => {
 
     const stripped = stripPendingSuggestionsExcept(doc, null);
     expect(collectPendingSuggestionMarkIds(stripped)).toEqual(["human-tc-1"]);
+    expect(stripped).toEqual(doc);
+  });
+
+  it("does not strip committed (accepted) AI tracked-change marks", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "hello",
+              marks: [
+                {
+                  type: "suggestionInsert",
+                  attrs: {
+                    id: "ai-rev-1",
+                    authorId: "ai",
+                    status: "accepted",
+                    createdAt: "2026-01-01T00:00:00.000Z",
+                    kind: "fix",
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const stripped = stripPendingSuggestionsExcept(doc, null);
+    expect(collectPendingSuggestionMarkIds(stripped, "ai")).toEqual([]);
     expect(stripped).toEqual(doc);
   });
 });
@@ -181,5 +215,65 @@ describe("shouldSkipSuggestionDocSync", () => {
         hasLocalEdits: true,
       })
     ).toBe(false);
+  });
+});
+
+describe("shouldApplyExternalValueToEditor", () => {
+  it("does not rewrite when the live doc already matches aside from AI preview marks", () => {
+    expect(
+      shouldApplyExternalValueToEditor({
+        previewHeld: false,
+        persistedChanged: true,
+        hasFocus: false,
+        docsMatchIgnoringPreview: true,
+      })
+    ).toBe(false);
+  });
+
+  it("does not replace the live preview with the pre-accept snapshot", () => {
+    // Regression: preview-held flipped on, value still the old snapshot,
+    // editor still showing insert/delete marks — applying that snapshot
+    // made the proposed text vanish until the PATCH returned.
+    expect(
+      shouldApplyExternalValueToEditor({
+        previewHeld: true,
+        persistedChanged: false,
+        hasFocus: true,
+        docsMatchIgnoringPreview: false,
+      })
+    ).toBe(false);
+  });
+
+  it("applies the persisted result once accept/dismiss has written it", () => {
+    expect(
+      shouldApplyExternalValueToEditor({
+        previewHeld: true,
+        persistedChanged: true,
+        hasFocus: true,
+        docsMatchIgnoringPreview: false,
+      })
+    ).toBe(true);
+  });
+
+  it("does not replace the focused editor after local typing", () => {
+    expect(
+      shouldApplyExternalValueToEditor({
+        previewHeld: false,
+        persistedChanged: true,
+        hasFocus: true,
+        docsMatchIgnoringPreview: false,
+      })
+    ).toBe(false);
+  });
+
+  it("applies an unfocused external write", () => {
+    expect(
+      shouldApplyExternalValueToEditor({
+        previewHeld: false,
+        persistedChanged: true,
+        hasFocus: false,
+        docsMatchIgnoringPreview: false,
+      })
+    ).toBe(true);
   });
 });

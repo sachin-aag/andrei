@@ -27,6 +27,7 @@ import {
   validateAssignedManagerIds,
   withAssignedManagerIds,
 } from "@/lib/reports/managers";
+import { sourceDocxFilenameFor } from "@/lib/reports/persist-source-docx";
 import {
   investigationOtherTools,
   investigationToolsUsed,
@@ -53,11 +54,14 @@ export async function GET(
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const { sections, evaluations, comments } =
-    await loadReportSubtables(reportId);
+  const [{ sections, evaluations, comments }, sourceDocxFilename] =
+    await Promise.all([
+      loadReportSubtables(reportId),
+      sourceDocxFilenameFor(reportId),
+    ]);
 
   return NextResponse.json({
-    report: reportWithManagers,
+    report: { ...reportWithManagers, sourceDocxFilename },
     sections,
     evaluations,
     comments,

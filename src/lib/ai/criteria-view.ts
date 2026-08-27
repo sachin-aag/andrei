@@ -3,6 +3,7 @@ import type { EvaluationRecord } from "@/types/report";
 import {
   getCriteria,
   getEvaluatableSections,
+  getWorkspaceSections,
 } from "@/lib/document-types";
 
 export type CriterionRow = EvaluationRecord & {
@@ -75,6 +76,22 @@ export function evaluatableSectionKeys(
   documentType: DocumentType = "investigation_report"
 ): SectionType[] {
   return getEvaluatableSections(documentType).map((s) => s.key);
+}
+
+/**
+ * Sections that can show an AI suggestion card in the review gutter.
+ * Criteria-backed types keep their evaluatable order. Types with no
+ * traffic-light check (blank documents) fall back to editable workspace
+ * sections so a `body` proposal still gets a card.
+ */
+export function suggestionCardSectionKeys(
+  documentType: DocumentType = "investigation_report"
+): SectionType[] {
+  const evaluatable = evaluatableSectionKeys(documentType);
+  if (evaluatable.length > 0) return evaluatable;
+  return getWorkspaceSections(documentType)
+    .filter((section) => section.editable)
+    .map((section) => section.key);
 }
 
 export function aggregateStatus(rows: EvaluationRecord[]): CriterionStatus {

@@ -210,6 +210,26 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).not.toContain("SOP/DP/QA/008");
   });
 
+  it("parks citations at the end on generic documents, not demo investigation", () => {
+    const investigation = buildChatSystemPrompt({ ...opts, mode: "agent" });
+    expect(investigation).toContain(
+      "When you rely on retrieved evidence in prose, cite it as"
+    );
+    expect(investigation).not.toContain("END of the section field");
+
+    const generic = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      documentType: "generic_document",
+    });
+    expect(generic).toContain("Document structure (required)");
+    expect(generic).toContain("`#` document title");
+    expect(generic).toContain("Always use markdown headings");
+    expect(generic).toContain("END of the section field");
+    expect(generic).toContain("Citations:");
+    expect(generic).not.toContain("when they ask for structure");
+  });
+
   it("scoped mode limits criteria and section focus in the prompt", () => {
     const prompt = buildChatSystemPrompt({
       ...opts,

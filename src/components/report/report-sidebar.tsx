@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { isAiSuggestionKind } from "@/lib/ai/suggestion-gating";
-import { useReportPlaceholders, useReportComments } from "@/providers/report-provider";
+import { useReportPlaceholders, useReportComments, useReportData } from "@/providers/report-provider";
 import { captureEvent } from "@/lib/analytics/events";
 import { PlaceholdersPanelContent } from "./placeholders-panel";
 import { CriteriaPanelContent, CommentsPanelContent } from "./criteria-sheet";
@@ -19,6 +19,7 @@ import { AnalyticsChatPanel } from "@/components/statistical-analysis/analytics-
 import type { SectionType } from "@/db/schema";
 import type { Placeholder } from "@/lib/placeholders/find";
 import type { ReportWorkspaceSurface } from "./report-workspace-header";
+import { getEvaluatableSections } from "@/lib/document-types";
 
 export type SidebarTab =
   | "assistant"
@@ -65,6 +66,11 @@ export function ReportSidebar({
   const analyticsSurface = surface === "analytics";
   const { pendingPlaceholders } = useReportPlaceholders();
   const { comments } = useReportComments();
+  const { report } = useReportData();
+  const showCriteria = getEvaluatableSections(report.documentType).length > 0;
+  const visibleTabs = showCriteria
+    ? TABS
+    : TABS.filter((tab) => tab.value !== "criteria");
   const rootCommentCount = comments.filter((c) => !c.parentId).length;
   const openSuggestionCount = comments.filter(
     (c) => !c.parentId && isAiSuggestionKind(c.kind) && c.status === "open"
@@ -117,7 +123,7 @@ export function ReportSidebar({
             : "flex flex-wrap items-center gap-1 px-2 py-1.5",
         )}
       >
-        {TABS.map((tab) => {
+        {visibleTabs.map((tab) => {
           const Icon = tab.icon;
           const badge =
             tab.value === "placeholders" && pendingPlaceholders.length > 0

@@ -51,8 +51,10 @@ export type CustomerPack = {
    * When true, document citations are numbered at the claim and parked at
    * the end of each section field. New edits that add a source citation keep
    * a `[n]` marker beside the claim and append `n. [filename, p. N]` under
-   * Citations:. Off for demo/MJ. Also enables the Export without citations
-   * DOCX option (trailing citation blocks and matching markers are dropped).
+   * Citations:. On for Convergent; off for demo/MJ. Generic (blank)
+   * documents enable the same mode via the document-type flag. Also
+   * enables the Export without citations DOCX option (trailing citation
+   * blocks and matching markers are dropped).
    */
   citationsAtEndOfSection: boolean;
   /**
@@ -143,7 +145,11 @@ const MJ_BRANDING: CustomerBranding = {
 /** Demo pack is the default engine overlay (Andrei branding). */
 export const DEMO_PACK: CustomerPack = {
   id: "demo",
-  enabledDocumentTypes: ["investigation_report", "design_verification"],
+  enabledDocumentTypes: [
+    "investigation_report",
+    "design_verification",
+    "generic_document",
+  ],
   hiddenInvestigationSections: [],
   investigationTemplateFile: "investigation-report-template.docx",
   promptVersion: PROMPT_VERSION,
