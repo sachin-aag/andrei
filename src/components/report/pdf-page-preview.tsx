@@ -4,11 +4,16 @@ import {
   memo,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
+  type FormEvent,
   type RefObject,
 } from "react";
+import { RotateCw, ZoomIn, ZoomOut } from "lucide-react";
 import type { PDFDocumentProxy, PDFPageProxy } from "pdfjs-dist";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { loadPdfjs } from "@/lib/attachments/load-pdfjs";
 import {
   pdfjsPreviewLoadingOptions,
@@ -19,10 +24,17 @@ import {
   layoutPreviewTextSpans,
   PDF_FALLBACK_PAGE_HEIGHT,
   PDF_FALLBACK_PAGE_WIDTH,
+  PDF_PREVIEW_HORIZONTAL_PADDING,
   PDF_PREVIEW_SCALE,
+  pdfPreviewRenderScale,
   type PdfPreviewTextSpan,
   type PdfTextContentItem,
 } from "@/lib/attachments/pdf-preview-layout";
+
+const PDF_ZOOM_MIN = 0.5;
+const PDF_ZOOM_MAX = 3;
+const PDF_ZOOM_STEP = 0.25;
+const PDF_ZOOM_DEFAULT = 1;
 
 type PreviewState =
   | { status: "loading"; loadedBytes: number; totalBytes: number }
@@ -211,9 +223,64 @@ function PdfDocumentPages({
   onVisiblePageChangeRef: RefObject<((page: number) => void) | undefined>;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [viewportWidth, setViewportWidth] = useState(0);
   const [prefetchNeighbors, setPrefetchNeighbors] = useState(false);
+  const [visiblePage, setVisiblePage] = useState(
+    initialPaintedPageNumber(initialPage)
+  );
+  const [pageInput, setPageInput] = useState(String(initialPaintedPageNumber(initialPage)));
+  const [pageInputFocused, setPageInputFocused] = useState(false);
+  const [zoomLevel, setZoomLevel] = useState(PDF_ZOOM_DEFAULT);
+  const [rotation, setRotation] = useState(0);
   const enableNeighborPrefetch = useCallback(() => {
     setPrefetchNeighbors(true);
+  }, []);
+  const reportVisiblePage = useCallback((page: number) => {
+    setVisiblePage(page);
+    onVisiblePageChangeRef.current?.(page);
+  }, [onVisiblePageChangeRef]);
+  const goToPage = useCallback(
+    (page: number) => {
+      const clamped = Math.min(Math.max(1, Math.round(page)), numPages);
+      setPageInput(String(clamped));
+      const root = scrollRef.current;
+      if (!root) return;
+      const target = root.querySelector(`[data-pdf-page="${clamped}"]`);
+      if (
+        target instanceof HTMLElement &&
+        typeof target.scrollIntoView === "function"
+      ) {
+        target.scrollIntoView({ block: "start" });
+      }
+      reportVisiblePage(clamped);
+    },
+    [numPages, reportVisiblePage]
+  );
+  const handlePageSubmit = useCallback(
+    (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault();
+      const parsed = Number.parseInt(pageInput, 10);
+      if (Number.isFinite(parsed)) {
+        goToPage(parsed);
+      } else {
+        setPageInput(String(visiblePage));
+      }
+      (event.currentTarget.elements.namedItem("pdf-page") as HTMLInputElement | null)?.blur();
+    },
+    [goToPage, pageInput, visiblePage]
+  );
+  const zoomIn = useCallback(() => {
+    setZoomLevel((prev) =>
+      Math.min(PDF_ZOOM_MAX, roundZoom(prev + PDF_ZOOM_STEP))
+    );
+  }, []);
+  const zoomOut = useCallback(() => {
+    setZoomLevel((prev) =>
+      Math.max(PDF_ZOOM_MIN, roundZoom(prev - PDF_ZOOM_STEP))
+    );
+  }, []);
+  const rotatePage = useCallback(() => {
+    setRotation((prev) => (prev + 90) % 360);
   }, []);
   // Live window, not a growing set: pages that scroll away release their
   // canvas. A 1000-page scan at PDF_PREVIEW_SCALE would otherwise retain
@@ -221,6 +288,33 @@ function PdfDocumentPages({
   const [nearPages, setNearPages] = useState<ReadonlySet<number>>(
     () => new Set()
   );
+
+  useEffect(() => {
+    if (!pageInputFocused) {
+      setPageInput(String(visiblePage));
+    }
+  }, [pageInputFocused, visiblePage]);
+
+  useLayoutEffect(() => {
+    const root = scrollRef.current;
+    if (root && root.clientWidth > 0) {
+      setViewportWidth(root.clientWidth);
+    }
+  }, []);
+
+  useEffect(() => {
+    const root = scrollRef.current;
+    if (!root) return;
+    const measure = () => {
+      const next = root.clientWidth;
+      if (next > 0) setViewportWidth(next);
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(root);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     const root = scrollRef.current;
@@ -279,7 +373,7 @@ function PdfDocumentPages({
             best = { page: pageNumber, ratio: entry.intersectionRatio };
           }
         }
-        if (best) onVisiblePageChangeRef.current?.(best.page);
+        if (best) reportVisiblePage(best.page);
       },
       { root, threshold: [0.2, 0.45, 0.7] }
     );
@@ -292,52 +386,60 @@ function PdfDocumentPages({
       prefetch?.disconnect();
       currentPage.disconnect();
     };
-  }, [numPages, onVisiblePageChangeRef, prefetchNeighbors]);
+  }, [numPages, prefetchNeighbors, reportVisiblePage]);
 
   useEffect(() => {
-    const root = scrollRef.current;
-    if (!root) return;
-    const targetPage = Number.isInteger(initialPage) ? initialPage : 1;
-    if (targetPage <= 1) return;
-    const target = root.querySelector(`[data-pdf-page="${targetPage}"]`);
-    if (
-      target instanceof HTMLElement &&
-      typeof target.scrollIntoView === "function"
-    ) {
-      target.scrollIntoView({ block: "start" });
-    }
-  }, [initialPage, pdf]);
+    goToPage(initialPage);
+  }, [goToPage, initialPage, pdf]);
 
   return (
-    <div
-      ref={scrollRef}
-      data-pdf-preview-scroll=""
-      role="region"
-      aria-label={`${title} preview`}
-      className="h-full overflow-auto bg-[var(--muted)]"
-    >
-      <div className="flex flex-col items-center gap-4 p-4">
-        {Array.from({ length: numPages }, (_, index) => index + 1).map(
-          (pageNumber) => (
-            <PdfPreviewPage
-              key={pageNumber}
-              pdf={pdf}
-              pageNumber={pageNumber}
-              title={title}
-              shouldRender={
-                pageNumber === initialPaintedPageNumber(initialPage) ||
-                nearPages.has(pageNumber)
-              }
-              onRequestedPageSettled={
-                pageNumber === initialPaintedPageNumber(initialPage)
-                  ? enableNeighborPrefetch
-                  : undefined
-              }
-              fallbackWidth={pageWidth}
-              fallbackHeight={pageHeight}
-            />
-          )
-        )}
+    <div className="flex h-full min-h-0 flex-col">
+      <PdfPreviewToolbar
+        numPages={numPages}
+        pageInput={pageInput}
+        zoomLevel={zoomLevel}
+        rotation={rotation}
+        onPageInputChange={setPageInput}
+        onPageInputFocus={() => setPageInputFocused(true)}
+        onPageInputBlur={() => setPageInputFocused(false)}
+        onPageSubmit={handlePageSubmit}
+        onRotate={rotatePage}
+        onZoomIn={zoomIn}
+        onZoomOut={zoomOut}
+      />
+      <div
+        ref={scrollRef}
+        data-pdf-preview-scroll=""
+        role="region"
+        aria-label={`${title} preview`}
+        className="min-h-0 flex-1 overflow-auto bg-[var(--muted)]"
+      >
+        <div className="flex flex-col items-center gap-4 p-4">
+          {Array.from({ length: numPages }, (_, index) => index + 1).map(
+            (pageNumber) => (
+              <PdfPreviewPage
+                key={pageNumber}
+                pdf={pdf}
+                pageNumber={pageNumber}
+                title={title}
+                viewportWidth={viewportWidth}
+                zoomLevel={zoomLevel}
+                rotation={rotation}
+                shouldRender={
+                  pageNumber === initialPaintedPageNumber(initialPage) ||
+                  nearPages.has(pageNumber)
+                }
+                onRequestedPageSettled={
+                  pageNumber === initialPaintedPageNumber(initialPage)
+                    ? enableNeighborPrefetch
+                    : undefined
+                }
+                fallbackWidth={pageWidth}
+                fallbackHeight={pageHeight}
+              />
+            )
+          )}
+        </div>
       </div>
     </div>
   );
@@ -347,6 +449,9 @@ const PdfPreviewPage = memo(function PdfPreviewPage({
   pdf,
   pageNumber,
   title,
+  viewportWidth,
+  zoomLevel,
+  rotation,
   shouldRender,
   onRequestedPageSettled,
   fallbackWidth,
@@ -355,6 +460,9 @@ const PdfPreviewPage = memo(function PdfPreviewPage({
   pdf: PDFDocumentProxy;
   pageNumber: number;
   title: string;
+  viewportWidth: number;
+  zoomLevel: number;
+  rotation: number;
   shouldRender: boolean;
   onRequestedPageSettled?: () => void;
   fallbackWidth: number;
@@ -377,6 +485,9 @@ const PdfPreviewPage = memo(function PdfPreviewPage({
       }
       return;
     }
+    if (viewportWidth <= PDF_PREVIEW_HORIZONTAL_PADDING) {
+      return;
+    }
     const controller = new AbortController();
 
     void (async () => {
@@ -388,7 +499,19 @@ const PdfPreviewPage = memo(function PdfPreviewPage({
         }
         const pdfPage = await pdf.getPage(pageNumber);
         if (controller.signal.aborted) return;
-        const viewport = pdfPage.getViewport({ scale: PDF_PREVIEW_SCALE });
+        const baseViewport = pdfPage.getViewport({
+          scale: PDF_PREVIEW_SCALE,
+          rotation,
+        });
+        const renderScale = pdfPreviewRenderScale({
+          viewportWidth,
+          pageWidthAtBaseScale: baseViewport.width,
+          zoomLevel,
+        });
+        const viewport = pdfPage.getViewport({
+          scale: renderScale,
+          rotation,
+        });
         canvas.width = viewport.width;
         canvas.height = viewport.height;
         await pdfPage.render({
@@ -403,7 +526,10 @@ const PdfPreviewPage = memo(function PdfPreviewPage({
           pageHeight: viewport.height,
         });
         onRequestedPageSettled?.();
-        const spans = await readPreviewTextSpans(pdfPage, viewport.height);
+        const spans =
+          rotation === 0
+            ? await readPreviewTextSpans(pdfPage, viewport.height, renderScale)
+            : [];
         if (!controller.signal.aborted) {
           setState({
             status: "ready",
@@ -421,7 +547,15 @@ const PdfPreviewPage = memo(function PdfPreviewPage({
     })();
 
     return () => controller.abort();
-  }, [pdf, pageNumber, shouldRender, onRequestedPageSettled]);
+  }, [
+    pdf,
+    pageNumber,
+    rotation,
+    shouldRender,
+    onRequestedPageSettled,
+    viewportWidth,
+    zoomLevel,
+  ]);
 
   const canvasVisible = isCanvasVisible(state);
   const width = canvasVisible ? state.pageWidth : fallbackWidth;
@@ -430,7 +564,7 @@ const PdfPreviewPage = memo(function PdfPreviewPage({
   return (
     <div
       data-pdf-page={pageNumber}
-      className="pdf-page-preview relative max-w-full bg-white shadow-sm [container-type:inline-size]"
+      className="pdf-page-preview relative shrink-0 bg-white shadow-sm [container-type:inline-size]"
       style={{ width, minHeight: height }}
     >
       {state.status === "error" ? (
@@ -441,7 +575,7 @@ const PdfPreviewPage = memo(function PdfPreviewPage({
       <canvas
         ref={canvasRef}
         aria-label={`${title}, page ${pageNumber}`}
-        className={canvasVisible ? "block h-auto w-full" : "hidden"}
+        className={canvasVisible ? "block max-w-none" : "hidden"}
       />
       {state.status === "ready" ? (
         <div
@@ -475,8 +609,117 @@ const PdfPreviewPage = memo(function PdfPreviewPage({
   );
 });
 
+function PdfPreviewToolbar({
+  numPages,
+  pageInput,
+  zoomLevel,
+  rotation,
+  onPageInputChange,
+  onPageInputFocus,
+  onPageInputBlur,
+  onPageSubmit,
+  onRotate,
+  onZoomIn,
+  onZoomOut,
+}: {
+  numPages: number;
+  pageInput: string;
+  zoomLevel: number;
+  rotation: number;
+  onPageInputChange: (value: string) => void;
+  onPageInputFocus: () => void;
+  onPageInputBlur: () => void;
+  onPageSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  onRotate: () => void;
+  onZoomIn: () => void;
+  onZoomOut: () => void;
+}) {
+  const zoomPercent = formatZoomPercent(zoomLevel);
+  const zoomOutDisabled = zoomLevel <= PDF_ZOOM_MIN;
+  const zoomInDisabled = zoomLevel >= PDF_ZOOM_MAX;
+
+  return (
+    <div
+      data-testid="pdf-preview-toolbar"
+      className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-[var(--border)] bg-[var(--card)] px-4 py-2"
+    >
+      <form
+        className="flex items-center gap-2 text-sm text-[var(--foreground)]"
+        onSubmit={onPageSubmit}
+      >
+        <span className="text-[var(--muted-foreground)]">Page</span>
+        <Input
+          name="pdf-page"
+          type="text"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          value={pageInput}
+          onChange={(event) => onPageInputChange(event.target.value)}
+          onFocus={onPageInputFocus}
+          onBlur={onPageInputBlur}
+          aria-label="Page number"
+          data-testid="pdf-toolbar-page-input"
+          className="h-8 w-16 px-2 text-center"
+        />
+        <span className="text-[var(--muted-foreground)]">of {numPages}</span>
+      </form>
+      <div className="flex items-center gap-1">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={onRotate}
+          aria-label={`Rotate page (${rotation}°)`}
+          data-testid="pdf-toolbar-rotate"
+        >
+          <RotateCw className="size-4" aria-hidden="true" />
+          Rotate
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          className="size-8"
+          onClick={onZoomOut}
+          disabled={zoomOutDisabled}
+          aria-label="Zoom out"
+          data-testid="pdf-toolbar-zoom-out"
+        >
+          <ZoomOut className="size-4" aria-hidden="true" />
+        </Button>
+        <span
+          className="min-w-[3.5rem] text-center text-sm tabular-nums text-[var(--muted-foreground)]"
+          aria-live="polite"
+        >
+          {zoomPercent}
+        </span>
+        <Button
+          type="button"
+          variant="outline"
+          size="icon"
+          className="size-8"
+          onClick={onZoomIn}
+          disabled={zoomInDisabled}
+          aria-label="Zoom in"
+          data-testid="pdf-toolbar-zoom-in"
+        >
+          <ZoomIn className="size-4" aria-hidden="true" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function initialPaintedPageNumber(page: number): number {
   return Number.isInteger(page) && page > 0 ? page : 1;
+}
+
+function roundZoom(value: number): number {
+  return Math.round(value / PDF_ZOOM_STEP) * PDF_ZOOM_STEP;
+}
+
+function formatZoomPercent(zoomLevel: number): string {
+  return `${Math.round(zoomLevel * 100)}%`;
 }
 
 /**
@@ -520,16 +763,17 @@ function isCanvasVisible(
 
 async function readPreviewTextSpans(
   pdfPage: PDFPageProxy,
-  scaledPageHeight: number
+  scaledPageHeight: number,
+  scale: number = PDF_PREVIEW_SCALE
 ): Promise<PdfPreviewTextSpan[]> {
   try {
     const content = await pdfPage.getTextContent();
-    const pageHeight = scaledPageHeight / PDF_PREVIEW_SCALE;
+    const pageHeight = scaledPageHeight / scale;
     return layoutPreviewTextSpans(
       (content.items as readonly unknown[]).filter(isTextContentItem),
       content.styles ?? {},
       pageHeight,
-      PDF_PREVIEW_SCALE
+      scale
     );
   } catch {
     return [];
