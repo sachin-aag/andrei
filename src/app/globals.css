@@ -825,31 +825,121 @@ html[data-customer="convergent"] {
   word-break: break-word;
 }
 
-/* ProseMirror / Tiptap — table editing */
+/* ProseMirror / Tiptap — table editing.
+   Wide matrices (FMEA, DV) must never shrink below a readable floor.
+   The editor chrome scrolls horizontally; identity columns stick. */
+.ProseMirror:has(table) {
+  max-width: none;
+  width: max-content;
+  min-width: 100%;
+}
+
 .ProseMirror table {
-  border-collapse: collapse;
-  table-layout: fixed;
-  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  table-layout: auto;
+  width: max-content;
+  min-width: 100%;
   margin: 0.75rem 0;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .ProseMirror td,
 .ProseMirror th {
-  min-width: 1em;
-  border: 1px solid var(--border);
+  min-width: 8rem;
+  border-color: var(--border);
+  border-style: solid;
+  border-width: 0 1px 1px 0;
   padding: 6px 8px;
   /* Default; per-cell alignment from TipTap uses inline style and wins. */
   vertical-align: top;
   box-sizing: border-box;
   position: relative;
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 .ProseMirror th {
   background-color: var(--secondary);
   font-weight: 600;
+  white-space: normal;
+}
+
+.ProseMirror td {
+  background-color: var(--input);
+}
+
+.ProseMirror tr:first-child th,
+.ProseMirror tr:first-child td {
+  border-top-width: 1px;
+}
+
+/* Freeze Sr. No. + the next identity column while the rest of the grid pans. */
+.ProseMirror th:first-child,
+.ProseMirror td:first-child {
+  min-width: 4.5rem;
+  width: 4.5rem;
+  max-width: 4.5rem;
+  border-left-width: 1px;
+  position: sticky;
+  left: 0;
+  z-index: 3;
+}
+
+.ProseMirror th:nth-child(2),
+.ProseMirror td:nth-child(2) {
+  min-width: 10rem;
+  position: sticky;
+  left: 4.5rem;
+  z-index: 3;
+  box-shadow: 2px 0 4px -2px rgb(0 0 0 / 0.18);
+}
+
+.ProseMirror th:first-child,
+.ProseMirror th:nth-child(2) {
+  z-index: 4;
+}
+
+/* FMEA F02/F04 — narrower score cells; column groups in fmea-stages.ts. */
+.fmea-grid .ProseMirror :is(th, td):nth-child(6),
+.fmea-grid .ProseMirror :is(th, td):nth-child(8),
+.fmea-grid .ProseMirror :is(th, td):nth-child(10),
+.fmea-grid .ProseMirror :is(th, td):nth-child(15),
+.fmea-grid .ProseMirror :is(th, td):nth-child(16),
+.fmea-grid .ProseMirror :is(th, td):nth-child(17) {
+  min-width: 4.5rem;
+  width: 4.5rem;
+}
+
+.fmea-grid .ProseMirror :is(th, td):nth-child(11),
+.fmea-grid .ProseMirror :is(th, td):nth-child(18) {
+  min-width: 5.5rem;
+  width: 5.5rem;
+}
+
+.fmea-grid .ProseMirror :is(th, td):nth-child(12),
+.fmea-grid .ProseMirror :is(th, td):nth-child(19) {
+  min-width: 6.75rem;
+  width: 6.75rem;
+}
+
+.fmea-grid[data-fmea-stage="identification"] .ProseMirror :is(th, td):nth-child(n + 6) {
+  display: none;
+}
+
+.fmea-grid[data-fmea-stage="scoring"] .ProseMirror :is(th, td):nth-child(4),
+.fmea-grid[data-fmea-stage="scoring"] .ProseMirror :is(th, td):nth-child(5),
+.fmea-grid[data-fmea-stage="scoring"] .ProseMirror :is(th, td):nth-child(n + 13) {
+  display: none;
+}
+
+.fmea-grid[data-fmea-stage="mitigation"] .ProseMirror :is(th, td):nth-child(n + 4):nth-child(-n + 12),
+.fmea-grid[data-fmea-stage="mitigation"] .ProseMirror :is(th, td):nth-child(n + 15) {
+  display: none;
+}
+
+.fmea-grid[data-fmea-stage="residual"] .ProseMirror :is(th, td):nth-child(n + 4):nth-child(-n + 14) {
+  display: none;
 }
 
 .ProseMirror .selectedCell::after {

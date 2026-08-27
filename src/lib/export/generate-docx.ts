@@ -21,7 +21,7 @@ import {
   type ReportRecord,
   type ReportSectionRecord,
 } from "@/types/report";
-import type { SectionType, reports as reportsTable } from "@/db/schema";
+import type { DocumentType, SectionType, reports as reportsTable } from "@/db/schema";
 import { getCustomerPack } from "@/lib/customers/packs";
 import { getDocumentType, mergeSectionForType } from "@/lib/document-types";
 import { GENERIC_DOCUMENT_SECTION } from "@/lib/document-types/generic/sections";
@@ -473,7 +473,8 @@ export async function generateReportDocx({
   }
   if (
     report.documentType === "design_verification" ||
-    report.documentType === "mechanical_design_verification"
+    report.documentType === "mechanical_design_verification" ||
+    report.documentType === "quality_risk_assessment"
   ) {
     return generateDesignVerificationDocx({
       documentType: report.documentType,
@@ -595,7 +596,7 @@ async function generateDesignVerificationDocx({
   sections,
   electronicSignatures,
 }: {
-  documentType: "design_verification" | "mechanical_design_verification";
+  documentType: DocumentType;
   report: ReportRowWithManagers;
   sections: ReportSectionRecord[];
   electronicSignatures: DocxAuditSignature[];
@@ -618,7 +619,6 @@ async function generateDesignVerificationDocx({
     pack.id === "convergent" ? CONVERGENT_DOCX_RUN_STYLE : undefined
   );
   const def = getDocumentType(documentType);
-  const meta = designVerificationMetadata(report);
   const mergedSections = sections.map((row) => ({
     section: row.section,
     content: mergeSectionForType(documentType, row.section, row.content),
@@ -633,9 +633,15 @@ async function generateDesignVerificationDocx({
   const data: Record<string, string> = {
     date: formatCalendarDate(report.date),
     documentNo: report.documentNo,
-    productName: meta.productName,
-    revision: meta.revision,
   };
+  if (
+    documentType === "design_verification" ||
+    documentType === "mechanical_design_verification"
+  ) {
+    const meta = designVerificationMetadata(report);
+    data.productName = meta.productName;
+    data.revision = meta.revision;
+  }
   for (const [key, value] of Object.entries(built)) {
     data[key] = stringifyDvTemplateValue(value, ctx);
   }

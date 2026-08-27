@@ -83,6 +83,8 @@ describe("analysis download", () => {
         xLabel: "Measurement",
         yLabel: "Torque (ozf-in)",
         layout: TORQUE_MOCK_SPEC.layout,
+        lsl: null,
+        usl: null,
       },
       results: {
         specs: [TORQUE_MOCK_SPEC],

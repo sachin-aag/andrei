@@ -53,6 +53,7 @@ export const documentTypeEnum = pgEnum("document_type", [
   "design_verification",
   "mechanical_design_verification",
   "generic_document",
+  "quality_risk_assessment",
 ]);
 
 /**

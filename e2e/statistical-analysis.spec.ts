@@ -16,7 +16,7 @@ import {
 test.describe.configure({ mode: "serial" });
 
 async function openNormalSixpackDialog(page: Page): Promise<void> {
-  await page.getByRole("button", { name: "Stat" }).click();
+  await page.getByTestId("worksheet-stat-menu").click();
   await page.getByTestId("stat-normal-sixpack").click();
   await expect(page.getByTestId("capability-dialog")).toBeVisible();
 }
@@ -97,6 +97,11 @@ test.describe("report analytics", () => {
     await expect(
       page.getByText(/process capability sixpack of assay/i)
     ).toBeVisible();
+    await expect(page.getByTestId("sixpack-spec-label-lsl")).toHaveText("90.00");
+    await expect(page.getByTestId("sixpack-spec-label-usl")).toHaveText("110.00");
+    await expect(page.getByTestId("sixpack-ichart-label-ucl")).toBeVisible();
+    await expect(page.getByTestId("sixpack-last25-label-ucl")).toBeVisible();
+    await expect(page.getByTestId("sixpack-mr-label-ucl")).toBeVisible();
     await expect(page.getByText("Cpk")).toBeVisible();
     await expect(page.getByTestId("analysis-list")).toBeVisible();
   });
@@ -316,9 +321,8 @@ test.describe("report analytics", () => {
     const sidebar = reportSidebar(page);
     const composer = sidebar.getByTestId("analytics-chat-input");
     await expect(composer).toBeEnabled({ timeout: 15_000 });
-    await expect(sidebar.getByLabel("Assistant mode")).toBeVisible();
+    await expect(sidebar.getByTestId("analytics-chat-mode")).toBeVisible();
     await expect(sidebar.getByTestId("analytics-chat-pace")).toBeVisible();
-    await expect(sidebar.getByLabel("Answer depth")).toBeVisible();
     await expect(sidebar.getByTestId("analytics-chat-attach-image")).toBeVisible();
     await composer.fill("extract assay numbers from the attachments");
     await sidebar.getByRole("button", { name: /^send message$/i }).click();
@@ -352,11 +356,15 @@ test.describe("report analytics", () => {
     await page.getByTestId("column-specs-save").click();
     await expect(page.getByTestId("column-specs-dialog")).toHaveCount(0);
 
-    await page.getByRole("button", { name: "Stat" }).click();
+    await page.getByTestId("worksheet-stat-menu").click();
     await page.getByTestId("stat-plot-measurements").click();
     await expect(page.getByTestId("plot-measurements-dialog")).toBeVisible();
     await expect(page.getByTestId("plot-measurements-submit")).toBeDisabled();
+    await expect(page.getByTestId("plot-lsl")).toHaveValue("");
+    await expect(page.getByTestId("plot-usl")).toHaveValue("");
     await page.getByTestId("plot-query").fill("M3-SYS-FN-037");
+    await page.getByTestId("plot-lsl").fill("1");
+    await page.getByTestId("plot-usl").fill("6");
     await page.getByTestId("plot-measurements-submit").click();
     await expect(page.getByRole("alert")).toBeVisible({ timeout: 30_000 });
   });
@@ -375,7 +383,7 @@ test.describe("report analytics", () => {
     await expect(page.getByTestId("column-header-c1")).toHaveText("Assay");
     await expect(page.getByTestId("column-header-c2")).toHaveText("Lot");
 
-    await page.getByRole("button", { name: "Stat" }).click();
+    await page.getByTestId("worksheet-stat-menu").click();
     await page.getByTestId("stat-one-way-anova").click();
     await expect(page.getByTestId("anova-dialog")).toBeVisible();
     await expect(page.getByTestId("anova-response")).toContainText("Assay");

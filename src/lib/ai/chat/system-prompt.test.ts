@@ -94,6 +94,18 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).not.toContain("Risk Control Link");
   });
 
+  it("includes SOP scoring rules for quality risk assessment", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      documentType: "quality_risk_assessment",
+    });
+    expect(prompt).toContain("never write RPN");
+    expect(prompt).toContain("SOP/DP/QA/010");
+    expect(prompt).toContain("qra_fmea");
+    expect(prompt).not.toContain("select_analyze_method");
+  });
+
   it("keeps the investigation draft order for investigation reports", () => {
     const prompt = buildChatSystemPrompt({ ...opts, mode: "agent" });
     expect(prompt).toContain(

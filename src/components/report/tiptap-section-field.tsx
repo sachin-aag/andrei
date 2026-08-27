@@ -1154,7 +1154,7 @@ export function TiptapSectionField({
 
       <div
         className={cn(
-          "min-w-0 max-w-full text-sm leading-relaxed",
+          "min-w-0 max-w-full overflow-x-auto overscroll-x-contain text-sm leading-relaxed",
           chrome === "page"
             ? "bg-transparent"
             : "rounded-md border border-[var(--border)] bg-[var(--input)] px-3 py-2 focus-within:ring-2 focus-within:ring-[var(--ring)]",

@@ -17,7 +17,7 @@ const emptyAnalytics: ReportAnalyticsView = {
 
 describe("analytics chat prompt", () => {
   it("bumps when sixpack/scatter/ANOVA policy or tools change", () => {
-    expect(ANALYTICS_CHAT_PROMPT_VERSION).toBe("analytics-chat-v11");
+    expect(ANALYTICS_CHAT_PROMPT_VERSION).toBe("analytics-chat-v12");
   });
 
   it("covers worksheet, sixpack, scatter, and ANOVA without drafting the report", () => {
@@ -30,6 +30,7 @@ describe("analytics chat prompt", () => {
       mode: "agent",
     });
     expect(prompt).toContain("plot_measurements");
+    expect(prompt).toContain("Optional lsl / usl override");
     expect(prompt).toContain("scan_attachments");
     expect(prompt).toContain("manage_worksheet");
     expect(prompt).toContain("create a new data sheet");

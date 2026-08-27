@@ -84,6 +84,8 @@ function asScatterConfig(value: unknown): MeasurementScatterConfig {
     xLabel: parsed.xLabel,
     yLabel: parsed.yLabel,
     layout: parsed.layout,
+    lsl: parsed.lsl ?? null,
+    usl: parsed.usl ?? null,
   };
 }
 
@@ -386,6 +388,8 @@ async function createScatterAnalysisForReport(
     xLabel: parsed.data.xLabel,
     yLabel: parsed.data.yLabel,
     layout: parsed.data.layout,
+    lsl: parsed.data.lsl ?? null,
+    usl: parsed.data.usl ?? null,
     existingTitles: analytics.analyses.map((item) => item.title),
   });
   if (!scatter.ok) {
@@ -604,6 +608,8 @@ export async function recomputeAnalysisForReport(
         xAxis: existing.config.layout.xAxis,
         yMax: existing.config.layout.yRange?.max,
       },
+      lsl: existing.config.lsl,
+      usl: existing.config.usl,
       existingTitles: analytics.analyses
         .filter((item) => item.id !== existing.id)
         .map((item) => item.title),

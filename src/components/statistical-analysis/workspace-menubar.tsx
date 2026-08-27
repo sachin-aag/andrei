@@ -68,7 +68,12 @@ export function WorkspaceMenubar({
 
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="ghost" size="sm" disabled={readOnly}>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={readOnly}
+            data-testid="worksheet-stat-menu"
+          >
             Stat
           </Button>
         </DropdownMenuTrigger>

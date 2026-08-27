@@ -99,6 +99,23 @@ import {
   MechUnitsUnderTestEditor,
 } from "./sections/dv/mechanical-section-editors";
 import { GenericDocumentEditor } from "./sections/generic/generic-document-editor";
+import {
+  QraApproachEditor,
+  QraCommunicationEditor,
+  QraFmeaEditor,
+  QraMitigationEditor,
+  QraObjectiveEditor,
+  QraOverviewEditor,
+  QraPeriodicReviewEditor,
+  QraPostConclusionEditor,
+  QraPreConclusionEditor,
+  QraProcedureEditor,
+  QraResidualRiskEditor,
+  QraRevisionHistoryEditor,
+  QraRiskIdentificationEditor,
+  QraScopeEditor,
+  QraTeamEditor,
+} from "./sections/qra/qra-section-editors";
 
 export type { WorkspaceMode };
 
@@ -157,6 +174,24 @@ const MECHANICAL_DV_SECTION_EDITORS: Record<string, ComponentType> = {
   revision_history: MechRevisionHistoryEditor,
 };
 
+const QRA_SECTION_EDITORS: Record<string, ComponentType> = {
+  qra_approach: QraApproachEditor,
+  qra_objective: QraObjectiveEditor,
+  qra_scope: QraScopeEditor,
+  qra_overview: QraOverviewEditor,
+  qra_procedure: QraProcedureEditor,
+  qra_team: QraTeamEditor,
+  qra_risk_identification: QraRiskIdentificationEditor,
+  qra_fmea: QraFmeaEditor,
+  qra_communication: QraCommunicationEditor,
+  qra_pre_conclusion: QraPreConclusionEditor,
+  qra_mitigation: QraMitigationEditor,
+  qra_residual_risk: QraResidualRiskEditor,
+  qra_periodic_review: QraPeriodicReviewEditor,
+  qra_post_conclusion: QraPostConclusionEditor,
+  qra_revision_history: QraRevisionHistoryEditor,
+};
+
 const SECTION_EDITORS_BY_DOCUMENT_TYPE: Record<
   DocumentType,
   Record<string, ComponentType>
@@ -165,6 +200,7 @@ const SECTION_EDITORS_BY_DOCUMENT_TYPE: Record<
   design_verification: DV_SECTION_EDITORS,
   mechanical_design_verification: MECHANICAL_DV_SECTION_EDITORS,
   generic_document: { body: GenericDocumentEditor },
+  quality_risk_assessment: QRA_SECTION_EDITORS,
 };
 
 export function ReportWorkspace({

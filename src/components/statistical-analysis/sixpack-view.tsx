@@ -20,6 +20,12 @@ import {
   normalizeRowSelection,
 } from "@/lib/statistical-analysis/row-selection";
 import {
+  layoutControlLimitLabels,
+  layoutSpecLimitLabels,
+  type ControlLimitInput,
+  type SpecLimitInput,
+} from "@/lib/statistical-analysis/spec-limit-labels";
+import {
   analysisDownloadFilename,
   analysisToCsv,
   downloadTextFile,
@@ -83,6 +89,42 @@ function ChartSvg({
 }
 
 const PLOT = { left: 36, right: 308, top: 12, bottom: 168 };
+
+function LimitLabel({
+  testId,
+  name,
+  x,
+  y,
+  textAnchor,
+  text,
+}: {
+  testId: string;
+  name: string;
+  x: number;
+  y: number;
+  textAnchor: "start" | "middle" | "end";
+  text: string;
+}) {
+  const insidePlot = y > PLOT.top && y < PLOT.bottom;
+  return (
+    <text
+      data-testid={testId}
+      className="tabular-nums"
+      x={x}
+      y={y}
+      textAnchor={textAnchor}
+      fontSize="8"
+      fontWeight="600"
+      fill="var(--destructive)"
+      stroke={insidePlot ? "var(--card)" : undefined}
+      strokeWidth={insidePlot ? 3 : undefined}
+      paintOrder={insidePlot ? "stroke" : undefined}
+      aria-label={`${name} ${text}`}
+    >
+      {text}
+    </text>
+  );
+}
 
 function Axis({
   xMin,
@@ -178,12 +220,14 @@ function ControlChart({
   xLabel,
   yLabel,
   ariaLabel,
+  chartTestId,
 }: {
   series: ControlChartSeries;
   xOffset?: number;
   xLabel: string;
   yLabel: string;
   ariaLabel: string;
+  chartTestId: string;
 }) {
   const xs = series.values.map((_, i) => i + xOffset);
   const [yMin, yMax] = domain(
@@ -198,6 +242,11 @@ function ControlChart({
   const path = series.values
     .map((value, i) => `${i === 0 ? "M" : "L"} ${x(xs[i]!)} ${y(value)}`)
     .join(" ");
+  const controlLimits: ControlLimitInput[] = [
+    { kind: "ucl", value: series.ucl, lineY: y(series.ucl) },
+    { kind: "lcl", value: series.lcl, lineY: y(series.lcl) },
+  ];
+  const controlLabels = layoutControlLimitLabels(controlLimits, PLOT);
 
   return (
     <ChartSvg ariaLabel={ariaLabel}>
@@ -242,6 +291,17 @@ function ControlChart({
           fill={ooc.has(i) ? "var(--destructive)" : "var(--brand-600)"}
         />
       ))}
+      {controlLabels.map((label) => (
+        <LimitLabel
+          key={label.kind}
+          testId={`sixpack-${chartTestId}-label-${label.kind}`}
+          name={label.kind.toUpperCase()}
+          x={label.x}
+          y={label.y}
+          textAnchor={label.textAnchor}
+          text={label.text}
+        />
+      ))}
     </ChartSvg>
   );
 }
@@ -272,6 +332,11 @@ function HistogramChart({
   const yMax = Math.max(1, ...counts, ...curveYs) * 1.12;
   const x = scale(xMin, xMax, PLOT.left, PLOT.right);
   const y = scale(0, yMax, PLOT.bottom, PLOT.top);
+  const specLimits: SpecLimitInput[] = [
+    ...(lsl != null ? [{ kind: "lsl" as const, value: lsl, lineX: x(lsl) }] : []),
+    ...(usl != null ? [{ kind: "usl" as const, value: usl, lineX: x(usl) }] : []),
+  ];
+  const specLabels = layoutSpecLimitLabels(specLimits, PLOT);
 
   const toPath = (points: CurvePoint[]) =>
     points
@@ -318,26 +383,28 @@ function HistogramChart({
         strokeWidth="1.2"
         strokeDasharray="4 3"
       />
-      {lsl != null ? (
+      {specLimits.map((limit) => (
         <line
-          x1={x(lsl)}
-          x2={x(lsl)}
+          key={limit.kind}
+          x1={limit.lineX}
+          x2={limit.lineX}
           y1={PLOT.top}
           y2={PLOT.bottom}
           stroke="var(--destructive)"
           strokeDasharray="3 2"
         />
-      ) : null}
-      {usl != null ? (
-        <line
-          x1={x(usl)}
-          x2={x(usl)}
-          y1={PLOT.top}
-          y2={PLOT.bottom}
-          stroke="var(--destructive)"
-          strokeDasharray="3 2"
+      ))}
+      {specLabels.map((label) => (
+        <LimitLabel
+          key={label.kind}
+          testId={`sixpack-spec-label-${label.kind}`}
+          name={label.kind.toUpperCase()}
+          x={label.x}
+          y={label.y}
+          textAnchor={label.textAnchor}
+          text={label.text}
         />
-      ) : null}
+      ))}
     </ChartSvg>
   );
 }
@@ -580,6 +647,7 @@ export function SixpackView({
             xLabel="Observation"
             yLabel="Individual"
             ariaLabel="Individuals control chart"
+            chartTestId="ichart"
           />
         </Panel>
         <Panel title="Last 25 Observations">
@@ -595,6 +663,7 @@ export function SixpackView({
             xLabel="Observation"
             yLabel="Value"
             ariaLabel="Last 25 observations"
+            chartTestId="last25"
           />
         </Panel>
         <Panel title="Capability Histogram">
@@ -613,6 +682,7 @@ export function SixpackView({
             xLabel="Observation"
             yLabel="Moving range"
             ariaLabel="Moving range control chart"
+            chartTestId="mr"
           />
         </Panel>
         <Panel title="Normal Probability Plot">

@@ -14,7 +14,7 @@ import {
 import { formatRowSelection, normalizeRowSelection } from "./row-selection";
 
 /** Bump when analytics chat policy / tool instructions change. */
-export const ANALYTICS_CHAT_PROMPT_VERSION = "analytics-chat-v11";
+export const ANALYTICS_CHAT_PROMPT_VERSION = "analytics-chat-v12";
 
 const STRUCTURE_RULES = `## Worksheet structure
 If the engineer asked to create, add, insert, rename, edit (a header/name), or delete a data sheet, column, or row, call manage_worksheet immediately. Do not search attachments, scan files, extract numbers, or call write_column.
@@ -44,6 +44,7 @@ If cited pages have unlabeled dual RESULT columns for more than one assay, extra
 
 Attachment scatter path:
 - plot_measurements with a requirement ID or measurement name (e.g. M3-SYS-FN-037) when they asked for a measurement scatter / that style of plot. Do not invent points.
+- Optional lsl / usl override the extracted acceptance limits. Omit them to keep limits cited on the pages. One-sided is allowed.
 
 Steps 4–7 (write_column, sixpack, ANOVA, scatter) and manage_worksheet apply in Agent mode only.
 
@@ -129,7 +130,7 @@ function worksheetIndex(analytics: ReportAnalyticsView): string {
           "Analyses:",
           ...analytics.analyses.map((item) => {
             if (isScatterAnalysis(item)) {
-              return `- ${item.title} (${item.id}) measurement_scatter query=${item.config.query} n=${item.results.n}`;
+              return `- ${item.title} (${item.id}) measurement_scatter query=${item.config.query} n=${item.results.n} LSL=${item.results.specs[0]?.limits.lower ?? "—"} USL=${item.results.specs[0]?.limits.upper ?? "—"}`;
             }
             if (isAnovaAnalysis(item)) {
               return `- ${item.title} (${item.id})${item.stale ? " STALE" : ""} one_way_anova ${item.config.responseColumnName} by ${item.config.factorColumnName} F=${item.results.table.factor.f} p=${item.results.table.factor.p}`;

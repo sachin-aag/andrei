@@ -168,6 +168,21 @@ export const SECTION_LABELS: Record<string, string> = {
   results_and_discussions: "Results and Discussion",
   problems_resolution: "Problem or Failure Resolution",
   body: "Document",
+  qra_approach: "Risk Assessment Approach",
+  qra_objective: "Objective",
+  qra_scope: "Scope",
+  qra_overview: "System / Equipment Overview",
+  qra_procedure: "Procedure",
+  qra_team: "Risk Assessment Team",
+  qra_risk_identification: "Risk Identification",
+  qra_fmea: "Risk Identification and Evaluation",
+  qra_communication: "Risk Communication",
+  qra_pre_conclusion: "Summary and Conclusion (Before Implementation)",
+  qra_mitigation: "Mitigation Plan and Closure",
+  qra_residual_risk: "New / Residual Risk",
+  qra_periodic_review: "Periodic Review",
+  qra_post_conclusion: "Summary and Conclusion (After Implementation)",
+  qra_revision_history: "Revision History",
 };
 
 export const EDITABLE_SECTIONS = [

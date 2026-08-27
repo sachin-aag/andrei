@@ -435,7 +435,9 @@ export function StatisticalWorkspace({
                 const column = worksheet.columns[colIndex];
                 if (!column) return;
                 setSelection(collapseSelection(colIndex, selection.row));
-                setSpecsColumnId(column.id);
+                // Open after the column context menu unmounts so Radix does
+                // not leave body pointer-events: none when the dialog closes.
+                window.setTimeout(() => setSpecsColumnId(column.id), 0);
               }}
             />
           </div>
@@ -785,6 +787,8 @@ export function StatisticalWorkspace({
               xLabel: values.xLabel || undefined,
               yLabel: values.yLabel || undefined,
               layout: { mode: values.mode },
+              lsl: values.lsl,
+              usl: values.usl,
             });
             applyAnalytics(created.analytics, {
               selectAnalysisId: created.analysisId,

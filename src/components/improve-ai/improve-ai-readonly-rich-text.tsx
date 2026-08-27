@@ -36,7 +36,7 @@ export function ImproveAiReadonlyRichText({
   return (
     <div
       className={cn(
-        "improve-ai-readonly-rich-text min-w-0 max-w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)]",
+        "improve-ai-readonly-rich-text min-w-0 max-w-full overflow-x-auto overscroll-x-contain rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm text-[var(--foreground)]",
         "[&_.ProseMirror]:min-h-0 [&_.ProseMirror]:outline-none [&_.ProseMirror]:cursor-default",
         className
       )}

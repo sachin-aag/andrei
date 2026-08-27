@@ -1,0 +1,63 @@
+Standard Operating Procedure Unit: Drug Product
+
+M.J. Biopharm Private Limited Gnsy
+
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance [ SOP No.: SOP/DP/QA/010 _| Revision No: R04 _| Page 20 of 51
+
+10.2 GUIDELINES:
+10.2.1 ICH Q9: Quality risk management
+
+11.0 ANNEXURES:
+
+11.1 Annexure I: Flow Chart for Quality Risk Assessment (SOP/DP/QA/010/A01-R00)
+11.2. Annexure II: Decision Tree for Risk assessment (SOP/DP/QA/010/A02-R00)
+
+12.0 FORMATS:
+
+12.1. Format]: Minutes of Meeting for Risk Assessment (SOP/DP/QA/010/F01-RO1)
+
+12.2 Format Il: Templates for Risk Assessment by FMEA (SOP/DP/QA/010/F02-R04)
+
+12.3. Format III: Quality Risk Assessment Log (SOP/DP/QA/010/F03-R00)
+
+12.4 Format IV: Templates for New Risk/Residual Risk (SOP/DP/QA/010/F04-R00)
+
+12.5 Format V: Periodic Review Schedule for Risk Assessment (SOP/DP/QA/010/F05-R00)
+12.6 Format VI: Periodic Review Checklist for Risk Assessment (SOP/DP/QA/010/F06-R00)
+
+13.0 REVISION HISTORY:
+
+keen eaective Change History aan Control
+ROO 20/10/2022 | New release CCF/QA/22/001
+1. Table 02 in SOP and point number 1.8.2.2 in
+SOP/DP/QA/010/F02-R00 updated with risk priority
+ranking (RPR) for below combinations as shown below.
+Severity | Probability | Detection RPR
+High Low Low Low
+High Low Medium Medium
+RO1 29/07/2023 Medium | High Medium High CCF/QA/23/010
+Medium | Medium High High
+Medium | Medium Medium High
+Low High High High
+Low High Medium Medium
+Low Medium Medium Medium
+
+Prepared By (User Department) Sign/Date
+
+Reviewed By (Quality Assurance) Sign/Date
+
+Sg j06 16
+
+=e
+
+ad o6!t6
+
+Confidential and Proprietary
+MASTER COPY
+
+SOP/DP/QA/001/F01-R02
+

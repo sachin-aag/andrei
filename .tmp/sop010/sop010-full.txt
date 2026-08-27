@@ -1,0 +1,2751 @@
+Standard Operating Procedure Unit: Drug Product
+
+M.J. Biopharm Private Limited sy
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance
+Effective Date: 09\03\2026 Review Date: O8 \OX\2028
+
+SOP No.: SOP/DP/QA/010 Revision No: R04 | Page | of 51
+Supersedes: SOP/DP/QA/010/R03
+
+Preparation, Review and Approval
+
+Name Desiguaitoms Signature Date
+Department
+Prepared By fot , ; TY: Executus .
+(User Department) | JT™)™ esh Sana? C4 L8— 24 Jo 6 / 2
+Reviewed By Sarvesh Nov Oy, manager 5
+(Quality Assurance) Sovermy OH pea = 24 |oelr6
+Reviewed By Sv" coal ual oH 2g
+(User Department) Wahoo for GA Bet °
+Approved By G en)
+ire amnkey Bivar pranagev So. io7 JAaz6 |
+Head QA) Quart. =.
+
+Confidential and Proprietary SOP/DP/QA/001/F01-R02
+
+MASTER COPY
+Standard Operating Procedure Unit: Drug Product
+
+M.J. Biopharm Private Limited sy
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance | SOP No.: SOP/DP/QA/010 | Revision No: R04 Page 2 of 51
+
+1.0 PURPOSE:
+
+11 To provide a procedure to identify various potential risks to the design, facility, process, materials,
+systems, equipment, utility etc. to assess / reduce quality risk and devise a systematic process for
+the assessment, control, communication and review of risks to the quality of the medicinal product.
+
+2.0 SCOPE:
+
+2.1 This SOP is applicable to all the systems/equipment’s/instruments, process, procedure, facility and
+utility, which have direct or indirect impact on the product quality at Drug Product Facility of M.J.
+Biopharm Private Limited, Pune.
+
+3.0 RESPONSIBILITY:
+
+3.1 USER DEPARTMENT:
+
+3.1.1 User department personnel shall identify, initiate, assess, control, implement and manage the risk.
+3.1.2 Completion of the decided mitigation plan in their area (as applicable).
+
+3.1.3. Review and evaluate the level of the risk.
+
+3.1.4 Propose the appropriate control measure to mitigate the risks.
+
+3.1.5 Implementation of the proposed control measures and closer of the risk identified.
+
+3.2 CROSS FUNCTIONAL DEPARTMENT:
+
+3.2.1. Evaluation of the risk identified with respect to their department functions, procedures and
+documentation.
+3.2.2 Completion of mitigation plan if evaluated as responsible department.
+3.3 QUALITY ASSURANCE:
+3.3.1 To prepare and review the SOP.
+3.3.2 Site Quality Head/QA Head shall be responsible for approval of this SOP
+3.3.3 Evaluation of the risk identified.
+3.3.4 Assign the risk identification number.
+3.3.5. Review the risk mitigation action plan for each identified risk.
+Prepared By (User Department) Sign/Date Reviewed By (Quality Assurance) Sign/Date
+PSag\oelr Line
+Confidential and Proprietary SOP/DP/QA/001/F01-R02
+
+MASTER COPY
+
+Standard Operating Procedure Unit: Drug Product
+
+M.J. Biopharm Private Limited Gysy
+Plot No. 18, International Biotech Park, Hinjawadi, Phase IT, Pune 411057.
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance | SOP No.: SOP/DP/QA/010 | Revision No: R04 | Page 3 of 51
+
+3.3.6 Verification of the implementation status of the contro] measures.
+
+3.3.7. Approval of the risk assessment.
+
+3.3.8 Final closure of the risk assessment.
+
+3.4 RISK ASSESSMENT TEAM (RAT):
+
+3.4.1 Risk Assessment Team shall consist of members from different department viz. Quality
+Assurance, Quality Control, Regulatory Affairs, Production, Packing, Warehouse and Engineering
+ete.
+
+3.4.2 Brain storming during risk assessment meetings to identify the risks based on scientific judgment.
+
+4.0 ABBREVIATIONS:
+A Annexure QC Quality Control
+AHU Air Handling Unit QMS _} Quality Management System
+APQR_ | Annual Product Quality Review QRM_ | Quality Risk Management
+CAPA Corrective Action and Preventive RA Risk Assessment
+Action
+CFT Cross Functional Team RAT | Risk Assessment Team
+EHS Environment Health and Safety RPN _| Risk Priority Number
+F Format RPR_ | Risk Priority Ranking
+FMEA | Failure Mode Effect Analysis SOP | Standard Operating Procedure
+No. Number Sr. No. | Serial Number
+QA Quality Assurance TCD | Target Completion Date
+5.0 DEFINITIONS:
+5.1 Quality Risk Management:
+A systematic process for the assessment, control, communication, implementation and review of
+risks to the quality of the drug product across the product lifecycle.
+5.2 Risk:
+The combination of the probability of occurrence of harm and the severity of that harm.
+5.3 Risk Assessment:
+A systematic process of organizing information to support a risk decision. It consists of the
+identification of hazards and the analysis and evaluation of risks associated with exposure to those
+hazards.
+Prepared By (User Department) Sign/Date Reviewed By (Quality Assurance) Sign/Date
+PSs25\06}26 2
+Confidential and Proprietary SOP/DP/QA/001/F01-R02
+
+MASTER COPY
+
+Standard Operating Procedure Unit: Drug Product
+
+M.J. Biopharm Private Limited Gnsy
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance | SOP No.: SOP/DP/QA/010 _| Revision No: R04 _| Page 4 of 51
+
+5.4
+
+5.5
+
+5.6
+
+5.7
+
+5.8
+
+5.9
+
+5.10
+
+5.11
+
+5.12
+
+5.13
+
+5.14
+
+5.15
+
+5.16
+
+Detectability:
+The ability to discover or determine the existence, presence, or fact of a hazard.
+
+Probability/Occurrence:
+The likelihood that the cause of the failure will happen, resulting in harm to the patient.
+
+Severity:
+A measure of the possible consequences of a hazard.
+
+Risk analysis:
+The estimation of the risk associated with the identified hazards.
+
+Harm:
+Damage to health, including the damage that can occur from loss of product quality or availability.
+
+Product Lifecycle:
+All phases in the life of the product from the initial development through marketing until the
+
+product's discontinuation.
+
+Risk Identification:
+Systematic use of information to identify potential sources of harm (hazards) referring to the risk
+
+question or problem description.
+
+Risk Evaluation:
+The comparison of the estimated risk to given risk criteria using a quantitative or qualitative scale
+to determine the significance of the risk.
+
+Risk Control:
+Actions of implementing risk management decisions.
+
+Risk Communication:
+Exchange or sharing of information about risk and risk management between the decision maker
+and other stakeholders.
+
+Risk Acceptance:
+Risk control decision to accept risk.
+
+Risk Reduction:
+Actions taken to minimize the probability of occurrence of harm and the severity of that harm.
+
+Risk review:
+Review or monitoring of output/results of the risk management process considering (if appropriate)
+new knowledge and experience about the risk.
+
+Prepared By (User Department) Sign/Date Reviewed By (Quality Assurance) Sign/Date
+
+LS%s\c6 26 Anes
+
+Confidential and Proprietary SOP/DP/QA/001/F01-RO2
+MASTER COPY
+
+Standard Operating Procedure Unit: Drug Product
+
+M.J. Biopharm Private Limited Gay
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance | SOP No.: SOP/DP/QA/010 | Revision No: R04 | Page 5 of 51
+
+5.17
+
+Risk Priority Number (RPN):
+A quantitative method for determining the level of risk by multiplying the severity, probability of
+occurrence and detectability rankings of the failure or event.
+
+5.18 Risk Priority Ranking (RPR):
+A qualitative method for determining the level of risk by combining severity, occurrence and
+detectability rankings of the failure or event.
+
+5.19 Residual Risk:
+Risk remaining after risk control measures has been taken.
+
+5.20 Validation:
+Establishing documented evidence that provides a high degree of assurance that a specific process
+will consistently produce a product meeting its predetermined specifications and quality attributes.
+
+5.21 Direct Impact System:
+Those Building /Facility / Utility / Equipment / Instrument / Process which controls and or sustain
+a cGMP operation directly thereby impacting safety, efficacy and or purity of a product. (example :
+Manufacturing block, Clean room, Facility to ensure flow of material and personnel to minimize
+contamination, dedicated facilities / equipment, Purified water system, Filling machine, AHU
+system for areas where product / materials are exposed during operation.)
+
+5.22 Indirect Impact Systems:
+Those Building / Facility / Utility / Equipment / Instrument / Process which do not control and or
+sustain a cGMP operation directly, but still perceived to have an impact on safety, efficacy and or
+purity of a product (e.g. : Boiler steam, Raw water system, Building Management System, access
+control etc.).
+
+5.23 Qualitative Risk Assessment (Informal):
+Qualitative risk assessment shall be performed based on the level of risk ranking, as high, medium
+and low. Risk priority ranking shall be evaluated in qualitative risk assessment.
+
+5.24 Quantitative Risk Assessment (Formal):
+Quantitative risk assessment shall be performed based on the level of risk rating. Risk priority
+number shall be calculated in quantitative risk assessment.
+
+6.0 MATERIAL AND EQUIPMENTS:
+Not Applicable.
+
+Prepared By (User Department) Sign/Date Reviewed By (Quality Assurance) Sign/Date
+, =
+L549 06! 24 Agel
+Confidential and Proprietary SOP/DP/QA/001/F01-R02
+
+MASTER COPY
+
+Standard Operating Procedure Unit: Drug Product
+
+M.J. Biopharm Private Limited Gey
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance | SOP No.: SOP/DP/QA/010 _| Revision No: R04 _| Page 6 of 51
+7.0 PROCEDURE:
+71 Risk Management Process involves the following steps :
+
+7.1.1 Initiation of a quality risk management process
+7.1.2 Team Selection
+7.1.3 Risk Assessment — Identification, Analysis and Evaluation
+7.1.4 Risk Control — Mitigation plan, Risk reduction or Acceptance
+7.1.5 Risk Communication — QRM process shall be communicated between the team members
+7.1.6 Risk Review
+7.1.7. Risk Closure
+7.2 Initiation of a quality risk management process:
+7.2.1 Quality risk management should include systematic processes designed to coordinate, facilitate and
+improve science-based decision making with respect to risk. Possible steps used to initiate and plan
+a quality risk management process might include the following,
+7.2.1.1 Risk assessment team shall be selected for quality risk management process. Risk assessment team
+shall be made with subject matter experts to identify the risk and related controls by user
+department Head/Designee in coordination with QA.
+7.2.1.2 Meeting shall be arranged at initial to decide the strategy for risk assessment (Informal/Formal) and
+to identify the probable failure. Outcome of meeting shall be recorded as per format for “Minutes
+of Meeting for Risk Assessment” as per format no. SOP/DP/QA/010/FOL.
+73 Risk Assessment — Identification, Analysis and Evaluation
+7.3.1 Risk identification is a systematic use of information to identify hazards referring to the risk
+question or problem description. Identified risk shall be mentioned in template for risk assessment
+by FMEA method as per format no. SOP/DP/QA/010/F02.
+7.3.2 Flow of Risk Assessment Template:
+7.3.2.1 Pre-approval: Pre-approval of risk assessment shall be taken after identification of risk, their
+control and before implementation of mitigation plan (if applicable).
+7.3.2.2 Objective: State the objective of risk assessment including name of _ the
+equipment/instrument/system, process, activity etc.
+Prepared By (User Department) Sign/Date Reviewed By (Quality Assurance) Sign/Date
+LI o€)26 Ze Au
+Confidential and Proprietary SOP/DP/QA/001/F01-R02
+
+MASTER COPY
+
+Standard Operating Procedure Unit: Drug Product
+
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+M.J. Biopharm Private Limited Gysy
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance | SOP No.: SOP/DP/QA/010 Revision No: R04 | Page 7 of 51
+
+7.3.2.3
+7.3.2.4
+
+7.3.2.5
+7.3.2.5.1
+
+7.3.2.5.2
+
+7.3.2.5.3
+7.3.2.5.4
+
+7.3.2.5.5
+7.3.2.6
+
+7.3.2.6.1
+
+7.3.2.6.2
+
+7.3.2.7
+
+7.3.2.8
+
+7.3.2.9
+
+Scope: State the applicability of risk assessment including facility and company name.
+
+System/ Equipment/ Instrument/ Other (if any) Overview: Brief description of System/ Equipment/
+Instrument/ Other including functions, intended use, component details, process flow etc.
+
+Procedure: General process flow of quality risk management as follows,
+
+Define the problem and/or risk question, including pertinent assumptions identifying the potential
+for risk.
+
+Assemble background information and/ or data on the potential hazard, harm or human health
+impact relevant to the risk assessment.
+
+Identify a leader and necessary resources.
+
+Specify a timeline, deliverables and appropriate level of decision making for the risk management
+
+process.
+Flow chart for risk assessment shall be as per annexure no. SOP/DP/QA/010/A01.
+
+Risk Assessment Team: User Head/Designee along with QA consultation shall form the team for
+discussion on risk assessment and identify the potential failure, their control and mitigation plan (if
+applicable).
+
+During risk assessment team meeting, minutes of meeting as identified points of risk assessment
+shall be mentioned in format for “Minutes of Meeting for Risk Assessment” SOP/DP/QA/010/F01
+or if required minutes of meeting shall be prepared in word format as per format no.
+SOP/DP/QA/010/FO1 and detail risk assessment shall be prepared by iniating department as per
+format no. SOP/DP/QA/010/F02 with reference of points identified during meeting. Additional
+points (risk failure) may be added during actual preparation of risk.
+
+Format for “Minutes of Meeting for Risk Assessment” SOP/DP/QA/010/F01 shall be requested to
+QA as per SOP No. SOP/DP/QA/003 by user department.
+
+Risk Identification: Mention the idenfied risk considering with process/activity and their potential
+failure.
+
+Risk assessment measure (Informal or formal risk assessment): During meeting, user department
+along risk assessment team shall perform the evaluation of questions identified as per format no.
+SOP/DP/QA/010/F01 and nature of risk assessment shall be decided as informal risk assessment
+(Qualitative) or formal risk assessment (Quantitative).
+
+Flow chart for decision (informal or formal risk assessment) shall be mentioned as per annexure
+no. SOP/DP/QA/010/A02.
+
+Prepared By (User Department) Sign/Date Reviewed By (Quality Assurance) Sign/Date
+
+*
+
+E53) o6 Jot 50 ee
+
+Confidential and Proprietary SOP/DP/QA/001/F01-R02
+MASTER COPY
+
+Standard Operating Procedure Unit: Drug Product
+
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+M.J. Biopharm Private Limited Gysy
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance | SOP No.: SOP/DP/QA/010 _| Revision No: R04 _| Page 8 of 51
+
+7.3.2.9.)
+
+Informal Risk Assessment: Informal risk assessment considered as ‘Qualitative Risk Assessment’.
+Risk priority ranking shall be evaluated in informal risk assessment as, High, Medium and Low.
+
+7.3.2.9.2 Formal Risk Assessment: Formal risk assessment considered as ‘Quantitative Risk Assessment’.
+
+7.3.2.10
+
+Risk priority number shall be evaluated in formal risk assessment based on rating.
+
+Risk Identification and Evaluation Considering Current Control Measures: All potential failure
+shall be mentioned in tabular form along with control measure and detection.
+Note: Font size for this section shall be ‘10’ and page size can be ‘A4’ or’ A3’ as applicable.
+
+7.3.2.10.1 After evaluation, if risk found with high or medium risk category, mitigation plan need to be
+
+7.3.2.11
+
+7.3.2.12
+
+7.3.2.13
+
+7.3.2.14
+
+7.3.2.15
+
+identify to control the risk within acceptance. Mitigation plan is not required for low risk category.
+
+Risk Communication: Identified risk and mitigation plan shall be communicated within the cross
+functional departments including allocation of responsibility and target completion date of
+mitigation plan. If applicable risk communicated to Customer / regulatory authorities by
+Regulatory Affairs department in due consultation with QA Head/Designee.
+
+Risk Assessment Summary and Conclusion (Before Implementation): Summarize the outcome of
+risk assessment including control of risk and requirement of mitigation plan. Conclusion shall be
+made before implementation of mitigation plan.
+
+Mitigation Plan and Closure: This section includes the plan, closure status and closure date and
+sign/date of responsible person.
+
+New Risk Identified During Execution (Residual Risk): If any new risk identified during the
+implementation of mitigation plan, it shall be evaluated and requirement of re-assessment of initial
+risk assessment or any other action need to be taken shall be decided by user department in
+consultation with QA Head/Designee.
+
+If new risk identified, then format for New Risk/Residual Risk SOP/DP/QA/010/F04 shall be
+initiated. After evaluation of new risk in format, preapproval shall be taken by recording summary
+and conclusion (before implementation). If new risk found with high or medium risk category,
+mitigation plan need to be identify to control the risk within acceptance and after verification of
+implemented mitigation plan, post approval shall be taken by recording the summary and
+conclusion (after implementation). Process flow of handing the format SOP/DP/QA/010/F04 shall
+be as per initial risk assessment process flow. .
+
+Note: After closing of mitigation plan of new risk (if applicable), initial risk assessment shall be
+closed.
+
+7.3.2.16 Risk Assessment Summary and Conclusion (After Implementation): Summary and conclusion shall
+Prepared By (User Department) Sign/Date Reviewed By (Quality Assurance) Sign/Date
+LE 506 J26 “ot
+Confidential and Proprietary SOP/DP/QA/001/F01-R02
+
+MASTER COPY
+
+Standard Operating Procedure Unit: Drug Product
+
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+M.J. Biopharm Private Limited sy
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance | SOP No.: SOP/DP/QA/010 | Revision No: R04 | Page 9 of 51
+
+7.3.2.17
+
+7.3.3
+7.3.3.1
+
+7.3.3.2
+
+7.3.4
+73.4.1
+
+7.3.4.2
+
+7.3.4.3
+
+73.44
+
+7.3.4.5
+
+be mentioned after implementation of mitigation plan, if mitigation plan is not applicable then
+mark this section as ‘Not Applicable’.
+
+Post-Approval (After Implementation): Approval shall be taken after implementation of mitigation
+plan. If mitigation plan is not required (In case low category risk) then mark this section as “Not
+Applicable’.
+
+Primary principles of quality risk management are:
+
+The evaluation of the risk to quality should be based on scientific knowledge and ultimately link to
+the patient safety.
+
+The level of effort, formality and documentation of the quality risk management process should be
+commensurate with the level of risk.
+
+Risk shall be identified by assessing the following, but not limited to:
+
+Equipment:
+Type, design, capacity, location, installation, condition, lubricants used, equipment history,
+operation, maintenance, calibration and breakdown etc.
+
+Facilities:
+
+Design, Site layout, material movement, personnel movement, waste movement, pest control,
+utilities, building management system maintenance, building security measures, safety measures
+and facility monitoring system etc.
+
+Process:
+
+Development, Introduction of new product, Process change and rework / reprocess. Any major
+change or modification to the qualified facility, (Any Change) equipment, instrument, utility,
+process, product, system etc.
+
+Document system:
+
+Master documents, standard operating procedure, validation reports, self-inspection reports, change
+control system, deviation, CAPA, APQR, market complaint reports, batch manufacturing records,
+batch packing records, equipment usage logs, analytical records and reports of raw materials,
+packing materials, stability data, process/cleaning validation reports, environmental monitoring
+records, rework or reprocess and batch manufacturing records etc.
+
+Materials:
+
+Identity, status control, quality, quantity, handling, specifications, security arrangements,
+counterfeiting control, sampling, reference / working standards, out of specification, retention
+samples, destruction of samples, analysis report, laboratory safety, retesting, storage, segregation
+
+Prepared By (User Department) Sign/Date Reviewed By (Quality Assurance) Sign/Date
+
+L306 joé Annas
+
+Confidential and Proprietary SOP/DP/QA/001/F01-R02
+MASTER COPY
+
+Standard Operating Procedure Unit: Drug Product
+
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+M.J. Biopharm Private Limited Gysy
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance | SOP No.: SOP/DP/QA/010 _| Revision No: R04 _| Page 10 of 51
+
+7.3.4.6
+
+7.3.5
+
+7.3.6
+
+7.3.7
+
+7.3.8
+7.3.9
+7.3.9.1
+
+7.3.9.2
+
+7.3.9.3
+
+and material condition etc.
+
+Personnel:
+Attributes, education, experience, training, competence, reporting relationships, tampering,
+communication, theft and substitution etc.
+
+Risk assessment team and user department shall carry out risk assessment. All risks associated
+shall be identified through a discussion and for each process subjected to risk assessment, the
+potential failure mode to be identified and its relevant potential effect / impact on quality shall be
+assessed with following four fundamental questions:
+What might go wrong (Potential failure / Cause) and its relevant risk (the Hazard)?
+What are the consequences (severity)?
+What is the likelihood (probability) it will go wrong?
+What are the ability to find the hazard if it occurs (detectability)?
+
+Hazard identification is a systematic use of information to identify hazards referring to the risk
+question or problem description. Information can include historical data, theoretical analysis,
+informed opinions, and the concerns of stakeholders.
+
+Risk analysis is the estimation of the risk associated with the identified hazards. It is the qualitative
+or quantitative process of linking the likelihood of occurrence, severity of harms and detectability
+of harms.
+
+Risk evaluation is to compares the identified and analyzed risk against established risk criteria.
+
+Qualitative Risk Assessment:
+
+During qualitative risk assessment, risk priority ranking (RPR) shall be evaluated as High, Medium
+and Low.
+
+Risk assessment shall be performed considering with FMEA approach (Failure Mode Effect
+Analysis). All identified failure mode shall be irrespective of their probability of occurrence and or
+severity and or detectability.
+
+Based on the below table (table no. 01, 02 and 03), risk priority ranking (RPR) shall be evaluated,
+
+Prepared By (User Department) Sign/Date Reviewed By (Quality Assurance) Sign/Date
+
+P&ag\s le Ane
+
+2
+
+Confidential and Proprietary SOP/DP/QA/001/F01-R02
+MASTER COPY
+
+Standard Operating Procedure
+
+Unit: Drug Product
+
+M.J. Biopharm Private Limited Gisy
+
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance | SOP No.: SOP/DP/QA/010__| Revision No: R04 _| Page 11 of 51
+
+Severity:
+
+Severity is ranked based on the impact on safety, purity and identity of the product.
+
+Probability:
+
+Occurrence is ranked based on probability of failure (frequency of event/incident)
+
+Detectability:
+
+Detectability is ranked based on ability/accuracy of detection
+
+Risk Criteria:
+Table No. 01
+Severity Probability Detectability
+Rank Impact Rank Impact Rank Impact
+ted hi
+No impact or zeP ected fo happen Very
+. infrequently, yearly .
+Low impact (may . high/complete
+Low . ae Low | or unlikely to happen} Low .
+having indirect detection
+impact) e.g. one occurrence posible
+J more than a year
+Medium or Expected to happen in Medium or
+; moderate impact . a moderate frequency . moderate
+Med M Med: re
+conan (Will having eau e.g. Half yearly or an possibility of
+indirect impact) Quarterly detection
+ted
+High marae vocal i. “vere No detection
+High | (having direct | High | "SUSY °S High ;
+meee} than one occurrence possible
+P weekly or per day
+
+Prepared By (User Department) Sign/Date
+
+Reviewed By (Quality Assurance) Sign/Date
+
+LSxyloelee
+
+SA 06)
+
+Confidential and Proprietary
+MASTER COPY
+
+SOP/DP/QA/001/F01-R02
+
+Standard Operating Procedure
+
+Unit: Drug Product
+
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+M.J. Biopharm Private Limited
+
+ew)
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance
+
+| SOP No.: SOP/DP/QA/010 _| Revision No: R04 _| Page 12 of 51
+
+Risk Evaluation:
+
+| High
+
+I
+
+Medium
+
+high
+
+Table No. 02
+Severity Probability Detection Risk Prioritization Ranking
+High High
+High | Medium “High :
+High High ll
+High Medium Medium High
+Medium ay
+High
+- Medium
+; [| High High
+| Medium = High
+Medium
+High High
+Medium Medium Medium = High i
+Medium
+FAigh Medium
+Medium Medium
+
+High
+Medium
+
+Medium
+
+| Medium
+
+Engh
+Medium
+
+Medium
+
+Prepared By (User Department) Sign/Date
+
+Reviewed By (Quality Assurance) Sign/Date
+
+PF plo6 126 ZF aoe
+
+a
+
+Confidential and Proprietary SOP/DP/QA/001/F01-R02
+
+MASTER COPY
+Standard Operating Procedure Unit: Drug Product
+
+M.J. Biopharm Private Limited Gysy
+Plot No. 18, International Biotech Park, Hinjawadi, Phase IT, Pune 411057.
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance SOP No.: SOP/DP/QA/010 | Revision No: R04 | Page 13 of 51
+
+7.3.10
+7.3.10.1
+
+7.3.10.2
+
+7.3.10.3
+
+Table No. 03
+Overall Risk |Risk Treatment
+
+Low ‘Mitigation Plan not required or risk is at acceptable level.
+
+| Mitigation plan shall be done to reduce the risk and based on the
+
+haan mitigation risk can be acceptable
+Hich Identify and implement the mitigation plan before proceeding to the
+8 activity to reduce the risk ranking within acceptable range.
+
+Quantitative Risk Assessment:
+
+During quantitative risk assessment, risk priority number (RPN) shall be calculated based on the
+rating.
+
+Risk assessment shall be performed considering with FMEA approach (Failure Mode Effect
+Analysis). All identified failure mode shall be irrespective of their probability of ‘occurrence and or
+severity and or detectability.
+
+Based on the below tables (table no. 04, 05 and 06), risk priority number (RPN) shall be
+calculated,
+
+Severity:
+Severity shall be ranked based on the impact on quality, safety, purity and identity of the product.
+Severity number should be assigned from 1-5 scale depending upon the impact.
+Probability (frequency of event/incident):
+Occurrence shal! be ranked based on the probability of occurrence.
+Occurrence number should be assigned from 1-5 scale depending upon the probability.
+Detectability:
+Detectability shall be ranked based on the probability of detection of hazard.
+Detectability number should be assigned from 1-5 scale depending upon the probability of
+detection.
+Table No. 04
+
+Severity Probability Detectability
+
+Number Impact Number Impact Number Impact
+Expected to happen
+infrequently e.g. Very high/complete
+yearly or unlikely detection possible
+
+to happen e.g. one
+
+1 No impact 1
+
+Prepared By (User Department) Sign/Date Reviewed By (Quality Assurance) Sign/Date
+
+LErasgjoc /ré Pan
+
+Confidential and Proprietary SOP/DP/QA/001/F01-RO2
+WASTER COPY
+
+Standard Operating Procedure
+
+Unit: Drug Product
+
+; M.J. Biopharm Private Limited
+Plot No. 18, International Biotech Park, Hinjawadi, Phase H, Pune 411057.
+
+en)
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance
+
+| SOP No.: SOP/DP/QA/010 _ | Revision No: R04 _| Page 14 of 51
+
+occurrence more
+than a year
+
+Low impact
+(may having
+indirect impact)
+
+Expected to happen
+in low frequency
+e.g. Half yearly
+
+High possibility of
+detection
+
+Medium or
+moderate
+impact
+
+(Will having
+indirect impact)
+
+Expected to happen
+in a moderate
+frequency e.g.
+Quarterly
+
+Medium or moderate
+possibility of detection
+
+High impact
+(may having
+direct impact)
+
+Expected to happen
+repeated e.g.
+Weekly
+
+Low possibility of
+detection
+
+Very high
+impact
+
+(Will having
+direct impact)
+
+Expected to happen
+regularly e.g. More
+than one
+occurrence per day
+
+No detection possible
+
+Risk priority number shall be calculated as;
+RPN=SxPxD
+
+S = Severity, P = Probability of occurrence, D = detectability
+
+Table No. 05
+DETECTION
+Severity | Probability Risk THO
+(S) (P) (S*P) | vel 1 [2 [3 |4 5
+SxPxD
+
+*Green- Low; Yellow- Medium; Red- high
+
+Reviewed By (Quality Assurance) Sign/Date
+
+Aweens
+
+Prepared By (User Department) Sign/Date
+
+L5ry\06)26
+
+Confidential and Proprietary SOP/DP/QA/001/F01-RO02
+
+MASTER COPY
+Standard Operating Procedure Unit: Drug Product
+
+M.J. Biopharm Private Limited ensy
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance | SOP No.: SOP/DP/QA/010 | Revision No: R04 | Page 15 of 51
+
+So based on the above evaluation RPN rating as:
+
+Table No. 06
+| Overall Risk RPN Value Risk Treatment
+
+f |
+
+| Low 1-8  |Mitigation Plan not required or risk is at acceptable level.
+[— lanean :
+Medium | 9-24 | Mitigation plan shall be done to reduce the risk to an acceptable
+| |level |
+| High 95-125 |Identify and implement the mitigation plan before proceeding to |
+| ithe activity to reduce the risk ranking within acceptable range.
+74 Risk Control — Mitigation plan, Risk reduction or Acceptance
+
+TAA] Risk control includes decision making to reduce and/or accept risks. The purpose of risk control is
+to reduce the risk to an acceptable level.
+
+7.4.2 Risk control might focus on the following questions:
+
+7.4.2.1 Is the risk above an acceptable level?
+
+7.4.2.2 | What can be done to reduce or eliminate risks?
+
+7.4.2.3 What is the appropriate balance among benefits, risks and resources?
+
+7.4.2.4 Are new risks introduced as a result of the identified risks being controlled?
+
+74.3 The Mitigation plan elaborates the current control and the actions to reduce the overall risk to an
+acceptable levels or elimination.
+
+TAA For cases where overall risk is “Low”, mitigation plan is not required and the risk assessment shall
+
+be closed.
+
+7.4.5 The mitigation plan is mandatory where overall risk is “Medium” and "High", controls relating to
+the risk should be implemented as soon as practically possible.
+
+7.4.6 — Mitigation plan for medium category risk shall be done to reduce the risk to an acceptable level.
+
+7.4.7 Mitigation plan for high category risk shall be Identify and implement first to reduce the risk to an
+acceptable level, before proceeding to the activity.
+
+74.8 The mitigation plan shall briefly explain the recommended action to be taken; responsible person
+shall be implementing the controls mentioned in the risk mitigation plan and the expected target
+date for completion.
+
+Prepared By (User Department) Sign/Date Reviewed By (Quality Assurance) Sign/Date
+L49) 06/26 ea
+29) 34106 |n6
+Confidential and Proprietary SOP/DP/QA/001/F01-R02
+
+MASTER COPY
+
+Standard Operating Procedure Unit: Drug Product
+
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+M.J. Biopharm Private Limited Gysy
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance | SOP No.: SOP/DP/QA/010 Revision No: R04 | Page 16 of 51
+
+7.4.9
+74.9.1
+
+749.2
+
+7.4.10
+
+7411
+7.4.12
+7.413
+
+TAA
+
+TAA4L
+7414.2
+7.4.14.3
+
+7414.4
+
+NUMBERING SYSTEM FOR QUALITY RISK ASSESSMENT:
+
+On receipt of the quality risk assessment form, QA shall assign the number and the same shall be
+entered in “Quality Risk Assessment Log” as per format no. SOP/DP/QA/010/F03.
+
+Numbering system for Quality Risk Assessment as follows; RA/KXX/Y Y/ZZZ-RBB
+
+Where,
+
+‘RA’ stands for Risk Assessment
+
+‘XXX? stand for department code as per SOP No. SOP/DP/QA/001 (It shall be two digit or three
+digit e.g. QA, QC, EHS etc.)
+
+YY’ stands for last two digit of financial year (financial year 2022 shall be mentioned as 22)
+
+‘ZZZ’ stands for department wise sequentially increasing number starts from “001”.
+
+RBB R stand for revision and BB stand for sequential revision number start from 00, 01, 02 and so
+
+on.
+For example, the first risk assessment raised by QA department in Year 2022, then it shall be
+
+numbered as ‘RA/QA/22/001-R00’.
+
+On completion of risk assessment, pre-approval shall be taken from as reviewed by from risk
+assessment team and approval from QA Head/Designee. Risk accept or reject and their
+control/mitigation shall be reviewed during the pre-approval.
+
+If accepted, the risk assessment form shall be sent to the user department to proceed the risk
+control/ mitigation.
+
+In case the risk assessment is rejected, the same shall be communicated to concern departments and
+risk assessment considered as “Closed” and kept in risk assessment file for future reference.
+
+Risk assessment shall be reviewed by risk assessment team for proposed risk control and forward
+to QA Head/Designee for approval.
+
+Risk reduction includes:
+Use the appropriate quality tool for the mitigation of risk or completion of the action item.
+Preference should be given to reduce the occurrence rather than increasing the levels of detection.
+
+Process that improve the detectability of hazards and quality risks might also be used as part of a
+risk control strategy.
+
+Implementation of risk reduction measures should not introduce new risks into the system or
+
+increase the significance of other existing risks, it is required to revisit the risk assessment to
+identify and evaluate any possible change in the risk after implementing a risk reduction process
+
+Prepared By (User Department) Sign/Date Reviewed By (Quality Assurance) Sign/Date
+
+£543) hc og\oel&
+
+Confidential and Proprietary SOP/DP/QA/001/F01-RO2
+MASTER COPY
+
+Standard Operating Procedure Unit: Drug Product
+
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+M.J. Biopharm Private Limited ensy
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance SOP No.: SOP/DP/QA/010 | Revision No: R04 | Page 17 of 51
+
+during risk assessment review.
+
+74.15 Risk Acceptance:
+
+7.4.15.1 For some types of harms, even the best quality risk management practices might not entirely
+eliminate risk. In these circumstances, it might be agreed that an appropriate quality risk
+management strategy has been applied and that quality risk is reduced to a specified (acceptable)
+level. This (specified) acceptable level will depend on many parameters and should be decided on a
+case-by-case basis.
+
+74.16 Following quality risk management practices may be considered:
+
+7.4.16.1 Modify the process to reduce the risk to an acceptable level. (This usually involves modifications
+which will decrease the likelihood of occurrence.)
+
+7.4.16.2 Enhance the method of detection to reduce the risk to an acceptable level
+
+7.4.16.3 Employ a new process that has an acceptable level of risk.
+
+7.4.16.4 Communicate the risk level to the appropriate stakeholders for further consideration.
+
+75 Risk Communication:
+
+75.1 Is sharing of information about risk and risk mitigation between risk assessment team and
+responsible person of risk action. Communication can be at any stage of the risk management
+process. The output/ result of the quality risk management process should be appropriately
+documented and communicated
+
+7.5.2 During the implementation of mitigation plan, the implementation status shall be communicated to
+risk assessment team by the initiator. Based on the criticality of the risk, the risk management
+process shall be communicated to Customer / regulatory authorities by Regulatory Affairs
+department in due consultation with QA Head/Designee.
+
+75.3 After approval of risk assessment, identified risk shall be communicated to responsible cross-
+functional team along with QA.
+
+7.6 Risk Review:
+
+7.6.1 After implementation of controls as mentioned in the mitigation plan, Initiator shall inform to the
+risk assessment team for risk review. Risk assessment team shall review the risk assessment and
+after confirmation as risks are controlled, forward it to QA Head/Designee for approval. QA
+Head/Designee shall review the risk assessment followed by approval of risk assessment and status
+shall be updated in the “Quality Risk Assessment Log” as per format no. SOP/DP/QA/010/F03.
+
+Prepared By (User Department) Sign/Date Reviewed By (Quality Assurance) Sign/Date
+Lsx<y)o6he oan
+Confidential and Proprietary SOP/DP/QA/001/F01-R02
+
+MASTER COPY
+
+Standard Operating Procedure Unit: Drug Product
+
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+M.J. Biopharm Private Limited Gysy
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance | SOP No.: SOP/DP/QA/010__| Revision No: R04 _| Page 18 of 51
+
+7.6.2
+7.6.2.1
+
+7.6.2.2
+
+7.6.2.3
+
+7.6.2.4
+7.6.2.5
+
+7.6.2.6
+
+Periodic review of Risk Assessment: -
+As ongoing part of quality management process, applicable risk assessment and their outcome shall
+be reviewed.
+
+Review applicability of risk’s shall be considered/decided on nature of risk’s, potential impact and
+effectiveness retention period of risk’s. Review applicability of risk’s shall be mentioned in risk
+assessment format no. SOP/DP/QA/010/F02, at the time of risk assessment closure.
+
+Risk assessment shall be reviewed every two years. Review can be initiated one month before
+completion of two years period.
+
+Risk assessment review shall be done as per format no. SOP/DP/QA/010/F06
+
+Risk assessment revision shall be handled through change control procedure in case revision is
+required as per review outcome of format no. SOP/DP/QA/010/F06.
+
+Risk assessment periodic review shall be done by respective user or
+product/process/equipment/system owner.
+
+7.6.3 Risk assessment review schedule shall be prepared yearly i.e. in the month of march of every
+financial year or as and when required; schedule shall be prepared as per format no.
+SOP/DP/QA/010/F05.
+
+7.6.4 Risk assessment may be reviewed before periodic review in following circumstance (but not
+limited to),
+
+7.6.4.1 Impact of high level deviations.
+
+7.6.4.2 Product performance (Product Recall, Field Alert).
+
+7.6.4.3. Market Complaints.
+
+7.6.4.4 Walk through/ internal audit/ External audit observations, Major changes impacting facility,
+equipment or processes.
+
+7.6.4.5 Annual Product Quality Review (APQR) recommendations.
+
+77 Risk Closure:
+
+TIA Once the risk review is completed by risk assessment team and risk is reduced to acceptable level
+(if applicable), it shall be forwarded to QA Head/Designee for approval followed by closure in the
+risk assessment log as per format no. SOP/DP/QA/010/F03.
+
+Prepared By (User Department) Sign/Date Reviewed By (Quality Assurance) Sign/Date
+6 a
+LSars\» c}e ‘oglasn6
+Confidential and Proprietary SOP/DP/QA/001/F01-R02
+
+MASTER COPY
+
+Standard Operating Procedure Unit: Drug Product
+
+M.J. Biopharm Private Limited Gysy
+Plot No. 18, International Biotech Park, Hinjawadi, Phase IJ, Pune 411057.
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance | SOP No.: SOP/DP/QA/010 _| Revision No: R04 _| Page 19 of 51
+
+8.0 ENVIRONMENT, HEALTH AND SAFETY:
+
+Not applicable
+9.0 DOCUMENT DISTRIBUTION LIST:
+This document is issued to following departments
+Department Name Copy No. | Department Name Copy No.
+Quality Assurance 01 Purchase NA
+Quality Control 02 Human Resource and Admin 09
+(Analytical/Wet Chemistry)
+Production 03 Regulatory Affairs NA
+Packing 04 Environment, Health and 10
+Safety
+Engineering and Utilities 05 Production Planning NA
+Tati
+Information Technology 06 Bounulauon ene NA
+development
+Microbiology 07 Project NA
+Warehouse 08 Hits | Bofueice
+
+10.0 REFERENCES:
+
+10.1 SOP’S:
+10.1.1. SOP for SOP (SOP/DP/QA/001)
+10.1.2 Good Documentation Practices (SOP No. SOP/DP/QA/002)
+10.1.3. Document and Data Control (SOP No. SOP/DP/QA/003)
+10.1.4 Specimen Signature (SOP No. SOP/DP/QA/004)
+10.1.5 Training (SOP No. SOP/DP/QA/005)
+10.1.6 Control of Stamp (SOP No. SOP/DP/QA/006)
+10.1.7 Change Control (SOP No. SOP/DP/QA/007)
+10.1.8 Handling of Deviation (SOP No. SOP/DP/QA/008)
+10.1.9 Corrective Action Preventive Action (SOP No. SOP/DP/QA/009)
+
+Prepared By (User Department) Sign/Date Reviewed By (Quality Assurance) Sign/Date
+Ps- whet ad 208 1&
+Confidential and Proprietary SOP/DP/QA/001/F01-R02
+
+MASTER COPY
+
+Standard Operating Procedure Unit: Drug Product
+
+M.J. Biopharm Private Limited Gnsy
+
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance [ SOP No.: SOP/DP/QA/010 _| Revision No: R04 _| Page 20 of 51
+
+10.2 GUIDELINES:
+10.2.1 ICH Q9: Quality risk management
+
+11.0 ANNEXURES:
+
+11.1 Annexure I: Flow Chart for Quality Risk Assessment (SOP/DP/QA/010/A01-R00)
+11.2. Annexure II: Decision Tree for Risk assessment (SOP/DP/QA/010/A02-R00)
+
+12.0 FORMATS:
+
+12.1. Format]: Minutes of Meeting for Risk Assessment (SOP/DP/QA/010/F01-RO1)
+
+12.2 Format Il: Templates for Risk Assessment by FMEA (SOP/DP/QA/010/F02-R04)
+
+12.3. Format III: Quality Risk Assessment Log (SOP/DP/QA/010/F03-R00)
+
+12.4 Format IV: Templates for New Risk/Residual Risk (SOP/DP/QA/010/F04-R00)
+
+12.5 Format V: Periodic Review Schedule for Risk Assessment (SOP/DP/QA/010/F05-R00)
+12.6 Format VI: Periodic Review Checklist for Risk Assessment (SOP/DP/QA/010/F06-R00)
+
+13.0 REVISION HISTORY:
+
+keen eaective Change History aan Control
+ROO 20/10/2022 | New release CCF/QA/22/001
+1. Table 02 in SOP and point number 1.8.2.2 in
+SOP/DP/QA/010/F02-R00 updated with risk priority
+ranking (RPR) for below combinations as shown below.
+Severity | Probability | Detection RPR
+High Low Low Low
+High Low Medium Medium
+RO1 29/07/2023 Medium | High Medium High CCF/QA/23/010
+Medium | Medium High High
+Medium | Medium Medium High
+Low High High High
+Low High Medium Medium
+Low Medium Medium Medium
+
+Prepared By (User Department) Sign/Date
+
+Reviewed By (Quality Assurance) Sign/Date
+
+Sg j06 16
+
+=e
+
+ad o6!t6
+
+Confidential and Proprietary
+MASTER COPY
+
+SOP/DP/QA/001/F01-R02
+
+Standard Operating Procedure Unit: Drug Product
+
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+M.J. Biopharm Private Limited ansy
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance
+
+| SOP No.: SOP/DP/QA/010__| Revision No: R04 _| Page 21 of 51
+
+Revision
+No.
+
+Effective
+date
+
+Change Control
+
+Change History No
+
+2. Risk treatment for medium overall risk in table no. 3 of
+existing SOP and in point no. 1.8.2.2 of format
+SOP/DP/QA/010/F02-R00 changed from “Mitigation
+plan shall be done to reduce the risk to an acceptable
+level” to “Mitigation plan shall be done to reduce the
+risk and based on the mitigation risk can be acceptable”.
+
+RO2
+
+28/03/2024
+
+1. SOP template aligned with SOP for SOP
+(SOP/DP/QA/001-R03)
+
+4.0 ABBREVIATIONS: arranged alphabetically.
+7.3.2.15 New point added. CCF/QA/23/042
+In format II point 4.1 modified.
+
+New format added, Format [V: Templates for New
+Risk/Residual Risk (SOP/DP/QA/010/F04-R00)
+
+a2 Y
+
+RO3
+
+13/12/2024
+
+1. SOP template aligned with SOP for SOP
+(SOP/DP/QA/001-R04)
+
+2. Incorporated Section 3.3.2 for responsibility of site
+Quality head/QA head.
+
+3. Point 7.6 updated for periodic review procedure of
+risk assessment and editorial changes.
+
+4. Typographical error corrected in section no. 1.7 in
+Format II: Templates for Risk Assessment by
+FMEA (SOP/DP/QA/010/F02-R02).
+
+5. New formats incorporated, Format V: Periodic
+Review Schedule for Risk Assessment
+(SOP/DP/QA/010/F05-R00) and Format VI:
+Periodic Review Checklist for Risk Assessment
+(SOP/DP/QA/010/F06-R00)
+
+CCF/QA/24/034
+
+RO4
+
+04 oA lro276
+
+1. In Section 7.6.2 periodic review applicability
+procedure for risk assessment incorporated.
+
+2. Content sequence updated in Format I: Minutes of
+Meeting for Risk Assessment
+(SOP/DP/QA/010/F01-R00).
+
+3. Periodic review applicability section incorporated
+in Format II: Templates for Risk Assessment by
+FMEA (SOP/DP/QA/010/F02-R03)
+
+CCF/QA/26/012
+
+Prepared By (User Department) Sign/Date Reviewed By (Quality Assurance) Sign/Date
+
+Ligiecie® uns
+
+Confidential and Proprietary SOP/DP/QA/001/F01-R02
+MASTER COPY
+
+Standard Operating Procedure
+
+Unit: Drug Product
+
+M.J. Biopharm Private Limited
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+et)
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance
+
+| SOP No.: SOP/DP/QA/010 _| Revision No: R04 _| Page 22 of 51
+
+Reference SOP No. : SOP/DP/QA/010
+
+ANNEXURE -I
+
+Unit: Drug Product
+
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+M.J. Biopharm Private Limited
+
+a)
+
+Flow Chart for Quality Risk Assessment
+
+[ Initiation of Quality Risk Assessment.
+
+v
+
+Decision on Qualitative or Quantitative risk assessment by risk assessment
+team and user department
+
+Risk Communication
+
+t
+
+| Risk Identification |
+
+ta
+
+Risk Analysis
+
+a
+
+Risk Evaluation
+
+a
+
+Risk Control
+
+Risk Reduction
+
+{
+|__| Risk Acceptance =)
+»
+
+el
+
+Unacceptable
+
+ml
+
+Output / Result of the Product Quality Risk
+
+Assessment Process.
+
+Risk Review
+
+Unacceptable
+
+aes |
+
+a
+
+Risk Management Tools
+
+Confidential and Proprietary
+
+Page X of Y
+
+SOP/DP/QA/010/A01-R00
+
+Prepared By (User Department) Sign/Date
+
+Reviewed By (Quality Assurance) Sign/Date
+
+Pj a\oe jak
+
+u
+
+Ex) aeons
+
+Confidential and Proprietary
+MASTER COPY
+
+SOP/DP/QA/001/F01-R02
+
+Standard Operating Procedure Unit: Drug Product
+
+M.J. Biopharm Private Limited Gysy
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance [ SOP No.: SOP/DP/QA/010__| Revision No: R04 _| Page 23 of 51
+ANNEXURE -II
+Reference SOP No. : SOP/DP/QA/010 Unit: Drug Product
+M.J. Biopharm Private Limited Gysy
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+Decision Tree for Risk Assessment
+
+Case identification
+(Change nronosed to Existing svstem/ New svstem)
+
+*
+
+QRM facilitator, discussion with CFT and Team selection
+
+v
+
+Is there potential impact on product quality or
+
+GMP system is known and understood?
+Yes
+The identified risk can be
+mitigate by existing QMS No
+elements
+y v
+Y v No
+Yes No y
+| QRM is required
+
+y
+
+Based on information frame the questions
+
+‘
+
+Follow the site
+Procedure
+
+e Isscope is well defined?
+
+e Is scope is narrow?
+
+X
+
+Yes for All No for any one above question
+y .
+Informal ORM Formal QRM
+Confidential and Proprietary Page X of Y SOP/DP/QA/010/A02-R00
+Prepared By (User Department) Sign/Date Reviewed By (Quality Assurance) Sign/Date
+6\2
+aset 59106).S
+Confidential and Proprietary SOP/DP/QA/001/F01-R02
+
+MASTER COPY
+Standard Operating Procedure Unit: Drug Product
+
+M.J. Biopharm Private Limited Gysy
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance [ SOP No.: SOP/DP/QA/010__| Revision No: R04 _| Page 24 of 51
+FORMAT -I
+Reference SOP No.: SOP/DP/QA/010 Unit: Drug Product
+M.J. Biopharm Private Limited Gysy
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+Minutes of Meeting for Risk Assessment
+
+Date: Time: From to
+
+1. Subject:
+
+2. Identified points:
+
+Sr. No. Probable Identified Failure Responsibility
+Prepared By (User Department) Sign/Date Reviewed By (Quality Assurance) Sign/Date
+Confidential and Proprietary SOP/DP/QA/001/F01-R02
+
+MASTER COPY
+
+Standard Operating Procedure
+
+Unit: Drug Product
+
+M.J. Biopharm Private Limited ensy
+
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance
+
+| SOP No.: SOP/DP/QA/010__| Revision No: R04 _| Page 25 of 51
+
+Sr. No.
+
+Probable Identified Failure Responsibility
+
+Prepared By (User Department) Sign/Date
+
+Reviewed By (Quality Assurance) Sign/Date
+
+Layo )e
+
+>
+
+59\06\>©
+
+Confidential and Proprietary
+MASTER COPY
+
+SOP/DP/QA/001/F01-R02
+
+Standard Operating Procedure
+
+Unit: Drug Product
+
+M.J. Biopharm Private Limited Gnsy
+
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance
+
+| SOP No.: SOP/DP/QA/010_| Revision No: R04 _| Page 26 of 51
+
+3. Risk Assessment Team:
+
+Sr. No.
+
+Name of Person
+
+Department Sign/Date
+
+4, Evaluation of Risk Assessment (Qualitative/Quantitative):
+
+Sr. No. Question Answer (Yes/No)
+1. Is there potential impact on product quality or GMP system is known and
+understood?
+2. | Is scope is well defined?
+3. | Is scope is narrow?
+Note:
+
+If answer is “yes” to all above then ‘Qualitative risk assessment’ to be performed.
+If answer is “no” to any of the above question, then ‘Quantitative risk assessment’ to be performed.
+y g
+
+Based on the above evaluation, Risk Assessment shall be performed as Qualitative / Quantitative
+(Encircle whichever applicable)
+
+Prepared By (User Department) Sign/Date
+
+Reviewed By (Quality Assurance) Sign/Date
+
+Lisa gho« Ir
+
+o
+
+one
+
+24
+
+Confidential and Proprietary
+MASTER COPY
+
+SOP/DP/QA/001/F01-R02
+
+Standard Operating Procedure Unit: Drug Product
+
+M.J. Biopharm Private Limited Gysy
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+Title: Quality Risk Assessment
+Dept.: Quality Assurance | SOP No.: SOP/DP/QA/010__| Revision No: R04 _| Page 27 of 51
+
+Comment:
+
+5. Meeting Overview:
+
+6. Approval:
+
+Name Designation/Dept. | Sign/Date
+
+Prepared By (User Dept.)
+
+Reviewed By
+(Concern Dept. Head/Designee)
+Reviewed By
+(Concern Dept. Head/Designee)
+Reviewed By
+(Concern Dept. Head/Designee)
+Reviewed By
+(Concern Dept. Head/Designee)
+Reviewed By
+(Concern Dept. Head/Designee)
+Reviewed By
+(Concern Dept. Head/Designee)
+Reviewed By
+(Concern Dept. Head/Designee)
+Reviewed By
+(Concern Dept. Head/Designee)
+Reviewed By
+(Concern Dept. Head/Designee)
+
+Approved By (QA Head/Designee)
+
+Confidential and Proprietary Page X of Y SOP/DP/QA/010/F01-RO1
+Prepared By (User Department) Sign/Date Reviewed By (Quality Assurance) Sign/Date
+
+Las }96)26 ans
+
+Confidential and Proprietary SOP/DP/QA/001/F01-R02
+MASTER COPY
+
+Standard Operating Procedure Unit: Drug Product
+
+M.J. Biopharm Private Limited Gysy
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance | SOP No.: SOP/DP/QA/010 _| Revision No: R04 _| Page 28 of 51
+FORMAT -II
+Reference SOP No.: SOP/DP/QA/010 Unit: Drug Product
+M.J. Biopharm Private Limited Gnsy
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+Template for Risk Assessment by FMEA
+
+Title:
+
+Department : Risk Assessment No.
+
+RISK ASSESSMENT AND EVALUATION RECORD FOR
+(System/Equipment/Facility/Instrument/other Name)
+
+Source Document Name
+(If any):
+
+Source Document No. (If
+any):
+
+Product / Process /
+Equipment /
+System/Other name
+
+ID No.: (If Applicable)
+
+Prepared By (User Department) Sign/Date Reviewed By (Quality Assurance) Sign/Date
+
+Fig \06 124 ZA eos
+
+SOP/DP/QA/001/F01-R02
+
+Confidential and Proprietary
+MASTER COPY
+
+Standard Operating Procedure
+
+Unit: Drug Product
+
+M.J. Biopharm Private Limited Gnsy
+
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance
+
+| SOP No.: SOP/DP/QA/010 _| Revision No: R04 _| Page 29 of 51
+
+TABLE OF CONTENTS
+
+Sr. No.
+
+Title Page No.
+
+- Title Page
+
+Table of Contents
+
+A. Pre-Approval
+
+1 Details of Risk Assessment
+
+1.1 Objective
+
+1.2 Scope
+
+1.3 System/ Equipment/ Instrument/ Other (if any) Overview
+
+1.4 Procedure
+
+1.5 Risk Assessment Team Members
+
+1.6 Risk Identification
+
+1.7 Risk Measurement by Failure Mode Effect Analysis
+
+1.8 Risk Assessment Approach
+
+‘2 Risk Identification and evaluation considering current control measures
+3 Risk Communication
+
+3.1 Risk Assessment Summary and Conclusion (Before Implementation)
+4 Mitigation plan and closure
+
+4] New risk identified during execution / residual risk (if any)
+
+42 Periodic review of identified risk’s
+
+43 Risk assessment summary and conclusion (after implementation):
+
+B. Revision History
+
+C. Post-Approval
+
+Prepared By (User Department) Sign/Date Reviewed By (Quality Assurance) Sign/Date
+
+P54 306 Iré
+
+Confidential and Proprietary
+MASTER COPY
+
+SOP/DP/QA/001/F01-R02
+
+Standard Operating Procedure Unit: Drug Product
+
+M.J. Biopharm Private Limited Gay
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance | SOP No.: SOP/DP/QA/010 | Revision No: R04 | Page 30 of 51
+
+A. PRE-APPROVAL (Before Implementation):
+
+Designation &
+
+Department Signature Date
+
+Name
+
+Performed By
+(User Dept.)
+
+Reviewed By
+(Risk Assessment
+Team Members)
+
+Approved By
+(Head QA/Designee)
+
+Note: Number of rows can be added or deleted based on the number of risk assessment team members
+
+Prepared By (User Department) Sign/Date Reviewed By (Quality Assurance) Sign/Date
+Lig jac he Ans
+Confidential and Proprietary SOP/DP/QA/001/F01-R02
+
+MASTER COPY
+
+Standard Operating Procedure Unit: Drug Product
+
+M.J. Biopharm Private Limited Grey
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+Title: Quality Risk Assessment
+Dept.: Quality Assurance SOP No.: SOP/DP/QA/010 Revision No: R04 | Page 31 of 51
+
+1. DETAILS OF THE RISK ASSESSMENT
+
+1.1 OBJECTIVE:
+The objective of this document is to perform the quality risk management and evaluation of controls
+and procedures for risk associated with (Name of equipment, process, activity..etc.) in the facility and
+identification of potential risk and risk mitigation plan for the same.
+
+1.2 SCOPE:
+This risk assessment document is applicable to (Name of equipment, process, activity..etc) in the Drug
+Product Facility of M.J. Biopharm Pvt. Ltd. Pune.
+
+1.3 SYSTEM/ EQUIPMENT/ INSTRUMENT/ OTHER (IF ANY) OVERVIEW:
+In this section brief description of the System/ Equipment/ Instrument/ other (if any) shall be mentioned.
+Which includes following details but not limited to,
+1.3.1 Equipment/system/instrument details and functions.
+1.3.2 Intended use of the equipment.
+1.3.3 Brief details about various components related to particular system.
+1.3.4 Process flow (if any).
+
+1.4 PROCEDURE:
+
+Quality risk management should include systematic processes designed to coordinate, facilitate and
+
+improve science-based decision making with respect to risk. Possible steps used to initiate and plan a
+
+quality risk management process might include the following:
+
+1.4.1 Define the problem and/or risk question, including pertinent assumptions identifying the potential
+for risk.
+
+1.4.2. Assemble background information and/ or data on the potential hazard, harm or human health
+impact relevant to the risk assessment.
+
+1.4.3 Identify a leader and necessary resources.
+
+1.4.4 Specify a timeline, deliverables and appropriate level of decision making for the risk
+management process.
+
+1.4.5 Following flow chart shall be followed for risk assessment,
+
+Prepared By (User Department) Sign/Date Reviewed By (Quality Assurance) Sign/Date
+Leas fob )ee Toss
+Confidential and Proprietary SOP/DP/QA/001/F01-R02
+
+MASTER COPY
+
+Standard Operating Procedure Unit: Drug Product
+
+M.J. Biopharm Private Limited Gnsy
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance | SOP No.: SOP/DP/QA/010 | Revision No: R04 Page 32 of 51
+
+| Initiation of Quality Risk Assessment. |
+v
+
+Decision on Qualitative or Quantitative risk assessment by risk assessment
+team and user department
+
+——— ¥ a
+
+| Risk Identification
+<+—______> i
+Risk Analysis
+|__| Risk Evaluation 2
+a sa —
+& Unacceptable &
+3 [——| Risk Control [—_] —— 3
+5 ———_ 5
+q i Risk Reduction @
+i) S
+6 + P 5
+3% |_{ Risk Acceptance | a
+» Y E
+Output / Result of the Product Quality Risk
+Assessment Process.
+r Risk Review Unacceptable
+_)
+«> | —_]
+[| Risk Events
+{___] ae
+Prepared By (User Department) Sign/Date Reviewed By (Quality Assurance) Sign/Date
+LS elo /2€ Agar
+Confidential and Proprietary SOP/DP/QA/001/F01-R02
+
+MASTER COPY
+Standard Operating Procedure Unit: Drug Product
+
+M.J. Biopharm Private Limited Gusy
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance [ SOP No.: SOP/DP/QA/010__| Revision No: R04 _| Page 33 of 51
+1.5 RISK ASSESSMENT TEAM MEMBERS:
+
+Sr. No. Name Department Designation
+
+Note: Rows can be added or deleted based in number of team members.
+
+1.6 RISK IDENTIFICATION:
+
+S.No. |Process / activity | Identify Failure
+1.
+
+2.
+
+3s
+
+4.
+
+5y
+
+Note: Rows can be added or deleted based on the requirement
+
+1.7 RISK MEASUREMENT BY FAILURE MODE EFFECT ANALYSIS:
+Risk assessment shall be performed as Formal Risk Assessment and Informal Risk Assessment.
+Decision shall be taken by department head/designee in coordination with QA. Decision Tree is given
+in approved SOP for “Quality Risk Assessment”
+
+1.8 Risk Assessment Approach: Formal Risk Assessment or Informal Risk Assessment
+1.8.1 Formal risk assessment:
+1.8.1.1 Risk Criteria:
+
+The severity (S), Probability (P) and Detection (D) values are assessed using the table below to
+calculate
+
+Prepared By (User Department) Sign/Date Reviewed By (Quality Assurance) Sign/Date
+PErg)06126 ZZ ecane
+Confidential and Proprietary SOP/DP/QA/001/F01-R02
+
+MASTER COPY
+
+Standard Operating Procedure
+
+Unit: Drug Product
+
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+M.J. Biopharm Private Limited
+
+ew)
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance
+
+| SOP No.: SOP/DP/QA/010__| Revision No: R04 _| Page 34 of 51
+
+Risk Priority Number (RPN) by the formula.
+Risk Prioritization Number (RPN) = Severity (S) x Probability (P) x Detection (D).
+
+Severity is ranked based on the Probability is tanked based on Detectability is ranked based
+impact on safety, purity and | probability of failure (frequency of Pantin acacraeronden ction
+identity of the product. event/incident) y
+Number Impact Number Impact Number Impact
+Expected to happen
+infrequently e.g. yearly or :
+1 No impact 1 unlikely to happen e.g. one 1 Very . high/comp ite
+detection possible
+occurrence more than a
+year
+Low impact (may Expected to happen in low High possibility of
+: having undlineet 2 frequency e.g. Half yearl 7 detection
+impact) ‘ ¥e8. year'y
+Medium ermmcdierale Expected to happen in a Medium or moderate
+3 pee . 3 moderate frequency e.g 3 possibility of
+(Will having indirect — :
+, Quarterly detection
+impact)
+4 High impact (may 4 Expected to happen 4 Low possibility of
+having direct impact) repeated e.g. Weekly detection
+Very high impact Expected to happen
+5 (Will having direct 5 regularly e.g. More than 5 No detection possible
+impact) one occurrence per day
+1.8.1.2 Risk Evaluation:
+Overall Risk /RPN Value | Risk Treatment
+Low 1-8 Mitigation Plan not required or risk is at acceptable level.
+Medium 9-24 Mitigation plan shall be done to reduce the risk to an acceptable level
+Hioh 95-125 Identify and implement the mitigation plan before proceeding to the |
+18 7 activity to reduce the risk ranking within acceptable range.
+
+1.8.2 Informal risk assessment:
+
+1.8.2.1 Risk Criteria:
+
+The severity (S), Probability (P) and Detection (D) are assessed using the table below to calculate
+Risk Priority Ranking by the formula.
+Risk Prioritization Ranking (RPR) = Severity (S) x Probability (P) x Detection (D).
+
+Prepared By (User Department) Sign/Date
+
+Reviewed By (Quality Assurance) Sign/Date
+
+Psa atoele4
+
+—sa\oelt6
+
+Confidential and Proprietary
+
+MASTER COPY
+
+SOP/DP/QA/001/F01-R02
+
+Standard Operating Procedure Unit: Drug Product
+
+M.J. Biopharm Private Limited
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+ws)
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance | SOP No.: SOP/DP/QA/010 Revision No: R04 | Page 35 of 51
+
+Severity is ranked based on Probability is tanked based on Detectability is ranked based
+the impact on safety, purity | probability of failure (frequency of OnIbiLiy) coctraeyORGetecton
+and identity of the product. event/incident) y
+Rank Impact Rank Impact Rank Impact
+No impact or Expected to happen
+Low impact (may infrequently, yearly or Very high/complete
+Mow having indirect TMs unlikely to happen e.g. one Low detection possible
+impact) occurrence more than a year
+Meoum impact or Expected to happen in a Medium or moderate
+Medium . pact Medium | moderate frequency e.g. | Medium | possibility of
+(will having Half yearly or Quarterly detection
+indirect impact)
+. . Expected. to happen
+, High imp a : regularly e.g. More than one : No detection
+High | (having direct | High High :
+; occurrence weekly of per possible
+impact)
+day
+1.8.2.2. Risk Evaluation:
+Detection | Risk Prioritization Ranking
+
+Probability
+
+Medium
+
+Medium a
+
+Medium
+Medium
+Medium
+Medium
+
+Prepared By (User Department) Sign/Date Reviewed By (Quality Assurance) Sign/Date
+
+LF ge6ir6 ZA oss
+
+SOP/DP/QA/001/F01-R02
+
+Confidential and Proprietary
+MASTER COPY
+
+Standard Operating Procedure
+
+Unit: Drug Product
+
+M.J. Biopharm Private Limited Gysy
+
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance SOP No.: SOP/DP/QA/010 | Revision No: R04 | Page 36 of 51
+
+Overall Risk Risk Treatment
+
+Low Mitigation Plan not required or risk is at acceptable level.
+
+Mitigation plan shall be done to reduce the risk and based on the mitigation risk
+
+Seco can be acceptable
+Hich Identify and implement the mitigation plan before proceeding to the activity to
+18 reduce the risk ranking within acceptable range.
+
+Prepared By (User Department) Sign/Date
+
+Reviewed By (Quality Assurance) Sign/Date
+
+Les o4)ze
+
+DB
+
+i joelr4
+
+Confidential and Proprietary
+MASTER COPY
+
+SOP/DP/QA/001/F01-R02
+
+ZOU-104/100/VO/dd/dOS
+
+ayeq/usig (aouvinssy Ajpeng)) Ag pamaraay
+
+grvivolb4
+
+7
+
+AdOO YWALSVA
+AlvpLdoig pue [eyuspyues)
+
+9290 er
+
+ajeq/usig Quowj.edag 4198-) Ag poredaig
+
+lod
+GOL pue
+Ayyiqisuodsay x
+(ON/S9.A) ON | @ aanyiey .
+aiquidaa0V Ueld /S9X) 5 none | aotuos joasnes | sanpieg AYAIIe an
+¥sRy WONeIYISse[D Ysry pastaay uonRsiIA a as t aqeqoig |jenuaj0g | / ssav01g
+-dasy | —
+ASR
+
+Ig Jo Le aBed |
+
+'SaAASVAW TOUWLNOOD INAWWND ONTAAGISNOD NOLLVOTVAG GNV NOLLVOIMLINAGI MST *7
+
+POY ON WOISTAZY |
+
+010/VO/dC/dOS “ON dOS |
+
+aouvinssy Ayyend :3deq
+
+JUSUISSOSSY YSTY Append :ap1L,
+
+fea
+
+pnpoig snag 3p
+
+“LSOTTy oung ‘Ty aseyd ‘Ipemelurpy ‘Yreg Yyoojorg [euoyeUUT “gy “ON 101d
+
+poyury oeAlg waeydorg ‘fT
+
+aaNpadoig suyviodg prpurys
+AdOO WALSVAL
+
+7OU-104/100/VO/dd/dOS Arejatidoig pue [eyuapyuo7
+aes oe pal SUP
+a8 qQ/uZIg (QouvaNnssy AyTENgd) Ag PIMOTADY] a3uq/usig Quouniedeg 19sq) Ag porvdaig
+
+:(uoyeyuews|dwy 91039g) NOISATONOO GNV AUVAIANS LNAWSSASSV MSI Ve
+
+juswaiinbal ay} UO pase pala[ap 10 pappe oq UBD SMOY °Z
+(uo os puke ZQY ‘LOY °8°9) Zou JUIOd 0} yoodsai YIM [esodoid uOTESIUA Yded Jo UONVITUAp! JOJ apoo onbiun Buravy “ON “IS “[y SION
+
+lod
+dol Ajiiqisuodsey roe at ID juounsog a[quonddy [esodoig wonesniyy ‘ON “AS
+hen ie) ON JusTIND0g,
+
+NOLLVOINOAWINOO MSR “€
+
+Ig Jo ge Beg vOd ‘ON UOISIAaY | 010/VO/dd/dOS “ON dOS | sourmssy Ayyend :*3doq
+JUOUUSSOSSY Ysryf Auypend su
+
+“LSOLLp ung ‘T] aseyd ‘Tpemelurpy WYAwg Yoosorg [euoneuszsjuy “ET ON 101d
+LBs) popu] ayealig waeydorg “fA
+
+pnporg snag 210 dINp2d01g suyvsdg prvpurys
+AdOO YWALSVAL
+
+ZOU-10A/100/VO/dd/dOS Areyatidoig puy [eyuepyuoy
+pura ae
+ajeq/usigs (Q0uenssy aaa) AG POAIIADYT ayeq/usig (uawjsedag 10sq) Ag poredaig
+(VO) ayep pue usig
+
+uondo pajsa]9s 10} uoNVIHsNE
+
+(e[quoydde zsaaqarya .A,, YUL)
+[_] on Ls nt MITA IIPOLtod 10} afquaydde aie syshy
+
+“yy3uans ‘Aqaind ‘A4qnuapr ‘Ajozes ‘Agpenb yonpoid uo yoedua Peys YOIYAA MITAIA IIpPOLsad 10} pa.acapisuod aq |[EYS JUSUISSISSE YSN T'T "Pp
+*MOTAD.A IIPOLIad 10} Potapisuod aq JOU [[VYS sosuvyD ArvA0dur9} ay) 0) pazefas JUIWUSSOSSE YS [TF
+
+*SoMSTA GaIALLINAGI AO MATAdY OIGOMaAd = TP
+“PayBHIUl 9q [1eYS F0A/010/VO/dC/dOS SHA
+TENPISOY/ISY MAN OF JOULAOY “YSLI MoU Jo UOHLIWUIpI Jo asvo uy (uy JP) MSTA TVAGISAA / NOLLADAXA ONAN GalLLNAGI AShi MAN Tb
+Juswormnbel sy} WO paseg paya[ap 10 poppe oq Bd SMOY *Z
+(uo Os pue ZO ‘OY “3'9) Zou JUIOd 0} yoodsor YIM [esodoid UoYeBy TUN YoRs Jo UOIJBOUAp! Jo} apoo onbrun Surry “ON “S “1 AION
+
+ajeq/usig ayeq oinso[D ajeq uons[du0D ‘ON JueTINIOG we
+sree EL LIN jenpy snyeas yosuvy posodoig 9DUI.LIJIY. ued UOHESHIAL ON 'S+
+‘HaUNSOTO UNV NV'Id NOTLVOLLIA ‘¢
+Ig JO 6€ 98eqg yOu *ON WOISTAaY | 010/VO/dd/dOS *°N dOS | souemssy Aytfend :3daq
+yuoulssassy Ysry AWpend spr
+“LSOTTp oung TI aseyd Ipemvlurpy Yared yd901g [eUOHEUADUT ‘ET “ON 101d
+kgs) pouwry aealig wavydorg “[WW
+
+ponporg snag 310 ain pao1g sulyvi0dg piepurjs
+AdOO WALSVN
+
+ZOU-104/100/VO/dd/dOS Arvyoiidoig puv [eyuapyuo,)
+rele aod
+ajuqsusig (souvinssy Append) Ag pomarAdyy ajequsig Quowjiedeg 49s) Ag poredaig
+
+:(uoneyuoma|dwy 4917V¥) NOISATINOD ANV AUVIAIANS LNAWSSASSV MSRI ¢'r
+
+1S JO Op a8td POU 1ON WOISTAdY 010/VO/dd/dOS *N dOs | aourinssy Ayyend) :4daq
+JUSUISSOSSY YsTY Append :opLL
+“LSOTTr Aung ‘T] aseyg ‘Ipemulury ‘Y1eg yoojorg (euoEUrUY ‘BT “ON 301d
+poywyy valg waeydorg ‘fT
+
+yonpoig snag :juy) aMpI01g suyei9dgG pavpurys
+AdOD UALSVA
+
+ZOU-10.4/100/VO/dd/dOS Arejatidoig pu jeyuspyu0;
+sree 791 EF
+aueqyusig (aoueinssy Aj[end) Ag pomorAdy aqeq/usig Quewjredeg 198¢Q) Ag poavdaig
+pOU-ZOA/010/VO/dd/dOS AJO X Beg Areyatidoag pue [eyuapyuo,)
+
+SIOQUIOUI WRI], JUSWSsasse Ys dy} UO poseq pojofop JO poppe 9q UBD MOI JO JOQUINNY :3]0N
+
+(aausIseq/VO P®2H)
+Ag peaouddy
+
+(s1squoyA
+ulva |, JWAUISsassy Ysty)
+
+Ag pomalAdyy
+
+(3daq 49s)
+Ag powasoy.iog
+
+a1eq aanjeusig qusuiedeg 3 LoNeUsIseg omen
+
++(e} 09 W9[d Wy 419337) TVAOUddV-LSOd *O
+
+‘ON [OUD ssueYyD At0qst 9SuKYyD “ON UOISTADY
+
+‘AMOLSIH NOISIAVA “&
+
+Ig JO Ip add POU 2ON UOIsLAay 010/VO/dC/dOS “ON dOS | sourinssy Anend :3daq
+
+quaUssessy Ysry AyTend :opLL,
+
+“LSOLTp ound ‘TI oseyg ‘Ipemvlary Yteg Yoojolg [eUOTeUAD,UT ‘QT ON 101d
+{ps payMTy ova wavydorg “fA
+
+pnpoig sniqg 771 aaNnpa0i1g suye.isdG prepurys
+Standard Operating Procedure
+
+Unit: Drug Product
+
+M.J. Biopharm Private Limited ensy
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+Title: Quality Risk Assessment
+Dept.: Quality Assurance | SOP No.: SOP/DP/QA/010 Revision No: R04 Page 42 of 51
+FORMAT -UI
+Reference SOP No.: SOP/DP/QA/010 Unit: Drug Product
+M.J. Biopharm Private Limited Gysy
+Plot No. 18, International Biotech Park, Hinjawadi Phase II, Pune 411057.
+Quality Risk Assessment Log
+Risk oe : Allotted | Proposed Risk QA
+Date | Assessment a title by Sign Mitigation Closed Sign & | Remarks
+No. & Date (Yes/No) Date
+Confidential and Proprietary Page X of Y SOP/DP/QA/010/F03-R00
+
+Prepared By (User Department) Sign/Date
+
+Reviewed By (Quality Assurance) Sign/Date
+
+LE 06124
+
+Wace
+
+Confidential and Proprietary
+MASTER COPY
+
+SOP/DP/QA/001/FOI-RO2
+Standard Operating Procedure
+
+Unit: Drug Product
+
+M.J. Biopharm Private Limited Guay
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance | SOP No.: SOP/DP/QA/010 | Revision No: R04 Page 43 of 51
+
+FORMAT -IV
+
+Reference SOP No.: SOP/DP/QA/010
+
+Unit: Drug Product
+
+M.J. Biopharm Private Limited Gysy
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+Template for New Risk/Residual Risk
+
+Title:
+
+Department :
+
+Risk Assessment No.
+
+Source Document Name (If any):
+
+Source Document No. (If any):
+
+Product / Process / Equipment /
+System/Other name:
+
+ID No.: (If Applicable)
+
+Prepared By (User Department) Sign/Date
+
+Reviewed By (Quality Assurance) Sign/Date
+
+PSA glecirs
+
+neene
+
+Confidential and Proprietary
+MASTER COPY
+
+SOP/DP/QA/001/F01-R02
+Standard Operating Procedure Unit: Drug Product
+
+M.J. Biopharm Private Limited Qnsy
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+Title: Quality Risk Assessment
+Dept.: Quality Assurance | SOP No.: SOP/DP/QA/010 Revision No: R04 Page 44 of 51
+
+A. PRE-APPROVAL (Before Implementation):
+
+Designation &
+
+Department Signature Date
+
+Name
+
+Performed By
+(User Dept.)
+
+Reviewed By
+(Risk Assessment
+
+Team Members)
+
+Approved By
+(Head QA/Designee)
+
+Note: Number of rows can be added or deleted based on the number of risk assessment team members
+
+Prepared By (User Department) Sign/Date Reviewed By (Quality Assurance) Sign/Date
+re Sa
+L-9H06l salash6
+Confidential and Proprietary SOP. A/001/F01-RO2
+
+MASTER COPY
+
+7OU-10A/100/VO/dd/dOS
+
+ae
+
+AdOO WALSVA
+Arvjatidoig pue [eyuepyuosd
+
+sense
+
+aUq/usis (aauvanssy Aylyend) 4g pomatady
+
+aqeq/usig Quouyiedeg ras) Ag porrdaig
+
+juoussasse ysii Jo yoroidde ayj uodn spusdap ..Yd¥,, 10 «Nd Ui, PIOM dy} UONUSTA# *¢
+
+‘JusworINbal ay) UO paseq prja[ap JO poppe oq UBD SMOY *Z
+
+“SOM II paynuepr ysux A[perTUL Jt “9"T YsHI PENTUT Woy, panupUOS aq [TeYs 1 Pue Ys PenpIsay/ysi1 Mau Jo
+
+“YSII [ENPISOI/YSII MOU ISITE 9q [TIM QOY Oy}
+
+UOLOYTUIPI Joy 9poo onbrun SurAvy ‘ON “S “Ty :ION
+
+r 7
+
+GOL pue
+
+1! 7 & suodsa Stk
+(On/s94) eurd# | oy || Iqisuodsay (on & =r ae = Ine a
+aigeydoooy ueld (SX) 5 u019919q s]o.1.U0D (roayq | JO98RE> | aamte | AWanae |
+‘STU UOIBIYISSE]D ASIY pasiasy uonesniAl desoy iS | enuayog gqeqoig |[eNuaj0g | / 8829014
+4s
+:(Aay JD SRI TVNGIsad / NOLLQOAXT ONAN GAILLNAGI MSI AGN 0°1
+1S JO Sp o8ed POU 7ON UOISTADY | 010/VO/dd/dOS *°°N dOS | sourinssy Aen?) :*3daq
+
+JUSUUSSaSSY Ysry Apend :9pLL
+
+cay
+
+“LSOT Lp ound TI eseyd ‘Ipemvlurpy Yared yoo 01g [eUOHEUAIUT ‘ZT “ON 101d
+
+paywry ayeaiig waeydorg "fA
+
+ponporg snag :310f
+
+wnpso01g suneiodg pivpurjys
+
+AdOS WALSVW
+
+ZOU-10e1/100/V0/dd/dOS Arejaudoig pue [equapyu0d
+Oba,
+aioe ae Uo OG
+a)uq/usig (QdueInssy Aj[ENgd) Ag paMorAdy aeq/usig uoujaedeg 19sy) Ag porrdaig
+
+:(uoneyuawo] duty 3.1039g) NOISQATONOD GNV AUVIAINNS 0°€
+‘JuouoIIMbal sy] UO paseq pelefep 10 pappe oq Ud SMOY *Z
+“YSU [RNPISOI/YSIE MOU JSITJ 9q [TIM 9OY UstI
+
+“SOU [14 payupt YSU ATTEN Jt a°T YSU [eTTUT Wo ponuruos aq [[eYs 1 pue SII [eNpIsoA/YsI Mou Jo UONeoyNUAp! Joy apoo anbiun Buravy ‘ON *S ‘1 ‘ION
+
+aol Ayyiqisuodsay [esodoig wonesyy "ON “AS,
+
+‘NOLLVOINDININOD AST TVAGISAaISTA MAN 0°7
+
+1g JO 9p aed ; POU ON WOISIADY 010/VO/dC/dOS *°°N dOS | soueinssy Altend) :"ydeq
+jUsUISsassy ysry AW[eNd sepLL,
+“LSOTTP ound ‘TI aseyg ‘pemvlary avg yYooporg [euoyeUssUy ‘ET ‘ON I01d
+£pss) powwry avaiig waeydorg ‘fT
+
+pnpoig snag :uy anpao1g suyneidg plvpurjs
+ZOU-104/100/VO/d/dOS
+
+gooles Fi
+
+AdOO WALSVN
+Arejyouidoig pue [eyuspyues)
+
+F290) sr
+
+ayeq/usig (aouvinssy Aypend) 4g pamoraay
+
+aqequsig (uoujredeg 198¢Q) Ag porvdaig
+
+:(uoneyuowsdwy 1933V) NOISATOINOD GNV AUVIAINAS 0°S
+‘yuauamMbar ay} Uo paseq pajofap 10 pappe aq uvo sMOY *Z
+
+“YSU [eNpIsol/sUE Mau ISI 3q [[IM 9QY Uay
+
+“SOU 1D poyMuopr Ysu AT[eNIUT JI ‘oT YSL [eITUL Woy ponuUOS aq [[eUS II PUL YSH [ENPISoI/YsU MoU JO UOTJOFNUSPI JO} apod onbrun Buraey ‘ON *S “Ty :ION
+
+ayeq/usis ayeq anso[D ayeq UoHsdui0D | “on juauIND0q aan
+round ouleN, [enjay smyeys yoBie], pasodoig 999.19J9Y] wed WORE SHTIN ON 'S+
+:(Auv JD) AUNSOTO GNV ASMA TVAGISaa/ASTA MAN AO NV'Td NOLLVOLLUA 10 NOLLVOLIRIGA 0°¢
+1S JO Ly aed VOU -ON WOISTATY 010/VO/dd/dOS *"°N dOS | aourmnssy Ayyend) :3deq
+
+JUSUUSSOSSY Ysry Aen’) ope
+
+fea
+
+“LSOTIPp oung ‘[] aseyg ‘Ipemefury reg ydoj01g [eUCLeUIIzU] “RT “ON 191d
+powwry aesug waeydorg “fA
+
+yanporg snag 2107
+
+ainpedoig sunei0dg pavpurys
+
+7OU-10e/100/V0/dd/dOS
+
+Gr 90\bo
+
+AdOO YALSVN
+Arejouidoig pue [eyuopyuoe;
+
+clas
+
+9219 9| CF
+
+auqsusig (soueinssy AyT[EN?) Ag PoMoTAdy
+
+ayeq/usig (uouyedeg z9sQ) Ag pasedaig
+
+00U-F0.1/010/VO/dd/dOS
+
+Ajo X Beg
+
+Arejatidoig pue [eyuspyue>
+
+SIOQUIOUI WIRD] JUSLUSSASSE YSTY SY} UO paseq Polefep JO pappe aq UD MOI JO JaqUINN :3}0N
+
+(eausisaq/VO PpeoH)
+Akg paaoiddy
+
+(sxaquisy,
+
+Wea] JUIUUSSISSW HST)
+Ag] Pamataadyy
+
+(3daq 42s)
+Ag poul1oj.10g
+
+ayeq
+
+IANJVUSIS
+
+yusujiedeg 2 uoHEUsIsog
+
+ouleN
+
+:(uoreyuawaf duly 1933V) TVAOUddV-LSOd ‘a
+
+IS JO 8p aBeq |
+
+POU !ON WOISTAaY O10/VO/d/dOS “ON AOS |
+
+soueinssy Aqiyend :3daq
+
+JUSUSSassY YsTY ATEN? ap1L
+
+xy
+
+“LSOTTp ung ‘TI aseyd ‘Ipemefurpy Yrvd Yyo01g [eUOTEU19}U] ‘ZT “ON 30Td
+
+paywry yearg waeyqdorg ‘fA
+
+pnpoig sig 7p
+
+dANpI01g SULIIdG pavpuES
+
+7OU-104/100/V0/dd/dOS
+
+ow
+
+AdOD YALSVIN
+Arvyauidoig pue jeyuepiyu0es)
+
+92 nol Ouse
+
+ayeq/usig (aauvanssy Ayyend) Ag pomaraayy
+
+ayeqg/usig Quowjiedeg 19s) Ag poredaig
+
+00U-S04/010/VO/dd/dOS
+
+Aso X OBE
+
+Areyaiidoig pue [eyuaplyue;
+
+JeULIOF PIOM UT poredoid aq [[eYs apnpayos -
+“Auyiqeotddejuowainbeas uo paseq a}2[9p JO ppe oq UL IOMSIASI OU, -y
+
+(0}ep pue usIg) (936 pue ust) (a78q pue udIg)
+(sousIseq/peoH VO) Aq poaosddy (LAD) Aq pamaaay x (VO) Aq porederg
+uo a}ep UO 9U0G MITAZy ayeq ‘ON
+ONp MITAIY Ipod MITAIY IIpoLiag | Asuanbasq jayep [eaosdde oad JUDUISSassy | JUDUISSaSSy | “ON,
+syieuay = | SIPOLAI9g IX9N, Tenpy peuur[g/paynpsyos| MIA =| UDWUSSOSSE YSIY USUAIEdEG) YSIY JO 9PLL YSN aS
+
+JUIUUSSISSY SRY OJ 9NPIYIS MIA IIPOLiog
+
+fp
+
+“LSOLTr oun ‘TI eseyg ‘Ipemelury yaeg Yoopolg feuoyeUssU] ‘gT “ON 101d
+paywry aeatg waeydorg “fT
+
+pnpoig snag Wu
+
+A~ LVAAOA
+
+010/VO/d0/dOS “ON dOS 99004959
+
+a
+
+1S JO 6p o8eg
+
+POU :ON WorstAay
+
+O10/VO/AC/dOS *ON AOS |
+
+goueinssy Append :ydaq
+
+quoulssossy ysry Alpen?) soph
+
+oy
+
+“LSOTTp Fund ‘TT eseyg Ipemefurpy Yreg yoo01g [eUCTVUAaxU] “ET ‘ON JOE
+poywry aeatg waeydorg “¢-1A]
+
+ponporg snag 310
+
+d1NpI01g suyeisdQ pavpurjs
+ZOU-104/100/VO/dd/dOS
+
+AdOO WALSVA
+Areyatidoig pur jeyuapyued
+
+ae
+
+su/90] gr
+
+ayeq/usig (soueanssy Aypengd) Ag pamolaay ajeq/usig Quouysedag z9s() Aq porvdaig
+anp poyseduil o1e SySII possosse/poynuap]] “9
+"syeoryy}
+BUIZIOWS JO YSZ Mau Aue JO UOT]ROTFWUAp]] “¢
+éperepdn
+
+st ABayeI]s VOTES Uosvar Aue IOg) “yp
+
+{(gueimd) spoyuo9|
+pelyquept Ul satousroryjop Jo sded Auy| -¢
+
+{[O1U09 ZUNSTXd Jo ssaUaATOaTTA
+
+{poled MarAar Surnp suey)
+uoTeSI}TW JO SsoUsATOaTJa UONRITLAA! *]
+
+yAvulay uoneArasqgQ syurodyaayd MITA wae
+ION JUSUISSassY YSry
+
+JUIWISSASSY YSTY AOJ SV] YY MOAI IIPOLIIg
+
+,
+
+“LOL Tp 2ung ‘T] aseyd ‘Ipemelury Yaeg yoojorg [eUOYVUE}UT ‘BT “ON 101d
+popu] ayealig wavydorg ‘fA
+
+pnpoig snag :j10Q
+
+010/VO/d/dOS *ON dOS 2Ud.10;9y
+
+IA~ LVNUOd
+
+Ig JO 0S a8eg
+
+POU ‘ON WOIstAdy 010/VO/dC/dOS “ON dOS | sourmnssy Aijend :ydeq
+
+JUSUIssassy ysry ATEN :opLL
+
+is)
+
+“LSOTTP oung ‘TJ aseyd ‘Ipemvlunyy aed yooorg [euoNyeUsszU] ‘gy ‘ON JO
+payMYy] eA Wavydorg “fA
+
+pnporg stig uf,
+
+aanpasoig suyeisadgQ paepurys
+AdO3 YALSVIA
+
+ZOU-104/100/VO/dC/dOS Axejatidoag pue [eyuapyuo)
+rele 92/90 Laer
+ayeq/usig (souvinssy Aqend) 4g pomorady ayeq/usig (uewjsedeg 198-9) Ag peredaig
+INAANOOd FO GNA
+00U-904/010/VO/dd/dOS Ajo X Be Aaejotidoag pue jenuapyuod
+“Ayyiqevordde/juswoesnber uo paseq o}9]9p JO ppe aq ULD JOMATAAI OU], -
+(a}ep pue usis) (yep pue usIS) (218 pur usig) (ayeq pur uSis)
+(aousisoq/peoH VO) 4q pasoaddy (VO) Aq pamaraay (LAD) Aq pamaraay x (a9s;) Ag poredarg
+> :yRUIAy]]
+-:(Auy JD) 110) “2
+“SOURTIOFUOD-UOU Aue}
+yavuly WOnvAIISGO S}ULOdYIIYI MOITADY ag
+Ig JO [¢ a8ed POU 2ON WOISTADY 010/VO/dd/dOS *°N dOS | soueinssy Aytjend) dog
+yusUUssassy Ysty Aipend :apLL
+“LSOTTp eung ‘TI sey Ipemelurpy Yseg yo 01g [eUOHEUAIU] ‘ET ‘ON 01d
+kgs) poy] oealig wreydorg "fA
+
+pnporg snig 3p ampado0ig suye.i19dQ paepurys
+

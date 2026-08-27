@@ -19,6 +19,9 @@ const ATX_HEADING_RE = /^(#{1,3})\s+(.*)$/;
 const INLINE_MARKDOWN_SPLIT_RE =
   /(\*\*[^*]+\*\*|(?<!\*)\*(?!\s)[^*]+?(?<!\s)\*(?!\*)|(?<!_)_(?!\s)[^_]+?(?<!\s)_(?!_))/g;
 
+/** GFM table cells and DOCX import use `<br>` when a cell spans multiple lines. */
+const HTML_BR_SPLIT_RE = /<br\s*\/?>/gi;
+
 export function stripInlineMarkdown(text: string): string {
   return text
     .replace(/\*\*([^*]+)\*\*/g, "$1")
@@ -363,9 +366,32 @@ export function inlineMarkdownToTextNodes(
   return nodes;
 }
 
+/**
+ * Inline markdown plus `<br>` / `<br/>` and literal newlines → text nodes with
+ * `hardBreak` separators. Used for GFM table cells and chat/table edits.
+ */
+export function inlineMarkdownToTextNodesWithBreaks(
+  text: string,
+  extraMarks?: JSONContent["marks"]
+): JSONContent[] {
+  const segments = text.split(HTML_BR_SPLIT_RE);
+  const nodes: JSONContent[] = [];
+  for (let i = 0; i < segments.length; i++) {
+    if (i > 0) nodes.push({ type: "hardBreak" });
+    const segment = segments[i]!;
+    const lineParts = segment.split("\n");
+    for (let j = 0; j < lineParts.length; j++) {
+      if (j > 0) nodes.push({ type: "hardBreak" });
+      nodes.push(...inlineMarkdownToTextNodes(lineParts[j]!, extraMarks));
+    }
+  }
+  if (nodes.at(-1)?.type === "hardBreak") nodes.pop();
+  return nodes;
+}
+
 /** `**bold**` / `*italic*` / `_italic_` → marked text nodes; everything else literal. */
 function parseInline(text: string): JSONContent[] {
-  return inlineMarkdownToTextNodes(text);
+  return inlineMarkdownToTextNodesWithBreaks(text);
 }
 
 function isTableRow(trimmed: string): boolean {

@@ -1,6 +1,7 @@
 import type { JSONContent } from "@tiptap/core";
 import type { SectionType } from "@/db/schema";
 import { dvTableHeadersForSection } from "@/lib/document-types/design-verification/sections";
+import { inlineMarkdownToTextNodesWithBreaks } from "@/lib/tiptap/markdown-to-doc";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 import { flattenForAnchor } from "@/lib/suggestions/locator";
 
@@ -142,36 +143,29 @@ function cellsMatch(
   );
 }
 
+function cellParagraphFromText(text: string): JSONContent {
+  const normalized = normalizeSuggestionInsertText(text);
+  if (!normalized) return { type: "paragraph" };
+  return {
+    type: "paragraph",
+    content: inlineMarkdownToTextNodesWithBreaks(normalized),
+  };
+}
+
 function makeCell(
   type: "tableHeader" | "tableCell",
   text: string,
   attrs?: JSONContent["attrs"]
 ): JSONContent {
-  const normalized = normalizeSuggestionInsertText(text);
   return {
     type,
     attrs: attrs ? structuredClone(attrs) : { ...DEFAULT_CELL_ATTRS },
-    content: [
-      normalized
-        ? {
-            type: "paragraph",
-            content: [{ type: "text", text: normalized }],
-          }
-        : { type: "paragraph" },
-    ],
+    content: [cellParagraphFromText(text)],
   };
 }
 
 function setCellText(cell: JSONContent, text: string): void {
-  const normalized = normalizeSuggestionInsertText(text);
-  cell.content = [
-    normalized
-      ? {
-          type: "paragraph",
-          content: [{ type: "text", text: normalized }],
-        }
-      : { type: "paragraph" },
-  ];
+  cell.content = [cellParagraphFromText(text)];
 }
 
 function fail(

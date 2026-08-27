@@ -1,0 +1,92 @@
+Standard Operating Procedure
+
+Unit: Drug Product
+
+; M.J. Biopharm Private Limited
+Plot No. 18, International Biotech Park, Hinjawadi, Phase H, Pune 411057.
+
+en)
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance
+
+| SOP No.: SOP/DP/QA/010 _ | Revision No: R04 _| Page 14 of 51
+
+occurrence more
+than a year
+
+Low impact
+(may having
+indirect impact)
+
+Expected to happen
+in low frequency
+e.g. Half yearly
+
+High possibility of
+detection
+
+Medium or
+moderate
+impact
+
+(Will having
+indirect impact)
+
+Expected to happen
+in a moderate
+frequency e.g.
+Quarterly
+
+Medium or moderate
+possibility of detection
+
+High impact
+(may having
+direct impact)
+
+Expected to happen
+repeated e.g.
+Weekly
+
+Low possibility of
+detection
+
+Very high
+impact
+
+(Will having
+direct impact)
+
+Expected to happen
+regularly e.g. More
+than one
+occurrence per day
+
+No detection possible
+
+Risk priority number shall be calculated as;
+RPN=SxPxD
+
+S = Severity, P = Probability of occurrence, D = detectability
+
+Table No. 05
+DETECTION
+Severity | Probability Risk THO
+(S) (P) (S*P) | vel 1 [2 [3 |4 5
+SxPxD
+
+*Green- Low; Yellow- Medium; Red- high
+
+Reviewed By (Quality Assurance) Sign/Date
+
+Aweens
+
+Prepared By (User Department) Sign/Date
+
+L5ry\06)26
+
+Confidential and Proprietary SOP/DP/QA/001/F01-RO02
+
+MASTER COPY

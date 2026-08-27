@@ -52,6 +52,39 @@ describe("measurement scatter", () => {
     expect(results.specs[0]?.points).toHaveLength(TORQUE_MOCK_VALUES.length);
     expect(results.specs[0]?.limits).toEqual({ lower: 1, upper: 6 });
     expect(results.specs[0]?.points[0]?.y).toBe(TORQUE_MOCK_VALUES[0]);
+    expect(config.lsl).toBeNull();
+    expect(config.usl).toBeNull();
+  });
+
+  it("lets the engineer override extracted LSL/USL", () => {
+    const { config, results } = scatterFromExtraction(torqueExtraction(), {
+      query: "M3-SYS-FN-037",
+      lsl: 2,
+      usl: 5,
+      existingTitles: [],
+    });
+    expect(config.lsl).toBe(2);
+    expect(config.usl).toBe(5);
+    expect(results.specs[0]?.limits).toEqual({ lower: 2, upper: 5 });
+  });
+
+  it("overrides one side and keeps the extracted limit on the other", () => {
+    const { results } = scatterFromExtraction(torqueExtraction(), {
+      query: "M3-SYS-FN-037",
+      lsl: 0.5,
+      existingTitles: [],
+    });
+    expect(results.specs[0]?.limits).toEqual({ lower: 0.5, upper: 6 });
+  });
+
+  it("draws no spec line when extraction and override are both empty on that side", () => {
+    const extraction = torqueExtraction();
+    extraction.limits = { lower: null, upper: null };
+    const { results } = scatterFromExtraction(extraction, {
+      query: "M3-SYS-FN-037",
+      existingTitles: [],
+    });
+    expect(results.specs[0]?.limits).toEqual({ lower: null, upper: null });
   });
 
   it("disambiguates the title when the query is already used", () => {

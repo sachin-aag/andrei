@@ -15,6 +15,8 @@ function untitledFallback(documentType: DocumentType | undefined): string {
       return "Untitled design verification";
     case "generic_document":
       return "Untitled document";
+    case "quality_risk_assessment":
+      return "Untitled quality risk assessment";
     case "investigation_report":
     case undefined:
       return "Untitled deviation";

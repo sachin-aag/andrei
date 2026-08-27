@@ -2,6 +2,8 @@ import {
   DEFAULT_CHART_LAYOUT,
   mergeChartLayout,
   splitSpec,
+  type ChartLimits,
+  type ChartSpec,
 } from "@/lib/charts/chart-spec";
 import {
   buildChartSpec,
@@ -14,6 +16,21 @@ import type {
   MeasurementScatterLayoutInput,
   MeasurementScatterResult,
 } from "./types";
+
+/** Per-side: a provided number wins; null/undefined keeps the extracted limit. */
+export function mergeScatterLimits(
+  extracted: ChartLimits,
+  override: { lsl?: number | null; usl?: number | null }
+): ChartLimits {
+  return {
+    lower: override.lsl ?? extracted.lower,
+    upper: override.usl ?? extracted.upper,
+  };
+}
+
+function applyLimitsToSpecs(specs: ChartSpec[], limits: ChartLimits): ChartSpec[] {
+  return specs.map((spec) => ({ ...spec, limits }));
+}
 
 export type ScatterExtractFn = (input: {
   reportId: string;
@@ -28,6 +45,8 @@ export function scatterFromExtraction(
     xLabel?: string;
     yLabel?: string;
     layout?: MeasurementScatterLayoutInput;
+    lsl?: number | null;
+    usl?: number | null;
     existingTitles: readonly string[];
   }
 ): { config: MeasurementScatterConfig; results: MeasurementScatterResult } {
@@ -39,6 +58,8 @@ export function scatterFromExtraction(
   const xLabel = input.xLabel?.trim() || "Measurement";
   const yLabel = input.yLabel?.trim() || `Value (${extraction.uom})`;
   const layout = mergeChartLayout(DEFAULT_CHART_LAYOUT, input.layout ?? {});
+  const lsl = input.lsl ?? null;
+  const usl = input.usl ?? null;
   const spec = buildChartSpec({
     query,
     title,
@@ -47,9 +68,10 @@ export function scatterFromExtraction(
     layout,
     extraction,
   });
-  const specs = splitSpec(spec);
+  const limits = mergeScatterLimits(spec.limits, { lsl, usl });
+  const specs = applyLimitsToSpecs(splitSpec(spec), limits);
   return {
-    config: { query, title, xLabel, yLabel, layout },
+    config: { query, title, xLabel, yLabel, layout, lsl, usl },
     results: {
       specs,
       n: spec.points.length,
@@ -65,6 +87,8 @@ export async function runMeasurementScatter(input: {
   xLabel?: string;
   yLabel?: string;
   layout?: MeasurementScatterLayoutInput;
+  lsl?: number | null;
+  usl?: number | null;
   existingTitles: readonly string[];
   extract?: ScatterExtractFn;
 }): Promise<

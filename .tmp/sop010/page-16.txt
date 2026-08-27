@@ -1,0 +1,86 @@
+Standard Operating Procedure Unit: Drug Product
+
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+M.J. Biopharm Private Limited Gysy
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance | SOP No.: SOP/DP/QA/010 Revision No: R04 | Page 16 of 51
+
+7.4.9
+74.9.1
+
+749.2
+
+7.4.10
+
+7411
+7.4.12
+7.413
+
+TAA
+
+TAA4L
+7414.2
+7.4.14.3
+
+7414.4
+
+NUMBERING SYSTEM FOR QUALITY RISK ASSESSMENT:
+
+On receipt of the quality risk assessment form, QA shall assign the number and the same shall be
+entered in “Quality Risk Assessment Log” as per format no. SOP/DP/QA/010/F03.
+
+Numbering system for Quality Risk Assessment as follows; RA/KXX/Y Y/ZZZ-RBB
+
+Where,
+
+‘RA’ stands for Risk Assessment
+
+‘XXX? stand for department code as per SOP No. SOP/DP/QA/001 (It shall be two digit or three
+digit e.g. QA, QC, EHS etc.)
+
+YY’ stands for last two digit of financial year (financial year 2022 shall be mentioned as 22)
+
+‘ZZZ’ stands for department wise sequentially increasing number starts from “001”.
+
+RBB R stand for revision and BB stand for sequential revision number start from 00, 01, 02 and so
+
+on.
+For example, the first risk assessment raised by QA department in Year 2022, then it shall be
+
+numbered as ‘RA/QA/22/001-R00’.
+
+On completion of risk assessment, pre-approval shall be taken from as reviewed by from risk
+assessment team and approval from QA Head/Designee. Risk accept or reject and their
+control/mitigation shall be reviewed during the pre-approval.
+
+If accepted, the risk assessment form shall be sent to the user department to proceed the risk
+control/ mitigation.
+
+In case the risk assessment is rejected, the same shall be communicated to concern departments and
+risk assessment considered as “Closed” and kept in risk assessment file for future reference.
+
+Risk assessment shall be reviewed by risk assessment team for proposed risk control and forward
+to QA Head/Designee for approval.
+
+Risk reduction includes:
+Use the appropriate quality tool for the mitigation of risk or completion of the action item.
+Preference should be given to reduce the occurrence rather than increasing the levels of detection.
+
+Process that improve the detectability of hazards and quality risks might also be used as part of a
+risk control strategy.
+
+Implementation of risk reduction measures should not introduce new risks into the system or
+
+increase the significance of other existing risks, it is required to revisit the risk assessment to
+identify and evaluate any possible change in the risk after implementing a risk reduction process
+
+Prepared By (User Department) Sign/Date Reviewed By (Quality Assurance) Sign/Date
+
+£543) hc og\oel&
+
+Confidential and Proprietary SOP/DP/QA/001/F01-RO2
+MASTER COPY
+

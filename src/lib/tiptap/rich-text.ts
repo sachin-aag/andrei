@@ -6,6 +6,7 @@ import {
 import {
   atxHeadingParagraph,
   hydrateLiteralMarkdownInDoc,
+  inlineMarkdownToTextNodesWithBreaks,
 } from "@/lib/tiptap/markdown-to-doc";
 import {
   listItemParagraph,
@@ -207,6 +208,27 @@ function expandPhraseItalicText(
  * so a stray `heading` would make ProseMirror reject the entire doc. Convert it
  * to a bold paragraph unless `preserveHeadings` is set (generic documents).
  */
+const LITERAL_HTML_BR_RE = /<br\s*\/?>/i;
+
+function repairLiteralBrInParagraph(paragraph: JSONContent): JSONContent {
+  if (paragraph.type !== "paragraph" || !paragraph.content?.length) return paragraph;
+  let changed = false;
+  const content: JSONContent[] = [];
+  for (const child of paragraph.content) {
+    if (
+      child.type === "text" &&
+      child.text &&
+      LITERAL_HTML_BR_RE.test(child.text)
+    ) {
+      changed = true;
+      content.push(...inlineMarkdownToTextNodesWithBreaks(child.text, child.marks));
+      continue;
+    }
+    content.push(child);
+  }
+  return changed ? { ...paragraph, content } : paragraph;
+}
+
 function coerceUnsupportedNodes(
   node: JSONContent,
   preserveHeadings = false
@@ -220,6 +242,15 @@ function coerceUnsupportedNodes(
         return marks.some((m) => m.type === "bold")
           ? child
           : { ...child, marks: [...marks, { type: "bold" }] };
+      }),
+    };
+  }
+  if (node.type === "tableCell" || node.type === "tableHeader") {
+    return {
+      ...node,
+      content: (node.content ?? []).map((child) => {
+        const coerced = coerceUnsupportedNodes(child, preserveHeadings);
+        return child.type === "paragraph" ? repairLiteralBrInParagraph(coerced) : coerced;
       }),
     };
   }

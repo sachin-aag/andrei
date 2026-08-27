@@ -1,0 +1,47 @@
+Standard Operating Procedure Unit: Drug Product
+
+M.J. Biopharm Private Limited Gusy
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance [ SOP No.: SOP/DP/QA/010__| Revision No: R04 _| Page 33 of 51
+1.5 RISK ASSESSMENT TEAM MEMBERS:
+
+Sr. No. Name Department Designation
+
+Note: Rows can be added or deleted based in number of team members.
+
+1.6 RISK IDENTIFICATION:
+
+S.No. |Process / activity | Identify Failure
+1.
+
+2.
+
+3s
+
+4.
+
+5y
+
+Note: Rows can be added or deleted based on the requirement
+
+1.7 RISK MEASUREMENT BY FAILURE MODE EFFECT ANALYSIS:
+Risk assessment shall be performed as Formal Risk Assessment and Informal Risk Assessment.
+Decision shall be taken by department head/designee in coordination with QA. Decision Tree is given
+in approved SOP for “Quality Risk Assessment”
+
+1.8 Risk Assessment Approach: Formal Risk Assessment or Informal Risk Assessment
+1.8.1 Formal risk assessment:
+1.8.1.1 Risk Criteria:
+
+The severity (S), Probability (P) and Detection (D) values are assessed using the table below to
+calculate
+
+Prepared By (User Department) Sign/Date Reviewed By (Quality Assurance) Sign/Date
+PErg)06126 ZZ ecane
+Confidential and Proprietary SOP/DP/QA/001/F01-R02
+
+MASTER COPY
+

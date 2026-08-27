@@ -57,6 +57,21 @@ export const SUGGEST_TARGET_FIELD_PATTERNS: Record<string, readonly string[]> = 
   revision_history: ["table"],
   // Demo-only continuous Word-like document
   body: ["narrative"],
+  qra_approach: ["narrative", "impactKnown", "scopeDefined", "scopeNarrow"],
+  qra_objective: ["narrative"],
+  qra_scope: ["narrative"],
+  qra_overview: ["narrative"],
+  qra_procedure: ["narrative"],
+  qra_team: ["table"],
+  qra_risk_identification: ["table"],
+  qra_fmea: ["narrative", "table"],
+  qra_communication: ["narrative", "table"],
+  qra_pre_conclusion: ["narrative"],
+  qra_mitigation: ["narrative", "table"],
+  qra_residual_risk: ["narrative", "table"],
+  qra_periodic_review: ["narrative", "applicable"],
+  qra_post_conclusion: ["narrative"],
+  qra_revision_history: ["table"],
 };
 
 function patternToRegex(pattern: string): RegExp {
@@ -139,6 +154,21 @@ export const RICH_FIELD_PATHS: Partial<Record<string, readonly string[]>> = {
   observations: ["narrative"],
   revision_history: ["table"],
   body: ["narrative"],
+  qra_approach: ["narrative"],
+  qra_objective: ["narrative"],
+  qra_scope: ["narrative"],
+  qra_overview: ["narrative"],
+  qra_procedure: ["narrative"],
+  qra_team: ["table"],
+  qra_risk_identification: ["table"],
+  qra_fmea: ["narrative", "table"],
+  qra_communication: ["narrative", "table"],
+  qra_pre_conclusion: ["narrative"],
+  qra_mitigation: ["narrative", "table"],
+  qra_residual_risk: ["narrative", "table"],
+  qra_periodic_review: ["narrative"],
+  qra_post_conclusion: ["narrative"],
+  qra_revision_history: ["table"],
 };
 
 export function isRichTargetField(section: SectionType, contentPath: string): boolean {

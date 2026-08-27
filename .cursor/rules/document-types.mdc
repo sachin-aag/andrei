@@ -17,9 +17,10 @@ alwaysApply: false
 # Document types
 
 Reports are `investigation_report`, `design_verification`,
-`mechanical_design_verification`, or `generic_document` (demo pack only).
-The registry is `src/lib/document-types/`. Call `getDocumentType(type)` for
-sections, criteria, prompts, chat persona, and merge.
+`mechanical_design_verification`, `quality_risk_assessment`, or
+`generic_document` (demo pack only). The registry is
+`src/lib/document-types/`. Call `getDocumentType(type)` for sections, criteria,
+prompts, chat persona, and merge.
 
 ```ts
 // ❌ BAD — assumes every report is DMAIC
