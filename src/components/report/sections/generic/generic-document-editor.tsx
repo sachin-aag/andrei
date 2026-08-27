@@ -4,6 +4,7 @@ import type { JSONContent } from "@tiptap/core";
 import { AlertTriangle } from "lucide-react";
 import { TiptapSectionField } from "@/components/report/tiptap-section-field";
 import { SaveStatus } from "@/components/report/save-status";
+import { SectionSuggestionCard } from "@/components/report/suggestion-card";
 import { PagedDocumentSurface } from "@/components/report/sections/generic/paged-document-surface";
 import {
   useGenericReportSection,
@@ -52,6 +53,9 @@ export function GenericDocumentEditor() {
           </div>
         </div>
       ) : null}
+      <div className="lg:hidden">
+        <SectionSuggestionCard section={GENERIC_DOCUMENT_SECTION} />
+      </div>
       <div className="flex items-start justify-center overflow-x-auto pl-16">
         <PagedDocumentSurface>
           <TiptapSectionField

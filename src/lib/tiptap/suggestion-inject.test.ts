@@ -93,6 +93,39 @@ describe("stripPendingSuggestionsExcept", () => {
     expect(collectPendingSuggestionMarkIds(stripped)).toEqual(["human-tc-1"]);
     expect(stripped).toEqual(doc);
   });
+
+  it("does not strip committed (accepted) AI tracked-change marks", () => {
+    const doc: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "hello",
+              marks: [
+                {
+                  type: "suggestionInsert",
+                  attrs: {
+                    id: "ai-rev-1",
+                    authorId: "ai",
+                    status: "accepted",
+                    createdAt: "2026-01-01T00:00:00.000Z",
+                    kind: "fix",
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    };
+
+    const stripped = stripPendingSuggestionsExcept(doc, null);
+    expect(collectPendingSuggestionMarkIds(stripped, "ai")).toEqual([]);
+    expect(stripped).toEqual(doc);
+  });
 });
 
 describe("richDocsMatchIgnoringAiPreview", () => {

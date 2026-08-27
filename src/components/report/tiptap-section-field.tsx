@@ -94,6 +94,7 @@ import {
   CommentPersistError,
   SectionPersistError,
 } from "@/lib/suggestions/accept-suggestion";
+import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { suggestionTargetsField } from "@/lib/suggestions/resolve-suggestion-field-path";
 import { validateSuggestionLocate } from "@/lib/suggestions/validate-suggestion";
 import { buildTableOperationPreviewDoc } from "@/lib/suggestions/table-preview";
@@ -643,12 +644,24 @@ export function TiptapSectionField({
         throw new Error("Suggestion could not be located");
       }
 
-      // Do not mutate editor-local JSON — external-value sync repaints from section state.
+      // Paint the applied result immediately. External-value sync skips a
+      // focused editor, and the preview-strip effect would otherwise revert
+      // pending AI marks once the comment is no longer the active suggestion.
       if (result.nextSection) {
         replaceSection(
           section,
           result.nextSection as unknown
         );
+        if (editor && !editor.isDestroyed && isRichField) {
+          editor.commands.setContent(
+            getRichFieldValue(
+              result.nextSection,
+              contentPath,
+              richFieldOptions
+            ) as Content,
+            { emitUpdate: false }
+          );
+        }
       }
       setComments((prev) =>
         mode === "dismiss"
@@ -667,6 +680,9 @@ export function TiptapSectionField({
       replaceSection,
       setComments,
       suggestionPersistMode,
+      editor,
+      isRichField,
+      richFieldOptions,
     ]
   );
 

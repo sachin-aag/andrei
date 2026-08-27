@@ -54,6 +54,12 @@ vi.mock("@/components/report/tiptap-section-field", () => ({
   ),
 }));
 
+vi.mock("@/components/report/suggestion-card", () => ({
+  SectionSuggestionCard: ({ section }: { section: string }) => (
+    <div data-testid="mobile-suggestion-card" data-section={section} />
+  ),
+}));
+
 vi.mock("@/providers/report-provider", () => ({
   useReportData: () => ({
     report: {
@@ -90,5 +96,9 @@ describe("GenericDocumentEditor", () => {
     const field = screen.getByTestId("tiptap-field");
     expect(field).toHaveAttribute("data-chrome", "page");
     expect(field).toHaveAttribute("data-label", "");
+    expect(screen.getByTestId("mobile-suggestion-card")).toHaveAttribute(
+      "data-section",
+      "body"
+    );
   });
 });

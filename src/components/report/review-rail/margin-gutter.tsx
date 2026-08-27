@@ -19,7 +19,10 @@ import {
 import { CommentCard } from "./comment-card";
 import { SectionCommentComposer } from "./section-comment-composer";
 import { SectionSuggestionCard } from "@/components/report/suggestion-card";
-import { evaluatableSectionKeys } from "@/lib/ai/criteria-view";
+import {
+  evaluatableSectionKeys,
+  suggestionCardSectionKeys,
+} from "@/lib/ai/criteria-view";
 import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
 import {
   effectivePlainTextContentPath,
@@ -250,6 +253,10 @@ export function MarginGutter({ onSectionOverflow }: Props) {
     () => evaluatableSectionKeys(report.documentType),
     [report.documentType]
   );
+  const suggestionCardSections = useMemo(
+    () => suggestionCardSectionKeys(report.documentType),
+    [report.documentType]
+  );
   const {
     comments,
     activeCommentId,
@@ -402,7 +409,7 @@ export function MarginGutter({ onSectionOverflow }: Props) {
     //    fields still center. During a queue bridge, park at the previous
     //    card's Y; scroll clamping (below) keeps "Go to next" in the
     //    scrollport until the user jumps (this section or another) or dismisses.
-    for (const section of evaluatableSections) {
+    for (const section of suggestionCardSections) {
       const active = gutterSuggestionCommentForSection(section);
       if (!active) continue;
 
@@ -482,6 +489,7 @@ export function MarginGutter({ onSectionOverflow }: Props) {
     layoutVersion,
     canComment,
     evaluatableSections,
+    suggestionCardSections,
   ]);
 
   // Keep a parked queue-bridge card inside the scrollport. Other gutter
@@ -560,7 +568,7 @@ export function MarginGutter({ onSectionOverflow }: Props) {
     const containerTop = container.getBoundingClientRect().top;
 
     const overflows: Record<string, number> = {};
-    for (const section of evaluatableSections) {
+    for (const section of suggestionCardSections) {
       const sectionEl = document.getElementById(section);
       if (!sectionEl) continue;
       const cardsInSection = packed.filter((c) => c.section === section);
@@ -598,7 +606,7 @@ export function MarginGutter({ onSectionOverflow }: Props) {
     lastOverflowRef.current = overflows;
 
     onSectionOverflow(overflows as Record<SectionType, number>);
-  }, [packed, cardHeights, onSectionOverflow, evaluatableSections]);
+  }, [packed, cardHeights, onSectionOverflow, suggestionCardSections]);
 
   // Measure card heights once they render so the packer knows actual sizes.
   // Depends on anchors only — not packed (packed changes when heights update).
