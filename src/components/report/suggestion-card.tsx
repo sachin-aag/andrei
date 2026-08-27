@@ -1035,7 +1035,6 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
     evaluations,
     sectionOrder,
     report.id,
-    report.documentType,
     replaceSection,
     animateQueueTransition,
     setComments,

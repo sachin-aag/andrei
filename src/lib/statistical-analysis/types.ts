@@ -19,14 +19,17 @@ export const IMR_CONSTANTS = {
 
 export const CAPABILITY_SIXPACK_NORMAL = "capability_sixpack_normal" as const;
 export const MEASUREMENT_SCATTER = "measurement_scatter" as const;
+export const XY_SCATTER = "xy_scatter" as const;
 export const ONE_WAY_ANOVA = "one_way_anova" as const;
 
 export const MIN_ANOVA_GROUPS = 2;
 export const MAX_ANOVA_GROUPS = 40;
+export const MIN_XY_POINTS = 2;
 
 export type AnalysisKind =
   | typeof CAPABILITY_SIXPACK_NORMAL
   | typeof MEASUREMENT_SCATTER
+  | typeof XY_SCATTER
   | typeof ONE_WAY_ANOVA;
 
 export const PRIMARY_DATA_SHEET_ID = "data-1";
@@ -316,9 +319,58 @@ export type AnovaAnalysisSummary = AnalysisSummaryBase & {
   results: OneWayAnovaResult;
 };
 
+export type XyScatterConfig = {
+  xColumnId: string;
+  xColumnName: string;
+  yColumnId: string;
+  yColumnName: string;
+  title: string;
+  /** 1-based inclusive. Null with `rowEnd` null means the whole columns. */
+  rowStart?: number | null;
+  rowEnd?: number | null;
+  /** Explicit 1-based row numbers. When set, overrides `rowStart`/`rowEnd`. */
+  rows?: number[] | null;
+};
+
+export type XyScatterResult = {
+  specs: ChartSpec[];
+  n: number;
+  skipped: number;
+  /** Pearson r. Null when n < 2 or either axis has zero variance. */
+  pearsonR: number | null;
+};
+
+export type XyScatterComputeErrorCode =
+  | "too_few_points"
+  | "missing_columns"
+  | "different_sheets"
+  | "same_column";
+
+export type XyScatterComputeSuccess = {
+  ok: true;
+  result: XyScatterResult;
+};
+
+export type XyScatterComputeFailure = {
+  ok: false;
+  code: XyScatterComputeErrorCode;
+  message: string;
+};
+
+export type XyScatterComputeOutcome =
+  | XyScatterComputeSuccess
+  | XyScatterComputeFailure;
+
+export type XyScatterAnalysisSummary = AnalysisSummaryBase & {
+  kind: typeof XY_SCATTER;
+  config: XyScatterConfig;
+  results: XyScatterResult;
+};
+
 export type StatisticalAnalysisSummary =
   | SixpackAnalysisSummary
   | ScatterAnalysisSummary
+  | XyScatterAnalysisSummary
   | AnovaAnalysisSummary;
 
 export function isSixpackAnalysis(
@@ -339,6 +391,12 @@ export function isAnovaAnalysis(
   return analysis.kind === ONE_WAY_ANOVA;
 }
 
+export function isXyScatterAnalysis(
+  analysis: StatisticalAnalysisSummary
+): analysis is XyScatterAnalysisSummary {
+  return analysis.kind === XY_SCATTER;
+}
+
 /**
  * One analytics worksheet per report (1:1 with `statistical_workspaces`).
  * Saved sixpacks live in `analyses` — many per report, never overwritten
@@ -349,6 +407,8 @@ export type ReportAnalyticsView = {
   reportId: string;
   worksheet: WorksheetData;
   analyses: StatisticalAnalysisSummary[];
+  /** Monotonic worksheet revision; PATCH must send the last seen value. */
+  version: number;
   createdAt: string;
   updatedAt: string;
 };

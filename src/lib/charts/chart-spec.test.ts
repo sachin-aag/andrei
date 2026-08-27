@@ -4,6 +4,7 @@ import {
   formatChartProvenance,
   layoutPoints,
   parseChartSpec,
+  resolveXRange,
   resolveYRange,
   splitSpec,
   type ChartSpec,
@@ -83,6 +84,49 @@ describe("layoutPoints", () => {
       { series: "B", label: "B Tip 1", x: 1 },
       { series: "B", label: "B Tip 2", x: 2 },
     ]);
+  });
+
+  it("keeps numeric x for value axis", () => {
+    const laid = layoutPoints(
+      spec({
+        points: [
+          { x: 20.7, y: 0.17, series: null, label: "Row 1" },
+          { x: 2369, y: 8, series: null, label: "Row 2" },
+        ],
+        layout: { ...DEFAULT_CHART_LAYOUT, xAxis: "value" },
+      })
+    );
+    expect(laid.map((p) => p.x)).toEqual([20.7, 2369]);
+  });
+});
+
+describe("resolveXRange", () => {
+  it("uses the numeric x extent for value axis, not 1..N", () => {
+    const range = resolveXRange(
+      spec({
+        points: [
+          { x: 20.7, y: 1, series: null, label: "a" },
+          { x: 2369, y: 2, series: null, label: "b" },
+        ],
+        layout: { ...DEFAULT_CHART_LAYOUT, xAxis: "value" },
+      })
+    );
+    expect(range.min).toBeLessThan(20.7);
+    expect(range.max).toBeGreaterThan(2369);
+  });
+
+  it("does not snap xmin to 0 when values sit far from the origin", () => {
+    const range = resolveXRange(
+      spec({
+        points: [
+          { x: 90, y: 1, series: null, label: "a" },
+          { x: 110, y: 2, series: null, label: "b" },
+        ],
+        layout: { ...DEFAULT_CHART_LAYOUT, xAxis: "value" },
+      })
+    );
+    expect(range.min).toBeGreaterThan(50);
+    expect(range.max).toBeGreaterThan(110);
   });
 });
 

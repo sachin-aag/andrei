@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export type ChartPoint = {
-  /** X position. Assigned by layout, not by the model. */
+  /** X position. Sequential/replicate layouts overwrite this; value keeps it. */
   x: number;
   y: number;
   /** Legend group, e.g. a handpiece serial. null = single ungrouped series. */
@@ -27,9 +27,10 @@ export type ChartLayout = {
   seriesBy: "unit" | "none";
   /**
    * "sequential" = x is 1..N across all points, "replicate" = x is the
-   * within-series index, series overlaid.
+   * within-series index, series overlaid. "value" = keep each point's x
+   * as a numeric coordinate (worksheet XY scatter).
    */
-  xAxis: "sequential" | "replicate";
+  xAxis: "sequential" | "replicate" | "value";
   /** null = auto from data and limits with padding. */
   yRange: { min: number; max: number } | null;
 };
@@ -80,7 +81,7 @@ const chartCitationSchema = z.object({
 const chartLayoutSchema = z.object({
   mode: z.enum(["combined", "per-series"]),
   seriesBy: z.enum(["unit", "none"]),
-  xAxis: z.enum(["sequential", "replicate"]),
+  xAxis: z.enum(["sequential", "replicate", "value"]),
   yRange: z
     .object({
       min: z.number().finite(),
@@ -138,16 +139,23 @@ function sortedPoints(points: ChartPoint[]): ChartPoint[] {
 /** Assign x positions per layout.xAxis and sort deterministically. */
 export function layoutPoints(spec: ChartSpec): ChartPoint[] {
   const ordered = sortedPoints(spec.points);
+  if (spec.layout.xAxis === "value") {
+    return ordered;
+  }
   if (spec.layout.xAxis === "sequential") {
     return ordered.map((point, index) => ({ ...point, x: index + 1 }));
   }
-  const counts = new Map<string, number>();
-  return ordered.map((point) => {
-    const key = seriesKey(point.series);
-    const next = (counts.get(key) ?? 0) + 1;
-    counts.set(key, next);
-    return { ...point, x: next };
-  });
+  if (spec.layout.xAxis === "replicate") {
+    const counts = new Map<string, number>();
+    return ordered.map((point) => {
+      const key = seriesKey(point.series);
+      const next = (counts.get(key) ?? 0) + 1;
+      counts.set(key, next);
+      return { ...point, x: next };
+    });
+  }
+  const exhaustive: never = spec.layout.xAxis;
+  return exhaustive;
 }
 
 function niceNumber(range: number, round: boolean): number {
@@ -203,8 +211,7 @@ export function resolveYRange(spec: ChartSpec): { min: number; max: number } {
   return { min, max };
 }
 
-export function yTickValues(spec: ChartSpec): number[] {
-  const { min, max } = resolveYRange(spec);
+function niceTicks(min: number, max: number): number[] {
   const span = max - min;
   const step = niceNumber(span / 6, true);
   const ticks: number[] = [];
@@ -221,6 +228,54 @@ export function yTickValues(spec: ChartSpec): number[] {
   return [...new Set(ticks.map((tick) => Number(tick.toPrecision(12))))].toSorted(
     (a, b) => a - b
   );
+}
+
+export function yTickValues(spec: ChartSpec): number[] {
+  const { min, max } = resolveYRange(spec);
+  return niceTicks(min, max);
+}
+
+/** Auto x-range. Sequential/replicate pad 0.5 around 1..N; value pads data and does not snap xmin to 0. */
+export function resolveXRange(spec: ChartSpec): { min: number; max: number } {
+  const points = layoutPoints(spec);
+  const xs = points.map((point) => point.x);
+  if (xs.length === 0) return { min: 0, max: 1 };
+  if (spec.layout.xAxis !== "value") {
+    const rawMin = Math.min(...xs);
+    const rawMax = Math.max(...xs);
+    return { min: rawMin - 0.5, max: Math.max(rawMin + 0.5, rawMax + 0.5) };
+  }
+  const dataMin = Math.min(...xs);
+  const dataMax = Math.max(...xs);
+  const span = dataMax - dataMin;
+  const pad = span === 0 ? Math.max(1, Math.abs(dataMax) * 0.1 || 1) : span * 0.08;
+  let min = dataMin - pad;
+  let max = dataMax + pad;
+  const allNonNegative = xs.every((value) => value >= 0);
+  if (allNonNegative && min < 0) min = 0;
+  const niceSpan = niceNumber(max - min, false);
+  const step = niceNumber(niceSpan / 6, true);
+  min = Math.floor(min / step) * step;
+  max = Math.ceil(max / step) * step;
+  if (allNonNegative && min < 0) min = 0;
+  if (max <= min) max = min + step;
+  return { min, max };
+}
+
+export function xTickValues(spec: ChartSpec): number[] {
+  if (spec.layout.xAxis === "value") {
+    const { min, max } = resolveXRange(spec);
+    return niceTicks(min, max);
+  }
+  const points = layoutPoints(spec);
+  const xs = points.map((point) => point.x);
+  if (xs.length === 0) return [1];
+  const xTickMin = Math.round(Math.min(...xs));
+  const xTickMax = Math.round(Math.max(...xs));
+  const xTickStep = xTickMax <= 15 ? 1 : xTickMax <= 40 ? 5 : 10;
+  const ticks: number[] = [];
+  for (let x = xTickMin; x <= xTickMax; x += xTickStep) ticks.push(x);
+  return ticks;
 }
 
 /** Split into one spec per series when layout.mode === "per-series". */

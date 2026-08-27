@@ -69,6 +69,7 @@ function analyticsView(
     reportId: "report-1",
     worksheet,
     analyses: [],
+    version: 1,
     createdAt: "2026-08-26T00:00:00.000Z",
     updatedAt: "2026-08-26T00:00:00.000Z",
   };
@@ -91,6 +92,7 @@ describe("analytics chat tools", () => {
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("run_capability_sixpack");
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("run_one_way_anova");
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("plot_measurements");
+    expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("plot_xy_scatter");
     expect(ANALYTICS_CHAT_TOOL_NAMES).toContain("scan_attachments");
   });
 
@@ -119,6 +121,7 @@ describe("analytics chat tools", () => {
     expect(writable.run_capability_sixpack).toBeDefined();
     expect(writable.run_one_way_anova).toBeDefined();
     expect(writable.plot_measurements).toBeDefined();
+    expect(writable.plot_xy_scatter).toBeDefined();
 
     const locked = buildAnalyticsChatTools({
       reportId: "report-1",
@@ -130,6 +133,7 @@ describe("analytics chat tools", () => {
     expect(locked.run_capability_sixpack).toBeUndefined();
     expect(locked.run_one_way_anova).toBeUndefined();
     expect(locked.plot_measurements).toBeUndefined();
+    expect(locked.plot_xy_scatter).toBeUndefined();
     expect(locked.scan_attachments).toBeDefined();
     expect(locked.search_documents).toBeDefined();
     const searchSchema = locked.search_documents?.inputSchema as unknown as ZodToolSchema;
@@ -274,9 +278,10 @@ describe("analytics chat tools", () => {
   it("adds a data sheet without searching attachments", async () => {
     const initial = analyticsView();
     vi.mocked(getOrCreateReportAnalytics).mockResolvedValue(initial);
-    vi.mocked(updateReportAnalytics).mockImplementation(async (_id, worksheet) =>
-      analyticsView(worksheet)
-    );
+    vi.mocked(updateReportAnalytics).mockImplementation(async (_id, worksheet) => ({
+      ok: true,
+      analytics: analyticsView(worksheet),
+    }));
     const tools = buildAnalyticsChatTools({
       reportId: "report-1",
       canEdit: true,
@@ -299,5 +304,110 @@ describe("analytics chat tools", () => {
     });
     expect(updateReportAnalytics).toHaveBeenCalled();
     expect(listReadyDocumentsForReport).not.toHaveBeenCalled();
+  });
+
+  it("batches several manage_worksheet operations into one save", async () => {
+    const initial = analyticsView();
+    vi.mocked(getOrCreateReportAnalytics).mockResolvedValue(initial);
+    vi.mocked(updateReportAnalytics).mockImplementation(async (_id, worksheet) => ({
+      ok: true,
+      analytics: analyticsView(worksheet),
+    }));
+    const tools = buildAnalyticsChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "investigation_report",
+    });
+    const execute = tools.manage_worksheet?.execute;
+    if (!execute) throw new Error("manage_worksheet has no execute");
+    const result = await execute(
+      {
+        operations: [
+          { action: "add_column", name: "Time (hrs)" },
+          { action: "add_column", name: "Temp (°C)" },
+        ],
+      },
+      {
+        toolCallId: "test",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    expect(result).toMatchObject({
+      status: "ok",
+      operationCount: 2,
+    });
+    expect(updateReportAnalytics).toHaveBeenCalledTimes(1);
+  });
+
+  it("reports destination and non-numeric cells after write_column", async () => {
+    const initial = analyticsView();
+    vi.mocked(getOrCreateReportAnalytics).mockResolvedValue(initial);
+    vi.mocked(updateReportAnalytics).mockImplementation(async (_id, worksheet) => ({
+      ok: true,
+      analytics: analyticsView(worksheet),
+    }));
+    const tools = buildAnalyticsChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "investigation_report",
+    });
+    const execute = tools.write_column?.execute;
+    if (!execute) throw new Error("write_column has no execute");
+    const result = await execute(
+      { name: "Time", values: ["0", "24", "not a number"] },
+      {
+        toolCallId: "test",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    expect(result).toMatchObject({
+      status: "written",
+      sheetName: "Data",
+      columnName: "Time",
+      rowsWritten: 3,
+      numericCells: 2,
+      nonNumericCells: 1,
+    });
+    expect(String((result as { note?: string }).note)).toMatch(/not numbers/i);
+  });
+
+  it("retries write_column once after a version conflict", async () => {
+    const initial = analyticsView();
+    vi.mocked(getOrCreateReportAnalytics).mockResolvedValue(initial);
+    vi.mocked(updateReportAnalytics)
+      .mockResolvedValueOnce({
+        ok: false,
+        reason: "conflict",
+        analytics: { ...initial, version: 2 },
+      })
+      .mockImplementation(async (_id, worksheet) => ({
+        ok: true,
+        analytics: { ...analyticsView(worksheet), version: 3 },
+      }));
+    const tools = buildAnalyticsChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      documentType: "investigation_report",
+    });
+    const execute = tools.write_column?.execute;
+    if (!execute) throw new Error("write_column has no execute");
+    const result = await execute(
+      { name: "Time", values: ["0", "24"] },
+      {
+        toolCallId: "test",
+        messages: [],
+        abortSignal: new AbortController().signal,
+      }
+    );
+    expect(result).toMatchObject({ status: "written", columnName: "Time" });
+    expect(updateReportAnalytics).toHaveBeenCalledTimes(2);
+    expect(updateReportAnalytics).toHaveBeenNthCalledWith(
+      2,
+      "report-1",
+      expect.anything(),
+      { expectedVersion: 2 }
+    );
   });
 });

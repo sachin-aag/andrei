@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { applyManageWorksheet } from "./manage-worksheet";
+import {
+  applyManageWorksheet,
+  manageWorksheetInputSchema,
+} from "./manage-worksheet";
 import {
   addDataSheet,
   createEmptyWorksheet,
@@ -131,5 +134,37 @@ describe("applyManageWorksheet", () => {
     expect(
       applyManageWorksheet(sheet, { action: "add_sheet" }).result
     ).toMatchObject({ status: "error" });
+  });
+
+  it("applies a batch of operations in order", () => {
+    const first = applyManageWorksheet(createEmptyWorksheet(), {
+      action: "add_column",
+      name: "Time",
+    });
+    expect(first.result.status).toBe("ok");
+    const second = applyManageWorksheet(first.worksheet!, {
+      action: "add_column",
+      name: "Temp",
+    });
+    expect(second.result).toMatchObject({ status: "ok", columnName: "Temp" });
+    expect(second.worksheet?.columns.map((column) => column.name)).toContain(
+      "Time"
+    );
+    expect(second.worksheet?.columns.map((column) => column.name)).toContain(
+      "Temp"
+    );
+  });
+
+  it("parses a batch of operations without a top-level action", () => {
+    const parsed = manageWorksheetInputSchema.safeParse({
+      operations: [
+        { action: "add_column", name: "Time" },
+        { action: "add_column", name: "Temp" },
+      ],
+    });
+    expect(parsed.success).toBe(true);
+    expect(
+      manageWorksheetInputSchema.safeParse({}).success
+    ).toBe(false);
   });
 });

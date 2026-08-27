@@ -49,6 +49,7 @@ const analytics: ReportAnalyticsView = {
     activeSheetId: "data-1",
   },
   analyses: [],
+  version: 1,
   createdAt: "2026-01-01T00:00:00.000Z",
   updatedAt: "2026-01-01T00:00:00.000Z",
 };
@@ -99,7 +100,10 @@ describe("/api/reports/[reportId]/analytics", () => {
   it("patches worksheet JSON", async () => {
     vi.mocked(requireAnalyticsAccess).mockResolvedValue(okAccess() as never);
     vi.mocked(getOrCreateReportAnalytics).mockResolvedValue(analytics);
-    vi.mocked(updateReportAnalytics).mockResolvedValue(analytics);
+    vi.mocked(updateReportAnalytics).mockResolvedValue({
+      ok: true,
+      analytics,
+    });
 
     const response = await PATCH(
       new Request("http://localhost/api/reports/report-1/analytics", {
@@ -112,14 +116,45 @@ describe("/api/reports/[reportId]/analytics", () => {
     expect(response.status).toBe(200);
     expect(updateReportAnalytics).toHaveBeenCalledWith(
       "report-1",
-      analytics.worksheet
+      analytics.worksheet,
+      { expectedVersion: undefined }
+    );
+  });
+
+  it("sends the last-seen version and returns 409 on conflict", async () => {
+    vi.mocked(requireAnalyticsAccess).mockResolvedValue(okAccess() as never);
+    vi.mocked(getOrCreateReportAnalytics).mockResolvedValue(analytics);
+    vi.mocked(updateReportAnalytics).mockResolvedValue({
+      ok: false,
+      reason: "conflict",
+      analytics: { ...analytics, version: 3 },
+    });
+
+    const response = await PATCH(
+      new Request("http://localhost/api/reports/report-1/analytics", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ worksheet: analytics.worksheet, version: 1 }),
+      }),
+      params
+    );
+    expect(response.status).toBe(409);
+    const body = await response.json();
+    expect(body.analytics.version).toBe(3);
+    expect(updateReportAnalytics).toHaveBeenCalledWith(
+      "report-1",
+      analytics.worksheet,
+      { expectedVersion: 1 }
     );
   });
 
   it("accepts POST as a PATCH alias for autosave beacons", async () => {
     vi.mocked(requireAnalyticsAccess).mockResolvedValue(okAccess() as never);
     vi.mocked(getOrCreateReportAnalytics).mockResolvedValue(analytics);
-    vi.mocked(updateReportAnalytics).mockResolvedValue(analytics);
+    vi.mocked(updateReportAnalytics).mockResolvedValue({
+      ok: true,
+      analytics,
+    });
 
     const response = await POST(
       new Request("http://localhost/api/reports/report-1/analytics", {

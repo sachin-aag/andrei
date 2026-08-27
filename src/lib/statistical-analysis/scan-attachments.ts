@@ -96,6 +96,31 @@ export function scorePageContext(
   return score;
 }
 
+/** Page-context hits outweigh transcript hits; both count. */
+export function scorePageForScan(
+  page: {
+    pageContext?: string | null;
+    transcript?: string | null;
+  },
+  tokens: readonly string[]
+): number {
+  return (
+    scorePageContext(page.pageContext, tokens) * 2 +
+    scorePageContext(page.transcript, tokens)
+  );
+}
+
+export function selectScoredPages(
+  scored: readonly { pageNumber: number; score: number }[],
+  cap: number
+): number[] {
+  const ranked = scored
+    .filter((page) => page.score > 0)
+    .toSorted((a, b) => b.score - a.score || a.pageNumber - b.pageNumber)
+    .map((page) => page.pageNumber);
+  return withPreviousPages(ranked, cap);
+}
+
 function uniquePageNumbers(pages: readonly number[], cap: number): number[] {
   const seen = new Set<number>();
   const out: number[] = [];
@@ -187,17 +212,12 @@ export async function runScanAttachments(input: {
       .map((page) => ({
         pageNumber: page.pageNumber,
         pageContext: page.pageContext,
-        score: scorePageContext(page.pageContext, tokens),
+        score: scorePageForScan(page, tokens),
       }))
       .filter((page) => (tokens.length === 0 ? false : page.score > 0))
       .toSorted((a, b) => b.score - a.score || a.pageNumber - b.pageNumber);
-    const bestScore = scored[0]?.score ?? 0;
-    const hits = scored.filter((page) => page.score === bestScore);
 
-    const selected = withPreviousPages(
-      hits.map((page) => page.pageNumber),
-      remainingPageBudget.left
-    );
+    const selected = selectScoredPages(scored, remainingPageBudget.left);
     remainingPageBudget.left -= selected.length;
 
     const pageReads = await Promise.all(

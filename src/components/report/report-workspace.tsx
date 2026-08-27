@@ -257,6 +257,7 @@ export function ReportWorkspace({
   const [surface, setSurface] = useState<ReportWorkspaceSurface>("document");
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
   const [analyticsReloadEpoch, setAnalyticsReloadEpoch] = useState(0);
+  const [analyticsAgentBusy, setAnalyticsAgentBusy] = useState(false);
   const [sectionMinHeights, setSectionMinHeights] = useState<
     Partial<Record<SectionType, number>>
   >({});
@@ -436,12 +437,15 @@ export function ReportWorkspace({
   useEffect(() => {
     if (!suggestionsFocus) return;
     const { section, commentId } = suggestionsFocus;
-    setCriteriaFocusSection(section);
-    // Suggestions live in the review margin. Keep the assistant collapsed
-    // so the gutter is visible — do not auto-open the right panel.
-    setSidebarCollapsed(true);
 
     let cancelled = false;
+    queueMicrotask(() => {
+      if (cancelled) return;
+      setCriteriaFocusSection(section);
+      // Suggestions live in the review margin. Keep the assistant collapsed
+      // so the gutter is visible — do not auto-open the right panel.
+      setSidebarCollapsed(true);
+    });
     const timeouts: Array<ReturnType<typeof setTimeout>> = [];
     const retryDelaysMs = [0, 50, 100, 200];
 
@@ -724,6 +728,7 @@ export function ReportWorkspace({
                   reportId={report.id}
                   readOnly={!analyticsCanEdit}
                   reloadEpoch={analyticsReloadEpoch}
+                  agentBusy={analyticsAgentBusy}
                 />
               </div>
               {activeAttachmentId ? (
@@ -803,6 +808,7 @@ export function ReportWorkspace({
             onAnalyticsSettled={() =>
               setAnalyticsReloadEpoch((epoch) => epoch + 1)
             }
+            onAnalyticsAgentBusy={setAnalyticsAgentBusy}
           />
           {sidebarCollapsed ? null : (
             <WorkspaceResizeHandle

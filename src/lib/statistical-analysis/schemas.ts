@@ -6,6 +6,7 @@ import {
   MAX_WORKSHEET_ROWS,
   MEASUREMENT_SCATTER,
   ONE_WAY_ANOVA,
+  XY_SCATTER,
 } from "./types";
 
 export const worksheetColumnSchema = z.object({
@@ -200,9 +201,43 @@ export const oneWayAnovaInputSchema = z
   })
   .superRefine(refineDistinctAnovaColumns);
 
+function refineDistinctXyColumns(
+  value: { xColumnId: string; yColumnId: string },
+  ctx: z.RefinementCtx
+): void {
+  if (value.xColumnId === value.yColumnId) {
+    ctx.addIssue({
+      code: "custom",
+      message: "X and Y must be different columns.",
+      path: ["xColumnId"],
+    });
+  }
+}
+
+export const xyScatterBodySchema = z
+  .object({
+    xColumnId: z.string().trim().min(1),
+    yColumnId: z.string().trim().min(1),
+    title: z.string().trim().max(120).optional(),
+    ...anovaRowFields,
+  })
+  .superRefine(refineDistinctXyColumns);
+
+export const xyScatterInputSchema = z
+  .object({
+    kind: z.literal(XY_SCATTER),
+    xColumnId: z.string().trim().min(1),
+    yColumnId: z.string().trim().min(1),
+    title: z.string().trim().max(120).optional(),
+    ...anovaRowFields,
+  })
+  .superRefine(refineDistinctXyColumns);
+
 export const patchAnalyticsBodySchema = z
   .object({
     worksheet: worksheetDataSchema.optional(),
+    /** Last-seen `ReportAnalyticsView.version`. Omit only for legacy beacons. */
+    version: z.number().int().positive().optional(),
     /** Ignored leftover from the old named-workspace autosave body. */
     name: z.string().optional(),
   })

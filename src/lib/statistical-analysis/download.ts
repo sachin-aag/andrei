@@ -7,8 +7,10 @@ import {
   isAnovaAnalysis,
   isScatterAnalysis,
   isSixpackAnalysis,
+  isXyScatterAnalysis,
   type AnovaAnalysisSummary,
   type StatisticalAnalysisSummary,
+  type XyScatterAnalysisSummary,
 } from "./types";
 
 function csvCell(value: string): string {
@@ -36,6 +38,9 @@ export function analysisDownloadFilename(
   if (isScatterAnalysis(analysis)) {
     return `${safeFilenameBase(analysis.title, "scatter")}-measurement-scatter.csv`;
   }
+  if (isXyScatterAnalysis(analysis)) {
+    return `${safeFilenameBase(analysis.title, "scatter")}-xy-scatter.csv`;
+  }
   if (isAnovaAnalysis(analysis)) {
     return `${safeFilenameBase(analysis.title, "anova")}-one-way-anova.csv`;
   }
@@ -49,6 +54,9 @@ export function analysisDownloadFilename(
 export function analysisToCsv(analysis: StatisticalAnalysisSummary): string {
   if (isScatterAnalysis(analysis)) {
     return scatterToCsv(analysis);
+  }
+  if (isXyScatterAnalysis(analysis)) {
+    return xyScatterToCsv(analysis);
   }
   if (isAnovaAnalysis(analysis)) {
     return anovaToCsv(analysis);
@@ -240,6 +248,39 @@ function scatterToCsv(
     "Citations",
     csvRow(["Attachment", "Page"]),
     ...citationRows,
+  ];
+  return `\uFEFF${lines.join("\n")}\n`;
+}
+
+function xyScatterToCsv(analysis: XyScatterAnalysisSummary): string {
+  const spec = analysis.results.specs[0];
+  const rows = formatRowSelection(normalizeRowSelection(analysis.config)) || "all";
+  const summary: Array<[string, string]> = [
+    ["Title", analysis.title],
+    ["Y", analysis.config.yColumnName],
+    ["X", analysis.config.xColumnName],
+    ["Rows", rows],
+    ["Kind", "XY scatter"],
+    ["N", String(analysis.results.n)],
+    ["Skipped", String(analysis.results.skipped)],
+    ["Pearson r", formatStat(analysis.results.pearsonR, 4)],
+    ["LSL (Y)", formatStat(spec?.limits.lower ?? null)],
+    ["USL (Y)", formatStat(spec?.limits.upper ?? null)],
+    ["Created", analysis.createdAt],
+  ];
+  const pointRows = analysis.results.specs.flatMap((item) =>
+    item.points.map((point) =>
+      csvRow([item.title, point.label, String(point.x), String(point.y)])
+    )
+  );
+  const lines = [
+    "Summary",
+    csvRow(["Field", "Value"]),
+    ...summary.map(([field, value]) => csvRow([field, value])),
+    "",
+    "Points",
+    csvRow(["Chart", "Label", "X", "Y"]),
+    ...pointRows,
   ];
   return `\uFEFF${lines.join("\n")}\n`;
 }

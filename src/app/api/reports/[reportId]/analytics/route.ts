@@ -37,11 +37,27 @@ export async function PATCH(request: Request, context: RouteContext) {
   }
 
   await getOrCreateReportAnalytics(reportId);
-  const analytics = await updateReportAnalytics(reportId, parsed.data.worksheet!);
-  if (!analytics) {
-    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const result = await updateReportAnalytics(
+    reportId,
+    parsed.data.worksheet!,
+    { expectedVersion: parsed.data.version }
+  );
+  if (result.ok) {
+    return NextResponse.json({ analytics: result.analytics });
   }
-  return NextResponse.json({ analytics });
+  if (result.reason === "conflict") {
+    return NextResponse.json(
+      {
+        error: "Worksheet was updated elsewhere.",
+        analytics: result.analytics,
+      },
+      { status: 409 }
+    );
+  }
+  if (result.reason === "invalid") {
+    return NextResponse.json({ error: "Invalid worksheet" }, { status: 400 });
+  }
+  return NextResponse.json({ error: "Not found" }, { status: 404 });
 }
 
 /** Keepalive / sendBeacon from `useAutoSave` posts the same JSON as PATCH. */

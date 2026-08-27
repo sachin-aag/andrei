@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { CAPABILITY_SIXPACK_NORMAL, MEASUREMENT_SCATTER, ONE_WAY_ANOVA } from "./types";
+import { CAPABILITY_SIXPACK_NORMAL, MEASUREMENT_SCATTER, ONE_WAY_ANOVA, XY_SCATTER } from "./types";
 import type { StatisticalAnalysisSummary } from "./types";
 import { TORQUE_MOCK_SPEC } from "@/lib/charts/__fixtures__/torque-mock";
 import { computeCapabilitySixpackFromValues } from "./sixpack";
 import { computeOneWayAnova } from "./anova";
+import { computeXyScatter } from "./xy-scatter";
 import { createEmptyWorksheet, pasteTsv } from "./worksheet";
 import {
   analysisDownloadFilename,
@@ -142,5 +143,42 @@ describe("analysis download", () => {
     expect(csv).toContain("Source,DF,SS,MS,F,P");
     expect(csv).toContain("Pairwise (Bonferroni t-tests using ANOVA MSE)");
     expect(csv).toContain("A - B");
+  });
+
+  it("downloads XY scatter points and Pearson r", () => {
+    let sheet = createEmptyWorksheet(2);
+    sheet = pasteTsv(sheet, 0, 0, ["1", "2", "3"].join("\n"));
+    sheet = pasteTsv(sheet, 1, 0, ["2", "4", "6"].join("\n"));
+    const outcome = computeXyScatter(sheet, {
+      xColumnId: "c1",
+      xColumnName: "X",
+      yColumnId: "c2",
+      yColumnName: "Y",
+      title: "Y vs X",
+    });
+    if (!outcome.ok) throw new Error(outcome.message);
+    const analysis: StatisticalAnalysisSummary = {
+      id: "an-xy",
+      workspaceId: "ws-1",
+      kind: XY_SCATTER,
+      title: "Y vs X",
+      config: {
+        xColumnId: "c1",
+        xColumnName: "X",
+        yColumnId: "c2",
+        yColumnName: "Y",
+        title: "Y vs X",
+      },
+      results: outcome.result,
+      sourceHash: "xy",
+      stale: false,
+      createdAt: "2026-08-26T00:00:00.000Z",
+    };
+    expect(analysisDownloadFilename(analysis)).toBe("Y-vs-X-xy-scatter.csv");
+    const csv = analysisToCsv(analysis);
+    expect(csv).toContain("XY scatter");
+    expect(csv).toContain("Pearson r");
+    expect(csv).toContain("Chart,Label,X,Y");
+    expect(csv).toContain("1,2");
   });
 });

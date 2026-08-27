@@ -1,6 +1,11 @@
 "use client";
 
-import type { ScatterAnalysisSummary } from "@/lib/statistical-analysis/types";
+import type {
+  ScatterAnalysisSummary,
+  XyScatterAnalysisSummary,
+} from "@/lib/statistical-analysis/types";
+import { isXyScatterAnalysis } from "@/lib/statistical-analysis/types";
+import { formatStat } from "@/lib/statistical-analysis/format";
 import {
   analysisDownloadFilename,
   analysisToCsv,
@@ -9,7 +14,9 @@ import {
 import {
   formatChartProvenance,
   layoutPoints,
+  resolveXRange,
   resolveYRange,
+  xTickValues,
   yTickValues,
   type ChartPoint,
   type ChartSpec,
@@ -56,6 +63,8 @@ function ScatterChart({ spec }: { spec: ChartSpec }) {
   }
   const yRange = resolveYRange(spec);
   const yTicks = yTickValues({ ...spec, points });
+  const xRange = resolveXRange({ ...spec, points });
+  const xTicks = xTickValues({ ...spec, points });
   const seriesNames = uniqueSeries(points);
   const showLegend = spec.layout.seriesBy === "unit" && seriesNames.some((name) => name);
   const legendWidth = showLegend ? 168 : 0;
@@ -65,21 +74,11 @@ function ScatterChart({ spec }: { spec: ChartSpec }) {
   const plotBottom = HEIGHT - 72;
   const plotWidth = plotRight - plotLeft;
   const plotHeight = plotBottom - plotTop;
-  const xs = points.map((point) => point.x);
-  const rawMin = Math.min(...xs);
-  const rawMax = Math.max(...xs);
-  const xMin = rawMin - 0.5;
-  const xMax = rawMax + 0.5;
-  const xSpan = Math.max(1, xMax - xMin);
-  const xToPx = (x: number) => plotLeft + ((x - xMin) / xSpan) * plotWidth;
+  const xSpan = Math.max(1e-9, xRange.max - xRange.min);
+  const xToPx = (x: number) => plotLeft + ((x - xRange.min) / xSpan) * plotWidth;
   const yToPx = (y: number) =>
     plotBottom - ((y - yRange.min) / (yRange.max - yRange.min)) * plotHeight;
   const seriesIndex = new Map(seriesNames.map((name, index) => [name, index]));
-  const xTickMin = Math.round(rawMin);
-  const xTickMax = Math.round(rawMax);
-  const xTickStep = xTickMax <= 15 ? 1 : xTickMax <= 40 ? 5 : 10;
-  const xTicks: number[] = [];
-  for (let x = xTickMin; x <= xTickMax; x += xTickStep) xTicks.push(x);
   const plotBox = {
     left: plotLeft,
     right: plotRight,
@@ -182,7 +181,7 @@ function ScatterChart({ spec }: { spec: ChartSpec }) {
             fontSize="11"
             fill={colors.axis}
           >
-            {tick}
+            {formatTick(tick)}
           </text>
         </g>
       ))}
@@ -236,7 +235,11 @@ function ScatterChart({ spec }: { spec: ChartSpec }) {
             stroke={colors.plotFill}
             strokeWidth="1"
           >
-            <title>{`${point.label}: ${point.y}`}</title>
+            <title>
+              {spec.layout.xAxis === "value"
+                ? `${point.label}: ${point.x}, ${point.y}`
+                : `${point.label}: ${point.y}`}
+            </title>
           </circle>
         );
       })}
@@ -263,26 +266,38 @@ export function ScatterView({
   recomputing,
   readOnly = false,
 }: {
-  analysis: ScatterAnalysisSummary;
+  analysis: ScatterAnalysisSummary | XyScatterAnalysisSummary;
   onRecompute: () => void;
   onDelete: () => void;
   recomputing: boolean;
   readOnly?: boolean;
 }) {
   const spec = analysis.results.specs[0];
+  const xy = isXyScatterAnalysis(analysis);
   const provenance = spec ? formatChartProvenance(spec) : "";
+  const subtitle = xy
+    ? [
+        `${analysis.config.yColumnName} vs ${analysis.config.xColumnName}`,
+        `${analysis.results.n} point${analysis.results.n === 1 ? "" : "s"}`,
+        analysis.results.skipped > 0
+          ? `${analysis.results.skipped} skipped`
+          : null,
+        analysis.results.pearsonR == null
+          ? null
+          : `r = ${formatStat(analysis.results.pearsonR, 3)}`,
+      ]
+        .filter(Boolean)
+        .join(" · ")
+    : `${analysis.config.query}${provenance ? ` · ${provenance}` : ""}`;
   return (
     <div
-      data-testid="measurement-scatter"
+      data-testid={xy ? "xy-scatter" : "measurement-scatter"}
       className="flex h-full flex-col gap-3 overflow-auto p-4"
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-base font-semibold">{analysis.title}</h2>
-          <p className="text-xs text-[var(--muted-foreground)]">
-            {analysis.config.query}
-            {provenance ? ` · ${provenance}` : ""}
-          </p>
+          <p className="text-xs text-[var(--muted-foreground)]">{subtitle}</p>
         </div>
         <div className="flex items-center gap-2">
           {analysis.stale ? (
@@ -311,7 +326,11 @@ export function ScatterView({
                 disabled={recomputing}
                 onClick={onRecompute}
               >
-                {recomputing ? "Extracting…" : "Recompute"}
+                {recomputing
+                  ? xy
+                    ? "Recomputing…"
+                    : "Extracting…"
+                  : "Recompute"}
               </Button>
               <Button type="button" variant="ghost" size="sm" onClick={onDelete}>
                 Delete

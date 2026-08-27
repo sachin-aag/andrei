@@ -1,5 +1,15 @@
 import type { ReportAnalyticsView } from "./types";
 
+export class AnalyticsConflictError extends Error {
+  readonly analytics: ReportAnalyticsView;
+
+  constructor(analytics: ReportAnalyticsView, message = "Worksheet was updated elsewhere.") {
+    super(message);
+    this.name = "AnalyticsConflictError";
+    this.analytics = analytics;
+  }
+}
+
 async function readError(response: Response): Promise<string> {
   try {
     const body = (await response.json()) as { error?: string };
@@ -29,7 +39,10 @@ export async function getReportAnalytics(
 
 export async function patchReportAnalytics(
   reportId: string,
-  body: { worksheet: ReportAnalyticsView["worksheet"] },
+  body: {
+    worksheet: ReportAnalyticsView["worksheet"];
+    version?: number;
+  },
   signal?: AbortSignal
 ): Promise<ReportAnalyticsView> {
   const response = await fetch(analyticsUrl(reportId), {
@@ -38,6 +51,25 @@ export async function patchReportAnalytics(
     body: JSON.stringify(body),
     signal,
   });
+  if (response.status === 409) {
+    try {
+      const payload = (await response.json()) as {
+        error?: string;
+        analytics?: ReportAnalyticsView;
+      };
+      if (payload.analytics) {
+        throw new AnalyticsConflictError(
+          payload.analytics,
+          typeof payload.error === "string" && payload.error.trim()
+            ? payload.error
+            : "Worksheet was updated elsewhere."
+        );
+      }
+    } catch (error) {
+      if (error instanceof AnalyticsConflictError) throw error;
+    }
+    throw new Error("Worksheet was updated elsewhere.");
+  }
   if (!response.ok) throw new Error(await readError(response));
   return parseAnalytics(response);
 }
@@ -95,6 +127,23 @@ export async function createOneWayAnova(
 ): Promise<{ analytics: ReportAnalyticsView; analysisId: string }> {
   return postAnalysis(reportId, {
     kind: "one_way_anova",
+    ...input,
+  });
+}
+
+export async function createXyScatter(
+  reportId: string,
+  input: {
+    xColumnId: string;
+    yColumnId: string;
+    title?: string;
+    rowStart?: number | null;
+    rowEnd?: number | null;
+    rows?: number[];
+  }
+): Promise<{ analytics: ReportAnalyticsView; analysisId: string }> {
+  return postAnalysis(reportId, {
+    kind: "xy_scatter",
     ...input,
   });
 }

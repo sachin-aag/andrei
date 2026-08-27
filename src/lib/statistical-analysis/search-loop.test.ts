@@ -91,6 +91,7 @@ describe("prepareAnalyticsChatStep", () => {
     expect(prepared?.activeTools).toContain("manage_worksheet");
     expect(prepared?.activeTools).toContain("run_one_way_anova");
     expect(prepared?.activeTools).toContain("plot_measurements");
+    expect(prepared?.activeTools).toContain("plot_xy_scatter");
     expect(prepared?.activeTools).not.toContain("search_documents");
     expect(
       prepareAnalyticsChatStep({
