@@ -220,6 +220,12 @@ describe("QRA DOCX export", () => {
     expect(xml).toContain("FORMAT");
     expect(xml).toContain("PRE-APPROVAL");
     expect(xml).toContain("TABLE OF CONTENTS");
+    expect(xml).toContain('w:orient="landscape"');
+    const fmeaAt = xml.indexOf("Underfill");
+    const landscapeBreaks = [...xml.matchAll(/w:orient="landscape"/g)];
+    expect(landscapeBreaks.length).toBeGreaterThanOrEqual(1);
+    expect(fmeaAt).toBeGreaterThan(-1);
+    expect(landscapeBreaks.some((m) => (m.index ?? 0) > fmeaAt)).toBe(true);
     expect(zip.file("word/media/image1.png")).toBeTruthy();
     expect(zip.file("word/media/image1.jpeg")).toBeFalsy();
     expect(partText(zip, "word/header2.xml")).toContain("M.J.");
