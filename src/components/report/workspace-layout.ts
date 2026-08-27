@@ -9,6 +9,14 @@
 
 export const COLLAPSED_RAIL_PX = 48;
 
+/** Review margin beside the document canvas (container ≥800px). */
+export const REVIEW_GUTTER_MIN_PX = 168;
+export const REVIEW_GUTTER_MAX_PX = 280;
+
+/** Tailwind container-query grid when the review margin is visible. */
+export const REVIEW_GUTTER_GRID_COLS =
+  "@[800px]:grid-cols-[minmax(0,1fr)_minmax(168px,280px)]" as const;
+
 export const CHAT_DEFAULT_PX = 400;
 export const DOCS_DEFAULT_PX = 300;
 

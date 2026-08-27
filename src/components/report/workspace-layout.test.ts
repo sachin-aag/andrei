@@ -13,6 +13,9 @@ import {
   isReviewGutterVisible,
   mainMinWidth,
   parseStoredWorkspaceLayout,
+  REVIEW_GUTTER_GRID_COLS,
+  REVIEW_GUTTER_MAX_PX,
+  REVIEW_GUTTER_MIN_PX,
   resetWorkspaceLayoutStore,
   serializeStoredWorkspaceLayout,
   updateWorkspaceLayout,
@@ -68,6 +71,15 @@ describe("isReviewGutterVisible", () => {
     expect(isReviewGutterVisible(true, true)).toBe(false);
     expect(isReviewGutterVisible(false, true)).toBe(false);
     expect(isReviewGutterVisible(true, false)).toBe(true);
+  });
+});
+
+describe("review gutter width", () => {
+  it("keeps the margin column narrower than the old 200–360px range", () => {
+    expect(REVIEW_GUTTER_MIN_PX).toBeLessThan(200);
+    expect(REVIEW_GUTTER_MAX_PX).toBeLessThan(360);
+    expect(REVIEW_GUTTER_GRID_COLS).toContain(`${REVIEW_GUTTER_MIN_PX}px`);
+    expect(REVIEW_GUTTER_GRID_COLS).toContain(`${REVIEW_GUTTER_MAX_PX}px`);
   });
 });
 
