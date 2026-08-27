@@ -108,6 +108,7 @@ describe("/api/admin/users", () => {
         mustChangePassword: true,
         deactivatedAt: null,
         lockedAt: null,
+        lastLoginAt: new Date("2026-02-15T14:30:00.000Z"),
         createdAt: new Date("2026-01-01T00:00:00.000Z"),
       },
     ] as never);
@@ -128,6 +129,7 @@ describe("/api/admin/users", () => {
           isActive: true,
           lockedAt: null,
           deactivatedAt: null,
+          lastLoginAt: "2026-02-15T14:30:00.000Z",
         },
       ],
     });
