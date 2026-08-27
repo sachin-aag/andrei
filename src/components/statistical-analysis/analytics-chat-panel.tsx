@@ -54,6 +54,10 @@ import {
 } from "@/components/report/chat-session-host";
 import { useReportData } from "@/providers/report-provider";
 import {
+  DocumentUploadingNotice,
+  useDocumentUploadingNotice,
+} from "@/components/report/document-uploading-notice";
+import {
   aiSuggestionLockReason,
   canSaveReportSection,
 } from "@/lib/reports/access";
@@ -578,6 +582,7 @@ export function AnalyticsChatPanel({
   const [initializing, setInitializing] = useState(true);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [input, setInput] = useState("");
+  const showUploadingNotice = useDocumentUploadingNotice(input);
   const [pendingImages, setPendingImages] = useState<PendingChatImage[]>([]);
   const [attaching, setAttaching] = useState(false);
   const historyRef = useRef<HTMLDivElement>(null);
@@ -1086,6 +1091,7 @@ export function AnalyticsChatPanel({
             Ask mode can still search attachments.
           </p>
         ) : null}
+        {showUploadingNotice ? <DocumentUploadingNotice /> : null}
         {pendingImages.length > 0 ? (
           <div className="mb-2 flex flex-wrap gap-2">
             {pendingImages.map((image) => (

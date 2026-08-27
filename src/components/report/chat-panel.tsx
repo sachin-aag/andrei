@@ -127,6 +127,10 @@ import {
 import { ChatSessionTabs } from "@/components/report/chat-session-tabs";
 import { DocumentReviewProgress } from "@/components/report/document-review-progress";
 import {
+  DocumentUploadingNotice,
+  useDocumentUploadingNotice,
+} from "@/components/report/document-uploading-notice";
+import {
   isDocumentReviewToolName,
   type DocumentReviewToolPart,
 } from "@/lib/ai/chat/document-review-ui";
@@ -837,6 +841,7 @@ export function ChatPanel() {
   );
   const { attachments } = useReportAttachments();
   const [input, setInput] = useState("");
+  const showUploadingNotice = useDocumentUploadingNotice(input);
   const [mentions, setMentions] = useState<MentionCandidate[]>([]);
   const [mentionRange, setMentionRange] = useState<MentionQuery | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
@@ -1677,6 +1682,7 @@ export function ChatPanel() {
             edits cannot be accepted.
           </p>
         ) : null}
+        {showUploadingNotice ? <DocumentUploadingNotice /> : null}
         <MentionChips mentions={mentions} onRemove={removeMention} />
         {pendingImages.length > 0 ? (
           <div className="mb-2 flex flex-wrap gap-2">
