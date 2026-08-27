@@ -8,9 +8,38 @@
 
 export const PDF_PREVIEW_SCALE = 1.5;
 
+/** Horizontal padding on the scroll stack (`p-4` left + right). */
+export const PDF_PREVIEW_HORIZONTAL_PADDING = 32;
+
 /** US Letter at 72pt — placeholder size until the first painted page reports its viewport. */
 export const PDF_FALLBACK_PAGE_WIDTH = 612 * PDF_PREVIEW_SCALE;
 export const PDF_FALLBACK_PAGE_HEIGHT = 792 * PDF_PREVIEW_SCALE;
+
+/**
+ * Viewer zoom is relative to fit-to-width in the preview panel, not raw PDF
+ * points. At zoom 1 the page spans the scroll viewport (minus padding).
+ */
+export function pdfPreviewRenderScale({
+  viewportWidth,
+  pageWidthAtBaseScale,
+  zoomLevel,
+  horizontalPadding = PDF_PREVIEW_HORIZONTAL_PADDING,
+}: {
+  viewportWidth: number;
+  pageWidthAtBaseScale: number;
+  zoomLevel: number;
+  horizontalPadding?: number;
+}): number {
+  if (pageWidthAtBaseScale <= 0) {
+    return PDF_PREVIEW_SCALE * zoomLevel;
+  }
+  if (viewportWidth <= horizontalPadding) {
+    return PDF_PREVIEW_SCALE * zoomLevel;
+  }
+  const availableWidth = viewportWidth - horizontalPadding;
+  const fitScale = availableWidth / pageWidthAtBaseScale;
+  return PDF_PREVIEW_SCALE * fitScale * zoomLevel;
+}
 
 /** Default typographic ascent when the font style does not report one. */
 const DEFAULT_ASCENT = 0.8;

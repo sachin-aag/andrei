@@ -4,6 +4,7 @@ import {
   memo,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type FormEvent,
@@ -23,7 +24,9 @@ import {
   layoutPreviewTextSpans,
   PDF_FALLBACK_PAGE_HEIGHT,
   PDF_FALLBACK_PAGE_WIDTH,
+  PDF_PREVIEW_HORIZONTAL_PADDING,
   PDF_PREVIEW_SCALE,
+  pdfPreviewRenderScale,
   type PdfPreviewTextSpan,
   type PdfTextContentItem,
 } from "@/lib/attachments/pdf-preview-layout";
@@ -220,6 +223,7 @@ function PdfDocumentPages({
   onVisiblePageChangeRef: RefObject<((page: number) => void) | undefined>;
 }) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [viewportWidth, setViewportWidth] = useState(0);
   const [prefetchNeighbors, setPrefetchNeighbors] = useState(false);
   const [visiblePage, setVisiblePage] = useState(
     initialPaintedPageNumber(initialPage)
@@ -290,6 +294,27 @@ function PdfDocumentPages({
       setPageInput(String(visiblePage));
     }
   }, [pageInputFocused, visiblePage]);
+
+  useLayoutEffect(() => {
+    const root = scrollRef.current;
+    if (root && root.clientWidth > 0) {
+      setViewportWidth(root.clientWidth);
+    }
+  }, []);
+
+  useEffect(() => {
+    const root = scrollRef.current;
+    if (!root) return;
+    const measure = () => {
+      const next = root.clientWidth;
+      if (next > 0) setViewportWidth(next);
+    };
+    measure();
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(root);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     const root = scrollRef.current;
@@ -397,6 +422,7 @@ function PdfDocumentPages({
                 pdf={pdf}
                 pageNumber={pageNumber}
                 title={title}
+                viewportWidth={viewportWidth}
                 zoomLevel={zoomLevel}
                 rotation={rotation}
                 shouldRender={
@@ -423,6 +449,7 @@ const PdfPreviewPage = memo(function PdfPreviewPage({
   pdf,
   pageNumber,
   title,
+  viewportWidth,
   zoomLevel,
   rotation,
   shouldRender,
@@ -433,6 +460,7 @@ const PdfPreviewPage = memo(function PdfPreviewPage({
   pdf: PDFDocumentProxy;
   pageNumber: number;
   title: string;
+  viewportWidth: number;
   zoomLevel: number;
   rotation: number;
   shouldRender: boolean;
@@ -457,6 +485,9 @@ const PdfPreviewPage = memo(function PdfPreviewPage({
       }
       return;
     }
+    if (viewportWidth <= PDF_PREVIEW_HORIZONTAL_PADDING) {
+      return;
+    }
     const controller = new AbortController();
 
     void (async () => {
@@ -468,7 +499,15 @@ const PdfPreviewPage = memo(function PdfPreviewPage({
         }
         const pdfPage = await pdf.getPage(pageNumber);
         if (controller.signal.aborted) return;
-        const renderScale = PDF_PREVIEW_SCALE * zoomLevel;
+        const baseViewport = pdfPage.getViewport({
+          scale: PDF_PREVIEW_SCALE,
+          rotation,
+        });
+        const renderScale = pdfPreviewRenderScale({
+          viewportWidth,
+          pageWidthAtBaseScale: baseViewport.width,
+          zoomLevel,
+        });
         const viewport = pdfPage.getViewport({
           scale: renderScale,
           rotation,
@@ -514,6 +553,7 @@ const PdfPreviewPage = memo(function PdfPreviewPage({
     rotation,
     shouldRender,
     onRequestedPageSettled,
+    viewportWidth,
     zoomLevel,
   ]);
 

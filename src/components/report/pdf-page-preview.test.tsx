@@ -4,7 +4,14 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PdfPagePreview } from "@/components/report/pdf-page-preview";
 import { pdfjsPreviewLoadingOptions } from "@/lib/attachments/pdfjs-browser";
-import { PDF_PREVIEW_SCALE } from "@/lib/attachments/pdf-preview-layout";
+import {
+  PDF_PREVIEW_HORIZONTAL_PADDING,
+  PDF_PREVIEW_SCALE,
+  pdfPreviewRenderScale,
+} from "@/lib/attachments/pdf-preview-layout";
+
+const PREVIEW_VIEWPORT_WIDTH = 400;
+const MOCK_PAGE_WIDTH = 200;
 
 const getDocument = vi.fn();
 const renderPage = vi.fn();
@@ -113,6 +120,40 @@ function installNoopIntersectionObserver() {
   vi.stubGlobal("IntersectionObserver", NoopIntersectionObserver);
 }
 
+function installPreviewViewportResizeObserver(
+  width = PREVIEW_VIEWPORT_WIDTH
+) {
+  class PreviewViewportResizeObserver {
+    private readonly callback: ResizeObserverCallback;
+
+    constructor(callback: ResizeObserverCallback) {
+      this.callback = callback;
+    }
+
+    observe(target: Element) {
+      Object.defineProperty(target, "clientWidth", {
+        configurable: true,
+        value: width,
+      });
+      this.callback([], this as unknown as ResizeObserver);
+    }
+
+    unobserve() {}
+    disconnect() {}
+  }
+
+  vi.stubGlobal("ResizeObserver", PreviewViewportResizeObserver);
+}
+
+function expectedRenderedWidth(zoomLevel: number): number {
+  const scale = pdfPreviewRenderScale({
+    viewportWidth: PREVIEW_VIEWPORT_WIDTH,
+    pageWidthAtBaseScale: MOCK_PAGE_WIDTH * PDF_PREVIEW_SCALE,
+    zoomLevel,
+  });
+  return MOCK_PAGE_WIDTH * scale;
+}
+
 describe("PdfPagePreview", () => {
   const originalGetContext = HTMLCanvasElement.prototype.getContext;
 
@@ -141,6 +182,7 @@ describe("PdfPagePreview", () => {
       vi.fn().mockRejectedValue(new Error("preview must not fetch bytes itself"))
     );
     installImmediateIntersectionObserver();
+    installPreviewViewportResizeObserver();
   });
 
   afterEach(() => {
@@ -178,7 +220,7 @@ describe("PdfPagePreview", () => {
       expect(renderPage).toHaveBeenCalledWith(
         expect.objectContaining({
           viewport: expect.objectContaining({
-            width: 200 * PDF_PREVIEW_SCALE,
+            width: expectedRenderedWidth(1),
           }),
         })
       );
@@ -544,7 +586,7 @@ describe("PdfPagePreview", () => {
     const canvas = await screen.findByLabelText("Evidence.pdf, page 1");
     const pageShell = canvas.closest("[data-pdf-page]") as HTMLElement;
     await waitFor(() => {
-      expect(pageShell.style.width).toBe(`${200 * PDF_PREVIEW_SCALE}px`);
+      expect(pageShell.style.width).toBe(`${expectedRenderedWidth(1)}px`);
     });
 
     fireEvent.click(screen.getByTestId("pdf-toolbar-zoom-in"));
@@ -553,13 +595,11 @@ describe("PdfPagePreview", () => {
       expect(renderPage).toHaveBeenCalledWith(
         expect.objectContaining({
           viewport: expect.objectContaining({
-            width: 200 * PDF_PREVIEW_SCALE * 1.25,
+            width: expectedRenderedWidth(1.25),
           }),
         })
       );
-      expect(pageShell.style.width).toBe(
-        `${200 * PDF_PREVIEW_SCALE * 1.25}px`
-      );
+      expect(pageShell.style.width).toBe(`${expectedRenderedWidth(1.25)}px`);
     });
     expect(screen.getByText("125%")).toBeInTheDocument();
   });
