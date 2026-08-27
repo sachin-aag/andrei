@@ -774,3 +774,10 @@ export function replaceColumnValues(
     )
   );
 }
+
+export function clearColumn(
+  data: WorksheetData,
+  colIndex: number
+): WorksheetData {
+  return replaceColumnValues(data, colIndex, []);
+}

@@ -34,6 +34,7 @@ export {
   setCell,
   insertColumn,
   deleteColumn,
+  clearColumn,
   insertRow,
   deleteRow,
   renameColumn,

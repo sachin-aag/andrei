@@ -24,6 +24,7 @@ import {
 import { applySampleAssay } from "@/lib/statistical-analysis/sample-data";
 import {
   addDataSheet,
+  clearColumn,
   createEmptyWorksheet,
   deleteColumn,
   deleteDataSheet,
@@ -36,6 +37,8 @@ import {
   upsertSpecRow,
 } from "@/lib/statistical-analysis/worksheet";
 import {
+  MEASUREMENT_SCATTER,
+  ONE_WAY_ANOVA,
   isAnovaAnalysis,
   isScatterAnalysis,
   isSixpackAnalysis,
@@ -45,6 +48,7 @@ import {
   type WorksheetData,
 } from "@/lib/statistical-analysis/types";
 import { analysisListSubtitle, withLocalStale } from "@/lib/statistical-analysis/stale";
+import { AnalyzeDialog } from "@/components/statistical-analysis/analyze-dialog";
 import { CapabilityDialog } from "@/components/statistical-analysis/capability-dialog";
 import { AnovaDialog } from "@/components/statistical-analysis/anova-dialog";
 import { PlotMeasurementsDialog } from "@/components/statistical-analysis/plot-measurements-dialog";
@@ -55,6 +59,7 @@ import { SixpackView } from "@/components/statistical-analysis/sixpack-view";
 import { ColumnSpecsDialog } from "@/components/statistical-analysis/column-specs-dialog";
 import {
   WorksheetGrid,
+  type ColumnMenuAction,
 } from "@/components/statistical-analysis/worksheet-grid";
 import { WorkspaceMenubar } from "@/components/statistical-analysis/workspace-menubar";
 
@@ -98,6 +103,12 @@ export function StatisticalWorkspace({
   );
   const [tab, setTab] = useState("worksheet");
   const [selectedAnalysisId, setSelectedAnalysisId] = useState<string | null>(null);
+  const [analyzeOpen, setAnalyzeOpen] = useState(false);
+  const [analyzeColumnId, setAnalyzeColumnId] = useState("");
+  const [analyzeRowStart, setAnalyzeRowStart] = useState<number | null>(null);
+  const [analyzeRowEnd, setAnalyzeRowEnd] = useState<number | null>(null);
+  const [analyzeSubmitting, setAnalyzeSubmitting] = useState(false);
+  const [analyzeError, setAnalyzeError] = useState<string | null>(null);
   const [capabilityOpen, setCapabilityOpen] = useState(false);
   const [capabilityColumnId, setCapabilityColumnId] = useState("");
   const [capabilityRowStart, setCapabilityRowStart] = useState<number | null>(
@@ -288,6 +299,19 @@ export function StatisticalWorkspace({
   const specsColumn =
     worksheet.columns.find((column) => column.id === specsColumnId) ?? null;
 
+  const openAnalyzeForColumn = async (
+    columnId: string,
+    rows: { start: number; end: number } | null = null
+  ) => {
+    if (readOnly) return;
+    await flush().catch(() => undefined);
+    setAnalyzeColumnId(columnId);
+    setAnalyzeRowStart(rows?.start ?? null);
+    setAnalyzeRowEnd(rows?.end ?? null);
+    setAnalyzeError(null);
+    setAnalyzeOpen(true);
+  };
+
   const openSixpackForColumn = async (
     columnId: string,
     rows: { start: number; end: number } | null = null
@@ -334,6 +358,54 @@ export function StatisticalWorkspace({
     setXyOpen(true);
   };
 
+  const insertColumnAt = (atIndex: number) => {
+    setWorksheet((current) => insertColumn(current, atIndex));
+    setSelection((sel) => collapseSelection(atIndex, sel.row));
+  };
+
+  const removeColumnAt = (colIndex: number) => {
+    setWorksheet((current) => {
+      const next = deleteColumn(current, colIndex);
+      const maxCol = Math.max(0, next.columns.length - 1);
+      setSelection((sel) =>
+        collapseSelection(Math.min(colIndex, maxCol), sel.row)
+      );
+      return next;
+    });
+  };
+
+  const handleColumnMenuAction = (action: ColumnMenuAction, colIndex: number) => {
+    const column = worksheet.columns[colIndex];
+    if (!column) return;
+    setSelection((sel) => collapseSelection(colIndex, sel.row));
+    switch (action) {
+      case "insert-left":
+        insertColumnAt(colIndex);
+        return;
+      case "insert-right":
+        insertColumnAt(colIndex + 1);
+        return;
+      case "delete":
+        removeColumnAt(colIndex);
+        return;
+      case "clear":
+        setWorksheet((current) => clearColumn(current, colIndex));
+        return;
+      case "specs":
+        window.setTimeout(() => setSpecsColumnId(column.id), 0);
+        return;
+      case "analyze":
+        window.setTimeout(() => {
+          void openAnalyzeForColumn(column.id, null);
+        }, 0);
+        return;
+      default: {
+        const exhaustive: never = action;
+        return exhaustive;
+      }
+    }
+  };
+
   if (loading) {
     return (
       <div
@@ -372,23 +444,8 @@ export function StatisticalWorkspace({
           <div className="flex flex-wrap items-center gap-1">
             <WorkspaceMenubar
               readOnly={readOnly}
-              onInsertColumn={() => {
-                setWorksheet((current) => insertColumn(current, selection.col));
-              }}
-              onDeleteColumn={() => {
-                setWorksheet((current) => {
-                  const next = deleteColumn(current, selection.col);
-                  setSelection((sel) => {
-                    const maxCol = next.columns.length - 1;
-                    return {
-                      ...sel,
-                      col: Math.min(sel.col, maxCol),
-                      anchorCol: Math.min(sel.anchorCol, maxCol),
-                    };
-                  });
-                  return next;
-                });
-              }}
+              onInsertColumn={() => insertColumnAt(selection.col)}
+              onDeleteColumn={() => removeColumnAt(selection.col)}
               onInsertRow={() => {
                 setWorksheet((current) => insertRow(current, selection.row));
               }}
@@ -423,7 +480,7 @@ export function StatisticalWorkspace({
                 data-testid="analyze-selected-column"
                 disabled={!selectedColumnId}
                 onClick={() =>
-                  void openSixpackForColumn(selectedColumnId, selectedRowRange)
+                  void openAnalyzeForColumn(selectedColumnId, selectedRowRange)
                 }
               >
                 {analyzeLabel}
@@ -531,20 +588,7 @@ export function StatisticalWorkspace({
               onSelectionChange={setSelection}
               onChange={setWorksheet}
               readOnly={readOnly}
-              onAnalyzeColumn={(colIndex) => {
-                const column = worksheet.columns[colIndex];
-                if (!column) return;
-                setSelection(collapseSelection(colIndex, selection.row));
-                void openSixpackForColumn(column.id, null);
-              }}
-              onEditColumnSpecs={(colIndex) => {
-                const column = worksheet.columns[colIndex];
-                if (!column) return;
-                setSelection(collapseSelection(colIndex, selection.row));
-                // Open after the column context menu unmounts so Radix does
-                // not leave body pointer-events: none when the dialog closes.
-                window.setTimeout(() => setSpecsColumnId(column.id), 0);
-              }}
+              onColumnMenuAction={handleColumnMenuAction}
             />
           </div>
         </TabsContent>
@@ -582,7 +626,7 @@ export function StatisticalWorkspace({
                       className="h-6 px-1.5 text-[11px]"
                       data-testid="new-analysis"
                       onClick={() =>
-                        void openSixpackForColumn(
+                        void openAnalyzeForColumn(
                           selectedColumnId,
                           selectedRowRange
                         )
@@ -771,6 +815,73 @@ export function StatisticalWorkspace({
           )}
         </TabsContent>
       </Tabs>
+
+      <AnalyzeDialog
+        key={analyzeOpen ? "analyze-open" : "analyze-closed"}
+        open={analyzeOpen}
+        worksheet={worksheet}
+        defaultColumnId={analyzeColumnId || selectedColumnId}
+        defaultRowStart={analyzeRowStart}
+        defaultRowEnd={analyzeRowEnd}
+        submitting={analyzeSubmitting}
+        error={analyzeError}
+        onOpenChange={setAnalyzeOpen}
+        onSubmit={async (payload) => {
+          setAnalyzeSubmitting(true);
+          setAnalyzeError(null);
+          try {
+            await flush().catch(() => undefined);
+            if (payload.kind === ONE_WAY_ANOVA) {
+              const created = await createOneWayAnova(reportId, {
+                responseColumnId: payload.values.responseColumnId,
+                factorColumnId: payload.values.factorColumnId,
+                title: payload.values.title || undefined,
+                rowStart: payload.values.rowStart,
+                rowEnd: payload.values.rowEnd,
+              });
+              applyAnalytics(created.analytics, {
+                selectAnalysisId: created.analysisId,
+              });
+            } else if (payload.kind === MEASUREMENT_SCATTER) {
+              const created = await createMeasurementScatter(reportId, {
+                query: payload.values.query,
+                title: payload.values.title || undefined,
+                xLabel: payload.values.xLabel || undefined,
+                yLabel: payload.values.yLabel || undefined,
+                layout: { mode: payload.values.mode },
+                lsl: payload.values.lsl,
+                usl: payload.values.usl,
+              });
+              applyAnalytics(created.analytics, {
+                selectAnalysisId: created.analysisId,
+              });
+            } else {
+              const created = await createCapabilitySixpack(reportId, {
+                columnId: payload.values.columnId,
+                title: payload.values.title || undefined,
+                lsl: payload.values.lsl,
+                usl: payload.values.usl,
+                target: payload.values.target,
+                rowStart: payload.values.rowStart,
+                rowEnd: payload.values.rowEnd,
+              });
+              applyAnalytics(created.analytics, {
+                selectAnalysisId: created.analysisId,
+              });
+            }
+            setAnalyzeOpen(false);
+            setTab("results");
+          } catch (error) {
+            setAnalyzeError(
+              error instanceof Error
+                ? error.message
+                : "Could not run the analysis."
+            );
+          } finally {
+            setAnalyzeSubmitting(false);
+          }
+        }}
+      />
 
       <CapabilityDialog
         key={capabilityOpen ? "open" : "closed"}
