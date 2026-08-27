@@ -114,6 +114,40 @@ describe("PATCH /api/admin/users/[userId]", () => {
     expect(db.update).not.toHaveBeenCalled();
   });
 
+  it("reactivates a deactivated user for admins", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(admin);
+    mockSelectExistingUser({
+      deactivatedAt: new Date("2026-06-24T00:00:00.000Z"),
+    });
+    const { set } = mockUpdateReturning([
+      {
+        id: "user-1",
+        name: "User One",
+        email: "user.one@mjbiopharm.com",
+        role: "engineer",
+        title: "Engineer",
+        passwordHash: "old.hash",
+        mustChangePassword: false,
+        deactivatedAt: null,
+        lockedAt: null,
+        createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      },
+    ]);
+
+    const response = await PATCH(jsonRequest({ active: true }), {
+      params: Promise.resolve({ userId: "user-1" }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(set).toHaveBeenCalledWith({ deactivatedAt: null });
+    await expect(response.json()).resolves.toMatchObject({
+      user: {
+        id: "user-1",
+        isActive: true,
+      },
+    });
+  });
+
   it("updates a user role for admins", async () => {
     vi.mocked(getCurrentUser).mockResolvedValueOnce(admin);
     mockSelectExistingUser();

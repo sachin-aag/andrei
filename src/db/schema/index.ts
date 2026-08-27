@@ -250,7 +250,7 @@ export const workspaceUsers = pgTable(
     passwordResetTokenExpiresAt: timestamp("password_reset_token_expires_at", {
       withTimezone: true,
     }),
-    /** Non-null means the account is deactivated and cannot sign in. */
+    /** Non-null means the account is deactivated and cannot sign in until reactivated. */
     deactivatedAt: timestamp("deactivated_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

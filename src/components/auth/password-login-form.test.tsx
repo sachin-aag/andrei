@@ -48,7 +48,7 @@ describe("PasswordLoginForm", () => {
 
   it("shows unknown email error", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
-      jsonResponse({ allowed: false, hasPassword: false })
+      jsonResponse({ allowed: false, hasPassword: false, deactivated: false })
     );
 
     const user = userEvent.setup();
@@ -62,6 +62,56 @@ describe("PasswordLoginForm", () => {
     expect(
       await screen.findByText(/this email isn't registered/i)
     ).toBeInTheDocument();
+  });
+
+  it("shows deactivated account error on the email step", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      jsonResponse({
+        allowed: false,
+        hasPassword: true,
+        locked: false,
+        deactivated: true,
+      })
+    );
+
+    const user = userEvent.setup();
+    render(<PasswordLoginForm />);
+    await user.type(
+      screen.getByLabelText(/work email/i),
+      "retired@mjbiopharm.com"
+    );
+    await user.click(screen.getByRole("button", { name: /continue/i }));
+
+    expect(
+      await screen.findByText(/this account has been deactivated/i)
+    ).toBeInTheDocument();
+    expect(screen.queryByLabelText(/^password$/i)).not.toBeInTheDocument();
+  });
+
+  it("rejects deactivated emails on the magic-link path", async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      jsonResponse({
+        allowed: false,
+        hasPassword: true,
+        locked: false,
+        deactivated: true,
+      })
+    );
+
+    const user = userEvent.setup();
+    render(<PasswordLoginForm />);
+    await user.type(
+      screen.getByLabelText(/work email/i),
+      "retired@mjbiopharm.com"
+    );
+    await user.click(
+      screen.getByRole("button", { name: /email me a sign-in link instead/i })
+    );
+
+    expect(
+      await screen.findByText(/this account has been deactivated/i)
+    ).toBeInTheDocument();
+    expect(signIn).not.toHaveBeenCalled();
   });
 
   it("shows a readable error when email check fails", async () => {
@@ -291,7 +341,7 @@ describe("PasswordLoginForm", () => {
 
   it("rejects unknown emails on the magic-link path", async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
-      jsonResponse({ allowed: false, hasPassword: false })
+      jsonResponse({ allowed: false, hasPassword: false, deactivated: false })
     );
 
     const user = userEvent.setup();

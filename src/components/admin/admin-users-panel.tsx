@@ -90,6 +90,9 @@ export function AdminUsersPanel({
   const [resetUser, setResetUser] = useState<AdminUser | null>(null);
   const [deleteUser, setDeleteUser] = useState<AdminUser | null>(null);
   const [pendingRoleUserId, setPendingRoleUserId] = useState<string | null>(null);
+  const [pendingReactivateUserId, setPendingReactivateUserId] = useState<
+    string | null
+  >(null);
   const [isCreating, startCreateTransition] = useTransition();
   const [isResetting, startResetTransition] = useTransition();
   const [isDeleting, startDeleteTransition] = useTransition();
@@ -251,6 +254,34 @@ export function AdminUsersPanel({
       toast.success(`Password reset email sent to ${resetUser.email}`);
       setResetUser(null);
     });
+  };
+
+  const reactivateUser = (userId: string) => {
+    setPendingReactivateUserId(userId);
+    void fetch(`/api/admin/users/${encodeURIComponent(userId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ active: true }),
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(await readError(response, "Could not reactivate user"));
+        }
+        return (await response.json()) as { user: AdminUser };
+      })
+      .then((data) => {
+        updateUser(data.user);
+        toast.success("User reactivated");
+        router.refresh();
+      })
+      .catch((error) => {
+        toast.error(
+          error instanceof Error ? error.message : "Could not reactivate user"
+        );
+      })
+      .finally(() => {
+        setPendingReactivateUserId(null);
+      });
   };
 
   const deleteSelectedUser = () => {
@@ -602,10 +633,26 @@ export function AdminUsersPanel({
                           Unlock
                         </Button>
                       )}
+                      {!user.isActive && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          disabled={pendingReactivateUserId === user.id}
+                          onClick={() => reactivateUser(user.id)}
+                        >
+                          {pendingReactivateUserId === user.id ? (
+                            <Loader2 className="size-4 animate-spin" />
+                          ) : (
+                            "Reactivate"
+                          )}
+                        </Button>
+                      )}
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
+                        disabled={!user.isActive}
                         onClick={() => setResetUser(user)}
                       >
                         Send reset email
@@ -700,9 +747,8 @@ export function AdminUsersPanel({
           <DialogHeader>
             <DialogTitle>Deactivate user?</DialogTitle>
             <DialogDescription>
-              This will retire {deleteUser?.name}&apos;s sign-in access. Their user
-              ID and email cannot be reused. Existing reports and audit history are
-              retained.
+              This blocks {deleteUser?.name}&apos;s sign-in access until an admin
+              reactivates the account. Reports and audit history are retained.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
