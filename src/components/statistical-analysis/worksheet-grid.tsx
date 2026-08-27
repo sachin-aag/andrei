@@ -255,7 +255,6 @@ function WorksheetRowHeader({
     <button
       type="button"
       data-testid={`row-header-${rowIndex}`}
-      aria-selected={selected}
       className="flex h-7 w-full items-center justify-center"
       onClick={(event) => {
         onSelect(event.shiftKey);
@@ -267,14 +266,14 @@ function WorksheetRowHeader({
 
   if (readOnly) {
     return (
-      <th scope="row" className={headerClass}>
+      <th scope="row" aria-selected={selected} className={headerClass}>
         {headerBody}
       </th>
     );
   }
 
   return (
-    <th scope="row" className={headerClass}>
+    <th scope="row" aria-selected={selected} className={headerClass}>
       <ContextMenu
         onOpenChange={(open) => {
           if (open) onMenuOpen();
