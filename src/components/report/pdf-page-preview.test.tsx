@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PdfPagePreview } from "@/components/report/pdf-page-preview";
 import { pdfjsPreviewLoadingOptions } from "@/lib/attachments/pdfjs-browser";
@@ -27,9 +27,16 @@ function mockPdfPage(
   } = {}
 ) {
   return {
-    getViewport: ({ scale }: { scale: number }) => ({
+    getViewport: ({
+      scale,
+      rotation = 0,
+    }: {
+      scale: number;
+      rotation?: number;
+    }) => ({
       width: (overrides.width ?? 200) * scale,
       height: (overrides.height ?? 400) * scale,
+      rotation,
     }),
     getTextContent:
       overrides.getTextContent ??
@@ -476,5 +483,100 @@ describe("PdfPagePreview", () => {
     expect(
       await screen.findByText(/Could not render this page in the browser/)
     ).toBeInTheDocument();
+  });
+
+  it("renders page navigation, rotate, and zoom controls", async () => {
+    render(
+      <PdfPagePreview
+        src="/api/reports/r1/attachments/a1/content?proxy=1&page=1"
+        page={1}
+        title="Evidence.pdf"
+        sizeBytes={250_000}
+      />
+    );
+
+    await screen.findByLabelText("Evidence.pdf, page 1");
+    expect(screen.getByTestId("pdf-preview-toolbar")).toBeInTheDocument();
+    expect(screen.getByTestId("pdf-toolbar-page-input")).toHaveValue("1");
+    expect(screen.getByText("of 2")).toBeInTheDocument();
+    expect(screen.getByTestId("pdf-toolbar-rotate")).toBeInTheDocument();
+    expect(screen.getByTestId("pdf-toolbar-zoom-in")).toBeInTheDocument();
+    expect(screen.getByTestId("pdf-toolbar-zoom-out")).toBeInTheDocument();
+    expect(screen.getByText("100%")).toBeInTheDocument();
+  });
+
+  it("jumps to a page when the user enters a page number", async () => {
+    const onVisiblePageChange = vi.fn();
+    const scrollIntoView = vi.fn();
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+
+    render(
+      <PdfPagePreview
+        src="/api/reports/r1/attachments/a1/content?proxy=1&page=1"
+        page={1}
+        title="Evidence.pdf"
+        sizeBytes={250_000}
+        onVisiblePageChange={onVisiblePageChange}
+      />
+    );
+
+    await screen.findByLabelText("Evidence.pdf, page 2");
+    const input = screen.getByTestId("pdf-toolbar-page-input");
+    fireEvent.change(input, { target: { value: "2" } });
+    fireEvent.submit(input.closest("form")!);
+
+    await waitFor(() => {
+      expect(scrollIntoView).toHaveBeenCalled();
+    });
+    expect(onVisiblePageChange).toHaveBeenCalledWith(2);
+  });
+
+  it("re-renders with a higher scale when zooming in", async () => {
+    render(
+      <PdfPagePreview
+        src="/api/reports/r1/attachments/a1/content?proxy=1&page=1"
+        page={1}
+        title="Evidence.pdf"
+        sizeBytes={250_000}
+      />
+    );
+
+    await screen.findByLabelText("Evidence.pdf, page 1");
+    fireEvent.click(screen.getByTestId("pdf-toolbar-zoom-in"));
+
+    await waitFor(() => {
+      expect(renderPage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          viewport: expect.objectContaining({
+            width: 200 * PDF_PREVIEW_SCALE * 1.25,
+          }),
+        })
+      );
+    });
+    expect(screen.getByText("125%")).toBeInTheDocument();
+  });
+
+  it("re-renders with rotation when the rotate button is clicked", async () => {
+    render(
+      <PdfPagePreview
+        src="/api/reports/r1/attachments/a1/content?proxy=1&page=1"
+        page={1}
+        title="Evidence.pdf"
+        sizeBytes={250_000}
+      />
+    );
+
+    await screen.findByLabelText("Evidence.pdf, page 1");
+    fireEvent.click(screen.getByTestId("pdf-toolbar-rotate"));
+
+    await waitFor(() => {
+      expect(getPage).toHaveBeenCalled();
+      const lastRender = renderPage.mock.calls.at(-1)?.[0] as {
+        viewport?: { rotation?: number };
+      };
+      expect(lastRender?.viewport).toEqual(
+        expect.objectContaining({ rotation: 90 })
+      );
+    });
   });
 });
