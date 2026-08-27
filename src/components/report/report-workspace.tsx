@@ -670,7 +670,7 @@ export function ReportWorkspace({
         }}
       />
 
-      {analyticsSurface ? null : <ReportEditorToolbar />}
+      {analyticsSurface || viewingDocument ? null : <ReportEditorToolbar />}
 
       <div
         ref={containerRef}
@@ -710,7 +710,7 @@ export function ReportWorkspace({
           ref={mainRef}
           className={cn(
             "@container min-h-0 min-w-0 flex-1 bg-[var(--background)]",
-            analyticsSurface
+            analyticsSurface || viewingDocument
               ? "flex flex-col overflow-hidden"
               : continuousDocument
                 ? "overflow-auto bg-[var(--muted)]"
@@ -722,7 +722,7 @@ export function ReportWorkspace({
               <div
                 className={cn(
                   "min-h-0 flex-1",
-                  activeAttachmentId && "hidden"
+                  viewingDocument && "hidden"
                 )}
               >
                 <StatisticalWorkspace
@@ -732,63 +732,72 @@ export function ReportWorkspace({
                   agentBusy={analyticsAgentBusy}
                 />
               </div>
-              {activeAttachmentId ? (
-                <div className="min-h-0 flex-1 overflow-auto">
-                  <AttachmentViewer />
-                </div>
-              ) : null}
+              {viewingDocument ? <AttachmentCanvas /> : null}
             </div>
           ) : (
-          <div
-            className={cn(
-              "mx-auto grid w-full min-w-0 grid-cols-1 gap-8 pb-24",
-              continuousDocument
-                ? "max-w-none px-4 py-6"
-                : "max-w-[1180px] px-6 py-8",
-              showReviewGutter && REVIEW_GUTTER_GRID_COLS
-            )}
-          >
-            <div
-              className={cn(
-                "space-y-10 min-w-0",
-                documentType === "quality_risk_assessment" && "qra-document"
-              )}
-            >
-              <ReportHeader />
+            <>
               <div
-                hidden={!!activeAttachmentId}
-                className={cn("min-w-0", continuousDocument ? "space-y-4" : "space-y-10")}
+                hidden={viewingDocument}
+                inert={viewingDocument}
+                className={cn(
+                  "mx-auto grid w-full min-w-0 grid-cols-1 gap-8 pb-24",
+                  viewingDocument && "hidden",
+                  continuousDocument
+                    ? "max-w-none px-4 py-6"
+                    : "max-w-[1180px] px-6 py-8",
+                  showReviewGutter && REVIEW_GUTTER_GRID_COLS
+                )}
               >
-                {getWorkspaceSections(report.documentType).map((section) => {
-                  const s = section.key;
-                  const Editor =
-                    SECTION_EDITORS_BY_DOCUMENT_TYPE[report.documentType]?.[s];
-                  if (!Editor) return null;
-                  const extra = showReviewGutter ? sectionMinHeights[s] : undefined;
-                  return (
-                    <section
-                      key={s}
-                      id={s}
-                      style={extra ? { paddingBottom: `${extra}px` } : undefined}
-                    >
-                      <Editor />
-                    </section>
-                  );
-                })}
+                <div
+                  className={cn(
+                    "space-y-10 min-w-0",
+                    documentType === "quality_risk_assessment" && "qra-document"
+                  )}
+                >
+                  <ReportHeader />
+                  <div
+                    className={cn(
+                      "min-w-0",
+                      continuousDocument ? "space-y-4" : "space-y-10"
+                    )}
+                  >
+                    {getWorkspaceSections(report.documentType).map((section) => {
+                      const s = section.key;
+                      const Editor =
+                        SECTION_EDITORS_BY_DOCUMENT_TYPE[report.documentType]?.[
+                          s
+                        ];
+                      if (!Editor) return null;
+                      const extra = showReviewGutter
+                        ? sectionMinHeights[s]
+                        : undefined;
+                      return (
+                        <section
+                          key={s}
+                          id={s}
+                          style={
+                            extra ? { paddingBottom: `${extra}px` } : undefined
+                          }
+                        >
+                          <Editor />
+                        </section>
+                      );
+                    })}
+                  </div>
+                </div>
+                {showReviewGutter ? (
+                  <aside
+                    className="relative hidden min-w-0 @[800px]:block"
+                    aria-label="Review margin"
+                  >
+                    <MarginGutter
+                      onSectionOverflow={handleSectionOverflow}
+                    />
+                  </aside>
+                ) : null}
               </div>
-              {activeAttachmentId ? <AttachmentViewer /> : null}
-            </div>
-            {showReviewGutter ? (
-              <aside
-                className="relative hidden min-w-0 @[800px]:block"
-                aria-label="Review margin"
-              >
-                <MarginGutter
-                  onSectionOverflow={handleSectionOverflow}
-                />
-              </aside>
-            ) : null}
-          </div>
+              {viewingDocument ? <AttachmentCanvas /> : null}
+            </>
           )}
         </main>
 
@@ -831,6 +840,14 @@ export function ReportWorkspace({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function AttachmentCanvas() {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+      <AttachmentViewer />
     </div>
   );
 }
