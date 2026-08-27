@@ -36,6 +36,7 @@ import {
   createDocxExportContext,
   type DocxExportContext,
 } from "@/lib/export/docx-export-context";
+import { loadDocxPageSetupFromZip } from "@/lib/export/docx-page-setup";
 import {
   applyNumberingToDocxZip,
   loadListNumberingBasesFromZip,
@@ -487,7 +488,8 @@ export async function generateReportDocx({
   });
 
   const numberingBases = loadListNumberingBasesFromZip(zip);
-  const ctx = createDocxExportContext(numberingBases);
+  const pageSetup = loadDocxPageSetupFromZip(zip);
+  const ctx = createDocxExportContext(numberingBases, undefined, pageSetup);
   const data = buildTemplateData(report, exportSections, ctx, comments);
   const signatureSnapshot = signatureSnapshotFromSection(
     data._signatureApprovals as SignatureApprovalsSection
@@ -534,9 +536,11 @@ async function generateDesignVerificationDocx({
 
   const numberingBases = loadListNumberingBasesFromZip(zip);
   const pack = getCustomerPack();
+  const pageSetup = loadDocxPageSetupFromZip(zip);
   const ctx = createDocxExportContext(
     numberingBases,
-    pack.id === "convergent" ? CONVERGENT_DOCX_RUN_STYLE : undefined
+    pack.id === "convergent" ? CONVERGENT_DOCX_RUN_STYLE : undefined,
+    pageSetup
   );
   const def = getDocumentType(documentType);
   const mergedSections = sections.map((row) => ({

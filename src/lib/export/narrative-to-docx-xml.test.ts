@@ -46,6 +46,20 @@ function textCell(
   };
 }
 
+function nColTable(columnCount: number): JSONContent {
+  return {
+    type: "table",
+    content: [
+      {
+        type: "tableRow",
+        content: Array.from({ length: columnCount }, (_, i) =>
+          textCell("tableHeader", `C${i + 1}`)
+        ),
+      },
+    ],
+  };
+}
+
 function tableRows(xml: string): string[] {
   return [...xml.matchAll(/<w:tr>[\s\S]*?<\/w:tr>/g)].map((match) => match[0]);
 }
@@ -642,6 +656,65 @@ describe("narrativeToDocxXml tables", () => {
     const sum = cols.reduce((a, b) => a + b, 0);
     expect(sum).toBeLessThanOrEqual(10469);
     expect(innerXml).toContain(`<w:tblW w:w="${sum}" w:type="dxa"/>`);
+  });
+
+  it("does not rotate a 4-column table onto a landscape page", () => {
+    const xml = narrativeToDocxXml({
+      type: "doc",
+      content: [nColTable(4)],
+    });
+    expect(xml).not.toContain('w:orient="landscape"');
+  });
+
+  it("puts a many-column table on a landscape section and uses the landscape content band", () => {
+    const xml = narrativeToDocxXml({
+      type: "doc",
+      content: [nColTable(19)],
+    });
+
+    expect(xml).toContain('w:orient="landscape"');
+    expect(xml).toMatch(
+      /<w:p><w:pPr><w:spacing w:before="0" w:after="0"\/><w:sectPr>/
+    );
+    expect(xml.indexOf("w:orient")).toBeGreaterThan(xml.indexOf("<w:tbl>"));
+
+    const innerMatch = xml.match(/<w:tbl>[\s\S]*?(<w:tbl>[\s\S]*?<\/w:tbl>)/);
+    const innerXml = innerMatch?.[1] ?? "";
+    const cols = [...innerXml.matchAll(/<w:gridCol w:w="(\d+)"/g)].map((m) =>
+      parseInt(m[1]!, 10)
+    );
+    expect(cols).toHaveLength(19);
+    const sum = cols.reduce((a, b) => a + b, 0);
+    expect(sum).toBeGreaterThan(10469);
+    expect(sum).toBeLessThanOrEqual(15394);
+  });
+
+  it("keeps consecutive wide tables in one landscape section", () => {
+    const xml = narrativeToDocxXml({
+      type: "doc",
+      content: [nColTable(15), nColTable(16)],
+    });
+    const landscapeBreaks = xml.match(/w:orient="landscape"/g) ?? [];
+    expect(landscapeBreaks).toHaveLength(1);
+    expect(xml).toContain("C1");
+    expect(xml).toContain("C16");
+  });
+
+  it("returns to portrait after a wide table so following paragraphs stay upright", () => {
+    const xml = narrativeToDocxXml({
+      type: "doc",
+      content: [
+        { type: "paragraph", content: [{ type: "text", text: "Before" }] },
+        nColTable(15),
+        { type: "paragraph", content: [{ type: "text", text: "After" }] },
+      ],
+    });
+    const beforeAt = xml.indexOf("Before");
+    const landscapeAt = xml.indexOf('w:orient="landscape"');
+    const afterAt = xml.indexOf("After");
+    expect(beforeAt).toBeGreaterThan(-1);
+    expect(landscapeAt).toBeGreaterThan(beforeAt);
+    expect(afterAt).toBeGreaterThan(landscapeAt);
   });
 
   it("emits Word gridSpan for colspans", () => {
