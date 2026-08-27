@@ -48,6 +48,7 @@ import { useWorkspaceLayout } from "@/hooks/use-workspace-layout";
 import { WorkspaceResizeHandle } from "./workspace-resize-handle";
 import {
   isReviewGutterVisible,
+  REVIEW_GUTTER_GRID_COLS,
   WORKSPACE_PANEL_WIDTH_TRANSITION_MS,
 } from "./workspace-layout";
 import {
@@ -744,8 +745,7 @@ export function ReportWorkspace({
               continuousDocument
                 ? "max-w-none px-4 py-6"
                 : "max-w-[1180px] px-6 py-8",
-              showReviewGutter &&
-                "@[800px]:grid-cols-[minmax(0,1fr)_minmax(200px,360px)]"
+              showReviewGutter && REVIEW_GUTTER_GRID_COLS
             )}
           >
             <div
