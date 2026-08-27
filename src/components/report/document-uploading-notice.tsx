@@ -9,7 +9,7 @@ import {
 import { useReportAttachments } from "@/providers/report-attachments-provider";
 
 export const DOCUMENT_UPLOADING_NOTICE =
-  "A document is still uploading.";
+  "A document is uploading and will not be available until processing is complete.";
 
 export function DocumentUploadingNotice() {
   return (
@@ -17,9 +17,9 @@ export function DocumentUploadingNotice() {
       role="status"
       aria-live="polite"
       data-testid="document-uploading-notice"
-      className="mb-2 flex items-center gap-1.5 text-[11px] text-amber-800"
+      className="mb-2 flex items-start gap-1.5 text-[11px] leading-snug text-amber-800"
     >
-      <Loader2 className="size-3 shrink-0 animate-spin" aria-hidden="true" />
+      <Loader2 className="mt-px size-3 shrink-0 animate-spin" aria-hidden="true" />
       <span>{DOCUMENT_UPLOADING_NOTICE}</span>
     </p>
   );

@@ -170,7 +170,9 @@ test.describe("report chat", () => {
       await composer.fill("what does this file say");
       const notice = sidebar.getByTestId("document-uploading-notice");
       await expect(notice).toBeVisible();
-      await expect(notice).toHaveText(/document is still uploading/i);
+      await expect(notice).toHaveText(
+        /document is uploading and will not be available until processing is complete/i
+      );
 
       const send = sidebar.getByRole("button", { name: /^send message$/i });
       await expect(send).toBeEnabled();
