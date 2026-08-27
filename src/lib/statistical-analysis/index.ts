@@ -11,15 +11,18 @@ export {
   CAPABILITY_SIXPACK_NORMAL,
   MEASUREMENT_SCATTER,
   ONE_WAY_ANOVA,
+  XY_SCATTER,
   isAnovaAnalysis,
   isScatterAnalysis,
   isSixpackAnalysis,
+  isXyScatterAnalysis,
 } from "./types";
 export {
   createEmptyWorksheet,
   normalizeWorksheet,
   analysisSourceKey,
   anovaSourceKey,
+  xyScatterSourceKey,
   columnNumericValues,
   columnSourceKey,
   findColumn,
@@ -52,6 +55,7 @@ export {
 } from "./sample-data";
 export { computeCapabilitySixpack } from "./sixpack";
 export { computeOneWayAnova, suggestFactorColumn } from "./anova";
+export { computeXyScatter, suggestXColumn } from "./xy-scatter";
 export { formatLimit, formatPpm, formatPValue, formatStat, formatSpecSummary } from "./format";
 export {
   formatRowSelection,

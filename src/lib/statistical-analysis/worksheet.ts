@@ -734,6 +734,18 @@ export function anovaSourceKey(
   });
 }
 
+/** Client-safe XY scatter source key — do not import `hash.ts` from the browser. */
+export function xyScatterSourceKey(
+  xColumn: WorksheetColumn,
+  yColumn: WorksheetColumn,
+  selection: AnalysisRowSelection = { mode: "all" }
+): string {
+  return JSON.stringify({
+    x: cellsForRowSelection(xColumn, selection),
+    y: cellsForRowSelection(yColumn, selection),
+  });
+}
+
 export function columnSourceKey(column: WorksheetColumn): string {
   return analysisSourceKey(column, { mode: "all" });
 }

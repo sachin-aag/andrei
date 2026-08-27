@@ -255,6 +255,7 @@ export function ReportWorkspace({
   const [surface, setSurface] = useState<ReportWorkspaceSurface>("document");
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
   const [analyticsReloadEpoch, setAnalyticsReloadEpoch] = useState(0);
+  const [analyticsAgentBusy, setAnalyticsAgentBusy] = useState(false);
   const [sectionMinHeights, setSectionMinHeights] = useState<
     Partial<Record<SectionType, number>>
   >({});
@@ -717,6 +718,7 @@ export function ReportWorkspace({
                   reportId={report.id}
                   readOnly={!analyticsCanEdit}
                   reloadEpoch={analyticsReloadEpoch}
+                  agentBusy={analyticsAgentBusy}
                 />
               </div>
               {activeAttachmentId ? (
@@ -793,6 +795,7 @@ export function ReportWorkspace({
             onAnalyticsSettled={() =>
               setAnalyticsReloadEpoch((epoch) => epoch + 1)
             }
+            onAnalyticsAgentBusy={setAnalyticsAgentBusy}
           />
           {sidebarCollapsed ? null : (
             <WorkspaceResizeHandle

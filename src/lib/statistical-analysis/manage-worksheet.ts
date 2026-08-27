@@ -44,7 +44,7 @@ export const MANAGE_WORKSHEET_ACTIONS = [
 
 export type ManageWorksheetAction = (typeof MANAGE_WORKSHEET_ACTIONS)[number];
 
-export const manageWorksheetInputSchema = z.object({
+const manageWorksheetOperationFields = {
   action: z
     .enum(MANAGE_WORKSHEET_ACTIONS)
     .describe(
@@ -92,8 +92,39 @@ export const manageWorksheetInputSchema = z.object({
     .union([z.number().finite(), z.string().max(MAX_CELL_LENGTH)])
     .optional()
     .describe("Cell value for set_cell."),
-});
+} as const;
 
+export const manageWorksheetOperationSchema = z.object(
+  manageWorksheetOperationFields
+);
+
+export const manageWorksheetInputSchema = z
+  .object({
+    ...manageWorksheetOperationFields,
+    action: manageWorksheetOperationFields.action.optional(),
+    operations: z
+      .array(manageWorksheetOperationSchema)
+      .min(1)
+      .max(40)
+      .optional()
+      .describe(
+        "Several add/rename/delete operations applied in order and saved once. Prefer this over calling the tool repeatedly."
+      ),
+  })
+  .superRefine((value, ctx) => {
+    if (value.operations && value.operations.length > 0) return;
+    if (!value.action) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Provide action or operations.",
+        path: ["action"],
+      });
+    }
+  });
+
+export type ManageWorksheetOperation = z.infer<
+  typeof manageWorksheetOperationSchema
+>;
 export type ManageWorksheetInput = z.infer<typeof manageWorksheetInputSchema>;
 
 export type ManageWorksheetResult =
@@ -171,7 +202,7 @@ function activateSheet(
 
 function activateForColumn(
   worksheet: WorksheetData,
-  input: Pick<ManageWorksheetInput, "sheetId" | "columnId">
+  input: Pick<ManageWorksheetOperation, "sheetId" | "columnId">
 ):
   | { ok: true; worksheet: WorksheetData }
   | { ok: false; result: ManageWorksheetResult } {
@@ -265,8 +296,14 @@ function fail(result: ManageWorksheetResult): {
 
 export function applyManageWorksheet(
   data: WorksheetData,
-  input: ManageWorksheetInput
+  input: ManageWorksheetOperation | ManageWorksheetInput
 ): { worksheet: WorksheetData | null; result: ManageWorksheetResult } {
+  if (!input.action) {
+    return fail({
+      status: "error",
+      message: "Provide action or operations.",
+    });
+  }
   switch (input.action) {
     case "add_sheet": {
       if (dataSheets(data).length >= MAX_DATA_SHEETS) {

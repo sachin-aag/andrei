@@ -72,6 +72,8 @@ export type DocumentOutlinePage = {
   pageNumber: number;
   printedPageLabel: string | null;
   pageContext: string | null;
+  /** Full page transcript for server-side scoring; omit from LLM tool payloads. */
+  transcript?: string;
 };
 
 export type DocumentOutline = {
@@ -706,6 +708,9 @@ export async function readDocumentOutline({
     .limit(OUTLINE_PAGE_CAP);
 
   const outline = buildOutlineFromStoredPages(pages);
+  const transcriptByPage = new Map(
+    pages.map((page) => [page.pageNumber, page.transcript ?? ""])
+  );
 
   return {
     attachmentId: header.attachmentId,
@@ -718,6 +723,7 @@ export async function readDocumentOutline({
       pageContext: page.pageContext
         ? truncateSnippet(page.pageContext, OUTLINE_CONTEXT_CHARS)
         : null,
+      transcript: transcriptByPage.get(page.pageNumber) ?? "",
     })),
     spans: outline.spans,
   };

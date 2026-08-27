@@ -89,6 +89,7 @@ const ANALYTICS_EXAMPLE_PROMPTS: Record<ChatMode, string[]> = {
     "Run a Normal Capability Sixpack on the Assay column with LSL 90 and USL 110.",
     "Run one-way ANOVA of Assay by Lot.",
     "Plot measurements for M3-SYS-FN-037 from the attachments.",
+    "Plot OD660 vs Cumulative Glucose from the worksheet.",
   ],
 };
 
@@ -99,6 +100,7 @@ type PendingChatImage = {
 
 type ToolPartInfo = {
   toolName: string;
+  toolCallId: string;
   state: string;
   input: Record<string, unknown> | undefined;
   output: Record<string, unknown> | undefined;
@@ -111,6 +113,7 @@ function readToolPart(part: UIMessagePart<never, never>): ToolPartInfo | null {
   }
   const p = part as unknown as {
     type: string;
+    toolCallId?: string;
     state?: string;
     input?: Record<string, unknown>;
     output?: Record<string, unknown>;
@@ -118,6 +121,7 @@ function readToolPart(part: UIMessagePart<never, never>): ToolPartInfo | null {
   };
   return {
     toolName: p.type.slice("tool-".length),
+    toolCallId: typeof p.toolCallId === "string" ? p.toolCallId : "",
     state: p.state ?? "",
     input: p.input,
     output: p.output,
@@ -377,6 +381,32 @@ function AnalyticsToolChip({
         </ToolLine>
       );
     }
+    case "plot_xy_scatter": {
+      if (pending) {
+        return (
+          <ToolLine icon={<ChartScatter className="size-3.5" />}>
+            Plotting XY scatter…
+          </ToolLine>
+        );
+      }
+      if (info.output?.status === "ok") {
+        return (
+          <ToolLine
+            icon={<ChartScatter className="size-3.5 text-emerald-500" />}
+            tone="success"
+          >
+            Saved XY scatter — open the Results tab
+          </ToolLine>
+        );
+      }
+      return (
+        <ToolLine icon={<ChartScatter className="size-3.5" />} tone="warn">
+          {typeof info.output?.message === "string"
+            ? info.output.message
+            : "Could not plot the scatter."}
+        </ToolLine>
+      );
+    }
     case "plot_measurements": {
       if (pending) {
         return (
@@ -497,8 +527,10 @@ function subscribeNoop() {
 
 export function AnalyticsChatPanel({
   onWorksheetChanged,
+  onAgentBusyChange,
 }: {
   onWorksheetChanged: () => void;
+  onAgentBusyChange?: (busy: boolean) => void;
 }) {
   const { report, currentUserId, currentUserRole, currentUserEmail } =
     useReportData();
@@ -523,6 +555,7 @@ export function AnalyticsChatPanel({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const runtimeBySessionRef = useRef(new Map<string, ChatSessionRuntime>());
   const currentSessionIdRef = useRef<string | null>(null);
+  const seenWriteIdsRef = useRef(new Set<string>());
   const storedComposerPrefs = useSyncExternalStore(
     subscribeChatComposerPrefs,
     () =>
@@ -568,6 +601,35 @@ export function AnalyticsChatPanel({
     elapsedMs,
     silentMs,
   });
+
+  useEffect(() => {
+    onAgentBusyChange?.(busy);
+  }, [busy, onAgentBusyChange]);
+
+  useEffect(() => {
+    return () => onAgentBusyChange?.(false);
+  }, [onAgentBusyChange]);
+
+  useEffect(() => {
+    let found = false;
+    for (const message of messages) {
+      for (const part of message.parts ?? []) {
+        const info = readToolPart(part as UIMessagePart<never, never>);
+        if (!info || info.state !== "output-available") continue;
+        if (
+          info.toolName !== "write_column" &&
+          info.toolName !== "manage_worksheet"
+        ) {
+          continue;
+        }
+        const id = info.toolCallId;
+        if (!id || seenWriteIdsRef.current.has(id)) continue;
+        seenWriteIdsRef.current.add(id);
+        found = true;
+      }
+    }
+    if (found) onWorksheetChanged();
+  }, [messages, onWorksheetChanged]);
 
   const loadSessions = useCallback(async (): Promise<ChatSessionSummary[]> => {
     try {

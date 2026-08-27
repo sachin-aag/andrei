@@ -38,6 +38,7 @@ type Props = {
   surface?: ReportWorkspaceSurface;
   analyticsOpen?: boolean;
   onAnalyticsSettled?: () => void;
+  onAnalyticsAgentBusy?: (busy: boolean) => void;
 };
 
 const TABS: { value: SidebarTab; label: string; icon: typeof ListChecks }[] = [
@@ -59,6 +60,7 @@ export function ReportSidebar({
   surface = "document",
   analyticsOpen = false,
   onAnalyticsSettled,
+  onAnalyticsAgentBusy,
 }: Props) {
   const analyticsSurface = surface === "analytics";
   const { pendingPlaceholders } = useReportPlaceholders();
@@ -219,6 +221,7 @@ export function ReportSidebar({
         >
           <AnalyticsChatPanel
             onWorksheetChanged={() => onAnalyticsSettled?.()}
+            onAgentBusyChange={onAnalyticsAgentBusy}
           />
         </div>
       ) : null}

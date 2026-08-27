@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import type { AnalysisRowSelection } from "./row-selection";
-import { analysisSourceKey, anovaSourceKey } from "./worksheet";
+import { analysisSourceKey, anovaSourceKey, xyScatterSourceKey } from "./worksheet";
 import type { MeasurementScatterResult, WorksheetColumn } from "./types";
 
 export function hashColumnSource(
@@ -43,5 +43,15 @@ export function hashAnovaSource(
 ): string {
   return createHash("sha256")
     .update(anovaSourceKey(response, factor, selection))
+    .digest("hex");
+}
+
+export function hashXyScatterSource(
+  xColumn: WorksheetColumn,
+  yColumn: WorksheetColumn,
+  selection: AnalysisRowSelection = { mode: "all" }
+): string {
+  return createHash("sha256")
+    .update(xyScatterSourceKey(xColumn, yColumn, selection))
     .digest("hex");
 }

@@ -1155,6 +1155,7 @@ export const statisticalWorkspaces = pgTable(
       .notNull()
       .references(() => reports.id, { onDelete: "cascade" }),
     worksheet: jsonb("worksheet").notNull(),
+    version: integer("version").notNull().default(1),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -14,10 +14,12 @@ import {
   createCapabilitySixpack,
   createMeasurementScatter,
   createOneWayAnova,
+  createXyScatter,
   deleteCapabilitySixpack,
   getReportAnalytics,
   patchReportAnalytics,
   recomputeCapabilitySixpack,
+  AnalyticsConflictError,
 } from "@/lib/statistical-analysis/client";
 import { applySampleAssay } from "@/lib/statistical-analysis/sample-data";
 import {
@@ -37,6 +39,7 @@ import {
   isAnovaAnalysis,
   isScatterAnalysis,
   isSixpackAnalysis,
+  isXyScatterAnalysis,
   type ReportAnalyticsView,
   type StatisticalAnalysisSummary,
   type WorksheetData,
@@ -45,6 +48,7 @@ import { analysisListSubtitle, withLocalStale } from "@/lib/statistical-analysis
 import { CapabilityDialog } from "@/components/statistical-analysis/capability-dialog";
 import { AnovaDialog } from "@/components/statistical-analysis/anova-dialog";
 import { PlotMeasurementsDialog } from "@/components/statistical-analysis/plot-measurements-dialog";
+import { XyScatterDialog } from "@/components/statistical-analysis/xy-scatter-dialog";
 import { ScatterView } from "@/components/statistical-analysis/scatter-view";
 import { AnovaView } from "@/components/statistical-analysis/anova-view";
 import { SixpackView } from "@/components/statistical-analysis/sixpack-view";
@@ -71,14 +75,20 @@ function saveLabel(status: SaveStatus): string {
   }
 }
 
+function worksheetsEqual(a: WorksheetData, b: WorksheetData): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
 export function StatisticalWorkspace({
   reportId,
   readOnly,
   reloadEpoch,
+  agentBusy = false,
 }: {
   reportId: string;
   readOnly: boolean;
   reloadEpoch: number;
+  agentBusy?: boolean;
 }) {
   const [worksheet, setWorksheet] = useState(createEmptyWorksheet);
   const [persistedWorksheet, setPersistedWorksheet] = useState(createEmptyWorksheet);
@@ -105,11 +115,30 @@ export function StatisticalWorkspace({
   const [anovaRowEnd, setAnovaRowEnd] = useState<number | null>(null);
   const [anovaSubmitting, setAnovaSubmitting] = useState(false);
   const [anovaError, setAnovaError] = useState<string | null>(null);
+  const [xyOpen, setXyOpen] = useState(false);
+  const [xyYColumnId, setXyYColumnId] = useState("");
+  const [xyRowStart, setXyRowStart] = useState<number | null>(null);
+  const [xyRowEnd, setXyRowEnd] = useState<number | null>(null);
+  const [xySubmitting, setXySubmitting] = useState(false);
+  const [xyError, setXyError] = useState<string | null>(null);
   const [specsColumnId, setSpecsColumnId] = useState<string | null>(null);
   const [recomputing, setRecomputing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [version, setVersion] = useState(1);
+  const [remoteUpdate, setRemoteUpdate] = useState<ReportAnalyticsView | null>(
+    null
+  );
   const analysisCountRef = useRef(0);
+  const worksheetRef = useRef(worksheet);
+  const persistedRef = useRef(persistedWorksheet);
+
+  useLayoutEffect(() => {
+    worksheetRef.current = worksheet;
+  }, [worksheet]);
+  useLayoutEffect(() => {
+    persistedRef.current = persistedWorksheet;
+  }, [persistedWorksheet]);
 
   const applyAnalytics = useCallback((
     next: ReportAnalyticsView,
@@ -117,6 +146,8 @@ export function StatisticalWorkspace({
   ) => {
     setWorksheet(next.worksheet);
     setPersistedWorksheet(next.worksheet);
+    setVersion(next.version);
+    setRemoteUpdate(null);
     setAnalyses(next.analyses);
     analysisCountRef.current = next.analyses.length;
     setSelectedAnalysisId((current) => {
@@ -132,6 +163,22 @@ export function StatisticalWorkspace({
       return next.analyses[0]?.id ?? null;
     });
   }, []);
+
+  const ingestRemote = useCallback(
+    (next: ReportAnalyticsView, force = false) => {
+      const dirty = !worksheetsEqual(
+        worksheetRef.current,
+        persistedRef.current
+      );
+      if (!force && dirty) {
+        setVersion(next.version);
+        setRemoteUpdate(next);
+        return;
+      }
+      applyAnalytics(next);
+    },
+    [applyAnalytics]
+  );
 
   const load = useCallback(async () => {
     try {
@@ -153,8 +200,24 @@ export function StatisticalWorkspace({
 
   useEffect(() => {
     if (reloadEpoch === 0) return;
-    void load();
-  }, [load, reloadEpoch]);
+    let cancelled = false;
+    void (async () => {
+      try {
+        const next = await getReportAnalytics(reportId);
+        if (cancelled) return;
+        ingestRemote(next);
+        setLoadError(null);
+      } catch (error) {
+        if (cancelled) return;
+        setLoadError(
+          error instanceof Error ? error.message : "Could not load analytics."
+        );
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [ingestRemote, reloadEpoch, reportId]);
 
   useEffect(() => {
     if (analyses.length > analysisCountRef.current) {
@@ -165,32 +228,38 @@ export function StatisticalWorkspace({
 
   const onSave = useCallback(
     async (
-      value: WorksheetData,
+      value: { worksheet: WorksheetData; version: number },
       context?: { signal?: AbortSignal }
     ) => {
       try {
         const next = await patchReportAnalytics(
           reportId,
-          { worksheet: value },
+          { worksheet: value.worksheet, version: value.version },
           context?.signal
         );
         setPersistedWorksheet(next.worksheet);
+        setVersion(next.version);
         setAnalyses(next.analyses);
+        setRemoteUpdate(null);
       } catch (error) {
         if (context?.signal?.aborted) throw error;
+        if (error instanceof AnalyticsConflictError) {
+          ingestRemote(error.analytics);
+          throw error;
+        }
         toast.error(
           error instanceof Error ? error.message : "Could not save the worksheet."
         );
         throw error;
       }
     },
-    [reportId]
+    [ingestRemote, reportId]
   );
 
   const { status, flush } = useAutoSave({
-    value: worksheet,
+    value: { worksheet, version },
     onSave,
-    enabled: !readOnly && !loading,
+    enabled: !readOnly && !loading && !agentBusy,
     beaconUrl: `/api/reports/${encodeURIComponent(reportId)}/analytics`,
   });
 
@@ -246,6 +315,19 @@ export function StatisticalWorkspace({
     setAnovaRowEnd(rows?.end ?? null);
     setAnovaError(null);
     setAnovaOpen(true);
+  };
+
+  const openXyScatter = async (
+    columnId: string,
+    rows: { start: number; end: number } | null = null
+  ) => {
+    if (readOnly) return;
+    await flush().catch(() => undefined);
+    setXyYColumnId(columnId);
+    setXyRowStart(rows?.start ?? null);
+    setXyRowEnd(rows?.end ?? null);
+    setXyError(null);
+    setXyOpen(true);
   };
 
   if (loading) {
@@ -321,6 +403,9 @@ export function StatisticalWorkspace({
               onOneWayAnova={() =>
                 void openOneWayAnova(selectedColumnId, selectedRowRange)
               }
+              onXyScatter={() =>
+                void openXyScatter(selectedColumnId, selectedRowRange)
+              }
               onPlotMeasurements={() => void openPlotMeasurements()}
               onAddDataSheet={() => {
                 setWorksheet((current) => addDataSheet(current));
@@ -376,6 +461,23 @@ export function StatisticalWorkspace({
           className="mt-0 min-h-0 flex-1 overflow-hidden"
         >
           <div className="flex h-full min-h-0 flex-col">
+            {remoteUpdate ? (
+              <div
+                data-testid="worksheet-assistant-update-banner"
+                className="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--border)] bg-[var(--secondary)] px-4 py-2 text-xs text-[var(--foreground)]"
+              >
+                <p>The assistant updated this worksheet.</p>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  data-testid="worksheet-reload-from-assistant"
+                  onClick={() => ingestRemote(remoteUpdate, true)}
+                >
+                  Reload
+                </Button>
+              </div>
+            ) : null}
             <div
               data-testid="worksheet-sheet-tabs"
               className="flex shrink-0 flex-wrap items-center gap-1 border-b border-[var(--border)] px-4 py-1.5"
@@ -452,7 +554,8 @@ export function StatisticalWorkspace({
               <p className="max-w-md text-sm text-[var(--muted-foreground)]">
                 Select a worksheet column — or Shift+arrow a row range — and
                 click <strong>Analyze {selectedColumnName}</strong>, use{" "}
-                <strong>Stat → One-Way ANOVA</strong>, or{" "}
+                <strong>Stat → One-Way ANOVA</strong>,{" "}
+                <strong>Stat → Scatter</strong> for two worksheet columns, or{" "}
                 <strong>Stat → Plot measurements</strong> for an attachment
                 scatter. Each run is saved as its own result.
               </p>
@@ -529,7 +632,9 @@ export function StatisticalWorkspace({
                 </ul>
               </aside>
               <div className="min-w-0 flex-1 overflow-hidden">
-                {selectedAnalysis && isScatterAnalysis(selectedAnalysis) ? (
+                {selectedAnalysis &&
+                (isScatterAnalysis(selectedAnalysis) ||
+                  isXyScatterAnalysis(selectedAnalysis)) ? (
                   <ScatterView
                     analysis={selectedAnalysis}
                     readOnly={readOnly}
@@ -543,7 +648,11 @@ export function StatisticalWorkspace({
                           selectedAnalysis.id
                         );
                         applyAnalytics(next);
-                        toast.success("Scatter recomputed from the attachments.");
+                        toast.success(
+                          isXyScatterAnalysis(selectedAnalysis)
+                            ? "Scatter recomputed from the current columns."
+                            : "Scatter recomputed from the attachments."
+                        );
                       } catch (error) {
                         toast.error(
                           error instanceof Error
@@ -766,6 +875,45 @@ export function StatisticalWorkspace({
             );
           } finally {
             setAnovaSubmitting(false);
+          }
+        }}
+      />
+
+      <XyScatterDialog
+        key={xyOpen ? "xy-open" : "xy-closed"}
+        open={xyOpen}
+        worksheet={worksheet}
+        defaultYColumnId={xyYColumnId || selectedColumnId}
+        defaultRowStart={xyRowStart}
+        defaultRowEnd={xyRowEnd}
+        submitting={xySubmitting}
+        error={xyError}
+        onOpenChange={setXyOpen}
+        onSubmit={async (values) => {
+          setXySubmitting(true);
+          setXyError(null);
+          try {
+            await flush().catch(() => undefined);
+            const created = await createXyScatter(reportId, {
+              xColumnId: values.xColumnId,
+              yColumnId: values.yColumnId,
+              title: values.title || undefined,
+              rowStart: values.rowStart,
+              rowEnd: values.rowEnd,
+            });
+            applyAnalytics(created.analytics, {
+              selectAnalysisId: created.analysisId,
+            });
+            setXyOpen(false);
+            setTab("results");
+          } catch (error) {
+            setXyError(
+              error instanceof Error
+                ? error.message
+                : "Could not plot the scatter."
+            );
+          } finally {
+            setXySubmitting(false);
           }
         }}
       />

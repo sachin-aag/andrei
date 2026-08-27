@@ -6,9 +6,11 @@ import {
   CAPABILITY_SIXPACK_NORMAL,
   MEASUREMENT_SCATTER,
   ONE_WAY_ANOVA,
+  XY_SCATTER,
   type AnovaAnalysisSummary,
   type ScatterAnalysisSummary,
   type SixpackAnalysisSummary,
+  type XyScatterAnalysisSummary,
 } from "./types";
 import { createEmptyWorksheet, setCell } from "./worksheet";
 
@@ -55,6 +57,31 @@ function scatter(): ScatterAnalysisSummary {
       uom: "ozf-in",
     },
     sourceHash: "def",
+    stale: false,
+    createdAt: "2026-08-26T00:00:00.000Z",
+  };
+}
+
+function xyScatter(): XyScatterAnalysisSummary {
+  return {
+    id: "an-xy",
+    workspaceId: "ws-1",
+    kind: XY_SCATTER,
+    title: "OD660 vs Glucose",
+    config: {
+      xColumnId: "c2",
+      xColumnName: "Lot",
+      yColumnId: "c1",
+      yColumnName: "Assay",
+      title: "OD660 vs Glucose",
+    },
+    results: {
+      specs: [],
+      n: 3,
+      skipped: 0,
+      pearsonR: 0.99,
+    },
+    sourceHash: "xy",
     stale: false,
     createdAt: "2026-08-26T00:00:00.000Z",
   };
@@ -121,9 +148,21 @@ describe("analysis stale flags", () => {
     expect(staleFactor?.stale).toBe(true);
   });
 
+  it("marks XY scatter stale when X or Y cells change", () => {
+    const persisted = applySampleAssay(createEmptyWorksheet(), 0);
+    const editedY = setCell(persisted, 0, 0, "99.00");
+    const [staleY] = withLocalStale([xyScatter()], editedY, persisted);
+    expect(staleY?.stale).toBe(true);
+
+    const editedX = setCell(persisted, 1, 0, "Z");
+    const [staleX] = withLocalStale([xyScatter()], editedX, persisted);
+    expect(staleX?.stale).toBe(true);
+  });
+
   it("summarizes sixpack, scatter, and ANOVA rows for the results list", () => {
     expect(analysisListSubtitle(sixpack())).toContain("Assay");
     expect(analysisListSubtitle(scatter())).toMatch(/M3-SYS-FN-037|10 point|ozf-in|limits/i);
     expect(analysisListSubtitle(anova())).toMatch(/Assay by Lot/i);
+    expect(analysisListSubtitle(xyScatter())).toMatch(/Assay vs Lot/i);
   });
 });

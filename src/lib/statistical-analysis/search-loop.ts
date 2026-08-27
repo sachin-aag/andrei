@@ -25,6 +25,7 @@ const WRITE_AFTER_SEARCH_TOOLS = [
   "manage_worksheet",
   "run_capability_sixpack",
   "run_one_way_anova",
+  "plot_xy_scatter",
   "plot_measurements",
 ] as const;
 

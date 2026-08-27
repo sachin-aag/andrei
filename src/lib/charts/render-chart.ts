@@ -4,7 +4,9 @@ import { CHAT_SECTION_IMAGE_MAX_DATA_URL_CHARS } from "@/lib/ai/chat/section-ima
 import { chartBrandColors, seriesFill, type ChartBrandColors } from "@/lib/charts/brand-colors";
 import {
   layoutPoints,
+  resolveXRange,
   resolveYRange,
+  xTickValues,
   yTickValues,
   type ChartPoint,
   type ChartSpec,
@@ -134,6 +136,8 @@ function drawChart(
   const points = layoutPoints(spec);
   const yRange = resolveYRange(spec);
   const yTicks = yTickValues({ ...spec, points });
+  const xRange = resolveXRange({ ...spec, points });
+  const xTicks = xTickValues({ ...spec, points });
   const seriesNames = uniqueSeries(points);
   const showLegend = spec.layout.seriesBy === "unit" && seriesNames.some((name) => name);
   const legendWidth = showLegend ? 168 : 0;
@@ -145,15 +149,10 @@ function drawChart(
   const plotWidth = plotRight - plotLeft;
   const plotHeight = plotBottom - plotTop;
 
-  const xs = points.map((point) => point.x);
-  const rawMin = Math.min(...xs);
-  const rawMax = Math.max(...xs);
-  const xMin = rawMin - 0.5;
-  const xMax = rawMax + 0.5;
-  const xSpan = Math.max(1, xMax - xMin);
+  const xSpan = Math.max(1e-9, xRange.max - xRange.min);
 
   const xToPx = (x: number) =>
-    plotLeft + ((x - xMin) / xSpan) * plotWidth;
+    plotLeft + ((x - xRange.min) / xSpan) * plotWidth;
   const yToPx = (y: number) =>
     plotBottom - ((y - yRange.min) / (yRange.max - yRange.min)) * plotHeight;
 
@@ -191,10 +190,7 @@ function drawChart(
     ctx.stroke();
   }
 
-  const xTickMin = Math.round(rawMin);
-  const xTickMax = Math.round(rawMax);
-  const xTickStep = xTickMax <= 15 ? 1 : xTickMax <= 40 ? 5 : 10;
-  for (let x = xTickMin; x <= xTickMax; x += xTickStep) {
+  for (const x of xTicks) {
     const px = xToPx(x);
     ctx.beginPath();
     ctx.moveTo(px, plotTop);
@@ -219,8 +215,8 @@ function drawChart(
   }
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
-  for (let x = xTickMin; x <= xTickMax; x += xTickStep) {
-    ctx.fillText(String(x), xToPx(x), plotBottom + 8);
+  for (const x of xTicks) {
+    ctx.fillText(formatTick(x), xToPx(x), plotBottom + 8);
   }
 
   ctx.setLineDash([6, 4]);

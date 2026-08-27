@@ -16,6 +16,8 @@ import {
   runScanAttachments,
   scanQueryTokens,
   scorePageContext,
+  scorePageForScan,
+  selectScoredPages,
   withPreviousPages,
 } from "./scan-attachments";
 
@@ -49,11 +51,44 @@ describe("scanQueryTokens / scorePageContext", () => {
     expect(log).toBeGreaterThan(feed);
     expect(log).toBeGreaterThan(0);
   });
+
+  it("scores a transcript-only table title that is missing from pageContext", () => {
+    const tokens = scanQueryTokens(
+      "Table 01 Log sheet for Fermentation data sheet for 60 L"
+    );
+    const contextOnly = scorePageForScan(
+      { pageContext: "fermentation overview", transcript: "" },
+      tokens
+    );
+    const transcriptOnly = scorePageForScan(
+      {
+        pageContext: "cover sheet",
+        transcript: "TABLE NO.- 01 - LOG SHEETS FOR 60 L FERMENTER (SEED 2)",
+      },
+      tokens
+    );
+    expect(transcriptOnly).toBeGreaterThan(contextOnly);
+    expect(transcriptOnly).toBeGreaterThan(0);
+  });
 });
 
 describe("withPreviousPages", () => {
   it("includes the prior page so split table headers are kept", () => {
     expect(withPreviousPages([31], 12)).toEqual([30, 31]);
+  });
+});
+
+describe("selectScoredPages", () => {
+  it("fills the budget from the highest-scoring pages, not document order", () => {
+    expect(
+      selectScoredPages(
+        [
+          { pageNumber: 2, score: 1 },
+          { pageNumber: 20, score: 10 },
+        ],
+        2
+      )
+    ).toEqual([19, 20]);
   });
 });
 
@@ -126,9 +161,45 @@ describe("runScanAttachments", () => {
     if (result.status !== "ok") return;
     expect(result.files).toHaveLength(1);
     expect(result.files[0]?.filename).toBe("016-Seed-2 BMR.pdf");
-    expect(result.files[0]?.pages.map((p) => p.pageNumber)).toEqual([30, 31]);
-    expect(readPage).toHaveBeenCalledTimes(2);
+    const pages = result.files[0]?.pages.map((p) => p.pageNumber) ?? [];
+    expect(pages).toContain(30);
+    expect(pages).toContain(31);
     expect(outline).toHaveBeenCalledTimes(1);
+  });
+
+  it("selects a page whose table title is only in the transcript", async () => {
+    outline.mockResolvedValue({
+      attachmentId: "seed-16",
+      filename: "016-Seed-2 BMR.pdf",
+      description: null,
+      pageCount: 40,
+      documentSummary: null,
+      pages: [
+        {
+          pageNumber: 1,
+          printedPageLabel: null,
+          pageContext: "cover sheet",
+          transcript: "title page",
+        },
+        {
+          pageNumber: 18,
+          printedPageLabel: null,
+          pageContext: "fermentation overview",
+          transcript:
+            "TABLE NO.- 01 - LOG SHEETS FOR 60 L FERMENTER (SEED 2)\nTime Age Temp RPM",
+        },
+      ],
+      spans: [{ title: "Cover", pageStart: 1, pageEnd: 1 }],
+    });
+    const result = await runScanAttachments({
+      reportId: "report-1",
+      filenameContains: "Seed-2",
+      query: "TABLE NO 01 LOG SHEETS FOR 60 L FERMENTER",
+    });
+    expect(result.status).toBe("ok");
+    if (result.status !== "ok") return;
+    const pages = result.files[0]?.pages.map((p) => p.pageNumber) ?? [];
+    expect(pages).toContain(18);
   });
 
   it("refuses an empty locator", async () => {
