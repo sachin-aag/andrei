@@ -9,7 +9,7 @@ One product engine on **`main`**. Customer differences live in `ANDREI_CUSTOMER`
 | **Pack** | `ANDREI_CUSTOMER=mj` | `ANDREI_CUSTOMER=demo` (or unset) | `ANDREI_CUSTOMER=convergent` |
 | **URL** | https://mj.andreihealth.com | https://demo.andreihealth.com | https://convergent.andreihealth.com |
 | **Neon project** | `Andrei V2` | `demo` (`bold-field-45608643`) | `andrei-convergent` (`cold-thunder-36255681`) |
-| **What users see** | MJ criteria, MJ Word template, Word import, no DV, no conclusion | Andrei branding, DV + conclusion, attachments-only create | Convergent branding, design verification only (9-section Solea DV template) |
+| **What users see** | MJ criteria, MJ Word template, Word import, no DV, no conclusion | Andrei branding, DV + conclusion + Document, attachments-only create | Convergent branding, design verification plus Document (9-section Solea DV template) |
 
 Release valve: **the same git SHA on all three Production deploys**. Pack env chooses MJ vs demo vs Convergent. There is no long-lived product branch.
 

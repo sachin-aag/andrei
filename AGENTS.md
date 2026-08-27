@@ -30,7 +30,7 @@ Pharmaceutical quality documents for M.J. Biopharm and Convergent Dental — **f
 | `design_verification` | design verification | demo, Convergent | demo: cover page + 10 sections; Convergent: 9 Solea DV sections |
 | `mechanical_design_verification` | mechanical DV | Convergent | 14-section Solea mechanical DV |
 | `quality_risk_assessment` | quality risk assessment | MJ | SOP/DP/QA/010 F02 + F04 (`qra_*` keys) |
-| `generic_document` | document | demo | one continuous `body` section (no criteria) |
+| `generic_document` | document | demo, Convergent | one continuous `body` section (no criteria) |
 
 Chat, eval, suggestions, and editors **must** go through
 `src/lib/document-types/`. Do not hardcode DMAIC as if it were the only type.
@@ -98,9 +98,9 @@ Neon HTTP cannot `db.transaction()` (ingest + folder moves).
 
 ### Customer pack
 
-Local default is **demo** (Andrei branding, design verification, conclusion).
-Set both to `mj` to exercise the MJ overlay, or both to `convergent` for
-Convergent Dental (DV only):
+Local default is **demo** (Andrei branding, design verification, conclusion,
+and a free-form Document). Set both to `mj` to exercise the MJ overlay, or
+both to `convergent` for Convergent Dental (DV plus Document):
 
 ```bash
 ANDREI_CUSTOMER=mj

@@ -125,7 +125,7 @@ describe("CreateReportButton", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("offers software and mechanical DV on Convergent, not investigation", async () => {
+  it("offers software DV, mechanical DV, and Document on Convergent, not investigation", async () => {
     vi.mocked(getCustomerPack).mockReturnValue(CONVERGENT_PACK);
     const user = userEvent.setup();
     render(<CreateReportButton managers={managers} />);
@@ -140,8 +140,15 @@ describe("CreateReportButton", () => {
     expect(
       screen.getByRole("option", { name: /mechanical dv report/i })
     ).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: /^document$/i })).toBeInTheDocument();
     expect(
       screen.queryByRole("option", { name: /investigation/i })
     ).not.toBeInTheDocument();
+
+    await user.selectOptions(typeSelect, "generic_document");
+    expect(
+      screen.getByRole("heading", { name: /create document/i })
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText(/existing document/i)).toBeInTheDocument();
   });
 });

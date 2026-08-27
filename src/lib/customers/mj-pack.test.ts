@@ -94,6 +94,7 @@ describe("MJ customer pack content", () => {
     expect(isDocumentTypeEnabled("design_verification", MJ_PACK)).toBe(false);
     expect(isDocumentTypeEnabled("investigation_report", MJ_PACK)).toBe(true);
     expect(isDocumentTypeEnabled("quality_risk_assessment", MJ_PACK)).toBe(true);
+    expect(isDocumentTypeEnabled("generic_document", MJ_PACK)).toBe(false);
     expect(
       engineerReportsSubtitle([
         { label: "Investigation Report" },

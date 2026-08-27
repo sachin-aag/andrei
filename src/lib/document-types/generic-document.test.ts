@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEMO_PACK, MJ_PACK } from "@/lib/customers/packs";
+import { CONVERGENT_PACK, DEMO_PACK, MJ_PACK } from "@/lib/customers/packs";
 import {
   citationsAtEndOfSectionFor,
   editorProfileFor,
@@ -23,8 +23,10 @@ describe("generic document type", () => {
     });
   });
 
-  it("allows Word import on demo even though pack wordImportEnabled is off", () => {
+  it("allows Word import on demo and Convergent even though pack wordImportEnabled is off", () => {
     expect(isWordImportAvailable("generic_document", DEMO_PACK)).toBe(true);
+    expect(isWordImportAvailable("generic_document", CONVERGENT_PACK)).toBe(true);
+    expect(isWordImportAvailable("generic_document", MJ_PACK)).toBe(false);
     expect(isWordImportAvailable("investigation_report", DEMO_PACK)).toBe(false);
     expect(isWordImportAvailable("investigation_report", MJ_PACK)).toBe(true);
     expect(isWordImportAvailable("design_verification", DEMO_PACK)).toBe(false);
