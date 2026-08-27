@@ -748,7 +748,12 @@ export function ReportWorkspace({
                 "@[800px]:grid-cols-[minmax(0,1fr)_minmax(200px,360px)]"
             )}
           >
-            <div className="space-y-10 min-w-0">
+            <div
+              className={cn(
+                "space-y-10 min-w-0",
+                documentType === "quality_risk_assessment" && "qra-document"
+              )}
+            >
               <ReportHeader />
               <div
                 hidden={!!activeAttachmentId}
