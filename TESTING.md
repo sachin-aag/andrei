@@ -5,7 +5,7 @@ This project uses three layers of quality checks:
 | Layer | Tool | Location | Count (approx.) |
 |-------|------|----------|-----------------|
 | **Unit / integration** | Vitest | `src/**/*.test.ts(x)` | ~76 files, ~345 tests |
-| **End-to-end** | Playwright | `e2e/**/*.spec.ts` | 9 spec files, ~40 cases × 3 browsers |
+| **End-to-end** | Playwright | `e2e/**/*.spec.ts` | 10 spec files, ~42 cases × 3 browsers |
 | **Manual** | Checklist | [docs/manual-test-cases.md](docs/manual-test-cases.md) | 6 release-candidate cases |
 
 `pnpm precommit` runs **lint + typecheck + Vitest only** (no E2E). CI runs Vitest and Playwright in separate jobs.
@@ -219,6 +219,16 @@ Specs run against Chromium, Firefox, and WebKit unless you pass `--project=chrom
 
 Both AI-suggestion cases seed an open suggestion through `POST /api/test/seed-ai-suggestion`
 (test-only, gated like `/api/test/login`) so no AI credential is needed.
+
+</details>
+
+<details>
+<summary><strong>suggestion-accept.spec.ts</strong> — applying a suggestion does not blank the field</summary>
+
+| Test | What it verifies |
+|------|------------------|
+| does not blank Define while the gutter Apply is in flight | Seeded insert stays in the live editor for every sampled frame until it becomes ordinary text |
+| does not blank Define while inline Accept is in flight | Same for the inline Accept control on the highlighted span |
 
 </details>
 
