@@ -252,6 +252,8 @@ export const workspaceUsers = pgTable(
     }),
     /** Non-null means the account is deactivated and cannot sign in. */
     deactivatedAt: timestamp("deactivated_at", { withTimezone: true }),
+    /** Updated on each successful sign-in (credentials or magic link). */
+    lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

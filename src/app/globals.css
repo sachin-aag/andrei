@@ -827,7 +827,7 @@ html[data-customer="convergent"] {
 
 /* ProseMirror / Tiptap — table editing.
    Wide matrices (FMEA, DV) must never shrink below a readable floor.
-   The editor chrome scrolls horizontally; identity columns stick. */
+   The editor chrome scrolls horizontally; identity columns stick except on QRA. */
 .ProseMirror:has(table) {
   max-width: none;
   width: max-content;
@@ -874,13 +874,22 @@ html[data-customer="convergent"] {
   border-top-width: 1px;
 }
 
-/* Freeze Sr. No. + the next identity column while the rest of the grid pans. */
+/* Identity column floors. QRA tables scroll as one unit (no frozen columns). */
 .ProseMirror th:first-child,
 .ProseMirror td:first-child {
   min-width: 4.5rem;
   width: 4.5rem;
   max-width: 4.5rem;
   border-left-width: 1px;
+}
+
+.ProseMirror th:nth-child(2),
+.ProseMirror td:nth-child(2) {
+  min-width: 10rem;
+}
+
+.ProseMirror th:first-child,
+.ProseMirror td:first-child {
   position: sticky;
   left: 0;
   z-index: 3;
@@ -888,7 +897,6 @@ html[data-customer="convergent"] {
 
 .ProseMirror th:nth-child(2),
 .ProseMirror td:nth-child(2) {
-  min-width: 10rem;
   position: sticky;
   left: 4.5rem;
   z-index: 3;
@@ -898,6 +906,16 @@ html[data-customer="convergent"] {
 .ProseMirror th:first-child,
 .ProseMirror th:nth-child(2) {
   z-index: 4;
+}
+
+.qra-document .ProseMirror th:first-child,
+.qra-document .ProseMirror td:first-child,
+.qra-document .ProseMirror th:nth-child(2),
+.qra-document .ProseMirror td:nth-child(2) {
+  position: static;
+  left: auto;
+  z-index: auto;
+  box-shadow: none;
 }
 
 /* FMEA F02/F04 — narrower score cells; column groups in fmea-stages.ts. */

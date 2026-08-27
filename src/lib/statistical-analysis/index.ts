@@ -37,6 +37,8 @@ export {
   clearColumn,
   insertRow,
   deleteRow,
+  deleteRows,
+  clearRows,
   renameColumn,
   replaceColumnValues,
   addDataSheet,

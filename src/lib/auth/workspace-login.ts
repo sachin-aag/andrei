@@ -95,6 +95,17 @@ export async function clearFailedLoginAttempts(userId: string): Promise<void> {
   }
 }
 
+export async function recordLastLogin(userId: string): Promise<void> {
+  try {
+    await db
+      .update(workspaceUsers)
+      .set({ lastLoginAt: new Date() })
+      .where(eq(workspaceUsers.id, userId));
+  } catch (error) {
+    console.error("last_login_at update failed", error);
+  }
+}
+
 export async function isWorkspaceUserDeactivated(
   email: string
 ): Promise<boolean> {

@@ -3,6 +3,8 @@ export type GridSelection = {
   row: number;
   anchorCol: number;
   anchorRow: number;
+  /** Whole-row highlight; focus stays on `col` for Analyze. */
+  axis?: "row";
 };
 
 export type GridSelectionBounds = {
@@ -16,12 +18,43 @@ export function collapseSelection(col: number, row: number): GridSelection {
   return { col, row, anchorCol: col, anchorRow: row };
 }
 
-export function selectionBounds(selection: GridSelection): GridSelectionBounds {
+export function isRowSelection(selection: GridSelection): boolean {
+  return selection.axis === "row";
+}
+
+export function selectRows(
+  row: number,
+  anchorRow: number,
+  focusCol: number
+): GridSelection {
+  return {
+    col: focusCol,
+    row,
+    anchorCol: focusCol,
+    anchorRow,
+    axis: "row",
+  };
+}
+
+export function selectionBounds(
+  selection: GridSelection,
+  maxCol = 0
+): GridSelectionBounds {
+  const rowStart = Math.min(selection.row, selection.anchorRow);
+  const rowEnd = Math.max(selection.row, selection.anchorRow);
+  if (selection.axis === "row") {
+    return {
+      colStart: 0,
+      colEnd: Math.max(0, maxCol),
+      rowStart,
+      rowEnd,
+    };
+  }
   return {
     colStart: Math.min(selection.col, selection.anchorCol),
     colEnd: Math.max(selection.col, selection.anchorCol),
-    rowStart: Math.min(selection.row, selection.anchorRow),
-    rowEnd: Math.max(selection.row, selection.anchorRow),
+    rowStart,
+    rowEnd,
   };
 }
 
@@ -31,12 +64,23 @@ export function isCellInSelection(
   row: number
 ): boolean {
   const bounds = selectionBounds(selection);
+  if (selection.axis === "row") {
+    return row >= bounds.rowStart && row <= bounds.rowEnd;
+  }
   return (
     col >= bounds.colStart &&
     col <= bounds.colEnd &&
     row >= bounds.rowStart &&
     row <= bounds.rowEnd
   );
+}
+
+export function rowIsInSelection(
+  selection: GridSelection,
+  row: number
+): boolean {
+  const bounds = selectionBounds(selection);
+  return row >= bounds.rowStart && row <= bounds.rowEnd;
 }
 
 export function clampSelection(
@@ -53,6 +97,7 @@ export function clampSelection(
     row: clampRow(selection.row),
     anchorCol: clampCol(selection.anchorCol),
     anchorRow: clampRow(selection.anchorRow),
+    ...(selection.axis === "row" ? { axis: "row" as const } : {}),
   };
 }
 
@@ -64,12 +109,14 @@ export function moveSelection(
   maxCol: number,
   maxRow: number
 ): GridSelection {
+  const keepRowAxis = extend && selection.axis === "row" && dCol === 0;
   const next = clampSelection(
     {
       col: selection.col + dCol,
       row: selection.row + dRow,
       anchorCol: extend ? selection.anchorCol : selection.col + dCol,
       anchorRow: extend ? selection.anchorRow : selection.row + dRow,
+      ...(keepRowAxis ? { axis: "row" as const } : {}),
     },
     maxCol,
     maxRow

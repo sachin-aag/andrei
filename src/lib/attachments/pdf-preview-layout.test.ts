@@ -3,6 +3,8 @@ import {
   contentUrlFromPreviewSrc,
   layoutPreviewTextSpan,
   layoutPreviewTextSpans,
+  pdfPreviewRenderScale,
+  PDF_PREVIEW_HORIZONTAL_PADDING,
   PDF_PREVIEW_SCALE,
 } from "@/lib/attachments/pdf-preview-layout";
 
@@ -62,5 +64,39 @@ describe("layoutPreviewTextSpan", () => {
         1
       ).map((span) => span.str)
     ).toEqual(["kept"]);
+  });
+});
+
+describe("pdfPreviewRenderScale", () => {
+  it("fits the page to the preview viewport at 100% zoom", () => {
+    const pageWidthAtBaseScale = 200 * PDF_PREVIEW_SCALE;
+    const viewportWidth = 400;
+    const scale = pdfPreviewRenderScale({
+      viewportWidth,
+      pageWidthAtBaseScale,
+      zoomLevel: 1,
+    });
+    const renderedWidth = 200 * scale;
+    expect(renderedWidth).toBe(viewportWidth - PDF_PREVIEW_HORIZONTAL_PADDING);
+  });
+
+  it("scales beyond fit-to-width when zooming in", () => {
+    const pageWidthAtBaseScale = 200 * PDF_PREVIEW_SCALE;
+    const viewportWidth = 400;
+    const at100 = pdfPreviewRenderScale({
+      viewportWidth,
+      pageWidthAtBaseScale,
+      zoomLevel: 1,
+    });
+    const at125 = pdfPreviewRenderScale({
+      viewportWidth,
+      pageWidthAtBaseScale,
+      zoomLevel: 1.25,
+    });
+    expect(at125).toBeGreaterThan(at100);
+    expect(200 * at125).toBeCloseTo(
+      (viewportWidth - PDF_PREVIEW_HORIZONTAL_PADDING) * 1.25,
+      5
+    );
   });
 });

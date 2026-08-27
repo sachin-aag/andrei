@@ -7,11 +7,17 @@ import {
   clampSelection,
   collapseSelection,
   isCellInSelection,
+  isRowSelection,
   moveSelection,
+  rowIsInSelection,
+  selectRows,
   selectionBounds,
   type GridSelection,
 } from "@/lib/statistical-analysis/grid-selection";
 import {
+  clearRows,
+  deleteRows,
+  insertRow,
   pasteTsv,
   renameColumn,
   rowCount,
@@ -34,6 +40,12 @@ export type ColumnMenuAction =
   | "specs"
   | "analyze";
 
+export type RowMenuAction =
+  | "insert-above"
+  | "insert-below"
+  | "clear"
+  | "delete";
+
 export type { GridSelection };
 
 type WorksheetGridProps = {
@@ -52,7 +64,8 @@ function visibleRowCount(data: WorksheetData): number {
 }
 
 function tsvFromSelection(worksheet: WorksheetData, selection: GridSelection): string {
-  const bounds = selectionBounds(selection);
+  const maxCol = Math.max(0, worksheet.columns.length - 1);
+  const bounds = selectionBounds(selection, maxCol);
   const lines: string[] = [];
   for (let row = bounds.rowStart; row <= bounds.rowEnd; row++) {
     const cells: string[] = [];
@@ -69,7 +82,8 @@ function clearSelectionCells(
   selection: GridSelection
 ): WorksheetData {
   let next = worksheet;
-  const bounds = selectionBounds(selection);
+  const maxCol = Math.max(0, worksheet.columns.length - 1);
+  const bounds = selectionBounds(selection, maxCol);
   for (let row = bounds.rowStart; row <= bounds.rowEnd; row++) {
     for (let col = bounds.colStart; col <= bounds.colEnd; col++) {
       next = setCell(next, col, row, "");
@@ -217,6 +231,87 @@ function WorksheetColumnHeader({
   );
 }
 
+function WorksheetRowHeader({
+  rowIndex,
+  selected,
+  readOnly,
+  onSelect,
+  onMenuOpen,
+  onMenuAction,
+}: {
+  rowIndex: number;
+  selected: boolean;
+  readOnly: boolean;
+  onSelect: (extend: boolean) => void;
+  onMenuOpen: () => void;
+  onMenuAction: (action: RowMenuAction) => void;
+}) {
+  const headerClass = cn(
+    "sticky left-0 z-10 w-10 min-w-10 cursor-pointer select-none border border-[var(--border)] bg-[var(--secondary)] p-0 text-center font-medium tabular-nums text-[var(--muted-foreground)]",
+    selected && "bg-[var(--brand-100)]"
+  );
+
+  const headerBody = (
+    <button
+      type="button"
+      data-testid={`row-header-${rowIndex}`}
+      className="flex h-7 w-full items-center justify-center"
+      onClick={(event) => {
+        onSelect(event.shiftKey);
+      }}
+    >
+      {rowIndex + 1}
+    </button>
+  );
+
+  if (readOnly) {
+    return (
+      <th scope="row" aria-selected={selected} className={headerClass}>
+        {headerBody}
+      </th>
+    );
+  }
+
+  return (
+    <th scope="row" aria-selected={selected} className={headerClass}>
+      <ContextMenu
+        onOpenChange={(open) => {
+          if (open) onMenuOpen();
+        }}
+      >
+        <ContextMenuTrigger asChild>{headerBody}</ContextMenuTrigger>
+        <ContextMenuContent data-testid={`row-menu-${rowIndex}`}>
+          <ContextMenuItem
+            data-testid={`row-insert-above-${rowIndex}`}
+            onSelect={() => onMenuAction("insert-above")}
+          >
+            Insert row above
+          </ContextMenuItem>
+          <ContextMenuItem
+            data-testid={`row-insert-below-${rowIndex}`}
+            onSelect={() => onMenuAction("insert-below")}
+          >
+            Insert row below
+          </ContextMenuItem>
+          <ContextMenuItem
+            data-testid={`row-clear-${rowIndex}`}
+            onSelect={() => onMenuAction("clear")}
+          >
+            Clear
+          </ContextMenuItem>
+          <ContextMenuItem
+            data-testid={`row-delete-${rowIndex}`}
+            variant="destructive"
+            onSelect={() => onMenuAction("delete")}
+          >
+            Delete
+          </ContextMenuItem>
+        </ContextMenuContent>
+      </ContextMenu>
+    </th>
+  );
+}
+
 export function WorksheetGrid({
   worksheet,
   selection,
@@ -228,6 +323,7 @@ export function WorksheetGrid({
   const gridRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const headerInputRef = useRef<HTMLInputElement>(null);
+  const rowMenuRangeRef = useRef({ start: 0, end: 0 });
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
   const [editingHeader, setEditingHeader] = useState<number | null>(null);
@@ -235,15 +331,67 @@ export function WorksheetGrid({
 
   const columns = worksheet.columns;
   const rows = visibleRowCount(worksheet);
-  const bounds = selectionBounds(selection);
   const maxCol = Math.max(0, columns.length - 1);
   const maxRow = Math.max(0, rows - 1);
+  const bounds = selectionBounds(selection, maxCol);
 
   const cellValue = (col: number, row: number): string =>
     columns[col]?.values[row] ?? "";
 
   const select = (next: GridSelection) => {
     onSelectionChange(clampSelection(next, maxCol, maxRow));
+  };
+
+  const rowMenuRange = (rowIndex: number) => {
+    if (isRowSelection(selection) && rowIsInSelection(selection, rowIndex)) {
+      return { start: bounds.rowStart, end: bounds.rowEnd };
+    }
+    return { start: rowIndex, end: rowIndex };
+  };
+
+  const applyRowSelection = (rowIndex: number, extend: boolean) => {
+    select(
+      selectRows(
+        rowIndex,
+        extend ? selection.anchorRow : rowIndex,
+        selection.col
+      )
+    );
+  };
+
+  const selectEntireRow = (rowIndex: number, extend: boolean) => {
+    applyRowSelection(rowIndex, extend);
+    gridRef.current?.focus();
+  };
+
+  const handleRowMenuAction = (action: RowMenuAction) => {
+    const range = rowMenuRangeRef.current;
+    switch (action) {
+      case "insert-above": {
+        onChange(insertRow(worksheet, range.start));
+        select(selectRows(range.start, range.start, selection.col));
+        return;
+      }
+      case "insert-below": {
+        const at = range.end + 1;
+        onChange(insertRow(worksheet, at));
+        select(selectRows(at, at, selection.col));
+        return;
+      }
+      case "clear": {
+        onChange(clearRows(worksheet, range.start, range.end));
+        return;
+      }
+      case "delete": {
+        onChange(deleteRows(worksheet, range.start, range.end));
+        select(selectRows(range.start, range.start, selection.col));
+        return;
+      }
+      default: {
+        const exhaustive: never = action;
+        return exhaustive;
+      }
+    }
   };
 
   const beginEdit = (initial: string) => {
@@ -389,6 +537,7 @@ export function WorksheetGrid({
       data-col-end={bounds.colEnd}
       data-row-start={bounds.rowStart}
       data-row-end={bounds.rowEnd}
+      data-selection-axis={selection.axis ?? "cell"}
       aria-label="Worksheet"
       aria-multiselectable="true"
       aria-rowcount={rows + 1}
@@ -410,7 +559,9 @@ export function WorksheetGrid({
                 key={column.id}
                 column={column}
                 selected={
-                  colIndex >= bounds.colStart && colIndex <= bounds.colEnd
+                  !isRowSelection(selection) &&
+                  colIndex >= bounds.colStart &&
+                  colIndex <= bounds.colEnd
                 }
                 editing={editingHeader === colIndex}
                 headerDraft={headerDraft}
@@ -446,30 +597,23 @@ export function WorksheetGrid({
               className="stat-grid-row"
               style={{ contentVisibility: "auto", containIntrinsicSize: "0 28px" }}
             >
-              <th
-                scope="row"
-                data-testid={`row-header-${rowIndex}`}
-                className={cn(
-                  "sticky left-0 z-10 w-10 min-w-10 cursor-pointer border border-[var(--border)] bg-[var(--secondary)] text-center font-medium tabular-nums text-[var(--muted-foreground)]",
-                  rowIndex >= bounds.rowStart &&
-                    rowIndex <= bounds.rowEnd &&
-                    "bg-[var(--brand-100)]"
-                )}
-                onClick={(event) => {
-                  if (event.shiftKey) {
-                    select({
-                      ...selection,
-                      row: rowIndex,
-                    });
-                    gridRef.current?.focus();
-                    return;
+              <WorksheetRowHeader
+                rowIndex={rowIndex}
+                selected={rowIsInSelection(selection, rowIndex)}
+                readOnly={readOnly}
+                onSelect={(extend) => selectEntireRow(rowIndex, extend)}
+                onMenuOpen={() => {
+                  const range = rowMenuRange(rowIndex);
+                  rowMenuRangeRef.current = range;
+                  if (
+                    !isRowSelection(selection) ||
+                    !rowIsInSelection(selection, rowIndex)
+                  ) {
+                    applyRowSelection(rowIndex, false);
                   }
-                  select(collapseSelection(selection.col, rowIndex));
-                  gridRef.current?.focus();
                 }}
-              >
-                {rowIndex + 1}
-              </th>
+                onMenuAction={handleRowMenuAction}
+              />
               {columns.map((column, colIndex) => {
                 const inSelection = isCellInSelection(
                   selection,
@@ -495,9 +639,10 @@ export function WorksheetGrid({
                       if (editing && !focused) commitEdit();
                       if (event.shiftKey) {
                         select({
-                          ...selection,
                           col: colIndex,
                           row: rowIndex,
+                          anchorCol: selection.anchorCol,
+                          anchorRow: selection.anchorRow,
                         });
                       } else {
                         select(collapseSelection(colIndex, rowIndex));

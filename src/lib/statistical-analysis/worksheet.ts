@@ -635,12 +635,44 @@ export function insertRow(data: WorksheetData, atIndex: number): WorksheetData {
 }
 
 export function deleteRow(data: WorksheetData, rowIndex: number): WorksheetData {
-  if (rowIndex < 0) return data;
+  return deleteRows(data, rowIndex, rowIndex);
+}
+
+export function deleteRows(
+  data: WorksheetData,
+  rowStart: number,
+  rowEnd: number
+): WorksheetData {
+  const start = Math.max(0, Math.min(rowStart, rowEnd));
+  const end = Math.max(rowStart, rowEnd);
+  if (end < 0) return data;
   return withWorkbook(
     data,
     data.columns.map((column) => {
-      if (rowIndex >= column.values.length) return column;
-      const values = column.values.filter((_, index) => index !== rowIndex);
+      if (start >= column.values.length) return column;
+      const values = column.values.filter(
+        (_, index) => index < start || index > end
+      );
+      return { ...column, values: trimTrailingEmpty(values) };
+    })
+  );
+}
+
+export function clearRows(
+  data: WorksheetData,
+  rowStart: number,
+  rowEnd: number
+): WorksheetData {
+  const start = Math.max(0, Math.min(rowStart, rowEnd));
+  const end = Math.max(rowStart, rowEnd);
+  if (end < 0) return data;
+  return withWorkbook(
+    data,
+    data.columns.map((column) => {
+      if (start >= column.values.length) return column;
+      const values = [...column.values];
+      const last = Math.min(end, values.length - 1);
+      for (let index = start; index <= last; index++) values[index] = "";
       return { ...column, values: trimTrailingEmpty(values) };
     })
   );
