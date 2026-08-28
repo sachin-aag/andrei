@@ -1,5 +1,5 @@
 import type { UIMessage } from "ai";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   assistantPartsHaveVisibleContent,
   assistantPartsHaveVisibleText,
@@ -16,8 +16,10 @@ import {
   CHAT_ASSISTANT_STEP_BUDGET_MESSAGE,
   CHAT_CLIENT_GIVE_UP_MS,
   CHAT_CLIENT_STALE_MS,
+  CHAT_CONSUME_STREAM_BUDGET_MS,
   CHAT_FUNCTION_MAX_DURATION_SEC,
   CHAT_SERVER_ABORT_MS,
+  consumeAssistantStreamWithBudget,
 } from "./assistant-turn";
 import { CHAT_TURN_STALE_MS } from "./background-turn-status";
 
@@ -95,6 +97,10 @@ describe("deadline constants", () => {
   it("aborts the stream before Vercel can kill the isolate", () => {
     expect(CHAT_FUNCTION_MAX_DURATION_SEC).toBe(300);
     expect(CHAT_SERVER_ABORT_MS).toBeLessThan(CHAT_FUNCTION_MAX_DURATION_SEC * 1000);
+    expect(CHAT_CONSUME_STREAM_BUDGET_MS).toBeGreaterThan(CHAT_SERVER_ABORT_MS);
+    expect(CHAT_CONSUME_STREAM_BUDGET_MS).toBeLessThan(
+      CHAT_FUNCTION_MAX_DURATION_SEC * 1000
+    );
     expect(CHAT_CLIENT_GIVE_UP_MS).toBeGreaterThan(CHAT_SERVER_ABORT_MS);
     expect(CHAT_CLIENT_GIVE_UP_MS).toBeLessThan(
       CHAT_FUNCTION_MAX_DURATION_SEC * 1000
@@ -103,6 +109,28 @@ describe("deadline constants", () => {
     expect(CHAT_TURN_STALE_MS).toBeGreaterThan(
       CHAT_FUNCTION_MAX_DURATION_SEC * 1000
     );
+  });
+});
+
+describe("consumeAssistantStreamWithBudget", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("resolves completed when consume finishes", async () => {
+    await expect(
+      consumeAssistantStreamWithBudget(async () => undefined, 50)
+    ).resolves.toBe("completed");
+  });
+
+  it("times out a hung consume so after() can still clear the turn", async () => {
+    vi.useFakeTimers();
+    const hung = consumeAssistantStreamWithBudget(
+      () => new Promise(() => {}),
+      20
+    );
+    await vi.advanceTimersByTimeAsync(20);
+    await expect(hung).resolves.toBe("timed_out");
   });
 });
 

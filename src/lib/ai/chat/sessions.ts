@@ -2,7 +2,12 @@ import { and, asc, desc, eq } from "drizzle-orm";
 import type { UIMessage } from "ai";
 import { db } from "@/db";
 import { chatMessages, chatSessions } from "@/db/schema";
-import type { ChatAssistantTurnStatus } from "@/lib/ai/chat/background-turn-status";
+import {
+  isAssistantTurnStale,
+  isChatAssistantTurnActive,
+  type ChatAssistantTurnStatus,
+} from "@/lib/ai/chat/background-turn-status";
+import { reclaimStaleAssistantTurn } from "@/lib/ai/chat/background-turn";
 import { deriveSessionTitle, UNTITLED_SESSION } from "@/lib/ai/chat/session-title";
 
 export { deriveSessionTitle };
@@ -128,8 +133,15 @@ export async function loadSessionView(
   sessionId: string,
   surface: ChatSurface = REPORT_CHAT_SURFACE
 ): Promise<ChatSessionView | null> {
-  const session = await findChatSession(reportId, sessionId, surface);
+  let session = await findChatSession(reportId, sessionId, surface);
   if (!session) return null;
+  if (
+    isChatAssistantTurnActive(session.assistantTurnStatus) &&
+    isAssistantTurnStale(session.assistantTurnStartedAt)
+  ) {
+    await reclaimStaleAssistantTurn(sessionId);
+    session = (await findChatSession(reportId, sessionId, surface)) ?? session;
+  }
   const messages = await loadSessionMessages(sessionId);
   return {
     messages,

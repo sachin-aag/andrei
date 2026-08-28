@@ -5,7 +5,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PdfPagePreview } from "@/components/report/pdf-page-preview";
 import { pdfjsPreviewLoadingOptions } from "@/lib/attachments/pdfjs-browser";
 import {
-  PDF_PREVIEW_HORIZONTAL_PADDING,
   PDF_PREVIEW_SCALE,
   pdfPreviewRenderScale,
 } from "@/lib/attachments/pdf-preview-layout";

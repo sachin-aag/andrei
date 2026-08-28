@@ -124,11 +124,11 @@ export async function setReportChrome(
   page: Page,
   chrome: "document" | "agent"
 ): Promise<void> {
-  await page.getByTestId(`report-chrome-${chrome}`).click();
-  await expect(page.getByTestId(`report-chrome-${chrome}`)).toHaveAttribute(
-    "aria-selected",
-    "true"
-  );
+  const switchBtn = page.getByTestId("report-chrome-switch");
+  if ((await switchBtn.getAttribute("data-current-chrome")) !== chrome) {
+    await switchBtn.click();
+  }
+  await expect(switchBtn).toHaveAttribute("data-current-chrome", chrome);
 }
 
 /** Collapse the assistant so the review margin (suggestions/comments) can show. */

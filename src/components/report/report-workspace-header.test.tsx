@@ -54,21 +54,25 @@ const baseProps = {
 };
 
 describe("ReportWorkspaceHeader chrome", () => {
-  it("shows Document and Agent, not Analytics", () => {
-    render(<ReportWorkspaceHeader {...baseProps} />);
-    expect(screen.getByTestId("report-chrome-document")).toHaveAttribute(
-      "aria-selected",
-      "true"
+  it("offers Switch to Agent in Document chrome, not Analytics", async () => {
+    const user = userEvent.setup();
+    const onChromeChange = vi.fn();
+    render(
+      <ReportWorkspaceHeader {...baseProps} onChromeChange={onChromeChange} />
     );
-    expect(screen.getByTestId("report-chrome-agent")).toHaveAttribute(
-      "aria-selected",
-      "false"
-    );
+    const switchBtn = screen.getByRole("button", { name: "Switch to Agent" });
+    expect(switchBtn).toHaveAttribute("data-current-chrome", "document");
+    expect(switchBtn).toHaveAttribute("data-testid", "report-chrome-switch");
+    expect(
+      screen.queryByRole("button", { name: "Switch to Document" })
+    ).not.toBeInTheDocument();
     expect(screen.queryByTestId("report-surface-analytics")).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Analytics" })).not.toBeInTheDocument();
+    await user.click(switchBtn);
+    expect(onChromeChange).toHaveBeenCalledWith("agent");
   });
 
-  it("marks Agent selected without selecting a ghost Analytics tab", async () => {
+  it("offers Switch to Document in Agent chrome", async () => {
     const user = userEvent.setup();
     const onChromeChange = vi.fn();
     render(
@@ -78,15 +82,9 @@ describe("ReportWorkspaceHeader chrome", () => {
         onChromeChange={onChromeChange}
       />
     );
-    expect(screen.getByTestId("report-chrome-agent")).toHaveAttribute(
-      "aria-selected",
-      "true"
-    );
-    expect(screen.getByTestId("report-chrome-document")).toHaveAttribute(
-      "aria-selected",
-      "false"
-    );
-    await user.click(screen.getByTestId("report-chrome-document"));
+    const switchBtn = screen.getByRole("button", { name: "Switch to Document" });
+    expect(switchBtn).toHaveAttribute("data-current-chrome", "agent");
+    await user.click(switchBtn);
     expect(onChromeChange).toHaveBeenCalledWith("document");
   });
 

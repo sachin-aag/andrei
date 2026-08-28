@@ -48,9 +48,11 @@ import {
 } from "@/lib/observability/langfuse";
 import { listReadyDocumentsForReport } from "@/lib/attachments/retrieval";
 import { sanitizeChatMessagesForModel } from "@/lib/ai/chat/image-parts";
+import { repairChatToolCall } from "@/lib/ai/chat/repair-tool-call";
 import {
   CHAT_ASSISTANT_ERROR_MESSAGE,
   CHAT_SERVER_ABORT_MS,
+  consumeAssistantStreamWithBudget,
   formatChatLlmError,
   isFailedChatFinishReason,
   partsForPersistedAssistantTurn,
@@ -183,6 +185,7 @@ export async function POST(
       system,
       messages: await convertToModelMessages(messages),
       tools,
+      experimental_repairToolCall: repairChatToolCall,
       stopWhen: async ({ steps }) => {
         if (await isAssistantTurnCancelRequested(sessionId)) return true;
         if (steps.length >= ANALYTICS_CHAT_STEP_BUDGET) {
@@ -236,10 +239,19 @@ export async function POST(
 
   after(async () => {
     try {
-      await result.consumeStream();
+      const outcome = await consumeAssistantStreamWithBudget(() =>
+        result.consumeStream()
+      );
+      if (outcome === "timed_out") {
+        console.error("analytics-chat: consumeStream exceeded budget", {
+          reportId,
+          sessionId,
+        });
+      }
       await flushLangfuseTraces();
     } finally {
       stopCancelPoll();
+      await clearAssistantTurn(sessionId);
     }
   });
 

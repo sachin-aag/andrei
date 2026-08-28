@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import {
+  ArrowLeftRight,
   CheckCircle2,
   ChevronLeft,
   Loader2,
@@ -21,12 +22,24 @@ import { ReportExportButton } from "./report-export-button";
 import { RunAllEvaluationButton } from "./section-status-pill";
 import { StatusBadge } from "./status-badge";
 import type { WorkspaceChrome, WorkProductView } from "./workspace-chrome";
-import { WorkspaceSegmentedTabs } from "./workspace-segmented-tabs";
 
-const CHROME_TABS = [
-  { value: "document" as const, label: "Document", testId: "report-chrome-document" },
-  { value: "agent" as const, label: "Agent", testId: "report-chrome-agent" },
-];
+function oppositeWorkspaceChrome(chrome: WorkspaceChrome): WorkspaceChrome {
+  switch (chrome) {
+    case "document":
+      return "agent";
+    case "agent":
+      return "document";
+    default: {
+      const _exhaustive: never = chrome;
+      return _exhaustive;
+    }
+  }
+}
+
+const CHROME_SWITCH_NOUN: Record<WorkspaceChrome, string> = {
+  document: "Document",
+  agent: "Agent",
+};
 
 type ReportWorkspaceHeaderProps = {
   report: ReportRecord;
@@ -82,6 +95,8 @@ export function ReportWorkspaceHeader({
   const isViewMode = mode === "view";
   const showRunAll =
     !isViewMode && chrome === "document" && workProductView === "report";
+  const nextChrome = oppositeWorkspaceChrome(chrome);
+  const switchLabel = `Switch to ${CHROME_SWITCH_NOUN[nextChrome]}`;
 
   return (
     <header className="h-16 border-b border-[var(--border)] bg-[var(--card)] px-6 flex items-center gap-4 shrink-0">
@@ -123,12 +138,18 @@ export function ReportWorkspaceHeader({
           {managerNames.length > 0 ? ` → ${managerNames.join(", ")}` : ""}
         </span>
       </div>
-      <WorkspaceSegmentedTabs
-        label="Workspace chrome"
-        value={chrome}
-        tabs={CHROME_TABS}
-        onChange={onChromeChange}
-      />
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="shrink-0"
+        data-testid="report-chrome-switch"
+        data-current-chrome={chrome}
+        onClick={() => onChromeChange(nextChrome)}
+      >
+        <ArrowLeftRight className="size-3.5" aria-hidden="true" />
+        {switchLabel}
+      </Button>
 
       <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
         <ReportExportButton

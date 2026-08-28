@@ -18,7 +18,6 @@ import {
 import {
   CHAT_TURN_POLL_MS,
   backgroundTurnFromSessionView,
-  isChatAssistantTurnActive,
 } from "@/lib/ai/chat/background-turn-status";
 import {
   isChatSessionBusy,
@@ -240,7 +239,8 @@ export function ChatSessionHost({
         if (!res.ok || cancelled) return;
         const view = (await res.json()) as ChatSessionView;
         if (cancelled) return;
-        if (isChatAssistantTurnActive(view.assistantTurnStatus)) return;
+        const next = backgroundTurnFromSessionView(view);
+        if (next.backgroundTurn) return;
         setMessages(view.messages ?? []);
         setBackgroundTurn(false);
         const startedAt = agentRunStartedAtRef.current;

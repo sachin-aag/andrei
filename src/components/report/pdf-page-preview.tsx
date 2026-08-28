@@ -230,8 +230,22 @@ function PdfDocumentPages({
   );
   const [pageInput, setPageInput] = useState(String(initialPaintedPageNumber(initialPage)));
   const [pageInputFocused, setPageInputFocused] = useState(false);
+  const [appliedInitialPage, setAppliedInitialPage] = useState(initialPage);
   const [zoomLevel, setZoomLevel] = useState(PDF_ZOOM_DEFAULT);
   const [rotation, setRotation] = useState(0);
+  const [syncedVisiblePage, setSyncedVisiblePage] = useState(visiblePage);
+  if (appliedInitialPage !== initialPage) {
+    const clamped = clampPdfPage(initialPage, numPages);
+    setAppliedInitialPage(initialPage);
+    setVisiblePage(clamped);
+    setPageInput(String(clamped));
+  }
+  if (syncedVisiblePage !== visiblePage) {
+    setSyncedVisiblePage(visiblePage);
+    if (!pageInputFocused) {
+      setPageInput(String(visiblePage));
+    }
+  }
   const enableNeighborPrefetch = useCallback(() => {
     setPrefetchNeighbors(true);
   }, []);
@@ -241,17 +255,9 @@ function PdfDocumentPages({
   }, [onVisiblePageChangeRef]);
   const goToPage = useCallback(
     (page: number) => {
-      const clamped = Math.min(Math.max(1, Math.round(page)), numPages);
+      const clamped = clampPdfPage(page, numPages);
       setPageInput(String(clamped));
-      const root = scrollRef.current;
-      if (!root) return;
-      const target = root.querySelector(`[data-pdf-page="${clamped}"]`);
-      if (
-        target instanceof HTMLElement &&
-        typeof target.scrollIntoView === "function"
-      ) {
-        target.scrollIntoView({ block: "start" });
-      }
+      scrollPreviewToPage(scrollRef.current, clamped);
       reportVisiblePage(clamped);
     },
     [numPages, reportVisiblePage]
@@ -288,12 +294,6 @@ function PdfDocumentPages({
   const [nearPages, setNearPages] = useState<ReadonlySet<number>>(
     () => new Set()
   );
-
-  useEffect(() => {
-    if (!pageInputFocused) {
-      setPageInput(String(visiblePage));
-    }
-  }, [pageInputFocused, visiblePage]);
 
   useLayoutEffect(() => {
     const root = scrollRef.current;
@@ -360,8 +360,13 @@ function PdfDocumentPages({
         )
       : null;
 
+    // Drop the synchronous observe() burst so a first layout pass that marks
+    // every page intersecting cannot overwrite the requested page before
+    // scrollIntoView has settled. Later scroll notifications still apply.
+    let ignoreInitialIntersections = true;
     const currentPage = new IntersectionObserver(
       (entries) => {
+        if (ignoreInitialIntersections) return;
         let best: { page: number; ratio: number } | null = null;
         for (const entry of entries) {
           if (!entry.isIntersecting) continue;
@@ -382,15 +387,18 @@ function PdfDocumentPages({
       prefetch?.observe(node);
       currentPage.observe(node);
     }
+    ignoreInitialIntersections = false;
     return () => {
       prefetch?.disconnect();
       currentPage.disconnect();
     };
   }, [numPages, prefetchNeighbors, reportVisiblePage]);
 
-  useEffect(() => {
-    goToPage(initialPage);
-  }, [goToPage, initialPage, pdf]);
+  useLayoutEffect(() => {
+    const clamped = clampPdfPage(initialPage, numPages);
+    scrollPreviewToPage(scrollRef.current, clamped);
+    onVisiblePageChangeRef.current?.(clamped);
+  }, [initialPage, numPages, onVisiblePageChangeRef, pdf]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -712,6 +720,20 @@ function PdfPreviewToolbar({
 
 function initialPaintedPageNumber(page: number): number {
   return Number.isInteger(page) && page > 0 ? page : 1;
+}
+
+function clampPdfPage(page: number, numPages: number): number {
+  return Math.min(Math.max(1, Math.round(page)), numPages);
+}
+
+function scrollPreviewToPage(root: HTMLElement | null, page: number): void {
+  const target = root?.querySelector(`[data-pdf-page="${page}"]`);
+  if (
+    target instanceof HTMLElement &&
+    typeof target.scrollIntoView === "function"
+  ) {
+    target.scrollIntoView({ block: "start" });
+  }
 }
 
 function roundZoom(value: number): number {

@@ -1,6 +1,13 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect, type ComponentType } from "react";
+import {
+  useState,
+  useRef,
+  useCallback,
+  useEffect,
+  useSyncExternalStore,
+  type ComponentType,
+} from "react";
 import { toast } from "sonner";
 import { useRouter } from "next/navigation";
 import {
@@ -16,6 +23,12 @@ import { ReportDetailsEditDialog } from "./report-details-edit-dialog";
 import { ReportWorkspaceHeader } from "./report-workspace-header";
 import { RequestExpertReviewDialog } from "./request-expert-review-dialog";
 import type { WorkspaceChrome, WorkProductView } from "./workspace-chrome";
+import {
+  DEFAULT_WORKSPACE_CHROME,
+  readWorkspaceChrome,
+  subscribeWorkspaceChromePrefs,
+  writeWorkspaceChrome,
+} from "./workspace-chrome-prefs";
 import { WorkProductTabs } from "./work-product-tabs";
 import { DocumentRevisionHistory } from "./document-revision-history";
 import { DocumentRevisionDiff } from "./document-revision-diff";
@@ -244,7 +257,11 @@ export function ReportWorkspace({
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [documentsCollapsed, setDocumentsCollapsed] = useState(false);
   const [previewCollapsed, setPreviewCollapsed] = useState(true);
-  const [chrome, setChrome] = useState<WorkspaceChrome>("document");
+  const chrome = useSyncExternalStore(
+    subscribeWorkspaceChromePrefs,
+    () => readWorkspaceChrome(currentUserId, report.id),
+    () => DEFAULT_WORKSPACE_CHROME
+  );
   const [workProductView, setWorkProductView] =
     useState<WorkProductView>("report");
   const [compare, setCompare] = useState<{ from: number; to: number } | null>(
@@ -304,11 +321,9 @@ export function ReportWorkspace({
   const hideReportEditors =
     analyticsSurface || viewingDocument || comparing;
 
-  useEffect(() => {
-    if (agentChrome && previewCollapsed && activeAttachmentId) {
-      setPreviewCollapsed(false);
-    }
-  }, [activeAttachmentId, agentChrome, previewCollapsed]);
+  if (agentChrome && previewCollapsed && activeAttachmentId) {
+    setPreviewCollapsed(false);
+  }
 
   const showReviewGutter =
     !analyticsSurface &&
@@ -649,9 +664,12 @@ export function ReportWorkspace({
     [agentChrome, previewCollapsed]
   );
 
-  const handleChromeChange = useCallback((next: WorkspaceChrome) => {
-    setChrome(next);
-  }, []);
+  const handleChromeChange = useCallback(
+    (next: WorkspaceChrome) => {
+      writeWorkspaceChrome(currentUserId, report.id, next);
+    },
+    [currentUserId, report.id]
+  );
 
   return (
     <div className="flex h-full flex-col">
