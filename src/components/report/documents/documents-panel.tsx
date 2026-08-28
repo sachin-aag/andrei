@@ -173,6 +173,62 @@ function ExpandedDocumentsPanel({
   const visibleTabs = showContentsTab
     ? LEFT_PANEL_TABS
     : LEFT_PANEL_TABS.filter((tab) => tab.value === "attachments");
+  const onAttachmentsTab = activeTab === "attachments";
+
+  const collapseButton = (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      className="size-7 shrink-0"
+      aria-label="Collapse documents panel"
+      aria-expanded
+      title="Collapse"
+      onClick={onToggleCollapse}
+    >
+      <PanelLeftClose className="size-4" aria-hidden="true" />
+    </Button>
+  );
+
+  const attachmentActions = canMutateAttachments ? (
+    <>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="size-7"
+        aria-label="New folder"
+        title="New folder"
+        onClick={() => setCreatingFolder(true)}
+      >
+        <FolderPlus className="size-4" aria-hidden="true" />
+      </Button>
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon"
+        className="size-7"
+        aria-label="Upload PDF or Word document"
+        title="Upload PDF or Word document"
+        disabled={isUploading}
+        onClick={() => inputRef.current?.click()}
+      >
+        {isUploading ? (
+          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
+        ) : (
+          <Upload className="size-4" aria-hidden="true" />
+        )}
+      </Button>
+      <input
+        ref={inputRef}
+        type="file"
+        accept={ATTACHMENT_ACCEPT_ATTR}
+        multiple
+        className="hidden"
+        onChange={(event) => void handleFiles(event.target.files)}
+      />
+    </>
+  ) : null;
 
   return (
     <aside
@@ -180,52 +236,41 @@ function ExpandedDocumentsPanel({
       aria-label="Documents"
       className="flex h-full w-full min-w-0 flex-col border-r border-[var(--border)] bg-[var(--card)]"
     >
-      <div className="flex items-center justify-between gap-1 border-b border-[var(--border)] px-3 py-2">
-        <h2 className="flex items-center gap-2 text-sm font-semibold text-[var(--foreground)]">
-          <Paperclip
-            className="size-4 text-[var(--muted-foreground)]"
-            aria-hidden="true"
-          />
-          Documents
-        </h2>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="size-7"
-          aria-label="Collapse documents panel"
-          aria-expanded
-          title="Collapse"
-          onClick={onToggleCollapse}
-        >
-          <PanelLeftClose className="size-4" aria-hidden="true" />
-        </Button>
+      <div className="flex shrink-0 items-center justify-between gap-1 border-b border-[var(--border)] px-2 py-1.5">
+        {showContentsTab ? (
+          <div className="flex flex-wrap items-center gap-1">
+            {visibleTabs.map((tab) => {
+              const Icon = tab.icon;
+              const selected = activeTab === tab.value;
+              return (
+                <button
+                  key={tab.value}
+                  type="button"
+                  onClick={() => onTabChange(tab.value)}
+                  className={cn(
+                    "relative flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors",
+                    selected
+                      ? "bg-[var(--secondary)] text-[var(--foreground)] border-[var(--border)]"
+                      : "text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--secondary)]/50 border-transparent hover:border-[var(--border)]"
+                  )}
+                  aria-label={tab.label}
+                  aria-pressed={selected}
+                >
+                  <Icon className="size-3.5" aria-hidden="true" />
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="flex items-center gap-0.5">{attachmentActions}</div>
+        )}
+        {collapseButton}
       </div>
 
-      {showContentsTab ? (
-        <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-[var(--border)] px-2 py-1.5">
-          {visibleTabs.map((tab) => {
-            const Icon = tab.icon;
-            const selected = activeTab === tab.value;
-            return (
-              <button
-                key={tab.value}
-                type="button"
-                onClick={() => onTabChange(tab.value)}
-                className={cn(
-                  "relative flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors",
-                  selected
-                    ? "bg-[var(--secondary)] text-[var(--foreground)] border-[var(--border)]"
-                    : "text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--secondary)]/50 border-transparent hover:border-[var(--border)]"
-                )}
-                aria-label={tab.label}
-                aria-pressed={selected}
-              >
-                <Icon className="size-3.5" aria-hidden="true" />
-                {tab.label}
-              </button>
-            );
-          })}
+      {showContentsTab && onAttachmentsTab && canMutateAttachments ? (
+        <div className="flex shrink-0 items-center justify-end gap-0.5 border-b border-[var(--border)] px-2 py-1.5">
+          {attachmentActions}
         </div>
       ) : null}
 
@@ -236,48 +281,6 @@ function ExpandedDocumentsPanel({
         />
       ) : (
         <>
-          <div className="flex items-center justify-end gap-0.5 border-b border-[var(--border)] px-2 py-1.5">
-            {canMutateAttachments ? (
-              <>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="size-7"
-                  aria-label="New folder"
-                  title="New folder"
-                  onClick={() => setCreatingFolder(true)}
-                >
-                  <FolderPlus className="size-4" aria-hidden="true" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="size-7"
-                  aria-label="Upload PDF or Word document"
-                  title="Upload PDF or Word document"
-                  disabled={isUploading}
-                  onClick={() => inputRef.current?.click()}
-                >
-                  {isUploading ? (
-                    <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-                  ) : (
-                    <Upload className="size-4" aria-hidden="true" />
-                  )}
-                </Button>
-                <input
-                  ref={inputRef}
-                  type="file"
-                  accept={ATTACHMENT_ACCEPT_ATTR}
-                  multiple
-                  className="hidden"
-                  onChange={(event) => void handleFiles(event.target.files)}
-                />
-              </>
-            ) : null}
-          </div>
-
           <div
             className={cn(
               "min-h-0 flex-1 overflow-y-auto p-2",

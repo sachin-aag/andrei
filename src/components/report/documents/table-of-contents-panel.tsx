@@ -1,5 +1,6 @@
 "use client";
 
+import { ArrowRight } from "lucide-react";
 import type { SectionType } from "@/db/schema";
 import type { TableOfContentsEntry } from "@/lib/document-types/convergent/table-of-contents";
 import { cn } from "@/lib/utils";
@@ -9,20 +10,28 @@ type Props = {
   onJumpToSection: (section: SectionType) => void;
 };
 
+const INDENT_STEP_PX = 14;
+const BASE_INDENT_PX = 12;
+
 export function TableOfContentsPanel({ entries, onJumpToSection }: Props) {
   return (
-    <nav aria-label="Table of contents" className="min-h-0 flex-1 overflow-y-auto p-2">
-      <ul className="space-y-0.5">
-        {entries.map((entry) => (
-          <TocEntryRow
-            key={entry.label}
-            entry={entry}
-            depth={0}
-            onJumpToSection={onJumpToSection}
-          />
-        ))}
-      </ul>
-    </nav>
+    <div className="flex min-h-0 flex-1 flex-col">
+      <p className="border-b border-[var(--border)] px-3 py-2 text-[11px] leading-snug text-[var(--muted-foreground)]">
+        Click a section to jump there in the document.
+      </p>
+      <nav aria-label="Table of contents" className="min-h-0 flex-1 overflow-y-auto px-2 py-2">
+        <ul className="space-y-0.5">
+          {entries.map((entry) => (
+            <TocEntryRow
+              key={entry.label}
+              entry={entry}
+              depth={0}
+              onJumpToSection={onJumpToSection}
+            />
+          ))}
+        </ul>
+      </nav>
+    </div>
   );
 }
 
@@ -37,6 +46,7 @@ function TocEntryRow({
 }) {
   const hasChildren = (entry.children?.length ?? 0) > 0;
   const isJumpTarget = entry.sectionKey != null && !hasChildren;
+  const indentPx = BASE_INDENT_PX + depth * INDENT_STEP_PX;
 
   return (
     <li>
@@ -44,29 +54,41 @@ function TocEntryRow({
         <button
           type="button"
           onClick={() => onJumpToSection(entry.sectionKey!)}
+          title={`Jump to ${entry.label}`}
           className={cn(
-            "w-full rounded-md px-2 py-1.5 text-left text-xs transition-colors",
-            "text-[var(--foreground)] hover:bg-[var(--secondary)]",
+            "group flex w-full items-center gap-1.5 rounded-md border-l-2 border-transparent py-1.5 pr-2 text-left transition-colors",
+            "hover:border-[var(--primary)] hover:bg-[var(--secondary)]",
             "focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]",
-            depth > 0 && "text-[var(--muted-foreground)]"
+            depth === 0
+              ? "text-sm font-medium text-[var(--foreground)]"
+              : "text-[13px] font-normal text-[var(--muted-foreground)] group-hover:text-[var(--foreground)]"
           )}
-          style={{ paddingLeft: `${8 + depth * 12}px` }}
+          style={{ paddingLeft: `${indentPx}px` }}
         >
-          {entry.label}
+          <span className="min-w-0 flex-1 truncate">{entry.label}</span>
+          <ArrowRight
+            aria-hidden="true"
+            className="size-4 shrink-0 -translate-x-1 text-[var(--primary)] opacity-0 transition-all duration-150 group-hover:translate-x-0 group-hover:opacity-100"
+          />
         </button>
       ) : (
         <span
           className={cn(
-            "block px-2 py-1.5 text-xs font-medium text-[var(--foreground)]",
-            depth > 0 && "font-normal text-[var(--muted-foreground)]"
+            "block py-1.5 pr-2 text-left",
+            hasChildren
+              ? "text-[13px] font-semibold text-[var(--foreground)]"
+              : "text-sm text-[var(--muted-foreground)]"
           )}
-          style={{ paddingLeft: `${8 + depth * 12}px` }}
+          style={{ paddingLeft: `${indentPx}px` }}
         >
           {entry.label}
         </span>
       )}
       {hasChildren ? (
-        <ul className="space-y-0.5">
+        <ul
+          className="space-y-0.5 border-l border-[var(--border)] pl-1"
+          style={{ marginLeft: `${indentPx + 2}px` }}
+        >
           {entry.children!.map((child) => (
             <TocEntryRow
               key={child.label}
