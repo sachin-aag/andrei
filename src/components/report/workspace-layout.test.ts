@@ -62,15 +62,17 @@ describe("docsWidthBounds", () => {
 });
 
 describe("isReviewGutterVisible", () => {
-  it("shows the review margin only while the assistant is collapsed", () => {
-    expect(isReviewGutterVisible(true)).toBe(true);
-    expect(isReviewGutterVisible(false)).toBe(false);
+  it("hides the review margin by default until comments are enabled", () => {
+    expect(isReviewGutterVisible(false, true)).toBe(false);
+    expect(isReviewGutterVisible(false, false)).toBe(false);
+    expect(isReviewGutterVisible(true, true)).toBe(true);
+    expect(isReviewGutterVisible(true, false)).toBe(false);
   });
 
   it("hides the review margin while a PDF or Word document is open", () => {
-    expect(isReviewGutterVisible(true, true)).toBe(false);
-    expect(isReviewGutterVisible(false, true)).toBe(false);
-    expect(isReviewGutterVisible(true, false)).toBe(true);
+    expect(isReviewGutterVisible(true, true, true)).toBe(false);
+    expect(isReviewGutterVisible(true, false, true)).toBe(false);
+    expect(isReviewGutterVisible(true, true, false)).toBe(true);
   });
 });
 

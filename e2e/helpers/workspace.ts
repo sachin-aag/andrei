@@ -106,6 +106,22 @@ export async function collapseReportSidebar(page: Page): Promise<void> {
   }
 }
 
+/** Turn on the Comments switch so the review margin can mount. */
+export async function enableCommentsGutter(page: Page): Promise<void> {
+  const toggle = page.getByRole("switch", { name: /comments/i });
+  await expect(toggle).toBeVisible({ timeout: 15_000 });
+  if ((await toggle.getAttribute("aria-checked")) !== "true") {
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-checked", "true");
+  }
+}
+
+/** Collapse assistant and enable the Comments gutter toggle. */
+export async function showReviewMargin(page: Page): Promise<void> {
+  await enableCommentsGutter(page);
+  await collapseReportSidebar(page);
+}
+
 export function defineSection(page: Page) {
   return page.locator("#define");
 }
@@ -129,7 +145,7 @@ export async function openReviewMarginNote(
   page: Page,
   sectionLabel: string
 ): Promise<void> {
-  await collapseReportSidebar(page);
+  await showReviewMargin(page);
   await reviewMargin(page)
     .getByRole("button", { name: new RegExp(`add note on ${sectionLabel}`, "i") })
     .click();
@@ -177,7 +193,7 @@ export async function openMarginCommentReply(
   page: Page,
   commentText: string
 ): Promise<void> {
-  await collapseReportSidebar(page);
+  await showReviewMargin(page);
   const margin = reviewMargin(page);
   await expect(margin.getByText(commentText)).toBeVisible({ timeout: 15_000 });
   const card = margin
