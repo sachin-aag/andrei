@@ -11,10 +11,14 @@ import {
   citationsAtEndOfSectionFor,
   getDocumentType,
 } from "@/lib/document-types";
+import {
+  type AlreadyDraftedSection,
+  alreadyDraftedBlock,
+} from "@/lib/ai/chat/already-drafted";
 import type { RetrievalPolicy } from "@/lib/ai/chat/retrieval-policy";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v48-ask-mode-qna-metric-series-plots";
+export const CHAT_PROMPT_VERSION = "chat-v49-review-filled-before-search";
 
 export type ChatMode = "plan" | "agent";
 
@@ -84,8 +88,9 @@ Call suggest_section_scope with suggestedSection="${mismatch.suggestedSection}" 
 const QUESTION_RULES = `## Asking questions
 When you need facts from the engineer, call the ask_user tool. It renders a structured answer form in the chat. NEVER write questions as prose, numbered lists, or markdown in your reply.
 - Do not call ask_user for a fact until you have searched ready attachments (or used the evidence preview). That includes verification objective, design outputs / requirement IDs, and ECO/DCR — not only batch / date / equipment.
+- Never call ask_user for a fact already in the current section text, a prior answer, retrieved evidence, or a hint you would write. If you know the answer, use it (draft or targeted edit) — do not quiz the engineer to confirm.
+- Use the hint field for the expected format only, e.g. "e.g. B-2024-117". Never put the actual answer in hint.
 - Batch every open question into ONE ask_user call (max 6). Prefer questions that unlock multiple criteria.
-- Use the hint field for the expected format, e.g. "e.g. B-2024-117".
 - After calling ask_user, stop and wait. The engineer can skip questions; use a bracketed placeholder like [batch number] for anything skipped.`;
 
 function documentRules(
@@ -107,7 +112,7 @@ function documentRules(
     case "adaptive":
       retrievalMode = `## Document evidence
 - Retrieval mode: ADAPTIVE. Treat search_documents as grep over the attachments. Work in rounds: grep → read the hits → grep complementary terms with excludePages set to nextExcludePages from the last result. Do not stop at the first matching table. Do not read every page unless the set is unbounded.
-- If Documents are listed, you MUST grep before ask_user or draft_field. Start with search_documents. Prefer queries[] in one call (equipment AND UUT AND fixtures). Use mode=keyword for exact protocol terms (UUT, Solea, 13.3).
+- If Documents are listed, you MUST grep before ask_user or draft_field — except when the target section is already filled or partial: call read_section first and grep only for a gap you found. Start with search_documents. Prefer queries[] in one call (equipment AND UUT AND fixtures). Use mode=keyword for exact protocol terms (UUT, Solea, 13.3).
 - If hits look like one table or heading, call document_outline and read neighboring pages, then grep again for sibling objects.
 - If truncated=true or nextExcludePages grew, grep again with different terms. Never draft a table from a single truncated hit list.
 - For a single fact (one requirement ID, one date, one labelled page), one grep and one page read is enough.
@@ -208,15 +213,15 @@ function agentRules(opts: {
       reviewTools = `
 - start_document_review / continue_document_review / finish_document_review — required for enumerations and matrices. Finish the review before draft_field.`;
       searchFirst =
-        "- If Documents are listed, finish_document_review before ask_user or draft_field. Do not treat search_documents or the evidence preview as complete coverage.";
+        "- If Documents are listed and the target section is empty, finish_document_review before ask_user or draft_field. Do not treat search_documents or the evidence preview as complete coverage. If the target section is filled or partial, read_section first; only start a document review if you found a coverage gap that needs a complete inventory.";
       break;
     case "adaptive":
       searchFirst =
-        "- If Documents are listed, grep in rounds until the question is covered (complementary queries, excludePages=nextExcludePages, outline, neighboring pages). Do not ask_user or draft_field from one truncated search. Do not start a document review.";
+        "- If Documents are listed and the target section is empty, grep in rounds until the question is covered (complementary queries, excludePages=nextExcludePages, outline, neighboring pages). Do not ask_user or draft_field from one truncated search. Do not start a document review. If the target section is filled or partial, read_section first; grep only for a gap you found.";
       break;
     case "focused":
       searchFirst =
-        "- If Documents are listed and you have not searched (and there is no evidence preview), call search_documents first. Do not ask_user or draft_field yet.";
+        "- If Documents are listed, the target section is empty, and you have not searched (and there is no evidence preview), call search_documents first. Do not ask_user or draft_field yet. If the target section is filled or partial, read_section first.";
       break;
     default: {
       const _exhaustive: never = opts.retrievalPolicy;
@@ -234,12 +239,13 @@ Choosing the right tool:
 - insert_image — place one existing image (chat attachment or a figure already in a section) into a rich field. The engineer reviews it like any other suggestion. Do not invent or generate pixels${opts.includePlotMeasurements ? " — use plot_measurements when the engineer asked for a chart" : ". Measurement charts belong in Analytics, not Document chat"}.
 ${opts.includePlotMeasurements ? "- plot_measurements — extract cited numeric measurements from attachments and propose a scatter plot as a reviewable figure. Only when the engineer asked in words for a chart. Never volunteer. Name one series or requirement ID (not \"Conductivity or TOC\"). Restyle reuses chartSpec." : "- Measurement plots — not available in Document chat. Tell the engineer to open Analytics and use Plot measurements or the Statistical Analysis assistant."}
 - remove_image — remove one existing figure from a rich field. Call read_section first and pass image.id (e.g. narrative#1). The engineer reviews it like any other suggestion. Do not rewrite the field with draft_field just to drop a figure.
-- search_documents — grep ready evidence attachments in rounds. Prefer complementary queries. Pass excludePages from the previous nextExcludePages. Required before ask_user or draft_field when Documents are listed.
+- search_documents — grep ready evidence attachments in rounds. Prefer complementary queries. Pass excludePages from the previous nextExcludePages. Required before ask_user or draft_field when Documents are listed and the target section is empty. If the section is already filled or partial, call read_section first and only grep for a gap you found.
 - document_outline — list per-page context for one attachment so you can pick which pages to read. Not a substitute for search_documents.
 - read_document_page — read bounded transcript/visual context for one page from a retrieved attachment.
 - ask_user — structured questions when facts are still missing after a document search (see "Asking questions").${analyzeToolLine}${reviewTools}
 
 Drafting decisions (important):
+- If the engineer asked to draft a section the context map marks filled or partial: call read_section on that section FIRST. Do not search_documents or ask_user yet. Compare the current text to that section's quality criteria. No material gaps → report that it is already drafted, summarize what is there, and ask if they want a specific change. Gaps → search only for the missing facts, then a targeted propose_edit (or edit_table). Do not draft_field a full rewrite unless they asked to replace the section.
 - Filenames and topics in the document index are not real information. Real information is retrieved evidence, current section text, and answers the engineer already gave.
 ${searchFirst}
 - For each section, judge how much retrieved information you have.
@@ -249,7 +255,7 @@ ${searchFirst}
 - Use a markdown table when creating a NEW table — test results vs specification, batch/equipment lists, timelines of events, action plans with owners and due dates. Tables only work in rich fields; draft_field will tell you if the field cannot hold one. If a table already exists, use edit_table.
 
 Editing rules:
-1. Read before you edit. Call read_section immediately before edit_table or propose_edit so coordinates and anchors match the current text. draft_field replaces the whole field, so reading first is only needed to preserve existing facts.
+1. Read before you edit. When the context map marks the section filled or partial, call read_section before searching or drafting. Call read_section immediately before edit_table or propose_edit so coordinates and anchors match the current text. draft_field replaces the whole field, so reading first is required to preserve existing facts — do not use it on a filled field unless they asked to replace it.
 2. Any change to an existing table uses edit_table. Row 0 is the header; the first data row is row 1. For insert_rows, omit afterRow to append. For delete_rows, omit expectedCells — the server captures the exact current row before proposing the edit. When adding systems, UUTs, or other equipment, insert every distinct matching unit from the source in one edit_table call — never a single representative row. When changing or moving values across columns, put every affected cell in one edit_cells call (source and destination together). Do not split a same-kind change into two suggestions, and do not list cells whose insertText matches expectedText. Do not quote a markdown pipe table as propose_edit anchorText. If propose_edit fails on a table (not_found / ambiguous / cross_cell), call edit_table — do not fall through to draft_field.
 3. propose_edit remains for prose and list edits. anchorText must be UNIQUE in the field. On "ambiguous" quote more words; on "not_found" re-read and re-quote. If propose_edit fails twice on the same prose spot, switch to draft_field for that field. That fallback is for prose only — never for tables.
 4. If edit_table fails, re-read the field and retry once. If the retry fails, stop and explain the problem. "Never call edit_table more than twice" is a failed-retry cap, not a budget of two successful proposals — one successful edit_cells is the whole request. draft_field creates a new table or performs an explicitly requested full replacement only; it is not a recovery path for a failed table edit.
@@ -302,6 +308,8 @@ export function buildChatSystemPrompt(opts: {
   sectionScope?: ChatSectionScope;
   documentType?: DocumentType;
   scopeMismatch?: SectionScopeMismatch | null;
+  /** When the requested section is already filled/partial, inject review-first. */
+  alreadyDrafted?: AlreadyDraftedSection | null;
   /** Rendered @ mention block; empty when the engineer tagged nothing. */
   mentionBlock?: string;
   /** Pre-retrieved attachment snippets; empty when none. */
@@ -336,6 +344,10 @@ export function buildChatSystemPrompt(opts: {
   const mismatchBlock = opts.scopeMismatch
     ? `\n\n${scopeMismatchBlock(opts.scopeMismatch)}`
     : "";
+  const draftedBlock =
+    opts.alreadyDrafted && !opts.scopeMismatch
+      ? `\n\n${alreadyDraftedBlock(opts.alreadyDrafted, mode)}`
+      : "";
   const mentions = opts.mentionBlock?.trim()
     ? `\n\n${opts.mentionBlock.trim()}`
     : "";
@@ -352,7 +364,7 @@ export function buildChatSystemPrompt(opts: {
 
   return `${chat.persona}
 
-${sectionFocusBlock(sectionScope, analyzeInScope, includePlotMeasurements)}${mismatchBlock}${mentions}
+${sectionFocusBlock(sectionScope, analyzeInScope, includePlotMeasurements)}${mismatchBlock}${draftedBlock}${mentions}
 
 ## Editable fields (section → targetField (kind))
 ${fieldTaxonomy(sectionScope, documentType)}

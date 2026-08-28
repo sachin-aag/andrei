@@ -19,7 +19,7 @@ describe("isChatMode", () => {
 describe("buildChatSystemPrompt", () => {
   it("bumps the prompt version when insert_image and citation-marker guidance change", () => {
     expect(CHAT_PROMPT_VERSION).toBe(
-      "chat-v48-ask-mode-qna-metric-series-plots"
+      "chat-v49-review-filled-before-search"
     );
   });
 
@@ -258,6 +258,35 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).not.toContain("- plot_measurements — extract cited numeric measurements");
   });
 
+  it("injects review-first guidance when the requested section is already drafted", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      alreadyDrafted: { section: "testers_dates", fillState: "filled" },
+    });
+    expect(prompt).toContain("Already drafted (review first)");
+    expect(prompt).toContain("Testers/Dates");
+    expect(prompt).toContain("Do not call search_documents or ask_user yet");
+    expect(prompt).toContain("ask whether they want a specific change");
+  });
+
+  it("omits review-first guidance when a scope mismatch is pending", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      sectionScope: "purpose",
+      documentType: "mechanical_design_verification",
+      alreadyDrafted: { section: "testers_dates", fillState: "filled" },
+      scopeMismatch: {
+        currentSection: "purpose",
+        suggestedSection: "testers_dates",
+        reason: "Looks like Testers/Dates.",
+      },
+    });
+    expect(prompt).toContain("Section scope mismatch (detected)");
+    expect(prompt).not.toContain("Already drafted (review first)");
+  });
+
   it("includes scope mismatch guidance when detected", () => {
     const prompt = buildChatSystemPrompt({
       ...opts,
@@ -302,6 +331,11 @@ describe("buildChatSystemPrompt", () => {
     expect(agent).toContain("Never treat the index as ENOUGH");
     expect(agent).toContain("grep in rounds until the question is covered");
     expect(agent).toContain("Do not start a document review");
+    expect(agent).toContain(
+      "If the engineer asked to draft a section the context map marks filled or partial"
+    );
+    expect(agent).toContain("Never call ask_user for a fact already in the current section");
+    expect(agent).toContain("Never put the actual answer in hint");
   });
 
   it("requires a finished comprehensive review before drafting inventories", () => {

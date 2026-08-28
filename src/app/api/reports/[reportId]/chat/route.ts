@@ -51,6 +51,10 @@ import {
   detectSectionScopeMismatch,
 } from "@/lib/ai/chat/section-intent";
 import {
+  detectAlreadyDraftedSection,
+  alreadyDraftedReadStep,
+} from "@/lib/ai/chat/already-drafted";
+import {
   createChatSession,
   findChatSession,
   touchChatSession,
@@ -257,6 +261,12 @@ export async function POST(
   const reviewPageCount =
     mentionedPageCount > 0 ? mentionedPageCount : totalReadyPages;
 
+  const alreadyDrafted = detectAlreadyDraftedSection({
+    userText,
+    sectionScope,
+    documentType: report.documentType,
+    sections: mergedSections,
+  });
   const contextMap = buildReportContextMap({
     report: {
       documentNo: report.documentNo,
@@ -307,6 +317,7 @@ export async function POST(
     sectionScope,
     documentType: report.documentType,
     scopeMismatch,
+    alreadyDrafted: scopeMismatch ? null : alreadyDrafted,
     mentionBlock: buildMentionBlock(mentions),
     autoEvidenceBlock,
     retrievalPolicy: retrieval.policy,
@@ -385,8 +396,16 @@ export async function POST(
           };
         }
 
+        const alreadyDraftedActive = alreadyDrafted != null && !scopeMismatch;
+        const alreadyDraftedStep = alreadyDraftedReadStep({
+          stepsTaken: steps.length,
+          alreadyDrafted: alreadyDraftedActive,
+          hasReadSectionTool: Boolean(tools.read_section),
+        });
+        if (alreadyDraftedStep) return alreadyDraftedStep;
+
         const prepared = prepareDocumentReviewStep({
-          policy: retrieval.policy,
+          policy: alreadyDraftedActive ? "adaptive" : retrieval.policy,
           phase: documentReview.phase(),
           availableTools: Object.keys(tools),
         });
