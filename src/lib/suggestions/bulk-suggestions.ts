@@ -33,7 +33,9 @@ type ReportBulkArgs = {
   sectionContentFor: (section: SectionType) => Record<string, unknown> | undefined;
   /** Called before a section's batch so the caller can pause its auto-save. */
   onSectionStart?: (section: SectionType, firstCommentId: string) => void;
-  /** Called after a section's batch with its final content, only if it changed. */
+  /** Called with the section's next content before persist, so the editor can
+   *  show applied wording during the PATCH. Also called with the original on
+   *  save failure so the caller can revert. */
   onSectionSettled?: (
     section: SectionType,
     nextSection: Record<string, unknown>
@@ -80,6 +82,8 @@ export async function acceptAllSuggestions(args: {
   comments: readonly CommentRecord[];
   sectionContent: Record<string, unknown>;
   applyMode?: SuggestionApplyMode;
+  /** Fired with in-memory applied content before the section PATCH. */
+  onPreview?: (nextSection: Record<string, unknown>) => void;
 }): Promise<BulkSuggestionResult> {
   const partition = partitionBulkApplies({
     section: args.section,
@@ -130,9 +134,14 @@ export async function acceptAllSuggestions(args: {
     return { appliedIds, skippedIds, failedIds: [], nextSection: current };
   }
 
+  // Push the applied wording into the editor before the network round-trip
+  // so insert text does not vanish while the section PATCH is in flight.
+  args.onPreview?.(current);
+
   try {
     await patchSection(args.reportId, args.section, current);
   } catch {
+    args.onPreview?.(args.sectionContent);
     return {
       appliedIds: [],
       skippedIds,
@@ -160,6 +169,7 @@ export async function dismissAllSuggestions(args: {
   section: SectionType;
   comments: readonly CommentRecord[];
   sectionContent: Record<string, unknown>;
+  onPreview?: (nextSection: Record<string, unknown>) => void;
 }): Promise<BulkSuggestionResult> {
   let current = args.sectionContent;
   let changed = false;
@@ -178,9 +188,11 @@ export async function dismissAllSuggestions(args: {
   }
 
   if (changed) {
+    args.onPreview?.(current);
     try {
       await patchSection(args.reportId, args.section, current);
     } catch {
+      args.onPreview?.(args.sectionContent);
       return {
         appliedIds: [],
         skippedIds: [],
@@ -237,13 +249,14 @@ export function reportSuggestionQueues(
 export async function acceptAllSuggestionsInReport(
   args: ReportBulkArgs & { applyMode?: SuggestionApplyMode }
 ): Promise<ReportBulkSuggestionResult> {
-  return runReportBulk(args, (queue, sectionContent) =>
+  return runReportBulk(args, (queue, sectionContent, onPreview) =>
     acceptAllSuggestions({
       reportId: args.reportId,
       section: queue.section,
       comments: queue.comments,
       sectionContent,
       applyMode: args.applyMode,
+      onPreview,
     })
   );
 }
@@ -251,12 +264,13 @@ export async function acceptAllSuggestionsInReport(
 export async function dismissAllSuggestionsInReport(
   args: ReportBulkArgs
 ): Promise<ReportBulkSuggestionResult> {
-  return runReportBulk(args, (queue, sectionContent) =>
+  return runReportBulk(args, (queue, sectionContent, onPreview) =>
     dismissAllSuggestions({
       reportId: args.reportId,
       section: queue.section,
       comments: queue.comments,
       sectionContent,
+      onPreview,
     })
   );
 }
@@ -265,7 +279,8 @@ async function runReportBulk(
   args: ReportBulkArgs,
   runSection: (
     queue: { section: SectionType; comments: CommentRecord[] },
-    sectionContent: Record<string, unknown>
+    sectionContent: Record<string, unknown>,
+    onPreview: (nextSection: Record<string, unknown>) => void
   ) => Promise<BulkSuggestionResult>
 ): Promise<ReportBulkSuggestionResult> {
   const appliedIds: string[] = [];
@@ -288,14 +303,15 @@ async function runReportBulk(
 
     args.onSectionStart?.(queue.section, queue.comments[0].id);
     try {
-      const result = await runSection(queue, sectionContent);
+      const result = await runSection(queue, sectionContent, (next) => {
+        args.onSectionSettled?.(queue.section, next);
+      });
 
       appliedIds.push(...result.appliedIds);
       skippedIds.push(...result.skippedIds);
       failedIds.push(...result.failedIds);
       if (result.appliedIds.length > 0) {
         changedSections.push(queue.section);
-        args.onSectionSettled?.(queue.section, result.nextSection);
       }
     } finally {
       args.onSectionEnd?.(queue.section);

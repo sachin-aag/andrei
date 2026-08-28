@@ -207,6 +207,58 @@ describe("acceptAllSuggestions", () => {
     expect(result.failedIds).toEqual(["c1", "c2"]);
     expect(result.skippedIds).toEqual([]);
   });
+
+  it("previews applied content before the section PATCH", async () => {
+    const order: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (String(url).includes("/sections/")) order.push("patch");
+        return { ok: true, json: async () => ({}) } as Response;
+      })
+    );
+
+    await acceptAllSuggestions({
+      reportId: "report-1",
+      section: "define",
+      comments: [first, second],
+      sectionContent: structuredClone(sectionContent),
+      onPreview: (next) => {
+        order.push("preview");
+        expect(JSON.stringify(next)).toContain("on line FL-02");
+      },
+    });
+
+    expect(order.slice(0, 2)).toEqual(["preview", "patch"]);
+  });
+
+  it("reverts the preview when the section PATCH fails", async () => {
+    const original = structuredClone(sectionContent);
+    const previews: Record<string, unknown>[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (String(url).includes("/sections/")) {
+          return { ok: false, status: 500 } as Response;
+        }
+        return { ok: true, json: async () => ({}) } as Response;
+      })
+    );
+
+    await acceptAllSuggestions({
+      reportId: "report-1",
+      section: "define",
+      comments: [first, second],
+      sectionContent: original,
+      onPreview: (next) => {
+        previews.push(next);
+      },
+    });
+
+    expect(previews).toHaveLength(2);
+    expect(JSON.stringify(previews[0])).toContain("on line FL-02");
+    expect(previews[1]).toBe(original);
+  });
 });
 
 const measureFirst = comment(
@@ -306,6 +358,9 @@ describe("acceptAllSuggestionsInReport", () => {
       comments: [first, second, measureFirst],
       evaluations: [],
       sectionContentFor: (section) => sections[section],
+      onSectionSettled: (section, next) => {
+        sections[section] = next;
+      },
     });
 
     expect(result.failedIds).toEqual(["c1", "c2"]);

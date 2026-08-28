@@ -847,13 +847,16 @@ export function TiptapSectionField({
       // and comments stay "open" until the whole report batch finishes — if
       // we re-injected the first card onto already-applied text, overlapping
       // deletes would paint red across the new green run.
-      if (
-        suggestionApplyTransition[section]?.bridge ||
-        isBulkSuggestionApply(suggestionApplyTransition[section]?.mode)
-      ) {
+      if (suggestionApplyTransition[section]?.bridge) {
         json = stripPendingSuggestionsExcept(json, null);
         if (JSON.stringify(json) === before) return;
         editor.commands.setContent(json as Content, { emitUpdate: false });
+        return;
+      }
+      if (isBulkSuggestionApply(suggestionApplyTransition[section]?.mode)) {
+        // Keep the live insert/delete marks. Stripping them (or CSS-hiding
+        // the insert run) removes the wording until the PATCH returns.
+        // Do not inject — comments stay "open" for the whole report batch.
         return;
       }
       // Keep showing the suggestion currently being applied/dismissed as-is —
@@ -1230,7 +1233,9 @@ export function TiptapSectionField({
           "[&_.tiptap-image-inline]:my-1 [&_.tiptap-image-inline]:max-w-full [&_.tiptap-image-inline]:h-auto [&_.tiptap-image-inline]:rounded-sm",
           "[&_.tiptap-math-block]:my-2",
           !editable && "opacity-90",
-          previewHeld && "suggestion-field-settling"
+          previewHeld &&
+            !isBulkSuggestionApply(previewHeldMode) &&
+            "suggestion-field-settling"
         )}
         data-field-anchor={`${section}.${contentPath}`}
         data-editor-chrome={chrome}

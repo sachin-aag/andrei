@@ -581,19 +581,25 @@ html[data-customer="convergent"] {
 }
 
 /*
- * Bulk apply/dismiss: hide the current preview immediately. Do not run the
- * single-card accept animation (red strikethrough still painted across the
- * green insert while opacity eases out).
+ * Bulk apply: keep the inserted wording on screen as ordinary text and hide
+ * the deleted run immediately. Opacity-0 on *both* runs made the sentence
+ * vanish until the section PATCH returned.
  */
-[data-suggestion-preview-held="bulk"] .suggestion-insert,
-[data-suggestion-preview-held="bulk"] .suggestion-insert-ai,
 [data-suggestion-preview-held="bulk"] .suggestion-delete,
 [data-suggestion-preview-held="bulk"] .suggestion-delete-ai,
-[data-suggestion-preview-held="bulk"] .suggestion-image-insert,
-[data-suggestion-preview-held="bulk"] .suggestion-image-insert-ai,
 [data-suggestion-preview-held="bulk"] .suggestion-image-delete,
 [data-suggestion-preview-held="bulk"] .suggestion-image-delete-ai {
   opacity: 0;
+  background-color: transparent;
+  transition: none;
+}
+
+[data-suggestion-preview-held="bulk"] .suggestion-insert,
+[data-suggestion-preview-held="bulk"] .suggestion-insert-ai,
+[data-suggestion-preview-held="bulk"] .suggestion-image-insert,
+[data-suggestion-preview-held="bulk"] .suggestion-image-insert-ai {
+  background-color: transparent;
+  border-bottom-color: transparent;
   transition: none;
 }
 

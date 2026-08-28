@@ -62,7 +62,7 @@ export function ReportBulkSuggestionActions() {
   }, [sectionOrder, endSuggestionApplyTransition]);
 
   const buildBulkArgs = useCallback(
-    () => ({
+    (holdMode: "bulk" | "dismiss") => ({
       reportId: report.id,
       sectionOrder,
       comments,
@@ -70,9 +70,10 @@ export function ReportBulkSuggestionActions() {
       sectionContentFor: (section: SectionType) =>
         sections[section] as Record<string, unknown> | undefined,
       onSectionStart: (section: SectionType, firstCommentId: string) => {
-        // Pauses that section's auto-save. Mode "bulk" strips previews instead
-        // of playing the single-card accept/dismiss settle (red through green).
-        beginSuggestionApplyTransition(section, firstCommentId, "bulk");
+        // Pauses that section's auto-save. Apply-all uses "bulk" (keep insert
+        // text, hide deletes instantly). Dismiss-all uses "dismiss" so the
+        // original wording stays instead of the proposed insert.
+        beginSuggestionApplyTransition(section, firstCommentId, holdMode);
       },
       onSectionSettled: (section: SectionType, next: Record<string, unknown>) => {
         replaceSection(section, next as unknown);
@@ -94,7 +95,7 @@ export function ReportBulkSuggestionActions() {
     setRunning("accept");
     try {
       const result = await acceptAllSuggestionsInReport({
-        ...buildBulkArgs(),
+        ...buildBulkArgs("bulk"),
         applyMode: suggestionApplyModeFor(getDocumentType(report.documentType)),
       });
 
@@ -142,7 +143,7 @@ export function ReportBulkSuggestionActions() {
     if (running || !canResolve) return;
     setRunning("dismiss");
     try {
-      const result = await dismissAllSuggestionsInReport(buildBulkArgs());
+      const result = await dismissAllSuggestionsInReport(buildBulkArgs("dismiss"));
 
       const dismissed = new Set(result.appliedIds);
       setComments((prev) => prev.filter((c) => !dismissed.has(c.id)));
