@@ -78,6 +78,29 @@ describe("moveCitationsToEndOfText", () => {
     );
   });
 
+  it("numbers underscored Convergent document-number cites instead of leaving them inline", () => {
+    const markdown = [
+      "All testing was performed between 15 June 2023 and 19 July 2023 [790-00134R_Rev_U_Solea_Model_3_Software_Design_Verification_Test_Report_(Report_Only).docx, p. 1].",
+      "",
+      "The datasheets were signed by their supervisor, Jai Paul [790-00134R_Rev_U_Solea_Model_3_Software_Design_Verification_Test_Report_(Report_Only).docx, p. 1].",
+      "",
+      "All testing was performed between 16 FEB 2024 and 20 FEB 2024 [790-00134R_Rev_U_Solea_Model_3_Software_Design_Verification_Test_Report_(Report_Only).docx, p. 4].",
+    ].join("\n");
+    expect(moveCitationsToEndOfText(markdown)).toBe(
+      [
+        "All testing was performed between 15 June 2023 and 19 July 2023 [1].",
+        "",
+        "The datasheets were signed by their supervisor, Jai Paul [1].",
+        "",
+        "All testing was performed between 16 FEB 2024 and 20 FEB 2024 [2].",
+        "",
+        "Citations:",
+        "1. [790-00134R_Rev_U_Solea_Model_3_Software_Design_Verification_Test_Report_(Report_Only).docx, p. 1]",
+        "2. [790-00134R_Rev_U_Solea_Model_3_Software_Design_Verification_Test_Report_(Report_Only).docx, p. 4]",
+      ].join("\n")
+    );
+  });
+
   it("reuses an existing list number instead of duplicating the source", () => {
     const markdown = [
       "Outcome is Pass [protocol.pdf, p. 2].",

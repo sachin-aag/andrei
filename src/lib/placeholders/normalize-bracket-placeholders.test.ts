@@ -149,5 +149,19 @@ describe("normalizeBracketPlaceholdersInPlainText", () => {
         "see [Appendix B DV Report 790-00134R(RevU)] and [Appendix B]."
       )
     ).toBe("see [Appendix B DV Report 790-00134R(RevU)] and [Appendix B].");
+    expect(
+      normalizeBracketPlaceholdersInPlainText(
+        "between 15 June 2023 and 19 July 2023 [790-00134R_Rev_U_Solea_Model_3_Software_Design_Verification_Test_Report_(Report_Only).docx, p. 1]."
+      )
+    ).toBe(
+      "between 15 June 2023 and 19 July 2023 [790-00134R_Rev_U_Solea_Model_3_Software_Design_Verification_Test_Report_(Report_Only).docx, p. 1]."
+    );
+    expect(
+      normalizeBracketPlaceholdersInPlainText(
+        "[790-00134R_Rev_U_Solea_Model_3_Software_Design_Verification_Test_Report_(Report_Only)]"
+      )
+    ).toBe(
+      "[790-00134R_Rev_U_Solea_Model_3_Software_Design_Verification_Test_Report_(Report_Only)]"
+    );
   });
 });

@@ -15,9 +15,22 @@ const ATX_HEADING_RE = /^(#{1,3})\s+(.*)$/;
 /**
  * CommonMark-ish emphasis: no space after the opener or before the closer.
  * `* item` bullets are handled at line level; `2 * 3` stays literal.
+ * Underscore italics are flanking-sensitive (`See _Annex B_`) so identifier
+ * stems like `790-00134R_Rev_U_Solea_…` stay literal.
  */
-const INLINE_MARKDOWN_SPLIT_RE =
-  /(\*\*[^*]+\*\*|(?<!\*)\*(?!\s)[^*]+?(?<!\s)\*(?!\*)|(?<!_)_(?!\s)[^_]+?(?<!\s)_(?!_))/g;
+const UNDERSCORE_ITALIC_OPEN = "(?<![\\w*])_(?!\\s)";
+const UNDERSCORE_ITALIC_CLOSE = "(?<!\\s)_(?![\\w*])";
+const INLINE_MARKDOWN_SPLIT_RE = new RegExp(
+  `(\\*\\*[^*]+\\*\\*|(?<!\\*)\\*(?!\\s)[^*]+?(?<!\\s)\\*(?!\\*)|${UNDERSCORE_ITALIC_OPEN}[^_]+?${UNDERSCORE_ITALIC_CLOSE})`,
+  "g"
+);
+const UNDERSCORE_ITALIC_RE = new RegExp(
+  `${UNDERSCORE_ITALIC_OPEN}([^_]+?)${UNDERSCORE_ITALIC_CLOSE}`,
+  "g"
+);
+const UNDERSCORE_ITALIC_PART_RE = new RegExp(
+  `^${UNDERSCORE_ITALIC_OPEN}([^_]+?)${UNDERSCORE_ITALIC_CLOSE}$`
+);
 
 /** GFM table cells and DOCX import use `<br>` when a cell spans multiple lines. */
 const HTML_BR_SPLIT_RE = /<br\s*\/?>/gi;
@@ -26,7 +39,7 @@ export function stripInlineMarkdown(text: string): string {
   return text
     .replace(/\*\*([^*]+)\*\*/g, "$1")
     .replace(/(?<!\*)\*(?!\s)([^*]+?)(?<!\s)\*(?!\*)/g, "$1")
-    .replace(/(?<!_)_(?!\s)([^_]+?)(?<!\s)_(?!_)/g, "$1");
+    .replace(UNDERSCORE_ITALIC_RE, "$1");
 }
 
 /** ATX `#`–`###` line → heading node or bold paragraph. */
@@ -348,7 +361,7 @@ export function inlineMarkdownToTextNodes(
       });
       continue;
     }
-    const italicUnderscore = /^_(?!\s)([^_]+?)(?<!\s)_$/.exec(part);
+    const italicUnderscore = UNDERSCORE_ITALIC_PART_RE.exec(part);
     if (italicUnderscore) {
       nodes.push({
         type: "text",
