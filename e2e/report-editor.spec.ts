@@ -13,6 +13,7 @@ import {
 } from "./helpers/reports";
 import {
   collapseReportSidebar,
+  collapseWorkProductPanel,
   defineEditor,
   defineSection,
   documentsPanel,
@@ -298,5 +299,12 @@ test.describe("report editor", () => {
     await expect(
       page.getByText("Versions appear after the assistant edits the document.")
     ).toBeVisible();
+
+    await collapseWorkProductPanel(page);
+    await expect(collapsedPanel.getByRole("button", { name: /expand document panel/i })).toBeVisible();
+    await page.getByTestId("report-surface-analytics").click();
+    await expect(page.getByTestId("report-analytics-workspace")).toBeVisible({
+      timeout: 30_000,
+    });
   });
 });

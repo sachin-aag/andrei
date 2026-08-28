@@ -53,6 +53,7 @@ import { useWorkspaceLayout } from "@/hooks/use-workspace-layout";
 import { AgentWorkProductRail } from "./agent-work-product-rail";
 import { WorkspaceResizeHandle } from "./workspace-resize-handle";
 import {
+  COLLAPSED_RAIL_PX,
   isReviewGutterVisible,
   REVIEW_GUTTER_GRID_COLS,
   WORKSPACE_PANEL_WIDTH_TRANSITION_MS,
@@ -250,7 +251,6 @@ export function ReportWorkspace({
     null
   );
   const agentChrome = chrome === "agent";
-  const showCollapsedWorkProduct = agentChrome && previewCollapsed;
   const {
     containerRef,
     isResizing,
@@ -273,8 +273,10 @@ export function ReportWorkspace({
     chrome,
     chatCollapsed: agentChrome ? false : sidebarCollapsed,
     docsCollapsed: documentsCollapsed,
-    previewCollapsed: showCollapsedWorkProduct,
+    previewCollapsed: agentChrome && previewCollapsed,
   });
+  const showCollapsedWorkProduct =
+    agentChrome && previewCollapsed && !isResizing;
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("assistant");
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
   const [analyticsReloadEpoch, setAnalyticsReloadEpoch] = useState(0);
@@ -625,10 +627,22 @@ export function ReportWorkspace({
     setSidebarCollapsed((c) => !c);
   };
 
+  const selectWorkProductView = useCallback(
+    (next: WorkProductView) => {
+      if (agentChrome && previewCollapsed) {
+        setPreviewCollapsed(false);
+      }
+      if (next === "analytics") {
+        setCompare(null);
+        setAnalyticsOpen(true);
+        setSidebarTab("assistant");
+      }
+      setWorkProductView(next);
+    },
+    [agentChrome, previewCollapsed]
+  );
+
   const handleChromeChange = useCallback((next: WorkspaceChrome) => {
-    if (next === "agent") {
-      setPreviewCollapsed(true);
-    }
     setChrome(next);
   }, []);
 
@@ -743,6 +757,8 @@ export function ReportWorkspace({
           {showCollapsedWorkProduct ? (
             <AgentWorkProductRail
               workProductView={workProductView}
+              statsEnabled={statsEnabled}
+              onSelectView={selectWorkProductView}
               onExpand={() => setPreviewCollapsed(false)}
             />
           ) : (
@@ -751,21 +767,14 @@ export function ReportWorkspace({
                 {statsEnabled ? (
                   <WorkProductTabs
                     value={workProductView}
-                    onChange={(next) => {
-                      if (next === "analytics") {
-                        setCompare(null);
-                        setAnalyticsOpen(true);
-                        setSidebarTab("assistant");
-                      }
-                      setWorkProductView(next);
-                    }}
+                    onChange={selectWorkProductView}
                   />
                 ) : null}
                 <DocumentRevisionHistory
                   reportId={report.id}
                   compare={compare}
                   onCompare={(range) => {
-                    setWorkProductView("report");
+                    selectWorkProductView("report");
                     setCompare(range);
                   }}
                   onExitCompare={() => setCompare(null)}
@@ -881,16 +890,21 @@ export function ReportWorkspace({
               </div>
             </>
           )}
-          {agentChrome && !showCollapsedWorkProduct ? (
+          {agentChrome ? (
             <WorkspaceResizeHandle
               label="Resize document panel"
               controlsId="report-work-product"
               edge="start"
               value={previewWidth}
-              min={previewBounds.min}
+              min={
+                showCollapsedWorkProduct ? COLLAPSED_RAIL_PX : previewBounds.min
+              }
               max={previewBounds.max}
               onChange={setPreviewWidth}
-              onDragStart={() => beginResize("preview")}
+              onDragStart={() => {
+                setPreviewCollapsed(false);
+                beginResize("preview");
+              }}
               onDragEnd={endResize}
               onReset={resetPreviewWidth}
             />
