@@ -28,7 +28,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { AdminAiBudgetPanel } from "@/components/admin/admin-ai-budget-panel";
+import { AdminAttachmentPageBudgetPanel } from "@/components/admin/admin-attachment-page-budget-panel";
 import type { AiBudgetStatus } from "@/lib/ai/usage";
+import type { AttachmentPageBudgetStatus } from "@/lib/attachments/page-budget";
 import type { AdminUser } from "@/lib/admin/users";
 import { USER_ROLES, roleLabel, type UserRole } from "@/lib/auth/roles";
 import { formatDateTime } from "@/lib/utils";
@@ -70,12 +72,14 @@ export function AdminUsersPanel({
   initialPasswordExpiryDays,
   initialInactivityTimeoutMinutes,
   initialAiBudgetStatus,
+  initialAttachmentPageBudgetStatus,
 }: {
   initialUsers: AdminUser[];
   currentUserId: string;
   initialPasswordExpiryDays: number;
   initialInactivityTimeoutMinutes: number;
   initialAiBudgetStatus: AiBudgetStatus;
+  initialAttachmentPageBudgetStatus: AttachmentPageBudgetStatus;
 }) {
   const router = useRouter();
   const [users, setUsers] = useState(() => sortUsers(initialUsers));
@@ -532,6 +536,9 @@ export function AdminUsersPanel({
           </section>
 
           <AdminAiBudgetPanel initialStatus={initialAiBudgetStatus} />
+          <AdminAttachmentPageBudgetPanel
+            initialStatus={initialAttachmentPageBudgetStatus}
+          />
         </div>
 
         <div className="overflow-hidden rounded-lg border border-[var(--border)]">

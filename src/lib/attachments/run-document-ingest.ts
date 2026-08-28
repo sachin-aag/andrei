@@ -48,6 +48,7 @@ import {
   MAX_PDF_BATCH_PAGES,
   splitPdfIntoBatches,
 } from "@/lib/attachments/pdf-split";
+import { recordAttachmentPageUsage } from "@/lib/attachments/page-budget";
 import { getAttachmentStorage, tempBatchObjectKey } from "@/lib/storage/attachments";
 
 export { sanitizeIngestError } from "@/lib/attachments/ingest-errors";
@@ -905,6 +906,27 @@ async function markRunReady(
   input: IngestInit,
   warning: string | null = null
 ): Promise<void> {
+  const [run] = await db
+    .select({
+      pageCount: attachmentIngestRuns.pageCount,
+    })
+    .from(attachmentIngestRuns)
+    .where(eq(attachmentIngestRuns.id, input.runId))
+    .limit(1);
+
+  const [attachment] = await db
+    .select({
+      pageCount: reportAttachments.pageCount,
+    })
+    .from(reportAttachments)
+    .where(eq(reportAttachments.id, input.attachmentId))
+    .limit(1);
+
+  const processedPageCount = Math.max(
+    1,
+    run?.pageCount ?? attachment?.pageCount ?? 1
+  );
+
   await db.transaction(async (tx) => {
     await tx
       .update(attachmentIngestRuns)
@@ -936,6 +958,13 @@ async function markRunReady(
         processingError: warning,
       })
       .where(eq(reportAttachments.id, input.attachmentId));
+  });
+
+  await recordAttachmentPageUsage({
+    ingestRunId: input.runId,
+    attachmentId: input.attachmentId,
+    reportId: input.reportId,
+    pageCount: processedPageCount,
   });
 }
 

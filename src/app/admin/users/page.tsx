@@ -6,6 +6,7 @@ import { getCurrentUser } from "@/lib/auth/session";
 import { listAdminUsers } from "@/lib/admin/users";
 import { getPasswordPolicy } from "@/lib/auth/password-policy";
 import { getAiBudgetStatus } from "@/lib/ai/usage";
+import { getAttachmentPageBudgetStatus } from "@/lib/attachments/page-budget";
 
 export const dynamic = "force-dynamic";
 
@@ -14,10 +15,11 @@ export default async function AdminUsersPage() {
   if (!user) redirect("/login");
   if (user.role !== "admin") redirect("/");
 
-  const [users, policy, aiBudget] = await Promise.all([
+  const [users, policy, aiBudget, attachmentPageBudget] = await Promise.all([
     listAdminUsers(),
     getPasswordPolicy(),
     getAiBudgetStatus(),
+    getAttachmentPageBudgetStatus(),
   ]);
   const shellUsers = users.map(({ id, name, email, role, title }) => ({
     id,
@@ -44,6 +46,7 @@ export default async function AdminUsersPage() {
           initialPasswordExpiryDays={policy.expiryDays}
           initialInactivityTimeoutMinutes={policy.inactivityTimeoutMinutes}
           initialAiBudgetStatus={aiBudget}
+          initialAttachmentPageBudgetStatus={attachmentPageBudget}
         />
       </ViewTransition>
     </AppShell>
