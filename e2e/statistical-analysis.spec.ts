@@ -15,10 +15,14 @@ import {
 
 test.describe.configure({ mode: "serial" });
 
-async function openNormalSixpackDialog(page: Page): Promise<void> {
-  await page.getByTestId("worksheet-stat-menu").click();
-  await page.getByTestId("stat-normal-sixpack").click();
-  await expect(page.getByTestId("capability-dialog")).toBeVisible();
+async function commitWorksheetCell(
+  page: Page,
+  cellTestId: string,
+  value: string
+): Promise<void> {
+  await page.getByTestId(cellTestId).dblclick();
+  await page.getByTestId(cellTestId).locator("input").fill(value);
+  await page.keyboard.press("Enter");
 }
 
 const SAMPLE_MOISTURE = [
@@ -69,6 +73,31 @@ test.describe("report analytics", () => {
     await openReportAnalytics(page);
     await expect(page.getByTestId("worksheet-grid")).toBeVisible();
     await expect(page.getByRole("heading", { name: /^define$/i })).toHaveCount(0);
+    await expect(page.getByTestId("analytics-save-status")).toHaveText("");
+  });
+
+  test("autosave settles to Saved and keeps later cell edits", async ({
+    page,
+  }) => {
+    test.setTimeout(60_000);
+    await openReportAnalytics(page);
+    await expect(page.getByTestId("worksheet-grid")).toBeVisible({
+      timeout: 30_000,
+    });
+    const saveStatus = page.getByTestId("analytics-save-status");
+    await expect(saveStatus).toHaveText("");
+
+    await commitWorksheetCell(page, "cell-c1-0", "101.5");
+    await expect(saveStatus).toHaveText("Saving…");
+    await expect(saveStatus).toHaveText("Saved", { timeout: 10_000 });
+
+    await commitWorksheetCell(page, "cell-c1-1", "102.1");
+    await expect(page.getByTestId("cell-c1-0")).toHaveText("101.5");
+    await expect(saveStatus).toHaveText("Saved", { timeout: 10_000 });
+    await page.waitForTimeout(2_000);
+    await expect(saveStatus).toHaveText("Saved");
+    await expect(page.getByTestId("cell-c1-0")).toHaveText("101.5");
+    await expect(page.getByTestId("cell-c1-1")).toHaveText("102.1");
   });
 
   test("loads sample assay and runs a Normal Capability Sixpack", async ({

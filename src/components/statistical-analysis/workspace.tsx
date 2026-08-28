@@ -503,7 +503,10 @@ export function StatisticalWorkspace({
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-3">
             <h2 className="truncate text-sm font-semibold">Statistical Analysis</h2>
-            <span className="text-xs text-[var(--muted-foreground)]">
+            <span
+              data-testid="analytics-save-status"
+              className="text-xs text-[var(--muted-foreground)]"
+            >
               {readOnly ? "View only" : saveLabel(status)}
             </span>
           </div>
