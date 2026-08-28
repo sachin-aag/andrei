@@ -12,6 +12,11 @@ vi.mock("ai", async (importOriginal) => {
   };
 });
 
+vi.mock("@/lib/ai/usage", () => ({
+  assertAiBudgetAvailable: vi.fn().mockResolvedValue(undefined),
+  recordAiUsage: vi.fn().mockResolvedValue(undefined),
+}));
+
 import { describeDocxImages } from "@/lib/attachments/describe-docx-images";
 
 /** Distinct 1×1 PNG-shaped buffers so content-key dedupe does not collapse fixtures. */

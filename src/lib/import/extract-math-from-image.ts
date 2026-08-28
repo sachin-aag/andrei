@@ -5,6 +5,10 @@ import {
   getGeminiAuthDiagnostics,
   resolveGoogleLanguageModel,
 } from "@/lib/ai/resolve-google-language-model";
+import {
+  assertAiBudgetAvailable,
+  recordAiUsage,
+} from "@/lib/ai/usage";
 import { convertLatexToMathMl, ensureMathliveSsr } from "@/lib/math/mathlive-ssr";
 import { isTestStubMathExtraction } from "@/lib/test/ai-bypass";
 import { z } from "zod";
@@ -512,6 +516,7 @@ async function defaultLlmCall(args: {
       ? `Context (surrounding text from the document, may help disambiguate symbols):\n${args.contextHint.trim()}\n\nReturn JSON with the LaTeX for the math expression in the image.`
       : "Return JSON with the LaTeX for the math expression in the image.";
 
+  await assertAiBudgetAvailable();
   const result = await generateText({
     model: resolveExtractionModel(),
     output: Output.object({ schema: mathExtractSchema }),
@@ -528,6 +533,12 @@ async function defaultLlmCall(args: {
     temperature: MATH_EXTRACT_TEMPERATURE,
     maxOutputTokens: MATH_EXTRACT_MAX_OUTPUT_TOKENS,
     providerOptions: { google: { seed: MATH_EXTRACT_SEED } },
+  });
+
+  await recordAiUsage({
+    feature: "math_extraction",
+    modelId: MATH_EXTRACT_GOOGLE_MODEL_ID,
+    usage: result.usage,
   });
 
   const structuredLatex = result.experimental_output?.latex?.trim() ?? "";

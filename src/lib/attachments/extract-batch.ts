@@ -8,6 +8,10 @@ import {
 import { z } from "zod";
 import { createWifAuthClient, getWifConfig } from "@/lib/gcp/wif-token";
 import {
+  assertAiBudgetAvailable,
+  recordAiUsage,
+} from "@/lib/ai/usage";
+import {
   isDocumentAiConfigured,
   ocrPdfWithDocumentAi,
 } from "@/lib/attachments/document-ai-ocr";
@@ -195,6 +199,7 @@ export function resolveDocumentExtractModel(modelId: string): LanguageModel {
 export async function extractPdfBatch(
   input: ExtractPdfBatchInput
 ): Promise<ExtractBatchResult> {
+  await assertAiBudgetAvailable();
   const model = input.model ?? resolveDocumentExtractModel(input.modelId);
   const resolved: ResolvedInput = { ...input, model };
 
@@ -204,17 +209,32 @@ export async function extractPdfBatch(
     (page) => page.text.length >= MIN_TEXT_LAYER_CHARS
   );
 
+  let result: ExtractBatchResult;
   if (
     textLayer &&
     textLayer.pages.length === expectedPages &&
     textPages.length === expectedPages
   ) {
-    return finalizeExtractedBatch(await extractFromTextLayer(resolved, textLayer));
+    result = finalizeExtractedBatch(await extractFromTextLayer(resolved, textLayer));
+  } else if (textPages.length === 0 || !textLayer) {
+    result = finalizeExtractedBatch(await extractScannedPages(resolved));
+  } else {
+    result = finalizeExtractedBatch(await extractMixedPages(resolved, textLayer));
   }
-  if (textPages.length === 0 || !textLayer) {
-    return finalizeExtractedBatch(await extractScannedPages(resolved));
-  }
-  return finalizeExtractedBatch(await extractMixedPages(resolved, textLayer));
+
+  await recordAiUsage({
+    feature: "document_ingest",
+    modelId: input.modelId,
+    inputTokens: result.usage?.inputTokens,
+    outputTokens: result.usage?.outputTokens,
+    metadata: {
+      pageStart: input.pageStart,
+      pageEnd: input.pageEnd,
+      filename: input.filename,
+    },
+  });
+
+  return result;
 }
 
 /**

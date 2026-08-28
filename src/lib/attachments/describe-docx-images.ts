@@ -9,6 +9,10 @@ import {
   type DocxEmbeddedImage,
 } from "@/lib/attachments/docx-images";
 import { resolveDocumentExtractModel } from "@/lib/attachments/extract-batch";
+import {
+  assertAiBudgetAvailable,
+  recordAiUsage,
+} from "@/lib/ai/usage";
 
 const TEMPERATURE = 0;
 const MAX_OUTPUT_TOKENS = 4_000;
@@ -71,6 +75,7 @@ export async function describeDocxImages(
       images: batch,
       filename: input.filename,
       model,
+      modelId: input.modelId,
     });
     for (const entry of described) {
       descriptionByUniqueOrdinal.set(entry.ordinal, entry.description);
@@ -103,6 +108,7 @@ async function describeBatch(input: {
   images: DocxEmbeddedImage[];
   filename: string;
   model: LanguageModel;
+  modelId: string;
 }): Promise<DocxImageDescription[]> {
   try {
     const content: Array<
@@ -118,6 +124,7 @@ async function describeBatch(input: {
       });
     }
 
+    await assertAiBudgetAvailable();
     const result = await generateText({
       model: input.model,
       output: Output.object({ schema: imageDescriptionSchema }),
@@ -130,6 +137,13 @@ async function describeBatch(input: {
       messages: [{ role: "user", content }],
       temperature: TEMPERATURE,
       maxOutputTokens: MAX_OUTPUT_TOKENS,
+    });
+
+    await recordAiUsage({
+      feature: "docx_image_description",
+      modelId: input.modelId,
+      usage: result.usage,
+      metadata: { filename: input.filename, imageCount: input.images.length },
     });
 
     const structured = readStructuredOutput(result);

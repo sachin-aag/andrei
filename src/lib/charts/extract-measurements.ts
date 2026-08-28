@@ -1,8 +1,12 @@
 import { generateText, Output } from "ai";
 import { z } from "zod";
 import { buildGeminiThoughtSummaryProviderOptions } from "@/lib/eval/eval-generation-options";
-import { resolveChatExtractLanguageModel } from "@/lib/ai/chat/model";
+import { resolveChatExtractLanguageModel, CHAT_EXTRACT_GOOGLE_MODEL_ID } from "@/lib/ai/chat/model";
 import { sanitizePromptMetadata } from "@/lib/ai/chat/prompt-metadata";
+import {
+  assertAiBudgetAvailable,
+  recordAiUsage,
+} from "@/lib/ai/usage";
 import {
   readDocumentPage,
   searchReportDocuments,
@@ -177,6 +181,7 @@ async function defaultExtractRows(input: {
     })
     .join("\n\n");
 
+  await assertAiBudgetAvailable();
   const result = await generateText({
     model: resolveChatExtractLanguageModel(),
     output: Output.object({ schema: llmExtractSchema }),
@@ -192,6 +197,11 @@ async function defaultExtractRows(input: {
       `Query: ${input.query}`,
       pageBlock,
     ].join("\n\n"),
+  });
+  await recordAiUsage({
+    feature: "chart_extraction",
+    modelId: CHAT_EXTRACT_GOOGLE_MODEL_ID,
+    usage: result.usage,
   });
   return (
     result.output ?? {

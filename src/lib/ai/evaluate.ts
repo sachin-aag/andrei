@@ -17,6 +17,10 @@ import { cleanSectionContentForEval } from "@/lib/tiptap/strip-pending-suggestio
 import { EDITABLE_SECTIONS } from "@/types/sections";
 import { langfuseGenerateTextTelemetry } from "@/lib/observability/langfuse";
 import {
+  assertAiBudgetAvailable,
+  recordAiUsage,
+} from "@/lib/ai/usage";
+import {
   buildEvalGenerationSettings,
   describeEvalGenerationConfig,
   modelSkipsSamplingControls,
@@ -460,6 +464,7 @@ export async function evaluateSection({
 
   try {
     const { temperature, maxOutputTokens, seed, providerOptions } = generationSettings;
+    await assertAiBudgetAvailable();
     const result = await generateText({
       model: resolvedModel,
       output: Output.object({ schema: evaluationSchema }),
@@ -479,6 +484,13 @@ export async function evaluateSection({
           promptVersion: getDocumentType(documentType).prompts.promptVersion,
         },
       }),
+    });
+
+    await recordAiUsage({
+      feature: "criteria_evaluation",
+      modelId: modelId ?? CRITERIA_EVAL_GOOGLE_MODEL_ID,
+      usage: result.usage,
+      reportId: report?.id || undefined,
     });
 
     if (result.experimental_output) {

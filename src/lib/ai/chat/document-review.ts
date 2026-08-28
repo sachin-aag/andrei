@@ -11,8 +11,12 @@ import {
 } from "@/lib/ai/chat/results-inventory";
 import { derivePageOutlineDigest } from "@/lib/attachments/page-outline";
 import { isTestStubChat } from "@/lib/test/ai-bypass";
-import { resolveChatExtractLanguageModel } from "@/lib/ai/chat/model";
+import { resolveChatExtractLanguageModel, CHAT_EXTRACT_GOOGLE_MODEL_ID } from "@/lib/ai/chat/model";
 import { sanitizePromptMetadata } from "@/lib/ai/chat/prompt-metadata";
+import {
+  assertAiBudgetAvailable,
+  recordAiUsage,
+} from "@/lib/ai/usage";
 import {
   DOCUMENT_REVIEW_TOOL_NAMES,
   isDocumentReviewToolName,
@@ -638,6 +642,7 @@ async function extractReviewBatchWithLlm(input: {
     })
     .join("\n\n");
 
+  await assertAiBudgetAvailable();
   const result = await generateText({
     model: resolveChatExtractLanguageModel(),
     output: Output.object({ schema: llmFindingSchema }),
@@ -652,6 +657,12 @@ async function extractReviewBatchWithLlm(input: {
       `Objective: ${input.objective || "inventory requirements, configurations, and results"}`,
       pageBlock,
     ].join("\n\n"),
+  });
+
+  await recordAiUsage({
+    feature: "document_review_extract",
+    modelId: CHAT_EXTRACT_GOOGLE_MODEL_ID,
+    usage: result.usage,
   });
 
   const filenameByPage = new Map(

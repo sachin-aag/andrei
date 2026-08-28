@@ -1,5 +1,10 @@
 import { describe, expect, it, beforeEach, vi } from "vitest";
 
+vi.mock("@/lib/ai/usage", () => ({
+  assertAiBudgetAvailable: vi.fn().mockResolvedValue(undefined),
+  recordAiUsage: vi.fn().mockResolvedValue(undefined),
+}));
+
 import {
   clearMathExtractionCache,
   extractMathFromImage,
