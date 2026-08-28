@@ -18,7 +18,7 @@ import { ChatPanel } from "./chat-panel";
 import { AnalyticsChatPanel } from "@/components/statistical-analysis/analytics-chat-panel";
 import type { SectionType } from "@/db/schema";
 import type { Placeholder } from "@/lib/placeholders/find";
-import type { ReportWorkspaceSurface } from "./report-workspace-header";
+import type { WorkProductView, WorkspaceChrome } from "./workspace-chrome";
 import { getEvaluatableSections } from "@/lib/document-types";
 
 export type SidebarTab =
@@ -35,8 +35,10 @@ type Props = {
   onJumpToSection: (section: SectionType) => void;
   onJumpToPlaceholder: (p: Placeholder) => void;
   onJumpToComment: (commentId: string) => void;
+  hideCollapse?: boolean;
+  chrome?: WorkspaceChrome;
   initialCriteriaSection?: SectionType;
-  surface?: ReportWorkspaceSurface;
+  workProductView?: WorkProductView;
   analyticsOpen?: boolean;
   onAnalyticsSettled?: () => void;
   onAnalyticsAgentBusy?: (busy: boolean) => void;
@@ -57,13 +59,15 @@ export function ReportSidebar({
   onJumpToSection,
   onJumpToPlaceholder,
   onJumpToComment,
+  hideCollapse = false,
+  chrome = "document",
   initialCriteriaSection,
-  surface = "document",
+  workProductView = "report",
   analyticsOpen = false,
   onAnalyticsSettled,
   onAnalyticsAgentBusy,
 }: Props) {
-  const analyticsSurface = surface === "analytics";
+  const analyticsSurface = workProductView === "analytics";
   const { pendingPlaceholders } = useReportPlaceholders();
   const { comments } = useReportComments();
   const { report } = useReportData();
@@ -80,38 +84,44 @@ export function ReportSidebar({
     <aside
       id="report-chat-sidebar"
       aria-label="Report sidebar"
-      className="flex h-full w-full min-w-0 flex-col overflow-hidden border-l border-[var(--border)] bg-[var(--card)]"
+      className={cn(
+        "flex h-full w-full min-w-0 flex-col overflow-hidden bg-[var(--card)]",
+        chrome === "agent"
+          ? "border-x border-[var(--border)]"
+          : "border-l border-[var(--border)]"
+      )}
     >
-      {/* Collapse toggle */}
-      <div
-        className={cn(
-          "border-b border-[var(--border)] shrink-0",
-          collapsed ? "px-1 py-2 flex justify-center" : "px-3 py-2",
-        )}
-      >
-        <button
-          type="button"
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          aria-expanded={!collapsed}
-          onClick={onToggleCollapse}
+      {hideCollapse ? null : (
+        <div
           className={cn(
-            "flex items-center gap-2 rounded-md text-sm font-medium text-[var(--muted-foreground)] hover:bg-[var(--secondary)] hover:text-[var(--foreground)] transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]",
-            collapsed
-              ? "size-9 justify-center"
-              : "w-full px-2 py-1.5",
+            "border-b border-[var(--border)] shrink-0",
+            collapsed ? "px-1 py-2 flex justify-center" : "px-3 py-2",
           )}
-          title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
         >
-          {collapsed ? (
-            <PanelRightClose className="size-4" />
-          ) : (
-            <>
-              <PanelRightOpen className="size-4" />
-              <span className="text-xs">Collapse</span>
-            </>
-          )}
-        </button>
-      </div>
+          <button
+            type="button"
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-expanded={!collapsed}
+            onClick={onToggleCollapse}
+            className={cn(
+              "flex items-center gap-2 rounded-md text-sm font-medium text-[var(--muted-foreground)] hover:bg-[var(--secondary)] hover:text-[var(--foreground)] transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]",
+              collapsed
+                ? "size-9 justify-center"
+                : "w-full px-2 py-1.5",
+            )}
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            {collapsed ? (
+              <PanelRightClose className="size-4" />
+            ) : (
+              <>
+                <PanelRightOpen className="size-4" />
+                <span className="text-xs">Collapse</span>
+              </>
+            )}
+          </button>
+        </div>
+      )}
 
       {/* Tab buttons — icons only when collapsed; wrap when expanded so none get clipped */}
       {analyticsSurface ? null : (
@@ -216,7 +226,7 @@ export function ReportSidebar({
           (collapsed || analyticsSurface || activeTab !== "assistant") && "hidden"
         )}
       >
-        <ChatPanel />
+        <ChatPanel workspaceChrome={chrome} />
       </div>
       {analyticsOpen ? (
         <div

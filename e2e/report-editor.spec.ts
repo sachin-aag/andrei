@@ -15,9 +15,13 @@ import {
   collapseReportSidebar,
   defineEditor,
   defineSection,
+  documentsPanel,
+  expandDocumentsPanel,
   expandReportSidebar,
+  openReportAnalytics,
   reportSidebar,
   reviewMargin,
+  setReportChrome,
 } from "./helpers/workspace";
 import {
   signedWorkflowPayload,
@@ -242,5 +246,45 @@ test.describe("report editor", () => {
     });
     await expect(page.getByRole("button", { name: /submit for review/i })).toHaveCount(0);
     await expect(page.locator("#define [contenteditable='true']")).toHaveCount(0);
+  });
+
+  test("Agent chrome puts chat in the center and work product on the right", async ({
+    page,
+  }) => {
+    await page.setViewportSize({ width: 1600, height: 900 });
+    await expandDocumentsPanel(page);
+    await expandReportSidebar(page);
+    await setReportChrome(page, "agent");
+
+    const docsBox = await documentsPanel(page).boundingBox();
+    const chatBox = await reportSidebar(page).boundingBox();
+    const canvasBox = await page.getByTestId("report-work-product").boundingBox();
+    expect(docsBox).toBeTruthy();
+    expect(chatBox).toBeTruthy();
+    expect(canvasBox).toBeTruthy();
+    expect(docsBox!.x).toBeLessThan(chatBox!.x);
+    expect(chatBox!.x).toBeLessThan(canvasBox!.x);
+
+    await openReportAnalytics(page);
+    const analytics = page.getByTestId("report-analytics-workspace");
+    await expect(analytics).toBeVisible();
+    const analyticsBox = await analytics.boundingBox();
+    const chatAfter = await reportSidebar(page).boundingBox();
+    expect(analyticsBox).toBeTruthy();
+    expect(chatAfter).toBeTruthy();
+    expect(chatAfter!.x).toBeLessThan(analyticsBox!.x);
+
+    await setReportChrome(page, "document");
+    const canvasAfter = await page.getByTestId("report-work-product").boundingBox();
+    const chatRight = await reportSidebar(page).boundingBox();
+    expect(canvasAfter).toBeTruthy();
+    expect(chatRight).toBeTruthy();
+    expect(canvasAfter!.x).toBeLessThan(chatRight!.x);
+
+    await setReportChrome(page, "agent");
+    await page.getByTestId("document-revision-history").click();
+    await expect(
+      page.getByText("Versions appear after the assistant edits the document.")
+    ).toBeVisible();
   });
 });

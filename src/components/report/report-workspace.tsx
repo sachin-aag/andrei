@@ -14,8 +14,11 @@ import { useReportAttachments } from "@/providers/report-attachments-provider";
 import { ReportHeader } from "./report-header";
 import { ReportDetailsEditDialog } from "./report-details-edit-dialog";
 import { ReportWorkspaceHeader } from "./report-workspace-header";
-import type { ReportWorkspaceSurface } from "./report-workspace-header";
 import { RequestExpertReviewDialog } from "./request-expert-review-dialog";
+import type { WorkspaceChrome, WorkProductView } from "./workspace-chrome";
+import { WorkProductTabs } from "./work-product-tabs";
+import { DocumentRevisionHistory } from "./document-revision-history";
+import { DocumentRevisionDiff } from "./document-revision-diff";
 import { ReportEditorToolbar } from "./report-editor-toolbar";
 import { MarginGutter } from "./review-rail/margin-gutter";
 import { ReportSidebar, type SidebarTab } from "./report-sidebar";
@@ -236,26 +239,37 @@ export function ReportWorkspace({
   const [expertReviewOpen, setExpertReviewOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [documentsCollapsed, setDocumentsCollapsed] = useState(false);
+  const [chrome, setChrome] = useState<WorkspaceChrome>("document");
+  const [workProductView, setWorkProductView] =
+    useState<WorkProductView>("report");
+  const [compare, setCompare] = useState<{ from: number; to: number } | null>(
+    null
+  );
+  const agentChrome = chrome === "agent";
   const {
     containerRef,
     isResizing,
     chatWidth,
     docsWidth,
+    previewWidth,
     chatBounds,
     docsBounds,
+    previewBounds,
     setChatWidth,
     setDocsWidth,
+    setPreviewWidth,
     resetChatWidth,
     resetDocsWidth,
+    resetPreviewWidth,
     beginResize,
     endResize,
   } = useWorkspaceLayout({
     reportId: report.id,
-    chatCollapsed: sidebarCollapsed,
+    chrome,
+    chatCollapsed: agentChrome ? false : sidebarCollapsed,
     docsCollapsed: documentsCollapsed,
   });
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("assistant");
-  const [surface, setSurface] = useState<ReportWorkspaceSurface>("document");
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
   const [analyticsReloadEpoch, setAnalyticsReloadEpoch] = useState(0);
   const [analyticsAgentBusy, setAnalyticsAgentBusy] = useState(false);
@@ -272,14 +286,18 @@ export function ReportWorkspace({
     workspacePresentationFor(getDocumentType(documentType)).kind ===
     "continuous_document";
   const statsEnabled = isStatisticalAnalysisEnabled();
-  const analyticsSurface = surface === "analytics";
+  const analyticsSurface = workProductView === "analytics";
+  const comparing = compare != null;
   const analyticsCanEdit = canSaveReportSection(
     { id: currentUserId, role: currentUserRole, email: currentUserEmail },
     report
   );
   const viewingDocument = !!activeAttachmentId;
+  const hideReportEditors =
+    analyticsSurface || viewingDocument || comparing;
   const showReviewGutter =
     !analyticsSurface &&
+    !comparing &&
     isReviewGutterVisible(sidebarCollapsed, viewingDocument);
   const handleSectionOverflow = useCallback(
     (overflows: Record<SectionType, number>) => {
@@ -421,6 +439,10 @@ export function ReportWorkspace({
   };
 
   const signingInFlight = submitting || approving || sendingFeedback;
+
+  useEffect(() => {
+    if (chrome === "agent") setSidebarCollapsed(false);
+  }, [chrome]);
 
   const jumpToSection = useCallback((s: SectionType) => {
     const el = mainRef.current?.querySelector(`#${s}`);
@@ -650,24 +672,9 @@ export function ReportWorkspace({
         }}
         showExpertReview={showExpertReview}
         onExpertReview={() => setExpertReviewOpen(true)}
-        surface={surface}
-        showAnalyticsToggle={statsEnabled}
-        onSurfaceChange={(next) => {
-          switch (next) {
-            case "analytics":
-              setSurface(next);
-              setAnalyticsOpen(true);
-              setSidebarTab("assistant");
-              return;
-            case "document":
-              setSurface(next);
-              return;
-            default: {
-              const exhaustive: never = next;
-              return exhaustive;
-            }
-          }
-        }}
+        chrome={chrome}
+        onChromeChange={setChrome}
+        workProductView={workProductView}
       />
 
       {analyticsSurface || viewingDocument ? null : <ReportEditorToolbar />}
@@ -681,7 +688,7 @@ export function ReportWorkspace({
       >
         <div
           className={cn(
-            "relative z-10 h-full shrink-0",
+            "relative z-10 order-1 h-full shrink-0",
             !isResizing && "transition-[width] duration-200 ease-in-out"
           )}
           style={{ width: docsWidth }}
@@ -708,21 +715,124 @@ export function ReportWorkspace({
 
         <main
           ref={mainRef}
+          data-testid="report-work-product"
           className={cn(
-            "@container min-h-0 min-w-0 flex-1 bg-[var(--background)]",
-            analyticsSurface || viewingDocument
-              ? "flex flex-col overflow-hidden"
-              : continuousDocument
-                ? "overflow-auto bg-[var(--muted)]"
-                : "overflow-auto"
+            "@container flex min-h-0 flex-col bg-[var(--background)]",
+            agentChrome
+              ? "order-3 shrink-0"
+              : "order-2 min-w-0 flex-1",
+            !agentChrome &&
+              !(analyticsSurface || viewingDocument) &&
+              continuousDocument &&
+              "bg-[var(--muted)]"
           )}
+          style={agentChrome ? { width: previewWidth } : undefined}
         >
-          {analyticsSurface ? (
-            <div className="relative flex min-h-0 flex-1 flex-col">
+          <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-3 py-2">
+            {statsEnabled ? (
+              <WorkProductTabs
+                value={workProductView}
+                onChange={(next) => {
+                  if (next === "analytics") {
+                    setCompare(null);
+                    setAnalyticsOpen(true);
+                    setSidebarTab("assistant");
+                  }
+                  setWorkProductView(next);
+                }}
+              />
+            ) : null}
+            <DocumentRevisionHistory
+              reportId={report.id}
+              compare={compare}
+              onCompare={(range) => {
+                setWorkProductView("report");
+                setCompare(range);
+              }}
+              onExitCompare={() => setCompare(null)}
+            />
+          </div>
+          <div
+            className={cn(
+              "relative flex min-h-0 min-w-0 flex-1 flex-col",
+              hideReportEditors ? "overflow-hidden" : "overflow-auto"
+            )}
+          >
+            {comparing ? (
+              <DocumentRevisionDiff
+                reportId={report.id}
+                from={compare.from}
+                to={compare.to}
+                onExit={() => setCompare(null)}
+              />
+            ) : null}
+            <div
+              hidden={hideReportEditors}
+              inert={hideReportEditors}
+              className={cn(
+                "mx-auto grid w-full min-w-0 grid-cols-1 gap-8 pb-24",
+                hideReportEditors && "hidden",
+                continuousDocument
+                  ? "max-w-none px-4 py-6"
+                  : "max-w-[1180px] px-6 py-8",
+                showReviewGutter && REVIEW_GUTTER_GRID_COLS
+              )}
+            >
               <div
                 className={cn(
+                  "space-y-10 min-w-0",
+                  documentType === "quality_risk_assessment" && "qra-document"
+                )}
+              >
+                <ReportHeader />
+                <div
+                  className={cn(
+                    "min-w-0",
+                    continuousDocument ? "space-y-4" : "space-y-10"
+                  )}
+                >
+                  {getWorkspaceSections(report.documentType).map((section) => {
+                    const s = section.key;
+                    const Editor =
+                      SECTION_EDITORS_BY_DOCUMENT_TYPE[report.documentType]?.[
+                        s
+                      ];
+                    if (!Editor) return null;
+                    const extra = showReviewGutter
+                      ? sectionMinHeights[s]
+                      : undefined;
+                    return (
+                      <section
+                        key={s}
+                        id={s}
+                        style={
+                          extra ? { paddingBottom: `${extra}px` } : undefined
+                        }
+                      >
+                        <Editor />
+                      </section>
+                    );
+                  })}
+                </div>
+              </div>
+              {showReviewGutter ? (
+                <aside
+                  className="relative hidden min-w-0 @[800px]:block"
+                  aria-label="Review margin"
+                >
+                  <MarginGutter
+                    onSectionOverflow={handleSectionOverflow}
+                  />
+                </aside>
+              ) : null}
+            </div>
+            {analyticsOpen ? (
+              <div
+                hidden={!analyticsSurface || viewingDocument || comparing}
+                inert={!analyticsSurface || viewingDocument || comparing}
+                className={cn(
                   "min-h-0 flex-1",
-                  viewingDocument && "hidden"
+                  (!analyticsSurface || viewingDocument || comparing) && "hidden"
                 )}
               >
                 <StatisticalWorkspace
@@ -732,99 +842,63 @@ export function ReportWorkspace({
                   agentBusy={analyticsAgentBusy}
                 />
               </div>
-              {viewingDocument ? <AttachmentCanvas /> : null}
-            </div>
-          ) : (
-            <>
-              <div
-                hidden={viewingDocument}
-                inert={viewingDocument}
-                className={cn(
-                  "mx-auto grid w-full min-w-0 grid-cols-1 gap-8 pb-24",
-                  viewingDocument && "hidden",
-                  continuousDocument
-                    ? "max-w-none px-4 py-6"
-                    : "max-w-[1180px] px-6 py-8",
-                  showReviewGutter && REVIEW_GUTTER_GRID_COLS
-                )}
-              >
-                <div
-                  className={cn(
-                    "space-y-10 min-w-0",
-                    documentType === "quality_risk_assessment" && "qra-document"
-                  )}
-                >
-                  <ReportHeader />
-                  <div
-                    className={cn(
-                      "min-w-0",
-                      continuousDocument ? "space-y-4" : "space-y-10"
-                    )}
-                  >
-                    {getWorkspaceSections(report.documentType).map((section) => {
-                      const s = section.key;
-                      const Editor =
-                        SECTION_EDITORS_BY_DOCUMENT_TYPE[report.documentType]?.[
-                          s
-                        ];
-                      if (!Editor) return null;
-                      const extra = showReviewGutter
-                        ? sectionMinHeights[s]
-                        : undefined;
-                      return (
-                        <section
-                          key={s}
-                          id={s}
-                          style={
-                            extra ? { paddingBottom: `${extra}px` } : undefined
-                          }
-                        >
-                          <Editor />
-                        </section>
-                      );
-                    })}
-                  </div>
-                </div>
-                {showReviewGutter ? (
-                  <aside
-                    className="relative hidden min-w-0 @[800px]:block"
-                    aria-label="Review margin"
-                  >
-                    <MarginGutter
-                      onSectionOverflow={handleSectionOverflow}
-                    />
-                  </aside>
-                ) : null}
-              </div>
-              {viewingDocument ? <AttachmentCanvas /> : null}
-            </>
-          )}
+            ) : null}
+            {viewingDocument && !comparing ? <AttachmentCanvas /> : null}
+          </div>
+          {agentChrome ? (
+            <WorkspaceResizeHandle
+              label="Resize document panel"
+              controlsId="report-work-product"
+              edge="start"
+              value={previewWidth}
+              min={previewBounds.min}
+              max={previewBounds.max}
+              onChange={setPreviewWidth}
+              onDragStart={() => beginResize("preview")}
+              onDragEnd={endResize}
+              onReset={resetPreviewWidth}
+            />
+          ) : null}
         </main>
 
         <div
           className={cn(
-            "relative z-10 h-full shrink-0",
-            !isResizing && "transition-[width] duration-200 ease-in-out"
+            "relative z-10 h-full",
+            agentChrome
+              ? "order-2 min-w-0 flex-1"
+              : "order-3 shrink-0",
+            !agentChrome &&
+              !isResizing &&
+              "transition-[width] duration-200 ease-in-out"
           )}
-          style={{ width: chatWidth }}
+          style={agentChrome ? undefined : { width: chatWidth }}
         >
-          <ReportSidebar
-            collapsed={sidebarCollapsed}
-            onToggleCollapse={toggleSidebarCollapse}
-            activeTab={sidebarTab}
-            onTabChange={setSidebarTab}
-            onJumpToSection={jumpToSection}
-            onJumpToPlaceholder={handleJumpToPlaceholder}
-            onJumpToComment={jumpToComment}
-            initialCriteriaSection={criteriaFocusSection}
-            surface={surface}
-            analyticsOpen={analyticsOpen}
-            onAnalyticsSettled={() =>
-              setAnalyticsReloadEpoch((epoch) => epoch + 1)
-            }
-            onAnalyticsAgentBusy={setAnalyticsAgentBusy}
-          />
-          {sidebarCollapsed ? null : (
+          <div
+            className={cn(
+              "h-full w-full",
+              agentChrome && "mx-auto max-w-[800px]"
+            )}
+          >
+            <ReportSidebar
+              collapsed={agentChrome ? false : sidebarCollapsed}
+              onToggleCollapse={toggleSidebarCollapse}
+              hideCollapse={agentChrome}
+              chrome={chrome}
+              activeTab={sidebarTab}
+              onTabChange={setSidebarTab}
+              onJumpToSection={jumpToSection}
+              onJumpToPlaceholder={handleJumpToPlaceholder}
+              onJumpToComment={jumpToComment}
+              initialCriteriaSection={criteriaFocusSection}
+              workProductView={workProductView}
+              analyticsOpen={analyticsOpen}
+              onAnalyticsSettled={() =>
+                setAnalyticsReloadEpoch((epoch) => epoch + 1)
+              }
+              onAnalyticsAgentBusy={setAnalyticsAgentBusy}
+            />
+          </div>
+          {agentChrome || sidebarCollapsed ? null : (
             <WorkspaceResizeHandle
               label="Resize assistant panel"
               controlsId="report-chat-sidebar"

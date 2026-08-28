@@ -29,6 +29,7 @@ export type PersistedChatMessage = {
   id: string;
   role: "user" | "assistant";
   parts: UIMessage["parts"];
+  metadata?: Record<string, unknown>;
 };
 
 export async function listChatSessions(
@@ -150,6 +151,10 @@ export async function loadSessionMessages(
     id: row.id,
     role: row.role,
     parts: (row.parts as UIMessage["parts"]) ?? [],
+    metadata:
+      row.metadata && typeof row.metadata === "object"
+        ? (row.metadata as Record<string, unknown>)
+        : undefined,
   }));
 }
 

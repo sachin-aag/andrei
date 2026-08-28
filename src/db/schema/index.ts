@@ -1224,6 +1224,82 @@ export const statisticalAnalysesRelations = relations(
   })
 );
 
+export const documentRevisionSourceEnum = pgEnum("document_revision_source", [
+  "agent_turn",
+]);
+
+/** One product version of the report, created after an Agent-chrome turn that wrote sections. */
+export const documentRevisions = pgTable(
+  "document_revisions",
+  {
+    id: text("id").primaryKey().$defaultFn(() => createId()),
+    reportId: text("report_id")
+      .notNull()
+      .references(() => reports.id, { onDelete: "cascade" }),
+    revisionNo: integer("revision_no").notNull(),
+    source: documentRevisionSourceEnum("source").notNull().default("agent_turn"),
+    chatSessionId: text("chat_session_id").references(() => chatSessions.id, {
+      onDelete: "set null",
+    }),
+    chatMessageId: text("chat_message_id").references(() => chatMessages.id, {
+      onDelete: "set null",
+    }),
+    summary: text("summary").notNull().default(""),
+    createdBy: text("created_by"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    reportRevisionUnique: uniqueIndex(
+      "document_revisions_report_revision_unique"
+    ).on(t.reportId, t.revisionNo),
+    reportCreatedIdx: index("document_revisions_report_created_idx").on(
+      t.reportId,
+      t.createdAt
+    ),
+  })
+);
+
+export const documentRevisionSections = pgTable(
+  "document_revision_sections",
+  {
+    id: text("id").primaryKey().$defaultFn(() => createId()),
+    revisionId: text("revision_id")
+      .notNull()
+      .references(() => documentRevisions.id, { onDelete: "cascade" }),
+    section: text("section").notNull(),
+    content: jsonb("content").notNull().default({}),
+    contentHash: text("content_hash").notNull(),
+  },
+  (t) => ({
+    revisionSectionUnique: uniqueIndex(
+      "document_revision_sections_revision_section_unique"
+    ).on(t.revisionId, t.section),
+  })
+);
+
+export const documentRevisionsRelations = relations(
+  documentRevisions,
+  ({ one, many }) => ({
+    report: one(reports, {
+      fields: [documentRevisions.reportId],
+      references: [reports.id],
+    }),
+    sections: many(documentRevisionSections),
+  })
+);
+
+export const documentRevisionSectionsRelations = relations(
+  documentRevisionSections,
+  ({ one }) => ({
+    revision: one(documentRevisions, {
+      fields: [documentRevisionSections.revisionId],
+      references: [documentRevisions.id],
+    }),
+  })
+);
+
 export type ReportStatus = (typeof reportStatusEnum.enumValues)[number];
 export type DocumentType = (typeof documentTypeEnum.enumValues)[number];
 /** Free-text section key; validated by the document-type registry at write time. */
@@ -1251,5 +1327,7 @@ export type DocumentChunkSourceKind =
   (typeof documentChunkSourceKindEnum.enumValues)[number];
 export type StorageOutboxStatus =
   (typeof storageOutboxStatusEnum.enumValues)[number];
+export type DocumentRevisionSource =
+  (typeof documentRevisionSourceEnum.enumValues)[number];
 
 export * from "./auth";

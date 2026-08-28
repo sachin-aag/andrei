@@ -60,6 +60,15 @@ export function resolveChatExtractLanguageModel(): LanguageModel {
   });
 }
 
+export type ChatTurnChangeSummary = {
+  items: Array<{
+    section: string;
+    targetField: string;
+    reasoning: string;
+  }>;
+  revisionNo?: number;
+};
+
 /**
  * Stored on every assistant row in `chat_messages.metadata`. Users pick a
  * pace, not a model, so this is the only place a past reply can be traced
@@ -70,12 +79,21 @@ export type ChatAssistantTurnMetadata = ChatPaceConfig & {
   pace: ChatPace;
   mode: ChatMode;
   promptVersion: string;
+  changeSummary?: ChatTurnChangeSummary;
 };
 
 export function chatAssistantTurnMetadata(input: {
   pace: ChatPace;
   mode: ChatMode;
   promptVersion: string;
+  changeSummary?: ChatTurnChangeSummary;
 }): ChatAssistantTurnMetadata {
-  return { ...chatPaceConfig(input.pace), ...input };
+  const { changeSummary, ...rest } = input;
+  return {
+    ...chatPaceConfig(input.pace),
+    ...rest,
+    ...(changeSummary && changeSummary.items.length > 0
+      ? { changeSummary }
+      : {}),
+  };
 }

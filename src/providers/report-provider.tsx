@@ -210,6 +210,12 @@ type ReportContextValue = {
   ) => () => void;
   /** Await every registered section autosave flush (no-ops when already persisted). */
   flushPendingSectionSaves: () => Promise<void>;
+  /**
+   * True while an Agent-chrome report turn is applying edits. Pauses
+   * section autosave so a debounced PATCH cannot overwrite the commit.
+   */
+  agentCommitInFlight: boolean;
+  setAgentCommitInFlight: (inFlight: boolean) => void;
   /** Tiptap editor registry for the margin-gutter to compute anchor positions. */
   registerEditor: (
     section: SectionType,
@@ -249,6 +255,8 @@ type ReportDataContextValue = Pick<
   | "getSectionId"
   | "registerSectionFlush"
   | "flushPendingSectionSaves"
+  | "agentCommitInFlight"
+  | "setAgentCommitInFlight"
 >;
 
 type ReportSectionsContextValue = Pick<
@@ -428,6 +436,7 @@ export function ReportProvider({
   const [suggestionApplyTransition, setSuggestionApplyTransition] = useState<
     Partial<Record<SectionType, SuggestionApplyTransition>>
   >({});
+  const [agentCommitInFlight, setAgentCommitInFlight] = useState(false);
   const [isEvaluating, setIsEvaluating] = useState(false);
   const [overflowCounts, setOverflowCounts] = useState<
     Partial<Record<SectionType, number>>
@@ -931,6 +940,8 @@ export function ReportProvider({
       getSectionId,
       registerSectionFlush,
       flushPendingSectionSaves,
+      agentCommitInFlight,
+      setAgentCommitInFlight,
     }),
     [
       report,
@@ -946,6 +957,8 @@ export function ReportProvider({
       getSectionId,
       registerSectionFlush,
       flushPendingSectionSaves,
+      agentCommitInFlight,
+      setAgentCommitInFlight,
     ]
   );
 

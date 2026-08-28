@@ -56,7 +56,7 @@ import {
   ComposerSelect,
   DOCUMENT_CHAT_MODE_OPTIONS,
 } from "@/components/report/chat-composer-controls";
-import { useReportData } from "@/providers/report-provider";
+import type { WorkspaceChrome } from "@/components/report/workspace-chrome";
 import { useReportAttachments } from "@/providers/report-attachments-provider";
 import { useUserDirectory } from "@/providers/user-directory-provider";
 import {
@@ -257,6 +257,28 @@ function parseAskUserQuestions(input: Record<string, unknown> | undefined): AskU
   });
 }
 
+function appliedEditsFromParts(
+  parts: UIMessage["parts"] | undefined
+): Array<{ section: string; targetField: string; reasoning: string }> {
+  const items: Array<{ section: string; targetField: string; reasoning: string }> =
+    [];
+  for (const part of parts ?? []) {
+    const tool = readToolPart(part as UIMessagePart<never, never>);
+    if (!tool?.output) continue;
+    const status = tool.output.status;
+    if (status !== "applied") continue;
+    const section =
+      typeof tool.output.section === "string" ? tool.output.section : "";
+    const targetField =
+      typeof tool.output.targetField === "string" ? tool.output.targetField : "";
+    const reasoning =
+      typeof tool.output.summary === "string" ? tool.output.summary : "";
+    if (!section) continue;
+    items.push({ section, targetField, reasoning });
+  }
+  return items;
+}
+
 function ToolChip({
   info,
   onSwitchSectionScope,
@@ -331,6 +353,14 @@ function ToolChip({
       );
     }
     const status = info.output?.status;
+    if (status === "applied") {
+      return (
+        <ToolLine icon={<PencilLine className="size-3.5 text-emerald-500" />} tone="success">
+          Applied to {section}
+          {field ? ` · ${field}` : ""}
+        </ToolLine>
+      );
+    }
     if (status === "proposed") {
       return (
         <ToolLine icon={<PencilLine className="size-3.5 text-emerald-500" />} tone="success">
@@ -361,6 +391,14 @@ function ToolChip({
       return (
         <ToolLine icon={<ImagePlus className="size-3.5" />}>
           Inserting image in {section}…
+        </ToolLine>
+      );
+    }
+    if (info.output?.status === "applied") {
+      return (
+        <ToolLine icon={<ImagePlus className="size-3.5 text-emerald-500" />} tone="success">
+          Applied image in {section}
+          {field ? ` · ${field}` : ""}
         </ToolLine>
       );
     }
@@ -397,6 +435,14 @@ function ToolChip({
         </ToolLine>
       );
     }
+    if (info.output?.status === "applied") {
+      return (
+        <ToolLine icon={<ImageMinus className="size-3.5 text-emerald-500" />} tone="success">
+          Removed figure in {section}
+          {field ? ` · ${field}` : ""}
+        </ToolLine>
+      );
+    }
     if (info.output?.status === "proposed") {
       return (
         <ToolLine icon={<ImageMinus className="size-3.5 text-emerald-500" />} tone="success">
@@ -427,6 +473,14 @@ function ToolChip({
       return (
         <ToolLine icon={<Table2 className="size-3.5" />}>
           Editing table in {section}…
+        </ToolLine>
+      );
+    }
+    if (info.output?.status === "applied") {
+      return (
+        <ToolLine icon={<Table2 className="size-3.5 text-emerald-500" />} tone="success">
+          Applied table edit to {section}
+          {field ? ` · ${field}` : ""}
         </ToolLine>
       );
     }
@@ -461,6 +515,14 @@ function ToolChip({
         <ToolLine icon={<FileText className="size-3.5" />}>
           Drafting {section}
           {field ? ` · ${field}` : ""}…
+        </ToolLine>
+      );
+    }
+    if (info.output?.status === "applied") {
+      return (
+        <ToolLine icon={<FileText className="size-3.5 text-emerald-500" />} tone="success">
+          Applied draft to {section}
+          {field ? ` · ${field}` : ""}
         </ToolLine>
       );
     }
@@ -750,9 +812,62 @@ const MessageTurn = memo(function MessageTurn({
           return null;
         })
       )}
+      <TurnChangeSummary
+        parts={parts}
+        metadata={
+          "metadata" in message
+            ? (message as { metadata?: unknown }).metadata
+            : undefined
+        }
+      />
     </div>
   );
 });
+
+function TurnChangeSummary({
+  parts,
+  metadata,
+}: {
+  parts: UIMessage["parts"];
+  metadata: unknown;
+}) {
+  const items = appliedEditsFromParts(parts);
+  if (items.length === 0) return null;
+  const revisionNo =
+    metadata &&
+    typeof metadata === "object" &&
+    "changeSummary" in metadata &&
+    metadata.changeSummary &&
+    typeof metadata.changeSummary === "object" &&
+    "revisionNo" in metadata.changeSummary &&
+    typeof metadata.changeSummary.revisionNo === "number"
+      ? metadata.changeSummary.revisionNo
+      : null;
+  return (
+    <div
+      data-testid="chat-change-summary"
+      className="rounded-lg border border-[var(--border)] bg-[var(--secondary)]/40 px-3 py-2"
+    >
+      <p className="text-[11px] font-semibold text-[var(--foreground)]">
+        Changes this turn
+      </p>
+      <ul className="mt-1 space-y-0.5 text-xs text-[var(--muted-foreground)]">
+        {items.map((item, i) => (
+          <li key={`${item.section}-${item.targetField}-${i}`}>
+            {sectionLabel(item.section)}
+            {item.targetField ? ` · ${item.targetField}` : ""}
+            {item.reasoning ? ` — ${item.reasoning}` : ""}
+          </li>
+        ))}
+      </ul>
+      {revisionNo != null ? (
+        <p className="mt-1 text-[11px] text-[var(--muted-foreground)]">
+          Saved as version {revisionNo}
+        </p>
+      ) : null}
+    </div>
+  );
+}
 
 function scopeDescription(scope: ChatSectionScope): string {
   return scope === CHAT_SECTION_SCOPE_ALL
@@ -809,8 +924,19 @@ function subscribeNoop() {
   return () => {};
 }
 
-export function ChatPanel() {
-  const { report, refresh, readOnly, currentUserId } = useReportData();
+export function ChatPanel({
+  workspaceChrome = "document",
+}: {
+  workspaceChrome?: WorkspaceChrome;
+}) {
+  const {
+    report,
+    refresh,
+    readOnly,
+    currentUserId,
+    flushPendingSectionSaves,
+    setAgentCommitInFlight,
+  } = useReportData();
   const { getUser } = useUserDirectory();
   const user = getUser(currentUserId);
   const role = user?.role;
@@ -927,6 +1053,30 @@ export function ChatPanel() {
     currentSessionId,
     busy
   );
+
+  const appliedEditCount = useMemo(
+    () =>
+      messages.reduce(
+        (sum, message) =>
+          sum + appliedEditsFromParts(message.parts).length,
+        0
+      ),
+    [messages]
+  );
+  const appliedEditCountRef = useRef(0);
+  useEffect(() => {
+    if (!busy) {
+      setAgentCommitInFlight(false);
+    }
+  }, [busy, setAgentCommitInFlight]);
+  useEffect(() => {
+    if (appliedEditCount <= appliedEditCountRef.current) {
+      appliedEditCountRef.current = appliedEditCount;
+      return;
+    }
+    appliedEditCountRef.current = appliedEditCount;
+    void refresh();
+  }, [appliedEditCount, refresh]);
 
   // Only ready documents are taggable — an attachment still being ingested has
   // no chunks, so scoping search to it would return nothing.
@@ -1050,11 +1200,12 @@ export function ChatPanel() {
   }, [base]);
 
   const onFinishTurn = useCallback(() => {
-    // Pull newly-proposed ai_fix comments into report state (inline diff +
-    // gutter card), and refresh session titles/order.
+    setAgentCommitInFlight(false);
+    // Pull newly-proposed ai_fix comments (document chrome) or committed
+    // section content (agent chrome) into report state.
     void refresh();
     void loadSessions();
-  }, [loadSessions, refresh]);
+  }, [loadSessions, refresh, setAgentCommitInFlight]);
 
   const onTurnCompleted = useCallback(
     (startedAt: number | null) => {
@@ -1379,6 +1530,17 @@ export function ChatPanel() {
         return;
       }
       if (sessionRuntime.busy) return;
+      if (workspaceChrome === "agent" && mode === "agent") {
+        try {
+          await flushPendingSectionSaves();
+        } catch {
+          toast.error(
+            "Could not save your latest edits before the assistant ran."
+          );
+          return;
+        }
+        setAgentCommitInFlight(true);
+      }
       setInput("");
       setPendingImages([]);
       setMentionRange(null);
@@ -1396,6 +1558,7 @@ export function ChatPanel() {
         mode,
         pace,
         sectionScope,
+        workspaceChrome,
       };
       if (tagsForRequest.length > 0) {
         body.mentions = tagsForRequest.map((mention) => ({
@@ -1425,6 +1588,9 @@ export function ChatPanel() {
       mentions,
       report.documentType,
       currentUserId,
+      workspaceChrome,
+      flushPendingSectionSaves,
+      setAgentCommitInFlight,
     ]
   );
 
@@ -1571,8 +1737,12 @@ export function ChatPanel() {
                   ? "I'll answer questions about your deviation investigation using the report and attachments. I won't edit the document in Ask mode."
                   : `Focused on ${scopeDescription(sectionScope)} — I'll answer questions about that section. I won't edit the document in Ask mode.`
                 : sectionScope === CHAT_SECTION_SCOPE_ALL
-                  ? "Ask me to draft or improve any section of your deviation investigation. I read the report and propose targeted edits you accept or reject."
-                  : `Focused on ${scopeDescription(sectionScope)} — ask me to draft or improve that section. I'll propose targeted edits you accept or reject.`}
+                  ? workspaceChrome === "agent"
+                    ? "Ask me to draft or improve any section. I'll apply edits directly to the document."
+                    : "Ask me to draft or improve any section of your deviation investigation. I read the report and propose targeted edits you accept or reject."
+                  : workspaceChrome === "agent"
+                    ? `Focused on ${scopeDescription(sectionScope)} — ask me to draft or improve that section. I'll apply edits directly to the document.`
+                    : `Focused on ${scopeDescription(sectionScope)} — ask me to draft or improve that section. I'll propose targeted edits you accept or reject.`}
             </p>
             <div className="space-y-1.5">
               {examplePromptsForMode(mode).map((p) => (

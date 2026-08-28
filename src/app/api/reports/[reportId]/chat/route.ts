@@ -28,6 +28,10 @@ import {
 } from "@/lib/ai/chat/system-prompt";
 import { buildCriteriaOutline } from "@/lib/ai/chat/criteria-outline";
 import { buildChatTools } from "@/lib/ai/chat/tools";
+import { deriveChatEditPolicy, isWorkspaceChrome } from "@/lib/ai/chat/edit-policy";
+import type { TurnEditItem } from "@/lib/ai/chat/commit-edit";
+import type { WorkspaceChrome } from "@/components/report/workspace-chrome";
+import { snapshotDocumentRevision } from "@/lib/document-revisions/snapshot";
 import {
   CHAT_EXTRACT_GOOGLE_MODEL_ID,
   chatAssistantTurnMetadata,
@@ -141,6 +145,7 @@ export async function POST(
     pace?: string;
     sectionScope?: string;
     mentions?: unknown;
+    workspaceChrome?: unknown;
   };
   const messages = sanitizeChatMessagesForModel(
     Array.isArray(body.messages) ? body.messages : []
@@ -166,6 +171,11 @@ export async function POST(
   const { report } = access;
   // Plan mode never edits; Agent mode only when section content is still writable.
   const canEdit = mode === "agent" && canSaveReportSection(user, report);
+  const workspaceChrome: WorkspaceChrome = isWorkspaceChrome(body.workspaceChrome)
+    ? body.workspaceChrome
+    : "document";
+  const editPolicy = deriveChatEditPolicy({ workspaceChrome, canEdit });
+  const turnEdits: TurnEditItem[] = [];
 
   // Resolve the session (create one if the client didn't supply a valid id).
   let sessionId = body.sessionId?.trim() || "";
@@ -310,6 +320,7 @@ export async function POST(
     mentionBlock: buildMentionBlock(mentions),
     autoEvidenceBlock,
     retrievalPolicy: retrieval.policy,
+    editPolicy,
   });
 
   const allTools = buildChatTools({
@@ -323,6 +334,8 @@ export async function POST(
     retrievalPolicy: retrieval.policy,
     documentReview,
     messages,
+    editPolicy,
+    turnEdits,
   });
   const tools: ToolSet =
     mode === "plan"
@@ -514,20 +527,60 @@ export async function POST(
         });
       }
       try {
-        await db.insert(chatMessages).values({
-          reportId,
-          sessionId,
-          role: "assistant",
-          parts: persisted.parts,
-          // The composer only ever showed "Quick" / "Deep" — record what
-          // actually answered so the turn stays traceable.
-          metadata: chatAssistantTurnMetadata({
-            pace,
-            mode,
-            promptVersion: CHAT_PROMPT_VERSION,
-          }),
-          authorId: null,
-        });
+        const changeItems = turnEdits.map((item) => ({
+          section: item.section,
+          targetField: item.targetField,
+          reasoning: item.reasoning,
+        }));
+        const [inserted] = await db
+          .insert(chatMessages)
+          .values({
+            reportId,
+            sessionId,
+            role: "assistant",
+            parts: persisted.parts,
+            metadata: chatAssistantTurnMetadata({
+              pace,
+              mode,
+              promptVersion: CHAT_PROMPT_VERSION,
+              changeSummary:
+                changeItems.length > 0 ? { items: changeItems } : undefined,
+            }),
+            authorId: null,
+          })
+          .returning({ id: chatMessages.id });
+
+        if (changeItems.length > 0 && inserted) {
+          try {
+            const revision = await snapshotDocumentRevision({
+              reportId,
+              documentType: report.documentType,
+              summary: changeItems
+                .map((item) => item.reasoning.trim() || item.targetField)
+                .filter(Boolean)
+                .join("; "),
+              createdBy: user.id,
+              chatSessionId: sessionId,
+              chatMessageId: inserted.id,
+            });
+            await db
+              .update(chatMessages)
+              .set({
+                metadata: chatAssistantTurnMetadata({
+                  pace,
+                  mode,
+                  promptVersion: CHAT_PROMPT_VERSION,
+                  changeSummary: {
+                    items: changeItems,
+                    revisionNo: revision.revisionNo,
+                  },
+                }),
+              })
+              .where(eq(chatMessages.id, inserted.id));
+          } catch (err) {
+            console.error("chat: failed to snapshot document revision", err);
+          }
+        }
         await touchChatSession(sessionId, null);
       } catch (err) {
         // The reply already streamed to the client, so we can only log here —

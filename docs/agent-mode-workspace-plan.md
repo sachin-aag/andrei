@@ -1,8 +1,10 @@
 # Agent-mode workspace — execution plan
 
-Status: **not started**. Plan only — do not treat this file as shipped product
-behavior. Written for a junior engineer to implement in **three stacked PRs**.
-Do not land all three in one PR.
+Status: **implemented** on `cursor/agent-mode-workspace-plan-aba8`. Trust the
+code if this file disagrees, then update this file.
+
+Originally written as three stacked PRs. The product decision was to land
+layout, commit-on-edit, and document versions together.
 
 If this file disagrees with the code, trust the code, then update this file.
 

@@ -19,16 +19,20 @@ import { ReportActionsMenu } from "./report-actions-menu";
 import { ReportExportButton } from "./report-export-button";
 import { RunAllEvaluationButton } from "./section-status-pill";
 import { StatusBadge } from "./status-badge";
-import { cn } from "@/lib/utils";
+import type { WorkspaceChrome, WorkProductView } from "./workspace-chrome";
+import { WorkspaceSegmentedTabs } from "./workspace-segmented-tabs";
 
-export type ReportWorkspaceSurface = "document" | "analytics";
+const CHROME_TABS = [
+  { value: "document" as const, label: "Document", testId: "report-chrome-document" },
+  { value: "agent" as const, label: "Agent", testId: "report-chrome-agent" },
+];
 
 type ReportWorkspaceHeaderProps = {
   report: ReportRecord;
   mode: WorkspaceMode;
-  surface?: ReportWorkspaceSurface;
-  onSurfaceChange?: (surface: ReportWorkspaceSurface) => void;
-  showAnalyticsToggle?: boolean;
+  chrome: WorkspaceChrome;
+  onChromeChange: (chrome: WorkspaceChrome) => void;
+  workProductView: WorkProductView;
   authorName?: string;
   managerNames?: string[];
   canSubmit: boolean;
@@ -51,6 +55,9 @@ type ReportWorkspaceHeaderProps = {
 export function ReportWorkspaceHeader({
   report,
   mode,
+  chrome,
+  onChromeChange,
+  workProductView,
   authorName,
   managerNames = [],
   canSubmit,
@@ -68,14 +75,12 @@ export function ReportWorkspaceHeader({
   onEditDetails,
   showExpertReview = false,
   onExpertReview,
-  surface = "document",
-  onSurfaceChange,
-  showAnalyticsToggle = false,
 }: ReportWorkspaceHeaderProps) {
   const title = report.documentNo || "Untitled";
   const [navigatingBack, setNavigatingBack] = useState(false);
   const isViewMode = mode === "view";
-  const documentSurface = surface === "document";
+  const showRunAll =
+    !isViewMode && chrome === "document" && workProductView === "report";
 
   return (
     <header className="h-16 border-b border-[var(--border)] bg-[var(--card)] px-6 flex items-center gap-4 shrink-0">
@@ -117,44 +122,12 @@ export function ReportWorkspaceHeader({
           {managerNames.length > 0 ? ` → ${managerNames.join(", ")}` : ""}
         </span>
       </div>
-      {showAnalyticsToggle && onSurfaceChange ? (
-        <div
-          role="tablist"
-          aria-label="Report workspace"
-          className="flex shrink-0 rounded-md border border-[var(--border)] p-0.5"
-        >
-          <button
-            type="button"
-            role="tab"
-            data-testid="report-surface-document"
-            aria-selected={documentSurface}
-            onClick={() => onSurfaceChange("document")}
-            className={cn(
-              "rounded px-2.5 py-1 text-xs font-medium transition-colors",
-              documentSurface
-                ? "bg-[var(--secondary)] text-[var(--foreground)]"
-                : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-            )}
-          >
-            Document
-          </button>
-          <button
-            type="button"
-            role="tab"
-            data-testid="report-surface-analytics"
-            aria-selected={!documentSurface}
-            onClick={() => onSurfaceChange("analytics")}
-            className={cn(
-              "rounded px-2.5 py-1 text-xs font-medium transition-colors",
-              !documentSurface
-                ? "bg-[var(--secondary)] text-[var(--foreground)]"
-                : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-            )}
-          >
-            Analytics
-          </button>
-        </div>
-      ) : null}
+      <WorkspaceSegmentedTabs
+        label="Workspace chrome"
+        value={chrome}
+        tabs={CHROME_TABS}
+        onChange={onChromeChange}
+      />
 
       <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
         <ReportExportButton
@@ -163,14 +136,14 @@ export function ReportWorkspaceHeader({
           documentType={report.documentType}
         />
 
-        {!isViewMode && documentSurface ? <RunAllEvaluationButton /> : null}
+        {showRunAll ? <RunAllEvaluationButton /> : null}
 
         {canSubmit && (
           <Button size="sm" onClick={onSubmit} disabled={submitting}>
             {submitting ? (
               <Loader2 className="size-4 animate-spin" aria-hidden="true" />
             ) : (
-              <Send className="size-4" aria-hidden="true" />
+              <Send className="size-4" />
             )}
             Submit for review
           </Button>
@@ -187,7 +160,7 @@ export function ReportWorkspaceHeader({
               {sendingFeedback ? (
                 <Loader2 className="size-4 animate-spin" aria-hidden="true" />
               ) : (
-                <MessageSquare className="size-4" aria-hidden="true" />
+                <MessageSquare className="size-4" />
               )}
               Return with feedback
             </Button>
@@ -200,7 +173,7 @@ export function ReportWorkspaceHeader({
               {approving ? (
                 <Loader2 className="size-4 animate-spin" aria-hidden="true" />
               ) : (
-                <CheckCircle2 className="size-4" aria-hidden="true" />
+                <CheckCircle2 className="size-4" />
               )}
               Approve
             </Button>

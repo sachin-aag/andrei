@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useLayoutEffect, useRef, useState, useSyncExternalStore } from "react";
+import type { WorkspaceChrome } from "@/components/report/workspace-chrome";
 import {
   allocateWorkspaceColumns,
   bindWorkspaceLayoutToReport,
@@ -13,6 +14,8 @@ import {
   getViewportWidthSnapshot,
   getWorkspaceLayoutServerSnapshot,
   getWorkspaceLayoutSnapshot,
+  PREVIEW_DEFAULT_PX,
+  previewWidthBounds,
   subscribeViewportWidth,
   subscribeWorkspaceLayout,
   updateWorkspaceLayout,
@@ -21,6 +24,7 @@ import {
 
 type UseWorkspaceLayoutArgs = {
   reportId: string;
+  chrome: WorkspaceChrome;
   chatCollapsed: boolean;
   docsCollapsed: boolean;
 };
@@ -35,6 +39,7 @@ function estimateContainerWidth(): number {
 
 export function useWorkspaceLayout({
   reportId,
+  chrome,
   chatCollapsed,
   docsCollapsed,
 }: UseWorkspaceLayoutArgs) {
@@ -74,8 +79,10 @@ export function useWorkspaceLayout({
     containerWidth,
     viewportWidth,
     {
+      chrome,
       chatWidth: desired.chatWidth,
       docsWidth: desired.docsWidth,
+      previewWidth: desired.previewWidth,
       chatCollapsed,
       docsCollapsed,
     },
@@ -84,6 +91,7 @@ export function useWorkspaceLayout({
 
   const chatBounds = chatWidthBounds(viewportWidth);
   const docsBounds = docsWidthBounds(viewportWidth);
+  const previewBounds = previewWidthBounds(viewportWidth);
 
   const setChatWidth = useCallback((width: number) => {
     setProtect("chat");
@@ -95,6 +103,11 @@ export function useWorkspaceLayout({
     updateWorkspaceLayout((prev) => ({ ...prev, docsWidth: width }));
   }, []);
 
+  const setPreviewWidth = useCallback((width: number) => {
+    setProtect("preview");
+    updateWorkspaceLayout((prev) => ({ ...prev, previewWidth: width }));
+  }, []);
+
   const resetChatWidth = useCallback(() => {
     setChatWidth(CHAT_DEFAULT_PX);
   }, [setChatWidth]);
@@ -103,7 +116,11 @@ export function useWorkspaceLayout({
     setDocsWidth(DOCS_DEFAULT_PX);
   }, [setDocsWidth]);
 
-  const beginResize = useCallback((panel: "chat" | "docs") => {
+  const resetPreviewWidth = useCallback(() => {
+    setPreviewWidth(PREVIEW_DEFAULT_PX);
+  }, [setPreviewWidth]);
+
+  const beginResize = useCallback((panel: "chat" | "docs" | "preview") => {
     isResizingRef.current = true;
     setIsResizing(true);
     setProtect(panel);
@@ -120,12 +137,16 @@ export function useWorkspaceLayout({
     isResizing,
     chatWidth: chatCollapsed ? COLLAPSED_RAIL_PX : allocated.chatWidth,
     docsWidth: docsCollapsed ? COLLAPSED_RAIL_PX : allocated.docsWidth,
+    previewWidth: allocated.previewWidth,
     chatBounds,
     docsBounds,
+    previewBounds,
     setChatWidth,
     setDocsWidth,
+    setPreviewWidth,
     resetChatWidth,
     resetDocsWidth,
+    resetPreviewWidth,
     beginResize,
     endResize,
   };

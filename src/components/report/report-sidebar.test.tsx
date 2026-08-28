@@ -118,7 +118,7 @@ describe("ReportSidebar chat keep-alive", () => {
         onJumpToSection={noop}
         onJumpToPlaceholder={noop}
         onJumpToComment={noop}
-        surface="analytics"
+        workProductView="analytics"
         analyticsOpen
       />
     );

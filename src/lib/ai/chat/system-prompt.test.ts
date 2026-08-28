@@ -18,9 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("bumps the prompt version when insert_image and citation-marker guidance change", () => {
-    expect(CHAT_PROMPT_VERSION).toBe(
-      "chat-v48-ask-mode-qna-metric-series-plots"
-    );
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v49-agent-chrome-commit");
   });
 
   it("puts citations at the end of the section when the pack mode is on", () => {
@@ -416,5 +414,26 @@ describe("buildChatSystemPrompt", () => {
       sectionScope: "define",
     });
     expect(planDefine).not.toContain("## Analyze questions");
+  });
+
+  it("tells the model edits apply immediately when editPolicy is commit", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      editPolicy: "commit",
+    });
+    expect(prompt).toContain("apply edits immediately");
+    expect(prompt).toContain("written to the document immediately");
+    expect(prompt).not.toContain("nothing is applied until they accept it");
+  });
+
+  it("keeps propose-and-review copy when editPolicy is propose", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      editPolicy: "propose",
+    });
+    expect(prompt).toContain("nothing is applied until they accept it");
+    expect(prompt).not.toContain("written to the document immediately");
   });
 });

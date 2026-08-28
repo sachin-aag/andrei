@@ -157,6 +157,8 @@ export function ChatSessionHost({
       agentRunStartedAtRef.current = null;
       setBackgroundTurn(false);
       onTurnCompletedRef.current(startedAt);
+      // Pick up persisted metadata (change summary / document version).
+      void hydrateFromServer();
     },
     onError: (err) => {
       console.error("chat error", err);

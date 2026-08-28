@@ -60,6 +60,12 @@ import { isDocumentChatPlotMeasurementsEnabled } from "@/lib/customers/packs";
 import { citationsAtEndOfSectionFor } from "@/lib/document-types";
 import { checkProposedEdit, proposedEditHint } from "@/lib/ai/chat/propose-edit";
 import {
+  commitChatEdit,
+  type CommitEditInput,
+  type TurnEditItem,
+} from "@/lib/ai/chat/commit-edit";
+import type { ChatEditPolicy } from "@/lib/ai/chat/edit-policy";
+import {
   citationAppendPart,
   documentCitationRule,
   moveCitationsToEndOfText,
@@ -136,6 +142,12 @@ export type ProposeEditResult =
       targetField: string;
       summary: string;
     }
+  | {
+      status: "applied";
+      section: SectionType;
+      targetField: string;
+      summary: string;
+    }
   | { status: "not_editable"; message: string }
   | { status: "invalid_section"; message: string }
   | { status: "invalid_field"; message: string; allowedFields: string[] }
@@ -151,6 +163,12 @@ export type InsertImageResult =
   | {
       status: "proposed";
       suggestionId: string;
+      section: SectionType;
+      targetField: string;
+      summary: string;
+    }
+  | {
+      status: "applied";
       section: SectionType;
       targetField: string;
       summary: string;
@@ -184,6 +202,12 @@ export type EditTableResult =
       targetField: string;
       summary: string;
     }
+  | {
+      status: "applied";
+      section: SectionType;
+      targetField: string;
+      summary: string;
+    }
   | { status: "not_editable"; message: string }
   | { status: "invalid_section"; message: string }
   | { status: "invalid_field"; message: string; allowedFields: string[] }
@@ -199,6 +223,12 @@ export type DraftFieldResult =
   | {
       status: "drafted";
       suggestionId: string;
+      section: SectionType;
+      targetField: string;
+      summary: string;
+    }
+  | {
+      status: "applied";
       section: SectionType;
       targetField: string;
       summary: string;
@@ -599,6 +629,13 @@ export function buildChatTools(opts: {
   documentType?: import("@/db/schema").DocumentType;
   /** Acting user for audit events (e.g. select_analyze_method). */
   actor?: AuditActorSnapshot;
+  /**
+   * Server-derived. `commit` writes `report_sections` and never inserts
+   * suggestion comments. Default `propose` is document-chrome behavior.
+   */
+  editPolicy?: ChatEditPolicy;
+  /** Mutable per-turn log; successful commits push here for the change summary. */
+  turnEdits?: TurnEditItem[];
   /** Attachments the engineer tagged with @; biases search_documents. */
   pinnedAttachmentIds?: readonly string[];
   /** Sections the engineer tagged with @; readable even when out of scope. */
@@ -614,6 +651,56 @@ export function buildChatTools(opts: {
 }): ToolSet {
   const { reportId, canEdit, actor } = opts;
   const documentType = opts.documentType ?? "investigation_report";
+  const editPolicy: ChatEditPolicy = opts.editPolicy ?? "propose";
+  const turnEdits = opts.turnEdits;
+  const committing = editPolicy === "commit";
+  const recordTurnEdit = (
+    section: SectionType,
+    targetField: string,
+    reasoning: string
+  ) => {
+    turnEdits?.push({ section, targetField, reasoning });
+  };
+  const commitFieldEdit = async (args: {
+    section: SectionType;
+    targetField: string;
+    reasoning: string;
+    input: CommitEditInput;
+  }) => {
+    if (!actor) {
+      return {
+        status: "not_editable" as const,
+        message:
+          "This report is not editable in its current state, so edits cannot be applied.",
+      };
+    }
+    const result = await commitChatEdit({
+      reportId,
+      actor,
+      documentType,
+      section: args.section,
+      targetField: args.targetField,
+      reasoning: args.reasoning,
+      input: args.input,
+    });
+    if (result.status === "applied") {
+      recordTurnEdit(result.section, result.targetField, args.reasoning);
+      return result;
+    }
+    if (result.status === "section_not_found") {
+      return {
+        status: "section_not_found" as const,
+        message: result.message,
+      };
+    }
+    return {
+      status: result.status,
+      hint: result.hint ?? "Could not apply this edit.",
+    };
+  };
+  const reviewableCopy = committing
+    ? "The change is written to the document immediately."
+    : "The engineer accepts or rejects it.";
   const sectionScope = opts.sectionScope ?? "all";
   const retrievalPolicy = opts.retrievalPolicy ?? "adaptive";
   const documentReview = opts.documentReview ?? new DocumentReviewSession();
@@ -972,7 +1059,7 @@ export function buildChatTools(opts: {
 
     propose_edit: tool({
       description:
-        `Propose ONE targeted, reviewable edit to a single field. The edit appears as an inline tracked-change the engineer accepts or rejects. Read the field first so the anchor is exact.${
+        `Propose ONE targeted edit to a single field. ${reviewableCopy} Read the field first so the anchor is exact.${
           citationsAtEndOfSection
             ? " Put document citations as [filename, p. N] immediately after the claim in insertText. The server converts them to numbered markers and parks `1. [filename, p. N]` under a Citations: heading. A split `second` (empty anchor, insertText like 'Citations:\\n[filename, p. N]') still works as a fallback."
             : ""
@@ -1135,6 +1222,23 @@ export function buildChatTools(opts: {
               insertText: normalizeSuggestionInsertText(prepared.second.insertText),
             }
           : undefined;
+        if (committing) {
+          return commitFieldEdit({
+            section,
+            targetField: resolvedField,
+            reasoning,
+            input: {
+              kind: "located",
+              edit: {
+                anchorText: prepared.anchorText,
+                deleteText: prepared.deleteText,
+                insertText: normalizedInsert,
+                scope: prepared.scope,
+                second,
+              },
+            },
+          });
+        }
         await db.insert(comments).values({
           id: suggestionId,
           reportId,
@@ -1170,7 +1274,7 @@ export function buildChatTools(opts: {
 
     insert_image: tool({
       description:
-        `Insert one existing image into a rich narrative field as a reviewable suggestion (the engineer accepts or rejects it). section/targetField are the DESTINATION. For source=section, set image.section to the section the figure is in NOW (required when copying between sections) and pass image.id from read_section (e.g. 'narrative#1') or image.index. Do not generate new pixels${includePlotMeasurements ? " — use plot_measurements when the engineer asked for a chart" : ". Measurement charts belong in Analytics, not Document chat"}. Do not put markdown image syntax in draft_field or propose_edit — those cannot create figures. Empty anchorText appends at the end of the field.${scopeHint}`,
+        `Insert one existing image into a rich narrative field. ${reviewableCopy} section/targetField are the DESTINATION. For source=section, set image.section to the section the figure is in NOW (required when copying between sections) and pass image.id from read_section (e.g. 'narrative#1') or image.index. Do not generate new pixels${includePlotMeasurements ? " — use plot_measurements when the engineer asked for a chart" : ". Measurement charts belong in Analytics, not Document chat"}. Do not put markdown image syntax in draft_field or propose_edit — those cannot create figures. Empty anchorText appends at the end of the field.${scopeHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
@@ -1412,6 +1516,22 @@ export function buildChatTools(opts: {
         }
 
         const suggestionId = createId();
+        if (committing) {
+          return commitFieldEdit({
+            section,
+            targetField: resolvedField,
+            reasoning,
+            input: {
+              kind: "located",
+              edit: {
+                anchorText: (anchorText ?? "").trim(),
+                deleteText: "",
+                insertText: "",
+                insertImage,
+              },
+            },
+          });
+        }
         await db.insert(comments).values({
           id: suggestionId,
           reportId,
@@ -1492,12 +1612,15 @@ export function buildChatTools(opts: {
           documentType,
           retrievalPolicy,
           documentReview,
+          editPolicy,
+          actor,
+          turnEdits,
         }),
     }),
 
     remove_image: tool({
       description:
-        `Remove one existing inline figure from a rich narrative field as a reviewable suggestion (the engineer accepts or rejects it). Call read_section first and pass image.id (e.g. 'narrative#1') or image.index. Do not rewrite the field with draft_field just to drop a figure — that drops every figure. Do not use propose_edit against [image:N] markers.${scopeHint}`,
+        `Remove one existing inline figure from a rich narrative field. ${reviewableCopy} Call read_section first and pass image.id (e.g. 'narrative#1') or image.index. Do not rewrite the field with draft_field just to drop a figure — that drops every figure. Do not use propose_edit against [image:N] markers.${scopeHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
@@ -1640,6 +1763,22 @@ export function buildChatTools(opts: {
           }
 
           const suggestionId = createId();
+          if (committing) {
+            return commitFieldEdit({
+              section,
+              targetField: resolvedField,
+              reasoning,
+              input: {
+                kind: "located",
+                edit: {
+                  anchorText: "",
+                  deleteText: "",
+                  insertText: "",
+                  removeImage,
+                },
+              },
+            });
+          }
           await db.insert(comments).values({
             id: suggestionId,
             reportId,
@@ -1769,6 +1908,31 @@ export function buildChatTools(opts: {
           : undefined;
 
         const suggestionId = createId();
+        if (committing) {
+          const tableResult = await commitFieldEdit({
+            section,
+            targetField: resolvedField,
+            reasoning,
+            input: { kind: "table", operation: stripped.operation },
+          });
+          if (tableResult.status !== "applied" || !second) {
+            return tableResult;
+          }
+          return commitFieldEdit({
+            section,
+            targetField: resolvedField,
+            reasoning,
+            input: {
+              kind: "located",
+              edit: {
+                anchorText: second.anchorText,
+                deleteText: second.deleteText,
+                insertText: second.insertText,
+                scope: second.scope,
+              },
+            },
+          });
+        }
         await db.insert(comments).values({
           id: suggestionId,
           reportId,
@@ -1804,7 +1968,7 @@ export function buildChatTools(opts: {
 
     draft_field: tool({
       description:
-        `Draft or fully rewrite ONE field. Provide the COMPLETE replacement content as markdown: paragraphs, '- ' bullets, '1. ' numbered lists, '## ' headings, '**bold**', '*italic*', and GFM tables ('| a | b |' rows with a '| --- |' separator). Use bracketed placeholders like [batch number] for facts you do not know — never invent facts. The engineer reviews the full draft and accepts or rejects it. Use this for empty fields, substantial rewrites, creating a NEW table, or an explicitly requested full table replacement. For any incremental change to an existing table, use edit_table — never draft_field. Use propose_edit only for small prose or list edits. Do not put markdown image syntax (![alt](url) or narrative#1) here — use insert_image. To remove a figure, call remove_image; do not rewrite the field just to drop one.${scopeHint}${fixedTableHint}`,
+        `Draft or fully rewrite ONE field. Provide the COMPLETE replacement content as markdown: paragraphs, '- ' bullets, '1. ' numbered lists, '## ' headings, '**bold**', '*italic*', and GFM tables ('| a | b |' rows with a '| --- |' separator). Use bracketed placeholders like [batch number] for facts you do not know — never invent facts. ${reviewableCopy} Use this for empty fields, substantial rewrites, creating a NEW table, or an explicitly requested full table replacement. For any incremental change to an existing table, use edit_table — never draft_field. Use propose_edit only for small prose or list edits. Do not put markdown image syntax (![alt](url) or narrative#1) here — use insert_image. To remove a figure, call remove_image; do not rewrite the field just to drop one.${scopeHint}${fixedTableHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
@@ -1885,6 +2049,14 @@ export function buildChatTools(opts: {
         const draftMarkdown = citationsAtEndOfSection
           ? moveCitationsToEndOfText(normalizedMarkdown)
           : normalizedMarkdown;
+        if (committing) {
+          return commitFieldEdit({
+            section,
+            targetField: resolvedField,
+            reasoning,
+            input: { kind: "redraft", markdown: draftMarkdown },
+          });
+        }
         await db.insert(comments).values({
           id: suggestionId,
           reportId,
@@ -2021,6 +2193,9 @@ export function buildChatTools(opts: {
         }
 
         const plan = analyzeMethodPlan(method);
+        if (committing) {
+          recordTurnEdit("analyze", "toolsUsed", rationale);
+        }
         return {
           status: "selected",
           method,

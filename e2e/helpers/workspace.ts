@@ -96,6 +96,17 @@ export async function openReportAnalytics(page: Page): Promise<void> {
   });
 }
 
+export async function setReportChrome(
+  page: Page,
+  chrome: "document" | "agent"
+): Promise<void> {
+  await page.getByTestId(`report-chrome-${chrome}`).click();
+  await expect(page.getByTestId(`report-chrome-${chrome}`)).toHaveAttribute(
+    "aria-selected",
+    "true"
+  );
+}
+
 /** Collapse the assistant so the review margin (suggestions/comments) can show. */
 export async function collapseReportSidebar(page: Page): Promise<void> {
   const sidebar = reportSidebar(page);

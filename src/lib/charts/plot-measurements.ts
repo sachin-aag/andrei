@@ -20,6 +20,12 @@ import {
   sectionFieldPlainText,
 } from "@/lib/ai/chat/fields";
 import { checkProposedEdit, proposedEditHint } from "@/lib/ai/chat/propose-edit";
+import {
+  commitChatEdit,
+  type TurnEditItem,
+} from "@/lib/ai/chat/commit-edit";
+import type { ChatEditPolicy } from "@/lib/ai/chat/edit-policy";
+import type { AuditActorSnapshot } from "@/lib/audit";
 import type { RetrievalPolicy } from "@/lib/ai/chat/retrieval-policy";
 import type { DocumentReviewSession } from "@/lib/ai/chat/document-review";
 import {
@@ -79,7 +85,7 @@ export type PlotMeasurementsInput = {
 
 export type PlotMeasurementsResult =
   | {
-      status: "proposed" | "replaced";
+      status: "proposed" | "replaced" | "applied";
       suggestionId: string;
       suggestionIds: string[];
       section: SectionType;
@@ -332,6 +338,92 @@ function checkStatusResult(
   return { status: check.status, hint } as PlotMeasurementsResult;
 }
 
+async function persistChartEdit(args: {
+  ctx: {
+    reportId: string;
+    documentType: DocumentType;
+    editPolicy?: ChatEditPolicy;
+    actor?: AuditActorSnapshot;
+    turnEdits?: TurnEditItem[];
+  };
+  deps: PlotMeasurementsDeps;
+  loaded: LoadedSection;
+  input: PlotMeasurementsInput;
+  resolvedField: string;
+  hash: string;
+  insertImage?: SuggestionImageInsert;
+  removeImage?: SuggestionImageRemove;
+  anchorText: string;
+}): Promise<{ ok: true; id: string } | PlotMeasurementsResult> {
+  if (args.ctx.editPolicy === "commit") {
+    if (!args.ctx.actor) {
+      return {
+        status: "not_editable",
+        message:
+          "This report is not editable in its current state, so charts cannot be applied.",
+      };
+    }
+    const result = await commitChatEdit({
+      reportId: args.ctx.reportId,
+      actor: args.ctx.actor,
+      documentType: args.ctx.documentType,
+      section: args.input.section,
+      targetField: args.resolvedField,
+      reasoning: args.input.reasoning,
+      input: {
+        kind: "located",
+        edit: {
+          anchorText: args.anchorText,
+          deleteText: "",
+          insertText: "",
+          insertImage: args.insertImage,
+          removeImage: args.removeImage,
+        },
+      },
+    });
+    if (result.status === "applied") {
+      args.ctx.turnEdits?.push({
+        section: result.section,
+        targetField: result.targetField,
+        reasoning: args.input.reasoning,
+      });
+      return { ok: true, id: "applied" };
+    }
+    if (result.status === "section_not_found") {
+      return { status: "section_not_found", message: result.message };
+    }
+    if (result.status === "not_found") {
+      return {
+        status: "not_found_anchor",
+        hint: result.hint ?? "Could not place this chart.",
+      };
+    }
+    return {
+      status: result.status,
+      hint: result.hint ?? "Could not apply this chart.",
+    } as PlotMeasurementsResult;
+  }
+
+  const id = args.deps.createId();
+  await args.deps.insertComment({
+    id,
+    reportId: args.ctx.reportId,
+    sectionId: args.loaded.sectionId,
+    section: args.input.section,
+    content: serializeAiFixCommentContent({
+      deleteText: "",
+      insertText: "",
+      insertImage: args.insertImage,
+      removeImage: args.removeImage,
+      reasoning: args.input.reasoning,
+      contentHashAtSuggestion: args.hash,
+    }),
+    anchorText: args.anchorText,
+    contentPath: args.resolvedField,
+  });
+  return { ok: true, id };
+}
+
 export async function executePlotMeasurements(
   input: PlotMeasurementsInput,
   ctx: {
@@ -340,6 +432,9 @@ export async function executePlotMeasurements(
     documentType: DocumentType;
     retrievalPolicy: RetrievalPolicy;
     documentReview: DocumentReviewSession;
+    editPolicy?: ChatEditPolicy;
+    actor?: AuditActorSnapshot;
+    turnEdits?: TurnEditItem[];
   },
   deps: PlotMeasurementsDeps = DEFAULT_DEPS
 ): Promise<PlotMeasurementsResult> {
@@ -388,7 +483,10 @@ export async function executePlotMeasurements(
     reportId: ctx.reportId,
     section: input.section,
   });
-  const pending = pendingChartsForQuery(open, query, resolvedField);
+  const pending =
+    ctx.editPolicy === "commit"
+      ? []
+      : pendingChartsForQuery(open, query, resolvedField);
   const accepted = acceptedChartsForQuery(listed, query);
 
   let specs: ChartSpec[];
@@ -530,24 +628,19 @@ export async function executePlotMeasurements(
       );
       const failed = checkStatusResult(check, fieldDoc, removeImage ? "" : anchorText);
       if (failed) return failed;
-      const id = deps.createId();
-      await deps.insertComment({
-        id,
-        reportId: ctx.reportId,
-        sectionId: loaded.sectionId,
-        section: input.section,
-        content: serializeAiFixCommentContent({
-          deleteText: "",
-          insertText: "",
-          insertImage,
-          removeImage,
-          reasoning: input.reasoning,
-          contentHashAtSuggestion: hash,
-        }),
+      const persisted = await persistChartEdit({
+        ctx,
+        deps,
+        loaded,
+        input,
+        resolvedField,
+        hash,
+        insertImage,
+        removeImage,
         anchorText: removeImage ? "" : anchorText,
-        contentPath: resolvedField,
       });
-      suggestionIds.push(id);
+      if (!("ok" in persisted)) return persisted;
+      suggestionIds.push(persisted.id);
     }
     for (const leftover of accepted.slice(rendered.rendered.length)) {
       const removeImage: SuggestionImageRemove = {
@@ -565,26 +658,21 @@ export async function executePlotMeasurements(
       );
       const failed = checkStatusResult(check, fieldDoc, "");
       if (failed) return failed;
-      const id = deps.createId();
-      await deps.insertComment({
-        id,
-        reportId: ctx.reportId,
-        sectionId: loaded.sectionId,
-        section: input.section,
-        content: serializeAiFixCommentContent({
-          deleteText: "",
-          insertText: "",
-          removeImage,
-          reasoning: input.reasoning,
-          contentHashAtSuggestion: hash,
-        }),
+      const persisted = await persistChartEdit({
+        ctx,
+        deps,
+        loaded,
+        input,
+        resolvedField,
+        hash,
+        removeImage,
         anchorText: "",
-        contentPath: resolvedField,
       });
-      suggestionIds.push(id);
+      if (!("ok" in persisted)) return persisted;
+      suggestionIds.push(persisted.id);
     }
     return {
-      status: "replaced",
+      status: ctx.editPolicy === "commit" ? "applied" : "replaced",
       suggestionId: suggestionIds[0]!,
       suggestionIds,
       section: input.section,
@@ -608,26 +696,21 @@ export async function executePlotMeasurements(
     );
     const failed = checkStatusResult(check, fieldDoc, anchorText);
     if (failed) return failed;
-    const id = deps.createId();
-    await deps.insertComment({
-      id,
-      reportId: ctx.reportId,
-      sectionId: loaded.sectionId,
-      section: input.section,
-      content: serializeAiFixCommentContent({
-        deleteText: "",
-        insertText: "",
-        insertImage,
-        reasoning: input.reasoning,
-        contentHashAtSuggestion: hash,
-      }),
+    const persisted = await persistChartEdit({
+      ctx,
+      deps,
+      loaded,
+      input,
+      resolvedField,
+      hash,
+      insertImage,
       anchorText,
-      contentPath: resolvedField,
     });
-    suggestionIds.push(id);
+    if (!("ok" in persisted)) return persisted;
+    suggestionIds.push(persisted.id);
   }
   return {
-    status: "proposed",
+    status: ctx.editPolicy === "commit" ? "applied" : "proposed",
     suggestionId: suggestionIds[0]!,
     suggestionIds,
     section: input.section,
