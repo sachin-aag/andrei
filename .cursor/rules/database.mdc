@@ -25,3 +25,7 @@ alwaysApply: false
 - Attachment tables: `reportAttachments`, `attachmentIngestRuns`,
   `documentPages`, `documentChunks` (pgvector 768). Soft-delete via
   `deletedAt`; retrieval joins `activeIngestRunId`.
+- Product History: `documentRevisions` + `documentRevisionSections` (one
+  snapshot per Agent-chrome report turn). Do not reuse
+  `sectionContentVersions` for that UI — the audit table records every PATCH
+  including human autosave. Worksheet writes are not document versions.

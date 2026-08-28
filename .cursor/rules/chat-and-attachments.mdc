@@ -24,6 +24,10 @@ system prompt when kickoff retrieval hits.
 - New tools: register in `buildChatTools` **and** add to the Plan allowlist in
   `src/app/api/reports/[reportId]/chat/route.ts` (`mode === "plan"` object).
   Missing from the allowlist = silent Plan-mode gap.
+- Report chat `editPolicy` is derived on the **server** from `workspaceChrome`
+  + `canSaveReportSection`. Agent chrome **commits** (`status: "applied"`, no
+  `ai_fix` comments). Document chrome **proposes**. Do not trust a client
+  `editPolicy` on a locked report. Plan-mode allowlist does not gain edit tools.
 - Bump `CHAT_PROMPT_VERSION` when `DOCUMENT_RULES` / plan-agent policy changes.
 - Kickoff retrieval (`buildAutoEvidence`) is fail-soft (timeout / no creds →
   `""`). Do not block the turn on embeddings.

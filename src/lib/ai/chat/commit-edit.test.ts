@@ -71,4 +71,30 @@ describe("applyCommitToSectionContent", () => {
     expect(afterSecond).not.toContain("humidity");
     expect(afterSecond).not.toContain("temperature");
   });
+
+  it("commits generic_document rich edits without leftover suggestion marks", () => {
+    const result = applyCommitToSectionContent({
+      content: { narrative: paraDoc("The protocol is complete.") },
+      section: "body",
+      targetField: "narrative",
+      documentType: "generic_document",
+      input: {
+        kind: "located",
+        edit: {
+          anchorText: "complete",
+          deleteText: "complete",
+          insertText: "approved",
+        },
+      },
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+
+    const json = JSON.stringify(result.content);
+    expect(json).not.toContain("suggestionInsert");
+    expect(json).not.toContain("suggestionDelete");
+    expect(
+      flattenForAnchor(getRichFieldValue(result.content, "narrative")).text
+    ).toContain("approved");
+  });
 });

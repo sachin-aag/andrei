@@ -5,7 +5,7 @@ This project uses three layers of quality checks:
 | Layer | Tool | Location | Count (approx.) |
 |-------|------|----------|-----------------|
 | **Unit / integration** | Vitest | `src/**/*.test.ts(x)` | ~76 files, ~345 tests |
-| **End-to-end** | Playwright | `e2e/**/*.spec.ts` | 10 spec files, ~42 cases × 3 browsers |
+| **End-to-end** | Playwright | `e2e/**/*.spec.ts` | 11 spec files, ~43 cases × 3 browsers |
 | **Manual** | Checklist | [docs/manual-test-cases.md](docs/manual-test-cases.md) | 6 release-candidate cases |
 
 `pnpm precommit` runs **lint + typecheck + Vitest only** (no E2E). CI runs Vitest and Playwright in separate jobs.
@@ -117,7 +117,7 @@ Documented in `.env.example` (local / CI only):
 
 | Variable | Effect |
 |----------|--------|
-| `ALLOW_TEST_LOGIN=true` | Enables `POST /api/test/login` and `POST /api/test/seed-auth-users` |
+| `ALLOW_TEST_LOGIN=true` | Enables `POST /api/test/login`, `POST /api/test/seed-auth-users`, `POST /api/test/seed-ai-suggestion`, and `POST /api/test/seed-document-revisions` |
 | `TEST_AUTH_EMAIL` | Default engineer email for test login (default: `test.engineer@mjbiopharm.com`) |
 | `ALLOW_TEST_SKIP_EVALUATION=true` | Stub all `evaluateSection()` calls (report editor + Improve AI) via `src/lib/improve-ai/fixtures/stub-evaluations.json` |
 | `ALLOW_TEST_SKIP_SUGGESTIONS=true` | Stub AI suggestions with `src/lib/ai/fixtures/stub-suggestions.json` |
@@ -178,6 +178,16 @@ Specs run against Chromium, Firefox, and WebKit unless you pass `--project=chrom
 | resizes the assistant and documents panels from the keyboard | Drag handles; ArrowLeft/Right; handle hidden when collapsed |
 | opens the assistant at the default width on a new report and after reload | Width is not kept across reports or reloads |
 | approved report is read-only for engineer | No submit; `contenteditable=false` |
+| Agent chrome puts chat in the center and work product on the right | Column order `docs.x < chat.x < canvas.x`; Analytics stays on the right; History empty copy |
+
+</details>
+
+<details>
+<summary><strong>document-revisions.spec.ts</strong> — Agent History compare</summary>
+
+| Test | What it verifies |
+|------|------------------|
+| compares two seeded versions inline and exits back to the live report | `POST /api/test/seed-document-revisions` (no Gemini); History → Compare shows ins/del; Exit restores Define |
 
 </details>
 
