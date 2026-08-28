@@ -6,22 +6,10 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import type { AiBudgetStatus } from "@/lib/ai/usage";
+import type { AttachmentPageBudgetStatus } from "@/lib/attachments/page-budget";
 
-function formatUsd(value: number): string {
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(value);
-}
-
-function formatFeatureLabel(feature: string): string {
-  return feature
-    .split("_")
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
+function formatPageCount(value: number): string {
+  return new Intl.NumberFormat("en-US").format(value);
 }
 
 async function readError(response: Response, fallback: string): Promise<string> {
@@ -29,17 +17,17 @@ async function readError(response: Response, fallback: string): Promise<string> 
   return body.error ?? fallback;
 }
 
-export function AdminAiBudgetPanel({
+export function AdminAttachmentPageBudgetPanel({
   initialStatus,
 }: {
-  initialStatus: AiBudgetStatus;
+  initialStatus: AttachmentPageBudgetStatus;
 }) {
   const [status, setStatus] = useState(initialStatus);
-  const [monthlyBudgetUsd, setMonthlyBudgetUsd] = useState(
-    String(initialStatus.monthlyBudgetUsd)
+  const [monthlyPageLimit, setMonthlyPageLimit] = useState(
+    String(initialStatus.monthlyPageLimit)
   );
-  const [savedMonthlyBudgetUsd, setSavedMonthlyBudgetUsd] = useState(
-    initialStatus.monthlyBudgetUsd
+  const [savedMonthlyPageLimit, setSavedMonthlyPageLimit] = useState(
+    initialStatus.monthlyPageLimit
   );
   const [enforceHardLimit, setEnforceHardLimit] = useState(
     initialStatus.enforceHardLimit
@@ -59,49 +47,53 @@ export function AdminAiBudgetPanel({
 
   const refreshStatus = () => {
     startRefreshTransition(async () => {
-      const response = await fetch("/api/admin/ai-budget");
+      const response = await fetch("/api/admin/attachment-page-budget");
       if (!response.ok) {
-        toast.error(await readError(response, "Could not refresh AI budget"));
+        toast.error(
+          await readError(response, "Could not refresh attachment page budget")
+        );
         return;
       }
-      const data = (await response.json()) as AiBudgetStatus;
+      const data = (await response.json()) as AttachmentPageBudgetStatus;
       setStatus(data);
-      setMonthlyBudgetUsd(String(data.monthlyBudgetUsd));
-      setSavedMonthlyBudgetUsd(data.monthlyBudgetUsd);
+      setMonthlyPageLimit(String(data.monthlyPageLimit));
+      setSavedMonthlyPageLimit(data.monthlyPageLimit);
       setEnforceHardLimit(data.enforceHardLimit);
       setSavedEnforceHardLimit(data.enforceHardLimit);
     });
   };
 
   const saveBudgetSettings = () => {
-    const budget = Number.parseFloat(monthlyBudgetUsd);
-    if (!Number.isFinite(budget) || budget < 0) {
-      toast.error("Enter a valid monthly budget in USD");
+    const limit = Number.parseInt(monthlyPageLimit, 10);
+    if (!Number.isFinite(limit) || limit < 0) {
+      toast.error("Enter a valid monthly page limit");
       return;
     }
 
     startBudgetSaveTransition(async () => {
-      const response = await fetch("/api/admin/ai-budget", {
+      const response = await fetch("/api/admin/attachment-page-budget", {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          monthlyBudgetUsd: budget,
+          monthlyPageLimit: limit,
           enforceHardLimit,
         }),
       });
 
       if (!response.ok) {
-        toast.error(await readError(response, "Could not update AI budget"));
+        toast.error(
+          await readError(response, "Could not update attachment page budget")
+        );
         return;
       }
 
-      const data = (await response.json()) as AiBudgetStatus;
+      const data = (await response.json()) as AttachmentPageBudgetStatus;
       setStatus(data);
-      setSavedMonthlyBudgetUsd(data.monthlyBudgetUsd);
-      setMonthlyBudgetUsd(String(data.monthlyBudgetUsd));
+      setSavedMonthlyPageLimit(data.monthlyPageLimit);
+      setMonthlyPageLimit(String(data.monthlyPageLimit));
       setSavedEnforceHardLimit(data.enforceHardLimit);
       setEnforceHardLimit(data.enforceHardLimit);
-      toast.success("AI budget updated");
+      toast.success("Attachment page budget updated");
     });
   };
 
@@ -109,11 +101,11 @@ export function AdminAiBudgetPanel({
     <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="text-base font-semibold">AI monthly budget</h2>
+          <h2 className="text-base font-semibold">Attachment page budget</h2>
           <p className="mt-1 text-sm text-[var(--muted-foreground)]">
-            Gemini usage for this deployment resets on the first day of each month
-            (UTC). When the hard limit is on, AI features stop once spend reaches
-            the cap.
+            PDF and Word attachment processing for this deployment resets on the
+            first day of each month (UTC). When the hard limit is on, new ingest
+            jobs are blocked once processed pages reach the cap.
           </p>
         </div>
         <Button
@@ -131,8 +123,8 @@ export function AdminAiBudgetPanel({
         <div>
           <div className="flex items-baseline justify-between gap-3 text-sm">
             <span className="font-medium">
-              {formatUsd(status.currentMonthSpendUsd)} of{" "}
-              {formatUsd(status.monthlyBudgetUsd)}
+              {formatPageCount(status.totalCommittedPageCount)} of{" "}
+              {formatPageCount(status.monthlyPageLimit)} pages
             </span>
             <span className="text-[var(--muted-foreground)]">
               {status.percentUsed.toFixed(1)}% used
@@ -149,31 +141,37 @@ export function AdminAiBudgetPanel({
             {new Date(status.cycleStart).toLocaleDateString()} –{" "}
             {new Date(status.cycleEnd).toLocaleDateString()} UTC)
           </p>
+          <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+            {formatPageCount(status.currentMonthPageCount)} pages completed,{" "}
+            {formatPageCount(status.inFlightPageCount)} in flight
+          </p>
           {status.isOverBudget ? (
             <p className="mt-2 text-sm text-red-600">
-              Monthly AI budget exceeded. New Gemini calls are blocked while the
-              hard limit is enabled.
+              Monthly attachment page budget exceeded. New document ingest is
+              blocked while the hard limit is enabled.
             </p>
           ) : status.isWarning ? (
             <p className="mt-2 text-sm text-amber-700">
               Usage is above {status.warningThresholdPercent}% of the monthly
-              budget.
+              page budget.
             </p>
           ) : null}
         </div>
 
         <div className="grid gap-3">
           <div className="grid gap-2">
-            <Label htmlFor="ai-monthly-budget-usd">Monthly limit (USD)</Label>
+            <Label htmlFor="attachment-monthly-page-limit">
+              Monthly limit (pages)
+            </Label>
             <Input
-              id="ai-monthly-budget-usd"
+              id="attachment-monthly-page-limit"
               type="number"
               min={0}
-              step="1"
-              inputMode="decimal"
-              value={monthlyBudgetUsd}
+              step="1000"
+              inputMode="numeric"
+              value={monthlyPageLimit}
               disabled={isSavingBudget}
-              onChange={(event) => setMonthlyBudgetUsd(event.target.value)}
+              onChange={(event) => setMonthlyPageLimit(event.target.value)}
             />
           </div>
           <label className="flex items-center gap-2 text-sm">
@@ -190,7 +188,7 @@ export function AdminAiBudgetPanel({
             type="button"
             disabled={
               isSavingBudget ||
-              (Number.parseFloat(monthlyBudgetUsd) === savedMonthlyBudgetUsd &&
+              (Number.parseInt(monthlyPageLimit, 10) === savedMonthlyPageLimit &&
                 enforceHardLimit === savedEnforceHardLimit)
             }
             onClick={saveBudgetSettings}
@@ -204,37 +202,14 @@ export function AdminAiBudgetPanel({
         </div>
       </div>
 
-      {status.featureBreakdown.length > 0 ? (
-        <div className="mt-6 overflow-x-auto">
-          <table className="w-full min-w-[28rem] text-left text-sm">
-            <thead>
-              <tr className="border-b border-[var(--border)] text-[var(--muted-foreground)]">
-                <th className="py-2 pr-4 font-medium">Feature</th>
-                <th className="py-2 pr-4 font-medium">Spend</th>
-                <th className="py-2 pr-4 font-medium">Input tokens</th>
-                <th className="py-2 font-medium">Output tokens</th>
-              </tr>
-            </thead>
-            <tbody>
-              {status.featureBreakdown.map((row) => (
-                <tr
-                  key={row.feature}
-                  className="border-b border-[var(--border)] last:border-0"
-                >
-                  <td className="py-2 pr-4">{formatFeatureLabel(row.feature)}</td>
-                  <td className="py-2 pr-4">{formatUsd(row.spendUsd)}</td>
-                  <td className="py-2 pr-4">
-                    {row.inputTokens.toLocaleString()}
-                  </td>
-                  <td className="py-2">{row.outputTokens.toLocaleString()}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+      {status.eventCount > 0 ? (
+        <p className="mt-6 text-sm text-[var(--muted-foreground)]">
+          {formatPageCount(status.eventCount)} completed ingest runs recorded
+          this month.
+        </p>
       ) : (
         <p className="mt-6 text-sm text-[var(--muted-foreground)]">
-          No Gemini usage recorded for this month yet.
+          No attachment pages processed this month yet.
         </p>
       )}
     </section>

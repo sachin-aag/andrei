@@ -76,6 +76,24 @@ export function ReportSidebar({
     (c) => !c.parentId && isAiSuggestionKind(c.kind) && c.status === "open"
   ).length;
 
+  const tabBadge = (tab: SidebarTab): number | null => {
+    if (tab === "placeholders" && pendingPlaceholders.length > 0) {
+      return pendingPlaceholders.length;
+    }
+    if (tab === "criteria" && openSuggestionCount > 0) {
+      return openSuggestionCount;
+    }
+    if (tab === "comments" && rootCommentCount > 0) {
+      return rootCommentCount;
+    }
+    return null;
+  };
+
+  const activeTabDef =
+    visibleTabs.find((tab) => tab.value === activeTab) ?? visibleTabs[0]!;
+  const ActiveTabIcon = activeTabDef.icon;
+  const activeTabBadge = tabBadge(activeTabDef.value);
+
   return (
     <aside
       id="report-chat-sidebar"
@@ -113,95 +131,71 @@ export function ReportSidebar({
         </button>
       </div>
 
-      {/* Tab buttons — icons only when collapsed; wrap when expanded so none get clipped */}
-      {analyticsSurface ? null : (
-      <div
-        className={cn(
-          "border-b border-[var(--border)] shrink-0",
-          collapsed
-            ? "px-1 py-2 space-y-1"
-            : "flex flex-wrap items-center gap-1 px-2 py-1.5",
-        )}
-      >
-        {visibleTabs.map((tab) => {
-          const Icon = tab.icon;
-          const badge =
-            tab.value === "placeholders" && pendingPlaceholders.length > 0
-              ? pendingPlaceholders.length
-              : tab.value === "criteria" && openSuggestionCount > 0
-                ? openSuggestionCount
-              : tab.value === "comments" && rootCommentCount > 0
-                ? rootCommentCount
-                : null;
+      {/* Tab buttons — expanded shows all tabs; collapsed shows the active tab only */}
+      {analyticsSurface ? null : collapsed ? (
+        <div className="shrink-0 border-b border-[var(--border)] px-1 py-2">
+          <button
+            type="button"
+            onClick={() => {
+              onToggleCollapse();
+              captureEvent("sidebar_tab_changed", { tab: activeTabDef.value });
+            }}
+            className="relative mx-auto flex size-9 items-center justify-center rounded-md border border-[var(--border)] bg-[var(--secondary)] text-[var(--foreground)] transition-colors hover:bg-[var(--secondary)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]"
+            title={activeTabDef.label}
+            aria-label={activeTabDef.label}
+            aria-pressed
+          >
+            <ActiveTabIcon className="size-4" aria-hidden="true" />
+            {activeTabBadge != null ? (
+              <span className="absolute -right-1 -top-1 flex size-3.5 items-center justify-center rounded-full bg-amber-500 text-[8px] font-bold text-white">
+                {activeTabBadge}
+              </span>
+            ) : null}
+          </button>
+        </div>
+      ) : (
+        <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-[var(--border)] px-2 py-1.5">
+          {visibleTabs.map((tab) => {
+            const Icon = tab.icon;
+            const badge = tabBadge(tab.value);
+            const selected = activeTab === tab.value;
 
-          const selected = activeTab === tab.value;
-
-          if (collapsed) {
             return (
               <button
                 key={tab.value}
                 type="button"
                 onClick={() => {
-                  if (collapsed) onToggleCollapse();
                   captureEvent("sidebar_tab_changed", { tab: tab.value });
                   onTabChange(tab.value);
                 }}
                 className={cn(
-                  "relative flex items-center justify-center size-9 rounded-md border transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)] mx-auto",
+                  "relative flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors",
                   selected
                     ? "bg-[var(--secondary)] text-[var(--foreground)] border-[var(--border)]"
                     : "text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--secondary)]/50 border-transparent hover:border-[var(--border)]",
                 )}
-                title={tab.label}
                 aria-label={tab.label}
                 aria-pressed={selected}
               >
-                <Icon className="size-4" aria-hidden="true" />
-                {badge != null && (
-                  <span className="absolute -top-1 -right-1 flex size-3.5 items-center justify-center rounded-full bg-amber-500 text-[8px] font-bold text-white">
-                    {badge}
+                <Icon className="size-3.5" aria-hidden="true" />
+                {tab.label}
+                {tab.value !== "assistant" ? (
+                  // Keep a badge slot on count tabs so a late placeholder /
+                  // suggestion / comment count does not reflow flex-wrap.
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      "ml-0.5 flex size-4 items-center justify-center rounded-full bg-amber-500 text-[9px] font-bold text-white",
+                      badge == null && "invisible"
+                    )}
+                  >
+                    {badge ?? 0}
                   </span>
-                )}
+                ) : null}
               </button>
             );
-          }
-
-          return (
-            <button
-              key={tab.value}
-              type="button"
-              onClick={() => {
-                captureEvent("sidebar_tab_changed", { tab: tab.value });
-                onTabChange(tab.value);
-              }}
-              className={cn(
-                "relative flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors",
-                selected
-                  ? "bg-[var(--secondary)] text-[var(--foreground)] border-[var(--border)]"
-                  : "text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--secondary)]/50 border-transparent hover:border-[var(--border)]",
-              )}
-              aria-label={tab.label}
-              aria-pressed={selected}
-            >
-              <Icon className="size-3.5" aria-hidden="true" />
-              {tab.label}
-              {tab.value !== "assistant" ? (
-                // Keep a badge slot on count tabs so a late placeholder /
-                // suggestion / comment count does not reflow flex-wrap.
-                <span
-                  aria-hidden="true"
-                  className={cn(
-                    "ml-0.5 flex size-4 items-center justify-center rounded-full bg-amber-500 text-[9px] font-bold text-white",
-                    badge == null && "invisible"
-                  )}
-                >
-                  {badge ?? 0}
-                </span>
-              ) : null}
-            </button>
-          );
-        })}
-      </div>
+          })}
+        </div>
       )}
 
       {/* ChatPanel stays mounted across collapse and tab changes so the

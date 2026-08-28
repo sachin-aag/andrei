@@ -1113,6 +1113,51 @@ export const aiUsageEvents = pgTable(
   })
 );
 
+export const attachmentPageBudgetSettings = pgTable(
+  "attachment_page_budget_settings",
+  {
+    id: text("id").primaryKey().default("default"),
+    monthlyPageLimit: integer("monthly_page_limit").notNull().default(100_000),
+    enforceHardLimit: boolean("enforce_hard_limit").notNull().default(true),
+    warningThresholdPercent: integer("warning_threshold_percent")
+      .notNull()
+      .default(80),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  }
+);
+
+export const attachmentPageUsageEvents = pgTable(
+  "attachment_page_usage_events",
+  {
+    id: text("id").primaryKey(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    yearMonth: text("year_month").notNull(),
+    pageCount: integer("page_count").notNull(),
+    attachmentId: text("attachment_id")
+      .notNull()
+      .references(() => reportAttachments.id, { onDelete: "cascade" }),
+    reportId: text("report_id").references(() => reports.id, {
+      onDelete: "set null",
+    }),
+    ingestRunId: text("ingest_run_id")
+      .notNull()
+      .references(() => attachmentIngestRuns.id, { onDelete: "cascade" }),
+    metadata: jsonb("metadata").notNull().default({}),
+  },
+  (t) => ({
+    yearMonthIdx: index("attachment_page_usage_events_year_month_idx").on(
+      t.yearMonth
+    ),
+    ingestRunUnique: uniqueIndex(
+      "attachment_page_usage_events_ingest_run_unique"
+    ).on(t.ingestRunId),
+  })
+);
+
 export const auditEventsRelations = relations(auditEvents, ({ one, many }) => ({
   report: one(reports, {
     fields: [auditEvents.reportId],

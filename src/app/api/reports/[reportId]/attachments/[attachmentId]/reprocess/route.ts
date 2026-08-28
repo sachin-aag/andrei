@@ -5,6 +5,10 @@ import { reportAttachments } from "@/db/schema";
 import { toAttachmentDto } from "@/lib/attachments/dto";
 import { canReprocessAttachment } from "@/lib/attachments/ingest-errors";
 import { startDocumentIngest } from "@/lib/attachments/start-ingest";
+import {
+  AttachmentPageBudgetExceededError,
+  attachmentPageBudgetExceededResponse,
+} from "@/lib/attachments/page-budget";
 import { reclaimStaleIngests } from "@/lib/attachments/stale-ingest";
 import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
 import { getCurrentUser } from "@/lib/auth/session";
@@ -97,7 +101,15 @@ export async function POST(
     return NextResponse.json({ attachment: toAttachmentDto(current) });
   }
 
-  await startDocumentIngest(attachmentId, attachment.gcsGeneration);
+  try {
+    await startDocumentIngest(attachmentId, attachment.gcsGeneration);
+  } catch (error) {
+    if (error instanceof AttachmentPageBudgetExceededError) {
+      return attachmentPageBudgetExceededResponse(error);
+    }
+    throw error;
+  }
+
   await recordAuditEvent({
     actor: auditActorFromUser(access.user),
     action: "attachment_reprocessed",
