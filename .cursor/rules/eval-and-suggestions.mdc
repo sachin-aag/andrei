@@ -39,5 +39,9 @@ DV mixes LLM criteria with deterministic `check()` functions.
 - Canonical anchor text is `flattenForAnchor` — no markdown pipes.
 - Accept/dismiss always: locate → apply → PATCH section → flip comment.
   Never resolve a suggestion without a successful apply.
+- Bulk apply locates overlapping edits in a section and applies those
+  recursively; non-overlapping edits persist as one section PATCH.
+  Preview the applied section content before that PATCH so insert text
+  does not vanish during save.
 - Bump `SUGGEST_PROMPT_VERSION` when the suggestion prompt changes.
 - Whole-field rewrites are redrafts (`apply-redraft.ts`), not anchored edits.

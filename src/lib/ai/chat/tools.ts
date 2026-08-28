@@ -530,7 +530,7 @@ function buildSearchDocumentsTool(opts: {
   if (pinnedAttachmentIds.length === 0) {
     return tool({
       description:
-        "Grep ready attachments. Run multiple rounds: search, read hits, then search complementary terms with excludePages=nextExcludePages from the last result. Prefer queries[] for tables (equipment AND UUT). mode=keyword is lexical grep. truncated=true means keep grepping. Cite as [filename, p. N].",
+        "Grep ready attachments. Run multiple rounds: search, read hits, then search complementary terms with excludePages=nextExcludePages from the last result. Prefer queries[] for tables (equipment AND UUT). mode=keyword is lexical grep. truncated=true means keep grepping. Cite as [filename, p. N]. Required before ask_user or draft_field when the target section is empty. If it is filled or partial, call read_section first and only grep for a gap you found.",
       inputSchema: z
         .object(searchDocumentsBaseShape)
         .refine(hasSearchQuery, { message: "Provide query or queries." }),
@@ -542,7 +542,7 @@ function buildSearchDocumentsTool(opts: {
   const tagged = pinnedAttachmentIds.length;
   return tool({
     description:
-      `Grep ready attachments in rounds. Prefer complementary queries for tables. Pass excludePages=nextExcludePages from the previous result. mode=keyword is lexical grep. truncated=true means keep grepping. Defaults to the ${tagged} document(s) the engineer tagged with @ (pinned=true; shortfall backfilled with pinned=false). Pass scope="all" to search every attachment. Cite as [filename, p. N].`,
+        `Grep ready attachments in rounds. Prefer complementary queries for tables. Pass excludePages=nextExcludePages from the previous result. mode=keyword is lexical grep. truncated=true means keep grepping. Defaults to the ${tagged} document(s) the engineer tagged with @ (pinned=true; shortfall backfilled with pinned=false). Pass scope="all" to search every attachment. Cite as [filename, p. N]. Required before ask_user or draft_field when Documents are listed and the target section is empty. If the section is filled or partial, call read_section first and only grep for a gap you found.`,
     inputSchema: z
       .object({
         ...searchDocumentsBaseShape,
@@ -671,7 +671,7 @@ export function buildChatTools(opts: {
   const tools: ToolSet = {
     read_section: tool({
       description:
-        `Read the current text of an editable section so you can quote exact anchors. Inline images are returned as vision parts (see readingText [image:N] markers). Optionally pass specific field paths; otherwise all editable fields are returned.${scopeHint}` +
+        `Read the current text of an editable section so you can quote exact anchors. Inline images are returned as vision parts (see readingText [image:N] markers). Optionally pass specific field paths; otherwise all editable fields are returned. When the engineer asked to draft a section the context map marks filled or partial, call this FIRST — before search_documents or ask_user.${scopeHint}` +
         (analyzeInScope && sectionScope === "analyze"
           ? " You may also read define and measure to choose the Analyze root-cause method."
           : "") +
@@ -1804,7 +1804,7 @@ export function buildChatTools(opts: {
 
     draft_field: tool({
       description:
-        `Draft or fully rewrite ONE field. Provide the COMPLETE replacement content as markdown: paragraphs, '- ' bullets, '1. ' numbered lists, '## ' headings, '**bold**', '*italic*', and GFM tables ('| a | b |' rows with a '| --- |' separator). Use bracketed placeholders like [batch number] for facts you do not know — never invent facts. The engineer reviews the full draft and accepts or rejects it. Use this for empty fields, substantial rewrites, creating a NEW table, or an explicitly requested full table replacement. For any incremental change to an existing table, use edit_table — never draft_field. Use propose_edit only for small prose or list edits. Do not put markdown image syntax (![alt](url) or narrative#1) here — use insert_image. To remove a figure, call remove_image; do not rewrite the field just to drop one.${scopeHint}${fixedTableHint}`,
+        `Draft or fully rewrite ONE field. Provide the COMPLETE replacement content as markdown: paragraphs, '- ' bullets, '1. ' numbered lists, '## ' headings, '**bold**', '*italic*', and GFM tables ('| a | b |' rows with a '| --- |' separator). Use bracketed placeholders like [batch number] for facts you do not know — never invent facts. The engineer reviews the full draft and accepts or rejects it. Use this for empty fields, substantial rewrites, creating a NEW table, or an explicitly requested full table replacement. Do not use it on a filled or partial field unless they asked to replace it — read_section first, then propose_edit for gaps. For any incremental change to an existing table, use edit_table — never draft_field. Use propose_edit only for small prose or list edits. Do not put markdown image syntax (![alt](url) or narrative#1) here — use insert_image. To remove a figure, call remove_image; do not rewrite the field just to drop one.${scopeHint}${fixedTableHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
@@ -1921,7 +1921,7 @@ export function buildChatTools(opts: {
 
     ask_user: tool({
       description:
-        "Ask the engineer for facts still missing AFTER searching ready attachments (search_documents or the evidence preview). Do not ask for facts that are likely in a listed document (requirement IDs, design outputs, verification objective, ECO/DCR, batch/date/equipment). The questions render as a structured form in the chat — NEVER write questions as chat prose or markdown lists. Batch every open question into one call, then stop and wait for the answers.",
+        "Ask the engineer for facts still missing AFTER searching ready attachments (search_documents or the evidence preview). Do not ask for facts that are likely in a listed document (requirement IDs, design outputs, verification objective, ECO/DCR, batch/date/equipment), already in the current section, or that you would put in hint. If you know the answer, use it — do not quiz them to confirm. hint is an expected format (e.g. 'e.g. B-2024-117'), never the answer itself. The questions render as a structured form in the chat — NEVER write questions as chat prose or markdown lists. Batch every open question into one call, then stop and wait for the answers.",
       inputSchema: z.object({
         questions: z
           .array(
@@ -1935,7 +1935,9 @@ export function buildChatTools(opts: {
                 .string()
                 .max(200)
                 .optional()
-                .describe("Optional expected format or example, e.g. 'e.g. B-2024-117'."),
+                .describe(
+                  "Expected format only, e.g. 'e.g. B-2024-117'. Never put the actual answer here."
+                ),
             })
           )
           .min(1)

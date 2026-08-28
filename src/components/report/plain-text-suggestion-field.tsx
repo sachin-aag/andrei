@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { PlainTextHighlightedInput } from "@/components/report/plain-text-highlighted-input";
 import { PlainTextPlaceholderSpans } from "@/components/report/plain-text-placeholder-spans";
 import { SuggestionInlineActions } from "@/components/report/suggestion-inline-actions";
+import { isBulkSuggestionApply } from "@/lib/suggestions/apply-transition";
 import {
   useReportComments,
   useReportData,
@@ -178,6 +179,13 @@ export function PlainTextSuggestionField({
     if (isSuggestionPreviewHeld(section)) {
       // Queue bridge: hold the next inline preview until the user jumps or dismisses.
       if (suggestionApplyTransition[section]?.bridge) return null;
+      if (isBulkSuggestionApply(suggestionApplyTransition[section]?.mode)) {
+        // Overlay is editor-local; the applied `value` is swapped in before
+        // the PATCH. Showing the locked card on that wording would paint the
+        // suggestion twice. Null here reveals `value` — original for one
+        // frame, then the in-memory apply.
+        return null;
+      }
       // Keep previewing the suggestion currently being applied/dismissed —
       // nulling it out here would flash the original wording before the
       // request resolves and the real result lands.

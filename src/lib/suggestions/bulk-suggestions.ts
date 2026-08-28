@@ -2,9 +2,12 @@ import type { SectionType } from "@/db/schema";
 import type { CommentRecord, EvaluationRecord } from "@/types/report";
 import type { SuggestionApplyMode } from "@/lib/document-types";
 import {
-  acceptSuggestion,
-  dismissSuggestion,
+  applySuggestionToContent,
+  patchSection,
+  stripSuggestionFromContent,
 } from "@/lib/suggestions/accept-suggestion";
+import { patchCommentStatuses } from "@/lib/suggestions/persist-comment-status";
+import { partitionBulkApplies } from "@/lib/suggestions/suggestion-overlap";
 import { sortedOpenSuggestionsForSection } from "@/lib/ai/suggestion-gating";
 
 export type BulkSuggestionResult = {
@@ -30,7 +33,9 @@ type ReportBulkArgs = {
   sectionContentFor: (section: SectionType) => Record<string, unknown> | undefined;
   /** Called before a section's batch so the caller can pause its auto-save. */
   onSectionStart?: (section: SectionType, firstCommentId: string) => void;
-  /** Called after a section's batch with its final content, only if it changed. */
+  /** Called with the section's next content before persist, so the editor can
+   *  show applied wording during the PATCH. Also called with the original on
+   *  save failure so the caller can revert. */
   onSectionSettled?: (
     section: SectionType,
     nextSection: Record<string, unknown>
@@ -39,10 +44,37 @@ type ReportBulkArgs = {
   onSectionEnd?: (section: SectionType) => void;
 };
 
+function applyOneInMemory(args: {
+  section: SectionType;
+  comment: CommentRecord;
+  sectionContent: Record<string, unknown>;
+  applyMode?: SuggestionApplyMode;
+  applied: Set<string>;
+  appliedIds: string[];
+  skippedIds: string[];
+}): Record<string, unknown> {
+  if (args.applied.has(args.comment.id)) return args.sectionContent;
+  args.applied.add(args.comment.id);
+  const result = applySuggestionToContent({
+    section: args.section,
+    comment: args.comment,
+    sectionContent: args.sectionContent,
+    applyMode: args.applyMode,
+  });
+  if (!result.ok) {
+    args.skippedIds.push(args.comment.id);
+    return args.sectionContent;
+  }
+  args.appliedIds.push(args.comment.id);
+  return result.nextSection;
+}
+
 /**
- * Apply every remaining open suggestion in queue order. Locate failures are
- * skipped so a stale card does not block the rest. A save/status failure
- * stops the batch — later edits would be based on unsaved content.
+ * Apply every remaining open suggestion. Non-overlapping edits are applied as
+ * one in-memory batch. Overlapping edits in the same field are applied
+ * recursively (each locate runs against the doc after the previous apply).
+ * Locate failures are skipped. The section is PATCHed once; comment statuses
+ * flip in parallel. A save failure fails every locatable apply in the section.
  */
 export async function acceptAllSuggestions(args: {
   reportId: string;
@@ -50,33 +82,86 @@ export async function acceptAllSuggestions(args: {
   comments: readonly CommentRecord[];
   sectionContent: Record<string, unknown>;
   applyMode?: SuggestionApplyMode;
+  /** Fired with in-memory applied content before the section PATCH. */
+  onPreview?: (nextSection: Record<string, unknown>) => void;
 }): Promise<BulkSuggestionResult> {
+  const partition = partitionBulkApplies({
+    section: args.section,
+    comments: args.comments,
+    sectionContent: args.sectionContent,
+  });
+
   let current = args.sectionContent;
   const appliedIds: string[] = [];
-  const skippedIds: string[] = [];
-  const failedIds: string[] = [];
+  const skippedIds: string[] = [...partition.unlocatableIds];
+  const applied = new Set<string>(partition.unlocatableIds);
+  const overlappingIds = new Set(
+    partition.overlapping.flatMap((group) => group.map((c) => c.id))
+  );
 
   for (const comment of args.comments) {
-    const result = await acceptSuggestion({
-      reportId: args.reportId,
+    if (applied.has(comment.id)) continue;
+    if (overlappingIds.has(comment.id)) {
+      const cluster = partition.overlapping.find((group) =>
+        group.some((c) => c.id === comment.id)
+      );
+      if (!cluster) continue;
+      for (const member of cluster) {
+        current = applyOneInMemory({
+          section: args.section,
+          comment: member,
+          sectionContent: current,
+          applyMode: args.applyMode,
+          applied,
+          appliedIds,
+          skippedIds,
+        });
+      }
+      continue;
+    }
+    current = applyOneInMemory({
       section: args.section,
       comment,
       sectionContent: current,
       applyMode: args.applyMode,
+      applied,
+      appliedIds,
+      skippedIds,
     });
-    if (result.ok) {
-      current = result.nextSection;
-      appliedIds.push(comment.id);
-      continue;
-    }
-    if (result.reason === "save_failed" || result.reason === "status_failed") {
-      failedIds.push(comment.id);
-      break;
-    }
-    skippedIds.push(comment.id);
   }
 
-  return { appliedIds, skippedIds, failedIds, nextSection: current };
+  if (appliedIds.length === 0) {
+    return { appliedIds, skippedIds, failedIds: [], nextSection: current };
+  }
+
+  // Push the applied wording into the editor before the network round-trip
+  // so insert text does not vanish while the section PATCH is in flight.
+  args.onPreview?.(current);
+
+  try {
+    await patchSection(args.reportId, args.section, current);
+  } catch {
+    args.onPreview?.(args.sectionContent);
+    return {
+      appliedIds: [],
+      skippedIds,
+      failedIds: appliedIds,
+      nextSection: args.sectionContent,
+    };
+  }
+
+  const { failedIds } = await patchCommentStatuses(
+    args.reportId,
+    appliedIds,
+    "resolved"
+  );
+  const failed = new Set(failedIds);
+  return {
+    appliedIds: appliedIds.filter((id) => !failed.has(id)),
+    skippedIds,
+    failedIds,
+    nextSection: current,
+  };
 }
 
 export async function dismissAllSuggestions(args: {
@@ -84,29 +169,51 @@ export async function dismissAllSuggestions(args: {
   section: SectionType;
   comments: readonly CommentRecord[];
   sectionContent: Record<string, unknown>;
+  onPreview?: (nextSection: Record<string, unknown>) => void;
 }): Promise<BulkSuggestionResult> {
   let current = args.sectionContent;
-  const appliedIds: string[] = [];
-  const skippedIds: string[] = [];
-  const failedIds: string[] = [];
+  let changed = false;
+  const candidateIds = args.comments.map((c) => c.id);
 
   for (const comment of args.comments) {
-    const result = await dismissSuggestion({
-      reportId: args.reportId,
+    const next = stripSuggestionFromContent({
       section: args.section,
       comment,
       sectionContent: current,
     });
-    if (result.ok) {
-      if (result.nextSection) current = result.nextSection;
-      appliedIds.push(comment.id);
-      continue;
+    if (next) {
+      current = next;
+      changed = true;
     }
-    failedIds.push(comment.id);
-    if (result.reason === "save_failed") break;
   }
 
-  return { appliedIds, skippedIds, failedIds, nextSection: current };
+  if (changed) {
+    args.onPreview?.(current);
+    try {
+      await patchSection(args.reportId, args.section, current);
+    } catch {
+      args.onPreview?.(args.sectionContent);
+      return {
+        appliedIds: [],
+        skippedIds: [],
+        failedIds: candidateIds,
+        nextSection: args.sectionContent,
+      };
+    }
+  }
+
+  const { failedIds } = await patchCommentStatuses(
+    args.reportId,
+    candidateIds,
+    "dismissed"
+  );
+  const failed = new Set(failedIds);
+  return {
+    appliedIds: candidateIds.filter((id) => !failed.has(id)),
+    skippedIds: [],
+    failedIds,
+    nextSection: current,
+  };
 }
 
 export function shouldShowSuggestionBulkActions(queueTotal: number): boolean {
@@ -142,13 +249,14 @@ export function reportSuggestionQueues(
 export async function acceptAllSuggestionsInReport(
   args: ReportBulkArgs & { applyMode?: SuggestionApplyMode }
 ): Promise<ReportBulkSuggestionResult> {
-  return runReportBulk(args, (queue, sectionContent) =>
+  return runReportBulk(args, (queue, sectionContent, onPreview) =>
     acceptAllSuggestions({
       reportId: args.reportId,
       section: queue.section,
       comments: queue.comments,
       sectionContent,
       applyMode: args.applyMode,
+      onPreview,
     })
   );
 }
@@ -156,12 +264,13 @@ export async function acceptAllSuggestionsInReport(
 export async function dismissAllSuggestionsInReport(
   args: ReportBulkArgs
 ): Promise<ReportBulkSuggestionResult> {
-  return runReportBulk(args, (queue, sectionContent) =>
+  return runReportBulk(args, (queue, sectionContent, onPreview) =>
     dismissAllSuggestions({
       reportId: args.reportId,
       section: queue.section,
       comments: queue.comments,
       sectionContent,
+      onPreview,
     })
   );
 }
@@ -170,7 +279,8 @@ async function runReportBulk(
   args: ReportBulkArgs,
   runSection: (
     queue: { section: SectionType; comments: CommentRecord[] },
-    sectionContent: Record<string, unknown>
+    sectionContent: Record<string, unknown>,
+    onPreview: (nextSection: Record<string, unknown>) => void
   ) => Promise<BulkSuggestionResult>
 ): Promise<ReportBulkSuggestionResult> {
   const appliedIds: string[] = [];
@@ -193,14 +303,15 @@ async function runReportBulk(
 
     args.onSectionStart?.(queue.section, queue.comments[0].id);
     try {
-      const result = await runSection(queue, sectionContent);
+      const result = await runSection(queue, sectionContent, (next) => {
+        args.onSectionSettled?.(queue.section, next);
+      });
 
       appliedIds.push(...result.appliedIds);
       skippedIds.push(...result.skippedIds);
       failedIds.push(...result.failedIds);
       if (result.appliedIds.length > 0) {
         changedSections.push(queue.section);
-        args.onSectionSettled?.(queue.section, result.nextSection);
       }
     } finally {
       args.onSectionEnd?.(queue.section);

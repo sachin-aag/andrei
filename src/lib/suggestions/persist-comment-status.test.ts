@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CommentPersistError,
   patchCommentStatus,
+  patchCommentStatuses,
 } from "./persist-comment-status";
 
 describe("patchCommentStatus", () => {
@@ -74,5 +75,32 @@ describe("patchCommentStatus", () => {
         message: "Could not update suggestion. Please try again.",
       })
     );
+  });
+});
+
+describe("patchCommentStatuses", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("resolves every id in parallel and reports failures", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (String(url).includes("/comments/c2")) {
+          return {
+            ok: false,
+            status: 404,
+            json: async () => ({}),
+          };
+        }
+        return { ok: true, status: 200 };
+      })
+    );
+
+    await expect(
+      patchCommentStatuses("r1", ["c1", "c2", "c3"], "resolved")
+    ).resolves.toEqual({ failedIds: ["c2"] });
+    expect(fetch).toHaveBeenCalledTimes(3);
   });
 });
