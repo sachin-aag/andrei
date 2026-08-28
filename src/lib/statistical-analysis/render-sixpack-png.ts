@@ -3,7 +3,7 @@ import { chartBrandColors, type ChartBrandColors } from "@/lib/charts/brand-colo
 import { CHART_DISPLAY_WIDTH_PX } from "@/lib/charts/render-chart";
 import { resolveCustomerId, type CustomerId } from "@/lib/customers/resolve";
 import { readRasterDimensions } from "@/lib/export/raster-dimensions";
-import { formatPValue, formatStat } from "@/lib/statistical-analysis/format";
+import { formatPpm, formatPValue, formatStat } from "@/lib/statistical-analysis/format";
 import { isValidSuggestionImageSrc } from "@/lib/suggestions/image-insert";
 import type {
   CapabilitySixpackResult,
@@ -21,11 +21,13 @@ type Canvas2d = {
   font: string;
   textAlign: CanvasTextAlign;
   textBaseline: CanvasTextBaseline;
+  globalAlpha: number;
   setLineDash: (segments: number[]) => void;
   beginPath: () => void;
   moveTo: (x: number, y: number) => void;
   lineTo: (x: number, y: number) => void;
   arc: (x: number, y: number, r: number, start: number, end: number) => void;
+  closePath: () => void;
   stroke: () => void;
   fill: () => void;
   fillRect: (x: number, y: number, w: number, h: number) => void;
@@ -44,8 +46,15 @@ type CanvasModule = {
   };
 };
 
+const MARGIN = 8;
+const HEADER_HEIGHT = 40;
+const PANEL_GAP = 8;
+const PANEL_HEIGHT = 228;
+const COLS = 3;
+
 export const SIXPACK_LOGICAL_WIDTH = 960;
-export const SIXPACK_LOGICAL_HEIGHT = 720;
+export const SIXPACK_LOGICAL_HEIGHT =
+  MARGIN + HEADER_HEIGHT + PANEL_GAP + PANEL_HEIGHT + PANEL_GAP + PANEL_HEIGHT + MARGIN;
 
 export type RenderedSixpack = {
   dataUrl: string;
@@ -57,16 +66,37 @@ export type RenderSixpackError = { error: "canvas_unavailable" | "too_large" };
 
 type PanelRect = { x: number; y: number; w: number; h: number };
 
-const PANELS: PanelRect[] = [
-  { x: 8, y: 36, w: 312, h: 200 },
-  { x: 324, y: 36, w: 312, h: 200 },
-  { x: 640, y: 36, w: 312, h: 200 },
-  { x: 8, y: 248, w: 312, h: 200 },
-  { x: 324, y: 248, w: 312, h: 200 },
-  { x: 640, y: 248, w: 312, h: 200 },
-];
+type PlotArea = {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+};
 
-const PLOT = { left: 36, right: 288, top: 24, bottom: 168 };
+function panelWidth(): number {
+  return (
+    (SIXPACK_LOGICAL_WIDTH - MARGIN * 2 - PANEL_GAP * (COLS - 1)) / COLS
+  );
+}
+
+function panelAt(col: number, row: number): PanelRect {
+  const w = panelWidth();
+  return {
+    x: MARGIN + col * (w + PANEL_GAP),
+    y: MARGIN + HEADER_HEIGHT + PANEL_GAP + row * (PANEL_HEIGHT + PANEL_GAP),
+    w,
+    h: PANEL_HEIGHT,
+  };
+}
+
+function plotArea(panel: PanelRect): PlotArea {
+  return {
+    left: 36,
+    right: panel.w - 10,
+    top: 24,
+    bottom: panel.h - 28,
+  };
+}
 
 function domain(values: number[], pad = 0.08): [number, number] {
   if (values.length === 0) return [-1, 1];
@@ -85,17 +115,22 @@ function scale(min: number, max: number, start: number, end: number) {
   return (value: number) => start + ((value - min) / span) * (end - start);
 }
 
-function drawPanelTitle(
+function drawPanelFrame(
   ctx: Canvas2d,
   panel: PanelRect,
   title: string,
   colors: ChartBrandColors
 ) {
-  ctx.fillStyle = colors.axis;
+  ctx.fillStyle = colors.plotFill;
+  ctx.strokeStyle = colors.grid;
+  ctx.lineWidth = 1;
+  ctx.fillRect(panel.x, panel.y, panel.w, panel.h);
+  ctx.strokeRect(panel.x + 0.5, panel.y + 0.5, panel.w - 1, panel.h - 1);
+  ctx.fillStyle = colors.brand800;
   ctx.font = "bold 11px Arimo, Helvetica, Arial, sans-serif";
   ctx.textAlign = "left";
   ctx.textBaseline = "top";
-  ctx.fillText(title, panel.x + 4, panel.y + 4);
+  ctx.fillText(title, panel.x + 6, panel.y + 6);
 }
 
 function drawAxes(
@@ -107,21 +142,16 @@ function drawAxes(
   yMax: number,
   colors: ChartBrandColors
 ) {
+  const plot = plotArea(panel);
   ctx.save();
   ctx.translate(panel.x, panel.y);
-  const y = scale(yMin, yMax, PLOT.bottom, PLOT.top);
+  const y = scale(yMin, yMax, plot.bottom, plot.top);
   ctx.strokeStyle = colors.grid;
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(PLOT.left, PLOT.top);
-  ctx.lineTo(PLOT.left, PLOT.bottom);
-  ctx.lineTo(PLOT.right, PLOT.bottom);
-  ctx.stroke();
-  ctx.strokeStyle = colors.axis;
-  ctx.lineWidth = 0.8;
-  ctx.beginPath();
-  ctx.moveTo(PLOT.left, y(0));
-  ctx.lineTo(PLOT.right, y(0));
+  ctx.moveTo(plot.left, plot.top);
+  ctx.lineTo(plot.left, plot.bottom);
+  ctx.lineTo(plot.right, plot.bottom);
   ctx.stroke();
   ctx.restore();
 }
@@ -131,10 +161,11 @@ function drawControlChart(
   panel: PanelRect,
   series: ControlChartSeries,
   colors: ChartBrandColors,
-  title: string
+  title: string,
+  xOffset = 1
 ) {
-  drawPanelTitle(ctx, panel, title, colors);
-  const xs = series.values.map((_, i) => i + 1);
+  drawPanelFrame(ctx, panel, title, colors);
+  const xs = series.values.map((_, i) => i + xOffset);
   const [yMin, yMax] = domain(
     [...series.values, series.ucl, series.lcl, series.center],
     0.12
@@ -142,27 +173,28 @@ function drawControlChart(
   const xMin = (xs[0] ?? 1) - 0.5;
   const xMax = (xs[xs.length - 1] ?? 1) + 0.5;
   drawAxes(ctx, panel, xMin, xMax, yMin, yMax, colors);
+  const plot = plotArea(panel);
   ctx.save();
   ctx.translate(panel.x, panel.y);
-  const x = scale(xMin, xMax, PLOT.left, PLOT.right);
-  const y = scale(yMin, yMax, PLOT.bottom, PLOT.top);
+  const x = scale(xMin, xMax, plot.left, plot.right);
+  const y = scale(yMin, yMax, plot.bottom, plot.top);
   const ooc = new Set(series.outOfControl);
   ctx.setLineDash([4, 3]);
   ctx.strokeStyle = colors.limit;
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(PLOT.left, y(series.ucl));
-  ctx.lineTo(PLOT.right, y(series.ucl));
+  ctx.moveTo(plot.left, y(series.ucl));
+  ctx.lineTo(plot.right, y(series.ucl));
   ctx.stroke();
   ctx.beginPath();
-  ctx.moveTo(PLOT.left, y(series.lcl));
-  ctx.lineTo(PLOT.right, y(series.lcl));
+  ctx.moveTo(plot.left, y(series.lcl));
+  ctx.lineTo(plot.right, y(series.lcl));
   ctx.stroke();
   ctx.setLineDash([]);
   ctx.strokeStyle = colors.brand600;
   ctx.beginPath();
-  ctx.moveTo(PLOT.left, y(series.center));
-  ctx.lineTo(PLOT.right, y(series.center));
+  ctx.moveTo(plot.left, y(series.center));
+  ctx.lineTo(plot.right, y(series.center));
   ctx.stroke();
   ctx.strokeStyle = colors.brand800;
   ctx.lineWidth = 1.1;
@@ -193,7 +225,7 @@ function drawHistogram(
   usl: number | null,
   colors: ChartBrandColors
 ) {
-  drawPanelTitle(ctx, panel, "Capability histogram", colors);
+  drawPanelFrame(ctx, panel, "Capability Histogram", colors);
   const counts = bins.map((bin) => bin.count);
   const curveYs = [...overallCurve, ...withinCurve].map((point) => point.y);
   const xValues = [
@@ -205,10 +237,11 @@ function drawHistogram(
   const [xMin, xMax] = domain(xValues, 0.02);
   const yMax = Math.max(1, ...counts, ...curveYs) * 1.12;
   drawAxes(ctx, panel, xMin, xMax, 0, yMax, colors);
+  const plot = plotArea(panel);
   ctx.save();
   ctx.translate(panel.x, panel.y);
-  const x = scale(xMin, xMax, PLOT.left, PLOT.right);
-  const y = scale(0, yMax, PLOT.bottom, PLOT.top);
+  const x = scale(xMin, xMax, plot.left, plot.right);
+  const y = scale(0, yMax, plot.bottom, plot.top);
   bins.forEach((bin) => {
     const width = Math.max(0.5, x(bin.x1) - x(bin.x0) - 1);
     const height = Math.max(0, y(0) - y(bin.count));
@@ -240,8 +273,8 @@ function drawHistogram(
     ctx.setLineDash([3, 2]);
     ctx.strokeStyle = colors.limit;
     ctx.beginPath();
-    ctx.moveTo(x(limit), PLOT.top);
-    ctx.lineTo(x(limit), PLOT.bottom);
+    ctx.moveTo(x(limit), plot.top);
+    ctx.lineTo(x(limit), plot.bottom);
     ctx.stroke();
     ctx.setLineDash([]);
   });
@@ -254,20 +287,56 @@ function drawNormalPlot(
   points: ProbabilityPlotPoint[],
   lineStart: ProbabilityPlotPoint,
   lineEnd: ProbabilityPlotPoint,
+  lowerBand: ProbabilityPlotPoint[],
+  upperBand: ProbabilityPlotPoint[],
   ad: number,
   pValue: number,
   colors: ChartBrandColors
 ) {
-  drawPanelTitle(ctx, panel, "Normal probability plot", colors);
-  const zs = points.map((point) => point.z);
-  const ys = points.map((point) => point.value);
-  const [xMin, xMax] = domain([...zs, lineStart.z, lineEnd.z], 0.08);
-  const [yMin, yMax] = domain([...ys, lineStart.value, lineEnd.value], 0.08);
+  drawPanelFrame(ctx, panel, "Normal Probability Plot", colors);
+  const zs = [
+    ...points.map((point) => point.z),
+    lineStart.z,
+    lineEnd.z,
+    ...lowerBand.map((point) => point.z),
+    ...upperBand.map((point) => point.z),
+  ];
+  const ys = [
+    ...points.map((point) => point.value),
+    lineStart.value,
+    lineEnd.value,
+    ...lowerBand.map((point) => point.value),
+    ...upperBand.map((point) => point.value),
+  ];
+  const [xMin, xMax] = domain(zs, 0.08);
+  const [yMin, yMax] = domain(ys, 0.08);
   drawAxes(ctx, panel, xMin, xMax, yMin, yMax, colors);
+  const plot = plotArea(panel);
   ctx.save();
   ctx.translate(panel.x, panel.y);
-  const x = scale(xMin, xMax, PLOT.left, PLOT.right);
-  const y = scale(yMin, yMax, PLOT.bottom, PLOT.top);
+  const x = scale(xMin, xMax, plot.left, plot.right);
+  const y = scale(yMin, yMax, plot.bottom, plot.top);
+  const band = [
+    ...lowerBand.map((point) => `${x(point.z)},${y(point.value)}`),
+    ...upperBand
+      .toReversed()
+      .map((point) => `${x(point.z)},${y(point.value)}`),
+  ].join(" ");
+  if (band.length > 0) {
+    ctx.fillStyle = colors.brand400;
+    ctx.globalAlpha = 0.25;
+    ctx.beginPath();
+    const [first, ...rest] = band.split(" ");
+    const [fx, fy] = first!.split(",").map(Number);
+    ctx.moveTo(fx!, fy!);
+    rest.forEach((pair) => {
+      const [px, py] = pair.split(",").map(Number);
+      ctx.lineTo(px!, py!);
+    });
+    ctx.closePath();
+    ctx.fill();
+    ctx.globalAlpha = 1;
+  }
   ctx.strokeStyle = colors.brand600;
   ctx.lineWidth = 1.3;
   ctx.beginPath();
@@ -286,8 +355,8 @@ function drawNormalPlot(
   ctx.textBaseline = "top";
   ctx.fillText(
     `AD: ${formatStat(ad, 3)}   P: ${formatPValue(pValue)}`,
-    PLOT.left + 6,
-    PLOT.top + 4
+    plot.left + 4,
+    plot.top + 4
   );
   ctx.restore();
 }
@@ -298,25 +367,50 @@ function drawCapabilitySummary(
   result: CapabilitySixpackResult,
   colors: ChartBrandColors
 ) {
-  drawPanelTitle(ctx, panel, "Capability summary", colors);
+  drawPanelFrame(ctx, panel, "Process Capability", colors);
   const cap = result.capability;
-  const lines = [
-    `N = ${result.n}`,
-    `Mean = ${formatStat(result.mean)}`,
-    `StDev (within) = ${formatStat(result.withinStdev)}`,
-    `Cp = ${formatStat(cap.cp)}`,
-    `Cpk = ${formatStat(cap.cpk)}`,
-    `Pp = ${formatStat(cap.pp)}`,
-    `Ppk = ${formatStat(cap.ppk)}`,
-    `LSL = ${formatStat(cap.lsl)}`,
-    `USL = ${formatStat(cap.usl)}`,
+  const leftCol = [
+    "PROCESS DATA",
+    `Sample N  ${result.n}`,
+    ...(result.skipped > 0 ? [`Skipped  ${result.skipped}`] : []),
+    `Mean  ${formatStat(result.mean)}`,
+    `StDev (overall)  ${formatStat(result.overallStdev)}`,
+    `StDev (within)  ${formatStat(result.withinStdev)}`,
+    `MR̄  ${formatStat(result.mrBar)}`,
+    `LSL  ${formatStat(cap.lsl)}`,
+    `Target  ${formatStat(cap.target)}`,
+    `USL  ${formatStat(cap.usl)}`,
   ];
-  ctx.fillStyle = colors.brand800;
-  ctx.font = "10px Arimo, Helvetica, Arial, sans-serif";
+  const rightCol = [
+    "POTENTIAL (WITHIN)",
+    `Cp  ${formatStat(cap.cp)}`,
+    `CPL  ${formatStat(cap.cpl)}`,
+    `CPU  ${formatStat(cap.cpu)}`,
+    `Cpk  ${formatStat(cap.cpk)}`,
+    `PPM (exp.)  ${formatPpm(cap.ppmWithin)}`,
+    "",
+    "OVERALL",
+    `Pp  ${formatStat(cap.pp)}`,
+    `PPL  ${formatStat(cap.ppl)}`,
+    `PPU  ${formatStat(cap.ppu)}`,
+    `Ppk  ${formatStat(cap.ppk)}`,
+    `PPM (exp.)  ${formatPpm(cap.ppmOverall)}`,
+    `PPM (obs.)  ${formatPpm(cap.ppmObserved)}`,
+  ];
+  ctx.font = "9px Arimo, Helvetica, Arial, sans-serif";
   ctx.textAlign = "left";
   ctx.textBaseline = "top";
-  lines.forEach((line, i) => {
-    ctx.fillText(line, panel.x + 8, panel.y + 28 + i * 16);
+  const colWidth = (panel.w - 16) / 2;
+  [leftCol, rightCol].forEach((lines, col) => {
+    lines.forEach((line, i) => {
+      if (!line) return;
+      const isHeader = line === line.toUpperCase() && !line.includes("  ");
+      ctx.fillStyle = isHeader ? colors.axis : colors.brand800;
+      ctx.font = isHeader
+        ? "bold 8px Arimo, Helvetica, Arial, sans-serif"
+        : "9px Arimo, Helvetica, Arial, sans-serif";
+      ctx.fillText(line, panel.x + 8 + col * colWidth, panel.y + 24 + i * 12);
+    });
   });
 }
 
@@ -326,61 +420,71 @@ function drawSixpack(
   colors: ChartBrandColors
 ) {
   const { config, results } = analysis;
-  ctx.fillStyle = colors.plotFill;
+  ctx.fillStyle = "#f4f6f9";
   ctx.fillRect(0, 0, SIXPACK_LOGICAL_WIDTH, SIXPACK_LOGICAL_HEIGHT);
   ctx.fillStyle = colors.brand800;
   ctx.font = "bold 14px Arimo, Helvetica, Arial, sans-serif";
   ctx.textAlign = "left";
   ctx.textBaseline = "top";
-  ctx.fillText(analysis.title, 12, 10);
+  ctx.fillText(
+    `Process Capability Sixpack of ${config.columnName}`,
+    MARGIN,
+    10
+  );
   ctx.fillStyle = colors.axis;
   ctx.font = "10px Arimo, Helvetica, Arial, sans-serif";
-  ctx.fillText(config.columnName, 12, 28);
+  ctx.fillText(`${analysis.title} · Normal · Individuals / I-MR`, MARGIN, 26);
 
+  const last25Offset = Math.max(1, results.n - results.lastObservations.length + 1);
+  const last25Series: ControlChartSeries = {
+    values: results.lastObservations,
+    center: results.mean,
+    ucl: results.individuals.ucl,
+    lcl: results.individuals.lcl,
+    outOfControl: [],
+  };
+
+  // Match SixpackView grid order: row 1 then row 2, left to right.
+  drawControlChart(ctx, panelAt(0, 0), results.individuals, colors, "I Chart", 1);
   drawControlChart(
     ctx,
-    PANELS[0]!,
-    results.individuals,
+    panelAt(1, 0),
+    last25Series,
     colors,
-    "Individuals chart"
-  );
-  drawControlChart(
-    ctx,
-    PANELS[1]!,
-    results.movingRange,
-    colors,
-    "Moving range chart"
+    "Last 25 Observations",
+    last25Offset
   );
   drawHistogram(
     ctx,
-    PANELS[2]!,
+    panelAt(2, 0),
     results.histogram.bins,
     results.histogram.overallCurve,
     results.histogram.withinCurve,
-    config.lsl,
-    config.usl,
+    results.capability.lsl,
+    results.capability.usl,
     colors
+  );
+  drawControlChart(
+    ctx,
+    panelAt(0, 1),
+    results.movingRange,
+    colors,
+    "Moving Range Chart",
+    2
   );
   drawNormalPlot(
     ctx,
-    PANELS[3]!,
+    panelAt(1, 1),
     results.normalPlot.points,
     results.normalPlot.lineStart,
     results.normalPlot.lineEnd,
+    results.normalPlot.lowerBand,
+    results.normalPlot.upperBand,
     results.normalPlot.ad,
     results.normalPlot.pValue,
     colors
   );
-  drawCapabilitySummary(ctx, PANELS[4]!, results, colors);
-  drawPanelTitle(ctx, PANELS[5]!, "Last observations", colors);
-  ctx.fillStyle = colors.brand800;
-  ctx.font = "10px Arimo, Helvetica, Arial, sans-serif";
-  ctx.textAlign = "left";
-  ctx.textBaseline = "top";
-  const last = results.lastObservations
-    .map((value) => formatStat(value))
-    .join(", ");
-  ctx.fillText(last || "—", PANELS[5]!.x + 8, PANELS[5]!.y + 28);
+  drawCapabilitySummary(ctx, panelAt(2, 1), results, colors);
 }
 
 function pngDataUrl(bytes: Buffer): string {
