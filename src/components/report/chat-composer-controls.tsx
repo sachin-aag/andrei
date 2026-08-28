@@ -2,6 +2,8 @@
 
 import { useRef, useState, type ReactNode } from "react";
 import {
+  BarChart3,
+  FileText,
   Loader2,
   MessageCircleQuestionMark,
   Telescope,
@@ -25,6 +27,7 @@ import {
 } from "@/components/ui/tooltip";
 import type { ChatPace } from "@/lib/ai/chat/pace";
 import type { ChatMode } from "@/lib/ai/chat/system-prompt";
+import type { WorkProductView } from "@/components/report/workspace-chrome";
 
 export type ComposerOption<T extends string> = {
   value: T;
@@ -73,6 +76,22 @@ export const ANALYTICS_CHAT_MODE_OPTIONS: readonly ComposerOption<ChatMode>[] = 
  * Pace, never a model name. The description is the only explanation a user
  * gets, so it says what changes for them — not what runs underneath.
  */
+export const CHAT_WORK_PRODUCT_OPTIONS: readonly ComposerOption<WorkProductView>[] =
+  [
+    {
+      value: "report",
+      label: "Report",
+      description: "Draft and edit the document.",
+      icon: FileText,
+    },
+    {
+      value: "analytics",
+      label: "Analytics",
+      description: "Fill the worksheet and run plots.",
+      icon: BarChart3,
+    },
+  ];
+
 export const CHAT_PACE_OPTIONS: readonly ComposerOption<ChatPace>[] = [
   {
     value: "quick",

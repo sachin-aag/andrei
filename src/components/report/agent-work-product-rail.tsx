@@ -41,7 +41,7 @@ export function AgentWorkProductRail({
   ];
 
   return (
-    <div className="flex h-full w-full min-w-0 flex-col items-center border-l border-[var(--border)] bg-[var(--card)] py-2">
+    <div className="flex h-full w-full min-w-0 flex-col items-center bg-[var(--card)] py-2">
       <div className="flex w-full flex-col items-center gap-1 px-1">
         {tabs.map((tab) => {
           const Icon = tab.icon;

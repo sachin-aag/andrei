@@ -8,6 +8,10 @@ import {
   type FileUIPart,
   type UIMessage,
 } from "ai";
+import {
+  readJsonBody,
+  resolveChatTurnUrl,
+} from "@/lib/ai/chat/chat-turn-url";
 import { toast } from "sonner";
 import { useChatWatchdog } from "@/hooks/use-chat-watchdog";
 import {
@@ -116,7 +120,13 @@ export function ChatSessionHost({
 
   const { messages, sendMessage, setMessages, status, error, stop } = useChat({
     id: reportChatInstanceId(reportId, sessionId),
-    transport: new DefaultChatTransport({ api }),
+    transport: new DefaultChatTransport({
+      api,
+      fetch: (input, init) => {
+        const url = resolveChatTurnUrl(reportId, api, readJsonBody(init));
+        return fetch(url, init);
+      },
+    }),
     onFinish: ({ message, isAbort, isDisconnect, isError }) => {
       finishTurnRef.current();
       if (isAbort) {

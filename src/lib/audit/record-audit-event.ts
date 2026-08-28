@@ -2,6 +2,8 @@ import { db } from "@/db";
 import { auditEvents, type AuditAction, type AuditEntity } from "@/db/schema";
 import type { AuditActorSnapshot } from "./actor";
 
+type DbInsertExecutor = Pick<typeof db, "insert">;
+
 export type RecordAuditEventInput = {
   actor: AuditActorSnapshot;
   action: AuditAction;
@@ -12,10 +14,13 @@ export type RecordAuditEventInput = {
   oldValue?: unknown;
   newValue?: unknown;
   metadata?: Record<string, unknown>;
+  /** Use the caller's transaction so serverless pools (max 1) do not deadlock. */
+  executor?: DbInsertExecutor;
 };
 
 export async function recordAuditEvent(input: RecordAuditEventInput) {
-  const [row] = await db
+  const executor = input.executor ?? db;
+  const [row] = await executor
     .insert(auditEvents)
     .values({
       reportId: input.reportId ?? null,

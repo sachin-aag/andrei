@@ -88,9 +88,19 @@ describe("ReportWorkspaceHeader chrome", () => {
     expect(onChromeChange).toHaveBeenCalledWith("document");
   });
 
-  it("hides Run all when chrome is Agent or work product is Analytics", () => {
+  it("shows Run all in Agent chrome and hides it on Analytics", () => {
     const { rerender } = render(
       <ReportWorkspaceHeader {...baseProps} chrome="agent" />
+    );
+    expect(screen.getByTestId("run-all-evaluation")).toBeInTheDocument();
+    expect(screen.queryByTestId("bulk-suggestion-actions")).not.toBeInTheDocument();
+
+    rerender(
+      <ReportWorkspaceHeader
+        {...baseProps}
+        chrome="agent"
+        workProductView="analytics"
+      />
     );
     expect(screen.queryByTestId("run-all-evaluation")).not.toBeInTheDocument();
 
@@ -111,5 +121,6 @@ describe("ReportWorkspaceHeader chrome", () => {
       />
     );
     expect(screen.getByTestId("run-all-evaluation")).toBeInTheDocument();
+    expect(screen.getByTestId("bulk-suggestion-actions")).toBeInTheDocument();
   });
 });

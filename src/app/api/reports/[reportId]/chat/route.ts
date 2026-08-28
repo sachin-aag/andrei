@@ -182,7 +182,7 @@ export async function POST(
   // Resolve the session (create one if the client didn't supply a valid id).
   let sessionId = body.sessionId?.trim() || "";
   if (sessionId) {
-    const found = await findChatSession(reportId, sessionId, "report");
+    const found = await findChatSession(reportId, sessionId);
     if (!found) sessionId = "";
   }
   if (!sessionId) {

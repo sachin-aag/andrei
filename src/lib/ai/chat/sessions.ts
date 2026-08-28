@@ -39,16 +39,18 @@ export type PersistedChatMessage = {
 
 export async function listChatSessions(
   reportId: string,
-  surface: ChatSurface = REPORT_CHAT_SURFACE
+  surface: ChatSurface | "all" = REPORT_CHAT_SURFACE
 ): Promise<ChatSessionSummary[]> {
   const sessions = await db
     .select()
     .from(chatSessions)
     .where(
-      and(
-        eq(chatSessions.reportId, reportId),
-        eq(chatSessions.surface, surface)
-      )
+      surface === "all"
+        ? eq(chatSessions.reportId, reportId)
+        : and(
+            eq(chatSessions.reportId, reportId),
+            eq(chatSessions.surface, surface)
+          )
     )
     .orderBy(desc(chatSessions.updatedAt));
 
@@ -93,11 +95,11 @@ export async function createChatSession(
   };
 }
 
-/** Returns the session if it belongs to the report and surface, else null. */
+/** Returns the session if it belongs to the report (and surface, when given). */
 export async function findChatSession(
   reportId: string,
   sessionId: string,
-  surface: ChatSurface = REPORT_CHAT_SURFACE
+  surface?: ChatSurface
 ): Promise<{
   id: string;
   title: string;
@@ -113,11 +115,13 @@ export async function findChatSession(
     })
     .from(chatSessions)
     .where(
-      and(
-        eq(chatSessions.id, sessionId),
-        eq(chatSessions.reportId, reportId),
-        eq(chatSessions.surface, surface)
-      )
+      surface
+        ? and(
+            eq(chatSessions.id, sessionId),
+            eq(chatSessions.reportId, reportId),
+            eq(chatSessions.surface, surface)
+          )
+        : and(eq(chatSessions.id, sessionId), eq(chatSessions.reportId, reportId))
     );
   return row ?? null;
 }
@@ -131,7 +135,7 @@ export type ChatSessionView = {
 export async function loadSessionView(
   reportId: string,
   sessionId: string,
-  surface: ChatSurface = REPORT_CHAT_SURFACE
+  surface?: ChatSurface
 ): Promise<ChatSessionView | null> {
   let session = await findChatSession(reportId, sessionId, surface);
   if (!session) return null;

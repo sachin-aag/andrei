@@ -46,6 +46,7 @@ export async function persistSectionContent(args: {
       section: args.section,
       previousContent: {},
       newContent: args.content,
+      executor: args.executor,
     });
 
     return inserted;
@@ -58,6 +59,7 @@ export async function persistSectionContent(args: {
     section: args.section,
     previousContent: existing.content,
     newContent: args.content,
+    executor: args.executor,
   });
 
   const [updated] = await executor

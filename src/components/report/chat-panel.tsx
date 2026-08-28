@@ -44,19 +44,23 @@ import {
   type AskUserQuestionInput,
 } from "@/components/report/chat-ask-user-form";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  ChatBusyStatus,
+  ANALYTICS_CHAT_MODE_OPTIONS,
   CHAT_PACE_OPTIONS,
+  CHAT_WORK_PRODUCT_OPTIONS,
+  ChatBusyStatus,
   ComposerSelect,
   DOCUMENT_CHAT_MODE_OPTIONS,
 } from "@/components/report/chat-composer-controls";
-import type { WorkspaceChrome } from "@/components/report/workspace-chrome";
+import {
+  SectionScopeSelect,
+  SheetScopeSelect,
+} from "@/components/report/chat-composer-scope";
+import {
+  chatWorkProductTarget,
+  isWorkProductView,
+  type WorkProductView,
+  type WorkspaceChrome,
+} from "@/components/report/workspace-chrome";
 import { useReportAttachments } from "@/providers/report-attachments-provider";
 import { useUserDirectory } from "@/providers/user-directory-provider";
 import { useReportData } from "@/providers/report-provider";
@@ -78,7 +82,10 @@ import {
   subscribeChatComposerPrefs,
   writeChatComposerPrefs,
 } from "@/lib/ai/chat/composer-prefs";
-import { examplePromptsForMode } from "@/lib/ai/chat/example-prompts";
+import {
+  examplePromptsForMode,
+  analyticsExamplePromptsForMode,
+} from "@/lib/ai/chat/example-prompts";
 import { isChatMode, type ChatMode } from "@/lib/ai/chat/system-prompt";
 import {
   CHAT_IMAGE_MAX_BYTES,
@@ -152,6 +159,23 @@ import {
   shouldShowAgentDonePendingHint,
   unlockAgentDoneAudio,
 } from "@/lib/notifications/notify-agent-done";
+import {
+  AnalyticsChatToolChip,
+  isAnalyticsWorksheetMutationTool,
+} from "@/components/statistical-analysis/analytics-chat-tool-chip";
+import {
+  CHAT_SHEET_SCOPE_ALL,
+  chatSheetOptionsFromWorksheet,
+  type ChatSheetOption,
+  type ChatSheetScope,
+} from "@/lib/statistical-analysis/chat-sheet-scope";
+import { getReportAnalytics } from "@/lib/statistical-analysis/client";
+import {
+  publishWorksheetSheets,
+  readWorksheetSheets,
+  subscribeWorksheetSheets,
+  worksheetSheetsAreLive,
+} from "@/lib/statistical-analysis/worksheet-sheets-store";
 
 type PendingChatImage = {
   id: string;
@@ -181,6 +205,7 @@ function announceCompletedAssistantTurn(
 type ToolPartInfo = {
   toolName: string;
   state: string;
+  toolCallId: string | undefined;
   input: Record<string, unknown> | undefined;
   output: Record<string, unknown> | undefined;
   errorText: string | undefined;
@@ -191,6 +216,7 @@ function readToolPart(part: UIMessagePart<never, never>): ToolPartInfo | null {
   const p = part as unknown as {
     type: string;
     state?: string;
+    toolCallId?: string;
     input?: Record<string, unknown>;
     output?: Record<string, unknown>;
     errorText?: string;
@@ -198,6 +224,7 @@ function readToolPart(part: UIMessagePart<never, never>): ToolPartInfo | null {
   return {
     toolName: p.type.slice("tool-".length),
     state: p.state ?? "",
+    toolCallId: typeof p.toolCallId === "string" ? p.toolCallId : undefined,
     input: p.input,
     output: p.output,
     errorText: p.errorText,
@@ -560,6 +587,9 @@ function ToolChip({
     );
   }
 
+  const analyticsChip = AnalyticsChatToolChip({ info });
+  if (analyticsChip) return analyticsChip;
+
   return <ToolLine icon={<Wrench className="size-3.5" />}>{info.toolName}</ToolLine>;
 }
 
@@ -876,49 +906,75 @@ function scopeDescription(scope: ChatSectionScope): string {
     : sectionLabel(scope);
 }
 
-function SectionScopeSelect({
-  value,
-  onChange,
-  disabled,
-  documentType,
-}: {
-  value: ChatSectionScope;
-  onChange: (scope: ChatSectionScope) => void;
-  disabled?: boolean;
-  documentType: DocumentType;
-}) {
-  const sections = chatEditableSections(documentType);
-  return (
-    <Select
-      value={value}
-      onValueChange={(next) => {
-        if (next !== CHAT_SECTION_SCOPE_ALL && !sections.includes(next as SectionType)) {
-          return;
-        }
-        onChange(next as ChatSectionScope);
-      }}
-      disabled={disabled}
-    >
-      <SelectTrigger
-        className="h-7 w-[7.5rem] border-[var(--border)] bg-[var(--secondary)]/30 px-2 text-[11px] font-medium"
-        aria-label="Section focus"
-        title="Choose which report section to focus on"
-      >
-        <SelectValue placeholder="Section" />
-      </SelectTrigger>
-      {/* Opens upward: the control strip sits at the bottom of the panel. */}
-      <SelectContent side="top" sideOffset={6} className="text-[11px]">
-        <SelectItem className="text-[11px]" value={CHAT_SECTION_SCOPE_ALL}>
-          All sections
-        </SelectItem>
-        {sections.map((section) => (
-          <SelectItem className="text-[11px]" key={section} value={section}>
-            {sectionLabel(section)}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
+function sheetFocusLabel(
+  scope: ChatSheetScope,
+  sheets: readonly ChatSheetOption[]
+): string {
+  if (scope === CHAT_SHEET_SCOPE_ALL) return "all data sheets";
+  return sheets.find((sheet) => sheet.id === scope)?.name ?? "the selected data sheet";
+}
+
+function emptyChatIntro(args: {
+  targetingAnalytics: boolean;
+  mode: ChatMode;
+  workspaceChrome: WorkspaceChrome;
+  sectionScope: ChatSectionScope;
+  sheetScope: ChatSheetScope;
+  sheets: readonly ChatSheetOption[];
+}): string {
+  if (args.targetingAnalytics) {
+    if (args.mode === "plan") {
+      if (args.sheetScope === CHAT_SHEET_SCOPE_ALL) {
+        return "I read this report's attachments and the worksheet. I don't fill columns or run plots in Ask mode — switch to Agent for that. I don't draft the document.";
+      }
+      return `Focused on ${sheetFocusLabel(args.sheetScope, args.sheets)} — I'll answer questions about that sheet. I won't fill columns or run plots in Ask mode.`;
+    }
+    if (args.sheetScope === CHAT_SHEET_SCOPE_ALL) {
+      return "I fill the worksheet, run a sixpack or one-way ANOVA, and plot an XY scatter (two numeric columns) or a measurement scatter (one series vs index). I can't color points by group or use serial numbers as an X axis. I don't draft the document.";
+    }
+    return `Focused on ${sheetFocusLabel(args.sheetScope, args.sheets)} — I'll fill that sheet, run plots, and use attachments. I don't draft the document.`;
+  }
+  if (args.mode === "plan") {
+    if (args.sectionScope === CHAT_SECTION_SCOPE_ALL) {
+      return "I'll answer questions about your deviation investigation using the report and attachments. I won't edit the document in Ask mode.";
+    }
+    return `Focused on ${scopeDescription(args.sectionScope)} — I'll answer questions about that section. I won't edit the document in Ask mode.`;
+  }
+  if (args.sectionScope === CHAT_SECTION_SCOPE_ALL) {
+    return args.workspaceChrome === "agent"
+      ? "Ask me to draft or improve any section. I'll apply edits directly to the document."
+      : "Ask me to draft or improve any section of your deviation investigation. I read the report and propose targeted edits you accept or reject.";
+  }
+  return args.workspaceChrome === "agent"
+    ? `Focused on ${scopeDescription(args.sectionScope)} — ask me to draft or improve that section. I'll apply edits directly to the document.`
+    : `Focused on ${scopeDescription(args.sectionScope)} — ask me to draft or improve that section. I'll propose targeted edits you accept or reject.`;
+}
+
+function composerPlaceholder(args: {
+  targetingAnalytics: boolean;
+  mode: ChatMode;
+  sectionScope: ChatSectionScope;
+  sheetScope: ChatSheetScope;
+  sheets: readonly ChatSheetOption[];
+}): string {
+  if (args.targetingAnalytics) {
+    if (args.mode === "plan") {
+      return args.sheetScope === CHAT_SHEET_SCOPE_ALL
+        ? "Ask about measurements in the attachments…"
+        : `Ask about ${sheetFocusLabel(args.sheetScope, args.sheets)}…`;
+    }
+    return args.sheetScope === CHAT_SHEET_SCOPE_ALL
+      ? "Extract numbers, run a sixpack or ANOVA, or plot an XY/measurement scatter…"
+      : `Ask the assistant to fill ${sheetFocusLabel(args.sheetScope, args.sheets)}…`;
+  }
+  if (args.mode === "plan") {
+    return args.sectionScope === CHAT_SECTION_SCOPE_ALL
+      ? "Ask about the report or attachments… type @ to tag a document or section"
+      : `Ask about ${scopeDescription(args.sectionScope)}… type @ to tag a document`;
+  }
+  return args.sectionScope === CHAT_SECTION_SCOPE_ALL
+    ? "Ask the assistant to draft or improve a section… type @ to tag a document"
+    : `Ask the assistant to draft or improve ${scopeDescription(args.sectionScope)}… @ to tag a document`;
 }
 
 function subscribeNoop() {
@@ -927,8 +983,16 @@ function subscribeNoop() {
 
 export function ChatPanel({
   workspaceChrome = "document",
+  workProductView = "report",
+  statsEnabled = false,
+  onWorksheetChanged,
+  onAgentBusyChange,
 }: {
   workspaceChrome?: WorkspaceChrome;
+  workProductView?: WorkProductView;
+  statsEnabled?: boolean;
+  onWorksheetChanged?: () => void;
+  onAgentBusyChange?: (busy: boolean) => void;
 }) {
   const {
     report,
@@ -951,21 +1015,6 @@ export function ChatPanel({
     accessUser != null
       ? aiSuggestionLockReason(accessUser, report)
       : "You can't propose edits on this report right now.";
-  // When Agent is unavailable the item still lists, disabled, with the lock
-  // reason standing in for its description — a missing option explains nothing.
-  const modeOptions = useMemo(
-    () =>
-      DOCUMENT_CHAT_MODE_OPTIONS.map((option) =>
-        option.value === "agent" && !canProposeAiEdits
-          ? {
-              ...option,
-              disabled: true,
-              description: editLockReason ?? option.description,
-            }
-          : option
-      ),
-    [canProposeAiEdits, editLockReason]
-  );
   const { attachments } = useReportAttachments();
   const [input, setInput] = useState("");
   const showUploadingNotice = useDocumentUploadingNotice(input);
@@ -984,12 +1033,48 @@ export function ChatPanel({
   );
   const isClient = useSyncExternalStore(subscribeNoop, () => true, () => false);
   const composerPrefsReady = isClient && currentUserId != null;
+  const agentChatTarget =
+    storedComposerPrefs.chatTarget ?? workProductView;
+  const chatTarget = chatWorkProductTarget({
+    chrome: workspaceChrome,
+    workProductView,
+    agentTarget: agentChatTarget,
+    statsEnabled,
+  });
+  const targetingAnalytics = chatTarget === "analytics";
+  const modeOptions = useMemo(() => {
+    const source = targetingAnalytics
+      ? ANALYTICS_CHAT_MODE_OPTIONS
+      : DOCUMENT_CHAT_MODE_OPTIONS;
+    return source.map((option) =>
+      option.value === "agent" && !canProposeAiEdits
+        ? {
+            ...option,
+            disabled: true,
+            description: editLockReason ?? option.description,
+          }
+        : option
+    );
+  }, [canProposeAiEdits, editLockReason, targetingAnalytics]);
   const mode =
     role != null && !canProposeAiEdits && storedComposerPrefs.mode === "agent"
       ? "plan"
       : storedComposerPrefs.mode;
   const pace = storedComposerPrefs.pace;
+  const liveSheets = useSyncExternalStore(
+    subscribeWorksheetSheets,
+    () => readWorksheetSheets(report.id),
+    () => []
+  );
   const [sectionScope, setSectionScope] = useState<ChatSectionScope>(CHAT_SECTION_SCOPE_ALL);
+  const [sheetScope, setSheetScope] = useState<ChatSheetScope>(CHAT_SHEET_SCOPE_ALL);
+  if (
+    sheetScope !== CHAT_SHEET_SCOPE_ALL &&
+    liveSheets.length > 0 &&
+    !liveSheets.some((sheet) => sheet.id === sheetScope)
+  ) {
+    setSheetScope(CHAT_SHEET_SCOPE_ALL);
+  }
   const [clientScopeSuggestion, setClientScopeSuggestion] =
     useState<SectionScopeMismatch | null>(null);
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
@@ -1030,6 +1115,8 @@ export function ChatPanel({
   const pendingCaretRef = useRef<number | null>(null);
   const currentSessionIdRef = useRef<string | null>(null);
   const runtimeBySessionRef = useRef(new Map<string, ChatSessionRuntime>());
+  const lastSendTargetRef = useRef<WorkProductView>("report");
+  const seenWriteIdsRef = useRef(new Set<string>());
 
   const base = `/api/reports/${report.id}/chat`;
   const {
@@ -1070,6 +1157,28 @@ export function ChatPanel({
       setAgentCommitInFlight(false);
     }
   }, [busy, setAgentCommitInFlight]);
+  useEffect(() => {
+    onAgentBusyChange?.(busy && lastSendTargetRef.current === "analytics");
+  }, [busy, onAgentBusyChange]);
+  useEffect(() => {
+    return () => onAgentBusyChange?.(false);
+  }, [onAgentBusyChange]);
+  useEffect(() => {
+    if (!onWorksheetChanged) return;
+    let found = false;
+    for (const message of messages) {
+      for (const part of message.parts ?? []) {
+        const info = readToolPart(part as UIMessagePart<never, never>);
+        if (!info || info.state !== "output-available") continue;
+        if (!isAnalyticsWorksheetMutationTool(info.toolName)) continue;
+        const id = info.toolCallId ?? `${info.toolName}:${JSON.stringify(info.output)}`;
+        if (seenWriteIdsRef.current.has(id)) continue;
+        seenWriteIdsRef.current.add(id);
+        found = true;
+      }
+    }
+    if (found) onWorksheetChanged();
+  }, [messages, onWorksheetChanged]);
   useEffect(() => {
     if (appliedEditCount <= appliedEditCountRef.current) {
       appliedEditCountRef.current = appliedEditCount;
@@ -1115,11 +1224,23 @@ export function ChatPanel({
   );
 
   const persistComposerPrefs = useCallback(
-    (next: { mode: ChatMode; pace: ChatPace }) => {
+    (next: {
+      mode: ChatMode;
+      pace: ChatPace;
+      chatTarget?: WorkProductView;
+    }) => {
       if (!currentUserId) return;
-      writeChatComposerPrefs(currentUserId, report.id, next);
+      writeChatComposerPrefs(currentUserId, report.id, {
+        mode: next.mode,
+        pace: next.pace,
+        ...(next.chatTarget
+          ? { chatTarget: next.chatTarget }
+          : storedComposerPrefs.chatTarget
+            ? { chatTarget: storedComposerPrefs.chatTarget }
+            : {}),
+      });
     },
-    [currentUserId, report.id]
+    [currentUserId, report.id, storedComposerPrefs.chatTarget]
   );
 
   const setMode = useCallback(
@@ -1137,6 +1258,31 @@ export function ChatPanel({
     },
     [persistComposerPrefs, storedComposerPrefs.mode]
   );
+
+  const setAgentChatTarget = useCallback(
+    (next: WorkProductView) => {
+      if (!isWorkProductView(next)) return;
+      persistComposerPrefs({
+        mode: storedComposerPrefs.mode,
+        pace: storedComposerPrefs.pace,
+        chatTarget: next,
+      });
+    },
+    [persistComposerPrefs, storedComposerPrefs.mode, storedComposerPrefs.pace]
+  );
+
+  const refreshSheetOptions = useCallback(async () => {
+    if (worksheetSheetsAreLive(report.id)) return;
+    try {
+      const analytics = await getReportAnalytics(report.id);
+      publishWorksheetSheets(
+        report.id,
+        chatSheetOptionsFromWorksheet(analytics.worksheet)
+      );
+    } catch {
+      // Fail-soft: All data sheets remains available.
+    }
+  }, [report.id]);
 
   // Restore the caret after a mention replaces the in-progress @ token.
   useEffect(() => {
@@ -1206,7 +1352,10 @@ export function ChatPanel({
     // section content (agent chrome) into report state.
     void refresh();
     void loadSessions();
-  }, [loadSessions, refresh, setAgentCommitInFlight]);
+    if (lastSendTargetRef.current === "analytics") {
+      onWorksheetChanged?.();
+    }
+  }, [loadSessions, onWorksheetChanged, refresh, setAgentCommitInFlight]);
 
   const onTurnCompleted = useCallback(
     (startedAt: number | null) => {
@@ -1531,7 +1680,12 @@ export function ChatPanel({
         return;
       }
       if (sessionRuntime.busy) return;
-      if (workspaceChrome === "agent" && mode === "agent") {
+      lastSendTargetRef.current = chatTarget;
+      if (
+        workspaceChrome === "agent" &&
+        mode === "agent" &&
+        chatTarget !== "analytics"
+      ) {
         try {
           await flushPendingSectionSaves();
         } catch {
@@ -1547,7 +1701,7 @@ export function ChatPanel({
       setMentionRange(null);
       const tagsForRequest = mentions;
       setMentions([]);
-      if (trimmed) {
+      if (trimmed && chatTarget !== "analytics") {
         setClientScopeSuggestion(
           detectSectionScopeMismatch(sectionScope, trimmed, report.documentType)
         );
@@ -1558,9 +1712,14 @@ export function ChatPanel({
         sessionId,
         mode,
         pace,
-        sectionScope,
         workspaceChrome,
+        chatTarget,
       };
+      if (chatTarget === "analytics") {
+        body.sheetScope = sheetScope;
+      } else {
+        body.sectionScope = sectionScope;
+      }
       if (tagsForRequest.length > 0) {
         body.mentions = tagsForRequest.map((mention) => ({
           type: mention.type,
@@ -1584,7 +1743,9 @@ export function ChatPanel({
       mountSession,
       mode,
       pace,
+      chatTarget,
       sectionScope,
+      sheetScope,
       pendingImages,
       mentions,
       report.documentType,
@@ -1733,20 +1894,20 @@ export function ChatPanel({
         {messages.length === 0 ? (
           <div className="space-y-3">
             <p className="text-sm text-[var(--muted-foreground)]">
-              {mode === "plan"
-                ? sectionScope === CHAT_SECTION_SCOPE_ALL
-                  ? "I'll answer questions about your deviation investigation using the report and attachments. I won't edit the document in Ask mode."
-                  : `Focused on ${scopeDescription(sectionScope)} — I'll answer questions about that section. I won't edit the document in Ask mode.`
-                : sectionScope === CHAT_SECTION_SCOPE_ALL
-                  ? workspaceChrome === "agent"
-                    ? "Ask me to draft or improve any section. I'll apply edits directly to the document."
-                    : "Ask me to draft or improve any section of your deviation investigation. I read the report and propose targeted edits you accept or reject."
-                  : workspaceChrome === "agent"
-                    ? `Focused on ${scopeDescription(sectionScope)} — ask me to draft or improve that section. I'll apply edits directly to the document.`
-                    : `Focused on ${scopeDescription(sectionScope)} — ask me to draft or improve that section. I'll propose targeted edits you accept or reject.`}
+              {emptyChatIntro({
+                targetingAnalytics,
+                mode,
+                workspaceChrome,
+                sectionScope,
+                sheetScope,
+                sheets: liveSheets,
+              })}
             </p>
             <div className="space-y-1.5">
-              {examplePromptsForMode(mode).map((p) => (
+              {(targetingAnalytics
+                ? analyticsExamplePromptsForMode(mode)
+                : examplePromptsForMode(mode)
+              ).map((p) => (
                 <button
                   key={p}
                   type="button"
@@ -1804,13 +1965,13 @@ export function ChatPanel({
           void send(input);
         }}
       >
-        {clientScopeSuggestion && (
+        {clientScopeSuggestion && !targetingAnalytics ? (
           <ScopeMismatchBanner
             mismatch={clientScopeSuggestion}
             onSwitch={applySectionScope}
             onDismiss={() => setClientScopeSuggestion(null)}
           />
-        )}
+        ) : null}
         <div className="mb-2 flex items-center gap-1.5">
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
             {composerPrefsReady ? (
@@ -1822,6 +1983,7 @@ export function ChatPanel({
                   disabled={busy}
                   ariaLabel="Assistant mode"
                   className="w-[6rem]"
+                  testId={targetingAnalytics ? "analytics-chat-mode" : undefined}
                 />
                 <ComposerSelect
                   value={pace}
@@ -1830,24 +1992,48 @@ export function ChatPanel({
                   disabled={busy}
                   ariaLabel="Answer depth"
                   className="w-[6rem]"
+                  testId={targetingAnalytics ? "analytics-chat-pace" : undefined}
                 />
               </>
             ) : null}
-            <SectionScopeSelect
-              value={sectionScope}
-              onChange={changeSectionScope}
-              disabled={busy}
-              documentType={report.documentType}
-            />
+            {workspaceChrome === "agent" && statsEnabled ? (
+              <ComposerSelect
+                value={agentChatTarget}
+                options={CHAT_WORK_PRODUCT_OPTIONS}
+                onChange={setAgentChatTarget}
+                disabled={busy}
+                ariaLabel="Work product"
+                className="w-[7.5rem]"
+                testId="chat-work-product-target"
+              />
+            ) : null}
+            {targetingAnalytics ? (
+              <SheetScopeSelect
+                value={sheetScope}
+                onChange={setSheetScope}
+                disabled={busy}
+                sheets={liveSheets}
+                onOpen={() => {
+                  void refreshSheetOptions();
+                }}
+              />
+            ) : (
+              <SectionScopeSelect
+                value={sectionScope}
+                onChange={changeSectionScope}
+                disabled={busy}
+                documentType={report.documentType}
+              />
+            )}
           </div>
         </div>
         {!canProposeAiEdits ? (
           <p className="mb-2 text-[11px] text-[var(--muted-foreground)]">
-            {editLockReason ??
-              "You can't propose edits on this report right now."}{" "}
-            Ask mode can still discuss the report.
+            {targetingAnalytics
+              ? `${editLockReason ?? "You can't change the worksheet on this report right now."} Ask mode can still search attachments.`
+              : `${editLockReason ?? "You can't propose edits on this report right now."} Ask mode can still discuss the report.`}
           </p>
-        ) : readOnly && mode === "agent" ? (
+        ) : readOnly && mode === "agent" && !targetingAnalytics ? (
           <p className="mb-2 text-[11px] text-[var(--muted-foreground)]">
             This report is read-only — the assistant can still discuss it, but proposed
             edits cannot be accepted.
@@ -1898,6 +2084,7 @@ export function ChatPanel({
             disabled={busy || initializing || attaching || !hostReady}
             aria-label="Attach image"
             title="Attach image"
+            data-testid={targetingAnalytics ? "analytics-chat-attach-image" : undefined}
             onClick={() => fileInputRef.current?.click()}
             className="flex size-9 shrink-0 items-center justify-center rounded-md border border-[var(--border)] text-[var(--muted-foreground)] transition-colors hover:bg-[var(--secondary)] hover:text-[var(--foreground)] disabled:opacity-40"
           >
@@ -1918,6 +2105,7 @@ export function ChatPanel({
             <textarea
               ref={textareaRef}
               value={input}
+              data-testid={targetingAnalytics ? "analytics-chat-input" : undefined}
               role="combobox"
               aria-expanded={mentionMenuOpen}
               aria-controls={mentionMenuOpen ? "chat-mention-menu" : undefined}
@@ -1977,15 +2165,13 @@ export function ChatPanel({
               }}
               rows={2}
               disabled={initializing}
-              placeholder={
-                mode === "plan"
-                  ? sectionScope === CHAT_SECTION_SCOPE_ALL
-                    ? "Ask about the report or attachments… type @ to tag a document or section"
-                    : `Ask about ${scopeDescription(sectionScope)}… type @ to tag a document`
-                  : sectionScope === CHAT_SECTION_SCOPE_ALL
-                    ? "Ask the assistant to draft or improve a section… type @ to tag a document"
-                    : `Ask the assistant to draft or improve ${scopeDescription(sectionScope)}… @ to tag a document`
-              }
+              placeholder={composerPlaceholder({
+                targetingAnalytics,
+                mode,
+                sectionScope,
+                sheetScope,
+                sheets: liveSheets,
+              })}
               className="min-h-[40px] max-h-40 w-full resize-none rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)] disabled:opacity-50"
             />
           </div>

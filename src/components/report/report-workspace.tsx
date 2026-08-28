@@ -22,7 +22,11 @@ import { ReportHeader } from "./report-header";
 import { ReportDetailsEditDialog } from "./report-details-edit-dialog";
 import { ReportWorkspaceHeader } from "./report-workspace-header";
 import { RequestExpertReviewDialog } from "./request-expert-review-dialog";
-import type { WorkspaceChrome, WorkProductView } from "./workspace-chrome";
+import {
+  shouldRevealCriteriaTab,
+  type WorkspaceChrome,
+  type WorkProductView,
+} from "./workspace-chrome";
 import {
   DEFAULT_WORKSPACE_CHROME,
   readWorkspaceChrome,
@@ -242,7 +246,8 @@ export function ReportWorkspace({
   const { pendingPlaceholders } = useReportPlaceholders();
   const { getEditor } = useReportEditors();
   const { requestCommentFocus, comments } = useReportComments();
-  const { suggestionsFocus, clearSuggestionsFocus } = useReportEvaluations();
+  const { suggestionsFocus, clearSuggestionsFocus, isEvaluating } =
+    useReportEvaluations();
   const { activeAttachmentId } = useReportAttachments();
   const [criteriaFocusSection, setCriteriaFocusSection] = useState<
     SectionType | undefined
@@ -295,6 +300,7 @@ export function ReportWorkspace({
   const showCollapsedWorkProduct =
     agentChrome && previewCollapsed && !isResizing;
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("assistant");
+  const wasEvaluatingRef = useRef(false);
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
   const [analyticsReloadEpoch, setAnalyticsReloadEpoch] = useState(0);
   const [analyticsAgentBusy, setAnalyticsAgentBusy] = useState(false);
@@ -324,6 +330,19 @@ export function ReportWorkspace({
   if (agentChrome && previewCollapsed && activeAttachmentId) {
     setPreviewCollapsed(false);
   }
+
+  useEffect(() => {
+    const justFinished = shouldRevealCriteriaTab({
+      wasEvaluating: wasEvaluatingRef.current,
+      isEvaluating,
+      chrome,
+      workProductView,
+    });
+    wasEvaluatingRef.current = isEvaluating;
+    if (justFinished) {
+      setSidebarTab("criteria");
+    }
+  }, [chrome, isEvaluating, workProductView]);
 
   const showReviewGutter =
     !analyticsSurface &&
@@ -765,9 +784,12 @@ export function ReportWorkspace({
           ref={mainRef}
           data-testid="report-work-product"
           className={cn(
-            "@container flex min-h-0 flex-col bg-[var(--background)]",
+            // `relative` is required so the document-panel resize handle
+            // (`absolute -left-1.5`) anchors to this column, not the workspace.
+            // Do not add z-10 here: the handle's z-20 must paint above chat.
+            "@container relative flex min-h-0 flex-col bg-[var(--background)]",
             agentChrome
-              ? "order-3 shrink-0"
+              ? "order-3 shrink-0 border-l border-[var(--border)]"
               : "order-2 min-w-0 flex-1",
             agentChrome &&
               !isResizing &&
@@ -966,7 +988,7 @@ export function ReportWorkspace({
               onJumpToComment={jumpToComment}
               initialCriteriaSection={criteriaFocusSection}
               workProductView={workProductView}
-              analyticsOpen={analyticsOpen}
+              statsEnabled={statsEnabled}
               onAnalyticsSettled={() =>
                 setAnalyticsReloadEpoch((epoch) => epoch + 1)
               }

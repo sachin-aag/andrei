@@ -15,7 +15,6 @@ import { captureEvent } from "@/lib/analytics/events";
 import { PlaceholdersPanelContent } from "./placeholders-panel";
 import { CriteriaPanelContent, CommentsPanelContent } from "./criteria-sheet";
 import { ChatPanel } from "./chat-panel";
-import { AnalyticsChatPanel } from "@/components/statistical-analysis/analytics-chat-panel";
 import type { SectionType } from "@/db/schema";
 import type { Placeholder } from "@/lib/placeholders/find";
 import type { WorkProductView, WorkspaceChrome } from "./workspace-chrome";
@@ -39,7 +38,7 @@ type Props = {
   chrome?: WorkspaceChrome;
   initialCriteriaSection?: SectionType;
   workProductView?: WorkProductView;
-  analyticsOpen?: boolean;
+  statsEnabled?: boolean;
   onAnalyticsSettled?: () => void;
   onAnalyticsAgentBusy?: (busy: boolean) => void;
 };
@@ -63,7 +62,7 @@ export function ReportSidebar({
   chrome = "document",
   initialCriteriaSection,
   workProductView = "report",
-  analyticsOpen = false,
+  statsEnabled = false,
   onAnalyticsSettled,
   onAnalyticsAgentBusy,
 }: Props) {
@@ -214,33 +213,26 @@ export function ReportSidebar({
       </div>
       )}
 
-      {/* ChatPanel stays mounted across collapse and tab changes so the
-          thread, composer prefs, and rendered markdown are not reset.
-          Hide with CSS instead of unmounting — remount refetches and
-          re-parses the whole conversation. Assistant manages its own
-          scroll/input, so it gets a full-height container without the
-          shared padding. */}
+      {/* ChatPanel stays mounted across collapse, tab, and work-product
+          changes so the thread, composer prefs, and rendered markdown are
+          not reset. Hide with CSS instead of unmounting. Assistant manages
+          its own scroll/input, so it gets a full-height container without
+          the shared padding. */}
       <div
         className={cn(
           "min-h-0 flex-1",
-          (collapsed || analyticsSurface || activeTab !== "assistant") && "hidden"
+          (collapsed || (!analyticsSurface && activeTab !== "assistant")) &&
+            "hidden"
         )}
       >
-        <ChatPanel workspaceChrome={chrome} />
+        <ChatPanel
+          workspaceChrome={chrome}
+          workProductView={workProductView}
+          statsEnabled={statsEnabled}
+          onWorksheetChanged={() => onAnalyticsSettled?.()}
+          onAgentBusyChange={onAnalyticsAgentBusy}
+        />
       </div>
-      {analyticsOpen ? (
-        <div
-          className={cn(
-            "min-h-0 flex-1",
-            (collapsed || !analyticsSurface) && "hidden"
-          )}
-        >
-          <AnalyticsChatPanel
-            onWorksheetChanged={() => onAnalyticsSettled?.()}
-            onAgentBusyChange={onAnalyticsAgentBusy}
-          />
-        </div>
-      ) : null}
       {!collapsed && !analyticsSurface && activeTab !== "assistant" ? (
         <div className="flex-1 overflow-y-auto p-4 min-w-0">
           {activeTab === "placeholders" && (

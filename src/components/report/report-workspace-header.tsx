@@ -93,8 +93,8 @@ export function ReportWorkspaceHeader({
   const title = report.documentNo || "Untitled";
   const [navigatingBack, setNavigatingBack] = useState(false);
   const isViewMode = mode === "view";
-  const showRunAll =
-    !isViewMode && chrome === "document" && workProductView === "report";
+  const showRunCriteria = !isViewMode && workProductView === "report";
+  const showBulkSuggestions = showRunCriteria && chrome === "document";
   const nextChrome = oppositeWorkspaceChrome(chrome);
   const switchLabel = `Switch to ${CHROME_SWITCH_NOUN[nextChrome]}`;
 
@@ -158,8 +158,8 @@ export function ReportWorkspaceHeader({
           documentType={report.documentType}
         />
 
-        {showRunAll ? <RunAllEvaluationButton /> : null}
-        {showRunAll ? <ReportBulkSuggestionActions /> : null}
+        {showRunCriteria ? <RunAllEvaluationButton /> : null}
+        {showBulkSuggestions ? <ReportBulkSuggestionActions /> : null}
 
         {canSubmit && (
           <Button size="sm" onClick={onSubmit} disabled={submitting}>

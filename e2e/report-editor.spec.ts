@@ -266,6 +266,18 @@ test.describe("report editor", () => {
     expect(collapsedBox).toBeTruthy();
     expect(collapsedBox!.width).toBeLessThanOrEqual(52);
 
+    const previewHandle = page.getByRole("separator", {
+      name: /resize document panel/i,
+    });
+    await expect(previewHandle).toBeVisible();
+    const collapsedHandleBox = await previewHandle.boundingBox();
+    expect(collapsedHandleBox).toBeTruthy();
+    expect(
+      Math.abs(
+        collapsedHandleBox!.x + collapsedHandleBox!.width / 2 - collapsedBox!.x
+      )
+    ).toBeLessThan(8);
+
     await expandWorkProductPanel(page);
 
     const docsBox = await documentsPanel(page).boundingBox();
@@ -276,6 +288,22 @@ test.describe("report editor", () => {
     expect(canvasBox).toBeTruthy();
     expect(docsBox!.x).toBeLessThan(chatBox!.x);
     expect(chatBox!.x).toBeLessThan(canvasBox!.x);
+
+    const handleBox = await previewHandle.boundingBox();
+    expect(handleBox).toBeTruthy();
+    expect(
+      Math.abs(handleBox!.x + handleBox!.width / 2 - canvasBox!.x)
+    ).toBeLessThan(8);
+    const widthBefore = canvasBox!.width;
+    await previewHandle.focus();
+    await page.keyboard.press("ArrowLeft");
+    await expect
+      .poll(async () =>
+        page
+          .getByTestId("report-work-product")
+          .evaluate((el) => el.getBoundingClientRect().width)
+      )
+      .toBeGreaterThan(widthBefore);
 
     await openReportAnalytics(page);
     const analytics = page.getByTestId("report-analytics-workspace");

@@ -12,9 +12,11 @@ import {
   trimTrailingEmpty,
 } from "./worksheet";
 import { formatRowSelection, normalizeRowSelection } from "./row-selection";
+import type { ChatSheetScope } from "./chat-sheet-scope";
+import { CHAT_SHEET_SCOPE_ALL } from "./chat-sheet-scope";
 
 /** Bump when analytics chat policy / tool instructions change. */
-export const ANALYTICS_CHAT_PROMPT_VERSION = "analytics-chat-v17";
+export const ANALYTICS_CHAT_PROMPT_VERSION = "analytics-chat-v18";
 
 const STRUCTURE_RULES = `## Worksheet structure
 If the engineer asked to create, add, insert, rename, edit (a header/name), or delete a data sheet, column, or row, call manage_worksheet immediately. Do not search attachments, scan files, extract numbers, or call write_column.
@@ -166,6 +168,16 @@ function worksheetIndex(analytics: ReportAnalyticsView): string {
   return [`Worksheet:`, ...sheetLines, ...specLines, analyses].join("\n");
 }
 
+function sheetFocusBlock(sheetScope: ChatSheetScope, analytics: ReportAnalyticsView): string {
+  if (sheetScope === CHAT_SHEET_SCOPE_ALL) {
+    return "## Sheet focus\nAll data sheets are in scope. Prefer the active data sheet when the engineer does not name one.";
+  }
+  const sheets = dataSheets(analytics.worksheet);
+  const sheet = sheets.find((item) => item.id === sheetScope);
+  const name = sheet?.name ?? sheetScope;
+  return `## Sheet focus\nThe engineer focused this turn on **${name}** [${sheetScope}]. Read and write that sheet unless they name a different tab.`;
+}
+
 export function buildAnalyticsChatSystemPrompt(input: {
   documentNo: string;
   status: string;
@@ -173,6 +185,7 @@ export function buildAnalyticsChatSystemPrompt(input: {
   analytics: ReportAnalyticsView;
   canEdit: boolean;
   mode: ChatMode;
+  sheetScope?: ChatSheetScope;
 }): string {
   const canWrite = input.mode === "agent" && input.canEdit;
   const editLine = canWrite
@@ -186,6 +199,7 @@ export function buildAnalyticsChatSystemPrompt(input: {
     editLine,
     modeRules(input.mode, input.canEdit),
     `Report ${quotePromptMetadata(sanitizePromptMetadata(input.documentNo, 80) || "untitled")} · status ${input.status}.`,
+    sheetFocusBlock(input.sheetScope ?? CHAT_SHEET_SCOPE_ALL, input.analytics),
     STRUCTURE_RULES,
     DOCUMENT_RULES,
     PLOT_RULES,

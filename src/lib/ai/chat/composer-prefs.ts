@@ -1,5 +1,9 @@
 import { isChatMode, type ChatMode } from "@/lib/ai/chat/system-prompt";
 import { DEFAULT_CHAT_PACE, isChatPace, type ChatPace } from "@/lib/ai/chat/pace";
+import {
+  isWorkProductView,
+  type WorkProductView,
+} from "@/components/report/workspace-chrome";
 
 /**
  * Composer Ask/Agent + Quick/Deep for a logged-in user on one report.
@@ -11,6 +15,8 @@ export const CHAT_COMPOSER_PREFS_STORAGE_PREFIX = "chatComposerPrefs:v1";
 export type ChatComposerPrefs = {
   mode: ChatMode;
   pace: ChatPace;
+  /** Agent-chrome Report | Analytics target. Document chrome ignores this. */
+  chatTarget?: WorkProductView;
 };
 
 export const DEFAULT_CHAT_COMPOSER_PREFS: ChatComposerPrefs = {
@@ -53,7 +59,12 @@ export function parseChatComposerPrefs(raw: unknown): ChatComposerPrefs | null {
   const mode = (raw as { mode?: unknown }).mode;
   const pace = (raw as { pace?: unknown }).pace;
   if (!isChatMode(mode) || !isChatPace(pace)) return null;
-  return { mode, pace };
+  const chatTarget = (raw as { chatTarget?: unknown }).chatTarget;
+  return {
+    mode,
+    pace,
+    ...(isWorkProductView(chatTarget) ? { chatTarget } : {}),
+  };
 }
 
 /** Test helper — module cache otherwise leaks across cases. */

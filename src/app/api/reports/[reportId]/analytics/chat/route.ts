@@ -18,6 +18,10 @@ import {
 import { getOrCreateReportAnalytics } from "@/lib/statistical-analysis/store";
 import { buildStubAnalyticsChatModel } from "@/lib/statistical-analysis/stub-chat-model";
 import {
+  chatSheetOptionsFromWorksheet,
+  parseChatSheetScope,
+} from "@/lib/statistical-analysis/chat-sheet-scope";
+import {
   CHAT_EXTRACT_GOOGLE_MODEL_ID,
   chatAssistantTurnMetadata,
   chatPaceConfig,
@@ -29,7 +33,6 @@ import {
   type ChatMode,
 } from "@/lib/ai/chat/system-prompt";
 import {
-  ANALYTICS_CHAT_SURFACE,
   createChatSession,
   findChatSession,
   touchChatSession,
@@ -90,6 +93,7 @@ export async function POST(
     sessionId?: string;
     pace?: unknown;
     mode?: unknown;
+    sheetScope?: unknown;
   };
   const messages = sanitizeChatMessagesForModel(
     Array.isArray(body.messages) ? body.messages : []
@@ -102,13 +106,12 @@ export async function POST(
   if (sessionId) {
     const found = await findChatSession(
       reportId,
-      sessionId,
-      ANALYTICS_CHAT_SURFACE
+      sessionId
     );
     if (!found) sessionId = "";
   }
   if (!sessionId) {
-    sessionId = (await createChatSession(reportId, ANALYTICS_CHAT_SURFACE)).id;
+    sessionId = (await createChatSession(reportId)).id;
   }
 
   const claimed = await tryMarkAssistantTurnRunning(sessionId);
@@ -146,6 +149,11 @@ export async function POST(
     getOrCreateReportAnalytics(reportId),
   ]);
 
+  const sheetScope = parseChatSheetScope(
+    body.sheetScope,
+    chatSheetOptionsFromWorksheet(analytics.worksheet)
+  );
+  const preferredSheetId = sheetScope === "all" ? undefined : sheetScope;
   const mode: ChatMode = isChatMode(body.mode) ? body.mode : "agent";
   const canWrite = mode === "agent" && canEdit;
   const searchGate = createAnalyticsSearchGate();
@@ -156,12 +164,14 @@ export async function POST(
     analytics,
     canEdit,
     mode,
+    sheetScope,
   });
   const tools = buildAnalyticsChatTools({
     reportId,
     canEdit: canWrite,
     documentType: report.documentType,
     searchGate,
+    preferredSheetId,
   });
   const pace: ChatPace = isChatPace(body.pace) ? body.pace : DEFAULT_CHAT_PACE;
   const paceConfig = chatPaceConfig(pace);

@@ -476,13 +476,29 @@ async function resolveExtractPages(input: {
   return listed.slice(0, MAX_EXTRACT_PAGES).map((page) => page.pageNumber);
 }
 
+function worksheetWithPreferredSheet(
+  worksheet: WorksheetData,
+  preferredSheetId?: string
+): WorksheetData {
+  if (preferredSheetId) {
+    const sheet = findSheet(worksheet, preferredSheetId);
+    if (sheet) return switchWorksheetTab(worksheet, sheet.id);
+  }
+  if (isSpecsTab(worksheet)) {
+    const first = dataSheets(worksheet)[0];
+    if (first) return switchWorksheetTab(worksheet, first.id);
+  }
+  return worksheet;
+}
+
 export function buildAnalyticsChatTools(opts: {
   reportId: string;
   canEdit: boolean;
   documentType: import("@/db/schema").DocumentType;
   searchGate?: AnalyticsSearchGate;
+  preferredSheetId?: string;
 }): ToolSet {
-  const { reportId, canEdit, documentType, searchGate } = opts;
+  const { reportId, canEdit, documentType, searchGate, preferredSheetId } = opts;
   const documentTools = pickAnalyticsDocumentTools(
     buildChatTools({
       reportId,
@@ -850,11 +866,10 @@ export function buildAnalyticsChatTools(opts: {
           }));
         }
         const analytics = await getOrCreateReportAnalytics(reportId);
-        let worksheet = analytics.worksheet;
-        if (isSpecsTab(worksheet)) {
-          const first = dataSheets(worksheet)[0];
-          if (first) worksheet = switchWorksheetTab(worksheet, first.id);
-        }
+        const worksheet = worksheetWithPreferredSheet(
+          analytics.worksheet,
+          preferredSheetId
+        );
         const applied = applyWriteColumnEntries(worksheet, entries);
         if (!applied.ok) {
           return {
@@ -932,7 +947,10 @@ export function buildAnalyticsChatTools(opts: {
         const operations = input.operations?.length
           ? input.operations
           : [input];
-        let worksheet = analytics.worksheet;
+        let worksheet = worksheetWithPreferredSheet(
+          analytics.worksheet,
+          preferredSheetId
+        );
         const applied: Array<{
           status: "ok";
           action: string;

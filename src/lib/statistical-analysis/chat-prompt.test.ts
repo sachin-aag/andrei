@@ -18,7 +18,7 @@ const emptyAnalytics: ReportAnalyticsView = {
 
 describe("analytics chat prompt", () => {
   it("bumps when sixpack/scatter/ANOVA policy or tools change", () => {
-    expect(ANALYTICS_CHAT_PROMPT_VERSION).toBe("analytics-chat-v17");
+    expect(ANALYTICS_CHAT_PROMPT_VERSION).toBe("analytics-chat-v18");
   });
 
   it("covers worksheet, sixpack, scatter, and ANOVA without drafting the report", () => {
@@ -66,7 +66,8 @@ describe("analytics chat prompt", () => {
     expect(prompt).toContain("Column specs: none");
     expect(prompt).not.toContain("Specs tab");
     expect(prompt).toContain("Quick vs Deep");
-    expect(prompt).toContain("## Mode: AGENT");
+    expect(prompt).toContain("## Sheet focus");
+    expect(prompt).toContain("All data sheets are in scope");
     expect(prompt).not.toContain("There is no Ask/Agent toggle here");
     expect(prompt).not.toContain("draft_field");
   });
