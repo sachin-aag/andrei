@@ -1,7 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { JSONContent } from "@tiptap/core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("@/lib/ai/usage", () => ({
+  assertAiBudgetAvailable: vi.fn().mockResolvedValue(undefined),
+  recordAiUsage: vi.fn().mockResolvedValue(undefined),
+}));
+
 import { reports } from "@/db/schema";
 import type { ImportedReportContent } from "@/lib/import/docx-to-sections";
 import { docxBufferToImportedReportContent } from "@/lib/import/docx-to-sections";

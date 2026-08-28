@@ -46,6 +46,12 @@ import {
   flushLangfuseTraces,
   langfuseGenerateTextTelemetry,
 } from "@/lib/observability/langfuse";
+import {
+  aiBudgetExceededResponse,
+  assertAiBudgetAvailable,
+  isAiBudgetExceededError,
+  recordAiUsage,
+} from "@/lib/ai/usage";
 import { listReadyDocumentsForReport } from "@/lib/attachments/retrieval";
 import { sanitizeChatMessagesForModel } from "@/lib/ai/chat/image-parts";
 import {
@@ -178,6 +184,9 @@ export async function POST(
 
   let result;
   try {
+    if (!isTestStubChat()) {
+      await assertAiBudgetAvailable();
+    }
     result = streamText({
       model,
       system,
@@ -223,6 +232,9 @@ export async function POST(
   } catch (err) {
     stopCancelPoll();
     await clearAssistantTurn(sessionId);
+    if (isAiBudgetExceededError(err)) {
+      return aiBudgetExceededResponse(err);
+    }
     console.error("analytics-chat: failed to start assistant stream", {
       reportId,
       sessionId,
@@ -237,6 +249,16 @@ export async function POST(
   after(async () => {
     try {
       await result.consumeStream();
+      if (!isTestStubChat()) {
+        const usage = await result.totalUsage;
+        await recordAiUsage({
+          feature: "analytics_chat",
+          modelId: paceConfig.modelId,
+          usage,
+          reportId,
+          userId: user.id,
+        });
+      }
       await flushLangfuseTraces();
     } finally {
       stopCancelPoll();

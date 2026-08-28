@@ -1,6 +1,10 @@
 import { createVertex } from "@ai-sdk/google-vertex";
 import { embedMany, type EmbeddingModel } from "ai";
 import { createWifAuthClient, getWifConfig } from "@/lib/gcp/wif-token";
+import {
+  assertAiBudgetAvailable,
+  recordAiUsage,
+} from "@/lib/ai/usage";
 
 export const DEFAULT_DOCUMENT_EMBEDDING_MODEL_ID = "gemini-embedding-001";
 export const DOCUMENT_EMBEDDING_DIMENSIONS = 768;
@@ -16,6 +20,7 @@ export async function embedDocumentChunks(input: {
   texts: string[];
   modelId: string;
 }): Promise<number[][]> {
+  await assertAiBudgetAvailable();
   const embeddings: number[][] = [];
   for (let index = 0; index < input.texts.length; index += EMBEDDING_BATCH_SIZE) {
     const batch = input.texts.slice(index, index + EMBEDDING_BATCH_SIZE);
@@ -28,6 +33,11 @@ export async function embedDocumentChunks(input: {
           outputDimensionality: DOCUMENT_EMBEDDING_DIMENSIONS,
         },
       },
+    });
+    await recordAiUsage({
+      feature: "document_embedding",
+      modelId: input.modelId,
+      usage: result.usage,
     });
     embeddings.push(...result.embeddings.map(normalizeEmbedding));
   }
