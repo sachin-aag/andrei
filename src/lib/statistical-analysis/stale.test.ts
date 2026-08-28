@@ -32,6 +32,7 @@ function sixpack(overrides?: Partial<SixpackAnalysisSummary>): SixpackAnalysisSu
     sourceHash: "abc",
     stale: false,
     createdAt: "2026-08-26T00:00:00.000Z",
+    previewImage: null,
     ...overrides,
   };
 }
@@ -59,6 +60,7 @@ function scatter(): ScatterAnalysisSummary {
     sourceHash: "def",
     stale: false,
     createdAt: "2026-08-26T00:00:00.000Z",
+    previewImage: null,
   };
 }
 
@@ -84,6 +86,7 @@ function xyScatter(): XyScatterAnalysisSummary {
     sourceHash: "xy",
     stale: false,
     createdAt: "2026-08-26T00:00:00.000Z",
+    previewImage: null,
   };
 }
 
@@ -119,6 +122,7 @@ function anova(): AnovaAnalysisSummary {
     sourceHash: "anova",
     stale: false,
     createdAt: "2026-08-26T00:00:00.000Z",
+    previewImage: null,
   };
 }
 

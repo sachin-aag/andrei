@@ -56,6 +56,10 @@ import {
   formatRowSelection,
   normalizeRowSelection,
 } from "./row-selection";
+import {
+  asPreviewImage,
+  snapshotAnalysisPreviewImage,
+} from "./snapshot-analysis-image";
 
 function asWorksheet(value: unknown): WorksheetData {
   return normalizeWorksheet(worksheetDataSchema.parse(value));
@@ -195,6 +199,7 @@ function toAnalysisSummary(
       sourceHash: row.sourceHash,
       stale: false,
       createdAt: iso(row.createdAt),
+      previewImage: asPreviewImage(row.previewImage),
     };
     return summary;
   }
@@ -217,6 +222,7 @@ function toAnalysisSummary(
       sourceHash: row.sourceHash,
       stale: currentHash !== row.sourceHash,
       createdAt: iso(row.createdAt),
+      previewImage: null,
     };
     return summary;
   }
@@ -239,6 +245,7 @@ function toAnalysisSummary(
       sourceHash: row.sourceHash,
       stale: currentHash !== row.sourceHash,
       createdAt: iso(row.createdAt),
+      previewImage: asPreviewImage(row.previewImage),
     };
     return summary;
   }
@@ -258,6 +265,7 @@ function toAnalysisSummary(
     sourceHash: row.sourceHash,
     stale: currentHash !== row.sourceHash,
     createdAt: iso(row.createdAt),
+    previewImage: asPreviewImage(row.previewImage),
   };
   return summary;
 }
@@ -680,6 +688,13 @@ async function insertAnalysisRow(input: {
   | { ok: true; analytics: ReportAnalyticsView; analysis: StatisticalAnalysisSummary }
   | { ok: false; status: 400 | 404; error: string }
 > {
+  const previewImage = await snapshotAnalysisPreviewImage({
+    kind: input.kind,
+    title: input.title,
+    config: input.config,
+    results: input.results,
+  });
+
   const [row] = await db
     .insert(statisticalAnalyses)
     .values({
@@ -688,6 +703,7 @@ async function insertAnalysisRow(input: {
       title: input.title,
       config: input.config,
       results: input.results,
+      previewImage,
       sourceHash: input.sourceHash,
     })
     .returning();
@@ -750,6 +766,7 @@ export async function recomputeAnalysisForReport(
         title: config.title,
         config,
         results: outcome.result,
+        previewImage: null,
         sourceHash: hashAnovaSource(
           response,
           factor,
@@ -785,12 +802,19 @@ export async function recomputeAnalysisForReport(
     if (!scatter.ok) {
       return { ok: false, status: 400, error: scatter.error };
     }
+    const scatterPreview = await snapshotAnalysisPreviewImage({
+      kind: MEASUREMENT_SCATTER,
+      title: scatter.config.title,
+      config: scatter.config,
+      results: scatter.results,
+    });
     await db
       .update(statisticalAnalyses)
       .set({
         title: scatter.config.title,
         config: scatter.config,
         results: scatter.results,
+        previewImage: scatterPreview,
         sourceHash: hashScatterSource(scatter.config.query, scatter.results),
       })
       .where(
@@ -818,12 +842,19 @@ export async function recomputeAnalysisForReport(
     if (!outcome.ok) {
       return { ok: false, status: 400, error: outcome.message };
     }
+    const xyPreview = await snapshotAnalysisPreviewImage({
+      kind: XY_SCATTER,
+      title: config.title,
+      config,
+      results: outcome.result,
+    });
     await db
       .update(statisticalAnalyses)
       .set({
         title: config.title,
         config,
         results: outcome.result,
+        previewImage: xyPreview,
         sourceHash: hashXyScatterSource(
           xColumn,
           yColumn,
@@ -854,13 +885,19 @@ export async function recomputeAnalysisForReport(
     if (!outcome.ok) {
       return { ok: false, status: 400, error: outcome.message };
     }
-
+    const sixpackPreview = await snapshotAnalysisPreviewImage({
+      kind: CAPABILITY_SIXPACK_NORMAL,
+      title: config.title,
+      config,
+      results: outcome.result,
+    });
     await db
       .update(statisticalAnalyses)
       .set({
         title: config.title,
         config,
         results: outcome.result,
+        previewImage: sixpackPreview,
         sourceHash: hashColumnSource(column, normalizeRowSelection(config)),
       })
       .where(

@@ -32,6 +32,7 @@ function scatterSummary(
     sourceHash: "def",
     stale: false,
     createdAt: "2026-08-26T00:00:00.000Z",
+    previewImage: null,
   };
 }
 

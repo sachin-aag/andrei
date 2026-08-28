@@ -1245,6 +1245,8 @@ export const statisticalAnalyses = pgTable(
     title: text("title").notNull(),
     config: jsonb("config").notNull(),
     results: jsonb("results").notNull(),
+    /** PNG snapshot for document insert; null for legacy rows or failed rasterization. */
+    previewImage: jsonb("preview_image"),
     sourceHash: text("source_hash").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

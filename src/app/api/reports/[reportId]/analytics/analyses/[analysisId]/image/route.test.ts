@@ -18,6 +18,14 @@ const params = {
   params: Promise.resolve({ reportId: "report-1", analysisId: "analysis-1" }),
 };
 
+const previewImage = {
+  dataUrl: "data:image/png;base64,AAAA",
+  widthPx: 600,
+  heightPx: 400,
+  alt: TORQUE_MOCK_SPEC.title,
+  chartSpec: TORQUE_MOCK_SPEC,
+};
+
 describe("GET /api/reports/[reportId]/analytics/analyses/[analysisId]/image", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -35,7 +43,7 @@ describe("GET /api/reports/[reportId]/analytics/analyses/[analysisId]/image", ()
     } as never);
   });
 
-  it("returns a PNG payload for a scatter analysis", async () => {
+  it("returns the stored preview image", async () => {
     vi.mocked(getOrCreateReportAnalytics).mockResolvedValue({
       id: "ws-1",
       reportId: "report-1",
@@ -54,6 +62,7 @@ describe("GET /api/reports/[reportId]/analytics/analyses/[analysisId]/image", ()
           sourceHash: "hash",
           stale: false,
           createdAt: "2026-01-01T00:00:00.000Z",
+          previewImage,
           config: {
             query: "torque",
             title: "Torque",
@@ -88,7 +97,60 @@ describe("GET /api/reports/[reportId]/analytics/analyses/[analysisId]/image", ()
     const body = (await response.json()) as {
       image: { dataUrl: string; alt: string };
     };
-    expect(body.image.alt).toBe(TORQUE_MOCK_SPEC.title);
-    expect(body.image.dataUrl.startsWith("data:image/png;base64,")).toBe(true);
+    expect(body.image).toEqual(previewImage);
+  });
+
+  it("returns 404 when no preview was stored", async () => {
+    vi.mocked(getOrCreateReportAnalytics).mockResolvedValue({
+      id: "ws-1",
+      reportId: "report-1",
+      worksheet: {
+        columns: [],
+        sheets: [],
+        specs: [],
+        activeSheetId: "data-1",
+      },
+      analyses: [
+        {
+          id: "analysis-1",
+          workspaceId: "ws-1",
+          title: "Torque",
+          kind: "measurement_scatter",
+          sourceHash: "hash",
+          stale: false,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          previewImage: null,
+          config: {
+            query: "torque",
+            title: "Torque",
+            xLabel: "Unit",
+            yLabel: "Torque",
+            layout: {
+              mode: "combined",
+              seriesBy: "none",
+              xAxis: "sequential",
+              yRange: null,
+            },
+            lsl: null,
+            usl: null,
+          },
+          results: {
+            specs: [TORQUE_MOCK_SPEC],
+            n: TORQUE_MOCK_SPEC.points.length,
+            uom: "Nm",
+          },
+        },
+      ],
+      version: 1,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    });
+
+    const response = await GET(
+      new Request("http://localhost/api"),
+      params
+    );
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({ error: "no_preview" });
   });
 });

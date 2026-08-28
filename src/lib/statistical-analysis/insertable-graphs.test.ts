@@ -1,9 +1,18 @@
 import { describe, expect, it } from "vitest";
+import { TORQUE_MOCK_SPEC } from "@/lib/charts/__fixtures__/torque-mock";
 import {
   isInsertableGraphAnalysis,
   listInsertableGraphAnalyses,
 } from "./insertable-graphs";
 import type { StatisticalAnalysisSummary } from "./types";
+
+const previewImage = {
+  dataUrl: "data:image/png;base64,AAAA",
+  widthPx: 600,
+  heightPx: 400,
+  alt: "Assay sixpack",
+  chartSpec: null,
+};
 
 const sixpack = {
   id: "a1",
@@ -13,6 +22,7 @@ const sixpack = {
   sourceHash: "h",
   stale: false,
   createdAt: "2026-01-01T00:00:00.000Z",
+  previewImage,
   config: {
     columnId: "c1",
     columnName: "Assay",
@@ -29,6 +39,11 @@ const scatter = {
   id: "a2",
   title: "Torque scatter",
   kind: "measurement_scatter",
+  previewImage: {
+    ...previewImage,
+    alt: "Torque scatter",
+    chartSpec: TORQUE_MOCK_SPEC,
+  },
   config: {
     query: "torque",
     title: "Torque scatter",
@@ -46,6 +61,7 @@ const anova = {
   id: "a3",
   title: "ANOVA",
   kind: "one_way_anova",
+  previewImage: null,
   config: {
     responseColumnId: "r",
     responseColumnName: "Response",
@@ -56,12 +72,19 @@ const anova = {
   results: {} as never,
 } satisfies StatisticalAnalysisSummary;
 
+const legacySixpack = {
+  ...sixpack,
+  id: "a4",
+  previewImage: null,
+};
+
 describe("insertable-graphs", () => {
-  it("includes sixpack and scatter analyses only", () => {
+  it("includes graph analyses with a stored preview only", () => {
     expect(isInsertableGraphAnalysis(sixpack)).toBe(true);
     expect(isInsertableGraphAnalysis(scatter)).toBe(true);
     expect(isInsertableGraphAnalysis(anova)).toBe(false);
-    expect(listInsertableGraphAnalyses([sixpack, scatter, anova])).toEqual([
+    expect(isInsertableGraphAnalysis(legacySixpack)).toBe(false);
+    expect(listInsertableGraphAnalyses([sixpack, scatter, anova, legacySixpack])).toEqual([
       sixpack,
       scatter,
     ]);
