@@ -440,10 +440,6 @@ export function ReportWorkspace({
 
   const signingInFlight = submitting || approving || sendingFeedback;
 
-  useEffect(() => {
-    if (chrome === "agent") setSidebarCollapsed(false);
-  }, [chrome]);
-
   const jumpToSection = useCallback((s: SectionType) => {
     const el = mainRef.current?.querySelector(`#${s}`);
     if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });

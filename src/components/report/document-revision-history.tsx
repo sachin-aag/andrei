@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { History } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -45,10 +45,6 @@ export function DocumentRevisionHistory({
       setRevisions([]);
     }
   }, [reportId]);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
 
   const canCompare = useMemo(
     () =>

@@ -59,6 +59,7 @@ import {
 import type { WorkspaceChrome } from "@/components/report/workspace-chrome";
 import { useReportAttachments } from "@/providers/report-attachments-provider";
 import { useUserDirectory } from "@/providers/user-directory-provider";
+import { useReportData } from "@/providers/report-provider";
 import {
   aiSuggestionLockReason,
   canSaveReportSection,

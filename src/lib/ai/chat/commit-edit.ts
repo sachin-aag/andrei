@@ -25,18 +25,22 @@ export type TurnEditItem = {
   reasoning: string;
 };
 
+export type CommitEditFailureStatus =
+  | "not_found"
+  | "ambiguous"
+  | "cross_cell"
+  | "bad_scope"
+  | "too_large"
+  | "no_table"
+  | "stale"
+  | "fixed_schema"
+  | "invalid"
+  | "empty_edit";
+
 export type CommitEditResult =
   | { status: "applied"; section: SectionType; targetField: string; summary: string }
   | { status: "section_not_found"; message: string }
-  | { status: "not_found"; hint?: string }
-  | { status: "ambiguous"; hint?: string }
-  | { status: "cross_cell"; hint?: string }
-  | { status: "bad_scope"; hint?: string }
-  | { status: "too_large"; hint?: string }
-  | { status: "no_table"; hint?: string }
-  | { status: "stale"; hint?: string }
-  | { status: "fixed_schema"; hint?: string }
-  | { status: "invalid"; hint?: string };
+  | { status: CommitEditFailureStatus; hint?: string };
 
 export type CommitEditInput =
   | {
@@ -60,7 +64,7 @@ export function applyCommitToSectionContent(args: {
   input: CommitEditInput;
 }):
   | { ok: true; content: Record<string, unknown> }
-  | { ok: false; status: CommitEditResult["status"]; hint?: string } {
+  | { ok: false; status: CommitEditFailureStatus; hint?: string } {
   const { content, section, targetField, documentType, input } = args;
   const headingNodes = documentType === "generic_document";
 
@@ -162,9 +166,6 @@ export async function commitChatEdit(args: {
   });
 
   if (!applied.ok) {
-    if (applied.status === "section_not_found") {
-      return { status: "section_not_found", message: "Section not found." };
-    }
     return { status: applied.status, hint: applied.hint };
   }
 

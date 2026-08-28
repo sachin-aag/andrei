@@ -134,6 +134,26 @@ import {
 import { parseResultsMatrix } from "@/lib/document-types/convergent/matrix-parser";
 import type { RetrievalPolicy } from "@/lib/ai/chat/retrieval-policy";
 
+type AgentCommitOutcome =
+  | {
+      status: "applied";
+      section: SectionType;
+      targetField: string;
+      summary: string;
+    }
+  | { status: "not_editable"; message: string }
+  | { status: "section_not_found"; message: string }
+  | { status: "not_found"; hint: string }
+  | { status: "ambiguous"; hint: string }
+  | { status: "cross_cell"; hint: string }
+  | { status: "bad_scope"; hint: string }
+  | { status: "too_large"; hint: string }
+  | { status: "empty_edit"; hint: string }
+  | { status: "no_table"; hint: string }
+  | { status: "stale"; hint: string }
+  | { status: "fixed_schema"; hint: string }
+  | { status: "invalid"; hint: string };
+
 export type ProposeEditResult =
   | {
       status: "proposed";
@@ -142,21 +162,9 @@ export type ProposeEditResult =
       targetField: string;
       summary: string;
     }
-  | {
-      status: "applied";
-      section: SectionType;
-      targetField: string;
-      summary: string;
-    }
-  | { status: "not_editable"; message: string }
+  | AgentCommitOutcome
   | { status: "invalid_section"; message: string }
   | { status: "invalid_field"; message: string; allowedFields: string[] }
-  | { status: "section_not_found"; message: string }
-  | { status: "not_found"; hint: string }
-  | { status: "ambiguous"; hint: string }
-  | { status: "cross_cell"; hint: string }
-  | { status: "bad_scope"; hint: string }
-  | { status: "too_large"; hint: string }
   | { status: "review_incomplete"; message: string };
 
 export type InsertImageResult =
@@ -167,24 +175,12 @@ export type InsertImageResult =
       targetField: string;
       summary: string;
     }
-  | {
-      status: "applied";
-      section: SectionType;
-      targetField: string;
-      summary: string;
-    }
-  | { status: "not_editable"; message: string }
+  | AgentCommitOutcome
   | { status: "invalid_section"; message: string }
   | { status: "invalid_field"; message: string; allowedFields: string[] }
   | { status: "plain_field"; message: string }
-  | { status: "section_not_found"; message: string }
   | { status: "image_not_found"; message: string }
   | { status: "too_many_images"; message: string }
-  | { status: "not_found"; hint: string }
-  | { status: "ambiguous"; hint: string }
-  | { status: "cross_cell"; hint: string }
-  | { status: "bad_scope"; hint: string }
-  | { status: "too_large"; hint: string }
   | { status: "review_incomplete"; message: string };
 
 type ProposedSecondInput = {
@@ -202,21 +198,9 @@ export type EditTableResult =
       targetField: string;
       summary: string;
     }
-  | {
-      status: "applied";
-      section: SectionType;
-      targetField: string;
-      summary: string;
-    }
-  | { status: "not_editable"; message: string }
+  | AgentCommitOutcome
   | { status: "invalid_section"; message: string }
   | { status: "invalid_field"; message: string; allowedFields: string[] }
-  | { status: "section_not_found"; message: string }
-  | { status: "no_table"; hint: string }
-  | { status: "bad_scope"; hint: string }
-  | { status: "stale"; hint: string }
-  | { status: "fixed_schema"; hint: string }
-  | { status: "invalid"; hint: string }
   | { status: "review_incomplete"; message: string };
 
 export type DraftFieldResult =
@@ -227,16 +211,9 @@ export type DraftFieldResult =
       targetField: string;
       summary: string;
     }
-  | {
-      status: "applied";
-      section: SectionType;
-      targetField: string;
-      summary: string;
-    }
-  | { status: "not_editable"; message: string }
+  | AgentCommitOutcome
   | { status: "invalid_section"; message: string }
   | { status: "invalid_field"; message: string; allowedFields: string[] }
-  | { status: "section_not_found"; message: string }
   | { status: "table_not_supported"; message: string }
   | { status: "figures_not_supported"; message: string }
   | { status: "review_incomplete"; message: string }
@@ -666,7 +643,7 @@ export function buildChatTools(opts: {
     targetField: string;
     reasoning: string;
     input: CommitEditInput;
-  }) => {
+  }): Promise<AgentCommitOutcome> => {
     if (!actor) {
       return {
         status: "not_editable" as const,

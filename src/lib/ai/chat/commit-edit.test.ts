@@ -1,8 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { JSONContent } from "@tiptap/core";
 import { applyCommitToSectionContent } from "@/lib/ai/chat/commit-edit";
 import { flattenForAnchor } from "@/lib/suggestions/locator";
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
+
+vi.mock("@/db", () => ({ db: {} }));
 
 function paraDoc(text: string): JSONContent {
   return {
