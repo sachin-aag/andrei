@@ -17,9 +17,12 @@ import {
 import { parseChartSpec } from "@/lib/charts/chart-spec";
 import { isStatisticalAnalysisEnabled } from "@/lib/customers/packs";
 import {
+  clipboardErrorMessage,
+  copyEditorSelection,
+  cutEditorSelection,
   deleteEditorSelection,
   editorHasSelection,
-  runEditorClipboardCommand,
+  pasteEditorClipboard,
 } from "@/lib/tiptap/editor-clipboard";
 import {
   fetchAnalysisImage,
@@ -118,17 +121,32 @@ export function TiptapEditorContextMenu({
     [editable, editor, reportId]
   );
 
-  const runClipboard = useCallback(
-    (command: "cut" | "copy" | "paste") => {
-      if (!editor || !editable) return;
-      const ok = runEditorClipboardCommand(editor, command);
-      if (!ok && command === "paste") {
-        toast.error("Paste is not available in this browser.");
-      }
-      refreshMenuState();
-    },
-    [editable, editor, refreshMenuState]
-  );
+  const handleCopy = useCallback(async () => {
+    if (!editor || !editable) return;
+    const result = await copyEditorSelection(editor);
+    if (!result.ok) {
+      toast.error(clipboardErrorMessage(result.error));
+    }
+    refreshMenuState();
+  }, [editable, editor, refreshMenuState]);
+
+  const handleCut = useCallback(async () => {
+    if (!editor || !editable) return;
+    const result = await cutEditorSelection(editor);
+    if (!result.ok) {
+      toast.error(clipboardErrorMessage(result.error));
+    }
+    refreshMenuState();
+  }, [editable, editor, refreshMenuState]);
+
+  const handlePaste = useCallback(async () => {
+    if (!editor || !editable) return;
+    const result = await pasteEditorClipboard(editor);
+    if (!result.ok) {
+      toast.error(clipboardErrorMessage(result.error));
+    }
+    refreshMenuState();
+  }, [editable, editor, refreshMenuState]);
 
   const handleDelete = useCallback(() => {
     if (!editor || !editable) return;
@@ -152,21 +170,21 @@ export function TiptapEditorContextMenu({
         <ContextMenuItem
           data-testid="tiptap-context-cut"
           disabled={selectionActionsDisabled}
-          onSelect={() => runClipboard("cut")}
+          onSelect={() => void handleCut()}
         >
           Cut
         </ContextMenuItem>
         <ContextMenuItem
           data-testid="tiptap-context-copy"
           disabled={selectionActionsDisabled}
-          onSelect={() => runClipboard("copy")}
+          onSelect={() => void handleCopy()}
         >
           Copy
         </ContextMenuItem>
         <ContextMenuItem
           data-testid="tiptap-context-paste"
           disabled={pasteDisabled}
-          onSelect={() => runClipboard("paste")}
+          onSelect={() => void handlePaste()}
         >
           Paste
         </ContextMenuItem>
