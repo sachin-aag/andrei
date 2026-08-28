@@ -1,21 +1,25 @@
 import { redirect } from "next/navigation";
 import { ViewTransition } from "react";
 import { AppShell } from "@/components/layout/app-shell";
-import { AdminUsersPanel } from "@/components/admin/admin-users-panel";
-import { getCurrentUser } from "@/lib/auth/session";
+import { AdminLimitsPanel } from "@/components/admin/admin-limits-panel";
 import { listAdminUsers } from "@/lib/admin/users";
+import { getCurrentUser } from "@/lib/auth/session";
 import { getPasswordPolicy } from "@/lib/auth/password-policy";
+import { getAiBudgetStatus } from "@/lib/ai/usage";
+import { getAttachmentPageBudgetStatus } from "@/lib/attachments/page-budget";
 
 export const dynamic = "force-dynamic";
 
-export default async function AdminUsersPage() {
+export default async function AdminLimitsPage() {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (user.role !== "admin") redirect("/");
 
-  const [users, policy] = await Promise.all([
+  const [users, policy, aiBudget, attachmentPageBudget] = await Promise.all([
     listAdminUsers(),
     getPasswordPolicy(),
+    getAiBudgetStatus(),
+    getAttachmentPageBudgetStatus(),
   ]);
   const shellUsers = users.map(({ id, name, email, role, title }) => ({
     id,
@@ -36,11 +40,9 @@ export default async function AdminUsersPage() {
         exit={{ "nav-back": "nav-back", default: "none" }}
         default="none"
       >
-        <AdminUsersPanel
-          initialUsers={users}
-          currentUserId={user.id}
-          initialPasswordExpiryDays={policy.expiryDays}
-          initialInactivityTimeoutMinutes={policy.inactivityTimeoutMinutes}
+        <AdminLimitsPanel
+          initialAiBudgetStatus={aiBudget}
+          initialAttachmentPageBudgetStatus={attachmentPageBudget}
         />
       </ViewTransition>
     </AppShell>
