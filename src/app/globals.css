@@ -580,6 +580,32 @@ html[data-customer="convergent"] {
   text-decoration-color: transparent;
 }
 
+/*
+ * Bulk apply/dismiss: hide the current preview immediately. Do not run the
+ * single-card accept animation (red strikethrough still painted across the
+ * green insert while opacity eases out).
+ */
+[data-suggestion-preview-held="bulk"] .suggestion-insert,
+[data-suggestion-preview-held="bulk"] .suggestion-insert-ai,
+[data-suggestion-preview-held="bulk"] .suggestion-delete,
+[data-suggestion-preview-held="bulk"] .suggestion-delete-ai,
+[data-suggestion-preview-held="bulk"] .suggestion-image-insert,
+[data-suggestion-preview-held="bulk"] .suggestion-image-insert-ai,
+[data-suggestion-preview-held="bulk"] .suggestion-image-delete,
+[data-suggestion-preview-held="bulk"] .suggestion-image-delete-ai {
+  opacity: 0;
+  transition: none;
+}
+
+[data-suggestion-preview-held="bulk"] .suggestion-insert-ai::before,
+[data-suggestion-preview-held="bulk"] .suggestion-insert-ai::after,
+[data-suggestion-preview-held="bulk"] .suggestion-delete-ai::before,
+[data-suggestion-preview-held="bulk"] .suggestion-delete-ai::after,
+[data-suggestion-preview-held="bulk"] .suggestion-action-widget {
+  opacity: 0;
+  transition: none;
+}
+
 /* Sparkle brackets fade with the run they annotate (opacity keeps their box,
    so the surrounding text does not shift). */
 [data-suggestion-preview-held] .suggestion-insert-ai::before,

@@ -33,6 +33,7 @@ import {
   AlignVerticalJustifyCenter,
   ArrowDownToLine,
 } from "lucide-react";
+import { isBulkSuggestionApply } from "@/lib/suggestions/apply-transition";
 import {
   useReportComments,
   useReportData,
@@ -841,7 +842,15 @@ export function TiptapSectionField({
     if (previewHeld) {
       // Queue bridge: don't keep the previous suggestion marks and don't inject
       // the next one until the user jumps to it or dismisses the handoff.
-      if (suggestionApplyTransition[section]?.bridge) {
+      // Bulk apply/dismiss: strip every preview. The single-card accept
+      // animation (red strikethrough through the green insert) must not play,
+      // and comments stay "open" until the whole report batch finishes — if
+      // we re-injected the first card onto already-applied text, overlapping
+      // deletes would paint red across the new green run.
+      if (
+        suggestionApplyTransition[section]?.bridge ||
+        isBulkSuggestionApply(suggestionApplyTransition[section]?.mode)
+      ) {
         json = stripPendingSuggestionsExcept(json, null);
         if (JSON.stringify(json) === before) return;
         editor.commands.setContent(json as Content, { emitUpdate: false });
