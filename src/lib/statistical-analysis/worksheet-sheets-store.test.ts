@@ -12,6 +12,10 @@ describe("worksheet sheets store", () => {
     resetWorksheetSheetsStore();
   });
 
+  it("returns a stable empty snapshot for unknown reports", () => {
+    expect(readWorksheetSheets("missing")).toBe(readWorksheetSheets("also-missing"));
+  });
+
   it("publishes live tabs and keeps them after unpublish", () => {
     publishWorksheetSheets(
       "rep-1",

@@ -167,7 +167,7 @@ export async function setReportChrome(
     timeout: 15_000,
   });
   if (chrome === "document") {
-    await expect(page.getByRole("heading", { name: /^define$/i })).toBeVisible({
+    await expect(page.getByTestId("report-work-product")).toBeVisible({
       timeout: 30_000,
     });
   }

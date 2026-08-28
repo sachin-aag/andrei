@@ -171,6 +171,7 @@ import {
 } from "@/lib/statistical-analysis/chat-sheet-scope";
 import { getReportAnalytics } from "@/lib/statistical-analysis/client";
 import {
+  EMPTY_WORKSHEET_SHEETS,
   publishWorksheetSheets,
   readWorksheetSheets,
   subscribeWorksheetSheets,
@@ -1064,7 +1065,7 @@ export function ChatPanel({
   const liveSheets = useSyncExternalStore(
     subscribeWorksheetSheets,
     () => readWorksheetSheets(report.id),
-    () => []
+    () => EMPTY_WORKSHEET_SHEETS
   );
   const [sectionScope, setSectionScope] = useState<ChatSectionScope>(CHAT_SECTION_SCOPE_ALL);
   const [sheetScope, setSheetScope] = useState<ChatSheetScope>(CHAT_SHEET_SCOPE_ALL);

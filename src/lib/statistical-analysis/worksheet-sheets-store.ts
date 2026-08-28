@@ -1,5 +1,14 @@
 import type { ChatSheetOption } from "@/lib/statistical-analysis/chat-sheet-scope";
 
+/**
+ * Stable empty snapshot for `useSyncExternalStore`. React 19 re-reads
+ * `getServerSnapshot` during hydration and loops if each call returns a
+ * new array.
+ */
+export const EMPTY_WORKSHEET_SHEETS: readonly ChatSheetOption[] = Object.freeze(
+  []
+);
+
 type SheetEntry = {
   sheets: ChatSheetOption[];
   live: boolean;
@@ -19,8 +28,8 @@ export function subscribeWorksheetSheets(onStoreChange: () => void): () => void 
   };
 }
 
-export function readWorksheetSheets(reportId: string): ChatSheetOption[] {
-  return sheetsByReport.get(reportId)?.sheets ?? [];
+export function readWorksheetSheets(reportId: string): readonly ChatSheetOption[] {
+  return sheetsByReport.get(reportId)?.sheets ?? EMPTY_WORKSHEET_SHEETS;
 }
 
 export function worksheetSheetsAreLive(reportId: string): boolean {
