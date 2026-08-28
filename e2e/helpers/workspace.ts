@@ -96,6 +96,30 @@ export async function openReportAnalytics(page: Page): Promise<void> {
   });
 }
 
+export async function expandWorkProductPanel(page: Page): Promise<void> {
+  const panel = page.getByTestId("report-work-product");
+  const expand = panel.getByRole("button", { name: /expand document panel/i });
+  if (await expand.isVisible()) {
+    await expand.click();
+  }
+  await expect(
+    panel.getByRole("button", { name: /collapse document panel/i })
+  ).toBeVisible();
+}
+
+export async function collapseWorkProductPanel(page: Page): Promise<void> {
+  const panel = page.getByTestId("report-work-product");
+  const collapse = panel.getByRole("button", {
+    name: /collapse document panel/i,
+  });
+  if (await collapse.isVisible()) {
+    await collapse.click();
+  }
+  await expect(
+    panel.getByRole("button", { name: /expand document panel/i })
+  ).toBeVisible();
+}
+
 export async function setReportChrome(
   page: Page,
   chrome: "document" | "agent"

@@ -322,6 +322,25 @@ describe("allocateWorkspaceColumns", () => {
     );
   });
 
+  it("uses a collapsed work-product rail in agent chrome when preview is collapsed", () => {
+    const allocated = allocateWorkspaceColumns(
+      laptop.container,
+      laptop.viewport,
+      {
+        chrome: "agent",
+        chatWidth: 400,
+        docsWidth: 300,
+        previewWidth: 480,
+        chatCollapsed: false,
+        docsCollapsed: false,
+        previewCollapsed: true,
+      }
+    );
+    expect(allocated.previewWidth).toBe(COLLAPSED_RAIL_PX);
+    expect(allocated.chatWidth).toBe(laptop.container - 300 - COLLAPSED_RAIL_PX);
+    expect(allocated.mainWidth).toBe(COLLAPSED_RAIL_PX);
+  });
+
   it("protects the work-product column when it is the panel being dragged", () => {
     const allocated = allocateWorkspaceColumns(
       1000,

@@ -3,7 +3,7 @@ import { loginAsEngineer } from "./helpers/auth";
 import { browserCookieHeaders } from "./helpers/api";
 import { gotoWithNavigationRetry } from "./helpers/navigation";
 import { createReport, deleteReport } from "./helpers/reports";
-import { setReportChrome } from "./helpers/workspace";
+import { expandWorkProductPanel, setReportChrome } from "./helpers/workspace";
 
 async function seedDocumentRevisions(
   page: import("@playwright/test").Page,
@@ -47,6 +47,7 @@ test.describe("document revisions", () => {
     page,
   }) => {
     await setReportChrome(page, "agent");
+    await expandWorkProductPanel(page);
     await page.getByTestId("document-revision-history").click();
     await expect(page.getByText("Version 1")).toBeVisible();
     await expect(page.getByText("Version 2")).toBeVisible();

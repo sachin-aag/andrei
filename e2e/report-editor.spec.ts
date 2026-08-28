@@ -18,6 +18,7 @@ import {
   documentsPanel,
   expandDocumentsPanel,
   expandReportSidebar,
+  expandWorkProductPanel,
   openReportAnalytics,
   reportSidebar,
   reviewMargin,
@@ -256,6 +257,16 @@ test.describe("report editor", () => {
     await expandReportSidebar(page);
     await setReportChrome(page, "agent");
 
+    const collapsedPanel = page.getByTestId("report-work-product");
+    await expect(
+      collapsedPanel.getByRole("button", { name: /expand document panel/i })
+    ).toBeVisible();
+    const collapsedBox = await collapsedPanel.boundingBox();
+    expect(collapsedBox).toBeTruthy();
+    expect(collapsedBox!.width).toBeLessThanOrEqual(52);
+
+    await expandWorkProductPanel(page);
+
     const docsBox = await documentsPanel(page).boundingBox();
     const chatBox = await reportSidebar(page).boundingBox();
     const canvasBox = await page.getByTestId("report-work-product").boundingBox();
@@ -282,6 +293,7 @@ test.describe("report editor", () => {
     expect(canvasAfter!.x).toBeLessThan(chatRight!.x);
 
     await setReportChrome(page, "agent");
+    await expandWorkProductPanel(page);
     await page.getByTestId("document-revision-history").click();
     await expect(
       page.getByText("Versions appear after the assistant edits the document.")

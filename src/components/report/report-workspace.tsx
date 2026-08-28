@@ -47,7 +47,10 @@ import {
 } from "@/lib/reports/hidden-expert-reviewer";
 import { canSaveReportSection } from "@/lib/reports/access";
 import { cn } from "@/lib/utils";
+import { PanelRightClose } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { useWorkspaceLayout } from "@/hooks/use-workspace-layout";
+import { AgentWorkProductRail } from "./agent-work-product-rail";
 import { WorkspaceResizeHandle } from "./workspace-resize-handle";
 import {
   isReviewGutterVisible,
@@ -239,6 +242,7 @@ export function ReportWorkspace({
   const [expertReviewOpen, setExpertReviewOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [documentsCollapsed, setDocumentsCollapsed] = useState(false);
+  const [previewCollapsed, setPreviewCollapsed] = useState(true);
   const [chrome, setChrome] = useState<WorkspaceChrome>("document");
   const [workProductView, setWorkProductView] =
     useState<WorkProductView>("report");
@@ -246,6 +250,7 @@ export function ReportWorkspace({
     null
   );
   const agentChrome = chrome === "agent";
+  const showCollapsedWorkProduct = agentChrome && previewCollapsed;
   const {
     containerRef,
     isResizing,
@@ -268,6 +273,7 @@ export function ReportWorkspace({
     chrome,
     chatCollapsed: agentChrome ? false : sidebarCollapsed,
     docsCollapsed: documentsCollapsed,
+    previewCollapsed: showCollapsedWorkProduct,
   });
   const [sidebarTab, setSidebarTab] = useState<SidebarTab>("assistant");
   const [analyticsOpen, setAnalyticsOpen] = useState(false);
@@ -619,6 +625,13 @@ export function ReportWorkspace({
     setSidebarCollapsed((c) => !c);
   };
 
+  const handleChromeChange = useCallback((next: WorkspaceChrome) => {
+    if (next === "agent") {
+      setPreviewCollapsed(true);
+    }
+    setChrome(next);
+  }, []);
+
   return (
     <div className="flex h-full flex-col">
       <ElectronicSignatureDialog
@@ -669,7 +682,7 @@ export function ReportWorkspace({
         showExpertReview={showExpertReview}
         onExpertReview={() => setExpertReviewOpen(true)}
         chrome={chrome}
-        onChromeChange={setChrome}
+        onChromeChange={handleChromeChange}
         workProductView={workProductView}
       />
 
@@ -717,6 +730,9 @@ export function ReportWorkspace({
             agentChrome
               ? "order-3 shrink-0"
               : "order-2 min-w-0 flex-1",
+            agentChrome &&
+              !isResizing &&
+              "transition-[width] duration-200 ease-in-out",
             !agentChrome &&
               !(analyticsSurface || viewingDocument) &&
               continuousDocument &&
@@ -724,124 +740,148 @@ export function ReportWorkspace({
           )}
           style={agentChrome ? { width: previewWidth } : undefined}
         >
-          <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-3 py-2">
-            {statsEnabled ? (
-              <WorkProductTabs
-                value={workProductView}
-                onChange={(next) => {
-                  if (next === "analytics") {
-                    setCompare(null);
-                    setAnalyticsOpen(true);
-                    setSidebarTab("assistant");
-                  }
-                  setWorkProductView(next);
-                }}
-              />
-            ) : null}
-            <DocumentRevisionHistory
-              reportId={report.id}
-              compare={compare}
-              onCompare={(range) => {
-                setWorkProductView("report");
-                setCompare(range);
-              }}
-              onExitCompare={() => setCompare(null)}
+          {showCollapsedWorkProduct ? (
+            <AgentWorkProductRail
+              workProductView={workProductView}
+              onExpand={() => setPreviewCollapsed(false)}
             />
-          </div>
-          <div
-            className={cn(
-              "relative flex min-h-0 min-w-0 flex-1 flex-col",
-              hideReportEditors ? "overflow-hidden" : "overflow-auto"
-            )}
-          >
-            {comparing ? (
-              <DocumentRevisionDiff
-                reportId={report.id}
-                from={compare.from}
-                to={compare.to}
-                onExit={() => setCompare(null)}
-              />
-            ) : null}
-            <div
-              hidden={hideReportEditors}
-              inert={hideReportEditors}
-              className={cn(
-                "mx-auto grid w-full min-w-0 grid-cols-1 gap-8 pb-24",
-                hideReportEditors && "hidden",
-                continuousDocument
-                  ? "max-w-none px-4 py-6"
-                  : "max-w-[1180px] px-6 py-8",
-                showReviewGutter && REVIEW_GUTTER_GRID_COLS
-              )}
-            >
+          ) : (
+            <>
+              <div className="flex shrink-0 items-center gap-2 border-b border-[var(--border)] px-3 py-2">
+                {statsEnabled ? (
+                  <WorkProductTabs
+                    value={workProductView}
+                    onChange={(next) => {
+                      if (next === "analytics") {
+                        setCompare(null);
+                        setAnalyticsOpen(true);
+                        setSidebarTab("assistant");
+                      }
+                      setWorkProductView(next);
+                    }}
+                  />
+                ) : null}
+                <DocumentRevisionHistory
+                  reportId={report.id}
+                  compare={compare}
+                  onCompare={(range) => {
+                    setWorkProductView("report");
+                    setCompare(range);
+                  }}
+                  onExitCompare={() => setCompare(null)}
+                />
+                {agentChrome ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-7 shrink-0"
+                    aria-label="Collapse document panel"
+                    aria-expanded
+                    title="Collapse"
+                    onClick={() => setPreviewCollapsed(true)}
+                  >
+                    <PanelRightClose className="size-4" aria-hidden="true" />
+                  </Button>
+                ) : null}
+              </div>
               <div
                 className={cn(
-                  "space-y-10 min-w-0",
-                  documentType === "quality_risk_assessment" && "qra-document"
+                  "relative flex min-h-0 min-w-0 flex-1 flex-col",
+                  hideReportEditors ? "overflow-hidden" : "overflow-auto"
                 )}
               >
-                <ReportHeader />
+                {comparing ? (
+                  <DocumentRevisionDiff
+                    reportId={report.id}
+                    from={compare.from}
+                    to={compare.to}
+                    onExit={() => setCompare(null)}
+                  />
+                ) : null}
                 <div
+                  hidden={hideReportEditors}
+                  inert={hideReportEditors}
                   className={cn(
-                    "min-w-0",
-                    continuousDocument ? "space-y-4" : "space-y-10"
+                    "mx-auto grid w-full min-w-0 grid-cols-1 gap-8 pb-24",
+                    hideReportEditors && "hidden",
+                    continuousDocument
+                      ? "max-w-none px-4 py-6"
+                      : "max-w-[1180px] px-6 py-8",
+                    showReviewGutter && REVIEW_GUTTER_GRID_COLS
                   )}
                 >
-                  {getWorkspaceSections(report.documentType).map((section) => {
-                    const s = section.key;
-                    const Editor =
-                      SECTION_EDITORS_BY_DOCUMENT_TYPE[report.documentType]?.[
-                        s
-                      ];
-                    if (!Editor) return null;
-                    const extra = showReviewGutter
-                      ? sectionMinHeights[s]
-                      : undefined;
-                    return (
-                      <section
-                        key={s}
-                        id={s}
-                        style={
-                          extra ? { paddingBottom: `${extra}px` } : undefined
-                        }
-                      >
-                        <Editor />
-                      </section>
-                    );
-                  })}
+                  <div
+                    className={cn(
+                      "space-y-10 min-w-0",
+                      documentType === "quality_risk_assessment" && "qra-document"
+                    )}
+                  >
+                    <ReportHeader />
+                    <div
+                      className={cn(
+                        "min-w-0",
+                        continuousDocument ? "space-y-4" : "space-y-10"
+                      )}
+                    >
+                      {getWorkspaceSections(report.documentType).map((section) => {
+                        const s = section.key;
+                        const Editor =
+                          SECTION_EDITORS_BY_DOCUMENT_TYPE[report.documentType]?.[
+                            s
+                          ];
+                        if (!Editor) return null;
+                        const extra = showReviewGutter
+                          ? sectionMinHeights[s]
+                          : undefined;
+                        return (
+                          <section
+                            key={s}
+                            id={s}
+                            style={
+                              extra ? { paddingBottom: `${extra}px` } : undefined
+                            }
+                          >
+                            <Editor />
+                          </section>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  {showReviewGutter ? (
+                    <aside
+                      className="relative hidden min-w-0 @[800px]:block"
+                      aria-label="Review margin"
+                    >
+                      <MarginGutter
+                        onSectionOverflow={handleSectionOverflow}
+                      />
+                    </aside>
+                  ) : null}
                 </div>
+                {analyticsOpen ? (
+                  <div
+                    hidden={!analyticsSurface || viewingDocument || comparing}
+                    inert={!analyticsSurface || viewingDocument || comparing}
+                    className={cn(
+                      "min-h-0 flex-1",
+                      (!analyticsSurface || viewingDocument || comparing) &&
+                        "hidden"
+                    )}
+                  >
+                    <StatisticalWorkspace
+                      reportId={report.id}
+                      readOnly={!analyticsCanEdit}
+                      reloadEpoch={analyticsReloadEpoch}
+                      agentBusy={analyticsAgentBusy}
+                    />
+                  </div>
+                ) : null}
+                {viewingDocument && !comparing ? <AttachmentCanvas /> : null}
               </div>
-              {showReviewGutter ? (
-                <aside
-                  className="relative hidden min-w-0 @[800px]:block"
-                  aria-label="Review margin"
-                >
-                  <MarginGutter
-                    onSectionOverflow={handleSectionOverflow}
-                  />
-                </aside>
-              ) : null}
-            </div>
-            {analyticsOpen ? (
-              <div
-                hidden={!analyticsSurface || viewingDocument || comparing}
-                inert={!analyticsSurface || viewingDocument || comparing}
-                className={cn(
-                  "min-h-0 flex-1",
-                  (!analyticsSurface || viewingDocument || comparing) && "hidden"
-                )}
-              >
-                <StatisticalWorkspace
-                  reportId={report.id}
-                  readOnly={!analyticsCanEdit}
-                  reloadEpoch={analyticsReloadEpoch}
-                  agentBusy={analyticsAgentBusy}
-                />
-              </div>
-            ) : null}
-            {viewingDocument && !comparing ? <AttachmentCanvas /> : null}
-          </div>
-          {agentChrome ? (
+            </>
+          )}
+          {agentChrome && !showCollapsedWorkProduct ? (
             <WorkspaceResizeHandle
               label="Resize document panel"
               controlsId="report-work-product"

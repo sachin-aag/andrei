@@ -88,6 +88,7 @@ export type WorkspaceColumnIntent = {
   previewWidth?: number;
   chatCollapsed: boolean;
   docsCollapsed: boolean;
+  previewCollapsed?: boolean;
 };
 
 export type AllocatedWorkspaceColumns = {
@@ -238,7 +239,11 @@ export function allocateWorkspaceColumns(
     ? COLLAPSED_RAIL_PX
     : clamp(desired.docsWidth, docsBounds.min, docsBounds.max);
   const docsMin = desired.docsCollapsed ? COLLAPSED_RAIL_PX : docsBounds.min;
-  const preview = clamp(storedPreview, previewBounds.min, previewBounds.max);
+  const previewCollapsed = desired.previewCollapsed ?? false;
+  const preview = previewCollapsed
+    ? COLLAPSED_RAIL_PX
+    : clamp(storedPreview, previewBounds.min, previewBounds.max);
+  const previewMin = previewCollapsed ? COLLAPSED_RAIL_PX : previewBounds.min;
 
   if (chrome === "agent") {
     const chatMin = desired.chatCollapsed ? COLLAPSED_RAIL_PX : chatBounds.min;
@@ -251,7 +256,7 @@ export function allocateWorkspaceColumns(
       const next = shrinkTwo(
         previewW,
         docsW,
-        previewBounds.min,
+        previewMin,
         docsMin,
         overflow,
         side

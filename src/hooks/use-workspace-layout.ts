@@ -27,6 +27,7 @@ type UseWorkspaceLayoutArgs = {
   chrome: WorkspaceChrome;
   chatCollapsed: boolean;
   docsCollapsed: boolean;
+  previewCollapsed?: boolean;
 };
 
 /** Collapsed app shell nav is `w-14`; used only until ResizeObserver measures. */
@@ -42,6 +43,7 @@ export function useWorkspaceLayout({
   chrome,
   chatCollapsed,
   docsCollapsed,
+  previewCollapsed = false,
 }: UseWorkspaceLayoutArgs) {
   bindWorkspaceLayoutToReport(reportId);
 
@@ -85,6 +87,7 @@ export function useWorkspaceLayout({
       previewWidth: desired.previewWidth,
       chatCollapsed,
       docsCollapsed,
+      previewCollapsed,
     },
     protect
   );
