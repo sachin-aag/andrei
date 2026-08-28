@@ -123,6 +123,68 @@ describe("acceptAllSuggestions", () => {
     expect(text).toContain("by 12%");
   });
 
+  it("PATCHes the section once for non-overlapping suggestions", async () => {
+    const urls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        urls.push(String(url));
+        return { ok: true, json: async () => ({}) } as Response;
+      })
+    );
+
+    await acceptAllSuggestions({
+      reportId: "report-1",
+      section: "define",
+      comments: [first, second],
+      sectionContent: structuredClone(sectionContent),
+    });
+
+    expect(urls.filter((url) => url.includes("/sections/define"))).toHaveLength(1);
+    expect(urls.filter((url) => url.includes("/comments/"))).toHaveLength(2);
+  });
+
+  it("applies overlapping suggestions recursively against the updated doc", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => ({}) }) as Response)
+    );
+
+    const overlappingFirst = comment(
+      "o1",
+      "issue was seen",
+      "a deviation was observed"
+    );
+    overlappingFirst.content = JSON.stringify({
+      deleteText: "deviation was observed",
+      insertText: "issue was seen",
+      reasoning: "overlap-a",
+    });
+    const overlappingSecond = comment(
+      "o2",
+      "was logged. The result",
+      "was observed. The result"
+    );
+    overlappingSecond.content = JSON.stringify({
+      deleteText: "was observed. The result",
+      insertText: "was logged. The result",
+      reasoning: "overlap-b",
+    });
+
+    const result = await acceptAllSuggestions({
+      reportId: "report-1",
+      section: "define",
+      comments: [overlappingFirst, overlappingSecond],
+      sectionContent: structuredClone(sectionContent),
+    });
+
+    expect(result.appliedIds).toEqual(["o1"]);
+    expect(result.skippedIds).toEqual(["o2"]);
+    const text = JSON.stringify(result.nextSection);
+    expect(text).toContain("issue was seen");
+    expect(text).not.toContain("was logged");
+  });
+
   it("stops the batch when a save fails", async () => {
     vi.stubGlobal(
       "fetch",
@@ -142,7 +204,7 @@ describe("acceptAllSuggestions", () => {
     });
 
     expect(result.appliedIds).toEqual([]);
-    expect(result.failedIds).toEqual(["c1"]);
+    expect(result.failedIds).toEqual(["c1", "c2"]);
     expect(result.skippedIds).toEqual([]);
   });
 });
@@ -246,7 +308,7 @@ describe("acceptAllSuggestionsInReport", () => {
       sectionContentFor: (section) => sections[section],
     });
 
-    expect(result.failedIds).toEqual(["c1"]);
+    expect(result.failedIds).toEqual(["c1", "c2"]);
     expect(result.appliedIds).toEqual(["m1"]);
     expect(result.changedSections).toEqual(["measure"]);
   });

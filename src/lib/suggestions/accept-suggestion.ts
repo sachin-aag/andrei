@@ -59,51 +59,26 @@ export class SectionPersistError extends Error {
   }
 }
 
-async function patchSection(
-  reportId: string,
-  section: SectionType,
-  content: Record<string, unknown>
-): Promise<void> {
-  let res: Response;
-  try {
-    res = await fetch(`/api/reports/${reportId}/sections/${section}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content }),
-    });
-  } catch {
-    throw new SectionPersistError(0, "Could not save section. Please try again.");
-  }
-  if (res.ok) return;
-  if (res.status === 403) {
-    throw new SectionPersistError(
-      403,
-      "You can't save changes to this report."
-    );
-  }
-  throw new SectionPersistError(
-    res.status,
-    `Save failed (${res.status})`
-  );
-}
-
-/**
- * Single writer for accepting an AI suggestion from any UI surface.
- * Order: locate → apply → PATCH section → flip comment status.
- * A failure before the status flip leaves the comment open.
- */
-export async function acceptSuggestion(args: {
-  reportId: string;
+export type ApplySuggestionToContentArgs = {
   section: SectionType;
   comment: CommentRecord;
   sectionContent: Record<string, unknown>;
-  /** Optional field path override for plain-text editors with legacy paths. */
   fieldContentPath?: string;
-  /** How to persist the applied edit. Default `final` (investigation/DV). */
   applyMode?: SuggestionApplyMode;
-}): Promise<AcceptSuggestionResult> {
+};
+
+export type ApplySuggestionToContentResult =
+  | { ok: true; nextSection: Record<string, unknown> }
+  | { ok: false; reason: LocateStatus };
+
+/**
+ * Locate and apply one suggestion in memory. No network. Bulk apply uses this
+ * so a section can persist once after every locatable edit is in the doc.
+ */
+export function applySuggestionToContent(
+  args: ApplySuggestionToContentArgs
+): ApplySuggestionToContentResult {
   const {
-    reportId,
     section,
     comment,
     sectionContent,
@@ -146,16 +121,6 @@ export async function acceptSuggestion(args: {
             redraft.markdown,
             { headingNodes: persistAsTrackedChange }
           );
-    try {
-      await patchSection(reportId, section, nextSection);
-    } catch (error) {
-      return { ok: false, reason: "save_failed", error };
-    }
-    try {
-      await patchCommentStatus(reportId, comment.id, "resolved");
-    } catch (error) {
-      return { ok: false, reason: "status_failed", error };
-    }
     return { ok: true, nextSection };
   }
 
@@ -195,18 +160,7 @@ export async function acceptSuggestion(args: {
     if (persistAsTrackedChange) {
       nextDoc = commitNarrativeSuggestionMarks(nextDoc, comment.id);
     }
-    const nextSection = setRichFieldValue(sectionContent, path, nextDoc);
-    try {
-      await patchSection(reportId, section, nextSection);
-    } catch (error) {
-      return { ok: false, reason: "save_failed", error };
-    }
-    try {
-      await patchCommentStatus(reportId, comment.id, "resolved");
-    } catch (error) {
-      return { ok: false, reason: "status_failed", error };
-    }
-    return { ok: true, nextSection };
+    return { ok: true, nextSection: setRichFieldValue(sectionContent, path, nextDoc) };
   }
 
   const edit = suggestionEditFromComment(comment);
@@ -230,18 +184,7 @@ export async function acceptSuggestion(args: {
         ? acceptPendingNarrativeSuggestion(doc, comment.id)
         : applyNarrativeSuggestion(doc, comment.id, edit);
     }
-    const nextSection = setRichFieldValue(sectionContent, path, nextDoc);
-    try {
-      await patchSection(reportId, section, nextSection);
-    } catch (error) {
-      return { ok: false, reason: "save_failed", error };
-    }
-    try {
-      await patchCommentStatus(reportId, comment.id, "resolved");
-    } catch (error) {
-      return { ok: false, reason: "status_failed", error };
-    }
-    return { ok: true, nextSection };
+    return { ok: true, nextSection: setRichFieldValue(sectionContent, path, nextDoc) };
   }
 
   const plain = getPlainTextFieldValue(sectionContent, path);
@@ -250,31 +193,101 @@ export async function acceptSuggestion(args: {
     return { ok: false, reason: status };
   }
 
-  let nextSection: Record<string, unknown>;
   try {
-    nextSection = applyStructuredFieldSuggestion(
-      sectionContent,
-      path,
-      payload.insertText,
-      payload.deleteText,
-      comment.anchorText,
-      payload.second
-    );
+    return {
+      ok: true,
+      nextSection: applyStructuredFieldSuggestion(
+        sectionContent,
+        path,
+        payload.insertText,
+        payload.deleteText,
+        comment.anchorText,
+        payload.second
+      ),
+    };
   } catch {
     return { ok: false, reason: "not_found" };
   }
+}
 
+/** Strip pending preview marks for one suggestion. Null when the field is unchanged. */
+export function stripSuggestionFromContent(args: {
+  section: SectionType;
+  comment: CommentRecord;
+  sectionContent: Record<string, unknown>;
+  fieldContentPath?: string;
+}): Record<string, unknown> | null {
+  const path = resolveSuggestionFieldPath(
+    args.section,
+    args.comment.contentPath,
+    args.fieldContentPath ?? args.comment.contentPath ?? "narrative"
+  );
+  if (!isRichTargetField(args.section, path)) return null;
+  const doc = getRichFieldValue(args.sectionContent, path);
+  if (!narrativeHasSuggestionMarks(doc, args.comment.id)) return null;
+  return setRichFieldValue(
+    args.sectionContent,
+    path,
+    removePendingNarrativeSuggestion(doc, args.comment.id)
+  );
+}
+
+export async function patchSection(
+  reportId: string,
+  section: SectionType,
+  content: Record<string, unknown>
+): Promise<void> {
+  let res: Response;
   try {
-    await patchSection(reportId, section, nextSection);
+    res = await fetch(`/api/reports/${reportId}/sections/${section}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content }),
+    });
+  } catch {
+    throw new SectionPersistError(0, "Could not save section. Please try again.");
+  }
+  if (res.ok) return;
+  if (res.status === 403) {
+    throw new SectionPersistError(
+      403,
+      "You can't save changes to this report."
+    );
+  }
+  throw new SectionPersistError(
+    res.status,
+    `Save failed (${res.status})`
+  );
+}
+
+/**
+ * Single writer for accepting an AI suggestion from any UI surface.
+ * Order: locate → apply → PATCH section → flip comment status.
+ * A failure before the status flip leaves the comment open.
+ */
+export async function acceptSuggestion(args: {
+  reportId: string;
+  section: SectionType;
+  comment: CommentRecord;
+  sectionContent: Record<string, unknown>;
+  /** Optional field path override for plain-text editors with legacy paths. */
+  fieldContentPath?: string;
+  /** How to persist the applied edit. Default `final` (investigation/DV). */
+  applyMode?: SuggestionApplyMode;
+}): Promise<AcceptSuggestionResult> {
+  const applied = applySuggestionToContent(args);
+  if (!applied.ok) return applied;
+  try {
+    await patchSection(args.reportId, args.section, applied.nextSection);
   } catch (error) {
     return { ok: false, reason: "save_failed", error };
   }
   try {
-    await patchCommentStatus(reportId, comment.id, "resolved");
+    await patchCommentStatus(args.reportId, args.comment.id, "resolved");
   } catch (error) {
     return { ok: false, reason: "status_failed", error };
   }
-  return { ok: true, nextSection };
+  return { ok: true, nextSection: applied.nextSection };
 }
 
 /**
@@ -289,30 +302,17 @@ export async function dismissSuggestion(args: {
   sectionContent: Record<string, unknown>;
   fieldContentPath?: string;
 }): Promise<DismissSuggestionResult> {
-  const { reportId, section, comment, sectionContent, fieldContentPath } = args;
-  const path = resolveSuggestionFieldPath(
-    section,
-    comment.contentPath,
-    fieldContentPath ?? comment.contentPath ?? "narrative"
-  );
-
-  let nextSection: Record<string, unknown> | null = null;
-
-  if (isRichTargetField(section, path)) {
-    const doc = getRichFieldValue(sectionContent, path);
-    if (narrativeHasSuggestionMarks(doc, comment.id)) {
-      const nextDoc = removePendingNarrativeSuggestion(doc, comment.id);
-      nextSection = setRichFieldValue(sectionContent, path, nextDoc);
-      try {
-        await patchSection(reportId, section, nextSection);
-      } catch (error) {
-        return { ok: false, reason: "save_failed", error };
-      }
+  const nextSection = stripSuggestionFromContent(args);
+  if (nextSection) {
+    try {
+      await patchSection(args.reportId, args.section, nextSection);
+    } catch (error) {
+      return { ok: false, reason: "save_failed", error };
     }
   }
 
   try {
-    await patchCommentStatus(reportId, comment.id, "dismissed");
+    await patchCommentStatus(args.reportId, args.comment.id, "dismissed");
   } catch (error) {
     return { ok: false, reason: "status_failed", error };
   }
