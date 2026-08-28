@@ -8,6 +8,7 @@ import { browserCookieHeaders } from "./helpers/api";
 import { createReport, deleteReport } from "./helpers/reports";
 import { signedWorkflowPayload } from "./helpers/signing";
 import {
+  openReportEditor,
   postReviewMarginNote,
   replyToMarginComment,
   reviewMargin,
@@ -41,8 +42,8 @@ test.describe("comments", () => {
 
   test("manager posts section comment in review mode", async ({ page }) => {
     await authenticateAsManager(page);
-    await page.goto(`/reports/${reportId}/review`);
     await page.setViewportSize({ width: 1280, height: 900 });
+    await openReportEditor(page, reportId!, { mode: "review" });
 
     const comment = "Please expand the initial scope section.";
     await postReviewMarginNote(page, "define", comment);
@@ -80,12 +81,8 @@ test.describe("comments", () => {
     expect(postRes.ok()).toBeTruthy();
 
     await authenticateAsEngineer(page);
-    await page.goto(`/reports/${reportId}/edit`);
     await page.setViewportSize({ width: 1280, height: 900 });
-    await expect(page).toHaveURL(new RegExp(`/reports/${reportId}/edit$`));
-    await expect(page.getByRole("heading", { name: /^define$/i })).toBeVisible({
-      timeout: 30_000,
-    });
+    await openReportEditor(page, reportId!);
 
     const reply = "Engineer reply with spaces here.";
     await replyToMarginComment(page, commentText, reply, { typeViaKeyboard: true });

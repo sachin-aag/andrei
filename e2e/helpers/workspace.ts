@@ -1,4 +1,5 @@
 import { expect, type Page } from "@playwright/test";
+import { gotoWithNavigationRetry } from "./navigation";
 
 export function primaryNav(page: Page) {
   return page.getByRole("complementary", { name: "Primary navigation" });
@@ -90,10 +91,42 @@ export async function openReportAssistant(page: Page): Promise<void> {
 }
 
 export async function openReportAnalytics(page: Page): Promise<void> {
-  await page.getByTestId("report-surface-analytics").click();
+  const tab = page.getByTestId("report-surface-analytics");
+  await expect(tab).toBeVisible({ timeout: 30_000 });
+  await tab.click();
   await expect(page.getByTestId("report-analytics-workspace")).toBeVisible({
     timeout: 30_000,
   });
+}
+
+/** Report workspace shell + Define section are mounted in Document chrome. */
+export async function waitForReportEditor(page: Page): Promise<void> {
+  const chromeSwitch = page.getByTestId("report-chrome-switch");
+  await expect(chromeSwitch).toBeVisible({ timeout: 30_000 });
+  await expect
+    .poll(async () => chromeSwitch.getAttribute("data-current-chrome"))
+    .toMatch(/^(document|agent)$/);
+
+  if ((await chromeSwitch.getAttribute("data-current-chrome")) !== "document") {
+    await setReportChrome(page, "document");
+  }
+
+  const defineHeading = page.getByRole("heading", { name: /^define$/i });
+  await expect(defineHeading).toBeVisible({ timeout: 30_000 });
+  await defineSection(page).scrollIntoViewIfNeeded();
+  await expect(defineEditor(page)).toBeVisible({ timeout: 30_000 });
+}
+
+export async function openReportEditor(
+  page: Page,
+  reportId: string,
+  opts?: { mode?: "edit" | "review" }
+): Promise<void> {
+  const mode = opts?.mode ?? "edit";
+  await gotoWithNavigationRetry(page, `/reports/${reportId}/${mode}`, {
+    waitUntil: "domcontentloaded",
+  });
+  await waitForReportEditor(page);
 }
 
 export async function expandWorkProductPanel(page: Page): Promise<void> {
@@ -125,10 +158,19 @@ export async function setReportChrome(
   chrome: "document" | "agent"
 ): Promise<void> {
   const switchBtn = page.getByTestId("report-chrome-switch");
-  if ((await switchBtn.getAttribute("data-current-chrome")) !== chrome) {
-    await switchBtn.click();
+  await expect(switchBtn).toBeVisible({ timeout: 30_000 });
+  if ((await switchBtn.getAttribute("data-current-chrome")) === chrome) {
+    return;
   }
-  await expect(switchBtn).toHaveAttribute("data-current-chrome", chrome);
+  await switchBtn.click();
+  await expect(switchBtn).toHaveAttribute("data-current-chrome", chrome, {
+    timeout: 15_000,
+  });
+  if (chrome === "document") {
+    await expect(page.getByRole("heading", { name: /^define$/i })).toBeVisible({
+      timeout: 30_000,
+    });
+  }
 }
 
 /** Collapse the assistant so the review margin (suggestions/comments) can show. */
@@ -136,6 +178,7 @@ export async function collapseReportSidebar(page: Page): Promise<void> {
   const sidebar = reportSidebar(page);
   const collapse = sidebar.getByRole("button", { name: /collapse sidebar/i });
   if (await collapse.isVisible()) {
+    await expect(collapse).toBeEnabled({ timeout: 15_000 });
     await collapse.click();
     await expect(sidebar.getByRole("button", { name: /expand sidebar/i })).toBeVisible();
   }
@@ -165,9 +208,11 @@ export async function openReviewMarginNote(
   sectionLabel: string
 ): Promise<void> {
   await collapseReportSidebar(page);
-  await reviewMargin(page)
-    .getByRole("button", { name: new RegExp(`add note on ${sectionLabel}`, "i") })
-    .click();
+  const addNote = reviewMargin(page).getByRole("button", {
+    name: new RegExp(`add note on ${sectionLabel}`, "i"),
+  });
+  await expect(addNote).toBeVisible({ timeout: 15_000 });
+  await addNote.click();
   await expect(
     reviewMargin(page).getByPlaceholder(/write a comment for the author/i)
   ).toBeVisible({ timeout: 15_000 });

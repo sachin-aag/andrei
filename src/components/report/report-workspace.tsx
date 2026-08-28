@@ -327,9 +327,14 @@ export function ReportWorkspace({
   const hideReportEditors =
     analyticsSurface || viewingDocument || comparing;
 
-  if (agentChrome && previewCollapsed && activeAttachmentId) {
-    setPreviewCollapsed(false);
-  }
+  const shouldExpandPreviewForAttachment =
+    agentChrome && previewCollapsed && !!activeAttachmentId;
+
+  useEffect(() => {
+    if (shouldExpandPreviewForAttachment) {
+      setPreviewCollapsed(false);
+    }
+  }, [shouldExpandPreviewForAttachment]);
 
   useEffect(() => {
     const justFinished = shouldRevealCriteriaTab({

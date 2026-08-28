@@ -1,9 +1,8 @@
 import { expect, test } from "@playwright/test";
 import { loginAsEngineer } from "./helpers/auth";
 import { browserCookieHeaders } from "./helpers/api";
-import { gotoWithNavigationRetry } from "./helpers/navigation";
 import { createReport, deleteReport } from "./helpers/reports";
-import { expandWorkProductPanel, setReportChrome } from "./helpers/workspace";
+import { expandWorkProductPanel, openReportEditor, setReportChrome } from "./helpers/workspace";
 
 async function seedDocumentRevisions(
   page: import("@playwright/test").Page,
@@ -28,12 +27,7 @@ test.describe("document revisions", () => {
     const created = await createReport(page);
     reportId = created.id;
     await seedDocumentRevisions(page, created.id);
-    await gotoWithNavigationRetry(page, `/reports/${created.id}/edit`, {
-      waitUntil: "domcontentloaded",
-    });
-    await expect(page.getByRole("heading", { name: /^define$/i })).toBeVisible({
-      timeout: 30_000,
-    });
+    await openReportEditor(page, created.id);
   });
 
   test.afterEach(async ({ page }) => {

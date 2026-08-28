@@ -3,7 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { PDFDocument } from "pdf-lib";
 import { loginAsEngineer } from "./helpers/auth";
 import { createReport, deleteReport } from "./helpers/reports";
-import { documentsPanel, expandDocumentsPanel, setReportChrome } from "./helpers/workspace";
+import { documentsPanel, expandDocumentsPanel, openReportEditor, setReportChrome } from "./helpers/workspace";
 
 test.describe.configure({ mode: "serial" });
 
@@ -50,10 +50,7 @@ test.describe("report PDF documents", () => {
     await loginAsEngineer(page);
     const created = await createReport(page);
     reportId = created.id;
-    await page.goto(`/reports/${reportId}/edit`);
-    await expect(page.getByRole("heading", { name: /^define$/i })).toBeVisible({
-      timeout: 30_000,
-    });
+    await openReportEditor(page, reportId);
     await expandDocumentsPanel(page);
   });
 

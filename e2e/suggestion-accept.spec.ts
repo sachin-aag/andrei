@@ -1,11 +1,11 @@
 import { expect, test } from "@playwright/test";
 import { loginAsEngineer } from "./helpers/auth";
 import { browserCookieHeaders } from "./helpers/api";
-import { gotoWithNavigationRetry } from "./helpers/navigation";
 import { createReport, deleteReport } from "./helpers/reports";
 import {
   collapseReportSidebar,
   defineEditor,
+  openReportEditor,
   reviewMargin,
 } from "./helpers/workspace";
 
@@ -68,11 +68,8 @@ async function openDefineWithPreview(
   page: import("@playwright/test").Page,
   reportId: string
 ) {
-  await gotoWithNavigationRetry(page, `/reports/${reportId}/edit`, {
-    waitUntil: "domcontentloaded",
-  });
+  await openReportEditor(page, reportId);
   const editor = defineEditor(page);
-  await expect(editor).toBeVisible({ timeout: 30_000 });
   await expect(
     editor.locator(".suggestion-insert").filter({ hasText: INSERT.trim() })
   ).toBeVisible({ timeout: 30_000 });

@@ -15,7 +15,10 @@ export async function signWorkflowAction(
   buttonName: RegExp,
   userId: string = TEST_ENGINEER_EMAIL
 ): Promise<void> {
-  await page.getByRole("button", { name: buttonName }).click();
+  const action = page.getByRole("button", { name: buttonName });
+  await expect(action).toBeVisible({ timeout: 30_000 });
+  await expect(action).toBeEnabled({ timeout: 30_000 });
+  await action.click();
   const dialog = page.getByRole("dialog");
   await expect(dialog).toBeVisible({ timeout: 15_000 });
   await dialog.getByLabel(/user id/i).fill(userId);
