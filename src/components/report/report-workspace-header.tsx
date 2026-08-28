@@ -16,6 +16,7 @@ import { Separator } from "@/components/ui/separator";
 import type { WorkspaceMode } from "@/providers/report-provider";
 import type { ReportRecord } from "@/types/report";
 import { ReportActionsMenu } from "./report-actions-menu";
+import { ReportBulkSuggestionActions } from "./report-bulk-suggestion-actions";
 import { ReportExportButton } from "./report-export-button";
 import { RunAllEvaluationButton } from "./section-status-pill";
 import { StatusBadge } from "./status-badge";
@@ -137,6 +138,9 @@ export function ReportWorkspaceHeader({
         />
 
         {showRunAll ? <RunAllEvaluationButton /> : null}
+        {!isViewMode && documentSurface ? <ReportBulkSuggestionActions /> : null}
+
+        {!isViewMode && documentSurface ? <RunAllEvaluationButton /> : null}
 
         {canSubmit && (
           <Button size="sm" onClick={onSubmit} disabled={submitting}>
