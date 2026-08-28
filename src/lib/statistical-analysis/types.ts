@@ -214,7 +214,7 @@ type AnalysisSummaryBase = {
   sourceHash: string;
   stale: boolean;
   createdAt: string;
-  /** Rasterized at create/recompute for document insert; null on legacy rows. */
+  /** Captured from the Analytics UI for document insert; null until opened (or after recompute). */
   previewImage: AnalysisPreviewImage | null;
 };
 
