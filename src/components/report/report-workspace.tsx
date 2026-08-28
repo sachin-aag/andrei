@@ -689,6 +689,8 @@ export function ReportWorkspace({
           <DocumentsPanel
             collapsed={documentsCollapsed}
             onToggleCollapse={() => setDocumentsCollapsed((c) => !c)}
+            documentType={report.documentType}
+            onJumpToSection={jumpToSection}
           />
           {documentsCollapsed ? null : (
             <WorkspaceResizeHandle
