@@ -33,7 +33,6 @@ import {
   ArrowRightLeft,
   ImagePlus,
   ImageMinus,
-  Paperclip,
   Square,
   X,
 } from "lucide-react";
@@ -2179,7 +2178,7 @@ export function ChatPanel({
                 {attaching ? (
                   <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
                 ) : (
-                  <Paperclip className="size-3.5" aria-hidden="true" />
+                  <ImagePlus className="size-3.5" aria-hidden="true" />
                 )}
               </button>
               {busy ? (
