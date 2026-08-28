@@ -154,48 +154,48 @@ export function ReportSidebar({
           </button>
         </div>
       ) : (
-      <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-[var(--border)] px-2 py-1.5">
-        {visibleTabs.map((tab) => {
-          const Icon = tab.icon;
-          const badge = tabBadge(tab.value);
-          const selected = activeTab === tab.value;
+        <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-[var(--border)] px-2 py-1.5">
+          {visibleTabs.map((tab) => {
+            const Icon = tab.icon;
+            const badge = tabBadge(tab.value);
+            const selected = activeTab === tab.value;
 
-          return (
-            <button
-              key={tab.value}
-              type="button"
-              onClick={() => {
-                captureEvent("sidebar_tab_changed", { tab: tab.value });
-                onTabChange(tab.value);
-              }}
-              className={cn(
-                "relative flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors",
-                selected
-                  ? "bg-[var(--secondary)] text-[var(--foreground)] border-[var(--border)]"
-                  : "text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--secondary)]/50 border-transparent hover:border-[var(--border)]",
-              )}
-              aria-label={tab.label}
-              aria-pressed={selected}
-            >
-              <Icon className="size-3.5" aria-hidden="true" />
-              {tab.label}
-              {tab.value !== "assistant" ? (
-                // Keep a badge slot on count tabs so a late placeholder /
-                // suggestion / comment count does not reflow flex-wrap.
-                <span
-                  aria-hidden="true"
-                  className={cn(
-                    "ml-0.5 flex size-4 items-center justify-center rounded-full bg-amber-500 text-[9px] font-bold text-white",
-                    badge == null && "invisible"
-                  )}
-                >
-                  {badge ?? 0}
-                </span>
-              ) : null}
-            </button>
-          );
-        })}
-      </div>
+            return (
+              <button
+                key={tab.value}
+                type="button"
+                onClick={() => {
+                  captureEvent("sidebar_tab_changed", { tab: tab.value });
+                  onTabChange(tab.value);
+                }}
+                className={cn(
+                  "relative flex shrink-0 items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors",
+                  selected
+                    ? "bg-[var(--secondary)] text-[var(--foreground)] border-[var(--border)]"
+                    : "text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--secondary)]/50 border-transparent hover:border-[var(--border)]",
+                )}
+                aria-label={tab.label}
+                aria-pressed={selected}
+              >
+                <Icon className="size-3.5" aria-hidden="true" />
+                {tab.label}
+                {tab.value !== "assistant" ? (
+                  // Keep a badge slot on count tabs so a late placeholder /
+                  // suggestion / comment count does not reflow flex-wrap.
+                  <span
+                    aria-hidden="true"
+                    className={cn(
+                      "ml-0.5 flex size-4 items-center justify-center rounded-full bg-amber-500 text-[9px] font-bold text-white",
+                      badge == null && "invisible"
+                    )}
+                  >
+                    {badge ?? 0}
+                  </span>
+                ) : null}
+              </button>
+            );
+          })}
+        </div>
       )}
 
       {/* ChatPanel stays mounted across collapse and tab changes so the

@@ -27,8 +27,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { AdminAiBudgetPanel } from "@/components/admin/admin-ai-budget-panel";
-import type { AiBudgetStatus } from "@/lib/ai/usage";
 import type { AdminUser } from "@/lib/admin/users";
 import { USER_ROLES, roleLabel, type UserRole } from "@/lib/auth/roles";
 import { formatDateTime } from "@/lib/utils";
@@ -69,13 +67,11 @@ export function AdminUsersPanel({
   currentUserId,
   initialPasswordExpiryDays,
   initialInactivityTimeoutMinutes,
-  initialAiBudgetStatus,
 }: {
   initialUsers: AdminUser[];
   currentUserId: string;
   initialPasswordExpiryDays: number;
   initialInactivityTimeoutMinutes: number;
-  initialAiBudgetStatus: AiBudgetStatus;
 }) {
   const router = useRouter();
   const [users, setUsers] = useState(() => sortUsers(initialUsers));
@@ -530,8 +526,6 @@ export function AdminUsersPanel({
               </Button>
             </div>
           </section>
-
-          <AdminAiBudgetPanel initialStatus={initialAiBudgetStatus} />
         </div>
 
         <div className="overflow-hidden rounded-lg border border-[var(--border)]">

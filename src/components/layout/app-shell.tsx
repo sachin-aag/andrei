@@ -8,6 +8,7 @@ import {
   AlertTriangle,
   BarChart3,
   FileText,
+  Gauge,
   Sparkles,
   Users,
   PanelLeftClose,
@@ -48,6 +49,7 @@ export function AppShell({
       ? [
           { href: "/admin/reports", label: "Reports", icon: FileText },
           { href: "/admin/users", label: "Users", icon: Users },
+          { href: "/admin/limits", label: "Limits", icon: Gauge },
         ]
       : [
           { href: "/", label: "Reports", icon: FileText },
