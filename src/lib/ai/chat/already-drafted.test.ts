@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   alreadyDraftedBlock,
+  alreadyDraftedGapHints,
   alreadyDraftedReadStep,
   detectAlreadyDraftedSection,
   isSectionDraftRequest,
@@ -118,6 +119,62 @@ describe("sectionFillState", () => {
   });
 });
 
+describe("alreadyDraftedGapHints", () => {
+  it("returns not_evaluated when the section has no AI Check rows", () => {
+    expect(
+      alreadyDraftedGapHints("testers_dates", [
+        { section: "purpose", status: "not_met", criterionLabel: "Other" },
+      ])
+    ).toEqual({ kind: "not_evaluated" });
+  });
+
+  it("returns all_met when every criterion passed", () => {
+    expect(
+      alreadyDraftedGapHints("testers_dates", [
+        {
+          section: "testers_dates",
+          status: "met",
+          criterionLabel: "Names and dates",
+        },
+      ])
+    ).toEqual({ kind: "all_met" });
+  });
+
+  it("returns partial and not_met gaps with trimmed reasoning", () => {
+    expect(
+      alreadyDraftedGapHints("testers_dates", [
+        {
+          section: "testers_dates",
+          status: "partially_met",
+          criterionLabel: "Date range stated",
+          reasoning: "Start date present; end date missing.",
+        },
+        {
+          section: "testers_dates",
+          status: "not_met",
+          criterionLabel: "Tester names",
+          bypassed: true,
+        },
+        {
+          section: "testers_dates",
+          status: "not_met",
+          criterionLabel: "Signatures",
+        },
+      ])
+    ).toEqual({
+      kind: "gaps",
+      gaps: [
+        {
+          status: "partially_met",
+          label: "Date range stated",
+          reasoning: "Start date present; end date missing.",
+        },
+        { status: "not_met", label: "Signatures" },
+      ],
+    });
+  });
+});
+
 describe("alreadyDraftedBlock", () => {
   it("tells agent mode to read first and not quiz for known facts", () => {
     const block = alreadyDraftedBlock(
@@ -130,6 +187,30 @@ describe("alreadyDraftedBlock", () => {
     expect(block).toContain("Do not call search_documents or ask_user yet");
     expect(block).toContain("targeted propose_edit");
     expect(block).toContain("hint field is an expected format");
+    expect(block).toContain("Material gap only");
+    expect(block).toContain("Recipe conflict");
+  });
+
+  it("lists AI Check gap hints when provided", () => {
+    const block = alreadyDraftedBlock(
+      { section: "testers_dates", fillState: "filled" },
+      "agent",
+      {
+        kind: "gaps",
+        gaps: [{ status: "not_met", label: "End date missing" }],
+      }
+    );
+    expect(block).toContain("AI Check flagged for this section");
+    expect(block).toContain("not met: End date missing");
+  });
+
+  it("notes when AI Check passed every criterion", () => {
+    const block = alreadyDraftedBlock(
+      { section: "testers_dates", fillState: "filled" },
+      "plan",
+      { kind: "all_met" }
+    );
+    expect(block).toContain("all criteria met for this section");
   });
 });
 

@@ -19,7 +19,7 @@ describe("isChatMode", () => {
 describe("buildChatSystemPrompt", () => {
   it("bumps the prompt version when insert_image and citation-marker guidance change", () => {
     expect(CHAT_PROMPT_VERSION).toBe(
-      "chat-v49-review-filled-before-search"
+      "chat-v50-already-drafted-gap-hints"
     );
   });
 
@@ -263,11 +263,17 @@ describe("buildChatSystemPrompt", () => {
       ...opts,
       mode: "agent",
       alreadyDrafted: { section: "testers_dates", fillState: "filled" },
+      alreadyDraftedGapHints: {
+        kind: "gaps",
+        gaps: [{ status: "partially_met", label: "Date range" }],
+      },
     });
     expect(prompt).toContain("Already drafted (review first)");
     expect(prompt).toContain("Testers/Dates");
     expect(prompt).toContain("Do not call search_documents or ask_user yet");
     expect(prompt).toContain("ask whether they want a specific change");
+    expect(prompt).toContain("partial: Date range");
+    expect(prompt).toContain("Material gap only");
   });
 
   it("omits review-first guidance when a scope mismatch is pending", () => {

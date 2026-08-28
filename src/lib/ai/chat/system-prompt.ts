@@ -12,13 +12,14 @@ import {
   getDocumentType,
 } from "@/lib/document-types";
 import {
+  type AlreadyDraftedGapHints,
   type AlreadyDraftedSection,
   alreadyDraftedBlock,
 } from "@/lib/ai/chat/already-drafted";
 import type { RetrievalPolicy } from "@/lib/ai/chat/retrieval-policy";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v49-review-filled-before-search";
+export const CHAT_PROMPT_VERSION = "chat-v50-already-drafted-gap-hints";
 
 export type ChatMode = "plan" | "agent";
 
@@ -310,6 +311,8 @@ export function buildChatSystemPrompt(opts: {
   scopeMismatch?: SectionScopeMismatch | null;
   /** When the requested section is already filled/partial, inject review-first. */
   alreadyDrafted?: AlreadyDraftedSection | null;
+  /** Cached AI Check gap hints for alreadyDrafted.section. */
+  alreadyDraftedGapHints?: AlreadyDraftedGapHints;
   /** Rendered @ mention block; empty when the engineer tagged nothing. */
   mentionBlock?: string;
   /** Pre-retrieved attachment snippets; empty when none. */
@@ -346,7 +349,11 @@ export function buildChatSystemPrompt(opts: {
     : "";
   const draftedBlock =
     opts.alreadyDrafted && !opts.scopeMismatch
-      ? `\n\n${alreadyDraftedBlock(opts.alreadyDrafted, mode)}`
+      ? `\n\n${alreadyDraftedBlock(
+          opts.alreadyDrafted,
+          mode,
+          opts.alreadyDraftedGapHints ?? { kind: "not_evaluated" }
+        )}`
       : "";
   const mentions = opts.mentionBlock?.trim()
     ? `\n\n${opts.mentionBlock.trim()}`

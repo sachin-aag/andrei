@@ -51,6 +51,7 @@ import {
   detectSectionScopeMismatch,
 } from "@/lib/ai/chat/section-intent";
 import {
+  alreadyDraftedGapHints,
   detectAlreadyDraftedSection,
   alreadyDraftedReadStep,
 } from "@/lib/ai/chat/already-drafted";
@@ -267,6 +268,9 @@ export async function POST(
     documentType: report.documentType,
     sections: mergedSections,
   });
+  const alreadyDraftedGapHintsForPrompt = alreadyDrafted
+    ? alreadyDraftedGapHints(alreadyDrafted.section, evaluations)
+    : undefined;
   const contextMap = buildReportContextMap({
     report: {
       documentNo: report.documentNo,
@@ -318,6 +322,7 @@ export async function POST(
     documentType: report.documentType,
     scopeMismatch,
     alreadyDrafted: scopeMismatch ? null : alreadyDrafted,
+    alreadyDraftedGapHints: alreadyDraftedGapHintsForPrompt,
     mentionBlock: buildMentionBlock(mentions),
     autoEvidenceBlock,
     retrievalPolicy: retrieval.policy,
