@@ -196,3 +196,29 @@ export async function deleteCapabilitySixpack(
   if (!response.ok) throw new Error(await readError(response));
   return parseAnalytics(response);
 }
+
+export type AnalysisImageExport = {
+  dataUrl: string;
+  widthPx: number;
+  heightPx: number;
+  alt: string;
+  chartSpec: unknown | null;
+};
+
+export async function fetchAnalysisImage(
+  reportId: string,
+  analysisId: string,
+  specIndex = 0
+): Promise<AnalysisImageExport> {
+  const query =
+    specIndex > 0 ? `?specIndex=${encodeURIComponent(String(specIndex))}` : "";
+  const response = await fetch(
+    analyticsUrl(
+      reportId,
+      `/analyses/${encodeURIComponent(analysisId)}/image${query}`
+    )
+  );
+  if (!response.ok) throw new Error(await readError(response));
+  const body = (await response.json()) as { image: AnalysisImageExport };
+  return body.image;
+}
