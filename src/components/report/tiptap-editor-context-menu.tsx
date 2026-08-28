@@ -232,8 +232,8 @@ export function TiptapEditorContextMenu({
                   ))
                 ) : (
                   <ContextMenuLabel className="max-w-[18rem] whitespace-normal font-normal text-[var(--muted-foreground)]">
-                    No graphs yet. Open the Analytics tab to create a sixpack or
-                    scatter plot, then insert it here.
+                    No graphs ready to insert. Open Analytics, create or open a
+                    sixpack or scatter, and wait a moment for the preview to save.
                   </ContextMenuLabel>
                 )}
               </ContextMenuSubContent>

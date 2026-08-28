@@ -207,18 +207,36 @@ export type AnalysisImageExport = {
 
 export async function fetchAnalysisImage(
   reportId: string,
-  analysisId: string,
-  specIndex = 0
+  analysisId: string
 ): Promise<AnalysisImageExport> {
-  const query =
-    specIndex > 0 ? `?specIndex=${encodeURIComponent(String(specIndex))}` : "";
   const response = await fetch(
     analyticsUrl(
       reportId,
-      `/analyses/${encodeURIComponent(analysisId)}/image${query}`
+      `/analyses/${encodeURIComponent(analysisId)}/image`
     )
   );
   if (!response.ok) throw new Error(await readError(response));
   const body = (await response.json()) as { image: AnalysisImageExport };
   return body.image;
+}
+
+export async function saveAnalysisPreview(
+  reportId: string,
+  analysisId: string,
+  previewImage: AnalysisImageExport
+): Promise<ReportAnalyticsView> {
+  const response = await fetch(
+    analyticsUrl(
+      reportId,
+      `/analyses/${encodeURIComponent(analysisId)}/preview`
+    ),
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ previewImage }),
+    }
+  );
+  if (!response.ok) throw new Error(await readError(response));
+  const body = (await response.json()) as { analytics: ReportAnalyticsView };
+  return body.analytics;
 }

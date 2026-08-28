@@ -1,10 +1,22 @@
 // @vitest-environment jsdom
 
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { TORQUE_MOCK_SPEC } from "@/lib/charts/__fixtures__/torque-mock";
 import { MEASUREMENT_SCATTER, type ScatterAnalysisSummary } from "@/lib/statistical-analysis/types";
 import { ScatterView } from "./scatter-view";
+
+vi.mock("@/hooks/use-analysis-preview-capture", () => ({
+  useAnalysisPreviewCapture: () => {},
+}));
+
+const viewProps = {
+  reportId: "report-1",
+  onPreviewUploaded: () => {},
+  onRecompute: () => {},
+  onDelete: () => {},
+  recomputing: false,
+};
 
 function scatterSummary(
   limits: { lower: number | null; upper: number | null }
@@ -41,9 +53,7 @@ describe("ScatterView spec limits", () => {
     render(
       <ScatterView
         analysis={scatterSummary({ lower: 1, upper: 6 })}
-        onRecompute={() => {}}
-        onDelete={() => {}}
-        recomputing={false}
+        {...viewProps}
       />
     );
 
@@ -61,9 +71,7 @@ describe("ScatterView spec limits", () => {
     render(
       <ScatterView
         analysis={scatterSummary({ lower: null, upper: null })}
-        onRecompute={() => {}}
-        onDelete={() => {}}
-        recomputing={false}
+        {...viewProps}
       />
     );
 
@@ -77,9 +85,7 @@ describe("ScatterView spec limits", () => {
     render(
       <ScatterView
         analysis={scatterSummary({ lower: null, upper: 6 })}
-        onRecompute={() => {}}
-        onDelete={() => {}}
-        recomputing={false}
+        {...viewProps}
       />
     );
 

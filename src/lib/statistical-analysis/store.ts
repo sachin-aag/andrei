@@ -15,6 +15,7 @@ import {
 } from "./types";
 import type {
   AnalysisKind,
+  AnalysisPreviewImage,
   AnovaAnalysisSummary,
   CapabilitySixpackConfig,
   CapabilitySixpackResult,
@@ -58,8 +59,7 @@ import {
 } from "./row-selection";
 import {
   asPreviewImage,
-  snapshotAnalysisPreviewImage,
-} from "./snapshot-analysis-image";
+} from "./preview-image";
 
 function asWorksheet(value: unknown): WorksheetData {
   return normalizeWorksheet(worksheetDataSchema.parse(value));
@@ -688,13 +688,6 @@ async function insertAnalysisRow(input: {
   | { ok: true; analytics: ReportAnalyticsView; analysis: StatisticalAnalysisSummary }
   | { ok: false; status: 400 | 404; error: string }
 > {
-  const previewImage = await snapshotAnalysisPreviewImage({
-    kind: input.kind,
-    title: input.title,
-    config: input.config,
-    results: input.results,
-  });
-
   const [row] = await db
     .insert(statisticalAnalyses)
     .values({
@@ -703,7 +696,7 @@ async function insertAnalysisRow(input: {
       title: input.title,
       config: input.config,
       results: input.results,
-      previewImage,
+      previewImage: null,
       sourceHash: input.sourceHash,
     })
     .returning();
@@ -802,19 +795,13 @@ export async function recomputeAnalysisForReport(
     if (!scatter.ok) {
       return { ok: false, status: 400, error: scatter.error };
     }
-    const scatterPreview = await snapshotAnalysisPreviewImage({
-      kind: MEASUREMENT_SCATTER,
-      title: scatter.config.title,
-      config: scatter.config,
-      results: scatter.results,
-    });
     await db
       .update(statisticalAnalyses)
       .set({
         title: scatter.config.title,
         config: scatter.config,
         results: scatter.results,
-        previewImage: scatterPreview,
+        previewImage: null,
         sourceHash: hashScatterSource(scatter.config.query, scatter.results),
       })
       .where(
@@ -842,19 +829,13 @@ export async function recomputeAnalysisForReport(
     if (!outcome.ok) {
       return { ok: false, status: 400, error: outcome.message };
     }
-    const xyPreview = await snapshotAnalysisPreviewImage({
-      kind: XY_SCATTER,
-      title: config.title,
-      config,
-      results: outcome.result,
-    });
     await db
       .update(statisticalAnalyses)
       .set({
         title: config.title,
         config,
         results: outcome.result,
-        previewImage: xyPreview,
+        previewImage: null,
         sourceHash: hashXyScatterSource(
           xColumn,
           yColumn,
@@ -885,19 +866,13 @@ export async function recomputeAnalysisForReport(
     if (!outcome.ok) {
       return { ok: false, status: 400, error: outcome.message };
     }
-    const sixpackPreview = await snapshotAnalysisPreviewImage({
-      kind: CAPABILITY_SIXPACK_NORMAL,
-      title: config.title,
-      config,
-      results: outcome.result,
-    });
     await db
       .update(statisticalAnalyses)
       .set({
         title: config.title,
         config,
         results: outcome.result,
-        previewImage: sixpackPreview,
+        previewImage: null,
         sourceHash: hashColumnSource(column, normalizeRowSelection(config)),
       })
       .where(
@@ -938,4 +913,53 @@ export async function deleteAnalysisForReport(
       )
     );
   return getReportAnalytics(reportId);
+}
+
+export async function saveAnalysisPreviewForReport(
+  reportId: string,
+  analysisId: string,
+  previewImage: AnalysisPreviewImage
+): Promise<
+  | { ok: true; analytics: ReportAnalyticsView }
+  | { ok: false; status: 400 | 404; error: string }
+> {
+  const parsed = asPreviewImage(previewImage);
+  if (!parsed) {
+    return { ok: false, status: 400, error: "Invalid preview image." };
+  }
+
+  const analytics = await getReportAnalytics(reportId);
+  if (!analytics) return { ok: false, status: 404, error: "Not found" };
+  const existing = analytics.analyses.find((item) => item.id === analysisId);
+  if (!existing) return { ok: false, status: 404, error: "Not found" };
+  if (
+    !isSixpackAnalysis(existing) &&
+    !isScatterAnalysis(existing) &&
+    !isXyScatterAnalysis(existing)
+  ) {
+    return {
+      ok: false,
+      status: 400,
+      error: "This analysis kind cannot store a preview image.",
+    };
+  }
+
+  await db
+    .update(statisticalAnalyses)
+    .set({ previewImage: parsed })
+    .where(
+      and(
+        eq(statisticalAnalyses.id, analysisId),
+        eq(statisticalAnalyses.workspaceId, analytics.id)
+      )
+    );
+
+  await db
+    .update(statisticalWorkspaces)
+    .set({ updatedAt: new Date() })
+    .where(eq(statisticalWorkspaces.id, analytics.id));
+
+  const next = await getReportAnalytics(reportId);
+  if (!next) return { ok: false, status: 404, error: "Not found" };
+  return { ok: true, analytics: next };
 }
