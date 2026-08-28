@@ -446,6 +446,12 @@ function cellAt(values: readonly string[], index: number): string {
   return values[index] ?? "";
 }
 
+export function worksheetsEqual(a: WorksheetData, b: WorksheetData): boolean {
+  return (
+    JSON.stringify(normalizeWorksheet(a)) === JSON.stringify(normalizeWorksheet(b))
+  );
+}
+
 function mergeColumnValues(
   local: WorksheetColumn,
   persisted: WorksheetColumn,
@@ -516,11 +522,23 @@ export function mergeDirtyWorksheet(
     }
   }
 
+  const specs =
+    JSON.stringify(localWb.specs) !== JSON.stringify(persistedWb.specs)
+      ? localWb.specs
+      : remoteWb.specs;
+
+  const preferredActiveId =
+    localWb.activeSheetId !== persistedWb.activeSheetId
+      ? localWb.activeSheetId
+      : remoteWb.activeSheetId;
   const active =
-    sheets.find((sheet) => sheet.id === remoteWb.activeSheetId) ?? sheets[0]!;
+    sheets.find((sheet) => sheet.id === preferredActiveId) ??
+    sheets.find((sheet) => sheet.id === remoteWb.activeSheetId) ??
+    sheets[0]!;
   return {
     ...remoteWb,
     sheets,
+    specs,
     activeSheetId: active.id,
     columns: active.columns,
   };

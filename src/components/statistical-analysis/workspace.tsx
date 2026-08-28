@@ -32,9 +32,11 @@ import {
   insertColumn,
   insertRow,
   mergeDirtyWorksheet,
+  normalizeWorksheet,
   specRowForColumn,
   switchWorksheetTab,
   upsertSpecRow,
+  worksheetsEqual,
 } from "@/lib/statistical-analysis/worksheet";
 import {
   MEASUREMENT_SCATTER,
@@ -78,10 +80,6 @@ function saveLabel(status: SaveStatus): string {
       return exhaustive;
     }
   }
-}
-
-function worksheetsEqual(a: WorksheetData, b: WorksheetData): boolean {
-  return JSON.stringify(a) === JSON.stringify(b);
 }
 
 export function StatisticalWorkspace({
@@ -140,6 +138,8 @@ export function StatisticalWorkspace({
   const analysisCountRef = useRef(0);
   const worksheetRef = useRef(worksheet);
   const persistedRef = useRef(persistedWorksheet);
+  const versionRef = useRef(version);
+  const markPersistedRef = useRef<(next: WorksheetData) => void>(() => {});
 
   useLayoutEffect(() => {
     worksheetRef.current = worksheet;
@@ -147,6 +147,9 @@ export function StatisticalWorkspace({
   useLayoutEffect(() => {
     persistedRef.current = persistedWorksheet;
   }, [persistedWorksheet]);
+  useLayoutEffect(() => {
+    versionRef.current = version;
+  }, [version]);
 
   const applyAnalytics = useCallback((
     next: ReportAnalyticsView,
@@ -154,9 +157,11 @@ export function StatisticalWorkspace({
   ) => {
     setWorksheet(next.worksheet);
     setPersistedWorksheet(next.worksheet);
+    versionRef.current = next.version;
     setVersion(next.version);
     setAnalyses(next.analyses);
     analysisCountRef.current = next.analyses.length;
+    markPersistedRef.current(next.worksheet);
     setSelectedAnalysisId((current) => {
       if (
         opts?.selectAnalysisId &&
@@ -184,6 +189,7 @@ export function StatisticalWorkspace({
       }
       setWorksheet(merged);
       setPersistedWorksheet(next.worksheet);
+      versionRef.current = next.version;
       setVersion(next.version);
       setAnalyses(next.analyses);
       analysisCountRef.current = next.analyses.length;
@@ -247,11 +253,42 @@ export function StatisticalWorkspace({
     analysisCountRef.current = analyses.length;
   }, [analyses.length]);
 
+  const applySavedWorksheet = useCallback(
+    (saved: ReportAnalyticsView, sent: WorksheetData): WorksheetData => {
+      versionRef.current = saved.version;
+      setVersion(saved.version);
+      setAnalyses(saved.analyses);
+      analysisCountRef.current = saved.analyses.length;
+      setPersistedWorksheet(saved.worksheet);
+      const kept = mergeDirtyWorksheet(
+        worksheetRef.current,
+        sent,
+        saved.worksheet
+      );
+      if (!worksheetsEqual(kept, worksheetRef.current)) {
+        setWorksheet(kept);
+      }
+      return kept;
+    },
+    []
+  );
+
+  const beaconSerialize = useCallback(
+    (nextWorksheet: WorksheetData) =>
+      JSON.stringify({
+        worksheet: nextWorksheet,
+        version: versionRef.current,
+      }),
+    []
+  );
+
+  const serializeWorksheet = useCallback(
+    (nextWorksheet: WorksheetData) => JSON.stringify(normalizeWorksheet(nextWorksheet)),
+    []
+  );
+
   const onSave = useCallback(
-    async (
-      value: { worksheet: WorksheetData; version: number },
-      context?: { signal?: AbortSignal }
-    ) => {
+    async (value: WorksheetData, context?: { signal?: AbortSignal }) => {
       const persist = (worksheet: WorksheetData, version: number) =>
         patchReportAnalytics(
           reportId,
@@ -259,10 +296,8 @@ export function StatisticalWorkspace({
           context?.signal
         );
       try {
-        const next = await persist(value.worksheet, value.version);
-        setPersistedWorksheet(next.worksheet);
-        setVersion(next.version);
-        setAnalyses(next.analyses);
+        const next = await persist(value, versionRef.current);
+        return applySavedWorksheet(next, value);
       } catch (error) {
         if (context?.signal?.aborted) throw error;
         if (error instanceof AnalyticsConflictError) {
@@ -273,8 +308,7 @@ export function StatisticalWorkspace({
           );
           try {
             const saved = await persist(merged, error.analytics.version);
-            applyAnalytics(saved);
-            return;
+            return applySavedWorksheet(saved, merged);
           } catch (retryError) {
             if (context?.signal?.aborted) throw retryError;
             ingestRemote(error.analytics);
@@ -293,15 +327,22 @@ export function StatisticalWorkspace({
         throw error;
       }
     },
-    [applyAnalytics, ingestRemote, reportId]
+    [applySavedWorksheet, ingestRemote, reportId]
   );
 
-  const { status, flush } = useAutoSave({
-    value: { worksheet, version },
+  const { status, flush, markPersisted } = useAutoSave({
+    // Version is sent on PATCH / beacon only. Including it in `value` made
+    // every successful save look dirty (version N → N+1) and loop Saving….
+    value: worksheet,
     onSave,
     enabled: !readOnly && !loading && !agentBusy,
     beaconUrl: `/api/reports/${encodeURIComponent(reportId)}/analytics`,
+    serialize: serializeWorksheet,
+    beaconSerialize,
   });
+  useLayoutEffect(() => {
+    markPersistedRef.current = markPersisted;
+  }, [markPersisted]);
 
   const displayedAnalyses = withLocalStale(
     analyses,
