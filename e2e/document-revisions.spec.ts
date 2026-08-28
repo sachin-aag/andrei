@@ -62,10 +62,10 @@ test.describe("document revisions", () => {
     await expect(
       diff.locator(".suggestion-insert").filter({ hasText: /humidity/i })
     ).toBeVisible();
-    await expect(page.getByRole("heading", { name: /^define$/i })).toHaveCount(0);
+    await expect(page.locator("#define")).toBeHidden();
 
     await page.getByTestId("document-revision-diff-exit").click();
     await expect(diff).toHaveCount(0);
-    await expect(page.getByRole("heading", { name: /^define$/i })).toBeVisible();
+    await expect(page.locator("#define")).toBeVisible();
   });
 });
