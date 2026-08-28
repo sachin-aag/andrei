@@ -69,7 +69,15 @@ export function DocumentsPanel({
     }
   }, [showContentsTab, activeTab]);
 
+  const visibleTabs = showContentsTab
+    ? LEFT_PANEL_TABS
+    : LEFT_PANEL_TABS.filter((tab) => tab.value === "attachments");
+
+  const activeTabDef =
+    visibleTabs.find((tab) => tab.value === activeTab) ?? visibleTabs[0]!;
+
   if (collapsed) {
+    const ActiveIcon = activeTabDef.icon;
     return (
       <aside
         id="report-documents-panel"
@@ -79,26 +87,27 @@ export function DocumentsPanel({
         <button
           type="button"
           onClick={onToggleCollapse}
-          aria-label="Expand documents"
+          aria-label="Expand documents panel"
           aria-expanded={false}
-          title="Documents"
-          className="relative flex size-9 items-center justify-center rounded-md text-[var(--muted-foreground)] transition-colors hover:bg-[var(--secondary)] hover:text-[var(--foreground)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]"
+          title="Expand"
+          className="flex size-9 items-center justify-center rounded-md text-[var(--muted-foreground)] transition-colors hover:bg-[var(--secondary)] hover:text-[var(--foreground)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]"
         >
-          <Paperclip className="size-4" aria-hidden="true" />
-          {attachments.length > 0 ? (
-            <span className="absolute -right-1 -top-1 flex size-3.5 items-center justify-center rounded-full bg-amber-500 text-[8px] font-bold text-white">
-              {attachments.length}
-            </span>
-          ) : null}
+          <PanelLeftOpen className="size-4" aria-hidden="true" />
         </button>
         <button
           type="button"
           onClick={onToggleCollapse}
-          aria-label="Expand documents panel"
-          className="mt-1 flex size-9 items-center justify-center rounded-md text-[var(--muted-foreground)] transition-colors hover:bg-[var(--secondary)] hover:text-[var(--foreground)]"
-          title="Expand"
+          aria-label={activeTabDef.label}
+          aria-pressed
+          title={activeTabDef.label}
+          className="relative mt-1 flex size-9 items-center justify-center rounded-md border border-[var(--border)] bg-[var(--secondary)] text-[var(--foreground)] transition-colors hover:bg-[var(--secondary)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]"
         >
-          <PanelLeftOpen className="size-4" aria-hidden="true" />
+          <ActiveIcon className="size-4" aria-hidden="true" />
+          {activeTab === "attachments" && attachments.length > 0 ? (
+            <span className="absolute -right-1 -top-1 flex size-3.5 items-center justify-center rounded-full bg-amber-500 text-[8px] font-bold text-white">
+              {attachments.length}
+            </span>
+          ) : null}
         </button>
       </aside>
     );
