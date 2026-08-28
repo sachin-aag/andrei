@@ -12,6 +12,13 @@ vi.mock("./report-actions-menu", () => ({
 vi.mock("./report-export-button", () => ({
   ReportExportButton: () => null,
 }));
+vi.mock("./report-bulk-suggestion-actions", () => ({
+  ReportBulkSuggestionActions: () => (
+    <button type="button" data-testid="bulk-suggestion-actions">
+      Bulk
+    </button>
+  ),
+}));
 vi.mock("./section-status-pill", () => ({
   RunAllEvaluationButton: () => (
     <button type="button" data-testid="run-all-evaluation">

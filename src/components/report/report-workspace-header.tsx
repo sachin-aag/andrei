@@ -138,9 +138,7 @@ export function ReportWorkspaceHeader({
         />
 
         {showRunAll ? <RunAllEvaluationButton /> : null}
-        {!isViewMode && documentSurface ? <ReportBulkSuggestionActions /> : null}
-
-        {!isViewMode && documentSurface ? <RunAllEvaluationButton /> : null}
+        {showRunAll ? <ReportBulkSuggestionActions /> : null}
 
         {canSubmit && (
           <Button size="sm" onClick={onSubmit} disabled={submitting}>
