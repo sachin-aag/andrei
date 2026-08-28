@@ -47,7 +47,7 @@ export async function expandPrimaryNav(page: Page): Promise<void> {
   }
 }
 
-/** Report sidebar may start collapsed — tab labels are icon-only until expanded. */
+/** Report sidebar may start collapsed — expand before switching tabs. */
 export async function expandReportSidebar(page: Page): Promise<void> {
   const sidebar = reportSidebar(page);
   const expand = sidebar.getByRole("button", { name: /expand sidebar/i });
