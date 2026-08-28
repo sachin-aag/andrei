@@ -303,6 +303,13 @@ export function ReportWorkspace({
   const viewingDocument = !!activeAttachmentId;
   const hideReportEditors =
     analyticsSurface || viewingDocument || comparing;
+
+  useEffect(() => {
+    if (agentChrome && previewCollapsed && activeAttachmentId) {
+      setPreviewCollapsed(false);
+    }
+  }, [activeAttachmentId, agentChrome, previewCollapsed]);
+
   const showReviewGutter =
     !analyticsSurface &&
     !comparing &&

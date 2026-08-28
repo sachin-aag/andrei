@@ -3,7 +3,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { PDFDocument } from "pdf-lib";
 import { loginAsEngineer } from "./helpers/auth";
 import { createReport, deleteReport } from "./helpers/reports";
-import { documentsPanel, expandDocumentsPanel } from "./helpers/workspace";
+import { documentsPanel, expandDocumentsPanel, setReportChrome } from "./helpers/workspace";
 
 test.describe.configure({ mode: "serial" });
 
@@ -88,6 +88,30 @@ test.describe("report PDF documents", () => {
     await page.getByRole("button", { name: /back to report/i }).click();
     await expect(page.getByRole("heading", { name: /^define$/i })).toBeVisible();
     await expect(page.getByTestId("attachment-viewer")).toHaveCount(0);
+  });
+
+  test("agent chrome expands the work product panel when a PDF is opened", async ({
+    page,
+  }) => {
+    await setReportChrome(page, "agent");
+    const workProduct = page.getByTestId("report-work-product");
+    await expect(
+      workProduct.getByRole("button", { name: /expand document panel/i })
+    ).toBeVisible();
+
+    const fileName = await uploadPdf(page);
+    const panel = documentsPanel(page);
+    await expect(
+      panel.locator('[data-document-file][data-status="ready"]')
+    ).toBeVisible({ timeout: 30_000 });
+
+    await panel.getByRole("button", { name: fileName, exact: true }).click();
+    await expect(
+      workProduct.getByRole("button", { name: /collapse document panel/i })
+    ).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole("button", { name: /back to report/i })).toBeVisible({
+      timeout: 15_000,
+    });
   });
 
   test("renders later PDF pages in a scrollable preview", async ({ page }) => {
