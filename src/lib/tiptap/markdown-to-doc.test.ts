@@ -98,6 +98,19 @@ describe("markdownToDoc", () => {
     ]);
   });
 
+  it("leaves underscored document filenames literal instead of eating _pairs_", () => {
+    const cite =
+      "[790-00134R_Rev_U_Solea_Model_3_Software_Design_Verification_Test_Report_(Report_Only).docx, p. 1]";
+    const doc = markdownToDoc(
+      `All testing was performed between 15 June 2023 and 19 July 2023 ${cite}.`
+    );
+    expect(richJsonToPlainText(doc)).toContain(cite);
+    expect(richJsonToPlainText(doc)).not.toContain("to be filled");
+    expect(markdownToPlainText(`see ${cite}`)).toContain(
+      "790-00134R_Rev_U_Solea_Model_3_Software"
+    );
+  });
+
   it("converts a GFM table with header row", () => {
     const doc = markdownToDoc(
       ["| Parameter | Result |", "| --- | --- |", "| pH | 6.8 |", "| Temp | 22 C |"].join(

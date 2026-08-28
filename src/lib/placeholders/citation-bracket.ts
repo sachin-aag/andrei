@@ -27,8 +27,8 @@ const LABEL_THEN_TO_BE_FILLED =
 const TRAILING_TO_BE_FILLED_JUNK =
   /[,;:\s]*(?:<\s*)?to\s+be\s+filled(?:\s*>)?\s*$/i;
 
-/** `[filename, p. N]` / `[filename, p.N]` page citation suffix. */
-const PAGE_CITE_SUFFIX = /,\s*p\.\s*\d+\s*$/i;
+/** `[filename, p. N]` / `[filename, p. N, M]` page citation suffix. */
+const PAGE_CITE_SUFFIX = /,\s*p\.\s*\d+(?:\s*,\s*\d+)*\s*$/i;
 
 /**
  * Extension-less exhibit labels: `Attachment I`, `Attachment_XIV`, `Attachment-21`.
@@ -44,11 +44,14 @@ const APPENDIX_LABEL =
   /^Appendix\s+(?:[A-Z](?:\.\d+)*|[IVXLCDM]{2,}|\d+)\b/i;
 
 /**
- * Pharma / QMS document numbers such as `790-00134R` or `790-00134R(RevU)`.
+ * Pharma / QMS document numbers such as `790-00134R`, `790-00134R(RevU)`,
+ * or glued/underscored stems (`790-00134RRevU…`, `790-00134R_Rev_U_…`).
  * Requires 3+ digits, hyphen, 4+ digits so ranges like `12-34` and dates
- * like `2024-01-15` are not treated as cites.
+ * like `2024-01-15` are not treated as cites. No trailing `\b`: the optional
+ * revision letter is often followed by `_` or more letters (`RRevU`), and
+ * `_` is a word character so `\b` would miss those stems.
  */
-const DOCUMENT_NUMBER = /\b\d{3,}-\d{4,}[A-Z]?\b/i;
+const DOCUMENT_NUMBER = /\b\d{3,}-\d{4,}/;
 
 /**
  * Core citation text: strip a mistaken `: <to be filled>` wrapper the AI /
@@ -94,11 +97,12 @@ function isDocumentNumberCite(core: string): boolean {
  *
  * Recognizes:
  * - numeric `[12]`
- * - page cites `[name, p. N]` (any name; extension optional)
+ * - page cites `[name, p. N]` / `[name, p. N, M]` (any name; extension optional)
  * - bare attachment filenames using supported extensions from file-types
  * - extension-less exhibit labels (`[Attachment_XIV]`, lists, optional page)
  * - appendix / report-number cites (`[Appendix B]`,
- *   `[Appendix B DV Report 790-00134R(RevU)]`)
+ *   `[Appendix B DV Report 790-00134R(RevU)]`,
+ *   `[790-00134R_Rev_U_Solea_Model_3_Software_…]`)
  * - mistaken `[cite: <to be filled>]` / `[cite,; <to be filled>]` wrappers
  */
 export function isCitationShapedBracket(match: string): boolean {
@@ -111,7 +115,7 @@ export function isCitationShapedBracket(match: string): boolean {
   if (isAttachmentLabelCite(core)) return true;
   if (isAppendixCite(core)) return true;
   if (isDocumentNumberCite(core)) return true;
-  return hasSupportedAttachmentExtension(core);
+  return hasSupportedAttachmentExtension(citeCoreWithoutPage(core));
 }
 
 /**
