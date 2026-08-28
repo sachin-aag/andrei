@@ -38,6 +38,18 @@ export async function expandDocumentsPanel(page: Page): Promise<void> {
   ).toBeVisible();
 }
 
+/** Convergent DV reports expose a Contents tab in the left panel. */
+export async function openDocumentsContentsTab(page: Page): Promise<void> {
+  await expandDocumentsPanel(page);
+  const tab = documentsPanel(page).getByRole("button", { name: /^contents$/i });
+  if (await tab.isVisible()) {
+    if ((await tab.getAttribute("aria-pressed")) !== "true") {
+      await tab.click();
+    }
+    await expect(tab).toHaveAttribute("aria-pressed", "true");
+  }
+}
+
 /** App shell nav starts collapsed — expand before using footer profile link. */
 export async function expandPrimaryNav(page: Page): Promise<void> {
   const nav = primaryNav(page);
