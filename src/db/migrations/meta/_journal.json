@@ -348,6 +348,13 @@
     {
       "idx": 49,
       "version": "7",
+      "when": 1787850800000,
+      "tag": "0050_attachment_page_budget",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
       "when": 1787900000000,
       "tag": "0050_document_revisions",
       "breakpoints": true

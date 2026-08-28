@@ -50,6 +50,19 @@ function renderSidebar(collapsed: boolean, activeTab: "assistant" | "criteria") 
 }
 
 describe("ReportSidebar chat keep-alive", () => {
+  it("hides tab buttons when the sidebar is collapsed", () => {
+    renderSidebar(true, "assistant");
+    expect(screen.queryByRole("button", { name: "Criteria" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Placeholders" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /expand sidebar/i })).toBeInTheDocument();
+  });
+
+  it("shows tab buttons when the sidebar is expanded", () => {
+    renderSidebar(false, "assistant");
+    expect(screen.getByRole("button", { name: "Criteria" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Placeholders" })).toBeInTheDocument();
+  });
+
   it("keeps ChatPanel mounted when the sidebar is collapsed", () => {
     chatPanelMounts = 0;
     const { rerender } = renderSidebar(false, "assistant");
