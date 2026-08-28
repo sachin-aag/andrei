@@ -138,6 +138,29 @@ export async function expandWorkProductPanel(page: Page): Promise<void> {
   await expect(
     panel.getByRole("button", { name: /collapse document panel/i })
   ).toBeVisible();
+  // report-workspace animates width for 200ms when the Agent rail expands.
+  await expect.poll(async () => (await panel.boundingBox())?.width ?? 0).toBeGreaterThan(
+    52
+  );
+}
+
+/** Resize handle is absolutely positioned on the work-product column's left edge. */
+export async function expectDocumentPanelResizeHandleAligned(
+  page: Page
+): Promise<void> {
+  const panel = page.getByTestId("report-work-product");
+  const handle = page.getByRole("separator", {
+    name: /resize document panel/i,
+  });
+  await expect(handle).toBeVisible();
+  await expect.poll(async () => {
+    const [panelBox, handleBox] = await Promise.all([
+      panel.boundingBox(),
+      handle.boundingBox(),
+    ]);
+    if (!panelBox || !handleBox) return Number.POSITIVE_INFINITY;
+    return Math.abs(handleBox.x + handleBox.width / 2 - panelBox.x);
+  }).toBeLessThan(16);
 }
 
 export async function collapseWorkProductPanel(page: Page): Promise<void> {

@@ -20,6 +20,7 @@ import {
   expandDocumentsPanel,
   expandReportSidebar,
   expandWorkProductPanel,
+  expectDocumentPanelResizeHandleAligned,
   openReportAnalytics,
   openReportEditor,
   reportSidebar,
@@ -267,14 +268,7 @@ test.describe("report editor", () => {
     const previewHandle = page.getByRole("separator", {
       name: /resize document panel/i,
     });
-    await expect(previewHandle).toBeVisible();
-    const collapsedHandleBox = await previewHandle.boundingBox();
-    expect(collapsedHandleBox).toBeTruthy();
-    expect(
-      Math.abs(
-        collapsedHandleBox!.x + collapsedHandleBox!.width / 2 - collapsedBox!.x
-      )
-    ).toBeLessThan(8);
+    await expectDocumentPanelResizeHandleAligned(page);
 
     await expandWorkProductPanel(page);
 
@@ -287,12 +281,10 @@ test.describe("report editor", () => {
     expect(docsBox!.x).toBeLessThan(chatBox!.x);
     expect(chatBox!.x).toBeLessThan(canvasBox!.x);
 
-    const handleBox = await previewHandle.boundingBox();
-    expect(handleBox).toBeTruthy();
-    expect(
-      Math.abs(handleBox!.x + handleBox!.width / 2 - canvasBox!.x)
-    ).toBeLessThan(8);
-    const widthBefore = canvasBox!.width;
+    await expectDocumentPanelResizeHandleAligned(page);
+    const widthBefore = await page
+      .getByTestId("report-work-product")
+      .evaluate((el) => el.getBoundingClientRect().width);
     await previewHandle.focus();
     await page.keyboard.press("ArrowLeft");
     await expect
