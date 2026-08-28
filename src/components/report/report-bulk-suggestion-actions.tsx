@@ -53,8 +53,16 @@ export function ReportBulkSuggestionActions() {
     [report.documentType]
   );
 
+  const releaseBulkHolds = useCallback(() => {
+    // Release after comments are updated so TipTap does not re-inject a
+    // still-open card onto already-applied text.
+    for (const section of sectionOrder) {
+      endSuggestionApplyTransition(section);
+    }
+  }, [sectionOrder, endSuggestionApplyTransition]);
+
   const buildBulkArgs = useCallback(
-    (mode: "accept" | "dismiss") => ({
+    () => ({
       reportId: report.id,
       sectionOrder,
       comments,
@@ -62,14 +70,12 @@ export function ReportBulkSuggestionActions() {
       sectionContentFor: (section: SectionType) =>
         sections[section] as Record<string, unknown> | undefined,
       onSectionStart: (section: SectionType, firstCommentId: string) => {
-        // Pauses that section's auto-save for the duration of its batch.
-        beginSuggestionApplyTransition(section, firstCommentId, mode);
+        // Pauses that section's auto-save. Mode "bulk" strips previews instead
+        // of playing the single-card accept/dismiss settle (red through green).
+        beginSuggestionApplyTransition(section, firstCommentId, "bulk");
       },
       onSectionSettled: (section: SectionType, next: Record<string, unknown>) => {
         replaceSection(section, next as unknown);
-      },
-      onSectionEnd: (section: SectionType) => {
-        endSuggestionApplyTransition(section);
       },
     }),
     [
@@ -80,7 +86,6 @@ export function ReportBulkSuggestionActions() {
       sections,
       replaceSection,
       beginSuggestionApplyTransition,
-      endSuggestionApplyTransition,
     ]
   );
 
@@ -89,7 +94,7 @@ export function ReportBulkSuggestionActions() {
     setRunning("accept");
     try {
       const result = await acceptAllSuggestionsInReport({
-        ...buildBulkArgs("accept"),
+        ...buildBulkArgs(),
         applyMode: suggestionApplyModeFor(getDocumentType(report.documentType)),
       });
 
@@ -120,6 +125,7 @@ export function ReportBulkSuggestionActions() {
       toast.error("Could not apply suggestions");
       await refresh();
     } finally {
+      releaseBulkHolds();
       setRunning(null);
     }
   }, [
@@ -129,15 +135,14 @@ export function ReportBulkSuggestionActions() {
     report.documentType,
     setComments,
     refresh,
+    releaseBulkHolds,
   ]);
 
   const handleDismissAll = useCallback(async () => {
     if (running || !canResolve) return;
     setRunning("dismiss");
     try {
-      const result = await dismissAllSuggestionsInReport(
-        buildBulkArgs("dismiss")
-      );
+      const result = await dismissAllSuggestionsInReport(buildBulkArgs());
 
       const dismissed = new Set(result.appliedIds);
       setComments((prev) => prev.filter((c) => !dismissed.has(c.id)));
@@ -160,9 +165,10 @@ export function ReportBulkSuggestionActions() {
       toast.error("Could not dismiss suggestions");
       await refresh();
     } finally {
+      releaseBulkHolds();
       setRunning(null);
     }
-  }, [running, canResolve, buildBulkArgs, setComments, refresh]);
+  }, [running, canResolve, buildBulkArgs, setComments, refresh, releaseBulkHolds]);
 
   if (!canResolve) return null;
   if (!shouldShowSuggestionBulkActions(openTotal)) return null;
