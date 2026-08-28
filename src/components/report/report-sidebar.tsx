@@ -79,6 +79,24 @@ export function ReportSidebar({
     (c) => !c.parentId && isAiSuggestionKind(c.kind) && c.status === "open"
   ).length;
 
+  const tabBadge = (tab: SidebarTab): number | null => {
+    if (tab === "placeholders" && pendingPlaceholders.length > 0) {
+      return pendingPlaceholders.length;
+    }
+    if (tab === "criteria" && openSuggestionCount > 0) {
+      return openSuggestionCount;
+    }
+    if (tab === "comments" && rootCommentCount > 0) {
+      return rootCommentCount;
+    }
+    return null;
+  };
+
+  const activeTabDef =
+    visibleTabs.find((tab) => tab.value === activeTab) ?? visibleTabs[0]!;
+  const ActiveTabIcon = activeTabDef.icon;
+  const activeTabBadge = tabBadge(activeTabDef.value);
+
   return (
     <aside
       id="report-chat-sidebar"
@@ -122,20 +140,33 @@ export function ReportSidebar({
         </div>
       )}
 
-      {/* Tab buttons — only when expanded; collapsed rail shows expand control only */}
-      {!collapsed && !analyticsSurface ? (
+      {/* Tab buttons — expanded shows all tabs; collapsed shows the active tab only */}
+      {analyticsSurface ? null : collapsed ? (
+        <div className="shrink-0 border-b border-[var(--border)] px-1 py-2">
+          <button
+            type="button"
+            onClick={() => {
+              onToggleCollapse();
+              captureEvent("sidebar_tab_changed", { tab: activeTabDef.value });
+            }}
+            className="relative mx-auto flex size-9 items-center justify-center rounded-md border border-[var(--border)] bg-[var(--secondary)] text-[var(--foreground)] transition-colors hover:bg-[var(--secondary)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]"
+            title={activeTabDef.label}
+            aria-label={activeTabDef.label}
+            aria-pressed
+          >
+            <ActiveTabIcon className="size-4" aria-hidden="true" />
+            {activeTabBadge != null ? (
+              <span className="absolute -right-1 -top-1 flex size-3.5 items-center justify-center rounded-full bg-amber-500 text-[8px] font-bold text-white">
+                {activeTabBadge}
+              </span>
+            ) : null}
+          </button>
+        </div>
+      ) : (
         <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-[var(--border)] px-2 py-1.5">
           {visibleTabs.map((tab) => {
             const Icon = tab.icon;
-            const badge =
-              tab.value === "placeholders" && pendingPlaceholders.length > 0
-                ? pendingPlaceholders.length
-                : tab.value === "criteria" && openSuggestionCount > 0
-                  ? openSuggestionCount
-                  : tab.value === "comments" && rootCommentCount > 0
-                    ? rootCommentCount
-                    : null;
-
+            const badge = tabBadge(tab.value);
             const selected = activeTab === tab.value;
 
             return (
@@ -174,7 +205,7 @@ export function ReportSidebar({
             );
           })}
         </div>
-      ) : null}
+      )}
 
       {/* ChatPanel stays mounted across collapse, tab, and work-product
           changes so the thread, composer prefs, and rendered markdown are

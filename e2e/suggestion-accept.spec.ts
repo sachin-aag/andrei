@@ -3,10 +3,10 @@ import { loginAsEngineer } from "./helpers/auth";
 import { browserCookieHeaders } from "./helpers/api";
 import { createReport, deleteReport } from "./helpers/reports";
 import {
-  collapseReportSidebar,
   defineEditor,
   openReportEditor,
   reviewMargin,
+  showReviewMargin,
 } from "./helpers/workspace";
 
 const ANCHOR = "a deviation was observed during testing";
@@ -136,7 +136,7 @@ test.describe("suggestion accept keeps text visible", () => {
     page,
   }) => {
     const editor = await openDefineWithPreview(page, reportId!);
-    await collapseReportSidebar(page);
+    await showReviewMargin(page);
 
     const apply = reviewMargin(page).getByRole("button", { name: /^apply$/i });
     await expect(apply).toBeVisible({ timeout: 15_000 });
@@ -255,7 +255,6 @@ test.describe("document-wide apply all and dismiss all", () => {
     page,
   }) => {
     const editor = await openDefineWithPreview(page, reportId!);
-    await collapseReportSidebar(page);
 
     const applyAll = bulkApplyAll(page);
     await expect(applyAll).toBeVisible({ timeout: 15_000 });
@@ -278,7 +277,6 @@ test.describe("document-wide apply all and dismiss all", () => {
     page,
   }) => {
     const editor = await openDefineWithPreview(page, reportId!);
-    await collapseReportSidebar(page);
 
     const dismissAll = bulkDismissAll(page);
     await expect(dismissAll).toBeVisible({ timeout: 15_000 });

@@ -273,6 +273,7 @@ export function ReportWorkspace({
     null
   );
   const agentChrome = chrome === "agent";
+  const [commentsGutterVisible, setCommentsGutterVisible] = useState(false);
   const {
     containerRef,
     isResizing,
@@ -352,7 +353,11 @@ export function ReportWorkspace({
   const showReviewGutter =
     !analyticsSurface &&
     !comparing &&
-    isReviewGutterVisible(sidebarCollapsed, viewingDocument);
+    isReviewGutterVisible(
+      commentsGutterVisible,
+      sidebarCollapsed,
+      viewingDocument
+    );
   const handleSectionOverflow = useCallback(
     (overflows: Record<SectionType, number>) => {
       setSectionMinHeights((prev) => {
@@ -515,8 +520,8 @@ export function ReportWorkspace({
     queueMicrotask(() => {
       if (cancelled) return;
       setCriteriaFocusSection(section);
-      // Suggestions live in the review margin. Keep the assistant collapsed
-      // so the gutter is visible — do not auto-open the right panel.
+      // Keep the assistant collapsed so the document has room; do not auto-show
+      // the review margin — inline suggestion ticks remain available.
       setSidebarCollapsed(true);
     });
     const timeouts: Array<ReturnType<typeof setTimeout>> = [];
@@ -552,6 +557,7 @@ export function ReportWorkspace({
     };
 
     const gutterAlreadyVisible = isReviewGutterVisible(
+      commentsGutterVisible,
       sidebarCollapsed,
       viewingDocument
     );
@@ -590,6 +596,7 @@ export function ReportWorkspace({
     comments,
     requestCommentFocus,
     sidebarCollapsed,
+    commentsGutterVisible,
     viewingDocument,
   ]);
 
@@ -619,9 +626,11 @@ export function ReportWorkspace({
       };
 
       const gutterAlreadyVisible = isReviewGutterVisible(
+        commentsGutterVisible,
         sidebarCollapsed,
         viewingDocument
       );
+      setCommentsGutterVisible(true);
       setSidebarCollapsed(true);
       if (gutterScrollTimeoutRef.current != null) {
         clearTimeout(gutterScrollTimeoutRef.current);
@@ -637,7 +646,7 @@ export function ReportWorkspace({
         scrollToCard();
       }, WORKSPACE_PANEL_WIDTH_TRANSITION_MS + 50);
     },
-    [comments, jumpToSection, requestCommentFocus, sidebarCollapsed, viewingDocument]
+    [comments, jumpToSection, requestCommentFocus, sidebarCollapsed, commentsGutterVisible, viewingDocument]
   );
 
   const handleJumpToPlaceholder = (p: Placeholder) => {
@@ -749,7 +758,12 @@ export function ReportWorkspace({
         workProductView={workProductView}
       />
 
-      {analyticsSurface || viewingDocument ? null : <ReportEditorToolbar />}
+      {analyticsSurface || viewingDocument ? null : (
+        <ReportEditorToolbar
+          commentsGutterVisible={commentsGutterVisible}
+          onCommentsGutterVisibleChange={setCommentsGutterVisible}
+        />
+      )}
 
       <div
         ref={containerRef}
@@ -768,6 +782,8 @@ export function ReportWorkspace({
           <DocumentsPanel
             collapsed={documentsCollapsed}
             onToggleCollapse={() => setDocumentsCollapsed((c) => !c)}
+            documentType={report.documentType}
+            onJumpToSection={jumpToSection}
           />
           {documentsCollapsed ? null : (
             <WorkspaceResizeHandle

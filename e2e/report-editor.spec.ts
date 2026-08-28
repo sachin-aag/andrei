@@ -110,7 +110,7 @@ test.describe("report editor", () => {
     await expect(sidebar.getByRole("button", { name: /collapse sidebar/i })).toBeVisible();
   });
 
-  test("hides the review margin while the assistant is expanded", async ({
+  test("hides the review margin until Comments is enabled and the assistant is collapsed", async ({
     page,
   }) => {
     // Wide enough that the main canvas would otherwise show both surfaces.
@@ -121,6 +121,15 @@ test.describe("report editor", () => {
     await expect(reviewMargin(page)).toHaveCount(0);
 
     await collapseReportSidebar(page);
+    await expect(reviewMargin(page)).toHaveCount(0);
+
+    await page.getByRole("switch", { name: /comments/i }).click();
+    await expect(reviewMargin(page)).toBeVisible();
+
+    await page.getByRole("switch", { name: /comments/i }).click();
+    await expect(reviewMargin(page)).toHaveCount(0);
+
+    await page.getByRole("switch", { name: /comments/i }).click();
     await expect(reviewMargin(page)).toBeVisible();
 
     await expandReportSidebar(page);

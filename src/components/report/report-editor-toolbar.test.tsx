@@ -46,6 +46,22 @@ vi.mock("@/components/report/advanced-formatting-toolbar", () => ({
 
 const trackChanges = () => screen.queryByRole("checkbox", { name: /track changes/i });
 
+function renderToolbar(
+  props: Partial<{
+    commentsGutterVisible: boolean;
+    onCommentsGutterVisibleChange: (next: boolean) => void;
+  }> = {}
+) {
+  const onCommentsGutterVisibleChange =
+    props.onCommentsGutterVisibleChange ?? vi.fn();
+  return render(
+    <ReportEditorToolbar
+      commentsGutterVisible={props.commentsGutterVisible ?? false}
+      onCommentsGutterVisibleChange={onCommentsGutterVisibleChange}
+    />
+  );
+}
+
 describe("ReportEditorToolbar", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -58,7 +74,7 @@ describe("ReportEditorToolbar", () => {
 
   it("offers track changes before any field is focused, so the mode can be armed first", async () => {
     const user = userEvent.setup();
-    render(<ReportEditorToolbar />);
+    renderToolbar();
 
     expect(screen.getByRole("toolbar", { name: "Editing" })).toBeInTheDocument();
     expect(screen.getByText(/select a field to start editing/i)).toBeInTheDocument();
@@ -72,7 +88,7 @@ describe("ReportEditorToolbar", () => {
   it("stays reachable for a manager whose surface is otherwise read-only", () => {
     mockState.workspaceMode = "review";
     mockState.readOnly = true;
-    render(<ReportEditorToolbar />);
+    renderToolbar();
 
     expect(screen.getByRole("toolbar", { name: "Editing" })).toBeInTheDocument();
     expect(trackChanges()).toBeInTheDocument();
@@ -80,7 +96,7 @@ describe("ReportEditorToolbar", () => {
 
   it("reflects the mode as checked", () => {
     mockState.trackChangesMode = true;
-    render(<ReportEditorToolbar />);
+    renderToolbar();
 
     expect(trackChanges()).toHaveAttribute("aria-checked", "true");
   });
@@ -88,7 +104,7 @@ describe("ReportEditorToolbar", () => {
   it("names the focused field and flags plain-text fields", () => {
     mockState.activeFieldKey = "analyze:rootCause.narrative";
     mockState.activeFieldKind = "plain";
-    render(<ReportEditorToolbar />);
+    renderToolbar();
 
     const toolbar = screen.getByRole("toolbar", { name: "Editing" });
     expect(toolbar).toHaveTextContent(/editing: root cause narrative/i);
@@ -98,23 +114,40 @@ describe("ReportEditorToolbar", () => {
   it("names Analyze Brainstorming and Other Tools when those plain fields are focused", () => {
     mockState.activeFieldKey = "analyze:brainstorming";
     mockState.activeFieldKind = "plain";
-    const { rerender } = render(<ReportEditorToolbar />);
+    const { rerender } = renderToolbar();
 
     expect(screen.getByRole("toolbar", { name: "Editing" })).toHaveTextContent(
       /editing: brainstorming/i
     );
 
     mockState.activeFieldKey = "analyze:otherTools";
-    rerender(<ReportEditorToolbar />);
+    rerender(
+      <ReportEditorToolbar
+        commentsGutterVisible={false}
+        onCommentsGutterVisibleChange={vi.fn()}
+      />
+    );
     expect(screen.getByRole("toolbar", { name: "Editing" })).toHaveTextContent(
       /editing: other tools/i
     );
   });
 
+  it("renders the Comments gutter switch", async () => {
+    const user = userEvent.setup();
+    const onCommentsGutterVisibleChange = vi.fn();
+    renderToolbar({ onCommentsGutterVisibleChange });
+
+    const toggle = screen.getByRole("switch", { name: /comments/i });
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+
+    await user.click(toggle);
+    expect(onCommentsGutterVisibleChange).toHaveBeenCalledWith(true);
+  });
+
   it("renders nothing in view mode", () => {
     mockState.workspaceMode = "view";
     mockState.readOnly = true;
-    const { container } = render(<ReportEditorToolbar />);
+    const { container } = renderToolbar();
 
     expect(container).toBeEmptyDOMElement();
   });
