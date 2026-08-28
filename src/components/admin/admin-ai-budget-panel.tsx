@@ -106,7 +106,7 @@ export function AdminAiBudgetPanel({
   };
 
   return (
-    <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-5 lg:col-span-2">
+    <section className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-base font-semibold">AI monthly budget</h2>
