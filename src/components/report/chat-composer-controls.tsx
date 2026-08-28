@@ -156,6 +156,17 @@ function HoverOnlyTooltip({
   );
 }
 
+export type ComposerSelectVariant = "strip" | "pill" | "ghost";
+
+const COMPOSER_SELECT_TRIGGER: Record<ComposerSelectVariant, string> = {
+  strip:
+    "h-7 border-[var(--border)] bg-[var(--secondary)]/30 px-2 text-[11px] font-medium",
+  pill:
+    "h-7 w-auto shrink-0 gap-1 rounded-full border-0 bg-[var(--secondary)] px-2.5 text-[11px] font-medium shadow-none focus:ring-0 [&>svg]:size-3",
+  ghost:
+    "h-7 w-auto shrink-0 gap-0.5 rounded-full border-0 bg-transparent px-1.5 text-[11px] font-medium text-[var(--muted-foreground)] shadow-none hover:bg-[var(--secondary)] hover:text-[var(--foreground)] focus:ring-0 [&>svg]:size-3",
+};
+
 /**
  * Select for the composer control strip. Explanations live on hover so the
  * open menu stays as wide as the label — the closed trigger is an icon and
@@ -169,6 +180,8 @@ export function ComposerSelect<T extends string>({
   ariaLabel,
   className,
   testId,
+  variant = "strip",
+  showIcon = true,
 }: {
   value: T;
   options: readonly ComposerOption<T>[];
@@ -177,6 +190,8 @@ export function ComposerSelect<T extends string>({
   ariaLabel: string;
   className?: string;
   testId?: string;
+  variant?: ComposerSelectVariant;
+  showIcon?: boolean;
 }) {
   const active = options.find((option) => option.value === value) ?? options[0];
   const ActiveIcon = active.icon;
@@ -191,10 +206,7 @@ export function ComposerSelect<T extends string>({
       disabled={disabled}
     >
       <SelectTrigger
-        className={cn(
-          "h-7 border-[var(--border)] bg-[var(--secondary)]/30 px-2 text-[11px] font-medium",
-          className
-        )}
+        className={cn(COMPOSER_SELECT_TRIGGER[variant], className)}
         aria-label={ariaLabel}
         title={active.description}
         data-testid={testId}
@@ -202,7 +214,7 @@ export function ComposerSelect<T extends string>({
         {/* A div, not a span: the trigger line-clamps direct span children,
             which would override the flex layout. */}
         <div className="flex min-w-0 items-center gap-1.5">
-          <ActiveIcon className="size-3.5 shrink-0" />
+          {showIcon ? <ActiveIcon className="size-3.5 shrink-0" /> : null}
           <SelectValue />
         </div>
       </SelectTrigger>

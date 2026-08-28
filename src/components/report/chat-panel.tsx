@@ -18,7 +18,7 @@ import {
 } from "ai";
 import { formatDistanceToNow } from "date-fns";
 import {
-  Send,
+  ArrowUp,
   Sparkles,
   PencilLine,
   Table2,
@@ -33,6 +33,7 @@ import {
   ArrowRightLeft,
   ImagePlus,
   ImageMinus,
+  Paperclip,
   Square,
   X,
 } from "lucide-react";
@@ -1975,28 +1976,6 @@ export function ChatPanel({
         ) : null}
         <div className="mb-2 flex items-center gap-1.5">
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-            {composerPrefsReady ? (
-              <>
-                <ComposerSelect
-                  value={mode}
-                  options={modeOptions}
-                  onChange={setMode}
-                  disabled={busy}
-                  ariaLabel="Assistant mode"
-                  className="w-[6rem]"
-                  testId={targetingAnalytics ? "analytics-chat-mode" : undefined}
-                />
-                <ComposerSelect
-                  value={pace}
-                  options={CHAT_PACE_OPTIONS}
-                  onChange={setPace}
-                  disabled={busy}
-                  ariaLabel="Answer depth"
-                  className="w-[6rem]"
-                  testId={targetingAnalytics ? "analytics-chat-pace" : undefined}
-                />
-              </>
-            ) : null}
             {workspaceChrome === "agent" && statsEnabled ? (
               <ComposerSelect
                 value={agentChatTarget}
@@ -2042,60 +2021,45 @@ export function ChatPanel({
         ) : null}
         {showUploadingNotice ? <DocumentUploadingNotice /> : null}
         <MentionChips mentions={mentions} onRemove={removeMention} />
-        {pendingImages.length > 0 ? (
-          <div className="mb-2 flex flex-wrap gap-2">
-            {pendingImages.map((image) => (
-              <div
-                key={image.id}
-                className="relative size-16 overflow-hidden rounded-md border border-[var(--border)] bg-[var(--secondary)]/40"
-              >
-                {/* eslint-disable-next-line @next/next/no-img-element -- chat data-URL previews */}
-                <img
-                  src={image.part.url}
-                  alt={image.part.filename ?? "Attached image"}
-                  className="size-full object-cover"
-                />
-                <button
-                  type="button"
-                  onClick={() => removePendingImage(image.id)}
-                  aria-label={`Remove ${image.part.filename ?? "image"}`}
-                  className="absolute right-0.5 top-0.5 flex size-5 items-center justify-center rounded-full bg-black/65 text-white hover:bg-black/80"
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/gif"
+          multiple
+          className="hidden"
+          onChange={(event) => {
+            const files = Array.from(event.target.files ?? []);
+            event.target.value = "";
+            if (files.length > 0) void addImageFiles(files);
+          }}
+        />
+        <div className="rounded-2xl border border-[var(--border)] bg-[var(--card)] focus-within:ring-1 focus-within:ring-[var(--ring)]">
+          {pendingImages.length > 0 ? (
+            <div className="flex flex-wrap gap-2 px-3 pt-3">
+              {pendingImages.map((image) => (
+                <div
+                  key={image.id}
+                  className="relative size-16 overflow-hidden rounded-md border border-[var(--border)] bg-[var(--secondary)]/40"
                 >
-                  <X className="size-3" aria-hidden="true" />
-                </button>
-              </div>
-            ))}
-          </div>
-        ) : null}
-        <div className="flex items-end gap-2">
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="image/png,image/jpeg,image/webp,image/gif"
-            multiple
-            className="hidden"
-            onChange={(event) => {
-              const files = Array.from(event.target.files ?? []);
-              event.target.value = "";
-              if (files.length > 0) void addImageFiles(files);
-            }}
-          />
-          <button
-            type="button"
-            disabled={busy || initializing || attaching || !hostReady}
-            aria-label="Attach image"
-            title="Attach image"
-            data-testid={targetingAnalytics ? "analytics-chat-attach-image" : undefined}
-            onClick={() => fileInputRef.current?.click()}
-            className="flex size-9 shrink-0 items-center justify-center rounded-md border border-[var(--border)] text-[var(--muted-foreground)] transition-colors hover:bg-[var(--secondary)] hover:text-[var(--foreground)] disabled:opacity-40"
-          >
-            {attaching ? (
-              <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-            ) : (
-              <ImagePlus className="size-4" aria-hidden="true" />
-            )}
-          </button>
-          <div className="relative flex-1">
+                  {/* eslint-disable-next-line @next/next/no-img-element -- chat data-URL previews */}
+                  <img
+                    src={image.part.url}
+                    alt={image.part.filename ?? "Attached image"}
+                    className="size-full object-cover"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removePendingImage(image.id)}
+                    aria-label={`Remove ${image.part.filename ?? "image"}`}
+                    className="absolute right-0.5 top-0.5 flex size-5 items-center justify-center rounded-full bg-black/65 text-white hover:bg-black/80"
+                  >
+                    <X className="size-3" aria-hidden="true" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          <div className="relative">
             {mentionMenuOpen ? (
               <MentionMenu
                 matches={mentionMatches}
@@ -2164,7 +2128,7 @@ export function ChatPanel({
                   void send(input);
                 }
               }}
-              rows={2}
+              rows={3}
               disabled={initializing}
               placeholder={composerPlaceholder({
                 targetingAnalytics,
@@ -2173,34 +2137,78 @@ export function ChatPanel({
                 sheetScope,
                 sheets: liveSheets,
               })}
-              className="min-h-[40px] max-h-40 w-full resize-none rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)] disabled:opacity-50"
+              className="min-h-[4.5rem] max-h-40 w-full resize-none bg-transparent px-3.5 pt-3 pb-1.5 text-sm outline-none placeholder:text-[var(--muted-foreground)] disabled:opacity-50"
             />
           </div>
-          {busy ? (
-            <button
-              type="button"
-              onClick={stopTurn}
-              aria-label="Stop generating"
-              title="Stop generating"
-              className="flex size-9 items-center justify-center rounded-md bg-[var(--primary)] text-[var(--primary-foreground)] transition-opacity hover:opacity-90"
-            >
-              <Square className="size-3.5 fill-current" />
-            </button>
-          ) : (
-            <button
-              type="submit"
-              disabled={
-                initializing ||
-                attaching ||
-                !hostReady ||
-                (!input.trim() && pendingImages.length === 0)
-              }
-              aria-label="Send message"
-              className="flex size-9 items-center justify-center rounded-md bg-[var(--primary)] text-[var(--primary-foreground)] transition-opacity hover:opacity-90 disabled:opacity-40"
-            >
-              <Send className="size-4" />
-            </button>
-          )}
+          <div className="flex items-center justify-between gap-2 px-2 pb-2">
+            <div className="flex min-w-0 items-center gap-0.5">
+              {composerPrefsReady ? (
+                <>
+                  <ComposerSelect
+                    value={mode}
+                    options={modeOptions}
+                    onChange={setMode}
+                    disabled={busy}
+                    ariaLabel="Assistant mode"
+                    variant="pill"
+                    testId={targetingAnalytics ? "analytics-chat-mode" : undefined}
+                  />
+                  <ComposerSelect
+                    value={pace}
+                    options={CHAT_PACE_OPTIONS}
+                    onChange={setPace}
+                    disabled={busy}
+                    ariaLabel="Answer depth"
+                    variant="ghost"
+                    showIcon={false}
+                    testId={targetingAnalytics ? "analytics-chat-pace" : undefined}
+                  />
+                </>
+              ) : null}
+            </div>
+            <div className="flex shrink-0 items-center gap-0.5">
+              <button
+                type="button"
+                disabled={busy || initializing || attaching || !hostReady}
+                aria-label="Attach image"
+                title="Attach image"
+                data-testid={targetingAnalytics ? "analytics-chat-attach-image" : undefined}
+                onClick={() => fileInputRef.current?.click()}
+                className="flex size-7 shrink-0 items-center justify-center rounded-full text-[var(--muted-foreground)] transition-colors hover:bg-[var(--secondary)] hover:text-[var(--foreground)] disabled:opacity-40"
+              >
+                {attaching ? (
+                  <Loader2 className="size-3.5 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Paperclip className="size-3.5" aria-hidden="true" />
+                )}
+              </button>
+              {busy ? (
+                <button
+                  type="button"
+                  onClick={stopTurn}
+                  aria-label="Stop generating"
+                  title="Stop generating"
+                  className="flex size-7 items-center justify-center rounded-full bg-[var(--brand-600)] text-white transition-opacity hover:opacity-90"
+                >
+                  <Square className="size-2.5 fill-current" />
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  disabled={
+                    initializing ||
+                    attaching ||
+                    !hostReady ||
+                    (!input.trim() && pendingImages.length === 0)
+                  }
+                  aria-label="Send message"
+                  className="flex size-7 items-center justify-center rounded-full bg-[var(--brand-600)] text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+                >
+                  <ArrowUp className="size-3.5" strokeWidth={2.5} />
+                </button>
+              )}
+            </div>
+          </div>
         </div>
       </form>
     </div>
