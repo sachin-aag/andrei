@@ -2,8 +2,15 @@ import { generateText, Output, tool, type ToolSet } from "ai";
 import { z } from "zod";
 import { buildChatTools } from "@/lib/ai/chat/tools";
 import { sanitizePromptMetadata } from "@/lib/ai/chat/prompt-metadata";
-import { resolveChatExtractLanguageModel } from "@/lib/ai/chat/model";
+import {
+  CHAT_EXTRACT_GOOGLE_MODEL_ID,
+  resolveChatExtractLanguageModel,
+} from "@/lib/ai/chat/model";
 import { buildGeminiThoughtSummaryProviderOptions } from "@/lib/eval/eval-generation-options";
+import {
+  assertAiBudgetAvailable,
+  recordAiUsage,
+} from "@/lib/ai/usage";
 import {
   listDocumentPagesForReview,
   listReadyDocumentsForReport,
@@ -770,6 +777,7 @@ export function buildAnalyticsChatTools(opts: {
                   `--- ${page.filename} p.${page.pageNumber} ---\n${page.text}`
               )
               .join("\n\n");
+            await assertAiBudgetAvailable();
             const result = await generateText({
               model: resolveChatExtractLanguageModel(),
               output: Output.object({ schema: extractedSeriesSchema }),
@@ -789,6 +797,12 @@ export function buildAnalyticsChatTools(opts: {
               ]
                 .filter(Boolean)
                 .join("\n\n"),
+            });
+            await recordAiUsage({
+              feature: "analytics_chat",
+              modelId: CHAT_EXTRACT_GOOGLE_MODEL_ID,
+              usage: result.usage,
+              reportId,
             });
             if (result.output?.values.length) {
               values = result.output.values.slice(0, MAX_WORKSHEET_ROWS);

@@ -45,3 +45,25 @@ export async function patchCommentStatus(
     messageForStatus(res.status, serverMessage)
   );
 }
+
+/**
+ * Flip many comment statuses in parallel. Used by bulk apply/dismiss after the
+ * section content is already persisted.
+ */
+export async function patchCommentStatuses(
+  reportId: string,
+  commentIds: readonly string[],
+  status: "resolved" | "dismissed"
+): Promise<{ failedIds: string[] }> {
+  const results = await Promise.all(
+    commentIds.map(async (id) => {
+      try {
+        await patchCommentStatus(reportId, id, status);
+        return { id, ok: true as const };
+      } catch {
+        return { id, ok: false as const };
+      }
+    })
+  );
+  return { failedIds: results.filter((r) => !r.ok).map((r) => r.id) };
+}

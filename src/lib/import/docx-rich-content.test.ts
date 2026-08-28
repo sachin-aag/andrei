@@ -1,4 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("@/lib/ai/usage", () => ({
+  assertAiBudgetAvailable: vi.fn().mockResolvedValue(undefined),
+  recordAiUsage: vi.fn().mockResolvedValue(undefined),
+}));
+
 import type { JSONContent } from "@tiptap/core";
 import {
   dedupeSupersetNarrativeParagraphsForTest,

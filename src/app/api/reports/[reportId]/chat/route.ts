@@ -55,6 +55,11 @@ import {
   detectSectionScopeMismatch,
 } from "@/lib/ai/chat/section-intent";
 import {
+  alreadyDraftedGapHints,
+  detectAlreadyDraftedSection,
+  alreadyDraftedReadStep,
+} from "@/lib/ai/chat/already-drafted";
+import {
   createChatSession,
   findChatSession,
   touchChatSession,
@@ -71,6 +76,12 @@ import {
   flushLangfuseTraces,
   langfuseGenerateTextTelemetry,
 } from "@/lib/observability/langfuse";
+import {
+  aiBudgetExceededResponse,
+  assertAiBudgetAvailable,
+  isAiBudgetExceededError,
+  recordAiUsage,
+} from "@/lib/ai/usage";
 import { auditActorFromUser } from "@/lib/audit";
 import { listReadyDocumentsForReport } from "@/lib/attachments/retrieval";
 import { buildAutoEvidence } from "@/lib/ai/chat/auto-evidence";
@@ -269,6 +280,15 @@ export async function POST(
   const reviewPageCount =
     mentionedPageCount > 0 ? mentionedPageCount : totalReadyPages;
 
+  const alreadyDrafted = detectAlreadyDraftedSection({
+    userText,
+    sectionScope,
+    documentType: report.documentType,
+    sections: mergedSections,
+  });
+  const alreadyDraftedGapHintsForPrompt = alreadyDrafted
+    ? alreadyDraftedGapHints(alreadyDrafted.section, evaluations)
+    : undefined;
   const contextMap = buildReportContextMap({
     report: {
       documentNo: report.documentNo,
@@ -319,6 +339,8 @@ export async function POST(
     sectionScope,
     documentType: report.documentType,
     scopeMismatch,
+    alreadyDrafted: scopeMismatch ? null : alreadyDrafted,
+    alreadyDraftedGapHints: alreadyDraftedGapHintsForPrompt,
     mentionBlock: buildMentionBlock(mentions),
     autoEvidenceBlock,
     retrievalPolicy: retrieval.policy,
@@ -371,6 +393,9 @@ export async function POST(
 
   let result;
   try {
+    if (!isTestStubChat()) {
+      await assertAiBudgetAvailable();
+    }
     result = streamText({
       model,
       system,
@@ -401,8 +426,16 @@ export async function POST(
           };
         }
 
+        const alreadyDraftedActive = alreadyDrafted != null && !scopeMismatch;
+        const alreadyDraftedStep = alreadyDraftedReadStep({
+          stepsTaken: steps.length,
+          alreadyDrafted: alreadyDraftedActive,
+          hasReadSectionTool: Boolean(tools.read_section),
+        });
+        if (alreadyDraftedStep) return alreadyDraftedStep;
+
         const prepared = prepareDocumentReviewStep({
-          policy: retrieval.policy,
+          policy: alreadyDraftedActive ? "adaptive" : retrieval.policy,
           phase: documentReview.phase(),
           availableTools: Object.keys(tools),
         });
@@ -454,6 +487,9 @@ export async function POST(
   } catch (err) {
     stopCancelPoll();
     await clearAssistantTurn(sessionId);
+    if (isAiBudgetExceededError(err)) {
+      return aiBudgetExceededResponse(err);
+    }
     console.error("chat: failed to start assistant stream", {
       reportId,
       sessionId,
@@ -474,6 +510,15 @@ export async function POST(
         console.error("chat: consumeStream exceeded budget", {
           reportId,
           sessionId,
+        });
+      } else if (!isTestStubChat()) {
+        const usage = await result.totalUsage;
+        await recordAiUsage({
+          feature: "document_chat",
+          modelId: paceConfig.modelId,
+          usage,
+          reportId,
+          userId: user.id,
         });
       }
       await flushLangfuseTraces();

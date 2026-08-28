@@ -580,6 +580,38 @@ html[data-customer="convergent"] {
   text-decoration-color: transparent;
 }
 
+/*
+ * Bulk apply: keep the inserted wording on screen as ordinary text and hide
+ * the deleted run immediately. Opacity-0 on *both* runs made the sentence
+ * vanish until the section PATCH returned.
+ */
+[data-suggestion-preview-held="bulk"] .suggestion-delete,
+[data-suggestion-preview-held="bulk"] .suggestion-delete-ai,
+[data-suggestion-preview-held="bulk"] .suggestion-image-delete,
+[data-suggestion-preview-held="bulk"] .suggestion-image-delete-ai {
+  opacity: 0;
+  background-color: transparent;
+  transition: none;
+}
+
+[data-suggestion-preview-held="bulk"] .suggestion-insert,
+[data-suggestion-preview-held="bulk"] .suggestion-insert-ai,
+[data-suggestion-preview-held="bulk"] .suggestion-image-insert,
+[data-suggestion-preview-held="bulk"] .suggestion-image-insert-ai {
+  background-color: transparent;
+  border-bottom-color: transparent;
+  transition: none;
+}
+
+[data-suggestion-preview-held="bulk"] .suggestion-insert-ai::before,
+[data-suggestion-preview-held="bulk"] .suggestion-insert-ai::after,
+[data-suggestion-preview-held="bulk"] .suggestion-delete-ai::before,
+[data-suggestion-preview-held="bulk"] .suggestion-delete-ai::after,
+[data-suggestion-preview-held="bulk"] .suggestion-action-widget {
+  opacity: 0;
+  transition: none;
+}
+
 /* Sparkle brackets fade with the run they annotate (opacity keeps their box,
    so the surrounding text does not shift). */
 [data-suggestion-preview-held] .suggestion-insert-ai::before,
@@ -827,7 +859,7 @@ html[data-customer="convergent"] {
 
 /* ProseMirror / Tiptap — table editing.
    Wide matrices (FMEA, DV) must never shrink below a readable floor.
-   The editor chrome scrolls horizontally; identity columns stick except on QRA. */
+   The editor chrome scrolls horizontally as one unit. */
 .ProseMirror:has(table) {
   max-width: none;
   width: max-content;
@@ -874,7 +906,7 @@ html[data-customer="convergent"] {
   border-top-width: 1px;
 }
 
-/* Identity column floors. QRA tables scroll as one unit (no frozen columns). */
+/* Identity column floors — sizing only; the whole table scrolls together. */
 .ProseMirror th:first-child,
 .ProseMirror td:first-child {
   min-width: 4.5rem;
@@ -886,36 +918,6 @@ html[data-customer="convergent"] {
 .ProseMirror th:nth-child(2),
 .ProseMirror td:nth-child(2) {
   min-width: 10rem;
-}
-
-.ProseMirror th:first-child,
-.ProseMirror td:first-child {
-  position: sticky;
-  left: 0;
-  z-index: 3;
-}
-
-.ProseMirror th:nth-child(2),
-.ProseMirror td:nth-child(2) {
-  position: sticky;
-  left: 4.5rem;
-  z-index: 3;
-  box-shadow: 2px 0 4px -2px rgb(0 0 0 / 0.18);
-}
-
-.ProseMirror th:first-child,
-.ProseMirror th:nth-child(2) {
-  z-index: 4;
-}
-
-.qra-document .ProseMirror th:first-child,
-.qra-document .ProseMirror td:first-child,
-.qra-document .ProseMirror th:nth-child(2),
-.qra-document .ProseMirror td:nth-child(2) {
-  position: static;
-  left: auto;
-  z-index: auto;
-  box-shadow: none;
 }
 
 /* FMEA F02/F04 — narrower score cells; column groups in fmea-stages.ts. */

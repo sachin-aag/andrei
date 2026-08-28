@@ -1058,6 +1058,61 @@ export const retentionSettings = pgTable("retention_settings", {
     .defaultNow(),
 });
 
+export const aiUsageFeatureEnum = pgEnum("ai_usage_feature", [
+  "criteria_evaluation",
+  "suggestion_generation",
+  "document_chat",
+  "analytics_chat",
+  "document_ingest",
+  "document_embedding",
+  "document_review_extract",
+  "math_extraction",
+  "chart_extraction",
+  "docx_image_description",
+]);
+
+export const aiBudgetSettings = pgTable("ai_budget_settings", {
+  id: text("id").primaryKey().default("default"),
+  monthlyBudgetUsd: real("monthly_budget_usd").notNull().default(500),
+  enforceHardLimit: boolean("enforce_hard_limit").notNull().default(true),
+  warningThresholdPercent: integer("warning_threshold_percent")
+    .notNull()
+    .default(80),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const aiUsageEvents = pgTable(
+  "ai_usage_events",
+  {
+    id: text("id").primaryKey(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    yearMonth: text("year_month").notNull(),
+    feature: aiUsageFeatureEnum("feature").notNull(),
+    modelId: text("model_id").notNull(),
+    inputTokens: integer("input_tokens").notNull().default(0),
+    outputTokens: integer("output_tokens").notNull().default(0),
+    estimatedCostUsd: real("estimated_cost_usd").notNull(),
+    reportId: text("report_id").references(() => reports.id, {
+      onDelete: "set null",
+    }),
+    userId: text("user_id").references(() => workspaceUsers.id, {
+      onDelete: "set null",
+    }),
+    metadata: jsonb("metadata").notNull().default({}),
+  },
+  (t) => ({
+    yearMonthIdx: index("ai_usage_events_year_month_idx").on(t.yearMonth),
+    featureIdx: index("ai_usage_events_year_month_feature_idx").on(
+      t.yearMonth,
+      t.feature
+    ),
+  })
+);
+
 export const auditEventsRelations = relations(auditEvents, ({ one, many }) => ({
   report: one(reports, {
     fields: [auditEvents.reportId],
@@ -1329,5 +1384,6 @@ export type StorageOutboxStatus =
   (typeof storageOutboxStatusEnum.enumValues)[number];
 export type DocumentRevisionSource =
   (typeof documentRevisionSourceEnum.enumValues)[number];
+export type AiUsageFeature = (typeof aiUsageFeatureEnum.enumValues)[number];
 
 export * from "./auth";

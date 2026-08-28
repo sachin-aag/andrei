@@ -24,6 +24,11 @@ vi.mock("./document-ai-ocr", () => ({
     ocrPdfWithDocumentAiMock(...args),
 }));
 
+vi.mock("@/lib/ai/usage", () => ({
+  assertAiBudgetAvailable: vi.fn().mockResolvedValue(undefined),
+  recordAiUsage: vi.fn().mockResolvedValue(undefined),
+}));
+
 import {
   extractPdfBatch,
   extractionWarningForGaps,

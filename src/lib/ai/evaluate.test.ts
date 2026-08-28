@@ -21,6 +21,11 @@ vi.mock("@ai-sdk/google", () => ({
   createGoogleGenerativeAI: vi.fn(() => vi.fn(() => "mock-model")),
 }));
 
+vi.mock("@/lib/ai/usage", () => ({
+  assertAiBudgetAvailable: vi.fn().mockResolvedValue(undefined),
+  recordAiUsage: vi.fn().mockResolvedValue(undefined),
+}));
+
 const COMMON_RULE_PHRASE = "traffic light system";
 const PROMPT_INJECTION_GUARD = "PROMPT INJECTION GUARD";
 

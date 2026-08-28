@@ -14,6 +14,10 @@ import {
   SUGGEST_THINKING_LEVEL,
 } from "@/lib/ai/suggest-prompts";
 import { langfuseGenerateTextTelemetry } from "@/lib/observability/langfuse";
+import {
+  assertAiBudgetAvailable,
+  recordAiUsage,
+} from "@/lib/ai/usage";
 import { buildGeminiThoughtSummaryProviderOptions } from "@/lib/eval/eval-generation-options";
 import { isAllowedTargetField } from "@/lib/ai/suggest-target-fields";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
@@ -387,6 +391,7 @@ export async function generateSuggestionsForSection({
       citationsAtEndOfSection,
     });
 
+    await assertAiBudgetAvailable();
     const result = await generateText({
       model: resolveModel(),
       output: Output.object({ schema: suggestionSchema }),
@@ -411,6 +416,13 @@ export async function generateSuggestionsForSection({
           promptVersion: SUGGEST_PROMPT_VERSION,
         },
       }),
+    });
+
+    await recordAiUsage({
+      feature: "suggestion_generation",
+      modelId: SUGGEST_GOOGLE_MODEL_ID,
+      usage: result.usage,
+      reportId,
     });
 
     const rawList = result.experimental_output?.suggestions

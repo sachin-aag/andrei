@@ -86,6 +86,25 @@ describe("normalizeSuggestionInsertText", () => {
         "see [Appendix B DV Report 790-00134R(RevU)]."
       )
     ).toBe("see [Appendix B DV Report 790-00134R(RevU)].");
+    expect(
+      normalizeSuggestionInsertText(
+        "[790-00134R_Rev_U_Solea_Model_3_Software_Design_Verification_Test_Report_(Report_Only).docx, p. 1]"
+      )
+    ).toBe(
+      "[790-00134R_Rev_U_Solea_Model_3_Software_Design_Verification_Test_Report_(Report_Only).docx, p. 1]"
+    );
+    expect(
+      normalizeSuggestionInsertText(
+        "[790-00134R_Rev_U_Solea_Model_3_Software_Design_Verification_Test_Report_(Report_Only): <to be filled>]"
+      )
+    ).toBe(
+      "[790-00134R_Rev_U_Solea_Model_3_Software_Design_Verification_Test_Report_(Report_Only)]"
+    );
+    expect(
+      normalizeSuggestionInsertText(
+        "[790-00134R_Rev_U_Solea_Model_3_Software_: <to be filled>]"
+      )
+    ).toBe("[790-00134R_Rev_U_Solea_Model_3_Software_]");
   });
 
   it("compacts long comma-containing instructional brackets", () => {

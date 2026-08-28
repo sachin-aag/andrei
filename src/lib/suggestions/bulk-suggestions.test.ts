@@ -123,6 +123,68 @@ describe("acceptAllSuggestions", () => {
     expect(text).toContain("by 12%");
   });
 
+  it("PATCHes the section once for non-overlapping suggestions", async () => {
+    const urls: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        urls.push(String(url));
+        return { ok: true, json: async () => ({}) } as Response;
+      })
+    );
+
+    await acceptAllSuggestions({
+      reportId: "report-1",
+      section: "define",
+      comments: [first, second],
+      sectionContent: structuredClone(sectionContent),
+    });
+
+    expect(urls.filter((url) => url.includes("/sections/define"))).toHaveLength(1);
+    expect(urls.filter((url) => url.includes("/comments/"))).toHaveLength(2);
+  });
+
+  it("applies overlapping suggestions recursively against the updated doc", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, json: async () => ({}) }) as Response)
+    );
+
+    const overlappingFirst = comment(
+      "o1",
+      "issue was seen",
+      "a deviation was observed"
+    );
+    overlappingFirst.content = JSON.stringify({
+      deleteText: "deviation was observed",
+      insertText: "issue was seen",
+      reasoning: "overlap-a",
+    });
+    const overlappingSecond = comment(
+      "o2",
+      "was logged. The result",
+      "was observed. The result"
+    );
+    overlappingSecond.content = JSON.stringify({
+      deleteText: "was observed. The result",
+      insertText: "was logged. The result",
+      reasoning: "overlap-b",
+    });
+
+    const result = await acceptAllSuggestions({
+      reportId: "report-1",
+      section: "define",
+      comments: [overlappingFirst, overlappingSecond],
+      sectionContent: structuredClone(sectionContent),
+    });
+
+    expect(result.appliedIds).toEqual(["o1"]);
+    expect(result.skippedIds).toEqual(["o2"]);
+    const text = JSON.stringify(result.nextSection);
+    expect(text).toContain("issue was seen");
+    expect(text).not.toContain("was logged");
+  });
+
   it("stops the batch when a save fails", async () => {
     vi.stubGlobal(
       "fetch",
@@ -142,8 +204,60 @@ describe("acceptAllSuggestions", () => {
     });
 
     expect(result.appliedIds).toEqual([]);
-    expect(result.failedIds).toEqual(["c1"]);
+    expect(result.failedIds).toEqual(["c1", "c2"]);
     expect(result.skippedIds).toEqual([]);
+  });
+
+  it("previews applied content before the section PATCH", async () => {
+    const order: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (String(url).includes("/sections/")) order.push("patch");
+        return { ok: true, json: async () => ({}) } as Response;
+      })
+    );
+
+    await acceptAllSuggestions({
+      reportId: "report-1",
+      section: "define",
+      comments: [first, second],
+      sectionContent: structuredClone(sectionContent),
+      onPreview: (next) => {
+        order.push("preview");
+        expect(JSON.stringify(next)).toContain("on line FL-02");
+      },
+    });
+
+    expect(order.slice(0, 2)).toEqual(["preview", "patch"]);
+  });
+
+  it("reverts the preview when the section PATCH fails", async () => {
+    const original = structuredClone(sectionContent);
+    const previews: Record<string, unknown>[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (String(url).includes("/sections/")) {
+          return { ok: false, status: 500 } as Response;
+        }
+        return { ok: true, json: async () => ({}) } as Response;
+      })
+    );
+
+    await acceptAllSuggestions({
+      reportId: "report-1",
+      section: "define",
+      comments: [first, second],
+      sectionContent: original,
+      onPreview: (next) => {
+        previews.push(next);
+      },
+    });
+
+    expect(previews).toHaveLength(2);
+    expect(JSON.stringify(previews[0])).toContain("on line FL-02");
+    expect(previews[1]).toBe(original);
   });
 });
 
@@ -244,9 +358,12 @@ describe("acceptAllSuggestionsInReport", () => {
       comments: [first, second, measureFirst],
       evaluations: [],
       sectionContentFor: (section) => sections[section],
+      onSectionSettled: (section, next) => {
+        sections[section] = next;
+      },
     });
 
-    expect(result.failedIds).toEqual(["c1"]);
+    expect(result.failedIds).toEqual(["c1", "c2"]);
     expect(result.appliedIds).toEqual(["m1"]);
     expect(result.changedSections).toEqual(["measure"]);
   });

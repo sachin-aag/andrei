@@ -517,7 +517,7 @@ transcript metadata until then.
 **Goal:** Each committing **report** turn creates a version. Compare two with
 an inline diff in the Report view.
 
-- Schema `0049_document_revisions.sql`.
+- Schema `0050_document_revisions.sql`.
 - `src/lib/document-revisions/` + API under
   `src/app/api/reports/[reportId]/revisions/`.
 - History + diff components on the work product column (Report view).

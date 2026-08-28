@@ -5,6 +5,7 @@ import { AdminUsersPanel } from "@/components/admin/admin-users-panel";
 import { getCurrentUser } from "@/lib/auth/session";
 import { listAdminUsers } from "@/lib/admin/users";
 import { getPasswordPolicy } from "@/lib/auth/password-policy";
+import { getAiBudgetStatus } from "@/lib/ai/usage";
 
 export const dynamic = "force-dynamic";
 
@@ -13,7 +14,11 @@ export default async function AdminUsersPage() {
   if (!user) redirect("/login");
   if (user.role !== "admin") redirect("/");
 
-  const [users, policy] = await Promise.all([listAdminUsers(), getPasswordPolicy()]);
+  const [users, policy, aiBudget] = await Promise.all([
+    listAdminUsers(),
+    getPasswordPolicy(),
+    getAiBudgetStatus(),
+  ]);
   const shellUsers = users.map(({ id, name, email, role, title }) => ({
     id,
     name,
@@ -38,6 +43,7 @@ export default async function AdminUsersPage() {
           currentUserId={user.id}
           initialPasswordExpiryDays={policy.expiryDays}
           initialInactivityTimeoutMinutes={policy.inactivityTimeoutMinutes}
+          initialAiBudgetStatus={aiBudget}
         />
       </ViewTransition>
     </AppShell>

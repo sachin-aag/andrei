@@ -76,7 +76,7 @@ export type WorkspaceMode = "edit" | "review" | "view";
  * differently for each: accepting fades the deletion out, dismissing fades the
  * insertion out.
  */
-export type SuggestionApplyMode = "accept" | "dismiss";
+export type SuggestionApplyMode = "accept" | "dismiss" | "bulk";
 
 /** Queue handoff: wait for the user to jump to — or dismiss — the next off-screen suggestion (any section). */
 export type SuggestionQueueBridge = {
