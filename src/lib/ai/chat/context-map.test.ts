@@ -41,6 +41,10 @@ describe("buildReportContextMap", () => {
 
     expect(map).toContain("deviation DEV-123");
     expect(map).toContain("Define [define]");
+    expect(map).toContain(
+      "empty = draft after searching attachments; filled/partial = already drafted"
+    );
+    expect(map).toContain("unless you are reviewing a filled/partial section");
     expect(map).toContain("filled");
     // one met + one partial; the not_met is bypassed so excluded
     expect(map).toContain("1 met / 1 partial / 0 not-met");

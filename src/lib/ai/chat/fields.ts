@@ -147,6 +147,26 @@ export function countSectionInlineImages(
   return total;
 }
 
+/** Below this character count (and no images) a section is "partial", not empty. */
+export const SECTION_PARTIAL_CHAR_LIMIT = 120;
+
+export type SectionFillState = "empty" | "partial" | "filled";
+
+export function sectionFillState(
+  content: Record<string, unknown> | undefined,
+  section: SectionType
+): SectionFillState {
+  const primary = primaryFieldForSection(section);
+  const text = sectionFieldPlainText(content ?? {}, section, primary);
+  const charCount = text.replace(/\s+/g, " ").trim().length;
+  const imageCount = countSectionInlineImages(content ?? {}, section);
+  if (charCount === 0 && imageCount === 0) return "empty";
+  if (charCount < SECTION_PARTIAL_CHAR_LIMIT && imageCount === 0) {
+    return "partial";
+  }
+  return "filled";
+}
+
 /**
  * Chat-oriented field read: anchor `text` plus `readingText` with `[image:N]`
  * markers, appending vision payloads into `collected` (shared across fields).
