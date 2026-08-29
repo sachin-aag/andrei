@@ -79,6 +79,7 @@ import {
 import {
   examplePromptsForMode,
   analyticsExamplePromptsForMode,
+  documentEmptyChatIntro,
 } from "@/lib/ai/chat/example-prompts";
 import { isChatMode, type ChatMode } from "@/lib/ai/chat/system-prompt";
 import {
@@ -824,6 +825,7 @@ function emptyChatIntro(args: {
   targetingAnalytics: boolean;
   mode: ChatMode;
   workspaceChrome: WorkspaceChrome;
+  documentType: DocumentType;
 }): string {
   if (args.targetingAnalytics) {
     if (args.mode === "plan") {
@@ -831,12 +833,11 @@ function emptyChatIntro(args: {
     }
     return "I fill the worksheet, run a sixpack or one-way ANOVA, and plot an XY scatter (two numeric columns) or a measurement scatter (one series vs index). I can't color points by group or use serial numbers as an X axis. I don't draft the document. Type @ to tag a sheet, plot, or file.";
   }
-  if (args.mode === "plan") {
-    return "I'll answer questions about your deviation investigation using the report and attachments. I won't edit the document in Ask mode. Type @ to tag a document or section.";
-  }
-  return args.workspaceChrome === "agent"
-    ? "Ask me to draft or improve any section. I'll apply edits directly to the document. Type @ to tag a document or section."
-    : "Ask me to draft or improve any section of your deviation investigation. I read the report and propose targeted edits you accept or reject. Type @ to tag a document or section.";
+  return documentEmptyChatIntro({
+    mode: args.mode,
+    workspaceChrome: args.workspaceChrome,
+    documentType: args.documentType,
+  });
 }
 
 function composerPlaceholder(args: {
@@ -1792,12 +1793,13 @@ export function ChatPanel({
                 targetingAnalytics,
                 mode,
                 workspaceChrome,
+                documentType: report.documentType,
               })}
             </p>
             <div className="space-y-1.5">
               {(targetingAnalytics
                 ? analyticsExamplePromptsForMode(mode)
-                : examplePromptsForMode(mode)
+                : examplePromptsForMode(mode, report.documentType)
               ).map((p) => (
                 <button
                   key={p}

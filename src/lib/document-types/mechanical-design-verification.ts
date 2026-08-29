@@ -741,6 +741,18 @@ You never write to the document directly. Every change is a PROPOSAL that appear
       "conclusion",
       "revision_history",
     ],
+    examplePrompts: {
+      plan: [
+        "What does the evidence say about the units under test?",
+        "Which quality criteria is Purpose still missing?",
+        "Summarize which requirements were verified in the attachments.",
+      ],
+      agent: [
+        "Draft Purpose from the protocol and assemblies we discussed.",
+        "Tighten the configurations and exclusions in Scope.",
+        "Propose a clearer Requirements Verified table with pass/fail.",
+      ],
+    },
     inventorySections: ["requirements_verified"],
     sectionIntentPatterns: [
       ["purpose", [/\bpurpose\b/i, /\bobjective\b/i]],

@@ -1,18 +1,11 @@
+import type { DocumentType } from "@/db/schema";
 import { coerceChatMode } from "@/lib/ai/chat/composer-prefs";
 import type { ChatMode } from "@/lib/ai/chat/system-prompt";
-
-export const EXAMPLE_PROMPTS: Record<ChatMode, string[]> = {
-  plan: [
-    "What does the evidence say about the root cause?",
-    "Which quality criteria is the Define section still missing?",
-    "Summarize what the batch record says about the out-of-spec result.",
-  ],
-  agent: [
-    "Draft the Define section from what we discussed.",
-    "Tighten the problem statement and scope in Define.",
-    "Propose a clearer root cause and impact assessment in Analyze.",
-  ],
-};
+import {
+  getDocumentType,
+  resolveDocumentType,
+} from "@/lib/document-types";
+import type { DocumentChatExamplePrompts } from "@/lib/document-types/types";
 
 export const ANALYTICS_EXAMPLE_PROMPTS: Record<ChatMode, string[]> = {
   plan: [
@@ -29,11 +22,37 @@ export const ANALYTICS_EXAMPLE_PROMPTS: Record<ChatMode, string[]> = {
   ],
 };
 
+export function examplePromptsForDocument(
+  documentType: DocumentType | null | undefined
+): DocumentChatExamplePrompts {
+  return getDocumentType(resolveDocumentType(documentType)).chat.examplePrompts;
+}
+
 /** Empty-state chips. Invalid mode (Radix "" after a remount) must not throw. */
-export function examplePromptsForMode(mode: unknown): string[] {
-  return EXAMPLE_PROMPTS[coerceChatMode(mode)];
+export function examplePromptsForMode(
+  mode: unknown,
+  documentType: DocumentType | null | undefined = "investigation_report"
+): readonly string[] {
+  return examplePromptsForDocument(documentType)[coerceChatMode(mode)];
 }
 
 export function analyticsExamplePromptsForMode(mode: unknown): string[] {
   return ANALYTICS_EXAMPLE_PROMPTS[coerceChatMode(mode)];
+}
+
+/** Document-chat empty-state intro. Analytics copy stays in ChatPanel. */
+export function documentEmptyChatIntro(args: {
+  mode: unknown;
+  workspaceChrome: "document" | "agent";
+  documentType: DocumentType | null | undefined;
+}): string {
+  const { documentNoun } = getDocumentType(
+    resolveDocumentType(args.documentType)
+  );
+  if (coerceChatMode(args.mode) === "plan") {
+    return `I'll answer questions about this ${documentNoun} using the report and attachments. I won't edit the document in Ask mode. Type @ to tag a document or section.`;
+  }
+  return args.workspaceChrome === "agent"
+    ? "Ask me to draft or improve any section. I'll apply edits directly to the document. Type @ to tag a document or section."
+    : `Ask me to draft or improve any section of this ${documentNoun}. I read the report and propose targeted edits you accept or reject. Type @ to tag a document or section.`;
 }
