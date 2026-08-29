@@ -185,8 +185,8 @@ type ReportContextValue = {
     >
   >;
   /**
-   * Set after suggestions succeed — workspace opens Criteria for this
-   * section and scrolls to this newly generated card (not the first open).
+   * Set after suggestions succeed — workspace scrolls to this newly
+   * generated card (not the first open). Does not collapse the assistant.
    */
   suggestionsFocus: { section: SectionType; commentId: string } | null;
   clearSuggestionsFocus: () => void;
