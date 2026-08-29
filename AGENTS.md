@@ -108,7 +108,7 @@ NEXT_PUBLIC_ANDREI_CUSTOMER=mj
 ```
 
 They must agree with `ANDREI_VERCEL_DEPLOY_SCOPE` when that is set. See
-`docs/whitelabel-vercel-deploy.md`. Report workspace chrome is Document | Agent.
+`docs/whitelabel-vercel-deploy.md`. Report workspace chrome is Document | Agent. Report and Analytics are pinned canvas tabs; attachments and History compare open closable tabs. Comments lives on the tab strip in Document chrome on the Report tab only (not in Agent).
 Statistical Analysis lives on the work-product **Analytics** pane (worksheet + Normal Capability Sixpack + measurement scatter + worksheet XY scatter + one-way ANOVA) and is on for demo, MJ,
 and Convergent (`statisticalAnalysisEnabled`). Analytics chat uses the same
 Ask/Agent + Quick/Deep composer as Document chat (Ask searches/extracts only;

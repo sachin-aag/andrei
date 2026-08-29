@@ -46,20 +46,8 @@ vi.mock("@/components/report/advanced-formatting-toolbar", () => ({
 
 const trackChanges = () => screen.queryByRole("checkbox", { name: /track changes/i });
 
-function renderToolbar(
-  props: Partial<{
-    commentsGutterVisible: boolean;
-    onCommentsGutterVisibleChange: (next: boolean) => void;
-  }> = {}
-) {
-  const onCommentsGutterVisibleChange =
-    props.onCommentsGutterVisibleChange ?? vi.fn();
-  return render(
-    <ReportEditorToolbar
-      commentsGutterVisible={props.commentsGutterVisible ?? false}
-      onCommentsGutterVisibleChange={onCommentsGutterVisibleChange}
-    />
-  );
+function renderToolbar() {
+  return render(<ReportEditorToolbar />);
 }
 
 describe("ReportEditorToolbar", () => {
@@ -121,27 +109,15 @@ describe("ReportEditorToolbar", () => {
     );
 
     mockState.activeFieldKey = "analyze:otherTools";
-    rerender(
-      <ReportEditorToolbar
-        commentsGutterVisible={false}
-        onCommentsGutterVisibleChange={vi.fn()}
-      />
-    );
+    rerender(<ReportEditorToolbar />);
     expect(screen.getByRole("toolbar", { name: "Editing" })).toHaveTextContent(
       /editing: other tools/i
     );
   });
 
-  it("renders the Comments gutter switch", async () => {
-    const user = userEvent.setup();
-    const onCommentsGutterVisibleChange = vi.fn();
-    renderToolbar({ onCommentsGutterVisibleChange });
-
-    const toggle = screen.getByRole("switch", { name: /comments/i });
-    expect(toggle).toHaveAttribute("aria-checked", "false");
-
-    await user.click(toggle);
-    expect(onCommentsGutterVisibleChange).toHaveBeenCalledWith(true);
+  it("does not render the Comments gutter switch", () => {
+    renderToolbar();
+    expect(screen.queryByRole("switch", { name: /comments/i })).not.toBeInTheDocument();
   });
 
   it("renders nothing in view mode", () => {

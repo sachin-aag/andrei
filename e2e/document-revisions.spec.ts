@@ -47,6 +47,7 @@ test.describe("document revisions", () => {
     await expect(page.getByText("Version 2")).toBeVisible();
     await page.getByTestId("document-revision-compare").click();
 
+    await expect(page.getByTestId("work-product-tab-history")).toBeVisible();
     const diff = page.getByTestId("document-revision-diff");
     await expect(diff).toBeVisible();
     await expect(diff.getByText("Comparing version 1 → version 2")).toBeVisible();
@@ -60,6 +61,7 @@ test.describe("document revisions", () => {
 
     await page.getByTestId("document-revision-diff-exit").click();
     await expect(diff).toHaveCount(0);
+    await expect(page.getByTestId("work-product-tab-history")).toHaveCount(0);
     await expect(page.locator("#define")).toBeVisible();
   });
 });

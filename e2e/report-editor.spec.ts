@@ -280,6 +280,7 @@ test.describe("report editor", () => {
     await expectDocumentPanelResizeHandleAligned(page);
 
     await expandWorkProductPanel(page);
+    await expect(page.getByRole("switch", { name: /comments/i })).toHaveCount(0);
 
     const docsBox = await documentsPanel(page).boundingBox();
     const chatBox = await reportSidebar(page).boundingBox();

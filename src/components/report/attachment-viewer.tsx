@@ -13,9 +13,14 @@ import {
 } from "@/lib/attachments/preview-urls";
 import { useReportAttachments } from "@/providers/report-attachments-provider";
 
-export function AttachmentViewer() {
+export function AttachmentViewer({
+  onClose,
+}: {
+  onClose?: () => void;
+} = {}) {
   const { activeAttachment, activePage, closeDocument, reportId } =
     useReportAttachments();
+  const dismiss = onClose ?? closeDocument;
   const [visiblePage, setVisiblePage] = useState(activePage);
   const pageSourceKey = `${activeAttachment?.id ?? ""}:${activePage}`;
   const [seenPageSourceKey, setSeenPageSourceKey] = useState(pageSourceKey);
@@ -33,12 +38,12 @@ export function AttachmentViewer() {
         return;
       }
       event.preventDefault();
-      closeDocument();
+      dismiss();
     };
 
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [activeAttachment, closeDocument]);
+  }, [activeAttachment, dismiss]);
 
   if (!activeAttachment) {
     return (
@@ -74,7 +79,7 @@ export function AttachmentViewer() {
         <Button
           type="button"
           variant="outline"
-          onClick={closeDocument}
+          onClick={dismiss}
           aria-label="Back to report"
           data-testid="attachment-viewer-back"
         >
@@ -120,7 +125,7 @@ export function AttachmentViewer() {
           type="button"
           variant="ghost"
           size="icon"
-          onClick={closeDocument}
+          onClick={dismiss}
           aria-label="Close document"
           data-testid="attachment-viewer-close"
         >

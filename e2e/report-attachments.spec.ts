@@ -74,6 +74,9 @@ test.describe("report PDF documents", () => {
     await expect(page.getByRole("button", { name: /back to report/i })).toBeVisible({
       timeout: 15_000,
     });
+    await expect(
+      page.getByTestId("work-product-tab-strip").getByText(fileName)
+    ).toBeVisible();
     await expect(page.getByRole("heading", { name: /^define$/i })).toBeHidden();
     await expect(page.getByRole("toolbar", { name: "Editing" })).toBeHidden();
     // PDFs paint to a canvas (Chrome/Comet block application/pdf iframes).
@@ -85,6 +88,33 @@ test.describe("report PDF documents", () => {
     await page.getByRole("button", { name: /back to report/i }).click();
     await expect(page.getByRole("heading", { name: /^define$/i })).toBeVisible();
     await expect(page.getByTestId("attachment-viewer")).toHaveCount(0);
+    await expect(
+      page.getByTestId("work-product-tab-strip").getByText(fileName)
+    ).toHaveCount(0);
+  });
+
+  test("opens each PDF in its own closable tab", async ({ page }) => {
+    const first = await uploadPdf(page, 1);
+    const panel = documentsPanel(page);
+    await expect(
+      panel.locator('[data-document-file][data-status="ready"]').filter({ hasText: first })
+    ).toBeVisible({ timeout: 30_000 });
+    await panel.getByRole("button", { name: first, exact: true }).click();
+
+    const second = await uploadPdf(page, 2);
+    await expect(
+      panel.locator('[data-document-file][data-status="ready"]').filter({ hasText: second })
+    ).toBeVisible({ timeout: 30_000 });
+    await panel.getByRole("button", { name: second, exact: true }).click();
+
+    const strip = page.getByTestId("work-product-tab-strip");
+    await expect(strip.getByText(first)).toBeVisible();
+    await expect(strip.getByText(second)).toBeVisible();
+
+    await strip.getByRole("button", { name: `Close ${second}` }).click();
+    await expect(strip.getByText(second)).toHaveCount(0);
+    await expect(page.getByTestId("attachment-viewer")).toBeVisible();
+    await expect(page.getByRole("heading", { name: /^define$/i })).toBeHidden();
   });
 
   test("agent chrome expands the work product panel when a PDF is opened", async ({
@@ -109,6 +139,10 @@ test.describe("report PDF documents", () => {
     await expect(page.getByRole("button", { name: /back to report/i })).toBeVisible({
       timeout: 15_000,
     });
+    await expect(
+      page.getByTestId("work-product-tab-strip").getByText(fileName)
+    ).toBeVisible();
+    await expect(page.getByRole("switch", { name: /comments/i })).toHaveCount(0);
   });
 
   test("renders later PDF pages in a scrollable preview", async ({ page }) => {

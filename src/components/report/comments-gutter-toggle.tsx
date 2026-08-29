@@ -19,7 +19,7 @@ export function CommentsGutterToggle({
   const id = useId();
 
   return (
-    <div className="ml-auto flex items-center gap-2">
+    <div className="flex items-center gap-2">
       <button
         id={id}
         type="button"

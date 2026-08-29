@@ -57,7 +57,7 @@ export function DocumentRevisionHistory({
   );
 
   return (
-    <div className="relative ml-auto">
+    <div className="relative">
       <button
         type="button"
         data-testid="document-revision-history"

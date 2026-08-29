@@ -119,4 +119,17 @@ describe("AttachmentViewer", () => {
     await user.keyboard("{Escape}");
     expect(closeDocument).toHaveBeenCalledTimes(1);
   });
+
+  it("prefers onClose over closeDocument", async () => {
+    const closeDocument = vi.fn();
+    const onClose = vi.fn();
+    mockContext({ closeDocument });
+    const user = userEvent.setup();
+
+    render(<AttachmentViewer onClose={onClose} />);
+
+    await user.click(screen.getByRole("button", { name: "Back to report" }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(closeDocument).not.toHaveBeenCalled();
+  });
 });

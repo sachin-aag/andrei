@@ -12,7 +12,7 @@ describe("AgentWorkProductRail", () => {
     const onSelectView = vi.fn();
     render(
       <AgentWorkProductRail
-        workProductView="analytics"
+        activeTabId="analytics"
         statsEnabled
         onSelectView={onSelectView}
         onExpand={onExpand}
@@ -27,6 +27,25 @@ describe("AgentWorkProductRail", () => {
 
     await user.click(screen.getByRole("button", { name: "Analytics" }));
     expect(onSelectView).toHaveBeenCalledWith("analytics");
+    expect(onExpand).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows a paperclip for an attachment tab and only expands", async () => {
+    const user = userEvent.setup();
+    const onExpand = vi.fn();
+    const onSelectView = vi.fn();
+    render(
+      <AgentWorkProductRail
+        activeTabId="attachment:att-1"
+        statsEnabled
+        attachmentLabel="batch.pdf"
+        onSelectView={onSelectView}
+        onExpand={onExpand}
+      />
+    );
+
+    await user.click(screen.getByRole("button", { name: "batch.pdf" }));
+    expect(onSelectView).not.toHaveBeenCalled();
     expect(onExpand).toHaveBeenCalledTimes(1);
   });
 });
