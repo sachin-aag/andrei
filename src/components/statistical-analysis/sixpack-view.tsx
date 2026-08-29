@@ -1,14 +1,16 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
 import type {
   CapabilitySixpackResult,
   ControlChartSeries,
   CurvePoint,
   HistogramBin,
   ProbabilityPlotPoint,
+  ReportAnalyticsView,
   SixpackAnalysisSummary,
 } from "@/lib/statistical-analysis/types";
+import { useAnalysisPreviewCapture } from "@/hooks/use-analysis-preview-capture";
 import {
   formatLimit,
   formatPpm,
@@ -562,12 +564,16 @@ function CapabilitySummary({ result }: { result: CapabilitySixpackResult }) {
 
 export function SixpackView({
   analysis,
+  reportId,
+  onPreviewUploaded,
   onRecompute,
   onDelete,
   recomputing,
   readOnly = false,
 }: {
   analysis: SixpackAnalysisSummary;
+  reportId: string;
+  onPreviewUploaded: (analytics: ReportAnalyticsView) => void;
   onRecompute: () => void;
   onDelete: () => void;
   recomputing: boolean;
@@ -575,58 +581,53 @@ export function SixpackView({
 }) {
   const { results, config, stale, title } = analysis;
   const rowLabel = formatRowSelection(normalizeRowSelection(config));
+  const captureRef = useRef<HTMLDivElement>(null);
+  useAnalysisPreviewCapture({
+    reportId,
+    analysis,
+    captureRef,
+    readOnly,
+    onUploaded: onPreviewUploaded,
+  });
+
   return (
     <div data-testid="capability-sixpack" className="flex h-full flex-col gap-3 overflow-auto p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="text-base font-semibold">
-            Process Capability Sixpack of {config.columnName}
-          </h2>
-          <p
-            className="text-xs text-[var(--muted-foreground)]"
-            data-testid="sixpack-row-range"
-          >
-            {title} · Normal · Individuals / I-MR
-            {rowLabel ? ` · ${rowLabel}` : ""}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {stale ? (
-            <Badge data-testid="sixpack-stale-badge" variant="warning">
-              Stale
-            </Badge>
-          ) : null}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            data-testid="download-analysis"
-            onClick={() => {
-              downloadTextFile(
-                analysisDownloadFilename(analysis),
-                analysisToCsv(analysis)
-              );
-            }}
-          >
-            Download
-          </Button>
-          {readOnly ? null : (
-            <>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={recomputing}
-                onClick={onRecompute}
-              >
-                {recomputing ? "Recomputing…" : "Recompute"}
-              </Button>
-              <Button type="button" variant="ghost" size="sm" onClick={onDelete}>
-                Delete
-              </Button>
-            </>
-          )}
-        </div>
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        {stale ? (
+          <Badge data-testid="sixpack-stale-badge" variant="warning">
+            Stale
+          </Badge>
+        ) : null}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          data-testid="download-analysis"
+          onClick={() => {
+            downloadTextFile(
+              analysisDownloadFilename(analysis),
+              analysisToCsv(analysis)
+            );
+          }}
+        >
+          Download
+        </Button>
+        {readOnly ? null : (
+          <>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={recomputing}
+              onClick={onRecompute}
+            >
+              {recomputing ? "Recomputing…" : "Recompute"}
+            </Button>
+            <Button type="button" variant="ghost" size="sm" onClick={onDelete}>
+              Delete
+            </Button>
+          </>
+        )}
       </div>
 
       {stale ? (
@@ -640,7 +641,25 @@ export function SixpackView({
         </p>
       ) : null}
 
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
+      <div
+        ref={captureRef}
+        data-testid="analysis-preview-figure"
+        className="flex flex-col gap-3 rounded-md bg-[#f4f6f9] p-4"
+      >
+        <div>
+          <h2 className="text-base font-semibold">
+            Process Capability Sixpack of {config.columnName}
+          </h2>
+          <p
+            className="text-xs text-[var(--muted-foreground)]"
+            data-testid="sixpack-row-range"
+          >
+            {title} · Normal · Individuals / I-MR
+            {rowLabel ? ` · ${rowLabel}` : ""}
+          </p>
+        </div>
+
+        <div className="grid grid-cols-1 gap-3 lg:grid-cols-3">
         <Panel title="I Chart">
           <ControlChart
             series={results.individuals}
@@ -699,6 +718,7 @@ export function SixpackView({
         <Panel title="Process Capability">
           <CapabilitySummary result={results} />
         </Panel>
+        </div>
       </div>
     </div>
   );

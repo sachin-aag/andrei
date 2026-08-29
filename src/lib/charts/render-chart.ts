@@ -13,12 +13,18 @@ import {
 } from "@/lib/charts/chart-spec";
 import { resolveCustomerId, type CustomerId } from "@/lib/customers/resolve";
 import { readRasterDimensions } from "@/lib/export/raster-dimensions";
+import {
+  CHART_DISPLAY_WIDTH_PX,
+  CHART_LOGICAL_HEIGHT,
+  CHART_LOGICAL_WIDTH,
+} from "@/lib/charts/chart-dimensions";
 import { isValidSuggestionImageSrc } from "@/lib/suggestions/image-insert";
 
-export const CHART_LOGICAL_WIDTH = 960;
-export const CHART_LOGICAL_HEIGHT = 720;
-/** Display width written onto the imageInline node (DOCX caps at 600). */
-export const CHART_DISPLAY_WIDTH_PX = 600;
+export {
+  CHART_DISPLAY_WIDTH_PX,
+  CHART_LOGICAL_HEIGHT,
+  CHART_LOGICAL_WIDTH,
+} from "@/lib/charts/chart-dimensions";
 
 type Canvas2d = {
   scale: (x: number, y: number) => void;

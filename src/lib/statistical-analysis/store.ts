@@ -15,6 +15,7 @@ import {
 } from "./types";
 import type {
   AnalysisKind,
+  AnalysisPreviewImage,
   AnovaAnalysisSummary,
   CapabilitySixpackConfig,
   CapabilitySixpackResult,
@@ -57,6 +58,9 @@ import {
   formatRowSelection,
   normalizeRowSelection,
 } from "./row-selection";
+import {
+  asPreviewImage,
+} from "./preview-image";
 
 function asWorksheet(value: unknown): WorksheetData {
   return normalizeWorksheet(worksheetDataSchema.parse(value));
@@ -196,6 +200,7 @@ function toAnalysisSummary(
       sourceHash: row.sourceHash,
       stale: false,
       createdAt: iso(row.createdAt),
+      previewImage: asPreviewImage(row.previewImage),
     };
     return summary;
   }
@@ -218,6 +223,7 @@ function toAnalysisSummary(
       sourceHash: row.sourceHash,
       stale: currentHash !== row.sourceHash,
       createdAt: iso(row.createdAt),
+      previewImage: null,
     };
     return summary;
   }
@@ -240,6 +246,7 @@ function toAnalysisSummary(
       sourceHash: row.sourceHash,
       stale: currentHash !== row.sourceHash,
       createdAt: iso(row.createdAt),
+      previewImage: asPreviewImage(row.previewImage),
     };
     return summary;
   }
@@ -259,6 +266,7 @@ function toAnalysisSummary(
     sourceHash: row.sourceHash,
     stale: currentHash !== row.sourceHash,
     createdAt: iso(row.createdAt),
+    previewImage: asPreviewImage(row.previewImage),
   };
   return summary;
 }
@@ -701,6 +709,7 @@ async function insertAnalysisRow(input: {
       title: input.title,
       config: input.config,
       results: input.results,
+      previewImage: null,
       sourceHash: input.sourceHash,
     })
     .returning();
@@ -763,6 +772,7 @@ export async function recomputeAnalysisForReport(
         title: config.title,
         config,
         results: outcome.result,
+        previewImage: null,
         sourceHash: hashAnovaSource(
           response,
           factor,
@@ -804,6 +814,7 @@ export async function recomputeAnalysisForReport(
         title: scatter.config.title,
         config: scatter.config,
         results: scatter.results,
+        previewImage: null,
         sourceHash: hashScatterSource(scatter.config.query, scatter.results),
       })
       .where(
@@ -837,6 +848,7 @@ export async function recomputeAnalysisForReport(
         title: config.title,
         config,
         results: outcome.result,
+        previewImage: null,
         sourceHash: hashXyScatterSource(
           xColumn,
           yColumn,
@@ -867,13 +879,13 @@ export async function recomputeAnalysisForReport(
     if (!outcome.ok) {
       return { ok: false, status: 400, error: outcome.message };
     }
-
     await db
       .update(statisticalAnalyses)
       .set({
         title: config.title,
         config,
         results: outcome.result,
+        previewImage: null,
         sourceHash: hashColumnSource(column, normalizeRowSelection(config)),
       })
       .where(
@@ -914,4 +926,53 @@ export async function deleteAnalysisForReport(
       )
     );
   return getReportAnalytics(reportId);
+}
+
+export async function saveAnalysisPreviewForReport(
+  reportId: string,
+  analysisId: string,
+  previewImage: AnalysisPreviewImage
+): Promise<
+  | { ok: true; analytics: ReportAnalyticsView }
+  | { ok: false; status: 400 | 404; error: string }
+> {
+  const parsed = asPreviewImage(previewImage);
+  if (!parsed) {
+    return { ok: false, status: 400, error: "Invalid preview image." };
+  }
+
+  const analytics = await getReportAnalytics(reportId);
+  if (!analytics) return { ok: false, status: 404, error: "Not found" };
+  const existing = analytics.analyses.find((item) => item.id === analysisId);
+  if (!existing) return { ok: false, status: 404, error: "Not found" };
+  if (
+    !isSixpackAnalysis(existing) &&
+    !isScatterAnalysis(existing) &&
+    !isXyScatterAnalysis(existing)
+  ) {
+    return {
+      ok: false,
+      status: 400,
+      error: "This analysis kind cannot store a preview image.",
+    };
+  }
+
+  await db
+    .update(statisticalAnalyses)
+    .set({ previewImage: parsed })
+    .where(
+      and(
+        eq(statisticalAnalyses.id, analysisId),
+        eq(statisticalAnalyses.workspaceId, analytics.id)
+      )
+    );
+
+  await db
+    .update(statisticalWorkspaces)
+    .set({ updatedAt: new Date() })
+    .where(eq(statisticalWorkspaces.id, analytics.id));
+
+  const next = await getReportAnalytics(reportId);
+  if (!next) return { ok: false, status: 404, error: "Not found" };
+  return { ok: true, analytics: next };
 }

@@ -105,6 +105,7 @@ import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
 import { editorRegistryKey } from "@/providers/report-provider";
 import { isTrackChangesFieldEditable } from "@/lib/reports/section-save-policy";
 import type { SectionType } from "@/db/schema";
+import { TiptapEditorContextMenu } from "@/components/report/tiptap-editor-context-menu";
 
 const GENERIC_RICH_FIELD_OPTIONS = { preserveHeadings: true } as const;
 const GENERIC_MARKDOWN_OPTIONS = { headingNodes: true } as const;
@@ -1218,33 +1219,39 @@ export function TiptapSectionField({
         </BubbleMenu>
       )}
 
-      <div
-        className={cn(
-          "min-w-0 max-w-full overflow-x-auto overscroll-x-contain text-sm leading-relaxed",
-          chrome === "page"
-            ? "bg-transparent"
-            : "rounded-md border border-[var(--border)] bg-[var(--input)] px-3 py-2 focus-within:ring-2 focus-within:ring-[var(--ring)]",
-          compact
-            ? "[&_.ProseMirror]:min-h-0 [&_.ProseMirror>p.is-empty:last-child]:hidden [&_.ProseMirror_table]:my-0"
-            : chrome === "page"
-              ? "[&_.ProseMirror]:min-h-[calc(var(--generic-page-height)-2*var(--generic-page-margin))]"
-              : "min-h-[200px] [&_.ProseMirror]:min-h-[180px]",
-          "[&_.ProseMirror]:outline-none",
-          "[&_.tiptap-image-inline]:my-1 [&_.tiptap-image-inline]:max-w-full [&_.tiptap-image-inline]:h-auto [&_.tiptap-image-inline]:rounded-sm",
-          "[&_.tiptap-math-block]:my-2",
-          !editable && "opacity-90",
-          previewHeld &&
-            !isBulkSuggestionApply(previewHeldMode) &&
-            "suggestion-field-settling"
-        )}
-        data-field-anchor={`${section}.${contentPath}`}
-        data-editor-chrome={chrome}
-        data-active-suggestion-id={activeSuggestionId ?? ""}
-        data-suggestion-preview-held={previewHeldMode}
-        {...(chrome === "page" ? { "aria-label": "Document body" } : {})}
+      <TiptapEditorContextMenu
+        editor={editor}
+        editable={editable}
+        reportId={report.id}
       >
-        {editor ? <EditorContent editor={editor} /> : null}
-      </div>
+        <div
+          className={cn(
+            "min-w-0 max-w-full overflow-x-auto overscroll-x-contain text-sm leading-relaxed",
+            chrome === "page"
+              ? "bg-transparent"
+              : "rounded-md border border-[var(--border)] bg-[var(--input)] px-3 py-2 focus-within:ring-2 focus-within:ring-[var(--ring)]",
+            compact
+              ? "[&_.ProseMirror]:min-h-0 [&_.ProseMirror>p.is-empty:last-child]:hidden [&_.ProseMirror_table]:my-0"
+              : chrome === "page"
+                ? "[&_.ProseMirror]:min-h-[calc(var(--generic-page-height)-2*var(--generic-page-margin))]"
+                : "min-h-[200px] [&_.ProseMirror]:min-h-[180px]",
+            "[&_.ProseMirror]:outline-none",
+            "[&_.tiptap-image-inline]:my-1 [&_.tiptap-image-inline]:max-w-full [&_.tiptap-image-inline]:h-auto [&_.tiptap-image-inline]:rounded-sm",
+            "[&_.tiptap-math-block]:my-2",
+            !editable && "opacity-90",
+            previewHeld &&
+              !isBulkSuggestionApply(previewHeldMode) &&
+              "suggestion-field-settling"
+          )}
+          data-field-anchor={`${section}.${contentPath}`}
+          data-editor-chrome={chrome}
+          data-active-suggestion-id={activeSuggestionId ?? ""}
+          data-suggestion-preview-held={previewHeldMode}
+          {...(chrome === "page" ? { "aria-label": "Document body" } : {})}
+        >
+          {editor ? <EditorContent editor={editor} /> : null}
+        </div>
+      </TiptapEditorContextMenu>
 
     </div>
   );
