@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ChevronLeft, Download, FileText, X } from "lucide-react";
+import { Download, FileText, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PdfPagePreview } from "@/components/report/pdf-page-preview";
 import type { AttachmentProcessingStatus } from "@/db/schema";
@@ -76,16 +76,6 @@ export function AttachmentViewer({
       data-testid="attachment-viewer"
     >
       <div className="flex shrink-0 items-center gap-3 border-b border-[var(--border)] bg-[var(--card)] px-4 py-3">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={dismiss}
-          aria-label="Back to report"
-          data-testid="attachment-viewer-back"
-        >
-          <ChevronLeft className="size-4" aria-hidden="true" />
-          Back to report
-        </Button>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 text-base font-semibold">
             <FileText className="size-4 shrink-0" aria-hidden="true" />
