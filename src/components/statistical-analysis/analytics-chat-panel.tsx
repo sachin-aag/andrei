@@ -88,10 +88,15 @@ import {
   filterMentionCandidates,
   findMentionQuery,
   mentionKey,
+  syncMentionCandidateLabels,
   type MentionCandidate,
   type MentionQuery,
 } from "@/lib/ai/chat/mention-search";
 import { getReportAnalytics } from "@/lib/statistical-analysis/client";
+import {
+  analyticsSheetMentionCandidates,
+  type AnalyticsMentionSheet,
+} from "@/lib/statistical-analysis/mentions";
 import { analysisListSubtitle } from "@/lib/statistical-analysis/stale";
 import type { ReportAnalyticsView } from "@/lib/statistical-analysis/types";
 import { dataSheets } from "@/lib/statistical-analysis/worksheet";
@@ -690,12 +695,14 @@ export function AnalyticsChatPanel({
   onFocusSheet,
   onFocusAnalysis,
   analyticsReloadEpoch = 0,
+  mentionSheets = [],
 }: {
   onWorksheetChanged: () => void;
   onAgentBusyChange?: (busy: boolean) => void;
   onFocusSheet?: (sheetId: string) => void;
   onFocusAnalysis?: (analysisId: string) => void;
   analyticsReloadEpoch?: number;
+  mentionSheets?: AnalyticsMentionSheet[];
 }) {
   const { report, currentUserId, currentUserRole, currentUserEmail } =
     useReportData();
@@ -788,14 +795,18 @@ export function AnalyticsChatPanel({
           sublabel: description || pages,
         };
       });
-    const sheets = analyticsSnapshot
-      ? dataSheets(analyticsSnapshot.worksheet).map((sheet) => ({
-          type: "sheet" as const,
-          id: sheet.id,
-          label: sheet.name,
-          sublabel: `${sheet.columns.length} column${sheet.columns.length === 1 ? "" : "s"}`,
-        }))
-      : [];
+    const sheets =
+      mentionSheets.length > 0
+        ? analyticsSheetMentionCandidates(mentionSheets)
+        : analyticsSnapshot
+          ? analyticsSheetMentionCandidates(
+              dataSheets(analyticsSnapshot.worksheet).map((sheet) => ({
+                sheetId: sheet.id,
+                name: sheet.name,
+                columnCount: sheet.columns.length,
+              }))
+            )
+          : [];
     const analyses = (analyticsSnapshot?.analyses ?? []).map((item) => ({
       type: "analysis" as const,
       id: item.id,
@@ -803,7 +814,11 @@ export function AnalyticsChatPanel({
       sublabel: analysisListSubtitle(item),
     }));
     return [...sheets, ...analyses, ...documents];
-  }, [analyticsSnapshot, attachments]);
+  }, [analyticsSnapshot, attachments, mentionSheets]);
+
+  useEffect(() => {
+    setMentions((current) => syncMentionCandidateLabels(current, mentionCandidates));
+  }, [mentionCandidates]);
 
   const mentionMatches = mentionRange
     ? filterMentionCandidates(mentionCandidates, mentionRange.query)

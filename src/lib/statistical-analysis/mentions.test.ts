@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   ANALYTICS_MAX_DOCUMENT_MENTIONS,
+  analyticsSheetMentionCandidates,
   buildAnalyticsMentionBlock,
   mentionedAnalyticsAttachmentIds,
   mentionedAnalyticsAnalysisIds,
@@ -44,6 +45,30 @@ function analyticsView(
     ...overrides,
   };
 }
+
+describe("analyticsSheetMentionCandidates", () => {
+  it("maps sheet ids and names to mention candidates", () => {
+    expect(
+      analyticsSheetMentionCandidates([
+        { sheetId: "sheet-a", name: "Fermenter A", columnCount: 2 },
+        { sheetId: "sheet-b", name: "Assay", columnCount: 1 },
+      ])
+    ).toEqual([
+      {
+        type: "sheet",
+        id: "sheet-a",
+        label: "Fermenter A",
+        sublabel: "2 columns",
+      },
+      {
+        type: "sheet",
+        id: "sheet-b",
+        label: "Assay",
+        sublabel: "1 column",
+      },
+    ]);
+  });
+});
 
 describe("parseAnalyticsChatMentions", () => {
   it("keeps document, sheet, and analysis mentions", () => {

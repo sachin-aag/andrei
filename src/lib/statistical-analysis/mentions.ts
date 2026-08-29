@@ -3,6 +3,7 @@ import {
   sanitizePromptMetadata,
 } from "@/lib/ai/chat/prompt-metadata";
 import type { ReadyDocumentIndexItem } from "@/lib/attachments/retrieval";
+import type { MentionCandidate } from "@/lib/ai/chat/mention-search";
 import {
   isAnovaAnalysis,
   isScatterAnalysis,
@@ -18,6 +19,23 @@ export const ANALYTICS_MAX_DOCUMENT_MENTIONS = 5;
 const MAX_RAW_MENTIONS = 50;
 
 export type AnalyticsChatMentionType = "document" | "sheet" | "analysis";
+
+export type AnalyticsMentionSheet = {
+  sheetId: string;
+  name: string;
+  columnCount: number;
+};
+
+export function analyticsSheetMentionCandidates(
+  sheets: AnalyticsMentionSheet[]
+): MentionCandidate[] {
+  return sheets.map((sheet) => ({
+    type: "sheet",
+    id: sheet.sheetId,
+    label: sheet.name,
+    sublabel: `${sheet.columnCount} column${sheet.columnCount === 1 ? "" : "s"}`,
+  }));
+}
 
 export type AnalyticsChatMention =
   | { type: "document"; id: string }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -38,7 +38,9 @@ import {
   switchWorksheetTab,
   upsertSpecRow,
   worksheetsEqual,
+  dataSheets,
 } from "@/lib/statistical-analysis/worksheet";
+import type { AnalyticsMentionSheet } from "@/lib/statistical-analysis/mentions";
 import {
   MEASUREMENT_SCATTER,
   ONE_WAY_ANOVA,
@@ -94,12 +96,14 @@ export function StatisticalWorkspace({
   reloadEpoch,
   agentBusy = false,
   focusApiRef,
+  onMentionSheetsChange,
 }: {
   reportId: string;
   readOnly: boolean;
   reloadEpoch: number;
   agentBusy?: boolean;
   focusApiRef?: React.MutableRefObject<AnalyticsFocusApi | null>;
+  onMentionSheetsChange?: (sheets: AnalyticsMentionSheet[]) => void;
 }) {
   const [worksheet, setWorksheet] = useState(createEmptyWorksheet);
   const [persistedWorksheet, setPersistedWorksheet] = useState(createEmptyWorksheet);
@@ -375,6 +379,20 @@ export function StatisticalWorkspace({
   useLayoutEffect(() => {
     markPersistedRef.current = markPersisted;
   }, [markPersisted]);
+
+  const mentionSheets = useMemo(
+    (): AnalyticsMentionSheet[] =>
+      dataSheets(worksheet).map((sheet) => ({
+        sheetId: sheet.id,
+        name: sheet.name,
+        columnCount: sheet.columns.length,
+      })),
+    [worksheet]
+  );
+
+  useEffect(() => {
+    onMentionSheetsChange?.(mentionSheets);
+  }, [mentionSheets, onMentionSheetsChange]);
 
   const displayedAnalyses = withLocalStale(
     analyses,

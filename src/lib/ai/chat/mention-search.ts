@@ -80,6 +80,34 @@ export function mentionKey(type: string, id: string): string {
   return `${type}:${id}`;
 }
 
+/** Refresh chip labels when the underlying sheet/plot/document was renamed. */
+export function syncMentionCandidateLabels(
+  mentions: MentionCandidate[],
+  candidates: MentionCandidate[]
+): MentionCandidate[] {
+  if (mentions.length === 0) return mentions;
+
+  const byKey = new Map(
+    candidates.map((candidate) => [
+      mentionKey(candidate.type, candidate.id),
+      candidate,
+    ])
+  );
+  let changed = false;
+  const next = mentions.map((mention) => {
+    const fresh = byKey.get(mentionKey(mention.type, mention.id));
+    if (
+      !fresh ||
+      (fresh.label === mention.label && fresh.sublabel === mention.sublabel)
+    ) {
+      return mention;
+    }
+    changed = true;
+    return { ...mention, label: fresh.label, sublabel: fresh.sublabel };
+  });
+  return changed ? next : mentions;
+}
+
 export function sectionMentionCandidate(
   section: SectionType,
   label: string

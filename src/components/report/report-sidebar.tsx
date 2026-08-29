@@ -16,6 +16,7 @@ import { PlaceholdersPanelContent } from "./placeholders-panel";
 import { CriteriaPanelContent, CommentsPanelContent } from "./criteria-sheet";
 import { ChatPanel } from "./chat-panel";
 import { AnalyticsChatPanel } from "@/components/statistical-analysis/analytics-chat-panel";
+import type { AnalyticsMentionSheet } from "@/lib/statistical-analysis/mentions";
 import type { SectionType } from "@/db/schema";
 import type { Placeholder } from "@/lib/placeholders/find";
 import type { ReportWorkspaceSurface } from "./report-workspace-header";
@@ -43,6 +44,7 @@ type Props = {
   onAnalyticsFocusSheet?: (sheetId: string) => void;
   onAnalyticsFocusAnalysis?: (analysisId: string) => void;
   analyticsReloadEpoch?: number;
+  analyticsMentionSheets?: AnalyticsMentionSheet[];
 };
 
 const TABS: { value: SidebarTab; label: string; icon: typeof ListChecks }[] = [
@@ -68,6 +70,7 @@ export function ReportSidebar({
   onAnalyticsFocusSheet,
   onAnalyticsFocusAnalysis,
   analyticsReloadEpoch,
+  analyticsMentionSheets,
 }: Props) {
   const analyticsSurface = surface === "analytics";
   const { pendingPlaceholders } = useReportPlaceholders();
@@ -231,6 +234,7 @@ export function ReportSidebar({
             onFocusSheet={onAnalyticsFocusSheet}
             onFocusAnalysis={onAnalyticsFocusAnalysis}
             analyticsReloadEpoch={analyticsReloadEpoch}
+            mentionSheets={analyticsMentionSheets}
           />
         </div>
       ) : null}
