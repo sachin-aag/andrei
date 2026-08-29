@@ -3,7 +3,7 @@
 import { toPng } from "html-to-image";
 import type { ChartSpec } from "@/lib/charts/chart-spec";
 import { CHAT_SECTION_IMAGE_MAX_DATA_URL_CHARS } from "@/lib/ai/chat/section-images";
-import { CHART_DISPLAY_WIDTH_PX } from "@/lib/charts/render-chart";
+import { CHART_DISPLAY_WIDTH_PX } from "@/lib/charts/chart-dimensions";
 import { isValidSuggestionImageSrc } from "@/lib/suggestions/image-insert";
 import type { AnalysisPreviewImage } from "./types";
 
