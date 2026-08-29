@@ -3,6 +3,8 @@ import type { CommentRecord } from "@/types/report";
 import {
   countStaleOpenSuggestions,
   fieldContentHash,
+  firstPreviewableOpenSuggestion,
+  reviewOrderOpenSuggestions,
   validateSuggestionLocate,
 } from "./validate-suggestion";
 import {
@@ -469,5 +471,56 @@ describe("validateSuggestionLocate table operations", () => {
     );
     expect(stale.canApply).toBe(false);
     expect(stale.documentChanged).toBe(true);
+  });
+});
+
+describe("reviewOrderOpenSuggestions", () => {
+  const sectionContent = {
+    narrative: {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "On 15/05/2025, hello world." }],
+        },
+      ],
+    },
+  };
+
+  it("puts a locatable newer card ahead of a stale older sibling", () => {
+    const stale = aiFixComment({
+      id: "stale",
+      createdAt: "2026-01-01T00:00:00.000Z",
+      evaluationId: null,
+      anchorText: "this sentence is gone",
+      content: serializeAiFixCommentContent({
+        deleteText: "this sentence is gone",
+        insertText: "replacement",
+        reasoning: "old rewrite",
+      }),
+    });
+    const fresh = aiFixComment({
+      id: "fresh",
+      createdAt: "2026-01-02T00:00:00.000Z",
+      evaluationId: null,
+      anchorText: "hello",
+      content: serializeAiFixCommentContent({
+        deleteText: "",
+        insertText: " there",
+        reasoning: "new edit",
+      }),
+    });
+
+    const ordered = reviewOrderOpenSuggestions(
+      "define",
+      [stale, fresh],
+      [],
+      sectionContent
+    );
+    expect(ordered.map((c) => c.id)).toEqual(["fresh", "stale"]);
+    expect(
+      firstPreviewableOpenSuggestion("define", [stale, fresh], [], sectionContent)
+        ?.id
+    ).toBe("fresh");
   });
 });

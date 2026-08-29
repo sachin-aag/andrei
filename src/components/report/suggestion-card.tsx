@@ -30,7 +30,6 @@ import {
   nextOpenSuggestionAfterResolve,
   parseAiFixCommentContent,
   parseAiRedraftCommentContent,
-  sortedOpenSuggestionsForSection,
   type ParsedAiFixPayload,
   type ParsedAiRedraftPayload,
 } from "@/lib/ai/suggestion-gating";
@@ -71,6 +70,7 @@ import {
 } from "@/lib/suggestions/navigate-suggestion";
 import {
   countStaleOpenSuggestions,
+  reviewOrderOpenSuggestions,
   suggestionStaleMessage,
   validateSuggestionLocate,
   type SuggestionValidation,
@@ -689,8 +689,14 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
   );
 
   const openSorted = useMemo(
-    () => sortedOpenSuggestionsForSection(section, comments, evaluations),
-    [section, comments, evaluations]
+    () =>
+      reviewOrderOpenSuggestions(
+        section,
+        comments,
+        evaluations,
+        sections[section]
+      ),
+    [section, comments, evaluations, sections]
   );
 
   const active = openSorted[0] ?? null;

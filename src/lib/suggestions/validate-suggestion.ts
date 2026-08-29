@@ -219,6 +219,47 @@ function mapProbeStatus(
   return "not_found";
 }
 
+/**
+ * Review queue: locatable cards first (so a new edit is not hidden behind a
+ * stale sibling), then cards that no longer locate. Severity order is kept
+ * inside each group.
+ */
+export function reviewOrderOpenSuggestions(
+  section: SectionType,
+  comments: CommentRecord[],
+  evaluations: EvaluationRecord[],
+  sectionContent: unknown
+): CommentRecord[] {
+  const open = sortedOpenSuggestionsForSection(section, comments, evaluations);
+  const locatable: CommentRecord[] = [];
+  const stale: CommentRecord[] = [];
+  for (const comment of open) {
+    if (validateSuggestionLocate(comment, section, sectionContent).canPreview) {
+      locatable.push(comment);
+    } else {
+      stale.push(comment);
+    }
+  }
+  return [...locatable, ...stale];
+}
+
+/** Card/preview target: first locatable in the review queue, else the stale head. */
+export function firstPreviewableOpenSuggestion(
+  section: SectionType,
+  comments: CommentRecord[],
+  evaluations: EvaluationRecord[],
+  sectionContent: unknown
+): CommentRecord | null {
+  return (
+    reviewOrderOpenSuggestions(
+      section,
+      comments,
+      evaluations,
+      sectionContent
+    )[0] ?? null
+  );
+}
+
 export function countStaleOpenSuggestions(
   section: SectionType,
   comments: CommentRecord[],

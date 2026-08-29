@@ -16,7 +16,6 @@ import {
 } from "@/providers/report-provider";
 import { useUserDirectory } from "@/providers/user-directory-provider";
 import {
-  activeSuggestionForSection,
   parseAiFixCommentContent,
   parseAiRedraftCommentContent,
 } from "@/lib/ai/suggestion-gating";
@@ -43,6 +42,7 @@ import {
   suggestionTargetsField,
 } from "@/lib/suggestions/resolve-suggestion-field-path";
 import {
+  firstPreviewableOpenSuggestion,
   suggestionStaleMessage,
   validateSuggestionLocate,
 } from "@/lib/suggestions/validate-suggestion";
@@ -198,7 +198,12 @@ export function PlainTextSuggestionField({
         ? locked
         : null;
     }
-    const active = activeSuggestionForSection(section, comments, evaluations);
+    const active = firstPreviewableOpenSuggestion(
+      section,
+      comments,
+      evaluations,
+      sections[section]
+    );
     if (!active) return null;
 
     return suggestionTargetsField(section, active.contentPath, contentPath)
@@ -209,6 +214,7 @@ export function PlainTextSuggestionField({
     evaluations,
     contentPath,
     section,
+    sections,
     isSuggestionPreviewHeld,
     suggestionApplyTransition,
   ]);
