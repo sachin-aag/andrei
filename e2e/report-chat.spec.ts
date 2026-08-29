@@ -3,16 +3,18 @@ import { expect, test, type Page } from "@playwright/test";
 import { PDFDocument } from "pdf-lib";
 import { loginAsEngineer } from "./helpers/auth";
 import { reloadWithNavigationRetry } from "./helpers/navigation";
-import { createReport, deleteReport } from "./helpers/reports";
+import { createReport, deleteReport, seedDefineForEvaluation } from "./helpers/reports";
 import {
   chatUserMessage,
   collapseReportSidebar,
+  defineEditor,
   documentsPanel,
   expandDocumentsPanel,
   expandReportSidebar,
   openReportAssistant,
   openReportEditor,
   reportSidebar,
+  setReportChrome,
 } from "./helpers/workspace";
 
 test.describe.configure({ mode: "serial" });
@@ -336,5 +338,49 @@ test.describe("report chat", () => {
     await expect(
       tabs.getByRole("button", { name: /close first chat for close test/i })
     ).toBeVisible();
+  });
+
+  test("keeps the document assistant open after a generated suggestion lands", async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+
+    await setReportChrome(page, "document");
+    await seedDefineForEvaluation(page, reportId!);
+    await openReportAssistant(page);
+    const sidebar = reportSidebar(page);
+    const mode = sidebar.getByLabel("Assistant mode");
+    await expect(mode).toBeVisible({ timeout: 15_000 });
+    if (!/agent/i.test((await mode.textContent()) ?? "")) {
+      await mode.click();
+      await page.getByRole("option", { name: /^agent$/i }).click();
+    }
+
+    const composer = sidebar.getByPlaceholder(
+      /ask the assistant to draft or improve a section/i
+    );
+    await expect(composer).toBeEnabled({ timeout: 15_000 });
+    await composer.fill("draft define");
+    await sidebar.getByRole("button", { name: /^send message$/i }).click();
+
+    await expect(chatUserMessage(page, "draft define")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(
+      sidebar.getByText(/review the highlighted insertion/i)
+    ).toBeVisible({ timeout: 30_000 });
+    await expect(
+      defineEditor(page)
+        .locator(".suggestion-insert")
+        .filter({ hasText: /stubbed drafting insertion/i })
+    ).toBeVisible({ timeout: 30_000 });
+
+    // The focus effect used to collapse the assistant on the next tick.
+    await page.waitForTimeout(500);
+    await expect(
+      sidebar.getByRole("button", { name: /collapse sidebar/i })
+    ).toBeVisible();
+    await expect(composer).toBeVisible();
+    await expect(composer).toBeEnabled();
   });
 });
