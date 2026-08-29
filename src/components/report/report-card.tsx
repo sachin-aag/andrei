@@ -46,7 +46,6 @@ export function ReportCard({
   managerNames,
   openLabel = "Open",
   displayTitle,
-  titleAction,
   trailingAction,
 }: {
   report: ReportCardData;
@@ -55,7 +54,6 @@ export function ReportCard({
   managerNames: string[];
   openLabel?: string;
   displayTitle?: string;
-  titleAction?: ReactNode;
   trailingAction?: ReactNode;
 }) {
   const title =
@@ -87,7 +85,6 @@ export function ReportCard({
                 <h3 className="truncate font-semibold">{title}</h3>
                 <StatusBadge status={report.status as ReportStatus} />
               </Link>
-              {titleAction}
             </div>
             <Link
               href={href}

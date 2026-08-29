@@ -12,7 +12,7 @@ describe("chat surfaces", () => {
   it("treats report and analytics as the only session surfaces", () => {
     expect(isChatSurface("report")).toBe(true);
     expect(isChatSurface("analytics")).toBe(true);
-    expect(isChatSurface("improve-ai")).toBe(false);
+    expect(isChatSurface("unknown")).toBe(false);
     expect(REPORT_CHAT_SURFACE).toBe("report");
     expect(ANALYTICS_CHAT_SURFACE).toBe("analytics");
   });
