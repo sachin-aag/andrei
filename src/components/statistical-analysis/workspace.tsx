@@ -564,11 +564,18 @@ export function StatisticalWorkspace({
     });
   };
 
-  const handleColumnMenuAction = (action: ColumnMenuAction, colIndex: number) => {
+  const handleColumnMenuAction = (
+    action: ColumnMenuAction,
+    colIndex: number,
+    analyzeRowRangeOverride?: { start: number; end: number } | null
+  ) => {
     const column = worksheet.columns[colIndex];
     if (!column) return;
-    const analyzeRowRange = rowRangeFromGridSelection(selection);
-    setSelection((sel) => collapseSelection(colIndex, sel.row));
+    const analyzeRowRange =
+      analyzeRowRangeOverride ?? rowRangeFromGridSelection(selection);
+    if (action !== "analyze") {
+      setSelection((sel) => collapseSelection(colIndex, sel.row));
+    }
     switch (action) {
       case "insert-left":
         insertColumnAt(colIndex);

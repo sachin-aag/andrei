@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   clampSelection,
   collapseSelection,
+  focusColumn,
   isCellInSelection,
   isRowSelection,
   moveSelection,
@@ -85,6 +86,26 @@ describe("grid selection", () => {
       rowEnd: 4,
     });
     expect(rowRangeFromGridSelection(selection)).toEqual({ start: 2, end: 5 });
+  });
+
+  it("focusColumn preserves a multi-row span when changing column focus", () => {
+    const extended = moveSelection(collapseSelection(0, 0), 0, 9, true, 7, 29);
+    expect(rowRangeFromGridSelection(extended)).toEqual({ start: 1, end: 10 });
+    const focused = focusColumn(extended, 1);
+    expect(focused).toEqual({
+      col: 1,
+      row: 9,
+      anchorCol: 1,
+      anchorRow: 0,
+    });
+    expect(rowRangeFromGridSelection(focused)).toEqual({ start: 1, end: 10 });
+    expect(focusColumn(selectRows(4, 1, 2), 3)).toEqual({
+      col: 3,
+      row: 4,
+      anchorCol: 3,
+      anchorRow: 1,
+      axis: "row",
+    });
   });
 
   it("keeps row-axis when Shift+Arrow extends vertically", () => {
