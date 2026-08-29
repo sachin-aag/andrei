@@ -379,6 +379,18 @@ describe("stripCitationsFromTableOperation", () => {
       )
     ).toBeUndefined();
   });
+
+  it("strips source cites from a new table's headers and rows", () => {
+    const { operation, citations } = stripCitationsFromTableOperation({
+      kind: "create_table",
+      headers: ["Req", "Result"],
+      rows: [["SW-1 [protocol.pdf, p. 3]", "Pass"]],
+    });
+    expect(citations).toEqual(["[protocol.pdf, p. 3]"]);
+    expect(operation.kind).toBe("create_table");
+    if (operation.kind !== "create_table") return;
+    expect(operation.rows?.[0]?.[0]).toBe("SW-1 [1]");
+  });
 });
 
 describe("keepEmptyParagraphBeforeCitationHeading", () => {

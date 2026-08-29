@@ -803,6 +803,15 @@ export function stripCitationsFromTableOperation(
     case "delete_rows":
     case "delete_column":
       return { operation, citations: [] };
+    case "create_table":
+      return {
+        operation: {
+          ...operation,
+          headers: operation.headers.map((header) => take(header)),
+          rows: operation.rows?.map((row) => row.map((cell) => take(cell))),
+        },
+        citations: uniquePreserveOrder(citations),
+      };
     default: {
       const _exhaustive: never = operation;
       return _exhaustive;

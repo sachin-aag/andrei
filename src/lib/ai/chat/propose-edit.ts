@@ -7,6 +7,7 @@ import {
   type SuggestionEdit,
 } from "@/lib/suggestions/locator";
 import { collapseWhitespace } from "@/lib/text/normalize-for-anchor";
+import { markdownHasTable } from "@/lib/tiptap/markdown-to-doc";
 import type {
   SuggestionImageInsert,
   SuggestionImageRemove,
@@ -64,6 +65,14 @@ export function checkProposedEdit(
     second: edit.second,
   };
 
+  if (
+    markdownHasTable(edit.insertText) ||
+    markdownHasTable(edit.anchorText) ||
+    markdownHasTable(edit.second?.insertText ?? "")
+  ) {
+    return { status: "not_found" };
+  }
+
   const status = fieldDoc
     ? probeRichEdit(fieldDoc, suggestionEdit)
     : probePlainEdit(fieldPlainText, suggestionEdit);
@@ -92,9 +101,13 @@ export function checkProposedEdit(
 /** Agent-facing repair hint for a non-ok check result. */
 export function looksLikeTableEdit(
   anchorText: string,
-  fieldDoc?: JSONContent | null
+  fieldDoc?: JSONContent | null,
+  insertText?: string
 ): boolean {
-  if (/\|.+\|/.test(anchorText)) return true;
+  if (markdownHasTable(anchorText) || markdownHasTable(insertText ?? "")) {
+    return true;
+  }
+  if (/\|.+\|/.test(anchorText) || /\|.+\|/.test(insertText ?? "")) return true;
   if (!fieldDoc) return false;
   const walk = (node: JSONContent): boolean =>
     node.type === "table" || Boolean(node.content?.some(walk));
@@ -103,16 +116,26 @@ export function looksLikeTableEdit(
 
 export function proposedEditHint(
   check: ProposedEditCheck,
-  opts?: { anchorText?: string; fieldDoc?: JSONContent | null }
+  opts?: {
+    anchorText?: string;
+    insertText?: string;
+    fieldDoc?: JSONContent | null;
+  }
 ): string {
   switch (check.status) {
     case "ok":
       return "";
     case "not_found":
-      if (looksLikeTableEdit(opts?.anchorText ?? "", opts?.fieldDoc)) {
-        return "That looks like a table change. Do not use a markdown pipe table as anchorText — propose_edit cannot match it. Call read_section, then edit_table with tableIndex and [row,col] from structuredText. Do not fall through to draft_field.";
+      if (
+        looksLikeTableEdit(
+          opts?.anchorText ?? "",
+          opts?.fieldDoc,
+          opts?.insertText
+        )
+      ) {
+        return "That looks like a table change. Do not use a markdown pipe table as anchorText or insertText — propose_edit cannot create or match it. Call read_section, then edit_table: create_table (headers plus rows) to add a table, or edit_cells / insert_rows for an existing one. Do not fall through to draft_field.";
       }
-      return "The anchorText was not found in the current field. Call read_section to get the exact current text, then quote a verbatim span.";
+      return "The anchorText was not found in the current field. Call read_section to get the exact current text, then quote a verbatim longer unique span.";
     case "ambiguous":
       return "The anchorText matches more than once. Include more surrounding words so it is unique, or set `scope` to the exact list item. For tables, use edit_table instead of propose_edit.";
     case "cross_cell":
@@ -120,7 +143,7 @@ export function proposedEditHint(
     case "bad_scope":
       return "The `scope` coordinate does not exist in this field. For tables, call read_section then edit_table. For lists, re-read and use a valid item index.";
     case "too_large":
-      return "This change rewrites most of the field. Make a smaller, targeted edit, or use draft_field for an explicit full replacement.";
+      return "This change rewrites most of the field. Make a smaller, targeted edit, or use draft_field for an explicit full replacement. To add a new table, use edit_table with kind create_table — not draft_field.";
     default: {
       const _exhaustive: never = check;
       return _exhaustive;

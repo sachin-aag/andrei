@@ -40,6 +40,13 @@ export type TableOperation =
       col: number;
       expectedHeaderText: string;
       expectedHeaders?: string[];
+    }
+  | {
+      kind: "create_table";
+      /** Header cells. First row of the new table. */
+      headers: string[];
+      /** Data rows; each padded or trimmed to headers.length. */
+      rows?: string[][];
     };
 
 export type TableCellEdit = {
@@ -190,6 +197,7 @@ export function captureTableOperationSnapshots(
   operation: TableOperation
 ): TableOperation {
   const captured = structuredClone(operation);
+  if (captured.kind === "create_table") return captured;
   const table = collectTables(doc)[captured.tableIndex];
   if (!table) return captured;
 
@@ -243,15 +251,60 @@ export function captureTableOperationSnapshots(
  * Apply a structural table operation to a rich field doc.
  * Untouched cells keep their nodes, marks, and attributes.
  */
+function applyCreateTable(
+  doc: JSONContent,
+  operation: Extract<TableOperation, { kind: "create_table" }>,
+  context?: TableOperationContext
+): TableOperationResult {
+  if (context && isFixedColumnTable(context.section, context.targetField)) {
+    return fail(
+      "fixed_schema",
+      "This matrix has a fixed column schema. Do not create another table. Edit cells or insert rows on the existing matrix."
+    );
+  }
+  if (operation.headers.length === 0) {
+    return fail("invalid", "create_table requires at least one header.");
+  }
+  const colCount = operation.headers.length;
+  const rows = (operation.rows ?? []).map((row) =>
+    row.length >= colCount
+      ? row.slice(0, colCount)
+      : [...row, ...Array.from({ length: colCount - row.length }, () => "")]
+  );
+  const table: JSONContent = {
+    type: "table",
+    content: [
+      {
+        type: "tableRow",
+        content: operation.headers.map((header) => makeCell("tableHeader", header)),
+      },
+      ...rows.map((row) => ({
+        type: "tableRow" as const,
+        content: row.map((cell) => makeCell("tableCell", cell)),
+      })),
+    ],
+  };
+  if (!Array.isArray(doc.content)) doc.content = [];
+  doc.content.push(table);
+  return { ok: true, status: "ok", doc };
+}
+
 export function applyTableOperation(
   doc: JSONContent,
   operation: TableOperation,
   context?: TableOperationContext
 ): TableOperationResult {
   const next = structuredClone(doc);
+  if (operation.kind === "create_table") {
+    return applyCreateTable(next, operation, context);
+  }
+
   const tables = collectTables(next);
   if (tables.length === 0) {
-    return fail("no_table", "This field has no table. Use draft_field to create one.");
+    return fail(
+      "no_table",
+      "This field has no table. Use edit_table with kind create_table (headers plus rows) to add one."
+    );
   }
   const table = tables[operation.tableIndex];
   if (!table) {
@@ -686,6 +739,21 @@ export function parseTableOperation(raw: unknown): TableOperation | undefined {
         expectedHeaders,
       };
     }
+    case "create_table": {
+      const headers = asStringArray(raw.headers);
+      if (!headers || headers.length === 0) return undefined;
+      let rows: string[][] | undefined;
+      if (raw.rows !== undefined) {
+        if (Array.isArray(raw.rows) && raw.rows.length === 0) {
+          rows = [];
+        } else {
+          const matrix = asStringMatrix(raw.rows);
+          if (!matrix) return undefined;
+          rows = matrix;
+        }
+      }
+      return { kind: "create_table", headers, rows };
+    }
     default:
       return undefined;
   }
@@ -696,7 +764,7 @@ export function tableOperationHint(
 ): string {
   switch (status) {
     case "no_table":
-      return "This field has no table. Use draft_field to create one, or read_section and target a field that already contains a table.";
+      return "This field has no table. Use edit_table with kind create_table (headers plus rows) to add one, or read_section and target a field that already contains a table.";
     case "bad_scope":
       return "The table/row/column coordinate does not exist. Call read_section and use the labeled tableIndex and [row,col] tags.";
     case "stale":
@@ -704,7 +772,7 @@ export function tableOperationHint(
     case "fixed_schema":
       return "This matrix has a fixed column schema. Edit cells or add/delete rows — do not add, delete, or rename columns.";
     case "invalid":
-      return "The table operation is malformed. Use one of edit_cells, insert_rows, delete_rows, insert_column, or delete_column with the fields listed in the tool schema.";
+      return "The table operation is malformed. Use one of edit_cells, insert_rows, delete_rows, insert_column, delete_column, or create_table with the fields listed in the tool schema.";
     default: {
       const _exhaustive: never = status;
       return _exhaustive;
@@ -740,6 +808,13 @@ export function summarizeTableOperation(operation: TableOperation): string {
     }
     case "delete_column":
       return `Delete “${operation.expectedHeaderText}” column`;
+    case "create_table": {
+      const n = (operation.rows ?? []).length;
+      const cols = operation.headers.length;
+      return n === 0
+        ? `Create a ${cols}-column table`
+        : `Create a ${cols}-column table with ${n} row${n === 1 ? "" : "s"}`;
+    }
     default: {
       const _exhaustive: never = operation;
       return _exhaustive;
@@ -779,6 +854,14 @@ export function tableOperationDetailLines(operation: TableOperation): string[] {
       ];
     case "delete_column":
       return [`Column ${operation.col}: ${operation.expectedHeaderText}`];
+    case "create_table":
+      return [
+        `Headers: ${operation.headers.map((h) => h || EMPTY_CELL_LABEL).join(" | ")}`,
+        ...(operation.rows ?? []).map(
+          (row, i) =>
+            `Row ${i + 1}: ${row.map((c) => c || EMPTY_CELL_LABEL).join(" | ")}`
+        ),
+      ];
     default: {
       const _exhaustive: never = operation;
       return [_exhaustive];

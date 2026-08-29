@@ -92,6 +92,16 @@ describe("checkProposedEdit", () => {
       })
     ).toEqual({ status: "not_found" });
   });
+
+  it("refuses a GFM table in insertText", () => {
+    expect(
+      checkProposedEdit(FIELD, {
+        anchorText: "",
+        deleteText: "",
+        insertText: "| Req | Result |\n| --- | --- |\n| SW-1 | Pass |",
+      })
+    ).toEqual({ status: "not_found" });
+  });
 });
 
 describe("proposedEditHint", () => {
@@ -111,5 +121,22 @@ describe("proposedEditHint", () => {
     );
     expect(hint).toMatch(/edit_table/);
     expect(hint).not.toMatch(/draft_field for that field/i);
+  });
+
+  it("routes a GFM table in insertText to create_table", () => {
+    const hint = proposedEditHint(
+      { status: "not_found" },
+      {
+        insertText: "| Equipment | Manufacturer |\n| --- | --- |\n| UUT-1 | Acme |",
+      }
+    );
+    expect(hint).toMatch(/create_table/);
+    expect(hint).not.toMatch(/draft_field for that field/i);
+  });
+
+  it("points too_large at create_table instead of drafting a table", () => {
+    expect(proposedEditHint({ status: "too_large", coverage: 0.9 })).toMatch(
+      /create_table/
+    );
   });
 });

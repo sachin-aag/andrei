@@ -18,7 +18,7 @@ describe("isChatMode", () => {
 
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v56-redraft-scope");
+    expect(CHAT_PROMPT_VERSION).toBe("chat-v57-structured-edit");
   });
 
   it("puts citations at the end of the section when the pack mode is on", () => {
@@ -198,13 +198,16 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("edit_table");
     expect(prompt).toContain("Any change to an existing table uses edit_table");
     expect(prompt).toContain("do not fall through to draft_field");
-    expect(prompt).toContain("That fallback is for prose only — never for tables");
+    expect(prompt).toContain("Never use that fallback for tables or images");
     expect(prompt).toContain("Row 0 is the header; the first data row is row 1");
     expect(prompt).toContain("never a single representative row");
     expect(prompt).toContain(
       "put every affected cell in one edit_cells call (source and destination together)"
     );
     expect(prompt).toContain("failed-retry cap");
+    expect(prompt).toContain("create_table");
+    expect(prompt).toContain("Do not use draft_field to create a table");
+    expect(prompt).toContain("two failed retries following a fresh read_section");
   });
 
   it("uses a demo-wide compliance persona, not a single customer brand", () => {

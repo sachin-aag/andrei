@@ -225,6 +225,36 @@ describe("buildTableOperationPreviewDoc", () => {
       },
     ]);
   });
+
+  it("marks every cell of a newly created table", () => {
+    const preview = buildTableOperationPreviewDoc(
+      {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [{ type: "text", text: "Intro." }],
+          },
+        ],
+      },
+      {
+        kind: "create_table",
+        headers: ["Req", "Result"],
+        rows: [["SW-1", "Pass"]],
+      },
+      PREVIEW_ATTRS
+    );
+    expect(preview.ok).toBe(true);
+    if (!preview.ok) return;
+    expect(preview.doc.content?.map((n) => n.type)).toEqual(["paragraph", "table"]);
+    expect(JSON.stringify(preview.doc.content?.[0])).not.toContain(
+      suggestionInsertMarkName
+    );
+    expect(rowHasInsertMark(preview.doc, 0)).toBe(true);
+    expect(rowHasInsertMark(preview.doc, 1)).toBe(true);
+    expect(cellText(preview.doc, 0, 0)).toBe("Req");
+    expect(cellText(preview.doc, 1, 1)).toBe("Pass");
+  });
 });
 
 describe("prefixSuffixDiff", () => {

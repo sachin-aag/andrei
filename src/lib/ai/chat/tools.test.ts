@@ -488,6 +488,18 @@ describe("buildChatTools edit_table", () => {
       accepts(tools, "edit_table", {
         section: "define",
         targetField: "narrative",
+        reasoning: "new table",
+        operation: {
+          kind: "create_table",
+          headers: ["Req", "Result"],
+          rows: [["SW-1", "Pass"]],
+        },
+      })
+    ).toBe(true);
+    expect(
+      accepts(tools, "edit_table", {
+        section: "define",
+        targetField: "narrative",
         reasoning: "bad",
         operation: { kind: "rewrite_table" },
       })
@@ -1040,6 +1052,57 @@ describe("buildChatTools propose vs commit", () => {
     expect(refused).toMatchObject({ status: "not_a_rewrite" });
     expect(dbInsertMock).not.toHaveBeenCalled();
     expect(commitChatEditMock).not.toHaveBeenCalled();
+  });
+
+  it("refuses a GFM table in propose_edit insertText", async () => {
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    const result = await tools.propose_edit!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        anchorText: "",
+        deleteText: "",
+        insertText: "| Req | Result |\n| --- | --- |\n| SW-1 | Pass |",
+        reasoning: "Add a results table.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({ status: "not_found" });
+    expect(String((result as { hint?: string }).hint)).toMatch(/create_table/);
+    expect(dbInsertMock).not.toHaveBeenCalled();
+  });
+
+  it("proposes edit_table create_table on a rich narrative field", async () => {
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    const result = await tools.edit_table!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        reasoning: "Add a results table.",
+        operation: {
+          kind: "create_table",
+          headers: ["Req", "Result"],
+          rows: [["SW-1", "Pass"]],
+        },
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(result).toMatchObject({
+      status: "proposed",
+      section: "define",
+      targetField: "narrative",
+    });
+    expect(dbInsertMock).toHaveBeenCalled();
   });
 
   it("returns section_changed when the field moved after read_section", async () => {

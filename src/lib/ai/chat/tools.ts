@@ -380,6 +380,17 @@ const tableOperationSchema = z.discriminatedUnion("kind", [
     expectedHeaderText: z.string(),
     expectedHeaders: z.array(z.string()).optional(),
   }),
+  z.object({
+    kind: z.literal("create_table"),
+    headers: z
+      .array(z.string())
+      .min(1)
+      .describe("Header cells. First row of the new table."),
+    rows: z
+      .array(z.array(z.string()))
+      .optional()
+      .describe("Data rows. Each row is padded or trimmed to headers.length."),
+  }),
 ]);
 
 export const SEARCH_DOCUMENTS_DEFAULT_LIMIT = 8;
@@ -1142,7 +1153,7 @@ export function buildChatTools(opts: {
 
     propose_edit: tool({
       description:
-        `Propose ONE targeted edit to a single field. ${reviewableCopy} Read the field first so the anchor is exact.${
+        `Propose ONE targeted edit to a single field. ${reviewableCopy} Read the field first so the anchor is exact. insertText may include markdown lists ('- ', '1. ') and headings ('## '). Do not paste a GFM pipe table — use edit_table create_table.${
           citationsAtEndOfSection
             ? " Put document citations as [filename, p. N] immediately after the claim in insertText. The server converts them to numbered markers and parks `1. [filename, p. N]` under a Citations: heading. A split `second` (empty anchor, insertText like 'Citations:\\n[filename, p. N]') still works as a fallback."
             : ""
@@ -1163,7 +1174,9 @@ export function buildChatTools(opts: {
         insertText: z
           .string()
           .default("")
-          .describe("New text to add, or '' to only delete."),
+          .describe(
+            "New text to add, or '' to only delete. Markdown lists (`- `, `1. `) and headings (`## `) become real list/heading blocks. Do not paste a GFM pipe table — use edit_table create_table."
+          ),
         scope: z
           .object({
             kind: z.enum(["cell", "listItem"]),
@@ -1294,6 +1307,7 @@ export function buildChatTools(opts: {
             status: check.status,
             hint: proposedEditHint(check, {
               anchorText: prepared.anchorText,
+              insertText: prepared.insertText,
               fieldDoc,
             }),
           } as ProposeEditResult;
@@ -1934,7 +1948,7 @@ export function buildChatTools(opts: {
 
     edit_table: tool({
       description:
-        `Change an existing table without rewriting the field. Operations: edit_cells (including clear), insert_rows (omit afterRow to append; afterRow 0 inserts after the header), delete_rows, insert_column (optional per-row values), delete_column. Call read_section first and copy tableIndex plus [row,col] / header text from structuredText. Row 0 is the header and cannot be deleted; the first data row is row 1. For delete_rows, provide the row coordinate and omit expectedCells so the server captures the current row safely. When adding a class of units (systems, UUTs, equipment), put every distinct matching unit in one insert_rows call — never a single representative row. edit_cells may list cells in any columns; a move or rewrite across columns is one edit_cells covering every affected cell — never a second proposal for the other column, and never a no-op cell (insertText === expectedText). The two-call limit is a failed-retry cap, not two successful edits. Clearing a cell is edit_cells with empty insertText. Do not use propose_edit or draft_field for incremental table changes.${scopeHint}${fixedTableHint}`,
+        `Change a table without rewriting the field. Operations: edit_cells (including clear), insert_rows (omit afterRow to append; afterRow 0 inserts after the header), delete_rows, insert_column (optional per-row values), delete_column, and create_table (headers plus rows) to add a NEW table in a rich field. Call read_section first and copy tableIndex plus [row,col] / header text from structuredText when editing an existing table. Row 0 is the header and cannot be deleted; the first data row is row 1. For delete_rows, provide the row coordinate and omit expectedCells so the server captures the current row safely. When adding a class of units (systems, UUTs, equipment), put every distinct matching unit in one insert_rows call — never a single representative row. edit_cells may list cells in any columns; a move or rewrite across columns is one edit_cells covering every affected cell — never a second proposal for the other column, and never a no-op cell (insertText === expectedText). The two-call limit is a failed-retry cap, not two successful edits. Clearing a cell is edit_cells with empty insertText. Do not use propose_edit or draft_field to create or incrementally edit a table.${scopeHint}${fixedTableHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
@@ -2091,7 +2105,7 @@ export function buildChatTools(opts: {
 
     draft_field: tool({
       description:
-        `Draft or fully rewrite ONE field. Provide the COMPLETE replacement content as markdown: paragraphs, '- ' bullets, '1. ' numbered lists, '## ' headings, '**bold**', '*italic*', and GFM tables ('| a | b |' rows with a '| --- |' separator). Use bracketed placeholders like [batch number] for facts you do not know — never invent facts. ${reviewableCopy} Use this for empty fields, substantial rewrites, creating a NEW table, or an explicitly requested full table replacement. The tool refuses a filled field unless replaceFilledField is true. For any incremental change to an existing table, use edit_table — never draft_field. Use propose_edit only for small prose or list edits. Do not put markdown image syntax (![alt](url) or narrative#1) here — use insert_image. To remove a figure, call remove_image; do not rewrite the field just to drop one.${scopeHint}${fixedTableHint}`,
+        `Draft or fully rewrite ONE field. Provide the COMPLETE replacement content as markdown: paragraphs, '- ' bullets, '1. ' numbered lists, '## ' headings, '**bold**', '*italic*', and GFM tables only when rewriting a field that already is a table. Use bracketed placeholders like [batch number] for facts you do not know — never invent facts. ${reviewableCopy} Use this for empty prose fields, or a genuine rewrite of a filled field (replaceFilledField: true). To add a NEW table, use edit_table create_table — not this tool. The tool refuses a filled field unless replaceFilledField is true. For any incremental change to an existing table, use edit_table — never draft_field. Use propose_edit for targeted prose, list, or heading edits. Do not put markdown image syntax (![alt](url) or narrative#1) here — use insert_image. To remove a figure, call remove_image; do not rewrite the field just to drop one.${scopeHint}${fixedTableHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z

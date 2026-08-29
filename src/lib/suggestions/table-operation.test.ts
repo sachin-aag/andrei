@@ -410,6 +410,40 @@ describe("applyTableOperation", () => {
     );
     expect(result.status).toBe("fixed_schema");
   });
+
+  it("appends a new table and pads short rows", () => {
+    const before: JSONContent = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Intro." }],
+        },
+      ],
+    };
+    const result = applyTableOperation(before, {
+      kind: "create_table",
+      headers: ["Req", "Result", "Notes"],
+      rows: [["SW-1", "Pass"], ["SW-2", "Fail", "see log", "extra"]],
+    });
+    expect(result.status).toBe("ok");
+    if (!result.ok) return;
+    expect(result.doc.content?.map((n) => n.type)).toEqual(["paragraph", "table"]);
+    expect(cellText(result.doc, 0, 0)).toBe("Req");
+    expect(cellText(result.doc, 1, 2)).toBe("");
+    expect(cellText(result.doc, 2, 2)).toBe("see log");
+    expect(colCount(result.doc)).toBe(3);
+    expect(rowCount(result.doc)).toBe(3);
+  });
+
+  it("refuses create_table on a seeded DV matrix field", () => {
+    const result = applyTableOperation(
+      seededTableDoc(["Equipment", "ID", "Calibration"]),
+      { kind: "create_table", headers: ["A", "B"] },
+      { section: "test_equipment", targetField: "table" }
+    );
+    expect(result.status).toBe("fixed_schema");
+  });
 });
 
 describe("parseTableOperation", () => {
@@ -435,6 +469,16 @@ describe("parseTableOperation", () => {
       })
     ).toBeUndefined();
     expect(parseTableOperation({ kind: "insert_rows", afterRow: 0, rows: [] })).toBeUndefined();
+    expect(parseTableOperation({ kind: "create_table", headers: [] })).toBeUndefined();
+  });
+
+  it("round-trips create_table", () => {
+    const raw: TableOperation = {
+      kind: "create_table",
+      headers: ["Req", "Result"],
+      rows: [["SW-1", "Pass"]],
+    };
+    expect(parseTableOperation(raw)).toEqual(raw);
   });
 });
 
@@ -449,5 +493,15 @@ describe("summarizeTableOperation", () => {
         values: ["a", "b", "", "c"],
       })
     ).toBe("Add “Description” column; populate 3 rows");
+  });
+
+  it("describes a new table", () => {
+    expect(
+      summarizeTableOperation({
+        kind: "create_table",
+        headers: ["A", "B"],
+        rows: [["1", "2"]],
+      })
+    ).toBe("Create a 2-column table with 1 row");
   });
 });

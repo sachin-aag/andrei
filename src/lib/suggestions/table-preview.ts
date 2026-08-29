@@ -294,6 +294,19 @@ export function buildTableOperationPreviewDoc(
   const applied = applyTableOperation(doc, operation, context);
   if (!applied.ok) return applied;
 
+  if (operation.kind === "create_table") {
+    const created = collectTables(applied.doc).at(-1);
+    if (!created) return applied;
+    const createdRows = tableRows(created);
+    markRows(
+      createdRows,
+      createdRows.map((_, i) => i),
+      suggestionInsertMarkName,
+      attrs
+    );
+    return applied;
+  }
+
   const table = collectTables(applied.doc)[operation.tableIndex];
   if (!table) return applied;
   const rows = tableRows(table);
