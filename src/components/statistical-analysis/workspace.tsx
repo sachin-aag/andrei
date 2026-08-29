@@ -652,7 +652,7 @@ export function StatisticalWorkspace({
       <header className="shrink-0 border-b border-[var(--border)] px-4 py-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex min-w-0 items-center gap-3">
-            <h2 className="truncate text-sm font-semibold">Statistical Analysis</h2>
+            <h2 className="truncate text-sm font-semibold">Worksheet</h2>
             <span
               data-testid="analytics-save-status"
               className="text-xs text-[var(--muted-foreground)]"
