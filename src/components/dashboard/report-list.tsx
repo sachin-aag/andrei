@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { FileText } from "lucide-react";
 import { ReportCard, type ReportCardData } from "@/components/report/report-card";
 import { DeleteReportButton } from "@/components/dashboard/delete-report-button";
-import { EvaluateWithAiButton } from "@/components/dashboard/evaluate-with-ai-button";
 import {
   documentTypeShortLabel,
   getDocumentType,
@@ -107,15 +106,6 @@ export function ReportList({
             authorName={author?.name}
             managerNames={managerNames}
             displayTitle={title}
-            titleAction={
-              isOwner ? (
-                <EvaluateWithAiButton
-                  layout="inline"
-                  reportId={report.id}
-                  deviationNo={title}
-                />
-              ) : undefined
-            }
             trailingAction={
               isOwner ? (
                 <DeleteReportButton

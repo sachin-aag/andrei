@@ -19,7 +19,6 @@ The same engine ships as three customer packs: **demo** (Andrei branding, invest
 - **Review workflow** — `draft` → `submitted` → `in_review` → `feedback` (back to the engineer) or `approved`.
 - **DOCX export** (and MJ Word import) matching the customer template.
 - **Admin** — users, password policy, retention, audit trail, and e-signatures (21 CFR Part 11-style hash chain).
-- **Improve AI** — a separate agree/disagree loop on AI verdicts, stored apart from the live evaluation cache.
 
 Insights dashboards exist under `/insights` and are currently backed by mock data.
 

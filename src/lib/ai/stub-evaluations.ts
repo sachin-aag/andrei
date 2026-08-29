@@ -1,7 +1,7 @@
 import type { CriterionStatus, DocumentType, SectionType } from "@/db/schema";
 import type { CriterionEvaluationResult } from "@/lib/ai/evaluate";
 import { getCriteria, getEvaluatableSections } from "@/lib/document-types";
-import stubEvaluationsJson from "@/lib/improve-ai/fixtures/stub-evaluations.json";
+import stubEvaluationsJson from "@/lib/ai/fixtures/stub-evaluations.json";
 
 type StubEvaluationEntry = {
   section: SectionType;

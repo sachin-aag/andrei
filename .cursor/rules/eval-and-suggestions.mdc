@@ -9,7 +9,6 @@ globs:
   - src/lib/ai/suggestion-gating.ts
   - src/lib/ai/evaluation-content-hash.ts
   - src/lib/suggestions/**/*.ts
-  - src/lib/improve-ai/**/*.ts
   - src/app/api/reports/**/evaluate/**/*.ts
   - src/app/api/reports/**/suggestions/**/*.ts
 alwaysApply: false
@@ -29,7 +28,7 @@ DV mixes LLM criteria with deterministic `check()` functions.
   `PROMPT_VERSION` in `section-prompts.ts`) or stale evals will not rerun.
 - Placeholders: `capEvaluationStatusForPlaceholders()` — never `not_met`
   solely for unfilled placeholders.
-- Improve AI (`evaluateReportCriteria`) walks `getEvaluatableSections()` for
+- Report AI Check (`POST .../evaluate`) walks `getEvaluatableSections()` for
   the report's document type. Do not hardcode DMAIC.
 
 ## Suggestions

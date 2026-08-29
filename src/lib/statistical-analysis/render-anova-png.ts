@@ -1,5 +1,6 @@
 import { chartBrandColors, seriesFill } from "@/lib/charts/brand-colors";
 import type { ChartBrandColors } from "@/lib/charts/brand-colors";
+import { chartFontFamily, loadChartCanvas } from "@/lib/charts/load-canvas";
 import { resolveCustomerId } from "@/lib/customers/resolve";
 import { formatStat } from "./format";
 import type { AnovaAnalysisSummary } from "./types";
@@ -37,12 +38,7 @@ type CanvasModule = {
 };
 
 function defaultLoadCanvas(): CanvasModule | null {
-  try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    return require("@napi-rs/canvas") as CanvasModule;
-  } catch {
-    return null;
-  }
+  return loadChartCanvas() as CanvasModule | null;
 }
 
 export type RenderAnovaPlotError = { error: "canvas_unavailable" | "no_groups" };
@@ -99,7 +95,7 @@ function drawAnovaIntervalPlot(
   ctx.fillRect(0, 0, WIDTH, HEIGHT);
 
   ctx.fillStyle = colors.brand800;
-  ctx.font = "16px Helvetica, Arial, sans-serif";
+  ctx.font = `16px ${chartFontFamily()}`;
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
   ctx.fillText(
@@ -109,7 +105,7 @@ function drawAnovaIntervalPlot(
   );
 
   ctx.fillStyle = colors.axis;
-  ctx.font = "12px Helvetica, Arial, sans-serif";
+  ctx.font = `12px ${chartFontFamily()}`;
   ctx.save();
   ctx.translate(22, (plotTop + plotBottom) / 2);
   ctx.rotate(-Math.PI / 2);
@@ -135,7 +131,7 @@ function drawAnovaIntervalPlot(
     ctx.lineTo(plotRight, y);
     ctx.stroke();
     ctx.fillStyle = colors.axis;
-    ctx.font = "11px Helvetica, Arial, sans-serif";
+    ctx.font = `11px ${chartFontFamily()}`;
     ctx.textAlign = "right";
     ctx.textBaseline = "middle";
     ctx.fillText(formatStat(tick, 2), plotLeft - 8, y);
@@ -164,7 +160,7 @@ function drawAnovaIntervalPlot(
     ctx.fillStyle = fill;
     ctx.fill();
     ctx.fillStyle = colors.axis;
-    ctx.font = "11px Helvetica, Arial, sans-serif";
+    ctx.font = `11px ${chartFontFamily()}`;
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
     ctx.fillText(group.label, x, plotBottom + 8);

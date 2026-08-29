@@ -59,18 +59,15 @@ pnpm exec playwright install --with-deps chromium firefox webkit
 ### Key directories
 
 - `src/app/api/reports/[reportId]/` — Route handlers for report CRUD, section auto-save (`sections/[sectionType]`), AI `evaluate`, evaluation bypass (`evaluations/[evalId]`), AI `suggestions`, `comments`, `submit`/`approve`/`feedback` workflow, `chat` (AI chat), `analytics` (worksheet + sixpack + stats chat), `audit` (trail), `attachments`, `revisions` (product History snapshots + inline diff), and `export`/`complete-export` (DOCX).
-- `src/app/improve-ai/` — Improve AI pages: session list and `[sessionId]` review page.
-- `src/app/api/improve-ai/` — API routes for creating sessions (from report or uploaded DOCX), listing sessions, and completing review.
 - `src/app/api/reports/[reportId]/chat/` — AI chat sessions/messages scoped to a report (see AI Chat subsystem).
 - `src/app/admin/` + `src/app/api/admin/` — Admin console (audit log viewer, user management, retention/password-policy settings). API: `audit`, `users` (+ `reset-password`, `unlock`), `password-policy`, `retention`, `reports/[reportId]/{purge,source-docx}`.
 - `src/app/insights/` — Analytics dashboards (`dashboard`, `doc-insights`, `management`, `pitfalls`). Currently backed by `src/lib/insights/mock-data.ts`.
 - `src/app/api/site-access/` — Site-wide password gate (see Site Access subsystem).
 - `src/app/{login,change-password,forgot-password,reset-password,unlock,profile}/` — auth/account pages. `src/app/api/auth-pw/` — password-based auth routes (forgot/reset).
 - `src/components/report/` — Editor UI: `report-workspace.tsx` (header Document | Agent chrome + work-product Report | Analytics pane + sidebar), per-section editors in `sections/`, `report-sidebar.tsx` (AI traffic-light results + analytics chat), `review-rail/` (manager comment margin UI), History compare (`document-revision-history.tsx` / `document-revision-diff.tsx` / `analytics-revision-diff.tsx`).
-- `src/components/improve-ai/` — Improve AI UI: session form, upload button, section content display, stale-rerun dialog.
 - `src/components/statistical-analysis/` — Report Analytics worksheet grid, Stat menu, sixpack/scatter SVG, capability and plot-measurements dialogs, stats chat panel.
 - `src/components/ui/` — shadcn-style Radix UI primitives.
-- `src/db/schema/index.ts` — Drizzle schema (single file, not a directory): `workspaceUsers`, `reports` (includes `documentType`), `reportManagers`, `reportSections`, `criteriaEvaluations`, `comments`, `chatSessions`/`chatMessages`, `reportSourceDocx`, `mathExtractionCache`, `aiFeedbackSessions`/`aiFeedbackResponses`, `auditEvents`/`sectionContentVersions`/`electronicSignatures`, `passwordPolicySettings`, `retentionSettings`, `statisticalWorkspaces`/`statisticalAnalyses`, `documentRevisions`/`documentRevisionSections` (document History — not the audit chain), `analyticsRevisions` (Analytics History), plus attachment evidence (`reportAttachments`, `attachmentIngestRuns`, `documentPages`, `documentChunks` with `vector(768)`). NextAuth tables + `authUsers` in `auth.ts`.
+- `src/db/schema/index.ts` — Drizzle schema (single file, not a directory): `workspaceUsers`, `reports` (includes `documentType`), `reportManagers`, `reportSections`, `criteriaEvaluations`, `comments`, `chatSessions`/`chatMessages`, `reportSourceDocx`, `mathExtractionCache`, `auditEvents`/`sectionContentVersions`/`electronicSignatures`, `passwordPolicySettings`, `retentionSettings`, `statisticalWorkspaces`/`statisticalAnalyses`, `documentRevisions`/`documentRevisionSections` (document History — not the audit chain), `analyticsRevisions` (Analytics History), plus attachment evidence (`reportAttachments`, `attachmentIngestRuns`, `documentPages`, `documentChunks` with `vector(768)`). NextAuth tables + `authUsers` in `auth.ts`.
 - `src/lib/document-revisions/` — Document product History snapshots (`snapshot.ts`) and inline compare (`inline-diff.ts`). One row per Agent-chrome report turn, or one coalesced row per human editing burst (30s idle). Compare diffs prose, every table by index, and added/removed figures. Worksheet writes are `analyticsRevisions`, not document versions.
 - `src/lib/analytics-revisions/` — Analytics product History (worksheet + plots snapshot, idle-coalesced). Compare is a cell/plot list, not TipTap.
 - `src/lib/ai/` — AI evaluation, suggestion, and chat pipelines (see subsystems below).
@@ -82,7 +79,6 @@ pnpm exec playwright install --with-deps chromium firefox webkit
 - `src/lib/statistical-analysis/` — Report-scoped worksheet ops, I-MR Normal Capability Sixpack, analytics store and stats-only chat tools.
 - `src/lib/reports/` — Report domain logic: access control (`access.ts`), manager authorization, deviation-no generation, submit validation, source-docx persistence, blank-section seeding, tombstones.
 - `src/lib/admin/` — Admin-console business logic (user/retention/password-policy operations).
-- `src/lib/improve-ai/` — Improve AI business logic: session store, session view, human-judgment tracking, response syncing, staleness detection.
 - `src/lib/analytics/` — PostHog client event capture (`events.ts` enumerates the event names).
 - `src/lib/eval/` — Offline eval harness helpers (model sweep, run comparison).
 - `src/lib/export/` — DOCX generation (see subsystem below).
@@ -264,26 +260,6 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
 - Report is read-only (unless trackChangesMode)
 - Suggestion is in-flight or being applied (prevents race conditions)
 - Previous save failed (blocks until report reloaded)
-
-## Subsystem: Improve AI
-
-**Purpose:** A separate feedback loop where engineers submit a completed report (or upload a reference DOCX) and receive per-criterion AI evaluations they can agree/disagree with. Results train human-judgment data (`aiFeedbackResponses`) separate from the live evaluation cache.
-
-**Entry points:**
-- `POST /api/improve-ai/from-report` — creates a session from an existing report
-- `POST /api/improve-ai/upload` — creates a session from an uploaded DOCX
-- `GET/PATCH /api/improve-ai/sessions/[id]` — fetch/update session
-- `POST /api/improve-ai/sessions/[id]/complete` — mark session as reviewed
-
-**Data flow:**
-1. Session created → status `evaluating` → `evaluateReportCriteria()` runs `evaluateSection()` for the report's `getEvaluatableSections()` (investigation DMAIC, Convergent/demo DV, mechanical DV, QRA)
-2. Status transitions to `ready_for_review`; engineer reviews per-criterion AI verdicts in `/improve-ai/[sessionId]`
-3. For each criterion the user records agreement + optional comment → upserted into `aiFeedbackResponses`
-4. `POST .../complete` marks session `reviewed`
-
-Sessions created before type-generic Improve AI (Convergent Review 404) re-run evaluation when Review opens if the report has evaluable content and the session has no reviewable criteria.
-
-**Staleness:** `src/lib/improve-ai/session-staleness.ts` detects when the underlying report has changed since the session was created, prompting a re-run dialog. Empty feedback rows with section content are stale so DV sessions can be re-evaluated.
 
 ## Subsystem: Statistical Analysis
 

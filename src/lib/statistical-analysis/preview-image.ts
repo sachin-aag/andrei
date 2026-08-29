@@ -1,15 +1,31 @@
 import { parseChartSpec } from "@/lib/charts/chart-spec";
-import { isValidSuggestionImageSrc } from "@/lib/suggestions/image-insert";
+import { isAllowedChatImageMediaType } from "@/lib/ai/chat/image-parts";
 import type { AnalysisPreviewImage } from "./types";
 
 const PNG_DATA_URL_PREFIX = /^data:image\/png;base64,/i;
+
+/** Analytics sixpack captures are larger than chat figure inserts. */
+export const ANALYTICS_PREVIEW_MAX_DATA_URL_CHARS = 3_500_000;
+
+export function isValidAnalysisPreviewSrc(src: string): boolean {
+  const trimmed = src.trim();
+  if (
+    trimmed.length === 0 ||
+    trimmed.length > ANALYTICS_PREVIEW_MAX_DATA_URL_CHARS
+  ) {
+    return false;
+  }
+  const match = /^data:([^;,]+);base64,/i.exec(trimmed);
+  if (!match) return false;
+  return isAllowedChatImageMediaType(match[1]!.trim().toLowerCase());
+}
 
 export function asPreviewImage(value: unknown): AnalysisPreviewImage | null {
   if (!value || typeof value !== "object") return null;
   const row = value as Partial<AnalysisPreviewImage>;
   if (
     typeof row.dataUrl !== "string" ||
-    !isValidSuggestionImageSrc(row.dataUrl) ||
+    !isValidAnalysisPreviewSrc(row.dataUrl) ||
     typeof row.widthPx !== "number" ||
     typeof row.heightPx !== "number" ||
     typeof row.alt !== "string"
