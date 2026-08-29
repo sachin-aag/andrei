@@ -417,6 +417,34 @@ test.describe("report analytics", () => {
     await expect(page.getByRole("alert")).toBeVisible({ timeout: 30_000 });
   });
 
+  test("renames the active data sheet from the tab and Data menu", async ({
+    page,
+  }) => {
+    test.setTimeout(90_000);
+    await openReportAnalytics(page);
+    await expect(page.getByTestId("worksheet-sheet-tab-data-1")).toHaveText(
+      "Data"
+    );
+
+    await page.getByTestId("worksheet-sheet-tab-data-1").dblclick();
+    const renameInput = page.getByTestId("worksheet-sheet-rename-data-1");
+    await expect(renameInput).toBeVisible();
+    await renameInput.fill("Assay");
+    await renameInput.press("Enter");
+    await expect(page.getByTestId("worksheet-sheet-tab-data-1")).toHaveText(
+      "Assay"
+    );
+
+    await page.getByTestId("worksheet-data-menu").click();
+    await page.getByTestId("rename-data-sheet").click();
+    await expect(page.getByTestId("worksheet-sheet-rename-data-1")).toBeVisible();
+    await page.getByTestId("worksheet-sheet-rename-data-1").fill("Moisture");
+    await page.getByTestId("worksheet-sheet-rename-data-1").press("Enter");
+    await expect(page.getByTestId("worksheet-sheet-tab-data-1")).toHaveText(
+      "Moisture"
+    );
+  });
+
   test("row headers select the whole row and the row menu inserts, clears, and deletes", async ({
     page,
   }) => {

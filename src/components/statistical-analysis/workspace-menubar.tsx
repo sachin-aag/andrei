@@ -16,6 +16,7 @@ export function WorkspaceMenubar({
   onXyScatter,
   onPlotMeasurements,
   onAddDataSheet,
+  onRenameDataSheet,
 }: {
   readOnly: boolean;
   onLoadSample: () => void;
@@ -24,6 +25,7 @@ export function WorkspaceMenubar({
   onXyScatter: () => void;
   onPlotMeasurements: () => void;
   onAddDataSheet: () => void;
+  onRenameDataSheet: () => void;
 }) {
   return (
     <div className="flex flex-wrap items-center gap-0.5">
@@ -44,6 +46,12 @@ export function WorkspaceMenubar({
             onSelect={onAddDataSheet}
           >
             New data sheet
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            data-testid="rename-data-sheet"
+            onSelect={onRenameDataSheet}
+          >
+            Rename data sheet
           </DropdownMenuItem>
           <DropdownMenuItem
             data-testid="load-sample-assay"

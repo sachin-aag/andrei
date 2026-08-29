@@ -32,6 +32,7 @@ import {
   insertColumn,
   mergeDirtyWorksheet,
   normalizeWorksheet,
+  renameDataSheet,
   specRowForColumn,
   switchWorksheetTab,
   upsertSpecRow,
@@ -130,6 +131,9 @@ export function StatisticalWorkspace({
   const [xySubmitting, setXySubmitting] = useState(false);
   const [xyError, setXyError] = useState<string | null>(null);
   const [specsColumnId, setSpecsColumnId] = useState<string | null>(null);
+  const [editingSheetId, setEditingSheetId] = useState<string | null>(null);
+  const [sheetNameDraft, setSheetNameDraft] = useState("");
+  const sheetNameInputRef = useRef<HTMLInputElement>(null);
   const [recomputing, setRecomputing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -364,6 +368,31 @@ export function StatisticalWorkspace({
   const specsColumn =
     worksheet.columns.find((column) => column.id === specsColumnId) ?? null;
 
+  const beginRenameSheet = useCallback(
+    (sheetId: string) => {
+      if (readOnly) return;
+      const sheet = worksheet.sheets.find((item) => item.id === sheetId);
+      if (!sheet) return;
+      setEditingSheetId(sheetId);
+      setSheetNameDraft(sheet.name);
+    },
+    [readOnly, worksheet.sheets]
+  );
+
+  const commitSheetRename = useCallback(() => {
+    if (editingSheetId === null) return;
+    setWorksheet((current) => renameDataSheet(current, editingSheetId, sheetNameDraft));
+    setEditingSheetId(null);
+  }, [editingSheetId, sheetNameDraft]);
+
+  const cancelSheetRename = useCallback(() => {
+    setEditingSheetId(null);
+  }, []);
+
+  useEffect(() => {
+    if (editingSheetId !== null) sheetNameInputRef.current?.focus();
+  }, [editingSheetId]);
+
   const openAnalyzeForColumn = async (
     columnId: string,
     rows: { start: number; end: number } | null = null
@@ -532,6 +561,7 @@ export function StatisticalWorkspace({
                 setWorksheet((current) => addDataSheet(current));
                 setSelection(collapseSelection(0, 0));
               }}
+              onRenameDataSheet={() => beginRenameSheet(worksheet.activeSheetId)}
             />
             {readOnly ? null : (
               <Button
@@ -588,7 +618,29 @@ export function StatisticalWorkspace({
             >
               {worksheet.sheets.map((sheet) => {
                 const active = worksheet.activeSheetId === sheet.id;
-                return (
+                const editing = editingSheetId === sheet.id;
+                return editing ? (
+                  <input
+                    key={sheet.id}
+                    ref={sheetNameInputRef}
+                    value={sheetNameDraft}
+                    aria-label="Data sheet name"
+                    data-testid={`worksheet-sheet-rename-${sheet.id}`}
+                    className="h-7 max-w-[10rem] rounded-md border border-[var(--ring)] bg-[var(--input)] px-2 text-xs font-medium"
+                    onChange={(event) => setSheetNameDraft(event.target.value)}
+                    onBlur={commitSheetRename}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        commitSheetRename();
+                      }
+                      if (event.key === "Escape") {
+                        event.preventDefault();
+                        cancelSheetRename();
+                      }
+                    }}
+                  />
+                ) : (
                   <button
                     key={sheet.id}
                     type="button"
@@ -599,6 +651,7 @@ export function StatisticalWorkspace({
                         switchWorksheetTab(current, sheet.id)
                       )
                     }
+                    onDoubleClick={() => beginRenameSheet(sheet.id)}
                     className={`rounded-md px-2 py-1 text-xs ${
                       active
                         ? "bg-[var(--secondary)] font-medium text-[var(--foreground)]"

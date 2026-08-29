@@ -12,6 +12,7 @@ import {
   deleteRow,
   deleteRows,
   findColumnIndexByName,
+  findSheet,
   clearColumn,
   clearRows,
   insertColumn,
@@ -22,6 +23,7 @@ import {
   parseTsv,
   pasteTsv,
   renameColumn,
+  renameDataSheet,
   replaceColumnValues,
   rowCount,
   setCell,
@@ -220,6 +222,14 @@ describe("worksheet grid operations", () => {
     expect(sheet.sheets).toHaveLength(2);
     expect(sheet.sheets[1]?.name).toBe("Assay");
     expect(sheet.activeSheetId).toBe("data-2");
+  });
+
+  it("renames a data sheet", () => {
+    let sheet = createEmptyWorksheet();
+    sheet = addDataSheet(sheet, "Assay");
+    sheet = renameDataSheet(sheet, PRIMARY_DATA_SHEET_ID, "Moisture");
+    expect(sheet.sheets[0]?.name).toBe("Moisture");
+    expect(findSheet(sheet, "Moisture")?.id).toBe(PRIMARY_DATA_SHEET_ID);
   });
 
   it("adds a second data sheet and maps a legacy Specs tab onto Data", () => {
