@@ -71,7 +71,7 @@ test.describe("report PDF documents", () => {
 
     // Scope to the Documents panel — a success toast also contains the filename.
     await panel.getByRole("button", { name: fileName, exact: true }).click();
-    await expect(page.getByRole("button", { name: /back to report/i })).toBeVisible({
+    await expect(page.getByTestId("attachment-viewer")).toBeVisible({
       timeout: 15_000,
     });
     await expect(
@@ -85,7 +85,7 @@ test.describe("report PDF documents", () => {
     });
     await expect(page.locator(`iframe[title="${fileName}"]`)).toHaveCount(0);
 
-    await page.getByRole("button", { name: /back to report/i }).click();
+    await page.getByRole("button", { name: "Close document" }).click();
     await expect(page.getByRole("heading", { name: /^define$/i })).toBeVisible();
     await expect(page.getByTestId("attachment-viewer")).toHaveCount(0);
     await expect(
@@ -136,7 +136,7 @@ test.describe("report PDF documents", () => {
     await expect(
       workProduct.getByRole("button", { name: /collapse document panel/i })
     ).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByRole("button", { name: /back to report/i })).toBeVisible({
+    await expect(page.getByTestId("attachment-viewer")).toBeVisible({
       timeout: 15_000,
     });
     await expect(
@@ -154,7 +154,7 @@ test.describe("report PDF documents", () => {
     ).toBeVisible({ timeout: 30_000 });
 
     await panel.getByRole("button", { name: fileName, exact: true }).click();
-    await expect(page.getByRole("button", { name: /back to report/i })).toBeVisible({
+    await expect(page.getByTestId("attachment-viewer")).toBeVisible({
       timeout: 15_000,
     });
     await expect(page.getByLabel(`${fileName}, page 1`)).toBeVisible({
