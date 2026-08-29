@@ -213,3 +213,47 @@ export async function deleteCapabilitySixpack(
   if (!response.ok) throw new Error(await readError(response));
   return parseAnalytics(response);
 }
+
+export type AnalysisImageExport = {
+  dataUrl: string;
+  widthPx: number;
+  heightPx: number;
+  alt: string;
+  chartSpec: unknown | null;
+};
+
+export async function fetchAnalysisImage(
+  reportId: string,
+  analysisId: string
+): Promise<AnalysisImageExport> {
+  const response = await fetch(
+    analyticsUrl(
+      reportId,
+      `/analyses/${encodeURIComponent(analysisId)}/image`
+    )
+  );
+  if (!response.ok) throw new Error(await readError(response));
+  const body = (await response.json()) as { image: AnalysisImageExport };
+  return body.image;
+}
+
+export async function saveAnalysisPreview(
+  reportId: string,
+  analysisId: string,
+  previewImage: AnalysisImageExport
+): Promise<ReportAnalyticsView> {
+  const response = await fetch(
+    analyticsUrl(
+      reportId,
+      `/analyses/${encodeURIComponent(analysisId)}/preview`
+    ),
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ previewImage }),
+    }
+  );
+  if (!response.ok) throw new Error(await readError(response));
+  const body = (await response.json()) as { analytics: ReportAnalyticsView };
+  return body.analytics;
+}

@@ -199,6 +199,14 @@ export type MeasurementScatterResult = {
   uom: string;
 };
 
+export type AnalysisPreviewImage = {
+  dataUrl: string;
+  widthPx: number;
+  heightPx: number;
+  alt: string;
+  chartSpec: ChartSpec | null;
+};
+
 type AnalysisSummaryBase = {
   id: string;
   workspaceId: string;
@@ -206,6 +214,8 @@ type AnalysisSummaryBase = {
   sourceHash: string;
   stale: boolean;
   createdAt: string;
+  /** Captured from the Analytics UI for document insert; null until opened (or after recompute). */
+  previewImage: AnalysisPreviewImage | null;
 };
 
 export type SixpackAnalysisSummary = AnalysisSummaryBase & {

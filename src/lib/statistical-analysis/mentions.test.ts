@@ -93,6 +93,7 @@ describe("resolveAnalyticsChatMentions", () => {
             stale: true,
             createdAt: "2026-01-01T00:00:00.000Z",
             sourceHash: "hash",
+            previewImage: null,
             config: {
               columnId: "c1",
               columnName: "Assay",

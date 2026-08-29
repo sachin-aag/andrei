@@ -1,10 +1,13 @@
 "use client";
 
+import { useRef } from "react";
 import type {
+  ReportAnalyticsView,
   ScatterAnalysisSummary,
   XyScatterAnalysisSummary,
 } from "@/lib/statistical-analysis/types";
 import { isXyScatterAnalysis } from "@/lib/statistical-analysis/types";
+import { useAnalysisPreviewCapture } from "@/hooks/use-analysis-preview-capture";
 import { formatStat } from "@/lib/statistical-analysis/format";
 import {
   analysisDownloadFilename,
@@ -262,6 +265,8 @@ function ScatterChart({ spec }: { spec: ChartSpec }) {
 
 export function ScatterView({
   analysis,
+  reportId,
+  onPreviewUploaded,
   onEdit,
   onRecompute,
   onDelete,
@@ -270,6 +275,8 @@ export function ScatterView({
   readOnly = false,
 }: {
   analysis: ScatterAnalysisSummary | XyScatterAnalysisSummary;
+  reportId: string;
+  onPreviewUploaded: (analytics: ReportAnalyticsView) => void;
   onEdit: () => void;
   onRecompute: () => void;
   onDelete: () => void;
@@ -279,6 +286,14 @@ export function ScatterView({
 }) {
   const spec = analysis.results.specs[0];
   const xy = isXyScatterAnalysis(analysis);
+  const captureRef = useRef<HTMLDivElement>(null);
+  useAnalysisPreviewCapture({
+    reportId,
+    analysis,
+    captureRef,
+    readOnly,
+    onUploaded: onPreviewUploaded,
+  });
   const provenance = spec ? formatChartProvenance(spec) : "";
   const subtitle = xy
     ? [
@@ -299,58 +314,63 @@ export function ScatterView({
       data-testid={xy ? "xy-scatter" : "measurement-scatter"}
       className="flex h-full flex-col gap-3 overflow-auto p-4"
     >
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        {analysis.stale ? (
+          <Badge variant="warning">Stale</Badge>
+        ) : null}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          data-testid="download-analysis"
+          onClick={() => {
+            downloadTextFile(
+              analysisDownloadFilename(analysis),
+              analysisToCsv(analysis)
+            );
+          }}
+        >
+          Download
+        </Button>
+        {readOnly ? null : (
+          <>
+            <AnalysisRecomputeButton
+              onClick={onRecompute}
+              recomputing={recomputing}
+              disabled={editing}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              data-testid="edit-analysis"
+              disabled={editing}
+              onClick={onEdit}
+            >
+              {editing ? "Opening…" : "Edit"}
+            </Button>
+            <Button type="button" variant="ghost" size="sm" onClick={onDelete}>
+              Delete
+            </Button>
+          </>
+        )}
+      </div>
+
+      <div
+        ref={captureRef}
+        data-testid="analysis-preview-figure"
+        className="flex flex-col gap-3 rounded-md bg-[#f4f6f9] p-4"
+      >
         <div>
           <h2 className="text-base font-semibold">{analysis.title}</h2>
           <p className="text-xs text-[var(--muted-foreground)]">{subtitle}</p>
         </div>
-        <div className="flex items-center gap-2">
-          {analysis.stale ? (
-            <Badge variant="warning">Stale</Badge>
-          ) : null}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            data-testid="download-analysis"
-            onClick={() => {
-              downloadTextFile(
-                analysisDownloadFilename(analysis),
-                analysisToCsv(analysis)
-              );
-            }}
-          >
-            Download
-          </Button>
-          {readOnly ? null : (
-            <>
-              <AnalysisRecomputeButton
-                onClick={onRecompute}
-                recomputing={recomputing}
-                disabled={editing}
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                data-testid="edit-analysis"
-                disabled={editing}
-                onClick={onEdit}
-              >
-                {editing ? "Opening…" : "Edit"}
-              </Button>
-              <Button type="button" variant="ghost" size="sm" onClick={onDelete}>
-                Delete
-              </Button>
-            </>
-          )}
-        </div>
-      </div>
 
-      <div className="grid gap-4">
-        {analysis.results.specs.map((item) => (
-          <ScatterChart key={item.title} spec={item} />
-        ))}
+        <div className="grid gap-4">
+          {analysis.results.specs.map((item) => (
+            <ScatterChart key={item.title} spec={item} />
+          ))}
+        </div>
       </div>
     </div>
   );

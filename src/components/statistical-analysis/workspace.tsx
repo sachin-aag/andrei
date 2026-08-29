@@ -881,6 +881,8 @@ export function StatisticalWorkspace({
                   isXyScatterAnalysis(selectedAnalysis)) ? (
                   <ScatterView
                     analysis={selectedAnalysis}
+                    reportId={reportId}
+                    onPreviewUploaded={applyAnalytics}
                     readOnly={readOnly}
                     editing={Boolean(editingAnalysisId)}
                     recomputing={recomputingAnalysisId === selectedAnalysis.id}
@@ -929,6 +931,8 @@ export function StatisticalWorkspace({
                 ) : selectedAnalysis && isSixpackAnalysis(selectedAnalysis) ? (
                   <SixpackView
                     analysis={selectedAnalysis}
+                    reportId={reportId}
+                    onPreviewUploaded={applyAnalytics}
                     readOnly={readOnly}
                     editing={Boolean(editingAnalysisId)}
                     recomputing={recomputingAnalysisId === selectedAnalysis.id}

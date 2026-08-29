@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { formatLimit } from "@/lib/statistical-analysis/format";
 import { SAMPLE_ASSAY_VALUES } from "@/lib/statistical-analysis/sample-data";
 import { computeCapabilitySixpackFromValues } from "@/lib/statistical-analysis/sixpack";
@@ -10,6 +10,19 @@ import {
   type SixpackAnalysisSummary,
 } from "@/lib/statistical-analysis/types";
 import { SixpackView } from "./sixpack-view";
+
+vi.mock("@/hooks/use-analysis-preview-capture", () => ({
+  useAnalysisPreviewCapture: () => {},
+}));
+
+const viewProps = {
+  reportId: "report-1",
+  onPreviewUploaded: () => {},
+  onEdit: () => {},
+  onRecompute: () => {},
+  onDelete: () => {},
+  recomputing: false,
+};
 
 function summaryFromValues(
   values: number[],
@@ -29,6 +42,7 @@ function summaryFromValues(
     sourceHash: "abc",
     stale: false,
     createdAt: "2026-08-26T00:00:00.000Z",
+    previewImage: null,
   };
 }
 
@@ -48,9 +62,7 @@ describe("SixpackView limit labels", () => {
     render(
       <SixpackView
         analysis={analysis}
-        onEdit={() => {}}
-        onRecompute={() => {}}
-        onDelete={() => {}}
+        {...viewProps}
       />
     );
 
@@ -79,9 +91,7 @@ describe("SixpackView limit labels", () => {
     render(
       <SixpackView
         analysis={analysis}
-        onEdit={() => {}}
-        onRecompute={() => {}}
-        onDelete={() => {}}
+        {...viewProps}
       />
     );
 
@@ -101,9 +111,7 @@ describe("SixpackView limit labels", () => {
     render(
       <SixpackView
         analysis={analysis}
-        onEdit={() => {}}
-        onRecompute={() => {}}
-        onDelete={() => {}}
+        {...viewProps}
       />
     );
 

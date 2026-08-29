@@ -51,6 +51,7 @@ function sampleAnalytics(): ReportAnalyticsView {
         sourceHash: "abc",
         stale: false,
         createdAt: "2026-08-26T00:00:00.000Z",
+        previewImage: null,
       },
       {
         id: "an-2",
@@ -74,6 +75,7 @@ function sampleAnalytics(): ReportAnalyticsView {
         sourceHash: "def",
         stale: false,
         createdAt: "2026-08-26T00:00:00.000Z",
+        previewImage: null,
       },
     ],
     version: 1,
