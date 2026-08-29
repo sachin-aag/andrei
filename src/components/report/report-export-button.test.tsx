@@ -5,7 +5,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CONVERGENT_PACK, DEMO_PACK, getCustomerPack } from "@/lib/customers/packs";
 import { ReportExportButton, exportHref } from "./report-export-button";
-import { analyticsExportHref } from "@/lib/statistical-analysis/export-xlsx";
+import { analyticsExportHref } from "@/lib/statistical-analysis/analytics-export-href";
 
 vi.mock("@/lib/customers/packs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/customers/packs")>();

@@ -2,11 +2,8 @@ import ExcelJS from "exceljs";
 import { describe, expect, it } from "vitest";
 import { DEFAULT_CHART_LAYOUT } from "@/lib/charts/chart-spec";
 import { TORQUE_MOCK_SPEC } from "@/lib/charts/__fixtures__/torque-mock";
-import {
-  analyticsExportFilename,
-  analyticsExportHref,
-  buildAnalyticsXlsx,
-} from "./export-xlsx";
+import { analyticsExportHref } from "./analytics-export-href";
+import { analyticsExportFilename, buildAnalyticsXlsx } from "./export-xlsx";
 import { computeCapabilitySixpackFromValues } from "./sixpack";
 import {
   CAPABILITY_SIXPACK_NORMAL,

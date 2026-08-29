@@ -12,7 +12,7 @@ import {
 import { captureEvent } from "@/lib/analytics/events";
 import type { DocumentType } from "@/db/schema";
 import { citationsAtEndOfSectionFor } from "@/lib/document-types";
-import { analyticsExportHref } from "@/lib/statistical-analysis/export-xlsx";
+import { analyticsExportHref } from "@/lib/statistical-analysis/analytics-export-href";
 
 export function exportHref(reportId: string, omitCitations: boolean): string {
   const path = `/api/reports/${reportId}/export`;

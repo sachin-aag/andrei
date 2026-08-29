@@ -349,11 +349,3 @@ export async function buildAnalyticsXlsx(
   const arrayBuffer = await workbook.xlsx.writeBuffer();
   return new Uint8Array(arrayBuffer);
 }
-
-export function analyticsExportHref(
-  reportId: string,
-  includePlots: boolean
-): string {
-  const path = `/api/reports/${reportId}/analytics/export`;
-  return includePlots ? `${path}?plots=1` : path;
-}
