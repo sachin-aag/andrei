@@ -5,6 +5,10 @@ import { reports } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import { persistSectionContent } from "@/lib/reports/persist-section";
 import { isValidSection } from "@/lib/document-types";
+import {
+  manualRevisionSummary,
+  tryRecordManualDocumentRevision,
+} from "@/lib/document-revisions/snapshot";
 import { canSaveReportSection } from "@/lib/reports/access";
 import { auditActorFromUser } from "@/lib/audit";
 
@@ -42,6 +46,13 @@ async function saveSection(
     reportId,
     section: sectionType,
     content: content as Record<string, unknown>,
+  });
+
+  await tryRecordManualDocumentRevision({
+    reportId,
+    documentType: report.documentType,
+    createdBy: user.id,
+    summary: manualRevisionSummary(report.documentType, sectionType),
   });
 
   return NextResponse.json({ section: saved });

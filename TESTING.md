@@ -178,16 +178,17 @@ Specs run against Chromium, Firefox, and WebKit unless you pass `--project=chrom
 | resizes the assistant and documents panels from the keyboard | Drag handles; ArrowLeft/Right; handle hidden when collapsed |
 | opens the assistant at the default width on a new report and after reload | Width is not kept across reports or reloads |
 | approved report is read-only for engineer | No submit; `contenteditable=false` |
-| Agent chrome puts chat in the center and work product on the right | Column order `docs.x < chat.x < canvas.x`; Analytics stays on the right; History empty copy |
+| Agent chrome puts chat in the center and work product on the right | Column order `docs.x < chat.x < canvas.x`; Analytics stays on the right; History on Report and Analytics (pane-scoped) |
 
 </details>
 
 <details>
-<summary><strong>document-revisions.spec.ts</strong> — Agent History compare</summary>
+<summary><strong>document-revisions.spec.ts</strong> — History compare</summary>
 
 | Test | What it verifies |
 |------|------------------|
 | compares two seeded versions inline and exits back to the live report | `POST /api/test/seed-document-revisions` (no Gemini); History → Compare shows ins/del; Exit restores Define |
+| records a coalesced manual version after a section save | PATCH Define after the two seeded Agent versions; History shows Version 3 · Edits |
 
 </details>
 
@@ -281,7 +282,8 @@ Both AI-suggestion cases seed an open suggestion through `POST /api/test/seed-ai
 
 | Test | What it verifies |
 |------|------------------|
-| opens the Analytics tab with an empty worksheet | `/reports/:id/edit` → Analytics → grid, Define hidden |
+| opens the Analytics tab with an empty worksheet | `/reports/:id/edit` → Analytics → grid, Define hidden; History is visible |
+| autosave settles to Saved and keeps later cell edits | Two cells persist; History shows Version 1 · Edits (Analytics compare is a cell/plot list, not a live grid overlay) |
 | loads sample assay and runs a Normal Capability Sixpack | Data menu sample → flattened Stat menu → Cp/Cpk sixpack |
 | saves a sixpack per column and switches between them | Analyze selected column + column context menu; Analyze data popup defaults to sixpack with Specs then min/max form defaults; two Results entries |
 | shift+arrow selects rows and runs a sixpack on that range | Range highlight, Analyze label, Sample N matches the span |

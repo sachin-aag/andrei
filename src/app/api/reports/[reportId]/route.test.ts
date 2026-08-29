@@ -34,6 +34,11 @@ vi.mock("@/lib/reports/persist-source-docx", () => ({
   sourceDocxFilenameFor: vi.fn().mockResolvedValue(null),
 }));
 
+vi.mock("@/lib/document-revisions/snapshot", () => ({
+  manualRevisionSummary: vi.fn(() => "Updated document details"),
+  tryRecordManualDocumentRevision: vi.fn().mockResolvedValue(null),
+}));
+
 import { db } from "@/db";
 import { getCurrentUser } from "@/lib/auth/session";
 import { GET, PATCH } from "./route";

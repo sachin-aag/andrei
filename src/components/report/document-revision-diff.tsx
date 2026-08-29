@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 import type {
   InlineDiffPart,
+  InlineFieldDiff,
+  InlineImageDiff,
   InlineSectionDiff,
 } from "@/lib/document-revisions/inline-diff";
 
@@ -29,6 +31,83 @@ function DiffText({ parts }: { parts: InlineDiffPart[] }) {
       })}
     </span>
   );
+}
+
+function ImageDiffs({ images }: { images: InlineImageDiff[] }) {
+  return (
+    <div className="flex flex-wrap gap-3">
+      {images.map((image, index) => {
+        const added = image.change === "added";
+        return (
+          <figure
+            key={`${image.change}-${image.src}-${index}`}
+            className={cn(
+              "max-w-56 space-y-1 rounded-md border p-2",
+              added
+                ? "border-[var(--border)] bg-[var(--secondary)]/40"
+                : "border-[var(--border)] opacity-70"
+            )}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element -- history figure previews */}
+            <img
+              src={image.src}
+              alt={image.alt || (added ? "Added figure" : "Removed figure")}
+              className="max-h-40 w-full object-contain"
+            />
+            <figcaption
+              className={cn(
+                "text-[11px]",
+                added ? "suggestion-insert" : "suggestion-delete"
+              )}
+            >
+              {added ? "Added" : "Removed"}
+              {image.alt ? ` · ${image.alt}` : ""}
+            </figcaption>
+          </figure>
+        );
+      })}
+    </div>
+  );
+}
+
+function FieldDiff({ field }: { field: InlineFieldDiff }) {
+  switch (field.kind) {
+    case "table":
+      return field.table ? (
+        <table className="w-full border-collapse text-sm">
+          <tbody>
+            {field.table.rows.map((row, rowIndex) => (
+              <tr key={rowIndex}>
+                {row.map((cell, cellIndex) => (
+                  <td
+                    key={cellIndex}
+                    className={cn(
+                      "border border-[var(--border)] px-2 py-1 align-top",
+                      cell.parts.some((part) => part.type !== "equal") &&
+                        "bg-[var(--secondary)]/60"
+                    )}
+                  >
+                    <DiffText parts={cell.parts} />
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      ) : null;
+    case "images":
+      return <ImageDiffs images={field.images ?? []} />;
+    case "text":
+      return (
+        <p className="text-sm text-[var(--foreground)]">
+          <DiffText parts={field.parts ?? []} />
+        </p>
+      );
+    default: {
+      const exhaustive: never = field.kind;
+      return exhaustive;
+    }
+  }
 }
 
 export function DocumentRevisionDiff({
@@ -104,37 +183,15 @@ export function DocumentRevisionDiff({
               <h2 className="text-sm font-semibold text-[var(--foreground)]">
                 {section.label}
               </h2>
-              {section.fields.map((field) => (
-                <div key={field.targetField} className="space-y-1">
+              {section.fields.map((field, index) => (
+                <div
+                  key={`${field.targetField}-${field.kind}-${index}`}
+                  className="space-y-1"
+                >
                   <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
                     {field.targetField}
                   </p>
-                  {field.kind === "table" && field.table ? (
-                    <table className="w-full border-collapse text-sm">
-                      <tbody>
-                        {field.table.rows.map((row, rowIndex) => (
-                          <tr key={rowIndex}>
-                            {row.map((cell, cellIndex) => (
-                              <td
-                                key={cellIndex}
-                                className={cn(
-                                  "border border-[var(--border)] px-2 py-1 align-top",
-                                  cell.parts.some((part) => part.type !== "equal") &&
-                                    "bg-[var(--secondary)]/60"
-                                )}
-                              >
-                                <DiffText parts={cell.parts} />
-                              </td>
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  ) : (
-                    <p className="text-sm text-[var(--foreground)]">
-                      <DiffText parts={field.parts ?? []} />
-                    </p>
-                  )}
+                  <FieldDiff field={field} />
                 </div>
               ))}
             </section>

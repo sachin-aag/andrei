@@ -99,7 +99,9 @@ describe("diffRevisionSnapshots", () => {
       ],
     });
 
-    const field = sections.find((row) => row.section === "define")?.fields[0];
+    const fields = sections.find((row) => row.section === "define")?.fields ?? [];
+    expect(fields).toHaveLength(1);
+    const field = fields[0];
     expect(field?.kind).toBe("table");
     const rows = field?.table?.rows ?? [];
     expect(rows[0]?.[0]?.parts).toEqual([{ type: "equal", value: "Cause" }]);
@@ -115,5 +117,124 @@ describe("diffRevisionSnapshots", () => {
         (part) => part.type === "insert" && part.value.includes("humidity")
       )
     ).toBe(true);
+  });
+
+  it("diffs every table by index and keeps surrounding prose", () => {
+    const from = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Opening temperature." }],
+        },
+        ...tableDoc([
+          ["Cause", "Status"],
+          ["hold", "open"],
+        ]).content!,
+        tableDoc([
+          ["Lot", "Result"],
+          ["A", "pass"],
+        ]).content![0]!,
+      ],
+    } satisfies JSONContent;
+    const to = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: "Opening humidity." }],
+        },
+        ...tableDoc([
+          ["Cause", "Status"],
+          ["hold", "open"],
+        ]).content!,
+        tableDoc([
+          ["Lot", "Result"],
+          ["A", "fail"],
+        ]).content![0]!,
+      ],
+    } satisfies JSONContent;
+
+    const sections = diffRevisionSnapshots({
+      documentType: "investigation_report",
+      from: [{ section: "define", content: { narrative: from }, contentHash: "from" }],
+      to: [{ section: "define", content: { narrative: to }, contentHash: "to" }],
+    });
+
+    const fields = sections.find((row) => row.section === "define")?.fields ?? [];
+    expect(fields.map((field) => [field.targetField, field.kind])).toEqual([
+      ["narrative · table 2", "table"],
+      ["narrative", "text"],
+    ]);
+    const tableField = fields.find((field) => field.kind === "table");
+    expect(
+      tableField?.table?.rows[1]?.[1]?.parts.some(
+        (part) => part.type === "insert" && part.value.includes("fail")
+      )
+    ).toBe(true);
+    const textField = fields.find((field) => field.kind === "text");
+    expect(
+      textField?.parts?.some(
+        (part) => part.type === "delete" && part.value.includes("temperature")
+      )
+    ).toBe(true);
+    expect(
+      textField?.parts?.some((part) => part.value.includes("hold"))
+    ).toBe(false);
+  });
+
+  it("lists added and removed figures", () => {
+    const from = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "imageInline",
+              attrs: { src: "https://example.com/old.png", alt: "Old plot" },
+            },
+          ],
+        },
+      ],
+    } satisfies JSONContent;
+    const to = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "imageInline",
+              attrs: { src: "https://example.com/new.png", alt: "New plot" },
+            },
+          ],
+        },
+      ],
+    } satisfies JSONContent;
+
+    const sections = diffRevisionSnapshots({
+      documentType: "investigation_report",
+      from: [{ section: "define", content: { narrative: from }, contentHash: "from" }],
+      to: [{ section: "define", content: { narrative: to }, contentHash: "to" }],
+    });
+
+    const field = sections.find((row) => row.section === "define")?.fields[0];
+    expect(field).toEqual({
+      targetField: "narrative · figures",
+      kind: "images",
+      images: [
+        {
+          change: "added",
+          src: "https://example.com/new.png",
+          alt: "New plot",
+        },
+        {
+          change: "removed",
+          src: "https://example.com/old.png",
+          alt: "Old plot",
+        },
+      ],
+    });
   });
 });

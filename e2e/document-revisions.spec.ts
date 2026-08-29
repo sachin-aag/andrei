@@ -64,4 +64,41 @@ test.describe("document revisions", () => {
     await expect(page.getByTestId("work-product-tab-history")).toHaveCount(0);
     await expect(page.locator("#define")).toBeVisible();
   });
+
+  test("records a coalesced manual version after a section save", async ({
+    page,
+  }) => {
+    const res = await page.request.patch(
+      `/api/reports/${reportId}/sections/define`,
+      {
+        data: {
+          content: {
+            narrative: {
+              type: "doc",
+              content: [
+                {
+                  type: "paragraph",
+                  content: [
+                    {
+                      type: "text",
+                      text: "Manual edit after the seeded Agent versions.",
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+        headers: await browserCookieHeaders(page),
+      }
+    );
+    expect(res.ok(), `manual section save failed (${res.status()})`).toBeTruthy();
+
+    await setReportChrome(page, "agent");
+    await expandWorkProductPanel(page);
+    await page.getByTestId("document-revision-history").click();
+    await expect(page.getByText("Version 3")).toBeVisible();
+    await expect(page.getByText("Edits")).toBeVisible();
+    await expect(page.getByText("Edited Define")).toBeVisible();
+  });
 });

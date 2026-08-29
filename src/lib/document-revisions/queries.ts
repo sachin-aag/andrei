@@ -10,6 +10,7 @@ export async function listDocumentRevisions(reportId: string) {
       source: documentRevisions.source,
       summary: documentRevisions.summary,
       createdAt: documentRevisions.createdAt,
+      updatedAt: documentRevisions.updatedAt,
       createdBy: documentRevisions.createdBy,
     })
     .from(documentRevisions)

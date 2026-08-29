@@ -21,6 +21,7 @@ export async function GET(
       source: row.source,
       summary: row.summary,
       createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
       createdBy: row.createdBy,
     })),
   });

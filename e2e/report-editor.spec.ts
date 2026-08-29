@@ -306,6 +306,7 @@ test.describe("report editor", () => {
       .toBeGreaterThan(widthBefore);
 
     await openReportAnalytics(page);
+    await expect(page.getByTestId("analytics-revision-history")).toBeVisible();
     const analytics = page.getByTestId("report-analytics-workspace");
     await expect(analytics).toBeVisible();
     const analyticsBox = await analytics.boundingBox();
@@ -323,9 +324,13 @@ test.describe("report editor", () => {
 
     await setReportChrome(page, "agent");
     await expandWorkProductPanel(page);
+    await expect(page.getByTestId("analytics-revision-history")).toBeVisible();
+    await page.getByTestId("report-surface-document").click();
     await page.getByTestId("document-revision-history").click();
     await expect(
-      page.getByText("Versions appear after the assistant edits the document.")
+      page.getByText(
+        "Versions appear after you edit the document or the assistant writes to it."
+      )
     ).toBeVisible();
 
     await collapseWorkProductPanel(page);

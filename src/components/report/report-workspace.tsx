@@ -37,6 +37,7 @@ import { WorkProductTabs } from "./work-product-tabs";
 import { CommentsGutterToggle } from "./comments-gutter-toggle";
 import { DocumentRevisionHistory } from "./document-revision-history";
 import { DocumentRevisionDiff } from "./document-revision-diff";
+import { AnalyticsRevisionDiff } from "./analytics-revision-diff";
 import { ReportEditorToolbar } from "./report-editor-toolbar";
 import {
   attachmentIdFromTab,
@@ -286,9 +287,11 @@ export function ReportWorkspace({
   const [activeTabId, setActiveTabId] = useState<CanvasTabId>("report");
   const [openAttachmentIds, setOpenAttachmentIds] = useState<string[]>([]);
   const [seenOpenEpoch, setSeenOpenEpoch] = useState(-1);
-  const [compare, setCompare] = useState<{ from: number; to: number } | null>(
-    null
-  );
+  const [compare, setCompare] = useState<{
+    from: number;
+    to: number;
+    surface: "report" | "analytics";
+  } | null>(null);
   const agentChrome = chrome === "agent";
   const [commentsGutterVisible, setCommentsGutterVisible] = useState(false);
   const {
@@ -388,6 +391,13 @@ export function ReportWorkspace({
   });
   const showCommentsSwitch =
     !agentChrome && reportSurface && mode !== "view";
+  const historySurface: "report" | "analytics" =
+    comparing && compare
+      ? compare.surface
+      : analyticsSurface
+        ? "analytics"
+        : "report";
+  const showHistory = reportSurface || analyticsSurface || comparing;
   const activeAttachmentTabId = attachmentIdFromTab(liveActiveTabId);
   const activeAttachmentTabLabel = activeAttachmentTabId
     ? attachmentLabels[activeAttachmentTabId]
@@ -802,11 +812,17 @@ export function ReportWorkspace({
         case "report":
         case "analytics":
           return;
-        case "history":
+        case "history": {
+          const surface = compare?.surface ?? "report";
           setCompare(null);
-          setActiveTabId("report");
-          setWorkProductView("report");
+          if (surface === "analytics") {
+            setAnalyticsOpen(true);
+            setSidebarTab("assistant");
+          }
+          setActiveTabId(surface);
+          setWorkProductView(surface);
           return;
+        }
         case "attachment": {
           const attachmentId = attachmentIdFromTab(id);
           if (!attachmentId) return;
@@ -849,7 +865,7 @@ export function ReportWorkspace({
         }
       }
     },
-    [activeAttachmentId, liveActiveTabId, canvasTabs, closeDocument, openDocument]
+    [activeAttachmentId, liveActiveTabId, canvasTabs, closeDocument, openDocument, compare]
   );
 
   const handleChromeChange = useCallback(
@@ -993,23 +1009,33 @@ export function ReportWorkspace({
                   onClose={closeCanvasTab}
                 />
                 <div className="ml-auto flex shrink-0 items-center gap-2 py-2">
-                  <DocumentRevisionHistory
-                    reportId={report.id}
-                    compare={compare}
-                    onCompare={(range) => {
-                      if (agentChrome && previewCollapsed) {
-                        setPreviewCollapsed(false);
-                      }
-                      setWorkProductView("report");
-                      setCompare(range);
-                      setActiveTabId("history");
-                    }}
-                    onExitCompare={() => {
-                      setCompare(null);
-                      setActiveTabId("report");
-                      setWorkProductView("report");
-                    }}
-                  />
+                  {showHistory ? (
+                    <DocumentRevisionHistory
+                      reportId={report.id}
+                      surface={historySurface}
+                      compare={compare}
+                      onCompare={(range) => {
+                        if (agentChrome && previewCollapsed) {
+                          setPreviewCollapsed(false);
+                        }
+                        if (historySurface === "analytics") {
+                          setAnalyticsOpen(true);
+                        }
+                        setWorkProductView(historySurface);
+                        setCompare({ ...range, surface: historySurface });
+                        setActiveTabId("history");
+                      }}
+                      onExitCompare={() => {
+                        const surface = compare?.surface ?? "report";
+                        setCompare(null);
+                        if (surface === "analytics") {
+                          setAnalyticsOpen(true);
+                        }
+                        setActiveTabId(surface);
+                        setWorkProductView(surface);
+                      }}
+                    />
+                  ) : null}
                   {showCommentsSwitch ? (
                     <CommentsGutterToggle
                       checked={commentsGutterVisible}
@@ -1038,7 +1064,7 @@ export function ReportWorkspace({
                   hideReportEditors ? "overflow-hidden" : "overflow-auto"
                 )}
               >
-                {comparing && compare ? (
+                {comparing && compare?.surface === "report" ? (
                   <DocumentRevisionDiff
                     reportId={report.id}
                     from={compare.from}
@@ -1047,6 +1073,19 @@ export function ReportWorkspace({
                       setCompare(null);
                       setActiveTabId("report");
                       setWorkProductView("report");
+                    }}
+                  />
+                ) : null}
+                {comparing && compare?.surface === "analytics" ? (
+                  <AnalyticsRevisionDiff
+                    reportId={report.id}
+                    from={compare.from}
+                    to={compare.to}
+                    onExit={() => {
+                      setCompare(null);
+                      setAnalyticsOpen(true);
+                      setActiveTabId("analytics");
+                      setWorkProductView("analytics");
                     }}
                   />
                 ) : null}

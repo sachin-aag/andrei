@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { auditActorFromUser } from "@/lib/audit";
+import { tryRecordAnalyticsChange } from "@/lib/analytics-revisions/record-change";
 import { requireAnalyticsAccess } from "@/lib/statistical-analysis/access";
 import {
   deleteAnalysisForReport,
@@ -33,6 +35,16 @@ export async function POST(request: Request, context: RouteContext) {
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: result.status });
     }
+    await tryRecordAnalyticsChange({
+      reportId,
+      analytics: result.analytics,
+      actor: auditActorFromUser(access.user),
+      action: "analysis_updated",
+      summary: `Recomputed ${result.analysis.title}`,
+      entityId: result.analysis.id,
+      historySource: "manual",
+      historySummary: `Recomputed ${result.analysis.title}`,
+    });
     return NextResponse.json({
       analytics: result.analytics,
       analysis: result.analysis,
@@ -45,6 +57,16 @@ export async function POST(request: Request, context: RouteContext) {
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: result.status });
     }
+    await tryRecordAnalyticsChange({
+      reportId,
+      analytics: result.analytics,
+      actor: auditActorFromUser(access.user),
+      action: "analysis_updated",
+      summary: `Updated ${result.analysis.title}`,
+      entityId: result.analysis.id,
+      historySource: "manual",
+      historySummary: `Updated ${result.analysis.title}`,
+    });
     return NextResponse.json({
       analytics: result.analytics,
       analysis: result.analysis,
@@ -63,5 +85,15 @@ export async function DELETE(_request: Request, context: RouteContext) {
   if (!analytics) {
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
+  await tryRecordAnalyticsChange({
+    reportId,
+    analytics,
+    actor: auditActorFromUser(access.user),
+    action: "analysis_deleted",
+    summary: "Deleted analysis",
+    entityId: analysisId,
+    historySource: "manual",
+    historySummary: "Deleted analysis",
+  });
   return NextResponse.json({ analytics });
 }

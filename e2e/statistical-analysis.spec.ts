@@ -87,6 +87,7 @@ test.describe("report analytics", () => {
     await expect(page.getByTestId("worksheet-grid")).toBeVisible();
     await expect(page.getByRole("heading", { name: /^define$/i })).toHaveCount(0);
     await expect(page.getByTestId("analytics-save-status")).toHaveText("");
+    await expect(page.getByTestId("analytics-revision-history")).toBeVisible();
   });
 
   test("autosave settles to Saved and keeps later cell edits", async ({
@@ -111,6 +112,10 @@ test.describe("report analytics", () => {
     await expect(saveStatus).toHaveText("Saved");
     await expect(page.getByTestId("cell-c1-0")).toHaveText("101.5");
     await expect(page.getByTestId("cell-c1-1")).toHaveText("102.1");
+
+    await page.getByTestId("analytics-revision-history").click();
+    await expect(page.getByText("Version 1")).toBeVisible();
+    await expect(page.getByText(/Edits/)).toBeVisible();
   });
 
   test("loads sample assay and runs a Normal Capability Sixpack", async ({

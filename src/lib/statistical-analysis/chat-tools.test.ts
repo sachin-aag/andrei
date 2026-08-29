@@ -35,6 +35,10 @@ vi.mock("@/lib/ai/chat/model", () => ({
   resolveChatExtractLanguageModel: vi.fn(),
 }));
 
+vi.mock("@/lib/analytics-revisions/record-change", () => ({
+  tryRecordAnalyticsChange: vi.fn(),
+}));
+
 vi.mock("@/lib/statistical-analysis/store", () => ({
   createAnalysisForReport: vi.fn(),
   getOrCreateReportAnalytics: vi.fn(),

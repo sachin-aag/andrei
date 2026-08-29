@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { History } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -11,28 +11,70 @@ export type DocumentRevisionSummary = {
   source: string;
   summary: string;
   createdAt: string;
+  updatedAt?: string;
   createdBy: string | null;
 };
+
+function revisionSourceLabel(source: string): string {
+  switch (source) {
+    case "agent_turn":
+      return "Agent";
+    case "manual":
+      return "Edits";
+    default:
+      return "Edits";
+  }
+}
 
 export function DocumentRevisionHistory({
   reportId,
   compare,
   onCompare,
   onExitCompare,
+  surface = "report",
 }: {
   reportId: string;
   compare: { from: number; to: number } | null;
   onCompare: (range: { from: number; to: number }) => void;
   onExitCompare: () => void;
+  surface?: "report" | "analytics";
 }) {
   const [open, setOpen] = useState(false);
   const [revisions, setRevisions] = useState<DocumentRevisionSummary[]>([]);
   const [fromNo, setFromNo] = useState<number | null>(null);
   const [toNo, setToNo] = useState<number | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (rootRef.current?.contains(event.target as Node)) return;
+      setOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [open]);
+
+  const revisionsHref =
+    surface === "analytics"
+      ? `/api/reports/${reportId}/analytics/revisions`
+      : `/api/reports/${reportId}/revisions`;
+  const historyTestId =
+    surface === "analytics"
+      ? "analytics-revision-history"
+      : "document-revision-history";
+  const compareTestId =
+    surface === "analytics"
+      ? "analytics-revision-compare"
+      : "document-revision-compare";
+  const emptyCopy =
+    surface === "analytics"
+      ? "Versions appear after you edit the worksheet or the assistant writes to it."
+      : "Versions appear after you edit the document or the assistant writes to it.";
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch(`/api/reports/${reportId}/revisions`);
+      const res = await fetch(revisionsHref);
       if (!res.ok) return;
       const data = (await res.json()) as { revisions?: DocumentRevisionSummary[] };
       const next = Array.isArray(data.revisions) ? data.revisions : [];
@@ -44,7 +86,12 @@ export function DocumentRevisionHistory({
     } catch {
       setRevisions([]);
     }
-  }, [reportId]);
+  }, [revisionsHref]);
+
+  useEffect(() => {
+    if (!open) return;
+    void load();
+  }, [load, open]);
 
   const canCompare = useMemo(
     () =>
@@ -57,10 +104,10 @@ export function DocumentRevisionHistory({
   );
 
   return (
-    <div className="relative">
+    <div ref={rootRef} className="relative">
       <button
         type="button"
-        data-testid="document-revision-history"
+        data-testid={historyTestId}
         aria-expanded={open}
         onClick={() => {
           setOpen((value) => !value);
@@ -77,9 +124,7 @@ export function DocumentRevisionHistory({
       {open ? (
         <div className="absolute right-0 top-8 z-40 w-80 rounded-lg border border-[var(--border)] bg-[var(--card)] p-3 shadow-xl">
           {revisions.length === 0 ? (
-            <p className="text-xs text-[var(--muted-foreground)]">
-              Versions appear after the assistant edits the document.
-            </p>
+            <p className="text-xs text-[var(--muted-foreground)]">{emptyCopy}</p>
           ) : (
             <>
               <ul className="max-h-48 space-y-1.5 overflow-y-auto">
@@ -95,11 +140,12 @@ export function DocumentRevisionHistory({
                         Version {row.revisionNo}
                       </p>
                       <p className="text-[11px] text-[var(--muted-foreground)]">
-                        {formatDistanceToNow(new Date(row.createdAt), {
-                          addSuffix: true,
-                        })}
+                        {formatDistanceToNow(
+                          new Date(row.updatedAt ?? row.createdAt),
+                          { addSuffix: true }
+                        )}
                         {" · "}
-                        Agent
+                        {revisionSourceLabel(row.source)}
                       </p>
                       {row.summary ? (
                         <p className="mt-0.5 line-clamp-2 text-[11px] text-[var(--muted-foreground)]">
@@ -147,7 +193,7 @@ export function DocumentRevisionHistory({
                   </div>
                   <button
                     type="button"
-                    data-testid="document-revision-compare"
+                    data-testid={compareTestId}
                     disabled={!canCompare}
                     onClick={() => {
                       if (!canCompare || fromNo == null || toNo == null) return;

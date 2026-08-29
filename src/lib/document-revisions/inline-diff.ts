@@ -1,6 +1,6 @@
 import type { JSONContent } from "@tiptap/core";
 import { diffWords } from "diff";
-import type { DocumentType, SectionType } from "@/db/schema";
+import type { DocumentType } from "@/db/schema";
 import { chatTargetFields, sectionLabel } from "@/lib/ai/chat/fields";
 import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
 import { flattenForAnchor } from "@/lib/suggestions/locator";
@@ -21,11 +21,18 @@ export type InlineTableDiff = {
   rows: InlineTableCellDiff[][];
 };
 
+export type InlineImageDiff = {
+  change: "added" | "removed";
+  src: string;
+  alt: string;
+};
+
 export type InlineFieldDiff = {
   targetField: string;
-  kind: "text" | "table";
+  kind: "text" | "table" | "images";
   parts?: InlineDiffPart[];
   table?: InlineTableDiff;
+  images?: InlineImageDiff[];
 };
 
 export type InlineSectionDiff = {
@@ -74,6 +81,66 @@ function tablesFromDoc(doc: JSONContent): string[][][] {
   return tables;
 }
 
+function tableChanged(table: InlineTableDiff): boolean {
+  return table.rows.some((row) =>
+    row.some((cell) => cell.parts.some((part) => part.type !== "equal"))
+  );
+}
+
+function withoutTablesAndImages(node: JSONContent): JSONContent | null {
+  if (node.type === "table" || node.type === "imageInline") return null;
+  if (!node.content) return node;
+  const content = node.content.flatMap((child) => {
+    const next = withoutTablesAndImages(child);
+    return next ? [next] : [];
+  });
+  return { ...node, content };
+}
+
+function proseText(doc: JSONContent): string {
+  const stripped = withoutTablesAndImages(doc);
+  if (!stripped) return "";
+  return flattenForAnchor(stripped).text;
+}
+
+function imagesFromDoc(doc: JSONContent): { src: string; alt: string }[] {
+  const images: { src: string; alt: string }[] = [];
+  const walk = (node: JSONContent | undefined) => {
+    if (!node) return;
+    if (node.type === "imageInline") {
+      const src =
+        typeof node.attrs?.src === "string" ? node.attrs.src.trim() : "";
+      if (src) {
+        const alt =
+          typeof node.attrs?.alt === "string" ? node.attrs.alt.trim() : "";
+        images.push({ src, alt });
+      }
+    }
+    for (const child of node.content ?? []) walk(child);
+  };
+  walk(doc);
+  return images;
+}
+
+function diffImages(fromDoc: JSONContent, toDoc: JSONContent): InlineImageDiff[] {
+  const from = imagesFromDoc(fromDoc);
+  const to = imagesFromDoc(toDoc);
+  const fromSrc = new Map(from.map((image) => [image.src, image]));
+  const toSrc = new Map(to.map((image) => [image.src, image]));
+  const diffs: InlineImageDiff[] = [];
+  for (const image of to) {
+    if (!fromSrc.has(image.src)) {
+      diffs.push({ change: "added", src: image.src, alt: image.alt });
+    }
+  }
+  for (const image of from) {
+    if (!toSrc.has(image.src)) {
+      diffs.push({ change: "removed", src: image.src, alt: image.alt });
+    }
+  }
+  return diffs;
+}
+
 function diffTables(from: string[][], to: string[][]): InlineTableDiff {
   const rowCount = Math.max(from.length, to.length);
   const colCount = Math.max(
@@ -97,25 +164,42 @@ function diffTables(from: string[][], to: string[][]): InlineTableDiff {
 function diffRichField(
   fromContent: Record<string, unknown>,
   toContent: Record<string, unknown>,
-  section: SectionType,
   targetField: string
-): InlineFieldDiff | null {
+): InlineFieldDiff[] {
   const fromDoc = getRichFieldValue(fromContent, targetField);
   const toDoc = getRichFieldValue(toContent, targetField);
   const fromTables = tablesFromDoc(fromDoc);
   const toTables = tablesFromDoc(toDoc);
-  if (fromTables.length === 1 && toTables.length === 1) {
-    const table = diffTables(fromTables[0]!, toTables[0]!);
-    const changed = table.rows.some((row) =>
-      row.some((cell) => cell.parts.some((part) => part.type !== "equal"))
-    );
-    if (!changed) return null;
-    return { targetField, kind: "table", table };
+  const fields: InlineFieldDiff[] = [];
+  const tableCount = Math.max(fromTables.length, toTables.length);
+  for (let index = 0; index < tableCount; index++) {
+    const table = diffTables(fromTables[index] ?? [], toTables[index] ?? []);
+    if (!tableChanged(table)) continue;
+    fields.push({
+      targetField:
+        tableCount > 1 ? `${targetField} · table ${index + 1}` : targetField,
+      kind: "table",
+      table,
+    });
   }
-  const fromText = flattenForAnchor(fromDoc).text;
-  const toText = flattenForAnchor(toDoc).text;
-  if (fromText === toText) return null;
-  return { targetField, kind: "text", parts: wordDiff(fromText, toText) };
+  const images = diffImages(fromDoc, toDoc);
+  if (images.length > 0) {
+    fields.push({
+      targetField: `${targetField} · figures`,
+      kind: "images",
+      images,
+    });
+  }
+  const fromText = proseText(fromDoc);
+  const toText = proseText(toDoc);
+  if (fromText !== toText) {
+    fields.push({
+      targetField,
+      kind: "text",
+      parts: wordDiff(fromText, toText),
+    });
+  }
+  return fields;
 }
 
 function diffPlainField(
@@ -163,10 +247,18 @@ export function diffRevisionSnapshots(args: {
       }
     } else {
       for (const field of chatTargetFields(section)) {
-        const next = isRichTargetField(section, field.targetField)
-          ? diffRichField(fromContent, toContent, section, field.targetField)
-          : diffPlainField(fromContent, toContent, field.targetField);
-        if (next) fields.push(next);
+        if (isRichTargetField(section, field.targetField)) {
+          fields.push(
+            ...diffRichField(fromContent, toContent, field.targetField)
+          );
+        } else {
+          const next = diffPlainField(
+            fromContent,
+            toContent,
+            field.targetField
+          );
+          if (next) fields.push(next);
+        }
       }
       if (fields.length === 0) {
         const parts = wordDiff(

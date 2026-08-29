@@ -170,6 +170,10 @@ export const auditActionEnum = pgEnum("audit_action", [
   "attachment_uploaded",
   "attachment_deleted",
   "attachment_reprocessed",
+  "worksheet_updated",
+  "analysis_created",
+  "analysis_updated",
+  "analysis_deleted",
 ]);
 
 export const auditEntityEnum = pgEnum("audit_entity", [
@@ -184,6 +188,7 @@ export const auditEntityEnum = pgEnum("audit_entity", [
   "auth",
   "improve_ai",
   "attachment",
+  "analytics",
 ]);
 
 export const attachmentProcessingStatusEnum = pgEnum(
@@ -451,6 +456,7 @@ export const reportsRelations = relations(reports, ({ one, many }) => ({
   managers: many(reportManagers),
   attachments: many(reportAttachments),
   analytics: one(statisticalWorkspaces),
+  analyticsRevisions: many(analyticsRevisions),
 }));
 
 export const reportManagersRelations = relations(reportManagers, ({ one }) => ({
@@ -1328,9 +1334,55 @@ export const statisticalAnalysesRelations = relations(
 
 export const documentRevisionSourceEnum = pgEnum("document_revision_source", [
   "agent_turn",
+  "manual",
 ]);
 
-/** One product version of the report, created after an Agent-chrome turn that wrote sections. */
+/** One product version of Analytics (worksheet + plots), idle-coalesced like document History. */
+export const analyticsRevisions = pgTable(
+  "analytics_revisions",
+  {
+    id: text("id").primaryKey().$defaultFn(() => createId()),
+    reportId: text("report_id")
+      .notNull()
+      .references(() => reports.id, { onDelete: "cascade" }),
+    revisionNo: integer("revision_no").notNull(),
+    source: documentRevisionSourceEnum("source").notNull().default("manual"),
+    /** `worksheet` coalesces; `analysis` always inserts a new History row. */
+    kind: text("kind").notNull().default("worksheet"),
+    summary: text("summary").notNull().default(""),
+    createdBy: text("created_by"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    worksheet: jsonb("worksheet").notNull(),
+    analyses: jsonb("analyses").notNull().default([]),
+    contentHash: text("content_hash").notNull(),
+  },
+  (t) => ({
+    reportRevisionUnique: uniqueIndex(
+      "analytics_revisions_report_revision_unique"
+    ).on(t.reportId, t.revisionNo),
+    reportCreatedIdx: index("analytics_revisions_report_created_idx").on(
+      t.reportId,
+      t.createdAt
+    ),
+  })
+);
+
+export const analyticsRevisionsRelations = relations(
+  analyticsRevisions,
+  ({ one }) => ({
+    report: one(reports, {
+      fields: [analyticsRevisions.reportId],
+      references: [reports.id],
+    }),
+  })
+);
+
+/** One product version of the report (Agent turn or idle-coalesced human edits). */
 export const documentRevisions = pgTable(
   "document_revisions",
   {
@@ -1349,6 +1401,9 @@ export const documentRevisions = pgTable(
     summary: text("summary").notNull().default(""),
     createdBy: text("created_by"),
     createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
   },

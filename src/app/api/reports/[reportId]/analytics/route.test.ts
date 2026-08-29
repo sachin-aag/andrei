@@ -10,6 +10,7 @@ import {
   updateAnalysisForReport,
   updateReportAnalytics,
 } from "@/lib/statistical-analysis/store";
+import { tryRecordAnalyticsChange } from "@/lib/analytics-revisions/record-change";
 import type { ReportAnalyticsView } from "@/lib/statistical-analysis/types";
 
 vi.mock("@/db", () => ({ db: {} }));
@@ -25,6 +26,10 @@ vi.mock("@/lib/statistical-analysis/store", () => ({
   recomputeAnalysisForReport: vi.fn(),
   updateAnalysisForReport: vi.fn(),
   deleteAnalysisForReport: vi.fn(),
+}));
+
+vi.mock("@/lib/analytics-revisions/record-change", () => ({
+  tryRecordAnalyticsChange: vi.fn(),
 }));
 
 const engineer = {
@@ -120,6 +125,14 @@ describe("/api/reports/[reportId]/analytics", () => {
       "report-1",
       analytics.worksheet,
       { expectedVersion: undefined }
+    );
+    expect(tryRecordAnalyticsChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reportId: "report-1",
+        action: "worksheet_updated",
+        historySource: "manual",
+        analytics,
+      })
     );
   });
 

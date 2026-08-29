@@ -10,6 +10,7 @@ import { requireAnalyticsAccess } from "@/lib/statistical-analysis/access";
 import { buildAnalyticsChatSystemPrompt } from "@/lib/statistical-analysis/chat-prompt";
 import { ANALYTICS_CHAT_PROMPT_VERSION } from "@/lib/statistical-analysis/chat-prompt";
 import { buildAnalyticsChatTools } from "@/lib/statistical-analysis/chat-tools";
+import { auditActorFromUser } from "@/lib/audit";
 import {
   ANALYTICS_CHAT_STEP_BUDGET,
   createAnalyticsSearchGate,
@@ -185,6 +186,7 @@ export async function POST(
     searchGate,
     pinnedAttachmentIds,
     focusedSheetId,
+    actor: auditActorFromUser(user),
   });
   const pace: ChatPace = isChatPace(body.pace) ? body.pace : DEFAULT_CHAT_PACE;
   const paceConfig = chatPaceConfig(pace);
