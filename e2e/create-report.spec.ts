@@ -7,6 +7,7 @@ import {
   openNewReportDialog,
   uniqueDeviationNo,
 } from "./helpers/reports";
+import { waitForReportEditor } from "./helpers/workspace";
 
 test.describe.configure({ mode: "serial" });
 
@@ -59,7 +60,7 @@ test.describe("create report", () => {
     await expect(page).toHaveURL(/\/reports\/[^/]+\/edit/, { timeout: 30_000 });
     const match = page.url().match(/\/reports\/([^/]+)\/edit/);
     createdReportId = match?.[1] ?? null;
-    await expect(page.getByRole("heading", { name: /^define$/i })).toBeVisible();
+    await waitForReportEditor(page);
   });
 
   test("cancel closes dialog", async ({ page }) => {

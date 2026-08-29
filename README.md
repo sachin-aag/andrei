@@ -2,7 +2,7 @@
 
 Andrei is a Next.js app for drafting, reviewing, and exporting regulated quality documents. It replaces the Word-over-email loop with an in-browser editor, AI checks against quality criteria, manager review, attachment evidence, and one-click DOCX export.
 
-The same engine ships as three customer packs: **demo** (Andrei branding, investigation reports plus design verification), **mj** (M.J. Biopharm SOP/DP/QA/008 overlay), and **convergent** (Convergent Dental branding, design verification only).
+The same engine ships as three customer packs: **demo** (Andrei branding, investigation reports plus design verification plus a free-form Document), **mj** (M.J. Biopharm SOP/DP/QA/008 overlay), and **convergent** (Convergent Dental branding, design verification only).
 
 **Release notes:** use the project skill **release-notes** (`.agents/skills/release-notes/SKILL.md`) to draft paste-ready markdown for GitHub Releases. Do not paste long release notes here.
 
@@ -11,7 +11,7 @@ The same engine ships as three customer packs: **demo** (Andrei branding, invest
 ## What it does
 
 - **In-browser editor** — TipTap sections with 1.5s auto-save and a `sendBeacon` flush on unload.
-- **Two document types** — investigation reports (DMAIC) and design verification. Chat, evaluation, suggestions, and editors all go through `src/lib/document-types/`.
+- **Document types** — investigation reports (DMAIC), design verification, and (demo pack) a free-form Document. Chat, evaluation, suggestions, and editors all go through `src/lib/document-types/`.
 - **AI Check** — traffic-light evaluation (`met` / `partially_met` / `not_met`) against type-specific criteria. Gemini via the Vercel AI Gateway or a direct Gemini key.
 - **Suggested fixes** — anchored edits and whole-field redrafts. Apply or dismiss from the sidebar, the rich editor, or a plain-text field.
 - **Report chat** — per-report assistant that can read sections and search attached PDFs/DOCX.
@@ -19,7 +19,6 @@ The same engine ships as three customer packs: **demo** (Andrei branding, invest
 - **Review workflow** — `draft` → `submitted` → `in_review` → `feedback` (back to the engineer) or `approved`.
 - **DOCX export** (and MJ Word import) matching the customer template.
 - **Admin** — users, password policy, retention, audit trail, and e-signatures (21 CFR Part 11-style hash chain).
-- **Improve AI** — a separate agree/disagree loop on AI verdicts, stored apart from the live evaluation cache.
 
 Insights dashboards exist under `/insights` and are currently backed by mock data.
 
@@ -31,12 +30,13 @@ Insights dashboards exist under `/insights` and are currently backed by mock dat
 |----------------|------|----------|
 | `investigation_report` | deviation | DMAIC + conclusion + attachments / approvals |
 | `design_verification` | design verification | demo: cover page + 10 sections; Convergent pack: 9 Solea DV sections |
+| `generic_document` | document | one continuous `body` section (demo pack only; no criteria) |
 
 Which types and sections appear is a **customer pack** decision, not a feature flag.
 
 | Pack | Env | What users see |
 |------|-----|----------------|
-| `demo` (default) | `ANDREI_CUSTOMER=demo` | Andrei branding, investigation + design verification, conclusion visible |
+| `demo` (default) | `ANDREI_CUSTOMER=demo` | Andrei branding, investigation + design verification + Document, conclusion visible |
 | `mj` | `ANDREI_CUSTOMER=mj` | MJ branding, SOP/DP/QA/008 criteria and Word template, Word import, investigation only (no conclusion, no design verification) |
 | `convergent` | `ANDREI_CUSTOMER=convergent` | Convergent Dental branding, design verification only (9-section Solea DV template) |
 

@@ -1,4 +1,8 @@
 import type { ListNumberingBases } from "@/lib/export/docx-numbering";
+import {
+  DEFAULT_A4_PAGE_SETUP,
+  type DocxPageSetup,
+} from "@/lib/export/docx-page-setup";
 import { readRasterDimensions } from "@/lib/export/raster-dimensions";
 
 export type DocxMediaAsset = {
@@ -73,8 +77,14 @@ export type DocxExportContext = {
   tableCellVAlign: "center" | null;
   tableHeaderAlign: "center" | null;
   tableBorderColor: string | null;
+  pageSetup: DocxPageSetup;
   /** Numeric citation markers in the field currently being converted. */
   citationNumbers?: ReadonlySet<number>;
+  /**
+   * Emit Word Heading1–3 paragraph styles for TipTap heading nodes.
+   * Investigation/DV keep headings as bold body paragraphs.
+   */
+  useHeadingStyles: boolean;
 };
 
 /** Matches 790-00134R Solea DV: Arial 10pt justified body, 9pt centered tables. */
@@ -110,7 +120,8 @@ const DEFAULT_TABLE_HEADER_FILL = "D9E2F3";
 
 export function createDocxExportContext(
   numberingBases: ListNumberingBases = EMPTY_NUMBERING_BASES,
-  runStyle?: DocxRunStyle
+  runStyle?: DocxRunStyle,
+  options?: { useHeadingStyles?: boolean; pageSetup?: DocxPageSetup }
 ): DocxExportContext {
   return {
     media: [],
@@ -138,6 +149,8 @@ export function createDocxExportContext(
     tableCellVAlign: runStyle?.tableCellVAlign ?? null,
     tableHeaderAlign: runStyle?.tableHeaderAlign ?? null,
     tableBorderColor: runStyle?.tableBorderColor ?? null,
+    useHeadingStyles: options?.useHeadingStyles === true,
+    pageSetup: options?.pageSetup ?? DEFAULT_A4_PAGE_SETUP,
   };
 }
 

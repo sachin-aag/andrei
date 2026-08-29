@@ -27,9 +27,12 @@ export function fillPlaceholder(
   const currentText = doc.textBetween(fromPos, toPos, "");
   if (currentText !== text) return false;
 
+  // Do not `.focus()` the editor — this runs from the Placeholders panel
+  // fill input. Focusing the document after Confirm steals the caret and,
+  // combined with an editor remount, produced a ghost caret in the next
+  // fill field (visible cursor, typed keys never appear).
   editor
     .chain()
-    .focus()
     .deleteRange({ from: fromPos, to: toPos })
     .insertContentAt(fromPos, value)
     .run();

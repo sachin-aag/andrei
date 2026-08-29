@@ -519,6 +519,7 @@ type EnrichableSections = {
     investigationOutcome?: JSONContent;
     rootCause?: { narrative?: JSONContent };
   };
+  body?: { narrative?: JSONContent };
 };
 
 function collectEnrichableDocs(sections: EnrichableSections): JSONContent[] {
@@ -529,6 +530,7 @@ function collectEnrichableDocs(sections: EnrichableSections): JSONContent[] {
     sections.analyze?.fiveWhy?.narrative,
     sections.analyze?.investigationOutcome,
     sections.analyze?.rootCause?.narrative,
+    sections.body?.narrative,
   ].filter((n): n is JSONContent => !!n && n.type === "doc");
 }
 
@@ -629,24 +631,42 @@ function dedupeSupersetNarrativeParagraphs(doc: JSONContent): void {
   }
 }
 
+type EnrichWalkOptions = {
+  /** Heading nodes (generic documents). Investigation keeps headings as paragraphs. */
+  headings?: boolean;
+  /** Nested lists / blockquotes. Off for investigation so 5-Why list items stay mammoth text. */
+  lists?: boolean;
+};
+
 function enrichDocFromOoxml(
   doc: JSONContent,
   parsed: ParsedParagraph[],
   usedParsed: Set<number>,
-  pIdxRef: { current: number }
+  pIdxRef: { current: number },
+  walk: EnrichWalkOptions = {}
 ): void {
   if (!doc.content?.length) return;
 
   for (let i = 0; i < doc.content.length; i++) {
     const node = doc.content[i]!;
-    if (node.type === "paragraph") {
+    if (node.type === "paragraph" || (walk.headings && node.type === "heading")) {
       enrichParagraphNode(node, parsed, usedParsed, pIdxRef, { parent: doc, index: i });
+      continue;
+    }
+    if (walk.lists && (node.type === "bulletList" || node.type === "orderedList")) {
+      for (const item of node.content ?? []) {
+        enrichDocFromOoxml(item, parsed, usedParsed, pIdxRef, walk);
+      }
+      continue;
+    }
+    if (walk.lists && (node.type === "listItem" || node.type === "blockquote")) {
+      enrichDocFromOoxml(node, parsed, usedParsed, pIdxRef, walk);
       continue;
     }
     if (node.type === "table") {
       for (const row of node.content ?? []) {
         for (const cell of row.content ?? []) {
-          enrichDocFromOoxml(cell, parsed, usedParsed, pIdxRef);
+          enrichDocFromOoxml(cell, parsed, usedParsed, pIdxRef, walk);
         }
       }
     }
@@ -655,7 +675,8 @@ function enrichDocFromOoxml(
 
 export async function enrichNarrativesFromDocxBuffer(
   buffer: Buffer,
-  sections: EnrichableSections
+  sections: EnrichableSections,
+  walk: EnrichWalkOptions = {}
 ): Promise<void> {
   const xml = readDocumentXml(buffer);
   if (!xml) return;
@@ -672,7 +693,7 @@ export async function enrichNarrativesFromDocxBuffer(
   const pIdxRef = { current: 0 };
   const usedParsed = new Set<number>();
   for (const narrative of collectEnrichableDocs(sections)) {
-    enrichDocFromOoxml(narrative, parsed, usedParsed, pIdxRef);
+    enrichDocFromOoxml(narrative, parsed, usedParsed, pIdxRef, walk);
     dedupeSupersetNarrativeParagraphs(narrative);
   }
 }

@@ -33,6 +33,7 @@ import {
   AlignVerticalJustifyCenter,
   ArrowDownToLine,
 } from "lucide-react";
+import { isBulkSuggestionApply } from "@/lib/suggestions/apply-transition";
 import {
   useReportComments,
   useReportData,
@@ -48,7 +49,6 @@ import { useUserDirectory } from "@/providers/user-directory-provider";
 import { cn } from "@/lib/utils";
 import { createCommentHighlightExtension } from "@/lib/tiptap/comment-highlights";
 import type { CommentHighlightRange, CommentHighlightHandlers } from "@/lib/tiptap/comment-highlights";
-import { getCustomerPack } from "@/lib/customers/packs";
 import { createCitationHighlightExtension } from "@/lib/tiptap/citation-highlights";
 import {
   createPlaceholderHighlightExtension,
@@ -69,6 +69,7 @@ import {
 import {
   injectSuggestionMarks,
   richDocsMatchIgnoringAiPreview,
+  shouldApplyExternalValueToEditor,
   shouldSkipSuggestionDocSync,
   stripPendingSuggestionsExcept,
 } from "@/lib/tiptap/suggestion-inject";
@@ -82,6 +83,13 @@ import { buildInactiveSuggestionCss } from "@/lib/tiptap/inactive-suggestion-css
 import { buildRedraftPreviewDoc } from "@/lib/tiptap/redraft-preview";
 import { markdownToDoc } from "@/lib/tiptap/markdown-to-doc";
 import { normalizeRichField } from "@/lib/tiptap/rich-text";
+import {
+  citationsAtEndOfSectionFor,
+  editorProfileFor,
+  getDocumentType,
+  suggestionApplyModeFor,
+} from "@/lib/document-types";
+import { afterPaint } from "@/lib/suggestions/apply-transition";
 import { buildSuggestionEdit, narrativeHasSuggestionMarks } from "@/lib/suggestions/apply-narrative-suggestion";
 import {
   acceptSuggestion,
@@ -89,6 +97,7 @@ import {
   CommentPersistError,
   SectionPersistError,
 } from "@/lib/suggestions/accept-suggestion";
+import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
 import { suggestionTargetsField } from "@/lib/suggestions/resolve-suggestion-field-path";
 import { validateSuggestionLocate } from "@/lib/suggestions/validate-suggestion";
 import { buildTableOperationPreviewDoc } from "@/lib/suggestions/table-preview";
@@ -96,6 +105,10 @@ import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
 import { editorRegistryKey } from "@/providers/report-provider";
 import { isTrackChangesFieldEditable } from "@/lib/reports/section-save-policy";
 import type { SectionType } from "@/db/schema";
+import { TiptapEditorContextMenu } from "@/components/report/tiptap-editor-context-menu";
+
+const GENERIC_RICH_FIELD_OPTIONS = { preserveHeadings: true } as const;
+const GENERIC_MARKDOWN_OPTIONS = { headingNodes: true } as const;
 
 function TableEditToolbar({
   editor,
@@ -276,7 +289,8 @@ function TableEditToolbar({
 export type TiptapSectionFieldProps = {
   section: SectionType;
   contentPath: string;
-  label: string;
+  /** Omit to hide the uppercase field label (paged documents). */
+  label?: string;
   placeholder?: string;
   className?: string;
   value: JSONContent;
@@ -287,6 +301,8 @@ export type TiptapSectionFieldProps = {
   locked?: boolean;
   /** Shrink the editor chrome for read-only blocks (e.g. signature tables). */
   compact?: boolean;
+  /** `page` is a Letter-sized surface without the boxed input chrome. */
+  chrome?: "input" | "page";
 };
 
 export function TiptapSectionField({
@@ -299,6 +315,7 @@ export function TiptapSectionField({
   onChange,
   locked = false,
   compact = false,
+  chrome = "input",
 }: TiptapSectionFieldProps) {
   const {
     report,
@@ -322,11 +339,20 @@ export function TiptapSectionField({
     acknowledgeCommentFocus,
   } = useReportComments();
   const { focusedPanelPlaceholderId } = useReportPlaceholders();
+  const focusedPanelPlaceholderIdRef = useRef(focusedPanelPlaceholderId);
+  useEffect(() => {
+    focusedPanelPlaceholderIdRef.current = focusedPanelPlaceholderId;
+  }, [focusedPanelPlaceholderId]);
   const { registerEditor, setActiveEditor, activeEditorKey } = useReportEditors();
   const isRichField = isRichTargetField(section, contentPath);
   const thisEditorKey = editorRegistryKey(section, contentPath);
-  const { activeSuggestionIdForSection, isSuggestionPreviewHeld, suggestionApplyTransition } =
-    useReportEvaluations();
+  const {
+    activeSuggestionIdForSection,
+    isSuggestionPreviewHeld,
+    suggestionApplyTransition,
+    beginSuggestionApplyTransition,
+    endSuggestionApplyTransition,
+  } = useReportEvaluations();
   const { replaceSection, sections } = useReportSections();
   const { getUser } = useUserDirectory();
   const activeSuggestionId = activeSuggestionIdForSection(section);
@@ -364,16 +390,21 @@ export function TiptapSectionField({
     []
   );
 
+  // Keep this extension identity stable. `useEditor` rebuilds the whole
+  // ProseMirror view when an extension object changes; doing that on panel
+  // fill-input focus leaves a ghost caret (input looks focused, keys go
+  // nowhere). Decorations refresh via `placeholderRefreshMeta` below.
   const placeholderHighlightExtension = useMemo(
     () =>
       createPlaceholderHighlightExtension(
-        () => focusedPanelPlaceholderId,
+        // eslint-disable-next-line react-hooks/refs -- ProseMirror calls this getter on refresh, not during render
+        () => focusedPanelPlaceholderIdRef.current,
         { section, contentPath }
       ),
-    [focusedPanelPlaceholderId, section, contentPath]
+    [section, contentPath]
   );
 
-  const citationsAtEndOfSection = getCustomerPack().citationsAtEndOfSection;
+  const citationsAtEndOfSection = citationsAtEndOfSectionFor(report.documentType);
   const citationHighlightExtension = useMemo(
     () => (citationsAtEndOfSection ? createCitationHighlightExtension() : null),
     [citationsAtEndOfSection]
@@ -429,13 +460,25 @@ export function TiptapSectionField({
   const [commentDraft, setCommentDraft] = useState("");
   const [pendingSel, setPendingSel] = useState<{ from: number; to: number } | null>(null);
   const [posting, setPosting] = useState(false);
+  const headingEnabled =
+    editorProfileFor(getDocumentType(report.documentType)) === "generic_document";
+  const suggestionPersistMode = suggestionApplyModeFor(
+    getDocumentType(report.documentType)
+  );
+  const richFieldOptions = headingEnabled
+    ? GENERIC_RICH_FIELD_OPTIONS
+    : undefined;
+  const markdownOptions = headingEnabled
+    ? GENERIC_MARKDOWN_OPTIONS
+    : undefined;
 
   const editor = useEditor(
     {
       immediatelyRender: false,
+      autofocus: false,
       extensions: [
         StarterKit.configure({
-          heading: false,
+          heading: headingEnabled ? { levels: [1, 2, 3] } : false,
           bulletList: false,
         }),
         BulletListWithStyle,
@@ -460,7 +503,7 @@ export function TiptapSectionField({
         placeholderHighlightExtension,
         ...(citationHighlightExtension ? [citationHighlightExtension] : []),
       ],
-      content: normalizeRichField(value),
+      content: normalizeRichField(value, richFieldOptions),
       editable,
       onUpdate: ({ editor: ed }) => {
         const json = ed.getJSON() as JSONContent;
@@ -583,56 +626,78 @@ export function TiptapSectionField({
       const comment = comments.find((c) => c.id === suggestionId);
       if (!comment) throw new Error("Suggestion not found");
 
-      const currentSection = sections[section] as Record<string, unknown>;
-      const result =
-        mode === "accept"
-          ? await acceptSuggestion({
-              reportId: report.id,
-              section,
-              comment,
-              sectionContent: currentSection,
-              fieldContentPath: contentPath,
-            })
-          : await dismissSuggestion({
-              reportId: report.id,
-              section,
-              comment,
-              sectionContent: currentSection,
-              fieldContentPath: contentPath,
-            });
+      beginSuggestionApplyTransition(section, suggestionId, mode);
 
-      if (!result.ok) {
-        if (result.reason === "status_failed") {
-          throw (
-            result.error instanceof CommentPersistError
-              ? result.error
-              : new CommentPersistError(0, "Could not update suggestion")
-          );
-        }
-        if (result.reason === "save_failed") {
-          throw (
-            result.error instanceof SectionPersistError
-              ? result.error
-              : new SectionPersistError(0, "Save failed")
-          );
-        }
-        throw new Error("Suggestion could not be located");
-      }
+      try {
+        const currentSection = sections[section] as Record<string, unknown>;
+        const result =
+          mode === "accept"
+            ? await acceptSuggestion({
+                reportId: report.id,
+                section,
+                comment,
+                sectionContent: currentSection,
+                fieldContentPath: contentPath,
+                applyMode: suggestionPersistMode,
+              })
+            : await dismissSuggestion({
+                reportId: report.id,
+                section,
+                comment,
+                sectionContent: currentSection,
+                fieldContentPath: contentPath,
+              });
 
-      // Do not mutate editor-local JSON — external-value sync repaints from section state.
-      if (result.nextSection) {
-        replaceSection(
-          section,
-          result.nextSection as unknown
+        if (!result.ok) {
+          if (result.reason === "status_failed") {
+            throw (
+              result.error instanceof CommentPersistError
+                ? result.error
+                : new CommentPersistError(0, "Could not update suggestion")
+            );
+          }
+          if (result.reason === "save_failed") {
+            throw (
+              result.error instanceof SectionPersistError
+                ? result.error
+                : new SectionPersistError(0, "Save failed")
+            );
+          }
+          throw new Error("Suggestion could not be located");
+        }
+
+        // Paint the applied result immediately. External-value sync skips a
+        // focused editor, and the preview-strip effect would otherwise revert
+        // pending AI marks once the comment is no longer the active suggestion.
+        if (result.nextSection) {
+          replaceSection(
+            section,
+            result.nextSection as unknown
+          );
+          if (editor && !editor.isDestroyed && isRichField) {
+            editor.commands.setContent(
+              getRichFieldValue(
+                result.nextSection,
+                contentPath,
+                richFieldOptions
+              ) as Content,
+              { emitUpdate: false }
+            );
+          }
+        }
+        setComments((prev) =>
+          mode === "dismiss"
+            ? prev.filter((c) => c.id !== suggestionId)
+            : prev.map((c) =>
+                c.id === suggestionId ? { ...c, status: "resolved" as const } : c
+              )
         );
+        // Let the accepted/dismissed value paint while preview-held is still on,
+        // otherwise ending the lock in the same tick re-strips the preview.
+        await afterPaint();
+      } finally {
+        endSuggestionApplyTransition(section);
       }
-      setComments((prev) =>
-        mode === "dismiss"
-          ? prev.filter((c) => c.id !== suggestionId)
-          : prev.map((c) =>
-              c.id === suggestionId ? { ...c, status: "resolved" as const } : c
-            )
-      );
     },
     [
       comments,
@@ -642,6 +707,12 @@ export function TiptapSectionField({
       sections,
       replaceSection,
       setComments,
+      suggestionPersistMode,
+      editor,
+      isRichField,
+      richFieldOptions,
+      beginSuggestionApplyTransition,
+      endSuggestionApplyTransition,
     ]
   );
 
@@ -711,21 +782,37 @@ export function TiptapSectionField({
     // the contenteditable=false accept/ignore island, which steals the caret.
   }, [activeSuggestionId, isRichField, editor, refresh]);
 
+  const lastPersistedJsonRef = useRef<string | null>(null);
+
   const applyExternalValueToEditor = useCallback(() => {
     const currentEditor = editor;
     if (!currentEditor || currentEditor.isDestroyed) return;
-    const incoming = normalizeRichField(value);
+    const incoming = normalizeRichField(value, richFieldOptions);
+    const incomingJson = JSON.stringify(incoming);
+    const prevPersisted = lastPersistedJsonRef.current;
+    lastPersistedJsonRef.current = incomingJson;
     const current = currentEditor.getJSON() as JSONContent;
-    if (richDocsMatchIgnoringAiPreview(current, incoming)) return;
     // Keystrokes update the editor first; parent state catches up via onUpdate.
     // Replacing the doc while focused jumps the viewport (and can land the
     // caret in a later AI suggestion span). Suggestion accept still applies
-    // because the preview-held lock is set for that moment.
-    if (currentEditor.view.hasFocus() && !isSuggestionPreviewHeld(section)) {
+    // once the persisted value changes — not when the preview-held lock
+    // first flips, which would wipe the live preview with the old snapshot.
+    if (
+      !shouldApplyExternalValueToEditor({
+        previewHeld: isSuggestionPreviewHeld(section),
+        persistedChanged:
+          prevPersisted !== null && prevPersisted !== incomingJson,
+        hasFocus: currentEditor.view.hasFocus(),
+        docsMatchIgnoringPreview: richDocsMatchIgnoringAiPreview(
+          current,
+          incoming
+        ),
+      })
+    ) {
       return;
     }
     currentEditor.commands.setContent(incoming as Content, { emitUpdate: false });
-  }, [editor, value, isSuggestionPreviewHeld, section]);
+  }, [editor, value, isSuggestionPreviewHeld, section, richFieldOptions]);
 
   useEffect(() => {
     applyExternalValueToEditor();
@@ -746,7 +833,7 @@ export function TiptapSectionField({
     if (!editor || !isRichField) return;
 
     let json = editor.getJSON() as JSONContent;
-    const canonicalJson = normalizeRichField(value) as JSONContent;
+    const canonicalJson = normalizeRichField(value, richFieldOptions) as JSONContent;
     const before = JSON.stringify(json);
 
     if (
@@ -766,10 +853,21 @@ export function TiptapSectionField({
     if (previewHeld) {
       // Queue bridge: don't keep the previous suggestion marks and don't inject
       // the next one until the user jumps to it or dismisses the handoff.
+      // Bulk apply/dismiss: strip every preview. The single-card accept
+      // animation (red strikethrough through the green insert) must not play,
+      // and comments stay "open" until the whole report batch finishes — if
+      // we re-injected the first card onto already-applied text, overlapping
+      // deletes would paint red across the new green run.
       if (suggestionApplyTransition[section]?.bridge) {
         json = stripPendingSuggestionsExcept(json, null);
         if (JSON.stringify(json) === before) return;
         editor.commands.setContent(json as Content, { emitUpdate: false });
+        return;
+      }
+      if (isBulkSuggestionApply(suggestionApplyTransition[section]?.mode)) {
+        // Keep the live insert/delete marks. Stripping them (or CSS-hiding
+        // the insert run) removes the wording until the PATCH returns.
+        // Do not inject — comments stay "open" for the whole report batch.
         return;
       }
       // Keep showing the suggestion currently being applied/dismissed as-is —
@@ -818,7 +916,10 @@ export function TiptapSectionField({
           // Full-field redraft: current content struck through, replacement
           // highlighted. Same mark machinery as fixes handles accept/dismiss.
           const redraft = parseAiRedraftCommentContent(comment.content);
-          json = buildRedraftPreviewDoc(json, markdownToDoc(redraft.markdown), {
+          json = buildRedraftPreviewDoc(
+            json,
+            markdownToDoc(redraft.markdown, markdownOptions),
+            {
             id: activeSuggestionId,
             authorId: AI_AUTHOR_ID,
             status: "pending",
@@ -864,7 +965,7 @@ export function TiptapSectionField({
                   }
                 );
                 if (citeInjected.located) {
-                  json = normalizeRichField(citeInjected.doc);
+                  json = normalizeRichField(citeInjected.doc, richFieldOptions);
                 }
               }
             }
@@ -873,6 +974,8 @@ export function TiptapSectionField({
               anchorText: comment.anchorText,
               deleteText: payload.deleteText,
               insertText: payload.insertText,
+              insertImage: payload.insertImage,
+              removeImage: payload.removeImage,
               scope: payload.scope,
               second: payload.second,
             });
@@ -885,7 +988,7 @@ export function TiptapSectionField({
             });
             // Never paint a preview (or enable inline accept) unless locate succeeded.
             if (injected.located) {
-              json = normalizeRichField(injected.doc);
+              json = normalizeRichField(injected.doc, richFieldOptions);
             }
           }
         }
@@ -909,6 +1012,8 @@ export function TiptapSectionField({
     sectionContent,
     suggestionApplyTransition,
     value,
+    richFieldOptions,
+    markdownOptions,
   ]);
 
   // Debounced decoration refresh — coalesces hover-driven updates to one per frame.
@@ -1000,9 +1105,11 @@ export function TiptapSectionField({
       {inactiveSuggestionCss ? (
         <style dangerouslySetInnerHTML={{ __html: inactiveSuggestionCss }} />
       ) : null}
-      <div className="mb-1.5 flex flex-wrap items-center gap-2">
-        <Label>{label}</Label>
-      </div>
+      {label ? (
+        <div className="mb-1.5 flex flex-wrap items-center gap-2">
+          <Label>{label}</Label>
+        </div>
+      ) : null}
 
       {editor && editable && activeEditorKey === thisEditorKey && (
         <FloatingMenu
@@ -1122,24 +1229,39 @@ export function TiptapSectionField({
         </BubbleMenu>
       )}
 
-      <div
-        className={cn(
-          "min-w-0 max-w-full rounded-md border border-[var(--border)] bg-[var(--input)] px-3 py-2 text-sm leading-relaxed focus-within:ring-2 focus-within:ring-[var(--ring)]",
-          compact
-            ? "[&_.ProseMirror]:min-h-0 [&_.ProseMirror>p.is-empty:last-child]:hidden [&_.ProseMirror_table]:my-0"
-            : "min-h-[200px] [&_.ProseMirror]:min-h-[180px]",
-          "[&_.ProseMirror]:outline-none",
-          "[&_.tiptap-image-inline]:my-1 [&_.tiptap-image-inline]:max-w-full [&_.tiptap-image-inline]:h-auto [&_.tiptap-image-inline]:rounded-sm",
-          "[&_.tiptap-math-block]:my-2",
-          !editable && "opacity-90",
-          previewHeld && "suggestion-field-settling"
-        )}
-        data-field-anchor={`${section}.${contentPath}`}
-        data-active-suggestion-id={activeSuggestionId ?? ""}
-        data-suggestion-preview-held={previewHeldMode}
+      <TiptapEditorContextMenu
+        editor={editor}
+        editable={editable}
+        reportId={report.id}
       >
-        {editor ? <EditorContent editor={editor} /> : null}
-      </div>
+        <div
+          className={cn(
+            "min-w-0 max-w-full overflow-x-auto overscroll-x-contain text-sm leading-relaxed",
+            chrome === "page"
+              ? "bg-transparent"
+              : "rounded-md border border-[var(--border)] bg-[var(--input)] px-3 py-2 focus-within:ring-2 focus-within:ring-[var(--ring)]",
+            compact
+              ? "[&_.ProseMirror]:min-h-0 [&_.ProseMirror>p.is-empty:last-child]:hidden [&_.ProseMirror_table]:my-0"
+              : chrome === "page"
+                ? "[&_.ProseMirror]:min-h-[calc(var(--generic-page-height)-2*var(--generic-page-margin))]"
+                : "min-h-[200px] [&_.ProseMirror]:min-h-[180px]",
+            "[&_.ProseMirror]:outline-none",
+            "[&_.tiptap-image-inline]:my-1 [&_.tiptap-image-inline]:max-w-full [&_.tiptap-image-inline]:h-auto [&_.tiptap-image-inline]:rounded-sm",
+            "[&_.tiptap-math-block]:my-2",
+            !editable && "opacity-90",
+            previewHeld &&
+              !isBulkSuggestionApply(previewHeldMode) &&
+              "suggestion-field-settling"
+          )}
+          data-field-anchor={`${section}.${contentPath}`}
+          data-editor-chrome={chrome}
+          data-active-suggestion-id={activeSuggestionId ?? ""}
+          data-suggestion-preview-held={previewHeldMode}
+          {...(chrome === "page" ? { "aria-label": "Document body" } : {})}
+        >
+          {editor ? <EditorContent editor={editor} /> : null}
+        </div>
+      </TiptapEditorContextMenu>
 
     </div>
   );

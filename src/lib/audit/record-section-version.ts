@@ -11,6 +11,8 @@ import { recordAuditEvent } from "./record-audit-event";
 
 export const SECTION_VERSION_CHECKPOINT_INTERVAL = 20;
 
+type DbVersionExecutor = Pick<typeof db, "select" | "insert">;
+
 export type RecordSectionVersionInput = {
   actor: AuditActorSnapshot;
   reportId: string;
@@ -19,16 +21,19 @@ export type RecordSectionVersionInput = {
   previousContent: unknown;
   newContent: unknown;
   forceSnapshot?: boolean;
+  /** Use the caller's transaction so serverless pools (max 1) do not deadlock. */
+  executor?: DbVersionExecutor;
 };
 
 export async function recordSectionVersion(input: RecordSectionVersionInput) {
+  const executor = input.executor ?? db;
   const previousHash = hashSectionContent(input.previousContent);
   const newHash = hashSectionContent(input.newContent);
   if (previousHash === newHash) {
     return null;
   }
 
-  const [latest] = await db
+  const [latest] = await executor
     .select()
     .from(sectionContentVersions)
     .where(
@@ -68,9 +73,10 @@ export async function recordSectionVersion(input: RecordSectionVersionInput) {
     oldValue: { contentHash: previousHash },
     newValue: { contentHash: newHash, versionNo },
     metadata: { section: input.section },
+    executor,
   });
 
-  const [version] = await db
+  const [version] = await executor
     .insert(sectionContentVersions)
     .values({
       reportId: input.reportId,

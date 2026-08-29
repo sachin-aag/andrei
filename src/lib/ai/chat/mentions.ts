@@ -1,5 +1,10 @@
 import type { DocumentType, SectionType } from "@/db/schema";
-import { isChatEditableSection, sectionLabel } from "@/lib/ai/chat/fields";
+import {
+  CHAT_SECTION_SCOPE_ALL,
+  isChatEditableSection,
+  sectionLabel,
+  type ChatSectionScope,
+} from "@/lib/ai/chat/fields";
 import {
   quotePromptMetadata,
   sanitizePromptMetadata,
@@ -95,6 +100,25 @@ export function parseChatMentions(
   }
 
   return mentions;
+}
+
+/**
+ * Composer focus is the tagged section when exactly one is present.
+ * Zero or several section tags mean the whole document (`all`).
+ */
+export function sectionScopeFromMentions(
+  mentions: readonly ChatMention[],
+  documentType: DocumentType = "investigation_report"
+): ChatSectionScope {
+  const sections = mentions.filter(
+    (mention): mention is Extract<ChatMention, { type: "section" }> =>
+      mention.type === "section"
+  );
+  if (sections.length !== 1) return CHAT_SECTION_SCOPE_ALL;
+  const section = sections[0]!.id;
+  return isChatEditableSection(section, documentType)
+    ? section
+    : CHAT_SECTION_SCOPE_ALL;
 }
 
 /**

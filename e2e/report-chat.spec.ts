@@ -11,6 +11,7 @@ import {
   expandDocumentsPanel,
   expandReportSidebar,
   openReportAssistant,
+  openReportEditor,
   reportSidebar,
 } from "./helpers/workspace";
 
@@ -57,10 +58,7 @@ test.describe("report chat", () => {
     await loginAsEngineer(page);
     const created = await createReport(page);
     reportId = created.id;
-    await page.goto(`/reports/${reportId}/edit`);
-    await expect(page.getByRole("heading", { name: /^define$/i })).toBeVisible({
-      timeout: 30_000,
-    });
+    await openReportEditor(page, reportId);
   });
 
   test.afterEach(async ({ page }) => {
@@ -89,7 +87,7 @@ test.describe("report chat", () => {
     await sidebar.getByLabel("Assistant mode").click();
     await page.getByRole("option", { name: /^ask$/i }).click();
 
-    const composer = sidebar.getByPlaceholder(/describe the deviation/i);
+    const composer = sidebar.getByPlaceholder(/ask about the report or attachments/i);
     await expect(composer).toBeEnabled({ timeout: 15_000 });
     await composer.fill("help me start this report");
     await sidebar.getByRole("button", { name: /^send message$/i }).click();
@@ -100,14 +98,14 @@ test.describe("report chat", () => {
     await expect(sidebar.getByText(/^assistant$/i)).toBeVisible({
       timeout: 30_000,
     });
-    await expect(sidebar.getByText(/before i draft anything/i)).toBeVisible({
+    await expect(sidebar.getByText(/out-of-spec dissolution result/i)).toBeVisible({
       timeout: 30_000,
     });
 
     await collapseReportSidebar(page);
     await expandReportSidebar(page);
     await expect(
-      reportSidebar(page).getByText(/before i draft anything/i)
+      reportSidebar(page).getByText(/out-of-spec dissolution result/i)
     ).toBeVisible({ timeout: 5_000 });
 
     await reloadWithNavigationRetry(page, { waitUntil: "domcontentloaded" });
@@ -117,8 +115,81 @@ test.describe("report chat", () => {
     });
     await openReportAssistant(page);
     await expect(
-      reportSidebar(page).getByText(/before i draft anything/i)
+      reportSidebar(page).getByText(/out-of-spec dissolution result/i)
     ).toBeVisible({ timeout: 30_000 });
+  });
+
+  test("warns in chat while a document is uploading without blocking send", async ({
+    page,
+  }) => {
+    test.setTimeout(90_000);
+
+    let releaseFinalize = () => {};
+    const finalizeReleased = new Promise<void>((resolve) => {
+      releaseFinalize = resolve;
+    });
+    let finalizeSettled = Promise.resolve();
+
+    await page.route(
+      (url) =>
+        /\/api\/reports\/[^/]+\/attachments\/[^/]+\/finalize$/.test(
+          new URL(url).pathname
+        ),
+      async (route) => {
+        if (route.request().method() !== "POST") {
+          await route.continue();
+          return;
+        }
+        finalizeSettled = (async () => {
+          await finalizeReleased;
+          try {
+            await route.continue();
+          } catch {
+            // Page already closed.
+          }
+        })();
+      }
+    );
+
+    try {
+      await expandDocumentsPanel(page);
+      await openReportAssistant(page);
+      const sidebar = reportSidebar(page);
+      await uploadPdf(page);
+
+      const composer = sidebar.getByPlaceholder(
+        /ask about the report or attachments|ask the assistant/i
+      );
+      await expect(composer).toBeEnabled({ timeout: 15_000 });
+      await expect(
+        sidebar.getByTestId("document-uploading-notice")
+      ).toHaveCount(0);
+
+      await composer.fill("what does this file say");
+      const notice = sidebar.getByTestId("document-uploading-notice");
+      await expect(notice).toBeVisible();
+      await expect(notice).toHaveText(
+        /document is uploading and will not be available until processing is complete/i
+      );
+
+      const send = sidebar.getByRole("button", { name: /^send message$/i });
+      await expect(send).toBeEnabled();
+      await send.click();
+      await expect(
+        chatUserMessage(page, "what does this file say")
+      ).toBeVisible({ timeout: 15_000 });
+      await expect(notice).toBeVisible();
+
+      releaseFinalize();
+      await expect(
+        documentsPanel(page).locator('[data-document-file][data-status="ready"]')
+      ).toBeVisible({ timeout: 30_000 });
+      await expect(notice).toHaveCount(0);
+    } finally {
+      releaseFinalize();
+      await finalizeSettled;
+      await page.unrouteAll({ behavior: "ignoreErrors" });
+    }
   });
 
   test("starting a new chat while a turn is in flight leaves the composer usable", async ({
@@ -166,7 +237,7 @@ test.describe("report chat", () => {
       await sidebar.getByLabel("Assistant mode").click();
       await page.getByRole("option", { name: /^ask$/i }).click();
 
-      const composer = sidebar.getByPlaceholder(/describe the deviation/i);
+      const composer = sidebar.getByPlaceholder(/ask about the report or attachments/i);
       await expect(composer).toBeEnabled({ timeout: 15_000 });
       await composer.fill("first concurrent chat ping");
       await sidebar.getByRole("button", { name: /^send message$/i }).click();
@@ -196,7 +267,7 @@ test.describe("report chat", () => {
       await expect(
         sidebar.getByRole("button", { name: /^send message$/i })
       ).toBeVisible();
-      const newComposer = sidebar.getByPlaceholder(/describe the deviation/i);
+      const newComposer = sidebar.getByPlaceholder(/ask about the report or attachments/i);
       await expect(newComposer).toBeEnabled({ timeout: 15_000 });
 
       await newComposer.fill("second concurrent chat ping");
@@ -237,7 +308,7 @@ test.describe("report chat", () => {
     await sidebar.getByLabel("Assistant mode").click();
     await page.getByRole("option", { name: /^ask$/i }).click();
 
-    const composer = sidebar.getByPlaceholder(/describe the deviation/i);
+    const composer = sidebar.getByPlaceholder(/ask about the report or attachments/i);
     await expect(composer).toBeEnabled({ timeout: 15_000 });
     await composer.fill("first chat for close test");
     await sidebar.getByRole("button", { name: /^send message$/i }).click();

@@ -5,28 +5,60 @@ import {
 } from "@/lib/suggestions/citations-at-end";
 import { parseListLine } from "@/lib/tiptap/list-style";
 
+export type MarkdownToDocOptions = {
+  /** Emit TipTap `heading` nodes instead of bold paragraphs. Generic documents only. */
+  headingNodes?: boolean;
+};
+
 const ATX_HEADING_RE = /^(#{1,3})\s+(.*)$/;
 
 /**
  * CommonMark-ish emphasis: no space after the opener or before the closer.
  * `* item` bullets are handled at line level; `2 * 3` stays literal.
+ * Underscore italics are flanking-sensitive (`See _Annex B_`) so identifier
+ * stems like `790-00134R_Rev_U_Solea_…` stay literal.
  */
-const INLINE_MARKDOWN_SPLIT_RE =
-  /(\*\*[^*]+\*\*|(?<!\*)\*(?!\s)[^*]+?(?<!\s)\*(?!\*)|(?<!_)_(?!\s)[^_]+?(?<!\s)_(?!_))/g;
+const UNDERSCORE_ITALIC_OPEN = "(?<![\\w*])_(?!\\s)";
+const UNDERSCORE_ITALIC_CLOSE = "(?<!\\s)_(?![\\w*])";
+const INLINE_MARKDOWN_SPLIT_RE = new RegExp(
+  `(\\*\\*[^*]+\\*\\*|(?<!\\*)\\*(?!\\s)[^*]+?(?<!\\s)\\*(?!\\*)|${UNDERSCORE_ITALIC_OPEN}[^_]+?${UNDERSCORE_ITALIC_CLOSE})`,
+  "g"
+);
+const UNDERSCORE_ITALIC_RE = new RegExp(
+  `${UNDERSCORE_ITALIC_OPEN}([^_]+?)${UNDERSCORE_ITALIC_CLOSE}`,
+  "g"
+);
+const UNDERSCORE_ITALIC_PART_RE = new RegExp(
+  `^${UNDERSCORE_ITALIC_OPEN}([^_]+?)${UNDERSCORE_ITALIC_CLOSE}$`
+);
+
+/** GFM table cells and DOCX import use `<br>` when a cell spans multiple lines. */
+const HTML_BR_SPLIT_RE = /<br\s*\/?>/gi;
 
 export function stripInlineMarkdown(text: string): string {
   return text
     .replace(/\*\*([^*]+)\*\*/g, "$1")
     .replace(/(?<!\*)\*(?!\s)([^*]+?)(?<!\s)\*(?!\*)/g, "$1")
-    .replace(/(?<!_)_(?!\s)([^_]+?)(?<!\s)_(?!_)/g, "$1");
+    .replace(UNDERSCORE_ITALIC_RE, "$1");
 }
 
-/** ATX `#`–`###` line → bold paragraph (section editor has no heading node). */
-export function atxHeadingParagraph(text: string): JSONContent | null {
+/** ATX `#`–`###` line → heading node or bold paragraph. */
+export function atxHeadingParagraph(
+  text: string,
+  options?: MarkdownToDocOptions
+): JSONContent | null {
   const heading = ATX_HEADING_RE.exec(text.trim());
   if (!heading) return null;
   const headingText = stripInlineMarkdown(heading[2]!);
   if (!headingText) return null;
+  const level = Math.min(3, heading[1]!.length);
+  if (options?.headingNodes) {
+    return {
+      type: "heading",
+      attrs: { level },
+      content: [{ type: "text", text: headingText }],
+    };
+  }
   return {
     type: "paragraph",
     content: [{ type: "text", text: headingText, marks: [{ type: "bold" }] }],
@@ -54,10 +86,13 @@ function paragraphIsPlainInline(node: JSONContent): boolean {
  * same bold paragraphs `markdownToDoc` emits, so Improve/Control don't show
  * literal hashes.
  */
-export function promoteAtxHeadingsInDoc(doc: JSONContent): JSONContent {
+export function promoteAtxHeadingsInDoc(
+  doc: JSONContent,
+  options?: MarkdownToDocOptions
+): JSONContent {
   function visit(node: JSONContent): JSONContent {
     if (node.type === "paragraph" && paragraphIsPlainInline(node)) {
-      const promoted = atxHeadingParagraph(paragraphPlainText(node));
+      const promoted = atxHeadingParagraph(paragraphPlainText(node), options);
       if (promoted) return promoted;
     }
     if (node.content?.length) {
@@ -73,15 +108,18 @@ export function promoteAtxHeadingsInDoc(doc: JSONContent): JSONContent {
  *
  * Supported (matches what the drafting prompt allows the model to emit):
  * - paragraphs (one line = one paragraph)
- * - headings `#` … `###` → rendered as a bold paragraph (the section editor
- *   schema has no heading node; emitting one makes ProseMirror drop the doc)
+ * - headings `#` … `###` → bold paragraph by default (section editors have
+ *   no heading node). Pass `{ headingNodes: true }` for generic documents.
  * - bullet (`- `, `* `) and ordered (`1. `) lists
  * - GFM tables (first row = header)
  * - `**bold**`, `*italic*`, and `_italic_` inline emphasis
  *
  * Anything else is kept as literal text. No HTML, no fuzziness.
  */
-export function markdownToDoc(markdown: string): JSONContent {
+export function markdownToDoc(
+  markdown: string,
+  options?: MarkdownToDocOptions
+): JSONContent {
   const lines = markdown.replace(/\r\n/g, "\n").split("\n");
   const content: JSONContent[] = [];
   let i = 0;
@@ -106,7 +144,7 @@ export function markdownToDoc(markdown: string): JSONContent {
       continue;
     }
 
-    const heading = atxHeadingParagraph(trimmed);
+    const heading = atxHeadingParagraph(trimmed, options);
     if (heading) {
       content.push(heading);
       i++;
@@ -148,6 +186,13 @@ export function markdownToDoc(markdown: string): JSONContent {
     return { type: "doc", content: [{ type: "paragraph" }] };
   }
   return { type: "doc", content };
+}
+
+/** Markdown image syntax (`![alt](url)`), including read_section ids like `narrative#1`. */
+const MARKDOWN_IMAGE_RE = /!\[[^\]]*]\(\s*[^)]+?\s*\)/;
+
+export function markdownHasImage(markdown: string): boolean {
+  return MARKDOWN_IMAGE_RE.test(markdown);
 }
 
 /** Markdown containing a GFM table (used to route tables away from plain fields). */
@@ -213,7 +258,10 @@ function isBlankPlainParagraph(node: JSONContent): boolean {
   );
 }
 
-function hydrateBlockArray(nodes: JSONContent[]): JSONContent[] {
+function hydrateBlockArray(
+  nodes: JSONContent[],
+  options?: MarkdownToDocOptions
+): JSONContent[] {
   const out: JSONContent[] = [];
   let i = 0;
   while (i < nodes.length) {
@@ -237,19 +285,22 @@ function hydrateBlockArray(nodes: JSONContent[]): JSONContent[] {
       while (texts.length > 0 && !texts[texts.length - 1]!.trim()) {
         texts.pop();
       }
-      const converted = markdownToDoc(texts.join("\n"));
+      const converted = markdownToDoc(texts.join("\n"), options);
       out.push(...(converted.content ?? []));
       continue;
     }
-    out.push(hydrateNode(node));
+    out.push(hydrateNode(node, options));
     i++;
   }
   return out;
 }
 
-function hydrateNode(node: JSONContent): JSONContent {
+function hydrateNode(
+  node: JSONContent,
+  options?: MarkdownToDocOptions
+): JSONContent {
   if (node.type !== "paragraph" && node.content?.length) {
-    return { ...node, content: hydrateBlockArray(node.content) };
+    return { ...node, content: hydrateBlockArray(node.content, options) };
   }
   return node;
 }
@@ -260,11 +311,14 @@ function hydrateNode(node: JSONContent): JSONContent {
  * TipTap nodes `markdownToDoc` emits so Improve/Control render instead of
  * showing hashes and asterisks.
  */
-export function hydrateLiteralMarkdownInDoc(doc: JSONContent): JSONContent {
+export function hydrateLiteralMarkdownInDoc(
+  doc: JSONContent,
+  options?: MarkdownToDocOptions
+): JSONContent {
   if (doc.type === "doc") {
-    return { ...doc, content: hydrateBlockArray(doc.content ?? []) };
+    return { ...doc, content: hydrateBlockArray(doc.content ?? [], options) };
   }
-  return hydrateNode(doc);
+  return hydrateNode(doc, options);
 }
 
 function withExtraMarks(
@@ -307,7 +361,7 @@ export function inlineMarkdownToTextNodes(
       });
       continue;
     }
-    const italicUnderscore = /^_(?!\s)([^_]+?)(?<!\s)_$/.exec(part);
+    const italicUnderscore = UNDERSCORE_ITALIC_PART_RE.exec(part);
     if (italicUnderscore) {
       nodes.push({
         type: "text",
@@ -325,9 +379,32 @@ export function inlineMarkdownToTextNodes(
   return nodes;
 }
 
+/**
+ * Inline markdown plus `<br>` / `<br/>` and literal newlines → text nodes with
+ * `hardBreak` separators. Used for GFM table cells and chat/table edits.
+ */
+export function inlineMarkdownToTextNodesWithBreaks(
+  text: string,
+  extraMarks?: JSONContent["marks"]
+): JSONContent[] {
+  const segments = text.split(HTML_BR_SPLIT_RE);
+  const nodes: JSONContent[] = [];
+  for (let i = 0; i < segments.length; i++) {
+    if (i > 0) nodes.push({ type: "hardBreak" });
+    const segment = segments[i]!;
+    const lineParts = segment.split("\n");
+    for (let j = 0; j < lineParts.length; j++) {
+      if (j > 0) nodes.push({ type: "hardBreak" });
+      nodes.push(...inlineMarkdownToTextNodes(lineParts[j]!, extraMarks));
+    }
+  }
+  if (nodes.at(-1)?.type === "hardBreak") nodes.pop();
+  return nodes;
+}
+
 /** `**bold**` / `*italic*` / `_italic_` → marked text nodes; everything else literal. */
 function parseInline(text: string): JSONContent[] {
-  return inlineMarkdownToTextNodes(text);
+  return inlineMarkdownToTextNodesWithBreaks(text);
 }
 
 function isTableRow(trimmed: string): boolean {

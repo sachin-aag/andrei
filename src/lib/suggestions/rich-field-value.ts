@@ -1,10 +1,16 @@
 import type { JSONContent } from "@tiptap/core";
-import { emptyDoc, legacyStringToDoc, normalizeRichField } from "@/lib/tiptap/rich-text";
+import {
+  emptyDoc,
+  legacyStringToDoc,
+  normalizeRichField,
+  type NormalizeRichFieldOptions,
+} from "@/lib/tiptap/rich-text";
 
 /** Read a rich JSONContent field from section JSON by dot path. */
 export function getRichFieldValue(
   content: Record<string, unknown>,
-  path: string
+  path: string,
+  options?: NormalizeRichFieldOptions
 ): JSONContent {
   const parts = path.split(".").filter(Boolean);
   let cur: unknown = content;
@@ -15,7 +21,7 @@ export function getRichFieldValue(
     cur = (cur as Record<string, unknown>)[part];
   }
   if (typeof cur === "string") return legacyStringToDoc(cur);
-  return normalizeRichField(cur);
+  return normalizeRichField(cur, options);
 }
 
 /** Write a rich JSONContent field at a dot path (returns a cloned section record). */

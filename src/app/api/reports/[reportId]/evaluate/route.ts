@@ -27,6 +27,10 @@ import {
 } from "@/lib/observability/langfuse";
 import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
 import { requireReportAccess } from "@/lib/reports/require-report-access";
+import {
+  aiBudgetExceededResponse,
+  isAiBudgetExceededError,
+} from "@/lib/ai/usage";
 
 export const maxDuration = 60;
 
@@ -136,27 +140,35 @@ async function handleEvaluatePost(
       allSections[row.section] ??
       mergeSectionForType(documentType, row.section, row.content);
 
-    const llmResults = await Promise.all(
-      readySectionRows.map(async (row) => {
-        const content =
-          row.section === "cover_page" ? report.metadata : mergedFor(row);
-        const evaluations = await evaluateSection({
-          section: row.section,
-          content,
-          reportContext: { deviationNo: report.documentNo, date: report.date },
-          allSections,
-          documentType,
-          report: report as never,
-        });
-        return {
-          sectionRow: row,
-          evaluations:
-            documentType === "investigation_report" && row.section === "analyze"
-              ? normalizeAnalyzeToolResults(content, evaluations)
-              : evaluations,
-        };
-      })
-    );
+    let llmResults;
+    try {
+      llmResults = await Promise.all(
+        readySectionRows.map(async (row) => {
+          const content =
+            row.section === "cover_page" ? report.metadata : mergedFor(row);
+          const evaluations = await evaluateSection({
+            section: row.section,
+            content,
+            reportContext: { deviationNo: report.documentNo, date: report.date },
+            allSections,
+            documentType,
+            report: report as never,
+          });
+          return {
+            sectionRow: row,
+            evaluations:
+              documentType === "investigation_report" && row.section === "analyze"
+                ? normalizeAnalyzeToolResults(content, evaluations)
+                : evaluations,
+          };
+        })
+      );
+    } catch (err) {
+      if (isAiBudgetExceededError(err)) {
+        return aiBudgetExceededResponse(err);
+      }
+      throw err;
+    }
 
     for (const { sectionRow, evaluations } of llmResults) {
       const existing = existingBySectionId.get(sectionRow.id) ?? [];

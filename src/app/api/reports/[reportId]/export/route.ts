@@ -5,7 +5,7 @@ import { comments, reports, reportSections } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import { hydrateUserDirectory } from "@/lib/auth/user-directory";
 import { listWorkspaceUsers } from "@/lib/auth/workspace-users";
-import { getCustomerPack } from "@/lib/customers/packs";
+import { citationsAtEndOfSectionFor } from "@/lib/document-types";
 import { reportExportDocxFileName } from "@/lib/export/docx-filename";
 import { generateReportDocx } from "@/lib/export/generate-docx";
 import { listReportSignatures } from "@/lib/audit";
@@ -55,7 +55,8 @@ export async function GET(
 
   const signatures = await listReportSignatures(reportId);
   const omitCitations =
-    requestedOmitCitations(req) && getCustomerPack().citationsAtEndOfSection;
+    requestedOmitCitations(req) &&
+    citationsAtEndOfSectionFor(report.documentType);
 
   const buffer = await generateReportDocx({
     report: reportWithManagers,

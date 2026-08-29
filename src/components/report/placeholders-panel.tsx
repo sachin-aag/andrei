@@ -109,6 +109,7 @@ function PlaceholderCard({
           onFocus={handleFillFocus}
           onBlur={handleFillBlur}
           onKeyDown={(e) => {
+            e.stopPropagation();
             if (e.key === "Enter") {
               e.preventDefault();
               onFill();

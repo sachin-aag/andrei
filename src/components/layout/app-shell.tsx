@@ -8,7 +8,7 @@ import {
   AlertTriangle,
   BarChart3,
   FileText,
-  Sparkles,
+  Gauge,
   Users,
   PanelLeftClose,
   PanelLeftOpen,
@@ -49,11 +49,11 @@ export function AppShell({
       ? [
           { href: "/admin/reports", label: "Reports", icon: FileText },
           { href: "/admin/users", label: "Users", icon: Users },
+          { href: "/admin/limits", label: "Limits", icon: Gauge },
         ]
       : [
           { href: "/", label: "Reports", icon: FileText },
           { href: "/insights/dashboard", label: "Insights", icon: BarChart3 },
-          { href: "/improve-ai", label: "Improve AI", icon: Sparkles },
         ]),
   ];
 
@@ -161,11 +161,9 @@ export function AppShell({
                   ? "nav-reports"
                   : item.href === "/insights/dashboard"
                     ? "nav-insights"
-                    : item.href === "/improve-ai"
-                      ? "nav-improve-ai"
-                      : item.href === "/admin/users"
-                        ? "nav-users"
-                        : undefined
+                    : item.href === "/admin/users"
+                      ? "nav-users"
+                      : undefined
               }
               className={cn(
                 "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--ring)]",

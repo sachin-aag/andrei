@@ -5,9 +5,8 @@ import {
   loginAsEngineer,
 } from "./helpers/auth";
 import { browserCookieHeaders } from "./helpers/api";
-import { gotoWithNavigationRetry } from "./helpers/navigation";
 import { createReport, deleteReport } from "./helpers/reports";
-import { defineEditor, defineSection, analyzePlainField } from "./helpers/workspace";
+import { defineEditor, defineSection, analyzePlainField, openReportEditor, waitForReportEditor } from "./helpers/workspace";
 import { signedWorkflowPayload } from "./helpers/signing";
 
 function improveEditor(page: Page) {
@@ -64,12 +63,7 @@ test.describe("manager track changes persist", () => {
 
   test("saves Define track-changes edits across reload", async ({ page }) => {
     await authenticateAsManager(page);
-    await gotoWithNavigationRetry(page, `/reports/${reportId}/review`, {
-      waitUntil: "domcontentloaded",
-    });
-    await expect(page.getByRole("heading", { name: /^define$/i })).toBeVisible({
-      timeout: 30_000,
-    });
+    await openReportEditor(page, reportId!, { mode: "review" });
 
     const mark = `mgr-define-${Date.now()}`;
     const editor = defineEditor(page);
@@ -83,17 +77,13 @@ test.describe("manager track changes persist", () => {
     });
 
     await page.reload({ waitUntil: "domcontentloaded" });
-    await expect(page.getByRole("heading", { name: /^define$/i })).toBeVisible({
-      timeout: 30_000,
-    });
+    await waitForReportEditor(page);
     await expect(defineEditor(page)).toContainText(mark, { timeout: 30_000 });
   });
 
   test("saves Improve track-changes edits across reload", async ({ page }) => {
     await authenticateAsManager(page);
-    await gotoWithNavigationRetry(page, `/reports/${reportId}/review`, {
-      waitUntil: "domcontentloaded",
-    });
+    await openReportEditor(page, reportId!, { mode: "review" });
     await expect(page.getByRole("heading", { name: /^improve$/i })).toBeVisible({
       timeout: 30_000,
     });
@@ -144,9 +134,7 @@ test.describe("manager track changes persist", () => {
     );
     expect(seed.ok(), `seed improve failed (${seed.status()})`).toBeTruthy();
 
-    await gotoWithNavigationRetry(page, `/reports/${reportId}/review`, {
-      waitUntil: "domcontentloaded",
-    });
+    await openReportEditor(page, reportId!, { mode: "review" });
     await expect(page.getByRole("heading", { name: /^improve$/i })).toBeVisible({
       timeout: 30_000,
     });
@@ -167,12 +155,7 @@ test.describe("manager track changes persist", () => {
 
   test("keeps a new line and types into it instead of joining", async ({ page }) => {
     await authenticateAsManager(page);
-    await gotoWithNavigationRetry(page, `/reports/${reportId}/review`, {
-      waitUntil: "domcontentloaded",
-    });
-    await expect(page.getByRole("heading", { name: /^define$/i })).toBeVisible({
-      timeout: 30_000,
-    });
+    await openReportEditor(page, reportId!, { mode: "review" });
 
     const mark = `mgr-enter-${Date.now()}`;
     const editor = defineEditor(page);
@@ -243,12 +226,7 @@ test.describe("manager track changes persist", () => {
       `seed ai suggestion failed (${seedSuggestion.status()})`
     ).toBeTruthy();
 
-    await gotoWithNavigationRetry(page, `/reports/${reportId}/review`, {
-      waitUntil: "domcontentloaded",
-    });
-    await expect(page.getByRole("heading", { name: /^define$/i })).toBeVisible({
-      timeout: 30_000,
-    });
+    await openReportEditor(page, reportId!, { mode: "review" });
 
     const editor = defineEditor(page);
     await expect(editor).toBeVisible({ timeout: 30_000 });
@@ -323,9 +301,7 @@ test.describe("manager track changes persist", () => {
       `seed ai suggestion failed (${seedSuggestion.status()})`
     ).toBeTruthy();
 
-    await gotoWithNavigationRetry(page, `/reports/${reportId}/review`, {
-      waitUntil: "domcontentloaded",
-    });
+    await openReportEditor(page, reportId!, { mode: "review" });
     await expect(page.getByRole("heading", { name: /^analyze$/i })).toBeVisible({
       timeout: 30_000,
     });
@@ -351,9 +327,7 @@ test.describe("manager track changes persist", () => {
 
   test("marks Brainstorming and Other Tools typing as inserts", async ({ page }) => {
     await authenticateAsManager(page);
-    await gotoWithNavigationRetry(page, `/reports/${reportId}/review`, {
-      waitUntil: "domcontentloaded",
-    });
+    await openReportEditor(page, reportId!, { mode: "review" });
     await expect(page.getByRole("heading", { name: /^analyze$/i })).toBeVisible({
       timeout: 30_000,
     });

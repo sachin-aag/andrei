@@ -68,6 +68,29 @@ describe("isCitationShapedBracket", () => {
       )
     ).toBe(true);
     expect(isCitationShapedBracket("[Appendix B: <to be filled>]")).toBe(true);
+    expect(
+      isCitationShapedBracket(
+        "[790-00134R_Rev_U_Solea_Model_3_Software_Design_Verification_Test_Report_(Report_Only).docx, p. 1]"
+      )
+    ).toBe(true);
+    expect(
+      isCitationShapedBracket(
+        "[790-00134R_Rev_U_Solea_Model_3_Software_Design_Verification_Test_Report_(Report_Only)]"
+      )
+    ).toBe(true);
+    expect(
+      isCitationShapedBracket(
+        "[790-00134RRevUSoleaModel3SoftwareDesignVerificationTestReport(ReportOnly).docx]"
+      )
+    ).toBe(true);
+    expect(
+      isCitationShapedBracket(
+        "[790-00134R_Rev_U_Solea_Model_3_Software_: <to be filled>]"
+      )
+    ).toBe(true);
+    expect(
+      isCitationShapedBracket("[recipe.docx, p. 3, 4]")
+    ).toBe(true);
   });
 
   it("rejects ordinary placeholders and guidance", () => {
@@ -112,6 +135,11 @@ describe("repairedCitationBracket", () => {
         "[Appendix B DV Report 790-00134R(RevU): <to be filled>]"
       )
     ).toBe("[Appendix B DV Report 790-00134R(RevU)]");
+    expect(
+      repairedCitationBracket(
+        "[790-00134R_Rev_U_Solea_Model_3_Software_: <to be filled>]"
+      )
+    ).toBe("[790-00134R_Rev_U_Solea_Model_3_Software_]");
     expect(repairedCitationBracket("[Appendix B: <to be filled>]")).toBe(
       "[Appendix B]"
     );

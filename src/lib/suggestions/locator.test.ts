@@ -4,6 +4,7 @@ import {
   applyAndAcceptRichEdit,
   applyEditToPlainText,
   applyEditToRichDoc,
+  commitSuggestionMarksById,
   flattenForAnchor,
   isApplyableStatus,
   locateEdit,
@@ -676,5 +677,31 @@ describe("locator — split edits", () => {
       type: "paragraph",
       text: "",
     });
+  });
+});
+
+describe("commitSuggestionMarksById", () => {
+  it("flips pending AI marks to accepted without unwrapping them", () => {
+    const pending = applyEditToRichDoc(
+      {
+        type: "doc",
+        content: [
+          {
+            type: "paragraph",
+            content: [{ type: "text", text: "The batch failed OOS." }],
+          },
+        ],
+      },
+      { anchorText: "failed OOS", deleteText: "failed OOS", insertText: "was OOS" },
+      ATTRS
+    );
+    expect(pending.status).toBe("located");
+    const committed = commitSuggestionMarksById(pending.doc, ATTRS.id);
+    const json = JSON.stringify(committed);
+    expect(json).toContain("suggestionInsert");
+    expect(json).toContain("suggestionDelete");
+    expect(json).toContain('"status":"accepted"');
+    expect(json).toContain("failed OOS");
+    expect(json).toContain("was OOS");
   });
 });

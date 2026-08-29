@@ -51,7 +51,7 @@ describe("MJ customer pack content", () => {
     expect(demo.prompts.perSection.conclusion).toBeTruthy();
   });
 
-  it("hides conclusion from sections, criteria, chat, and Improve AI eval list", () => {
+  it("hides conclusion from sections, criteria, chat, and evaluable section list", () => {
     const def = buildInvestigationReportDefinition(MJ_PACK);
     expect(def.sections.map((s) => s.key)).not.toContain("conclusion");
     expect(def.criteriaBySection.conclusion).toBeUndefined();
@@ -81,13 +81,25 @@ describe("MJ customer pack content", () => {
     expect(MJ_PACK.expertReviewEnabled).toBe(false);
   });
 
-  it("disables design verification", () => {
-    expect(MJ_PACK.enabledDocumentTypes).toEqual(["investigation_report"]);
+  it("enables statistical analysis on MJ", () => {
+    expect(MJ_PACK.statisticalAnalysisEnabled).toBe(true);
+    expect(DEMO_PACK.statisticalAnalysisEnabled).toBe(true);
+  });
+
+  it("disables design verification and enables quality risk assessment", () => {
+    expect(MJ_PACK.enabledDocumentTypes).toEqual([
+      "investigation_report",
+      "quality_risk_assessment",
+    ]);
     expect(isDocumentTypeEnabled("design_verification", MJ_PACK)).toBe(false);
     expect(isDocumentTypeEnabled("investigation_report", MJ_PACK)).toBe(true);
-    expect(engineerReportsSubtitle([{ label: "Investigation Report" }])).toBe(
-      "Create and manage investigation reports."
-    );
+    expect(isDocumentTypeEnabled("quality_risk_assessment", MJ_PACK)).toBe(true);
+    expect(
+      engineerReportsSubtitle([
+        { label: "Investigation Report" },
+        { label: "Quality Risk Assessment" },
+      ])
+    ).toBe("Create and manage investigation and quality risk assessment reports.");
   });
 
   it("exports through the MJ Word template, which has no conclusion tag", () => {

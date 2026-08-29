@@ -5,6 +5,10 @@ import {
   registerInlineImage,
   type DocxExportContext,
 } from "@/lib/export/docx-export-context";
+import {
+  sectionBreakParagraphXml,
+  tableNeedsLandscapePage,
+} from "@/lib/export/docx-page-setup";
 import { allocateListNumId } from "@/lib/export/docx-numbering";
 import { resolveOmmlFromMathAttrs } from "@/lib/math/omml-mathml";
 import { stripWordBookmarkAnchors } from "@/lib/import/sanitize-import-html";
@@ -58,22 +62,47 @@ export function narrativeToDocxXmlWithContext(
   const sanitized = sanitizeDocTextNodes(doc);
   ctx.citationNumbers = citationNumbersFromDoc(sanitized);
   const parts: string[] = [];
+  const portraitMax = portraitTableGridMax(ctx);
+  const landscapeMax = ctx.pageSetup.landscapeContentWidthDxa;
+  let landscapeOpen = false;
+
+  const closeLandscape = () => {
+    if (!landscapeOpen) return;
+    parts.push(sectionBreakParagraphXml(ctx.pageSetup.landscapeSectPr));
+    landscapeOpen = false;
+  };
+  const openLandscape = () => {
+    if (landscapeOpen) return;
+    parts.push(sectionBreakParagraphXml(ctx.pageSetup.portraitSectPr));
+    landscapeOpen = true;
+  };
 
   for (const node of sanitized.content ?? []) {
     if (node.type === "table") {
-      parts.push(tableToXml(node, ctx));
-    } else if (node.type === "paragraph") {
-      parts.push(paragraphToXml(node, false, null, null, false, ctx));
-    } else if (node.type === "bulletList" || node.type === "orderedList") {
-      parts.push(listToXml(node, ctx));
-    } else if (node.type === "heading") {
-      parts.push(paragraphToXml(node, true, null, null, false, ctx));
-    } else if (node.type === "mathBlock") {
-      parts.push(mathBlockToXml(node));
+      const colCount = Math.max(1, getLogicalColumnCount(node.content ?? []));
+      if (tableNeedsLandscapePage(colCount, portraitMax)) {
+        openLandscape();
+        parts.push(tableToXml(node, ctx, landscapeMax));
+      } else {
+        closeLandscape();
+        parts.push(tableToXml(node, ctx, portraitMax));
+      }
     } else {
-      parts.push(paragraphToXml(node, false, null, null, false, ctx));
+      closeLandscape();
+      if (node.type === "paragraph") {
+        parts.push(paragraphToXml(node, false, null, null, false, ctx));
+      } else if (node.type === "bulletList" || node.type === "orderedList") {
+        parts.push(listToXml(node, ctx));
+      } else if (node.type === "heading") {
+        parts.push(headingToXml(node, ctx));
+      } else if (node.type === "mathBlock") {
+        parts.push(mathBlockToXml(node));
+      } else {
+        parts.push(paragraphToXml(node, false, null, null, false, ctx));
+      }
     }
   }
+  closeLandscape();
 
   const result = parts.join("");
   return { xml: result || wrapParagraph("Not Applicable"), ctx };
@@ -143,8 +172,8 @@ function revisionWrapper(revision: SuggestionRevision, inner: string): string {
 }
 
 /**
- * Max table grid width in dxa (twips), matching investigation template body:
- * pgSz 11909 − left/right pgMar 720 each = 10469.
+ * Fallback table grid width in dxa (twips) when page setup is missing:
+ * A4 pgSz 11909 − left/right pgMar 720 each = 10469.
  */
 const TABLE_GRID_TOTAL_MAX_DXA = 10469;
 
@@ -268,6 +297,24 @@ function wrapParagraph(text: string, ctx?: DocxExportContext): string {
   return `<w:p>${paragraphProperties(null, null, false, ctx)}<w:r>${runProperties({}, ctx)}<w:t xml:space="preserve">${escapeXml(
     text
   )}</w:t></w:r></w:p>`;
+}
+
+function headingStyleName(level: unknown): "Heading1" | "Heading2" | "Heading3" {
+  const n = typeof level === "number" ? level : Number(level);
+  if (n <= 1 || Number.isNaN(n)) return "Heading1";
+  if (n >= 3) return "Heading3";
+  return "Heading2";
+}
+
+function headingToXml(node: JSONContent, ctx: DocxExportContext): string {
+  if (!ctx.useHeadingStyles) {
+    return paragraphToXml(node, true, null, null, false, ctx);
+  }
+  const style = headingStyleName(node.attrs?.level);
+  const runs = inlineNodesToRuns(node.content ?? [], false, ctx);
+  const pPr = `<w:pPr><w:pStyle w:val="${style}"/>${paragraphJustification(null, ctx)}</w:pPr>`;
+  if (!runs) return `<w:p>${pPr}</w:p>`;
+  return `<w:p>${pPr}${runs}</w:p>`;
 }
 
 function paragraphToXml(
@@ -452,8 +499,25 @@ function listToXml(node: JSONContent, ctx: DocxExportContext): string {
   return parts.join("");
 }
 
-function tableToXml(node: JSONContent, ctx?: DocxExportContext): string {
-  const inner = buildInnerTableXml(node, ctx);
+function portraitTableGridMax(ctx: DocxExportContext): number {
+  return (
+    ctx.tableGridMaxDxa ??
+    ctx.pageSetup.portraitContentWidthDxa ??
+    TABLE_GRID_TOTAL_MAX_DXA
+  );
+}
+
+function tableToXml(
+  node: JSONContent,
+  ctx?: DocxExportContext,
+  maxGridDxa?: number
+): string {
+  const gridMax =
+    maxGridDxa ??
+    ctx?.tableGridMaxDxa ??
+    ctx?.pageSetup.portraitContentWidthDxa ??
+    TABLE_GRID_TOTAL_MAX_DXA;
+  const inner = buildInnerTableXml(node, ctx, gridMax);
   if (!inner) return "";
   if (ctx && ctx.tableKeepTogetherWrapper === false) {
     return inner;
@@ -482,7 +546,7 @@ function tableToXml(node: JSONContent, ctx?: DocxExportContext): string {
     `</w:tblCellMar>` +
     `<w:tblLook w:val="04A0" w:firstRow="0" w:lastRow="0" w:firstColumn="0" w:lastColumn="0" w:noHBand="1" w:noVBand="1"/>` +
     `</w:tblPr>`;
-  const wrapperGrid = `<w:tblGrid><w:gridCol w:w="${TABLE_GRID_TOTAL_MAX_DXA}"/></w:tblGrid>`;
+  const wrapperGrid = `<w:tblGrid><w:gridCol w:w="${gridMax}"/></w:tblGrid>`;
   const wrapperCell =
     `<w:tc>` +
     `<w:tcPr><w:tcW w:w="5000" w:type="pct"/>` +
@@ -502,12 +566,15 @@ function tableToXml(node: JSONContent, ctx?: DocxExportContext): string {
   return `<w:tbl>${wrapperTblPr}${wrapperGrid}${wrapperRow}</w:tbl>`;
 }
 
-function buildInnerTableXml(node: JSONContent, ctx?: DocxExportContext): string {
+function buildInnerTableXml(
+  node: JSONContent,
+  ctx: DocxExportContext | undefined,
+  maxGridDxa: number
+): string {
   const rows = node.content ?? [];
   if (rows.length === 0) return "";
 
   const colCount = Math.max(1, getLogicalColumnCount(rows));
-  const maxGridDxa = ctx?.tableGridMaxDxa ?? TABLE_GRID_TOTAL_MAX_DXA;
 
   const colWidthsRaw = node.attrs?.colWidths as unknown;
   let storedWidths: number[] | null = null;

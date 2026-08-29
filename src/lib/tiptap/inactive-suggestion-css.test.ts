@@ -34,4 +34,15 @@ describe("buildInactiveSuggestionCss", () => {
     expect(css).toContain(':not([data-eval-id="eval-1"])');
     expect(css).toContain('[data-active-suggestion-id="eval-1"]');
   });
+
+  it("hides inactive insert figures but does not hide delete-pending figures", () => {
+    const css = buildInactiveSuggestionCss("eval-1");
+    const hidingRules = css
+      .split("}")
+      .filter((block) => block.includes("display: none"))
+      .join("}");
+    expect(hidingRules).toContain(".suggestion-image-insert-ai");
+    expect(hidingRules).not.toContain(".suggestion-image-delete");
+    expect(css).toContain(".suggestion-image-delete-ai");
+  });
 });

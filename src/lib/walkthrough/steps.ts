@@ -126,14 +126,6 @@ export function stepsForRole(
           target: "insights-tabs",
         },
         {
-          id: "improve-ai",
-          title: "Improve AI",
-          body: "Send a finished report (or upload a Word file) for a criteria review you can agree or disagree with. That feedback trains future checks.",
-          href: "/improve-ai",
-          match: (pathname) => pathname.startsWith("/improve-ai"),
-          target: "improve-ai-start",
-        },
-        {
           id: "profile",
           title: "Profile and password",
           body: "Update your password, notification preferences, and replay this tour from Profile.",
@@ -194,14 +186,6 @@ export function stepsForRole(
           target: "insights-tabs",
         },
         {
-          id: "improve-ai",
-          title: "Improve AI",
-          body: "Managers can also send reports through Improve AI to judge the checklist and teach future evaluations.",
-          href: "/improve-ai",
-          match: (pathname) => pathname.startsWith("/improve-ai"),
-          target: "improve-ai-start",
-        },
-        {
           id: "profile",
           title: "Profile and password",
           body: "Update your password and replay this tour from Profile.",
@@ -238,14 +222,6 @@ export function stepsForRole(
           href: "/insights/dashboard",
           match: (pathname) => pathname.startsWith("/insights"),
           target: "insights-tabs",
-        },
-        {
-          id: "improve-ai",
-          title: "Improve AI",
-          body: "Review how the AI scored past reports and add your judgment when you want to improve the checklist.",
-          href: "/improve-ai",
-          match: (pathname) => pathname.startsWith("/improve-ai"),
-          target: "improve-ai-start",
         },
         {
           id: "profile",
@@ -299,7 +275,7 @@ export function stepsForRole(
 function welcomeBody(role: UserRole, name: string, noun: string): string {
   switch (role) {
     case "engineer":
-      return `Start by creating a ${noun} report, writing in the editor (it auto-saves), running AI Check, then submitting for review. This short tour also covers the Assistant, attachments, Word export, Insights, and Improve AI.`;
+      return `Start by creating a ${noun} report, writing in the editor (it auto-saves), running AI Check, then submitting for review. This short tour also covers the Assistant, attachments, Word export, and Insights.`;
     case "manager":
       return `Your queue is submitted ${noun} reports. Open one, comment, then approve or send it back. This tour also covers Track changes, the Assistant, export, and Insights.`;
     case "qa":

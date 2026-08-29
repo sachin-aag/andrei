@@ -6,7 +6,7 @@ with this file, trust `AGENTS.md` / the rules / the code — then fix this file.
 
 ## Project
 
-Andrei — a Next.js 16 investigation-report engine with per-customer packs. Demo (`ANDREI_CUSTOMER=demo`) is Andrei-branded with design verification and a conclusion section. MJ (`ANDREI_CUSTOMER=mj`) overlays SOP/DP/QA/008 criteria and prompts, the MJ Word template, MJ branding, Word import, and hides conclusion plus design verification. Convergent (`ANDREI_CUSTOMER=convergent`) is Convergent Dental branding with design verification only (9-section Solea DV template). Features: in-browser DMAIC editor with auto-save, AI traffic-light evaluation (Gemini via Vercel AI Gateway or Vertex), manager review with comments, attachment evidence (PDF/DOCX ingest + chat retrieval), and DOCX export.
+Andrei — a Next.js 16 investigation-report engine with per-customer packs. Demo (`ANDREI_CUSTOMER=demo`) is Andrei-branded with design verification, a conclusion section, and a demo-only free-form Document (`generic_document`: one TipTap body, no criteria). MJ (`ANDREI_CUSTOMER=mj`) overlays SOP/DP/QA/008 criteria and prompts, the MJ Word template, MJ branding, Word import, hides conclusion plus design verification, and adds Quality Risk Assessment (`quality_risk_assessment`, SOP/DP/QA/010). Convergent (`ANDREI_CUSTOMER=convergent`) is Convergent Dental branding with design verification only (9-section Solea DV template). Features: in-browser DMAIC editor with auto-save, AI traffic-light evaluation (Gemini via Vercel AI Gateway or Vertex), manager review with comments, attachment evidence (PDF/DOCX ingest + chat retrieval), and DOCX export.
 
 ## Commands
 
@@ -58,27 +58,27 @@ pnpm exec playwright install --with-deps chromium firefox webkit
 
 ### Key directories
 
-- `src/app/api/reports/[reportId]/` — Route handlers for report CRUD, section auto-save (`sections/[sectionType]`), AI `evaluate`, evaluation bypass (`evaluations/[evalId]`), AI `suggestions`, `comments`, `submit`/`approve`/`feedback` workflow, `chat` (AI chat), `audit` (trail), `attachments`, and `export`/`complete-export` (DOCX).
-- `src/app/improve-ai/` — Improve AI pages: session list and `[sessionId]` review page.
-- `src/app/api/improve-ai/` — API routes for creating sessions (from report or uploaded DOCX), listing sessions, and completing review.
+- `src/app/api/reports/[reportId]/` — Route handlers for report CRUD, section auto-save (`sections/[sectionType]`), AI `evaluate`, evaluation bypass (`evaluations/[evalId]`), AI `suggestions`, `comments`, `submit`/`approve`/`feedback` workflow, `chat` (AI chat), `analytics` (worksheet + sixpack + stats chat), `audit` (trail), `attachments`, `revisions` (product History snapshots + inline diff), and `export`/`complete-export` (DOCX).
 - `src/app/api/reports/[reportId]/chat/` — AI chat sessions/messages scoped to a report (see AI Chat subsystem).
 - `src/app/admin/` + `src/app/api/admin/` — Admin console (audit log viewer, user management, retention/password-policy settings). API: `audit`, `users` (+ `reset-password`, `unlock`), `password-policy`, `retention`, `reports/[reportId]/{purge,source-docx}`.
 - `src/app/insights/` — Analytics dashboards (`dashboard`, `doc-insights`, `management`, `pitfalls`). Currently backed by `src/lib/insights/mock-data.ts`.
 - `src/app/api/site-access/` — Site-wide password gate (see Site Access subsystem).
 - `src/app/{login,change-password,forgot-password,reset-password,unlock,profile}/` — auth/account pages. `src/app/api/auth-pw/` — password-based auth routes (forgot/reset).
-- `src/components/report/` — Editor UI: `report-workspace.tsx` (header + tabs + sidebar), per-section editors in `sections/`, `report-sidebar.tsx` (AI traffic-light results), `review-rail/` (manager comment margin UI).
-- `src/components/improve-ai/` — Improve AI UI: session form, upload button, section content display, stale-rerun dialog.
+- `src/components/report/` — Editor UI: `report-workspace.tsx` (header Document | Agent chrome + work-product Report | Analytics pane + sidebar), per-section editors in `sections/`, `report-sidebar.tsx` (AI traffic-light results + analytics chat), `review-rail/` (manager comment margin UI), History compare (`document-revision-history.tsx` / `document-revision-diff.tsx` / `analytics-revision-diff.tsx`).
+- `src/components/statistical-analysis/` — Report Analytics worksheet grid, Stat menu, sixpack/scatter SVG, capability and plot-measurements dialogs, stats chat panel.
 - `src/components/ui/` — shadcn-style Radix UI primitives.
-- `src/db/schema/index.ts` — Drizzle schema (single file, not a directory): `workspaceUsers`, `reports` (includes `documentType`), `reportManagers`, `reportSections`, `criteriaEvaluations`, `comments`, `chatSessions`/`chatMessages`, `reportSourceDocx`, `mathExtractionCache`, `aiFeedbackSessions`/`aiFeedbackResponses`, `auditEvents`/`sectionContentVersions`/`electronicSignatures`, `passwordPolicySettings`, `retentionSettings`, plus attachment evidence (`reportAttachments`, `attachmentIngestRuns`, `documentPages`, `documentChunks` with `vector(768)`). NextAuth tables + `authUsers` in `auth.ts`.
+- `src/db/schema/index.ts` — Drizzle schema (single file, not a directory): `workspaceUsers`, `reports` (includes `documentType`), `reportManagers`, `reportSections`, `criteriaEvaluations`, `comments`, `chatSessions`/`chatMessages`, `reportSourceDocx`, `mathExtractionCache`, `auditEvents`/`sectionContentVersions`/`electronicSignatures`, `passwordPolicySettings`, `retentionSettings`, `statisticalWorkspaces`/`statisticalAnalyses`, `documentRevisions`/`documentRevisionSections` (document History — not the audit chain), `analyticsRevisions` (Analytics History), plus attachment evidence (`reportAttachments`, `attachmentIngestRuns`, `documentPages`, `documentChunks` with `vector(768)`). NextAuth tables + `authUsers` in `auth.ts`.
+- `src/lib/document-revisions/` — Document product History snapshots (`snapshot.ts`) and inline compare (`inline-diff.ts`). One row per Agent-chrome report turn, or one coalesced row per human editing burst (30s idle). Compare diffs prose, every table by index, and added/removed figures. Worksheet writes are `analyticsRevisions`, not document versions.
+- `src/lib/analytics-revisions/` — Analytics product History (worksheet + plots snapshot, idle-coalesced). Compare is a cell/plot list, not TipTap.
 - `src/lib/ai/` — AI evaluation, suggestion, and chat pipelines (see subsystems below).
-- `src/lib/document-types/` — Registry for `investigation_report` and `design_verification` (sections, criteria, prompts, chat persona, merge).
+- `src/lib/document-types/` — Registry for `investigation_report`, `design_verification`, `mechanical_design_verification`, `quality_risk_assessment`, and `generic_document` (sections, criteria, prompts, chat persona, merge).
 - `src/lib/attachments/` — PDF/DOCX ingest, chunk/embed, hybrid retrieval (`searchReportDocuments`, `readDocumentPage`, `readDocumentOutline`).
 - `src/lib/storage/` — Attachment blob storage (GCS vs local).
 - `src/lib/audit/` — Hash-chained audit log, section version history, and e-signature workflow (see Audit subsystem).
-- `src/lib/customers/` — Customer pack resolver (`ANDREI_CUSTOMER` / `NEXT_PUBLIC_ANDREI_CUSTOMER`). Demo vs MJ vs Convergent overlays: criteria descriptions, eval prompts, export template, hidden sections, enabled document types, Word import, branding.
+- `src/lib/customers/` — Customer pack resolver (`ANDREI_CUSTOMER` / `NEXT_PUBLIC_ANDREI_CUSTOMER`). Demo vs MJ vs Convergent overlays: criteria descriptions, eval prompts, export template, hidden sections, enabled document types, Word import, branding, `statisticalAnalysisEnabled`.
+- `src/lib/statistical-analysis/` — Report-scoped worksheet ops, I-MR Normal Capability Sixpack, analytics store and stats-only chat tools.
 - `src/lib/reports/` — Report domain logic: access control (`access.ts`), manager authorization, deviation-no generation, submit validation, source-docx persistence, blank-section seeding, tombstones.
 - `src/lib/admin/` — Admin-console business logic (user/retention/password-policy operations).
-- `src/lib/improve-ai/` — Improve AI business logic: session store, session view, human-judgment tracking, response syncing, staleness detection.
 - `src/lib/analytics/` — PostHog client event capture (`events.ts` enumerates the event names).
 - `src/lib/eval/` — Offline eval harness helpers (model sweep, run comparison).
 - `src/lib/export/` — DOCX generation (see subsystem below).
@@ -110,6 +110,8 @@ Owned by `getWorkspaceSections(documentType)` in `src/lib/document-types/`. The 
 
 - **Investigation:** DMAIC (`define`, `measure`, `analyze`, `improve`, `control`) plus `conclusion`, plus non-editable `documents_reviewed`, `attachments`, `signature_approvals`. Content types in `src/types/sections.ts`.
 - **Design verification:** demo/MJ shape is `purpose_scope`, `references`, `traceability`, `test_methods`, `test_results`, `deviations`, `conclusion`, `approval_signoff`, `appendices`, plus virtual `cover_page` (lives in `reports.metadata`, not `report_sections`). Convergent pack (`buildDesignVerificationDefinition`) is a 9-section Solea DV (`purpose` … `conclusion`, no cover page). Content types in `src/lib/document-types/design-verification/sections.ts` and `src/lib/document-types/convergent/sections.ts`.
+- **Quality risk assessment (MJ only):** SOP/DP/QA/010 F02 + F04. Keys are prefixed `qra_` (`qra_approach` … `qra_revision_history`). Identity lives in `reports.metadata`. RPN/RPR are computed in `src/lib/document-types/qra/scoring.ts`, not by the LLM.
+- **Generic document (demo pack only):** one continuous `body` section (`{ narrative }`). The editor is a US Letter page canvas (visual page separators overlay the same TipTap field — not extra JSON nodes). No criteria, no Criteria tab / Run AI Check. Headings (H1–H3) are enabled for this type only. Word upload is type-owned (`wordImport.kind === "generic_body"`) and does **not** use pack `wordImportEnabled`. Accepting AI suggestions persists TipTap revision marks and exports them as Word tracked changes. Content types in `src/lib/document-types/generic/sections.ts`.
 
 ### Auth
 
@@ -219,13 +221,15 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
 
 **Locator (single matcher):** `src/lib/suggestions/locator.ts` — `flattenForAnchor`, `locateEdit`, `applyEditToRichDoc` / `applyEditToPlainText`, `probeRichEdit` / `probePlainEdit`. Gate ≡ apply is structural (probe is locate without commit).
 
-**Applying suggestions:** all three UI surfaces (suggestion card, rich TipTap widget, plain-text field) go through `acceptSuggestion` / `dismissSuggestion` in `accept-suggestion.ts`. Order: locate → apply → PATCH section → flip comment status. Never resolve without a successful apply.
+**Applying suggestions:** all three UI surfaces (suggestion card, rich TipTap widget, plain-text field) go through `acceptSuggestion` / `dismissSuggestion` in `accept-suggestion.ts`. Order: locate → apply → PATCH section → flip comment status. Never resolve without a successful apply. Investigation/DV finalize marks (`acceptSuggestionMarksById`). Generic documents use `suggestionApplyMode: "tracked_change"`: locate → apply pending insert/delete marks → keep them in JSON → PATCH. Export serializes those marks as Word `w:ins`/`w:del`.
+
+**Bulk apply/dismiss:** `Apply all N` / `Dismiss all` in the report workspace header (`report-bulk-suggestion-actions.tsx`) are **document-wide**, not section-scoped — `acceptAllSuggestionsInReport` / `dismissAllSuggestionsInReport` in `src/lib/suggestions/bulk-suggestions.ts` walk every section in `suggestionCardSectionKeys` order. Overlapping edits in the same field apply recursively (each locate sees the previous apply); everything else applies as an in-memory batch. Each section PATCHes once, then comment statuses flip in parallel. A stale suggestion is skipped; a save failure aborts that section only and later sections still run. No confirm dialog — the toast reports applied/skipped counts. The gutter card keeps only its single Apply/Dismiss. The single-card Apply/Dismiss still uses the cinematic settle delays. Bulk apply uses hold mode `bulk` (keep insert text, hide deletes instantly — do not opacity-0 both runs) and pushes applied content into the editor *before* the section PATCH so the wording does not vanish during save. The hold stays until comments are updated, so TipTap cannot re-inject an already-applied preview.
 
 **Key invariant:** Anchor must be unique in the canonical field text. Whitespace is normalized for matching (multiple spaces/newlines → single space). Cross-paragraph deletes are allowed; cross-cell deletes are dropped.
 
 ## Subsystem: DOCX Export
 
-**Entry point:** `generateReportDocx()` in `src/lib/export/generate-docx.ts`. Investigation and design-verification are separate branches (IR template vs `templates/design-verification-report-template.docx`). The numbered pipeline below is the investigation-report path. Registry `export.templatePath` exists but generate-docx still hardcodes those paths.
+**Entry point:** `generateReportDocx()` in `src/lib/export/generate-docx.ts`. Investigation, design-verification, and generic-document are separate branches (IR template vs `templates/design-verification-report-template.docx` vs `templates/generic-document-template.docx`). The numbered pipeline below is the investigation-report path. Registry `export.templatePath` exists but generate-docx still hardcodes those paths. Generic export maps Heading1–3 (when `useHeadingStyles`), skips investigation checkboxes/signature blocks, and sets `w:trackRevisions` so pending insert/delete marks survive as Word tracked changes.
 
 **Pipeline:**
 1. Load template DOCX (`templates/investigation-report-template.docx`) via PizZip + Docxtemplater
@@ -257,23 +261,28 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
 - Suggestion is in-flight or being applied (prevents race conditions)
 - Previous save failed (blocks until report reloaded)
 
-## Subsystem: Improve AI
+## Subsystem: Statistical Analysis
 
-**Purpose:** A separate feedback loop where engineers submit a completed report (or upload a reference DOCX) and receive per-criterion AI evaluations they can agree/disagree with. Results train human-judgment data (`aiFeedbackResponses`) separate from the live evaluation cache.
+**Purpose:** Report-scoped measurement worksheet and Minitab-style Normal Capability Sixpack (individuals / I-MR), attachment measurement scatter, worksheet XY scatter, and one-way ANOVA. Lives on the report **Analytics** tab (same attachments as the document). On for demo, MJ, and Convergent (`statisticalAnalysisEnabled`). Not a document type, not TipTap, and not DMAIC chat. Convergent Document chat does **not** propose `plot_measurements` figures — those plots live in Analytics.
 
 **Entry points:**
-- `POST /api/improve-ai/from-report` — creates a session from an existing report
-- `POST /api/improve-ai/upload` — creates a session from an uploaded DOCX
-- `GET/PATCH /api/improve-ai/sessions/[id]` — fetch/update session
-- `POST /api/improve-ai/sessions/[id]/complete` — mark session as reviewed
+- Report workspace header: Document | Agent switch (`data-testid="report-chrome-switch"`, `data-current-chrome`). Chrome is persisted per user + report in localStorage (`workspaceChrome:v1`). Switching to Agent seeds the composer Report | Analytics target from the focused pane. Analytics is a work-product pane (`data-testid="report-surface-analytics"`), not a third chrome.
+- `GET/PATCH/POST /api/reports/[reportId]/analytics` (`POST` aliases `PATCH` for autosave beacons)
+- `POST .../analytics/analyses` creates a sixpack (default), `kind: "measurement_scatter"`, `kind: "xy_scatter"`, or `kind: "one_way_anova"`; `POST/DELETE .../analytics/analyses/[analysisId]` recomputes or deletes
+- `POST /api/reports/[reportId]/analytics/chat` — stats-only assistant (`ANALYTICS_CHAT_PROMPT_VERSION`, surface `analytics`)
 
 **Data flow:**
-1. Session created → status `evaluating` → background evaluation runs `evaluateSection()` for investigation `EVALUATABLE_SECTIONS` (`evaluateReportCriteria` is not yet type-generic)
-2. Status transitions to `ready_for_review`; engineer reviews per-criterion AI verdicts in `/improve-ai/[sessionId]`
-3. For each criterion the user records agreement + optional comment → upserted into `aiFeedbackResponses`
-4. `POST .../complete` marks session `reviewed`
+1. Opening Analytics `getOrCreate`s one worksheet per report (`statistical_workspaces.report_id` unique). The workbook has one or more data sheets. Specs (LSL/USL/target) are edited from a column-header context menu (also insert left/right, delete, clear data, and Analyze data).
+2. Enter, paste, or ask the assistant to extract values from attachments (`extract_numeric_series` → `write_column`). Extraction also fills column specs when pages name limits.
+3. `Analyze {column}` (or a Shift+arrow row range), column-header **Analyze data…**, or `Stat → Normal Capability Sixpack…` (or `run_capability_sixpack` with optional `rowStart`/`rowEnd`/`rows`) computes I-MR limits, histogram, AD normal plot, Cp/Cpk/Pp/Ppk on the **server** (`computeCapabilitySixpack`). Analyze data opens a plot-type popup (sixpack / ANOVA / attachment scatter) with the column’s values pre-filled and editable. Column specs (right-click header) prefill the form; if those are empty, min/max (and midpoint target) of the selected range are used. Each run **inserts** a new `statistical_analyses` row — same-column titles become `Assay (2)`; a subset is titled `Assay (rows 1–10)`.
+4. `Stat → Plot measurements…` (or analytics `plot_measurements`) extracts cited numeric measurements from attachments and saves a scatter (`measurement_scatter`) on Results. Optional LSL/USL in the dialog (or tool args) override extracted acceptance limits; blank keeps the cited limits. Do not reuse Document-chat `executePlotMeasurements` here (that path writes section suggestions).
+5. `Stat → Scatter…` (or analytics `plot_xy_scatter`) plots two numeric worksheet columns (`xy_scatter`, Y vs X). Pair rows where both cells parse as numbers; Pearson r is reported (null if n<2 or zero variance). Y-column LSL/USL draw as horizontal dashed lines. `plot_measurements` remains attachment series vs observation index.
+6. `Stat → One-Way ANOVA…` (or analytics `run_one_way_anova`) compares a numeric response by a factor column on the same sheet. Pairwise tests are Bonferroni t-tests using the ANOVA MSE (not Tukey). Each run **inserts** a new Results row.
+7. Results lists every saved analysis; selecting one does not discard the others. Editing cells **in the analyzed rows** marks a sixpack, ANOVA, or XY scatter **stale** (`sourceHash`); attachment measurement scatter is not worksheet-stale. Recompute refreshes only that row. **Download** saves a CSV.
 
-**Staleness:** `src/lib/improve-ai/session-staleness.ts` detects when the underlying report has changed since the session was created, prompting a re-run dialog.
+**Chat:** Same shared `ChatPanel` as Document chat (Ask/Agent + Quick/Deep) in both chromes. `@` tags sheets, plots, and files; `worksheet-sheet-options.ts` only lists data sheets for those chips — there is no sheet-scope dropdown. Tools are search/outline/scan/page/extract/worksheet (`read_worksheet`, `write_column`, `manage_worksheet` for sheets/columns/rows)/sixpack/ANOVA/XY scatter/attachment scatter. Analytics `search_documents` is keyword-first and must not reuse Document-chat grep-loop copy (`truncated` is not a reason to search again). After a cited page, a page read/scan/extract, or two empty greps, search is hidden for the rest of the turn. Images, Quick/Deep, and Ask vs Agent match Document chat. Ask searches and extracts only; Agent can `manage_worksheet`, `write_column`, run a sixpack, run one-way ANOVA, plot two worksheet columns (`plot_xy_scatter`), and plot measurements when the report is writable. Scatters are one series, one color: `plot_xy_scatter` needs two numeric columns (a label/serial column cannot be X); `plot_measurements` is one attachment series vs observation index. Do not substitute sixpack/ANOVA for a scatter, and do not overlay or color by group. No `propose_edit` / `draft_field`. Do not add those tools to the report Plan-mode allowlist. Stub chat is text-only (`buildStubAnalyticsChatModel`). Bump `ANALYTICS_CHAT_PROMPT_VERSION` when analytics prompt copy changes.
+
+**Key invariant:** Analyses do not silently change when the worksheet changes, and a new run never overwrites an earlier sixpack. I-MR constants are Minitab n=2 (`d2=1.128`, `D4=3.267`, `E2=2.66`). Mutations use `canSaveReportSection` (same lock as section autosave). Worksheet PATCH is version-guarded (`statistical_workspaces.version`); a 409 returns the current analytics so the grid can reload instead of last-write-wins. Chat `write_column` / `manage_worksheet` retry once on conflict. `write_column` reports `nonNumericCells` instead of implying a full numeric fill. Product History for Analytics is `analyticsRevisions` (idle-coalesced worksheet bursts; each plot create/recompute/delete is its own version). Audit events `worksheet_updated` / `analysis_*` use entity `analytics`. Do not fold worksheet JSON into `documentRevisions`.
 
 ## Subsystem: Audit Trail & E-Signatures
 
@@ -287,24 +296,27 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
 - `verify-password-for-signing.ts` + `workflow-sign.ts` — re-authenticate the user's password before a signed transition; `handleWorkflowSignRequest()` (`workflow-handler.ts`) is the signed submit/approve/feedback handler.
 - Export/review: `export.ts` + `audit-csv.ts` (CSV export), viewed in `src/app/admin/audit/`.
 
-**Key invariant:** The chain is append-only; content edits go through `hashSectionContent()` and version snapshots, never in-place history rewrites.
+**Key invariant:** The audit chain is append-only; content edits go through `hashSectionContent()` and version snapshots, never in-place rewrites of `sectionContentVersions`. Do not use that table as the product History UI — it records every PATCH including human autosave. Document History is `documentRevisions`. Analytics History is `analyticsRevisions`; worksheet/plot mutations also append `worksheet_updated` / `analysis_*` audit events (entity `analytics`). An open `manual` document History row may be updated in place during a typing burst; Agent rows and idle-closed manual rows are never rewritten.
 
 ## Subsystem: AI Chat
 
-**Purpose:** Per-report conversational assistant that can read report context, search attachments, and propose edits.
+**Purpose:** Per-report conversational assistant that can read report context, search attachments, and propose or commit edits.
 
-**Entry point:** `POST /api/reports/[reportId]/chat` — `streamText()` (via `resolveChatLanguageModel()`) with tools from `buildChatTools()`, streamed back with `toUIMessageStreamResponse()`. Sessions/messages persist in `chatSessions`/`chatMessages` and are managed under `chat/sessions/[sessionId]`.
+**Entry point:** `POST /api/reports/[reportId]/chat` — `streamText()` (via `resolveChatLanguageModel()`) with tools from `buildChatTools()`, streamed back with `toUIMessageStreamResponse()`. Sessions/messages persist in `chatSessions`/`chatMessages` and are managed under `chat/sessions/[sessionId]`. Body includes `workspaceChrome`; the server derives `editPolicy` (`propose` in Document chrome, `commit` in Agent chrome when `canSaveReportSection`). Do not trust a client `editPolicy`.
 
 **Logic in `src/lib/ai/chat/`:**
-- `system-prompt.ts` — mode-aware prompt (`plan` vs `agent`); `CHAT_PROMPT_VERSION`; search-then-ask `DOCUMENT_RULES`
+- `system-prompt.ts` — mode-aware prompt (`plan` vs `agent`); `CHAT_PROMPT_VERSION`; search-then-ask `DOCUMENT_RULES`; commit copy when `editPolicy` is `commit`
+- `edit-policy.ts` / `commit-edit.ts` — Agent chrome writes `report_sections` in a `FOR UPDATE` transaction; Document chrome still inserts suggestion comments
 - `auto-evidence.ts` — kickoff hybrid retrieval (≤1.5s, fail-soft) injected after document rules
 - `context-map.ts` — serializes report state + ready docs (sanitized `summary=`)
-- `tools.ts` — `read_section`, `search_documents`, `document_outline`, `read_document_page`, `ask_user`, draft/edit tools; sanitizes untrusted metadata here (not in `src/lib/attachments/`)
-- `fields.ts` / `section-scope.ts` — type-specific editable sections (`chatEditableSections`)
-- `mentions.ts` — `@` documents/sections
+- `tools.ts` — `read_section`, `search_documents`, `document_outline`, `read_document_page`, `ask_user`, draft/edit tools, pack-gated `plot_measurements` (off for Convergent Document chat); sanitizes untrusted metadata here (not in `src/lib/attachments/`)
+- `fields.ts` — type-specific editable sections (`chatEditableSections`); tagged `@` sections set chat scope. Do not keep investigation-only constants like `CHAT_EDITABLE_SECTIONS`.
+- `mentions.ts` — `@` documents/sections. Scope is `sectionScopeFromMentions` (one tagged section focuses prompt/tools; none tagged = all). There is no composer section dropdown and no `body.sectionScope`.
 - `propose-edit.ts`, `session-title.ts`, `access.ts`
 
-**Plan-mode allowlist** in `chat/route.ts`: `read_section`, `search_documents`, `read_document_page`, `document_outline`, `ask_user`, optional `suggest_section_scope`. New tools must be added here or they are silently missing in Plan.
+**Plan-mode allowlist** in `src/lib/ai/chat/document-review.ts`: `read_section`, `search_documents`, `read_document_page`, `document_outline`, `ask_user`, plus document-review tools. New tools must be added here or they are silently missing in Plan. Analytics worksheet/plot tools stay off this list.
+
+**Spectrum:** Document and Agent share `ChatPanel`. Composer/scope/tool changes must cover Document | Agent chrome, `/chat` **and** `/analytics/chat`, prompt versions (`CHAT_PROMPT_VERSION` / `ANALYTICS_CHAT_PROMPT_VERSION`), Plan allowlist, retrieval-policy, already-drafted, stub model, colocated tests, and `AGENTS.md` / this file / `.cursor/rules/chat-and-attachments.mdc`. Removing a control means deleting parsers, prompt copy, switch-section tools, and tests for it — not hiding the UI.
 
 **Retrieval:** `searchReportDocuments` (vector + English FTS OR-tokens). Report body is not chunk-indexed. Stub chat: `ALLOW_TEST_STUB_CHAT` / `stub-model.ts` — streams a canned reply; cannot assert tool selection.
 
@@ -340,7 +352,7 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
 
 - Vitest config: `vitest.config.ts`, environment `node`, setup file `src/test/setup.ts` (imports `@testing-library/jest-dom/vitest`). Mock `@/db` when a module loads `DATABASE_URL` at import time.
 - E2E: Playwright with chromium, base URL `http://127.0.0.1:3000`, config in `playwright.config.ts`. Local `reuseExistingServer` is on — see gotchas.
-- Test files live alongside source: `*.test.ts` / `*.test.tsx`.
+- Test files live alongside source: `*.test.ts` / `*.test.tsx`. Rename, split, or delete the test file when the source module changes; do not keep tombstone `not.toContain("old UI")` tests. Removals: grep the old symbol in tests and `e2e/` first.
 - Full E2E details, artifact locations, and test catalog: `TESTING.md`.
 - `pnpm precommit` runs lint + typecheck + Vitest only (no E2E). CI runs them in separate jobs.
 

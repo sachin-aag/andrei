@@ -1,0 +1,72 @@
+Standard Operating Procedure Unit: Drug Product
+
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+M.J. Biopharm Private Limited Gysy
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance | SOP No.: SOP/DP/QA/010__| Revision No: R04 _| Page 18 of 51
+
+7.6.2
+7.6.2.1
+
+7.6.2.2
+
+7.6.2.3
+
+7.6.2.4
+7.6.2.5
+
+7.6.2.6
+
+Periodic review of Risk Assessment: -
+As ongoing part of quality management process, applicable risk assessment and their outcome shall
+be reviewed.
+
+Review applicability of risk’s shall be considered/decided on nature of risk’s, potential impact and
+effectiveness retention period of risk’s. Review applicability of risk’s shall be mentioned in risk
+assessment format no. SOP/DP/QA/010/F02, at the time of risk assessment closure.
+
+Risk assessment shall be reviewed every two years. Review can be initiated one month before
+completion of two years period.
+
+Risk assessment review shall be done as per format no. SOP/DP/QA/010/F06
+
+Risk assessment revision shall be handled through change control procedure in case revision is
+required as per review outcome of format no. SOP/DP/QA/010/F06.
+
+Risk assessment periodic review shall be done by respective user or
+product/process/equipment/system owner.
+
+7.6.3 Risk assessment review schedule shall be prepared yearly i.e. in the month of march of every
+financial year or as and when required; schedule shall be prepared as per format no.
+SOP/DP/QA/010/F05.
+
+7.6.4 Risk assessment may be reviewed before periodic review in following circumstance (but not
+limited to),
+
+7.6.4.1 Impact of high level deviations.
+
+7.6.4.2 Product performance (Product Recall, Field Alert).
+
+7.6.4.3. Market Complaints.
+
+7.6.4.4 Walk through/ internal audit/ External audit observations, Major changes impacting facility,
+equipment or processes.
+
+7.6.4.5 Annual Product Quality Review (APQR) recommendations.
+
+77 Risk Closure:
+
+TIA Once the risk review is completed by risk assessment team and risk is reduced to acceptable level
+(if applicable), it shall be forwarded to QA Head/Designee for approval followed by closure in the
+risk assessment log as per format no. SOP/DP/QA/010/F03.
+
+Prepared By (User Department) Sign/Date Reviewed By (Quality Assurance) Sign/Date
+6 a
+LSars\» c}e ‘oglasn6
+Confidential and Proprietary SOP/DP/QA/001/F01-R02
+
+MASTER COPY
+

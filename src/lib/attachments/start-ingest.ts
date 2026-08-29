@@ -21,6 +21,10 @@ import {
   sanitizeIngestError,
   shouldBackfillIngestFailure,
 } from "@/lib/attachments/ingest-errors";
+import {
+  assertAttachmentPageBudgetAvailable,
+  AttachmentPageBudgetExceededError,
+} from "@/lib/attachments/page-budget";
 import { runDocumentIngest } from "@/lib/attachments/run-document-ingest";
 import { isTestStubDocumentIngest } from "@/lib/test/ai-bypass";
 import { documentIngestWorkflow } from "@/workflows/document-ingest";
@@ -45,6 +49,26 @@ export async function startDocumentIngest(
   if (isTestStubDocumentIngest()) {
     await markAttachmentReadyForTests(attachmentId, generation);
     return;
+  }
+
+  const [attachment] = await db
+    .select({
+      pageCount: reportAttachments.pageCount,
+    })
+    .from(reportAttachments)
+    .where(eq(reportAttachments.id, attachmentId))
+    .limit(1);
+
+  try {
+    await assertAttachmentPageBudgetAvailable({
+      attachmentId,
+      pageCount: attachment?.pageCount ?? 1,
+    });
+  } catch (error) {
+    if (error instanceof AttachmentPageBudgetExceededError) {
+      await ensureFailedIfStillInFlight(attachmentId, error);
+    }
+    throw error;
   }
 
   const claimed = await claimDocumentIngestStart(attachmentId, generation);

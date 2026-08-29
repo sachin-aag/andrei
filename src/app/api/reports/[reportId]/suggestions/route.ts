@@ -47,6 +47,10 @@ import {
 import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
 import { requireReportAccess } from "@/lib/reports/require-report-access";
 import { canSaveReportSection } from "@/lib/reports/access";
+import {
+  aiBudgetExceededResponse,
+  isAiBudgetExceededError,
+} from "@/lib/ai/usage";
 
 export const maxDuration = 120;
 
@@ -176,21 +180,31 @@ async function handleSuggestionsPost(
       );
     }
 
-  const { suggestions: llmSuggestions, dropped: llmDropped } =
-    await generateSuggestionsForSection({
-      section,
-      content: sectionContent,
-      reportContext: { deviationNo: report.documentNo, date: report.date },
-      reportId,
-      allSections,
-      gapCriteria: gap.map((g) => ({
-        criterionKey: g.criterionKey,
-        criterionLabel: g.criterionLabel,
-        reasoning: g.reasoning,
-        evaluationId: g.id,
-        status: effectiveStatus(g),
-      })),
-    });
+  let llmSuggestions;
+  let llmDropped;
+  try {
+    ({ suggestions: llmSuggestions, dropped: llmDropped } =
+      await generateSuggestionsForSection({
+        section,
+        content: sectionContent,
+        reportContext: { deviationNo: report.documentNo, date: report.date },
+        reportId,
+        documentType: report.documentType,
+        allSections,
+        gapCriteria: gap.map((g) => ({
+          criterionKey: g.criterionKey,
+          criterionLabel: g.criterionLabel,
+          reasoning: g.reasoning,
+          evaluationId: g.id,
+          status: effectiveStatus(g),
+        })),
+      }));
+  } catch (err) {
+    if (isAiBudgetExceededError(err)) {
+      return aiBudgetExceededResponse(err);
+    }
+    throw err;
+  }
 
   const applied: Array<{
     suggestionId: string;

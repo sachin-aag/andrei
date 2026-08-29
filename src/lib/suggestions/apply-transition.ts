@@ -23,6 +23,12 @@ export const SUGGESTION_NEXT_PREVIEW_DELAY_MS = 700;
 /** After the incoming card finishes, before the next inline preview appears. */
 export const SUGGESTION_INLINE_REVEAL_DELAY_MS = 450;
 
+export function isBulkSuggestionApply(
+  mode: "accept" | "dismiss" | "bulk" | undefined
+): boolean {
+  return mode === "bulk";
+}
+
 export function delay(ms: number): Promise<void> {
   return new Promise((resolve) => {
     window.setTimeout(resolve, ms);

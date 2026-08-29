@@ -1,0 +1,82 @@
+Standard Operating Procedure Unit: Drug Product
+
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+M.J. Biopharm Private Limited sy
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance | SOP No.: SOP/DP/QA/010 | Revision No: R04 | Page 9 of 51
+
+7.3.2.17
+
+7.3.3
+7.3.3.1
+
+7.3.3.2
+
+7.3.4
+73.4.1
+
+7.3.4.2
+
+7.3.4.3
+
+73.44
+
+7.3.4.5
+
+be mentioned after implementation of mitigation plan, if mitigation plan is not applicable then
+mark this section as ‘Not Applicable’.
+
+Post-Approval (After Implementation): Approval shall be taken after implementation of mitigation
+plan. If mitigation plan is not required (In case low category risk) then mark this section as “Not
+Applicable’.
+
+Primary principles of quality risk management are:
+
+The evaluation of the risk to quality should be based on scientific knowledge and ultimately link to
+the patient safety.
+
+The level of effort, formality and documentation of the quality risk management process should be
+commensurate with the level of risk.
+
+Risk shall be identified by assessing the following, but not limited to:
+
+Equipment:
+Type, design, capacity, location, installation, condition, lubricants used, equipment history,
+operation, maintenance, calibration and breakdown etc.
+
+Facilities:
+
+Design, Site layout, material movement, personnel movement, waste movement, pest control,
+utilities, building management system maintenance, building security measures, safety measures
+and facility monitoring system etc.
+
+Process:
+
+Development, Introduction of new product, Process change and rework / reprocess. Any major
+change or modification to the qualified facility, (Any Change) equipment, instrument, utility,
+process, product, system etc.
+
+Document system:
+
+Master documents, standard operating procedure, validation reports, self-inspection reports, change
+control system, deviation, CAPA, APQR, market complaint reports, batch manufacturing records,
+batch packing records, equipment usage logs, analytical records and reports of raw materials,
+packing materials, stability data, process/cleaning validation reports, environmental monitoring
+records, rework or reprocess and batch manufacturing records etc.
+
+Materials:
+
+Identity, status control, quality, quantity, handling, specifications, security arrangements,
+counterfeiting control, sampling, reference / working standards, out of specification, retention
+samples, destruction of samples, analysis report, laboratory safety, retesting, storage, segregation
+
+Prepared By (User Department) Sign/Date Reviewed By (Quality Assurance) Sign/Date
+
+L306 joé Annas
+
+Confidential and Proprietary SOP/DP/QA/001/F01-R02
+MASTER COPY
+

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chunkDocumentPages } from "./chunk-pages";
+import { chunkDocumentPages, rewriteChunkDocumentHeader } from "./chunk-pages";
 
 describe("chunkDocumentPages", () => {
   it("creates page-bounded quote and visual chunks with context prefixes", () => {
@@ -95,5 +95,24 @@ describe("chunkDocumentPages", () => {
     });
     expect(chunks[0]?.contextualText).toContain("SW-SST-1");
     expect(chunks[0]?.contextualText).not.toContain("Page 4 Page 5 Page 6");
+  });
+});
+
+describe("rewriteChunkDocumentHeader", () => {
+  it("replaces a stale ingest-time filename and keeps the page number", () => {
+    expect(
+      rewriteChunkDocumentHeader(
+        "Document: BMR.pdf | Page 31 | Seed expansion\n\nTABLE NO.- 01",
+        "016-Seed-2 BMR.pdf"
+      )
+    ).toBe(
+      "Document: 016-Seed-2 BMR.pdf | Page 31 | Seed expansion\n\nTABLE NO.- 01"
+    );
+  });
+
+  it("leaves snippets without a document header unchanged", () => {
+    expect(rewriteChunkDocumentHeader("raw table text", "016-Seed-2 BMR.pdf")).toBe(
+      "raw table text"
+    );
   });
 });

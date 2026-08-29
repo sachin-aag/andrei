@@ -61,6 +61,16 @@ vi.mock("@/lib/import/docx-to-sections", () => ({
   docxBufferToImportedReportContent: vi.fn(),
 }));
 
+vi.mock("@/lib/import/docx-to-generic-document", () => ({
+  GenericDocxImportError: class GenericDocxImportError extends Error {
+    constructor(message: string) {
+      super(message);
+      this.name = "GenericDocxImportError";
+    }
+  },
+  docxBufferToGenericDocument: vi.fn(),
+}));
+
 vi.mock("@/lib/reports/ensure-hidden-expert-reviewer", () => ({
   assignedManagerIdsWithHiddenExpert: vi.fn(async (ids: string[]) => ids),
   assignHiddenExpertReviewerToReport: vi.fn(),
@@ -70,10 +80,16 @@ vi.mock("@/lib/reports/ensure-hidden-expert-reviewer", () => ({
 
 import { db } from "@/db";
 import { isDocumentNoTaken } from "@/lib/reports/document-no";
-import { DEMO_PACK, getCustomerPack, MJ_PACK } from "@/lib/customers/packs";
+import {
+  CONVERGENT_PACK,
+  DEMO_PACK,
+  getCustomerPack,
+  MJ_PACK,
+} from "@/lib/customers/packs";
 import { persistReportSourceDocx } from "@/lib/reports/persist-source-docx";
 import { persistImportedWordComments } from "@/lib/reports/persist-imported-word-comments";
 import { docxBufferToImportedReportContent } from "@/lib/import/docx-to-sections";
+import { docxBufferToGenericDocument } from "@/lib/import/docx-to-generic-document";
 import { EMPTY_CONTENT, REPORT_SECTION_ROW_ORDER } from "@/types/sections";
 import { assignedManagerIdsWithHiddenExpert } from "@/lib/reports/ensure-hidden-expert-reviewer";
 
@@ -127,6 +143,9 @@ describe("/api/reports", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(getCustomerPack).mockReturnValue(DEMO_PACK);
+    vi.mocked(assignedManagerIdsWithHiddenExpert).mockImplementation(
+      async (ids: readonly string[]) => [...ids]
+    );
   });
 
   it("requires authentication for listing reports", async () => {
@@ -256,6 +275,59 @@ describe("/api/reports", () => {
     expect(db.transaction).not.toHaveBeenCalled();
   });
 
+  it("creates a mechanical DV report from JSON payload", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
+    vi.mocked(getCustomerPack).mockReturnValue(CONVERGENT_PACK);
+    vi.mocked(isDocumentNoTaken).mockResolvedValueOnce(false);
+    const { values } = mockSuccessfulCreate("report-mechanical");
+    mockSectionRowsSelect("report-mechanical");
+
+    const response = await POST(
+      new Request("http://localhost/api/reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          documentType: "mechanical_design_verification",
+          documentNo: "dvr abcde",
+          assignedManagerIds: [],
+        }),
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(values).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        documentType: "mechanical_design_verification",
+        documentNo: "dvr abcde",
+      })
+    );
+    expect(isDocumentNoTaken).toHaveBeenCalledWith(
+      "dvr abcde",
+      engineer.id,
+      "mechanical_design_verification"
+    );
+  });
+
+  it("rejects an unknown document type as an invalid payload", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
+
+    const response = await POST(
+      new Request("http://localhost/api/reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          documentType: "not_a_real_type",
+          documentNo: "dvr abcde",
+        }),
+      })
+    );
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "Invalid payload" });
+    expect(db.insert).not.toHaveBeenCalled();
+  });
+
   it("creates a report with multiple assigned managers", async () => {
     vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
     vi.mocked(isDocumentNoTaken).mockResolvedValueOnce(false);
@@ -316,6 +388,65 @@ describe("/api/reports", () => {
       error: "Word import is not enabled for this workspace.",
     });
     expect(db.insert).not.toHaveBeenCalled();
+  });
+
+  it("creates a generic document from a Word upload on demo", async () => {
+    vi.mocked(getCurrentUser).mockResolvedValueOnce(engineer);
+    vi.mocked(isDocumentNoTaken).mockResolvedValueOnce(false);
+    vi.mocked(docxBufferToGenericDocument).mockResolvedValueOnce({
+      narrative: {
+        type: "doc",
+        content: [
+          {
+            type: "heading",
+            attrs: { level: 1 },
+            content: [{ type: "text", text: "Protocol" }],
+          },
+        ],
+      },
+      warnings: [
+        "Headers and footers were omitted. Export uses the Andrei document template header.",
+      ],
+    });
+    const { values } = mockSuccessfulCreate("report-generic");
+    mockSectionRowsSelect("report-generic");
+
+    const form = new FormData();
+    form.append("documentType", "generic_document");
+    form.append("documentNo", "DOC-001");
+    form.append(
+      "file",
+      new File(["x"], "memo.docx", {
+        type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      })
+    );
+
+    const response = await POST(
+      new Request("http://localhost/api/reports", {
+        method: "POST",
+        body: form,
+      })
+    );
+
+    expect(response.status).toBe(200);
+    expect(values).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        documentType: "generic_document",
+        documentNo: "DOC-001",
+        metadata: expect.objectContaining({
+          importedFromFilename: "memo.docx",
+        }),
+      })
+    );
+    expect(persistImportedWordComments).not.toHaveBeenCalled();
+    expect(persistReportSourceDocx).toHaveBeenCalledWith(
+      expect.objectContaining({
+        reportId: "report-generic",
+        filename: "memo.docx",
+        uploadedById: engineer.id,
+      })
+    );
   });
 
   it("creates an investigation from a Word upload when the MJ pack is active", async () => {
@@ -398,7 +529,7 @@ describe("/api/reports", () => {
 
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({
-      error: "Word import is only supported for investigation reports.",
+      error: "Word import is not supported for this document type.",
     });
     expect(db.insert).not.toHaveBeenCalled();
   });

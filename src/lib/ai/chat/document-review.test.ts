@@ -1,4 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("@/lib/ai/usage", () => ({
+  assertAiBudgetAvailable: vi.fn().mockResolvedValue(undefined),
+  recordAiUsage: vi.fn().mockResolvedValue(undefined),
+}));
+
 import { REV_U_REPORT_ONLY_REQ_IDS } from "@/lib/document-types/convergent/rev-u-report-only-req-ids";
 import {
   buildReviewBatches,
@@ -395,6 +401,9 @@ describe("pickPlanModeChatTools", () => {
       ask_user: { kind: "ask" },
       draft_field: { kind: "draft" },
       propose_edit: { kind: "edit" },
+      insert_image: { kind: "image" },
+      plot_measurements: { kind: "chart" },
+      remove_image: { kind: "image-remove" },
       edit_table: { kind: "table" },
     };
     const planTools = pickPlanModeChatTools(allTools);
@@ -414,6 +423,9 @@ describe("pickPlanModeChatTools", () => {
     });
     expect(planTools).not.toHaveProperty("draft_field");
     expect(planTools).not.toHaveProperty("propose_edit");
+    expect(planTools).not.toHaveProperty("insert_image");
+    expect(planTools).not.toHaveProperty("plot_measurements");
+    expect(planTools).not.toHaveProperty("remove_image");
     expect(planTools).not.toHaveProperty("edit_table");
   });
 });

@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import {
+  ArrowLeftRight,
   CheckCircle2,
   ChevronLeft,
   Loader2,
@@ -16,13 +17,36 @@ import { Separator } from "@/components/ui/separator";
 import type { WorkspaceMode } from "@/providers/report-provider";
 import type { ReportRecord } from "@/types/report";
 import { ReportActionsMenu } from "./report-actions-menu";
+import { ReportBulkSuggestionActions } from "./report-bulk-suggestion-actions";
 import { ReportExportButton } from "./report-export-button";
 import { RunAllEvaluationButton } from "./section-status-pill";
 import { StatusBadge } from "./status-badge";
+import type { WorkspaceChrome, WorkProductView } from "./workspace-chrome";
+
+function oppositeWorkspaceChrome(chrome: WorkspaceChrome): WorkspaceChrome {
+  switch (chrome) {
+    case "document":
+      return "agent";
+    case "agent":
+      return "document";
+    default: {
+      const _exhaustive: never = chrome;
+      return _exhaustive;
+    }
+  }
+}
+
+const CHROME_SWITCH_NOUN: Record<WorkspaceChrome, string> = {
+  document: "Document",
+  agent: "Agent",
+};
 
 type ReportWorkspaceHeaderProps = {
   report: ReportRecord;
   mode: WorkspaceMode;
+  chrome: WorkspaceChrome;
+  onChromeChange: (chrome: WorkspaceChrome) => void;
+  workProductView: WorkProductView;
   authorName?: string;
   managerNames?: string[];
   canSubmit: boolean;
@@ -45,6 +69,9 @@ type ReportWorkspaceHeaderProps = {
 export function ReportWorkspaceHeader({
   report,
   mode,
+  chrome,
+  onChromeChange,
+  workProductView,
   authorName,
   managerNames = [],
   canSubmit,
@@ -66,6 +93,10 @@ export function ReportWorkspaceHeader({
   const title = report.documentNo || "Untitled";
   const [navigatingBack, setNavigatingBack] = useState(false);
   const isViewMode = mode === "view";
+  const showRunCriteria = !isViewMode && workProductView === "report";
+  const showBulkSuggestions = showRunCriteria && chrome === "document";
+  const nextChrome = oppositeWorkspaceChrome(chrome);
+  const switchLabel = `Switch to ${CHROME_SWITCH_NOUN[nextChrome]}`;
 
   return (
     <header className="h-16 border-b border-[var(--border)] bg-[var(--card)] px-6 flex items-center gap-4 shrink-0">
@@ -107,12 +138,31 @@ export function ReportWorkspaceHeader({
           {managerNames.length > 0 ? ` → ${managerNames.join(", ")}` : ""}
         </span>
       </div>
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="shrink-0"
+        data-testid="report-chrome-switch"
+        data-current-chrome={chrome}
+        onClick={() => onChromeChange(nextChrome)}
+      >
+        <ArrowLeftRight className="size-3.5" aria-hidden="true" />
+        {switchLabel}
+      </Button>
+
       <div className="ml-auto flex items-center gap-2 flex-wrap justify-end">
         <span data-walkthrough="export-docx" className="inline-flex">
-          <ReportExportButton reportId={report.id} />
+          <ReportExportButton
+            reportId={report.id}
+            sourceDocxFilename={report.sourceDocxFilename}
+            documentType={report.documentType}
+            surface={workProductView === "analytics" ? "analytics" : "document"}
+          />
         </span>
 
-        {!isViewMode && <RunAllEvaluationButton />}
+        {showRunCriteria ? <RunAllEvaluationButton /> : null}
+        {showBulkSuggestions ? <ReportBulkSuggestionActions /> : null}
 
         {canSubmit && (
           <Button
@@ -124,7 +174,7 @@ export function ReportWorkspaceHeader({
             {submitting ? (
               <Loader2 className="size-4 animate-spin" aria-hidden="true" />
             ) : (
-              <Send className="size-4" aria-hidden="true" />
+              <Send className="size-4" />
             )}
             Submit for review
           </Button>
@@ -141,7 +191,7 @@ export function ReportWorkspaceHeader({
               {sendingFeedback ? (
                 <Loader2 className="size-4 animate-spin" aria-hidden="true" />
               ) : (
-                <MessageSquare className="size-4" aria-hidden="true" />
+                <MessageSquare className="size-4" />
               )}
               Return with feedback
             </Button>
@@ -154,7 +204,7 @@ export function ReportWorkspaceHeader({
               {approving ? (
                 <Loader2 className="size-4 animate-spin" aria-hidden="true" />
               ) : (
-                <CheckCircle2 className="size-4" aria-hidden="true" />
+                <CheckCircle2 className="size-4" />
               )}
               Approve
             </Button>

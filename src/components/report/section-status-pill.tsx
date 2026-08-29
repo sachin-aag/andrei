@@ -160,6 +160,8 @@ export function SectionStatusPill({ section }: { section: SectionType }) {
   const status = aggregateStatus(displayRows);
   const { met, total } = metCount(displayRows);
 
+  if (total === 0 && !isRunning) return null;
+
   return (
     <div
       ref={rootRef}
@@ -284,11 +286,15 @@ function StackedAndreiButton({
 }
 
 export function SectionRunEvaluationButton({ section }: { section: SectionType }) {
+  const { report } = useReportData();
   const {
     runEvaluation,
     isEvaluating,
     runningEvalSections,
   } = useReportEvaluations();
+  if (!evaluatableSectionKeys(report.documentType).includes(section)) {
+    return null;
+  }
   const isRunning = runningEvalSections.includes(section);
 
   return (
@@ -395,6 +401,7 @@ export function RunAllEvaluationButton({
   } = useReportEvaluations();
 
   const sectionCount = evaluatableSectionKeys(report.documentType).length;
+  if (sectionCount === 0) return null;
   const typeLabel = getDocumentType(report.documentType).label;
   const title = `Run traffic-light criteria on all ${sectionCount} sections (${typeLabel}) · ${getCustomerPack().branding.aiAttribution}`;
 

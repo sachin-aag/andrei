@@ -1,0 +1,71 @@
+Standard Operating Procedure
+
+Unit: Drug Product
+
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+M.J. Biopharm Private Limited
+
+ew)
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance
+
+| SOP No.: SOP/DP/QA/010__| Revision No: R04 _| Page 34 of 51
+
+Risk Priority Number (RPN) by the formula.
+Risk Prioritization Number (RPN) = Severity (S) x Probability (P) x Detection (D).
+
+Severity is ranked based on the Probability is tanked based on Detectability is ranked based
+impact on safety, purity and | probability of failure (frequency of Pantin acacraeronden ction
+identity of the product. event/incident) y
+Number Impact Number Impact Number Impact
+Expected to happen
+infrequently e.g. yearly or :
+1 No impact 1 unlikely to happen e.g. one 1 Very . high/comp ite
+detection possible
+occurrence more than a
+year
+Low impact (may Expected to happen in low High possibility of
+: having undlineet 2 frequency e.g. Half yearl 7 detection
+impact) ‘ ¥e8. year'y
+Medium ermmcdierale Expected to happen in a Medium or moderate
+3 pee . 3 moderate frequency e.g 3 possibility of
+(Will having indirect — :
+, Quarterly detection
+impact)
+4 High impact (may 4 Expected to happen 4 Low possibility of
+having direct impact) repeated e.g. Weekly detection
+Very high impact Expected to happen
+5 (Will having direct 5 regularly e.g. More than 5 No detection possible
+impact) one occurrence per day
+1.8.1.2 Risk Evaluation:
+Overall Risk /RPN Value | Risk Treatment
+Low 1-8 Mitigation Plan not required or risk is at acceptable level.
+Medium 9-24 Mitigation plan shall be done to reduce the risk to an acceptable level
+Hioh 95-125 Identify and implement the mitigation plan before proceeding to the |
+18 7 activity to reduce the risk ranking within acceptable range.
+
+1.8.2 Informal risk assessment:
+
+1.8.2.1 Risk Criteria:
+
+The severity (S), Probability (P) and Detection (D) are assessed using the table below to calculate
+Risk Priority Ranking by the formula.
+Risk Prioritization Ranking (RPR) = Severity (S) x Probability (P) x Detection (D).
+
+Prepared By (User Department) Sign/Date
+
+Reviewed By (Quality Assurance) Sign/Date
+
+Psa atoele4
+
+—sa\oelt6
+
+Confidential and Proprietary
+
+MASTER COPY
+
+SOP/DP/QA/001/F01-R02
+

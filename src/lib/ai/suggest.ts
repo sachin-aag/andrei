@@ -1,7 +1,7 @@
 import { generateText, Output, type LanguageModel } from "ai";
 import { z } from "zod";
 import { resolveGoogleLanguageModel } from "@/lib/ai/resolve-google-language-model";
-import type { CriterionStatus, SectionType } from "@/db/schema";
+import type { CriterionStatus, DocumentType, SectionType } from "@/db/schema";
 import { contextForPrompt } from "@/lib/ai/section-context";
 import { contextForSuggestionPrompt } from "@/lib/ai/suggestion-section-context";
 import type { AllSectionsContent } from "@/lib/ai/evaluate";
@@ -14,6 +14,10 @@ import {
   SUGGEST_THINKING_LEVEL,
 } from "@/lib/ai/suggest-prompts";
 import { langfuseGenerateTextTelemetry } from "@/lib/observability/langfuse";
+import {
+  assertAiBudgetAvailable,
+  recordAiUsage,
+} from "@/lib/ai/usage";
 import { buildGeminiThoughtSummaryProviderOptions } from "@/lib/eval/eval-generation-options";
 import { isAllowedTargetField } from "@/lib/ai/suggest-target-fields";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
@@ -29,7 +33,7 @@ import {
 } from "@/lib/attachments/retrieval";
 import type { EditScope } from "@/lib/suggestions/locator";
 import { parseEditScope } from "@/lib/ai/suggestion-gating";
-import { getCustomerPack } from "@/lib/customers/packs";
+import { citationsAtEndOfSectionFor } from "@/lib/document-types";
 import { prepareEditForCitationMode } from "@/lib/suggestions/citations-at-end";
 
 export type SuggestionDropReason =
@@ -296,7 +300,8 @@ export async function generateSuggestionsForSection({
   reportId,
   allSections,
   gapCriteria,
-  citationsAtEndOfSection = getCustomerPack().citationsAtEndOfSection,
+  documentType,
+  citationsAtEndOfSection: citationsAtEndOfSectionOption,
 }: {
   section: SectionType;
   content: unknown;
@@ -310,8 +315,11 @@ export async function generateSuggestionsForSection({
     evaluationId: string;
     status: CriterionStatus;
   }>;
+  documentType?: DocumentType;
   citationsAtEndOfSection?: boolean;
 }): Promise<{ suggestions: GeneratedSuggestion[]; dropped: Array<{ criterionKey: string; reason: SuggestionDropReason }> }> {
+  const citationsAtEndOfSection =
+    citationsAtEndOfSectionOption ?? citationsAtEndOfSectionFor(documentType);
   if (gapCriteria.length === 0) {
     return { suggestions: [], dropped: [] };
   }
@@ -383,6 +391,7 @@ export async function generateSuggestionsForSection({
       citationsAtEndOfSection,
     });
 
+    await assertAiBudgetAvailable();
     const result = await generateText({
       model: resolveModel(),
       output: Output.object({ schema: suggestionSchema }),
@@ -407,6 +416,13 @@ export async function generateSuggestionsForSection({
           promptVersion: SUGGEST_PROMPT_VERSION,
         },
       }),
+    });
+
+    await recordAiUsage({
+      feature: "suggestion_generation",
+      modelId: SUGGEST_GOOGLE_MODEL_ID,
+      usage: result.usage,
+      reportId,
     });
 
     const rawList = result.experimental_output?.suggestions

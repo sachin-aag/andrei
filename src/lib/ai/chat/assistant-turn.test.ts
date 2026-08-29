@@ -1,19 +1,25 @@
 import type { UIMessage } from "ai";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   assistantPartsHaveVisibleContent,
+  assistantPartsHaveVisibleText,
   assistantProgressSignature,
   chatWatchdogPhase,
   formatChatLlmError,
   isFailedChatFinishReason,
   partsForPersistedAssistantTurn,
   shouldShowEmptyAssistantError,
+  writtenColumnNamesFromParts,
   CHAT_ASSISTANT_ERROR_MESSAGE,
+  CHAT_ASSISTANT_INCOMPLETE_TURN_MESSAGE,
   CHAT_ASSISTANT_INTERRUPTED_MESSAGE,
+  CHAT_ASSISTANT_STEP_BUDGET_MESSAGE,
   CHAT_CLIENT_GIVE_UP_MS,
   CHAT_CLIENT_STALE_MS,
+  CHAT_CONSUME_STREAM_BUDGET_MS,
   CHAT_FUNCTION_MAX_DURATION_SEC,
   CHAT_SERVER_ABORT_MS,
+  consumeAssistantStreamWithBudget,
 } from "./assistant-turn";
 import { CHAT_TURN_STALE_MS } from "./background-turn-status";
 
@@ -43,6 +49,17 @@ describe("assistantPartsHaveVisibleContent", () => {
         { type: "tool-read_section" },
       ])
     ).toBe(true);
+  });
+
+  it("treats tool chips without prose as having no visible text", () => {
+    expect(
+      assistantPartsHaveVisibleText([
+        { type: "tool-search_documents" },
+      ])
+    ).toBe(false);
+    expect(assistantPartsHaveVisibleText([{ type: "text", text: "ok" }])).toBe(
+      true
+    );
   });
 });
 
@@ -80,6 +97,10 @@ describe("deadline constants", () => {
   it("aborts the stream before Vercel can kill the isolate", () => {
     expect(CHAT_FUNCTION_MAX_DURATION_SEC).toBe(300);
     expect(CHAT_SERVER_ABORT_MS).toBeLessThan(CHAT_FUNCTION_MAX_DURATION_SEC * 1000);
+    expect(CHAT_CONSUME_STREAM_BUDGET_MS).toBeGreaterThan(CHAT_SERVER_ABORT_MS);
+    expect(CHAT_CONSUME_STREAM_BUDGET_MS).toBeLessThan(
+      CHAT_FUNCTION_MAX_DURATION_SEC * 1000
+    );
     expect(CHAT_CLIENT_GIVE_UP_MS).toBeGreaterThan(CHAT_SERVER_ABORT_MS);
     expect(CHAT_CLIENT_GIVE_UP_MS).toBeLessThan(
       CHAT_FUNCTION_MAX_DURATION_SEC * 1000
@@ -88,6 +109,28 @@ describe("deadline constants", () => {
     expect(CHAT_TURN_STALE_MS).toBeGreaterThan(
       CHAT_FUNCTION_MAX_DURATION_SEC * 1000
     );
+  });
+});
+
+describe("consumeAssistantStreamWithBudget", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("resolves completed when consume finishes", async () => {
+    await expect(
+      consumeAssistantStreamWithBudget(async () => undefined, 50)
+    ).resolves.toBe("completed");
+  });
+
+  it("times out a hung consume so after() can still clear the turn", async () => {
+    vi.useFakeTimers();
+    const hung = consumeAssistantStreamWithBudget(
+      () => new Promise(() => {}),
+      20
+    );
+    await vi.advanceTimersByTimeAsync(20);
+    await expect(hung).resolves.toBe("timed_out");
   });
 });
 
@@ -137,7 +180,13 @@ describe("partsForPersistedAssistantTurn", () => {
     const parts = [{ type: "text" as const, text: "ok" }];
     expect(
       partsForPersistedAssistantTurn({ parts, isAborted: false })
-    ).toEqual({ parts, emptyFailure: false, interrupted: false });
+    ).toEqual({
+      parts,
+      emptyFailure: false,
+      interrupted: false,
+      stepBudgetExhausted: false,
+      incomplete: false,
+    });
   });
 
   it("persists an interrupted line for empty aborted turns", () => {
@@ -147,6 +196,8 @@ describe("partsForPersistedAssistantTurn", () => {
       parts: [{ type: "text", text: CHAT_ASSISTANT_INTERRUPTED_MESSAGE }],
       emptyFailure: true,
       interrupted: true,
+      stepBudgetExhausted: false,
+      incomplete: true,
     });
   });
 
@@ -163,6 +214,8 @@ describe("partsForPersistedAssistantTurn", () => {
       ],
       emptyFailure: false,
       interrupted: true,
+      stepBudgetExhausted: false,
+      incomplete: true,
     });
   });
 
@@ -170,7 +223,13 @@ describe("partsForPersistedAssistantTurn", () => {
     const parts = [{ type: "text" as const, text: "Draft Define." }];
     expect(
       partsForPersistedAssistantTurn({ parts, isAborted: true })
-    ).toEqual({ parts, emptyFailure: false, interrupted: false });
+    ).toEqual({
+      parts,
+      emptyFailure: false,
+      interrupted: false,
+      stepBudgetExhausted: false,
+      incomplete: false,
+    });
   });
 
   it("persists a user-visible error line for empty finished turns", () => {
@@ -180,6 +239,95 @@ describe("partsForPersistedAssistantTurn", () => {
       parts: [{ type: "text", text: CHAT_ASSISTANT_ERROR_MESSAGE }],
       emptyFailure: true,
       interrupted: false,
+      stepBudgetExhausted: false,
+      incomplete: false,
+    });
+  });
+
+  it("appends a step-budget notice when tools ran but there is no prose", () => {
+    const parts = [
+      { type: "tool-search_documents", toolCallId: "call_1" },
+    ] as unknown as UIMessage["parts"];
+    expect(
+      partsForPersistedAssistantTurn({
+        parts,
+        isAborted: false,
+        stepBudgetExhausted: true,
+      })
+    ).toEqual({
+      parts: [
+        parts[0],
+        { type: "text", text: CHAT_ASSISTANT_STEP_BUDGET_MESSAGE },
+      ],
+      emptyFailure: false,
+      interrupted: false,
+      stepBudgetExhausted: true,
+      incomplete: true,
+    });
+  });
+
+  it("appends an incomplete notice when the model stops on tool-calls with no prose", () => {
+    const parts = [
+      {
+        type: "tool-write_column",
+        toolCallId: "call_1",
+        output: { status: "written", columnName: "Temp" },
+      },
+      {
+        type: "tool-write_column",
+        toolCallId: "call_2",
+        output: {
+          status: "written",
+          columnName: "pH",
+          columns: [
+            { columnName: "Temp" },
+            { columnName: "pH" },
+          ],
+        },
+      },
+    ] as unknown as UIMessage["parts"];
+    expect(writtenColumnNamesFromParts(parts)).toEqual(["Temp", "pH"]);
+    expect(
+      partsForPersistedAssistantTurn({
+        parts,
+        isAborted: false,
+        finishReason: "tool-calls",
+      })
+    ).toEqual({
+      parts: [
+        parts[0],
+        parts[1],
+        {
+          type: "text",
+          text: "I stopped after writing Temp and pH and did not finish this turn. Ask me to continue if any columns are still empty.",
+        },
+      ],
+      emptyFailure: false,
+      interrupted: false,
+      stepBudgetExhausted: false,
+      incomplete: true,
+    });
+  });
+
+  it("uses the generic incomplete line when tool-calls stop with no writes", () => {
+    const parts = [
+      { type: "tool-search_documents", toolCallId: "call_1" },
+    ] as unknown as UIMessage["parts"];
+    expect(
+      partsForPersistedAssistantTurn({
+        parts,
+        isAborted: false,
+        finishReason: "tool-calls",
+      })
+    ).toEqual({
+      parts: [
+        parts[0],
+        { type: "text", text: CHAT_ASSISTANT_INCOMPLETE_TURN_MESSAGE },
+      ],
+      emptyFailure: false,
+      interrupted: false,
+      stepBudgetExhausted: false,
+      incomplete: true,
     });
   });
 });

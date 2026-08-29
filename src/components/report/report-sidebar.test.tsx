@@ -8,6 +8,9 @@ import { ReportSidebar } from "@/components/report/report-sidebar";
 vi.mock("@/providers/report-provider", () => ({
   useReportPlaceholders: () => ({ pendingPlaceholders: [] }),
   useReportComments: () => ({ comments: [] }),
+  useReportData: () => ({
+    report: { id: "report-1", documentType: "investigation_report" },
+  }),
 }));
 
 let chatPanelMounts = 0;
@@ -47,6 +50,19 @@ function renderSidebar(collapsed: boolean, activeTab: "assistant" | "criteria") 
 }
 
 describe("ReportSidebar chat keep-alive", () => {
+  it("shows only the active tab icon when the sidebar is collapsed", () => {
+    renderSidebar(true, "criteria");
+    expect(screen.queryByRole("button", { name: "Placeholders" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Criteria" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /expand sidebar/i })).toBeInTheDocument();
+  });
+
+  it("shows all tab buttons when the sidebar is expanded", () => {
+    renderSidebar(false, "assistant");
+    expect(screen.getByRole("button", { name: "Criteria" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Placeholders" })).toBeInTheDocument();
+  });
+
   it("keeps ChatPanel mounted when the sidebar is collapsed", () => {
     chatPanelMounts = 0;
     const { rerender } = renderSidebar(false, "assistant");
@@ -91,6 +107,33 @@ describe("ReportSidebar chat keep-alive", () => {
 
     expect(screen.getByTestId("chat-panel")).toBeInTheDocument();
     expect(screen.getByTestId("chat-panel").parentElement).toHaveClass("hidden");
+    expect(chatPanelMounts).toBe(1);
+  });
+
+  it("keeps ChatPanel visible on the Analytics surface", () => {
+    chatPanelMounts = 0;
+    const { rerender } = renderSidebar(false, "assistant");
+    expect(screen.getByTestId("chat-panel")).toBeInTheDocument();
+
+    rerender(
+      <ReportSidebar
+        collapsed={false}
+        onToggleCollapse={noop}
+        activeTab="assistant"
+        onTabChange={noop}
+        onJumpToSection={noop}
+        onJumpToPlaceholder={noop}
+        onJumpToComment={noop}
+        workProductView="analytics"
+        statsEnabled
+      />
+    );
+
+    expect(screen.getByTestId("chat-panel")).toBeInTheDocument();
+    expect(screen.getByTestId("chat-panel").parentElement).not.toHaveClass(
+      "hidden"
+    );
+    expect(screen.queryByRole("button", { name: "Criteria" })).not.toBeInTheDocument();
     expect(chatPanelMounts).toBe(1);
   });
 });

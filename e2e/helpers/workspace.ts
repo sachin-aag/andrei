@@ -1,4 +1,5 @@
 import { expect, type Page } from "@playwright/test";
+import { gotoWithNavigationRetry } from "./navigation";
 
 export function primaryNav(page: Page) {
   return page.getByRole("complementary", { name: "Primary navigation" });
@@ -38,6 +39,18 @@ export async function expandDocumentsPanel(page: Page): Promise<void> {
   ).toBeVisible();
 }
 
+/** Convergent DV reports expose a Contents tab in the left panel. */
+export async function openDocumentsContentsTab(page: Page): Promise<void> {
+  await expandDocumentsPanel(page);
+  const tab = documentsPanel(page).getByRole("button", { name: /^contents$/i });
+  if (await tab.isVisible()) {
+    if ((await tab.getAttribute("aria-pressed")) !== "true") {
+      await tab.click();
+    }
+    await expect(tab).toHaveAttribute("aria-pressed", "true");
+  }
+}
+
 /** App shell nav starts collapsed — expand before using footer profile link. */
 export async function expandPrimaryNav(page: Page): Promise<void> {
   const nav = primaryNav(page);
@@ -47,7 +60,7 @@ export async function expandPrimaryNav(page: Page): Promise<void> {
   }
 }
 
-/** Report sidebar may start collapsed — tab labels are icon-only until expanded. */
+/** Report sidebar may start collapsed — expand before switching tabs. */
 export async function expandReportSidebar(page: Page): Promise<void> {
   const sidebar = reportSidebar(page);
   const expand = sidebar.getByRole("button", { name: /expand sidebar/i });
@@ -85,8 +98,114 @@ export async function openReportAssistant(page: Page): Promise<void> {
     timeout: 15_000,
   });
   await expect(
-    sidebar.getByPlaceholder(/describe the deviation|ask the assistant/i)
+    sidebar.getByPlaceholder(/ask about the report or attachments|ask the assistant/i)
   ).toBeEnabled({ timeout: 15_000 });
+}
+
+export async function openReportAnalytics(page: Page): Promise<void> {
+  const tab = page.getByTestId("report-surface-analytics");
+  await expect(tab).toBeVisible({ timeout: 30_000 });
+  await tab.click();
+  await expect(page.getByTestId("report-analytics-workspace")).toBeVisible({
+    timeout: 30_000,
+  });
+}
+
+/** Report workspace shell + Define section are mounted in Document chrome. */
+export async function waitForReportEditor(page: Page): Promise<void> {
+  const chromeSwitch = page.getByTestId("report-chrome-switch");
+  await expect(chromeSwitch).toBeVisible({ timeout: 30_000 });
+  await expect
+    .poll(async () => chromeSwitch.getAttribute("data-current-chrome"))
+    .toMatch(/^(document|agent)$/);
+
+  if ((await chromeSwitch.getAttribute("data-current-chrome")) !== "document") {
+    await setReportChrome(page, "document");
+  }
+
+  const defineHeading = page.getByRole("heading", { name: /^define$/i });
+  await expect(defineHeading).toBeVisible({ timeout: 30_000 });
+  await defineSection(page).scrollIntoViewIfNeeded();
+  await expect(defineEditor(page)).toBeVisible({ timeout: 30_000 });
+}
+
+export async function openReportEditor(
+  page: Page,
+  reportId: string,
+  opts?: { mode?: "edit" | "review" }
+): Promise<void> {
+  const mode = opts?.mode ?? "edit";
+  await gotoWithNavigationRetry(page, `/reports/${reportId}/${mode}`, {
+    waitUntil: "domcontentloaded",
+  });
+  await waitForReportEditor(page);
+}
+
+export async function expandWorkProductPanel(page: Page): Promise<void> {
+  const panel = page.getByTestId("report-work-product");
+  const expand = panel.getByRole("button", { name: /expand document panel/i });
+  if (await expand.isVisible()) {
+    await expand.click();
+  }
+  await expect(
+    panel.getByRole("button", { name: /collapse document panel/i })
+  ).toBeVisible();
+  // report-workspace animates width for 200ms when the Agent rail expands.
+  await expect.poll(async () => (await panel.boundingBox())?.width ?? 0).toBeGreaterThan(
+    52
+  );
+}
+
+/** Resize handle is absolutely positioned on the work-product column's left edge. */
+export async function expectDocumentPanelResizeHandleAligned(
+  page: Page
+): Promise<void> {
+  const panel = page.getByTestId("report-work-product");
+  const handle = page.getByRole("separator", {
+    name: /resize document panel/i,
+  });
+  await expect(handle).toBeVisible();
+  await expect.poll(async () => {
+    const [panelBox, handleBox] = await Promise.all([
+      panel.boundingBox(),
+      handle.boundingBox(),
+    ]);
+    if (!panelBox || !handleBox) return Number.POSITIVE_INFINITY;
+    return Math.abs(handleBox.x + handleBox.width / 2 - panelBox.x);
+  }).toBeLessThan(16);
+}
+
+export async function collapseWorkProductPanel(page: Page): Promise<void> {
+  const panel = page.getByTestId("report-work-product");
+  const collapse = panel.getByRole("button", {
+    name: /collapse document panel/i,
+  });
+  if (await collapse.isVisible()) {
+    await collapse.click();
+  }
+  await expect(
+    panel.getByRole("button", { name: /expand document panel/i })
+  ).toBeVisible();
+}
+
+export async function setReportChrome(
+  page: Page,
+  chrome: "document" | "agent"
+): Promise<void> {
+  const switchBtn = page.getByTestId("report-chrome-switch");
+  await expect(switchBtn).toBeVisible({ timeout: 30_000 });
+  if ((await switchBtn.getAttribute("data-current-chrome")) === chrome) {
+    return;
+  }
+  await switchBtn.click();
+  await expect(switchBtn).toHaveAttribute("data-current-chrome", chrome, {
+    timeout: 15_000,
+  });
+  if (chrome === "document") {
+    await expect(page.getByTestId("report-work-product")).toBeVisible({
+      timeout: 30_000,
+    });
+  }
 }
 
 /** Collapse the assistant so the review margin (suggestions/comments) can show. */
@@ -94,9 +213,26 @@ export async function collapseReportSidebar(page: Page): Promise<void> {
   const sidebar = reportSidebar(page);
   const collapse = sidebar.getByRole("button", { name: /collapse sidebar/i });
   if (await collapse.isVisible()) {
+    await expect(collapse).toBeEnabled({ timeout: 15_000 });
     await collapse.click();
     await expect(sidebar.getByRole("button", { name: /expand sidebar/i })).toBeVisible();
   }
+}
+
+/** Turn on the Comments switch so the review margin can mount. */
+export async function enableCommentsGutter(page: Page): Promise<void> {
+  const toggle = page.getByRole("switch", { name: /comments/i });
+  await expect(toggle).toBeVisible({ timeout: 15_000 });
+  if ((await toggle.getAttribute("aria-checked")) !== "true") {
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-checked", "true");
+  }
+}
+
+/** Collapse assistant and enable the Comments gutter toggle. */
+export async function showReviewMargin(page: Page): Promise<void> {
+  await enableCommentsGutter(page);
+  await collapseReportSidebar(page);
 }
 
 export function defineSection(page: Page) {
@@ -122,7 +258,7 @@ export async function openReviewMarginNote(
   page: Page,
   sectionLabel: string
 ): Promise<void> {
-  await collapseReportSidebar(page);
+  await showReviewMargin(page);
   await reviewMargin(page)
     .getByRole("button", { name: new RegExp(`add note on ${sectionLabel}`, "i") })
     .click();
@@ -170,7 +306,7 @@ export async function openMarginCommentReply(
   page: Page,
   commentText: string
 ): Promise<void> {
-  await collapseReportSidebar(page);
+  await showReviewMargin(page);
   const margin = reviewMargin(page);
   await expect(margin.getByText(commentText)).toBeVisible({ timeout: 15_000 });
   const card = margin

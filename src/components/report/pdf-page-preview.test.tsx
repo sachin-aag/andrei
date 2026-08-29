@@ -1,10 +1,16 @@
 // @vitest-environment jsdom
 
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PdfPagePreview } from "@/components/report/pdf-page-preview";
 import { pdfjsPreviewLoadingOptions } from "@/lib/attachments/pdfjs-browser";
-import { PDF_PREVIEW_SCALE } from "@/lib/attachments/pdf-preview-layout";
+import {
+  PDF_PREVIEW_SCALE,
+  pdfPreviewRenderScale,
+} from "@/lib/attachments/pdf-preview-layout";
+
+const PREVIEW_VIEWPORT_WIDTH = 400;
+const MOCK_PAGE_WIDTH = 200;
 
 const getDocument = vi.fn();
 const renderPage = vi.fn();
@@ -27,9 +33,16 @@ function mockPdfPage(
   } = {}
 ) {
   return {
-    getViewport: ({ scale }: { scale: number }) => ({
+    getViewport: ({
+      scale,
+      rotation = 0,
+    }: {
+      scale: number;
+      rotation?: number;
+    }) => ({
       width: (overrides.width ?? 200) * scale,
       height: (overrides.height ?? 400) * scale,
+      rotation,
     }),
     getTextContent:
       overrides.getTextContent ??
@@ -106,6 +119,40 @@ function installNoopIntersectionObserver() {
   vi.stubGlobal("IntersectionObserver", NoopIntersectionObserver);
 }
 
+function installPreviewViewportResizeObserver(
+  width = PREVIEW_VIEWPORT_WIDTH
+) {
+  class PreviewViewportResizeObserver {
+    private readonly callback: ResizeObserverCallback;
+
+    constructor(callback: ResizeObserverCallback) {
+      this.callback = callback;
+    }
+
+    observe(target: Element) {
+      Object.defineProperty(target, "clientWidth", {
+        configurable: true,
+        value: width,
+      });
+      this.callback([], this as unknown as ResizeObserver);
+    }
+
+    unobserve() {}
+    disconnect() {}
+  }
+
+  vi.stubGlobal("ResizeObserver", PreviewViewportResizeObserver);
+}
+
+function expectedRenderedWidth(zoomLevel: number): number {
+  const scale = pdfPreviewRenderScale({
+    viewportWidth: PREVIEW_VIEWPORT_WIDTH,
+    pageWidthAtBaseScale: MOCK_PAGE_WIDTH * PDF_PREVIEW_SCALE,
+    zoomLevel,
+  });
+  return MOCK_PAGE_WIDTH * scale;
+}
+
 describe("PdfPagePreview", () => {
   const originalGetContext = HTMLCanvasElement.prototype.getContext;
 
@@ -134,6 +181,7 @@ describe("PdfPagePreview", () => {
       vi.fn().mockRejectedValue(new Error("preview must not fetch bytes itself"))
     );
     installImmediateIntersectionObserver();
+    installPreviewViewportResizeObserver();
   });
 
   afterEach(() => {
@@ -171,7 +219,7 @@ describe("PdfPagePreview", () => {
       expect(renderPage).toHaveBeenCalledWith(
         expect.objectContaining({
           viewport: expect.objectContaining({
-            width: 200 * PDF_PREVIEW_SCALE,
+            width: expectedRenderedWidth(1),
           }),
         })
       );
@@ -476,5 +524,106 @@ describe("PdfPagePreview", () => {
     expect(
       await screen.findByText(/Could not render this page in the browser/)
     ).toBeInTheDocument();
+  });
+
+  it("renders page navigation, rotate, and zoom controls", async () => {
+    render(
+      <PdfPagePreview
+        src="/api/reports/r1/attachments/a1/content?proxy=1&page=1"
+        page={1}
+        title="Evidence.pdf"
+        sizeBytes={250_000}
+      />
+    );
+
+    await screen.findByLabelText("Evidence.pdf, page 1");
+    expect(screen.getByTestId("pdf-preview-toolbar")).toBeInTheDocument();
+    expect(screen.getByTestId("pdf-toolbar-page-input")).toHaveValue("1");
+    expect(screen.getByText("of 2")).toBeInTheDocument();
+    expect(screen.getByTestId("pdf-toolbar-rotate")).toBeInTheDocument();
+    expect(screen.getByTestId("pdf-toolbar-zoom-in")).toBeInTheDocument();
+    expect(screen.getByTestId("pdf-toolbar-zoom-out")).toBeInTheDocument();
+    expect(screen.getByText("100%")).toBeInTheDocument();
+  });
+
+  it("jumps to a page when the user enters a page number", async () => {
+    const onVisiblePageChange = vi.fn();
+    const scrollIntoView = vi.fn();
+    HTMLElement.prototype.scrollIntoView = scrollIntoView;
+
+    render(
+      <PdfPagePreview
+        src="/api/reports/r1/attachments/a1/content?proxy=1&page=1"
+        page={1}
+        title="Evidence.pdf"
+        sizeBytes={250_000}
+        onVisiblePageChange={onVisiblePageChange}
+      />
+    );
+
+    await screen.findByLabelText("Evidence.pdf, page 2");
+    const input = screen.getByTestId("pdf-toolbar-page-input");
+    fireEvent.change(input, { target: { value: "2" } });
+    fireEvent.submit(input.closest("form")!);
+
+    await waitFor(() => {
+      expect(scrollIntoView).toHaveBeenCalled();
+    });
+    expect(onVisiblePageChange).toHaveBeenCalledWith(2);
+  });
+
+  it("re-renders with a higher scale when zooming in", async () => {
+    render(
+      <PdfPagePreview
+        src="/api/reports/r1/attachments/a1/content?proxy=1&page=1"
+        page={1}
+        title="Evidence.pdf"
+        sizeBytes={250_000}
+      />
+    );
+
+    const canvas = await screen.findByLabelText("Evidence.pdf, page 1");
+    const pageShell = canvas.closest("[data-pdf-page]") as HTMLElement;
+    await waitFor(() => {
+      expect(pageShell.style.width).toBe(`${expectedRenderedWidth(1)}px`);
+    });
+
+    fireEvent.click(screen.getByTestId("pdf-toolbar-zoom-in"));
+
+    await waitFor(() => {
+      expect(renderPage).toHaveBeenCalledWith(
+        expect.objectContaining({
+          viewport: expect.objectContaining({
+            width: expectedRenderedWidth(1.25),
+          }),
+        })
+      );
+      expect(pageShell.style.width).toBe(`${expectedRenderedWidth(1.25)}px`);
+    });
+    expect(screen.getByText("125%")).toBeInTheDocument();
+  });
+
+  it("re-renders with rotation when the rotate button is clicked", async () => {
+    render(
+      <PdfPagePreview
+        src="/api/reports/r1/attachments/a1/content?proxy=1&page=1"
+        page={1}
+        title="Evidence.pdf"
+        sizeBytes={250_000}
+      />
+    );
+
+    await screen.findByLabelText("Evidence.pdf, page 1");
+    fireEvent.click(screen.getByTestId("pdf-toolbar-rotate"));
+
+    await waitFor(() => {
+      expect(getPage).toHaveBeenCalled();
+      const lastRender = renderPage.mock.calls.at(-1)?.[0] as {
+        viewport?: { rotation?: number };
+      };
+      expect(lastRender?.viewport).toEqual(
+        expect.objectContaining({ rotation: 90 })
+      );
+    });
   });
 });

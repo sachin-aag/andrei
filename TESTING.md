@@ -5,7 +5,7 @@ This project uses three layers of quality checks:
 | Layer | Tool | Location | Count (approx.) |
 |-------|------|----------|-----------------|
 | **Unit / integration** | Vitest | `src/**/*.test.ts(x)` | ~76 files, ~345 tests |
-| **End-to-end** | Playwright | `e2e/**/*.spec.ts` | 9 spec files, ~40 cases × 3 browsers |
+| **End-to-end** | Playwright | `e2e/**/*.spec.ts` | 11 spec files, ~43 cases × 3 browsers |
 | **Manual** | Checklist | [docs/manual-test-cases.md](docs/manual-test-cases.md) | 6 release-candidate cases |
 
 `pnpm precommit` runs **lint + typecheck + Vitest only** (no E2E). CI runs Vitest and Playwright in separate jobs.
@@ -117,9 +117,9 @@ Documented in `.env.example` (local / CI only):
 
 | Variable | Effect |
 |----------|--------|
-| `ALLOW_TEST_LOGIN=true` | Enables `POST /api/test/login` and `POST /api/test/seed-auth-users` |
+| `ALLOW_TEST_LOGIN=true` | Enables `POST /api/test/login`, `POST /api/test/seed-auth-users`, `POST /api/test/seed-ai-suggestion`, and `POST /api/test/seed-document-revisions` |
 | `TEST_AUTH_EMAIL` | Default engineer email for test login (default: `test.engineer@mjbiopharm.com`) |
-| `ALLOW_TEST_SKIP_EVALUATION=true` | Stub all `evaluateSection()` calls (report editor + Improve AI) via `src/lib/improve-ai/fixtures/stub-evaluations.json` |
+| `ALLOW_TEST_SKIP_EVALUATION=true` | Stub all `evaluateSection()` calls (report editor AI Check) via `src/lib/ai/fixtures/stub-evaluations.json` |
 | `ALLOW_TEST_SKIP_SUGGESTIONS=true` | Stub AI suggestions with `src/lib/ai/fixtures/stub-suggestions.json` |
 
 Playwright sets these automatically in `webServer.env`.
@@ -189,6 +189,17 @@ Specs run against Chromium, Firefox, and WebKit unless you pass `--project=chrom
 | resizes the assistant and documents panels from the keyboard | Drag handles; ArrowLeft/Right; handle hidden when collapsed |
 | opens the assistant at the default width on a new report and after reload | Width is not kept across reports or reloads |
 | approved report is read-only for engineer | No submit; `contenteditable=false` |
+| Agent chrome puts chat in the center and work product on the right | Column order `docs.x < chat.x < canvas.x`; Analytics stays on the right; History on Report and Analytics (pane-scoped) |
+
+</details>
+
+<details>
+<summary><strong>document-revisions.spec.ts</strong> — History compare</summary>
+
+| Test | What it verifies |
+|------|------------------|
+| compares two seeded versions inline and exits back to the live report | `POST /api/test/seed-document-revisions` (no Gemini); History → Compare shows ins/del; Exit restores Define |
+| records a coalesced manual version after a section save | PATCH Define after the two seeded Agent versions; History shows Version 3 · Edits |
 
 </details>
 
@@ -234,6 +245,16 @@ Both AI-suggestion cases seed an open suggestion through `POST /api/test/seed-ai
 </details>
 
 <details>
+<summary><strong>suggestion-accept.spec.ts</strong> — applying a suggestion does not blank the field</summary>
+
+| Test | What it verifies |
+|------|------------------|
+| does not blank Define while the gutter Apply is in flight | Seeded insert stays in the live editor for every sampled frame until it becomes ordinary text |
+| does not blank Define while inline Accept is in flight | Same for the inline Accept control on the highlighted span |
+
+</details>
+
+<details>
 <summary><strong>comments.spec.ts</strong> — review rail and API limits</summary>
 
 | Test | What it verifies |
@@ -255,15 +276,22 @@ Both AI-suggestion cases seed an open suggestion through `POST /api/test/seed-ai
 </details>
 
 <details>
-<summary><strong>improve-ai.spec.ts</strong> — AI feedback sessions (stub eval)</summary>
+<summary><strong>statistical-analysis.spec.ts</strong> — report Analytics worksheet, sixpack, scatter, ANOVA</summary>
 
 | Test | What it verifies |
 |------|------------------|
-| shows empty state on list page | `/improve-ai` empty copy |
-| creates session from existing report | UI flow → review page |
-| agrees with a criterion on review page | Yes / Yes radio answers |
-| completes session after reviewing all criteria | PATCH complete → Reviewed |
-| uploads docx to create session | Upload & evaluate path |
+| opens the Analytics tab with an empty worksheet | `/reports/:id/edit` → Analytics → grid, Define hidden; History is visible |
+| autosave settles to Saved and keeps later cell edits | Two cells persist; History shows Version 1 · Edits (Analytics compare is a cell/plot list, not a live grid overlay) |
+| loads sample assay and runs a Normal Capability Sixpack | Data menu sample → flattened Stat menu → Cp/Cpk sixpack |
+| saves a sixpack per column and switches between them | Analyze selected column + column context menu; Analyze data popup defaults to sixpack with Specs then min/max form defaults; two Results entries |
+| shift+arrow selects rows and runs a sixpack on that range | Range highlight, Analyze label, Sample N matches the span |
+| saves a sixpack for specific row numbers | POST `rows` list; Results shows that subset; Download saves a CSV |
+| marks a sixpack stale after the source column changes | API-seeded analysis, edit cell, Recompute clears stale badge |
+| streams a stats-assistant reply | Stub chat streams and persists; Ask/Agent + Quick/Deep + attach image are present (cannot assert tools) |
+| shows Data sheets and column specs from the header menu | Data tab only; insert/delete row/column are not in Data; right-click column Specs dialog filled from sample assay; Plot measurements dialog has optional LSL/USL and errors without attachments |
+| row headers select the whole row and the row menu inserts, clears, and deletes | Click row number to select all columns; right-click Insert above/below, Clear, Delete |
+| column context menu inserts, clears, and opens Analyze with prefilled plot values | Insert left/right, clear data, delete; Analyze data popup switches plot type with column values pre-filled |
+| loads sample assay and runs one-way ANOVA of Assay by Lot | Data menu sample fills Assay + Lot; Stat → One-Way ANOVA; Results table + interval plot |
 
 </details>
 
@@ -294,6 +322,18 @@ Skipped when `docs/Draft Investigation (DEV-QC-26-001).docx` is missing.
 - Rolls back report when source DOCX persistence fails
 
 File: `src/app/api/reports/route.test.ts`
+
+</details>
+
+<details>
+<summary><strong>/api/reports/[reportId]/analytics</strong> — worksheet + sixpack + scatter + ANOVA</summary>
+
+- Pack/auth failures pass through `requireAnalyticsAccess` (404/401/403)
+- GET loads or creates the per-report worksheet
+- PATCH/POST persist worksheet JSON (POST is the autosave beacon alias)
+- POST analyses creates a sixpack, `kind: "measurement_scatter"`, or `kind: "one_way_anova"`; POST analyses/[id] recomputes
+
+File: `src/app/api/reports/[reportId]/analytics/route.test.ts`
 
 </details>
 
@@ -456,14 +496,13 @@ Grouped by subsystem. Run a folder with `pnpm test -- src/lib/import`.
 </details>
 
 <details>
-<summary><strong>Reports, sections, auth, Improve AI</strong></summary>
+<summary><strong>Reports, sections, auth</strong></summary>
 
 | Area | Files |
 |------|--------|
 | Sections | `sections-merge.test.ts`, `section-content-normalize.test.ts`, `seed-blank-report-sections.test.ts`, `improve-control-body-split.test.ts` |
 | Reports | `deviation-no.test.ts`, `persist-source-docx.test.ts` |
 | Auth | `must-change-password.test.ts`, `auth-base-url.test.ts`, `send-reset-email.test.ts` |
-| Improve AI | `human-judgment.test.ts`, `session-staleness.test.ts`, `section-display-blocks.test.ts` |
 | Comments UI | `comments/display.test.ts` |
 | Math | `math/omml-mathml.test.ts` |
 | DOCX signatures | `docx/signature-block.test.ts` |
@@ -507,3 +546,7 @@ Workflow: `.github/workflows/ci.yml`
 | Full user journey | `e2e/*.spec.ts` — use `e2e/helpers/` |
 
 E2E patterns: unique deviation numbers (`uniqueDeviationNo`), `loginAsEngineer` / `loginAsManager`, `createReport` / `deleteReport` in `afterEach`.
+
+Colocate and name the test file after the source module. When you rename, split, or delete `foo.ts`, do the same to `foo.test.ts` — do not leave `section-scope.test.ts` after `section-scope.ts` is gone. Assert the current contract (e.g. `@` tags set scope). Do not keep tombstone tests (`not.toContain("old dropdown")`).
+
+Removals: grep the old symbol in `src/**/*.test.*` and `e2e/` before calling the change done. Chat/workspace counterparts: Document **and** Agent chrome, Report chat **and** Analytics chat. Update existing Playwright specs rather than inventing a new suite unless a gap remains. Stub chat cannot assert tool selection (`e2e/report-chat.spec.ts` is stream + persist only).

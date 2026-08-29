@@ -6,6 +6,7 @@ import {
   mentionedSections,
   parseChatMentions,
   resolveChatMentions,
+  sectionScopeFromMentions,
 } from "@/lib/ai/chat/mentions";
 import type { ReadyDocumentIndexItem } from "@/lib/attachments/retrieval";
 
@@ -85,6 +86,38 @@ describe("parseChatMentions", () => {
   it("returns nothing for non-array input", () => {
     expect(parseChatMentions(undefined)).toEqual([]);
     expect(parseChatMentions({ type: "document", id: "att_1" })).toEqual([]);
+  });
+});
+
+describe("sectionScopeFromMentions", () => {
+  it("focuses when exactly one section is tagged", () => {
+    expect(
+      sectionScopeFromMentions([
+        { type: "document", id: "att_1" },
+        { type: "section", id: "analyze" },
+      ])
+    ).toBe("analyze");
+  });
+
+  it("stays on all sections when none or several sections are tagged", () => {
+    expect(sectionScopeFromMentions([{ type: "document", id: "att_1" }])).toBe(
+      "all"
+    );
+    expect(
+      sectionScopeFromMentions([
+        { type: "section", id: "define" },
+        { type: "section", id: "analyze" },
+      ])
+    ).toBe("all");
+  });
+
+  it("ignores a section that is not editable for the document type", () => {
+    expect(
+      sectionScopeFromMentions(
+        [{ type: "section", id: "define" }],
+        "design_verification"
+      )
+    ).toBe("all");
   });
 });
 

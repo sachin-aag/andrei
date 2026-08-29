@@ -20,7 +20,12 @@ vi.mock("sonner", () => ({
 }));
 
 import { toast } from "sonner";
-import { getCustomerPack, DEMO_PACK, MJ_PACK } from "@/lib/customers/packs";
+import {
+  CONVERGENT_PACK,
+  DEMO_PACK,
+  getCustomerPack,
+  MJ_PACK,
+} from "@/lib/customers/packs";
 
 vi.mock("@/lib/customers/packs", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/customers/packs")>();
@@ -89,6 +94,23 @@ describe("CreateReportButton", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("shows a Word upload field when Document is selected on demo", async () => {
+    const user = userEvent.setup();
+    render(<CreateReportButton managers={managers} />);
+
+    await user.click(screen.getByRole("button", { name: /new report/i }));
+    await user.selectOptions(
+      screen.getByLabelText(/document type/i),
+      "generic_document"
+    );
+
+    expect(
+      screen.getByRole("heading", { name: /create document/i })
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText(/document number/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/existing document/i)).toBeInTheDocument();
+  });
+
   it("shows a Word-body field without an attachment dropzone when the MJ pack is active", async () => {
     vi.mocked(getCustomerPack).mockReturnValue(MJ_PACK);
     const user = userEvent.setup();
@@ -100,6 +122,26 @@ describe("CreateReportButton", () => {
     expect(screen.queryByText(/documents \(optional\)/i)).not.toBeInTheDocument();
     expect(
       screen.queryByText(/drop pdfs or word docs/i)
+    ).not.toBeInTheDocument();
+  });
+
+  it("offers software and mechanical DV on Convergent, not investigation", async () => {
+    vi.mocked(getCustomerPack).mockReturnValue(CONVERGENT_PACK);
+    const user = userEvent.setup();
+    render(<CreateReportButton managers={managers} />);
+
+    await user.click(screen.getByRole("button", { name: /new report/i }));
+
+    const typeSelect = screen.getByLabelText(/document type/i);
+    expect(typeSelect).toHaveValue("design_verification");
+    expect(
+      screen.getByRole("option", { name: /design verification report/i })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("option", { name: /mechanical dv report/i })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("option", { name: /investigation/i })
     ).not.toBeInTheDocument();
   });
 });

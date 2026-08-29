@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   hydrateLiteralMarkdownInDoc,
+  markdownHasImage,
   markdownHasTable,
   markdownToDoc,
   markdownToPlainText,
@@ -32,6 +33,17 @@ describe("markdownToDoc", () => {
         content: [
           { type: "text", text: "Investigation Summary", marks: [{ type: "bold" }] },
         ],
+      },
+    ]);
+  });
+
+  it("emits heading nodes when headingNodes is true", () => {
+    const doc = markdownToDoc("## Investigation Summary", { headingNodes: true });
+    expect(doc.content).toEqual([
+      {
+        type: "heading",
+        attrs: { level: 2 },
+        content: [{ type: "text", text: "Investigation Summary" }],
       },
     ]);
   });
@@ -86,6 +98,19 @@ describe("markdownToDoc", () => {
     ]);
   });
 
+  it("leaves underscored document filenames literal instead of eating _pairs_", () => {
+    const cite =
+      "[790-00134R_Rev_U_Solea_Model_3_Software_Design_Verification_Test_Report_(Report_Only).docx, p. 1]";
+    const doc = markdownToDoc(
+      `All testing was performed between 15 June 2023 and 19 July 2023 ${cite}.`
+    );
+    expect(richJsonToPlainText(doc)).toContain(cite);
+    expect(richJsonToPlainText(doc)).not.toContain("to be filled");
+    expect(markdownToPlainText(`see ${cite}`)).toContain(
+      "790-00134R_Rev_U_Solea_Model_3_Software"
+    );
+  });
+
   it("converts a GFM table with header row", () => {
     const doc = markdownToDoc(
       ["| Parameter | Result |", "| --- | --- |", "| pH | 6.8 |", "| Temp | 22 C |"].join(
@@ -123,9 +148,29 @@ describe("markdownToDoc", () => {
     expect(cell.content![0]!.content).toEqual([{ type: "text", text: "5 | 10" }]);
   });
 
+  it("converts <br> inside a table cell to hardBreak nodes", () => {
+    const doc = markdownToDoc(
+      ["| Label | Detail |", "| --- | --- |", "| Line one<br>Line two | x |"].join("\n")
+    );
+    const cell = doc.content![0]!.content![1]!.content![0]!;
+    expect(cell.content![0]!.content).toEqual([
+      { type: "text", text: "Line one" },
+      { type: "hardBreak" },
+      { type: "text", text: "Line two" },
+    ]);
+  });
+
   it("treats pipe lines without a separator as plain paragraphs", () => {
     const doc = markdownToDoc("| just text with pipes |");
     expect(doc.content![0]!.type).toBe("paragraph");
+  });
+
+  it("detects markdown image syntax including read_section ids", () => {
+    expect(markdownHasImage("![PXL_20260725_081416927](narrative#1)")).toBe(
+      true
+    );
+    expect(markdownHasTable("| a | b |\n| --- | --- |\n| 1 | 2 |")).toBe(true);
+    expect(markdownHasImage("No figure here.")).toBe(false);
   });
 
   it("round-trips through richJsonToPlainText markdown tables", () => {

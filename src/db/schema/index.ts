@@ -51,6 +51,9 @@ export const reportStatusEnum = pgEnum("report_status", [
 export const documentTypeEnum = pgEnum("document_type", [
   "investigation_report",
   "design_verification",
+  "mechanical_design_verification",
+  "generic_document",
+  "quality_risk_assessment",
 ]);
 
 /**
@@ -103,11 +106,6 @@ export const commentKindEnum = pgEnum("comment_kind", [
   "ai_redraft",
 ]);
 
-export const aiFeedbackSourceTypeEnum = pgEnum("ai_feedback_source_type", [
-  "existing_report",
-  "uploaded_docx",
-]);
-
 export const chatMessageRoleEnum = pgEnum("chat_message_role", [
   "user",
   "assistant",
@@ -118,12 +116,6 @@ export const chatAssistantTurnStatusEnum = pgEnum(
   "chat_assistant_turn_status",
   ["idle", "running", "cancel_requested"]
 );
-
-export const aiFeedbackSessionStatusEnum = pgEnum("ai_feedback_session_status", [
-  "evaluating",
-  "ready_for_review",
-  "reviewed",
-]);
 
 export const userRoleEnum = pgEnum("user_role", [
   "engineer",
@@ -165,6 +157,7 @@ export const auditActionEnum = pgEnum("audit_action", [
   "policy_updated",
   "auth_password_changed",
   "auth_password_reset",
+  // Historical Improve AI values — keep so existing audit_events rows stay valid.
   "improve_ai_session_created",
   "improve_ai_session_completed",
   "improve_ai_response_updated",
@@ -175,6 +168,10 @@ export const auditActionEnum = pgEnum("audit_action", [
   "attachment_uploaded",
   "attachment_deleted",
   "attachment_reprocessed",
+  "worksheet_updated",
+  "analysis_created",
+  "analysis_updated",
+  "analysis_deleted",
 ]);
 
 export const auditEntityEnum = pgEnum("audit_entity", [
@@ -187,8 +184,10 @@ export const auditEntityEnum = pgEnum("audit_entity", [
   "user",
   "policy",
   "auth",
+  // Historical Improve AI entity — keep so existing audit_events rows stay valid.
   "improve_ai",
   "attachment",
+  "analytics",
 ]);
 
 export const attachmentProcessingStatusEnum = pgEnum(
@@ -255,13 +254,15 @@ export const workspaceUsers = pgTable(
     passwordResetTokenExpiresAt: timestamp("password_reset_token_expires_at", {
       withTimezone: true,
     }),
-    /** Non-null means the account is deactivated and cannot sign in. */
+    /** Non-null means the account is deactivated and cannot sign in until reactivated. */
     deactivatedAt: timestamp("deactivated_at", { withTimezone: true }),
     /** First-login product tour. Resume from `productTourStepId` while `in_progress`. */
     productTourStatus: productTourStatusEnum("product_tour_status")
       .notNull()
       .default("not_started"),
     productTourStepId: text("product_tour_step_id"),
+    /** Updated on each successful sign-in (credentials or magic link). */
+    lastLoginAt: timestamp("last_login_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -297,9 +298,15 @@ export type DesignVerificationMetadata = {
   productName: string;
 };
 
+export type GenericDocumentMetadata = {
+  importWarnings?: string[];
+  importedFromFilename?: string;
+};
+
 export type ReportMetadata =
   | InvestigationReportMetadata
   | DesignVerificationMetadata
+  | GenericDocumentMetadata
   | Record<string, unknown>;
 
 export const reports = pgTable(
@@ -452,6 +459,8 @@ export const reportsRelations = relations(reports, ({ one, many }) => ({
   sourceDocx: one(reportSourceDocx),
   managers: many(reportManagers),
   attachments: many(reportAttachments),
+  analytics: one(statisticalWorkspaces),
+  analyticsRevisions: many(analyticsRevisions),
 }));
 
 export const reportManagersRelations = relations(reportManagers, ({ one }) => ({
@@ -791,6 +800,12 @@ export const chatSessions = pgTable(
     reportId: text("report_id")
       .notNull()
       .references(() => reports.id, { onDelete: "cascade" }),
+    /**
+     * Which assistant owns the thread. `report` is the drafting chat;
+     * `analytics` is the Statistical Analysis assistant. Must be filtered on
+     * every list/create/find or analytics threads leak into the report UI.
+     */
+    surface: text("surface").notNull().default("report"),
     title: text("title").notNull().default(""),
     /**
      * `running` while the server is still generating after the client
@@ -810,8 +825,9 @@ export const chatSessions = pgTable(
       .defaultNow(),
   },
   (t) => ({
-    reportUpdatedIdx: index("chat_sessions_report_updated_idx").on(
+    reportSurfaceUpdatedIdx: index("chat_sessions_report_surface_updated_idx").on(
       t.reportId,
+      t.surface,
       t.updatedAt
     ),
   })
@@ -874,90 +890,6 @@ export const mathExtractionCache = pgTable("math_extraction_cache", {
   mathml: text("mathml").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
-
-/** User-submitted report for Improve AI feedback (links to production `reports`). */
-export const aiFeedbackSessions = pgTable(
-  "ai_feedback_sessions",
-  {
-    id: text("id").primaryKey().$defaultFn(() => createId()),
-    reportId: text("report_id")
-      .notNull()
-      .references(() => reports.id, { onDelete: "cascade" }),
-    submittedBy: text("submitted_by")
-      .notNull()
-      .references(() => workspaceUsers.id, { onDelete: "cascade" }),
-    sourceType: aiFeedbackSourceTypeEnum("source_type").notNull(),
-    status: aiFeedbackSessionStatusEnum("status")
-      .notNull()
-      .default("evaluating"),
-    sourceLabel: text("source_label").notNull().default(""),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (t) => ({
-    reportSubmitterUnique: uniqueIndex(
-      "ai_feedback_sessions_report_submitter_unique"
-    ).on(t.reportId, t.submittedBy),
-  })
-);
-
-export const aiFeedbackResponses = pgTable(
-  "ai_feedback_responses",
-  {
-    id: text("id").primaryKey().$defaultFn(() => createId()),
-    sessionId: text("session_id")
-      .notNull()
-      .references(() => aiFeedbackSessions.id, { onDelete: "cascade" }),
-    criterionKey: text("criterion_key").notNull(),
-    section: text("section").notNull(),
-    aiStatus: criterionStatusEnum("ai_status").notNull(),
-    aiReasoning: text("ai_reasoning").notNull().default(""),
-    criteriaEvaluationAgreement: text("criteria_evaluation_agreement"),
-    reasoningAgreement: text("reasoning_agreement"),
-    humanComment: text("human_comment").notNull().default(""),
-    suggestedStatus: criterionStatusEnum("suggested_status"),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (t) => ({
-    sessionCriterionUnique: uniqueIndex(
-      "ai_feedback_responses_session_criterion_unique"
-    ).on(t.sessionId, t.criterionKey),
-  })
-);
-
-export const aiFeedbackSessionsRelations = relations(
-  aiFeedbackSessions,
-  ({ one, many }) => ({
-    report: one(reports, {
-      fields: [aiFeedbackSessions.reportId],
-      references: [reports.id],
-    }),
-    submitter: one(workspaceUsers, {
-      fields: [aiFeedbackSessions.submittedBy],
-      references: [workspaceUsers.id],
-    }),
-    responses: many(aiFeedbackResponses),
-  })
-);
-
-export const aiFeedbackResponsesRelations = relations(
-  aiFeedbackResponses,
-  ({ one }) => ({
-    session: one(aiFeedbackSessions, {
-      fields: [aiFeedbackResponses.sessionId],
-      references: [aiFeedbackSessions.id],
-    }),
-  })
-);
 
 /** Append-only Part 11 audit trail (hash chain enforced in DB triggers). */
 export const auditEvents = pgTable(
@@ -1051,6 +983,106 @@ export const retentionSettings = pgTable("retention_settings", {
     .notNull()
     .defaultNow(),
 });
+
+export const aiUsageFeatureEnum = pgEnum("ai_usage_feature", [
+  "criteria_evaluation",
+  "suggestion_generation",
+  "document_chat",
+  "analytics_chat",
+  "document_ingest",
+  "document_embedding",
+  "document_review_extract",
+  "math_extraction",
+  "chart_extraction",
+  "docx_image_description",
+]);
+
+export const aiBudgetSettings = pgTable("ai_budget_settings", {
+  id: text("id").primaryKey().default("default"),
+  monthlyBudgetUsd: real("monthly_budget_usd").notNull().default(500),
+  enforceHardLimit: boolean("enforce_hard_limit").notNull().default(true),
+  warningThresholdPercent: integer("warning_threshold_percent")
+    .notNull()
+    .default(80),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export const aiUsageEvents = pgTable(
+  "ai_usage_events",
+  {
+    id: text("id").primaryKey(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    yearMonth: text("year_month").notNull(),
+    feature: aiUsageFeatureEnum("feature").notNull(),
+    modelId: text("model_id").notNull(),
+    inputTokens: integer("input_tokens").notNull().default(0),
+    outputTokens: integer("output_tokens").notNull().default(0),
+    estimatedCostUsd: real("estimated_cost_usd").notNull(),
+    reportId: text("report_id").references(() => reports.id, {
+      onDelete: "set null",
+    }),
+    userId: text("user_id").references(() => workspaceUsers.id, {
+      onDelete: "set null",
+    }),
+    metadata: jsonb("metadata").notNull().default({}),
+  },
+  (t) => ({
+    yearMonthIdx: index("ai_usage_events_year_month_idx").on(t.yearMonth),
+    featureIdx: index("ai_usage_events_year_month_feature_idx").on(
+      t.yearMonth,
+      t.feature
+    ),
+  })
+);
+
+export const attachmentPageBudgetSettings = pgTable(
+  "attachment_page_budget_settings",
+  {
+    id: text("id").primaryKey().default("default"),
+    monthlyPageLimit: integer("monthly_page_limit").notNull().default(100_000),
+    enforceHardLimit: boolean("enforce_hard_limit").notNull().default(true),
+    warningThresholdPercent: integer("warning_threshold_percent")
+      .notNull()
+      .default(80),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  }
+);
+
+export const attachmentPageUsageEvents = pgTable(
+  "attachment_page_usage_events",
+  {
+    id: text("id").primaryKey(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    yearMonth: text("year_month").notNull(),
+    pageCount: integer("page_count").notNull(),
+    attachmentId: text("attachment_id")
+      .notNull()
+      .references(() => reportAttachments.id, { onDelete: "cascade" }),
+    reportId: text("report_id").references(() => reports.id, {
+      onDelete: "set null",
+    }),
+    ingestRunId: text("ingest_run_id")
+      .notNull()
+      .references(() => attachmentIngestRuns.id, { onDelete: "cascade" }),
+    metadata: jsonb("metadata").notNull().default({}),
+  },
+  (t) => ({
+    yearMonthIdx: index("attachment_page_usage_events_year_month_idx").on(
+      t.yearMonth
+    ),
+    ingestRunUnique: uniqueIndex(
+      "attachment_page_usage_events_ingest_run_unique"
+    ).on(t.ingestRunId),
+  })
+);
 
 export const auditEventsRelations = relations(auditEvents, ({ one, many }) => ({
   report: one(reports, {
@@ -1149,6 +1181,202 @@ export const documentChunksRelations = relations(documentChunks, ({ one }) => ({
   }),
 }));
 
+export const statisticalWorkspaces = pgTable(
+  "statistical_workspaces",
+  {
+    id: text("id").primaryKey().$defaultFn(() => createId()),
+    name: text("name").notNull().default("Worksheet"),
+    reportId: text("report_id")
+      .notNull()
+      .references(() => reports.id, { onDelete: "cascade" }),
+    worksheet: jsonb("worksheet").notNull(),
+    version: integer("version").notNull().default(1),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    reportIdUnique: uniqueIndex("statistical_workspaces_report_id_unique").on(
+      t.reportId
+    ),
+  })
+);
+
+export const statisticalAnalyses = pgTable(
+  "statistical_analyses",
+  {
+    id: text("id").primaryKey().$defaultFn(() => createId()),
+    workspaceId: text("workspace_id")
+      .notNull()
+      .references(() => statisticalWorkspaces.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull().default("capability_sixpack_normal"),
+    title: text("title").notNull(),
+    config: jsonb("config").notNull(),
+    results: jsonb("results").notNull(),
+    /** PNG captured from Analytics UI for document insert; null until preview is saved. */
+    previewImage: jsonb("preview_image"),
+    sourceHash: text("source_hash").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    workspaceCreatedIdx: index("statistical_analyses_workspace_created_idx").on(
+      t.workspaceId,
+      t.createdAt
+    ),
+  })
+);
+
+export const statisticalWorkspacesRelations = relations(
+  statisticalWorkspaces,
+  ({ one, many }) => ({
+    report: one(reports, {
+      fields: [statisticalWorkspaces.reportId],
+      references: [reports.id],
+    }),
+    analyses: many(statisticalAnalyses),
+  })
+);
+
+export const statisticalAnalysesRelations = relations(
+  statisticalAnalyses,
+  ({ one }) => ({
+    workspace: one(statisticalWorkspaces, {
+      fields: [statisticalAnalyses.workspaceId],
+      references: [statisticalWorkspaces.id],
+    }),
+  })
+);
+
+export const documentRevisionSourceEnum = pgEnum("document_revision_source", [
+  "agent_turn",
+  "manual",
+]);
+
+/** One product version of Analytics (worksheet + plots), idle-coalesced like document History. */
+export const analyticsRevisions = pgTable(
+  "analytics_revisions",
+  {
+    id: text("id").primaryKey().$defaultFn(() => createId()),
+    reportId: text("report_id")
+      .notNull()
+      .references(() => reports.id, { onDelete: "cascade" }),
+    revisionNo: integer("revision_no").notNull(),
+    source: documentRevisionSourceEnum("source").notNull().default("manual"),
+    /** `worksheet` coalesces; `analysis` always inserts a new History row. */
+    kind: text("kind").notNull().default("worksheet"),
+    summary: text("summary").notNull().default(""),
+    createdBy: text("created_by"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    worksheet: jsonb("worksheet").notNull(),
+    analyses: jsonb("analyses").notNull().default([]),
+    contentHash: text("content_hash").notNull(),
+  },
+  (t) => ({
+    reportRevisionUnique: uniqueIndex(
+      "analytics_revisions_report_revision_unique"
+    ).on(t.reportId, t.revisionNo),
+    reportCreatedIdx: index("analytics_revisions_report_created_idx").on(
+      t.reportId,
+      t.createdAt
+    ),
+  })
+);
+
+export const analyticsRevisionsRelations = relations(
+  analyticsRevisions,
+  ({ one }) => ({
+    report: one(reports, {
+      fields: [analyticsRevisions.reportId],
+      references: [reports.id],
+    }),
+  })
+);
+
+/** One product version of the report (Agent turn or idle-coalesced human edits). */
+export const documentRevisions = pgTable(
+  "document_revisions",
+  {
+    id: text("id").primaryKey().$defaultFn(() => createId()),
+    reportId: text("report_id")
+      .notNull()
+      .references(() => reports.id, { onDelete: "cascade" }),
+    revisionNo: integer("revision_no").notNull(),
+    source: documentRevisionSourceEnum("source").notNull().default("agent_turn"),
+    chatSessionId: text("chat_session_id").references(() => chatSessions.id, {
+      onDelete: "set null",
+    }),
+    chatMessageId: text("chat_message_id").references(() => chatMessages.id, {
+      onDelete: "set null",
+    }),
+    summary: text("summary").notNull().default(""),
+    createdBy: text("created_by"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => ({
+    reportRevisionUnique: uniqueIndex(
+      "document_revisions_report_revision_unique"
+    ).on(t.reportId, t.revisionNo),
+    reportCreatedIdx: index("document_revisions_report_created_idx").on(
+      t.reportId,
+      t.createdAt
+    ),
+  })
+);
+
+export const documentRevisionSections = pgTable(
+  "document_revision_sections",
+  {
+    id: text("id").primaryKey().$defaultFn(() => createId()),
+    revisionId: text("revision_id")
+      .notNull()
+      .references(() => documentRevisions.id, { onDelete: "cascade" }),
+    section: text("section").notNull(),
+    content: jsonb("content").notNull().default({}),
+    contentHash: text("content_hash").notNull(),
+  },
+  (t) => ({
+    revisionSectionUnique: uniqueIndex(
+      "document_revision_sections_revision_section_unique"
+    ).on(t.revisionId, t.section),
+  })
+);
+
+export const documentRevisionsRelations = relations(
+  documentRevisions,
+  ({ one, many }) => ({
+    report: one(reports, {
+      fields: [documentRevisions.reportId],
+      references: [reports.id],
+    }),
+    sections: many(documentRevisionSections),
+  })
+);
+
+export const documentRevisionSectionsRelations = relations(
+  documentRevisionSections,
+  ({ one }) => ({
+    revision: one(documentRevisions, {
+      fields: [documentRevisionSections.revisionId],
+      references: [documentRevisions.id],
+    }),
+  })
+);
+
 export type ReportStatus = (typeof reportStatusEnum.enumValues)[number];
 export type DocumentType = (typeof documentTypeEnum.enumValues)[number];
 /** Free-text section key; validated by the document-type registry at write time. */
@@ -1158,10 +1386,6 @@ export type InvestigationSectionType =
 export type CriterionStatus = (typeof criterionStatusEnum.enumValues)[number];
 export type CommentStatus = (typeof commentStatusEnum.enumValues)[number];
 export type CommentKind = (typeof commentKindEnum.enumValues)[number];
-export type AiFeedbackSourceType =
-  (typeof aiFeedbackSourceTypeEnum.enumValues)[number];
-export type AiFeedbackSessionStatus =
-  (typeof aiFeedbackSessionStatusEnum.enumValues)[number];
 export type ChatMessageRole = (typeof chatMessageRoleEnum.enumValues)[number];
 export type AuditAction = (typeof auditActionEnum.enumValues)[number];
 export type AuditEntity = (typeof auditEntityEnum.enumValues)[number];
@@ -1178,5 +1402,8 @@ export type StorageOutboxStatus =
   (typeof storageOutboxStatusEnum.enumValues)[number];
 export type ProductTourStatus =
   (typeof productTourStatusEnum.enumValues)[number];
+export type DocumentRevisionSource =
+  (typeof documentRevisionSourceEnum.enumValues)[number];
+export type AiUsageFeature = (typeof aiUsageFeatureEnum.enumValues)[number];
 
 export * from "./auth";

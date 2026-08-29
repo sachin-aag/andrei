@@ -1,0 +1,88 @@
+Standard Operating Procedure Unit: Drug Product
+
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+M.J. Biopharm Private Limited Gysy
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance | SOP No.: SOP/DP/QA/010 Revision No: R04 | Page 7 of 51
+
+7.3.2.3
+7.3.2.4
+
+7.3.2.5
+7.3.2.5.1
+
+7.3.2.5.2
+
+7.3.2.5.3
+7.3.2.5.4
+
+7.3.2.5.5
+7.3.2.6
+
+7.3.2.6.1
+
+7.3.2.6.2
+
+7.3.2.7
+
+7.3.2.8
+
+7.3.2.9
+
+Scope: State the applicability of risk assessment including facility and company name.
+
+System/ Equipment/ Instrument/ Other (if any) Overview: Brief description of System/ Equipment/
+Instrument/ Other including functions, intended use, component details, process flow etc.
+
+Procedure: General process flow of quality risk management as follows,
+
+Define the problem and/or risk question, including pertinent assumptions identifying the potential
+for risk.
+
+Assemble background information and/ or data on the potential hazard, harm or human health
+impact relevant to the risk assessment.
+
+Identify a leader and necessary resources.
+
+Specify a timeline, deliverables and appropriate level of decision making for the risk management
+
+process.
+Flow chart for risk assessment shall be as per annexure no. SOP/DP/QA/010/A01.
+
+Risk Assessment Team: User Head/Designee along with QA consultation shall form the team for
+discussion on risk assessment and identify the potential failure, their control and mitigation plan (if
+applicable).
+
+During risk assessment team meeting, minutes of meeting as identified points of risk assessment
+shall be mentioned in format for “Minutes of Meeting for Risk Assessment” SOP/DP/QA/010/F01
+or if required minutes of meeting shall be prepared in word format as per format no.
+SOP/DP/QA/010/FO1 and detail risk assessment shall be prepared by iniating department as per
+format no. SOP/DP/QA/010/F02 with reference of points identified during meeting. Additional
+points (risk failure) may be added during actual preparation of risk.
+
+Format for “Minutes of Meeting for Risk Assessment” SOP/DP/QA/010/F01 shall be requested to
+QA as per SOP No. SOP/DP/QA/003 by user department.
+
+Risk Identification: Mention the idenfied risk considering with process/activity and their potential
+failure.
+
+Risk assessment measure (Informal or formal risk assessment): During meeting, user department
+along risk assessment team shall perform the evaluation of questions identified as per format no.
+SOP/DP/QA/010/F01 and nature of risk assessment shall be decided as informal risk assessment
+(Qualitative) or formal risk assessment (Quantitative).
+
+Flow chart for decision (informal or formal risk assessment) shall be mentioned as per annexure
+no. SOP/DP/QA/010/A02.
+
+Prepared By (User Department) Sign/Date Reviewed By (Quality Assurance) Sign/Date
+
+*
+
+E53) o6 Jot 50 ee
+
+Confidential and Proprietary SOP/DP/QA/001/F01-R02
+MASTER COPY
+

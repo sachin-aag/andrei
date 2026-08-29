@@ -5,8 +5,11 @@ import { useRouter } from "next/navigation";
 import { FileText } from "lucide-react";
 import { ReportCard, type ReportCardData } from "@/components/report/report-card";
 import { DeleteReportButton } from "@/components/dashboard/delete-report-button";
-import { EvaluateWithAiButton } from "@/components/dashboard/evaluate-with-ai-button";
-import { listDocumentTypes } from "@/lib/document-types";
+import {
+  documentTypeShortLabel,
+  getDocumentType,
+  listDocumentTypes,
+} from "@/lib/document-types";
 import { visibleManagerNames } from "@/lib/reports/hidden-expert-reviewer";
 import type { DocumentType } from "@/db/schema";
 
@@ -57,13 +60,7 @@ export function ReportList({
           [
             ["all", "All"] as const,
             ...availableTypes.map(
-              (def) =>
-                [
-                  def.key,
-                  def.key === "design_verification"
-                    ? "Design Verification"
-                    : "Investigation",
-                ] as const
+              (def) => [def.key, documentTypeShortLabel(def.key)] as const
             ),
           ]
         ).map(([value, label]) => (
@@ -99,9 +96,7 @@ export function ReportList({
         const isOwner = report.authorId === currentUserId;
         const title =
           report.documentNo ||
-          (report.documentType === "design_verification"
-            ? "Untitled design verification"
-            : "Untitled deviation");
+          `Untitled ${getDocumentType(report.documentType ?? "investigation_report").documentNoun}`;
 
         return (
           <ReportCard
@@ -111,15 +106,6 @@ export function ReportList({
             authorName={author?.name}
             managerNames={managerNames}
             displayTitle={title}
-            titleAction={
-              isOwner ? (
-                <EvaluateWithAiButton
-                  layout="inline"
-                  reportId={report.id}
-                  deviationNo={title}
-                />
-              ) : undefined
-            }
             trailingAction={
               isOwner ? (
                 <DeleteReportButton
@@ -138,6 +124,29 @@ export function ReportList({
 }
 
 function EmptyState({ role }: { role: "engineer" | "manager" | "qa" }) {
+  const types = listDocumentTypes();
+  const firstNoun = types[0]?.documentNoun ?? "report";
+  let description: string;
+  switch (role) {
+    case "engineer":
+      description =
+        types.length === 1
+          ? `Use New Report above to create your first ${firstNoun}. Your draft will auto-save as you write.`
+          : "Use New Report above to create your first report. Your draft will auto-save as you write.";
+      break;
+    case "qa":
+      description = "No reports are available yet.";
+      break;
+    case "manager":
+      description =
+        "Reports submitted by engineers will appear here for your review.";
+      break;
+    default: {
+      const exhaustive: never = role;
+      description = exhaustive;
+    }
+  }
+
   return (
     <div className="flex flex-col items-center justify-center py-20 text-center">
       <div className="size-16 rounded-2xl bg-[var(--brand-700)] flex items-center justify-center mb-4">
@@ -145,11 +154,7 @@ function EmptyState({ role }: { role: "engineer" | "manager" | "qa" }) {
       </div>
       <h3 className="text-lg font-semibold mb-1">No reports yet</h3>
       <p className="text-sm text-[var(--muted-foreground)] max-w-md">
-        {role === "engineer"
-          ? "Use New Report above to create your first deviation investigation. Your draft will auto-save as you write."
-          : role === "qa"
-            ? "No investigation reports are available yet."
-            : "Reports submitted by engineers will appear here for your review."}
+        {description}
       </p>
     </div>
   );

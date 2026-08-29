@@ -25,13 +25,15 @@ export function useSectionSave<K extends keyof SectionContentMap & SectionType>(
     currentUserId,
     currentUserRole,
     currentUserEmail,
+    agentCommitInFlight,
   } = useReportData();
   const { suggestionApplyTransition } = useReportEvaluations();
   const { value } = useReportSection(section);
   // Generation (Suggest fixes / chat) reads a fresh DB snapshot per request and
   // re-validates anchors at apply time, so autosave stays on while it runs —
   // only the brief accept/apply transition itself pauses it.
-  const applyInFlight = !!suggestionApplyTransition?.[section];
+  const applyInFlight =
+    !!suggestionApplyTransition?.[section] || agentCommitInFlight;
   const [saveBlocked, setSaveBlocked] = useState(false);
 
   const onSave = useCallback(

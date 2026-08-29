@@ -14,13 +14,16 @@ export async function POST(req: NextRequest) {
   try {
     const wsUser = await db.query.workspaceUsers.findFirst({
       where: eq(workspaceUsers.email, email),
-      columns: { id: true, passwordHash: true },
+      columns: { id: true, passwordHash: true, deactivatedAt: true },
     });
-    const locked = wsUser ? await isWorkspaceUserLocked(email) : false;
+    const deactivated = !!wsUser?.deactivatedAt;
+    const locked =
+      wsUser && !deactivated ? await isWorkspaceUserLocked(email) : false;
     return NextResponse.json({
-      allowed: !!wsUser,
+      allowed: !!wsUser && !deactivated,
       hasPassword: !!wsUser?.passwordHash,
       locked,
+      deactivated,
     });
   } catch (error) {
     console.error("Failed to check auth email", error);

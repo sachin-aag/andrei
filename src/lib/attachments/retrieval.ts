@@ -14,6 +14,7 @@ import {
   buildOutlineFromStoredPages,
   type OutlineSpan,
 } from "@/lib/attachments/page-outline";
+import { rewriteChunkDocumentHeader } from "@/lib/attachments/chunk-pages";
 
 export { buildOutlineFromStoredPages };
 
@@ -71,6 +72,8 @@ export type DocumentOutlinePage = {
   pageNumber: number;
   printedPageLabel: string | null;
   pageContext: string | null;
+  /** Full page transcript for server-side scoring; omit from LLM tool payloads. */
+  transcript?: string;
 };
 
 export type DocumentOutline = {
@@ -273,9 +276,12 @@ function toSearchResult(
   row: CandidateRow,
   opts: { snippetChars?: number } = {}
 ): DocumentSearchResult {
-  const quote = truncateSnippet(
-    row.contextualText || row.rawText,
-    opts.snippetChars ?? DEFAULT_SNIPPET_CHARS
+  const quote = rewriteChunkDocumentHeader(
+    truncateSnippet(
+      row.contextualText || row.rawText,
+      opts.snippetChars ?? DEFAULT_SNIPPET_CHARS
+    ),
+    row.filename
   );
   return {
     attachmentId: row.attachmentId,
@@ -702,6 +708,9 @@ export async function readDocumentOutline({
     .limit(OUTLINE_PAGE_CAP);
 
   const outline = buildOutlineFromStoredPages(pages);
+  const transcriptByPage = new Map(
+    pages.map((page) => [page.pageNumber, page.transcript ?? ""])
+  );
 
   return {
     attachmentId: header.attachmentId,
@@ -714,6 +723,7 @@ export async function readDocumentOutline({
       pageContext: page.pageContext
         ? truncateSnippet(page.pageContext, OUTLINE_CONTEXT_CHARS)
         : null,
+      transcript: transcriptByPage.get(page.pageNumber) ?? "",
     })),
     spans: outline.spans,
   };

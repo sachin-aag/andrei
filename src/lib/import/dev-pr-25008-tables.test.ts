@@ -1,6 +1,12 @@
 import fs from "node:fs";
 import path from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+
+vi.mock("@/lib/ai/usage", () => ({
+  assertAiBudgetAvailable: vi.fn().mockResolvedValue(undefined),
+  recordAiUsage: vi.fn().mockResolvedValue(undefined),
+}));
+
 import mammoth from "mammoth";
 import { getSchema } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";

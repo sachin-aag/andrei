@@ -20,8 +20,7 @@ import type { WorkspaceUser } from "@/lib/auth/workspace-user";
 import { captureEvent } from "@/lib/analytics/events";
 import { ManagerSelector } from "@/components/report/manager-selector";
 import type { DocumentType } from "@/db/schema";
-import { getCustomerPack } from "@/lib/customers/packs";
-import { listDocumentTypes } from "@/lib/document-types";
+import { isWordImportAvailable, listDocumentTypes } from "@/lib/document-types";
 
 type CreateReportButtonProps = {
   managers: Pick<WorkspaceUser, "id" | "name" | "title">[];
@@ -29,7 +28,6 @@ type CreateReportButtonProps = {
 
 export function CreateReportButton({ managers }: CreateReportButtonProps) {
   const availableTypes = listDocumentTypes();
-  const wordImportEnabled = getCustomerPack().wordImportEnabled;
   const [open, setOpen] = useState(false);
   const [documentType, setDocumentType] = useState<DocumentType>(
     () => availableTypes[0]?.key ?? "investigation_report"
@@ -42,8 +40,7 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
   const docxInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
 
-  const showWordImport =
-    wordImportEnabled && documentType === "investigation_report";
+  const showWordImport = isWordImportAvailable(documentType);
   const busy = pending || previewLoading;
   const selectedType =
     availableTypes.find((type) => type.key === documentType) ?? availableTypes[0];
@@ -52,7 +49,9 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
     ? `Create ${selectedType.label.toLowerCase()}`
     : "Create investigation report";
   const dialogDescription = showWordImport
-    ? "Starts a new deviation investigation report as a draft. Optionally upload an existing Word document to fill Define through Control."
+    ? selectedType?.key === "generic_document"
+      ? "Starts a new document as a draft. Optionally upload an existing Word file to fill the body. Some Word features (SmartArt, text boxes, headers) are dropped on import."
+      : "Starts a new deviation investigation report as a draft. Optionally upload an existing Word document to fill Define through Control."
     : selectedType
       ? `Starts a new ${selectedType.label.toLowerCase()} as a draft.`
       : "Starts a new deviation investigation report as a draft.";
@@ -74,7 +73,7 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
 
   const handleDocumentTypeChange = (next: DocumentType) => {
     setDocumentType(next);
-    if (next !== "investigation_report") clearDraftFile();
+    if (!isWordImportAvailable(next)) clearDraftFile();
   };
 
   const handleDraftFileChange = async (file: File | null) => {
@@ -88,6 +87,7 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
     try {
       const fd = new FormData();
       fd.append("file", file);
+      fd.append("documentType", documentType);
       const res = await fetch("/api/reports/import-preview", {
         method: "POST",
         body: fd,
@@ -229,9 +229,14 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
                 <Input
                   id="documentNo"
                   placeholder={
-                    documentType === "design_verification"
+                    selectedType?.documentNoPlaceholder ??
+                    (documentType === "design_verification"
                       ? "e.g. DVR-2026-001"
-                      : "e.g. DEV/PK/26/001"
+                      : documentType === "mechanical_design_verification"
+                        ? "e.g. 825-00101"
+                        : documentType === "quality_risk_assessment"
+                          ? "e.g. RA/DP/QA/26/001"
+                          : "e.g. DEV/PK/26/001")
                   }
                   value={documentNo}
                   disabled={busy}
@@ -253,7 +258,11 @@ export function CreateReportButton({ managers }: CreateReportButtonProps) {
             </div>
             {showWordImport ? (
               <div className="grid gap-2">
-                <Label htmlFor="report-upload">Existing report (.docx, optional)</Label>
+                <Label htmlFor="report-upload">
+                  {documentType === "generic_document"
+                    ? "Existing document (.docx, optional)"
+                    : "Existing report (.docx, optional)"}
+                </Label>
                 <div className="flex flex-wrap items-center gap-2">
                   <Input
                     id="report-upload"

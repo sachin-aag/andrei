@@ -9,7 +9,6 @@ globs:
   - src/lib/ai/suggestion-gating.ts
   - src/lib/ai/evaluation-content-hash.ts
   - src/lib/suggestions/**/*.ts
-  - src/lib/improve-ai/**/*.ts
   - src/app/api/reports/**/evaluate/**/*.ts
   - src/app/api/reports/**/suggestions/**/*.ts
 alwaysApply: false
@@ -29,8 +28,8 @@ DV mixes LLM criteria with deterministic `check()` functions.
   `PROMPT_VERSION` in `section-prompts.ts`) or stale evals will not rerun.
 - Placeholders: `capEvaluationStatusForPlaceholders()` — never `not_met`
   solely for unfilled placeholders.
-- Improve AI (`evaluateReportCriteria`) still walks investigation
-  `EVALUATABLE_SECTIONS`. Do not assume it is type-generic.
+- Report AI Check (`POST .../evaluate`) walks `getEvaluatableSections()` for
+  the report's document type. Do not hardcode DMAIC.
 
 ## Suggestions
 
@@ -39,5 +38,9 @@ DV mixes LLM criteria with deterministic `check()` functions.
 - Canonical anchor text is `flattenForAnchor` — no markdown pipes.
 - Accept/dismiss always: locate → apply → PATCH section → flip comment.
   Never resolve a suggestion without a successful apply.
+- Bulk apply locates overlapping edits in a section and applies those
+  recursively; non-overlapping edits persist as one section PATCH.
+  Preview the applied section content before that PATCH so insert text
+  does not vanish during save.
 - Bump `SUGGEST_PROMPT_VERSION` when the suggestion prompt changes.
 - Whole-field rewrites are redrafts (`apply-redraft.ts`), not anchored edits.

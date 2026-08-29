@@ -15,16 +15,7 @@ import {
   type SectionInlineImage,
 } from "@/lib/ai/chat/section-images";
 
-/** Sections the drafting chat can read + edit (DMAIC + conclusion). */
-export const CHAT_EDITABLE_SECTIONS: readonly SectionType[] = [
-  "define",
-  "measure",
-  "analyze",
-  "improve",
-  "control",
-  "conclusion",
-];
-
+/** Sections the drafting chat can read + edit (type-owned, not DMAIC-only). */
 export function chatEditableSections(
   documentType: DocumentType = "investigation_report"
 ): readonly SectionType[] {
@@ -33,7 +24,7 @@ export function chatEditableSections(
     .map((s) => s.key);
 }
 
-/** `all` = no section filter; otherwise focus plan/edits on one section. */
+/** `all` = no section filter; otherwise focus plan/edits on one tagged section. */
 export type ChatSectionScope = SectionType | "all";
 
 export const CHAT_SECTION_SCOPE_ALL = "all" as const;
@@ -43,25 +34,6 @@ export function isChatEditableSection(
   documentType: DocumentType = "investigation_report"
 ): value is SectionType {
   return (chatEditableSections(documentType) as readonly string[]).includes(value);
-}
-
-export function isChatSectionScope(
-  value: unknown,
-  documentType: DocumentType = "investigation_report"
-): value is ChatSectionScope {
-  return (
-    value === CHAT_SECTION_SCOPE_ALL ||
-    isChatEditableSection(String(value), documentType)
-  );
-}
-
-export function parseChatSectionScope(
-  value: unknown,
-  documentType: DocumentType = "investigation_report"
-): ChatSectionScope {
-  return isChatSectionScope(value, documentType)
-    ? value
-    : CHAT_SECTION_SCOPE_ALL;
 }
 
 /** Sections included in prompt/tools for the current focus. */
@@ -103,6 +75,12 @@ export function primaryFieldForSection(section: SectionType): string {
     case "traceability":
     case "test_results":
     case "test_equipment":
+    case "qra_team":
+    case "qra_risk_identification":
+    case "qra_fmea":
+    case "qra_mitigation":
+    case "qra_residual_risk":
+    case "qra_revision_history":
       return "table";
     case "testers_dates":
       return "testers";
@@ -139,6 +117,26 @@ export function countSectionInlineImages(
     total += countImagesInDoc(getRichFieldValue(sectionContent, field.targetField));
   }
   return total;
+}
+
+/** Below this character count (and no images) a section is "partial", not empty. */
+export const SECTION_PARTIAL_CHAR_LIMIT = 120;
+
+export type SectionFillState = "empty" | "partial" | "filled";
+
+export function sectionFillState(
+  content: Record<string, unknown> | undefined,
+  section: SectionType
+): SectionFillState {
+  const primary = primaryFieldForSection(section);
+  const text = sectionFieldPlainText(content ?? {}, section, primary);
+  const charCount = text.replace(/\s+/g, " ").trim().length;
+  const imageCount = countSectionInlineImages(content ?? {}, section);
+  if (charCount === 0 && imageCount === 0) return "empty";
+  if (charCount < SECTION_PARTIAL_CHAR_LIMIT && imageCount === 0) {
+    return "partial";
+  }
+  return "filled";
 }
 
 /**

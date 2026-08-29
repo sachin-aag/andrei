@@ -382,3 +382,85 @@ describe("parseAiFixCommentContent second", () => {
     expect(parseAiFixCommentContent(json).second).toBeUndefined();
   });
 });
+
+describe("parseAiFixCommentContent insertImage", () => {
+  it("round-trips an inline figure payload", () => {
+    const src =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const json = serializeAiFixCommentContent({
+      deleteText: "",
+      insertText: "",
+      reasoning: "Adds the chromatogram the engineer attached",
+      insertImage: { src, alt: "HPLC trace", width: 400, mediaId: null },
+    });
+    const parsed = parseAiFixCommentContent(json);
+    expect(parsed.insertImage).toEqual({
+      src,
+      alt: "HPLC trace",
+      width: 400,
+      mediaId: null,
+    });
+    expect(parsed.insertText).toBe("");
+  });
+
+  it("round-trips chartSpec on an insertImage payload", () => {
+    const src =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const chartSpec = {
+      version: 1 as const,
+      kind: "scatter" as const,
+      query: "mock-torque",
+      title: "Tip Detachment Torque",
+      xLabel: "Measurement",
+      yLabel: "Torque (ozf-in)",
+      uom: "ozf-in",
+      limits: { lower: 1, upper: 6 },
+      points: [{ x: 1, y: 3.1, series: null, label: "Tip 1" }],
+      layout: {
+        mode: "combined" as const,
+        seriesBy: "none" as const,
+        xAxis: "sequential" as const,
+        yRange: null,
+      },
+      citations: [] as [],
+      sampleSizeMin: null,
+    };
+    const json = serializeAiFixCommentContent({
+      deleteText: "",
+      insertText: "",
+      reasoning: "Plot of cited torque values",
+      insertImage: {
+        src,
+        alt: "Tip Detachment Torque",
+        width: 600,
+        mediaId: null,
+        chartSpec,
+      },
+    });
+    const parsed = parseAiFixCommentContent(json);
+    expect(parsed.insertImage?.chartSpec).toEqual(chartSpec);
+  });
+});
+
+describe("parseAiFixCommentContent removeImage", () => {
+  it("round-trips a figure-removal payload", () => {
+    const src =
+      "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const json = serializeAiFixCommentContent({
+      deleteText: "",
+      insertText: "",
+      reasoning: "This chromatogram belongs in Measure, not Define",
+      removeImage: { src, alt: "HPLC trace", width: 400, mediaId: null, index: 1 },
+    });
+    const parsed = parseAiFixCommentContent(json);
+    expect(parsed.removeImage).toEqual({
+      src,
+      alt: "HPLC trace",
+      width: 400,
+      mediaId: null,
+      index: 1,
+    });
+    expect(parsed.insertImage).toBeUndefined();
+    expect(parsed.insertText).toBe("");
+  });
+});

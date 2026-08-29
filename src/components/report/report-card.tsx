@@ -5,12 +5,32 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { StatusBadge } from "@/components/report/status-badge";
 import { formatCalendarDate, formatDate } from "@/lib/utils";
-import type { ReportStatus } from "@/db/schema";
+import type { DocumentType, ReportStatus } from "@/db/schema";
+import { documentTypeShortLabel } from "@/lib/document-types";
+
+function untitledFallback(documentType: DocumentType | undefined): string {
+  switch (documentType) {
+    case "design_verification":
+    case "mechanical_design_verification":
+      return "Untitled design verification";
+    case "generic_document":
+      return "Untitled document";
+    case "quality_risk_assessment":
+      return "Untitled quality risk assessment";
+    case "investigation_report":
+    case undefined:
+      return "Untitled deviation";
+    default: {
+      const exhaustive: never = documentType;
+      return exhaustive;
+    }
+  }
+}
 
 export type ReportCardData = {
   id: string;
   documentNo: string;
-  documentType?: "investigation_report" | "design_verification";
+  documentType?: DocumentType;
   date: Date;
   status: string;
   authorId: string;
@@ -26,7 +46,6 @@ export function ReportCard({
   managerNames,
   openLabel = "Open",
   displayTitle,
-  titleAction,
   trailingAction,
 }: {
   report: ReportCardData;
@@ -35,19 +54,14 @@ export function ReportCard({
   managerNames: string[];
   openLabel?: string;
   displayTitle?: string;
-  titleAction?: ReactNode;
   trailingAction?: ReactNode;
 }) {
   const title =
     displayTitle ??
-    (report.documentNo ||
-      (report.documentType === "design_verification"
-        ? "Untitled design verification"
-        : "Untitled deviation"));
-  const typeLabel =
-    report.documentType === "design_verification"
-      ? "Design Verification"
-      : "Investigation";
+    (report.documentNo || untitledFallback(report.documentType));
+  const typeLabel = report.documentType
+    ? documentTypeShortLabel(report.documentType)
+    : "Investigation";
   const managerLabel = managerNames.length === 1 ? "Manager" : "Managers";
 
   return (
@@ -71,7 +85,6 @@ export function ReportCard({
                 <h3 className="truncate font-semibold">{title}</h3>
                 <StatusBadge status={report.status as ReportStatus} />
               </Link>
-              {titleAction}
             </div>
             <Link
               href={href}

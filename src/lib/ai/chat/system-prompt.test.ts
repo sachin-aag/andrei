@@ -17,8 +17,10 @@ describe("isChatMode", () => {
 });
 
 describe("buildChatSystemPrompt", () => {
-  it("bumps the prompt version when section inline image guidance changes", () => {
-    expect(CHAT_PROMPT_VERSION).toBe("chat-v41-convergent-citation-markers");
+  it("pins the current chat prompt version", () => {
+    expect(CHAT_PROMPT_VERSION).toBe(
+      "chat-v53-drop-section-switch"
+    );
   });
 
   it("puts citations at the end of the section when the pack mode is on", () => {
@@ -92,6 +94,18 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).not.toContain("Risk Control Link");
   });
 
+  it("includes SOP scoring rules for quality risk assessment", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      documentType: "quality_risk_assessment",
+    });
+    expect(prompt).toContain("never write RPN");
+    expect(prompt).toContain("SOP/DP/QA/010");
+    expect(prompt).toContain("qra_fmea");
+    expect(prompt).not.toContain("select_analyze_method");
+  });
+
   it("keeps the investigation draft order for investigation reports", () => {
     const prompt = buildChatSystemPrompt({ ...opts, mode: "agent" });
     expect(prompt).toContain(
@@ -129,11 +143,40 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("never include [image:N] markers in anchorText");
   });
 
-  it("plan mode forbids editing and asks questions via ask_user", () => {
+  it("routes figure placement to insert_image instead of markdown", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      includePlotMeasurements: true,
+    });
+    expect(prompt).toContain("insert_image");
+    expect(prompt).toContain("source=chat");
+    expect(prompt).toContain("Do not invent or generate pixels — use plot_measurements");
+    expect(prompt).toContain("Never volunteer");
+    expect(prompt).toContain('image: { source: "section", section: "purpose"');
+    expect(prompt).toContain("id: \"narrative#1\"");
+    expect(prompt).not.toContain("Mode: ASK");
+  });
+
+  it("routes figure removal to remove_image instead of rewriting the field", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      includePlotMeasurements: true,
+    });
+    expect(prompt).toContain("remove_image");
+    expect(prompt).toContain("Never draft_field a field just to drop a figure");
+    expect(prompt).toContain("use insert_image / plot_measurements / remove_image");
+  });
+
+  it("ask mode forbids editing and answers questions", () => {
     const prompt = buildChatSystemPrompt({ ...opts, mode: "plan" });
     expect(prompt).toContain("Mode: ASK");
+    expect(prompt).toContain("answer questions");
     expect(prompt).toContain("edit tools are disabled");
     expect(prompt).toContain("ask_user");
+    expect(prompt).not.toContain("propose a short outline");
+    expect(prompt).not.toContain("switch to Agent mode to generate");
     expect(prompt).not.toContain("Mode: AGENT");
   });
 
@@ -157,7 +200,6 @@ describe("buildChatSystemPrompt", () => {
       "put every affected cell in one edit_cells call (source and destination together)"
     );
     expect(prompt).toContain("failed-retry cap");
-    expect(prompt).toContain("draft_field / edit_table / propose_edit");
   });
 
   it("uses a demo-wide compliance persona, not a single customer brand", () => {
@@ -168,33 +210,71 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).not.toContain("SOP/DP/QA/008");
   });
 
+  it("parks citations at the end on generic documents, not demo investigation", () => {
+    const investigation = buildChatSystemPrompt({ ...opts, mode: "agent" });
+    expect(investigation).toContain(
+      "When you rely on retrieved evidence in prose, cite it as"
+    );
+    expect(investigation).not.toContain("END of the section field");
+
+    const generic = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      documentType: "generic_document",
+    });
+    expect(generic).toContain("Document structure (required)");
+    expect(generic).toContain("`#` document title");
+    expect(generic).toContain("Always use markdown headings");
+    expect(generic).toContain("END of the section field");
+    expect(generic).toContain("Citations:");
+    expect(generic).not.toContain("when they ask for structure");
+  });
+
   it("scoped mode limits criteria and section focus in the prompt", () => {
     const prompt = buildChatSystemPrompt({
       ...opts,
       mode: "agent",
       sectionScope: "define",
       criteriaOutline: "DEFINE_ONLY",
+      includePlotMeasurements: true,
     });
     expect(prompt).toContain("Section focus: Define [define]");
+    expect(prompt).toContain("The engineer tagged **Define**");
     expect(prompt).toContain('on section "define"');
+    expect(prompt).toContain("draft_field / edit_table / propose_edit / insert_image / plot_measurements / remove_image");
     expect(prompt).toContain("DEFINE_ONLY");
     expect(prompt).not.toContain("[measure]:");
   });
 
-  it("includes scope mismatch guidance when detected", () => {
+  it("sends Convergent document chat to Analytics instead of plot_measurements", () => {
     const prompt = buildChatSystemPrompt({
       ...opts,
-      mode: "plan",
-      sectionScope: "define",
-      scopeMismatch: {
-        currentSection: "define",
-        suggestedSection: "analyze",
-        reason: "Looks like Analyze.",
+      mode: "agent",
+      includePlotMeasurements: false,
+    });
+    expect(prompt).toContain("use insert_image / remove_image");
+    expect(prompt).not.toContain("use insert_image / plot_measurements / remove_image");
+    expect(prompt).toContain("Measurement charts belong in Analytics, not Document chat");
+    expect(prompt).toContain("Tell the engineer to open Analytics");
+    expect(prompt).not.toContain("- plot_measurements — extract cited numeric measurements");
+  });
+
+  it("injects review-first guidance when the requested section is already drafted", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      alreadyDrafted: { section: "testers_dates", fillState: "filled" },
+      alreadyDraftedGapHints: {
+        kind: "gaps",
+        gaps: [{ status: "partially_met", label: "Date range" }],
       },
     });
-    expect(prompt).toContain("Section scope mismatch (detected)");
-    expect(prompt).toContain('suggest_section_scope');
-    expect(prompt).toContain("Analyze");
+    expect(prompt).toContain("Already drafted (review first)");
+    expect(prompt).toContain("Testers/Dates");
+    expect(prompt).toContain("Do not call search_documents or ask_user yet");
+    expect(prompt).toContain("ask whether they want a specific change");
+    expect(prompt).toContain("partial: Date range");
+    expect(prompt).toContain("Material gap only");
   });
 
   it("includes the report context and criteria in both modes", () => {
@@ -225,6 +305,11 @@ describe("buildChatSystemPrompt", () => {
     expect(agent).toContain("Never treat the index as ENOUGH");
     expect(agent).toContain("grep in rounds until the question is covered");
     expect(agent).toContain("Do not start a document review");
+    expect(agent).toContain(
+      "If the engineer asked to draft a section the context map marks filled or partial"
+    );
+    expect(agent).toContain("Never call ask_user for a fact already in the current section");
+    expect(agent).toContain("Never put the actual answer in hint");
   });
 
   it("requires a finished comprehensive review before drafting inventories", () => {
@@ -240,6 +325,7 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("recommendedInventory");
     expect(prompt).toContain("allIdentifiers");
     expect(prompt).toContain("SW-SST-5.1.1 is not SW-SST-5");
+    expect(prompt).toContain("M3-SYS-FN-037 is not SYS-FN-037");
     expect(prompt).not.toContain(
       "MUST call search_documents (or use the evidence preview below) BEFORE ask_user or draft_field"
     );
@@ -309,16 +395,17 @@ describe("buildChatSystemPrompt", () => {
     expect(analyzeScope).toContain("exactly ONE of 6M / 5-Why / Brainstorming");
   });
 
-  it("includes Analyze planning rules in plan mode when analyze is in scope", () => {
+  it("includes Analyze ask rules in ask mode when analyze is in scope", () => {
     const planAnalyze = buildChatSystemPrompt({
       ...opts,
       mode: "plan",
       sectionScope: "analyze",
     });
-    expect(planAnalyze).toContain("## Analyze planning rules");
-    expect(planAnalyze).toContain("recommended method");
-    expect(planAnalyze).toContain("read_section on define AND measure");
-    expect(planAnalyze).toContain("leave 6M and Brainstorming blank");
+    expect(planAnalyze).toContain("## Analyze questions");
+    expect(planAnalyze).toContain("your recommendation");
+    expect(planAnalyze).toContain("read define and measure");
+    expect(planAnalyze).toContain("Do not draft Analyze fields");
+    expect(planAnalyze).not.toContain("closing outline");
     expect(planAnalyze).not.toContain("## Analyze drafting rules");
   });
 
@@ -329,13 +416,34 @@ describe("buildChatSystemPrompt", () => {
       sectionScope: "define",
     });
     expect(defineScope).not.toContain("## Analyze drafting rules");
-    expect(defineScope).not.toContain("## Analyze planning rules");
+    expect(defineScope).not.toContain("## Analyze questions");
 
     const planDefine = buildChatSystemPrompt({
       ...opts,
       mode: "plan",
       sectionScope: "define",
     });
-    expect(planDefine).not.toContain("## Analyze planning rules");
+    expect(planDefine).not.toContain("## Analyze questions");
+  });
+
+  it("tells the model edits apply immediately when editPolicy is commit", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      editPolicy: "commit",
+    });
+    expect(prompt).toContain("apply edits immediately");
+    expect(prompt).toContain("written to the document immediately");
+    expect(prompt).not.toContain("nothing is applied until they accept it");
+  });
+
+  it("keeps propose-and-review copy when editPolicy is propose", () => {
+    const prompt = buildChatSystemPrompt({
+      ...opts,
+      mode: "agent",
+      editPolicy: "propose",
+    });
+    expect(prompt).toContain("nothing is applied until they accept it");
+    expect(prompt).not.toContain("written to the document immediately");
   });
 });

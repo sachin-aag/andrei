@@ -293,7 +293,105 @@
       "idx": 41,
       "version": "7",
       "when": 1783408800000,
-      "tag": "0042_product_tour",
+      "tag": "0042_mechanical_dv_document_type",
+      "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1783495200000,
+      "tag": "0043_statistical_analysis",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1783581600000,
+      "tag": "0044_report_analytics",
+      "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1787750000000,
+      "tag": "0045_quality_risk_assessment_document_type",
+      "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1787836400000,
+      "tag": "0046_generic_document_type",
+      "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1787840000000,
+      "tag": "0047_worksheet_version",
+      "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1787843600000,
+      "tag": "0048_last_login_at",
+      "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1787847200000,
+      "tag": "0049_ai_budget",
+      "breakpoints": true
+    },
+    {
+      "idx": 49,
+      "version": "7",
+      "when": 1787850800000,
+      "tag": "0050_attachment_page_budget",
+      "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1787900000000,
+      "tag": "0050_document_revisions",
+      "breakpoints": true
+    },
+    {
+      "idx": 51,
+      "version": "7",
+      "when": 1787903600000,
+      "tag": "0051_statistical_analysis_preview_image",
+      "breakpoints": true
+    },
+    {
+      "idx": 52,
+      "version": "7",
+      "when": 1787907200000,
+      "tag": "0052_document_revision_manual",
+      "breakpoints": true
+    },
+    {
+      "idx": 53,
+      "version": "7",
+      "when": 1787910800000,
+      "tag": "0053_analytics_revisions",
+      "breakpoints": true
+    },
+    {
+      "idx": 54,
+      "version": "7",
+      "when": 1787914400000,
+      "tag": "0052_drop_improve_ai_feedback",
+      "breakpoints": true
+    },
+    {
+      "idx": 55,
+      "version": "7",
+      "when": 1787918000000,
+      "tag": "0054_product_tour",
       "breakpoints": true
     }
   ]

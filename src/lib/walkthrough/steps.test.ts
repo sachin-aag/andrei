@@ -17,6 +17,7 @@ describe("stepsForRole", () => {
     expect(ids).toContain("ai-check");
     expect(ids).toContain("assistant");
     expect(ids).toContain("insights");
+    expect(ids).not.toContain("improve-ai");
     expect(steps.find((step) => step.id === "create-report")?.startHere).toBe(
       true
     );
@@ -27,6 +28,7 @@ describe("stepsForRole", () => {
     expect(ids).not.toContain("create-report");
     expect(ids).toContain("review-actions");
     expect(ids).toContain("reports");
+    expect(ids).not.toContain("improve-ai");
   });
 
   it("keeps QA read-only and skips approve/submit", () => {
@@ -35,6 +37,7 @@ describe("stepsForRole", () => {
     expect(ids).not.toContain("submit");
     expect(ids).not.toContain("review-actions");
     expect(ids).not.toContain("create-report");
+    expect(ids).not.toContain("improve-ai");
   });
 
   it("limits admins to reports, users, and profile", () => {

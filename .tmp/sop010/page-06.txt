@@ -1,0 +1,43 @@
+Standard Operating Procedure Unit: Drug Product
+
+M.J. Biopharm Private Limited Gey
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance | SOP No.: SOP/DP/QA/010 _| Revision No: R04 _| Page 6 of 51
+7.0 PROCEDURE:
+71 Risk Management Process involves the following steps :
+
+7.1.1 Initiation of a quality risk management process
+7.1.2 Team Selection
+7.1.3 Risk Assessment — Identification, Analysis and Evaluation
+7.1.4 Risk Control — Mitigation plan, Risk reduction or Acceptance
+7.1.5 Risk Communication — QRM process shall be communicated between the team members
+7.1.6 Risk Review
+7.1.7. Risk Closure
+7.2 Initiation of a quality risk management process:
+7.2.1 Quality risk management should include systematic processes designed to coordinate, facilitate and
+improve science-based decision making with respect to risk. Possible steps used to initiate and plan
+a quality risk management process might include the following,
+7.2.1.1 Risk assessment team shall be selected for quality risk management process. Risk assessment team
+shall be made with subject matter experts to identify the risk and related controls by user
+department Head/Designee in coordination with QA.
+7.2.1.2 Meeting shall be arranged at initial to decide the strategy for risk assessment (Informal/Formal) and
+to identify the probable failure. Outcome of meeting shall be recorded as per format for “Minutes
+of Meeting for Risk Assessment” as per format no. SOP/DP/QA/010/FOL.
+73 Risk Assessment — Identification, Analysis and Evaluation
+7.3.1 Risk identification is a systematic use of information to identify hazards referring to the risk
+question or problem description. Identified risk shall be mentioned in template for risk assessment
+by FMEA method as per format no. SOP/DP/QA/010/F02.
+7.3.2 Flow of Risk Assessment Template:
+7.3.2.1 Pre-approval: Pre-approval of risk assessment shall be taken after identification of risk, their
+control and before implementation of mitigation plan (if applicable).
+7.3.2.2 Objective: State the objective of risk assessment including name of _ the
+equipment/instrument/system, process, activity etc.
+Prepared By (User Department) Sign/Date Reviewed By (Quality Assurance) Sign/Date
+LI o€)26 Ze Au
+Confidential and Proprietary SOP/DP/QA/001/F01-R02
+
+MASTER COPY
+

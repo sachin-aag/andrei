@@ -3,6 +3,7 @@ import { and, desc, eq, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import { db } from "@/db";
 import {
+  documentTypeEnum,
   reportManagers,
   reports,
   reportSections,
@@ -27,7 +28,17 @@ import {
 } from "@/lib/reports/create-report-from-docx";
 import { persistImportedWordComments } from "@/lib/reports/persist-imported-word-comments";
 import { persistReportSourceDocx } from "@/lib/reports/persist-source-docx";
-import { getDocumentType, isDocumentTypeEnabled } from "@/lib/document-types";
+import {
+  getDocumentType,
+  isDocumentTypeEnabled,
+  isWordImportAvailable,
+  wordImportFor,
+} from "@/lib/document-types";
+import {
+  docxBufferToGenericDocument,
+  GenericDocxImportError,
+  type GenericImportedDocument,
+} from "@/lib/import/docx-to-generic-document";
 import { auditActorFromUser, recordAuditEvent, recordSectionVersion } from "@/lib/audit";
 import { assignedManagerIdsWithHiddenExpert } from "@/lib/reports/ensure-hidden-expert-reviewer";
 import {
@@ -106,10 +117,10 @@ export async function GET() {
   return NextResponse.json({ reports: rowsWithManagers });
 }
 
+const DOCUMENT_TYPE_VALUES = documentTypeEnum.enumValues;
+
 const createSchema = z.object({
-  documentType: z
-    .enum(["investigation_report", "design_verification"])
-    .default("investigation_report"),
+  documentType: z.enum(DOCUMENT_TYPE_VALUES).default("investigation_report"),
   documentNo: z.string().min(1).optional(),
   deviationNo: z.string().min(1).optional(), // alias for investigation
   assignedManagerId: z.string().nullable().optional(),
@@ -117,20 +128,25 @@ const createSchema = z.object({
 });
 
 function documentTypeFromForm(value: FormDataEntryValue | null): DocumentType {
-  if (value === "design_verification" || value === "investigation_report") {
-    return value;
+  if (
+    typeof value === "string" &&
+    (DOCUMENT_TYPE_VALUES as readonly string[]).includes(value)
+  ) {
+    return value as DocumentType;
   }
   return "investigation_report";
 }
 
 function wordImportDocumentTypeError(documentType: DocumentType): string | null {
-  switch (documentType) {
-    case "investigation_report":
+  const kind = wordImportFor(getDocumentType(documentType)).kind;
+  switch (kind) {
+    case "none":
+      return "Word import is not supported for this document type.";
+    case "investigation":
+    case "generic_body":
       return null;
-    case "design_verification":
-      return "Word import is only supported for investigation reports.";
     default: {
-      const exhaustive: never = documentType;
+      const exhaustive: never = kind;
       return exhaustive;
     }
   }
@@ -154,6 +170,7 @@ export async function POST(req: Request) {
     let rawDocumentNo: string | undefined;
     let assignedManagerIds: string[];
     let importedContent: ImportedReportContent | null = null;
+    let genericImported: GenericImportedDocument | null = null;
     let sourceUpload: { buffer: Buffer; filename: string } | null = null;
 
     if (contentType.includes("multipart/form-data")) {
@@ -167,9 +184,12 @@ export async function POST(req: Request) {
       const hasFile = file instanceof File && file.size > 0;
 
       if (hasFile && file instanceof File) {
-        if (!getCustomerPack().wordImportEnabled) {
+        if (!isWordImportAvailable(documentType)) {
           return NextResponse.json(
-            { error: "Word import is not enabled for this workspace." },
+            {
+              error: wordImportDocumentTypeError(documentType) ??
+                "Word import is not enabled for this workspace.",
+            },
             { status: 400 }
           );
         }
@@ -179,10 +199,30 @@ export async function POST(req: Request) {
         }
         try {
           const buf = await readDocxUpload(file);
-          importedContent = await docxBufferToImportedReportContent(buf);
           sourceUpload = { buffer: buf, filename: file.name };
+          const kind = wordImportFor(getDocumentType(documentType)).kind;
+          switch (kind) {
+            case "investigation":
+              importedContent = await docxBufferToImportedReportContent(buf);
+              break;
+            case "generic_body":
+              genericImported = await docxBufferToGenericDocument(buf);
+              break;
+            case "none":
+              return NextResponse.json(
+                { error: "Word import is not supported for this document type." },
+                { status: 400 }
+              );
+            default: {
+              const exhaustive: never = kind;
+              return exhaustive;
+            }
+          }
         } catch (e) {
           const message = e instanceof Error ? e.message : "";
+          if (e instanceof GenericDocxImportError) {
+            return NextResponse.json({ error: e.message }, { status: 400 });
+          }
           if (message.includes("too large") || message.includes("Only Word")) {
             return NextResponse.json({ error: message }, { status: 400 });
           }
@@ -207,7 +247,7 @@ export async function POST(req: Request) {
         : normalizeAssignedManagerIds([parse.data.assignedManagerId ?? null]);
     }
 
-    if (!isDocumentTypeEnabled(documentType)) {
+    if (!isDocumentTypeEnabled(documentType, getCustomerPack())) {
       return NextResponse.json(
         {
           error: `${getDocumentType(documentType).label} is not enabled for this workspace.`,
@@ -244,7 +284,12 @@ export async function POST(req: Request) {
     const metadata =
       importedContent && documentType === "investigation_report"
         ? investigationMetadataFromImport(importedContent)
-        : def.defaultMetadata;
+        : genericImported
+          ? {
+              importWarnings: genericImported.warnings,
+              importedFromFilename: sourceUpload?.filename,
+            }
+          : def.defaultMetadata;
     const [report] = await db
       .insert(reports)
       .values({
@@ -266,7 +311,11 @@ export async function POST(req: Request) {
     await insertReportManagers(report.id, assignedManagerIds);
 
     await db.insert(reportSections).values(
-      sectionRowsForCreate(documentType, importedContent).map((row) => ({
+      sectionRowsForCreate(
+        documentType,
+        importedContent,
+        genericImported ? { narrative: genericImported.narrative } : null
+      ).map((row) => ({
         reportId: report.id,
         section: row.section,
         content: row.content,
@@ -275,7 +324,9 @@ export async function POST(req: Request) {
 
     if (sourceUpload) {
       try {
-        await persistImportedWordComments(report.id, importedContent);
+        if (importedContent) {
+          await persistImportedWordComments(report.id, importedContent);
+        }
         await persistReportSourceDocx({
           reportId: report.id,
           buffer: sourceUpload.buffer,

@@ -1,14 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { ChevronLeft, Download, FileText } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Download, FileText, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
 import { PdfPagePreview } from "@/components/report/pdf-page-preview";
 import type { AttachmentProcessingStatus } from "@/db/schema";
 import { kindFromMime } from "@/lib/attachments/file-types";
@@ -19,9 +13,14 @@ import {
 } from "@/lib/attachments/preview-urls";
 import { useReportAttachments } from "@/providers/report-attachments-provider";
 
-export function AttachmentViewer() {
+export function AttachmentViewer({
+  onClose,
+}: {
+  onClose?: () => void;
+} = {}) {
   const { activeAttachment, activePage, closeDocument, reportId } =
     useReportAttachments();
+  const dismiss = onClose ?? closeDocument;
   const [visiblePage, setVisiblePage] = useState(activePage);
   const pageSourceKey = `${activeAttachment?.id ?? ""}:${activePage}`;
   const [seenPageSourceKey, setSeenPageSourceKey] = useState(pageSourceKey);
@@ -30,13 +29,27 @@ export function AttachmentViewer() {
     setVisiblePage(activePage);
   }
 
+  useEffect(() => {
+    if (!activeAttachment) return;
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || event.defaultPrevented) return;
+      if (event.target instanceof HTMLElement && event.target.closest('[role="dialog"]')) {
+        return;
+      }
+      event.preventDefault();
+      dismiss();
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [activeAttachment, dismiss]);
+
   if (!activeAttachment) {
     return (
-      <Card>
-        <CardContent className="p-6 text-sm text-[var(--muted-foreground)]">
-          Select a document from the Documents tab to preview it.
-        </CardContent>
-      </Card>
+      <div className="p-6 text-sm text-[var(--muted-foreground)]">
+        Select a document from the Documents tab to preview it.
+      </div>
     );
   }
 
@@ -58,51 +71,58 @@ export function AttachmentViewer() {
   const indexing = isIndexingStatus(activeAttachment.processingStatus);
 
   return (
-    <Card className="flex h-[calc(100vh-12rem)] min-h-[760px] flex-col overflow-hidden">
-      <CardHeader className="shrink-0 border-b border-[var(--border)] p-4">
-        <div className="flex items-center gap-3">
-          <Button type="button" variant="ghost" size="sm" onClick={closeDocument}>
-            <ChevronLeft className="size-4" aria-hidden="true" />
-            Back
-          </Button>
-          <div className="min-w-0 flex-1">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <FileText className="size-4 shrink-0" aria-hidden="true" />
-              <span className="truncate">{activeAttachment.filename}</span>
-            </CardTitle>
-            <p className="mt-1 text-xs text-[var(--muted-foreground)]">
-              {pageLabel}
-              {indexing
-                ? formatIngestPageLabel(activeAttachment.processingPage)
-                  ? ` · Indexing page ${activeAttachment.processingPage}…`
-                  : " · Indexing for search…"
-                : null}
-              {canPreview && activeAttachment.processingStatus === "failed"
-                ? " · Indexing failed (preview still available)"
-                : null}
-              {canPreview &&
-              activeAttachment.processingStatus === "ready" &&
-              activeAttachment.processingError
-                ? " · Indexing incomplete (preview still available)"
-                : null}
-            </p>
-            {activeAttachment.description ? (
-              <p className="mt-1 line-clamp-3 text-xs leading-snug text-[var(--muted-foreground)]">
-                {activeAttachment.description}
-              </p>
-            ) : null}
+    <div
+      className="flex h-full min-h-0 flex-col overflow-hidden bg-[var(--background)]"
+      data-testid="attachment-viewer"
+    >
+      <div className="flex shrink-0 items-center gap-3 border-b border-[var(--border)] bg-[var(--card)] px-4 py-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 text-base font-semibold">
+            <FileText className="size-4 shrink-0" aria-hidden="true" />
+            <span className="truncate">{activeAttachment.filename}</span>
           </div>
-          {canPreview ? (
-            <Button asChild variant="outline" size="sm">
-              <a href={downloadUrl}>
-                <Download className="size-4" aria-hidden="true" />
-                Download
-              </a>
-            </Button>
+          <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+            {pageLabel}
+            {indexing
+              ? formatIngestPageLabel(activeAttachment.processingPage)
+                ? ` · Indexing page ${activeAttachment.processingPage}…`
+                : " · Indexing for search…"
+              : null}
+            {canPreview && activeAttachment.processingStatus === "failed"
+              ? " · Indexing failed (preview still available)"
+              : null}
+            {canPreview &&
+            activeAttachment.processingStatus === "ready" &&
+            activeAttachment.processingError
+              ? " · Indexing incomplete (preview still available)"
+              : null}
+          </p>
+          {activeAttachment.description ? (
+            <p className="mt-1 line-clamp-3 text-xs leading-snug text-[var(--muted-foreground)]">
+              {activeAttachment.description}
+            </p>
           ) : null}
         </div>
-      </CardHeader>
-      <CardContent className="min-h-0 flex-1 p-0">
+        {canPreview ? (
+          <Button asChild variant="outline" size="sm">
+            <a href={downloadUrl}>
+              <Download className="size-4" aria-hidden="true" />
+              Download
+            </a>
+          </Button>
+        ) : null}
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          onClick={dismiss}
+          aria-label="Close document"
+          data-testid="attachment-viewer-close"
+        >
+          <X className="size-4" aria-hidden="true" />
+        </Button>
+      </div>
+      <div className="min-h-0 flex-1">
         {canPreview ? (
           isDocx ? (
             <iframe
@@ -112,7 +132,7 @@ export function AttachmentViewer() {
               // Untrusted HTML — no scripts. allow-popups* so target=_blank
               // links open a real new tab instead of replacing the preview.
               sandbox="allow-popups allow-popups-to-escape-sandbox"
-              className="h-full min-h-[720px] w-full bg-white"
+              className="h-full w-full bg-white"
             />
           ) : (
             <PdfPagePreview
@@ -131,8 +151,8 @@ export function AttachmentViewer() {
               : "Upload is still finishing. Preview will be available once the file is stored."}
           </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 

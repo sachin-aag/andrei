@@ -19,7 +19,10 @@ import {
 import { CommentCard } from "./comment-card";
 import { SectionCommentComposer } from "./section-comment-composer";
 import { SectionSuggestionCard } from "@/components/report/suggestion-card";
-import { evaluatableSectionKeys } from "@/lib/ai/criteria-view";
+import {
+  evaluatableSectionKeys,
+  suggestionCardSectionKeys,
+} from "@/lib/ai/criteria-view";
 import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
 import {
   effectivePlainTextContentPath,
@@ -135,6 +138,14 @@ function findSuggestionMarkPos(editor: Editor, markId: string): number | null {
   let found: number | null = null;
   editor.state.doc.descendants((node, pos) => {
     if (found != null) return false;
+    if (node.type.name === "imageInline") {
+      const suggestionId = node.attrs.suggestionId as string | null | undefined;
+      if (suggestionId === markId) {
+        found = pos;
+        return false;
+      }
+      return true;
+    }
     if (!node.isText || !node.marks?.length) return;
     for (const mark of node.marks) {
       const attrs = mark.attrs as { id?: string | null } | undefined;
@@ -154,6 +165,14 @@ function findSuggestionMarkRange(
   let from: number | null = null;
   let to: number | null = null;
   editor.state.doc.descendants((node, pos) => {
+    if (node.type.name === "imageInline") {
+      const suggestionId = node.attrs.suggestionId as string | null | undefined;
+      if (suggestionId === markId) {
+        from = from === null ? pos : Math.min(from, pos);
+        to = to === null ? pos + node.nodeSize : Math.max(to, pos + node.nodeSize);
+      }
+      return true;
+    }
     if (!node.isText || !node.marks?.length) return;
     const len = node.text?.length ?? 0;
     for (const mark of node.marks) {
@@ -232,6 +251,10 @@ export function MarginGutter({ onSectionOverflow }: Props) {
   const { report, workspaceMode, currentUserId } = useReportData();
   const evaluatableSections = useMemo(
     () => evaluatableSectionKeys(report.documentType),
+    [report.documentType]
+  );
+  const suggestionCardSections = useMemo(
+    () => suggestionCardSectionKeys(report.documentType),
     [report.documentType]
   );
   const {
@@ -386,7 +409,7 @@ export function MarginGutter({ onSectionOverflow }: Props) {
     //    fields still center. During a queue bridge, park at the previous
     //    card's Y; scroll clamping (below) keeps "Go to next" in the
     //    scrollport until the user jumps (this section or another) or dismisses.
-    for (const section of evaluatableSections) {
+    for (const section of suggestionCardSections) {
       const active = gutterSuggestionCommentForSection(section);
       if (!active) continue;
 
@@ -466,6 +489,7 @@ export function MarginGutter({ onSectionOverflow }: Props) {
     layoutVersion,
     canComment,
     evaluatableSections,
+    suggestionCardSections,
   ]);
 
   // Keep a parked queue-bridge card inside the scrollport. Other gutter
@@ -544,7 +568,7 @@ export function MarginGutter({ onSectionOverflow }: Props) {
     const containerTop = container.getBoundingClientRect().top;
 
     const overflows: Record<string, number> = {};
-    for (const section of evaluatableSections) {
+    for (const section of suggestionCardSections) {
       const sectionEl = document.getElementById(section);
       if (!sectionEl) continue;
       const cardsInSection = packed.filter((c) => c.section === section);
@@ -582,7 +606,7 @@ export function MarginGutter({ onSectionOverflow }: Props) {
     lastOverflowRef.current = overflows;
 
     onSectionOverflow(overflows as Record<SectionType, number>);
-  }, [packed, cardHeights, onSectionOverflow, evaluatableSections]);
+  }, [packed, cardHeights, onSectionOverflow, suggestionCardSections]);
 
   // Measure card heights once they render so the packer knows actual sizes.
   // Depends on anchors only — not packed (packed changes when heights update).

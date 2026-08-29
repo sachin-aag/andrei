@@ -11,7 +11,7 @@ import {
 type Props = {
   label: string;
   controlsId?: string;
-  /** `start` = handle on the panel's left edge (chat). `end` = right edge (documents). */
+  /** `start` = handle on the panel's left edge (chat, or the Agent document column). `end` = right edge (documents). */
   edge: "start" | "end";
   value: number;
   min: number;

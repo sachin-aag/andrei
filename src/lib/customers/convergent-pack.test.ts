@@ -6,10 +6,11 @@ import {
   CONVERGENT_PROMPT_VERSION,
   DEMO_PACK,
   MJ_PACK,
+  isDocumentChatPlotMeasurementsEnabled,
   isDocumentTypeEnabled,
 } from "./packs";
 import { buildDesignVerificationDefinition } from "@/lib/document-types/design-verification";
-import { engineerReportsSubtitle } from "@/lib/document-types";
+import { engineerReportsSubtitle, documentTypeShortLabel } from "@/lib/document-types";
 import {
   CONVERGENT_DV_SECTION_KEYS,
   CONVERGENT_DV_SECTION_LABELS,
@@ -23,11 +24,17 @@ import {
 } from "@/lib/document-types/design-verification/sections";
 
 describe("Convergent customer pack", () => {
-  it("enables only design verification", () => {
-    expect(CONVERGENT_PACK.enabledDocumentTypes).toEqual(["design_verification"]);
+  it("enables both design verification types and no investigation report", () => {
+    expect(CONVERGENT_PACK.enabledDocumentTypes).toEqual([
+      "design_verification",
+      "mechanical_design_verification",
+    ]);
     expect(isDocumentTypeEnabled("design_verification", CONVERGENT_PACK)).toBe(
       true
     );
+    expect(
+      isDocumentTypeEnabled("mechanical_design_verification", CONVERGENT_PACK)
+    ).toBe(true);
     expect(isDocumentTypeEnabled("investigation_report", CONVERGENT_PACK)).toBe(
       false
     );
@@ -38,17 +45,34 @@ describe("Convergent customer pack", () => {
     expect(CONVERGENT_PACK.expertReviewEnabled).toBe(true);
     expect(DEMO_PACK.expertReviewEnabled).toBe(false);
     expect(MJ_PACK.expertReviewEnabled).toBe(false);
+    expect(CONVERGENT_PACK.statisticalAnalysisEnabled).toBe(true);
+    expect(DEMO_PACK.statisticalAnalysisEnabled).toBe(true);
+    expect(MJ_PACK.statisticalAnalysisEnabled).toBe(true);
+    expect(isDocumentChatPlotMeasurementsEnabled(CONVERGENT_PACK)).toBe(false);
+    expect(isDocumentChatPlotMeasurementsEnabled(DEMO_PACK)).toBe(true);
+    expect(isDocumentChatPlotMeasurementsEnabled(MJ_PACK)).toBe(true);
     expect(engineerReportsSubtitle([{ label: "Design Verification Report" }])).toBe(
       "Create and manage design verification reports."
     );
+    expect(documentTypeShortLabel("design_verification")).toBe(
+      "Design Verification"
+    );
+    expect(documentTypeShortLabel("mechanical_design_verification")).toBe(
+      "Mechanical DV"
+    );
+    expect(documentTypeShortLabel("investigation_report")).toBe("Investigation");
   });
 
   it("does not change demo or MJ enabled types", () => {
     expect(DEMO_PACK.enabledDocumentTypes).toEqual([
       "investigation_report",
       "design_verification",
+      "generic_document",
     ]);
-    expect(MJ_PACK.enabledDocumentTypes).toEqual(["investigation_report"]);
+    expect(MJ_PACK.enabledDocumentTypes).toEqual([
+      "investigation_report",
+      "quality_risk_assessment",
+    ]);
   });
 
   it("uses convergent DV sections, table headers, and prompt version", () => {

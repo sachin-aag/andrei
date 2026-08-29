@@ -85,7 +85,7 @@ export async function PATCH(
         return NextResponse.json(
           {
             error: taken.deactivatedAt
-              ? "This email belongs to a retired user and cannot be reused."
+              ? "This email belongs to a deactivated user. Reactivate that account instead of reassigning the email."
               : "A user with this email already exists.",
           },
           { status: 409 }

@@ -13,6 +13,11 @@ import {
   isReviewGutterVisible,
   mainMinWidth,
   parseStoredWorkspaceLayout,
+  PREVIEW_DEFAULT_PX,
+  previewWidthBounds,
+  REVIEW_GUTTER_GRID_COLS,
+  REVIEW_GUTTER_MAX_PX,
+  REVIEW_GUTTER_MIN_PX,
   resetWorkspaceLayoutStore,
   serializeStoredWorkspaceLayout,
   updateWorkspaceLayout,
@@ -23,7 +28,7 @@ describe("chatWidthBounds", () => {
   it("keeps chat usable on a 1280px laptop", () => {
     const { min, max } = chatWidthBounds(1280);
     expect(min).toBe(280);
-    expect(max).toBe(538);
+    expect(max).toBe(704);
     expect(CHAT_DEFAULT_PX).toBeGreaterThanOrEqual(min);
     expect(CHAT_DEFAULT_PX).toBeLessThanOrEqual(max);
   });
@@ -33,14 +38,29 @@ describe("chatWidthBounds", () => {
     const desktop = chatWidthBounds(1920);
     expect(desktop.min).toBeGreaterThan(laptop.min);
     expect(desktop.max).toBeGreaterThan(laptop.max);
-    expect(desktop.max).toBe(720);
+    expect(desktop.max).toBe(960);
     expect(desktop.min).toBe(360);
   });
 
   it("caps max on a short 1024px window so the document still fits", () => {
     const { min, max } = chatWidthBounds(1024);
     expect(min).toBe(280);
-    expect(max).toBe(430);
+    expect(max).toBe(563);
+  });
+});
+
+describe("previewWidthBounds", () => {
+  it("keeps the work-product column usable on a 1280px laptop", () => {
+    const { min, max } = previewWidthBounds(1280);
+    expect(min).toBe(320);
+    expect(max).toBe(704);
+    expect(PREVIEW_DEFAULT_PX).toBeGreaterThanOrEqual(min);
+    expect(PREVIEW_DEFAULT_PX).toBeLessThanOrEqual(max);
+  });
+
+  it("allows a 960px work-product column on a 1920px display", () => {
+    expect(previewWidthBounds(1920).max).toBe(960);
+    expect(previewWidthBounds(1920).min).toBe(400);
   });
 });
 
@@ -59,15 +79,26 @@ describe("docsWidthBounds", () => {
 });
 
 describe("isReviewGutterVisible", () => {
-  it("shows the review margin only while the assistant is collapsed", () => {
-    expect(isReviewGutterVisible(true)).toBe(true);
-    expect(isReviewGutterVisible(false)).toBe(false);
+  it("hides the review margin by default until comments are enabled", () => {
+    expect(isReviewGutterVisible(false, true)).toBe(false);
+    expect(isReviewGutterVisible(false, false)).toBe(false);
+    expect(isReviewGutterVisible(true, true)).toBe(true);
+    expect(isReviewGutterVisible(true, false)).toBe(false);
   });
 
   it("hides the review margin while a PDF or Word document is open", () => {
-    expect(isReviewGutterVisible(true, true)).toBe(false);
-    expect(isReviewGutterVisible(false, true)).toBe(false);
-    expect(isReviewGutterVisible(true, false)).toBe(true);
+    expect(isReviewGutterVisible(true, true, true)).toBe(false);
+    expect(isReviewGutterVisible(true, false, true)).toBe(false);
+    expect(isReviewGutterVisible(true, true, false)).toBe(true);
+  });
+});
+
+describe("review gutter width", () => {
+  it("keeps the margin column narrower than the old 200–360px range", () => {
+    expect(REVIEW_GUTTER_MIN_PX).toBeLessThan(200);
+    expect(REVIEW_GUTTER_MAX_PX).toBeLessThan(360);
+    expect(REVIEW_GUTTER_GRID_COLS).toContain(`${REVIEW_GUTTER_MIN_PX}px`);
+    expect(REVIEW_GUTTER_GRID_COLS).toContain(`${REVIEW_GUTTER_MAX_PX}px`);
   });
 });
 
@@ -77,7 +108,7 @@ describe("mainMinWidth", () => {
   });
 
   it("asks for more document room on a wide display", () => {
-    expect(mainMinWidth(1920)).toBe(538);
+    expect(mainMinWidth(1920)).toBe(420);
   });
 });
 
@@ -152,17 +183,17 @@ describe("allocateWorkspaceColumns", () => {
 
   it("will not grow chat past the viewport max", () => {
     const allocated = allocateWorkspaceColumns(
-      laptop.container,
-      laptop.viewport,
+      1800,
+      1920,
       {
-        chatWidth: 900,
-        docsWidth: 300,
+        chatWidth: 2000,
+        docsWidth: 200,
         chatCollapsed: false,
         docsCollapsed: false,
       },
       "chat"
     );
-    expect(allocated.chatWidth).toBe(chatWidthBounds(laptop.viewport).max);
+    expect(allocated.chatWidth).toBe(chatWidthBounds(1920).max);
   });
 
   it("will not shrink chat below the viewport min", () => {
@@ -248,6 +279,90 @@ describe("allocateWorkspaceColumns", () => {
     expect(restored.chatWidth).toBe(400);
     expect(restored.docsWidth).toBe(300);
   });
+
+  it("sizes the work-product column and leaves leftover to chat in agent chrome", () => {
+    const allocated = allocateWorkspaceColumns(
+      laptop.container,
+      laptop.viewport,
+      {
+        chrome: "agent",
+        chatWidth: 400,
+        docsWidth: 300,
+        previewWidth: 480,
+        chatCollapsed: false,
+        docsCollapsed: false,
+      }
+    );
+    expect(allocated.docsWidth).toBe(300);
+    expect(allocated.previewWidth).toBe(480);
+    expect(allocated.chatWidth).toBe(laptop.container - 300 - 480);
+    expect(allocated.mainWidth).toBe(480);
+  });
+
+  it("clamps the work-product column to preview bounds in agent chrome", () => {
+    const allocated = allocateWorkspaceColumns(
+      laptop.container,
+      laptop.viewport,
+      {
+        chrome: "agent",
+        chatWidth: 400,
+        docsWidth: 300,
+        previewWidth: 2000,
+        chatCollapsed: false,
+        docsCollapsed: false,
+      },
+      "preview"
+    );
+    expect(allocated.previewWidth).toBeLessThanOrEqual(
+      previewWidthBounds(laptop.viewport).max
+    );
+    expect(allocated.previewWidth).toBeGreaterThanOrEqual(
+      previewWidthBounds(laptop.viewport).min
+    );
+    expect(allocated.chatWidth).toBeGreaterThanOrEqual(
+      chatWidthBounds(laptop.viewport).min
+    );
+  });
+
+  it("uses a collapsed work-product rail in agent chrome when preview is collapsed", () => {
+    const allocated = allocateWorkspaceColumns(
+      laptop.container,
+      laptop.viewport,
+      {
+        chrome: "agent",
+        chatWidth: 400,
+        docsWidth: 300,
+        previewWidth: 480,
+        chatCollapsed: false,
+        docsCollapsed: false,
+        previewCollapsed: true,
+      }
+    );
+    expect(allocated.previewWidth).toBe(COLLAPSED_RAIL_PX);
+    expect(allocated.chatWidth).toBe(laptop.container - 300 - COLLAPSED_RAIL_PX);
+    expect(allocated.mainWidth).toBe(COLLAPSED_RAIL_PX);
+  });
+
+  it("protects the work-product column when it is the panel being dragged", () => {
+    const allocated = allocateWorkspaceColumns(
+      1000,
+      laptop.viewport,
+      {
+        chrome: "agent",
+        chatWidth: 400,
+        docsWidth: 300,
+        previewWidth: 480,
+        chatCollapsed: false,
+        docsCollapsed: false,
+      },
+      "preview"
+    );
+    expect(allocated.previewWidth).toBe(480);
+    expect(allocated.docsWidth).toBeLessThan(300);
+    expect(allocated.chatWidth).toBeGreaterThanOrEqual(
+      chatWidthBounds(laptop.viewport).min
+    );
+  });
 });
 
 describe("session workspace layout", () => {
@@ -273,7 +388,11 @@ describe("session workspace layout", () => {
   it("ignores leftover profile storage and starts at defaults", () => {
     localStorage.setItem(
       WORKSPACE_LAYOUT_STORAGE_KEY,
-      serializeStoredWorkspaceLayout({ chatWidth: 720, docsWidth: 480 })
+      serializeStoredWorkspaceLayout({
+        chatWidth: 720,
+        docsWidth: 480,
+        previewWidth: 480,
+      })
     );
     bindWorkspaceLayoutToReport("report-a");
     expect(getWorkspaceLayoutSnapshot()).toEqual(defaultWorkspaceLayout());
@@ -312,10 +431,12 @@ describe("stored workspace layout", () => {
     const raw = serializeStoredWorkspaceLayout({
       chatWidth: 512.4,
       docsWidth: 280.9,
+      previewWidth: 480.2,
     });
     expect(parseStoredWorkspaceLayout(raw)).toEqual({
       chatWidth: 512,
       docsWidth: 281,
+      previewWidth: 480,
     });
   });
 
@@ -333,5 +454,17 @@ describe("stored workspace layout", () => {
         JSON.stringify({ chatWidth: Number.NaN, docsWidth: 300 })
       )
     ).toBeNull();
+  });
+
+  it("fills previewWidth when older stored JSON omitted it", () => {
+    expect(
+      parseStoredWorkspaceLayout(
+        JSON.stringify({ chatWidth: 400, docsWidth: 300 })
+      )
+    ).toEqual({
+      chatWidth: 400,
+      docsWidth: 300,
+      previewWidth: PREVIEW_DEFAULT_PX,
+    });
   });
 });

@@ -33,6 +33,14 @@ describe("normalizeBracketPlaceholdersInPlainText", () => {
     ).toBe("saw [particulate, e.g., fibers: <to be filled>] here");
   });
 
+  it("does not turn markdown image alts into placeholders", () => {
+    expect(
+      normalizeBracketPlaceholdersInPlainText(
+        "![PXL_20260725_081416927](narrative#1)"
+      )
+    ).toBe("![PXL_20260725_081416927](narrative#1)");
+  });
+
   it("compacts long AI guidance labels into canonical form under the limit", () => {
     const out = normalizeBracketPlaceholdersInPlainText(
       "system is [Name/ID of Monitoring System or Refrigerator Unit]."
@@ -141,5 +149,19 @@ describe("normalizeBracketPlaceholdersInPlainText", () => {
         "see [Appendix B DV Report 790-00134R(RevU)] and [Appendix B]."
       )
     ).toBe("see [Appendix B DV Report 790-00134R(RevU)] and [Appendix B].");
+    expect(
+      normalizeBracketPlaceholdersInPlainText(
+        "between 15 June 2023 and 19 July 2023 [790-00134R_Rev_U_Solea_Model_3_Software_Design_Verification_Test_Report_(Report_Only).docx, p. 1]."
+      )
+    ).toBe(
+      "between 15 June 2023 and 19 July 2023 [790-00134R_Rev_U_Solea_Model_3_Software_Design_Verification_Test_Report_(Report_Only).docx, p. 1]."
+    );
+    expect(
+      normalizeBracketPlaceholdersInPlainText(
+        "[790-00134R_Rev_U_Solea_Model_3_Software_Design_Verification_Test_Report_(Report_Only)]"
+      )
+    ).toBe(
+      "[790-00134R_Rev_U_Solea_Model_3_Software_Design_Verification_Test_Report_(Report_Only)]"
+    );
   });
 });

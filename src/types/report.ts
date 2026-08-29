@@ -10,6 +10,10 @@ import type {
   DesignVerificationMetadata,
   ReportMetadata,
 } from "@/db/schema";
+import {
+  QRA_DEFAULT_METADATA,
+  type QraMetadata,
+} from "@/lib/document-types/qra/sections";
 
 export type ReportRecord = {
   id: string;
@@ -23,6 +27,8 @@ export type ReportRecord = {
   assignedManagerIds?: string[];
   createdAt: string;
   updatedAt: string;
+  /** Present when a source .docx was uploaded at create time. */
+  sourceDocxFilename?: string | null;
 };
 
 /** Convenience accessors for investigation_report metadata. */
@@ -65,6 +71,21 @@ export function designVerificationMetadata(report: {
   return {
     revision: meta.revision ?? "",
     productName: meta.productName ?? "",
+  };
+}
+
+export function qraMetadata(report: { metadata: ReportMetadata }): QraMetadata {
+  const meta = report.metadata as Partial<QraMetadata>;
+  return {
+    revision: meta.revision ?? QRA_DEFAULT_METADATA.revision,
+    department: meta.department ?? "",
+    title: meta.title ?? "",
+    productName: meta.productName ?? "",
+    sourceDocumentName: meta.sourceDocumentName ?? "",
+    sourceDocumentNo: meta.sourceDocumentNo ?? "",
+    idNo: meta.idNo ?? "",
+    preApproval: meta.preApproval ?? "",
+    postApproval: meta.postApproval ?? "",
   };
 }
 

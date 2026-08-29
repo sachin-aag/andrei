@@ -11,11 +11,17 @@ export const OCR_QUALITY_PAGES = [1, 4, 31, 37, 59] as const;
 export const REQUIREMENT_ID_RECALL_PAGE = 31;
 
 /**
- * Solea-style IDs including dotted children (`SW-SST-5.1.1`). Requires a
+ * Solea-style IDs including dotted children (`SW-SST-5.1.1`). The leading
+ * family segment may mix letters and digits (`M3-SYS-FN-037`) but must start
+ * with a letter, so document numbers such as `825-00024` stay out. Requires a
  * numeric terminal segment so `PASS-FAIL` / `REV-U` / bare `SW-SST-` drop out.
+ *
+ * The leading segment used to be `[A-Z]{2,}`, which could not match `M3` — so
+ * `M3-SYS-FN-037` matched from the second segment and came back as
+ * `SYS-FN-037`, silently losing its prefix.
  */
 const REQUIREMENT_ID_RE =
-  /\b[A-Z]{2,}(?:-[A-Z0-9]+)*-\d+(?:\.\d+)*\b/g;
+  /\b[A-Z][A-Z0-9]+(?:-[A-Z0-9]+)*-\d+(?:\.\d+)*\b/g;
 
 const REQUIREMENT_ID_DENY_PREFIX =
   /^(IEC|ISO|CFR|ASTM|ANSI|UL|EN|TABLE|FIG|PAGE|REV)-/i;
@@ -82,6 +88,31 @@ export function requirementIds(text: string): string[] {
     seen.add(id);
   }
   return [...seen];
+}
+
+const SEGMENT_HAS_LETTER = /[A-Z]/i;
+
+/**
+ * Whether an identifier is shaped like a requirement — a candidate row of a
+ * Requirements Verified matrix — rather than a controlled part number, system
+ * configuration, change order, or manufacturing serial.
+ *
+ * A requirement carries at least three dash-separated segments and every
+ * segment before the terminal number names a family: `SW-SST-5.1.1`,
+ * `M3-SYS-FN-037`. Two-segment identifiers (`SUB-00448`, `TOP-00017`,
+ * `DCO-02058`) and serials whose middle segment is numeric (`SEN-0724-10001`)
+ * are not. `requirementIds` keeps all of those deliberately — retrieval and
+ * page outlines want them — so this narrower question is asked separately
+ * rather than by widening the deny list.
+ */
+export function isRequirementRowId(value: string): boolean {
+  const id = value.trim();
+  if (!isRequirementId(id)) return false;
+  const segments = id.split("-");
+  if (segments.length < 3) return false;
+  return segments
+    .slice(0, -1)
+    .every((segment) => SEGMENT_HAS_LETTER.test(segment));
 }
 
 export function idRecall(ocrText: string, geminiText: string): number | null {

@@ -68,6 +68,40 @@ describe("rich text helpers", () => {
     ]);
   });
 
+  it("repairs literal <br> text inside table cells on normalize", () => {
+    const doc = normalizeRichField({
+      type: "doc",
+      content: [
+        {
+          type: "table",
+          content: [
+            {
+              type: "tableRow",
+              content: [
+                {
+                  type: "tableCell",
+                  content: [
+                    {
+                      type: "paragraph",
+                      content: [{ type: "text", text: "Line one<br>Line two" }],
+                    },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    const inline =
+      doc.content![0]!.content![0]!.content![0]!.content![0]!.content;
+    expect(inline).toEqual([
+      { type: "text", text: "Line one" },
+      { type: "hardBreak" },
+      { type: "text", text: "Line two" },
+    ]);
+  });
+
   it("converts legacy plain text into paragraph nodes", () => {
     expect(legacyStringToDoc("Line one\nLine two")).toEqual({
       type: "doc",

@@ -23,7 +23,7 @@ import {
   STATUS_COLOR,
   STATUS_TEXT_COLOR,
   effectiveStatus,
-  evaluatableSectionKeys,
+  suggestionCardSectionKeys,
 } from "@/lib/ai/criteria-view";
 import {
   countOpenAiSuggestions,
@@ -34,7 +34,12 @@ import {
   type ParsedAiFixPayload,
   type ParsedAiRedraftPayload,
 } from "@/lib/ai/suggestion-gating";
-import { resolveSection } from "@/lib/document-types";
+import {
+  getDocumentType,
+  resolveSection,
+  suggestionApplyModeFor,
+} from "@/lib/document-types";
+import { formatChartProvenance } from "@/lib/charts/chart-spec";
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 import { splitPlainTextWithPlaceholders } from "@/lib/placeholders/plain-text-segments";
 import { inlineMarkdownToTextNodes } from "@/lib/tiptap/markdown-to-doc";
@@ -229,7 +234,11 @@ function SuggestionCardFace({
             ? "Full draft"
             : card.kind === "fix" && card.payload.tableOperation
               ? "Table edit"
-              : "Suggestion"}{" "}
+              : card.kind === "fix" && card.payload.removeImage
+              ? "Remove figure"
+              : card.kind === "fix" && card.payload.insertImage
+                ? "Figure"
+                : "Suggestion"}{" "}
           {queueIndex} of {queueTotal}
         </span>
         {linkedEval && (
@@ -296,8 +305,57 @@ function SuggestionCardFace({
         </div>
       ) : null}
 
+      {card.kind === "fix" && card.payload.insertImage ? (
+        <div
+          className={cn(
+            "space-y-1.5 transition-opacity duration-300",
+            phase !== "steady" && "opacity-70"
+          )}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element -- suggestion preview of a data URL */}
+          <img
+            src={card.payload.insertImage.src}
+            alt={card.payload.insertImage.alt ?? ""}
+            className="max-h-32 w-auto max-w-full rounded-sm border border-emerald-700/30"
+          />
+          {card.payload.insertImage.alt ? (
+            <p className="text-[11px] text-[var(--muted-foreground)]">
+              {card.payload.insertImage.alt}
+            </p>
+          ) : null}
+          {card.payload.insertImage.chartSpec ? (
+            <p className="text-[11px] text-[var(--muted-foreground)]">
+              {formatChartProvenance(card.payload.insertImage.chartSpec)}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {card.kind === "fix" && card.payload.removeImage ? (
+        <div
+          className={cn(
+            "space-y-1.5 transition-opacity duration-300",
+            phase !== "steady" && "opacity-70"
+          )}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element -- suggestion preview of a data URL */}
+          <img
+            src={card.payload.removeImage.src}
+            alt={card.payload.removeImage.alt ?? ""}
+            className="max-h-32 w-auto max-w-full rounded-sm border border-rose-700/30 opacity-60"
+          />
+          {card.payload.removeImage.alt ? (
+            <p className="text-[11px] text-[var(--muted-foreground)]">
+              {card.payload.removeImage.alt}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
       {card.kind === "fix" &&
       !card.payload.tableOperation &&
+      !card.payload.insertImage &&
+      !card.payload.removeImage &&
       (card.payload.deleteText ||
         card.payload.insertText ||
         card.payload.second?.insertText) ? (
@@ -607,7 +665,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
   const enterRef = useRef<HTMLDivElement>(null);
 
   const sectionOrder = useMemo(
-    () => evaluatableSectionKeys(report.documentType),
+    () => suggestionCardSectionKeys(report.documentType),
     [report.documentType]
   );
 
@@ -801,6 +859,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
         section,
         comment: snapshot.comment,
         sectionContent: sections[section] as Record<string, unknown>,
+        applyMode: suggestionApplyModeFor(getDocumentType(report.documentType)),
       });
       if (!result.ok) {
         if (result.reason === "status_failed") {
@@ -869,6 +928,7 @@ export function SectionSuggestionCard({ section }: { section: SectionType }) {
     evaluations,
     sectionOrder,
     report.id,
+    report.documentType,
     replaceSection,
     animateQueueTransition,
     setComments,

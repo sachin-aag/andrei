@@ -29,10 +29,19 @@ vi.mock("@/lib/reports/ensure-hidden-expert-reviewer", () => ({
   ensureHiddenExpertReviewer: vi.fn(),
 }));
 
+vi.mock("@/lib/reports/persist-source-docx", () => ({
+  persistReportSourceDocx: vi.fn(),
+  sourceDocxFilenameFor: vi.fn().mockResolvedValue(null),
+}));
+
+vi.mock("@/lib/document-revisions/snapshot", () => ({
+  manualRevisionSummary: vi.fn(() => "Updated document details"),
+  tryRecordManualDocumentRevision: vi.fn().mockResolvedValue(null),
+}));
+
 import { db } from "@/db";
 import { getCurrentUser } from "@/lib/auth/session";
 import { GET, PATCH } from "./route";
-import { assignedManagerIdsWithHiddenExpert } from "@/lib/reports/ensure-hidden-expert-reviewer";
 
 const engineer = {
   id: "engineer-1",

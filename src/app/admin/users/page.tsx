@@ -13,7 +13,10 @@ export default async function AdminUsersPage() {
   if (!user) redirect("/login");
   if (user.role !== "admin") redirect("/");
 
-  const [users, policy] = await Promise.all([listAdminUsers(), getPasswordPolicy()]);
+  const [users, policy] = await Promise.all([
+    listAdminUsers(),
+    getPasswordPolicy(),
+  ]);
   const shellUsers = users.map(({ id, name, email, role, title }) => ({
     id,
     name,

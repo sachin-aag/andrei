@@ -1,0 +1,63 @@
+Standard Operating Procedure Unit: Drug Product
+
+M.J. Biopharm Private Limited ensy
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance | SOP No.: SOP/DP/QA/010 | Revision No: R04 | Page 15 of 51
+
+So based on the above evaluation RPN rating as:
+
+Table No. 06
+| Overall Risk RPN Value Risk Treatment
+
+f |
+
+| Low 1-8  |Mitigation Plan not required or risk is at acceptable level.
+[— lanean :
+Medium | 9-24 | Mitigation plan shall be done to reduce the risk to an acceptable
+| |level |
+| High 95-125 |Identify and implement the mitigation plan before proceeding to |
+| ithe activity to reduce the risk ranking within acceptable range.
+74 Risk Control — Mitigation plan, Risk reduction or Acceptance
+
+TAA] Risk control includes decision making to reduce and/or accept risks. The purpose of risk control is
+to reduce the risk to an acceptable level.
+
+7.4.2 Risk control might focus on the following questions:
+
+7.4.2.1 Is the risk above an acceptable level?
+
+7.4.2.2 | What can be done to reduce or eliminate risks?
+
+7.4.2.3 What is the appropriate balance among benefits, risks and resources?
+
+7.4.2.4 Are new risks introduced as a result of the identified risks being controlled?
+
+74.3 The Mitigation plan elaborates the current control and the actions to reduce the overall risk to an
+acceptable levels or elimination.
+
+TAA For cases where overall risk is “Low”, mitigation plan is not required and the risk assessment shall
+
+be closed.
+
+7.4.5 The mitigation plan is mandatory where overall risk is “Medium” and "High", controls relating to
+the risk should be implemented as soon as practically possible.
+
+7.4.6 — Mitigation plan for medium category risk shall be done to reduce the risk to an acceptable level.
+
+7.4.7 Mitigation plan for high category risk shall be Identify and implement first to reduce the risk to an
+acceptable level, before proceeding to the activity.
+
+74.8 The mitigation plan shall briefly explain the recommended action to be taken; responsible person
+shall be implementing the controls mentioned in the risk mitigation plan and the expected target
+date for completion.
+
+Prepared By (User Department) Sign/Date Reviewed By (Quality Assurance) Sign/Date
+L49) 06/26 ea
+29) 34106 |n6
+Confidential and Proprietary SOP/DP/QA/001/F01-R02
+
+MASTER COPY
+

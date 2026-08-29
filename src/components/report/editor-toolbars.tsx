@@ -78,6 +78,27 @@ export function TextFormatToolbar({ editor }: { editor: Editor }) {
   );
 }
 
+export function HeadingToolbar({ editor }: { editor: Editor }) {
+  return (
+    <div className="flex items-center gap-0.5">
+      {([1, 2, 3] as const).map((level) => (
+        <Button
+          key={level}
+          type="button"
+          variant={editor.isActive("heading", { level }) ? "secondary" : "ghost"}
+          size="sm"
+          className="h-6 w-7 px-0 text-[10px] font-semibold"
+          onClick={() => editor.chain().focus().toggleHeading({ level }).run()}
+          title={`Heading ${level}`}
+          aria-label={`Heading ${level}`}
+        >
+          H{level}
+        </Button>
+      ))}
+    </div>
+  );
+}
+
 function activeTextColor(editor: Editor): string | undefined {
   const color = editor.getAttributes("textStyle").color;
   return typeof color === "string" && color.trim() ? color : undefined;

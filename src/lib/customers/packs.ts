@@ -51,8 +51,10 @@ export type CustomerPack = {
    * When true, document citations are numbered at the claim and parked at
    * the end of each section field. New edits that add a source citation keep
    * a `[n]` marker beside the claim and append `n. [filename, p. N]` under
-   * Citations:. Off for demo/MJ. Also enables the Export without citations
-   * DOCX option (trailing citation blocks and matching markers are dropped).
+   * Citations:. On for Convergent; off for demo/MJ. Generic (blank)
+   * documents enable the same mode via the document-type flag. Also
+   * enables the Export without citations DOCX option (trailing citation
+   * blocks and matching markers are dropped).
    */
   citationsAtEndOfSection: boolean;
   /**
@@ -60,6 +62,11 @@ export type CustomerPack = {
    * (email + edit link). The hidden reviewer is still assigned on every pack.
    */
   expertReviewEnabled: boolean;
+  /**
+   * Report Analytics tab (worksheet, sixpack, measurement scatter).
+   * On for demo, MJ, and Convergent.
+   */
+  statisticalAnalysisEnabled: boolean;
   branding: CustomerBranding;
 };
 
@@ -138,7 +145,11 @@ const MJ_BRANDING: CustomerBranding = {
 /** Demo pack is the default engine overlay (Andrei branding). */
 export const DEMO_PACK: CustomerPack = {
   id: "demo",
-  enabledDocumentTypes: ["investigation_report", "design_verification"],
+  enabledDocumentTypes: [
+    "investigation_report",
+    "design_verification",
+    "generic_document",
+  ],
   hiddenInvestigationSections: [],
   investigationTemplateFile: "investigation-report-template.docx",
   promptVersion: PROMPT_VERSION,
@@ -148,14 +159,17 @@ export const DEMO_PACK: CustomerPack = {
   wordImportEnabled: false,
   citationsAtEndOfSection: false,
   expertReviewEnabled: false,
+  statisticalAnalysisEnabled: true,
   branding: ANDREI_BRANDING,
 };
 
 export const CONVERGENT_PROMPT_VERSION = "convergent-dv-v7";
+export const MECHANICAL_PROMPT_VERSION = "convergent-mechanical-dv-v1";
+export const QRA_PROMPT_VERSION = "mj-qra-sop-010-r04-v1";
 
 export const CONVERGENT_PACK: CustomerPack = {
   id: "convergent",
-  enabledDocumentTypes: ["design_verification"],
+  enabledDocumentTypes: ["design_verification", "mechanical_design_verification"],
   hiddenInvestigationSections: [],
   investigationTemplateFile: "investigation-report-template.docx",
   promptVersion: CONVERGENT_PROMPT_VERSION,
@@ -165,12 +179,13 @@ export const CONVERGENT_PACK: CustomerPack = {
   wordImportEnabled: false,
   citationsAtEndOfSection: true,
   expertReviewEnabled: true,
+  statisticalAnalysisEnabled: true,
   branding: CONVERGENT_BRANDING,
 };
 
 export const MJ_PACK: CustomerPack = {
   id: "mj",
-  enabledDocumentTypes: ["investigation_report"],
+  enabledDocumentTypes: ["investigation_report", "quality_risk_assessment"],
   hiddenInvestigationSections: ["conclusion"],
   investigationTemplateFile: "mj-investigation-report-template.docx",
   promptVersion: MJ_PROMPT_VERSION,
@@ -180,6 +195,7 @@ export const MJ_PACK: CustomerPack = {
   wordImportEnabled: true,
   citationsAtEndOfSection: false,
   expertReviewEnabled: false,
+  statisticalAnalysisEnabled: true,
   branding: MJ_BRANDING,
 };
 
@@ -203,4 +219,20 @@ export function isDocumentTypeEnabled(
   pack: CustomerPack = getCustomerPack()
 ): boolean {
   return pack.enabledDocumentTypes.includes(type);
+}
+
+export function isStatisticalAnalysisEnabled(
+  pack: CustomerPack = getCustomerPack()
+): boolean {
+  return pack.statisticalAnalysisEnabled;
+}
+
+/**
+ * Document (report-body) chat may propose a measurement scatter as a
+ * reviewable figure. Convergent plots live in Analytics instead.
+ */
+export function isDocumentChatPlotMeasurementsEnabled(
+  pack: CustomerPack = getCustomerPack()
+): boolean {
+  return pack.id !== "convergent";
 }

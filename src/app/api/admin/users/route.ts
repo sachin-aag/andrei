@@ -88,7 +88,7 @@ export async function POST(req: Request) {
     return NextResponse.json(
       {
         error: existingEmail.deactivatedAt
-          ? "This email belongs to a retired user and cannot be reused."
+          ? "This email belongs to a deactivated user. Reactivate that account from the user list instead of creating a new one."
           : "A user with this email already exists.",
       },
       { status: 409 }

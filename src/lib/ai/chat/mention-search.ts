@@ -1,12 +1,11 @@
-import type { SectionType } from "@/db/schema";
 import type { ChatMentionType } from "@/lib/ai/chat/mentions";
 
 /** Max characters between `@` and the caret before the menu gives up. */
 const MAX_MENTION_QUERY_CHARS = 60;
 
 export type MentionCandidate = {
-  type: ChatMentionType;
-  /** Attachment id, or section type for section mentions. */
+  type: ChatMentionType | string;
+  /** Attachment id, section type, sheet id, or analysis id. */
   id: string;
   /** Filename or section name — inserted into the text for the engineer. */
   label: string;
@@ -76,13 +75,34 @@ export function applyMentionToInput(
   return { text: next, caret: range.start + inserted.length };
 }
 
-export function mentionKey(type: ChatMentionType, id: string): string {
+export function mentionKey(type: string, id: string): string {
   return `${type}:${id}`;
 }
 
-export function sectionMentionCandidate(
-  section: SectionType,
-  label: string
-): MentionCandidate {
-  return { type: "section", id: section, label };
+/** Refresh chip labels when the underlying sheet/plot/document was renamed. */
+export function syncMentionCandidateLabels(
+  mentions: MentionCandidate[],
+  candidates: MentionCandidate[]
+): MentionCandidate[] {
+  if (mentions.length === 0) return mentions;
+
+  const byKey = new Map(
+    candidates.map((candidate) => [
+      mentionKey(candidate.type, candidate.id),
+      candidate,
+    ])
+  );
+  let changed = false;
+  const next = mentions.map((mention) => {
+    const fresh = byKey.get(mentionKey(mention.type, mention.id));
+    if (
+      !fresh ||
+      (fresh.label === mention.label && fresh.sublabel === mention.sublabel)
+    ) {
+      return mention;
+    }
+    changed = true;
+    return { ...mention, label: fresh.label, sublabel: fresh.sublabel };
+  });
+  return changed ? next : mentions;
 }

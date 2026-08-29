@@ -215,7 +215,7 @@ Cover only what this PR can break. Map paths to surfaces:
 | Changed area | Tester should exercise |
 |--------------|------------------------|
 | Editor / sections / TipTap | Open both document types if the change is shared; otherwise the type you touched. Edit, auto-save, reload. |
-| Eval / suggestions / Improve AI | Run AI Check or apply/dismiss a suggestion on a draft. |
+| Eval / suggestions | Run AI Check or apply/dismiss a suggestion on a draft. |
 | Chat / retrieval / ingest | Ask a question that needs an attachment or `read_section`; confirm citations or an honest miss. |
 | Review / submit / approve / feedback | Engineer submit + manager approve or send feedback. |
 | Auth / `proxy.ts` / roles | Sign in as the affected role; hit a forbidden path if auth changed. |

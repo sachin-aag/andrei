@@ -1,0 +1,69 @@
+Standard Operating Procedure
+
+Unit: Drug Product
+
+M.J. Biopharm Private Limited Gnsy
+
+Plot No. 18, International Biotech Park, Hinjawadi, Phase II, Pune 411057.
+
+Title: Quality Risk Assessment
+
+Dept.: Quality Assurance
+
+| SOP No.: SOP/DP/QA/010 _| Revision No: R04 _| Page 29 of 51
+
+TABLE OF CONTENTS
+
+Sr. No.
+
+Title Page No.
+
+- Title Page
+
+Table of Contents
+
+A. Pre-Approval
+
+1 Details of Risk Assessment
+
+1.1 Objective
+
+1.2 Scope
+
+1.3 System/ Equipment/ Instrument/ Other (if any) Overview
+
+1.4 Procedure
+
+1.5 Risk Assessment Team Members
+
+1.6 Risk Identification
+
+1.7 Risk Measurement by Failure Mode Effect Analysis
+
+1.8 Risk Assessment Approach
+
+‘2 Risk Identification and evaluation considering current control measures
+3 Risk Communication
+
+3.1 Risk Assessment Summary and Conclusion (Before Implementation)
+4 Mitigation plan and closure
+
+4] New risk identified during execution / residual risk (if any)
+
+42 Periodic review of identified risk’s
+
+43 Risk assessment summary and conclusion (after implementation):
+
+B. Revision History
+
+C. Post-Approval
+
+Prepared By (User Department) Sign/Date Reviewed By (Quality Assurance) Sign/Date
+
+P54 306 Iré
+
+Confidential and Proprietary
+MASTER COPY
+
+SOP/DP/QA/001/F01-R02
+

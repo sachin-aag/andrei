@@ -28,6 +28,10 @@ import {
 } from "@/lib/ai/chat/system-prompt";
 import { buildCriteriaOutline } from "@/lib/ai/chat/criteria-outline";
 import { buildChatTools } from "@/lib/ai/chat/tools";
+import { deriveChatEditPolicy, isWorkspaceChrome } from "@/lib/ai/chat/edit-policy";
+import type { TurnEditItem } from "@/lib/ai/chat/commit-edit";
+import type { WorkspaceChrome } from "@/components/report/workspace-chrome";
+import { snapshotDocumentRevision } from "@/lib/document-revisions/snapshot";
 import {
   CHAT_EXTRACT_GOOGLE_MODEL_ID,
   chatAssistantTurnMetadata,
@@ -40,16 +44,14 @@ import {
   type ChatPace,
 } from "@/lib/ai/chat/pace";
 import { buildStubChatModel } from "@/lib/ai/chat/stub-model";
-import {
-  parseChatSectionScope,
-  primaryFieldForSection,
-  type ChatSectionScope,
-} from "@/lib/ai/chat/fields";
+import { primaryFieldForSection } from "@/lib/ai/chat/fields";
 import { getDocumentType } from "@/lib/document-types";
+import { detectSectionIntentFromText } from "@/lib/ai/chat/section-intent";
 import {
-  detectSectionIntentFromText,
-  detectSectionScopeMismatch,
-} from "@/lib/ai/chat/section-intent";
+  alreadyDraftedGapHints,
+  detectAlreadyDraftedSection,
+  alreadyDraftedReadStep,
+} from "@/lib/ai/chat/already-drafted";
 import {
   createChatSession,
   findChatSession,
@@ -67,6 +69,12 @@ import {
   flushLangfuseTraces,
   langfuseGenerateTextTelemetry,
 } from "@/lib/observability/langfuse";
+import {
+  aiBudgetExceededResponse,
+  assertAiBudgetAvailable,
+  isAiBudgetExceededError,
+  recordAiUsage,
+} from "@/lib/ai/usage";
 import { auditActorFromUser } from "@/lib/audit";
 import { listReadyDocumentsForReport } from "@/lib/attachments/retrieval";
 import { buildAutoEvidence } from "@/lib/ai/chat/auto-evidence";
@@ -81,9 +89,11 @@ import {
   shouldStopChatSteps,
 } from "@/lib/ai/chat/document-review";
 import { sanitizeChatMessagesForModel } from "@/lib/ai/chat/image-parts";
+import { repairChatToolCall } from "@/lib/ai/chat/repair-tool-call";
 import {
   CHAT_ASSISTANT_ERROR_MESSAGE,
   CHAT_SERVER_ABORT_MS,
+  consumeAssistantStreamWithBudget,
   formatChatLlmError,
   isFailedChatFinishReason,
   partsForPersistedAssistantTurn,
@@ -95,6 +105,7 @@ import {
   mentionedSections,
   parseChatMentions,
   resolveChatMentions,
+  sectionScopeFromMentions,
 } from "@/lib/ai/chat/mentions";
 
 /** Must stay in sync with `CHAT_FUNCTION_MAX_DURATION_SEC`. */
@@ -139,8 +150,8 @@ export async function POST(
     sessionId?: string;
     mode?: string;
     pace?: string;
-    sectionScope?: string;
     mentions?: unknown;
+    workspaceChrome?: unknown;
   };
   const messages = sanitizeChatMessagesForModel(
     Array.isArray(body.messages) ? body.messages : []
@@ -153,12 +164,12 @@ export async function POST(
   const paceConfig = chatPaceConfig(pace);
   const accessEarly = await loadAccessibleReport(reportId, user);
   if (!accessEarly) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const sectionScope: ChatSectionScope = parseChatSectionScope(
-    body.sectionScope,
-    accessEarly.report.documentType
-  );
   const requestedMentions = parseChatMentions(
     body.mentions,
+    accessEarly.report.documentType
+  );
+  const sectionScope = sectionScopeFromMentions(
+    requestedMentions,
     accessEarly.report.documentType
   );
 
@@ -166,6 +177,11 @@ export async function POST(
   const { report } = access;
   // Plan mode never edits; Agent mode only when section content is still writable.
   const canEdit = mode === "agent" && canSaveReportSection(user, report);
+  const workspaceChrome: WorkspaceChrome = isWorkspaceChrome(body.workspaceChrome)
+    ? body.workspaceChrome
+    : "document";
+  const editPolicy = deriveChatEditPolicy({ workspaceChrome, canEdit });
+  const turnEdits: TurnEditItem[] = [];
 
   // Resolve the session (create one if the client didn't supply a valid id).
   let sessionId = body.sessionId?.trim() || "";
@@ -174,7 +190,7 @@ export async function POST(
     if (!found) sessionId = "";
   }
   if (!sessionId) {
-    sessionId = (await createChatSession(reportId)).id;
+    sessionId = (await createChatSession(reportId, "report")).id;
   }
 
   const claimed = await tryMarkAssistantTurnRunning(sessionId);
@@ -191,11 +207,6 @@ export async function POST(
   // streaming a reply that would never be saved to history.
   const userMsg = lastUserMessage(messages);
   const userText = messageText(userMsg);
-  const scopeMismatch = detectSectionScopeMismatch(
-    sectionScope,
-    userText,
-    accessEarly.report.documentType
-  );
   if (userMsg) {
     try {
       await db.insert(chatMessages).values({
@@ -257,6 +268,15 @@ export async function POST(
   const reviewPageCount =
     mentionedPageCount > 0 ? mentionedPageCount : totalReadyPages;
 
+  const alreadyDrafted = detectAlreadyDraftedSection({
+    userText,
+    sectionScope,
+    documentType: report.documentType,
+    sections: mergedSections,
+  });
+  const alreadyDraftedGapHintsForPrompt = alreadyDrafted
+    ? alreadyDraftedGapHints(alreadyDrafted.section, evaluations)
+    : undefined;
   const contextMap = buildReportContextMap({
     report: {
       documentNo: report.documentNo,
@@ -306,10 +326,12 @@ export async function POST(
     mode,
     sectionScope,
     documentType: report.documentType,
-    scopeMismatch,
+    alreadyDrafted,
+    alreadyDraftedGapHints: alreadyDraftedGapHintsForPrompt,
     mentionBlock: buildMentionBlock(mentions),
     autoEvidenceBlock,
     retrievalPolicy: retrieval.policy,
+    editPolicy,
   });
 
   const allTools = buildChatTools({
@@ -322,6 +344,9 @@ export async function POST(
     mentionedSections: mentionedSections(mentions),
     retrievalPolicy: retrieval.policy,
     documentReview,
+    messages,
+    editPolicy,
+    turnEdits,
   });
   const tools: ToolSet =
     mode === "plan"
@@ -337,7 +362,6 @@ export async function POST(
         mode,
         section: stubSection,
         targetField: primaryFieldForSection(stubSection),
-        scopeMismatch,
         insertText: `Stubbed drafting insertion addressing "${userText.slice(0, 80)}". [Replace with real content once a Gemini credential is configured.]`,
         reasoning: "Demo stub proposal.",
       })
@@ -355,11 +379,15 @@ export async function POST(
 
   let result;
   try {
+    if (!isTestStubChat()) {
+      await assertAiBudgetAvailable();
+    }
     result = streamText({
       model,
       system,
       messages: await convertToModelMessages(messages),
       tools,
+      experimental_repairToolCall: repairChatToolCall,
       stopWhen: async ({ steps }) => {
         if (await isAssistantTurnCancelRequested(sessionId)) return true;
         return shouldStopChatSteps({
@@ -384,8 +412,16 @@ export async function POST(
           };
         }
 
+        const alreadyDraftedActive = alreadyDrafted != null;
+        const alreadyDraftedStep = alreadyDraftedReadStep({
+          stepsTaken: steps.length,
+          alreadyDrafted: alreadyDraftedActive,
+          hasReadSectionTool: Boolean(tools.read_section),
+        });
+        if (alreadyDraftedStep) return alreadyDraftedStep;
+
         const prepared = prepareDocumentReviewStep({
-          policy: retrieval.policy,
+          policy: alreadyDraftedActive ? "adaptive" : retrieval.policy,
           phase: documentReview.phase(),
           availableTools: Object.keys(tools),
         });
@@ -437,6 +473,9 @@ export async function POST(
   } catch (err) {
     stopCancelPoll();
     await clearAssistantTurn(sessionId);
+    if (isAiBudgetExceededError(err)) {
+      return aiBudgetExceededResponse(err);
+    }
     console.error("chat: failed to start assistant stream", {
       reportId,
       sessionId,
@@ -450,10 +489,28 @@ export async function POST(
 
   after(async () => {
     try {
-      await result.consumeStream();
+      const outcome = await consumeAssistantStreamWithBudget(() =>
+        result.consumeStream()
+      );
+      if (outcome === "timed_out") {
+        console.error("chat: consumeStream exceeded budget", {
+          reportId,
+          sessionId,
+        });
+      } else if (!isTestStubChat()) {
+        const usage = await result.totalUsage;
+        await recordAiUsage({
+          feature: "document_chat",
+          modelId: paceConfig.modelId,
+          usage,
+          reportId,
+          userId: user.id,
+        });
+      }
       await flushLangfuseTraces();
     } finally {
       stopCancelPoll();
+      await clearAssistantTurn(sessionId);
     }
   });
 
@@ -482,6 +539,7 @@ export async function POST(
       const persisted = partsForPersistedAssistantTurn({
         parts: responseMessage.parts,
         isAborted,
+        finishReason,
       });
       if (persisted.interrupted) {
         console.warn("chat: interrupted assistant turn", {
@@ -489,6 +547,13 @@ export async function POST(
           sessionId,
           finishReason: finishReason ?? "unknown",
           isAborted,
+          partTypes: (responseMessage.parts ?? []).map((part) => part.type),
+        });
+      } else if (persisted.incomplete) {
+        console.warn("chat: incomplete assistant turn", {
+          reportId,
+          sessionId,
+          finishReason: finishReason ?? "unknown",
           partTypes: (responseMessage.parts ?? []).map((part) => part.type),
         });
       } else if (
@@ -505,20 +570,60 @@ export async function POST(
         });
       }
       try {
-        await db.insert(chatMessages).values({
-          reportId,
-          sessionId,
-          role: "assistant",
-          parts: persisted.parts,
-          // The composer only ever showed "Quick" / "Deep" — record what
-          // actually answered so the turn stays traceable.
-          metadata: chatAssistantTurnMetadata({
-            pace,
-            mode,
-            promptVersion: CHAT_PROMPT_VERSION,
-          }),
-          authorId: null,
-        });
+        const changeItems = turnEdits.map((item) => ({
+          section: item.section,
+          targetField: item.targetField,
+          reasoning: item.reasoning,
+        }));
+        const [inserted] = await db
+          .insert(chatMessages)
+          .values({
+            reportId,
+            sessionId,
+            role: "assistant",
+            parts: persisted.parts,
+            metadata: chatAssistantTurnMetadata({
+              pace,
+              mode,
+              promptVersion: CHAT_PROMPT_VERSION,
+              changeSummary:
+                changeItems.length > 0 ? { items: changeItems } : undefined,
+            }),
+            authorId: null,
+          })
+          .returning({ id: chatMessages.id });
+
+        if (changeItems.length > 0 && inserted) {
+          try {
+            const revision = await snapshotDocumentRevision({
+              reportId,
+              documentType: report.documentType,
+              summary: changeItems
+                .map((item) => item.reasoning.trim() || item.targetField)
+                .filter(Boolean)
+                .join("; "),
+              createdBy: user.id,
+              chatSessionId: sessionId,
+              chatMessageId: inserted.id,
+            });
+            await db
+              .update(chatMessages)
+              .set({
+                metadata: chatAssistantTurnMetadata({
+                  pace,
+                  mode,
+                  promptVersion: CHAT_PROMPT_VERSION,
+                  changeSummary: {
+                    items: changeItems,
+                    revisionNo: revision.revisionNo,
+                  },
+                }),
+              })
+              .where(eq(chatMessages.id, inserted.id));
+          } catch (err) {
+            console.error("chat: failed to snapshot document revision", err);
+          }
+        }
         await touchChatSession(sessionId, null);
       } catch (err) {
         // The reply already streamed to the client, so we can only log here —
