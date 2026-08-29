@@ -1,5 +1,4 @@
-import fs from "node:fs";
-import path from "node:path";
+import { chartFontFamily, loadChartCanvas } from "@/lib/charts/load-canvas";
 import { CHAT_SECTION_IMAGE_MAX_DATA_URL_CHARS } from "@/lib/ai/chat/section-images";
 import { chartBrandColors, seriesFill, type ChartBrandColors } from "@/lib/charts/brand-colors";
 import {
@@ -77,42 +76,12 @@ export type RenderChartOptions = {
   packId?: CustomerId;
 };
 
-let fontsRegistered = false;
-
-function registerChartFont(GlobalFonts: CanvasModule["GlobalFonts"]): void {
-  if (fontsRegistered || !GlobalFonts) return;
-  fontsRegistered = true;
-  const filePath = path.join(
-    process.cwd(),
-    "src",
-    "lib",
-    "import",
-    "fonts",
-    "Arimo-Regular.ttf"
-  );
-  if (!fs.existsSync(filePath)) return;
-  try {
-    GlobalFonts.registerFromPath(filePath, "Arimo");
-  } catch {
-    // Fall through to the platform sans-serif.
-  }
-}
-
 function defaultLoadCanvas(): CanvasModule | null {
-  try {
-    // Lazy require so the module still loads when the optional native binding
-    // is missing — the caller surfaces canvas_unavailable instead of a blank PNG.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const mod = require("@napi-rs/canvas") as CanvasModule;
-    registerChartFont(mod.GlobalFonts);
-    return mod;
-  } catch {
-    return null;
-  }
+  return loadChartCanvas() as CanvasModule | null;
 }
 
 function fontFamily(): string {
-  return "Arimo, Helvetica, Arial, sans-serif";
+  return chartFontFamily();
 }
 
 function uniqueSeries(points: ChartPoint[]): string[] {
