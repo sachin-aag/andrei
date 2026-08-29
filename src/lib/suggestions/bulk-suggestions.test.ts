@@ -84,12 +84,12 @@ describe("formatBulkApplyToast", () => {
     expect(formatBulkApplyToast(3, 0)).toBe("Applied 3 suggestions");
   });
 
-  it("reports skipped leftovers as dismissed", () => {
+  it("reports skipped leftovers as left open", () => {
     expect(formatBulkApplyToast(2, 1)).toBe(
-      "Applied 2 suggestions. 1 no longer fits and was dismissed."
+      "Applied 2 suggestions. 1 no longer fits and was left open."
     );
     expect(formatBulkApplyToast(0, 2)).toBe(
-      "None of these suggestions could be applied. They were dismissed."
+      "None of these suggestions could be applied. Dismiss them or run Suggest fixes again."
     );
   });
 });
@@ -126,7 +126,7 @@ describe("acceptAllSuggestions", () => {
     expect(text).toContain("by 12%");
   });
 
-  it("dismisses unlocatable leftovers instead of leaving them open", async () => {
+  it("leaves unlocatable leftovers open instead of dismissing them", async () => {
     const urls: string[] = [];
     vi.stubGlobal(
       "fetch",
@@ -145,10 +145,10 @@ describe("acceptAllSuggestions", () => {
 
     expect(result.appliedIds).toEqual(["c1"]);
     expect(result.skippedIds).toEqual(["c3"]);
-    expect(urls.some((url) => url.includes("/comments/c3"))).toBe(true);
+    expect(urls.some((url) => url.includes("/comments/c3"))).toBe(false);
   });
 
-  it("dismisses a queue that is entirely unlocatable", async () => {
+  it("does not write status when a queue is entirely unlocatable", async () => {
     const urls: string[] = [];
     vi.stubGlobal(
       "fetch",
@@ -168,7 +168,7 @@ describe("acceptAllSuggestions", () => {
     expect(result.appliedIds).toEqual([]);
     expect(result.skippedIds).toEqual(["c3"]);
     expect(urls.filter((url) => url.includes("/sections/"))).toHaveLength(0);
-    expect(urls.some((url) => url.includes("/comments/c3"))).toBe(true);
+    expect(urls.some((url) => url.includes("/comments/c3"))).toBe(false);
   });
 
   it("PATCHes the section once for non-overlapping suggestions", async () => {
