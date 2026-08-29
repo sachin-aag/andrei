@@ -2,7 +2,9 @@ import type { DocumentType, SectionType } from "@/db/schema";
 import { isAiSuggestionKind } from "@/lib/ai/suggestion-gating";
 import {
   chatEditableSections,
+  chatTargetFields,
   countSectionInlineImages,
+  fieldFillState,
   primaryFieldForSection,
   sectionFieldPlainText,
   sectionFillState,
@@ -133,8 +135,16 @@ export function buildReportContextMap(input: BuildContextMapInput): string {
         `) · criteria: ${evalSummary(sectionEvals)}` +
         (openFixes > 0 ? ` · ${openFixes} open suggestion(s)` : "")
     );
-    if (state !== "empty") {
-      lines.push(`    ${primary}: "${summarize(text)}"`);
+    for (const field of chatTargetFields(section)) {
+      const fieldState = fieldFillState(content, section, field.targetField);
+      const fieldText = sectionFieldPlainText(content, section, field.targetField);
+      if (fieldState === "empty") {
+        lines.push(`    ${field.targetField}: empty`);
+      } else {
+        lines.push(
+          `    ${field.targetField}:${fieldState} "${summarize(fieldText)}"`
+        );
+      }
     }
     if (imageCount > 0) {
       lines.push(

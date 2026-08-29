@@ -119,24 +119,55 @@ export function countSectionInlineImages(
   return total;
 }
 
-/** Below this character count (and no images) a section is "partial", not empty. */
+/** Below this character count (and no images) a field is "partial", not empty. */
 export const SECTION_PARTIAL_CHAR_LIMIT = 120;
 
-export type SectionFillState = "empty" | "partial" | "filled";
+export type FieldFillState = "empty" | "partial" | "filled";
+export type SectionFillState = FieldFillState;
 
-export function sectionFillState(
+function fieldImageCount(
+  content: Record<string, unknown>,
+  section: SectionType,
+  targetField: string
+): number {
+  if (!isRichTargetField(section, targetField)) return 0;
+  return countImagesInDoc(getRichFieldValue(content, targetField));
+}
+
+export function fieldFillState(
   content: Record<string, unknown> | undefined,
-  section: SectionType
-): SectionFillState {
-  const primary = primaryFieldForSection(section);
-  const text = sectionFieldPlainText(content ?? {}, section, primary);
+  section: SectionType,
+  targetField: string
+): FieldFillState {
+  const record = content ?? {};
+  const text = sectionFieldPlainText(record, section, targetField);
   const charCount = text.replace(/\s+/g, " ").trim().length;
-  const imageCount = countSectionInlineImages(content ?? {}, section);
+  const imageCount = fieldImageCount(record, section, targetField);
   if (charCount === 0 && imageCount === 0) return "empty";
   if (charCount < SECTION_PARTIAL_CHAR_LIMIT && imageCount === 0) {
     return "partial";
   }
   return "filled";
+}
+
+/**
+ * Aggregate of per-field fill state. Empty only when every editable field is
+ * empty — a populated table is not hidden behind an empty narrative.
+ */
+export function sectionFillState(
+  content: Record<string, unknown> | undefined,
+  section: SectionType
+): SectionFillState {
+  const fields = chatTargetFields(section);
+  if (fields.length === 0) {
+    return fieldFillState(content, section, primaryFieldForSection(section));
+  }
+  const states = fields.map((field) =>
+    fieldFillState(content, section, field.targetField)
+  );
+  if (states.every((state) => state === "empty")) return "empty";
+  if (states.some((state) => state === "filled")) return "filled";
+  return "partial";
 }
 
 /**

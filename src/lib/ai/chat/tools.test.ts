@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { z } from "zod";
 import { REV_U_REPORT_ONLY_REQ_IDS } from "@/lib/document-types/convergent/rev-u-report-only-req-ids";
+import { comments } from "@/db/schema";
 import { buildChatTools, collectSearchQueries, mergeExcludePages } from "@/lib/ai/chat/tools";
 import {
   DocumentReviewSession,
@@ -13,6 +14,7 @@ const {
   listDocumentPagesForReviewMock,
   dbSelectMock,
   dbInsertMock,
+  dbUpdateMock,
   commitChatEditMock,
 } = vi.hoisted(() => ({
   readDocumentOutlineMock: vi.fn(),
@@ -20,6 +22,7 @@ const {
   listDocumentPagesForReviewMock: vi.fn(),
   dbSelectMock: vi.fn(),
   dbInsertMock: vi.fn(),
+  dbUpdateMock: vi.fn(),
   commitChatEditMock: vi.fn(),
 }));
 
@@ -27,6 +30,7 @@ vi.mock("@/db", () => ({
   db: {
     select: (...args: unknown[]) => dbSelectMock(...args),
     insert: (...args: unknown[]) => dbInsertMock(...args),
+    update: (...args: unknown[]) => dbUpdateMock(...args),
   },
 }));
 
@@ -862,16 +866,23 @@ const DEFINE_NARRATIVE = {
   ],
 };
 
-function mockDefineSectionSelect() {
-  const where = vi.fn().mockResolvedValue([
-    {
-      id: "sec-1",
-      reportId: "report-1",
-      section: "define",
-      content: { narrative: DEFINE_NARRATIVE },
-    },
-  ]);
-  dbSelectMock.mockReturnValue({ from: () => ({ where }) });
+function mockDefineSectionSelect(narrative = DEFINE_NARRATIVE) {
+  dbSelectMock.mockImplementation(() => ({
+    from: (table: unknown) => ({
+      where: vi.fn().mockResolvedValue(
+        table === comments
+          ? []
+          : [
+              {
+                id: "sec-1",
+                reportId: "report-1",
+                section: "define",
+                content: { narrative },
+              },
+            ]
+      ),
+    }),
+  }));
 }
 
 describe("buildChatTools propose vs commit", () => {
@@ -884,9 +895,13 @@ describe("buildChatTools propose vs commit", () => {
   beforeEach(() => {
     dbSelectMock.mockReset();
     dbInsertMock.mockReset();
+    dbUpdateMock.mockReset();
     commitChatEditMock.mockReset();
     mockDefineSectionSelect();
     dbInsertMock.mockReturnValue({ values: vi.fn().mockResolvedValue(undefined) });
+    dbUpdateMock.mockReturnValue({
+      set: () => ({ where: vi.fn().mockResolvedValue([]) }),
+    });
     commitChatEditMock.mockResolvedValue({
       status: "applied",
       section: "define",
@@ -949,5 +964,83 @@ describe("buildChatTools propose vs commit", () => {
         reasoning: "Name the actual cause.",
       },
     ]);
+  });
+
+  it("refuses draft_field on a filled field unless replaceFilledField is true", async () => {
+    const filled =
+      "During routine testing the tablet batch failed dissolution at 68 percent, well below the 80 percent specification, triggering this deviation investigation.";
+    mockDefineSectionSelect({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [{ type: "text", text: filled }],
+        },
+      ],
+    });
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    const refused = await tools.draft_field!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        markdown: "Replacement that would wipe the field.",
+        reasoning: "Rewrite Define.",
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(refused).toMatchObject({ status: "field_filled" });
+    expect(dbInsertMock).not.toHaveBeenCalled();
+
+    const replaced = await tools.draft_field!.execute!(
+      {
+        section: "define",
+        targetField: "narrative",
+        markdown: "Replacement that would wipe the field.",
+        reasoning: "Rewrite Define.",
+        replaceFilledField: true,
+      },
+      TEST_TOOL_OPTIONS
+    );
+    expect(replaced).toMatchObject({
+      status: "drafted",
+      section: "define",
+      targetField: "narrative",
+    });
+    expect(dbInsertMock).toHaveBeenCalled();
+  });
+
+  it("returns section_changed when the field moved after read_section", async () => {
+    const tools = buildChatTools({
+      reportId: "report-1",
+      canEdit: true,
+      actor,
+      editPolicy: "propose",
+    });
+    await tools.read_section!.execute!(
+      { section: "define" },
+      TEST_TOOL_OPTIONS
+    );
+    mockDefineSectionSelect({
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "The assay failed due to a different cause entirely.",
+            },
+          ],
+        },
+      ],
+    });
+    const result = await tools.propose_edit!.execute!(editInput, TEST_TOOL_OPTIONS);
+    expect(result).toMatchObject({ status: "section_changed" });
+    expect(dbInsertMock).not.toHaveBeenCalled();
   });
 });

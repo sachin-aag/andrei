@@ -197,6 +197,6 @@ describe("buildReportContextMap", () => {
     expect(map).toContain("Test Methods / Protocol Summary [test_methods]");
     expect(map).toContain("1 image");
     expect(map).toContain("call read_section to view them as vision");
-    expect(map).toContain('narrative: "hello"');
+    expect(map).toContain('narrative:filled "hello"');
   });
 });

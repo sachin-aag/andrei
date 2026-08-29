@@ -7,6 +7,7 @@ import { mergeSection } from "@/lib/sections-merge";
 import { isRichTargetField } from "@/lib/ai/suggest-target-fields";
 import { persistSectionContent } from "@/lib/reports/persist-section";
 import { applyRedraftToSection } from "@/lib/suggestions/apply-redraft";
+import { PlaceholderPreservationError } from "@/lib/placeholders/preservation";
 import {
   applyAndAcceptRichEdit,
   applyEditToPlainText,
@@ -35,7 +36,8 @@ export type CommitEditFailureStatus =
   | "stale"
   | "fixed_schema"
   | "invalid"
-  | "empty_edit";
+  | "empty_edit"
+  | "placeholder_conflict";
 
 export type CommitEditResult =
   | { status: "applied"; section: SectionType; targetField: string; summary: string }
@@ -50,6 +52,7 @@ export type CommitEditInput =
   | {
       kind: "redraft";
       markdown: string;
+      allowDropFilledPlaceholders?: boolean;
     }
   | {
       kind: "table";
@@ -93,16 +96,30 @@ export function applyCommitToSectionContent(args: {
       };
     }
     case "redraft":
-      return {
-        ok: true,
-        content: applyRedraftToSection(
-          content,
-          section,
-          targetField,
-          input.markdown,
-          { headingNodes }
-        ),
-      };
+      try {
+        return {
+          ok: true,
+          content: applyRedraftToSection(
+            content,
+            section,
+            targetField,
+            input.markdown,
+            {
+              headingNodes,
+              allowDropFilledPlaceholders: input.allowDropFilledPlaceholders,
+            }
+          ),
+        };
+      } catch (error) {
+        if (error instanceof PlaceholderPreservationError) {
+          return {
+            ok: false,
+            status: "placeholder_conflict",
+            hint: error.message,
+          };
+        }
+        throw error;
+      }
     case "table": {
       const fieldDoc = getRichFieldValue(content, targetField);
       const applied = applyTableOperation(fieldDoc, input.operation, {

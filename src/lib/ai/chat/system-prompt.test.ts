@@ -19,7 +19,7 @@ describe("isChatMode", () => {
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
     expect(CHAT_PROMPT_VERSION).toBe(
-      "chat-v53-drop-section-switch"
+      "chat-v54-field-fill-supersession"
     );
   });
 

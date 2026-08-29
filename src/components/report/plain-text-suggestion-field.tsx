@@ -29,6 +29,7 @@ import {
   acceptSuggestion,
   dismissSuggestion,
   CommentPersistError,
+  PLACEHOLDER_CONFLICT_MESSAGE,
   SectionPersistError,
 } from "@/lib/suggestions/accept-suggestion";
 import {
@@ -354,6 +355,9 @@ export function PlainTextSuggestionField({
           applyMode: suggestionApplyModeFor(
             getDocumentType(report.documentType)
           ),
+          openComments: comments.filter(
+            (c) => c.status === "open" && !c.parentId
+          ),
         }),
         delay(SUGGESTION_DIFF_FADE_MS),
       ]);
@@ -372,6 +376,9 @@ export function PlainTextSuggestionField({
               : new SectionPersistError(0, "Failed to save section")
           );
         }
+        if (result.reason === "placeholder_conflict") {
+          throw new Error(PLACEHOLDER_CONFLICT_MESSAGE);
+        }
         throw new Error("Suggestion could not be located");
       }
       const nextSection = result.nextSection as unknown;
@@ -389,9 +396,13 @@ export function PlainTextSuggestionField({
       }
       replaceSection(section, nextSection);
       setComments((prev) =>
-        prev.map((c) =>
-          c.id === activeComment.id ? { ...c, status: "resolved" as const } : c
-        )
+        prev.map((c) => {
+          if (c.id === activeComment.id) {
+            return { ...c, status: "resolved" as const };
+          }
+          const dismissed = result.dismissed.find((row) => row.id === c.id);
+          return dismissed ?? c;
+        })
       );
       // Only hide the diff preview once the real value has landed — hiding it
       // earlier would reveal the stale original text underneath while the
@@ -408,7 +419,9 @@ export function PlainTextSuggestionField({
           ? err.message
           : err instanceof CommentPersistError
             ? "Change saved but couldn't mark suggestion as resolved. It may reappear — try dismissing it."
-            : "Could not apply suggestion"
+            : err instanceof Error && err.message === PLACEHOLDER_CONFLICT_MESSAGE
+              ? err.message
+              : "Could not apply suggestion"
       );
       await refresh();
     } finally {
@@ -429,6 +442,7 @@ export function PlainTextSuggestionField({
     replaceSection,
     setComments,
     refresh,
+    comments,
     beginSuggestionApplyTransition,
     endSuggestionApplyTransition,
     trackChangesMode,

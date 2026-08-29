@@ -17,6 +17,12 @@ import {
 } from "@/lib/suggestions/apply-narrative-suggestion";
 import { applyStructuredFieldSuggestion } from "@/lib/suggestions/apply-field";
 import { applyRedraftToSection } from "@/lib/suggestions/apply-redraft";
+import { PlaceholderPreservationError } from "@/lib/placeholders/preservation";
+import {
+  suggestionsSupersededBy,
+  resolutionReasonSupersededBy,
+  withResolutionReason,
+} from "@/lib/suggestions/supersession";
 import { AI_AUTHOR_ID } from "@/lib/ai/constants";
 import { buildRedraftPreviewDoc } from "@/lib/tiptap/redraft-preview";
 import { markdownToDoc } from "@/lib/tiptap/markdown-to-doc";
@@ -30,6 +36,7 @@ import {
 import {
   CommentPersistError,
   patchCommentStatus,
+  patchCommentStatuses,
 } from "@/lib/suggestions/persist-comment-status";
 import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
 import { getRichFieldValue, setRichFieldValue } from "@/lib/suggestions/rich-field-value";
@@ -38,10 +45,14 @@ import { applyTableOperation } from "@/lib/suggestions/table-operation";
 import { suggestionEditFromComment } from "@/lib/suggestions/validate-suggestion";
 
 export type AcceptSuggestionResult =
-  | { ok: true; nextSection: Record<string, unknown> }
+  | {
+      ok: true;
+      nextSection: Record<string, unknown>;
+      dismissed: CommentRecord[];
+    }
   | {
       ok: false;
-      reason: LocateStatus | "save_failed" | "status_failed";
+      reason: LocateStatus | "save_failed" | "status_failed" | "placeholder_conflict";
       error?: unknown;
     };
 
@@ -69,7 +80,10 @@ export type ApplySuggestionToContentArgs = {
 
 export type ApplySuggestionToContentResult =
   | { ok: true; nextSection: Record<string, unknown> }
-  | { ok: false; reason: LocateStatus };
+  | { ok: false; reason: LocateStatus | "placeholder_conflict" };
+
+export const PLACEHOLDER_CONFLICT_MESSAGE =
+  "This rewrite would wipe filled placeholders. Dismiss it or use a targeted edit.";
 
 /**
  * Locate and apply one suggestion in memory. No network. Bulk apply uses this
@@ -94,34 +108,41 @@ export function applySuggestionToContent(
 
   if (comment.kind === "ai_redraft") {
     const redraft = parseAiRedraftCommentContent(comment.content);
-    const nextSection =
-      persistAsTrackedChange && isRichTargetField(section, path)
-        ? setRichFieldValue(
-            sectionContent,
-            path,
-            commitNarrativeSuggestionMarks(
-              buildRedraftPreviewDoc(
-                getRichFieldValue(sectionContent, path),
-                markdownToDoc(redraft.markdown, { headingNodes: true }),
-                {
-                  id: comment.id,
-                  authorId: AI_AUTHOR_ID,
-                  status: "pending",
-                  createdAt: new Date().toISOString(),
-                  kind: "redraft",
-                }
-              ),
-              comment.id
+    try {
+      const nextSection =
+        persistAsTrackedChange && isRichTargetField(section, path)
+          ? setRichFieldValue(
+              sectionContent,
+              path,
+              commitNarrativeSuggestionMarks(
+                buildRedraftPreviewDoc(
+                  getRichFieldValue(sectionContent, path),
+                  markdownToDoc(redraft.markdown, { headingNodes: true }),
+                  {
+                    id: comment.id,
+                    authorId: AI_AUTHOR_ID,
+                    status: "pending",
+                    createdAt: new Date().toISOString(),
+                    kind: "redraft",
+                  }
+                ),
+                comment.id
+              )
             )
-          )
-        : applyRedraftToSection(
-            sectionContent,
-            section,
-            path,
-            redraft.markdown,
-            { headingNodes: persistAsTrackedChange }
-          );
-    return { ok: true, nextSection };
+          : applyRedraftToSection(
+              sectionContent,
+              section,
+              path,
+              redraft.markdown,
+              { headingNodes: persistAsTrackedChange }
+            );
+      return { ok: true, nextSection };
+    } catch (error) {
+      if (error instanceof PlaceholderPreservationError) {
+        return { ok: false, reason: "placeholder_conflict" };
+      }
+      throw error;
+    }
   }
 
   const payload = parseAiFixCommentContent(comment.content);
@@ -274,9 +295,16 @@ export async function acceptSuggestion(args: {
   fieldContentPath?: string;
   /** How to persist the applied edit. Default `final` (investigation/DV). */
   applyMode?: SuggestionApplyMode;
+  /** Open siblings used to compute range-containment supersession. */
+  openComments?: readonly CommentRecord[];
 }): Promise<AcceptSuggestionResult> {
   const applied = applySuggestionToContent(args);
   if (!applied.ok) return applied;
+  const superseded = suggestionsSupersededBy(args.comment, {
+    section: args.section,
+    comments: args.openComments ?? [],
+    sectionContent: args.sectionContent,
+  });
   try {
     await patchSection(args.reportId, args.section, applied.nextSection);
   } catch (error) {
@@ -284,10 +312,33 @@ export async function acceptSuggestion(args: {
   }
   try {
     await patchCommentStatus(args.reportId, args.comment.id, "resolved");
+    const contentById: Record<string, string> = {};
+    for (const sibling of superseded) {
+      contentById[sibling.id] = withResolutionReason(
+        sibling.content,
+        resolutionReasonSupersededBy(args.comment.id)
+      );
+    }
+    if (superseded.length > 0) {
+      await patchCommentStatuses(
+        args.reportId,
+        superseded.map((c) => c.id),
+        "dismissed",
+        contentById
+      );
+    }
   } catch (error) {
     return { ok: false, reason: "status_failed", error };
   }
-  return { ok: true, nextSection: applied.nextSection };
+  const dismissed = superseded.map((sibling) => ({
+    ...sibling,
+    status: "dismissed" as const,
+    content: withResolutionReason(
+      sibling.content,
+      resolutionReasonSupersededBy(args.comment.id)
+    ),
+  }));
+  return { ok: true, nextSection: applied.nextSection, dismissed };
 }
 
 /**

@@ -1,9 +1,67 @@
 # Suggestions — principles, target state, and rebuild plan
 
-Status: proposed (not started)
+Status: Phase A in progress (PR 1). Phase B is the rebuild (PRs 2–4).
 Owner: TBD
 Related: `docs/suggestion-system-analysis.md`, `docs/suggestion-agent-plan.md`
 Supersedes: the phase-by-phase version of this document (diagnosis-first; kept in git history)
+
+---
+
+## Accepted revision (decisions)
+
+The original diagnosis and P1/P2/P3 stand. Three blocking gaps and the citation
+corrections below are now part of the plan. Phase A ships without the rebuild.
+
+**D-A1.** `base` is the real live field content at read time. Pending suggestions
+are never projected into it.
+
+**D-A2.** Supersession is a separate computed relation, not a merge outcome. A is
+superseded by B when B is newer, same field, and B's operation ranges fully contain
+A's. A whole-field intent (`draft_field` / `ai_redraft`) supersedes every older
+open suggestion on that field. Incremental `edit_table` is not whole-field.
+
+**D-A3.** A superseded suggestion goes to `dismissed` with payload
+`resolutionReason: "superseded_by:<id>"` plus an audit event. Do not use
+`resolved`. Dismissals survive a git revert and must be reopenable.
+
+**D-A4.** Fill state is per field (`empty | partial | filled`). `draft_field`
+refuses a filled field unless `replaceFilledField: true`.
+
+**D-A5.** Placeholder preservation is enforced in `applyRedraftToSection`: a
+filled `[Label: value]` span may not become an unfilled token or vanish unless
+the operation explicitly targets it (`allowDropFilledPlaceholders`).
+
+**D-A6 (Phase B).** Plain fields split on newline for merge blocks, then word-diff
+within a line.
+
+**D-A8 (Phase B).** Per-operation audit `suggestion_operation_applied` with
+`{ commentId, opIndex, coverage, classification }`. No child comment rows.
+Mark `id` stays the comment id; add a separate `opIndex` attr.
+
+**Gap 3 (Phase B).** Classifier denominator weights each inline atom as 20
+characters, computed per block, not per flattened field.
+
+Delivery is four PRs: Phase A (this work, no flag), then dark merge engine, then
+record shape, then flip and delete. Phase B is 4–6 weeks. Flag off until PR 4;
+then delete the legacy path. A half-migrated permanently-off flag is not done.
+
+### Citation corrections
+
+- `draft_field` is `tools.ts` ~1941–2064. `:1802-1910` is `edit_table`.
+- The `draft_field` hash is `fieldHashAtSuggestion` (per-field), not
+  `contentHashAtSuggestion` (per-section). Two hash schemes coexist.
+- `CommitEditFailureStatus.stale` **is** returned (`table-operation.ts:342-347`).
+  Unused members are `too_large` and `section_not_found`.
+- AI Check hashes at request start (`suggestions/route.ts:154-161`) from the
+  content the model read. G.1 applies to **chat**, not AI Check.
+- Defect B is overstated. Table failures route to `edit_table`. Two real funnels
+  remain: two failed prose attempts (`system-prompt.ts` ~256) and `too_large` (~259).
+- `suggestion-gating.ts` lives at `src/lib/ai/`, not `src/lib/suggestions/`.
+- `stripSuggestionMarksById` is `locator.ts:1424`; `:1377` is
+  `commitSuggestionMarksById`.
+- `applyTableOperation` is `table-operation.ts:246`.
+- Defect D is true for `ai_redraft` only. AI Check writes `ai_fix` and previews
+  the located span.
 
 ---
 
@@ -481,20 +539,20 @@ principle that removes it.
 | # | defect | location | removed by |
 |---|---|---|---|
 | A | AI Check applies no size guard at all — an edit deleting a whole paragraph passes every gate | `suggest.ts:452-489`, `suggestions/route.ts:221`, `:288` | P3 (classification is universal) |
-| B | Four prompt paths funnel every `propose_edit` failure into a full rewrite | `system-prompt.ts:246`, `:254`, `:257`; `propose-edit.ts:123` | P1 (anchors resolved once against base; failures become rare) + P3 (0.5 no longer rejects) |
-| C | `draft_field` has no preconditions — never checks whether the field is written | `tools.ts:1802-1910` | P2 (a draft over written content merges rather than replaces) |
-| D | Preview strikes through the entire field, so warranted rewrites look maximally destructive | `redraft-preview.ts` | P3 (renderer chosen by coverage) |
-| E | Duplicate drafts: no supersede, older card surfaces first, no ordering is safe | `tools.ts` (no dedupe); `suggestion-gating.ts:349-377`; `validate-suggestion.ts:106-113` | P1 (R2's base is R1) + P2 (merge, not replace) |
+| B | Two real funnels remain: two failed prose attempts, and `too_large`. Table failures already route to `edit_table` (`system-prompt.ts` ~254) | `system-prompt.ts` ~256, ~259; `propose-edit.ts` | P1 + P3 (0.5 no longer rejects). Do not overstate four funnel paths. |
+| C | `draft_field` has no preconditions — never checks whether the field is written | `tools.ts` `draft_field` (~1941–2064), **not** `:1802-1910` (`edit_table`) | P2 + Phase A `replaceFilledField` / fill-state guard |
+| D | Preview strikes through the entire field, so warranted rewrites look maximally destructive | `redraft-preview.ts` — **`ai_redraft` only**; AI Check previews the located span | P3 (renderer chosen by coverage) |
+| E | Duplicate drafts: no supersede, older card surfaces first, no ordering is safe | `tools.ts` (no dedupe); `src/lib/ai/suggestion-gating.ts`; `validate-suggestion.ts` | Phase A supersession (range containment); P2 does not replace this |
 | F.1 | Redraft destroys existing figures — checks the new markdown for images, never the target field | `apply-redraft.ts`, `tools.ts` | P2 (unchanged regions untouched) + figure ops |
-| F.2 | Coverage denominator counts an inline image as one character, so image-heavy fields over-trigger `too_large` → funnelled to `draft_field` → figures wiped | `locator.ts:44-45`, `propose-edit.ts:80-87` | P3 (no reject, no funnel) |
-| G.1 | Staleness hash snapped at write time, so a suggestion authored against pre-accept content renders **fresh** and silently reverts | `tools.ts:2020-2049`, `suggestions/route.ts:259` | P1 (base at read time) + P2 |
-| G.2 | Pending suggestions are invisible to the model and orphaned by an overlapping accept | `context-map.ts:127-131` | P2 (merge composes; conflicts surface) |
-| — | `CommitEditFailureStatus` declares a `"stale"` status never returned anywhere | `commit-edit.ts:35` | the slot conflicts fill |
+| F.2 | Coverage denominator: an inline image/equation is a space that `collapseWhitespace` usually merges away, so image-heavy fields classify as rewrites | `locator.ts:38-46`, `:192`, `:416-418` (not "one character") | P3 with weighted per-block denominator (Gap 3) |
+| G.1 | Chat staleness hash snapped at write time, so a suggestion authored against pre-accept content renders **fresh** and silently reverts | `tools.ts` hashes; **not** AI Check (`suggestions/route.ts:154-161` hashes at request start) | Phase A per-turn base capture → `section_changed`; P1 persists that base |
+| G.2 | Pending suggestions are invisible to the model and orphaned by an overlapping accept | `context-map.ts` | P2 (merge composes; conflicts surface); Phase B exposes pending content via `read_section` |
+| — | `CommitEditFailureStatus` `"stale"` **is** returned (`table-operation.ts:342-347`). Unused members are `too_large` and `section_not_found`. | `commit-edit.ts` | — |
 
-Two ideas from the previous plan are **retired**, both because P1/P2 dissolve them:
-supersede-on-draft (E) — unnecessary once R2 merges against R1 rather than racing it — and
-read-time hashing, which was the right instinct expressed as a weaker mechanism than storing
-the base content itself.
+Two ideas from the previous plan are **revised**: supersede-on-draft (E) is **not**
+retired — it is a separate containment relation (D-A2), because an honest base
+(D-A1) cannot express "this intent covers that intent." Read-time hashing is
+replaced by storing the field content itself (Phase A capture map → Phase B `base`).
 
 One idea is **kept and promoted**: exposing pending suggestions to the model via
 `read_section`, so a draft is authored knowing what is queued. P2 makes overlap safe; this

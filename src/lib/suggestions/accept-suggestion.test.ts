@@ -412,3 +412,76 @@ describe("acceptSuggestion split citation", () => {
     expect(text).toContain("[protocol.pdf, p. 3]");
   });
 });
+
+describe("acceptSuggestion supersession", () => {
+  it("dismisses older contained siblings instead of applying them", async () => {
+    const fetches: Array<{ url: string; body: unknown }> = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        fetches.push({
+          url: String(url),
+          body: init?.body ? JSON.parse(String(init.body)) : null,
+        });
+        return { ok: true, json: async () => ({}) } as Response;
+      })
+    );
+
+    const narrative = {
+      type: "doc",
+      content: [
+        {
+          type: "paragraph",
+          content: [
+            {
+              type: "text",
+              text: "On 01/01/2026 a deviation was observed. The result exceeded limits.",
+            },
+          ],
+        },
+      ],
+    };
+    const older: CommentRecord = {
+      ...comment,
+      id: "old",
+      content: JSON.stringify({
+        deleteText: "deviation was observed",
+        insertText: "issue was seen",
+        reasoning: "narrow",
+      }),
+      anchorText: "a deviation was observed",
+      createdAt: "2026-01-01T00:00:00.000Z",
+    };
+    const newer: CommentRecord = {
+      ...comment,
+      id: "new",
+      content: JSON.stringify({
+        deleteText: "a deviation was observed. The result",
+        insertText: "the issue was logged. The result",
+        reasoning: "cover",
+      }),
+      anchorText: "a deviation was observed. The result",
+      createdAt: "2026-01-01T00:01:00.000Z",
+    };
+
+    const result = await acceptSuggestion({
+      reportId,
+      section: "define",
+      comment: newer,
+      sectionContent: { narrative },
+      openComments: [older, newer],
+    });
+
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.dismissed.map((row) => row.id)).toEqual(["old"]);
+    expect(result.dismissed[0]?.status).toBe("dismissed");
+    expect(result.dismissed[0]?.content).toContain("superseded_by:new");
+    const dismissedPatch = fetches.find(
+      (call) => call.url.includes("/comments/old")
+    );
+    expect(dismissedPatch?.body).toMatchObject({
+      status: "dismissed",
+    });
+  });
+});

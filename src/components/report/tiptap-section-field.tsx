@@ -95,6 +95,7 @@ import {
   acceptSuggestion,
   dismissSuggestion,
   CommentPersistError,
+  PLACEHOLDER_CONFLICT_MESSAGE,
   SectionPersistError,
 } from "@/lib/suggestions/accept-suggestion";
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
@@ -639,6 +640,9 @@ export function TiptapSectionField({
                 sectionContent: currentSection,
                 fieldContentPath: contentPath,
                 applyMode: suggestionPersistMode,
+                openComments: comments.filter(
+                  (c) => c.status === "open" && !c.parentId
+                ),
               })
             : await dismissSuggestion({
                 reportId: report.id,
@@ -663,8 +667,21 @@ export function TiptapSectionField({
                 : new SectionPersistError(0, "Save failed")
             );
           }
+          if (result.reason === "placeholder_conflict") {
+            throw new Error(PLACEHOLDER_CONFLICT_MESSAGE);
+          }
           throw new Error("Suggestion could not be located");
         }
+
+        const dismissedSiblings =
+          mode === "accept"
+            ? (
+                result as Extract<
+                  Awaited<ReturnType<typeof acceptSuggestion>>,
+                  { ok: true }
+                >
+              ).dismissed
+            : [];
 
         // Paint the applied result immediately. External-value sync skips a
         // focused editor, and the preview-strip effect would otherwise revert
@@ -688,9 +705,14 @@ export function TiptapSectionField({
         setComments((prev) =>
           mode === "dismiss"
             ? prev.filter((c) => c.id !== suggestionId)
-            : prev.map((c) =>
-                c.id === suggestionId ? { ...c, status: "resolved" as const } : c
-              )
+            : prev.map((c) => {
+                if (c.id === suggestionId) {
+                  return { ...c, status: "resolved" as const };
+                }
+                const dismissed = dismissedSiblings.find((row) => row.id === c.id);
+                if (dismissed) return dismissed;
+                return c;
+              })
         );
         // Let the accepted/dismissed value paint while preview-held is still on,
         // otherwise ending the lock in the same tick re-strips the preview.
@@ -738,7 +760,8 @@ export function TiptapSectionField({
           console.error(err);
           toast.error(
             err instanceof CommentPersistError ||
-              err instanceof SectionPersistError
+              err instanceof SectionPersistError ||
+              (err instanceof Error && err.message === PLACEHOLDER_CONFLICT_MESSAGE)
               ? err.message
               : "Could not apply suggestion"
           );

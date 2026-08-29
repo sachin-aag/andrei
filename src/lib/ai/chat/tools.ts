@@ -23,6 +23,8 @@ import {
 } from "@/lib/ai/suggest-target-fields";
 import { parseEditScope } from "@/lib/ai/suggestion-gating";
 import { getRichFieldValue } from "@/lib/suggestions/rich-field-value";
+import { getPlainTextFieldValue } from "@/lib/suggestions/plain-text-field-value";
+import { dismissSuggestionsSupersededBy } from "@/lib/suggestions/persist-supersession";
 import { listInlineImagesInDoc } from "@/lib/suggestions/image-insert";
 import {
   countImagesInDoc,
@@ -47,6 +49,7 @@ import {
   type ChatSectionScope,
   chatSectionsInScope,
   chatTargetFields,
+  fieldFillState,
   isChatEditableSection,
   sectionFieldForChat,
   sectionFieldPlainText,
@@ -94,6 +97,7 @@ type ReadSectionSuccess = {
     kind: string;
     charCount: number;
     isEmpty: boolean;
+    fillState: "empty" | "partial" | "filled";
     text: string;
     readingText: string;
     imageCount: number;
@@ -148,6 +152,9 @@ type AgentCommitOutcome =
   | { status: "bad_scope"; hint: string }
   | { status: "too_large"; hint: string }
   | { status: "empty_edit"; hint: string }
+  | { status: "placeholder_conflict"; hint: string }
+  | { status: "section_changed"; message: string }
+  | { status: "field_filled"; message: string }
   | { status: "no_table"; hint: string }
   | { status: "stale"; hint: string }
   | { status: "fixed_schema"; hint: string }
@@ -160,6 +167,7 @@ export type ProposeEditResult =
       section: SectionType;
       targetField: string;
       summary: string;
+      supersededSuggestionIds?: string[];
     }
   | AgentCommitOutcome
   | { status: "invalid_section"; message: string }
@@ -173,6 +181,7 @@ export type InsertImageResult =
       section: SectionType;
       targetField: string;
       summary: string;
+      supersededSuggestionIds?: string[];
     }
   | AgentCommitOutcome
   | { status: "invalid_section"; message: string }
@@ -196,6 +205,7 @@ export type EditTableResult =
       section: SectionType;
       targetField: string;
       summary: string;
+      supersededSuggestionIds?: string[];
     }
   | AgentCommitOutcome
   | { status: "invalid_section"; message: string }
@@ -209,6 +219,7 @@ export type DraftFieldResult =
       section: SectionType;
       targetField: string;
       summary: string;
+      supersededSuggestionIds?: string[];
     }
   | AgentCommitOutcome
   | { status: "invalid_section"; message: string }
@@ -592,6 +603,39 @@ async function loadMergedSection(
   };
 }
 
+function fieldSnapshotKey(section: SectionType, targetField: string): string {
+  return `${section}\0${targetField}`;
+}
+
+function cloneFieldValue(
+  content: Record<string, unknown>,
+  section: SectionType,
+  targetField: string
+): unknown {
+  if (isRichTargetField(section, targetField)) {
+    return structuredClone(getRichFieldValue(content, targetField));
+  }
+  return getPlainTextFieldValue(content, targetField);
+}
+
+function fieldValuesEqual(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+const SECTION_CHANGED_MESSAGE =
+  "This field changed since you last read it. Call read_section on this field, then retry the edit.";
+
+const FIELD_FILLED_MESSAGE =
+  "This field is already filled. Use propose_edit or edit_table for a targeted change, or pass replaceFilledField: true to replace the whole field.";
+
+function proposedWithSupersession<T extends { status: string }>(
+  result: T,
+  supersededIds: string[]
+): T {
+  if (supersededIds.length === 0) return result;
+  return { ...result, supersededSuggestionIds: supersededIds };
+}
+
 /**
  * Build the drafting-chat tool set for a report. Tools reuse the existing
  * suggestion pipeline: `propose_edit` creates an open `ai_fix` comment (no
@@ -630,6 +674,50 @@ export function buildChatTools(opts: {
   const editPolicy: ChatEditPolicy = opts.editPolicy ?? "propose";
   const turnEdits = opts.turnEdits;
   const committing = editPolicy === "commit";
+  const fieldReadSnapshots = new Map<string, unknown>();
+  const captureFieldSnapshot = (
+    section: SectionType,
+    targetField: string,
+    content: Record<string, unknown>
+  ) => {
+    fieldReadSnapshots.set(
+      fieldSnapshotKey(section, targetField),
+      cloneFieldValue(content, section, targetField)
+    );
+  };
+  const unchangedOrStale = (
+    section: SectionType,
+    targetField: string,
+    liveContent: Record<string, unknown>
+  ): { status: "section_changed"; message: string } | null => {
+    const key = fieldSnapshotKey(section, targetField);
+    if (!fieldReadSnapshots.has(key)) return null;
+    const snap = fieldReadSnapshots.get(key);
+    const live = cloneFieldValue(liveContent, section, targetField);
+    if (fieldValuesEqual(snap, live)) return null;
+    return { status: "section_changed", message: SECTION_CHANGED_MESSAGE };
+  };
+  const recaptureAfterCommit = async (
+    section: SectionType,
+    targetField: string
+  ) => {
+    const after = await loadMergedSection(reportId, section);
+    if (after) captureFieldSnapshot(section, targetField, after.content);
+  };
+  const dismissCovered = async (args: {
+    section: SectionType;
+    sectionContent: Record<string, unknown>;
+    newCommentId: string;
+  }): Promise<string[]> => {
+    const pairs = await dismissSuggestionsSupersededBy({
+      reportId,
+      section: args.section,
+      sectionContent: args.sectionContent,
+      newCommentId: args.newCommentId,
+      actor: actor ?? undefined,
+    });
+    return pairs.map((pair) => pair.supersededId);
+  };
   const recordTurnEdit = (
     section: SectionType,
     targetField: string,
@@ -661,7 +749,14 @@ export function buildChatTools(opts: {
     });
     if (result.status === "applied") {
       recordTurnEdit(result.section, result.targetField, args.reasoning);
+      await recaptureAfterCommit(result.section, result.targetField);
       return result;
+    }
+    if (result.status === "placeholder_conflict") {
+      return {
+        status: "placeholder_conflict" as const,
+        hint: result.hint ?? FIELD_FILLED_MESSAGE,
+      };
     }
     if (result.status === "section_not_found") {
       return {
@@ -769,11 +864,13 @@ export function buildChatTools(opts: {
             collected
           );
           const trimmed = chat.text.replace(/\s+/g, " ").trim();
+          captureFieldSnapshot(section, f.targetField, loaded.content);
           return {
             targetField: f.targetField,
             kind: f.kind,
             charCount: trimmed.length,
             isEmpty: trimmed.length === 0 && chat.imageCount === 0,
+            fillState: fieldFillState(loaded.content, section, f.targetField),
             /** Anchor-compatible text — quote from this for propose_edit. */
             text: chat.text,
             /** Same content with [image:N] markers for describing visuals. */
@@ -1144,6 +1241,8 @@ export function buildChatTools(opts: {
         if (!loaded) {
           return { status: "section_not_found", message: "Section not found." };
         }
+        const stale = unchangedOrStale(section, resolvedField, loaded.content);
+        if (stale) return stale;
 
         const parsedScope = parseEditScope(scope);
         const rawSecond =
@@ -1234,13 +1333,21 @@ export function buildChatTools(opts: {
           evaluationId: null,
         });
 
-        return {
-          status: "proposed",
-          suggestionId,
+        const supersededSuggestionIds = await dismissCovered({
           section,
-          targetField: resolvedField,
-          summary: reasoning,
-        };
+          sectionContent: loaded.content,
+          newCommentId: suggestionId,
+        });
+        return proposedWithSupersession(
+          {
+            status: "proposed" as const,
+            suggestionId,
+            section,
+            targetField: resolvedField,
+            summary: reasoning,
+          },
+          supersededSuggestionIds
+        );
       },
     }),
 
@@ -1362,6 +1469,8 @@ export function buildChatTools(opts: {
         if (!loaded) {
           return { status: "section_not_found", message: "Section not found." };
         }
+        const staleInsert = unchangedOrStale(section, resolvedField, loaded.content);
+        if (staleInsert) return staleInsert;
 
         const fieldDoc = getRichFieldValue(
           loaded.content as Record<string, unknown>,
@@ -1526,13 +1635,21 @@ export function buildChatTools(opts: {
           evaluationId: null,
         });
 
-        return {
-          status: "proposed",
-          suggestionId,
+        const supersededSuggestionIds = await dismissCovered({
           section,
-          targetField: resolvedField,
-          summary: reasoning,
-        };
+          sectionContent: loaded.content,
+          newCommentId: suggestionId,
+        });
+        return proposedWithSupersession(
+          {
+            status: "proposed" as const,
+            suggestionId,
+            section,
+            targetField: resolvedField,
+            summary: reasoning,
+          },
+          supersededSuggestionIds
+        );
         } catch (err) {
           console.error("insert_image failed", err);
           return {
@@ -1681,6 +1798,8 @@ export function buildChatTools(opts: {
           if (!loaded) {
             return { status: "section_not_found", message: "Section not found." };
           }
+          const staleRemove = unchangedOrStale(section, resolvedField, loaded.content);
+          if (staleRemove) return staleRemove;
 
           const fieldDoc = getRichFieldValue(
             loaded.content as Record<string, unknown>,
@@ -1773,13 +1892,21 @@ export function buildChatTools(opts: {
             evaluationId: null,
           });
 
-          return {
-            status: "proposed",
-            suggestionId,
+          const supersededSuggestionIds = await dismissCovered({
             section,
-            targetField: resolvedField,
-            summary: reasoning,
-          };
+            sectionContent: loaded.content,
+            newCommentId: suggestionId,
+          });
+          return proposedWithSupersession(
+            {
+              status: "proposed" as const,
+              suggestionId,
+              section,
+              targetField: resolvedField,
+              summary: reasoning,
+            },
+            supersededSuggestionIds
+          );
         } catch (err) {
           console.error("remove_image failed", err);
           return {
@@ -1854,6 +1981,8 @@ export function buildChatTools(opts: {
         if (!loaded) {
           return { status: "section_not_found", message: "Section not found." };
         }
+        const staleTable = unchangedOrStale(section, resolvedField, loaded.content);
+        if (staleTable) return staleTable;
 
         const fieldDoc = getRichFieldValue(
           loaded.content as Record<string, unknown>,
@@ -1928,19 +2057,27 @@ export function buildChatTools(opts: {
           evaluationId: null,
         });
 
-        return {
-          status: "proposed",
-          suggestionId,
+        const supersededSuggestionIds = await dismissCovered({
           section,
-          targetField: resolvedField,
-          summary: reasoning,
-        };
+          sectionContent: loaded.content,
+          newCommentId: suggestionId,
+        });
+        return proposedWithSupersession(
+          {
+            status: "proposed" as const,
+            suggestionId,
+            section,
+            targetField: resolvedField,
+            summary: reasoning,
+          },
+          supersededSuggestionIds
+        );
       },
     }),
 
     draft_field: tool({
       description:
-        `Draft or fully rewrite ONE field. Provide the COMPLETE replacement content as markdown: paragraphs, '- ' bullets, '1. ' numbered lists, '## ' headings, '**bold**', '*italic*', and GFM tables ('| a | b |' rows with a '| --- |' separator). Use bracketed placeholders like [batch number] for facts you do not know — never invent facts. ${reviewableCopy} Use this for empty fields, substantial rewrites, creating a NEW table, or an explicitly requested full table replacement. Do not use it on a filled or partial field unless they asked to replace it — read_section first, then propose_edit for gaps. For any incremental change to an existing table, use edit_table — never draft_field. Use propose_edit only for small prose or list edits. Do not put markdown image syntax (![alt](url) or narrative#1) here — use insert_image. To remove a figure, call remove_image; do not rewrite the field just to drop one.${scopeHint}${fixedTableHint}`,
+        `Draft or fully rewrite ONE field. Provide the COMPLETE replacement content as markdown: paragraphs, '- ' bullets, '1. ' numbered lists, '## ' headings, '**bold**', '*italic*', and GFM tables ('| a | b |' rows with a '| --- |' separator). Use bracketed placeholders like [batch number] for facts you do not know — never invent facts. ${reviewableCopy} Use this for empty fields, substantial rewrites, creating a NEW table, or an explicitly requested full table replacement. The tool refuses a filled field unless replaceFilledField is true. For any incremental change to an existing table, use edit_table — never draft_field. Use propose_edit only for small prose or list edits. Do not put markdown image syntax (![alt](url) or narrative#1) here — use insert_image. To remove a figure, call remove_image; do not rewrite the field just to drop one.${scopeHint}${fixedTableHint}`,
       inputSchema: z.object({
         section: z.enum(sectionEnum),
         targetField: z
@@ -1954,12 +2091,19 @@ export function buildChatTools(opts: {
           .string()
           .max(300)
           .describe("One short sentence explaining the draft (shown to the engineer)."),
+        replaceFilledField: z
+          .boolean()
+          .optional()
+          .describe(
+            "Required to replace a field whose fillState is filled. Omit (or false) for empty/partial fields. Targeted edits should use propose_edit or edit_table instead."
+          ),
       }),
       execute: async ({
         section,
         targetField,
         markdown,
         reasoning,
+        replaceFilledField,
       }): Promise<DraftFieldResult> => {
         if (!canEdit) {
           return {
@@ -2015,6 +2159,12 @@ export function buildChatTools(opts: {
         if (!loaded) {
           return { status: "section_not_found", message: "Section not found." };
         }
+        const staleDraft = unchangedOrStale(section, resolvedField, loaded.content);
+        if (staleDraft) return staleDraft;
+        const fill = fieldFillState(loaded.content, section, resolvedField);
+        if (fill === "filled" && replaceFilledField !== true) {
+          return { status: "field_filled", message: FIELD_FILLED_MESSAGE };
+        }
 
         const suggestionId = createId();
         const normalizedMarkdown = normalizeSuggestionInsertText(markdown);
@@ -2026,7 +2176,11 @@ export function buildChatTools(opts: {
             section,
             targetField: resolvedField,
             reasoning,
-            input: { kind: "redraft", markdown: draftMarkdown },
+            input: {
+              kind: "redraft",
+              markdown: draftMarkdown,
+              allowDropFilledPlaceholders: replaceFilledField === true,
+            },
           });
         }
         await db.insert(comments).values({
@@ -2053,13 +2207,21 @@ export function buildChatTools(opts: {
           evaluationId: null,
         });
 
-        return {
-          status: "drafted",
-          suggestionId,
+        const supersededSuggestionIds = await dismissCovered({
           section,
-          targetField: resolvedField,
-          summary: reasoning,
-        };
+          sectionContent: loaded.content,
+          newCommentId: suggestionId,
+        });
+        return proposedWithSupersession(
+          {
+            status: "drafted" as const,
+            suggestionId,
+            section,
+            targetField: resolvedField,
+            summary: reasoning,
+          },
+          supersededSuggestionIds
+        );
       },
     }),
 

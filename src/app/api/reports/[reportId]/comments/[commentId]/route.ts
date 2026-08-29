@@ -6,6 +6,7 @@ import { comments, reports } from "@/db/schema";
 import { getCurrentUser } from "@/lib/auth/session";
 import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
 import { isAiSuggestionKind } from "@/lib/ai/suggestion-gating";
+import { stripResolutionReason } from "@/lib/suggestions/supersession";
 
 const patchSchema = z.object({
   status: z.enum(["open", "resolved", "dismissed"]).optional(),
@@ -69,7 +70,9 @@ export async function PATCH(
         { status: 403 }
       );
     }
-    if (!canEditCommentContent(user, row)) {
+    const mayEditAiPayload =
+      isAiSuggestionKind(row.kind) && canResolveThread(user, report);
+    if (!canEditCommentContent(user, row) && !mayEditAiPayload) {
       return NextResponse.json({ error: "Forbidden" }, { status: 403 });
     }
     const [updated] = await db
@@ -95,9 +98,20 @@ export async function PATCH(
   }
 
   if (parse.data.status != null) {
+    const reopenSuperseded =
+      parse.data.status === "open" &&
+      row.status === "dismissed" &&
+      isAiSuggestionKind(row.kind) &&
+      parse.data.content == null;
+    const statusPatch: { status: typeof parse.data.status; content?: string } = {
+      status: parse.data.status,
+    };
+    if (reopenSuperseded) {
+      statusPatch.content = stripResolutionReason(row.content);
+    }
     const [updated] = await db
       .update(comments)
-      .set({ status: parse.data.status })
+      .set(statusPatch)
       .where(and(eq(comments.id, threadRootId), eq(comments.reportId, reportId)))
       .returning();
 
