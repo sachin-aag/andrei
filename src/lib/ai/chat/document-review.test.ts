@@ -427,5 +427,6 @@ describe("pickPlanModeChatTools", () => {
     expect(planTools).not.toHaveProperty("plot_measurements");
     expect(planTools).not.toHaveProperty("remove_image");
     expect(planTools).not.toHaveProperty("edit_table");
+    expect(PLAN_MODE_CHAT_TOOL_NAMES).not.toContain("suggest_section_scope");
   });
 });

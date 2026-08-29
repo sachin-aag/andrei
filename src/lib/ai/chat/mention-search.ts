@@ -1,4 +1,3 @@
-import type { SectionType } from "@/db/schema";
 import type { ChatMentionType } from "@/lib/ai/chat/mentions";
 
 /** Max characters between `@` and the caret before the menu gives up. */
@@ -106,11 +105,4 @@ export function syncMentionCandidateLabels(
     return { ...mention, label: fresh.label, sublabel: fresh.sublabel };
   });
   return changed ? next : mentions;
-}
-
-export function sectionMentionCandidate(
-  section: SectionType,
-  label: string
-): MentionCandidate {
-  return { type: "section", id: section, label };
 }

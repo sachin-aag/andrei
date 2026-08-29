@@ -695,10 +695,6 @@ export function buildChatTools(opts: {
     isChatEditableSection(section, documentType)
   );
   const sectionEnum = allowedSections as [SectionType, ...SectionType[]];
-  const allSectionEnum = chatEditableSections(documentType) as [
-    SectionType,
-    ...SectionType[],
-  ];
   const scopeHint =
     sectionScope === "all"
       ? ""
@@ -711,7 +707,7 @@ export function buildChatTools(opts: {
         : "";
   const analyzeInScope = allowedSections.includes("analyze");
   // When Analyze is in scope, allow reading Define/Measure for method selection
-  // even if the dropdown is narrowed to Analyze (draft/propose stay restricted).
+  // even if @ focus is narrowed to Analyze (draft/propose stay restricted).
   // Sections tagged with @ are readable on the same terms.
   const readableSections: SectionType[] = Array.from(
     new Set<SectionType>([
@@ -2183,29 +2179,6 @@ export function buildChatTools(opts: {
           leaveBlankFields: plan.leaveBlankFields,
         };
       },
-    });
-  }
-
-  if (sectionScope !== "all") {
-    const currentSection = sectionScope;
-    tools.suggest_section_scope = tool({
-      description:
-        "Suggest changing the section focus dropdown when the engineer's request is about a different section than the current focus. Does not change scope — the UI shows a one-click switch.",
-      inputSchema: z.object({
-        suggestedSection: z
-          .enum(allSectionEnum)
-          .describe("Section the engineer should switch the dropdown to."),
-        reason: z
-          .string()
-          .max(200)
-          .describe("One short sentence explaining the mismatch."),
-      }),
-      execute: async ({ suggestedSection, reason }) => ({
-        status: "suggested" as const,
-        currentSection,
-        suggestedSection,
-        reason,
-      }),
     });
   }
 

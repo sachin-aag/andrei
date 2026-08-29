@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildCriteriaOutline } from "./criteria-outline";
 import { chatEditableSections, parseChatSectionScope } from "./fields";
-import {
-  detectSectionIntentFromText,
-  detectSectionScopeMismatch,
-} from "./section-intent";
+import { detectSectionIntentFromText } from "./section-intent";
 
 describe("parseChatSectionScope", () => {
   it("defaults unknown values to all", () => {
@@ -65,33 +62,6 @@ describe("detectSectionIntentFromText", () => {
     expect(
       detectSectionIntentFromText("Draft define section", "design_verification")
     ).toBeNull();
-  });
-});
-
-describe("detectSectionScopeMismatch", () => {
-  it("flags when scoped section differs from message intent", () => {
-    const mismatch = detectSectionScopeMismatch(
-      "define",
-      "Please improve the root cause narrative"
-    );
-    expect(mismatch?.suggestedSection).toBe("analyze");
-    expect(mismatch?.currentSection).toBe("define");
-  });
-
-  it("returns null when scope is all", () => {
-    expect(
-      detectSectionScopeMismatch("all", "Draft the root cause in Analyze")
-    ).toBeNull();
-  });
-
-  it("flags DV mismatches using DV sections only", () => {
-    const mismatch = detectSectionScopeMismatch(
-      "purpose_scope",
-      "Please update the traceability matrix",
-      "design_verification"
-    );
-    expect(mismatch?.suggestedSection).toBe("traceability");
-    expect(mismatch?.currentSection).toBe("purpose_scope");
   });
 });
 

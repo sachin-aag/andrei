@@ -337,7 +337,7 @@ Sessions created before type-generic Improve AI (Convergent Review 404) re-run e
 - `mentions.ts` — `@` documents/sections
 - `propose-edit.ts`, `session-title.ts`, `access.ts`
 
-**Plan-mode allowlist** in `chat/route.ts`: `read_section`, `search_documents`, `read_document_page`, `document_outline`, `ask_user`, optional `suggest_section_scope`. New tools must be added here or they are silently missing in Plan.
+**Plan-mode allowlist** in `src/lib/ai/chat/document-review.ts`: `read_section`, `search_documents`, `read_document_page`, `document_outline`, `ask_user`, plus document-review tools. New tools must be added here or they are silently missing in Plan.
 
 **Retrieval:** `searchReportDocuments` (vector + English FTS OR-tokens). Report body is not chunk-indexed. Stub chat: `ALLOW_TEST_STUB_CHAT` / `stub-model.ts` — streams a canned reply; cannot assert tool selection.
 

@@ -19,7 +19,7 @@ describe("isChatMode", () => {
 describe("buildChatSystemPrompt", () => {
   it("bumps the prompt version when insert_image and citation-marker guidance change", () => {
     expect(CHAT_PROMPT_VERSION).toBe(
-      "chat-v51-already-drafted-agent-commit"
+      "chat-v53-drop-section-switch"
     );
   });
 
@@ -239,6 +239,9 @@ describe("buildChatSystemPrompt", () => {
       includePlotMeasurements: true,
     });
     expect(prompt).toContain("Section focus: Define [define]");
+    expect(prompt).toContain("The engineer tagged **Define**");
+    expect(prompt).not.toContain("section dropdown");
+    expect(prompt).not.toContain("suggest_section_scope");
     expect(prompt).toContain('on section "define"');
     expect(prompt).toContain("draft_field / edit_table / propose_edit / insert_image / plot_measurements / remove_image");
     expect(prompt).toContain("DEFINE_ONLY");
@@ -274,39 +277,6 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("ask whether they want a specific change");
     expect(prompt).toContain("partial: Date range");
     expect(prompt).toContain("Material gap only");
-  });
-
-  it("omits review-first guidance when a scope mismatch is pending", () => {
-    const prompt = buildChatSystemPrompt({
-      ...opts,
-      mode: "agent",
-      sectionScope: "purpose",
-      documentType: "mechanical_design_verification",
-      alreadyDrafted: { section: "testers_dates", fillState: "filled" },
-      scopeMismatch: {
-        currentSection: "purpose",
-        suggestedSection: "testers_dates",
-        reason: "Looks like Testers/Dates.",
-      },
-    });
-    expect(prompt).toContain("Section scope mismatch (detected)");
-    expect(prompt).not.toContain("Already drafted (review first)");
-  });
-
-  it("includes scope mismatch guidance when detected", () => {
-    const prompt = buildChatSystemPrompt({
-      ...opts,
-      mode: "plan",
-      sectionScope: "define",
-      scopeMismatch: {
-        currentSection: "define",
-        suggestedSection: "analyze",
-        reason: "Looks like Analyze.",
-      },
-    });
-    expect(prompt).toContain("Section scope mismatch (detected)");
-    expect(prompt).toContain('suggest_section_scope');
-    expect(prompt).toContain("Analyze");
   });
 
   it("includes the report context and criteria in both modes", () => {

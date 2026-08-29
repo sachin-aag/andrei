@@ -502,7 +502,6 @@ export const PLAN_MODE_CHAT_TOOL_NAMES = [
   "continue_document_review",
   "finish_document_review",
   "ask_user",
-  "suggest_section_scope",
 ] as const;
 
 export function pickPlanModeChatTools<T extends Record<string, unknown>>(

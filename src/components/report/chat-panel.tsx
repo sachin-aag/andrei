@@ -30,7 +30,6 @@ import {
   ClipboardList,
   Wrench,
   Check,
-  ArrowRightLeft,
   ImagePlus,
   ImageMinus,
   LineChart,
@@ -52,7 +51,6 @@ import {
   ComposerSelect,
   DOCUMENT_CHAT_MODE_OPTIONS,
 } from "@/components/report/chat-composer-controls";
-import { SectionScopeSelect } from "@/components/report/chat-composer-scope";
 import {
   chatWorkProductTarget,
   isWorkProductView,
@@ -68,10 +66,8 @@ import {
 } from "@/lib/reports/access";
 import type { DocumentType, SectionType } from "@/db/schema";
 import {
-  CHAT_SECTION_SCOPE_ALL,
   chatEditableSections,
   sectionLabel as chatSectionLabel,
-  type ChatSectionScope,
 } from "@/lib/ai/chat/fields";
 import { isChatPace, type ChatPace } from "@/lib/ai/chat/pace";
 import {
@@ -105,10 +101,6 @@ import {
   waitForValue,
   type MountedChatSession,
 } from "@/lib/ai/chat/session-runtime";
-import {
-  detectSectionScopeMismatch,
-  type SectionScopeMismatch,
-} from "@/lib/ai/chat/section-intent";
 import type { ChatSessionSummary } from "@/lib/ai/chat/sessions";
 import {
   buildChatSessionTabItems,
@@ -303,57 +295,16 @@ function appliedEditsFromParts(
 
 function ToolChip({
   info,
-  onSwitchSectionScope,
   askUserActive,
   onAnswerQuestions,
 }: {
   info: ToolPartInfo;
-  onSwitchSectionScope?: (section: SectionType) => void;
   askUserActive?: boolean;
   onAnswerQuestions?: (message: string) => void;
 }) {
   const pending = info.state === "input-streaming" || info.state === "input-available";
 
   if (isDocumentReviewToolName(info.toolName)) return null;
-
-  if (info.toolName === "suggest_section_scope") {
-    const suggested = info.output?.suggestedSection ?? info.input?.suggestedSection;
-    const reason =
-      typeof info.output?.reason === "string"
-        ? info.output.reason
-        : typeof info.input?.reason === "string"
-          ? info.input.reason
-          : "This question may fit another section better.";
-    const suggestedLabel = sectionLabel(suggested);
-
-    if (pending) {
-      return (
-        <ToolLine icon={<ArrowRightLeft className="size-3.5" />}>
-          Checking section focus…
-        </ToolLine>
-      );
-    }
-
-    return (
-      <div className="rounded-md border border-[var(--primary)]/30 bg-[var(--primary)]/5 px-2.5 py-2 text-[11px] text-[var(--foreground)]">
-        <div className="flex items-start gap-2">
-          <ArrowRightLeft className="mt-0.5 size-3.5 shrink-0 text-[var(--primary)]" />
-          <div className="min-w-0 space-y-1.5">
-            <p className="leading-relaxed">{reason}</p>
-            {typeof suggested === "string" && onSwitchSectionScope && (
-              <button
-                type="button"
-                onClick={() => onSwitchSectionScope(suggested as SectionType)}
-                className="rounded-md border border-[var(--primary)]/40 bg-[var(--card)] px-2 py-1 text-[11px] font-medium text-[var(--primary)] transition-colors hover:bg-[var(--secondary)]"
-              >
-                Switch to {suggestedLabel}
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   if (info.toolName === "read_section") {
     const section = sectionLabel(info.input?.section);
@@ -614,37 +565,6 @@ function ToolLine({
   );
 }
 
-function ScopeMismatchBanner({
-  mismatch,
-  onSwitch,
-  onDismiss,
-}: {
-  mismatch: SectionScopeMismatch;
-  onSwitch: (section: SectionType) => void;
-  onDismiss: () => void;
-}) {
-  return (
-    <div className="mb-2 flex flex-wrap items-center gap-2 rounded-md border border-[var(--primary)]/30 bg-[var(--primary)]/5 px-2.5 py-2 text-[11px] text-[var(--foreground)]">
-      <ArrowRightLeft className="size-3.5 shrink-0 text-[var(--primary)]" />
-      <span className="min-w-0 flex-1 leading-relaxed">{mismatch.reason}</span>
-      <button
-        type="button"
-        onClick={() => onSwitch(mismatch.suggestedSection)}
-        className="rounded-md border border-[var(--primary)]/40 bg-[var(--card)] px-2 py-1 font-medium text-[var(--primary)] transition-colors hover:bg-[var(--secondary)]"
-      >
-        Switch to {sectionLabel(mismatch.suggestedSection)}
-      </button>
-      <button
-        type="button"
-        onClick={onDismiss}
-        className="rounded-md px-2 py-1 text-[var(--muted-foreground)] transition-colors hover:bg-[var(--secondary)] hover:text-[var(--foreground)]"
-      >
-        Keep {sectionLabel(mismatch.currentSection)}
-      </button>
-    </div>
-  );
-}
-
 function mentionIcon(type: MentionCandidate["type"]) {
   switch (type) {
     case "document":
@@ -759,13 +679,11 @@ function MentionMenu({
 
 const MessageTurn = memo(function MessageTurn({
   message,
-  onSwitchSectionScope,
   askUserActive,
   onAnswerQuestions,
   streaming = false,
 }: {
   message: UIMessage;
-  onSwitchSectionScope?: (section: SectionType) => void;
   askUserActive?: boolean;
   onAnswerQuestions?: (message: string) => void;
   streaming?: boolean;
@@ -837,7 +755,6 @@ const MessageTurn = memo(function MessageTurn({
               <ToolChip
                 key={i}
                 info={tool}
-                onSwitchSectionScope={onSwitchSectionScope}
                 askUserActive={askUserActive}
                 onAnswerQuestions={onAnswerQuestions}
               />
@@ -903,17 +820,10 @@ function TurnChangeSummary({
   );
 }
 
-function scopeDescription(scope: ChatSectionScope): string {
-  return scope === CHAT_SECTION_SCOPE_ALL
-    ? "all sections"
-    : sectionLabel(scope);
-}
-
 function emptyChatIntro(args: {
   targetingAnalytics: boolean;
   mode: ChatMode;
   workspaceChrome: WorkspaceChrome;
-  sectionScope: ChatSectionScope;
 }): string {
   if (args.targetingAnalytics) {
     if (args.mode === "plan") {
@@ -922,25 +832,16 @@ function emptyChatIntro(args: {
     return "I fill the worksheet, run a sixpack or one-way ANOVA, and plot an XY scatter (two numeric columns) or a measurement scatter (one series vs index). I can't color points by group or use serial numbers as an X axis. I don't draft the document. Type @ to tag a sheet, plot, or file.";
   }
   if (args.mode === "plan") {
-    if (args.sectionScope === CHAT_SECTION_SCOPE_ALL) {
-      return "I'll answer questions about your deviation investigation using the report and attachments. I won't edit the document in Ask mode.";
-    }
-    return `Focused on ${scopeDescription(args.sectionScope)} — I'll answer questions about that section. I won't edit the document in Ask mode.`;
-  }
-  if (args.sectionScope === CHAT_SECTION_SCOPE_ALL) {
-    return args.workspaceChrome === "agent"
-      ? "Ask me to draft or improve any section. I'll apply edits directly to the document."
-      : "Ask me to draft or improve any section of your deviation investigation. I read the report and propose targeted edits you accept or reject.";
+    return "I'll answer questions about your deviation investigation using the report and attachments. I won't edit the document in Ask mode. Type @ to tag a document or section.";
   }
   return args.workspaceChrome === "agent"
-    ? `Focused on ${scopeDescription(args.sectionScope)} — ask me to draft or improve that section. I'll apply edits directly to the document.`
-    : `Focused on ${scopeDescription(args.sectionScope)} — ask me to draft or improve that section. I'll propose targeted edits you accept or reject.`;
+    ? "Ask me to draft or improve any section. I'll apply edits directly to the document. Type @ to tag a document or section."
+    : "Ask me to draft or improve any section of your deviation investigation. I read the report and propose targeted edits you accept or reject. Type @ to tag a document or section.";
 }
 
 function composerPlaceholder(args: {
   targetingAnalytics: boolean;
   mode: ChatMode;
-  sectionScope: ChatSectionScope;
 }): string {
   if (args.targetingAnalytics) {
     return args.mode === "plan"
@@ -948,13 +849,9 @@ function composerPlaceholder(args: {
       : "Extract numbers, run a sixpack or ANOVA, or plot… type @ to tag a sheet or plot";
   }
   if (args.mode === "plan") {
-    return args.sectionScope === CHAT_SECTION_SCOPE_ALL
-      ? "Ask about the report or attachments… type @ to tag a document or section"
-      : `Ask about ${scopeDescription(args.sectionScope)}… type @ to tag a document`;
+    return "Ask about the report or attachments… type @ to tag a document or section";
   }
-  return args.sectionScope === CHAT_SECTION_SCOPE_ALL
-    ? "Ask the assistant to draft or improve a section… type @ to tag a document"
-    : `Ask the assistant to draft or improve ${scopeDescription(args.sectionScope)}… @ to tag a document`;
+  return "Ask the assistant to draft or improve a section… type @ to tag a document or section";
 }
 
 function subscribeNoop() {
@@ -1063,9 +960,6 @@ export function ChatPanel({
       ? "plan"
       : storedComposerPrefs.mode;
   const pace = storedComposerPrefs.pace;
-  const [sectionScope, setSectionScope] = useState<ChatSectionScope>(CHAT_SECTION_SCOPE_ALL);
-  const [clientScopeSuggestion, setClientScopeSuggestion] =
-    useState<SectionScopeMismatch | null>(null);
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [mountedSessions, setMountedSessions] = useState<MountedChatSession[]>(
@@ -1592,16 +1486,6 @@ export function ChatPanel({
     return () => document.removeEventListener("mousedown", onClick);
   }, [historyOpen]);
 
-  const applySectionScope = useCallback((section: SectionType) => {
-    setSectionScope(section);
-    setClientScopeSuggestion(null);
-  }, []);
-
-  const changeSectionScope = useCallback((scope: ChatSectionScope) => {
-    setSectionScope(scope);
-    setClientScopeSuggestion(null);
-  }, []);
-
   const addImageFiles = useCallback(
     async (files: File[]) => {
       const imageFiles = files.filter((file) => isAllowedChatImageMediaType(file.type));
@@ -1723,13 +1607,6 @@ export function ChatPanel({
       for (const mention of tagsForRequest) {
         applyMentionFocus(mention);
       }
-      if (trimmed && chatTarget !== "analytics") {
-        setClientScopeSuggestion(
-          detectSectionScopeMismatch(sectionScope, trimmed, report.documentType)
-        );
-      } else {
-        setClientScopeSuggestion(null);
-      }
       const body: Record<string, unknown> = {
         sessionId,
         mode,
@@ -1737,9 +1614,6 @@ export function ChatPanel({
         workspaceChrome,
         chatTarget,
       };
-      if (chatTarget !== "analytics") {
-        body.sectionScope = sectionScope;
-      }
       if (tagsForRequest.length > 0) {
         body.mentions = tagsForRequest.map((mention) => ({
           type: mention.type,
@@ -1764,11 +1638,9 @@ export function ChatPanel({
       mode,
       pace,
       chatTarget,
-      sectionScope,
       pendingImages,
       mentions,
       applyMentionFocus,
-      report.documentType,
       currentUserId,
       workspaceChrome,
       flushPendingSectionSaves,
@@ -1918,7 +1790,6 @@ export function ChatPanel({
                 targetingAnalytics,
                 mode,
                 workspaceChrome,
-                sectionScope,
               })}
             </p>
             <div className="space-y-1.5">
@@ -1943,7 +1814,6 @@ export function ChatPanel({
             <MessageTurn
               key={m.id}
               message={m}
-              onSwitchSectionScope={applySectionScope}
               askUserActive={
                 visibleStartIndex + i === messages.length - 1 &&
                 !busy &&
@@ -1983,36 +1853,19 @@ export function ChatPanel({
           void send(input);
         }}
       >
-        {clientScopeSuggestion && !targetingAnalytics ? (
-          <ScopeMismatchBanner
-            mismatch={clientScopeSuggestion}
-            onSwitch={applySectionScope}
-            onDismiss={() => setClientScopeSuggestion(null)}
-          />
-        ) : null}
-        <div className="mb-2 flex items-center gap-1.5">
-          <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-            {workspaceChrome === "agent" && statsEnabled ? (
-              <ComposerSelect
-                value={agentChatTarget}
-                options={CHAT_WORK_PRODUCT_OPTIONS}
-                onChange={setAgentChatTarget}
-                disabled={busy}
-                ariaLabel="Work product"
-                className="w-[7.5rem]"
-                testId="chat-work-product-target"
-              />
-            ) : null}
-            {targetingAnalytics ? null : (
-              <SectionScopeSelect
-                value={sectionScope}
-                onChange={changeSectionScope}
-                disabled={busy}
-                documentType={report.documentType}
-              />
-            )}
+        {workspaceChrome === "agent" && statsEnabled ? (
+          <div className="mb-2 flex items-center gap-1.5">
+            <ComposerSelect
+              value={agentChatTarget}
+              options={CHAT_WORK_PRODUCT_OPTIONS}
+              onChange={setAgentChatTarget}
+              disabled={busy}
+              ariaLabel="Work product"
+              className="w-[7.5rem]"
+              testId="chat-work-product-target"
+            />
           </div>
-        </div>
+        ) : null}
         {!canProposeAiEdits ? (
           <p className="mb-2 text-[11px] text-[var(--muted-foreground)]">
             {targetingAnalytics
@@ -2139,7 +1992,6 @@ export function ChatPanel({
               placeholder={composerPlaceholder({
                 targetingAnalytics,
                 mode,
-                sectionScope,
               })}
               className="min-h-[4.5rem] max-h-40 w-full resize-none bg-transparent px-3.5 pt-3 pb-1.5 text-sm outline-none placeholder:text-[var(--muted-foreground)] disabled:opacity-50"
             />

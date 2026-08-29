@@ -50,10 +50,7 @@ import {
   type ChatSectionScope,
 } from "@/lib/ai/chat/fields";
 import { getDocumentType } from "@/lib/document-types";
-import {
-  detectSectionIntentFromText,
-  detectSectionScopeMismatch,
-} from "@/lib/ai/chat/section-intent";
+import { detectSectionIntentFromText } from "@/lib/ai/chat/section-intent";
 import {
   alreadyDraftedGapHints,
   detectAlreadyDraftedSection,
@@ -112,6 +109,7 @@ import {
   mentionedSections,
   parseChatMentions,
   resolveChatMentions,
+  sectionScopeFromMentions,
 } from "@/lib/ai/chat/mentions";
 
 /** Must stay in sync with `CHAT_FUNCTION_MAX_DURATION_SEC`. */
@@ -171,14 +169,19 @@ export async function POST(
   const paceConfig = chatPaceConfig(pace);
   const accessEarly = await loadAccessibleReport(reportId, user);
   if (!accessEarly) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const sectionScope: ChatSectionScope = parseChatSectionScope(
-    body.sectionScope,
-    accessEarly.report.documentType
-  );
   const requestedMentions = parseChatMentions(
     body.mentions,
     accessEarly.report.documentType
   );
+  const mentionScope = sectionScopeFromMentions(
+    requestedMentions,
+    accessEarly.report.documentType
+  );
+  const sectionScope: ChatSectionScope = requestedMentions.some(
+    (mention) => mention.type === "section"
+  )
+    ? mentionScope
+    : parseChatSectionScope(body.sectionScope, accessEarly.report.documentType);
 
   const access = accessEarly;
   const { report } = access;
@@ -214,11 +217,6 @@ export async function POST(
   // streaming a reply that would never be saved to history.
   const userMsg = lastUserMessage(messages);
   const userText = messageText(userMsg);
-  const scopeMismatch = detectSectionScopeMismatch(
-    sectionScope,
-    userText,
-    accessEarly.report.documentType
-  );
   if (userMsg) {
     try {
       await db.insert(chatMessages).values({
@@ -338,8 +336,7 @@ export async function POST(
     mode,
     sectionScope,
     documentType: report.documentType,
-    scopeMismatch,
-    alreadyDrafted: scopeMismatch ? null : alreadyDrafted,
+    alreadyDrafted,
     alreadyDraftedGapHints: alreadyDraftedGapHintsForPrompt,
     mentionBlock: buildMentionBlock(mentions),
     autoEvidenceBlock,
@@ -375,7 +372,6 @@ export async function POST(
         mode,
         section: stubSection,
         targetField: primaryFieldForSection(stubSection),
-        scopeMismatch,
         insertText: `Stubbed drafting insertion addressing "${userText.slice(0, 80)}". [Replace with real content once a Gemini credential is configured.]`,
         reasoning: "Demo stub proposal.",
       })
@@ -426,7 +422,7 @@ export async function POST(
           };
         }
 
-        const alreadyDraftedActive = alreadyDrafted != null && !scopeMismatch;
+        const alreadyDraftedActive = alreadyDrafted != null;
         const alreadyDraftedStep = alreadyDraftedReadStep({
           stepsTaken: steps.length,
           alreadyDrafted: alreadyDraftedActive,

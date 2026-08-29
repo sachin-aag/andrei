@@ -1,5 +1,4 @@
 import type { DocumentType, SectionType } from "@/db/schema";
-import type { SectionScopeMismatch } from "@/lib/ai/chat/section-intent";
 import {
   type ChatSectionScope,
   chatSectionsInScope,
@@ -20,7 +19,7 @@ import type { RetrievalPolicy } from "@/lib/ai/chat/retrieval-policy";
 import type { ChatEditPolicy } from "@/lib/ai/chat/edit-policy";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v51-already-drafted-agent-commit";
+export const CHAT_PROMPT_VERSION = "chat-v53-drop-section-switch";
 
 export type ChatMode = "plan" | "agent";
 
@@ -75,16 +74,9 @@ The engineer has not narrowed scope. Answer questions about any section unless t
     ? `draft_field / edit_table / propose_edit / ${figures} / select_analyze_method`
     : `draft_field / edit_table / propose_edit / ${figures}`;
   return `## Section focus: ${label} [${scope}]
-The engineer selected **${label}** for this conversation. Focus Ask questions and Agent edits on this section only.
-- Ask mode: answer questions about ${label}; do not address other sections unless they change the section dropdown.
-- Agent mode: only call ${editTools} on section "${scope}". Prefer read_section on "${scope}" too.${priorReadNote}
-- If the request clearly belongs elsewhere, call suggest_section_scope before answering substantively — do not edit other sections.`;
-}
-
-function scopeMismatchBlock(mismatch: SectionScopeMismatch): string {
-  return `## Section scope mismatch (detected)
-The engineer's latest message appears to be about **${sectionLabel(mismatch.suggestedSection)}** [${mismatch.suggestedSection}], but the section dropdown is set to **${sectionLabel(mismatch.currentSection)}** [${mismatch.currentSection}].
-Call suggest_section_scope with suggestedSection="${mismatch.suggestedSection}" and a brief reason BEFORE answering substantively. You may add a short note in prose, but do not read or edit the out-of-scope section until they switch or confirm keeping the current focus.`;
+The engineer tagged **${label}** for this conversation. Focus Ask questions and Agent edits on this section only.
+- Ask mode: answer questions about ${label}; do not address other sections unless they tag a different @ section.
+- Agent mode: only call ${editTools} on section "${scope}". Prefer read_section on "${scope}" too.${priorReadNote}`;
 }
 
 const QUESTION_RULES = `## Asking questions
@@ -311,7 +303,6 @@ export function buildChatSystemPrompt(opts: {
   mode: ChatMode;
   sectionScope?: ChatSectionScope;
   documentType?: DocumentType;
-  scopeMismatch?: SectionScopeMismatch | null;
   /** When the requested section is already filled/partial, inject review-first. */
   alreadyDrafted?: AlreadyDraftedSection | null;
   /** Cached AI Check gap hints for alreadyDrafted.section. */
@@ -350,17 +341,13 @@ export function buildChatSystemPrompt(opts: {
           includePlotMeasurements,
           editPolicy: opts.editPolicy ?? "propose",
         });
-  const mismatchBlock = opts.scopeMismatch
-    ? `\n\n${scopeMismatchBlock(opts.scopeMismatch)}`
+  const draftedBlock = opts.alreadyDrafted
+    ? `\n\n${alreadyDraftedBlock(
+        opts.alreadyDrafted,
+        mode,
+        opts.alreadyDraftedGapHints ?? { kind: "not_evaluated" }
+      )}`
     : "";
-  const draftedBlock =
-    opts.alreadyDrafted && !opts.scopeMismatch
-      ? `\n\n${alreadyDraftedBlock(
-          opts.alreadyDrafted,
-          mode,
-          opts.alreadyDraftedGapHints ?? { kind: "not_evaluated" }
-        )}`
-      : "";
   const mentions = opts.mentionBlock?.trim()
     ? `\n\n${opts.mentionBlock.trim()}`
     : "";
@@ -377,7 +364,7 @@ export function buildChatSystemPrompt(opts: {
 
   return `${chat.persona}
 
-${sectionFocusBlock(sectionScope, analyzeInScope, includePlotMeasurements)}${mismatchBlock}${draftedBlock}${mentions}
+${sectionFocusBlock(sectionScope, analyzeInScope, includePlotMeasurements)}${draftedBlock}${mentions}
 
 ## Editable fields (section → targetField (kind))
 ${fieldTaxonomy(sectionScope, documentType)}
