@@ -95,18 +95,15 @@ describe("AttachmentViewer", () => {
     expect(screen.getByText(/Upload is still finishing/)).toBeInTheDocument();
   });
 
-  it("exposes labeled back and close controls that return to the report", async () => {
+  it("exposes a labeled close control that returns to the report", async () => {
     const closeDocument = vi.fn();
     mockContext({ closeDocument });
     const user = userEvent.setup();
 
     render(<AttachmentViewer />);
 
-    await user.click(screen.getByRole("button", { name: "Back to report" }));
-    expect(closeDocument).toHaveBeenCalledTimes(1);
-
     await user.click(screen.getByRole("button", { name: "Close document" }));
-    expect(closeDocument).toHaveBeenCalledTimes(2);
+    expect(closeDocument).toHaveBeenCalledTimes(1);
   });
 
   it("closes the document when Escape is pressed", async () => {
@@ -128,7 +125,7 @@ describe("AttachmentViewer", () => {
 
     render(<AttachmentViewer onClose={onClose} />);
 
-    await user.click(screen.getByRole("button", { name: "Back to report" }));
+    await user.click(screen.getByRole("button", { name: "Close document" }));
     expect(onClose).toHaveBeenCalledTimes(1);
     expect(closeDocument).not.toHaveBeenCalled();
   });
