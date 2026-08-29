@@ -51,7 +51,7 @@ describe("MJ customer pack content", () => {
     expect(demo.prompts.perSection.conclusion).toBeTruthy();
   });
 
-  it("hides conclusion from sections, criteria, chat, and Improve AI eval list", () => {
+  it("hides conclusion from sections, criteria, chat, and evaluable section list", () => {
     const def = buildInvestigationReportDefinition(MJ_PACK);
     expect(def.sections.map((s) => s.key)).not.toContain("conclusion");
     expect(def.criteriaBySection.conclusion).toBeUndefined();

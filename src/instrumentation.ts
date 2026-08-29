@@ -20,7 +20,6 @@ export function getLangfuseSpanProcessor(): LangfuseSpanProcessor | null {
 /**
  * Next.js server instrumentation hook.
  * Langfuse tracing for inline suggestions / evaluation observability.
- * Improve AI feedback sessions are stored in Neon (see src/lib/improve-ai/store.ts).
  */
 export function register() {
   if (process.env.NEXT_RUNTIME === "edge") return;
