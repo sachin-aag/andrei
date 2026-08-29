@@ -44,12 +44,23 @@ export type DocumentTypePrompts = {
   promptVersion: string;
 };
 
+/** Empty-state Document-chat chips. Ask vs Agent; never DMAIC-hardcoded. */
+export type DocumentChatExamplePrompts = {
+  readonly plan: readonly string[];
+  readonly agent: readonly string[];
+};
+
 /** Chat drafting guidance owned by each document type. */
 export type DocumentTypeChatConfig = {
   /** Opening persona paragraphs for the chat system prompt. */
   persona: string;
   /** Editable section keys in drafting-priority order (highest signal first). */
   draftOrder: readonly SectionType[];
+  /**
+   * Empty-state composer chips for Document chat. Name this type's sections
+   * (Purpose & Scope, FMEA, …), not investigation DMAIC unless this is IR.
+   */
+  examplePrompts: DocumentChatExamplePrompts;
   /** Section keyword patterns for scope-intent detection. */
   sectionIntentPatterns: ReadonlyArray<
     readonly [SectionType, readonly RegExp[]]

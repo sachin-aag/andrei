@@ -71,7 +71,7 @@ pnpm exec playwright install --with-deps chromium firefox webkit
 - `src/lib/document-revisions/` — Document product History snapshots (`snapshot.ts`) and inline compare (`inline-diff.ts`). One row per Agent-chrome report turn, or one coalesced row per human editing burst (30s idle). Compare diffs prose, every table by index, and added/removed figures. Worksheet writes are `analyticsRevisions`, not document versions.
 - `src/lib/analytics-revisions/` — Analytics product History (worksheet + plots snapshot, idle-coalesced). Compare is a cell/plot list, not TipTap.
 - `src/lib/ai/` — AI evaluation, suggestion, and chat pipelines (see subsystems below).
-- `src/lib/document-types/` — Registry for `investigation_report`, `design_verification`, `mechanical_design_verification`, `quality_risk_assessment`, and `generic_document` (sections, criteria, prompts, chat persona, merge).
+- `src/lib/document-types/` — Registry for `investigation_report`, `design_verification`, `mechanical_design_verification`, `quality_risk_assessment`, and `generic_document` (sections, criteria, prompts, chat persona, empty-state chips, merge).
 - `src/lib/attachments/` — PDF/DOCX ingest, chunk/embed, hybrid retrieval (`searchReportDocuments`, `readDocumentPage`, `readDocumentOutline`).
 - `src/lib/storage/` — Attachment blob storage (GCS vs local).
 - `src/lib/audit/` — Hash-chained audit log, section version history, and e-signature workflow (see Audit subsystem).
@@ -316,7 +316,7 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
 
 **Plan-mode allowlist** in `src/lib/ai/chat/document-review.ts`: `read_section`, `search_documents`, `read_document_page`, `document_outline`, `ask_user`, plus document-review tools. New tools must be added here or they are silently missing in Plan. Analytics worksheet/plot tools stay off this list.
 
-**Spectrum:** Document and Agent share `ChatPanel`. Composer/scope/tool changes must cover Document | Agent chrome, `/chat` **and** `/analytics/chat`, prompt versions (`CHAT_PROMPT_VERSION` / `ANALYTICS_CHAT_PROMPT_VERSION`), Plan allowlist, retrieval-policy, already-drafted, stub model, colocated tests, and `AGENTS.md` / this file / `.cursor/rules/chat-and-attachments.mdc`. Removing a control means deleting parsers, prompt copy, switch-section tools, and tests for it — not hiding the UI.
+**Spectrum:** Document and Agent share `ChatPanel`. Composer/scope/tool changes must cover Document | Agent chrome, `/chat` **and** `/analytics/chat`, prompt versions (`CHAT_PROMPT_VERSION` / `ANALYTICS_CHAT_PROMPT_VERSION`), Plan allowlist, retrieval-policy, already-drafted, stub model, colocated tests, and `AGENTS.md` / this file / `.cursor/rules/chat-and-attachments.mdc`. Removing a control means deleting parsers, prompt copy, switch-section tools, and tests for it — not hiding the UI. Empty-state Document chips are `chat.examplePrompts` on the document type (Purpose & Scope on DV, Define on investigation); Analytics chips stay in `ANALYTICS_EXAMPLE_PROMPTS`.
 
 **Retrieval:** `searchReportDocuments` (vector + English FTS OR-tokens). Report body is not chunk-indexed. Stub chat: `ALLOW_TEST_STUB_CHAT` / `stub-model.ts` — streams a canned reply; cannot assert tool selection.
 
