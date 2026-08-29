@@ -38,6 +38,9 @@ const sections = getWorkspaceSections(report.documentType);
   `convergent-dv-v7` for Convergent DV).
 - Chat editable sections: `chatEditableSections(documentType)` in
   `src/lib/ai/chat/fields.ts`. Do not reuse investigation field maps on DV.
+- Document-chat empty-state chips: `chat.examplePrompts` on the type (Ask vs
+  Agent). Name that template's sections (`Purpose & Scope`, `Objective`, …).
+  Do not hardcode Define / Analyze in `ChatPanel`.
 - Criteria evaluation is per filled section. An empty Purpose / Define /
   cover page must not block Run criteria on other sections that have
   content. Cover page eval reads `reports.metadata` (document number),

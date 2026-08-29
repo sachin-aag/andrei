@@ -80,6 +80,18 @@ export const genericDocumentDefinition: DocumentTypeDefinition = {
     persona: genericPersona(),
     draftingGuidance: GENERIC_DRAFTING_GUIDANCE,
     draftOrder: [GENERIC_DOCUMENT_SECTION],
+    examplePrompts: {
+      plan: [
+        "What does the evidence say about this topic?",
+        "Summarize the attached files that should inform this document.",
+        "Outline headings I should add to the body.",
+      ],
+      agent: [
+        "Draft the document from what we discussed, using markdown headings.",
+        "Tighten the structure with a clear title and section headings.",
+        "Propose a clearer opening and a tighter closing.",
+      ],
+    },
     sectionIntentPatterns: [
       [
         GENERIC_DOCUMENT_SECTION,
