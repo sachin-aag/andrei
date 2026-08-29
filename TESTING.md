@@ -119,7 +119,7 @@ Documented in `.env.example` (local / CI only):
 |----------|--------|
 | `ALLOW_TEST_LOGIN=true` | Enables `POST /api/test/login` and `POST /api/test/seed-auth-users` |
 | `TEST_AUTH_EMAIL` | Default engineer email for test login (default: `test.engineer@mjbiopharm.com`) |
-| `ALLOW_TEST_SKIP_EVALUATION=true` | Stub all `evaluateSection()` calls (report editor + Improve AI) via `src/lib/improve-ai/fixtures/stub-evaluations.json` |
+| `ALLOW_TEST_SKIP_EVALUATION=true` | Stub all `evaluateSection()` calls (report editor AI Check) via `src/lib/ai/fixtures/stub-evaluations.json` |
 | `ALLOW_TEST_SKIP_SUGGESTIONS=true` | Stub AI suggestions with `src/lib/ai/fixtures/stub-suggestions.json` |
 
 Playwright sets these automatically in `webServer.env`.
@@ -250,19 +250,6 @@ Both AI-suggestion cases seed an open suggestion through `POST /api/test/seed-ai
 |------|------------------|
 | export triggers docx download | Export DOCX link → `.docx` filename (Convergent also has Export without citations in the split menu) |
 | export returns 404 for missing report | Bad report id |
-
-</details>
-
-<details>
-<summary><strong>improve-ai.spec.ts</strong> — AI feedback sessions (stub eval)</summary>
-
-| Test | What it verifies |
-|------|------------------|
-| shows empty state on list page | `/improve-ai` empty copy |
-| creates session from existing report | UI flow → review page |
-| agrees with a criterion on review page | Yes / Yes radio answers |
-| completes session after reviewing all criteria | PATCH complete → Reviewed |
-| uploads docx to create session | Upload & evaluate path |
 
 </details>
 
@@ -486,14 +473,13 @@ Grouped by subsystem. Run a folder with `pnpm test -- src/lib/import`.
 </details>
 
 <details>
-<summary><strong>Reports, sections, auth, Improve AI</strong></summary>
+<summary><strong>Reports, sections, auth</strong></summary>
 
 | Area | Files |
 |------|--------|
 | Sections | `sections-merge.test.ts`, `section-content-normalize.test.ts`, `seed-blank-report-sections.test.ts`, `improve-control-body-split.test.ts` |
 | Reports | `deviation-no.test.ts`, `persist-source-docx.test.ts` |
 | Auth | `must-change-password.test.ts`, `auth-base-url.test.ts`, `send-reset-email.test.ts` |
-| Improve AI | `human-judgment.test.ts`, `session-staleness.test.ts`, `section-display-blocks.test.ts` |
 | Comments UI | `comments/display.test.ts` |
 | Math | `math/omml-mathml.test.ts` |
 | DOCX signatures | `docx/signature-block.test.ts` |

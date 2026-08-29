@@ -106,11 +106,6 @@ export const commentKindEnum = pgEnum("comment_kind", [
   "ai_redraft",
 ]);
 
-export const aiFeedbackSourceTypeEnum = pgEnum("ai_feedback_source_type", [
-  "existing_report",
-  "uploaded_docx",
-]);
-
 export const chatMessageRoleEnum = pgEnum("chat_message_role", [
   "user",
   "assistant",
@@ -121,12 +116,6 @@ export const chatAssistantTurnStatusEnum = pgEnum(
   "chat_assistant_turn_status",
   ["idle", "running", "cancel_requested"]
 );
-
-export const aiFeedbackSessionStatusEnum = pgEnum("ai_feedback_session_status", [
-  "evaluating",
-  "ready_for_review",
-  "reviewed",
-]);
 
 export const userRoleEnum = pgEnum("user_role", [
   "engineer",
@@ -160,6 +149,7 @@ export const auditActionEnum = pgEnum("audit_action", [
   "policy_updated",
   "auth_password_changed",
   "auth_password_reset",
+  // Historical Improve AI values — keep so existing audit_events rows stay valid.
   "improve_ai_session_created",
   "improve_ai_session_completed",
   "improve_ai_response_updated",
@@ -182,6 +172,7 @@ export const auditEntityEnum = pgEnum("audit_entity", [
   "user",
   "policy",
   "auth",
+  // Historical Improve AI entity — keep so existing audit_events rows stay valid.
   "improve_ai",
   "attachment",
 ]);
@@ -881,90 +872,6 @@ export const mathExtractionCache = pgTable("math_extraction_cache", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-/** User-submitted report for Improve AI feedback (links to production `reports`). */
-export const aiFeedbackSessions = pgTable(
-  "ai_feedback_sessions",
-  {
-    id: text("id").primaryKey().$defaultFn(() => createId()),
-    reportId: text("report_id")
-      .notNull()
-      .references(() => reports.id, { onDelete: "cascade" }),
-    submittedBy: text("submitted_by")
-      .notNull()
-      .references(() => workspaceUsers.id, { onDelete: "cascade" }),
-    sourceType: aiFeedbackSourceTypeEnum("source_type").notNull(),
-    status: aiFeedbackSessionStatusEnum("status")
-      .notNull()
-      .default("evaluating"),
-    sourceLabel: text("source_label").notNull().default(""),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (t) => ({
-    reportSubmitterUnique: uniqueIndex(
-      "ai_feedback_sessions_report_submitter_unique"
-    ).on(t.reportId, t.submittedBy),
-  })
-);
-
-export const aiFeedbackResponses = pgTable(
-  "ai_feedback_responses",
-  {
-    id: text("id").primaryKey().$defaultFn(() => createId()),
-    sessionId: text("session_id")
-      .notNull()
-      .references(() => aiFeedbackSessions.id, { onDelete: "cascade" }),
-    criterionKey: text("criterion_key").notNull(),
-    section: text("section").notNull(),
-    aiStatus: criterionStatusEnum("ai_status").notNull(),
-    aiReasoning: text("ai_reasoning").notNull().default(""),
-    criteriaEvaluationAgreement: text("criteria_evaluation_agreement"),
-    reasoningAgreement: text("reasoning_agreement"),
-    humanComment: text("human_comment").notNull().default(""),
-    suggestedStatus: criterionStatusEnum("suggested_status"),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-  },
-  (t) => ({
-    sessionCriterionUnique: uniqueIndex(
-      "ai_feedback_responses_session_criterion_unique"
-    ).on(t.sessionId, t.criterionKey),
-  })
-);
-
-export const aiFeedbackSessionsRelations = relations(
-  aiFeedbackSessions,
-  ({ one, many }) => ({
-    report: one(reports, {
-      fields: [aiFeedbackSessions.reportId],
-      references: [reports.id],
-    }),
-    submitter: one(workspaceUsers, {
-      fields: [aiFeedbackSessions.submittedBy],
-      references: [workspaceUsers.id],
-    }),
-    responses: many(aiFeedbackResponses),
-  })
-);
-
-export const aiFeedbackResponsesRelations = relations(
-  aiFeedbackResponses,
-  ({ one }) => ({
-    session: one(aiFeedbackSessions, {
-      fields: [aiFeedbackResponses.sessionId],
-      references: [aiFeedbackSessions.id],
-    }),
-  })
-);
-
 /** Append-only Part 11 audit trail (hash chain enforced in DB triggers). */
 export const auditEvents = pgTable(
   "audit_events",
@@ -1335,10 +1242,6 @@ export type InvestigationSectionType =
 export type CriterionStatus = (typeof criterionStatusEnum.enumValues)[number];
 export type CommentStatus = (typeof commentStatusEnum.enumValues)[number];
 export type CommentKind = (typeof commentKindEnum.enumValues)[number];
-export type AiFeedbackSourceType =
-  (typeof aiFeedbackSourceTypeEnum.enumValues)[number];
-export type AiFeedbackSessionStatus =
-  (typeof aiFeedbackSessionStatusEnum.enumValues)[number];
 export type ChatMessageRole = (typeof chatMessageRoleEnum.enumValues)[number];
 export type AuditAction = (typeof auditActionEnum.enumValues)[number];
 export type AuditEntity = (typeof auditEntityEnum.enumValues)[number];

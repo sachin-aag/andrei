@@ -9,7 +9,6 @@ import {
   BarChart3,
   FileText,
   Gauge,
-  Sparkles,
   Users,
   PanelLeftClose,
   PanelLeftOpen,
@@ -54,7 +53,6 @@ export function AppShell({
       : [
           { href: "/", label: "Reports", icon: FileText },
           { href: "/insights/dashboard", label: "Insights", icon: BarChart3 },
-          { href: "/improve-ai", label: "Improve AI", icon: Sparkles },
         ]),
   ];
 

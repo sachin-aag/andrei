@@ -3,7 +3,7 @@
  * Never set ALLOW_TEST_* on Vercel production or preview deployments.
  */
 
-/** Stubs `evaluateSection()` (report editor + Improve AI) — skips Gemini. */
+/** Stubs `evaluateSection()` (report editor AI Check) — skips Gemini. */
 export function isTestSkipEvaluation(): boolean {
   return process.env.ALLOW_TEST_SKIP_EVALUATION === "true";
 }
