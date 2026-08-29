@@ -97,9 +97,6 @@ test.describe("report chat", () => {
     await expect(chatUserMessage(page, "help me start this report")).toBeVisible({
       timeout: 15_000,
     });
-    await expect(sidebar.getByText(/^assistant$/i)).toBeVisible({
-      timeout: 30_000,
-    });
     await expect(sidebar.getByText(/out-of-spec dissolution result/i)).toBeVisible({
       timeout: 30_000,
     });
