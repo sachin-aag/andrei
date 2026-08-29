@@ -18,7 +18,7 @@ import {
   deleteCapabilitySixpack,
   getReportAnalytics,
   patchReportAnalytics,
-  recomputeCapabilitySixpack,
+  updateAnalysis,
   AnalyticsConflictError,
 } from "@/lib/statistical-analysis/client";
 import { applySampleAssay } from "@/lib/statistical-analysis/sample-data";
@@ -133,8 +133,8 @@ export function StatisticalWorkspace({
   const [specsColumnId, setSpecsColumnId] = useState<string | null>(null);
   const [editingSheetId, setEditingSheetId] = useState<string | null>(null);
   const [sheetNameDraft, setSheetNameDraft] = useState("");
+  const [editingAnalysisId, setEditingAnalysisId] = useState<string | null>(null);
   const sheetNameInputRef = useRef<HTMLInputElement>(null);
-  const [recomputing, setRecomputing] = useState(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [version, setVersion] = useState(1);
@@ -356,6 +356,10 @@ export function StatisticalWorkspace({
     displayedAnalyses.find((item) => item.id === selectedAnalysisId) ??
     displayedAnalyses[0] ??
     null;
+  const editingAnalysis =
+    editingAnalysisId != null
+      ? displayedAnalyses.find((item) => item.id === editingAnalysisId) ?? null
+      : null;
 
   const selectedColumn =
     worksheet.columns[selection.col] ?? worksheet.columns[0] ?? null;
@@ -389,6 +393,46 @@ export function StatisticalWorkspace({
     setEditingSheetId(null);
   }, []);
 
+  const openAnalysisEdit = useCallback(
+    (analysis: StatisticalAnalysisSummary) => {
+      if (readOnly) return;
+      setEditingAnalysisId(analysis.id);
+      if (isSixpackAnalysis(analysis)) {
+        setCapabilityColumnId(analysis.config.columnId);
+        setCapabilityRowStart(analysis.config.rowStart ?? null);
+        setCapabilityRowEnd(analysis.config.rowEnd ?? null);
+        setCapabilityError(null);
+        setCapabilityOpen(true);
+        return;
+      }
+      if (isAnovaAnalysis(analysis)) {
+        setAnovaResponseColumnId(analysis.config.responseColumnId);
+        setAnovaRowStart(analysis.config.rowStart ?? null);
+        setAnovaRowEnd(analysis.config.rowEnd ?? null);
+        setAnovaError(null);
+        setAnovaOpen(true);
+        return;
+      }
+      if (isXyScatterAnalysis(analysis)) {
+        setXyYColumnId(analysis.config.yColumnId);
+        setXyRowStart(analysis.config.rowStart ?? null);
+        setXyRowEnd(analysis.config.rowEnd ?? null);
+        setXyError(null);
+        setXyOpen(true);
+        return;
+      }
+      if (isScatterAnalysis(analysis)) {
+        setPlotError(null);
+        setPlotOpen(true);
+      }
+    },
+    [readOnly]
+  );
+
+  const clearAnalysisEdit = useCallback(() => {
+    setEditingAnalysisId(null);
+  }, []);
+
   useEffect(() => {
     if (editingSheetId !== null) sheetNameInputRef.current?.focus();
   }, [editingSheetId]);
@@ -399,6 +443,7 @@ export function StatisticalWorkspace({
   ) => {
     if (readOnly) return;
     await flush().catch(() => undefined);
+    setEditingAnalysisId(null);
     setAnalyzeColumnId(columnId);
     setAnalyzeRowStart(rows?.start ?? null);
     setAnalyzeRowEnd(rows?.end ?? null);
@@ -412,6 +457,7 @@ export function StatisticalWorkspace({
   ) => {
     if (readOnly) return;
     await flush().catch(() => undefined);
+    setEditingAnalysisId(null);
     setCapabilityColumnId(columnId);
     setCapabilityRowStart(rows?.start ?? null);
     setCapabilityRowEnd(rows?.end ?? null);
@@ -422,6 +468,7 @@ export function StatisticalWorkspace({
   const openPlotMeasurements = async () => {
     if (readOnly) return;
     await flush().catch(() => undefined);
+    setEditingAnalysisId(null);
     setPlotError(null);
     setPlotOpen(true);
   };
@@ -432,6 +479,7 @@ export function StatisticalWorkspace({
   ) => {
     if (readOnly) return;
     await flush().catch(() => undefined);
+    setEditingAnalysisId(null);
     setAnovaResponseColumnId(columnId);
     setAnovaRowStart(rows?.start ?? null);
     setAnovaRowEnd(rows?.end ?? null);
@@ -445,6 +493,7 @@ export function StatisticalWorkspace({
   ) => {
     if (readOnly) return;
     await flush().catch(() => undefined);
+    setEditingAnalysisId(null);
     setXyYColumnId(columnId);
     setXyRowStart(rows?.start ?? null);
     setXyRowEnd(rows?.end ?? null);
@@ -766,7 +815,7 @@ export function StatisticalWorkspace({
                                 : "text-[var(--muted-foreground)]"
                             }`}
                           >
-                            {analysis.stale ? "Needs recompute · " : ""}
+                            {analysis.stale ? "Stale · " : ""}
                             {new Date(analysis.createdAt).toLocaleString()}
                           </span>
                         </button>
@@ -782,31 +831,8 @@ export function StatisticalWorkspace({
                   <ScatterView
                     analysis={selectedAnalysis}
                     readOnly={readOnly}
-                    recomputing={recomputing}
-                    onRecompute={async () => {
-                      setRecomputing(true);
-                      try {
-                        await flush().catch(() => undefined);
-                        const next = await recomputeCapabilitySixpack(
-                          reportId,
-                          selectedAnalysis.id
-                        );
-                        applyAnalytics(next);
-                        toast.success(
-                          isXyScatterAnalysis(selectedAnalysis)
-                            ? "Scatter recomputed from the current columns."
-                            : "Scatter recomputed from the attachments."
-                        );
-                      } catch (error) {
-                        toast.error(
-                          error instanceof Error
-                            ? error.message
-                            : "Could not recompute the analysis."
-                        );
-                      } finally {
-                        setRecomputing(false);
-                      }
-                    }}
+                    editing={Boolean(editingAnalysisId)}
+                    onEdit={() => openAnalysisEdit(selectedAnalysis)}
                     onDelete={async () => {
                       try {
                         const next = await deleteCapabilitySixpack(
@@ -827,27 +853,8 @@ export function StatisticalWorkspace({
                   <AnovaView
                     analysis={selectedAnalysis}
                     readOnly={readOnly}
-                    recomputing={recomputing}
-                    onRecompute={async () => {
-                      setRecomputing(true);
-                      try {
-                        await flush().catch(() => undefined);
-                        const next = await recomputeCapabilitySixpack(
-                          reportId,
-                          selectedAnalysis.id
-                        );
-                        applyAnalytics(next);
-                        toast.success("ANOVA recomputed from the current columns.");
-                      } catch (error) {
-                        toast.error(
-                          error instanceof Error
-                            ? error.message
-                            : "Could not recompute the analysis."
-                        );
-                      } finally {
-                        setRecomputing(false);
-                      }
-                    }}
+                    editing={Boolean(editingAnalysisId)}
+                    onEdit={() => openAnalysisEdit(selectedAnalysis)}
                     onDelete={async () => {
                       try {
                         const next = await deleteCapabilitySixpack(
@@ -868,27 +875,8 @@ export function StatisticalWorkspace({
                   <SixpackView
                     analysis={selectedAnalysis}
                     readOnly={readOnly}
-                    recomputing={recomputing}
-                    onRecompute={async () => {
-                      setRecomputing(true);
-                      try {
-                        await flush().catch(() => undefined);
-                        const next = await recomputeCapabilitySixpack(
-                          reportId,
-                          selectedAnalysis.id
-                        );
-                        applyAnalytics(next);
-                        toast.success("Sixpack recomputed from the current column.");
-                      } catch (error) {
-                        toast.error(
-                          error instanceof Error
-                            ? error.message
-                            : "Could not recompute the analysis."
-                        );
-                      } finally {
-                        setRecomputing(false);
-                      }
-                    }}
+                    editing={Boolean(editingAnalysisId)}
+                    onEdit={() => openAnalysisEdit(selectedAnalysis)}
                     onDelete={async () => {
                       try {
                         const next = await deleteCapabilitySixpack(
@@ -980,33 +968,78 @@ export function StatisticalWorkspace({
       />
 
       <CapabilityDialog
-        key={capabilityOpen ? "open" : "closed"}
+        key={
+          capabilityOpen
+            ? `capability-${editingAnalysisId ?? "new"}`
+            : "capability-closed"
+        }
         open={capabilityOpen}
         worksheet={worksheet}
         defaultColumnId={capabilityColumnId || selectedColumnId}
         defaultRowStart={capabilityRowStart}
         defaultRowEnd={capabilityRowEnd}
+        defaultTitle={
+          editingAnalysis && isSixpackAnalysis(editingAnalysis)
+            ? editingAnalysis.config.title
+            : ""
+        }
+        defaultLsl={
+          editingAnalysis && isSixpackAnalysis(editingAnalysis)
+            ? editingAnalysis.config.lsl
+            : null
+        }
+        defaultUsl={
+          editingAnalysis && isSixpackAnalysis(editingAnalysis)
+            ? editingAnalysis.config.usl
+            : null
+        }
+        defaultTarget={
+          editingAnalysis && isSixpackAnalysis(editingAnalysis)
+            ? editingAnalysis.config.target
+            : null
+        }
+        editMode={Boolean(
+          editingAnalysis && isSixpackAnalysis(editingAnalysis)
+        )}
         submitting={capabilitySubmitting}
         error={capabilityError}
-        onOpenChange={setCapabilityOpen}
+        onOpenChange={(open) => {
+          setCapabilityOpen(open);
+          if (!open) clearAnalysisEdit();
+        }}
         onSubmit={async (values) => {
           setCapabilitySubmitting(true);
           setCapabilityError(null);
           try {
             await flush().catch(() => undefined);
-            const created = await createCapabilitySixpack(reportId, {
-              columnId: values.columnId,
-              title: values.title || undefined,
-              lsl: values.lsl,
-              usl: values.usl,
-              target: values.target,
-              rowStart: values.rowStart,
-              rowEnd: values.rowEnd,
-            });
-            applyAnalytics(created.analytics, {
-              selectAnalysisId: created.analysisId,
-            });
+            if (editingAnalysisId && isSixpackAnalysis(editingAnalysis!)) {
+              const next = await updateAnalysis(reportId, editingAnalysisId, {
+                columnId: values.columnId,
+                title: values.title || undefined,
+                lsl: values.lsl,
+                usl: values.usl,
+                target: values.target,
+                rowStart: values.rowStart,
+                rowEnd: values.rowEnd,
+              });
+              applyAnalytics(next, { selectAnalysisId: editingAnalysisId });
+              toast.success("Sixpack updated.");
+            } else {
+              const created = await createCapabilitySixpack(reportId, {
+                columnId: values.columnId,
+                title: values.title || undefined,
+                lsl: values.lsl,
+                usl: values.usl,
+                target: values.target,
+                rowStart: values.rowStart,
+                rowEnd: values.rowEnd,
+              });
+              applyAnalytics(created.analytics, {
+                selectAnalysisId: created.analysisId,
+              });
+            }
             setCapabilityOpen(false);
+            clearAnalysisEdit();
             setTab("results");
           } catch (error) {
             setCapabilityError(
@@ -1052,31 +1085,60 @@ export function StatisticalWorkspace({
       />
 
       <AnovaDialog
-        key={anovaOpen ? "anova-open" : "anova-closed"}
+        key={
+          anovaOpen ? `anova-${editingAnalysisId ?? "new"}` : "anova-closed"
+        }
         open={anovaOpen}
         worksheet={worksheet}
         defaultResponseColumnId={anovaResponseColumnId || selectedColumnId}
+        defaultFactorColumnId={
+          editingAnalysis && isAnovaAnalysis(editingAnalysis)
+            ? editingAnalysis.config.factorColumnId
+            : undefined
+        }
         defaultRowStart={anovaRowStart}
         defaultRowEnd={anovaRowEnd}
+        defaultTitle={
+          editingAnalysis && isAnovaAnalysis(editingAnalysis)
+            ? editingAnalysis.config.title
+            : ""
+        }
+        editMode={Boolean(editingAnalysis && isAnovaAnalysis(editingAnalysis))}
         submitting={anovaSubmitting}
         error={anovaError}
-        onOpenChange={setAnovaOpen}
+        onOpenChange={(open) => {
+          setAnovaOpen(open);
+          if (!open) clearAnalysisEdit();
+        }}
         onSubmit={async (values) => {
           setAnovaSubmitting(true);
           setAnovaError(null);
           try {
             await flush().catch(() => undefined);
-            const created = await createOneWayAnova(reportId, {
-              responseColumnId: values.responseColumnId,
-              factorColumnId: values.factorColumnId,
-              title: values.title || undefined,
-              rowStart: values.rowStart,
-              rowEnd: values.rowEnd,
-            });
-            applyAnalytics(created.analytics, {
-              selectAnalysisId: created.analysisId,
-            });
+            if (editingAnalysisId && isAnovaAnalysis(editingAnalysis!)) {
+              const next = await updateAnalysis(reportId, editingAnalysisId, {
+                responseColumnId: values.responseColumnId,
+                factorColumnId: values.factorColumnId,
+                title: values.title || undefined,
+                rowStart: values.rowStart,
+                rowEnd: values.rowEnd,
+              });
+              applyAnalytics(next, { selectAnalysisId: editingAnalysisId });
+              toast.success("ANOVA updated.");
+            } else {
+              const created = await createOneWayAnova(reportId, {
+                responseColumnId: values.responseColumnId,
+                factorColumnId: values.factorColumnId,
+                title: values.title || undefined,
+                rowStart: values.rowStart,
+                rowEnd: values.rowEnd,
+              });
+              applyAnalytics(created.analytics, {
+                selectAnalysisId: created.analysisId,
+              });
+            }
             setAnovaOpen(false);
+            clearAnalysisEdit();
             setTab("results");
           } catch (error) {
             setAnovaError(
@@ -1091,31 +1153,60 @@ export function StatisticalWorkspace({
       />
 
       <XyScatterDialog
-        key={xyOpen ? "xy-open" : "xy-closed"}
+        key={xyOpen ? `xy-${editingAnalysisId ?? "new"}` : "xy-closed"}
         open={xyOpen}
         worksheet={worksheet}
         defaultYColumnId={xyYColumnId || selectedColumnId}
+        defaultXColumnId={
+          editingAnalysis && isXyScatterAnalysis(editingAnalysis)
+            ? editingAnalysis.config.xColumnId
+            : undefined
+        }
         defaultRowStart={xyRowStart}
         defaultRowEnd={xyRowEnd}
+        defaultTitle={
+          editingAnalysis && isXyScatterAnalysis(editingAnalysis)
+            ? editingAnalysis.config.title
+            : ""
+        }
+        editMode={Boolean(
+          editingAnalysis && isXyScatterAnalysis(editingAnalysis)
+        )}
         submitting={xySubmitting}
         error={xyError}
-        onOpenChange={setXyOpen}
+        onOpenChange={(open) => {
+          setXyOpen(open);
+          if (!open) clearAnalysisEdit();
+        }}
         onSubmit={async (values) => {
           setXySubmitting(true);
           setXyError(null);
           try {
             await flush().catch(() => undefined);
-            const created = await createXyScatter(reportId, {
-              xColumnId: values.xColumnId,
-              yColumnId: values.yColumnId,
-              title: values.title || undefined,
-              rowStart: values.rowStart,
-              rowEnd: values.rowEnd,
-            });
-            applyAnalytics(created.analytics, {
-              selectAnalysisId: created.analysisId,
-            });
+            if (editingAnalysisId && isXyScatterAnalysis(editingAnalysis!)) {
+              const next = await updateAnalysis(reportId, editingAnalysisId, {
+                xColumnId: values.xColumnId,
+                yColumnId: values.yColumnId,
+                title: values.title || undefined,
+                rowStart: values.rowStart,
+                rowEnd: values.rowEnd,
+              });
+              applyAnalytics(next, { selectAnalysisId: editingAnalysisId });
+              toast.success("Scatter updated.");
+            } else {
+              const created = await createXyScatter(reportId, {
+                xColumnId: values.xColumnId,
+                yColumnId: values.yColumnId,
+                title: values.title || undefined,
+                rowStart: values.rowStart,
+                rowEnd: values.rowEnd,
+              });
+              applyAnalytics(created.analytics, {
+                selectAnalysisId: created.analysisId,
+              });
+            }
             setXyOpen(false);
+            clearAnalysisEdit();
             setTab("results");
           } catch (error) {
             setXyError(
@@ -1130,29 +1221,87 @@ export function StatisticalWorkspace({
       />
 
       <PlotMeasurementsDialog
-        key={plotOpen ? "plot-open" : "plot-closed"}
+        key={
+          plotOpen ? `plot-${editingAnalysisId ?? "new"}` : "plot-closed"
+        }
         open={plotOpen}
+        defaultQuery={
+          editingAnalysis && isScatterAnalysis(editingAnalysis)
+            ? editingAnalysis.config.query
+            : ""
+        }
+        defaultTitle={
+          editingAnalysis && isScatterAnalysis(editingAnalysis)
+            ? editingAnalysis.config.title
+            : ""
+        }
+        defaultXLabel={
+          editingAnalysis && isScatterAnalysis(editingAnalysis)
+            ? editingAnalysis.config.xLabel
+            : ""
+        }
+        defaultYLabel={
+          editingAnalysis && isScatterAnalysis(editingAnalysis)
+            ? editingAnalysis.config.yLabel
+            : ""
+        }
+        defaultMode={
+          editingAnalysis && isScatterAnalysis(editingAnalysis)
+            ? editingAnalysis.config.layout.mode
+            : "combined"
+        }
+        defaultLsl={
+          editingAnalysis && isScatterAnalysis(editingAnalysis)
+            ? editingAnalysis.config.lsl
+            : null
+        }
+        defaultUsl={
+          editingAnalysis && isScatterAnalysis(editingAnalysis)
+            ? editingAnalysis.config.usl
+            : null
+        }
+        editMode={Boolean(
+          editingAnalysis && isScatterAnalysis(editingAnalysis)
+        )}
         submitting={plotSubmitting}
         error={plotError}
-        onOpenChange={setPlotOpen}
+        onOpenChange={(open) => {
+          setPlotOpen(open);
+          if (!open) clearAnalysisEdit();
+        }}
         onSubmit={async (values) => {
           setPlotSubmitting(true);
           setPlotError(null);
           try {
             await flush().catch(() => undefined);
-            const created = await createMeasurementScatter(reportId, {
-              query: values.query,
-              title: values.title || undefined,
-              xLabel: values.xLabel || undefined,
-              yLabel: values.yLabel || undefined,
-              layout: { mode: values.mode },
-              lsl: values.lsl,
-              usl: values.usl,
-            });
-            applyAnalytics(created.analytics, {
-              selectAnalysisId: created.analysisId,
-            });
+            if (editingAnalysisId && isScatterAnalysis(editingAnalysis!)) {
+              const next = await updateAnalysis(reportId, editingAnalysisId, {
+                query: values.query,
+                title: values.title || undefined,
+                xLabel: values.xLabel || undefined,
+                yLabel: values.yLabel || undefined,
+                layout: { mode: values.mode },
+                lsl: values.lsl,
+                usl: values.usl,
+              });
+              applyAnalytics(next, { selectAnalysisId: editingAnalysisId });
+              toast.success("Measurement scatter updated.");
+            } else {
+              const created = await createMeasurementScatter(reportId, {
+                query: values.query,
+                title: values.title || undefined,
+                xLabel: values.xLabel || undefined,
+                yLabel: values.yLabel || undefined,
+                layout: { mode: values.mode },
+                lsl: values.lsl,
+                usl: values.usl,
+              });
+              applyAnalytics(created.analytics, {
+                selectAnalysisId: created.analysisId,
+              });
+            }
             setPlotOpen(false);
+            clearAnalysisEdit();
             setTab("results");
           } catch (error) {
             setPlotError(

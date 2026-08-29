@@ -48,9 +48,8 @@ describe("SixpackView limit labels", () => {
     render(
       <SixpackView
         analysis={analysis}
-        onRecompute={() => {}}
+        onEdit={() => {}}
         onDelete={() => {}}
-        recomputing={false}
       />
     );
 
@@ -79,9 +78,8 @@ describe("SixpackView limit labels", () => {
     render(
       <SixpackView
         analysis={analysis}
-        onRecompute={() => {}}
+        onEdit={() => {}}
         onDelete={() => {}}
-        recomputing={false}
       />
     );
 
@@ -101,9 +99,8 @@ describe("SixpackView limit labels", () => {
     render(
       <SixpackView
         analysis={analysis}
-        onRecompute={() => {}}
+        onEdit={() => {}}
         onDelete={() => {}}
-        recomputing={false}
       />
     );
 

@@ -99,6 +99,11 @@ export function CapabilityDialog({
   defaultColumnId,
   defaultRowStart = null,
   defaultRowEnd = null,
+  defaultTitle = "",
+  defaultLsl = null,
+  defaultUsl = null,
+  defaultTarget = null,
+  editMode = false,
   submitting,
   error,
   onOpenChange,
@@ -109,19 +114,30 @@ export function CapabilityDialog({
   defaultColumnId: string;
   defaultRowStart?: number | null;
   defaultRowEnd?: number | null;
+  defaultTitle?: string;
+  defaultLsl?: number | null;
+  defaultUsl?: number | null;
+  defaultTarget?: number | null;
+  editMode?: boolean;
   submitting: boolean;
   error: string | null;
   onOpenChange: (open: boolean) => void;
   onSubmit: (values: CapabilityDialogValues) => void;
 }) {
-  const initialLimits = limitsForColumn(
-    worksheet,
-    defaultColumnId,
-    defaultRowStart != null ? String(defaultRowStart) : "",
-    defaultRowEnd != null ? String(defaultRowEnd) : ""
-  );
+  const initialLimits = editMode
+    ? {
+        lsl: formatLimitInput(defaultLsl),
+        usl: formatLimitInput(defaultUsl),
+        target: formatLimitInput(defaultTarget),
+      }
+    : limitsForColumn(
+        worksheet,
+        defaultColumnId,
+        defaultRowStart != null ? String(defaultRowStart) : "",
+        defaultRowEnd != null ? String(defaultRowEnd) : ""
+      );
   const [columnId, setColumnId] = useState(defaultColumnId);
-  const [title, setTitle] = useState("");
+  const [title, setTitle] = useState(defaultTitle);
   const [lsl, setLsl] = useState(initialLimits.lsl);
   const [usl, setUsl] = useState(initialLimits.usl);
   const [target, setTarget] = useState(initialLimits.target);
@@ -339,7 +355,7 @@ export function CapabilityDialog({
               })
             }
           >
-            {submitting ? "Running…" : "OK"}
+            {submitting ? (editMode ? "Updating…" : "Running…") : editMode ? "Update" : "OK"}
           </Button>
         </DialogFooter>
       </DialogContent>

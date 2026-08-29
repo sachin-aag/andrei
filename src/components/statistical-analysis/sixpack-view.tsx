@@ -562,15 +562,15 @@ function CapabilitySummary({ result }: { result: CapabilitySixpackResult }) {
 
 export function SixpackView({
   analysis,
-  onRecompute,
+  onEdit,
   onDelete,
-  recomputing,
+  editing = false,
   readOnly = false,
 }: {
   analysis: SixpackAnalysisSummary;
-  onRecompute: () => void;
+  onEdit: () => void;
   onDelete: () => void;
-  recomputing: boolean;
+  editing?: boolean;
   readOnly?: boolean;
 }) {
   const { results, config, stale, title } = analysis;
@@ -616,10 +616,11 @@ export function SixpackView({
                 type="button"
                 variant="outline"
                 size="sm"
-                disabled={recomputing}
-                onClick={onRecompute}
+                data-testid="edit-analysis"
+                disabled={editing}
+                onClick={onEdit}
               >
-                {recomputing ? "Recomputing…" : "Recompute"}
+                {editing ? "Opening…" : "Edit"}
               </Button>
               <Button type="button" variant="ghost" size="sm" onClick={onDelete}>
                 Delete
@@ -635,8 +636,8 @@ export function SixpackView({
           className="rounded-md border border-amber-300/60 bg-amber-50 px-3 py-2 text-sm text-amber-950"
           role="status"
         >
-          Worksheet data changed after this analysis. Recompute to refresh the
-          sixpack; the stored result is unchanged until you do.
+          Worksheet data changed after this analysis. Edit the analysis to
+          refresh the sixpack; the stored result is unchanged until you do.
         </p>
       ) : null}
 

@@ -185,6 +185,23 @@ export async function recomputeCapabilitySixpack(
   return parseAnalytics(response);
 }
 
+export async function updateAnalysis(
+  reportId: string,
+  analysisId: string,
+  input: unknown
+): Promise<ReportAnalyticsView> {
+  const response = await fetch(
+    analyticsUrl(reportId, `/analyses/${encodeURIComponent(analysisId)}`),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "update", ...(input as object) }),
+    }
+  );
+  if (!response.ok) throw new Error(await readError(response));
+  return parseAnalytics(response);
+}
+
 export async function deleteCapabilitySixpack(
   reportId: string,
   analysisId: string

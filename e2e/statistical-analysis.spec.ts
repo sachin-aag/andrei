@@ -354,7 +354,9 @@ test.describe("report analytics", () => {
 
     await page.getByTestId("workspace-tab-results").click();
     await expect(page.getByTestId("sixpack-stale-badge")).toBeVisible();
-    await page.getByRole("button", { name: /^recompute$/i }).click();
+    await page.getByTestId("edit-analysis").click();
+    await expect(page.getByTestId("capability-dialog")).toBeVisible();
+    await page.getByRole("button", { name: /^update$/i }).click();
     await expect(page.getByTestId("sixpack-stale-badge")).toHaveCount(0, {
       timeout: 30_000,
     });

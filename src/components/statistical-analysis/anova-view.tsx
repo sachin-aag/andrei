@@ -199,15 +199,15 @@ function Td({
 
 export function AnovaView({
   analysis,
-  onRecompute,
+  onEdit,
   onDelete,
-  recomputing,
+  editing = false,
   readOnly = false,
 }: {
   analysis: AnovaAnalysisSummary;
-  onRecompute: () => void;
+  onEdit: () => void;
   onDelete: () => void;
-  recomputing: boolean;
+  editing?: boolean;
   readOnly?: boolean;
 }) {
   const { results, config, stale, title } = analysis;
@@ -257,10 +257,11 @@ export function AnovaView({
                 type="button"
                 variant="outline"
                 size="sm"
-                disabled={recomputing}
-                onClick={onRecompute}
+                data-testid="edit-analysis"
+                disabled={editing}
+                onClick={onEdit}
               >
-                {recomputing ? "Recomputing…" : "Recompute"}
+                {editing ? "Opening…" : "Edit"}
               </Button>
               <Button type="button" variant="ghost" size="sm" onClick={onDelete}>
                 Delete

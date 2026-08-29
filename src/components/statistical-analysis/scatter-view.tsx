@@ -261,15 +261,15 @@ function ScatterChart({ spec }: { spec: ChartSpec }) {
 
 export function ScatterView({
   analysis,
-  onRecompute,
+  onEdit,
   onDelete,
-  recomputing,
+  editing = false,
   readOnly = false,
 }: {
   analysis: ScatterAnalysisSummary | XyScatterAnalysisSummary;
-  onRecompute: () => void;
+  onEdit: () => void;
   onDelete: () => void;
-  recomputing: boolean;
+  editing?: boolean;
   readOnly?: boolean;
 }) {
   const spec = analysis.results.specs[0];
@@ -323,14 +323,11 @@ export function ScatterView({
                 type="button"
                 variant="outline"
                 size="sm"
-                disabled={recomputing}
-                onClick={onRecompute}
+                data-testid="edit-analysis"
+                disabled={editing}
+                onClick={onEdit}
               >
-                {recomputing
-                  ? xy
-                    ? "Recomputing…"
-                    : "Extracting…"
-                  : "Recompute"}
+                {editing ? "Opening…" : "Edit"}
               </Button>
               <Button type="button" variant="ghost" size="sm" onClick={onDelete}>
                 Delete

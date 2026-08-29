@@ -40,9 +40,8 @@ describe("ScatterView spec limits", () => {
     render(
       <ScatterView
         analysis={scatterSummary({ lower: 1, upper: 6 })}
-        onRecompute={() => {}}
+        onEdit={() => {}}
         onDelete={() => {}}
-        recomputing={false}
       />
     );
 
@@ -60,9 +59,8 @@ describe("ScatterView spec limits", () => {
     render(
       <ScatterView
         analysis={scatterSummary({ lower: null, upper: null })}
-        onRecompute={() => {}}
+        onEdit={() => {}}
         onDelete={() => {}}
-        recomputing={false}
       />
     );
 
@@ -76,9 +74,8 @@ describe("ScatterView spec limits", () => {
     render(
       <ScatterView
         analysis={scatterSummary({ lower: null, upper: 6 })}
-        onRecompute={() => {}}
+        onEdit={() => {}}
         onDelete={() => {}}
-        recomputing={false}
       />
     );
 
