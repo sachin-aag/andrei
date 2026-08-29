@@ -368,6 +368,70 @@ indivisible change.
 
 ---
 
+### Failure handling
+
+The instinct is to design a recovery menu — retry, place it somewhere else, give up and tell
+the user. That instinct is calibrated to the *current* architecture. Under P1/P2 most of
+those failures have no trigger left, so the first job is to be precise about what can still
+go wrong.
+
+**What P1/P2 remove entirely.** Every one of these is an apply-time failure today:
+
+| failure | why it cannot happen |
+|---|---|
+| anchor not found | anchors are resolved once, at write time, against `base` — the exact content the model read. They never survive to apply time. |
+| anchor ambiguous / cross-cell | same; and at write time the model can immediately retry with more context, which it already does |
+| document changed since the suggestion | that is a re-merge, not a failure |
+
+**What is left.** Three things, and only one is a user decision:
+
+| remaining | nature | response |
+|---|---|---|
+| **conflict** — both `current` and `intent` changed a block | a real decision | keep mine / take theirs / ask the agent to reconcile |
+| **save failure** — network, 409, report locked mid-review | infrastructure | retry once automatically, then a plain error |
+| **planner invariant violated** — `apply(plan(old,new), old) !== new` | a bug | fail loudly, log, never auto-recover |
+
+#### When a choice belongs to the user
+
+> Offer a choice only when the user holds information the system does not.
+
+Keep-mine / take-theirs qualifies: only the engineer knows which wording is right.
+"Retry, or insert at the end?" does not — the user has no basis for choosing, so the menu
+offloads our uncertainty onto them and dresses it as control.
+
+#### Do not use end-insertion as a fallback
+
+End-of-section insertion is already a **deliberate** authoring signal, not a fallback:
+`locateEdit` returns `{ status: "append" }` for an empty anchor (`locator.ts:642`), and the
+suggestion prompt instructs the model to set `anchorText: ""` when content is topically
+distinct enough to start a new paragraph (`suggest-prompts.ts:76`).
+
+Reusing it as a failure recovery makes deliberate placement and failed placement
+indistinguishable in the resulting document. The observable outcome is a Control section with
+a paragraph about detection dates dangling at the bottom, and no way — for the user or for us
+— to tell whether that was intended. In a document that gets signed and exported, misplaced
+content is worse than absent content, because absent content is visible.
+
+#### Prefer reproducibility over runtime recovery
+
+P1 stores `base` and `intent`. Every failure is therefore **exactly reproducible offline** —
+the triple `(base, current, intent)` is a complete test case. That is new: today the content
+a suggestion was authored against is gone the moment the field changes, which is why these
+failures have been diagnosed by inference rather than replay.
+
+So the strategy for the residual failures is to *fix* them, not to build a runtime menu
+around them. Log the triple on every planner failure; each one becomes a fixture. A recovery
+menu, by contrast, makes a failure permanently survivable and therefore permanently
+unfixed.
+
+#### The escape hatch is re-planning, not a strategy picker
+
+For anything genuinely unresolvable, one action: **ask the agent to redo this**, which hands
+back the section, the intent, and what went wrong, and lets the model author a *new* intent.
+This is already the architecture — commit mode returns conflicts to the model to re-plan
+(see [Conflicts](#conflicts)) — and it turns "write a follow-up prompt yourself" into one
+click. Manual editing is always available and needs no affordance; the editor is right there.
+
 ## Evidence: how small do operations get?
 
 "One big edit is bad, forty tiny ones are worse" is the real risk in P3, so it was measured.
@@ -558,6 +622,28 @@ Under P2 this needs no scheduling machinery: it falls out of re-merging against 
 **D13 — Partial application always, never total failure.** A suggestion applies every
 operation it can and keeps the rest as a visible remainder. There is no code path in which
 one difficult operation discards work the user already approved.
+
+**D14 — No LLM in the failure path.** Recovery strategy is chosen by a switch statement over
+three structured cases, not by a model. Four reasons, in order of weight:
+
+1. **A model asked "how should I recover?" always answers.** It will not say "this is a
+   planner bug, stop." It will produce a plausible-looking recovery for a corrupt plan,
+   converting a loud failure into a quietly wrong document — the exact class of bug this
+   rebuild exists to remove.
+2. **Nondeterministic recovery is not defensible in a validated system.** If the same failure
+   sometimes retries and sometimes relocates content, it cannot be tested, a support report
+   cannot be reproduced, and the behaviour cannot be described in a validation package.
+3. **There is nothing to reason about.** The inputs are structured and the decision set is
+   closed at three, each with one correct response. A switch statement is the honest
+   expression of a small closed set, not a shortcut.
+4. **Latency lands at the worst moment.** The user just clicked Accept and something went
+   wrong; several seconds of thinking before they learn what happened is worse than an
+   immediate honest message.
+
+Where the model *does* belong: **re-authoring intent**, not selecting system behaviour. That
+is writing, which models are reliable at, rather than choosing among three internal
+mechanisms, which they are not. It is the "ask the agent to redo this" action, and it reuses
+the chat loop that already exists.
 
 ---
 
