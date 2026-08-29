@@ -75,11 +75,11 @@ describe("isHumanSubAnswerComplete", () => {
     ).toBe(false);
   });
 
-  it("is true when both answers are yes and no comment is required", () => {
+  it("is true when both answers are yes for a design-verification section", () => {
     expect(
       isHumanSubAnswerComplete({
-        section: "define",
-        criterionKey: "define.what_happened",
+        section: "purpose",
+        criterionKey: "purpose.objective",
         criteriaEvaluationAgreement: "yes",
         reasoningAgreement: "yes",
       })

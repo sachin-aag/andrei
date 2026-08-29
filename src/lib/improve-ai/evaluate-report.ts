@@ -11,13 +11,14 @@ import {
   evaluationContentHash,
   type AllSectionsContent,
 } from "@/lib/ai/evaluate";
-import {
-  getCriteria,
-  getInvestigationEvaluatableSections,
-} from "@/lib/ai/criteria";
 import { normalizeAnalyzeToolResults } from "@/lib/ai/evaluate-run-helpers";
-import { mergeSection } from "@/lib/sections-merge";
-import { getDocumentType } from "@/lib/document-types";
+import { sectionsReadyForEvaluation } from "@/lib/ai/evaluation-readiness";
+import {
+  getDocumentType,
+  getEvaluatableSections,
+  mergeSectionForType,
+} from "@/lib/document-types";
+import type { ReportRecord } from "@/types/report";
 
 export class ImproveAiEvaluationError extends Error {
   constructor(
@@ -32,8 +33,9 @@ export class ImproveAiEvaluationError extends Error {
 export type ReportEvaluationRow = typeof criteriaEvaluations.$inferSelect;
 
 /**
- * Runs AI criteria evaluation for all DMAIC sections on a report and upserts
- * `criteria_evaluations` rows (same behavior as POST /api/reports/[id]/evaluate).
+ * Runs AI criteria evaluation for every evaluable section on a report and
+ * upserts `criteria_evaluations` rows (same behavior as POST
+ * `/api/reports/[id]/evaluate`).
  */
 export async function evaluateReportCriteria(
   reportId: string
@@ -43,9 +45,18 @@ export async function evaluateReportCriteria(
     throw new ImproveAiEvaluationError("Report not found", 404);
   }
 
-  const targetSections: SectionType[] = [
-    ...getInvestigationEvaluatableSections(),
-  ];
+  const documentType = report.documentType;
+  const def = getDocumentType(documentType);
+  const targetSections: SectionType[] = getEvaluatableSections(documentType).map(
+    (section) => section.key
+  );
+
+  if (targetSections.length === 0) {
+    return db
+      .select()
+      .from(criteriaEvaluations)
+      .where(eq(criteriaEvaluations.reportId, reportId));
+  }
 
   const sectionRows = await db
     .select()
@@ -66,15 +77,44 @@ export async function evaluateReportCriteria(
         inArray(reportSections.section, targetSections)
       )
     );
+  const bySection = new Map<string, (typeof allEvaluatableRows)[number]>();
+  for (const row of allEvaluatableRows) bySection.set(row.section, row);
 
-  const existingForSections = sectionRows.length
+  const allSections: AllSectionsContent = {};
+  for (const row of allEvaluatableRows) {
+    allSections[row.section] = mergeSectionForType(
+      documentType,
+      row.section,
+      row.content
+    );
+  }
+  if (targetSections.includes("cover_page")) {
+    allSections.cover_page = report.metadata;
+  }
+
+  const readiness = sectionsReadyForEvaluation({
+    documentType,
+    targets: targetSections,
+    documentNo: String(report.documentNo ?? ""),
+    contentFor: (section) => {
+      if (section === "cover_page") return report.metadata;
+      const row = bySection.get(section);
+      return row
+        ? mergeSectionForType(documentType, section, row.content)
+        : undefined;
+    },
+  });
+  const readySet = new Set(readiness.ready);
+  const readySectionRows = sectionRows.filter((row) => readySet.has(row.section));
+
+  const existingForSections = readySectionRows.length
     ? await db
         .select()
         .from(criteriaEvaluations)
         .where(
           inArray(
             criteriaEvaluations.sectionId,
-            sectionRows.map((r) => r.id)
+            readySectionRows.map((r) => r.id)
           )
         )
     : [];
@@ -85,27 +125,28 @@ export async function evaluateReportCriteria(
     existingBySectionId.set(row.sectionId, arr);
   }
 
-  // Merged content everywhere, matching the suggestions route's hash input.
-  const allSections: AllSectionsContent = {};
-  for (const row of allEvaluatableRows) {
-    allSections[row.section] = mergeSection(row.section, row.content);
-  }
-  const mergedFor = (row: (typeof sectionRows)[number]) =>
-    allSections[row.section] ?? mergeSection(row.section, row.content);
+  const mergedFor = (row: (typeof readySectionRows)[number]) =>
+    allSections[row.section] ??
+    mergeSectionForType(documentType, row.section, row.content);
+
+  const reportForEval = report as unknown as ReportRecord;
 
   const llmResults = await Promise.all(
-    sectionRows.map(async (row) => {
-      const content = mergedFor(row);
+    readySectionRows.map(async (row) => {
+      const content =
+        row.section === "cover_page" ? report.metadata : mergedFor(row);
       const evaluations = await evaluateSection({
         section: row.section,
         content,
         reportContext: { deviationNo: report.documentNo, date: report.date },
         allSections,
+        documentType,
+        report: reportForEval,
       });
       return {
         sectionRow: row,
         evaluations:
-          row.section === "analyze"
+          documentType === "investigation_report" && row.section === "analyze"
             ? normalizeAnalyzeToolResults(content, evaluations)
             : evaluations,
       };
@@ -115,12 +156,16 @@ export async function evaluateReportCriteria(
   for (const { sectionRow, evaluations } of llmResults) {
     const existing = existingBySectionId.get(sectionRow.id) ?? [];
     const existingByKey = new Map(existing.map((e) => [e.criterionKey, e]));
+    const sectionCriteria = def.criteriaBySection[sectionRow.section] ?? [];
     const contentHash = evaluationContentHash({
       section: sectionRow.section,
-      content: mergedFor(sectionRow),
+      content:
+        sectionRow.section === "cover_page"
+          ? report.metadata
+          : mergedFor(sectionRow),
       allSections,
-      criteria: getCriteria(sectionRow.section),
-      promptVersion: getDocumentType("investigation_report").prompts.promptVersion,
+      criteria: sectionCriteria,
+      promptVersion: def.prompts.promptVersion,
     });
 
     for (const evalResult of evaluations) {

@@ -96,6 +96,16 @@ export function buildSectionDisplayBlocks(
     pushRichBlock(blocks, "Preventive actions", content.preventiveActions);
   } else if (section === "conclusion") {
     pushRichBlock(blocks, "Narrative", content.narrative);
+  } else {
+    if ("narrative" in content) {
+      pushRichBlock(blocks, "Narrative", content.narrative);
+    }
+    if ("testers" in content) {
+      pushRichBlock(blocks, "Testers", content.testers);
+    }
+    if ("table" in content) {
+      pushRichBlock(blocks, "Table", content.table);
+    }
   }
 
   return blocks;

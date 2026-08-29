@@ -7,10 +7,11 @@ import { getPasswordStatusForUser } from "@/lib/auth/password-status";
 import { getPasswordPolicy } from "@/lib/auth/password-policy";
 import { AppShell } from "@/components/layout/app-shell";
 import { ImproveAiSessionForm } from "@/components/improve-ai/improve-ai-session-form";
-import { getImproveAiSessionView } from "@/lib/improve-ai/store";
+import { getImproveAiSessionViewOrHeal } from "@/lib/improve-ai/store";
 import { Button } from "@/components/ui/button";
 
 export const dynamic = "force-dynamic";
+export const maxDuration = 120;
 
 type PageProps = { params: Promise<{ sessionId: string }> };
 
@@ -20,7 +21,7 @@ export default async function ImproveAiSessionPage({ params }: PageProps) {
 
   const { sessionId } = await params;
   const id = decodeURIComponent(sessionId);
-  const session = await getImproveAiSessionView(id, user.id);
+  const session = await getImproveAiSessionViewOrHeal(id, user.id);
   if (!session) notFound();
 
   const [workspaceUsers, passwordStatus, policy] = await Promise.all([

@@ -8,11 +8,7 @@ export async function syncFeedbackResponsesFromEvaluations(
   sessionId: string,
   evaluations: ReportEvaluationRow[]
 ): Promise<void> {
-  const evaluatable = evaluations.filter((row) =>
-    ["define", "measure", "analyze", "improve", "control"].includes(row.section)
-  );
-
-  for (const row of evaluatable) {
+  for (const row of evaluations) {
     await db
       .insert(aiFeedbackResponses)
       .values({

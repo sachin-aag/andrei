@@ -7,8 +7,10 @@ import {
   criteriaEvaluations,
   reportSections,
   reports,
+  type DocumentType,
 } from "@/db/schema";
 import type { AllSectionsContent } from "@/lib/ai/evaluate";
+import { sectionsReadyForEvaluation } from "@/lib/ai/evaluation-readiness";
 import {
   evaluateReportCriteria,
   ImproveAiEvaluationError,
@@ -24,7 +26,12 @@ import {
 import { isImproveAiSessionStale } from "@/lib/improve-ai/session-staleness";
 import type { HumanSubAnswerDraft } from "@/lib/improve-ai/human-judgment";
 import { humanAnswerKey } from "@/lib/improve-ai/human-judgment";
-import { getInvestigationEvaluatableSections } from "@/lib/ai/criteria";
+import {
+  evaluationCapabilityFor,
+  getDocumentType,
+  getEvaluatableSections,
+  mergeSectionForType,
+} from "@/lib/document-types";
 
 export type ImproveAiSessionListItem = {
   id: string;
@@ -37,17 +44,26 @@ export type ImproveAiSessionListItem = {
   updatedAt: Date;
 };
 
-async function loadSectionContents(reportId: string): Promise<AllSectionsContent> {
+async function loadSectionContents(
+  reportId: string,
+  documentType: DocumentType
+): Promise<AllSectionsContent> {
   const evalRows = await db
     .select()
     .from(reportSections)
     .where(eq(reportSections.reportId, reportId));
 
-  const evaluatable = new Set<string>(getInvestigationEvaluatableSections());
+  const evaluatable = new Set(
+    getEvaluatableSections(documentType).map((section) => section.key)
+  );
   const allSections: AllSectionsContent = {};
   for (const row of evalRows) {
     if (evaluatable.has(row.section)) {
-      allSections[row.section] = row.content;
+      allSections[row.section] = mergeSectionForType(
+        documentType,
+        row.section,
+        row.content
+      );
     }
   }
   return allSections;
@@ -116,7 +132,10 @@ export async function getImproveAiSessionView(
     .from(aiFeedbackResponses)
     .where(eq(aiFeedbackResponses.sessionId, sessionId));
 
-  const sectionContents = await loadSectionContents(row.session.reportId);
+  const sectionContents = await loadSectionContents(
+    row.session.reportId,
+    row.report.documentType
+  );
 
   return buildImproveAiSessionView({
     session: row.session,
@@ -126,10 +145,62 @@ export async function getImproveAiSessionView(
   });
 }
 
+/**
+ * Re-runs evaluation when a ready session has no reviewable criteria but the
+ * report has evaluable content. Fixes Convergent/DV sessions created while
+ * Improve AI only walked investigation sections (Review 404 / empty 0/0).
+ */
+export async function getImproveAiSessionViewOrHeal(
+  sessionId: string,
+  userId: string
+): Promise<ImproveAiSessionView | null> {
+  const view = await getImproveAiSessionView(sessionId, userId);
+  if (!view) return null;
+  if (view.status === "evaluating" || view.sections.length > 0) return view;
+
+  const [row] = await db
+    .select({
+      session: aiFeedbackSessions,
+      report: reports,
+    })
+    .from(aiFeedbackSessions)
+    .innerJoin(reports, eq(aiFeedbackSessions.reportId, reports.id))
+    .where(eq(aiFeedbackSessions.id, sessionId));
+
+  if (!row || row.session.submittedBy !== userId) return view;
+
+  const documentType = row.report.documentType;
+  if (evaluationCapabilityFor(getDocumentType(documentType)).kind === "none") {
+    return view;
+  }
+
+  const sectionContents = await loadSectionContents(
+    row.session.reportId,
+    documentType
+  );
+  const readiness = sectionsReadyForEvaluation({
+    documentType,
+    targets: getEvaluatableSections(documentType).map((section) => section.key),
+    documentNo: String(row.report.documentNo ?? ""),
+    contentFor: (section) =>
+      section === "cover_page" ? row.report.metadata : sectionContents[section],
+  });
+  if (readiness.ready.length === 0) return view;
+
+  await rerunImproveAiSession(sessionId, userId);
+  return (await getImproveAiSessionView(sessionId, userId)) ?? view;
+}
+
 export async function checkImproveAiSessionStale(
   sessionId: string,
   reportId: string
 ): Promise<boolean> {
+  const [report] = await db
+    .select({ documentType: reports.documentType })
+    .from(reports)
+    .where(eq(reports.id, reportId));
+  const documentType = report?.documentType ?? "investigation_report";
+
   const [responses, evaluations, sectionContents] = await Promise.all([
     db
       .select()
@@ -139,7 +210,7 @@ export async function checkImproveAiSessionStale(
       .select()
       .from(criteriaEvaluations)
       .where(eq(criteriaEvaluations.reportId, reportId)),
-    loadSectionContents(reportId),
+    loadSectionContents(reportId, documentType),
   ]);
 
   return isImproveAiSessionStale({

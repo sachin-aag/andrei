@@ -29,8 +29,8 @@ DV mixes LLM criteria with deterministic `check()` functions.
   `PROMPT_VERSION` in `section-prompts.ts`) or stale evals will not rerun.
 - Placeholders: `capEvaluationStatusForPlaceholders()` — never `not_met`
   solely for unfilled placeholders.
-- Improve AI (`evaluateReportCriteria`) still walks investigation
-  `EVALUATABLE_SECTIONS`. Do not assume it is type-generic.
+- Improve AI (`evaluateReportCriteria`) walks `getEvaluatableSections()` for
+  the report's document type. Do not hardcode DMAIC.
 
 ## Suggestions
 

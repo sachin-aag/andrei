@@ -55,14 +55,24 @@ function evaluationRow(overrides: Partial<{
 }
 
 describe("isImproveAiSessionStale", () => {
-  it("returns false when session has no responses yet", () => {
+  it("returns false when session has no responses and no section content", () => {
     expect(
       isImproveAiSessionStale({
         responses: [],
         evaluations: [evaluationRow()],
-        sectionContents: { define: defineContent },
+        sectionContents: {},
       })
     ).toBe(false);
+  });
+
+  it("returns true when session has no responses but the report has section content", () => {
+    expect(
+      isImproveAiSessionStale({
+        responses: [],
+        evaluations: [],
+        sectionContents: { purpose: { narrative: defineContent } },
+      })
+    ).toBe(true);
   });
 
   it("returns false when feedback matches current evaluations and content", () => {
