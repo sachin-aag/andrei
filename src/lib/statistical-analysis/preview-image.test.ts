@@ -1,9 +1,29 @@
 import { describe, expect, it } from "vitest";
 import { TORQUE_MOCK_SPEC } from "@/lib/charts/__fixtures__/torque-mock";
-import { asPreviewImage, pngBufferFromDataUrl } from "./preview-image";
+import {
+  ANALYTICS_PREVIEW_MAX_DATA_URL_CHARS,
+  asPreviewImage,
+  isValidAnalysisPreviewSrc,
+  pngBufferFromDataUrl,
+} from "./preview-image";
 
 const TINY_PNG =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+
+describe("isValidAnalysisPreviewSrc", () => {
+  it("accepts sixpack-sized PNG data URLs that exceed the chat insert cap", () => {
+    const payload = "A".repeat(1_600_000);
+    const src = `data:image/png;base64,${payload}`;
+    expect(src.length).toBeGreaterThan(1_400_000);
+    expect(src.length).toBeLessThan(ANALYTICS_PREVIEW_MAX_DATA_URL_CHARS);
+    expect(isValidAnalysisPreviewSrc(src)).toBe(true);
+  });
+
+  it("rejects data URLs above the analytics preview cap", () => {
+    const src = `data:image/png;base64,${"A".repeat(ANALYTICS_PREVIEW_MAX_DATA_URL_CHARS)}`;
+    expect(isValidAnalysisPreviewSrc(src)).toBe(false);
+  });
+});
 
 describe("asPreviewImage", () => {
   it("parses stored preview payloads", () => {

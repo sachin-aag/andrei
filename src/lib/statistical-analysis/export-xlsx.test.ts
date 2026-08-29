@@ -142,6 +142,14 @@ describe("buildAnalyticsXlsx", () => {
     expect(scatter?.getImages().length).toBeGreaterThan(0);
     expect(sixpack?.getImages()[0]?.range.tl.nativeRow).toBe(0);
     expect(sixpack?.getCell("A1").value).not.toBe("Plots");
+
+    const imageId = sixpack?.getImages()[0]?.imageId;
+    expect(imageId).toBeDefined();
+    const embedded = workbook.getImage(Number(imageId));
+    const png = embedded.buffer
+      ? Buffer.from(embedded.buffer)
+      : Buffer.from(embedded.base64 ?? "", "base64");
+    expect(png.byteLength).toBeGreaterThan(20_000);
   });
 
   it("embeds the captured preview at the top of the analysis sheet", async () => {

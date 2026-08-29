@@ -7,7 +7,11 @@ import { renderChartPng } from "@/lib/charts/render-chart";
 import { resolveCustomerId } from "@/lib/customers/resolve";
 import { pngBufferFromDataUrl } from "./preview-image";
 import { renderAnovaIntervalPlotPng } from "./render-anova-png";
-import { renderSixpackPng } from "./render-sixpack-png";
+import {
+  renderSixpackPng,
+  SIXPACK_PNG_HEIGHT,
+  SIXPACK_PNG_WIDTH,
+} from "./render-sixpack-png";
 import {
   isAnovaAnalysis,
   isScatterAnalysis,
@@ -26,8 +30,10 @@ export type AnalysisPlotImage = {
 const FALLBACK_CHART_HEIGHT_PX = Math.round(
   (CHART_DISPLAY_WIDTH_PX * CHART_LOGICAL_HEIGHT) / CHART_LOGICAL_WIDTH
 );
-const SIXPACK_DISPLAY_WIDTH_PX = 720;
-const SIXPACK_DISPLAY_HEIGHT_PX = 360;
+const SIXPACK_DISPLAY_WIDTH_PX = 1100;
+const SIXPACK_DISPLAY_HEIGHT_PX = Math.round(
+  (SIXPACK_DISPLAY_WIDTH_PX * SIXPACK_PNG_HEIGHT) / SIXPACK_PNG_WIDTH
+);
 
 function dataUrlToBuffer(dataUrl: string): Buffer {
   const base64 = dataUrl.replace(/^data:image\/png;base64,/, "");
@@ -100,12 +106,17 @@ export async function plotImagesForExport(
   if (preview) {
     const buffer = pngBufferFromDataUrl(preview.dataUrl);
     if (buffer) {
+      const aspect = preview.heightPx / Math.max(1, preview.widthPx);
+      const width = Math.min(
+        1100,
+        Math.max(preview.widthPx, SIXPACK_DISPLAY_WIDTH_PX)
+      );
       return [
         {
           title: preview.alt || analysis.title,
           buffer,
-          width: Math.max(1, preview.widthPx),
-          height: Math.max(1, preview.heightPx),
+          width,
+          height: Math.max(1, Math.round(width * aspect)),
         },
       ];
     }
