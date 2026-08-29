@@ -307,7 +307,7 @@ export function AnalyzeDialog({
                   id="plot-query"
                   data-testid="plot-query"
                   value={query}
-                  placeholder="M3-SYS-FN-037"
+                  placeholder="Assay"
                   onChange={(event) => setQuery(event.target.value)}
                 />
               </div>

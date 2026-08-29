@@ -13,11 +13,18 @@ export type AutoSaveContext = {
 
 export type UseAutoSaveOptions<T> = {
   value: T;
-  onSave: (value: T, context?: AutoSaveContext) => Promise<void>;
+  /**
+   * Persist `value`. Return the confirmed snapshot when it differs from the
+   * argument (conflict retry, server normalize) so dirty-checking does not
+   * treat the pre-save payload as what landed.
+   */
+  onSave: (value: T, context?: AutoSaveContext) => Promise<void | T>;
   delayMs?: number;
   enabled?: boolean;
   beaconUrl?: string;
   serialize?: (value: T) => string;
+  /** Body for pagehide/unmount keepalive. Defaults to `serialize`. */
+  beaconSerialize?: (value: T) => string;
 };
 
 function isBenignSaveError(err: unknown, signal?: AbortSignal): boolean {
@@ -34,6 +41,7 @@ export function useAutoSave<T>({
   enabled = true,
   beaconUrl,
   serialize,
+  beaconSerialize,
 }: UseAutoSaveOptions<T>) {
   const [status, setStatus] = useState<SaveStatus>("idle");
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
@@ -56,6 +64,14 @@ export function useAutoSave<T>({
   useLayoutEffect(() => {
     serializeValueRef.current = serializeValue;
   }, [serializeValue]);
+  const beaconSerializeValue = useCallback(
+    (v: T) => (beaconSerialize ? beaconSerialize(v) : serializeValue(v)),
+    [beaconSerialize, serializeValue]
+  );
+  const beaconSerializeRef = useRef(beaconSerializeValue);
+  useLayoutEffect(() => {
+    beaconSerializeRef.current = beaconSerializeValue;
+  }, [beaconSerializeValue]);
   const lastSerialized = useRef<string>(serializeValue(value));
   /** Last value confirmed persisted by a successful `onSave`. */
   const lastPersisted = useRef<string>(serializeValue(value));
@@ -71,8 +87,10 @@ export function useAutoSave<T>({
   useLayoutEffect(() => {
     persistDirtyOnLeave.current = () => {
       if (!enabled || !beaconUrl) return;
-      const body = serializeValueRef.current(latestValue.current);
-      if (body === lastPersisted.current) return;
+      const snapshot = latestValue.current;
+      const comparable = serializeValueRef.current(snapshot);
+      if (comparable === lastPersisted.current) return;
+      const body = beaconSerializeRef.current(snapshot);
       try {
         void fetch(beaconUrl, {
           method: "POST",
@@ -90,8 +108,8 @@ export function useAutoSave<T>({
           // Page is unloading; best-effort only.
         }
       }
-      lastPersisted.current = body;
-      lastSerialized.current = body;
+      lastPersisted.current = comparable;
+      lastSerialized.current = comparable;
     };
   }, [enabled, beaconUrl]);
 
@@ -126,10 +144,14 @@ export function useAutoSave<T>({
       const controller = new AbortController();
       abortRef.current = controller;
       try {
-        await onSave(snapshot, { signal: controller.signal });
+        const confirmed = await onSave(snapshot, { signal: controller.signal });
         if (controller.signal.aborted) return;
-        lastSerialized.current = serialized;
-        lastPersisted.current = serialized;
+        const persistedSerialized =
+          confirmed === undefined
+            ? serialized
+            : serializeValueRef.current(confirmed);
+        lastSerialized.current = persistedSerialized;
+        lastPersisted.current = persistedSerialized;
         setStatus("saved");
         setLastSavedAt(new Date());
       } catch (err) {
@@ -171,6 +193,21 @@ export function useAutoSave<T>({
   );
 
   const flush = useCallback(() => flushImpl.current(), []);
+
+  const markPersisted = useCallback((next?: T) => {
+    const serialized = serializeValueRef.current(
+      next === undefined ? latestValue.current : next
+    );
+    lastSerialized.current = serialized;
+    lastPersisted.current = serialized;
+    if (timer.current) {
+      clearTimeout(timer.current);
+      timer.current = null;
+    }
+    if (!isSaving.current) {
+      setStatus((current) => (current === "saving" ? "idle" : current));
+    }
+  }, []);
 
   useEffect(() => {
     const justEnabled = enabled && !wasEnabled.current;
@@ -218,5 +255,5 @@ export function useAutoSave<T>({
     };
   }, [beaconUrl, enabled]);
 
-  return { status, lastSavedAt, flush };
+  return { status, lastSavedAt, flush, markPersisted };
 }
