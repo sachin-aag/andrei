@@ -72,13 +72,17 @@ document type (not DMAIC-hardcoded); Analytics chips stay in
   `mode=keyword` for lexical hits, `document_outline`). Classifier forces
   **comprehensive** for every-row inventories and for open-set work products
   (registry `inventorySections`) when evidence is distributed (≥12 ready
-  pages or ≥6 outline siblings), unless a bounded locator or non-inventory
-  section intent applies. **Focused** is an explicit skim. Adaptive turns
+  pages or ≥6 outline siblings), unless a bounded locator, targeted
+  sentence/paragraph rewrite, or non-inventory section intent applies.
+  Open-set produce intent is scored on the latest user turn only.
+  **Focused** is an explicit skim. Adaptive turns
   skip auto-evidence so the model must grep.
   Adaptive/focused turns do not expose `start_document_review`. Comprehensive
   `continue_document_review` drains the remaining queue in one call with a
   worker pool of `REVIEW_EXTRACT_CONCURRENCY` extracts (no thought summaries
-  on extract). Orchestrator is `gemini-3.7-flash` with `thinkingLevel`
+  on extract). `finish_document_review` caps the findings sample;
+  follow-up turns strip prior findings arrays before the model call.
+  Orchestrator is `gemini-3.7-flash` with `thinkingLevel`
   `medium` until we route it by task (3.7 Flash rejects `minimal`); page
   extracts use `gemini-3.5-flash-lite` with `minimal`. Do not set
   temperature / topP / seed on Gemini 3.x chat calls.

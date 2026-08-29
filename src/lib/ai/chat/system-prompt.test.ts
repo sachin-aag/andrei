@@ -19,7 +19,7 @@ describe("isChatMode", () => {
 describe("buildChatSystemPrompt", () => {
   it("pins the current chat prompt version", () => {
     expect(CHAT_PROMPT_VERSION).toBe(
-      "chat-v54-field-fill-supersession"
+      "chat-v55-review-followup"
     );
   });
 
@@ -324,6 +324,7 @@ describe("buildChatSystemPrompt", () => {
     expect(prompt).toContain("finish_document_review before draft_field");
     expect(prompt).toContain("recommendedInventory");
     expect(prompt).toContain("allIdentifiers");
+    expect(prompt).toContain("short findings sample");
     expect(prompt).toContain("SW-SST-5.1.1 is not SW-SST-5");
     expect(prompt).toContain("M3-SYS-FN-037 is not SYS-FN-037");
     expect(prompt).not.toContain(

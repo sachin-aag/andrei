@@ -61,6 +61,7 @@ import {
   resolveAnalyticsChatMentions,
 } from "@/lib/statistical-analysis/mentions";
 import { sanitizeChatMessagesForModel } from "@/lib/ai/chat/image-parts";
+import { compactChatToolHistoryForModel } from "@/lib/ai/chat/compact-tool-history";
 import { repairChatToolCall } from "@/lib/ai/chat/repair-tool-call";
 import {
   CHAT_ASSISTANT_ERROR_MESSAGE,
@@ -105,8 +106,10 @@ export async function POST(
     mode?: unknown;
     mentions?: unknown;
   };
-  const messages = sanitizeChatMessagesForModel(
-    Array.isArray(body.messages) ? body.messages : []
+  const messages = compactChatToolHistoryForModel(
+    sanitizeChatMessagesForModel(
+      Array.isArray(body.messages) ? body.messages : []
+    )
   );
   if (messages.length === 0) {
     return NextResponse.json({ error: "No messages" }, { status: 400 });

@@ -318,7 +318,7 @@ Investigation-report import. **Entry point:** `docxBufferToImportedReportContent
 
 **Spectrum:** Document and Agent share `ChatPanel`. Composer/scope/tool changes must cover Document | Agent chrome, `/chat` **and** `/analytics/chat`, prompt versions (`CHAT_PROMPT_VERSION` / `ANALYTICS_CHAT_PROMPT_VERSION`), Plan allowlist, retrieval-policy, already-drafted, stub model, colocated tests, and `AGENTS.md` / this file / `.cursor/rules/chat-and-attachments.mdc`. Removing a control means deleting parsers, prompt copy, switch-section tools, and tests for it — not hiding the UI. Empty-state Document chips are `chat.examplePrompts` on the document type (Purpose & Scope on DV, Define on investigation); Analytics chips stay in `ANALYTICS_EXAMPLE_PROMPTS`.
 
-**Retrieval:** `searchReportDocuments` (vector + English FTS OR-tokens). Report body is not chunk-indexed. Stub chat: `ALLOW_TEST_STUB_CHAT` / `stub-model.ts` — streams a canned reply; cannot assert tool selection.
+**Retrieval:** `searchReportDocuments` (vector + English FTS OR-tokens). Report body is not chunk-indexed. Comprehensive page review is for inventories / open-set drafts, not sentence rewrites; `finish_document_review` caps findings and follow-up turns strip prior findings arrays (`compactChatToolHistoryForModel`). Stub chat: `ALLOW_TEST_STUB_CHAT` / `stub-model.ts` — streams a canned reply; cannot assert tool selection.
 
 ## Subsystem: Attachments (ingest + evidence)
 

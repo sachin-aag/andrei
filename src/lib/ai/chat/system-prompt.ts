@@ -19,7 +19,7 @@ import type { RetrievalPolicy } from "@/lib/ai/chat/retrieval-policy";
 import type { ChatEditPolicy } from "@/lib/ai/chat/edit-policy";
 
 /** Bump to invalidate any cached chat behaviour assumptions. */
-export const CHAT_PROMPT_VERSION = "chat-v54-field-fill-supersession";
+export const CHAT_PROMPT_VERSION = "chat-v55-review-followup";
 
 export type ChatMode = "plan" | "agent";
 
@@ -99,7 +99,7 @@ function documentRules(
 - Retrieval mode: COMPREHENSIVE. The engineer asked for a complete inventory, matrix, full-document review, or an open set over a multi-page catalog (for example drafting the report when Results must list every executed test) — not a handful of search hits.
 - Reply with ONE short sentence that you are starting a complete review, then call start_document_review. Prefer tagged (@) documents. If several ready documents are untagged, pass attachmentIds for the evidence file rather than walking every file.
 - Call continue_document_review until the tool reports coverage is complete. Do not stop after a few batches. Do not draft from search_documents snippets or the evidence preview.
-- Call finish_document_review before draft_field, edit_table, propose_edit, or claiming completeness. finish_document_review returns allIdentifiers (every mention found — diagnostic only) and recommendedInventory (the Requirements Verified / executed-test rows to publish). Draft the results matrix from recommendedInventory only. Preserve each Req. ID exactly, including its family prefix and any dotted suffix (M3-SYS-FN-037 is not SYS-FN-037; SW-SST-5.1.1 is not SW-SST-5). Do not dump allIdentifiers into the matrix. Cite [filename, p. N].
+- Call finish_document_review before draft_field, edit_table, propose_edit, or claiming completeness. finish_document_review returns allIdentifiers (every mention found — diagnostic only), recommendedInventory (the Requirements Verified / executed-test rows to publish), and a short findings sample (not every page). Draft the results matrix from recommendedInventory only. Preserve each Req. ID exactly, including its family prefix and any dotted suffix (M3-SYS-FN-037 is not SYS-FN-037; SW-SST-5.1.1 is not SW-SST-5). Do not dump allIdentifiers into the matrix. Cite [filename, p. N].
 - Preserve repeated executions and configurations as separate cited findings. If finish reports failed pages, say so — do not claim every page was read.
 - search_documents remains for later fact checks after the review finishes. It is not a substitute for the review. Use document_outline only as a map, not as evidence.`;
       break;

@@ -709,14 +709,19 @@ export function buildChatTools(opts: {
     sectionContent: Record<string, unknown>;
     newCommentId: string;
   }): Promise<string[]> => {
-    const pairs = await dismissSuggestionsSupersededBy({
-      reportId,
-      section: args.section,
-      sectionContent: args.sectionContent,
-      newCommentId: args.newCommentId,
-      actor: actor ?? undefined,
-    });
-    return pairs.map((pair) => pair.supersededId);
+    try {
+      const pairs = await dismissSuggestionsSupersededBy({
+        reportId,
+        section: args.section,
+        sectionContent: args.sectionContent,
+        newCommentId: args.newCommentId,
+        actor: actor ?? undefined,
+      });
+      return pairs.map((pair) => pair.supersededId);
+    } catch (err) {
+      console.error("chat: failed to dismiss superseded suggestions", err);
+      return [];
+    }
   };
   const recordTurnEdit = (
     section: SectionType,
