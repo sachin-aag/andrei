@@ -92,7 +92,7 @@ const ANALYTICS_EXAMPLE_PROMPTS: Record<ChatMode, string[]> = {
     "Extract assay measurements from the attachments into a worksheet column.",
     "Run a Normal Capability Sixpack on the Assay column with LSL 90 and USL 110.",
     "Run one-way ANOVA of Assay by Lot.",
-    "Plot measurements for M3-SYS-FN-037 from the attachments.",
+    "Plot measurements for Assay from the attachments.",
     "Plot OD660 vs Cumulative Glucose from the worksheet.",
   ],
 };
