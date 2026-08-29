@@ -11,11 +11,21 @@ export type AnalyticsRevisionPayload = {
   analyses: AnalyticsRevisionAnalysis[];
 };
 
+function omitKeys<T extends object, K extends keyof T>(
+  obj: T,
+  keys: readonly K[]
+): Omit<T, K> {
+  const next = { ...obj };
+  for (const key of keys) {
+    Reflect.deleteProperty(next, key);
+  }
+  return next;
+}
+
 export function analysisForSnapshot(
   analysis: StatisticalAnalysisSummary
 ): AnalyticsRevisionAnalysis {
-  const { previewImage: _previewImage, stale: _stale, ...rest } = analysis;
-  return rest;
+  return omitKeys(analysis, ["previewImage", "stale"]);
 }
 
 export function analyticsRevisionPayload(args: {

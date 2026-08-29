@@ -88,10 +88,14 @@ export function DocumentRevisionHistory({
     }
   }, [revisionsHref]);
 
-  useEffect(() => {
-    if (!open) return;
-    void load();
-  }, [load, open]);
+  const [prevHref, setPrevHref] = useState(revisionsHref);
+  if (revisionsHref !== prevHref) {
+    setPrevHref(revisionsHref);
+    setRevisions([]);
+    setFromNo(null);
+    setToNo(null);
+    setOpen(false);
+  }
 
   const canCompare = useMemo(
     () =>

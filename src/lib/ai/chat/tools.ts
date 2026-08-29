@@ -45,7 +45,6 @@ import {
 import { normalizeSuggestionInsertText } from "@/lib/placeholders/normalize-suggestion-insert";
 import {
   type ChatSectionScope,
-  chatEditableSections,
   chatSectionsInScope,
   chatTargetFields,
   isChatEditableSection,

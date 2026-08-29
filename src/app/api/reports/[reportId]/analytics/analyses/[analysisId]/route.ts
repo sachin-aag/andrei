@@ -52,7 +52,8 @@ export async function POST(request: Request, context: RouteContext) {
   }
 
   if (action === "update") {
-    const { action: _action, ...input } = body;
+    const input = { ...body };
+    delete input.action;
     const result = await updateAnalysisForReport(reportId, analysisId, input);
     if (!result.ok) {
       return NextResponse.json({ error: result.error }, { status: result.status });

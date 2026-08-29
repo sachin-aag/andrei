@@ -929,18 +929,20 @@ export function ChatPanel({
     statsEnabled,
   });
   const targetingAnalytics = chatTarget === "analytics";
-  const loadAnalyticsSnapshot = useCallback(async () => {
-    if (!statsEnabled) return;
-    try {
-      setAnalyticsSnapshot(await getReportAnalytics(report.id));
-    } catch {
-      setAnalyticsSnapshot(null);
-    }
-  }, [report.id, statsEnabled]);
   useEffect(() => {
     if (!statsEnabled) return;
-    void loadAnalyticsSnapshot();
-  }, [analyticsReloadEpoch, loadAnalyticsSnapshot, statsEnabled]);
+    let cancelled = false;
+    void getReportAnalytics(report.id)
+      .then((snapshot) => {
+        if (!cancelled) setAnalyticsSnapshot(snapshot);
+      })
+      .catch(() => {
+        if (!cancelled) setAnalyticsSnapshot(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [analyticsReloadEpoch, report.id, statsEnabled]);
   const modeOptions = useMemo(() => {
     const source = targetingAnalytics
       ? ANALYTICS_CHAT_MODE_OPTIONS
