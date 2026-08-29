@@ -9,6 +9,10 @@ import { kindFromMime } from "@/lib/attachments/file-types";
 import { getAttachmentLimits } from "@/lib/attachments/limits";
 import { getMalwareScanner } from "@/lib/attachments/malware-scan";
 import { startDocumentIngest } from "@/lib/attachments/start-ingest";
+import {
+  AttachmentPageBudgetExceededError,
+  attachmentPageBudgetExceededResponse,
+} from "@/lib/attachments/page-budget";
 import { validateDocx } from "@/lib/attachments/validate-docx";
 import { validatePdf } from "@/lib/attachments/validate-pdf";
 import { auditActorFromUser, recordAuditEvent } from "@/lib/audit";
@@ -201,6 +205,17 @@ export async function POST(
 
     return NextResponse.json({ attachment: toAttachmentDto(updated) });
   } catch (error) {
+    if (error instanceof AttachmentPageBudgetExceededError) {
+      await db
+        .update(reportAttachments)
+        .set({
+          processingStatus: "failed",
+          processingProgress: 0,
+          processingError: error.message,
+        })
+        .where(eq(reportAttachments.id, attachmentId));
+      return attachmentPageBudgetExceededResponse(error);
+    }
     const message = sanitizeFinalizeError(error);
     await db
       .update(reportAttachments)

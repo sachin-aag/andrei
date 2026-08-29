@@ -298,7 +298,7 @@ async function repairMissingSchema(pool: pg.Pool): Promise<void> {
   );
   await ensureMigrationColumn(
     pool,
-    "0050_statistical_analysis_preview_image",
+    "0051_statistical_analysis_preview_image",
     "statistical_analyses",
     "preview_image"
   );

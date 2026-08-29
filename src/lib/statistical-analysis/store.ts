@@ -39,6 +39,7 @@ import {
   findSheetIdForColumn,
   normalizeWorksheet,
   upsertSpecRow,
+  worksheetsEqual,
 } from "./worksheet";
 import { hashAnovaSource, hashColumnSource, hashScatterSource, hashXyScatterSource } from "./hash";
 import { computeCapabilitySixpack } from "./sixpack";
@@ -352,6 +353,18 @@ export async function updateReportAnalytics(
   if (!parsed.success) return { ok: false, reason: "invalid" };
 
   const expectedVersion = opts?.expectedVersion;
+  // Skip the version bump when the grid is unchanged so a client that
+  // re-PATCHes after save (or a keepalive with the same cells) cannot
+  // loop "Saving…" forever.
+  const current = await getReportAnalytics(reportId);
+  if (!current) return { ok: false, reason: "not_found" };
+  if (expectedVersion != null && current.version !== expectedVersion) {
+    return { ok: false, reason: "conflict", analytics: current };
+  }
+  if (worksheetsEqual(current.worksheet, parsed.data)) {
+    return { ok: true, analytics: current };
+  }
+
   const [row] = await db
     .update(statisticalWorkspaces)
     .set({

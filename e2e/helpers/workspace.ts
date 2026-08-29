@@ -38,6 +38,18 @@ export async function expandDocumentsPanel(page: Page): Promise<void> {
   ).toBeVisible();
 }
 
+/** Convergent DV reports expose a Contents tab in the left panel. */
+export async function openDocumentsContentsTab(page: Page): Promise<void> {
+  await expandDocumentsPanel(page);
+  const tab = documentsPanel(page).getByRole("button", { name: /^contents$/i });
+  if (await tab.isVisible()) {
+    if ((await tab.getAttribute("aria-pressed")) !== "true") {
+      await tab.click();
+    }
+    await expect(tab).toHaveAttribute("aria-pressed", "true");
+  }
+}
+
 /** App shell nav starts collapsed — expand before using footer profile link. */
 export async function expandPrimaryNav(page: Page): Promise<void> {
   const nav = primaryNav(page);
@@ -47,7 +59,7 @@ export async function expandPrimaryNav(page: Page): Promise<void> {
   }
 }
 
-/** Report sidebar may start collapsed — tab labels are icon-only until expanded. */
+/** Report sidebar may start collapsed — expand before switching tabs. */
 export async function expandReportSidebar(page: Page): Promise<void> {
   const sidebar = reportSidebar(page);
   const expand = sidebar.getByRole("button", { name: /expand sidebar/i });
@@ -106,6 +118,22 @@ export async function collapseReportSidebar(page: Page): Promise<void> {
   }
 }
 
+/** Turn on the Comments switch so the review margin can mount. */
+export async function enableCommentsGutter(page: Page): Promise<void> {
+  const toggle = page.getByRole("switch", { name: /comments/i });
+  await expect(toggle).toBeVisible({ timeout: 15_000 });
+  if ((await toggle.getAttribute("aria-checked")) !== "true") {
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-checked", "true");
+  }
+}
+
+/** Collapse assistant and enable the Comments gutter toggle. */
+export async function showReviewMargin(page: Page): Promise<void> {
+  await enableCommentsGutter(page);
+  await collapseReportSidebar(page);
+}
+
 export function defineSection(page: Page) {
   return page.locator("#define");
 }
@@ -129,7 +157,7 @@ export async function openReviewMarginNote(
   page: Page,
   sectionLabel: string
 ): Promise<void> {
-  await collapseReportSidebar(page);
+  await showReviewMargin(page);
   await reviewMargin(page)
     .getByRole("button", { name: new RegExp(`add note on ${sectionLabel}`, "i") })
     .click();
@@ -177,7 +205,7 @@ export async function openMarginCommentReply(
   page: Page,
   commentText: string
 ): Promise<void> {
-  await collapseReportSidebar(page);
+  await showReviewMargin(page);
   const margin = reviewMargin(page);
   await expect(margin.getByText(commentText)).toBeVisible({ timeout: 15_000 });
   const card = margin
