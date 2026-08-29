@@ -1,16 +1,15 @@
 "use client";
 
+import { useRef } from "react";
 import type {
+  ReportAnalyticsView,
   ScatterAnalysisSummary,
   XyScatterAnalysisSummary,
 } from "@/lib/statistical-analysis/types";
 import { isXyScatterAnalysis } from "@/lib/statistical-analysis/types";
+import { useAnalysisPreviewCapture } from "@/hooks/use-analysis-preview-capture";
 import { formatStat } from "@/lib/statistical-analysis/format";
-import {
-  analysisDownloadFilename,
-  analysisToCsv,
-  downloadTextFile,
-} from "@/lib/statistical-analysis/download";
+import { downloadAnalysisFigure } from "@/lib/statistical-analysis/download-figure";
 import {
   formatChartProvenance,
   layoutPoints,
@@ -28,6 +27,7 @@ import {
 } from "@/lib/statistical-analysis/spec-limit-labels";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { AnalysisRecomputeButton } from "@/components/statistical-analysis/analysis-recompute-button";
 
 const WIDTH = 960;
 const HEIGHT = 720;
@@ -261,19 +261,35 @@ function ScatterChart({ spec }: { spec: ChartSpec }) {
 
 export function ScatterView({
   analysis,
+  reportId,
+  onPreviewUploaded,
+  onEdit,
   onRecompute,
   onDelete,
-  recomputing,
+  editing = false,
+  recomputing = false,
   readOnly = false,
 }: {
   analysis: ScatterAnalysisSummary | XyScatterAnalysisSummary;
+  reportId: string;
+  onPreviewUploaded: (analytics: ReportAnalyticsView) => void;
+  onEdit: () => void;
   onRecompute: () => void;
   onDelete: () => void;
-  recomputing: boolean;
+  editing?: boolean;
+  recomputing?: boolean;
   readOnly?: boolean;
 }) {
   const spec = analysis.results.specs[0];
   const xy = isXyScatterAnalysis(analysis);
+  const captureRef = useRef<HTMLDivElement>(null);
+  useAnalysisPreviewCapture({
+    reportId,
+    analysis,
+    captureRef,
+    readOnly,
+    onUploaded: onPreviewUploaded,
+  });
   const provenance = spec ? formatChartProvenance(spec) : "";
   const subtitle = xy
     ? [
@@ -294,56 +310,60 @@ export function ScatterView({
       data-testid={xy ? "xy-scatter" : "measurement-scatter"}
       className="flex h-full flex-col gap-3 overflow-auto p-4"
     >
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        {analysis.stale ? (
+          <Badge variant="warning">Stale</Badge>
+        ) : null}
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          data-testid="download-analysis"
+          onClick={() => {
+            void downloadAnalysisFigure(analysis, captureRef.current);
+          }}
+        >
+          Download
+        </Button>
+        {readOnly ? null : (
+          <>
+            <AnalysisRecomputeButton
+              onClick={onRecompute}
+              recomputing={recomputing}
+              disabled={editing}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              data-testid="edit-analysis"
+              disabled={editing}
+              onClick={onEdit}
+            >
+              {editing ? "Opening…" : "Edit"}
+            </Button>
+            <Button type="button" variant="ghost" size="sm" onClick={onDelete}>
+              Delete
+            </Button>
+          </>
+        )}
+      </div>
+
+      <div
+        ref={captureRef}
+        data-testid="analysis-preview-figure"
+        className="flex flex-col gap-3 rounded-md bg-[#f4f6f9] p-4"
+      >
         <div>
           <h2 className="text-base font-semibold">{analysis.title}</h2>
           <p className="text-xs text-[var(--muted-foreground)]">{subtitle}</p>
         </div>
-        <div className="flex items-center gap-2">
-          {analysis.stale ? (
-            <Badge variant="warning">Stale</Badge>
-          ) : null}
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            data-testid="download-analysis"
-            onClick={() => {
-              downloadTextFile(
-                analysisDownloadFilename(analysis),
-                analysisToCsv(analysis)
-              );
-            }}
-          >
-            Download
-          </Button>
-          {readOnly ? null : (
-            <>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={recomputing}
-                onClick={onRecompute}
-              >
-                {recomputing
-                  ? xy
-                    ? "Recomputing…"
-                    : "Extracting…"
-                  : "Recompute"}
-              </Button>
-              <Button type="button" variant="ghost" size="sm" onClick={onDelete}>
-                Delete
-              </Button>
-            </>
-          )}
-        </div>
-      </div>
 
-      <div className="grid gap-4">
-        {analysis.results.specs.map((item) => (
-          <ScatterChart key={item.title} spec={item} />
-        ))}
+        <div className="grid gap-4">
+          {analysis.results.specs.map((item) => (
+            <ScatterChart key={item.title} spec={item} />
+          ))}
+        </div>
       </div>
     </div>
   );

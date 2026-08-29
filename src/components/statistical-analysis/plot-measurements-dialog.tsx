@@ -42,24 +42,44 @@ function parseOptionalNumber(raw: string): number | null {
 
 export function PlotMeasurementsDialog({
   open,
+  defaultQuery = "",
+  defaultTitle = "",
+  defaultXLabel = "",
+  defaultYLabel = "",
+  defaultMode = "combined" as "combined" | "per-series",
+  defaultLsl = null,
+  defaultUsl = null,
+  editMode = false,
   submitting,
   error,
   onOpenChange,
   onSubmit,
 }: {
   open: boolean;
+  defaultQuery?: string;
+  defaultTitle?: string;
+  defaultXLabel?: string;
+  defaultYLabel?: string;
+  defaultMode?: "combined" | "per-series";
+  defaultLsl?: number | null;
+  defaultUsl?: number | null;
+  editMode?: boolean;
   submitting: boolean;
   error: string | null;
   onOpenChange: (open: boolean) => void;
   onSubmit: (values: PlotMeasurementsDialogValues) => void;
 }) {
-  const [query, setQuery] = useState("");
-  const [title, setTitle] = useState("");
-  const [xLabel, setXLabel] = useState("");
-  const [yLabel, setYLabel] = useState("");
-  const [mode, setMode] = useState<"combined" | "per-series">("combined");
-  const [lsl, setLsl] = useState("");
-  const [usl, setUsl] = useState("");
+  const [query, setQuery] = useState(defaultQuery);
+  const [title, setTitle] = useState(defaultTitle);
+  const [xLabel, setXLabel] = useState(defaultXLabel);
+  const [yLabel, setYLabel] = useState(defaultYLabel);
+  const [mode, setMode] = useState<"combined" | "per-series">(defaultMode);
+  const [lsl, setLsl] = useState(
+    defaultLsl == null ? "" : String(defaultLsl)
+  );
+  const [usl, setUsl] = useState(
+    defaultUsl == null ? "" : String(defaultUsl)
+  );
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -70,8 +90,8 @@ export function PlotMeasurementsDialog({
             Extract cited numeric measurements from this report&apos;s
             attachments and save a scatter of that series versus observation
             index in Results. One series, one color — this is not a grouped
-            overlay. Use a requirement ID or measurement name, for example
-            M3-SYS-FN-037. LSL and USL are optional — leave them blank to use
+            overlay. Use a requirement ID or measurement name, for example Assay
+            or REQ-042. LSL and USL are optional — leave them blank to use
             limits cited in the files.
           </DialogDescription>
         </DialogHeader>
@@ -85,7 +105,7 @@ export function PlotMeasurementsDialog({
               id="plot-query"
               data-testid="plot-query"
               value={query}
-              placeholder="M3-SYS-FN-037"
+              placeholder="Assay"
               onChange={(event) => setQuery(event.target.value)}
             />
           </div>
@@ -203,7 +223,13 @@ export function PlotMeasurementsDialog({
               })
             }
           >
-            {submitting ? "Extracting…" : "OK"}
+            {submitting
+              ? editMode
+                ? "Updating…"
+                : "Extracting…"
+              : editMode
+                ? "Update"
+                : "OK"}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -1,5 +1,7 @@
 "use client";
 
+import { ChevronDown } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -16,6 +18,7 @@ export function WorkspaceMenubar({
   onXyScatter,
   onPlotMeasurements,
   onAddDataSheet,
+  onRenameDataSheet,
 }: {
   readOnly: boolean;
   onLoadSample: () => void;
@@ -24,18 +27,22 @@ export function WorkspaceMenubar({
   onXyScatter: () => void;
   onPlotMeasurements: () => void;
   onAddDataSheet: () => void;
+  onRenameDataSheet: () => void;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-0.5">
+    <div className="flex flex-wrap items-center gap-1.5">
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
-            variant="ghost"
+            type="button"
+            variant="outline"
             size="sm"
             disabled={readOnly}
             data-testid="worksheet-data-menu"
+            className="gap-1 pr-2 data-[state=open]:bg-[var(--secondary)]"
           >
             Data
+            <ChevronDown className="size-3.5 opacity-60" aria-hidden="true" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start">
@@ -44,6 +51,12 @@ export function WorkspaceMenubar({
             onSelect={onAddDataSheet}
           >
             New data sheet
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            data-testid="rename-data-sheet"
+            onSelect={onRenameDataSheet}
+          >
+            Rename data sheet
           </DropdownMenuItem>
           <DropdownMenuItem
             data-testid="load-sample-assay"
@@ -57,12 +70,15 @@ export function WorkspaceMenubar({
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
-            variant="ghost"
+            type="button"
+            variant="outline"
             size="sm"
             disabled={readOnly}
-            data-testid="worksheet-stat-menu"
+            data-testid="worksheet-plot-menu"
+            className="gap-1 pr-2 data-[state=open]:bg-[var(--secondary)]"
           >
-            Stat
+            Plot
+            <ChevronDown className="size-3.5 opacity-60" aria-hidden="true" />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start">

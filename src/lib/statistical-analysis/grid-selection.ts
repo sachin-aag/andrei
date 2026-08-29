@@ -18,6 +18,24 @@ export function collapseSelection(col: number, row: number): GridSelection {
   return { col, row, anchorCol: col, anchorRow: row };
 }
 
+/** Move column focus without clearing a multi-row selection span. */
+export function focusColumn(selection: GridSelection, col: number): GridSelection {
+  if (selection.axis === "row") {
+    return { ...selection, col, anchorCol: col };
+  }
+  const rowStart = Math.min(selection.row, selection.anchorRow);
+  const rowEnd = Math.max(selection.row, selection.anchorRow);
+  if (rowStart === rowEnd) {
+    return collapseSelection(col, selection.row);
+  }
+  return {
+    col,
+    row: selection.row,
+    anchorCol: col,
+    anchorRow: selection.anchorRow,
+  };
+}
+
 export function isRowSelection(selection: GridSelection): boolean {
   return selection.axis === "row";
 }

@@ -32,6 +32,7 @@ export const REASONING_AGREEMENT_LABELS: Record<ReasoningAgreement, string> = {
 
 export const MIN_HUMAN_COMMENT_LENGTH = 20;
 
+/** Investigation DMAIC keys kept for tests and older call sites. */
 export const REVIEWABLE_SECTION_TYPES = [
   "define",
   "measure",
@@ -40,6 +41,8 @@ export const REVIEWABLE_SECTION_TYPES = [
   "control",
 ] as const;
 
+const sectionKeySchema = z.string().trim().min(1);
+
 export const humanReviewerSchema = z.object({
   id: z.string().trim().min(1, "Reviewer ID is required."),
   name: z.string().trim().min(1, "Reviewer name is required."),
@@ -47,7 +50,7 @@ export const humanReviewerSchema = z.object({
 });
 
 export const humanSubAnswerSchema = z.object({
-  section: z.enum(REVIEWABLE_SECTION_TYPES),
+  section: sectionKeySchema,
   criterionKey: z.string().min(1),
   criteriaEvaluationAgreement: z.enum(CRITERIA_EVALUATION_AGREEMENTS),
   reasoningAgreement: z.enum(REASONING_AGREEMENTS),
@@ -60,7 +63,7 @@ export const humanSubAnswerSchema = z.object({
 
 /** Draft saves may omit judgment on unanswered sub-questions. */
 export const humanSubAnswerDraftSchema = z.object({
-  section: z.enum(REVIEWABLE_SECTION_TYPES),
+  section: sectionKeySchema,
   criterionKey: z.string().min(1),
   criteriaEvaluationAgreement: z
     .enum(CRITERIA_EVALUATION_AGREEMENTS)

@@ -15,6 +15,7 @@ import { captureEvent } from "@/lib/analytics/events";
 import { PlaceholdersPanelContent } from "./placeholders-panel";
 import { CriteriaPanelContent, CommentsPanelContent } from "./criteria-sheet";
 import { ChatPanel } from "./chat-panel";
+import type { AnalyticsMentionSheet } from "@/lib/statistical-analysis/mentions";
 import type { SectionType } from "@/db/schema";
 import type { Placeholder } from "@/lib/placeholders/find";
 import type { WorkProductView, WorkspaceChrome } from "./workspace-chrome";
@@ -41,6 +42,10 @@ type Props = {
   statsEnabled?: boolean;
   onAnalyticsSettled?: () => void;
   onAnalyticsAgentBusy?: (busy: boolean) => void;
+  onAnalyticsFocusSheet?: (sheetId: string) => void;
+  onAnalyticsFocusAnalysis?: (analysisId: string) => void;
+  analyticsReloadEpoch?: number;
+  analyticsMentionSheets?: AnalyticsMentionSheet[];
 };
 
 const TABS: { value: SidebarTab; label: string; icon: typeof ListChecks }[] = [
@@ -65,6 +70,10 @@ export function ReportSidebar({
   statsEnabled = false,
   onAnalyticsSettled,
   onAnalyticsAgentBusy,
+  onAnalyticsFocusSheet,
+  onAnalyticsFocusAnalysis,
+  analyticsReloadEpoch,
+  analyticsMentionSheets,
 }: Props) {
   const analyticsSurface = workProductView === "analytics";
   const { pendingPlaceholders } = useReportPlaceholders();
@@ -225,6 +234,10 @@ export function ReportSidebar({
           statsEnabled={statsEnabled}
           onWorksheetChanged={() => onAnalyticsSettled?.()}
           onAgentBusyChange={onAnalyticsAgentBusy}
+          onAnalyticsFocusSheet={onAnalyticsFocusSheet}
+          onAnalyticsFocusAnalysis={onAnalyticsFocusAnalysis}
+          analyticsReloadEpoch={analyticsReloadEpoch}
+          mentionSheets={analyticsMentionSheets}
         />
       </div>
       {!collapsed && !analyticsSurface && activeTab !== "assistant" ? (

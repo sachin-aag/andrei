@@ -51,6 +51,12 @@ export function analysisDownloadFilename(
   return `${safeFilenameBase(analysis.title, "sixpack")}-capability-sixpack.csv`;
 }
 
+export function analysisImageDownloadFilename(
+  analysis: StatisticalAnalysisSummary
+): string {
+  return analysisDownloadFilename(analysis).replace(/\.csv$/i, ".png");
+}
+
 export function analysisToCsv(analysis: StatisticalAnalysisSummary): string {
   if (isScatterAnalysis(analysis)) {
     return scatterToCsv(analysis);
@@ -300,4 +306,24 @@ export function downloadTextFile(
   link.click();
   link.remove();
   URL.revokeObjectURL(url);
+}
+
+export function downloadDataUrl(filename: string, dataUrl: string): void {
+  const link = document.createElement("a");
+  link.href = dataUrl;
+  link.download = filename;
+  link.rel = "noopener";
+  document.body.append(link);
+  link.click();
+  link.remove();
+}
+
+/** Plot analyses download the captured PNG; tables stay CSV. */
+export function downloadAnalysis(analysis: StatisticalAnalysisSummary): void {
+  const preview = analysis.previewImage;
+  if (preview?.dataUrl) {
+    downloadDataUrl(analysisImageDownloadFilename(analysis), preview.dataUrl);
+    return;
+  }
+  downloadTextFile(analysisDownloadFilename(analysis), analysisToCsv(analysis));
 }

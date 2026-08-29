@@ -1290,6 +1290,8 @@ export const statisticalAnalyses = pgTable(
     title: text("title").notNull(),
     config: jsonb("config").notNull(),
     results: jsonb("results").notNull(),
+    /** PNG captured from Analytics UI for document insert; null until preview is saved. */
+    previewImage: jsonb("preview_image"),
     sourceHash: text("source_hash").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

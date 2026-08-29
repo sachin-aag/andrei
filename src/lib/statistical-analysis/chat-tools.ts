@@ -503,9 +503,13 @@ export function buildAnalyticsChatTools(opts: {
   canEdit: boolean;
   documentType: import("@/db/schema").DocumentType;
   searchGate?: AnalyticsSearchGate;
-  preferredSheetId?: string;
+  pinnedAttachmentIds?: readonly string[];
+  focusedSheetId?: string;
 }): ToolSet {
-  const { reportId, canEdit, documentType, searchGate, preferredSheetId } = opts;
+  const { reportId, canEdit, documentType, searchGate, focusedSheetId } = opts;
+  const pinnedAttachmentIds = Array.from(
+    new Set((opts.pinnedAttachmentIds ?? []).filter((id) => id.trim().length > 0))
+  );
   const documentTools = pickAnalyticsDocumentTools(
     buildChatTools({
       reportId,
@@ -518,6 +522,7 @@ export function buildAnalyticsChatTools(opts: {
   documentTools.search_documents = buildAnalyticsSearchDocumentsTool({
     reportId,
     searchGate,
+    pinnedAttachmentIds,
   });
 
   const sourceTexts: string[] = [];
@@ -607,8 +612,14 @@ export function buildAnalyticsChatTools(opts: {
     }),
     read_worksheet: tool({
       description:
-        "Read the saved Statistical Analysis worksheet: column names, counts, and values. Pass columnId for one column's full values; omit it for a compact index of every column.",
+        "Read the saved Statistical Analysis worksheet: column names, counts, and values. Pass sheetId to focus a tagged data sheet, or columnId for one column's full values; omit both for a compact index of every sheet.",
       inputSchema: z.object({
+        sheetId: z
+          .string()
+          .trim()
+          .min(1)
+          .optional()
+          .describe("Data sheet id or name from the worksheet index."),
         columnId: z
           .string()
           .trim()
@@ -616,14 +627,29 @@ export function buildAnalyticsChatTools(opts: {
           .optional()
           .describe("Worksheet column id such as c1."),
       }),
-      execute: async ({ columnId }) => {
+      execute: async ({ sheetId, columnId }) => {
         const analytics = await getOrCreateReportAnalytics(reportId);
+        const fullWorksheet = analytics.worksheet;
         if (columnId) {
-          const column = findColumn(analytics.worksheet, columnId);
+          let worksheet = fullWorksheet;
+          if (sheetId) {
+            const sheet = findSheet(worksheet, sheetId);
+            if (!sheet) return { status: "not_found" as const, sheetId };
+            worksheet = switchWorksheetTab(worksheet, sheet.id);
+          } else if (focusedSheetId) {
+            const sheet = findSheet(worksheet, focusedSheetId);
+            if (sheet) worksheet = switchWorksheetTab(worksheet, sheet.id);
+          }
+          const column = findColumn(worksheet, columnId);
           if (!column) return { status: "not_found" as const, columnId };
           const numeric = columnNumericValues(column);
+          const activeSheet =
+            findSheet(worksheet, worksheet.activeSheetId) ??
+            dataSheets(worksheet)[0];
           return {
             status: "ok" as const,
+            sheetId: activeSheet?.id ?? worksheet.activeSheetId,
+            sheetName: activeSheet?.name ?? "Data",
             column: {
               id: column.id,
               name: column.name,
@@ -635,9 +661,44 @@ export function buildAnalyticsChatTools(opts: {
             analyses: analytics.analyses.map(analysisIndexItem),
           };
         }
+        if (sheetId) {
+          const sheet = findSheet(fullWorksheet, sheetId);
+          if (!sheet) return { status: "not_found" as const, sheetId };
+          const numericSheet = switchWorksheetTab(fullWorksheet, sheet.id);
+          const activeSheet = findSheet(numericSheet, numericSheet.activeSheetId);
+          return {
+            status: "ok" as const,
+            activeSheetId: numericSheet.activeSheetId,
+            sheets: activeSheet
+              ? [
+                  {
+                    id: activeSheet.id,
+                    name: activeSheet.name,
+                    columns: activeSheet.columns.map((column) => {
+                      const trimmed = trimTrailingEmpty(column.values);
+                      const numeric = columnNumericValues(column);
+                      return {
+                        id: column.id,
+                        name: column.name,
+                        valueCount: trimmed.length,
+                        numericCount: numeric.values.length,
+                        numericCells: numeric.values.length,
+                        nonNumericCells: numeric.skipped,
+                        preview: trimmed.slice(0, 12),
+                      };
+                    }),
+                  },
+                ]
+              : [],
+            specs: numericSheet.specs,
+            analyses: analytics.analyses.map(analysisIndexItem),
+          };
+        }
         return {
           status: "ok" as const,
-          sheets: dataSheets(analytics.worksheet).map((sheet) => ({
+          activeSheetId: fullWorksheet.activeSheetId,
+          focusedSheetId: focusedSheetId ?? null,
+          sheets: dataSheets(fullWorksheet).map((sheet) => ({
             id: sheet.id,
             name: sheet.name,
             columns: sheet.columns.map((column) => {
@@ -882,7 +943,7 @@ export function buildAnalyticsChatTools(opts: {
         const analytics = await getOrCreateReportAnalytics(reportId);
         const worksheet = worksheetWithPreferredSheet(
           analytics.worksheet,
-          preferredSheetId
+          focusedSheetId
         );
         const applied = applyWriteColumnEntries(worksheet, entries);
         if (!applied.ok) {
@@ -961,10 +1022,13 @@ export function buildAnalyticsChatTools(opts: {
         const operations = input.operations?.length
           ? input.operations
           : [input];
-        let worksheet = worksheetWithPreferredSheet(
-          analytics.worksheet,
-          preferredSheetId
-        );
+        let worksheet = analytics.worksheet;
+        if (
+          focusedSheetId &&
+          !operations.some((operation) => operation.sheetId?.trim())
+        ) {
+          worksheet = worksheetWithPreferredSheet(worksheet, focusedSheetId);
+        }
         const applied: Array<{
           status: "ok";
           action: string;

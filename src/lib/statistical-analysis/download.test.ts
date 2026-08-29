@@ -8,6 +8,7 @@ import { computeXyScatter } from "./xy-scatter";
 import { createEmptyWorksheet, pasteTsv } from "./worksheet";
 import {
   analysisDownloadFilename,
+  analysisImageDownloadFilename,
   analysisToCsv,
 } from "./download";
 
@@ -46,6 +47,7 @@ function sampleAnalysis(): StatisticalAnalysisSummary {
     sourceHash: "abc",
     stale: false,
     createdAt: "2026-08-26T00:00:00.000Z",
+    previewImage: null,
   };
 }
 
@@ -54,6 +56,9 @@ describe("analysis download", () => {
     const analysis = sampleAnalysis();
     expect(analysisDownloadFilename(analysis)).toBe(
       "Assay-rows-1-5-capability-sixpack.csv"
+    );
+    expect(analysisImageDownloadFilename(analysis)).toBe(
+      "Assay-rows-1-5-capability-sixpack.png"
     );
     expect(
       analysisDownloadFilename({ ...analysis, title: "  " })
@@ -95,6 +100,7 @@ describe("analysis download", () => {
       sourceHash: "def",
       stale: false,
       createdAt: "2026-08-26T00:00:00.000Z",
+      previewImage: null,
     };
     expect(analysisDownloadFilename(analysis)).toBe(
       "Tip-Detachment-Torque-measurement-scatter.csv"
@@ -136,6 +142,7 @@ describe("analysis download", () => {
       sourceHash: "anova",
       stale: false,
       createdAt: "2026-08-26T00:00:00.000Z",
+      previewImage: null,
     };
     expect(analysisDownloadFilename(analysis)).toBe("Y-by-Group-one-way-anova.csv");
     const csv = analysisToCsv(analysis);
@@ -173,6 +180,7 @@ describe("analysis download", () => {
       sourceHash: "xy",
       stale: false,
       createdAt: "2026-08-26T00:00:00.000Z",
+      previewImage: null,
     };
     expect(analysisDownloadFilename(analysis)).toBe("Y-vs-X-xy-scatter.csv");
     const csv = analysisToCsv(analysis);

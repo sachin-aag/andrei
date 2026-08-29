@@ -12,6 +12,7 @@ import {
   deleteRow,
   deleteRows,
   findColumnIndexByName,
+  findSheet,
   clearColumn,
   clearRows,
   insertColumn,
@@ -22,12 +23,15 @@ import {
   parseTsv,
   pasteTsv,
   renameColumn,
+  renameDataSheet,
   replaceColumnValues,
   rowCount,
   setCell,
   specRowForColumn,
   switchWorksheetTab,
   trimTrailingEmpty,
+  upsertSpecRow,
+  worksheetsEqual,
 } from "./worksheet";
 import {
   PRIMARY_DATA_SHEET_ID,
@@ -220,6 +224,14 @@ describe("worksheet grid operations", () => {
     expect(sheet.activeSheetId).toBe("data-2");
   });
 
+  it("renames a data sheet", () => {
+    let sheet = createEmptyWorksheet();
+    sheet = addDataSheet(sheet, "Assay");
+    sheet = renameDataSheet(sheet, PRIMARY_DATA_SHEET_ID, "Moisture");
+    expect(sheet.sheets[0]?.name).toBe("Moisture");
+    expect(findSheet(sheet, "Moisture")?.id).toBe(PRIMARY_DATA_SHEET_ID);
+  });
+
   it("adds a second data sheet and maps a legacy Specs tab onto Data", () => {
     let sheet = createEmptyWorksheet();
     sheet = addDataSheet(sheet);
@@ -322,5 +334,31 @@ describe("worksheet grid operations", () => {
     expect(merged.columns[0]?.values.slice(0, 2)).toEqual(["3", "2.5"]);
     expect(merged.columns).toHaveLength(remote.columns.length);
     expect(merged.columns[1]?.id).toBe(remote.columns[1]?.id);
+  });
+
+  it("keeps local spec edits and the active sheet when merging remote", () => {
+    const persisted = createEmptyWorksheet();
+    const local = upsertSpecRow(addDataSheet(persisted), {
+      columnName: "Assay",
+      lsl: "90",
+      usl: "110",
+      target: "100",
+    });
+    const remote = insertColumn(persisted, 1);
+    const merged = mergeDirtyWorksheet(local, persisted, remote);
+    expect(merged.specs).toEqual([
+      { columnName: "Assay", lsl: "90", usl: "110", target: "100" },
+    ]);
+    expect(merged.activeSheetId).toBe("data-2");
+    expect(merged.sheets.some((sheet) => sheet.id === "data-2")).toBe(true);
+    const data1 = merged.sheets.find((sheet) => sheet.id === persisted.activeSheetId);
+    expect(data1?.columns).toHaveLength(remote.columns.length);
+  });
+
+  it("treats normalized worksheets as equal", () => {
+    const a = createEmptyWorksheet();
+    const b = normalizeWorksheet({ columns: a.columns });
+    expect(worksheetsEqual(a, b)).toBe(true);
+    expect(worksheetsEqual(a, setCell(a, 0, 0, "1"))).toBe(false);
   });
 });

@@ -1,9 +1,9 @@
-import type { SectionType, CriterionStatus } from "@/db/schema";
+import type { SectionType, CriterionStatus, DocumentType } from "@/db/schema";
 import {
+  buildEvaluationSystemPromptForType,
   getCriteria,
-  getInvestigationEvaluatableSections,
-} from "@/lib/ai/criteria";
-import { buildEvaluationSystemPromptForType } from "@/lib/document-types";
+  getEvaluatableSections,
+} from "@/lib/document-types";
 import {
   blocksToPromptText,
   buildSectionDisplayBlocks,
@@ -11,10 +11,8 @@ import {
   type ImproveAiDisplayBlock,
 } from "@/lib/improve-ai/section-display-blocks";
 import type { AllSectionsContent } from "@/lib/ai/evaluate";
-import { EDITABLE_SECTIONS } from "@/types/sections";
 import {
   humanAnswerKey,
-  REVIEWABLE_SECTION_TYPES,
   type HumanSubAnswerDraft,
 } from "@/lib/improve-ai/human-judgment";
 import type { aiFeedbackResponses, aiFeedbackSessions, reports } from "@/db/schema";
@@ -58,17 +56,25 @@ export type ImproveAiSessionView = {
   answers: Record<string, HumanSubAnswerDraft>;
 };
 
-function priorSections(section: SectionType): SectionType[] {
-  const idx = EDITABLE_SECTIONS.indexOf(section as (typeof EDITABLE_SECTIONS)[number]);
+function evaluableSectionKeys(documentType: DocumentType): SectionType[] {
+  return getEvaluatableSections(documentType).map((section) => section.key);
+}
+
+function priorSections(
+  section: SectionType,
+  ordered: readonly SectionType[]
+): SectionType[] {
+  const idx = ordered.indexOf(section);
   if (idx <= 0) return [];
-  return EDITABLE_SECTIONS.slice(0, idx) as unknown as SectionType[];
+  return ordered.slice(0, idx);
 }
 
 function previousSectionsForView(
   section: SectionType,
-  allSections: AllSectionsContent
+  allSections: AllSectionsContent,
+  ordered: readonly SectionType[]
 ): ImproveAiPreviousSection[] {
-  return priorSections(section).flatMap((priorSection) => {
+  return priorSections(section, ordered).flatMap((priorSection) => {
     const content = allSections[priorSection];
     if (!content) return [];
     const blocks = buildSectionDisplayBlocks(priorSection, content);
@@ -77,25 +83,40 @@ function previousSectionsForView(
   });
 }
 
+function contentForSection(
+  section: SectionType,
+  report: typeof reports.$inferSelect,
+  sectionContents: AllSectionsContent
+): unknown {
+  if (section === "cover_page") return report.metadata;
+  return sectionContents[section];
+}
+
 export function buildImproveAiSessionView(params: {
   session: typeof aiFeedbackSessions.$inferSelect;
   report: typeof reports.$inferSelect;
   sectionContents: AllSectionsContent;
   responses: (typeof aiFeedbackResponses.$inferSelect)[];
-}): ImproveAiSessionView | null {
+}): ImproveAiSessionView {
+  const documentType = params.report.documentType;
+  const orderedSections = evaluableSectionKeys(documentType);
   const evalByKey = new Map(
     params.responses.map((r) => [r.criterionKey, r])
   );
 
   const sections: ImproveAiSectionView[] = [];
 
-  for (const section of getInvestigationEvaluatableSections()) {
-    const content = params.sectionContents[section];
+  for (const section of orderedSections) {
+    const content = contentForSection(
+      section,
+      params.report,
+      params.sectionContents
+    );
     const blocks = buildSectionDisplayBlocks(section, content);
     if (!sectionDisplayBlocksHaveContent(blocks)) continue;
     const sectionContent = blocksToPromptText(blocks);
 
-    const defs = getCriteria(section);
+    const defs = getCriteria(documentType, section);
     const criteria: ImproveAiCriterion[] = [];
 
     for (let i = 0; i < defs.length; i++) {
@@ -120,23 +141,22 @@ export function buildImproveAiSessionView(params: {
       sectionIndex: sections.length + 1,
       sectionContent,
       blocks,
-      systemPrompt: buildEvaluationSystemPromptForType(
-        "investigation_report",
-        section
+      systemPrompt: buildEvaluationSystemPromptForType(documentType, section),
+      previousSections: previousSectionsForView(
+        section,
+        params.sectionContents,
+        orderedSections
       ),
-      previousSections: previousSectionsForView(section, params.sectionContents),
       criteria,
     });
   }
-
-  if (sections.length === 0) return null;
 
   const answers: Record<string, HumanSubAnswerDraft> = {};
   for (const section of sections) {
     for (const criterion of section.criteria) {
       const row = evalByKey.get(criterion.criterionKey);
       answers[criterion.answerKey] = {
-        section: section.section as (typeof REVIEWABLE_SECTION_TYPES)[number],
+        section: section.section,
         criterionKey: criterion.criterionKey,
         criteriaEvaluationAgreement:
           (row?.criteriaEvaluationAgreement as HumanSubAnswerDraft["criteriaEvaluationAgreement"]) ??

@@ -7,6 +7,7 @@ import {
   createAnalysisForReport,
   getOrCreateReportAnalytics,
   recomputeAnalysisForReport,
+  updateAnalysisForReport,
   updateReportAnalytics,
 } from "@/lib/statistical-analysis/store";
 import type { ReportAnalyticsView } from "@/lib/statistical-analysis/types";
@@ -22,6 +23,7 @@ vi.mock("@/lib/statistical-analysis/store", () => ({
   updateReportAnalytics: vi.fn(),
   createAnalysisForReport: vi.fn(),
   recomputeAnalysisForReport: vi.fn(),
+  updateAnalysisForReport: vi.fn(),
   deleteAnalysisForReport: vi.fn(),
 }));
 
@@ -271,5 +273,58 @@ describe("/api/reports/[reportId]/analytics", () => {
       "report-1",
       "an-1"
     );
+  });
+
+  it("updates an analysis", async () => {
+    vi.mocked(requireAnalyticsAccess).mockResolvedValue(okAccess() as never);
+    vi.mocked(updateAnalysisForReport).mockResolvedValue({
+      ok: true,
+      analytics,
+      analysis: {
+        id: "an-1",
+        workspaceId: "ws-1",
+        kind: "capability_sixpack_normal",
+        title: "Assay (edited)",
+        config: {
+          columnId: "c1",
+          columnName: "Assay",
+          title: "Assay (edited)",
+          lsl: 90,
+          usl: 110,
+          target: 100,
+        },
+        results: { n: 2 },
+        sourceHash: "def",
+        stale: false,
+        createdAt: "2026-01-01T00:00:00.000Z",
+      } as never,
+    });
+
+    const response = await recomputeAnalysis(
+      new Request(
+        "http://localhost/api/reports/report-1/analytics/analyses/an-1",
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "update",
+            columnId: "c1",
+            title: "Assay (edited)",
+            lsl: 90,
+            usl: 110,
+            target: 100,
+          }),
+        }
+      ),
+      { params: Promise.resolve({ reportId: "report-1", analysisId: "an-1" }) }
+    );
+    expect(response.status).toBe(200);
+    expect(updateAnalysisForReport).toHaveBeenCalledWith("report-1", "an-1", {
+      columnId: "c1",
+      title: "Assay (edited)",
+      lsl: 90,
+      usl: 110,
+      target: 100,
+    });
   });
 });

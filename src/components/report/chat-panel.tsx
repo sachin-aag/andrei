@@ -33,6 +33,7 @@ import {
   ArrowRightLeft,
   ImagePlus,
   ImageMinus,
+  LineChart,
   Square,
   X,
 } from "lucide-react";
@@ -51,10 +52,7 @@ import {
   ComposerSelect,
   DOCUMENT_CHAT_MODE_OPTIONS,
 } from "@/components/report/chat-composer-controls";
-import {
-  SectionScopeSelect,
-  SheetScopeSelect,
-} from "@/components/report/chat-composer-scope";
+import { SectionScopeSelect } from "@/components/report/chat-composer-scope";
 import {
   chatWorkProductTarget,
   isWorkProductView,
@@ -123,6 +121,7 @@ import {
   filterMentionCandidates,
   findMentionQuery,
   mentionKey,
+  syncMentionCandidateLabels,
   type MentionCandidate,
   type MentionQuery,
 } from "@/lib/ai/chat/mention-search";
@@ -163,20 +162,14 @@ import {
   AnalyticsChatToolChip,
   isAnalyticsWorksheetMutationTool,
 } from "@/components/statistical-analysis/analytics-chat-tool-chip";
-import {
-  CHAT_SHEET_SCOPE_ALL,
-  chatSheetOptionsFromWorksheet,
-  type ChatSheetOption,
-  type ChatSheetScope,
-} from "@/lib/statistical-analysis/chat-sheet-scope";
 import { getReportAnalytics } from "@/lib/statistical-analysis/client";
 import {
-  EMPTY_WORKSHEET_SHEETS,
-  publishWorksheetSheets,
-  readWorksheetSheets,
-  subscribeWorksheetSheets,
-  worksheetSheetsAreLive,
-} from "@/lib/statistical-analysis/worksheet-sheets-store";
+  analyticsSheetMentionCandidates,
+  type AnalyticsMentionSheet,
+} from "@/lib/statistical-analysis/mentions";
+import { analysisListSubtitle } from "@/lib/statistical-analysis/stale";
+import type { ReportAnalyticsView } from "@/lib/statistical-analysis/types";
+import { dataSheets } from "@/lib/statistical-analysis/worksheet";
 
 type PendingChatImage = {
   id: string;
@@ -653,7 +646,16 @@ function ScopeMismatchBanner({
 }
 
 function mentionIcon(type: MentionCandidate["type"]) {
-  return type === "document" ? FileText : ClipboardList;
+  switch (type) {
+    case "document":
+      return FileText;
+    case "sheet":
+      return Table2;
+    case "analysis":
+      return LineChart;
+    default:
+      return ClipboardList;
+  }
 }
 
 function MentionChips({
@@ -907,33 +909,17 @@ function scopeDescription(scope: ChatSectionScope): string {
     : sectionLabel(scope);
 }
 
-function sheetFocusLabel(
-  scope: ChatSheetScope,
-  sheets: readonly ChatSheetOption[]
-): string {
-  if (scope === CHAT_SHEET_SCOPE_ALL) return "all data sheets";
-  return sheets.find((sheet) => sheet.id === scope)?.name ?? "the selected data sheet";
-}
-
 function emptyChatIntro(args: {
   targetingAnalytics: boolean;
   mode: ChatMode;
   workspaceChrome: WorkspaceChrome;
   sectionScope: ChatSectionScope;
-  sheetScope: ChatSheetScope;
-  sheets: readonly ChatSheetOption[];
 }): string {
   if (args.targetingAnalytics) {
     if (args.mode === "plan") {
-      if (args.sheetScope === CHAT_SHEET_SCOPE_ALL) {
-        return "I read this report's attachments and the worksheet. I don't fill columns or run plots in Ask mode — switch to Agent for that. I don't draft the document.";
-      }
-      return `Focused on ${sheetFocusLabel(args.sheetScope, args.sheets)} — I'll answer questions about that sheet. I won't fill columns or run plots in Ask mode.`;
+      return "I read this report's attachments and the worksheet. I don't fill columns or run plots in Ask mode — switch to Agent for that. I don't draft the document. Type @ to tag a sheet, plot, or file.";
     }
-    if (args.sheetScope === CHAT_SHEET_SCOPE_ALL) {
-      return "I fill the worksheet, run a sixpack or one-way ANOVA, and plot an XY scatter (two numeric columns) or a measurement scatter (one series vs index). I can't color points by group or use serial numbers as an X axis. I don't draft the document.";
-    }
-    return `Focused on ${sheetFocusLabel(args.sheetScope, args.sheets)} — I'll fill that sheet, run plots, and use attachments. I don't draft the document.`;
+    return "I fill the worksheet, run a sixpack or one-way ANOVA, and plot an XY scatter (two numeric columns) or a measurement scatter (one series vs index). I can't color points by group or use serial numbers as an X axis. I don't draft the document. Type @ to tag a sheet, plot, or file.";
   }
   if (args.mode === "plan") {
     if (args.sectionScope === CHAT_SECTION_SCOPE_ALL) {
@@ -955,18 +941,11 @@ function composerPlaceholder(args: {
   targetingAnalytics: boolean;
   mode: ChatMode;
   sectionScope: ChatSectionScope;
-  sheetScope: ChatSheetScope;
-  sheets: readonly ChatSheetOption[];
 }): string {
   if (args.targetingAnalytics) {
-    if (args.mode === "plan") {
-      return args.sheetScope === CHAT_SHEET_SCOPE_ALL
-        ? "Ask about measurements in the attachments…"
-        : `Ask about ${sheetFocusLabel(args.sheetScope, args.sheets)}…`;
-    }
-    return args.sheetScope === CHAT_SHEET_SCOPE_ALL
-      ? "Extract numbers, run a sixpack or ANOVA, or plot an XY/measurement scatter…"
-      : `Ask the assistant to fill ${sheetFocusLabel(args.sheetScope, args.sheets)}…`;
+    return args.mode === "plan"
+      ? "Ask about measurements in the attachments… type @ to tag a sheet or plot"
+      : "Extract numbers, run a sixpack or ANOVA, or plot… type @ to tag a sheet or plot";
   }
   if (args.mode === "plan") {
     return args.sectionScope === CHAT_SECTION_SCOPE_ALL
@@ -988,12 +967,20 @@ export function ChatPanel({
   statsEnabled = false,
   onWorksheetChanged,
   onAgentBusyChange,
+  onAnalyticsFocusSheet,
+  onAnalyticsFocusAnalysis,
+  analyticsReloadEpoch = 0,
+  mentionSheets = [],
 }: {
   workspaceChrome?: WorkspaceChrome;
   workProductView?: WorkProductView;
   statsEnabled?: boolean;
   onWorksheetChanged?: () => void;
   onAgentBusyChange?: (busy: boolean) => void;
+  onAnalyticsFocusSheet?: (sheetId: string) => void;
+  onAnalyticsFocusAnalysis?: (analysisId: string) => void;
+  analyticsReloadEpoch?: number;
+  mentionSheets?: AnalyticsMentionSheet[];
 }) {
   const {
     report,
@@ -1022,6 +1009,8 @@ export function ChatPanel({
   const [mentions, setMentions] = useState<MentionCandidate[]>([]);
   const [mentionRange, setMentionRange] = useState<MentionQuery | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
+  const [analyticsSnapshot, setAnalyticsSnapshot] =
+    useState<ReportAnalyticsView | null>(null);
   const [pendingImages, setPendingImages] = useState<PendingChatImage[]>([]);
   const [attaching, setAttaching] = useState(false);
   const storedComposerPrefs = useSyncExternalStore(
@@ -1043,6 +1032,18 @@ export function ChatPanel({
     statsEnabled,
   });
   const targetingAnalytics = chatTarget === "analytics";
+  const loadAnalyticsSnapshot = useCallback(async () => {
+    if (!statsEnabled) return;
+    try {
+      setAnalyticsSnapshot(await getReportAnalytics(report.id));
+    } catch {
+      setAnalyticsSnapshot(null);
+    }
+  }, [report.id, statsEnabled]);
+  useEffect(() => {
+    if (!statsEnabled) return;
+    void loadAnalyticsSnapshot();
+  }, [analyticsReloadEpoch, loadAnalyticsSnapshot, statsEnabled]);
   const modeOptions = useMemo(() => {
     const source = targetingAnalytics
       ? ANALYTICS_CHAT_MODE_OPTIONS
@@ -1062,20 +1063,7 @@ export function ChatPanel({
       ? "plan"
       : storedComposerPrefs.mode;
   const pace = storedComposerPrefs.pace;
-  const liveSheets = useSyncExternalStore(
-    subscribeWorksheetSheets,
-    () => readWorksheetSheets(report.id),
-    () => EMPTY_WORKSHEET_SHEETS
-  );
   const [sectionScope, setSectionScope] = useState<ChatSectionScope>(CHAT_SECTION_SCOPE_ALL);
-  const [sheetScope, setSheetScope] = useState<ChatSheetScope>(CHAT_SHEET_SCOPE_ALL);
-  if (
-    sheetScope !== CHAT_SHEET_SCOPE_ALL &&
-    liveSheets.length > 0 &&
-    !liveSheets.some((sheet) => sheet.id === sheetScope)
-  ) {
-    setSheetScope(CHAT_SHEET_SCOPE_ALL);
-  }
   const [clientScopeSuggestion, setClientScopeSuggestion] =
     useState<SectionScopeMismatch | null>(null);
   const [sessions, setSessions] = useState<ChatSessionSummary[]>([]);
@@ -1207,13 +1195,47 @@ export function ChatPanel({
           sublabel: description || pages,
         };
       });
+    if (targetingAnalytics) {
+      const sheets =
+        mentionSheets.length > 0
+          ? analyticsSheetMentionCandidates(mentionSheets)
+          : analyticsSnapshot
+            ? analyticsSheetMentionCandidates(
+                dataSheets(analyticsSnapshot.worksheet).map((sheet) => ({
+                  sheetId: sheet.id,
+                  name: sheet.name,
+                  columnCount: sheet.columns.length,
+                }))
+              )
+            : [];
+      const analyses = (analyticsSnapshot?.analyses ?? []).map((item) => ({
+        type: "analysis" as const,
+        id: item.id,
+        label: item.title,
+        sublabel: analysisListSubtitle(item),
+      }));
+      return [...sheets, ...analyses, ...documents];
+    }
     const sections = chatEditableSections(report.documentType).map((section) => ({
       type: "section" as const,
       id: section,
       label: sectionLabel(section),
     }));
     return [...documents, ...sections];
-  }, [attachments, report.documentType]);
+  }, [
+    analyticsSnapshot,
+    attachments,
+    mentionSheets,
+    report.documentType,
+    targetingAnalytics,
+  ]);
+  const labeledMentions = syncMentionCandidateLabels(
+    mentions,
+    mentionCandidates
+  );
+  if (labeledMentions !== mentions) {
+    setMentions(labeledMentions);
+  }
 
   const mentionMatches = mentionRange
     ? filterMentionCandidates(mentionCandidates, mentionRange.query)
@@ -1272,18 +1294,13 @@ export function ChatPanel({
     [persistComposerPrefs, storedComposerPrefs.mode, storedComposerPrefs.pace]
   );
 
-  const refreshSheetOptions = useCallback(async () => {
-    if (worksheetSheetsAreLive(report.id)) return;
-    try {
-      const analytics = await getReportAnalytics(report.id);
-      publishWorksheetSheets(
-        report.id,
-        chatSheetOptionsFromWorksheet(analytics.worksheet)
-      );
-    } catch {
-      // Fail-soft: All data sheets remains available.
-    }
-  }, [report.id]);
+  const applyMentionFocus = useCallback(
+    (candidate: MentionCandidate) => {
+      if (candidate.type === "sheet") onAnalyticsFocusSheet?.(candidate.id);
+      if (candidate.type === "analysis") onAnalyticsFocusAnalysis?.(candidate.id);
+    },
+    [onAnalyticsFocusAnalysis, onAnalyticsFocusSheet]
+  );
 
   // Restore the caret after a mention replaces the in-progress @ token.
   useEffect(() => {
@@ -1304,6 +1321,7 @@ export function ChatPanel({
   const selectMention = useCallback(
     (candidate: MentionCandidate) => {
       if (!mentionRange) return;
+      applyMentionFocus(candidate);
       setInput((current) => {
         const next = applyMentionToInput(current, mentionRange, candidate);
         pendingCaretRef.current = next.caret;
@@ -1321,7 +1339,7 @@ export function ChatPanel({
       setMentionRange(null);
       setMentionIndex(0);
     },
-    [mentionRange]
+    [applyMentionFocus, mentionRange]
   );
 
   const removeMention = useCallback((candidate: MentionCandidate) => {
@@ -1702,6 +1720,9 @@ export function ChatPanel({
       setMentionRange(null);
       const tagsForRequest = mentions;
       setMentions([]);
+      for (const mention of tagsForRequest) {
+        applyMentionFocus(mention);
+      }
       if (trimmed && chatTarget !== "analytics") {
         setClientScopeSuggestion(
           detectSectionScopeMismatch(sectionScope, trimmed, report.documentType)
@@ -1716,9 +1737,7 @@ export function ChatPanel({
         workspaceChrome,
         chatTarget,
       };
-      if (chatTarget === "analytics") {
-        body.sheetScope = sheetScope;
-      } else {
+      if (chatTarget !== "analytics") {
         body.sectionScope = sectionScope;
       }
       if (tagsForRequest.length > 0) {
@@ -1746,9 +1765,9 @@ export function ChatPanel({
       pace,
       chatTarget,
       sectionScope,
-      sheetScope,
       pendingImages,
       mentions,
+      applyMentionFocus,
       report.documentType,
       currentUserId,
       workspaceChrome,
@@ -1900,8 +1919,6 @@ export function ChatPanel({
                 mode,
                 workspaceChrome,
                 sectionScope,
-                sheetScope,
-                sheets: liveSheets,
               })}
             </p>
             <div className="space-y-1.5">
@@ -1986,17 +2003,7 @@ export function ChatPanel({
                 testId="chat-work-product-target"
               />
             ) : null}
-            {targetingAnalytics ? (
-              <SheetScopeSelect
-                value={sheetScope}
-                onChange={setSheetScope}
-                disabled={busy}
-                sheets={liveSheets}
-                onOpen={() => {
-                  void refreshSheetOptions();
-                }}
-              />
-            ) : (
+            {targetingAnalytics ? null : (
               <SectionScopeSelect
                 value={sectionScope}
                 onChange={changeSectionScope}
@@ -2133,8 +2140,6 @@ export function ChatPanel({
                 targetingAnalytics,
                 mode,
                 sectionScope,
-                sheetScope,
-                sheets: liveSheets,
               })}
               className="min-h-[4.5rem] max-h-40 w-full resize-none bg-transparent px-3.5 pt-3 pb-1.5 text-sm outline-none placeholder:text-[var(--muted-foreground)] disabled:opacity-50"
             />

@@ -236,4 +236,84 @@ describe("useAutoSave", () => {
     );
     expect(result.current.status).toBe("saved");
   });
+
+  it("treats onSave's returned snapshot as persisted so a follow-up render does not save again", async () => {
+    const onSave = vi.fn().mockResolvedValue("server-copy");
+    const { rerender, result } = renderHook(
+      ({ value }) => useAutoSave({ value, onSave, delayMs: 100 }),
+      { initialProps: { value: "local" } }
+    );
+
+    rerender({ value: "local-edit" });
+    await act(async () => {
+      vi.advanceTimersByTime(100);
+    });
+    expect(onSave).toHaveBeenCalledTimes(1);
+    expect(result.current.status).toBe("saved");
+
+    rerender({ value: "server-copy" });
+    await act(async () => {
+      vi.advanceTimersByTime(100);
+    });
+    expect(onSave).toHaveBeenCalledTimes(1);
+
+    rerender({ value: "another-edit" });
+    await act(async () => {
+      vi.advanceTimersByTime(100);
+    });
+    expect(onSave).toHaveBeenCalledTimes(2);
+  });
+
+  it("markPersisted hydrates a loaded value without saving", async () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const { rerender, result } = renderHook(
+      ({ value }) => useAutoSave({ value, onSave, delayMs: 100 }),
+      { initialProps: { value: "empty" } }
+    );
+
+    act(() => {
+      result.current.markPersisted("loaded-from-server");
+    });
+    rerender({ value: "loaded-from-server" });
+    await act(async () => {
+      vi.advanceTimersByTime(100);
+    });
+
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it("posts beaconSerialize on pagehide while dirty-checking with serialize", () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(null, { status: 204 }));
+    const { rerender } = renderHook(
+      ({ value }) =>
+        useAutoSave({
+          value,
+          onSave,
+          delayMs: 5_000,
+          beaconUrl: "/api/reports/r1/analytics",
+          serialize: (worksheet) => JSON.stringify(worksheet),
+          beaconSerialize: (worksheet) =>
+            JSON.stringify({ worksheet, version: 7 }),
+        }),
+      { initialProps: { value: { cells: [] as number[] } } }
+    );
+
+    rerender({ value: { cells: [1] } });
+    act(() => {
+      window.dispatchEvent(new Event("pagehide"));
+    });
+
+    expect(fetchSpy).toHaveBeenCalledWith(
+      "/api/reports/r1/analytics",
+      expect.objectContaining({
+        method: "POST",
+        keepalive: true,
+        body: JSON.stringify({ worksheet: { cells: [1] }, version: 7 }),
+      })
+    );
+    fetchSpy.mockRestore();
+  });
 });

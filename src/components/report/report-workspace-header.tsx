@@ -156,6 +156,7 @@ export function ReportWorkspaceHeader({
           reportId={report.id}
           sourceDocxFilename={report.sourceDocxFilename}
           documentType={report.documentType}
+          surface={workProductView === "analytics" ? "analytics" : "document"}
         />
 
         {showRunCriteria ? <RunAllEvaluationButton /> : null}

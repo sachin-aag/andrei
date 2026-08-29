@@ -53,8 +53,11 @@ export function AnovaDialog({
   open,
   worksheet,
   defaultResponseColumnId,
+  defaultFactorColumnId,
   defaultRowStart = null,
   defaultRowEnd = null,
+  defaultTitle = "",
+  editMode = false,
   submitting,
   error,
   onOpenChange,
@@ -63,8 +66,11 @@ export function AnovaDialog({
   open: boolean;
   worksheet: WorksheetData;
   defaultResponseColumnId: string;
+  defaultFactorColumnId?: string;
   defaultRowStart?: number | null;
   defaultRowEnd?: number | null;
+  defaultTitle?: string;
+  editMode?: boolean;
   submitting: boolean;
   error: string | null;
   onOpenChange: (open: boolean) => void;
@@ -75,9 +81,12 @@ export function AnovaDialog({
     defaultResponseColumnId || worksheet.columns[0]?.id || "";
   const [responseColumnId, setResponseColumnId] = useState(fallbackResponse);
   const [factorColumnId, setFactorColumnId] = useState(
-    () => suggestFactorColumn(worksheet, fallbackResponse) ?? ""
+    () =>
+      defaultFactorColumnId ??
+      suggestFactorColumn(worksheet, fallbackResponse) ??
+      ""
   );
-  const [title, setTitle] = useState("");
+  const [title, setTitle] = useState(defaultTitle);
   const [rowStart, setRowStart] = useState(
     defaultRowStart != null ? String(defaultRowStart) : ""
   );
@@ -248,7 +257,7 @@ export function AnovaDialog({
               })
             }
           >
-            {submitting ? "Running…" : "OK"}
+            {submitting ? (editMode ? "Updating…" : "Running…") : editMode ? "Update" : "OK"}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -15,6 +15,7 @@ import {
 } from "./types";
 import type {
   AnalysisKind,
+  AnalysisPreviewImage,
   AnovaAnalysisSummary,
   CapabilitySixpackConfig,
   CapabilitySixpackResult,
@@ -31,13 +32,14 @@ import type {
   XyScatterConfig,
   XyScatterResult,
 } from "./types";
-import { nextAnalysisTitle } from "./analysis-title";
+import { nextAnalysisTitle, titleForUpdate } from "./analysis-title";
 import {
   createEmptyWorksheet,
   findColumn,
   findSheetIdForColumn,
   normalizeWorksheet,
   upsertSpecRow,
+  worksheetsEqual,
 } from "./worksheet";
 import { hashAnovaSource, hashColumnSource, hashScatterSource, hashXyScatterSource } from "./hash";
 import { computeCapabilitySixpack } from "./sixpack";
@@ -47,8 +49,11 @@ import { runMeasurementScatter } from "./measurement-scatter";
 import {
   capabilitySixpackInputSchema,
   measurementScatterInputSchema,
+  measurementScatterToolInputSchema,
+  oneWayAnovaBodySchema,
   oneWayAnovaInputSchema,
   worksheetDataSchema,
+  xyScatterBodySchema,
   xyScatterInputSchema,
 } from "./schemas";
 import {
@@ -56,6 +61,9 @@ import {
   formatRowSelection,
   normalizeRowSelection,
 } from "./row-selection";
+import {
+  asPreviewImage,
+} from "./preview-image";
 
 function asWorksheet(value: unknown): WorksheetData {
   return normalizeWorksheet(worksheetDataSchema.parse(value));
@@ -195,6 +203,7 @@ function toAnalysisSummary(
       sourceHash: row.sourceHash,
       stale: false,
       createdAt: iso(row.createdAt),
+      previewImage: asPreviewImage(row.previewImage),
     };
     return summary;
   }
@@ -217,6 +226,7 @@ function toAnalysisSummary(
       sourceHash: row.sourceHash,
       stale: currentHash !== row.sourceHash,
       createdAt: iso(row.createdAt),
+      previewImage: null,
     };
     return summary;
   }
@@ -239,6 +249,7 @@ function toAnalysisSummary(
       sourceHash: row.sourceHash,
       stale: currentHash !== row.sourceHash,
       createdAt: iso(row.createdAt),
+      previewImage: asPreviewImage(row.previewImage),
     };
     return summary;
   }
@@ -258,6 +269,7 @@ function toAnalysisSummary(
     sourceHash: row.sourceHash,
     stale: currentHash !== row.sourceHash,
     createdAt: iso(row.createdAt),
+    previewImage: asPreviewImage(row.previewImage),
   };
   return summary;
 }
@@ -344,6 +356,18 @@ export async function updateReportAnalytics(
   if (!parsed.success) return { ok: false, reason: "invalid" };
 
   const expectedVersion = opts?.expectedVersion;
+  // Skip the version bump when the grid is unchanged so a client that
+  // re-PATCHes after save (or a keepalive with the same cells) cannot
+  // loop "Saving…" forever.
+  const current = await getReportAnalytics(reportId);
+  if (!current) return { ok: false, reason: "not_found" };
+  if (expectedVersion != null && current.version !== expectedVersion) {
+    return { ok: false, reason: "conflict", analytics: current };
+  }
+  if (worksheetsEqual(current.worksheet, parsed.data)) {
+    return { ok: true, analytics: current };
+  }
+
   const [row] = await db
     .update(statisticalWorkspaces)
     .set({
@@ -688,6 +712,7 @@ async function insertAnalysisRow(input: {
       title: input.title,
       config: input.config,
       results: input.results,
+      previewImage: null,
       sourceHash: input.sourceHash,
     })
     .returning();
@@ -750,6 +775,7 @@ export async function recomputeAnalysisForReport(
         title: config.title,
         config,
         results: outcome.result,
+        previewImage: null,
         sourceHash: hashAnovaSource(
           response,
           factor,
@@ -791,6 +817,7 @@ export async function recomputeAnalysisForReport(
         title: scatter.config.title,
         config: scatter.config,
         results: scatter.results,
+        previewImage: null,
         sourceHash: hashScatterSource(scatter.config.query, scatter.results),
       })
       .where(
@@ -824,6 +851,7 @@ export async function recomputeAnalysisForReport(
         title: config.title,
         config,
         results: outcome.result,
+        previewImage: null,
         sourceHash: hashXyScatterSource(
           xColumn,
           yColumn,
@@ -854,14 +882,278 @@ export async function recomputeAnalysisForReport(
     if (!outcome.ok) {
       return { ok: false, status: 400, error: outcome.message };
     }
-
     await db
       .update(statisticalAnalyses)
       .set({
         title: config.title,
         config,
         results: outcome.result,
+        previewImage: null,
         sourceHash: hashColumnSource(column, normalizeRowSelection(config)),
+      })
+      .where(
+        and(
+          eq(statisticalAnalyses.id, analysisId),
+          eq(statisticalAnalyses.workspaceId, analytics.id)
+        )
+      );
+  } else {
+    const exhaustive: never = existing;
+    return exhaustive;
+  }
+
+  await db
+    .update(statisticalWorkspaces)
+    .set({ updatedAt: new Date() })
+    .where(eq(statisticalWorkspaces.id, analytics.id));
+
+  const next = await getReportAnalytics(reportId);
+  if (!next) return { ok: false, status: 404, error: "Not found" };
+  const analysis = next.analyses.find((item) => item.id === analysisId);
+  if (!analysis) return { ok: false, status: 404, error: "Not found" };
+  return { ok: true, analytics: next, analysis };
+}
+
+export async function updateAnalysisForReport(
+  reportId: string,
+  analysisId: string,
+  input: unknown
+): Promise<
+  | { ok: true; analytics: ReportAnalyticsView; analysis: StatisticalAnalysisSummary }
+  | { ok: false; status: 400 | 404; error: string }
+> {
+  const analytics = await getReportAnalytics(reportId);
+  if (!analytics) return { ok: false, status: 404, error: "Not found" };
+  const existing = analytics.analyses.find((item) => item.id === analysisId);
+  if (!existing) return { ok: false, status: 404, error: "Not found" };
+
+  const existingTitles = analytics.analyses.map((item) => item.title);
+  const otherTitles = existingTitles.filter((title) => title !== existing.title);
+
+  if (isAnovaAnalysis(existing)) {
+    const parsed = oneWayAnovaBodySchema.safeParse(input);
+    if (!parsed.success) {
+      return {
+        ok: false,
+        status: 400,
+        error: parsed.error.issues[0]?.message ?? "Invalid ANOVA options.",
+      };
+    }
+    const response = findColumn(analytics.worksheet, parsed.data.responseColumnId);
+    const factor = findColumn(analytics.worksheet, parsed.data.factorColumnId);
+    if (!response || !factor) {
+      return {
+        ok: false,
+        status: 400,
+        error: "Select a response column and a factor column.",
+      };
+    }
+    const responseSheet = findSheetIdForColumn(
+      analytics.worksheet,
+      parsed.data.responseColumnId
+    );
+    const factorSheet = findSheetIdForColumn(
+      analytics.worksheet,
+      parsed.data.factorColumnId
+    );
+    if (!responseSheet || !factorSheet || responseSheet !== factorSheet) {
+      return {
+        ok: false,
+        status: 400,
+        error: "Response and factor must be on the same data sheet.",
+      };
+    }
+    const rowSelection = normalizeRowSelection(parsed.data);
+    const rowFields = configRowFields(rowSelection);
+    const rowLabel = formatRowSelection(rowSelection);
+    const fallback =
+      rowLabel
+        ? `${response.name} by ${factor.name} (${rowLabel})`
+        : `${response.name} by ${factor.name}`;
+    const title = titleForUpdate(
+      existingTitles,
+      existing.config.title,
+      parsed.data.title,
+      fallback
+    );
+    const config: OneWayAnovaConfig = {
+      responseColumnId: response.id,
+      responseColumnName: response.name,
+      factorColumnId: factor.id,
+      factorColumnName: factor.name,
+      title,
+      alpha: parsed.data.alpha ?? existing.config.alpha ?? 0.05,
+      ...rowFields,
+    };
+    const outcome = computeOneWayAnova(analytics.worksheet, config);
+    if (!outcome.ok) {
+      return { ok: false, status: 400, error: outcome.message };
+    }
+    await db
+      .update(statisticalAnalyses)
+      .set({
+        title: config.title,
+        config,
+        results: outcome.result,
+        sourceHash: hashAnovaSource(response, factor, rowSelection),
+      })
+      .where(
+        and(
+          eq(statisticalAnalyses.id, analysisId),
+          eq(statisticalAnalyses.workspaceId, analytics.id)
+        )
+      );
+  } else if (isScatterAnalysis(existing)) {
+    const parsed = measurementScatterToolInputSchema.safeParse(input);
+    if (!parsed.success) {
+      return {
+        ok: false,
+        status: 400,
+        error: parsed.error.issues[0]?.message ?? "Invalid plot options.",
+      };
+    }
+    const scatter = await runMeasurementScatter({
+      reportId,
+      query: parsed.data.query,
+      title: titleForUpdate(
+        existingTitles,
+        existing.config.title,
+        parsed.data.title,
+        parsed.data.query.trim()
+      ),
+      xLabel: parsed.data.xLabel,
+      yLabel: parsed.data.yLabel,
+      layout: parsed.data.layout,
+      lsl: parsed.data.lsl ?? null,
+      usl: parsed.data.usl ?? null,
+      existingTitles: otherTitles,
+    });
+    if (!scatter.ok) {
+      return { ok: false, status: 400, error: scatter.error };
+    }
+    await db
+      .update(statisticalAnalyses)
+      .set({
+        title: scatter.config.title,
+        config: scatter.config,
+        results: scatter.results,
+        sourceHash: hashScatterSource(scatter.config.query, scatter.results),
+      })
+      .where(
+        and(
+          eq(statisticalAnalyses.id, analysisId),
+          eq(statisticalAnalyses.workspaceId, analytics.id)
+        )
+      );
+  } else if (isXyScatterAnalysis(existing)) {
+    const parsed = xyScatterBodySchema.safeParse(input);
+    if (!parsed.success) {
+      return {
+        ok: false,
+        status: 400,
+        error: parsed.error.issues[0]?.message ?? "Invalid scatter options.",
+      };
+    }
+    const xColumn = findColumn(analytics.worksheet, parsed.data.xColumnId);
+    const yColumn = findColumn(analytics.worksheet, parsed.data.yColumnId);
+    if (!xColumn || !yColumn) {
+      return {
+        ok: false,
+        status: 400,
+        error: "Select an X column and a Y column.",
+      };
+    }
+    const xSheet = findSheetIdForColumn(analytics.worksheet, parsed.data.xColumnId);
+    const ySheet = findSheetIdForColumn(analytics.worksheet, parsed.data.yColumnId);
+    if (!xSheet || !ySheet || xSheet !== ySheet) {
+      return {
+        ok: false,
+        status: 400,
+        error: "X and Y must be on the same data sheet.",
+      };
+    }
+    const rowSelection = normalizeRowSelection(parsed.data);
+    const rowFields = configRowFields(rowSelection);
+    const rowLabel = formatRowSelection(rowSelection);
+    const fallback =
+      rowLabel
+        ? `${yColumn.name} vs ${xColumn.name} (${rowLabel})`
+        : `${yColumn.name} vs ${xColumn.name}`;
+    const title = titleForUpdate(
+      existingTitles,
+      existing.config.title,
+      parsed.data.title,
+      fallback
+    );
+    const config: XyScatterConfig = {
+      xColumnId: xColumn.id,
+      xColumnName: xColumn.name,
+      yColumnId: yColumn.id,
+      yColumnName: yColumn.name,
+      title,
+      ...rowFields,
+    };
+    const outcome = computeXyScatter(analytics.worksheet, config);
+    if (!outcome.ok) {
+      return { ok: false, status: 400, error: outcome.message };
+    }
+    await db
+      .update(statisticalAnalyses)
+      .set({
+        title: config.title,
+        config,
+        results: outcome.result,
+        sourceHash: hashXyScatterSource(xColumn, yColumn, rowSelection),
+      })
+      .where(
+        and(
+          eq(statisticalAnalyses.id, analysisId),
+          eq(statisticalAnalyses.workspaceId, analytics.id)
+        )
+      );
+  } else if (isSixpackAnalysis(existing)) {
+    const parsed = capabilitySixpackInputSchema.safeParse(input);
+    if (!parsed.success) {
+      return {
+        ok: false,
+        status: 400,
+        error: parsed.error.issues[0]?.message ?? "Invalid analysis options.",
+      };
+    }
+    const column = findColumn(analytics.worksheet, parsed.data.columnId);
+    if (!column) {
+      return { ok: false, status: 400, error: "Select a worksheet column." };
+    }
+    const rowSelection = normalizeRowSelection(parsed.data);
+    const rowFields = configRowFields(rowSelection);
+    const rowLabel = formatRowSelection(rowSelection);
+    const fallback = rowLabel ? `${column.name} (${rowLabel})` : column.name;
+    const title = titleForUpdate(
+      existingTitles,
+      existing.config.title,
+      parsed.data.title,
+      fallback
+    );
+    const config: CapabilitySixpackConfig = {
+      columnId: column.id,
+      columnName: column.name,
+      title,
+      lsl: parsed.data.lsl,
+      usl: parsed.data.usl,
+      target: parsed.data.target,
+      ...rowFields,
+    };
+    const outcome = computeCapabilitySixpack(analytics.worksheet, config);
+    if (!outcome.ok) {
+      return { ok: false, status: 400, error: outcome.message };
+    }
+    await db
+      .update(statisticalAnalyses)
+      .set({
+        title: config.title,
+        config,
+        results: outcome.result,
+        sourceHash: hashColumnSource(column, rowSelection),
       })
       .where(
         and(
@@ -901,4 +1193,53 @@ export async function deleteAnalysisForReport(
       )
     );
   return getReportAnalytics(reportId);
+}
+
+export async function saveAnalysisPreviewForReport(
+  reportId: string,
+  analysisId: string,
+  previewImage: AnalysisPreviewImage
+): Promise<
+  | { ok: true; analytics: ReportAnalyticsView }
+  | { ok: false; status: 400 | 404; error: string }
+> {
+  const parsed = asPreviewImage(previewImage);
+  if (!parsed) {
+    return { ok: false, status: 400, error: "Invalid preview image." };
+  }
+
+  const analytics = await getReportAnalytics(reportId);
+  if (!analytics) return { ok: false, status: 404, error: "Not found" };
+  const existing = analytics.analyses.find((item) => item.id === analysisId);
+  if (!existing) return { ok: false, status: 404, error: "Not found" };
+  if (
+    !isSixpackAnalysis(existing) &&
+    !isScatterAnalysis(existing) &&
+    !isXyScatterAnalysis(existing)
+  ) {
+    return {
+      ok: false,
+      status: 400,
+      error: "This analysis kind cannot store a preview image.",
+    };
+  }
+
+  await db
+    .update(statisticalAnalyses)
+    .set({ previewImage: parsed })
+    .where(
+      and(
+        eq(statisticalAnalyses.id, analysisId),
+        eq(statisticalAnalyses.workspaceId, analytics.id)
+      )
+    );
+
+  await db
+    .update(statisticalWorkspaces)
+    .set({ updatedAt: new Date() })
+    .where(eq(statisticalWorkspaces.id, analytics.id));
+
+  const next = await getReportAnalytics(reportId);
+  if (!next) return { ok: false, status: 404, error: "Not found" };
+  return { ok: true, analytics: next };
 }
